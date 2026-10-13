@@ -222,6 +222,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'branchClose:closeTill':  { device_id: { t: 'string' }, counted_cash: { t: 'number' }, notes: { t: 'string', optional: true } },
   'branchClose:confirmShift': { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } },   // A452
   'branchClose:closeBranch':  { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true } },   // A452, A458
+  'branchClose:shiftMoney':   { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true }, expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true } },   // A465
+  'branchClose:cancelShiftMoney': { instruction_id: { t: 'number' } },   // A465
   'day:summary':            NO_PAYLOAD,
   'day:isManager':          NO_PAYLOAD,
   'day:conflicts':          NO_PAYLOAD,

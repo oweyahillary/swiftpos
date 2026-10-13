@@ -223,6 +223,16 @@ export interface BranchTotals {
   shifts: { all: number; open: number; awaiting: number; confirmed: number; uncounted: number };
 }
 
+/** A465: a cash in / out or expense the branch server sent to a till (main/branchClose.ts ShiftMoneyView). */
+export interface ShiftMoneyView {
+  id: number; status: string; error: string | null; created_at: string;
+  shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; note: string | null;
+}
+export interface ShiftMoneyRequest {
+  device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
+  description?: string; expense_category_id?: string; category_name?: string; payment_method?: string;
+}
+
 export interface BranchPeerShift {
   id: string; cashier_name: string; opened_at: string; closed_at: string | null;
   state: 'open' | 'awaiting' | 'confirmed' | 'closed';
@@ -481,9 +491,13 @@ declare global {
               /** A452: the till's shifts (absent from an older till), and its clock when it reported. */
               shifts?: BranchPeerShift[];
               clock?: string;
+              /** A465: the till's code and name (absent from an older till). */
+              terminal?: { code?: string | null; name?: string | null };
             } | null;
             /** A452: the latest confirm sent per shift. */
             confirms?: Record<string, { status: string; error: string | null; created_at: string }>;
+            /** A465: cash in / out and expenses sent to this till from the server (last 24 h). */
+            money?: ShiftMoneyView[];
             instruction: {
               id: number; status: string; created_at: string;
               delivered_at: string | null; acked_at: string | null;
@@ -506,6 +520,13 @@ declare global {
           ok: boolean; error?: string; blockers?: string[];
           results?: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }>;
         }>;
+        /** A465: a cash in / out or expense on any running shift of the branch — the till records it (server only). */
+        shiftMoney: (req: ShiftMoneyRequest) => Promise<{
+          ok: boolean; error?: string; instruction_id?: number; row_id?: string; direct?: boolean;
+          summary?: { kind: string; amount: number; shift_id: string; expected_cash: number } | null;
+        }>;
+        /** A465: withdraw one the till has not answered yet. */
+        cancelShiftMoney: (instructionId: number) => Promise<{ ok: boolean; error?: string }>;
       };
       /** A197: stock transfers between branches (online licence; inventory.transfer). */
       transfers: {
@@ -601,6 +622,8 @@ declare global {
         forceClose: (reason: string) => Promise<ZReport>;
         /** A401: the shift was closed on the web and the till closed it too. Returns an unsubscribe. */
         onClosedElsewhere: (cb: (e: { id: string; message: string }) => void) => () => void;
+        /** A465: the branch server recorded a cash in / out or expense on this till's shift. Returns an unsubscribe. */
+        onChangedElsewhere: (cb: (e: { id: string | null; kind: string | null }) => void) => () => void;
         current: (opts?: { includeForeign?: boolean }) => Promise<ZReport | null>;
         open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
         /** 0.6.37 (A388): a pay out needs a manager — signed in, or `pin` (a manager's). */

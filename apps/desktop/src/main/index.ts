@@ -17,7 +17,7 @@ import { enterServerMode, leaveServerMode, keepServerWindowAlive, isServing, mar
 import { onJoinAsked } from './serverJoin';   // A436
 import { WATCHDOG_ARG, watchdogStaysDown, quitByHand, clearQuitByHand } from './serverWatchdog';   // A435
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
-import { ownDayState, executeCloseDay, executeConfirmShift } from './branchClose';
+import { ownDayState, executeCloseDay, executeConfirmShift, executeShiftMoney } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
 import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
@@ -344,6 +344,19 @@ app.whenReady().then(() => {
           // A452: a manager on the branch server confirmed one of this till's shifts — recorded here, on its own books.
           const ack = executeConfirmShift(ins.payload);
           if (ack.ok) syncPush().catch(() => { /* the timer retries */ });
+          if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
+          continue;
+        }
+        if (ins.kind === 'shift_money') {
+          // A465: a manager on the branch server recorded a cash in / out or an expense on one of this till's open
+          // shifts — recorded here, on its own books; the drawer's figures on screen reload.
+          const ack = executeShiftMoney(ins.payload);
+          if (ack.ok && !ack.already) {
+            syncPush().catch(() => { /* the timer retries */ });
+            for (const w of BrowserWindow.getAllWindows()) {
+              if (!w.isDestroyed()) w.webContents.send('shift:changedElsewhere', { id: ins.payload?.shift_id ?? null, kind: ins.payload?.kind ?? null });
+            }
+          }
           if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
           continue;
         }

@@ -18,9 +18,11 @@ ok('…the ring and the bars are shares of what was PAID (all methods), coloured
   /const total = rows\.reduce\(\(a, \[, v\]\) => a \+ v, 0\);/.test(mp) && (mp.match(/methodColour\((m|method)\)\.dot/g) ?? []).length >= 2);
 ok('top sellers ranked with a bar against the best seller (restaurant and retail)',
   (mp.match(/<TopSellers items=\{topItems\}/g) ?? []).length === 2 && /data-testid="overview-top-sellers"/.test(mp));
-ok('the headline cards carry an icon and a colour; revenue is the gradient one',
-  (mp.match(/accent icon="revenue"/g) ?? []).length === 3 && (mp.match(/icon="tax" tone="amber"/g) ?? []).length === 2
-  && /bg-gradient-to-br from-action-500 to-action-700/.test(mp));
+// A465 (owner, 2026-10-13): "remove the icons on the cards on the desktop overview but leave the colors".
+ok('the headline cards carry a colour and no icon; revenue is the gradient one',
+  (mp.match(/<KpiCard label=\{`Revenue \$\{when\}`\}[^\n]*\saccent\b/g) ?? []).length === 3 && (mp.match(/label="VAT collected"[^\n]*tone="amber"/g) ?? []).length === 2
+  && /bg-gradient-to-br from-action-500 to-action-700/.test(mp)
+  && !/KPI_ICON/.test(mp) && !/<KpiCard[^>]*\sicon=/.test(mp));
 ok('the hourly chart: taller, gridlines, the peak picked out, an hour readout on hover',
   /<div className="relative h-36">/.test(mp) && /onMouseEnter=\{\(\) => setHover\(h\)\}/.test(mp) && /Point at a bar for its hour/.test(mp));
 ok('the old inline payment blocks are gone (one implementation)', !/<div className="h-1 bg-gray-700 rounded-full overflow-hidden">/.test(mp));

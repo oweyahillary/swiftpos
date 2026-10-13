@@ -134,6 +134,12 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     posApi.pos.features().then((f) => { setManagerOnlyMoney(!!f.cashier_no_money_out); setPayLater(!!(f as any).pay_later_tabs); }).catch(() => {});   // A453; A461
   }, []);
 
+  // A465: a manager on the branch server recorded a cash in / out or expense on this drawer — reload its figures.
+  useEffect(() => posApi.shift.onChangedElsewhere(() => {
+    void refresh();
+    if (activeTab === 'expenses') posApi.expense.list().then(setExpList).catch(() => {});
+  }), [activeTab]);
+
   // Reload expense list whenever the expenses tab is opened
   useEffect(() => {
     if (activeTab === 'expenses') {

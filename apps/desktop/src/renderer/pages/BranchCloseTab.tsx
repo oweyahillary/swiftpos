@@ -16,10 +16,15 @@
  *   till then closes its day with its confirmed counts (no second count), a till still on yesterday's day included.
  *
  * IT NEVER PRETENDS. A till not heard from, on an older version, refusing, or still answering is shown as such.
+ *
+ * A465 (owner, 2026-10-13): every drawer open at the branch is listed with Cash in / out and Expense — a manager here
+ * records money on ANY running shift. The till that holds the drawer records it on its own books (~15 s); until then it
+ * shows as waiting for the till (and can be withdrawn), then recorded, or refused with the till's reason.
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { posApi, type BranchPeerShift } from '../lib/posApi';
+import { posApi, type BranchPeerShift, type ShiftMoneyView } from '../lib/posApi';
+import { methodLabel } from '../../shared/paymentCatalogue';   // A465
 import { methodName, type MethodOption } from '../../shared/shiftConfirm';
 import MethodDot from '../components/MethodDot';
 
@@ -29,7 +34,12 @@ type Overview = Extract<Awaited<ReturnType<typeof posApi.branchClose.overview>>,
 type TillView = Overview['tills'][number];
 
 const STALE_MS = 120_000;
-const tillLabel = (t: { is_self: boolean; device_id: string }) => (t.is_self ? 'This terminal (branch server)' : `Terminal ${t.device_id.slice(0, 8)}`);
+// A465: a till that reports its name / code is named by it; an older till keeps "Terminal xxxxxxxx".
+const tillLabel = (t: { is_self: boolean; device_id: string; state?: { terminal?: { code?: string | null; name?: string | null } } | null }) => {
+  if (t.is_self) return 'This terminal (branch server)';
+  const n = t.state?.terminal?.name?.trim(); const c = t.state?.terminal?.code?.trim();
+  return n && c ? `${n} (${c})` : n || (c ? `Till ${c}` : `Terminal ${t.device_id.slice(0, 8)}`);
+};
 
 export default function BranchCloseTab({ currency }: Props) {
   const [ov, setOv] = useState<Overview | null>(null);
@@ -42,6 +52,8 @@ export default function BranchCloseTab({ currency }: Props) {
   const [closeMsg, setCloseMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [showTills, setShowTills] = useState(false);   // A458: the per-till detail, on request
   const [totalsOk, setTotalsOk] = useState(false);     // A458: the manager ticked the day's totals
+  const [moneyFor, setMoneyFor] = useState<{ t: TillView; s: BranchPeerShift; mode: 'float' | 'expense' } | null>(null);   // A465
+  const [moneyMsg, setMoneyMsg] = useState('');   // A465
   const alive = useRef(true);
 
   const load = useCallback(async () => {
@@ -113,6 +125,15 @@ export default function BranchCloseTab({ currency }: Props) {
     } finally { setClosing(false); }
   };
 
+  // A465: every drawer open at the branch — a manager here records cash in / out or an expense on it (server only).
+  const isServer = role === 'node' || role === 'office';
+  const openDrawers = ov.tills.flatMap(t => (t.state?.shifts ?? []).filter(s => s.state === 'open').map(s => ({ t, s })));
+  const cancelMoney = async (id: number) => {
+    const r = await posApi.branchClose.cancelShiftMoney(id).catch(() => ({ ok: false, error: 'Could not withdraw it.' }));
+    setMoneyMsg(r.ok ? 'Withdrawn — the till will not record it.' : (r.error ?? 'Could not withdraw it.'));
+    await load();
+  };
+
   // A458: every shift waiting for a manager, across the tills — confirmed here one by one (the till records it).
   const toConfirm = ov.tills.flatMap(t => (t.state?.shifts ?? []).filter(s => s.state === 'awaiting').map(s => ({ t, s })));
   const T = ov.totals;
@@ -177,6 +198,41 @@ export default function BranchCloseTab({ currency }: Props) {
           <p className="text-xs text-gray-400">{T.shifts.uncounted} shift{T.shifts.uncounted === 1 ? ' was' : 's were'} closed without a manager's count (force-closed or older) — in Sales and Expected, not in Confirmed.</p>
         )}
       </div>
+
+      {/* A465: the drawers open now — cash in / out and expenses on any of them, recorded by the till that holds it */}
+      {isServer && openDrawers.length > 0 && (
+        <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 space-y-2" data-testid="open-drawers">
+          <p className="text-gray-100 font-medium">Drawers open now ({openDrawers.length})</p>
+          <p className="text-xs text-gray-400">Record cash in, cash out or an expense on any drawer. The till that holds it records it within about 15 seconds.</p>
+          {moneyMsg && <p className="text-xs text-gray-300">{moneyMsg}</p>}
+          {openDrawers.map(({ t, s }) => {
+            const age = ageOf(t.is_self ? new Date().toISOString() : t.last_seen);
+            const items = (t.money ?? []).filter(m => m.shift_id === s.id);
+            return (
+              <div key={s.id} className="border-t border-gray-700/60 pt-2 space-y-1" data-testid={`drawer-${s.id}`}>
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <span className="text-gray-100">{s.cashier_name}</span>
+                  <span className="text-xs text-gray-400">{tillLabel(t)} · opened {time(s.opened_at)}</span>
+                  {!t.is_self && age.stale && <span className="text-xs text-amber-400">last seen {age.label}</span>}
+                  <span className="ml-auto text-xs text-gray-400">Cash expected <span className="text-gray-100 font-medium tabular-nums">{money(s.expected.cash ?? 0)}</span></span>
+                </div>
+                <div className="flex gap-2">
+                  <button data-testid={`drawer-float-${s.id}`} onClick={() => { setMoneyMsg(''); setMoneyFor({ t, s, mode: 'float' }); }}
+                    className="px-3 py-1.5 rounded-md border border-gray-600 text-gray-200 hover:bg-gray-700/40 text-sm">Cash in / out</button>
+                  <button data-testid={`drawer-expense-${s.id}`} onClick={() => { setMoneyMsg(''); setMoneyFor({ t, s, mode: 'expense' }); }}
+                    className="px-3 py-1.5 rounded-md border border-gray-600 text-gray-200 hover:bg-gray-700/40 text-sm">Expense</button>
+                </div>
+                {items.map(m => <MoneyLine key={m.id} m={m} money={money} onCancel={() => void cancelMoney(m.id)} />)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {moneyFor && (
+        <ShiftMoneyModal till={moneyFor.t} s={moneyFor.s} mode={moneyFor.mode} label={tillLabel(moneyFor.t)} money={money} currency={currency}
+          options={options} time={time} onCancel={() => setMoneyFor(null)}
+          onDone={(msg) => { setMoneyFor(null); setMoneyMsg(msg); void load(); }} />
+      )}
 
       {/* A458: the shifts waiting for a manager — confirmed one by one, as before */}
       {toConfirm.length > 0 && (
@@ -465,6 +521,128 @@ function ConfirmHere({ till, s, money, options, currency, onDone, onCancel }: {
           {busy ? 'Confirming…' : 'Confirm shift'}
         </button>
         <button onClick={onCancel} className="px-3 py-1.5 rounded-md border border-gray-600 text-gray-200 text-sm">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/** A465: one cash in / out or expense sent to a till — waiting, recorded, or refused with the till's reason. */
+function MoneyLine({ m, money, onCancel }: { m: ShiftMoneyView; money: (n: number) => string; onCancel: () => void }) {
+  const what = m.kind === 'expense' ? 'expense' : m.kind === 'float_in' ? 'cash in' : 'cash out';
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs" data-testid={`money-${m.id}`}>
+      <span className="text-gray-200 tabular-nums">{money(m.amount)} {what}{m.note ? ` — ${m.note}` : ''}</span>
+      {m.status === 'pending' && <>
+        <span className="text-amber-300">{m.delivered_at ? 'the till has it — recording' : 'waiting for the till'}</span>
+        {!m.delivered_at && <button onClick={onCancel} className="text-gray-400 hover:text-gray-200 underline">Cancel</button>}
+      </>}
+      {m.status === 'acked' && <span className="text-gray-400">recorded</span>}
+      {m.status === 'failed' && <span className="text-red-300">refused: {m.error ?? 'the till did not say why'}</span>}
+    </div>
+  );
+}
+
+/** A465: cash in / out or an expense on one open drawer — the till that holds it records it. */
+function ShiftMoneyModal({ till, s, mode, label, money, currency, options, time, onCancel, onDone }: {
+  till: TillView; s: BranchPeerShift; mode: 'float' | 'expense'; label: string; money: (n: number) => string; currency: string;
+  options: MethodOption[]; time: (iso: string | null) => string; onCancel: () => void; onDone: (msg: string) => void;
+}) {
+  const [type, setType] = useState<'float_in' | 'float_out'>('float_in');
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [desc, setDesc] = useState('');
+  const [catId, setCatId] = useState('');
+  const [method, setMethod] = useState('cash');
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const methods = [...new Set(['cash', 'mpesa', 'card', ...options.map(o => String(o.code).toLowerCase())])];
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-400 focus:outline-none focus:border-action-500';
+
+  useEffect(() => {
+    if (mode === 'expense') posApi.expense.categories().then(setCategories).catch(() => {});
+  }, [mode]);
+
+  const save = async () => {
+    if (!(Number(amount) > 0)) { setError('Enter an amount greater than zero.'); return; }
+    if (mode === 'expense' && !desc.trim()) { setError('Description is required.'); return; }
+    setBusy(true); setError('');
+    try {
+      const r = await posApi.branchClose.shiftMoney(mode === 'float'
+        ? { device_id: till.device_id, shift_id: s.id, kind: type, amount: Number(amount), reason: reason.trim() || undefined }
+        : { device_id: till.device_id, shift_id: s.id, kind: 'expense', amount: Number(amount), description: desc.trim(),
+            expense_category_id: catId || undefined, category_name: categories.find(c => c.id === catId)?.name, payment_method: method });
+      if (!r.ok) { setError(r.error ?? 'Could not record it.'); return; }
+      onDone(r.direct ? 'Recorded on this terminal\'s drawer.' : 'Sent — the till records it within about 15 seconds.');
+    } catch (e: any) { setError(e?.message ?? 'Could not record it.'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-[60]" data-testid="shift-money-modal">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-800">
+          <div>
+            <h2 className="text-white font-bold">{mode === 'float' ? 'Cash in / out' : 'Expense'}</h2>
+            <p className="text-xs text-gray-400" data-testid="shift-money-drawer">
+              {label} · {s.cashier_name} · opened {time(s.opened_at)} · cash expected {money(s.expected.cash ?? 0)}
+            </p>
+          </div>
+          <button onClick={onCancel} className="text-gray-300 hover:text-white">✕</button>
+        </div>
+        <div className="p-6 space-y-3 overflow-y-auto">
+          {error && <p className="text-red-300 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">{error}</p>}
+          {mode === 'float' ? (<>
+            <div className="flex gap-2">
+              {(['float_in', 'float_out'] as const).map(k => (
+                <button key={k} onClick={() => setType(k)} data-testid={`shift-money-${k}`}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm border ${type === k ? 'bg-action-500 border-action-500 text-gray-950 font-semibold' : 'border-gray-600 text-gray-200'}`}>
+                  {k === 'float_in' ? 'Cash in' : 'Cash out'}
+                </button>
+              ))}
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs text-gray-400">Amount ({currency})</span>
+              <input className={inputCls} type="number" min="0" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-gray-400">Reason</span>
+              <input className={inputCls} value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder={type === 'float_in' ? 'e.g. Change top-up' : 'e.g. Banked'} />
+            </label>
+          </>) : (<>
+            <label className="block space-y-1">
+              <span className="text-xs text-gray-400">Type</span>
+              <select className={inputCls} value={catId} onChange={(e) => setCatId(e.target.value)}>
+                <option value="">No type</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-gray-400">Description</span>
+              <input className={inputCls} value={desc} maxLength={200} onChange={(e) => setDesc(e.target.value)} placeholder="e.g. Gas refill" />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-xs text-gray-400">Amount ({currency})</span>
+                <input className={inputCls} type="number" min="0" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs text-gray-400">Paid with</span>
+                <select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}>
+                  {methods.map(m => <option key={m} value={m}>{methodLabel(m)}</option>)}
+                </select>
+              </label>
+            </div>
+            <p className="text-xs text-gray-400">{method === 'cash' ? 'Cash comes out of this drawer — its expected cash goes down.' : 'Not cash — the drawer is not affected.'}</p>
+          </>)}
+          <div className="flex gap-2 pt-1">
+            <button data-testid="shift-money-save" onClick={() => void save()} disabled={busy}
+              className="px-4 py-2 rounded-lg bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold disabled:opacity-50">
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={onCancel} disabled={busy} className="px-4 py-2 rounded-lg border border-gray-600 text-gray-200 text-sm">Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -280,6 +280,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     setClosedElsewhere(e.message);
     posApi.shift.current().then(setShift).catch(() => setShift(null));
   }), []);
+  // A465: the branch server recorded a cash in / out or expense on this drawer — its figures reload.
+  useEffect(() => posApi.shift.onChangedElsewhere(() => {
+    posApi.shift.current().then(setShift).catch(() => {});
+  }), []);
 
   // Order history + void
   const [showHistory, setShowHistory] = useState(false);

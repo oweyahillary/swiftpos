@@ -52,7 +52,7 @@ import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDevi
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
+import { openShift, addFloat, recordExpense, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { branchDay } from './branchDay';   // A431 / A432
 import { cloudBranchOrders, mirrorTillRefund, reverseRiderPayout } from './webSales';
@@ -67,6 +67,8 @@ import { exportDailySalesReport } from './dailySalesReport';
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from './branchClose';
+import { executeShiftMoney, createShiftMoneyInstruction, cancelShiftMoneyInstruction, SHIFT_MONEY_CLOSED, type ShiftMoneyPayload } from './branchClose';   // A465
+import { ownOpenShift } from './shiftService';   // A465
 import { takeSnapshot, setBackupDir, maintenanceStatus } from './maintenance';
 import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { localOrderDetail } from './managerReports';   // A444
@@ -1864,6 +1866,72 @@ export function registerIpcHandlers() {
       return { ok: false, error: err?.message ?? 'Could not confirm the shift' };
     }
   });
+  // A465 (owner, 2026-10-13): a manager on the BRANCH SERVER records a cash in, cash out or expense on ANY running shift
+  // of the branch. The server never writes another till's row: it queues an instruction that till collects (~15 s) and
+  // records on its own books — its Z-report, its push and Close Branch stay one story. The server's own drawer: at once.
+  handle('branchClose:shiftMoney', async (_e, payload) => {
+    const p = assertPayload<{ device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number;
+      reason?: string; description?: string; expense_category_id?: string; category_name?: string; payment_method?: string }>({
+      device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] },
+      amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true },
+      expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true },
+    }, payload);
+    try {
+      const cfg = getDeviceConfig();
+      if (!isNodeRole(cfg?.device_role)) return { ok: false, error: 'Only the branch server records money on another till\'s shift.' };
+      // A manager signed in here approves it as themselves (A388); A453's manager-only switch always lets a manager through.
+      const me = signedInConfirmer();
+      if (!me || !mayRecordMoneyMovement(getPosFeatures(), true)) return { ok: false, error: 'Only a manager (or the owner) signed in here can do this.' };
+      const amount = Math.round(Number(p.amount) * 100) / 100;
+      if (!(amount > 0)) return { ok: false, error: 'Enter an amount greater than zero.' };
+      if (p.kind === 'expense' && !String(p.description ?? '').trim()) return { ok: false, error: 'Description is required.' };
+      const isSelf = p.device_id === cfg?.device_id;
+      if (isSelf) {
+        if (!ownOpenShift(p.shift_id)) return { ok: false, error: SHIFT_MONEY_CLOSED };
+      } else {
+        // Only to a till heard from in the last minute that reports this shift open — never queued into the dark.
+        const row = getLocalDb().prepare(`SELECT state, updated_at FROM node_peer_state WHERE device_id = ?`).get(p.device_id) as { state: string; updated_at: string } | undefined;
+        if (!row || Date.now() - new Date(row.updated_at).getTime() > 60_000) return { ok: false, error: 'That till has not been heard from — check it is on' };
+        let st: PeerDayState | null = null;
+        try { st = JSON.parse(row.state); } catch { /* unreadable */ }
+        if (!st?.shifts) return { ok: false, error: 'That till is on an older version — update it to record money on it from here.' };
+        if (!st.shifts.some((s) => s.id === p.shift_id && s.state === 'open')) return { ok: false, error: 'That shift is no longer open on its till.' };
+      }
+      const instr: ShiftMoneyPayload = {
+        row_id: uuid(), shift_id: p.shift_id, kind: p.kind, amount,
+        reason: p.kind === 'expense' ? null : (String(p.reason ?? '').trim().slice(0, 200) || null),
+        description: p.kind === 'expense' ? String(p.description).trim().slice(0, 200) : null,
+        expense_category_id: p.kind === 'expense' ? (p.expense_category_id || null) : null,
+        category_name: p.kind === 'expense' ? (p.category_name ?? null) : null,
+        payment_method: p.kind === 'expense' ? (p.payment_method || 'cash') : null,
+        approver: me, recorded_by: me,
+      };
+      const what = `${p.kind === 'expense' ? 'expense' : p.kind === 'float_in' ? 'cash in' : 'cash out'} ${amount}`;
+      if (isSelf) {
+        const r = executeShiftMoney(instr);
+        if (!r.ok) return { ok: false, error: r.error };
+        pushNow();
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send('shift:changedElsewhere', { id: p.shift_id, kind: p.kind });
+        }
+        logLine('branchClose', `A465 ${what} on this server's shift ${p.shift_id} by ${me.name ?? me.id}`);
+        return { ok: true, row_id: instr.row_id, direct: true, summary: r.summary ?? null };
+      }
+      const { id } = createShiftMoneyInstruction(p.device_id, instr, me.id);
+      logLine('branchClose', `A465 ${what} on shift ${p.shift_id} sent to ${p.device_id} by ${me.name ?? me.id}`);
+      return { ok: true, instruction_id: id, row_id: instr.row_id };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? 'Could not record it' };
+    }
+  });
+  // A465: withdraw one the till has not answered yet.
+  handle('branchClose:cancelShiftMoney', async (_e, payload) => {
+    const { instruction_id } = assertPayload<{ instruction_id: number }>({ instruction_id: { t: 'number' } }, payload);
+    if (!isNodeRole(getDeviceConfig()?.device_role) || !signedInConfirmer()) return { ok: false, error: 'Only a manager on the branch server can do this.' };
+    const removed = cancelShiftMoneyInstruction(instruction_id);
+    if (removed) logLine('branchClose', `A465 instruction ${instruction_id} withdrawn`);
+    return removed ? { ok: true } : { ok: false, error: 'The till has already answered — it cannot be withdrawn now.' };
+  });
   // A452: Close Branch — every till's day, once no drawer is open and no shift waits for a manager (owner: "when all
   // shifts are closed and confirmed they get a close branch"). No second count: each till closes with its confirmed
   // shifts' cash. The server's date is final — a till still on yesterday closes that day too.
@@ -3044,44 +3112,15 @@ export function registerIpcHandlers() {
     description, amount, expense_category_id, paid_by, payment_method, category_name, pin,
   }: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
        payment_method?: string; category_name?: string; pin?: string }) => {
-    const db = getLocalDb();
     // A453: with 'cashier_no_money_out' only a manager signed in here records an expense.
     if (!mayRecordMoneyMovement(getPosFeatures(), signedInConfirmer() !== null)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
     const approver = await payoutApprover(pin);   // 0.6.37 (A388): every expense needs a manager
-    const session  = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
-    const staff    = db.prepare(`SELECT branch_id, staff_id FROM staff_session WHERE id=1`).get() as any;
-    const shift    = db.prepare(`SELECT id FROM shifts WHERE status='open'
-       AND COALESCE(device_id,'') = COALESCE(?,'')
-     ORDER BY created_at DESC LIMIT 1`).get(getDeviceConfig()?.device_id ?? null) as any;
-
-    if (!session?.business_id) throw new Error('No active session');
-    if (!staff?.branch_id)     throw new Error('No staff session');
-
-    const id = uuid();   // A179: MUST be a UUID — the cloud expenses.id is uuid; a
-                         // prefixed id (exp_…) fails 22P02 and, batched with shifts/
-                         // days/floats, blocks ALL of them from syncing.
-    const now = new Date().toISOString();
-
-    db.prepare(`
-      INSERT INTO expenses
-        (id, business_id, branch_id, expense_category_id, description, amount,
-         paid_by, expense_date, shift_id, created_at, device_id, payment_method, expense_type_name,
-         approved_by, approved_by_name, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).run(
-      id, session.business_id, staff.branch_id,
-      expense_category_id ?? null, description, amount,
-      paid_by ?? staff.staff_id ?? null,
-      now.slice(0, 10), shift?.id ?? null, now,
-      // See the note in shiftService.recordFloat: a NULL-attributed row matches
-      // nothing under COALESCE(device_id,'') = COALESCE(own,''), so it is never
-      // collected by the push and the expense silently never leaves the till.
-      getDeviceConfig()?.device_id ?? null,
-      // 0.6.27: how it was paid (only cash leaves the drawer) and the type's name (the Z-report shows it, offline too).
-      cleanExpenseMethod(payment_method),
-      expense_category_id ? (String(category_name ?? '').trim().slice(0, 100) || null) : null,
-      approver.id, approver.name,
-    );
+    const shift = getOpenShift();   // the till's own open drawer (none: paid outside any drawer)
+    // A465: the insert lives in shiftService.recordExpense — the branch server's instruction records the same way.
+    const { id } = recordExpense({
+      shiftId: shift?.id ?? null, description, amount, expense_category_id: expense_category_id ?? null,
+      category_name: category_name ?? null, payment_method: payment_method ?? null, paid_by: paid_by ?? null, approver,
+    });
     logLine('shift', `expense ${Number(amount)} approved by ${approver.name ?? approver.id}`);
     return { id, approvedBy: approver.name };
   });

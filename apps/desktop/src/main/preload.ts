@@ -105,6 +105,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
     confirmShift: (device_id: string, shift_id: string, counts: Record<string, number>, reasons?: Record<string, string>) =>
       ipcRenderer.invoke('branchClose:confirmShift', { device_id, shift_id, counts, reasons }),
     closeBranch: (notes?: string, totalsConfirmed?: boolean) => ipcRenderer.invoke('branchClose:closeBranch', { notes, totals_confirmed: totalsConfirmed === true }),   // A458
+    // A465: a cash in / out or expense on any running shift of the branch (the till records it); withdraw one not yet taken.
+    shiftMoney: (req: { device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
+      description?: string; expense_category_id?: string; category_name?: string; payment_method?: string }) => ipcRenderer.invoke('branchClose:shiftMoney', req),
+    cancelShiftMoney: (instruction_id: number) => ipcRenderer.invoke('branchClose:cancelShiftMoney', { instruction_id }),
   },
   // A197: stock transfers between branches (online licence).
   transfers: {
@@ -208,6 +212,12 @@ contextBridge.exposeInMainWorld('swiftpos', {
       const h = (_e: unknown, e: { id: string; message: string }) => cb(e);
       ipcRenderer.on('shift:closedElsewhere', h);
       return () => { ipcRenderer.removeListener('shift:closedElsewhere', h); };
+    },
+    // A465: the branch server recorded a cash in / out or expense on this till's shift — reload the drawer's figures.
+    onChangedElsewhere: (cb: (e: { id: string | null; kind: string | null }) => void) => {
+      const h = (_e: unknown, e: { id: string | null; kind: string | null }) => cb(e);
+      ipcRenderer.on('shift:changedElsewhere', h);
+      return () => { ipcRenderer.removeListener('shift:changedElsewhere', h); };
     },
     float:   (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason, pin }),   // 0.6.37: pin
     close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),

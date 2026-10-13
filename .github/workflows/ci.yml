@@ -916,6 +916,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/backup-folder.test.mjs
 
+      # A465 — a manager on the branch server records cash in / out or an expense on any running shift; the till that
+      # holds the drawer records it on its own books.
+      - name: Desktop cash in / out and expenses on any drawer from the branch server
+        working-directory: apps/desktop
+        run: node --no-warnings test/server-drawer-money.test.mjs
+
       # A454 — the cashier's Z-report at shift close is their own count (no reconciliation), on the till's receipt
       # printer even when that is a Windows printer.
       - name: Desktop cashier's Z-report copy and the Z-report on the Windows receipt printer

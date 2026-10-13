@@ -118,32 +118,25 @@ function timeAgo(iso: string) {
 
 // ── Shared card components ─────────────────────────────────────────────────────
 // A457 (owner, 2026-10-12: "can you make the desktop overview beautiful i know we can do better"): the headline cards
-// carry an icon and a colour each, the first (revenue) a full gradient; the figures are unchanged.
+// carry a colour each, the first (revenue) a full gradient; the figures are unchanged.
+// A465 (owner, 2026-10-13: "remove the icons on the cards on the desktop overview but leave the colors"): no icons.
 type KpiTone = 'action' | 'sky' | 'violet' | 'amber' | 'rose';
-const KPI_TONE: Record<KpiTone, { ring: string; icon: string }> = {
-  action: { ring: 'from-action-500/20 to-transparent', icon: 'bg-action-500/15 text-action-300' },
-  sky:    { ring: 'from-sky-500/20 to-transparent',    icon: 'bg-sky-500/15 text-sky-300' },
-  violet: { ring: 'from-violet-500/20 to-transparent', icon: 'bg-violet-500/15 text-violet-300' },
-  amber:  { ring: 'from-amber-500/20 to-transparent',  icon: 'bg-amber-500/15 text-amber-300' },
-  rose:   { ring: 'from-rose-500/20 to-transparent',   icon: 'bg-rose-500/15 text-rose-300' },
+const KPI_TONE: Record<KpiTone, { ring: string }> = {
+  action: { ring: 'from-action-500/20 to-transparent' },
+  sky:    { ring: 'from-sky-500/20 to-transparent' },
+  violet: { ring: 'from-violet-500/20 to-transparent' },
+  amber:  { ring: 'from-amber-500/20 to-transparent' },
+  rose:   { ring: 'from-rose-500/20 to-transparent' },
 };
-const KPI_ICON = {
-  revenue: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-  orders:  'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z',
-  avg:     'M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z',
-  tax:     'M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z',
-  fuel:    'M3 21h12M5 21V5a2 2 0 012-2h6a2 2 0 012 2v16M15 10h2a2 2 0 012 2v5a1 1 0 002 0V9l-3-3M8 7h4',
-} as const;
-function KpiCard({ label, value, sub, accent, icon, tone = 'sky' }: {
-  label: string; value: string; sub?: string; accent?: boolean; icon?: keyof typeof KPI_ICON; tone?: KpiTone;
+function KpiCard({ label, value, sub, accent, tone = 'sky' }: {
+  label: string; value: string; sub?: string; accent?: boolean; tone?: KpiTone;
 }) {
   if (accent) {
     return (
       <div className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-action-500 to-action-700 shadow-lg shadow-action-900/30">
         <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/10" />
-        <div className="relative flex items-start justify-between gap-2">
+        <div className="relative">
           <p className="text-xs font-semibold uppercase tracking-wider text-white/80">{label}</p>
-          {icon && <span className="rounded-lg bg-white/15 p-1.5 text-white"><Icon d={KPI_ICON[icon]} size={16} /></span>}
         </div>
         <p className="relative text-2xl font-bold tabular-nums text-white mt-2">{value}</p>
         {sub && <p className="relative text-xs mt-0.5 text-white/75">{sub}</p>}
@@ -154,9 +147,8 @@ function KpiCard({ label, value, sub, accent, icon, tone = 'sky' }: {
   return (
     <div className="relative overflow-hidden rounded-2xl p-4 bg-gray-800/80 border border-gray-700/70">
       <div className={`absolute inset-x-0 top-0 h-16 bg-gradient-to-b ${t.ring}`} />
-      <div className="relative flex items-start justify-between gap-2">
+      <div className="relative">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</p>
-        {icon && <span className={`rounded-lg p-1.5 ${t.icon}`}><Icon d={KPI_ICON[icon]} size={16} /></span>}
       </div>
       <p className="relative text-2xl font-bold tabular-nums text-white mt-2">{value}</p>
       {sub && <p className="relative text-xs mt-0.5 text-gray-300">{sub}</p>}
@@ -510,10 +502,10 @@ function RestaurantOverview({ currency, date = null }: { currency: string; date?
       <ScopeLine day={sales} />
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}   value={fmt(s?.totalRevenue ?? 0, currency)} accent icon="revenue" />
-        <KpiCard label={`Orders ${when}`}    value={String(s?.totalOrders ?? 0)} icon="orders" tone="sky" />
-        <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} icon="avg" tone="violet" />
-        <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} icon="tax" tone="amber" />
+        <KpiCard label={`Revenue ${when}`}   value={fmt(s?.totalRevenue ?? 0, currency)} accent />
+        <KpiCard label={`Orders ${when}`}    value={String(s?.totalOrders ?? 0)} tone="sky" />
+        <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} tone="violet" />
+        <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} tone="amber" />
       </div>
       <MoneyStrip s={s} currency={currency} hideVat />
 
@@ -590,10 +582,10 @@ function PetrolOverview({ currency, date = null }: { currency: string; date?: st
       <ScopeLine day={sales} />
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}     value={fmt((when === 'today' ? f?.totalRevenue : sales?.summary?.totalRevenue) ?? 0, currency)} accent icon="revenue" />
-        <KpiCard label="Litres sold"        value={fmtL(f?.totalLitres ?? 0)} icon="fuel" tone="amber" />
-        <KpiCard label="Transactions"       value={String(f?.totalTransactions ?? 0)} icon="orders" tone="sky" />
-        <KpiCard label="Avg per transaction" icon="avg" tone="violet"
+        <KpiCard label={`Revenue ${when}`}     value={fmt((when === 'today' ? f?.totalRevenue : sales?.summary?.totalRevenue) ?? 0, currency)} accent />
+        <KpiCard label="Litres sold"        value={fmtL(f?.totalLitres ?? 0)} tone="amber" />
+        <KpiCard label="Transactions"       value={String(f?.totalTransactions ?? 0)} tone="sky" />
+        <KpiCard label="Avg per transaction" tone="violet"
           value={f?.totalTransactions > 0
             ? fmt((f.totalRevenue / f.totalTransactions), currency)
             : '—'} />
@@ -715,10 +707,10 @@ function RetailOverview({ currency, date = null }: { currency: string; date?: st
     <div className="space-y-4">
       <ScopeLine day={sales} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}  value={fmt(s?.totalRevenue ?? 0, currency)} accent icon="revenue" />
-        <KpiCard label={`Orders ${when}`}   value={String(s?.totalOrders ?? 0)} icon="orders" tone="sky" />
-        <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} icon="avg" tone="violet" />
-        <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} icon="tax" tone="amber" />
+        <KpiCard label={`Revenue ${when}`}  value={fmt(s?.totalRevenue ?? 0, currency)} accent />
+        <KpiCard label={`Orders ${when}`}   value={String(s?.totalOrders ?? 0)} tone="sky" />
+        <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} tone="violet" />
+        <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} tone="amber" />
       </div>
       <MoneyStrip s={s} currency={currency} hideVat />
 
