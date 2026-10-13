@@ -114,9 +114,9 @@ export default function SuppliersPage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto p-6">
+    <div className="flex-1 overflow-auto p-4 sm:p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl font-bold text-white">Suppliers<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
           <p className="text-gray-500 text-sm mt-0.5">{suppliers.filter(s => s.status === 'active').length} active suppliers</p>
@@ -167,74 +167,76 @@ export default function SuppliersPage() {
             <p className="text-gray-500 text-sm">{search ? 'Try a different search' : 'Add your first supplier to get started'}</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wide">
-                <th className="text-left px-5 py-3">Supplier</th>
-                <th className="text-left px-5 py-3">Contact</th>
-                <th className="text-left px-5 py-3">Email</th>
-                <th className="text-left px-5 py-3">Phone</th>
-                <th className="text-left px-5 py-3">Status</th>
-                {canPay && <th className="text-right px-5 py-3">Owed</th>}
-                <th className="px-5 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(s => (
-                <tr key={s.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                  <td className="px-5 py-3.5">
-                    <span className="text-white font-medium">{s.name}</span>
-                    {s.address && <p className="text-gray-500 text-xs mt-0.5 truncate max-w-xs">{s.address}</p>}
-                  </td>
-                  <td className="px-5 py-3.5 text-gray-300">{s.contact_name ?? '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-300">{s.email ?? '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-300">{s.phone ?? '—'}</td>
-                  <td className="px-5 py-3.5">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                      s.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
-                    }`}>
-                      {s.status}
-                    </span>
-                  </td>
-                  {canPay && (() => {
-                    const o = owedOf(s.id);
-                    return (
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                        <span className={o && o.balance > 0 ? 'text-white' : 'text-gray-500'}>{o ? money(o.balance) : '—'}</span>
-                        {o && o.overdue > 0 && <p className="text-red-400 text-xs mt-0.5">{money(o.overdue)} overdue</p>}
-                      </td>
-                    );
-                  })()}
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2 justify-end">
-                      {canPay && (
-                        <button
-                          onClick={() => setAccount(s.id)}
-                          className="text-swift-text hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
-                        >
-                          Account
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openEdit(s)}
-                        className="text-gray-500 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
-                      >
-                        Edit
-                      </button>
-                      {s.status === 'active' && (
-                        <button
-                          onClick={() => deactivate(s)}
-                          className="text-gray-500 hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
-                        >
-                          Deactivate
-                        </button>
-                      )}
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wide">
+                  <th className="text-left px-5 py-3">Supplier</th>
+                  <th className="text-left px-5 py-3">Contact</th>
+                  <th className="text-left px-5 py-3">Email</th>
+                  <th className="text-left px-5 py-3">Phone</th>
+                  <th className="text-left px-5 py-3">Status</th>
+                  {canPay && <th className="text-right px-5 py-3">Owed</th>}
+                  <th className="px-5 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map(s => (
+                  <tr key={s.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                    <td className="px-5 py-3.5">
+                      <span className="text-white font-medium">{s.name}</span>
+                      {s.address && <p className="text-gray-500 text-xs mt-0.5 truncate max-w-xs">{s.address}</p>}
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-300">{s.contact_name ?? '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-300">{s.email ?? '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-300">{s.phone ?? '—'}</td>
+                    <td className="px-5 py-3.5">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        s.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
+                      }`}>
+                        {s.status}
+                      </span>
+                    </td>
+                    {canPay && (() => {
+                      const o = owedOf(s.id);
+                      return (
+                        <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                          <span className={o && o.balance > 0 ? 'text-white' : 'text-gray-500'}>{o ? money(o.balance) : '—'}</span>
+                          {o && o.overdue > 0 && <p className="text-red-400 text-xs mt-0.5">{money(o.overdue)} overdue</p>}
+                        </td>
+                      );
+                    })()}
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2 justify-end">
+                        {canPay && (
+                          <button
+                            onClick={() => setAccount(s.id)}
+                            className="text-swift-text hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
+                          >
+                            Account
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openEdit(s)}
+                          className="text-gray-500 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        {s.status === 'active' && (
+                          <button
+                            onClick={() => deactivate(s)}
+                            className="text-gray-500 hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
+                          >
+                            Deactivate
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

@@ -107,7 +107,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
           ? <p className="text-gray-500 text-sm py-10 text-center">No deliveries received yet.</p>
           : <div className="space-y-2">
               {grns.map(g => (
-                <div key={g.id} className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+                <div key={g.id} className="flex items-center justify-between gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
                   <div className="min-w-0">
                     <p className="text-white text-sm font-medium">{g.grn_number}
                       {g.purchase_orders?.po_number && <span className="text-gray-500 font-normal"> · {g.purchase_orders.po_number}</span>}
@@ -125,7 +125,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
               {transfers.map(t => {
                 const out = t.from_branch_id === branchId;
                 return (
-                  <div key={t.id} className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+                  <div key={t.id} className="flex items-center justify-between gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
                     <div className="flex items-center gap-3 min-w-0">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${STATUS_CLS[t.status]}`}>{t.status.replace('_', ' ')}</span>
                       <div className="min-w-0">

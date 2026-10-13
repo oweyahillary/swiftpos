@@ -90,12 +90,12 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
           <div className="space-y-3">
             {shifts.map(s => (
               <div key={s.id}>
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium">{s.cashier_name}{s.terminal_code ? ` · ${s.terminal_code}` : ''}</p>
                   <p className="text-gray-500 text-xs">open {since(s.opened_at)} · float {money(s.opening_float)} · expected {money(s.expected_cash_live)}</p>
                 </div>
-                <div className="flex-shrink-0 flex items-center gap-2">
+                <div className="sm:flex-shrink-0 flex flex-wrap items-center gap-2">
                   <button
                     onClick={async () => {
                       setReportId(s.id); setReportMsg(null);

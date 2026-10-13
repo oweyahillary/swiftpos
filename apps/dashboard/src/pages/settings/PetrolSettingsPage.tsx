@@ -197,18 +197,18 @@ export default function PetrolSettingsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-4 sm:p-6 max-w-5xl">
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
           {toast}
         </div>
       )}
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-5">
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-white">Petrol Station Settings</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Petrol Station Settings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage pumps, tanks, fuel grades and station policies</p>
         </div>
         <div className="flex gap-2.5">
@@ -232,7 +232,7 @@ export default function PetrolSettingsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         {[
           { label: 'Pumps',     value: pumps.length, cls: 'text-white' },
           { label: 'Idle',      value: pumps.filter(p => p.status === 'idle').length, cls: 'text-green-400' },
@@ -255,12 +255,12 @@ export default function PetrolSettingsPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-gray-800">
+      <div className="flex gap-1 mb-5 border-b border-gray-800 overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors whitespace-nowrap ${
               tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-500 hover:text-gray-300'
             }`}
           >
@@ -314,7 +314,7 @@ export default function PetrolSettingsPage() {
 
       {/* ── WET STOCK / TANKS ── */}
       {tab === 'tanks' && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-4">
           {tanks.length === 0 ? (
             <div className="col-span-full text-center text-gray-500 text-sm py-16">No tanks configured yet</div>
           ) : tanks.map(tank => {
@@ -389,7 +389,7 @@ export default function PetrolSettingsPage() {
           <p className="text-sm text-gray-500 mb-4">
             Fuel grades are managed as products with the "Is fuel" flag enabled. Go to Products to add new grades.
           </p>
-          <table className="w-full">
+          <div className="overflow-x-auto"><table className="w-full">
             <thead>
               <tr className="border-b border-gray-800">
                 {['Grade', 'Price per litre', 'Unit', 'Status', ''].map(h => (
@@ -423,7 +423,7 @@ export default function PetrolSettingsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -446,7 +446,7 @@ export default function PetrolSettingsPage() {
               No movements yet. Stock deductions appear here automatically when fuel sales are made.
             </div>
           ) : (
-            <table className="w-full">
+            <div className="overflow-x-auto"><table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
                   {['Date', 'Tank', 'Grade', 'Type', 'Litres', 'Level After', 'Note'].map(h => (
@@ -484,7 +484,7 @@ export default function PetrolSettingsPage() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}
@@ -522,7 +522,7 @@ export default function PetrolSettingsPage() {
 
       {/* ── EDIT PUMP MODAL ── */}
       {editPump && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-base font-bold text-white">{editPump.id ? `Edit ${editPump.name}` : 'Add pump'}</h3>
@@ -589,7 +589,7 @@ export default function PetrolSettingsPage() {
 
       {/* ── EDIT TANK MODAL ── */}
       {editTank && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-base font-bold text-white">{editTank.id ? `Edit ${editTank.name}` : 'Add tank'}</h3>
@@ -617,7 +617,7 @@ export default function PetrolSettingsPage() {
                 {fuelProducts.map(fp => <option key={fp.id} value={fp.id}>{fp.name}</option>)}
               </select>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
                 { label: 'Capacity (L)', field: 'capacity_litres' as const },
                 { label: 'Current (L)',  field: 'current_level' as const },
@@ -642,8 +642,8 @@ export default function PetrolSettingsPage() {
 
       {/* ── DELIVERY MODAL ── */}
       {stockEntry && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-base font-bold text-white">Record delivery — {stockEntry.tank.name}</h3>
               <button onClick={() => setStockEntry(null)} className="w-7 h-7 bg-gray-800 hover:bg-gray-700 border-none rounded-md text-gray-400 text-sm cursor-pointer">✕</button>

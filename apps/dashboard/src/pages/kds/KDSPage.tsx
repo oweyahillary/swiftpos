@@ -243,7 +243,7 @@ export default function KDSPage() {
     <div className="min-h-screen bg-gray-950 flex flex-col select-none">
 
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-800 flex-shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-2 px-3 sm:px-6 py-4 bg-gray-900 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-white font-bold text-xl tracking-tight">Kitchen Display</span>
           {/* A192: dot reflects the last fetch — green=live, red=not paired (401), amber=connection problem */}

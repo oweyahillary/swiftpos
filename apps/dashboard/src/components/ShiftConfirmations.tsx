@@ -108,7 +108,7 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
             {awaiting.length === 1 ? '1 shift awaits' : `${awaiting.length} shifts await`} a manager's check
           </p>
           {awaiting.map((s) => (
-            <div key={s.id} className="flex items-center justify-between text-sm text-amber-900 dark:text-amber-100">
+            <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 text-sm text-amber-900 dark:text-amber-100">
               <span>{s.cashier_name} · {s.terminal_code ?? 'Web'} · closed {when(s.closed_at)}</span>
               <button onClick={() => { setTarget(s); setInputs({}); setMsg(''); }} data-testid={`confirm-${s.id}`}
                 className="px-3 py-1 rounded bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-medium">Confirm</button>
@@ -118,35 +118,37 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
       )}
 
       {confirmed.length > 0 && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500">
-              <th className="py-1">Cashier</th><th>Closed</th><th>Confirmed by</th><th>Cash counted / expected</th><th>Differs from cashier</th>
-            </tr>
-          </thead>
-          <tbody>
-            {confirmed.map((s) => {
-              const diff = mismatches(s);
-              return (
-                <tr key={s.id} className="border-t border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-200">
-                  <td className="py-1">{s.cashier_name}</td>
-                  <td>{when(s.closed_at)}</td>
-                  <td>{s.confirmer_name ?? '—'}{s.confirm_self ? <span className="ml-1 text-xs text-amber-600" data-testid="self-confirmed">(self-confirmed)</span> : null}</td>
-                  <td>{money(s.confirmed_methods?.cash)} / {money(s.expected_methods?.cash)}</td>
-                  <td className={diff.length ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-400'}>
-                    {diff.length ? diff.map((m) => `${methodName(m)}: ${money(s.declared_methods?.[m])} → ${money(s.confirmed_methods?.[m])}`
-                      + (s.confirm_reasons?.[m] ? ` (${s.confirm_reasons[m]})` : '')).join('; ') : '—'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500">
+                <th className="py-1">Cashier</th><th>Closed</th><th>Confirmed by</th><th>Cash counted / expected</th><th>Differs from cashier</th>
+              </tr>
+            </thead>
+            <tbody>
+              {confirmed.map((s) => {
+                const diff = mismatches(s);
+                return (
+                  <tr key={s.id} className="border-t border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-200">
+                    <td className="py-1">{s.cashier_name}</td>
+                    <td>{when(s.closed_at)}</td>
+                    <td>{s.confirmer_name ?? '—'}{s.confirm_self ? <span className="ml-1 text-xs text-amber-600" data-testid="self-confirmed">(self-confirmed)</span> : null}</td>
+                    <td>{money(s.confirmed_methods?.cash)} / {money(s.expected_methods?.cash)}</td>
+                    <td className={diff.length ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-400'}>
+                      {diff.length ? diff.map((m) => `${methodName(m)}: ${money(s.declared_methods?.[m])} → ${money(s.confirmed_methods?.[m])}`
+                        + (s.confirm_reasons?.[m] ? ` (${s.confirm_reasons[m]})` : '')).join('; ') : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {target && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-lg border border-gray-200 dark:border-gray-700 p-5 space-y-3">
+          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-lg border border-gray-200 dark:border-gray-700 p-5 space-y-3 max-h-[90vh] overflow-y-auto">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">Confirm {target.cashier_name}'s shift</h3>
             <p className="text-xs text-gray-500">
               {showExpected
@@ -162,57 +164,59 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
               <span className="text-gray-500">Cashier</span><span className="text-right">{target.cashier_name}</span>
               <span className="text-gray-500">Shift</span><span className="text-right">{when(target.opened_at)} – {when(target.closed_at)}</span>
             </div>
-            <table className="w-full text-sm" data-testid="confirm-table">
-              <thead>
-                <tr className="text-xs text-gray-500 text-left">
-                  <th className="font-normal pb-1">Method</th>
-                  {showExpected && <th className="font-normal pb-1 text-right pr-2">Expected</th>}
-                  {view.showCashier && <th className="font-normal pb-1 text-right pr-2">Cashier</th>}
-                  <th className="font-normal pb-1">Manager</th>
-                  {showExpected && <th className="font-normal pb-1 text-right">Difference</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {methodsToCount(target.declared_methods).map((m) => {
-                  const cashierSaid = view.showCashier && view.declared ? (view.declared[m] ?? 0) : null;
-                  const typed = inputs[m] ?? '';
-                  const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
-                  const exp = showExpected ? Number(view.expected?.[m] ?? 0) : null;
-                  const v = exp !== null && typed.trim() !== '' && Number.isFinite(Number(typed)) ? Math.round((Number(typed) - exp) * 100) / 100 : null;
-                  return [
-                    <tr key={m}>
-                      <td className="py-1 text-gray-800 dark:text-gray-200 whitespace-nowrap">{methodName(m)}</td>
-                      {showExpected && (
-                        <td className="py-1 pr-2 text-right text-gray-700 dark:text-gray-200 tabular-nums" data-testid={`expected-${m}`}>{fmt(exp ?? 0)}</td>
-                      )}
-                      {view.showCashier && (
-                        <td className="py-1 pr-2 text-right text-gray-600 dark:text-gray-300 tabular-nums" data-testid={`cashier-${m}`}>{money(cashierSaid ?? 0)}</td>
-                      )}
-                      <td className="py-1">
-                        <input type="number" min={0} step="0.01" inputMode="decimal" value={typed} data-testid={`confirm-input-${m}`}
-                          onChange={(e) => setInputs({ ...inputs, [m]: e.target.value })} onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                          className={`w-full rounded-lg border ${differs ? 'border-amber-400' : 'border-gray-300 dark:border-gray-700'} bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white`} />
-                      </td>
-                      {showExpected && (
-                        <td data-testid={`variance-${m}`} className={`py-1 pl-2 text-right tabular-nums whitespace-nowrap ${v === null ? 'text-gray-400' : v === 0 ? 'text-gray-600 dark:text-gray-300' : v > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-red-600 dark:text-red-400'}`}>
-                          {v === null ? '—' : v === 0 ? 'balanced' : `${v > 0 ? 'over' : 'short'} ${fmt(Math.abs(v))}`}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="confirm-table">
+                <thead>
+                  <tr className="text-xs text-gray-500 text-left">
+                    <th className="font-normal pb-1">Method</th>
+                    {showExpected && <th className="font-normal pb-1 text-right pr-2">Expected</th>}
+                    {view.showCashier && <th className="font-normal pb-1 text-right pr-2">Cashier</th>}
+                    <th className="font-normal pb-1">Manager</th>
+                    {showExpected && <th className="font-normal pb-1 text-right">Difference</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {methodsToCount(target.declared_methods).map((m) => {
+                    const cashierSaid = view.showCashier && view.declared ? (view.declared[m] ?? 0) : null;
+                    const typed = inputs[m] ?? '';
+                    const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+                    const exp = showExpected ? Number(view.expected?.[m] ?? 0) : null;
+                    const v = exp !== null && typed.trim() !== '' && Number.isFinite(Number(typed)) ? Math.round((Number(typed) - exp) * 100) / 100 : null;
+                    return [
+                      <tr key={m}>
+                        <td className="py-1 text-gray-800 dark:text-gray-200 whitespace-nowrap">{methodName(m)}</td>
+                        {showExpected && (
+                          <td className="py-1 pr-2 text-right text-gray-700 dark:text-gray-200 tabular-nums" data-testid={`expected-${m}`}>{fmt(exp ?? 0)}</td>
+                        )}
+                        {view.showCashier && (
+                          <td className="py-1 pr-2 text-right text-gray-600 dark:text-gray-300 tabular-nums" data-testid={`cashier-${m}`}>{money(cashierSaid ?? 0)}</td>
+                        )}
+                        <td className="py-1">
+                          <input type="number" min={0} step="0.01" inputMode="decimal" value={typed} data-testid={`confirm-input-${m}`}
+                            onChange={(e) => setInputs({ ...inputs, [m]: e.target.value })} onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                            className={`w-full rounded-lg border ${differs ? 'border-amber-400' : 'border-gray-300 dark:border-gray-700'} bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white`} />
                         </td>
-                      )}
-                    </tr>,
-                    differs && (
-                      <tr key={`${m}-reason`}>
-                        <td colSpan={2 + (view.showCashier ? 1 : 0) + (showExpected ? 2 : 0)} className="pb-2">
-                          <input type="text" maxLength={REASON_MAX} value={reasons[m] ?? ''} data-testid={`reason-${m}`}
-                            placeholder={`Reason — ${methodName(m)} is ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's`}
-                            onChange={(e) => setReasons({ ...reasons, [m]: e.target.value })}
-                            className="w-full rounded-lg border border-amber-400 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-                        </td>
-                      </tr>
-                    ),
-                  ];
-                })}
-              </tbody>
-            </table>
+                        {showExpected && (
+                          <td data-testid={`variance-${m}`} className={`py-1 pl-2 text-right tabular-nums whitespace-nowrap ${v === null ? 'text-gray-400' : v === 0 ? 'text-gray-600 dark:text-gray-300' : v > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-red-600 dark:text-red-400'}`}>
+                            {v === null ? '—' : v === 0 ? 'balanced' : `${v > 0 ? 'over' : 'short'} ${fmt(Math.abs(v))}`}
+                          </td>
+                        )}
+                      </tr>,
+                      differs && (
+                        <tr key={`${m}-reason`}>
+                          <td colSpan={2 + (view.showCashier ? 1 : 0) + (showExpected ? 2 : 0)} className="pb-2">
+                            <input type="text" maxLength={REASON_MAX} value={reasons[m] ?? ''} data-testid={`reason-${m}`}
+                              placeholder={`Reason — ${methodName(m)} is ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's`}
+                              onChange={(e) => setReasons({ ...reasons, [m]: e.target.value })}
+                              className="w-full rounded-lg border border-amber-400 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                          </td>
+                        </tr>
+                      ),
+                    ];
+                  })}
+                </tbody>
+              </table>
+            </div>
             {msg && <p className="text-sm text-red-600 dark:text-red-400">{msg}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setTarget(null)} disabled={busy} className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">Cancel</button>

@@ -142,9 +142,9 @@ export default function DiscountsPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-gray-950">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-950">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
         <div>
           <h1 className="text-xl font-semibold text-white">Discounts & Promotions<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
           <p className="text-gray-500 text-sm mt-0.5">{discounts.length} discount{discounts.length !== 1 ? 's' : ''}</p>
@@ -171,7 +171,7 @@ export default function DiscountsPage() {
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
                 <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Name</th>
@@ -243,14 +243,14 @@ export default function DiscountsPage() {
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
       {/* Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-white font-semibold text-lg mb-5">{editTarget ? 'Edit Discount' : 'New Discount'}</h2>
 
             {error && <p className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
@@ -268,7 +268,7 @@ export default function DiscountsPage() {
               </div>
 
               {/* Type + Value */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Type *</label>
                   <select
@@ -319,7 +319,7 @@ export default function DiscountsPage() {
               </div>
 
               {/* Min order + Max uses */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Min Order ({currency}) <span className="text-gray-600">(optional)</span></label>
                   <input

@@ -115,27 +115,27 @@ export default function MinimartSettingsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-4 sm:p-6 max-w-5xl">
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
           {toast}
         </div>
       )}
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Minimart Settings</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-white">Minimart Settings</h1>
         <p className="text-sm text-gray-500 mt-1">Configure your minimart POS behaviour, products and barcode scanner</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-gray-800">
+      <div className="flex gap-1 mb-5 border-b border-gray-800 overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors whitespace-nowrap ${
               tab === t.key
                 ? 'border-swift text-swift-text'
                 : 'border-transparent text-gray-500 hover:text-gray-300'
@@ -199,7 +199,7 @@ export default function MinimartSettingsPage() {
           </div>
 
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <table className="w-full">
+            <div className="overflow-x-auto"><table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
                   {['Product', 'Category', 'Price', 'Barcode', 'PLU', 'Sold by', ''].map(h => (
@@ -237,13 +237,13 @@ export default function MinimartSettingsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
 
           {/* Edit product modal */}
           {editProduct && (
-            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-5">
                   <h3 className="text-base font-bold text-white">Edit: {editProduct.name}</h3>
                   <button onClick={() => setEditProduct(null)} className="w-7 h-7 bg-gray-800 hover:bg-gray-700 border-none rounded-md text-gray-400 text-sm cursor-pointer">✕</button>

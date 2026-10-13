@@ -1500,7 +1500,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             </div>
           </div>
 
-          <div className="sp-kpi-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 16 }}>
+          <div className="sp-kpi-grid sp-kpi-3" style={{ marginBottom: 16 }}>
             {[
               ["Total invoiced", fmt(invoices.reduce((s,i) => s + Number(i.amount), 0))],
               ["Paid",           fmt(invoices.filter(i => i.status === "paid").reduce((s,i) => s + Number(i.amount), 0))],
@@ -1585,8 +1585,8 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             <>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
               {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").map(f => (
-                <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                  <div>
+                <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, gap: 12 }}>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>
                     {f.notes && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{f.notes}</div>}
                   </div>
@@ -1776,7 +1776,7 @@ function BillingPage({ req }) {
   return (
     <div style={S.content}>
       <h1 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 20px" }}>Billing</h1>
-      <div className="sp-kpi-grid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+      <div className="sp-kpi-grid sp-kpi-3">
         {[["Total Invoiced", total, C.accent], ["Paid", paid, "#22c55e"], ["Outstanding", outstanding, "#f59e0b"]].map(([l, v, c]) => (
           <div key={l} style={S.kpiCard}>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>{l}</div>
@@ -2436,7 +2436,7 @@ function NewClientPage({ req, onCreated }) {
           {/* Business details */}
           <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Business Details</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="sp-form-2" style={{ display: "grid", gap: 12 }}>
               <div style={{ gridColumn: "1 / -1" }}>
                 <label style={S.label}>Business Name *</label>
                 <input style={S.input} required value={form.businessName}
@@ -2464,7 +2464,7 @@ function NewClientPage({ req, onCreated }) {
           {/* Branch */}
           <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Main Branch</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="sp-form-2" style={{ display: "grid", gap: 12 }}>
               <div>
                 <label style={S.label}>Branch Name *</label>
                 <input style={S.input} required value={form.branchName}
@@ -2484,7 +2484,7 @@ function NewClientPage({ req, onCreated }) {
             <p style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
               A Supabase auth account is created with these credentials. The owner logs in at <code style={{ color: C.accent }}>/login</code>.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="sp-form-2" style={{ display: "grid", gap: 12 }}>
               <div>
                 <label style={S.label}>Owner Name</label>
                 <input style={S.input} value={form.ownerName}
@@ -2617,6 +2617,8 @@ export default function AdminPortal() {
           gap: 14px;
           margin-bottom: 20px;
         }
+        .sp-kpi-grid.sp-kpi-3 { grid-template-columns: repeat(3, 1fr); }
+        .sp-form-2 { grid-template-columns: 1fr 1fr; }
         /* Two column grid */
         .sp-two-col {
           display: grid;
@@ -2692,6 +2694,8 @@ export default function AdminPortal() {
           .sp-email-label { display: none; }
           .sp-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
           .sp-content-scroll { padding: 0; }
+          .sp-kpi-grid.sp-kpi-3 { grid-template-columns: 1fr; }
+          .sp-form-2 { grid-template-columns: 1fr; }
         }
 
         @media (max-width: 480px) {

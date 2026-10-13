@@ -167,7 +167,7 @@ export default function CombosPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex-shrink-0 flex items-center justify-between">
+      <div className="px-4 sm:px-6 pt-6 pb-4 border-b border-gray-800 flex-shrink-0 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-white text-2xl font-bold">{term('combos')}</h1>
           <p className="text-gray-500 text-sm mt-1">Bundle products into set meals at a fixed price</p>
@@ -178,7 +178,7 @@ export default function CombosPage() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="mb-4">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${lower('combos')}…`}
             className="w-full max-w-sm bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />

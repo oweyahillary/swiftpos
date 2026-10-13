@@ -293,13 +293,13 @@ export default function ProductsPage() {
   const isPetrol = bizType === 'petrol_station';
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 sm:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">{term('products')}<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
           <p className="text-gray-400 text-sm mt-0.5">{products.length} product{products.length !== 1 ? 's' : ''}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => setShowMenuUpload(true)} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
             Menu upload
           </button>
@@ -319,7 +319,7 @@ export default function ProductsPage() {
       </div>
 
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 mb-4 bg-swift/10 border border-swift/30 rounded-lg px-4 py-2">
+        <div className="flex flex-wrap items-center gap-3 mb-4 bg-swift/10 border border-swift/30 rounded-lg px-4 py-2">
           <span className="text-sm text-swift-text font-medium">{selectedIds.size} selected</span>
           <button
             onClick={() => { setBulkPriceIds(Array.from(selectedIds)); setShowBulkPrice(true); }}
@@ -341,13 +341,13 @@ export default function ProductsPage() {
       )}
 
       {/* Filters */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-6">
         <input
           type="text"
           placeholder={`Search ${lower('products')}…`}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-swift transition-colors w-64"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-swift transition-colors w-full sm:w-64"
         />
         <select
           value={filterCategory}
@@ -464,7 +464,7 @@ export default function ProductsPage() {
                       as rendered at any width — not only after a sideways scroll whose bar sits at the
                       bottom of a 69-row table. Opaque background so scrolled cells pass beneath it. */}
                   <td className="px-4 py-3 sticky right-0 bg-gray-900 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.6)]">
-                    <div className="flex items-center gap-2 justify-end whitespace-nowrap">
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-2 justify-end sm:whitespace-nowrap max-w-[10rem] sm:max-w-none ml-auto">
                       {!isPetrol && (
                         <button
                           onClick={() => setDrawerProduct(p)}
@@ -718,7 +718,7 @@ export default function ProductsPage() {
         </div>
       )}
       {flash && (
-        <div className="fixed bottom-6 right-6 z-50 bg-gray-800 border border-gray-700 text-sm text-white px-4 py-2 rounded-lg shadow-lg">
+        <div className="fixed bottom-6 left-4 sm:left-auto right-6 z-50 bg-gray-800 border border-gray-700 text-sm text-white px-4 py-2 rounded-lg shadow-lg">
           {flash}
         </div>
       )}

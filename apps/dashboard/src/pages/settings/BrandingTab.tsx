@@ -175,10 +175,10 @@ export default function BrandingTab() {
     finally { setBusy(false); }
   };
 
-  if (loading) return <div className="p-6 text-gray-500">Loading branding…</div>;
+  if (loading) return <div className="p-4 sm:p-6 text-gray-500">Loading branding…</div>;
 
   return (
-    <div className="p-6 max-w-3xl">
+    <div className="p-4 sm:p-6 max-w-3xl">
       <h2 className="text-lg font-semibold mb-1">Branding</h2>
       <p className="text-sm text-gray-500 mb-6">Your logo and accent colour on the till lock screen. Changes reach tills automatically.</p>
 

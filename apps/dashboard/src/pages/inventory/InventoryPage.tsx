@@ -119,7 +119,7 @@ export default function InventoryPage() {
   // Inventory is per-branch — require a branch selection
   if (!activeBranchId) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-8">
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-4 sm:p-8">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-gray-600"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="12.01"/></svg>
         <p className="text-white font-medium">Select a branch to view inventory</p>
         <p className="text-gray-500 text-sm max-w-xs">Each branch has its own independent stock levels. Choose a branch from the sidebar to manage its inventory.</p>
@@ -128,10 +128,10 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 sm:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">{term('inventory')}</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">{term('inventory')}</h1>
           <p className="text-gray-400 text-sm mt-0.5">{rows.length} products</p>
         </div>
         <button
@@ -178,13 +178,13 @@ export default function InventoryPage() {
       </div>
 
       {/* Search + filter */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-6">
         <input
           type="text"
           placeholder="Search products…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-swift transition-colors w-64"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-swift transition-colors w-full sm:w-64"
         />
         {filter !== 'all' && (
           <button
@@ -204,113 +204,115 @@ export default function InventoryPage() {
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-800 text-left">
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Product</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Category</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Stock</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Threshold</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800">
-              {filtered.map(row => {
-                const status = getStatus(row);
-                const cfg = STATUS_CONFIG[status];
-                const isUntracked = status === 'untracked';
-                return (
-                  <tr key={row.product_id} className="hover:bg-gray-800/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        {row.products.image_url ? (
-                          <img src={row.products.image_url} alt={row.products.name} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
-                        ) : (
-                          <div className="w-9 h-9 rounded-lg bg-gray-800 flex items-center justify-center text-gray-600 flex-shrink-0 text-xs">IMG</div>
-                        )}
-                        <p className={`text-sm font-medium ${isUntracked ? 'text-gray-500' : 'text-white'}`}>
-                          {row.products.name}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {row.products.categories ? (
-                        <span className="text-xs text-gray-300">{row.products.categories.name}</span>
-                      ) : (
-                        <span className="text-xs text-gray-600">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {isUntracked ? (
-                        <span className="text-gray-600 text-sm">—</span>
-                      ) : (
-                        <span className={`text-sm font-semibold ${status === 'out' ? 'text-red-400' : status === 'low' ? 'text-amber-400' : 'text-white'}`}>
-                          {row.quantity}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {isUntracked ? (
-                        <span className="text-gray-600 text-sm">—</span>
-                      ) : editThreshId === row.product_id ? (
-                        <div className="flex flex-col gap-0.5">
-                          <input
-                            type="number" min="0" autoFocus disabled={savingThresh}
-                            value={threshDraft}
-                            onChange={e => setThreshDraft(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') e.currentTarget.blur();
-                              else if (e.key === 'Escape') { escRef.current = true; e.currentTarget.blur(); }
-                            }}
-                            onBlur={() => {
-                              if (escRef.current) { escRef.current = false; setEditThreshId(null); setThreshErr(''); return; }
-                              saveThreshold(row);
-                            }}
-                            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-swift"
-                          />
-                          {threshErr && <span className="text-red-400 text-[10px] max-w-[8rem]">{threshErr}</span>}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-800 text-left">
+                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Product</th>
+                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Category</th>
+                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Stock</th>
+                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Threshold</th>
+                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {filtered.map(row => {
+                  const status = getStatus(row);
+                  const cfg = STATUS_CONFIG[status];
+                  const isUntracked = status === 'untracked';
+                  return (
+                    <tr key={row.product_id} className="hover:bg-gray-800/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          {row.products.image_url ? (
+                            <img src={row.products.image_url} alt={row.products.name} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-lg bg-gray-800 flex items-center justify-center text-gray-600 flex-shrink-0 text-xs">IMG</div>
+                          )}
+                          <p className={`text-sm font-medium ${isUntracked ? 'text-gray-500' : 'text-white'}`}>
+                            {row.products.name}
+                          </p>
                         </div>
-                      ) : branchId ? (
-                        <button
-                          onClick={() => { setEditThreshId(row.product_id); setThreshDraft(String(row.low_stock_threshold)); setThreshErr(''); }}
-                          title="Click to edit reorder threshold"
-                          className="text-gray-400 text-sm hover:text-white underline decoration-dotted decoration-gray-600 underline-offset-4"
-                        >{row.low_stock_threshold}</button>
-                      ) : (
-                        <span className="text-gray-400 text-sm">{row.low_stock_threshold}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-1 rounded-full ${cfg.bg} ${cfg.text}`}>
-                        {cfg.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 justify-end">
-                        {!isUntracked && (
-                          <>
-                            <button
-                              onClick={() => setAdjusting(row)}
-                              className="text-xs text-swift-text hover:text-swift-text-hover px-2 py-1 rounded hover:bg-gray-700 transition-colors"
-                            >
-                              Adjust
-                            </button>
-                            <button
-                              onClick={() => setViewing(row)}
-                              className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-700 transition-colors"
-                            >
-                              History
-                            </button>
-                          </>
+                      </td>
+                      <td className="px-4 py-3">
+                        {row.products.categories ? (
+                          <span className="text-xs text-gray-300">{row.products.categories.name}</span>
+                        ) : (
+                          <span className="text-xs text-gray-600">—</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-4 py-3">
+                        {isUntracked ? (
+                          <span className="text-gray-600 text-sm">—</span>
+                        ) : (
+                          <span className={`text-sm font-semibold ${status === 'out' ? 'text-red-400' : status === 'low' ? 'text-amber-400' : 'text-white'}`}>
+                            {row.quantity}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isUntracked ? (
+                          <span className="text-gray-600 text-sm">—</span>
+                        ) : editThreshId === row.product_id ? (
+                          <div className="flex flex-col gap-0.5">
+                            <input
+                              type="number" min="0" autoFocus disabled={savingThresh}
+                              value={threshDraft}
+                              onChange={e => setThreshDraft(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') e.currentTarget.blur();
+                                else if (e.key === 'Escape') { escRef.current = true; e.currentTarget.blur(); }
+                              }}
+                              onBlur={() => {
+                                if (escRef.current) { escRef.current = false; setEditThreshId(null); setThreshErr(''); return; }
+                                saveThreshold(row);
+                              }}
+                              className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-swift"
+                            />
+                            {threshErr && <span className="text-red-400 text-[10px] max-w-[8rem]">{threshErr}</span>}
+                          </div>
+                        ) : branchId ? (
+                          <button
+                            onClick={() => { setEditThreshId(row.product_id); setThreshDraft(String(row.low_stock_threshold)); setThreshErr(''); }}
+                            title="Click to edit reorder threshold"
+                            className="text-gray-400 text-sm hover:text-white underline decoration-dotted decoration-gray-600 underline-offset-4"
+                          >{row.low_stock_threshold}</button>
+                        ) : (
+                          <span className="text-gray-400 text-sm">{row.low_stock_threshold}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-1 rounded-full ${cfg.bg} ${cfg.text}`}>
+                          {cfg.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 justify-end">
+                          {!isUntracked && (
+                            <>
+                              <button
+                                onClick={() => setAdjusting(row)}
+                                className="text-xs text-swift-text hover:text-swift-text-hover px-2 py-1 rounded hover:bg-gray-700 transition-colors"
+                              >
+                                Adjust
+                              </button>
+                              <button
+                                onClick={() => setViewing(row)}
+                                className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-700 transition-colors"
+                              >
+                                History
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

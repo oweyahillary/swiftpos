@@ -115,7 +115,7 @@ export default function WebhooksTab() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="text-white font-semibold">Webhook endpoints</h3>
           <p className="text-gray-500 text-sm mt-0.5">Receive HTTP POST requests when orders complete or are voided.</p>
@@ -220,7 +220,7 @@ export default function WebhooksTab() {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-white font-bold">New webhook endpoint</h3>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Endpoint URL</label>

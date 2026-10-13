@@ -95,8 +95,8 @@ export default function CategoriesPage() {
   };
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 sm:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">{term('categories')}</h1>
           <p className="text-gray-400 text-sm mt-0.5">Organise your products into categories · <span className="text-blue-400/70">shared across all branches</span></p>

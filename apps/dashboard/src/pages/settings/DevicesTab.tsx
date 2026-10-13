@@ -238,7 +238,7 @@ export default function DevicesTab() {
       )}
 
       {/* ── Filter tabs ─────────────────────────────────────────────────────── */}
-      <div className="flex gap-2 border-b border-gray-800 pb-px">
+      <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-px">
         {(['all', 'approved', 'pending', 'rejected'] as const).map(f => (
           <button
             key={f}

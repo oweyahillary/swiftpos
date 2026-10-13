@@ -240,17 +240,19 @@ function MovementsCard({ branch, month, methods, moves, onChange, money }: {
       </div>
       {err && <p className="text-sm text-red-500">{err}</p>}
       {moves.length > 0 && (
-        <table className="w-full text-sm">
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-gray-700 dark:text-gray-300">
-            {moves.map((m) => (
-              <tr key={m.id}>
-                <td className="py-1 whitespace-nowrap">{m.movement_date}</td><td className="py-1">{methodLabel(m.method)}</td><td className="py-1">{KIND_LABEL[m.kind] ?? m.kind}</td>
-                <td className="py-1 text-right tabular-nums">{money(Number(m.amount))}</td><td className="py-1 text-xs text-gray-500">{m.note ?? ''}{m.recorded_by_name ? ` · ${m.recorded_by_name}` : ''}</td>
-                <td className="py-1 text-right"><button onClick={() => void remove(m.id)} className="text-xs text-red-500">Remove</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-gray-700 dark:text-gray-300">
+              {moves.map((m) => (
+                <tr key={m.id}>
+                  <td className="py-1 whitespace-nowrap">{m.movement_date}</td><td className="py-1">{methodLabel(m.method)}</td><td className="py-1">{KIND_LABEL[m.kind] ?? m.kind}</td>
+                  <td className="py-1 text-right tabular-nums">{money(Number(m.amount))}</td><td className="py-1 text-xs text-gray-500">{m.note ?? ''}{m.recorded_by_name ? ` · ${m.recorded_by_name}` : ''}</td>
+                  <td className="py-1 text-right"><button onClick={() => void remove(m.id)} className="text-xs text-red-500">Remove</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

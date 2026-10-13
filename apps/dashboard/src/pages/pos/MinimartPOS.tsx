@@ -169,6 +169,15 @@ export default function MinimartPOS({
   const [quickAddPrice, setQuickAddPrice]           = useState('');
   const [quickAddSaving, setQuickAddSaving]         = useState(false);
 
+  // ── Phone width: stack the catalogue above the cart ────────────────────────
+  const [isPhone, setIsPhone] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = (e: MediaQueryListEvent) => setIsPhone(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   // ── Auto-focus scan bar ────────────────────────────────────────────────────
   useEffect(() => {
     scanInputRef.current?.focus();
@@ -471,7 +480,7 @@ export default function MinimartPOS({
       </div>
 
       {/* ── Body: [catalogue?] + cart ────────────────────────────────────── */}
-      <div style={s.body}>
+      <div style={isPhone ? { ...s.body, flexDirection: 'column' } : s.body}>
 
         {/* ── Product catalogue (hidden by default) ──────────────────────── */}
         {showCatalogue && (
@@ -532,7 +541,7 @@ export default function MinimartPOS({
         )}
 
         {/* ── Cart / order panel ──────────────────────────────────────────── */}
-        <div style={s.cartPanel}>
+        <div style={isPhone ? { ...s.cartPanel, width: '100%', borderLeft: 'none', borderTop: '1px solid #1e293b', maxHeight: '55%' } : s.cartPanel}>
 
           {/* Cart header */}
           <div style={s.cartHeader}>
@@ -853,6 +862,7 @@ const s: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #1e293b',
     flexShrink: 0,
     background: '#0f172a',
+    flexWrap: 'wrap',
   },
   topBarLeft: {
     flex: 1,
@@ -1284,6 +1294,7 @@ const s: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     zIndex: 1000,
     backdropFilter: 'blur(2px)',
+    padding: 12,
   },
   modal: {
     background: '#1e293b',

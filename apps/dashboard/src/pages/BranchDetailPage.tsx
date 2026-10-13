@@ -74,9 +74,9 @@ export default function BranchDetailPage() {
   const lowStock = stock.filter(s => s.quantity <= (s.low_stock_threshold ?? 5));
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-gray-950">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-950">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-6">
         <div>
           <Link to="/dashboard/branches" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
             ← Branches
@@ -97,7 +97,7 @@ export default function BranchDetailPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
           <p className="text-2xl font-bold text-white">{staff.length}</p>
           <p className="text-gray-500 text-xs mt-1">Staff</p>
@@ -134,11 +134,11 @@ export default function BranchDetailPage() {
       {tab === "staff" && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           {staff.length === 0 ? (
-            <div className="p-10 text-center">
+            <div className="p-6 sm:p-10 text-center">
               <p className="text-gray-500 text-sm">No staff assigned to this branch yet.</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Name</th>
@@ -165,7 +165,7 @@ export default function BranchDetailPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}
@@ -174,11 +174,11 @@ export default function BranchDetailPage() {
       {tab === "stock" && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           {stock.length === 0 ? (
-            <div className="p-10 text-center">
+            <div className="p-6 sm:p-10 text-center">
               <p className="text-gray-500 text-sm">No stock records for this branch.</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Product</th>
@@ -207,7 +207,7 @@ export default function BranchDetailPage() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}

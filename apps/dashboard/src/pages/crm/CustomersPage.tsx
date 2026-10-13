@@ -654,7 +654,8 @@ export default function CustomersPage({ currency }: Props) {
             </p>
           </div>
         ) : (
-          <>
+          <div className="overflow-x-auto sm:overflow-visible">
+          <div className="min-w-[640px] sm:min-w-0">
             {/* Header row */}
             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4 px-5 py-2.5 border-b border-gray-800/60 sticky top-0 bg-gray-950 z-10">
               {['Customer', 'Tier', 'Points', 'Total Spent', 'Visits', 'Status'].map(h => (
@@ -692,7 +693,8 @@ export default function CustomersPage({ currency }: Props) {
                 </div>
               </button>
             ))}
-          </>
+          </div>
+          </div>
         )}
       </div>
 

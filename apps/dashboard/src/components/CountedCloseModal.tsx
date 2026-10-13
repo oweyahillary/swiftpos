@@ -59,29 +59,31 @@ export default function CountedCloseModal({ client, shift, currency, onDone, onC
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" data-testid="counted-close">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-lg w-full space-y-3">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-lg w-full space-y-3 max-h-[90vh] overflow-y-auto">
         <h3 className="text-white font-semibold">Close {shift.cashier_name}’s drawer{shift.terminal_code ? ` (${shift.terminal_code})` : ''} with your count</h3>
         <p className="text-gray-400 text-sm">Count each payment method — the drawer, the M-Pesa statement, the card machine’s total. What the shift expects is beside it; the difference shows as you type. It closes <strong className="text-gray-200">counted</strong>, under your name, and then waits for a manager’s confirmation.</p>
-        <table className="w-full text-sm">
-          <thead><tr className="text-xs text-gray-500 text-left"><th className="font-normal">Method</th><th className="font-normal text-right pr-2">Expected</th><th className="font-normal">Counted</th><th className="font-normal text-right">Difference</th></tr></thead>
-          <tbody>
-            {codes.map((c) => {
-              const v = variance(c);
-              return (
-                <tr key={c}>
-                  <td className="py-1 text-gray-200 whitespace-nowrap">{methodName(c)}</td>
-                  <td className="py-1 pr-2 text-right text-gray-200 tabular-nums" data-testid={`cc-expected-${c}`}>{money(expected[c] ?? 0)}</td>
-                  <td className="py-1 w-36"><input type="number" min={0} step="0.01" inputMode="decimal" value={inputs[c] ?? ''} data-testid={`cc-count-${c}`}
-                    onWheel={(e) => (e.target as HTMLInputElement).blur()} onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-sm" /></td>
-                  <td className={`py-1 pl-2 text-right tabular-nums whitespace-nowrap ${v === null ? 'text-gray-500' : v === 0 ? 'text-gray-300' : v > 0 ? 'text-amber-300' : 'text-red-300'}`}>
-                    {v === null ? '—' : v === 0 ? 'balanced' : `${v > 0 ? 'over' : 'short'} ${money(Math.abs(v))}`}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-xs text-gray-500 text-left"><th className="font-normal">Method</th><th className="font-normal text-right pr-2">Expected</th><th className="font-normal">Counted</th><th className="font-normal text-right">Difference</th></tr></thead>
+            <tbody>
+              {codes.map((c) => {
+                const v = variance(c);
+                return (
+                  <tr key={c}>
+                    <td className="py-1 text-gray-200 whitespace-nowrap">{methodName(c)}</td>
+                    <td className="py-1 pr-2 text-right text-gray-200 tabular-nums" data-testid={`cc-expected-${c}`}>{money(expected[c] ?? 0)}</td>
+                    <td className="py-1 w-28 sm:w-36"><input type="number" min={0} step="0.01" inputMode="decimal" value={inputs[c] ?? ''} data-testid={`cc-count-${c}`}
+                      onWheel={(e) => (e.target as HTMLInputElement).blur()} onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-sm" /></td>
+                    <td className={`py-1 pl-2 text-right tabular-nums whitespace-nowrap ${v === null ? 'text-gray-500' : v === 0 ? 'text-gray-300' : v > 0 ? 'text-amber-300' : 'text-red-300'}`}>
+                      {v === null ? '—' : v === 0 ? 'balanced' : `${v > 0 ? 'over' : 'short'} ${money(Math.abs(v))}`}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={300}
           placeholder={cashOff ? 'Why the cash is over or short (required)' : 'Note (optional)'}
           className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white" />

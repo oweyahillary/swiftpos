@@ -731,7 +731,7 @@ function OverviewTab() {
                 </p>
                 <span className="text-xs text-green-400 font-semibold">● Open</span>
               </div>
-              <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
                 <div>
                   <p className="text-gray-500 text-xs">Hours open</p>
                   <p className="text-white font-bold text-lg">{shiftHours.toFixed(1)}h</p>
@@ -940,7 +940,7 @@ function POSExpensesTab({ currency }: { currency: string }) {
       </div>
       {showForm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-white font-semibold text-lg">Add Expense</h3>
             <div>
               <label className="block text-sm text-gray-400 mb-1">Description</label>
@@ -1088,7 +1088,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
         <p className="text-gray-500">No credit customers yet.</p>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800">
               <th className="p-3">Customer</th><th className="p-3">Phone</th>
               <th className="p-3 text-right">Limit</th><th className="p-3 text-right">Owed</th>
@@ -1106,7 +1106,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -1118,7 +1118,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
               <button onClick={() => setSelected(null)} className="text-gray-500 hover:text-white">✕</button>
             </div>
             {msg && <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm ${msg.kind === 'ok' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{msg.text}</div>}
-            <div className="grid grid-cols-3 gap-3 mb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Limit</p><p className="text-white font-semibold">{fmt(selected.credit_limit)}</p></div>
               <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Owed</p><p className="text-yellow-400 font-semibold">{fmt(selected.credit_balance)}</p></div>
               <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{fmt(selected.available_credit)}</p></div>
@@ -1132,7 +1132,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-4 mb-4">
                   <p className="text-white font-medium text-sm mb-3">Record repayment</p>
-                  <div className="grid grid-cols-3 gap-2 mb-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                     <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="Amount" min={0} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
                     <select value={payMethod} onChange={e => setPayMethod(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white"><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="card">Card</option></select>
                     <input value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="Ref (optional)" className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
@@ -1142,9 +1142,9 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                 <div className="bg-gray-800/50 rounded-lg p-4 mb-5">
                   <p className="text-white font-medium text-sm mb-1">Manual adjustment</p>
                   <p className="text-xs text-gray-500 mb-3">Negative reduces balance, positive increases. Reason required.</p>
-                  <div className="grid grid-cols-3 gap-2 mb-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                     <input type="number" value={adjAmount} onChange={e => setAdjAmount(e.target.value)} placeholder="+/- amount" className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
-                    <input value={adjNotes} onChange={e => setAdjNotes(e.target.value)} placeholder="Reason" className="col-span-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
+                    <input value={adjNotes} onChange={e => setAdjNotes(e.target.value)} placeholder="Reason" className="sm:col-span-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
                   </div>
                   <button onClick={postAdjustment} disabled={busy} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-lg text-sm">Post adjustment</button>
                 </div>
@@ -1152,7 +1152,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
             )}
             <p className="text-white font-medium text-sm mb-2">Statement</p>
             {ledger.length === 0 ? <p className="text-gray-500 text-sm">No transactions.</p> : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead><tr className="text-gray-500 text-left text-xs"><th className="pb-2">Date</th><th className="pb-2">Type</th><th className="pb-2 text-right">Amount</th><th className="pb-2 text-right">Balance</th><th className="pb-2">Note</th></tr></thead>
                 <tbody>
                   {ledger.map(l => (
@@ -1165,7 +1165,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </div>
         </div>
@@ -1228,10 +1228,10 @@ function ManagerTurnoverTab() {
       ) : (
         report.length === 0 ? <p className="text-gray-500">No completed dine-in orders in range.</p> : (
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800"><th className="p-3">Table</th><th className="p-3 text-right">Covers served</th><th className="p-3 text-right">Avg turnover</th></tr></thead>
               <tbody>{report.map(r => (<tr key={r.table_number} className="border-b border-gray-800"><td className="p-3 text-white">Table {r.table_number}</td><td className="p-3 text-right text-gray-300">{r.covers_served}</td><td className="p-3 text-right text-gray-300">{hm(r.avg_minutes)}</td></tr>))}</tbody>
-            </table>
+            </table></div>
           </div>
         )
       )}
@@ -1247,7 +1247,16 @@ export default function ManagerDashboard() {
   const { business }                = useBusiness();
   const { branches, setActiveBranch } = useBranch();
   const [active, setActive]           = useState('overview');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // A463: on a phone the sidebar is a drawer (closed to start, closed again once a page is picked) — it was a rail that
+  // still took 64 of 360 pixels and showed clipped labels. From md (768px) up it opens and collapses as before.
+  const [isPhone, setIsPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const on = () => setIsPhone(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  const [sidebarOpen, setSidebarOpen] = useState(() => !(typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches));
   const [branchSynced, setBranchSynced] = useState(false);
 
   // Auth guard — redirect if no session or wrong role
@@ -1338,8 +1347,10 @@ export default function ManagerDashboard() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
-      <aside className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-200 flex-shrink-0 ${sidebarOpen ? 'w-56' : 'w-16'}`}>
+    <div className="flex h-[100dvh] bg-gray-950 text-white overflow-hidden">
+      {isPhone && sidebarOpen && <div className="fixed inset-0 z-30 bg-black/60" onClick={() => setSidebarOpen(false)} aria-hidden />}
+      <aside data-testid="manager-sidebar" className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-200 flex-shrink-0 ${
+        isPhone ? `fixed inset-y-0 left-0 z-40 w-64 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}` : (sidebarOpen ? 'w-56' : 'w-16')}`}>
         <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-800 flex-shrink-0">
           <span className="flex-shrink-0 text-swift-text"><Icon d={I.logo} size={20} /></span>
           {sidebarOpen && (
@@ -1360,7 +1371,7 @@ export default function ManagerDashboard() {
                   <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-600">{group}</p>
                 )}
                 {items.map(item => (
-                  <button key={item.key} onClick={() => setActive(item.key)}
+                  <button key={item.key} onClick={() => { setActive(item.key); if (isPhone) setSidebarOpen(false); }}
                     title={!sidebarOpen ? item.title : undefined}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                       active === item.key
@@ -1391,16 +1402,16 @@ export default function ManagerDashboard() {
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="flex items-center justify-between px-6 h-16 bg-gray-900 border-b border-gray-800 flex-shrink-0">
-          <div className="flex items-center gap-4">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <header className="flex items-center justify-between gap-3 px-3 sm:px-6 h-14 sm:h-16 bg-gray-900 border-b border-gray-800 flex-shrink-0">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <button onClick={() => setSidebarOpen(o => !o)} className="text-gray-500 hover:text-white transition-colors"><Icon d={I.menu} size={20} /></button>
-            <h1 className="text-base font-semibold text-white">
+            <h1 className="text-base font-semibold text-white truncate">
               {visibleNav.find(n => n.key === active)?.label ?? 'Overview'}
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className="text-right">
+            <div className="text-right hidden sm:block">
               <p className="text-sm font-medium text-white">{session.staffName}</p>
               <p className="text-xs text-gray-500 capitalize">{session.role} · {session.branchName}</p>
             </div>
@@ -1409,7 +1420,7 @@ export default function ManagerDashboard() {
             </div>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6">
           {renderContent()}
         </main>
       </div>

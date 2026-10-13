@@ -24,7 +24,7 @@ export default function DevicesPrintersPage() {
 
 export function DevicesRoute() {
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <DevicesTab />
     </div>
   );

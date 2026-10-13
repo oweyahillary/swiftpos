@@ -202,9 +202,9 @@ export default function PromotionsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex-shrink-0 flex items-center justify-between">
+      <div className="px-4 sm:px-6 pt-6 pb-4 border-b border-gray-800 flex-shrink-0 flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-white text-2xl font-bold">{term('promotions')}</h1>
+          <h1 className="text-white text-xl sm:text-2xl font-bold">{term('promotions')}</h1>
           <p className="text-gray-500 text-sm mt-1">
             Happy hour, BOGO, and quantity deals — applied automatically at the POS
           </p>
@@ -216,7 +216,7 @@ export default function PromotionsPage() {
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {loading ? (
           <div className="text-center py-16 text-gray-500 text-sm">Loading…</div>
         ) : promos.length === 0 ? (
@@ -337,7 +337,7 @@ export default function PromotionsPage() {
               {/* Type */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Type</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {(['happy_hour', 'bogo', 'quantity_discount'] as PromoType[]).map(t => {
                     const meta = TYPE_META[t];
                     return (

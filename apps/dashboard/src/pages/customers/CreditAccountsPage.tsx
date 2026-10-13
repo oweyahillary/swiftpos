@@ -112,8 +112,8 @@ export default function CreditAccountsPage() {
   const totalOwed = rows.reduce((s, r) => s + Number(r.credit_balance), 0);
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-1">
+    <div className="p-4 sm:p-6">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
         <h1 className="text-xl font-bold text-white">Credit Accounts</h1>
         <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{fmt(totalOwed)}</span></div>
       </div>
@@ -132,7 +132,7 @@ export default function CreditAccountsPage() {
         <p className="text-gray-500">No credit customers yet. Set a credit limit on a customer to start.</p>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="text-gray-500 text-left text-xs border-b border-gray-800">
                 <th className="p-3">Customer</th><th className="p-3">Phone</th>
@@ -154,7 +154,7 @@ export default function CreditAccountsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -174,7 +174,7 @@ export default function CreditAccountsPage() {
               <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm ${msg.kind === 'ok' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{msg.text}</div>
             )}
 
-            <div className="grid grid-cols-3 gap-3 mb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Limit</p><p className="text-white font-semibold">{fmt(selected.credit_limit)}</p></div>
               <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Owed</p><p className="text-yellow-400 font-semibold">{fmt(selected.credit_balance)}</p></div>
               <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{fmt(selected.available_credit)}</p></div>
@@ -193,7 +193,7 @@ export default function CreditAccountsPage() {
             {/* Record payment */}
             <div className="bg-gray-800/50 rounded-lg p-4 mb-4">
               <p className="text-white font-medium text-sm mb-3">Record repayment</p>
-              <div className="grid grid-cols-3 gap-2 mb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                 <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="Amount" min={0}
                   className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
                 <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
@@ -210,7 +210,7 @@ export default function CreditAccountsPage() {
             <div className="bg-gray-800/50 rounded-lg p-4 mb-5">
               <p className="text-white font-medium text-sm mb-1">Manual adjustment</p>
               <p className="text-xs text-gray-500 mb-3">Use a negative amount to reduce the balance, positive to increase. Reason required.</p>
-              <div className="grid grid-cols-3 gap-2 mb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                 <input type="number" value={adjAmount} onChange={e => setAdjAmount(e.target.value)} placeholder="+/- amount"
                   className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
                 <input value={adjNotes} onChange={e => setAdjNotes(e.target.value)} placeholder="Reason"
@@ -222,7 +222,7 @@ export default function CreditAccountsPage() {
             {/* Ledger */}
             <p className="text-white font-medium text-sm mb-2">Statement</p>
             {ledger.length === 0 ? <p className="text-gray-500 text-sm">No transactions.</p> : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead><tr className="text-gray-500 text-left text-xs"><th className="pb-2">Date</th><th className="pb-2">Type</th><th className="pb-2 text-right">Amount</th><th className="pb-2 text-right">Balance</th><th className="pb-2">Note</th></tr></thead>
                 <tbody>
                   {ledger.map(l => (
@@ -235,7 +235,7 @@ export default function CreditAccountsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </div>
         </div>

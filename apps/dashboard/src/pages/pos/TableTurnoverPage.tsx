@@ -98,7 +98,7 @@ export default function TableTurnoverPage() {
       ) : (
         report.length === 0 ? <p className="text-gray-500">No completed dine-in orders in range.</p> : (
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="text-gray-500 text-left text-xs border-b border-gray-800">
                   <th className="p-3">Table</th><th className="p-3 text-right">Covers served</th><th className="p-3 text-right">Avg turnover</th>
@@ -113,7 +113,7 @@ export default function TableTurnoverPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )
       )}

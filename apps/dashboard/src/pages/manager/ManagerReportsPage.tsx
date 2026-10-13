@@ -280,7 +280,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
       {!loading && rows.length === 0 && <Empty label="No sales data for this period." />}
       {!loading && rows.length > 0 && (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
               <p className="text-gray-500 text-xs">Total</p>
               <p className="text-white font-bold text-lg mt-1">{fmtShort(currency, total)}</p>
@@ -295,7 +295,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
             </div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-gray-700/30">
                 <tr>
                   {['Hour', 'Orders', 'Revenue', 'Share', ''].map(h => (
@@ -318,7 +318,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         </>
       )}
@@ -362,7 +362,7 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
       {!loading && filtered.length === 0 && <Empty label="No items sold in this period." />}
       {!loading && filtered.length > 0 && (
         <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-700/30">
               <tr>
                 {['Item', 'Category', 'Qty', 'Revenue', '% of Sales', 'Avg Price'].map(h => (
@@ -392,7 +392,7 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
     </div>
@@ -442,7 +442,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
             </div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-gray-700/30">
                 <tr>
                   {['Order', 'Amount', 'Cashier', 'Authorized by', 'Table', 'Reason', 'Time'].map(h => (
@@ -463,7 +463,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         </>
       )}
@@ -503,7 +503,7 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
       {!loading && rows.length === 0 && <Empty label="No staff transactions in this period." />}
       {!loading && rows.length > 0 && (
         <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-700/30">
               <tr>
                 {['Cashier', 'Orders', 'Revenue', 'Avg Order', 'Voids', ''].map(h => (
@@ -538,7 +538,7 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
     </div>
@@ -620,7 +620,7 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
               : ((Date.now() - new Date(r.opened_at).getTime()) / 3_600_000).toFixed(1);
             return (
               <div key={r.id} className={`border rounded-2xl p-4 ${isOpen ? 'border-green-500/30 bg-green-500/5' : 'border-gray-700 bg-gray-800/40'}`}>
-                <div className="flex items-start justify-between gap-4 mb-3">
+                <div className="flex items-start justify-between flex-wrap gap-4 mb-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-white font-semibold">{r.cashier_name ?? 'Unknown'}</p>
@@ -640,7 +640,7 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                   <div>
                     <p className="text-gray-500">Orders</p>
                     <p className="text-white font-semibold mt-0.5">{r.order_count ?? 0}</p>
@@ -710,7 +710,7 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
       {loading && <Spinner />}
       {!loading && data && (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { label: 'Total Litres', value: fmtL(data.summary.totalLitres), color: '#f59e0b' },
               { label: 'Revenue', value: fmtC(data.summary.totalRevenue), color: '#22c55e' },
@@ -725,7 +725,7 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
           {data.grades.length > 0 && (
             <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-4 border-b border-gray-700">By Grade</p>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="bg-gray-700/30"><tr>
                   {['Grade','Litres','Revenue','Avg Price/L'].map(h => (
                     <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
@@ -746,13 +746,13 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           )}
           {data.pumps.length > 0 && (
             <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-4 border-b border-gray-700">By Pump</p>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="bg-gray-700/30"><tr>
                   {['Pump','Litres','Revenue','Transactions'].map(h => (
                     <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
@@ -768,7 +768,7 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           )}
         </>
@@ -833,7 +833,7 @@ function WetStockTab({ posApi, session, currency }: { posApi: PosApi; session: a
                   <div className="h-2 bg-gray-700 rounded-full overflow-hidden mb-3">
                     <div className="h-full rounded-full" style={{ width: `${tank.level_pct}%`, background: isLow ? '#ef4444' : color }} />
                   </div>
-                  <div className="grid grid-cols-4 gap-3 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div><p className="text-gray-500">Current</p><p className="text-white font-medium mt-0.5">{fmtL(tank.current_level)}</p></div>
                     <div><p className="text-green-500">Delivered</p><p className="text-white font-medium mt-0.5">+{fmtL(tank.delivered_litres)}</p></div>
                     <div><p className="text-amber-400">Dispensed</p><p className="text-white font-medium mt-0.5">{fmtL(tank.consumed_litres)}</p></div>

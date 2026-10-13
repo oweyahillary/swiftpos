@@ -160,7 +160,7 @@ export default function ShiftReportsPage() {
   const inputCls = 'rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-1.5 text-sm text-gray-900 dark:text-white';
 
   return (
-    <div className="p-6 space-y-4" data-testid="shift-reports">
+    <div className="p-4 sm:p-6 space-y-4" data-testid="shift-reports">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Shift Reports</h1>
@@ -181,7 +181,7 @@ export default function ShiftReportsPage() {
         <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} />
         <label className="text-sm text-gray-600 dark:text-gray-400">to</label>
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
-        <div className="flex gap-1 ml-2">
+        <div className="flex flex-wrap gap-1 ml-2">
           {([['all', 'All'], ['running', `Running (${counts.running})`], ['awaiting', `Awaiting check (${counts.awaiting})`],
              ['confirmed', 'Confirmed'], ['problems', `Problems (${counts.problems})`]] as [StatusFilter, string][]).map(([k, l]) => (
             <button key={k} onClick={() => setFilter(k)} data-testid={`filter-${k}`}
@@ -231,7 +231,7 @@ export default function ShiftReportsPage() {
         const confirmed = st === 'confirmed' || st === 'self';
         return (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 p-5 space-y-4" data-testid="shift-view">
+            <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 p-5 space-y-4 max-h-[90vh] overflow-y-auto" data-testid="shift-view">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-gray-900 dark:text-white">{view.cashier_name} · {view.terminal_code ?? 'Web'}</h2>
@@ -247,27 +247,29 @@ export default function ShiftReportsPage() {
                   Still running. Expected cash in the drawer now: <strong>{money(view.expected_cash_live)}</strong>. The table appears once the cashier closes the shift.
                 </p>
               ) : (
-                <table className="w-full text-sm" data-testid="shift-view-table">
-                  <thead className="text-left text-xs text-gray-500">
-                    <tr><th className="py-1">Method</th><th className="text-right">Cashier said</th><th className="text-right">Manager counted</th><th className="text-right">Till recorded</th><th className="text-right">Variance</th></tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((l) => {
-                      const v = l.variance ?? 0;
-                      return (
-                        <tr key={l.method} className={`border-t border-gray-100 dark:border-gray-800 ${l.mismatch ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
-                          <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{methodName(l.method)}</td>
-                          <td className="text-right">{money(l.cashier)}</td>
-                          <td className="text-right">{confirmed ? money(l.manager) : '—'}</td>
-                          <td className="text-right">{money(l.recorded)}</td>
-                          <td className={`text-right font-medium ${Math.round(v * 100) === 0 ? 'text-gray-500' : v < 0 ? 'text-red-600 dark:text-red-400' : 'text-amber-600'}`}>
-                            {l.variance === null ? '—' : Math.round(v * 100) === 0 ? '0' : `${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))}`}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="shift-view-table">
+                    <thead className="text-left text-xs text-gray-500">
+                      <tr><th className="py-1">Method</th><th className="text-right">Cashier said</th><th className="text-right">Manager counted</th><th className="text-right">Till recorded</th><th className="text-right">Variance</th></tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((l) => {
+                        const v = l.variance ?? 0;
+                        return (
+                          <tr key={l.method} className={`border-t border-gray-100 dark:border-gray-800 ${l.mismatch ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
+                            <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{methodName(l.method)}</td>
+                            <td className="text-right">{money(l.cashier)}</td>
+                            <td className="text-right">{confirmed ? money(l.manager) : '—'}</td>
+                            <td className="text-right">{money(l.recorded)}</td>
+                            <td className={`text-right font-medium ${Math.round(v * 100) === 0 ? 'text-gray-500' : v < 0 ? 'text-red-600 dark:text-red-400' : 'text-amber-600'}`}>
+                              {l.variance === null ? '—' : Math.round(v * 100) === 0 ? '0' : `${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))}`}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               <div className="text-xs text-gray-500 space-y-1">

@@ -143,8 +143,8 @@ export default function FleetPage() {
   const silent = fleet.filter(d => d.lastSyncAt === null || (d.hoursSinceSync ?? 0) >= WARN_HOURS);
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-start justify-between gap-4">
+    <div className="p-4 sm:p-6 space-y-5">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Terminals</h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -218,7 +218,7 @@ export default function FleetPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
                 {['Terminal', 'On shift', 'App', 'Schema', 'Last sync', 'Last sign-in'].map(h => (
@@ -259,7 +259,7 @@ export default function FleetPage() {
                           </span>
                           <button
                             onClick={() => { setEditingId(d.id); setDraftLabel(d.label ?? ''); }}
-                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs transition-opacity"
+                            className="sm:opacity-0 sm:group-hover:opacity-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs transition-opacity"
                             title="Rename terminal"
                           >✎</button>
                         </div>
@@ -346,7 +346,7 @@ export default function FleetPage() {
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 

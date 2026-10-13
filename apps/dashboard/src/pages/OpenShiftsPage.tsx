@@ -110,7 +110,7 @@ export default function OpenShiftsPage() {
   };
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 sm:p-6 space-y-5">
       <div>
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Open drawers</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -129,66 +129,68 @@ export default function OpenShiftsPage() {
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : shifts.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 sm:p-8 text-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             No drawers are open. Nothing to release.
           </p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                {['Cashier', 'Till', 'Opened', 'Opening float', 'Expected cash', ''].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {shifts.map(s => {
-                const hrs = hoursOpen(s.opened_at);
-                // 18h matches STALE_SHIFT_HOURS on the till, so the two surfaces
-                // agree about when a drawer has stopped being plausible.
-                const stale = hrs >= 18;
-                return (
-                  <tr key={s.id} className="bg-white dark:bg-gray-900">
-                    <td className="px-4 py-3 text-gray-900 dark:text-white">{s.cashier_name}</td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
-                        {hrs}h ago
-                      </span>
-                      <div className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('en-KE')}</div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums">
-                      {money(Number(s.opening_float))}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white tabular-nums">
-                      {money(s.expected_cash_live)}
-                    </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button data-testid={`count-close-${s.id}`} onClick={() => setCounting(s)}
-                        className="mr-2 text-xs px-3 py-1.5 rounded-md border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors">
-                        Close with count
-                      </button>
-                      <button
-                        onClick={() => { setTarget(s); setReason(''); }}
-                        className="text-xs px-3 py-1.5 rounded-md border border-red-300 text-red-700
-                                   hover:bg-red-50 dark:border-red-800 dark:text-red-400
-                                   dark:hover:bg-red-900/20 transition-colors"
-                      >
-                        Force close
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  {['Cashier', 'Till', 'Opened', 'Opening float', 'Expected cash', ''].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {shifts.map(s => {
+                  const hrs = hoursOpen(s.opened_at);
+                  // 18h matches STALE_SHIFT_HOURS on the till, so the two surfaces
+                  // agree about when a drawer has stopped being plausible.
+                  const stale = hrs >= 18;
+                  return (
+                    <tr key={s.id} className="bg-white dark:bg-gray-900">
+                      <td className="px-4 py-3 text-gray-900 dark:text-white">{s.cashier_name}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                        {s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
+                          {hrs}h ago
+                        </span>
+                        <div className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('en-KE')}</div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums">
+                        {money(Number(s.opening_float))}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-white tabular-nums">
+                        {money(s.expected_cash_live)}
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <button data-testid={`count-close-${s.id}`} onClick={() => setCounting(s)}
+                          className="mr-2 text-xs px-3 py-1.5 rounded-md border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors">
+                          Close with count
+                        </button>
+                        <button
+                          onClick={() => { setTarget(s); setReason(''); }}
+                          className="text-xs px-3 py-1.5 rounded-md border border-red-300 text-red-700
+                                     hover:bg-red-50 dark:border-red-800 dark:text-red-400
+                                     dark:hover:bg-red-900/20 transition-colors"
+                        >
+                          Force close
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -213,7 +215,7 @@ export default function OpenShiftsPage() {
           the open shift it replaces. */}
       {target && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-md border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-md border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
             <div className="px-5 pt-5 pb-3 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">
                 Force close {target.cashier_name}'s drawer

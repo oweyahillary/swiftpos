@@ -293,9 +293,9 @@ export default function ExpensesPage() {
   return (
     <>
       <Toast toast={toast} />
-    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
       {/* Page header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-white">Expenses</h1>
           <p className="text-gray-400 text-sm mt-0.5">Record and categorise business expenses</p>
@@ -311,10 +311,10 @@ export default function ExpensesPage() {
       </div>
 
       {/* Layout: categories sidebar + main table */}
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-6 lg:items-start">
 
         {/* ── Categories panel ── */}
-        <div className="w-56 flex-shrink-0 bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div className="w-full lg:w-56 lg:flex-shrink-0 bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
             <p className="text-white text-sm font-semibold">Categories</p>
             {canManage && (
@@ -350,7 +350,7 @@ export default function ExpensesPage() {
             >
               <span className="text-sm truncate flex-1">{cat.name}</span>
               {canManage && (
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 flex-shrink-0 ml-1">
+                <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0 ml-1">
                   <button
                     onClick={e => { e.stopPropagation(); openEditCat(cat); }}
                     className="text-gray-500 hover:text-white text-xs transition-colors p-0.5"
@@ -443,79 +443,81 @@ export default function ExpensesPage() {
                 </p>
               </div>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-800">
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Date</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Description</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Category</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Branch</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid With</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid By</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Recorded By</th>
-                    <th className="text-right text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Amount</th>
-                    {canManage && <th className="px-4 py-3" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map(e => (
-                    <tr key={e.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
-                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{fmtDate(e.expense_date)}</td>
-                      <td className="px-4 py-3 text-white max-w-xs">
-                        <span className="block truncate">{e.description}</span>
-                        {e.receipt_url && (
-                          <a
-                            href={e.receipt_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-swift-text text-xs hover:underline"
-                          >Receipt ↗</a>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {e.category_name ? (
-                          <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{e.category_name}</span>
-                        ) : (
-                          <span className="text-gray-600 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{e.branch_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{e.paid_by_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{e.recorded_by_name ?? '—'}
-                        {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
-                        {fmt(e.amount, currency)}
-                      </td>
-                      {canManage && (
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 justify-end transition-opacity">
-                            <button
-                              onClick={() => openEditExpense(e)}
-                              className="text-gray-500 hover:text-white text-xs transition-colors"
-                            >Edit</button>
-                            <button
-                              onClick={() => deleteExpense(e.id)}
-                              className="text-gray-500 hover:text-red-400 text-xs transition-colors"
-                            >Delete</button>
-                          </div>
-                        </td>
-                      )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800">
+                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Date</th>
+                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Description</th>
+                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Category</th>
+                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Branch</th>
+                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid With</th>
+                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid By</th>
+                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Recorded By</th>
+                      <th className="text-right text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Amount</th>
+                      {canManage && <th className="px-4 py-3" />}
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-gray-700">
-                    <td colSpan={7} className="px-4 py-3 text-gray-500 text-xs font-semibold">
-                      {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold text-red-300">
-                      {fmt(narrowed ? shownTotal : total, currency)}
-                    </td>
-                    {canManage && <td />}
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {shown.map(e => (
+                      <tr key={e.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
+                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{fmtDate(e.expense_date)}</td>
+                        <td className="px-4 py-3 text-white max-w-xs">
+                          <span className="block truncate">{e.description}</span>
+                          {e.receipt_url && (
+                            <a
+                              href={e.receipt_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-swift-text text-xs hover:underline"
+                            >Receipt ↗</a>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {e.category_name ? (
+                            <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{e.category_name}</span>
+                          ) : (
+                            <span className="text-gray-600 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-400 text-xs">{e.branch_name ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-400 text-xs">{EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method}</td>
+                        <td className="px-4 py-3 text-gray-400 text-xs">{e.paid_by_name ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-400 text-xs">{e.recorded_by_name ?? '—'}
+                          {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
+                          {fmt(e.amount, currency)}
+                        </td>
+                        {canManage && (
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2 sm:opacity-0 sm:group-hover:opacity-100 justify-end transition-opacity">
+                              <button
+                                onClick={() => openEditExpense(e)}
+                                className="text-gray-500 hover:text-white text-xs transition-colors"
+                              >Edit</button>
+                              <button
+                                onClick={() => deleteExpense(e.id)}
+                                className="text-gray-500 hover:text-red-400 text-xs transition-colors"
+                              >Delete</button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-gray-700">
+                      <td colSpan={7} className="px-4 py-3 text-gray-500 text-xs font-semibold">
+                        {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-red-300">
+                        {fmt(narrowed ? shownTotal : total, currency)}
+                      </td>
+                      {canManage && <td />}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
           </div>
         </div>
@@ -524,7 +526,7 @@ export default function ExpensesPage() {
       {/* ── Expense Modal ── */}
       {expenseModal !== null && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-800">
               <h2 className="text-white font-semibold">
                 {expenseModal === 'add' ? 'Add Expense' : 'Edit Expense'}
@@ -664,7 +666,7 @@ export default function ExpensesPage() {
       {/* ── Category Modal ── */}
       {catModal !== null && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-800">
               <h2 className="text-white font-semibold">
                 {catModal === 'add' ? 'New Category' : 'Rename Category'}

@@ -189,7 +189,7 @@ export default function FloorPlanTab({ branchId }: Props) {
   return (
     <div>
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg text-sm">
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg text-sm">
           {toast}
         </div>
       )}

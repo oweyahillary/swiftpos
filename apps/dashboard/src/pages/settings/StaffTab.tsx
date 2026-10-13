@@ -95,7 +95,7 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-white font-semibold text-lg">Staff Members</h2>
           <p className="text-gray-500 text-sm">{staff.filter(s => s.status === 'active').length} active</p>
@@ -116,8 +116,8 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
             const branchNames = s.user_branches?.map(b => b.branches?.name).filter(Boolean) ?? [];
             const overrideCount = s.user_permissions?.length ?? 0;
             return (
-              <div key={s.id} className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3">
-                <div className="flex items-center gap-3">
+              <div key={s.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-full bg-gray-700 flex items-center justify-center text-white font-semibold text-sm">
                     {s.name.charAt(0).toUpperCase()}
                   </div>
@@ -143,7 +143,7 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {canResetSignIn && s.status === 'active' && OTP_ROLES.includes((s.roles?.name ?? '').toLowerCase().replace(/ /g, '_')) && (
                     <button onClick={() => resetSignIn(s)} data-testid="reset-signin"
                       className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
@@ -339,8 +339,8 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
         )}
 
         {/* Basic info */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2 md:col-span-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2 md:col-span-1">
             <label className="block text-sm text-gray-400 mb-1">Full Name</label>
             <input value={name} onChange={e => setName(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
@@ -353,7 +353,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
             </select>
           </div>
           {(!editing && mode === 'invite') && (
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label className="block text-sm text-gray-400 mb-1">Email</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 name="staff-email" autoComplete="off"
@@ -361,7 +361,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
             </div>
           )}
           {editing && (
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label className="block text-sm text-gray-400 mb-1">
                 Email <span className="text-amber-400 text-xs ml-1">— used for POS login</span>
               </label>
@@ -401,7 +401,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
           )}
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="block text-sm text-gray-400 mb-1">
               Override PIN
               <span className="text-gray-600 text-xs ml-1">— lets this person authorize paid-order voids &amp; overrides</span>

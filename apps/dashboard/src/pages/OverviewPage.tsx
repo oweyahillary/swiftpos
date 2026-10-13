@@ -303,7 +303,7 @@ export default function OverviewPage() {
   if (loading && !sales) return <OverviewSkeleton />;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-gray-950">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-950">
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3 mb-6">
         <div>
@@ -335,14 +335,14 @@ export default function OverviewPage() {
       {isPetrol && pumpMonitor && (
         <div className="mb-5">
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-gray-800">
               <div className="flex items-center gap-2">
                 <span className="text-white text-sm font-medium">Pump Monitor</span>
                 <span className="flex items-center gap-1 text-[10px] text-green-400 font-medium">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />live
                 </span>
               </div>
-              <div className="flex items-center gap-4 text-xs text-gray-500">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-500">
                 <span>{fmt(pumpMonitor.totals?.total_revenue_today ?? 0, currency)} today</span>
                 <span>{(pumpMonitor.totals?.total_litres_today ?? 0).toLocaleString('en-KE', { maximumFractionDigits: 1 })} L sold</span>
                 <span>{pumpMonitor.totals?.total_transactions ?? 0} transactions</span>

@@ -34,7 +34,7 @@ export default function UsersAccessPage() {
 export function StaffMembersRoute() {
   const { branches } = useOutletContext<{ branches: Branch[] }>();
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <StaffTab branches={branches} canResetSignIn />
     </div>
   );
@@ -42,7 +42,7 @@ export function StaffMembersRoute() {
 
 export function RolesRoute() {
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <RolesTab />
     </div>
   );
@@ -51,7 +51,7 @@ export function RolesRoute() {
 // A391: the owner's own sign-in code — email or an authenticator app.
 export function SignInSecurityRoute() {
   return (
-    <div className="p-6 space-y-8">
+    <div className="p-4 sm:p-6 space-y-8">
       <SignInSecurity />
       {/* A402: the owner's password */}
       <ChangePassword />

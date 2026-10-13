@@ -879,10 +879,12 @@ const s: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60,
+    padding: 12,
   },
   modal: {
     background: '#1e293b', border: '1px solid #334155', borderRadius: 16,
     padding: '28px 28px 24px', width: 340, maxWidth: '92vw',
+    maxHeight: '90dvh', overflowY: 'auto',
     boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
   },
   iconRow: { textAlign: 'center', marginBottom: 10 },

@@ -161,7 +161,7 @@ function SectionCard({ title, children }: { title: string; children: React.React
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
       <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">{title}</h3>
-      {children}
+      <div className="overflow-x-auto">{children}</div>
     </div>
   );
 }
@@ -243,7 +243,7 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">{data.branchName || 'All branches'}</h2>
           <p className="text-xs text-gray-400 mt-0.5">{range.from} — {range.to}</p>
@@ -1414,7 +1414,7 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
           <div className="absolute top-0 bottom-0" style={{ left: '33%', borderLeft: '2px dashed rgba(0,0,0,0.15)' }} />
           <div className="absolute top-0 bottom-0" style={{ left: '55%', borderLeft: '2px dashed rgba(0,0,0,0.15)' }} />
         </div>
-        <div className="flex text-[10px] text-gray-400 mt-1 gap-4">
+        <div className="flex flex-wrap text-[10px] text-gray-400 mt-1 gap-4">
           <span className="text-red-500">Low</span>
           <span className="text-amber-500 ml-auto">KES 1,000/hr avg</span>
           <span className="text-green-600">KES 2,000/hr+ good</span>
@@ -1697,7 +1697,7 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard label="Revenue" value={fmtC(summary.totalRevenue)} accent />
         <KpiCard label="Total Litres Sold" value={fmtL(summary.totalLitres)} />
         <KpiCard label="Transactions" value={String(summary.totalTransactions)}
@@ -1853,7 +1853,7 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
         const totalDel  = tanks.reduce((s: number, t: any) => s + Number(t.delivered_litres ?? 0), 0);
         const pctFull   = totalCap > 0 ? Math.round((totalCurr / totalCap) * 100) : 0;
         return (
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <KpiCard label="Current Stock"       value={fmtL(totalCurr)} sub={`${pctFull}% of capacity`} accent />
             <KpiCard label="Sold (Period)"        value={fmtL2(totalSold)} />
             <KpiCard label="Delivered (Period)"   value={fmtL(totalDel)} />

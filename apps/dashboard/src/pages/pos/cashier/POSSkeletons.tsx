@@ -139,7 +139,7 @@ export function POSLoadingSkeleton() {
         </div>
       </div>
       {/* Right panel — cart */}
-      <div className="w-80 border-l border-gray-800 flex flex-col p-4 gap-3">
+      <div className="hidden md:flex md:w-80 md:border-l border-gray-800 flex-col p-4 gap-3">
         <div className={`${PULSE} h-6 w-24`} />
         <div className="flex-1 space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (

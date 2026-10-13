@@ -255,7 +255,7 @@ export default function PurchaseOrdersPage() {
     <div className="flex-1 flex overflow-hidden">
 
       {/* ── PO List ── */}
-      <div className={`flex flex-col border-r border-gray-800 ${selected ? 'w-96 flex-shrink-0' : 'flex-1'}`}>
+      <div className={`flex-col border-r border-gray-800 ${selected ? 'hidden lg:flex lg:w-96 lg:flex-shrink-0' : 'flex flex-1'}`}>
         <div className="px-5 py-4 border-b border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-white font-semibold">Purchase Orders</h2>
@@ -317,8 +317,9 @@ export default function PurchaseOrdersPage() {
       {/* ── PO Detail Panel ── */}
       {selected && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-800 flex items-start justify-between gap-4">
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-800 flex flex-wrap sm:flex-nowrap items-start justify-between gap-4">
             <div>
+              <button onClick={() => setSelected(null)} className="lg:hidden text-gray-400 hover:text-white text-xs mb-2 transition-colors">← Back to the list</button>
               <div className="flex items-center gap-3">
                 <h2 className="text-white font-bold text-base">{selected.po_number}</h2>
                 {(() => { const sc = STATUS[selected.status]; return <span className={`px-2 py-0.5 rounded text-xs font-medium ${sc.bg} ${sc.color}`}>{sc.label}</span>; })()}
@@ -346,49 +347,51 @@ export default function PurchaseOrdersPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-5">
             <div>
               <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-3">Ingredients Ordered</p>
               <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-800">
-                      {['Ingredient','Ordered','Received','Unit Cost','Line Total'].map(h => (
-                        <th key={h} className={`text-gray-500 text-xs px-4 py-2.5 uppercase tracking-wider font-semibold ${h === 'Ingredient' ? 'text-left' : 'text-right'}`}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(selected.purchase_order_items ?? []).map((item, idx) => {
-                      const ing = ingMap[item.ingredient_id];
-                      const name = ing?.name ?? item.ingredients?.name ?? item.ingredient_name ?? 'Unknown';
-                      const unit = ing?.unit ?? item.ingredients?.unit ?? item.ingredient_unit ?? '';
-                      const fullyRcvd = item.quantity_received >= item.quantity_ordered;
-                      return (
-                        <tr key={item.id ?? idx} className="border-b border-gray-800/50">
-                          <td className="px-4 py-3">
-                            <p className="text-white">{name}</p>
-                            {(ing?.category ?? '') && <p className="text-gray-600 text-xs">{ing?.category}</p>}
-                          </td>
-                          <td className="px-4 py-3 text-right text-gray-300">{item.quantity_ordered} {unit}</td>
-                          <td className="px-4 py-3 text-right">
-                            <span className={fullyRcvd ? 'text-green-400' : item.quantity_received > 0 ? 'text-amber-400' : 'text-gray-600'}>
-                              {item.quantity_received} {unit}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right text-gray-300">{fmt(item.unit_cost, currency)}</td>
-                          <td className="px-4 py-3 text-right text-white font-medium">{fmt(item.unit_cost * item.quantity_ordered, currency)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-gray-700">
-                      <td colSpan={4} className="px-4 py-3 text-gray-500 text-xs font-semibold text-right">TOTAL</td>
-                      <td className="px-4 py-3 text-right text-white font-bold">{fmt(selected.total_amount, currency)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-800">
+                        {['Ingredient','Ordered','Received','Unit Cost','Line Total'].map(h => (
+                          <th key={h} className={`text-gray-500 text-xs px-4 py-2.5 uppercase tracking-wider font-semibold ${h === 'Ingredient' ? 'text-left' : 'text-right'}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selected.purchase_order_items ?? []).map((item, idx) => {
+                        const ing = ingMap[item.ingredient_id];
+                        const name = ing?.name ?? item.ingredients?.name ?? item.ingredient_name ?? 'Unknown';
+                        const unit = ing?.unit ?? item.ingredients?.unit ?? item.ingredient_unit ?? '';
+                        const fullyRcvd = item.quantity_received >= item.quantity_ordered;
+                        return (
+                          <tr key={item.id ?? idx} className="border-b border-gray-800/50">
+                            <td className="px-4 py-3">
+                              <p className="text-white">{name}</p>
+                              {(ing?.category ?? '') && <p className="text-gray-600 text-xs">{ing?.category}</p>}
+                            </td>
+                            <td className="px-4 py-3 text-right text-gray-300">{item.quantity_ordered} {unit}</td>
+                            <td className="px-4 py-3 text-right">
+                              <span className={fullyRcvd ? 'text-green-400' : item.quantity_received > 0 ? 'text-amber-400' : 'text-gray-600'}>
+                                {item.quantity_received} {unit}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right text-gray-300">{fmt(item.unit_cost, currency)}</td>
+                            <td className="px-4 py-3 text-right text-white font-medium">{fmt(item.unit_cost * item.quantity_ordered, currency)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-700">
+                        <td colSpan={4} className="px-4 py-3 text-gray-500 text-xs font-semibold text-right">TOTAL</td>
+                        <td className="px-4 py-3 text-right text-white font-bold">{fmt(selected.total_amount, currency)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
             </div>
             {selected.notes && (
@@ -425,8 +428,8 @@ export default function PurchaseOrdersPage() {
               <h2 className="text-white font-semibold">New Purchase Order</h2>
               <p className="text-gray-500 text-xs mt-0.5">Order raw ingredients from a supplier</p>
             </div>
-            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="overflow-y-auto flex-1 px-4 sm:px-6 py-5 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Branch <span className="text-red-400">*</span></label>
                   <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)}
@@ -460,7 +463,7 @@ export default function PurchaseOrdersPage() {
                   <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Ingredients to Order</p>
                   <button onClick={addLine} className="text-swift-text hover:text-swift-text-hover text-xs font-medium transition-colors">+ Add Line</button>
                 </div>
-                <div className="grid grid-cols-12 gap-2 px-1 mb-1.5">
+                <div className="hidden sm:grid sm:grid-cols-12 gap-2 px-1 mb-1.5">
                   <p className="col-span-5 text-gray-600 text-xs">Ingredient</p>
                   <p className="col-span-3 text-gray-600 text-xs">Quantity</p>
                   <p className="col-span-3 text-gray-600 text-xs">Unit Cost ({currency})</p>
@@ -473,7 +476,7 @@ export default function PurchaseOrdersPage() {
                     const opts   = ingredients.filter(i => !srch || i.name.toLowerCase().includes(srch.toLowerCase()) || (i.category ?? '').toLowerCase().includes(srch.toLowerCase()));
                     return (
                       <div key={idx} className="grid grid-cols-12 gap-2 items-start">
-                        <div className="col-span-5 relative">
+                        <div className="col-span-12 sm:col-span-5 relative">
                           {selIng ? (
                             <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
                               <div className="flex-1 min-w-0">
@@ -508,7 +511,8 @@ export default function PurchaseOrdersPage() {
                             </div>
                           )}
                         </div>
-                        <div className="col-span-3">
+                        <div className="col-span-5 sm:col-span-3">
+                          <p className="sm:hidden text-gray-600 text-xs mb-1">Quantity</p>
                           <div className="relative">
                             <input type="number" min="0.01" step="0.01" placeholder="0"
                               value={item.quantity_ordered}
@@ -518,14 +522,15 @@ export default function PurchaseOrdersPage() {
                             {selIng && <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">{selIng.unit}</span>}
                           </div>
                         </div>
-                        <div className="col-span-3">
+                        <div className="col-span-5 sm:col-span-3">
+                          <p className="sm:hidden text-gray-600 text-xs mb-1">Unit Cost ({currency})</p>
                           <input type="number" min="0" step="0.01" placeholder="0.00"
                             value={item.unit_cost}
                             onChange={e => setNewItems(p => p.map((it, i) => i === idx ? { ...it, unit_cost: e.target.value } : it))}
                             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                           />
                         </div>
-                        <div className="col-span-1 flex items-center justify-center pt-2">
+                        <div className="col-span-2 sm:col-span-1 flex items-center justify-center pt-6 sm:pt-2">
                           {newItems.length > 1 && (
                             <button onClick={() => removeLine(idx)} className="text-gray-600 hover:text-red-400 transition-colors text-base">✕</button>
                           )}
@@ -644,7 +649,7 @@ export default function PurchaseOrdersPage() {
       {/* ── Cancel Modal ── */}
       {cancelTarget && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-5 border-b border-gray-800">
               <h2 className="text-white font-semibold">Cancel Purchase Order</h2>
               <p className="text-gray-500 text-xs mt-0.5">{cancelTarget.po_number}</p>

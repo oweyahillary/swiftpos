@@ -137,10 +137,10 @@ export default function EtimsSettingsPage() {
     } finally { setRetrying(false); }
   };
 
-  if (!branchId) return <div className="p-6 text-gray-400">Select a branch to configure eTIMS.</div>;
+  if (!branchId) return <div className="p-4 sm:p-6 text-gray-400">Select a branch to configure eTIMS.</div>;
 
   return (
-    <div className="p-6 max-w-3xl">
+    <div className="p-4 sm:p-6 max-w-3xl">
       <h1 className="text-xl font-bold text-white mb-1">KRA eTIMS</h1>
       <p className="text-sm text-gray-400 mb-6">Fiscalisation settings for {activeBranch?.name}.</p>
 
@@ -173,7 +173,7 @@ export default function EtimsSettingsPage() {
           </div>
 
           {/* Config */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4 grid grid-cols-2 gap-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">Environment</label>
               <select value={environment} onChange={e => setEnvironment(e.target.value as any)}
@@ -245,7 +245,7 @@ export default function EtimsSettingsPage() {
             {invoices.length === 0 ? (
               <p className="text-gray-500 text-sm">No records yet.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-500 text-left text-xs">
                     <th className="pb-2">No.</th><th className="pb-2">Type</th><th className="pb-2">Status</th>
@@ -263,7 +263,7 @@ export default function EtimsSettingsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </div>
         </>

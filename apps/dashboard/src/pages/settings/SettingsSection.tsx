@@ -16,8 +16,8 @@ export default function SettingsSection(
 ) {
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 pt-6 pb-3 border-b border-gray-800 flex-shrink-0">
-        <h1 className="text-white text-2xl font-bold">{title}</h1>
+      <div className="px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-800 flex-shrink-0">
+        <h1 className="text-white text-xl sm:text-2xl font-bold">{title}</h1>
         <nav className="flex gap-1 mt-3 flex-wrap">
           {tabs.map(t => (
             <NavLink key={t.to} to={t.to} end={t.end}
