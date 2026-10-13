@@ -19,16 +19,34 @@ import type { ZReport } from './posApi';
 import { zBackupNote } from './syncNotice';
 import { confirmationPrintLines } from '../../shared/shiftConfirm';
 import { kitchenVoidText } from '../../shared/kitchenLines';
+import { readPrinterSettings } from '../hooks/usePrinterSettings';   // A454
 
 /** Money crosses into shared/printing as integer cents, never as a float. */
 const toCents = (v: number | null | undefined) => Math.round((Number(v) || 0) * 100);
 
+/**
+ * A454: `cashierCopy` — the cashier's own slip at a blind close: what they declared per method, no sales, expected or
+ * variance (shared/printing renderCashierCopy). The report then carries no figures the cashier may not see anyway.
+ */
 export async function printShiftReport(
   report: ZReport,
+  opts: { cashierCopy?: { declared: Record<string, number> } } = {},
 ): Promise<{ ok: boolean; error?: string }> {
   const { shift, byMethod, totals, businessName, currency } = report;
+  // A454: the till's receipt printer is the Z-report's printer. With no thermal Till station bound here, the main
+  // process prints it to the Windows receipt printer chosen in Settings › Printers (else the Windows default) — the
+  // same printer the customer receipt uses — instead of refusing.
+  const ps = readPrinterSettings();
+  const cashierCopy = opts.cashierCopy ? {
+    declared: Object.entries(opts.cashierCopy.declared)
+      .sort(([a], [b]) => (a === 'cash' ? -1 : b === 'cash' ? 1 : a.localeCompare(b)))
+      .map(([method, v]) => ({ method, amount: toCents(v) })),
+  } : null;
 
   return window.swiftpos.escpos.printShiftReport({
+    cashierCopy,
+    fallbackPrinter: ps.receiptPrinterName ?? '',
+    fallbackPaperWidthMm: ps.paperWidth === 58 ? 58 : 80,
     businessName,
     currencyCode: currency ?? 'KES',
 

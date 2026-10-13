@@ -33,6 +33,7 @@ import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/d
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
 import { maySignedInConfirm } from '../../lib/shiftConfirm';
+import { mayRecordMoneyMovement } from '../../lib/posFeatures';   // A453
 import { onGrid } from '../../lib/productDays';
 import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreeze';   // A394
 import { useToast } from '../../hooks/useToast';
@@ -1192,6 +1193,8 @@ export default function CashierScreen() {
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
               >⏱ Clock</button>
+              {/* A453: with 'cashier_no_money_out' only a manager signed in records cash in / out and expenses. */}
+              {mayRecordMoneyMovement(posFeatures, maySignedInConfirm(session as any)) && (<>
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
                 onClick={() => setShiftModal('float')}
@@ -1203,6 +1206,7 @@ export default function CashierScreen() {
                 onClick={() => setShiftModal('expense')}
                 title="Record an expense"
               >🧾 Expense</button>
+              </>)}
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', marginRight: 4 }}
                 onClick={() => setShiftModal('close')}

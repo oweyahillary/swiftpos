@@ -104,7 +104,7 @@ async function runDailySummary(): Promise<void> {
 
 const normRole = (s: string) => (s || '').toLowerCase().replace(/ /g, '_');
 
-async function readReportSchedule(
+export async function readReportSchedule(
   businessId: string,
 ): Promise<{ enabled: boolean; send_time: string; recipients: string[] }> {
   const DEFAULT = { enabled: false, send_time: '21:00', recipients: [] as string[] };
@@ -140,7 +140,7 @@ async function writeLastSent(businessId: string, dateStr: string): Promise<void>
 }
 
 /** Owner + active branch managers (with an email) + the scheduler's added addresses, deduped. */
-async function gatherRecipients(
+export async function gatherRecipients(
   biz: { id: string; owner_id: string; name: string },
   schedule: { recipients?: string[] },
 ): Promise<string[]> {

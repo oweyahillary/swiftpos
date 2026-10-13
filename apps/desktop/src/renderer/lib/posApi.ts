@@ -206,6 +206,15 @@ export interface ShiftSummary {
 }
 
 /** A452: one shift as its till reports it to the branch server (main/branchClose.ts PeerShift). */
+/** A458: one payment method's line in the branch's day totals (main/branchClose.ts branchMethodTotals). */
+export interface BranchMethodLine { method: string; sales: number; expected: number; confirmed: number; variance: number }
+export interface BranchTotals {
+  methods: BranchMethodLine[];
+  total: Omit<BranchMethodLine, 'method'>;
+  orders: number;
+  shifts: { all: number; open: number; awaiting: number; confirmed: number; uncounted: number };
+}
+
 export interface BranchPeerShift {
   id: string; cashier_name: string; opened_at: string; closed_at: string | null;
   state: 'open' | 'awaiting' | 'confirmed' | 'closed';
@@ -474,6 +483,8 @@ declare global {
               ack: { ok: boolean; error?: string; summary?: any; already_closed?: boolean } | null;
             } | null;
           }>;
+          /** A458: the day's totals per payment method over every shift the tills reported. */
+          totals: BranchTotals;
         } | { error: string }>;
         closeTill: (deviceId: string, countedCash: number, notes?: string) => Promise<{
           ok: boolean; error?: string; instruction_id?: number;
@@ -482,7 +493,8 @@ declare global {
         confirmShift: (deviceId: string, shiftId: string, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<{
           ok: boolean; error?: string; instruction_id?: number; self?: boolean; summary?: Confirmation | null;
         }>;
-        closeBranch: (notes?: string) => Promise<{
+        /** A458: totalsConfirmed — the manager ticked the day's totals by payment method (required to close). */
+        closeBranch: (notes?: string, totalsConfirmed?: boolean) => Promise<{
           ok: boolean; error?: string; blockers?: string[];
           results?: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }>;
         }>;

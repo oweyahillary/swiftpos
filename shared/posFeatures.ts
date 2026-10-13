@@ -45,6 +45,13 @@ export const POS_FEATURES = [
     label: 'Sign-in codes (OTP)',
     description: 'The owner (dashboard) and managers (web POS) enter a 6-digit code after their password — emailed, or from an authenticator app. Turn on only when everyone it applies to has a real email address or an authenticator app.',
   },
+  // A453 (owner, 2026-10-12: "can we remove record expense and cash movement from cashier, is it a right they are given
+  // or we add it as a feature"). Until now every cashier could record them (a manager approving with a PIN, 0.6.37).
+  {
+    key: 'cashier_no_money_out',
+    label: 'Only managers record expenses and cash in / out',
+    description: 'Cashiers no longer record an expense, a pay-in or a pay-out on the till or the web POS — not even with a manager’s PIN. A manager signed in records them (the till’s shift screen and Manager › Expenses, the web POS). The delivery rider’s automatic pay-out still happens.',
+  },
 ] as const;
 
 /**
@@ -69,6 +76,17 @@ export function noPosFeatures(): PosFeatures {
     ...POS_FEATURE_KEYS.map((k) => [k, false]),
     ...STANDARD_POS_FEATURES.map((k) => [k, true]),
   ]) as PosFeatures;
+}
+
+/** A453: shown where a cashier would have recorded an expense or cash in / out. */
+export const MONEY_MOVEMENT_MANAGER_ONLY = 'Expenses and cash in / out are recorded by a manager — ask a manager to sign in.';
+
+/**
+ * A453: may the person at the POS record an expense, a pay-in or a pay-out? A manager signed in always may; anyone else
+ * only while 'cashier_no_money_out' is off (then, as before, a pay-out or an expense still needs a manager's PIN).
+ */
+export function mayRecordMoneyMovement(features: Pick<PosFeatures, 'cashier_no_money_out'>, signedInManager: boolean): boolean {
+  return signedInManager || !features.cashier_no_money_out;
 }
 
 /**

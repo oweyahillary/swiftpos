@@ -115,12 +115,49 @@ function timeAgo(iso: string) {
 }
 
 // ── Shared card components ─────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
+// A457 (owner, 2026-10-12: "can you make the desktop overview beautiful i know we can do better"): the headline cards
+// carry an icon and a colour each, the first (revenue) a full gradient; the figures are unchanged.
+type KpiTone = 'action' | 'sky' | 'violet' | 'amber' | 'rose';
+const KPI_TONE: Record<KpiTone, { ring: string; icon: string }> = {
+  action: { ring: 'from-action-500/20 to-transparent', icon: 'bg-action-500/15 text-action-300' },
+  sky:    { ring: 'from-sky-500/20 to-transparent',    icon: 'bg-sky-500/15 text-sky-300' },
+  violet: { ring: 'from-violet-500/20 to-transparent', icon: 'bg-violet-500/15 text-violet-300' },
+  amber:  { ring: 'from-amber-500/20 to-transparent',  icon: 'bg-amber-500/15 text-amber-300' },
+  rose:   { ring: 'from-rose-500/20 to-transparent',   icon: 'bg-rose-500/15 text-rose-300' },
+};
+const KPI_ICON = {
+  revenue: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  orders:  'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z',
+  avg:     'M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z',
+  tax:     'M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z',
+  fuel:    'M3 21h12M5 21V5a2 2 0 012-2h6a2 2 0 012 2v16M15 10h2a2 2 0 012 2v5a1 1 0 002 0V9l-3-3M8 7h4',
+} as const;
+function KpiCard({ label, value, sub, accent, icon, tone = 'sky' }: {
+  label: string; value: string; sub?: string; accent?: boolean; icon?: keyof typeof KPI_ICON; tone?: KpiTone;
+}) {
+  if (accent) {
+    return (
+      <div className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-action-500 to-action-700 shadow-lg shadow-action-900/30">
+        <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/10" />
+        <div className="relative flex items-start justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-white/80">{label}</p>
+          {icon && <span className="rounded-lg bg-white/15 p-1.5 text-white"><Icon d={KPI_ICON[icon]} size={16} /></span>}
+        </div>
+        <p className="relative text-2xl font-bold tabular-nums text-white mt-2">{value}</p>
+        {sub && <p className="relative text-xs mt-0.5 text-white/75">{sub}</p>}
+      </div>
+    );
+  }
+  const t = KPI_TONE[tone];
   return (
-    <div className={`rounded-xl p-4 border ${accent ? 'bg-blue-600 border-blue-500' : 'bg-gray-800 border-gray-700'}`}>
-      <p className={`text-xs font-medium uppercase tracking-wide mb-1 ${accent ? 'text-blue-100' : 'text-gray-400'}`}>{label}</p>
-      <p className={`text-xl font-bold tabular-nums ${accent ? 'text-white' : 'text-white'}`}>{value}</p>
-      {sub && <p className={`text-xs mt-0.5 ${accent ? 'text-blue-200' : 'text-gray-300'}`}>{sub}</p>}
+    <div className="relative overflow-hidden rounded-2xl p-4 bg-gray-800/80 border border-gray-700/70">
+      <div className={`absolute inset-x-0 top-0 h-16 bg-gradient-to-b ${t.ring}`} />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+        {icon && <span className={`rounded-lg p-1.5 ${t.icon}`}><Icon d={KPI_ICON[icon]} size={16} /></span>}
+      </div>
+      <p className="relative text-2xl font-bold tabular-nums text-white mt-2">{value}</p>
+      {sub && <p className="relative text-xs mt-0.5 text-gray-300">{sub}</p>}
     </div>
   );
 }
@@ -137,11 +174,11 @@ function MoneyStrip({ s, currency, hideVat = false }: { s: any; currency: string
   const extras = s.ctlLevied || (s.totalRefunded ?? 0) > 0 || (s.totalDiscount ?? 0) > 0 || (s.totalTips ?? 0) > 0;
   if (hideVat && !extras) return null;
   const item = (label: string, value: number) => (
-    <span className="whitespace-nowrap"><span className="text-gray-400">{label}</span>{' '}
+    <span className="whitespace-nowrap rounded-full bg-gray-900/70 border border-gray-700/70 px-3 py-1"><span className="text-gray-400">{label}</span>{' '}
       <span className="text-white font-medium tabular-nums">{fmt(value, currency)}</span></span>
   );
   return (
-    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm bg-gray-800/60 border border-gray-700 rounded-xl px-4 py-2.5">
+    <div className="flex flex-wrap gap-2 text-sm">
       {!hideVat && item('VAT', s.totalVat ?? 0)}
       {s.ctlLevied && item('CTL', s.totalCtl ?? 0)}
       {(s.totalRefunded ?? 0) > 0 && item('Refunds', -(s.totalRefunded ?? 0))}
@@ -153,9 +190,11 @@ function MoneyStrip({ s, currency, hideVat = false }: { s: any; currency: string
 
 function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-        <span className="text-sm font-semibold text-white">{title}</span>
+    <div className="bg-gray-800/80 border border-gray-700/70 rounded-2xl overflow-hidden shadow-sm">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/70">
+        <span className="flex items-center gap-2 text-sm font-semibold text-white">
+          <span className="w-1 h-4 rounded-full bg-action-500" />{title}
+        </span>
         {action}
       </div>
       <div className="p-4">{children}</div>
@@ -469,62 +508,23 @@ function RestaurantOverview({ currency, date = null }: { currency: string; date?
       <ScopeLine day={sales} />
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}   value={fmt(s?.totalRevenue ?? 0, currency)} accent />
-        <KpiCard label={`Orders ${when}`}    value={String(s?.totalOrders ?? 0)} />
-        <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} />
-        <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} />
+        <KpiCard label={`Revenue ${when}`}   value={fmt(s?.totalRevenue ?? 0, currency)} accent icon="revenue" />
+        <KpiCard label={`Orders ${when}`}    value={String(s?.totalOrders ?? 0)} icon="orders" tone="sky" />
+        <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} icon="avg" tone="violet" />
+        <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} icon="tax" tone="amber" />
       </div>
       <MoneyStrip s={s} currency={currency} hideVat />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Payment split */}
         <Card title={`Payment methods — ${when}`}>
-          {!sales?.paymentMethods || Object.keys(sales.paymentMethods).length === 0
-            ? <p className="text-gray-300 text-sm">{when === 'today' ? 'No payments yet today.' : 'No payments that day.'}</p>
-            : (
-              <div className="space-y-2">
-                {Object.entries(sales.paymentMethods as Record<string, number>)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([method, amount]) => {
-                    // A349: share of what was PAID (tips included, refunds out) — against revenue a tip pushed it past 100 %.
-                    const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
-                    const pct   = total > 0 ? Math.round((amount / total) * 100) : 0;
-                    return (
-                      <div key={method}>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
-                          <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
-                        </div>
-                        <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
+          <PaymentMix methods={sales?.paymentMethods} currency={currency}
+            empty={when === 'today' ? 'No payments yet today.' : 'No payments that day.'} />
         </Card>
 
         {/* Top items */}
         <Card title={`Top sellers — ${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}>
-          {topItems.length === 0
-            ? <p className="text-gray-300 text-sm">{when === 'today' ? 'No sales yet today.' : 'No sales that day.'}</p>
-            : (
-              <div className="divide-y divide-gray-700">
-                {topItems.map((p, i) => (
-                  <div key={p.name} className="flex items-center justify-between py-2 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-gray-400 text-xs w-4 tabular-nums">{i + 1}</span>
-                      <div className="min-w-0">
-                        <p className="text-white text-sm truncate">{p.name}</p>
-                        <p className="text-gray-300 text-xs">{Number(p.qty).toFixed(0)} sold</p>
-                      </div>
-                    </div>
-                    <span className="text-white text-sm font-medium tabular-nums flex-shrink-0">{fmt(Number(p.revenue), currency)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+          <TopSellers items={topItems} currency={currency} empty={when === 'today' ? 'No sales yet today.' : 'No sales that day.'} />
         </Card>
       </div>
 
@@ -588,10 +588,10 @@ function PetrolOverview({ currency, date = null }: { currency: string; date?: st
       <ScopeLine day={sales} />
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}     value={fmt((when === 'today' ? f?.totalRevenue : sales?.summary?.totalRevenue) ?? 0, currency)} accent />
-        <KpiCard label="Litres sold"        value={fmtL(f?.totalLitres ?? 0)} />
-        <KpiCard label="Transactions"       value={String(f?.totalTransactions ?? 0)} />
-        <KpiCard label="Avg per transaction"
+        <KpiCard label={`Revenue ${when}`}     value={fmt((when === 'today' ? f?.totalRevenue : sales?.summary?.totalRevenue) ?? 0, currency)} accent icon="revenue" />
+        <KpiCard label="Litres sold"        value={fmtL(f?.totalLitres ?? 0)} icon="fuel" tone="amber" />
+        <KpiCard label="Transactions"       value={String(f?.totalTransactions ?? 0)} icon="orders" tone="sky" />
+        <KpiCard label="Avg per transaction" icon="avg" tone="violet"
           value={f?.totalTransactions > 0
             ? fmt((f.totalRevenue / f.totalTransactions), currency)
             : '—'} />
@@ -673,26 +673,7 @@ function PetrolOverview({ currency, date = null }: { currency: string; date?: st
       {/* Payment split */}
       {sales?.paymentMethods && Object.keys(sales.paymentMethods).length > 0 && (
         <Card title={`Payment methods — ${when}`}>
-          <div className="space-y-2">
-            {Object.entries(sales.paymentMethods as Record<string, number>)
-              .sort(([, a], [, b]) => b - a)
-              .map(([method, amount]) => {
-                // A349: share of what was PAID (tips included, refunds out).
-                const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
-                const pct   = total > 0 ? Math.round((amount / total) * 100) : 0;
-                return (
-                  <div key={method}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
-                      <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
-                    </div>
-                    <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
+          <PaymentMix methods={sales.paymentMethods} currency={currency} empty="No payments." />
         </Card>
       )}
       <BranchShiftsAndTills day={sales} currency={currency} when={when} />
@@ -732,58 +713,21 @@ function RetailOverview({ currency, date = null }: { currency: string; date?: st
     <div className="space-y-4">
       <ScopeLine day={sales} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}  value={fmt(s?.totalRevenue ?? 0, currency)} accent />
-        <KpiCard label={`Orders ${when}`}   value={String(s?.totalOrders ?? 0)} />
-        <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} />
-        <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} />
+        <KpiCard label={`Revenue ${when}`}  value={fmt(s?.totalRevenue ?? 0, currency)} accent icon="revenue" />
+        <KpiCard label={`Orders ${when}`}   value={String(s?.totalOrders ?? 0)} icon="orders" tone="sky" />
+        <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} icon="avg" tone="violet" />
+        <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} icon="tax" tone="amber" />
       </div>
       <MoneyStrip s={s} currency={currency} hideVat />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title={`Payment methods — ${when}`}>
-          {!sales?.paymentMethods || Object.keys(sales.paymentMethods).length === 0
-            ? <p className="text-gray-300 text-sm">No payments yet.</p>
-            : (
-              <div className="space-y-2">
-                {Object.entries(sales.paymentMethods as Record<string, number>).sort(([, a], [, b]) => b - a).map(([method, amount]) => {
-                  // A349: share of what was PAID (tips included, refunds out).
-                  const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
-                  const pct = total > 0 ? Math.round((amount / total) * 100) : 0;
-                  return (
-                    <div key={method}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
-                        <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
-                      </div>
-                      <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <PaymentMix methods={sales?.paymentMethods} currency={currency}
+            empty={when === 'today' ? 'No payments yet today.' : 'No payments that day.'} />
         </Card>
 
         <Card title={`Top sellers — ${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}>
-          {topItems.length === 0
-            ? <p className="text-gray-300 text-sm">{when === 'today' ? 'No sales yet today.' : 'No sales that day.'}</p>
-            : (
-              <div className="divide-y divide-gray-700">
-                {topItems.map((p, i) => (
-                  <div key={p.name} className="flex items-center justify-between py-2 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-gray-400 text-xs w-4 tabular-nums">{i + 1}</span>
-                      <p className="text-white text-sm truncate">{p.name}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-white text-sm font-medium tabular-nums">{fmt(Number(p.revenue), currency)}</p>
-                      <p className="text-gray-300 text-xs">{Number(p.qty).toFixed(0)} units</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          <TopSellers items={topItems} currency={currency} empty={when === 'today' ? 'No sales yet today.' : 'No sales that day.'} />
         </Card>
       </div>
 
@@ -797,32 +741,121 @@ function RetailOverview({ currency, date = null }: { currency: string; date?: st
   );
 }
 
-// ── Hourly chart (shared) ─────────────────────────────────────────────────────
-function HourlyChart({ hourly, currency }: { hourly: { hour: number; revenue: number; orders: number }[]; currency: string }) {
-  const max = Math.max(...hourly.map(h => h.revenue), 1);
-  const peakHour = hourly.reduce((b, h) => h.revenue > b.revenue ? h : b, hourly[0]);
-
+// ── A457: payment mix (donut + bars) and top sellers, shared by the Overviews ──
+/** Share of what was PAID (tips included, refunds out — A349), as a ring and a bar per method. */
+function PaymentMix({ methods, currency, empty }: { methods: Record<string, number> | null | undefined; currency: string; empty: string }) {
+  const rows = Object.entries(methods ?? {}).map(([m, a]) => [m, Number(a) || 0] as const).sort(([, a], [, b]) => b - a);
+  const total = rows.reduce((a, [, v]) => a + v, 0);
+  if (rows.length === 0) return <p className="text-gray-300 text-sm">{empty}</p>;
+  const R = 15.915;   // circumference 100: dash lengths are percentages
+  let at = 0;
   return (
-    <>
-      <p className="text-xs text-gray-300 mb-3">
-        Peak: {peakHour?.hour}:00 · {fmt(peakHour?.revenue ?? 0, currency)} · {peakHour?.orders ?? 0} orders
-      </p>
-      <div className="flex items-end gap-0.5 h-20">
-        {Array.from({ length: 24 }, (_, h) => {
-          const row  = hourly.find(r => r.hour === h);
-          const pct  = row ? Math.max(4, Math.round((row.revenue / max) * 100)) : 4;
-          const isPeak = h === peakHour?.hour;
+    <div className="flex items-center gap-5" data-testid="overview-payment-mix">
+      <div className="relative w-28 h-28 flex-shrink-0">
+        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+          <circle cx="18" cy="18" r={R} fill="none" stroke="currentColor" strokeWidth="4" className="text-gray-700/60" />
+          {rows.map(([m, v]) => {
+            const pct = total > 0 ? (v / total) * 100 : 0;
+            const seg = <circle key={m} cx="18" cy="18" r={R} fill="none" strokeWidth="4" stroke={methodColour(m).dot}
+              strokeDasharray={`${Math.max(0, pct - 0.6)} ${100 - Math.max(0, pct - 0.6)}`} strokeDashoffset={-at} />;
+            at += pct;
+            return seg;
+          })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">Paid</span>
+          <span className="text-xs font-bold text-white tabular-nums">{Math.round(total).toLocaleString('en-KE')}</span>
+        </div>
+      </div>
+      <div className="flex-1 min-w-0 space-y-2">
+        {rows.map(([method, amount]) => {
+          const pct = total > 0 ? Math.round((amount / total) * 100) : 0;
           return (
-            <div key={h} className="flex-1 flex flex-col justify-end h-full"
-              title={`${h}:00  ${row ? fmt(row.revenue, currency) : '—'}`}>
-              <div style={{ height: `${pct}%` }}
-                className={`rounded-sm ${row?.revenue ? (isPeak ? 'bg-blue-500' : 'bg-blue-400/60') : 'bg-gray-700/30'}`} />
+            <div key={method}>
+              <div className="flex justify-between text-sm mb-1 gap-2">
+                <span className="text-gray-300 capitalize truncate"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
+                <span className="text-white font-medium tabular-nums whitespace-nowrap">{fmt(amount, currency)} <span className="text-gray-400 text-xs">{pct}%</span></span>
+              </div>
+              <div className="h-1.5 bg-gray-700/70 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
+              </div>
             </div>
           );
         })}
       </div>
-      <div className="flex justify-between mt-1">
-        {[0, 6, 12, 18, 23].map(h => <span key={h} className="text-[9px] text-gray-400">{h}:00</span>)}
+    </div>
+  );
+}
+
+/** The day's best sellers: rank, name, units, revenue, and a bar against the top one. */
+function TopSellers({ items, currency, empty }: { items: any[]; currency: string; empty: string }) {
+  if (items.length === 0) return <p className="text-gray-300 text-sm">{empty}</p>;
+  const top = Math.max(...items.map((p) => Number(p.revenue) || 0), 1);
+  const medal = ['bg-amber-400/20 text-amber-300', 'bg-gray-300/15 text-gray-200', 'bg-orange-400/15 text-orange-300'];
+  return (
+    <div className="space-y-2.5" data-testid="overview-top-sellers">
+      {items.map((p, i) => (
+        <div key={p.name} className="flex items-center gap-3">
+          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold tabular-nums flex-shrink-0 ${medal[i] ?? 'bg-gray-700/60 text-gray-400'}`}>{i + 1}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between gap-2">
+              <p className="text-white text-sm truncate">{p.name}</p>
+              <span className="text-white text-sm font-medium tabular-nums flex-shrink-0">{fmt(Number(p.revenue), currency)}</span>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="flex-1 h-1 bg-gray-700/70 rounded-full overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-action-600 to-action-400" style={{ width: `${Math.round(((Number(p.revenue) || 0) / top) * 100)}%` }} />
+              </div>
+              <span className="text-gray-400 text-xs tabular-nums w-16 text-right">{Number(p.qty).toFixed(0)} sold</span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Hourly chart (shared) ─────────────────────────────────────────────────────
+function HourlyChart({ hourly, currency }: { hourly: { hour: number; revenue: number; orders: number }[]; currency: string }) {
+  const max = Math.max(...hourly.map(h => h.revenue), 1);
+  const peakHour = hourly.reduce((b, h) => h.revenue > b.revenue ? h : b, hourly[0]);
+  const [hover, setHover] = useState<number | null>(null);
+  const shown = hover !== null ? hourly.find(r => r.hour === hover) ?? { hour: hover, revenue: 0, orders: 0 } : null;
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs">
+        <span className="rounded-full bg-action-500/15 text-action-300 px-2.5 py-1 font-medium">
+          Peak {peakHour?.hour}:00 · {fmt(peakHour?.revenue ?? 0, currency)} · {peakHour?.orders ?? 0} orders
+        </span>
+        <span className="text-gray-400 tabular-nums">
+          {shown ? `${shown.hour}:00 · ${fmt(shown.revenue, currency)} · ${shown.orders} orders` : 'Point at a bar for its hour'}
+        </span>
+      </div>
+      <div className="relative h-36">
+        {[0.25, 0.5, 0.75].map(g => (
+          <div key={g} className="absolute inset-x-0 border-t border-dashed border-gray-700/60" style={{ bottom: `${g * 100}%` }} />
+        ))}
+        <div className="relative flex items-end gap-1 h-full">
+          {Array.from({ length: 24 }, (_, h) => {
+            const row  = hourly.find(r => r.hour === h);
+            const pct  = row?.revenue ? Math.max(4, Math.round((row.revenue / max) * 100)) : 2;
+            const isPeak = h === peakHour?.hour;
+            return (
+              <div key={h} className="flex-1 flex flex-col justify-end h-full cursor-default"
+                onMouseEnter={() => setHover(h)} onMouseLeave={() => setHover(null)}
+                title={`${h}:00  ${row ? fmt(row.revenue, currency) : '—'}`}>
+                <div style={{ height: `${pct}%` }}
+                  className={`rounded-t-md transition-all ${row?.revenue
+                    ? (isPeak ? 'bg-gradient-to-t from-action-600 to-action-400' : hover === h ? 'bg-sky-300' : 'bg-gradient-to-t from-sky-700/70 to-sky-400/80')
+                    : 'bg-gray-700/30'}`} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex justify-between mt-1.5">
+        {[0, 3, 6, 9, 12, 15, 18, 21].map(h => <span key={h} className="text-[10px] text-gray-500 tabular-nums">{String(h).padStart(2, '0')}:00</span>)}
       </div>
     </>
   );

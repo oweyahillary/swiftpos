@@ -28,6 +28,7 @@ import {
 import { SqliteJobStore } from './spoolStore.sqlite';
 import { escposEnabled, setEscposEnabled } from '../escposBridge';
 import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@swiftpos/printing';
+import { printHtmlSilent } from '../printService';   // A454: the Z-report on the Windows receipt printer
 import { getBranding } from '../localDb';
 import { sampleOrder, sampleBusiness, SAMPLE_KITCHEN, SAMPLE_DISPATCH,
   kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
@@ -316,7 +317,10 @@ function registerIpc(): void {
         const st = stationConfigFor(a.stationId, a.paperWidthMm);
         return st?.kind === 'receipt';
       });
-      if (!assignment) return { ok: false, error: 'No receipt printer is set up on this terminal.' };
+      // A454 (owner, 2026-10-12: "make the till printer be the default printer to print the zreport, right now it's not
+      // printing"): a till whose customer receipts go to a Windows printer (Settings › Printers, else the Windows
+      // default) has no thermal Till station bound — the Z-report goes to that same printer instead of refusing.
+      if (!assignment) return await printShiftReportViaWindows(data);
 
       // 0.6.25: the receipt logo heads the Z-report too (same raster, same switch as the receipt).
       const brand = getBranding();
@@ -339,6 +343,22 @@ function registerIpc(): void {
       return { ok: false, error: e?.message ?? String(err), internal: !(err instanceof PrinterError) };
     }
   });
+
+  /** A454: the same layout, as monospace text, on the receipt printer Windows knows (the customer receipt's printer). */
+  async function printShiftReportViaWindows(data: any): Promise<{ ok: boolean; error?: string; via?: string }> {
+    const width: 58 | 80 = data?.fallbackPaperWidthMm === 58 ? 58 : 80;
+    const doc = renderShiftReport({
+      ...data,
+      openedAt:  new Date(data.openedAt),
+      closedAt:  data.closedAt ? new Date(data.closedAt) : null,
+      printedAt: new Date(),
+    }, width);
+    const html = shiftReportHtml(toPreview(doc), width);
+    const device = typeof data?.fallbackPrinter === 'string' ? data.fallbackPrinter : '';
+    const r = await printHtmlSilent({ html, deviceName: device, paperWidthMm: width, copies: 1 });
+    if (r.ok) return { ok: true, via: device || 'the Windows default printer' };
+    return { ok: false, error: `The Z-report did not print on ${device || 'the Windows default printer'}: ${r.error ?? 'no answer'}. Check Settings › Printers.` };
+  }
 
   handle('escpos:canPrint', (_e, kind: 'kitchen' | 'dispatch' | 'receipt') => {
     try {
@@ -414,4 +434,14 @@ function registerIpc(): void {
       };
     }
   });
+}
+
+/** A454: monospace text (the ESC/POS layout's own preview) as a page for a Windows receipt printer. */
+export function shiftReportHtml(text: string, paperWidthMm: 58 | 80): string {
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const fontPx = paperWidthMm === 58 ? 10 : 12;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+@page { margin: 0; } body { margin: 0; padding: 2mm; }
+pre { font-family: 'Courier New', Consolas, monospace; font-size: ${fontPx}px; line-height: 1.25; margin: 0; white-space: pre; }
+</style></head><body><pre>${esc}</pre></body></html>`;
 }

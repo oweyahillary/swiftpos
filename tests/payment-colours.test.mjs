@@ -110,9 +110,11 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.PAY_COLOURS_TS) {
   ok('the method dot beside the name: till POS orders, manager Orders / breakdowns / shift, shift panel; web order history and reports', () => {
     assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /<MethodDot method=\{method\} \/>\{method\.replace/);
     const mp = read('apps/desktop/src/renderer/pages/ManagerPage.tsx');
-    assert.equal((mp.match(/<MethodDot method=\{method\} \/>/g) || []).length, 4);
+    // A457: the three Overviews share one PaymentMix (ring + bars) — one dot beside the name, the bar and the ring coloured.
+    assert.equal((mp.match(/<MethodDot method=\{method\} \/>/g) || []).length, 2);
     assert.match(mp, /<MethodDot method=\{m\.method\} \/>/);
-    assert.equal((mp.match(/background: methodColour\(method\)\.dot/g) || []).length, 3);
+    assert.equal((mp.match(/background: methodColour\(method\)\.dot/g) || []).length, 1);
+    assert.match(mp, /stroke=\{methodColour\(m\)\.dot\}/);
     assert.match(read('apps/desktop/src/renderer/pages/ShiftPanel.tsx'), /<Line key=\{m\.method\} dot=\{m\.method\}/);
     assert.equal((read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx').match(/<MethodDot method=/g) || []).length, 2);
     assert.match(read('apps/dashboard/src/pages/pos/POSReportsTab.tsx'), /background: methodColour\(method\)\.dot/);

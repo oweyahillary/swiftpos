@@ -12,6 +12,8 @@ interface Schedule {
   recipients: string[];    // email addresses
   include_low_stock: boolean;
   include_top_products: boolean;
+  /** A455: last month's pack (one Excel per branch) by email on the 1st — to the owner, branch managers and the recipients. */
+  monthly_pack?: boolean;
 }
 
 export default function ReportSchedulerTab() {
@@ -95,6 +97,18 @@ export default function ReportSchedulerTab() {
         <button onClick={() => setSchedule(s => ({ ...s, enabled: !s.enabled }))}
           className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${schedule.enabled ? 'bg-swift-strong' : 'bg-gray-700'}`}>
           <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${schedule.enabled ? 'left-5' : 'left-0.5'}`} />
+        </button>
+      </div>
+
+      {/* A455: the monthly pack */}
+      <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3" data-testid="monthly-pack-toggle">
+        <div>
+          <p className="text-white text-sm font-medium">Email the monthly pack on the 1st</p>
+          <p className="text-gray-500 text-xs">Last month, one Excel file per branch (daily sales, expenses, cash and M-Pesa books) — to the owner, branch managers and the recipients below. Also in Reports › Monthly pack.</p>
+        </div>
+        <button onClick={() => setSchedule(s => ({ ...s, monthly_pack: !s.monthly_pack }))}
+          className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${schedule.monthly_pack ? 'bg-swift-strong' : 'bg-gray-700'}`}>
+          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${schedule.monthly_pack ? 'left-5' : 'left-0.5'}`} />
         </button>
       </div>
 
