@@ -356,6 +356,10 @@ export default function CashierScreen() {
   const [roomChargeError,  setRoomChargeError]    = useState('');
   const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [shiftModal, setShiftModal] = useState<ShiftModalMode | null>(null);
+  // A462 (owner, 2026-10-13: "when an owner force closes a till it cascades to all tills, both desktop and web"): the web POS
+  // learns within 20 s that its drawer was closed elsewhere — force-closed, or closed with a count by a manager or the owner —
+  // stops selling into it and asks for a new shift. It used to keep the shift it loaded until the page was reloaded.
+  const [closedElsewhere, setClosedElsewhere] = useState<string | null>(null);
   const [showPrinterSettings, setShowPrinterSettings] = useState(false);
   const { settings: printerSettings, save: savePrinterSettings, reset: resetPrinterSettings } = usePrinterSettings();
   // branchPrinters comes from usePOSData hook above
@@ -466,6 +470,27 @@ export default function CashierScreen() {
       .catch(() => setShiftModal('open'));
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
+
+  useEffect(() => {
+    const id = currentShift?.id;
+    if (!id) return;
+    let live = true;
+    const check = async () => {
+      try {
+        const rows = await posApi.get<Array<{ id: string; status: string; close_method?: string | null; closed_by?: string | null; closed_by_name?: string | null }>>(
+          `/api/shifts/state?ids=${encodeURIComponent(id)}`);
+        const st = Array.isArray(rows) ? rows.find((r) => r.id === id) : null;
+        if (!live || !st || st.status === 'open') return;
+        if (st.closed_by && st.closed_by === session?.staffId) return;   // closed here, by this cashier (Close shift)
+        setCurrentShift(null);
+        setClosedElsewhere(`This shift was ${st.close_method === 'forced' || st.status === 'force_closed' ? 'force-closed' : 'closed'}`
+          + `${st.closed_by_name ? ` by ${st.closed_by_name}` : ' elsewhere'}. Open a new shift to keep selling.`);
+        setShiftModal('open');
+      } catch { /* checked again in 20 s */ }
+    };
+    const t = setInterval(() => { void check(); }, 20_000);
+    return () => { live = false; clearInterval(t); };
+  }, [currentShift?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── A445: offers apply by themselves (shared/offers.ts, the till's and the cloud's rules) ──────────────────────
   // The old promotions here were shown on the cart but never charged or stored. Offers come with the menu (pos/init)
@@ -2614,6 +2639,13 @@ Signature: _______________`;
 
       {showZReport && <ZReportModal onClose={() => setShowZReport(false)} />}
 
+      {closedElsewhere && (
+        <div data-testid="shift-closed-elsewhere" role="alert"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 max-w-[92vw] px-4 py-3 rounded-lg shadow-lg text-sm border bg-red-950 border-red-700 text-red-100">
+          <span>{closedElsewhere}</span>
+          <button onClick={() => setClosedElsewhere(null)} className="shrink-0 px-2 py-1 rounded font-medium bg-red-700 hover:bg-red-600 text-white">OK</button>
+        </div>
+      )}
       {shiftModal && (
         <ShiftModal
           mode={shiftModal}

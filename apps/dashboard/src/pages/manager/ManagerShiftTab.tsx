@@ -14,6 +14,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { printShiftReport } from '../../lib/printShiftReport';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import RemoteDayClose from './RemoteDayClose';
+import ShiftConfirmations from '../../components/ShiftConfirmations';   // A462: the manager confirms on the web too
+import CountedCloseModal from '../../components/CountedCloseModal';     // A462: close someone else's drawer WITH a count
 
 interface OpenShift {
   id: string;
@@ -27,6 +29,10 @@ interface OpenShift {
 export default function ManagerShiftTab({ currency }: { currency: string }) {
   const { posApi, hasPermission } = usePOSAuth();
   const canForceClose = hasPermission('shifts.force_close');
+  // A462: a manager closes another person's drawer counted (the cloud's own rule: callerMayConfirm) and confirms shifts.
+  const canCountClose = hasPermission('orders.void') || hasPermission('settings.manage');
+  const [counting, setCounting] = useState<OpenShift | null>(null);
+  const [confirmKey, setConfirmKey] = useState(0);
 
   const [shifts, setShifts]   = useState<OpenShift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +77,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
     <div className="p-6 space-y-5">
       <div>
         <h2 className="text-white text-lg font-semibold">Shifts</h2>
-        <p className="text-gray-500 text-sm">Open drawers at your branch. Cashiers close their own drawer (counted) on the till; use force-close only to release a drawer stranded on a dead till.</p>
+        <p className="text-gray-500 text-sm">Open drawers at your branch. A cashier closes their own drawer; a manager can close one <strong className="text-gray-300">with a count</strong> (each method, beside what it expects). Force-close (uncounted) only releases a drawer nobody can count.</p>
       </div>
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
@@ -100,6 +106,12 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
                     className="text-xs font-medium px-3 py-1.5 rounded-lg border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors disabled:opacity-50">
                     {reportId === s.id ? 'Printing…' : 'Shift report'}
                   </button>
+                  {canCountClose && (
+                    <button data-testid={`count-close-${s.id}`} onClick={() => setCounting(s)}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors">
+                      Close with count
+                    </button>
+                  )}
                   {canForceClose && (
                     <button onClick={() => { setTarget(s); setReason(''); }}
                       className="text-xs font-medium px-3 py-1.5 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 transition-colors">
@@ -115,6 +127,18 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
             ))}
           </div>
         )}
+
+      {/* A462: the shifts waiting for a manager's check — confirmed here, with what each method expects. */}
+      {canCountClose && (
+        <div className="pt-4 border-t border-gray-800">
+          <ShiftConfirmations key={confirmKey} client={posApi as any} currency={currency} />
+        </div>
+      )}
+
+      {counting && (
+        <CountedCloseModal client={posApi as any} shift={counting} currency={currency}
+          onCancel={() => setCounting(null)} onDone={() => { setCounting(null); setConfirmKey((k) => k + 1); void load(); }} />
+      )}
 
       {/* A275 — remote day close for managers who aren't in the store. */}
       <div className="pt-4 border-t border-gray-800">

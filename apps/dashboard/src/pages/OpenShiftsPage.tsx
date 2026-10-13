@@ -39,6 +39,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import Toast from '../components/Toast';
 import ShiftConfirmations from '../components/ShiftConfirmations';
+import CountedCloseModal from '../components/CountedCloseModal';   // A462
 import { useToast } from '../hooks/useToast';
 
 interface OpenShift {
@@ -71,6 +72,8 @@ export default function OpenShiftsPage() {
   const [target, setTarget] = useState<OpenShift | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [counting, setCounting] = useState<OpenShift | null>(null);   // A462: close with a count
+  const [confirmKey, setConfirmKey] = useState(0);
   const { toast, showToast } = useToast();
 
   const load = useCallback(async () => {
@@ -167,7 +170,11 @@ export default function OpenShiftsPage() {
                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-white tabular-nums">
                       {money(s.expected_cash_live)}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button data-testid={`count-close-${s.id}`} onClick={() => setCounting(s)}
+                        className="mr-2 text-xs px-3 py-1.5 rounded-md border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors">
+                        Close with count
+                      </button>
                       <button
                         onClick={() => { setTarget(s); setReason(''); }}
                         className="text-xs px-3 py-1.5 rounded-md border border-red-300 text-red-700
@@ -188,11 +195,18 @@ export default function OpenShiftsPage() {
       <p className="text-xs text-gray-500 dark:text-gray-500">
         Force-closing records the drawer as <strong>uncounted</strong> — no closing
         float and no variance, because nobody counted it. Only use it when the
-        terminal cannot be reached. If the till still works, count the drawer there.
+        terminal cannot be reached. If the till still works, count the drawer there — or use
+        <strong> Close with count</strong>: you count each method here and it closes counted, under your name.
       </p>
 
-      {/* A365: shifts awaiting a manager's check (confirm here, blind), and who confirmed what. */}
-      <ShiftConfirmations />
+      {/* A365: shifts awaiting a manager's check, and who confirmed what. A462: what each method expects is shown. */}
+      <ShiftConfirmations key={confirmKey} />
+
+      {counting && (
+        <CountedCloseModal client={api as any} shift={counting} currency="KES"
+          onCancel={() => setCounting(null)}
+          onDone={() => { setCounting(null); setConfirmKey((k) => k + 1); showToast('Closed with your count — confirm it below.', 'success'); void load(); }} />
+      )}
 
       {/* Confirmation. Shows the figure being written off, and will not proceed
           without a reason: an unexplained hole in the cash record is worse than

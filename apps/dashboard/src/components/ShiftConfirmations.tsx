@@ -3,8 +3,10 @@
  *
  * Owner, 2026-09-29: "the managers should confirm shift before closing the day … They can confirm anytime but
  * recommended the moment the cashier closes … They should recount incase the cashier submitted less than the amount …
- * on all payment method". A manager signed in here confirms as themselves (no PIN); the recount is BLIND — the
- * cashier's and the expected figures are shown only after it is saved.
+ * on all payment method". A manager signed in here confirms as themselves (no PIN).
+ * A462 (owner, 2026-10-13: "let the manager see what the system holds … the variance before confirming" — A452 on the
+ * till; now the web too): the expected figure per method and the difference as typed. Used on the owner's Open drawers
+ * page and (A462) the manager's Shifts tab — `client` is whichever sign-in the page holds.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
@@ -39,7 +41,11 @@ export function mismatches(s: Pick<ClosedShift, 'declared_methods' | 'confirmed_
   return order([...codes]).filter((m) => Math.round((s.declared_methods![m] ?? 0) * 100) !== Math.round((s.confirmed_methods![m] ?? 0) * 100));
 }
 
-export default function ShiftConfirmations() {
+interface Client { get: <T>(p: string) => Promise<T>; post: <T>(p: string, body?: unknown) => Promise<T> }
+
+export default function ShiftConfirmations({ client = api as unknown as Client, currency = 'KES' }: { client?: Client; currency?: string } = {}) {
+  const fmt = (v: number | null | undefined) =>
+    `${currency} ${Number(v ?? 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const [shifts, setShifts] = useState<ClosedShift[]>([]);
   const [error, setError] = useState('');
   const [target, setTarget] = useState<ClosedShift | null>(null);
@@ -47,23 +53,24 @@ export default function ShiftConfirmations() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   // 0.6.27 ('confirm_shows_cashier_figures'): the cashier's figures beside the boxes, and a reason where they differ.
-  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null }>({ showCashier: false, declared: null });
+  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>({ showCashier: false, declared: null });
   const [reasons, setReasons] = useState<Record<string, string>>({});
   useEffect(() => {
     setView({ showCashier: false, declared: null }); setReasons({});
     if (!target) return;
-    api.get<{ showCashier: boolean; declared: Record<string, number> | null }>(`/api/shifts/${target.id}/confirm-view`)
+    client.get<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>(`/api/shifts/${target.id}/confirm-view`)
       .then(setView).catch(() => {});
-  }, [target]);
+  }, [target, client]);
+  const showExpected = !!view.expected;   // A462: the cloud sends them to a manager / the owner only
 
   const load = useCallback(async () => {
     setError('');
     try {
-      setShifts(await api.get<ClosedShift[]>('/api/shifts?status=closed&limit=100'));
+      setShifts(await client.get<ClosedShift[]>('/api/shifts?status=closed&limit=100'));
     } catch (e: any) {
       setError(e?.message ?? 'Could not load closed shifts');
     }
-  }, []);
+  }, [client]);
   useEffect(() => { void load(); }, [load]);
 
   const awaiting = shifts.filter((s) => s.awaiting_confirmation);
@@ -80,7 +87,7 @@ export default function ShiftConfirmations() {
     }
     setBusy(true); setMsg('');
     try {
-      await api.post(`/api/shifts/${target.id}/confirm`, { confirmed_methods: r.map, ...(view.showCashier ? { confirm_reasons: reasons } : {}) });
+      await client.post(`/api/shifts/${target.id}/confirm`, { confirmed_methods: r.map, ...(view.showCashier ? { confirm_reasons: reasons } : {}) });
       setTarget(null); setInputs({});
       await load();
     } catch (e: any) {
@@ -142,7 +149,9 @@ export default function ShiftConfirmations() {
           <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-lg border border-gray-200 dark:border-gray-700 p-5 space-y-3">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">Confirm {target.cashier_name}'s shift</h3>
             <p className="text-xs text-gray-500">
-              {view.showCashier
+              {showExpected
+                ? 'Count every payment method — the drawer, the M-Pesa statement, the card machine\'s total. What the system expects is beside each; the difference shows as you type.'
+                : view.showCashier
                 ? 'Count every payment method yourself and enter what you find beside the cashier\'s figure. Where they differ, say why.'
                 : 'Count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total — and enter what you find. The cashier\'s figures are shown after you save.'}
               {' '}{confirmationLabel({ status: 'awaiting' })}.
@@ -157,8 +166,10 @@ export default function ShiftConfirmations() {
               <thead>
                 <tr className="text-xs text-gray-500 text-left">
                   <th className="font-normal pb-1">Method</th>
+                  {showExpected && <th className="font-normal pb-1 text-right pr-2">Expected</th>}
                   {view.showCashier && <th className="font-normal pb-1 text-right pr-2">Cashier</th>}
                   <th className="font-normal pb-1">Manager</th>
+                  {showExpected && <th className="font-normal pb-1 text-right">Difference</th>}
                 </tr>
               </thead>
               <tbody>
@@ -166,9 +177,14 @@ export default function ShiftConfirmations() {
                   const cashierSaid = view.showCashier && view.declared ? (view.declared[m] ?? 0) : null;
                   const typed = inputs[m] ?? '';
                   const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+                  const exp = showExpected ? Number(view.expected?.[m] ?? 0) : null;
+                  const v = exp !== null && typed.trim() !== '' && Number.isFinite(Number(typed)) ? Math.round((Number(typed) - exp) * 100) / 100 : null;
                   return [
                     <tr key={m}>
                       <td className="py-1 text-gray-800 dark:text-gray-200 whitespace-nowrap">{methodName(m)}</td>
+                      {showExpected && (
+                        <td className="py-1 pr-2 text-right text-gray-700 dark:text-gray-200 tabular-nums" data-testid={`expected-${m}`}>{fmt(exp ?? 0)}</td>
+                      )}
                       {view.showCashier && (
                         <td className="py-1 pr-2 text-right text-gray-600 dark:text-gray-300 tabular-nums" data-testid={`cashier-${m}`}>{money(cashierSaid ?? 0)}</td>
                       )}
@@ -177,10 +193,15 @@ export default function ShiftConfirmations() {
                           onChange={(e) => setInputs({ ...inputs, [m]: e.target.value })} onWheel={(e) => (e.target as HTMLInputElement).blur()}
                           className={`w-full rounded-lg border ${differs ? 'border-amber-400' : 'border-gray-300 dark:border-gray-700'} bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white`} />
                       </td>
+                      {showExpected && (
+                        <td data-testid={`variance-${m}`} className={`py-1 pl-2 text-right tabular-nums whitespace-nowrap ${v === null ? 'text-gray-400' : v === 0 ? 'text-gray-600 dark:text-gray-300' : v > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-red-600 dark:text-red-400'}`}>
+                          {v === null ? '—' : v === 0 ? 'balanced' : `${v > 0 ? 'over' : 'short'} ${fmt(Math.abs(v))}`}
+                        </td>
+                      )}
                     </tr>,
                     differs && (
                       <tr key={`${m}-reason`}>
-                        <td colSpan={view.showCashier ? 3 : 2} className="pb-2">
+                        <td colSpan={2 + (view.showCashier ? 1 : 0) + (showExpected ? 2 : 0)} className="pb-2">
                           <input type="text" maxLength={REASON_MAX} value={reasons[m] ?? ''} data-testid={`reason-${m}`}
                             placeholder={`Reason — ${methodName(m)} is ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's`}
                             onChange={(e) => setReasons({ ...reasons, [m]: e.target.value })}
