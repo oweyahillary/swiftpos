@@ -18,6 +18,8 @@
 import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { methodLabel } from '../../shared/paymentCatalogue';   // A452
+import { useOnlineLicence } from '../lib/onlineLicence';   // A460
+import TransfersTab from '../components/TransfersTab';   // A197
 import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';   // A441
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
@@ -1789,6 +1791,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     MANAGER_ROLES.includes(String((staff as any)?.role ?? '').toLowerCase())
     || has('settings.manage');
 
+  // A460: the online licence — offers, variants / combos, wastage and transfers are shown only with it.
+  const online = useOnlineLicence();
   // Stock only for a business with the web POS (A346), and only once something actually tracks stock.
   const [showStock, setShowStock] = useState(false);
   useEffect(() => {
@@ -1821,6 +1825,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canPrinting: has('stations.manage') || canManageReceipt,
     showStock,
     canWaste: has('inventory.waste') || has('inventory.adjust') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A414
+    online,   // A460
+    canTransfer: has('inventory.transfer') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A197
   });
   const GROUP_ICON: Record<GroupKey, string> = {
     overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,
@@ -1855,8 +1861,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'prices':  return <PricesTab   currency={currency} />;
       case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => openTab('import')} />;
       // A445: the owner sets offers for every branch or this one; anyone else for this branch (the cloud enforces it).
-      case 'offers':  return <OffersScreen currency={currency} isOwner={String(staff?.role ?? '').toLowerCase() === 'owner' || perms['*'] === true} />;
-      case 'combos':  return <CombosTab  currency={currency} />;
+      case 'offers':  return online ? <OffersScreen currency={currency} isOwner={String(staff?.role ?? '').toLowerCase() === 'owner' || perms['*'] === true} /> : <RetailOverview currency={currency} />;   // A460
+      case 'combos':  return online ? <CombosTab  currency={currency} /> : <RetailOverview currency={currency} />;   // A460
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
       case 'settings': return <SettingsPanel canEdit={canManageSettings || canManageProducts}
@@ -1871,7 +1877,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
         reloadStations={reloadStations}
       />;
       case 'stock':   return showStock ? <StockTab currency={currency} /> : <RetailOverview currency={currency} />;
-      case 'wastage': return <TillWastage />;   // A414
+      case 'wastage': return online ? <TillWastage /> : <RetailOverview currency={currency} />;   // A414; A460
+      case 'transfers': return online ? <TransfersTab /> : <RetailOverview currency={currency} />;   // A197
       default:        return <RetailOverview currency={currency} />;
     }
   }

@@ -77,7 +77,8 @@ export default function TechPage({ onExit }: Props) {
     truncated: boolean; maskedColumns: string[];
   }>(null);
   const [maint, setMaint] = useState<null | { last_backup_at: string | null; last_backup_status: string | null;
-    backup_dir: string; last_prune_at: string | null; retention_days: number }>(null);
+    backup_dir: string; last_prune_at: string | null; retention_days: number;
+    same_disk?: boolean; custom_dir?: boolean; keep?: number }>(null);
   const [backupMsg, setBackupMsg] = useState('');
   useEffect(() => { posApi.tech.maintenance().then(setMaint).catch(() => {}); }, []);
   const [nodeAddr, setNodeAddr] = useState('');
@@ -96,6 +97,19 @@ export default function TechPage({ onExit }: Props) {
       const r = await posApi.tech.setNodeUrl(nodeAddr.trim());
       setRoleMsg(r.ok ? `Saved — this machine is now a ${r.role} pointing at ${nodeAddr.trim()}.` : (r.error ?? 'failed'));
       load();
+    } finally { setBusy(''); }
+  };
+
+  // A380: choose where the backups go (a USB drive, a second disk) — a backup is written there at once to prove it.
+  const changeBackupDir = async (useDefault: boolean) => {
+    setBackupMsg('');
+    const dir = useDefault ? null : await posApi.tech.chooseBackupDir();
+    if (!useDefault && !dir) return;   // cancelled
+    setBusy('backupdir');
+    try {
+      const r = await posApi.tech.setBackupDir(dir);
+      setBackupMsg(r.ok ? `Backups now go to ${r.dir} — one was written there just now.` : (r.error ?? 'failed'));
+      posApi.tech.maintenance().then(setMaint).catch(() => {});
     } finally { setBusy(''); }
   };
 
@@ -345,7 +359,14 @@ export default function TechPage({ onExit }: Props) {
               <p>Last backup: <span className={/FAILED/.test(maint.last_backup_status ?? '') ? 'text-red-400' : 'text-gray-200'}>
                 {maint.last_backup_at ? new Date(maint.last_backup_at).toLocaleString() : 'never'}</span>
                 {maint.last_backup_status && <span> — {maint.last_backup_status}</span>}</p>
-              <p>Backup folder: <span className="text-gray-300 font-mono">{maint.backup_dir}</span></p>
+              <p>Backup folder: <span className="text-gray-300 font-mono" data-testid="backup-dir">{maint.backup_dir}</span>
+                {maint.keep ? <span> · keeping the newest {maint.keep}</span> : null}</p>
+              {maint.same_disk && (
+                <p className="text-amber-300" data-testid="backup-same-disk">
+                  These backups are on the same disk as the database — a failed disk or a stolen PC loses both. Choose a USB
+                  drive or a second disk below.
+                </p>
+              )}
               <p>Replica retention: <span className="text-gray-300">{maint.retention_days} days</span>
                 {maint.last_prune_at && <span> · last prune {new Date(maint.last_prune_at).toLocaleDateString()}</span>}</p>
             </div>
@@ -355,6 +376,18 @@ export default function TechPage({ onExit }: Props) {
             className="mt-3 w-full bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">
             {busy === 'backup' ? 'Backing up…' : 'Back up now'}
           </button>
+          <div className="mt-2 flex gap-2">
+            <button data-testid="choose-backup-dir" onClick={() => void changeBackupDir(false)} disabled={busy === 'backupdir'}
+              className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">
+              {busy === 'backupdir' ? 'Writing a backup there…' : 'Choose backup folder…'}
+            </button>
+            {maint?.custom_dir && (
+              <button onClick={() => void changeBackupDir(true)} disabled={busy === 'backupdir'}
+                className="bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-300 rounded-lg py-2 px-3 text-sm">
+                Use the default
+              </button>
+            )}
+          </div>
           {backupMsg && <p className={`text-xs mt-2 ${/FAILED|failed/.test(backupMsg) ? 'text-red-400' : 'text-green-400'}`}>{backupMsg}</p>}
         </section>
 

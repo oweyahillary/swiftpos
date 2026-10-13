@@ -202,9 +202,10 @@ export function openKitchenOrders(shiftId?: string | null): OpenKitchenOrder[] {
   return [...by.values()];
 }
 
-/** End Shift with 'kitchen_void_approval': refused while this shift has a sent order unpaid. null = may close. */
+/** End Shift: refused while this shift has a sent order unpaid — unless the client has 'pay_later_tabs' (A461: eat now,
+ *  pay later; the order stays on hold until it is charged). null = may close. */
 export function kitchenCloseBlock(shiftId: string): string | null {
-  if (!getPosFeatures().kitchen_void_approval) return null;
+  if (getPosFeatures().pay_later_tabs) return null;
   const open = openKitchenOrders(shiftId);
   if (!open.length) return null;
   const list = open.slice(0, 4).map((o) => `#${o.order_number}`).join(', ') + (open.length > 4 ? ` and ${open.length - 4} more` : '');

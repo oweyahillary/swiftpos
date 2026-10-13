@@ -20,7 +20,7 @@
 
 export type TabKey =
   | 'overview' | 'orders' | 'items' | 'shift' | 'zreport' | 'expenses' | 'dayclose' | 'branchclose'
-  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage';
+  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers';
 
 export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 'settings' | 'stock';
 
@@ -40,6 +40,10 @@ export interface NavAccess {
   showStock: boolean;
   /** A414: inventory.waste or inventory.adjust — record wastage on the till. */
   canWaste?: boolean;
+  /** A460: the client has the online licence — offers, wastage and transfers are shown only then. */
+  online?: boolean;
+  /** A197: inventory.transfer — send and receive stock between branches (online licence). */
+  canTransfer?: boolean;
 }
 
 /** Pages opened from inside a group's page, not tabs of their own. */
@@ -59,7 +63,9 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
     { key: 'close', label: 'Close', tabs: a.isManagerRole
       ? [{ key: 'dayclose', label: 'Close Day' }, { key: 'branchclose', label: 'Close Branch' }] : [] },
     // A445: Offers beside the menu, for the same people (products.manage).
-    { key: 'menu', label: 'Menu', tabs: a.canManageProducts ? [{ key: 'menu', label: 'Menu' }, { key: 'offers', label: 'Offers' }] : [] },
+    // A460: Offers only with the online licence (a premium feature — never shown without it).
+    { key: 'menu', label: 'Menu', tabs: a.canManageProducts
+      ? [{ key: 'menu', label: 'Menu' }, ...(a.online ? [{ key: 'offers' as TabKey, label: 'Offers' }] : [])] : [] },
     { key: 'settings', label: 'Settings', tabs: [
       ...((a.canManageSettings || a.canManageProducts) ? [{ key: 'settings' as TabKey, label: 'General' }] : []),
       ...(a.canPrinting ? [{ key: 'printers' as TabKey, label: 'Printing' }] : []),
@@ -67,7 +73,8 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
     ] },
     { key: 'stock', label: 'Stock', tabs: [
       ...(a.showStock ? [{ key: 'stock' as TabKey, label: 'Stock' }] : []),
-      ...(a.canWaste ? [{ key: 'wastage' as TabKey, label: 'Wastage' }] : []),   // A414
+      ...(a.online && a.canWaste ? [{ key: 'wastage' as TabKey, label: 'Wastage' }] : []),   // A414; A460: online licence
+      ...(a.online && a.canTransfer ? [{ key: 'transfers' as TabKey, label: 'Transfers' }] : []),   // A197 (A460: online licence)
     ] },
   ];
   return groups.filter((g) => g.tabs.length > 0);

@@ -348,6 +348,55 @@ async function resolveOwnerUserRow(
   return (match as any) ?? null;
 }
 
+/**
+ * A451 (owner, 2026-10-13: "A451 is important and needed"): the owner ALWAYS signs in as a users row of their business.
+ * An owner with none signed in with the auth.users id — and every write naming the person (a void, a refund, a sale's
+ * cashier) was refused by the database (the 500 on the owner's void of order 8a523b99…). In order:
+ *   1. their row by email (resolveOwnerUserRow);
+ *   2. the row businesses.owner_id names, when it is a users row of this business;
+ *   3. else a row is created for them, as a new client's owner is (admin.ts / onboarding.ts): the business's owner
+ *      (else admin) role, active, linked to the main branch. Logged, once.
+ * Returns null only when none could be found or made (the caller keeps today's logged fallback).
+ */
+export async function ensureOwnerUserRow(
+  businessId: string,
+  email: string | null | undefined,
+): Promise<{ id: string; must_change_password?: boolean; created?: boolean } | null> {
+  const byEmail = await resolveOwnerUserRow(businessId, email);
+  if (byEmail) return byEmail;
+
+  const { data: biz } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
+  const ownerId = (biz as { owner_id?: string | null } | null)?.owner_id ?? null;
+  if (ownerId) {
+    const { data: row } = await supabase.from('users').select('id, must_change_password')
+      .eq('id', ownerId).eq('business_id', businessId).maybeSingle();
+    if (row) return row as { id: string; must_change_password?: boolean };
+  }
+
+  const cleanEmail = String(email ?? '').trim();
+  if (!cleanEmail) return null;
+  const { data: roles } = await supabase.from('roles').select('id, name').eq('business_id', businessId);
+  const pick = (n: string) => (roles ?? []).find((r: any) => String(r.name ?? '').toLowerCase() === n) as { id: string } | undefined;
+  const role = pick('owner') ?? pick('admin') ?? null;
+  const { data: created, error } = await supabase.from('users').insert({
+    business_id: businessId, name: cleanEmail.split('@')[0] || 'Owner', email: cleanEmail,
+    role_id: role?.id ?? null, status: 'active', must_change_password: false,
+  }).select('id, must_change_password').single();
+  if (error || !created) {
+    // A row with this email may have appeared since (another sign-in raced this one): take it.
+    const again = await resolveOwnerUserRow(businessId, cleanEmail);
+    if (again) return again;
+    console.error('[auth] A451: could not create the owner\'s users row', { businessId, error: error?.message });
+    return null;
+  }
+  const { data: main } = await supabase.from('branches').select('id').eq('business_id', businessId).eq('is_main', true).maybeSingle();
+  if ((main as { id?: string } | null)?.id) {
+    await supabase.from('user_branches').insert({ user_id: (created as any).id, branch_id: (main as any).id });
+  }
+  console.warn('[auth] A451: the owner had no users row — one was created', { businessId, userId: (created as any).id });
+  return { ...(created as { id: string; must_change_password?: boolean }), created: true };
+}
+
 async function getPermissionsVersion(userId: string): Promise<number> {
   const { data } = await supabase
     .from('users')
@@ -674,7 +723,7 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
   // Case-insensitive, pattern-safe. A miss here used to fall through to
   // data.user.id (an auth.users id) and poison every order push — see
   // resolveOwnerUserRow.
-  const ownerUser = await resolveOwnerUserRow(business.id, data.user.email);
+  const ownerUser = await ensureOwnerUserRow(business.id, data.user.email);   // A451: found, or created
 
   let mustChangePassword = (ownerUser as any)?.must_change_password ?? false;
   if (mustChangePassword) {
@@ -1008,6 +1057,20 @@ router.post('/refresh', async (req, res) => {
     });
     if (!isTillPayload(cleanPayload)) console.log(`[refresh] till ${row.device_id}: owner-era session replaced by the till's own`);
   } else {
+    // A451: an owner session that carries no users row (issued before A451) is mended at its next renewal — it takes
+    // the owner's row (found, or created) instead of the auth.users id the database refuses.
+    if (cleanPayload.isOwner && cleanPayload.userId && cleanPayload.businessId) {
+      const { data: mine } = await supabase.from('users').select('id')
+        .eq('id', cleanPayload.userId).eq('business_id', cleanPayload.businessId).maybeSingle();
+      if (!mine) {
+        const { data: authUser } = await supabase.auth.admin.getUserById(cleanPayload.userId).catch(() => ({ data: null } as any));
+        const row = await ensureOwnerUserRow(cleanPayload.businessId, (authUser as any)?.user?.email ?? null);
+        if (row) {
+          console.warn('[refresh] A451: owner session moved to its users row', { businessId: cleanPayload.businessId, userId: row.id });
+          cleanPayload.userId = row.id;
+        }
+      }
+    }
     // A person: re-fetch permissions — catches role changes since last login.
     if (cleanPayload.roleId && !cleanPayload.isOwner) {
       cleanPayload.permissionKeys = await buildPermissionKeys(cleanPayload.roleId, cleanPayload.userId);

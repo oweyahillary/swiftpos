@@ -60,15 +60,16 @@ console.log('0.6.27 — the prospect\'s requests, per-client switches\n');
 
 // ── The switches ─────────────────────────────────────────────────────────────
 // 0.6.29: blind close and the cashier's figures at confirm are standard (always on); the rest are switches, off unless set.
-ok('never told → every switch off; the two standard ones on', (() => { const f = C.getPosFeatures();
-  return f.blind_shift_close === true && f.confirm_shows_cashier_figures === true
-    && Object.entries(f).filter(([k]) => k !== 'blind_shift_close' && k !== 'confirm_shows_cashier_figures').every(([, v]) => v === false); })());
+const STD = ['blind_shift_close', 'confirm_shows_cashier_figures', 'kitchen_void_approval'];   // A461: kitchen voids standard
+ok('never told → every switch off; the standard ones on', (() => { const f = C.getPosFeatures();
+  return STD.every((k) => f[k] === true)
+    && Object.entries(f).filter(([k]) => !STD.includes(k)).every(([, v]) => v === false); })());
 C.setPosFeatures({ delivery_fee: 'yes', blind_shift_close: 1, cashier_no_reprint: true, made_up: true });
 ok('only a real true turns one on; unknown keys are dropped',
   JSON.stringify(C.getPosFeatures()) === JSON.stringify({ delivery_fee: false, cashier_own_history: false, cashier_no_reprint: true,
-                                                kitchen_void_approval: false, pay_before_kitchen: false, login_codes: false,   // A398
+                                                pay_later_tabs: false, pay_before_kitchen: false, login_codes: false,   // A398; A461 pay_later_tabs
                                                 cashier_no_money_out: false,   // A453
-                                                blind_shift_close: true, confirm_shows_cashier_figures: true }),   // 0.6.29: standard ones last, always on
+                                                blind_shift_close: true, confirm_shows_cashier_figures: true, kitchen_void_approval: true }),   // 0.6.29 / A461: standard ones last, always on
   JSON.stringify(C.getPosFeatures()));
 C.setPosFeatures(undefined);
 ok('an older cloud (nothing said) keeps what the till has', C.getPosFeatures().cashier_no_reprint === true);

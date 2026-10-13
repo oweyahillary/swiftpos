@@ -157,6 +157,10 @@ export const CreateStaffSchema = z.object({
 
 export const UpdateStaffSchema = CreateStaffSchema.partial().extend({
   status: z.enum(['active', 'inactive']).optional(),
+  // A459: NO default here. .partial() kept CreateStaffSchema's `.default([])`, so an edit that did not mention branches
+  // (a rename, a role, Deactivate) arrived as branch_ids: [] — and PATCH /api/staff/:id deleted every branch the person
+  // worked at ("no branch" = every branch, A426). Absent now means "leave the branches as they are".
+  branch_ids: z.array(uuid).optional(),
 });
 
 // ── Shifts ────────────────────────────────────────────────────────────────────

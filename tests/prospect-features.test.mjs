@@ -44,12 +44,15 @@ const H = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/his
 console.log('0.6.27 — the prospect\'s requests (cloud + web)\n');
 
 // ── The switches ─────────────────────────────────────────────────────────────
-await ok('the switches, all off unless set; the two standard ones always on (0.6.29); rows, objects and JSON read the same', () => {
+await ok('the switches, all off unless set; the standard ones always on (0.6.29; A461 kitchen voids); rows, objects and JSON read the same', () => {
   // 0.6.28 added the last two; 0.6.29 made blind_shift_close and confirm_shows_cashier_figures standard (not switches).
-  assert.deepEqual(F.POS_FEATURE_KEYS, ['delivery_fee', 'cashier_own_history', 'cashier_no_reprint', 'kitchen_void_approval', 'pay_before_kitchen', 'login_codes', 'cashier_no_money_out']);   // A398: login_codes; A453: cashier_no_money_out
-  assert.deepEqual([...F.STANDARD_POS_FEATURES], ['blind_shift_close', 'confirm_shows_cashier_figures']);
+  // A461: kitchen_void_approval became standard (always on); pay_later_tabs (eat now, pay later) is a new switch, off.
+  assert.deepEqual(F.POS_FEATURE_KEYS, ['delivery_fee', 'cashier_own_history', 'cashier_no_reprint', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'cashier_no_money_out']);   // A398: login_codes; A453: cashier_no_money_out
+  assert.deepEqual([...F.STANDARD_POS_FEATURES], ['blind_shift_close', 'confirm_shows_cashier_figures', 'kitchen_void_approval']);
   const none = F.parsePosFeatures(null);
-  assert.ok(F.POS_FEATURE_KEYS.every((k) => none[k] === false) && none.blind_shift_close === true && none.confirm_shows_cashier_figures === true);
+  assert.ok(F.POS_FEATURE_KEYS.every((k) => none[k] === false) && none.blind_shift_close === true && none.confirm_shows_cashier_figures === true
+    && none.kitchen_void_approval === true);
+  assert.equal(F.parsePosFeatures([{ key: 'kitchen_void_approval', enabled: false }]).kitchen_void_approval, true, 'a stored "off" is ignored');
   assert.equal(F.parsePosFeatures([{ key: 'blind_shift_close', enabled: false }]).blind_shift_close, true);
   assert.equal(F.parsePosFeatures([{ key: 'delivery_fee', enabled: true }, { key: 'loyalty_enabled', enabled: true }]).delivery_fee, true);
   assert.equal(F.parsePosFeatures('{"delivery_fee":"true"}').delivery_fee, false);

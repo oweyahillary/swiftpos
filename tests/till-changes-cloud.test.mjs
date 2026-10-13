@@ -253,6 +253,47 @@ await ok('a manager cannot add an owner from a till', async () => {
   assert(r.status === 'refused' && /only the owner/.test(r.message), JSON.stringify(r));
 });
 
+console.log('\nA459: staff changed on a till (rename, role, deactivate)\n');
+const amy = () => db.users.find((u) => u.id === AMY);
+amy().role_id = R_CASH;
+db.users.find((u) => u.id === OWNER).role_id = R_OWNER;
+await ok('a manager renames and deactivates a cashier from the till — applied on the cloud', async () => {
+  const [a] = await send('till', change('staff', 'update', AMY, { name: 'Amy W' }, { name: 'Amy' }));
+  const [b] = await send('till', change('staff', 'update', AMY, { status: 'inactive' }, { status: 'active' }));
+  assert(a.status === 'applied' && b.status === 'applied' && amy().name === 'Amy W' && amy().status === 'inactive', JSON.stringify([a, b, amy()]));
+  const cr = db.change_requests.find((x) => x.entity === 'staff' && x.op === 'update' && x.proposed.status === 'inactive');
+  assert(cr && !('pin_set' in cr.proposed), 'what waits for the owner is the change itself (no pin_set)');
+});
+await ok('a PIN never rides on a staff update (it changes only as staff_pin)', async () => {
+  const before = amy().pin_hash;
+  const [r] = await send('till', change('staff', 'update', AMY, { name: 'Amy', pin: '7777' }, { name: 'Amy W' }));
+  assert(r.status === 'applied' && amy().pin_hash === before && amy().name === 'Amy', JSON.stringify(r));
+});
+await ok('a manager may not change the owner, nor give anyone the owner\'s role', async () => {
+  const [a] = await send('till', change('staff', 'update', OWNER, { status: 'inactive' }, { status: 'active' }));
+  const [b] = await send('till', change('staff', 'update', AMY, { role_id: R_OWNER }, { role_id: R_CASH }));
+  assert(a.status === 'refused' && /only the owner changes/.test(a.message) && b.status === 'refused' && /only the owner gives that role/.test(b.message)
+    && db.users.find((u) => u.id === OWNER).status === 'active' && amy().role_id === R_CASH, JSON.stringify([a, b]));
+});
+await ok('…nor someone who works at another branch', async () => {
+  db.user_branches.push({ user_id: MARY, branch_id: '33333333-3333-4333-8333-333333333333' });
+  const [r] = await send('till', change('staff', 'update', MARY, { name: 'Mary K' }, { name: 'Mary' }));
+  assert(r.status === 'refused' && /another branch/.test(r.message), JSON.stringify(r));
+});
+await ok('the owner may (their change, sent by the till)', async () => {
+  const [r] = await send('till', change('staff', 'update', AMY, { role_id: R_MGR, status: 'active' }, { role_id: R_CASH, status: 'inactive' }, OWNER, 'Owner'));
+  assert(r.status === 'applied' && amy().role_id === R_MGR && amy().status === 'active', JSON.stringify(r));
+});
+await ok('a staff member is never deleted from a till', async () => {
+  const [r] = await send('till', change('staff', 'delete', AMY, {}));
+  assert(r.status === 'refused' && /deactivated, never deleted/.test(r.message) && !!amy(), JSON.stringify(r));
+});
+await ok('A459: an edit that does not mention branches leaves them alone (it wiped them — "no branch" = every branch)', async () => {
+  const { UpdateStaffSchema } = require(path.join(DIST, 'lib/schemas.js'));
+  const out = UpdateStaffSchema.parse({ status: 'inactive' });
+  assert(!('branch_ids' in out) && JSON.stringify(UpdateStaffSchema.parse({ branch_ids: [] }).branch_ids) === '[]', JSON.stringify(out));
+});
+
 server.close();
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -32,7 +32,7 @@ let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
 const FULL = { isRestaurant: true, isManagerRole: true, canManageProducts: true, canManageStaff: true,
-  canManageSettings: true, canPrinting: true, showStock: true };
+  canManageSettings: true, canPrinting: true, showStock: true, online: true, canTransfer: true };
 const labels = (nav) => nav.map((g) => `${g.label}${g.tabs.length > 1 ? ` [${g.tabs.map((t) => t.label).join(' · ')}]` : ''}`);
 
 ok('an owner at a restaurant: seven sidebar items, the groups the owner asked for', () => {
@@ -43,12 +43,18 @@ ok('an owner at a restaurant: seven sidebar items, the groups the owner asked fo
     'Close [Close Day · Close Branch]',
     'Menu [Menu · Offers]',   // A445: Offers beside the menu
     'Settings [General · Printing · Staff]',
-    'Stock',
+    'Stock [Stock · Transfers]',   // A197: Transfers with the online licence and inventory.transfer
   ]);
 });
 
+ok('A460: without the online licence — no Offers, no Wastage, no Transfers (never shown)', () => {
+  const nav = N.buildManagerNav({ ...FULL, online: false, canWaste: true });
+  const keys = nav.flatMap((g) => g.tabs.map((t) => t.key));
+  assert.ok(!keys.includes('offers') && !keys.includes('wastage') && !keys.includes('transfers') && keys.includes('menu'), JSON.stringify(keys));
+});
+
 ok('a shop (not a restaurant): Sales has no Item Mix; no web POS → no Stock', () => {
-  const nav = N.buildManagerNav({ ...FULL, isRestaurant: false, showStock: false });
+  const nav = N.buildManagerNav({ ...FULL, isRestaurant: false, showStock: false, online: false });   // no web POS = no online licence (A460)
   assert.deepEqual(N.groupOf(nav, 'orders').tabs.map((t) => t.key), ['orders', 'shift', 'zreport']);
   assert.equal(nav.find((g) => g.key === 'stock'), undefined);
 });
@@ -92,14 +98,14 @@ ok('Menu → Import stays in the Menu group (sidebar highlight and page title)',
 ok('every page ManagerPage can show belongs to exactly one group', () => {
   const nav = N.buildManagerNav(FULL);
   for (const t of ['overview', 'orders', 'items', 'shift', 'zreport', 'expenses', 'dayclose', 'branchclose', 'menu', 'offers',
-    'settings', 'printers', 'staff', 'stock']) {
+    'settings', 'printers', 'staff', 'stock', 'transfers']) {
     assert.equal(nav.filter((g) => g.tabs.some((x) => x.key === t)).length, 1, t);
   }
 });
 
 const mp = fs.readFileSync(path.join(DESKTOP, 'src/renderer/pages/ManagerPage.tsx'), 'utf8');
 ok('ManagerPage renders the sidebar from buildManagerNav with each page\'s own gate', () => {
-  assert.match(mp, /const nav = buildManagerNav\(\{\n\s+isRestaurant: flags\.isRestaurant,\n\s+isManagerRole,\n\s+canManageProducts,\n\s+canManageStaff,\n\s+canManageSettings,\n\s+canPrinting: has\('stations\.manage'\) \|\| canManageReceipt,\n\s+showStock,\n\s+canWaste: has\('inventory\.waste'\) \|\| has\('inventory\.adjust'\) \|\| \['owner', 'admin'\]\.includes\(String\(\(staff as any\)\?\.role \?\? ''\)\.toLowerCase\(\)\),   \/\/ A414\n\s+\}\);/);
+  assert.match(mp, /const nav = buildManagerNav\(\{\n\s+isRestaurant: flags\.isRestaurant,\n\s+isManagerRole,\n\s+canManageProducts,\n\s+canManageStaff,\n\s+canManageSettings,\n\s+canPrinting: has\('stations\.manage'\) \|\| canManageReceipt,\n\s+showStock,\n\s+canWaste: has\('inventory\.waste'\) \|\| has\('inventory\.adjust'\) \|\| \['owner', 'admin'\]\.includes\(String\(\(staff as any\)\?\.role \?\? ''\)\.toLowerCase\(\)\),   \/\/ A414\n\s+online,   \/\/ A460\n\s+canTransfer: [^\n]+\n\s+\}\);/);
   assert.match(mp, /\{nav\.map\(group => \(\n\s+<button key=\{group\.key\} onClick=\{\(\) => openTab\(openGroup\(group, lastTab\)\)\}/);
   assert.ok(!/navItems/.test(mp), 'the old flat list is gone');
 });

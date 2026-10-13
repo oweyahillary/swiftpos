@@ -905,6 +905,17 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/branch-close-shifts.test.mjs
 
+      # A460 + A459 + A197 — premium screens only with the online licence; staff renamed / re-roled / deactivated on
+      # the till (offline too); stock transfers in the Stock group.
+      - name: Desktop online-licence gating, staff edits offline, stock transfers
+        working-directory: apps/desktop
+        run: node --no-warnings test/licence-staff-transfers.test.mjs
+
+      # A380 — the branch server's backups go to the folder the technician chooses, proven at once.
+      - name: Desktop backup folder
+        working-directory: apps/desktop
+        run: node --no-warnings test/backup-folder.test.mjs
+
       # A454 — the cashier's Z-report at shift close is their own count (no reconciliation), on the till's receipt
       # printer even when that is a Windows printer.
       - name: Desktop cashier's Z-report copy and the Z-report on the Windows receipt printer

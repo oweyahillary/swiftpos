@@ -123,6 +123,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     posApi.kitchen.open().then((k) => setUnpaidKitchen(k?.shift ?? [])).catch(() => setUnpaidKitchen([]));
   };
   const [unpaidKitchen, setUnpaidKitchen] = useState<OpenKitchenOrder[]>([]);
+  const [payLater, setPayLater] = useState(false);   // A461: 'pay_later_tabs' — the shift may end with them on hold
 
   useEffect(() => {
     (async () => { await refresh(); setLoading(false); })();
@@ -130,7 +131,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     posApi.expense.categories().then(setCategories).catch(() => {});
     posApi.pos.paymentMethods().then(setMethodOptions).catch(() => {});   // A365
     posApi.shift.canConfirm().then(setIsManager).catch(() => setIsManager(false));   // 0.6.37: no PIN for a manager
-    posApi.pos.features().then((f) => setManagerOnlyMoney(!!f.cashier_no_money_out)).catch(() => {});   // A453
+    posApi.pos.features().then((f) => { setManagerOnlyMoney(!!f.cashier_no_money_out); setPayLater(!!(f as any).pay_later_tabs); }).catch(() => {});   // A453; A461
   }, []);
 
   // Reload expense list whenever the expenses tab is opened
@@ -426,7 +427,9 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                       #{o.order_number}{o.table_number ? ` · Table ${o.table_number}` : ''}{o.held ? ' · on hold' : ''} — {currency} {o.value.toLocaleString()}
                     </p>
                   ))}
-                  <p className="text-xs text-amber-100/80 mt-2">Charge each one, or have a manager remove its items, before ending the shift.</p>
+                  <p className="text-xs text-amber-100/80 mt-2">{payLater
+                    ? 'Eat now, pay later is on: you may end the shift — these stay on hold until they are paid.'
+                    : 'Charge each one, or have a manager remove its items, before ending the shift.'}</p>
                 </div>
               )}
 

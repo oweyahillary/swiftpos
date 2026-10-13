@@ -205,6 +205,14 @@ export interface ShiftSummary {
   cashier_name: string | null; expected_cash: number | null; cash_variance: number | null;
 }
 
+/** A197: a stock transfer as the cloud returns it (GET /api/stock/transfers). */
+export interface StockTransfer {
+  id: string; transfer_number: string | null; status: 'pending' | 'in_transit' | 'received' | 'cancelled';
+  from_branch_id: string; to_branch_id: string; from_branch_name?: string | null; to_branch_name?: string | null;
+  notes: string | null; receipt_note?: string | null; created_at: string;
+  stock_transfer_items: Array<{ id: string; product_id: string; quantity: number; quantity_received: number | null; products?: { name: string } | null }>;
+}
+
 /** A452: one shift as its till reports it to the branch server (main/branchClose.ts PeerShift). */
 /** A458: one payment method's line in the branch's day totals (main/branchClose.ts branchMethodTotals). */
 export interface BranchMethodLine { method: string; sales: number; expected: number; confirmed: number; variance: number }
@@ -499,6 +507,16 @@ declare global {
           results?: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }>;
         }>;
       };
+      /** A197: stock transfers between branches (online licence; inventory.transfer). */
+      transfers: {
+        list: () => Promise<{ ok: boolean; data?: StockTransfer[]; branch_id?: string; error?: string; code?: string | null }>;
+        branches: () => Promise<{ ok: boolean; data?: Array<{ id: string; name: string }>; error?: string }>;
+        create: (toBranchId: string, items: Array<{ product_id: string; quantity: number }>, notes?: string) =>
+          Promise<{ ok: boolean; data?: StockTransfer; error?: string; code?: string | null }>;
+        status: (body: { id: string; status: 'in_transit' | 'received' | 'cancelled'; reason?: string;
+          received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
+          Promise<{ ok: boolean; data?: StockTransfer; error?: string; code?: string | null }>;
+      };
       print: {
         list: () => Promise<PrinterInfo[]>;
         shares: () => Promise<Record<string, { shared: boolean; shareName: string | null }>>;
@@ -550,7 +568,11 @@ declare global {
         setNodeUrl: (url: string) => Promise<{ ok: boolean; role?: string; error?: string }>;
         backupNow: () => Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
         maintenance: () => Promise<{ last_backup_at: string | null; last_backup_status: string | null;
-                                     backup_dir: string; last_prune_at: string | null; retention_days: number }>;
+                                     backup_dir: string; last_prune_at: string | null; retention_days: number;
+                                     same_disk?: boolean; custom_dir?: boolean; keep?: number }>;
+        /** A380: pick a folder (null = cancelled); set it (null = the default) — a backup is written there at once. */
+        chooseBackupDir: () => Promise<string | null>;
+        setBackupDir: (dir: string | null) => Promise<{ ok: boolean; path?: string; error?: string; dir: string; same_disk: boolean }>;
         query: (sql: string) => Promise<
           | { ok: true; result: { columns: string[]; rows: unknown[][]; rowCount: number;
                                   truncated: boolean; maskedColumns: string[] } }

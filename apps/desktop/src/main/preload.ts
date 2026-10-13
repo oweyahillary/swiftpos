@@ -106,6 +106,16 @@ contextBridge.exposeInMainWorld('swiftpos', {
       ipcRenderer.invoke('branchClose:confirmShift', { device_id, shift_id, counts, reasons }),
     closeBranch: (notes?: string, totalsConfirmed?: boolean) => ipcRenderer.invoke('branchClose:closeBranch', { notes, totals_confirmed: totalsConfirmed === true }),   // A458
   },
+  // A197: stock transfers between branches (online licence).
+  transfers: {
+    list:     () => ipcRenderer.invoke('transfers:list'),
+    branches: () => ipcRenderer.invoke('transfers:branches'),
+    create:   (to_branch_id: string, items: Array<{ product_id: string; quantity: number }>, notes?: string) =>
+      ipcRenderer.invoke('transfers:create', { to_branch_id, items, notes }),
+    status:   (body: { id: string; status: 'in_transit' | 'received' | 'cancelled'; reason?: string;
+                received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
+      ipcRenderer.invoke('transfers:status', body),
+  },
   print: {
     list: () => ipcRenderer.invoke('print:list'),
     shares: () => ipcRenderer.invoke('print:shares'),
@@ -142,6 +152,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     logTail:      (lines?: number)=> ipcRenderer.invoke('tech:logTail', { lines }),
     backupNow:    ()              => ipcRenderer.invoke('tech:backupNow'),
     maintenance:  ()              => ipcRenderer.invoke('tech:maintenance'),
+    chooseBackupDir: ()           => ipcRenderer.invoke('tech:chooseBackupDir'),          // A380
+    setBackupDir: (dir: string | null) => ipcRenderer.invoke('tech:setBackupDir', { dir }), // A380
     promoteToNode:()              => ipcRenderer.invoke('tech:promoteToNode'),
     setNodeUrl:   (url: string)   => ipcRenderer.invoke('tech:setNodeUrl', { url }),
   },

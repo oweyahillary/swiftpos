@@ -339,7 +339,15 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'tech:promoteToNode': NO_PAYLOAD,
   'tech:setNodeUrl':    { url: { t: 'string' } },
   'tech:backupNow':     NO_PAYLOAD,
-  'tech:maintenance':   NO_PAYLOAD,
+  'tech:maintenance': NO_PAYLOAD,
+  'tech:chooseBackupDir': NO_PAYLOAD,                 // A380
+  'transfers:list':     NO_PAYLOAD,                                                                       // A197
+  'transfers:branches': NO_PAYLOAD,                                                                       // A197
+  'transfers:create':   { to_branch_id: { t: 'string', min: 1 }, notes: { t: 'string', optional: true }, items: { t: 'any' } },   // A197
+  'transfers:status':   { id: { t: 'string', min: 1 }, status: { t: 'string', min: 1 }, reason: { t: 'string', optional: true },
+                          received_items: { t: 'any', optional: true }, receipt_note: { t: 'string', optional: true },
+                          allow_same_user: { t: 'boolean', optional: true } },                            // A197
+  'tech:setBackupDir': { dir: { t: 'any' } },          // A380: a folder, or null for the default
   'tech:query':         { sql: { t: 'string' } },
   'tech:status':        NO_PAYLOAD,
   'tech:testConnection':NO_PAYLOAD,

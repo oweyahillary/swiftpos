@@ -55,11 +55,12 @@ const pinHash = (p) => bcrypt.hashSync(p, 4);
 const role = (name, keys) => ({ name, role_permissions: keys.map((k) => ({ permissions: { key: k } })) });
 
 let db;
-const reset = (switchOn = true) => {
+// A461: 'kitchen_void_approval' is STANDARD (always on); the one switch here now is 'pay_later_tabs' (eat now, pay later).
+const reset = (payLater = false) => {
   db = {
     businesses: [{ id: BZ, owner_id: OWNER, vat_rate: 16, ctl_rate: 0 }],
     user_devices: [{ business_id: BZ, device_id: T1, status: 'approved', retired_at: null }],   // A415: the till, on the business
-    feature_flags: switchOn ? [{ business_id: BZ, key: 'kitchen_void_approval', enabled: true }] : [],
+    feature_flags: payLater ? [{ business_id: BZ, key: 'pay_later_tabs', enabled: true }] : [],
     users: [
       { id: CASHIER, business_id: BZ, status: 'active', name: 'Amy', pin_hash: pinHash('1111'), roles: role('Cashier', ['orders.create']), user_permissions: [] },
       { id: MANAGER, business_id: BZ, status: 'active', name: 'Mary', pin_hash: pinHash('2222'), roles: role('Manager', ['orders.void', 'shifts.manage']), user_permissions: [] },
@@ -174,16 +175,17 @@ try {
     assert.equal(order(O1).status, 'voided'); assert.match(order(O1).void_reason, /Kitchen void: Wrong item punched/);
     assert.equal(db.order_items.filter((i) => i.order_id === O1).length, 0);
   });
-  await ok('switch off: the cashier may void — still recorded, no approver', async () => {
-    reset(false);
+  await ok('A461: always a manager — even where the client had the old switch off (a stored "off" row is ignored)', async () => {
+    reset();
+    db.feature_flags.push({ business_id: BZ, key: 'kitchen_void_approval', enabled: false });
     const r = await kv({ lines: [{ order_item_id: I2, qty: 1 }], reason: 'out_of_stock', cooked: false });
-    assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.equal(db.kitchen_voids.length, 1); assert.equal(db.kitchen_voids[0].approved_by, null);
+    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'KITCHEN_VOID_APPROVAL_REQUIRED');
+    assert.equal(db.kitchen_voids.length, 0);
   });
   await ok('more than the order holds, or an item not on it, is refused', async () => {
-    reset(false);
-    assert.equal((await kv({ lines: [{ order_item_id: I1, qty: 3 }], reason: 'wrong_quantity', cooked: false })).status, 400);
-    assert.equal((await kv({ lines: [{ order_item_id: 'nope', qty: 1 }], reason: 'wrong_quantity', cooked: false })).status, 400);
+    reset();
+    assert.equal((await kv({ lines: [{ order_item_id: I1, qty: 3 }], reason: 'wrong_quantity', cooked: false, pin: '2222' })).status, 400);
+    assert.equal((await kv({ lines: [{ order_item_id: 'nope', qty: 1 }], reason: 'wrong_quantity', cooked: false, pin: '2222' })).status, 400);
     assert.equal(db.kitchen_voids.length, 0);
   });
   await ok('a paid sale is not kitchen-voided (it is voided or refunded)', async () => {
@@ -223,11 +225,11 @@ try {
     assert.match(r.body.error, /#ORD-1/);
     assert.equal(db.shifts[0].status, 'open');
   });
-  await ok('switch off, or the till\'s own replay: not refused for it', async () => {
-    reset(false);
+  await ok('A461: "eat now, pay later" on, or the till\'s own replay: not refused for it', async () => {
+    reset(true);
     const r = await call(`/api/shifts/${S1}/close`, { closing_float: 0 });
     assert.notEqual(r.body?.code, 'UNPAID_KITCHEN_ORDERS', JSON.stringify(r.body));
-    reset(true);
+    reset();
     const r2 = await call(`/api/shifts/${S1}/close`, { closing_float: 0 }, { surface: 'desktop' });
     assert.notEqual(r2.body?.code, 'UNPAID_KITCHEN_ORDERS', JSON.stringify(r2.body));
   });
