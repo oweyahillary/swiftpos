@@ -20,6 +20,7 @@ import { posApi, ZReport } from '../lib/posApi';
 import { methodLabel } from '../../shared/paymentCatalogue';   // A452
 import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import TransfersTab from '../components/TransfersTab';   // A197
+import MonthlyPackTab from '../components/MonthlyPackTab';   // A466
 import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';   // A441
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
@@ -1819,6 +1820,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canWaste: has('inventory.waste') || has('inventory.adjust') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A414
     online,   // A460
     canTransfer: has('inventory.transfer') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A197
+    canMonthly: has('reports.financial'),   // A466: the cloud reads the pack for reports.financial (routes/reports-monthly.ts)
   });
   const GROUP_ICON: Record<GroupKey, string> = {
     overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,
@@ -1871,6 +1873,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'stock':   return showStock ? <StockTab currency={currency} /> : <RetailOverview currency={currency} />;
       case 'wastage': return online ? <TillWastage /> : <RetailOverview currency={currency} />;   // A414; A460
       case 'transfers': return online ? <TransfersTab /> : <RetailOverview currency={currency} />;   // A197
+      // A466: the web's Monthly pack; recording for the books as the web gates it (expenses.manage).
+      case 'monthly': return <MonthlyPackTab currency={currency} canRecord={has('expenses.manage')} />;
       default:        return <RetailOverview currency={currency} />;
     }
   }

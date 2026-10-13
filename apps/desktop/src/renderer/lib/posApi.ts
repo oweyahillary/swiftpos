@@ -213,6 +213,22 @@ export interface StockTransfer {
   stock_transfer_items: Array<{ id: string; product_id: string; quantity: number; quantity_received: number | null; products?: { name: string } | null }>;
 }
 
+/** A466: the monthly pack (A455) as the cloud builds it (apps/server/src/lib/monthlyPack.ts Pack). */
+export type MovementKind = 'opening' | 'other_income' | 'drawing' | 'bank_deposit' | 'charges';
+export interface MonthlySummaryRow { day: string; byMethod: Record<string, number>; total: number; expected: number | null; counted: number | null; variance: number | null; cashiers: string[]; remarks: string[] }
+export interface MonthlyBookRow { day: string; sales: number; otherIn: number; expenses: number; paidOut: number; drawings: number; deposits: number; charges: number; balance: number }
+export interface MonthlyPack {
+  title: string; methods: string[];
+  summary: { rows: MonthlySummaryRow[]; byMethod: Record<string, number>; total: number; expected: number; counted: number; variance: number };
+  expenses: { days: { day: string; lines: { type: string | null; description: string; amount: number; method: string; by: string | null }[]; total: number }[];
+    byType: { type: string; amount: number }[]; byMethod: { method: string; amount: number }[]; total: number };
+  books: { method: string; label: string; opening: number; rows: MonthlyBookRow[]; totals: Omit<MonthlyBookRow, 'day' | 'balance'>; closing: number }[];
+}
+/** A466: what a manager recorded for the books (money_movements). */
+export interface MoneyMovement { id: string; movement_date: string; method: string; kind: MovementKind; amount: number; note: string | null; recorded_by_name: string | null }
+/** A466: a monthly-pack answer from main — never thrown; `code: 'offline'` when there is no connection. */
+export interface MonthlyAnswer<T> { ok: boolean; data?: T; branch_id?: string; error?: string; code?: string | null; status?: number | null }
+
 /** A452: one shift as its till reports it to the branch server (main/branchClose.ts PeerShift). */
 /** A458: one payment method's line in the branch's day totals (main/branchClose.ts branchMethodTotals). */
 export interface BranchMethodLine { method: string; sales: number; expected: number; confirmed: number; variance: number }
@@ -227,6 +243,8 @@ export interface BranchTotals {
 export interface ShiftMoneyView {
   id: number; status: string; error: string | null; created_at: string;
   shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; note: string | null;
+  /** set once the till has picked it up — from then on it may be on its books, so it can no longer be withdrawn */
+  delivered_at: string | null; acked_at: string | null;
 }
 export interface ShiftMoneyRequest {
   device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
@@ -538,6 +556,16 @@ declare global {
           received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
           Promise<{ ok: boolean; data?: StockTransfer; error?: string; code?: string | null }>;
       };
+      /** A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in; online only. */
+      monthly: {
+        get: (month: string, branchId?: string) => Promise<MonthlyAnswer<MonthlyPack>>;
+        export: (month: string, branchId?: string) => Promise<{ ok: boolean; path?: string; error?: string; code?: string | null; canceled?: boolean }>;
+        movements: {
+          list: (month: string, branchId?: string) => Promise<MonthlyAnswer<MoneyMovement[]>>;
+          add: (m: { movement_date: string; method: string; kind: MovementKind; amount: number; note?: string; branch_id?: string }) => Promise<MonthlyAnswer<MoneyMovement>>;
+          remove: (id: string) => Promise<MonthlyAnswer<{ ok: true }>>;
+        };
+      };
       print: {
         list: () => Promise<PrinterInfo[]>;
         shares: () => Promise<Record<string, { shared: boolean; shareName: string | null }>>;
@@ -754,6 +782,8 @@ declare global {
         create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
                   /** 0.6.27: how it was paid ('cash' leaves the drawer) and the type's name. */
                   payment_method?: string; category_name?: string;
+                  /** A466: the branch server's manager — recorded outside any drawer even with a shift open here. */
+                  no_drawer?: boolean;
                   /** 0.6.37 (A388): a manager's PIN — every expense needs a manager (none when one is signed in). */
                   pin?: string }) => Promise<{ id: string; approvedBy?: string | null }>;
         list: () => Promise<any[]>;

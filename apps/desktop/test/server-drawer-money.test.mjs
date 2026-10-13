@@ -197,6 +197,29 @@ DC.saveDeviceConfig({ device_role: 'till' });
   ok('with no drawer open, an expense is paid outside any drawer (as before)', db.prepare(`SELECT shift_id FROM expenses WHERE id = ?`).get(noShift.id)?.shift_id === null);
 }
 
+console.log('\nA466: "Not from a drawer" on the server, even with its own shift open\n');
+{
+  S.openShift(200);
+  const own = require(path.join(dist, 'syncEngine.js')).getOpenShift();
+  signIn('u-mary', 'Mary', 'manager', '{"*":true}');
+  DC.saveDeviceConfig({ device_role: 'node' });
+  const before = expected(own.id);
+  const out = await H['expense:create'](null, { description: 'Bank charges', amount: 40, payment_method: 'cash', no_drawer: true });
+  ok('the server\'s manager records it outside any drawer — its own drawer\'s expected cash is untouched',
+    db.prepare(`SELECT shift_id FROM expenses WHERE id = ?`).get(out.id)?.shift_id === null && expected(own.id) === before);
+  const inD = await H['expense:create'](null, { description: 'Milk', amount: 15, payment_method: 'cash' });
+  ok('…and without the choice it comes out of its own open drawer, as before',
+    db.prepare(`SELECT shift_id FROM expenses WHERE id = ?`).get(inD.id)?.shift_id === own.id && expected(own.id) === before - 15);
+  DC.saveDeviceConfig({ device_role: 'till' });
+  const till = await H['expense:create'](null, { description: 'Sugar', amount: 5, payment_method: 'cash', no_drawer: true });
+  ok('a plain till ignores it — its expense still comes out of its open drawer',
+    db.prepare(`SELECT shift_id FROM expenses WHERE id = ?`).get(till.id)?.shift_id === own.id);
+  const form = read('src/renderer/components/RecordExpenseForm.tsx');
+  ok('the form offers "Not from a drawer" on the server while its shift is open',
+    form.includes('{isServer && (drawers.length > 0 || shiftOpen) && (') && form.includes('{shiftOpen && <option value={NONE}>Not from a drawer</option>}')
+    && form.includes('...(isServer && drawer === NONE ? { no_drawer: true } : {}),'));
+}
+
 console.log('\nWired end to end (source)\n');
 {
   const idx = read('src/main/index.ts');
@@ -214,7 +237,7 @@ console.log('\nWired end to end (source)\n');
     tab.includes('waiting for the till') && tab.includes('>recorded<') && tab.includes('refused: {') && tab.includes('posApi.branchClose.cancelShiftMoney('));
   const form = read('src/renderer/components/RecordExpenseForm.tsx');
   ok('Manager › Expenses: "Which drawer" only on the server; another till\'s goes to it, else as before',
-    form.includes("if (c?.device_role !== 'node' && c?.device_role !== 'office') return;") && form.includes('{isServer && drawers.length > 0 && (')
+    form.includes("if (c?.device_role !== 'node' && c?.device_role !== 'office') return;") && form.includes('{isServer && (drawers.length > 0 || shiftOpen) && (')
     && form.includes("kind: 'expense'") && form.includes('const saved = await posApi.expense.create({'));
 }
 

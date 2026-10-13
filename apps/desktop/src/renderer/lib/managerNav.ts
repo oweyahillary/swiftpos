@@ -5,7 +5,7 @@
  * branch and close day, orders and shift" → "go with it". Eleven sidebar items become at most seven; a group opens as
  * ONE page with tabs across the top (one tap, the sidebar never moves under the cashier's finger):
  *
- *   Overview · Sales [Orders · Item Mix · Current shift · Shift report] · Expenses · Close [Close Day · Close Branch]
+ *   Overview · Sales [Orders · Item Mix · Current shift · Shift report · Monthly pack] · Expenses · Close [Close Day · Close Branch]
  *   · Menu · Settings [General · Printing · Staff] · Stock
  *
  * Rules:
@@ -20,7 +20,7 @@
 
 export type TabKey =
   | 'overview' | 'orders' | 'items' | 'shift' | 'zreport' | 'expenses' | 'dayclose' | 'branchclose'
-  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers';
+  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers' | 'monthly';
 
 export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 'settings' | 'stock';
 
@@ -44,6 +44,8 @@ export interface NavAccess {
   online?: boolean;
   /** A197: inventory.transfer — send and receive stock between branches (online licence). */
   canTransfer?: boolean;
+  /** A466: reports.financial — the monthly pack (A455), from the cloud. */
+  canMonthly?: boolean;
 }
 
 /** Pages opened from inside a group's page, not tabs of their own. */
@@ -57,6 +59,7 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
       ...(a.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix' }] : []),   // restaurant only (A105)
       { key: 'shift', label: 'Current shift' },
       { key: 'zreport', label: 'Shift report' },
+      ...(a.canMonthly ? [{ key: 'monthly' as TabKey, label: 'Monthly pack' }] : []),   // A466: the web's Monthly pack (A455)
     ] },
     { key: 'expenses', label: 'Expenses', tabs: [{ key: 'expenses', label: 'Expenses' }] },   // 0.6.11
     // Manager-only: Close Day is the escape route for the trading-day gate.

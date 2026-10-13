@@ -263,6 +263,23 @@ try {
     const del = await call(MANAGER, 'DELETE', `/movements/${a.body.id}`);
     assert.equal(del.status, 200); assert.equal(db.money_movements.length, 0);
   });
+  await ok('A466: a manager signed in on a till with their PIN reads the pack and records for the books; the till\'s own token cannot', async () => {
+    reset();
+    db.user_devices = [{ business_id: BZ, device_id: 'dev-T1', status: 'active', retired_at: null }];
+    const TILL_MGR = token(MGR, ['reports.financial', 'expenses.manage'], { surface: 'desktop', pinSignIn: true });
+    const TILL_CASHIER = token(CASH, ['orders.create'], { surface: 'desktop', pinSignIn: true });
+    const DEVICE = token(null, ['*'], { surface: 'desktop', till: true, deviceId: 'dev-T1' });
+    const g = await call(TILL_MGR, 'GET', `?month=2026-06&branch_id=${BR}`);
+    assert.equal(g.status, 200, JSON.stringify(g.body)); assert.equal(g.body.summary.total, 1200);
+    assert.equal((await call(TILL_MGR, 'GET', `/export?month=2026-06&branch_id=${BR}`)).status, 200);
+    const a = await call(TILL_MGR, 'POST', '/movements', { branch_id: BR, movement_date: '2026-06-02', method: 'cash', kind: 'bank_deposit', amount: 300 });
+    assert.equal(a.status, 201, JSON.stringify(a.body));
+    assert.equal((await call(TILL_MGR, 'DELETE', `/movements/${a.body.id}`)).status, 200);
+    assert.equal((await call(TILL_MGR, 'GET', `?month=2026-06&branch_id=${BR2}`)).status, 403, 'own branch only, on the till too');
+    assert.equal((await call(TILL_CASHIER, 'GET', `?month=2026-06&branch_id=${BR}`)).status, 403, 'their own permissions apply');
+    const d = await call(DEVICE, 'GET', `?month=2026-06&branch_id=${BR}`);
+    assert.equal(d.status, 403, JSON.stringify(d.body)); assert.equal(d.body.code, 'WEB_SURFACE_REQUIRED');
+  });
   await ok('the Excel download has the client\'s sheets, with the figures in them', async () => {
     reset();
     const r = await call(MANAGER, 'GET', `/export?month=2026-06&branch_id=${BR}`);

@@ -120,6 +120,17 @@ contextBridge.exposeInMainWorld('swiftpos', {
                 received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
       ipcRenderer.invoke('transfers:status', body),
   },
+  // A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in.
+  monthly: {
+    get:     (month: string, branch_id?: string) => ipcRenderer.invoke('monthly:get', { month, branch_id }),
+    export:  (month: string, branch_id?: string) => ipcRenderer.invoke('monthly:export', { month, branch_id }),
+    movements: {
+      list:   (month: string, branch_id?: string) => ipcRenderer.invoke('monthly:movements', { month, branch_id }),
+      add:    (m: { movement_date: string; method: string; kind: string; amount: number; note?: string; branch_id?: string }) =>
+        ipcRenderer.invoke('monthly:addMovement', m),
+      remove: (id: string) => ipcRenderer.invoke('monthly:removeMovement', { id }),
+    },
+  },
   print: {
     list: () => ipcRenderer.invoke('print:list'),
     shares: () => ipcRenderer.invoke('print:shares'),
@@ -400,7 +411,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   expense: {
     categories: () => ipcRenderer.invoke('expense:categories'),
     addCategory: (name: string) => ipcRenderer.invoke('expense:addCategory', { name }),   // A341
-    create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string; pin?: string }) =>
+    create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string; pin?: string; no_drawer?: boolean }) =>
               ipcRenderer.invoke('expense:create', payload),
     list: () => ipcRenderer.invoke('expense:list'),
     range: (range?: any) => ipcRenderer.invoke('expense:range', range),

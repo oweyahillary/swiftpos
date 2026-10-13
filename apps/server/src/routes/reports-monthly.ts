@@ -11,6 +11,10 @@
  * Owner, 2026-10-12: "I want to be able to generate such reports from the system"; "email and downloadable"; "manager can
  * record". A branch is required (the clients keep one workbook per branch); a branch manager sees their
  * own branch only.
+ *
+ * A466 (owner, 2026-10-13: "desktop app does not have some reports I added yesterday, can you add them"): the till's
+ * manager screens read and record here too — a PERSON signed in on the till with their PIN (tillPersonOrWeb), with their
+ * own permissions and branch as below. The till's own token (no person) stays out, as from every other web report.
  */
 import ExcelJS from 'exceljs';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -25,7 +29,14 @@ import { cleanMovement } from '../lib/moneyMovements';
 
 const router = safeRouter();
 router.use(requireAuth);
-router.use(requireWebSurface);
+router.use(tillPersonOrWeb);
+
+/** A466: the web, the owner — and a person's PIN sign-in on a till (Manager › Sales › Monthly pack). Never the till's own
+ *  token: it names no person (and carries every permission), so a stolen one must not read the books. */
+function tillPersonOrWeb(req: any, res: any, next: any): void {
+  if (req.surface === 'desktop' && req.pinSignIn === true && req.isTill !== true) { next(); return; }
+  requireWebSurface(req, res, next);
+}
 
 /** The branch the pack is for: the owner's pick (header / query), a manager's own. */
 function packBranch(req: any, res: any): string | null {

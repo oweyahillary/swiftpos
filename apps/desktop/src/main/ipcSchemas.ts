@@ -327,7 +327,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── expense ───────────────────────────────────────────────────────────────
   'expense:categories': NO_PAYLOAD,
   'expense:addCategory': { name: { t: 'string', min: 1 } },   // A341
-  'expense:create':     { description: { t: 'string' }, amount: { t: 'number' }, expense_category_id: { t: 'string', optional: true }, paid_by: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, pin: { t: 'string', optional: true } },   // 0.6.37: pin
+  'expense:create':     { description: { t: 'string' }, amount: { t: 'number' }, expense_category_id: { t: 'string', optional: true }, paid_by: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, pin: { t: 'string', optional: true }, no_drawer: { t: 'boolean', optional: true } },   // 0.6.37: pin; A466: no_drawer
   'expense:list':       NO_PAYLOAD,
   'expense:range':      { ...rangeArg },
 
@@ -349,6 +349,13 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'transfers:status':   { id: { t: 'string', min: 1 }, status: { t: 'string', min: 1 }, reason: { t: 'string', optional: true },
                           received_items: { t: 'any', optional: true }, receipt_note: { t: 'string', optional: true },
                           allow_same_user: { t: 'boolean', optional: true } },                            // A197
+  // A466: the monthly pack (A455) on the till — read, download and record for the books, from the cloud.
+  'monthly:get':              { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },
+  'monthly:export':           { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },
+  'monthly:movements':        { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },
+  'monthly:addMovement':      { movement_date: { t: 'string', min: 10 }, method: { t: 'string', min: 1 }, kind: { t: 'string', min: 1 },
+                                amount: { t: 'number' }, note: { t: 'string', optional: true }, branch_id: { t: 'string', optional: true } },
+  'monthly:removeMovement': { id: { t: 'string', min: 1 } },
   'tech:setBackupDir': { dir: { t: 'any' } },          // A380: a folder, or null for the default
   'tech:query':         { sql: { t: 'string' } },
   'tech:status':        NO_PAYLOAD,

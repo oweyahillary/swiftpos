@@ -65,6 +65,7 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/offers(\/[^/]+)?$/,                             // A445: Manager › Offers on the till (products.manage; own branch)
   /^\/api\/stock\/transfers$/,                              // A197: Manager › Stock › Transfers — a new transfer (inventory.transfer)
   /^\/api\/stock\/transfers\/[^/]+\/status$/,               // A197: despatch, receive, cancel (inventory.transfer; branch access)
+  /^\/api\/reports\/monthly\/movements(\/[^/]+)?$/,          // A466: Manager › Monthly pack › Record for the books (expenses.manage; own branch)
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';
