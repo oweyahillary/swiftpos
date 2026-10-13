@@ -69,7 +69,8 @@ export interface CloudOrderCtx {
  */
 export function buildCloudOrderPayload(orderPayload: any, ctx: CloudOrderCtx): Record<string, any> {
   const src = orderPayload ?? {};
-  const { kot_sent: _kotSent, ...rest } = src;
+  // A456: receipt_copies, like kot_sent, is a renderer-to-main printing hint with no cloud column.
+  const { kot_sent: _kotSent, receipt_copies: _receiptCopies, ...rest } = src;
   const legs = nonEmptyArray(src.payments)
     ? src.payments
     : (src.payment && typeof src.payment === 'object') ? [src.payment] : [];

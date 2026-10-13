@@ -15,6 +15,7 @@ import { recorderId } from '../lib/expenseRecorder';
 import { cleanExpenseMethod, nonCashExpenses } from '../lib/expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from '../lib/confirmReasons';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
+import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from '../lib/posFeatures';   // A453
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
 import { confirmerRows, confirmerByPin } from '../lib/confirmerLookup';
@@ -931,6 +932,14 @@ router.post('/:id/force-close', requireAnyPermission('shifts.force_close', 'sett
 // Body: { type: 'float_in'|'float_out', amount, reason?, pin? }
 // 0.6.37 (A388): a pay-out (float_out) needs a manager — signed in, or `pin` (a manager's). A pay-in needs nobody.
 // ─────────────────────────────────────────────────────────────────────────────
+/** A453: with 'cashier_no_money_out' only a manager signed in records an expense or cash in / out at the POS (no PIN
+ *  route for a cashier). Answers 403 and returns false when refused. */
+async function moneyMovementAllowed(req: Request, res: Response): Promise<boolean> {
+  if (mayRecordMoneyMovement(await businessPosFeatures(req.businessId), callerMayConfirm(req as any))) return true;
+  res.status(403).json({ error: MONEY_MOVEMENT_MANAGER_ONLY, code: 'MANAGER_ONLY_MONEY' });
+  return false;
+}
+
 router.post('/:id/float', async (req, res) => {
   const { id } = req.params;
   const { type, amount, reason } = req.body;
@@ -943,6 +952,7 @@ router.post('/:id/float', async (req, res) => {
     res.status(400).json({ error: 'amount must be greater than zero' });
     return;
   }
+  if (!(await moneyMovementAllowed(req, res))) return;   // A453
 
   // Verify shift is open and belongs to this business
   const { data: shift, error: shiftErr } = await supabase
@@ -1004,6 +1014,7 @@ router.post('/:id/expense', async (req, res) => {
   if (!description) { res.status(400).json({ error: 'Say what the money was for (description).' }); return; }
   if (description.length > 255) { res.status(400).json({ error: 'Description is too long (255 characters at most).' }); return; }
   if (!Number.isFinite(amount) || amount <= 0) { res.status(400).json({ error: 'Enter an amount greater than zero.' }); return; }
+  if (!(await moneyMovementAllowed(req, res))) return;   // A453
 
   const { data: shift, error: shiftErr } = await supabase
     .from('shifts')

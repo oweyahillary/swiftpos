@@ -9,6 +9,7 @@ import ConfirmShiftModal from '../components/ConfirmShiftModal';
 import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
 import { expenseLabel } from '../../shared/expenseMethod';
 import { methodLabel } from '../../shared/paymentCatalogue';   // A442
+import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from '../../shared/posFeatures';   // A453
 
 /** 0.6.27: what an expense can be paid with — cash, M-Pesa, card and the business's own methods. */
 function expenseMethodChoices(options: MethodOption[]): string[] {
@@ -53,6 +54,8 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const [floatReason, setFloatReason] = useState('');
   // 0.6.37 (A388): a cash-out and an expense need a manager — signed in (no PIN), or their PIN typed here.
   const [isManager, setIsManager] = useState(false);
+  // A453: 'cashier_no_money_out' — only a manager signed in records an expense or cash in / out.
+  const [managerOnlyMoney, setManagerOnlyMoney] = useState(false);
   const [floatPin, setFloatPin] = useState('');
   const [expPin, setExpPin] = useState('');
 
@@ -127,6 +130,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     posApi.expense.categories().then(setCategories).catch(() => {});
     posApi.pos.paymentMethods().then(setMethodOptions).catch(() => {});   // A365
     posApi.shift.canConfirm().then(setIsManager).catch(() => setIsManager(false));   // 0.6.37: no PIN for a manager
+    posApi.pos.features().then((f) => setManagerOnlyMoney(!!f.cashier_no_money_out)).catch(() => {});   // A453
   }, []);
 
   // Reload expense list whenever the expenses tab is opened
@@ -183,6 +187,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     finally { setExpBusy(false); }
   };
 
+  const moneyAllowed = mayRecordMoneyMovement({ cashier_no_money_out: managerOnlyMoney }, isManager);   // A453
   const expected   = report?.totals.expectedCash ?? 0;
   const counted    = Number(closingFloat);
   const hasCount   = closingFloat.trim() !== '' && !Number.isNaN(counted);
@@ -217,7 +222,16 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     try {
       const r = await posApi.shift.close(counted, closeNotes.trim() || undefined, declaredRead.map);
       // A421: a cashier has nothing to see on a blind close — straight to the PIN screen for the next person.
-      if ((r as any)?.blind && onSignOut) { onSignOut('Shift closed — your count is saved. A manager checks it.'); return; }
+      // A454 (owner, 2026-10-12): first their own slip on the till's printer — what they declared per method, their
+      // expenses and pay-outs; no sales, no expected cash, no variance (shared/printing renderCashierCopy).
+      if ((r as any)?.blind && onSignOut) {
+        const declared = { ...(declaredRead.ok ? declaredRead.map : {}), cash: counted };
+        const p = await printShiftReport(r, { cashierCopy: { declared } })
+          .catch((e: any) => ({ ok: false, error: e?.message ?? 'the printer did not answer' }));
+        onSignOut(p.ok ? 'Shift closed — your count is saved and your slip printed. A manager checks it.'
+          : `Shift closed — your count is saved. A manager checks it. Your slip did not print: ${p.error ?? 'the printer did not answer'}`);
+        return;
+      }
       setFinalReport(r);
       onShiftChange(null);
       // Owner, 2026-10-10: "the close and print Z report button only closes but never prints" — it prints now (a manager's
@@ -261,7 +275,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
         {/* Tabs — only when a shift is open and not finalised */}
         {report && !finalReport && (
           <div className="flex border-b border-gray-800 flex-shrink-0">
-            {(['shift', 'expenses'] as const).map(t => (
+            {(moneyAllowed ? (['shift', 'expenses'] as const) : (['shift'] as const)).map(t => (
               <button key={t} onClick={() => setActiveTab(t)}
                 className={`flex-1 py-2.5 text-sm font-medium transition-colors capitalize ${
                   activeTab === t
@@ -364,7 +378,10 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 </div>
               )}
 
-              {/* Float movement */}
+              {/* Float movement — A453: a cashier sees only who records it while 'cashier_no_money_out' is on */}
+              {!moneyAllowed ? (
+                <p className="border border-gray-800 rounded-xl p-4 text-sm text-gray-400" data-testid="money-manager-only">{MONEY_MOVEMENT_MANAGER_ONLY}</p>
+              ) : (
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
                 <p className="text-sm text-gray-300 font-medium">Cash movement</p>
                 <div className="flex gap-2">
@@ -386,6 +403,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   Record {floatType === 'float_out' ? 'pay out' : 'pay in'}
                 </button>
               </div>
+              )}
 
               {/* A366: another cashier cannot count out this drawer — its owner or a manager does. */}
               {!closeRights.allowed && (
@@ -516,7 +534,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
           )}
 
           {/* ── Expenses tab ── */}
-          {!loading && report && !finalReport && activeTab === 'expenses' && (
+          {!loading && report && !finalReport && activeTab === 'expenses' && moneyAllowed && (
             <>
               {/* New expense form */}
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">

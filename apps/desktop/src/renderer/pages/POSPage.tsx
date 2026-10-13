@@ -987,6 +987,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         // prints the RECEIPT only. Without this the kitchen gets a second copy
         // of everything at payment.
         kot_sent: someSent,
+        // A456: this till's receipt copies (Settings › Printers: 1 customer, 2 customer + merchant) — the thermal printer too.
+        receipt_copies: printerSettings.copies === 2 ? 2 : 1,
         order_type: flags.isPetrol ? 'fuel_sale' : flags.isRestaurant ? orderType : 'retail',
         delivery_person: orderType === 'delivery' ? (deliveryPerson.trim() || null) : null,
         // 0.6.27: the fee on top of the bill ('delivery_fee' switch) — in the legs like the tip; the till pays the rider it.

@@ -11,6 +11,7 @@ import { useBusiness } from '../context/BusinessContext';
 import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
 import { methodColour } from '../lib/paymentColours';   // A439
+import MonthlyPackTab from './reports/MonthlyPackTab';   // A455
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -125,6 +126,7 @@ const CHANNEL_BAR_COLORS: Record<string, string> = {
 };
 const TAB_LIST = [
   { id: 'master',     label: 'Master / DSR' },
+  { id: 'monthly',    label: 'Monthly pack' },   // A455
   { id: 'hourly',     label: 'Hourly Sales' },
   { id: 'items',      label: 'Item Mix' },
   { id: 'matrix',     label: 'Menu Matrix' },
@@ -2012,6 +2014,7 @@ export default function ReportsPage() {
       </div>
 
       {activeTab === 'master' && <MasterTab  {...tabProps} />}
+      {activeTab === 'monthly' && <MonthlyPackTab branchId={branchId} currency={currency} branches={(branches ?? []) as any} />}
       {activeTab === 'hourly' && <HourlyTab  {...tabProps} />}
       {activeTab === 'items'     && <ItemMixTab   {...tabProps} />}
       {activeTab === 'matrix'    && <MatrixTab    {...tabProps} />}

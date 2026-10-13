@@ -101,6 +101,8 @@ function load(): PrinterSettings {
 }
 
 // Non-hook accessor for code outside React (print helpers).
+/** A454: this till's printer settings, read once (the Z-report's fallback to the receipt printer). */
+export function readPrinterSettings(): PrinterSettings { return load(); }
 
 
 export function usePrinterSettings() {

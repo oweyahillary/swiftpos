@@ -141,9 +141,18 @@ B.recordPeerState('dev-P', { business_date: '2026-10-12', day_open: true, open_d
 console.log('\nClose branch: every till, the server\'s date\n');
 {
   B.recordPeerState('dev-P', { business_date: '2026-10-12', day_open: true, open_drawer: null, drawers_on_day: 1, cashiers_counted_total: 1100,
-    shifts: [{ ...peerShift, state: 'confirmed', closed_at: now() }], clock: now() });
+    shifts: [{ ...peerShift, state: 'confirmed', closed_at: now(), confirmed: { by_name: 'Mary', at: now(), counted: { cash: 1100 } } }], clock: now() });
   const dayBefore = Dy.getOpenDay();
-  const r = await H['branchClose:closeBranch'](null, {});
+  // A458: the day's totals — every till's confirmed shifts added up, per payment method.
+  const T = (await H['branchClose:overview'](null)).totals;
+  const cash = T.methods.find((l) => l.method === 'cash'), mp = T.methods.find((l) => l.method === 'mpesa');
+  ok('A458: the day\'s totals add up every till\'s shifts per method (cash expected 1,500 + 1,100, confirmed 1,480 + 1,100)',
+    cash.expected === 2600 && cash.confirmed === 2580 && cash.variance === -20 && mp.confirmed === 700 && T.methods[0].method === 'cash', JSON.stringify(T));
+  ok('…with the branch total and the shifts behind it', T.total.confirmed === 3280 && T.shifts.confirmed === 2 && T.shifts.awaiting === 0 && T.shifts.open === 0, JSON.stringify(T));
+  const unticked = await H['branchClose:closeBranch'](null, {});
+  ok('A458: with nothing in the way, the branch still waits for the manager to tick the day\'s totals',
+    unticked.ok === false && unticked.code === 'TOTALS_NOT_CONFIRMED' && !!Dy.getOpenDay(), JSON.stringify(unticked));
+  const r = await H['branchClose:closeBranch'](null, { totals_confirmed: true });
   const closed = db.prepare(`SELECT business_date, status, counted_cash FROM business_days WHERE id = ?`).get(dayBefore.id);
   ok('every shift closed and confirmed: the branch closes', r.ok === true, JSON.stringify(r));
   ok('yesterday\'s day closes with the branch (no "check the clocks" refusal)', closed.status === 'closed' && closed.business_date === '2026-10-11', JSON.stringify(closed));
@@ -181,7 +190,11 @@ console.log('\nThe wiring\n');
   const cloudShifts = fs.readFileSync(path.join(here, '..', '..', 'server', 'src', 'routes', 'shifts.ts'), 'utf8');
   ok('the web\'s confirm (another till\'s shift, online) shows the expected figures too — to a manager or the owner only',
     /const expected = shift && callerMayConfirm\(req\) \? await expectedByMethod\(shift as any\) : null;/.test(cloudShifts));
-  ok('Close branch is one button, held until nothing stands in the way', /disabled=\{closing \|\| blockers\.length > 0 \|\| dayOpen\.length === 0 \|\| waitingClose\.length > 0\}/.test(tab));
+  ok('Close branch is one button, held until nothing stands in the way and the totals are ticked (A458)', /disabled=\{closing \|\| !totalsOk \|\| blockers\.length > 0 \|\| dayOpen\.length === 0 \|\| waitingClose\.length > 0\}/.test(tab)
+    && /posApi\.branchClose\.closeBranch\(undefined, totalsOk\)/.test(tab));
+  ok('A458: the screen leads with the day\'s totals and the shifts to confirm; the tills are behind "Show tills"',
+    tab.indexOf('data-testid="branch-totals"') < tab.indexOf('data-testid="to-confirm"') && tab.indexOf('data-testid="to-confirm"') < tab.indexOf('data-testid="show-tills"')
+    && /\{showTills && \(<>\s*\{ov\.tills\.map\(t => \{/.test(tab) && /useState\(false\);   \/\/ A458: the per-till detail, on request/.test(tab));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -221,7 +221,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'branchClose:overview':   NO_PAYLOAD,
   'branchClose:closeTill':  { device_id: { t: 'string' }, counted_cash: { t: 'number' }, notes: { t: 'string', optional: true } },
   'branchClose:confirmShift': { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } },   // A452
-  'branchClose:closeBranch':  { notes: { t: 'string', optional: true } },   // A452
+  'branchClose:closeBranch':  { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true } },   // A452, A458
   'day:summary':            NO_PAYLOAD,
   'day:isManager':          NO_PAYLOAD,
   'day:conflicts':          NO_PAYLOAD,

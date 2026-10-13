@@ -24,8 +24,9 @@ const sp = read('src/renderer/pages/ShiftPanel.tsx');
 const close = sp.slice(sp.indexOf('const handleClose = async'), sp.indexOf("const [printMsg, setPrintMsg]"));
 ok("a manager's close prints the Z-report (after it is saved; a failure says so)",
   /setFinalReport\(r\);\s*onShiftChange\(null\);[\s\S]*?printShiftReport\(r\)\.then\(\(p\) => \{ if \(!p\.ok\) setPrintMsg\(/.test(close));
-ok("a cashier's close is blind: no paper, and the button does not promise one",
-  /if \(\(r as any\)\?\.blind && onSignOut\) \{ onSignOut\(/.test(close)
+// A454 (owner, 2026-10-12): the cashier's close now prints THEIR copy — their count, no reconciliation — then signs out.
+ok("a cashier's close is blind: their own copy prints (no figures of the system's), the button does not promise a Z-report",
+  /if \(\(r as any\)\?\.blind && onSignOut\) \{\s*const declared = [^\n]*\n\s*const p = await printShiftReport\(r, \{ cashierCopy: \{ declared \} \}\)/.test(close)
   && sp.includes("{busy ? 'Closing…' : blind ? 'Close shift' : 'Close shift & print Z-report'}"));
 
 const mp = read('src/renderer/pages/ManagerPage.tsx');

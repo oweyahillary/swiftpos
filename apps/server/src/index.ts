@@ -14,6 +14,7 @@ import { startDailySummaryJob } from './jobs/dailySummary';
 import { reportMailReadiness }  from './lib/mailer';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
 import { startWatchdogJob }     from './jobs/watchdog';          // A383
+import { startMonthlyPackJob }  from './jobs/monthlyPack';       // A455
 import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt } from './lib/watchdogCounters';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
@@ -310,4 +311,5 @@ app.listen(PORT, () => {
   startDailySummaryJob();
   startEtimsRetryJob();
   startWatchdogJob();
+  startMonthlyPackJob();   // A455: the monthly pack by email on the 1st
 });

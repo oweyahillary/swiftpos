@@ -48,7 +48,7 @@ export function splitRecipients(to: string): string[] {
  * provider's own error text — SendGrid returns { errors: [{ message }] } — so the caller can log it or fall back.
  * Never throws: a network failure comes back as its message, like a refusal.
  */
-export async function sendViaSendGrid(opts: { from: string; to: string; subject: string; html: string }): Promise<string | null> {
+export async function sendViaSendGrid(opts: { from: string; to: string; subject: string; html: string; attachments?: MailAttachment[] }): Promise<string | null> {
   if (!SENDGRID_KEY) return 'SENDGRID_API_KEY is not set';
   try {
     const res = await fetch(SENDGRID_URL, {
@@ -60,6 +60,10 @@ export async function sendViaSendGrid(opts: { from: string; to: string; subject:
         from: parseFrom(opts.from),
         subject: opts.subject,
         content: [{ type: 'text/html', value: opts.html }],
+        // A455: files (the monthly pack) — SendGrid takes them base64.
+        ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => ({
+          content: a.content.toString('base64'), filename: a.filename, type: a.contentType, disposition: 'attachment',
+        })) } : {}),
       }),
     });
     if (res.status >= 200 && res.status < 300) return null;
@@ -286,10 +290,14 @@ export function classifySmtpFailure(err: any, host: string, port: number): strin
        + 'verbatim text (rule 11) rather than guessing at a cause.';
 }
 
+/** A455: a file sent with the email (the monthly pack's workbooks). */
+export interface MailAttachment { filename: string; content: Buffer; contentType: string }
+
 export interface MailOptions {
   to: string;
   subject: string;
   html: string;
+  attachments?: MailAttachment[];
   /** Override the FROM address — used for per-business domains (Step 19/21) */
   from?: string;
 }
@@ -416,6 +424,7 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
         to: opts.to,
         subject: opts.subject,
         html: opts.html,
+        ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => ({ filename: a.filename, content: a.content })) } : {}),   // A455
       });
       if (!error) return;
       failures.push(`Resend: ${error.message}`);
@@ -428,7 +437,7 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
 
   // ── Backup 1: SendGrid (A352) ─────────────────────────────
   if (SENDGRID_KEY) {
-    const sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html });
+    const sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html, attachments: opts.attachments });   // A455
     if (!sgError) return;
     failures.push(`SendGrid: ${sgError}`);
     console.warn('[mailer] SendGrid error, falling back to SMTP:', sgError);
@@ -442,6 +451,7 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
+      ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })) } : {}),   // A455
     });
     return;
   }

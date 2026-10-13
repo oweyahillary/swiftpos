@@ -602,6 +602,19 @@
     "sort_order": "\"integer\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "money_movements": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "movement_date": "\"date\" NOT NULL",
+    "method": "\"text\" NOT NULL",
+    "kind": "\"text\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "note": "\"text\"",
+    "recorded_by": "\"uuid\"",
+    "recorded_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "notifications": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",

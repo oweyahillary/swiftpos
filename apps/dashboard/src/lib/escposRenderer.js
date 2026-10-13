@@ -478,6 +478,7 @@ function renderShiftReport(r, paperWidthMm) {
   const d = new DocBuilder(cols);
   const money = (c) => `${r.currencyCode} ${formatCents(c ?? 0)}`;
   const isClosed = r.status === "closed" || r.status === "closed_unreconciled";
+  if (r.cashierCopy) return renderCashierCopy(r, r.cashierCopy, cols, d, money);
   if (r.logoRaster) d.image(r.logoRaster, "center");
   d.line(center(cols, r.businessName.toUpperCase()), { size: "tall", bold: true });
   d.line(center(cols, isClosed ? "Z-REPORT (SHIFT CLOSE)" : "SHIFT REPORT (LIVE)"), { bold: true });
@@ -615,6 +616,60 @@ function renderShiftReport(r, paperWidthMm) {
       d.lines(wrap(line.trim(), cols));
     }
   }
+  d.line(rule(cols));
+  d.line(center(cols, r.footerCredit ?? "Powered by ZapTill"));
+  return d.build();
+}
+var methodLabel = (m) => METHOD_LABELS[m] ?? m.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+function amountLine(d, cols, description, amt) {
+  if (description.length + amt.length + 1 <= cols) d.line(pair(cols, description, amt));
+  else {
+    d.lines(wrap(description, cols));
+    d.line(" ".repeat(Math.max(0, cols - amt.length)) + amt);
+  }
+}
+function renderCashierCopy(r, copy, cols, d, money) {
+  if (r.logoRaster) d.image(r.logoRaster, "center");
+  d.line(center(cols, r.businessName.toUpperCase()), { size: "tall", bold: true });
+  d.line(center(cols, "SHIFT CLOSE - CASHIER COPY"), { bold: true });
+  if (r.branchName) d.line(center(cols, r.branchName));
+  d.line(center(cols, `Printed ${stamp(r.printedAt)}`));
+  d.line(rule(cols));
+  d.line(pair(cols, "Cashier", r.cashierName));
+  d.line(pair(cols, "Shift", r.shiftRef));
+  d.line(pair(cols, "Opened", stamp(r.openedAt)));
+  d.line(pair(cols, "Closed", r.closedAt ? stamp(r.closedAt) : "\u2014"));
+  d.line(rule(cols));
+  d.line("YOUR COUNT", { bold: true });
+  let total = 0;
+  for (const m of copy.declared) {
+    total += m.amount;
+    d.line(pair(cols, methodLabel(m.method), money(m.amount)));
+  }
+  d.line(pair(cols, "Total declared", money(total)), { bold: true });
+  if (r.expenseLines && r.expenseLines.length) {
+    d.line(rule(cols));
+    d.line(`EXPENSES (${r.expenseLines.length})`, { bold: true });
+    for (const e of r.expenseLines) amountLine(d, cols, e.description, money(e.amount));
+  }
+  if (r.payoutLines && r.payoutLines.length) {
+    d.line(rule(cols));
+    d.line(`PAY-OUTS (${r.payoutLines.length})`, { bold: true });
+    for (const e of r.payoutLines) amountLine(d, cols, e.description, money(e.amount));
+  }
+  if (r.kitchenVoids && r.kitchenVoids.lines.length) {
+    d.line(rule(cols));
+    d.line(`KITCHEN VOIDS (${r.kitchenVoids.lines.length})`, { bold: true });
+    for (const e of r.kitchenVoids.lines) amountLine(d, cols, e.description, money(e.amount));
+  }
+  if (r.backupNote && r.backupNote.trim()) {
+    d.line(rule(cols));
+    d.lines(wrap(r.backupNote.trim(), cols), { bold: true });
+  }
+  d.line(rule(cols));
+  d.lines(wrap("AWAITING MANAGER CHECK - a manager counts and confirms this shift.", cols), { bold: true });
+  d.blank();
+  d.line("Cashier sign: ____________________");
   d.line(rule(cols));
   d.line(center(cols, r.footerCredit ?? "Powered by ZapTill"));
   return d.build();

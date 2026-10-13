@@ -905,6 +905,22 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/branch-close-shifts.test.mjs
 
+      # A454 — the cashier's Z-report at shift close is their own count (no reconciliation), on the till's receipt
+      # printer even when that is a Windows printer.
+      - name: Desktop cashier's Z-report copy and the Z-report on the Windows receipt printer
+        working-directory: apps/desktop
+        run: node --no-warnings test/zreport-cashier-copy.test.mjs
+
+      # A456 — two receipts (customer + merchant) on the thermal printer too; the web till already honours its setting.
+      - name: Desktop receipt copies
+        working-directory: apps/desktop
+        run: node --no-warnings test/receipt-copies.test.mjs
+
+      # A457 — the redesigned Overview keeps its parts (payment mix, top sellers, headline cards, hourly chart).
+      - name: Desktop Overview layout
+        working-directory: apps/desktop
+        run: node --no-warnings test/overview-look.test.mjs
+
       # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
       - name: Desktop and web order detail, reprint, void and refund
         working-directory: apps/desktop

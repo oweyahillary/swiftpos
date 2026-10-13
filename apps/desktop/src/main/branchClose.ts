@@ -286,6 +286,70 @@ export function recordPeerState(deviceId: string, state: unknown): void {
   `).run(deviceId, JSON.stringify(state), new Date().toISOString());
 }
 
+// ── A458: the day's totals for the whole branch, by payment method ───────────
+// Owner, 2026-10-12: "under close then close branch can we remove all the tills and maybe add fields which the manager
+// confirms all payment method and they close rather than closing one till at a time" — and: "per shift remains, each
+// shift has to be confirmed; the manager should do summation of each till and close using that as the total sales of
+// the day". So: every shift is still confirmed on its own (its till records it); Close Branch adds them up per method
+// from what each till REPORTED (its own books, never the server's replicated copies) and the manager confirms those
+// totals before the branch closes.
+
+export interface BranchMethodLine {
+  method: string;
+  /** Sales taken with this method, every shift of the day. */
+  sales: number;
+  /** What the tills expect for this method, every shift (cash: float + cash sales ± floats − cash expenses). */
+  expected: number;
+  /** The managers' confirmed counts, confirmed shifts only. */
+  confirmed: number;
+  /** Confirmed − expected, over the confirmed shifts (+ over, − short). */
+  variance: number;
+}
+export interface BranchTotals {
+  methods: BranchMethodLine[];
+  total: Omit<BranchMethodLine, 'method'>;
+  orders: number;
+  shifts: { all: number; open: number; awaiting: number; confirmed: number; uncounted: number };
+}
+
+const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+/** A458: the day's totals per payment method over the shifts the tills reported. Cash first, then by name. */
+export function branchMethodTotals(shifts: PeerShift[]): BranchTotals {
+  const lines = new Map<string, BranchMethodLine>();
+  const line = (m: string) => {
+    let l = lines.get(m);
+    if (!l) { l = { method: m, sales: 0, expected: 0, confirmed: 0, variance: 0 }; lines.set(m, l); }
+    return l;
+  };
+  const count = { all: 0, open: 0, awaiting: 0, confirmed: 0, uncounted: 0 };
+  let orders = 0;
+  for (const s of shifts) {
+    count.all++;
+    orders += Number(s.orders) || 0;
+    if (s.state === 'open') count.open++;
+    else if (s.state === 'awaiting') count.awaiting++;
+    else if (s.state === 'confirmed') count.confirmed++;
+    else count.uncounted++;
+    for (const [m, v] of Object.entries(s.by_method ?? {})) line(m).sales += Number(v) || 0;
+    for (const [m, v] of Object.entries(s.expected ?? {})) line(m).expected += Number(v) || 0;
+    const counted = s.state === 'confirmed' ? s.confirmed?.counted ?? null : null;
+    if (counted) {
+      const methods = new Set([...Object.keys(counted), ...Object.keys(s.expected ?? {})]);
+      for (const m of methods) {
+        const c = Number(counted[m] ?? 0) || 0;
+        line(m).confirmed += c;
+        line(m).variance += c - (Number(s.expected?.[m] ?? 0) || 0);
+      }
+    }
+  }
+  const methods = [...lines.values()]
+    .map((l) => ({ method: l.method, sales: r2(l.sales), expected: r2(l.expected), confirmed: r2(l.confirmed), variance: r2(l.variance) }))
+    .sort((a, b) => (a.method === 'cash' ? -1 : b.method === 'cash' ? 1 : a.method.localeCompare(b.method)));
+  const sum = (k: 'sales' | 'expected' | 'confirmed' | 'variance') => r2(methods.reduce((a, l) => a + l[k], 0));
+  return { methods, total: { sales: sum('sales'), expected: sum('expected'), confirmed: sum('confirmed'), variance: sum('variance') }, orders, shifts: count };
+}
+
 // ── Node side: what the manager screen renders ───────────────────────────────
 
 export interface BranchCloseTillView {
@@ -302,7 +366,7 @@ export interface BranchCloseTillView {
   confirms: Record<string, { status: string; error: string | null; created_at: string }>;
 }
 
-export function branchCloseOverview(): { business_date: string; tills: BranchCloseTillView[] } {
+export function branchCloseOverview(): { business_date: string; tills: BranchCloseTillView[]; totals: BranchTotals } {
   const db = getLocalDb();
   const own = getDeviceConfig()?.device_id ?? '';
   const today = businessDateNow();
@@ -360,5 +424,7 @@ export function branchCloseOverview(): { business_date: string; tills: BranchClo
   // Self first, then peers by device id — a stable order the eye can track
   // while statuses change under it.
   tills.sort((a, b) => (a.is_self === b.is_self) ? a.device_id.localeCompare(b.device_id) : (a.is_self ? -1 : 1));
-  return { business_date: today, tills };
+  // A458: the day's totals over every shift the tills reported.
+  const totals = branchMethodTotals(tills.flatMap((t) => (t.state?.shifts ?? []) as PeerShift[]));
+  return { business_date: today, tills, totals };
 }

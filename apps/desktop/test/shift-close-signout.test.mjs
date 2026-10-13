@@ -27,7 +27,8 @@ const app   = read('src/renderer/App.tsx');
 const pin   = read('src/renderer/pages/PinPage.tsx');
 
 ok("a cashier's close signs out at once (before the closed panel is shown)",
-  /const r = await posApi\.shift\.close\(counted[^\n]*\);\s*\/\/[^\n]*\n\s*if \(\(r as any\)\?\.blind && onSignOut\) \{ onSignOut\('[^']+'\); return; \}\s*setFinalReport\(r\);/.test(panel));
+  // A454: the cashier's copy prints first (their count, no reconciliation), then the sign-out — still before the panel.
+  /const r = await posApi\.shift\.close\(counted[^\n]*\);(\s*\/\/[^\n]*\n)+\s*if \(\(r as any\)\?\.blind && onSignOut\) \{[^}]*\{[^}]*\}[^]*?onSignOut\(p\.ok[^]*?\);\s*return;\s*\}\s*setFinalReport\(r\);/.test(panel));
 ok('leaving a closed shift signs out (Done and ✕)',
   /const leave = finalReport && onSignOut \? \(\) => onSignOut\('[^']+'\) : onClose;/.test(panel)
   && /<button onClick=\{leave\}[^>]*>✕<\/button>/.test(panel)

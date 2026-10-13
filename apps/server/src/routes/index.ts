@@ -17,6 +17,7 @@ import kitchenRoutes       from './kitchen';
 import staffRoutes         from './staff';
 import reportsExportRoutes from './reports-export';
 import reportsDailyRoutes  from './reports-daily';
+import reportsMonthlyRoutes from './reports-monthly';   // A455
 import reportsRoutes       from './reports';
 import loyaltyRoutes       from './loyalty';
 import creditRoutes        from './credit';
@@ -109,6 +110,7 @@ router.use('/etims',          etimsRoutes);
 // IMPORTANT: reports/export must come before /reports
 // Daily / hourly / audit share the same prefix and middleware. Mounted first so
 // its specific paths win before the broader export router's handlers.
+router.use('/reports/monthly', reportsMonthlyRoutes);   // A455: before /reports, which takes the rest
 router.use('/reports/export', reportsDailyRoutes);
 router.use('/reports/export', reportsExportRoutes);
 router.use('/reports',        reportsRoutes);

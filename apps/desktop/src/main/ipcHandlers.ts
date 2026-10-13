@@ -47,6 +47,7 @@ import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { tillBranchId } from './deviceConfig';   // A446
+import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
@@ -1131,6 +1132,11 @@ export function registerIpcHandlers() {
    * NEVER THROWS. It runs after the money is taken and the order is committed;
    * a printer problem must not turn a completed sale into an error on screen.
    */
+  /** A456: how many receipts this sale prints (the till's Copies setting, carried on the sale): 1 or 2. */
+  function receiptCopies(payload: any): 1 | 2 {
+    return Number(payload?.receipt_copies) === 2 ? 2 : 1;
+  }
+
   function queueThermal(
     payload: any,
     kinds: Array<'kitchen' | 'dispatch' | 'receipt'>,
@@ -1421,6 +1427,13 @@ export function registerIpcHandlers() {
       orderPayload,
       orderPayload?.kot_sent ? ['receipt'] : ['kitchen', 'dispatch', 'receipt'],
     );
+    // A456 (owner, 2026-10-12: "if i want to be printing 2 copies of a receipt that feature does not exist in the desktop
+    // till"): the till's Copies setting reached only the Windows-printer route; a thermal receipt printed once. The
+    // second copy (the merchant's) is queued after the first — the receipt only, never a second kitchen ticket.
+    if (receiptCopies(orderPayload) === 2) {
+      const second = queueThermal(orderPayload, ['receipt']);
+      printed.failed.push(...second.failed.filter((x) => !printed.failed.includes(x)));
+    }
 
     // A349: a ticket that could not be produced reaches the sale screen (a missing printer is not a failure — that is
     // "skipped", and a till with no receipt printer would otherwise be nagged on every sale).
@@ -1855,7 +1868,8 @@ export function registerIpcHandlers() {
   // shifts are closed and confirmed they get a close branch"). No second count: each till closes with its confirmed
   // shifts' cash. The server's date is final — a till still on yesterday closes that day too.
   handle('branchClose:closeBranch', async (_e, payload) => {
-    const { notes } = assertPayload<{ notes?: string }>({ notes: { t: 'string', optional: true } }, payload ?? {});
+    const { notes, totals_confirmed } = assertPayload<{ notes?: string; totals_confirmed?: boolean }>(
+      { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true } }, payload ?? {});
     try {
       if (!isManager()) return { ok: false, error: 'Only a manager can close the branch.' };
       const ov = branchCloseOverview();
@@ -1871,6 +1885,8 @@ export function registerIpcHandlers() {
         if (waiting) blockers.push(`${label(t)}: ${waiting} shift${waiting === 1 ? '' : 's'} not confirmed yet`);
       }
       if (blockers.length) return { ok: false, error: `The branch cannot close yet: ${blockers.join('; ')}.`, blockers };
+      // A458: then the manager confirms the day's totals per payment method (the confirmed shifts added up).
+      if (totals_confirmed !== true) return { ok: false, error: 'Check the day\'s totals by payment method and tick that they are right before closing the branch.', code: 'TOTALS_NOT_CONFIRMED' };
       const staff = getLocalDb().prepare(`SELECT staff_id, staff_name FROM staff_session WHERE id=1`).get() as any;
       const base = { business_date: businessDateNow(), counted_cash: null, notes, closed_by_staff_id: staff?.staff_id ?? null, closed_by_name: staff?.staff_name ?? null };
       const results: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }> = [];
@@ -1884,7 +1900,8 @@ export function registerIpcHandlers() {
           results.push({ device_id: t.device_id, ok: true, sent: true });
         }
       }
-      logLine('branchClose', `A452 branch close by ${staff?.staff_name ?? 'a manager'}: ${results.map((r) => `${r.device_id.slice(0, 8)}=${r.ok ? (r.sent ? 'sent' : 'closed') : 'refused'}`).join(', ') || 'nothing open'}`);
+      const dayTotals = ov.totals.methods.map((l) => `${l.method} ${l.confirmed}`).join(', ');   // A458
+      logLine('branchClose', `A452 branch close by ${staff?.staff_name ?? 'a manager'} (totals confirmed: ${dayTotals || 'none'}): ${results.map((r) => `${r.device_id.slice(0, 8)}=${r.ok ? (r.sent ? 'sent' : 'closed') : 'refused'}`).join(', ') || 'nothing open'}`);
       return { ok: results.every((r) => r.ok), results };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? 'Could not close the branch' };
@@ -1928,6 +1945,8 @@ export function registerIpcHandlers() {
   });
 
   handle('shift:float', async (_event, { type, amount, reason, pin }: { type: 'float_in' | 'float_out'; amount: number; reason?: string; pin?: string }) => {
+    // A453: with 'cashier_no_money_out' only a manager signed in here records cash in / out (no PIN route for a cashier).
+    if (!mayRecordMoneyMovement(getPosFeatures(), signedInConfirmer() !== null)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
     // 0.6.37 (A388): a cash-out needs a manager — signed in, or their PIN on the spot. A pay-in needs nobody.
     const approver = type === 'float_out' ? await payoutApprover(pin) : null;
     addFloat(type, Number(amount), reason, approver);
@@ -2945,6 +2964,8 @@ export function registerIpcHandlers() {
   }: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
        payment_method?: string; category_name?: string; pin?: string }) => {
     const db = getLocalDb();
+    // A453: with 'cashier_no_money_out' only a manager signed in here records an expense.
+    if (!mayRecordMoneyMovement(getPosFeatures(), signedInConfirmer() !== null)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
     const approver = await payoutApprover(pin);   // 0.6.37 (A388): every expense needs a manager
     const session  = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
     const staff    = db.prepare(`SELECT branch_id, staff_id FROM staff_session WHERE id=1`).get() as any;

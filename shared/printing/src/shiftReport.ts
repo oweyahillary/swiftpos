@@ -102,6 +102,13 @@ export interface ShiftReportData {
   variance?: Cents | null;
 
   notes?: string | null;
+  /**
+   * A454 — the cashier's own copy at a blind shift close (owner, 2026-10-12: "remove reconciliation from Zreport printed
+   * by the cashier during shift closing, it should only show payment method and any other details needed they should
+   * not know the variance"). Present → the slip shows what the cashier declared per payment method, their expenses and
+   * pay-outs, kitchen voids and that a manager checks it — never sales figures, expected amounts or a variance.
+   */
+  cashierCopy?: { declared: { method: string; amount: Cents }[] } | null;
   printedAt: Date;
   footerCredit?: string;
 }
@@ -125,6 +132,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   const money = (c: Cents | null | undefined) => `${r.currencyCode} ${formatCents(c ?? 0)}`;
 
   const isClosed = r.status === 'closed' || r.status === 'closed_unreconciled';
+  if (r.cashierCopy) return renderCashierCopy(r, r.cashierCopy, cols, d, money);   // A454
 
   // ── Heading ───────────────────────────────────────────────────────────────
   if (r.logoRaster) d.image(r.logoRaster, 'center');   // 0.6.25
@@ -293,5 +301,71 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   d.line(rule(cols));
   d.line(center(cols, r.footerCredit ?? 'Powered by ZapTill'));
 
+  return d.build();
+}
+
+/** A454: the methods' printed names, as on the full report. */
+const methodLabel = (m: string) => METHOD_LABELS[m] ?? m.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+/** Description left, amount right — wrapped whole when it does not fit (as the full report's expense lines). */
+function amountLine(d: DocBuilder, cols: number, description: string, amt: string): void {
+  if (description.length + amt.length + 1 <= cols) d.line(pair(cols, description, amt));
+  else { d.lines(wrap(description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
+}
+
+/**
+ * A454 — the cashier's copy at a blind close: who, when, what they declared per payment method, the money they paid out
+ * and the kitchen voids. No sales, no expected amount, no variance — the manager sees those when confirming.
+ */
+function renderCashierCopy(
+  r: ShiftReportData, copy: NonNullable<ShiftReportData['cashierCopy']>, cols: number, d: DocBuilder,
+  money: (c: Cents | null | undefined) => string,
+): Document {
+  if (r.logoRaster) d.image(r.logoRaster, 'center');
+  d.line(center(cols, r.businessName.toUpperCase()), { size: 'tall', bold: true });
+  d.line(center(cols, 'SHIFT CLOSE - CASHIER COPY'), { bold: true });
+  if (r.branchName) d.line(center(cols, r.branchName));
+  d.line(center(cols, `Printed ${stamp(r.printedAt)}`));
+  d.line(rule(cols));
+
+  d.line(pair(cols, 'Cashier', r.cashierName));
+  d.line(pair(cols, 'Shift', r.shiftRef));
+  d.line(pair(cols, 'Opened', stamp(r.openedAt)));
+  d.line(pair(cols, 'Closed', r.closedAt ? stamp(r.closedAt) : '—'));
+  d.line(rule(cols));
+
+  d.line('YOUR COUNT', { bold: true });
+  let total = 0;
+  for (const m of copy.declared) {
+    total += m.amount;
+    d.line(pair(cols, methodLabel(m.method), money(m.amount)));
+  }
+  d.line(pair(cols, 'Total declared', money(total)), { bold: true });
+
+  if (r.expenseLines && r.expenseLines.length) {
+    d.line(rule(cols));
+    d.line(`EXPENSES (${r.expenseLines.length})`, { bold: true });
+    for (const e of r.expenseLines) amountLine(d, cols, e.description, money(e.amount));
+  }
+  if (r.payoutLines && r.payoutLines.length) {
+    d.line(rule(cols));
+    d.line(`PAY-OUTS (${r.payoutLines.length})`, { bold: true });
+    for (const e of r.payoutLines) amountLine(d, cols, e.description, money(e.amount));
+  }
+  if (r.kitchenVoids && r.kitchenVoids.lines.length) {
+    d.line(rule(cols));
+    d.line(`KITCHEN VOIDS (${r.kitchenVoids.lines.length})`, { bold: true });
+    for (const e of r.kitchenVoids.lines) amountLine(d, cols, e.description, money(e.amount));
+  }
+  if (r.backupNote && r.backupNote.trim()) {
+    d.line(rule(cols));
+    d.lines(wrap(r.backupNote.trim(), cols), { bold: true });
+  }
+  d.line(rule(cols));
+  d.lines(wrap('AWAITING MANAGER CHECK - a manager counts and confirms this shift.', cols), { bold: true });
+  d.blank();
+  d.line('Cashier sign: ____________________');
+  d.line(rule(cols));
+  d.line(center(cols, r.footerCredit ?? 'Powered by ZapTill'));
   return d.build();
 }
