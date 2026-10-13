@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Fragment } from 'react';
 import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
@@ -12,6 +12,7 @@ import RecipeDrawer from './RecipeDrawer';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
 import { cleanShowDays, showDaysLabel, DAY_SHORT } from '../../lib/productDays';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 
 const EMPTY_FORM = {
   name: '',
@@ -33,6 +34,7 @@ export default function ProductsPage() {
   const { business } = useBusiness();
   const { term, lower } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
+  const more = useRowMore();   // A464: a phone shows select, Product, Price and the actions
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -385,16 +387,17 @@ export default function ProductsPage() {
                   />
                 </th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Product</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Category</th>
+                <th className={`px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider ${DESK}`}>Category</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Price</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Cost</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Status</th>
+                <th className={`px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider ${DESK}`}>Cost</th>
+                <th className={`px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider ${DESK}`}>Status</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider sticky right-0 bg-gray-900"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {filtered.map(p => (
-                <tr key={p.id} className={`hover:bg-gray-800/50 transition-colors ${selectedIds.has(p.id) ? 'bg-gray-800/40' : ''}`}>
+                <Fragment key={p.id}>
+                <tr className={`hover:bg-gray-800/50 transition-colors ${selectedIds.has(p.id) ? 'bg-gray-800/40' : ''}`}>
                   <td className="px-4 py-3">
                     <input type="checkbox" aria-label={`Select ${p.name}`} checked={selectedIds.has(p.id)} onChange={() => toggleRow(p.id)} />
                   </td>
@@ -416,10 +419,11 @@ export default function ProductsPage() {
                           )}
                         </div>
                         {p.description && <p className="text-gray-500 text-xs truncate max-w-xs">{p.description}</p>}
+                        <ViewMore open={more.isOpen(String(p.id))} onClick={() => more.toggle(String(p.id))} />
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className={`px-4 py-3 ${DESK}`}>
                     {p.categories ? (
                       <span className="text-xs text-gray-300">{p.categories.name}</span>
                     ) : (
@@ -450,12 +454,12 @@ export default function ProductsPage() {
                       </button>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className={`px-4 py-3 text-sm ${DESK}`}>
                     {(p as any).cost_price != null
                       ? <span className="text-gray-300">{currency} {Number((p as any).cost_price).toLocaleString()}</span>
                       : <span className="text-amber-500/70 text-xs">no cost</span>}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className={`px-4 py-3 ${DESK}`}>
                     <span className={`text-xs px-2 py-1 rounded-full ${p.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'}`}>
                       {p.status}
                     </span>
@@ -495,6 +499,16 @@ export default function ProductsPage() {
                     </div>
                   </td>
                 </tr>
+                <MoreRow open={more.isOpen(String(p.id))} colSpan={4} items={[
+                  ['Category', p.categories ? p.categories.name : '—'],
+                  ['Cost', (p as any).cost_price != null
+                    ? <span className="text-gray-300">{currency} {Number((p as any).cost_price).toLocaleString()}</span>
+                    : <span className="text-amber-500/70 text-xs">no cost</span>],
+                  ['Status', <span className={`text-xs px-2 py-1 rounded-full ${p.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'}`}>
+                      {p.status}
+                    </span>],
+                ]} />
+                </Fragment>
               ))}
             </tbody>
           </table>

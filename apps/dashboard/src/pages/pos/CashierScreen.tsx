@@ -779,6 +779,52 @@ export default function CashierScreen() {
     setPaymentEvenSplit(evenSplit); setShowPayment(true);
   }
 
+  // A464: the phone's cart bar — the item count, the open order (table / bay / pump) and, for 2 s, the item just added
+  // (the cart is out of sight on a phone, so the tap needs an answer).
+  const cartCount = cart.reduce((n, i) => n + (Number(i.quantity) || 0), 0);
+  const activeOrder = activeKey ? openOrders[activeKey] : undefined;
+  const activeOrderLabel = !activeOrder ? ''
+    : isPetrol ? (activeOrder.pumpName || activeOrder.tableName || '')
+    : isParking ? (activeOrder.vehiclePlate || activeOrder.tableName || '')
+    : (activeOrder.tableName || '');
+  const [cartFlash, setCartFlash] = useState<string | null>(null);
+  const cartQtyRef = useRef<Record<string, number> | null>(null);
+  const cartKeyRef = useRef<string | null>(null);
+  const cartFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const now: Record<string, number> = {};
+    const names: Record<string, string> = {};
+    for (const i of cart) {
+      now[i.product.id] = (now[i.product.id] ?? 0) + (Number(i.quantity) || 0);
+      names[i.product.id] = i.product.name;
+    }
+    const before = cartKeyRef.current === activeKey ? cartQtyRef.current : null;   // another table's order is not "adding"
+    cartQtyRef.current = now;
+    cartKeyRef.current = activeKey;
+    if (!before) return;   // the first render, or a switched / resumed order: nothing was just added
+    const added = Object.keys(now).find(id => now[id] > (before[id] ?? 0));
+    if (!added) return;
+    const delta = now[added] - (before[added] ?? 0);
+    setCartFlash(`+ ${names[added]} ×${Number.isInteger(delta) ? delta : delta.toFixed(2)}`);
+    if (cartFlashTimer.current) clearTimeout(cartFlashTimer.current);
+    cartFlashTimer.current = setTimeout(() => setCartFlash(null), 2000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart]);
+  useEffect(() => () => { if (cartFlashTimer.current) clearTimeout(cartFlashTimer.current); }, []);
+
+  // A464: the category bar has more to the right (a phone shows a fade there until it is scrolled to the end).
+  const catRowRef = useRef<HTMLDivElement | null>(null);
+  const [catMore, setCatMore] = useState(false);
+  const checkCatMore = useCallback(() => {
+    const el = catRowRef.current;
+    setCatMore(!!el && el.scrollWidth - el.scrollLeft - el.clientWidth > 4);
+  }, []);
+  useEffect(() => {
+    checkCatMore();
+    window.addEventListener('resize', checkCatMore);
+    return () => window.removeEventListener('resize', checkCatMore);
+  }, [checkCatMore, categories.length, isPhone, activeKey]);
+
   function resumeParked(key: string) {
     const order = openOrders[key];
     if (!order) return;
@@ -1256,7 +1302,7 @@ export default function CashierScreen() {
       </header>
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
-      <div style={isPhone && !cartSheet ? { ...s.body, paddingBottom: 60 } : s.body}>
+      <div style={isPhone && !cartSheet ? { ...s.body, paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))' } : s.body}>
 
         {/* Minimart: self-contained POS replacing both panels */}
         {isMinimart && (
@@ -1525,7 +1571,14 @@ export default function CashierScreen() {
               </div>
 
               {/* Category tabs */}
-              <div style={s.catRow}>
+              {/* A464: on a phone a fade at the right edge says there are more categories; a tapped one scrolls into view. */}
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+              {isPhone && catMore && (
+                <div data-testid="cat-more-fade" aria-hidden
+                  style={{ position: 'absolute', top: 0, right: 0, bottom: 1, width: 36, pointerEvents: 'none', zIndex: 1,
+                           background: 'linear-gradient(to right, transparent, var(--pos-panel))' }} />
+              )}
+              <div style={s.catRow} ref={catRowRef} onScroll={checkCatMore}>
                 {[{ id: 'all', name: 'All', color: null, icon: null }, ...categories].map((cat) => (
                   <button
                     key={cat.id}
@@ -1539,12 +1592,16 @@ export default function CashierScreen() {
                           }
                         : {}),
                     }}
-                    onClick={() => setActiveCategory(cat.id)}
+                    onClick={(e) => {
+                      setActiveCategory(cat.id);
+                      if (isPhone) e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }}
                   >
                     {(cat as Category).icon && <span>{(cat as Category).icon} </span>}
                     {cat.name}
                   </button>
                 ))}
+              </div>
               </div>
 
               {/* Product grid */}
@@ -2657,14 +2714,39 @@ Signature: _______________`;
 
       {showZReport && <ZReportModal onClose={() => setShowZReport(false)} />}
 
+      {/* A464 (owner, 2026-10-13): the bar names the open order, flashes the last item added, and charges in one tap;
+          it sits clear of the iPhone home bar. */}
       {isPhone && !cartSheet && !isMinimart && (cart.length > 0 || !!activeKey) && (
-        <button data-testid="pos-cart-bar" onClick={() => setCartSheet(true)}
-          style={{ position: 'fixed', left: 10, right: 10, bottom: 10, zIndex: 44, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                   padding: '12px 16px', borderRadius: 12, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15,
-                   background: 'var(--pos-accent, #14b8a6)', color: '#0b1220', boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
-          <span>🛒 Cart · {cart.reduce((n, i) => n + (Number(i.quantity) || 0), 0)} item{cart.reduce((n, i) => n + (Number(i.quantity) || 0), 0) === 1 ? '' : 's'}</span>
-          <span>{fmt(orderTotal, currency)} ›</span>
-        </button>
+        <div data-testid="pos-cart-bar"
+          style={{ position: 'fixed', left: 10, right: 10, bottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', zIndex: 44, display: 'flex',
+                   borderRadius: 12, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                   transform: cartFlash ? 'scale(1.03)' : 'scale(1)', transition: 'transform 0.15s ease' }}>
+          <button data-testid="pos-cart-open" onClick={() => setCartSheet(true)}
+            style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 1,
+                     padding: '9px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                     background: 'var(--pos-accent, #14b8a6)', color: '#0b1220' }}>
+            <span style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+              🛒 {activeOrderLabel ? `${activeOrderLabel} · ` : ''}{cartCount} item{cartCount === 1 ? '' : 's'} ›
+            </span>
+            <span data-testid="pos-cart-last" style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+              {cartFlash ?? 'Tap to see the order'}
+            </span>
+          </button>
+          {cart.length > 0 && (
+            <button data-testid="pos-cart-charge"
+              onClick={() => {
+                if (!currentShift) { setShiftModal('open'); return; }
+                // a delivery still missing its rider or fee: open the cart, where the message shows
+                const problem = deliveryProblem(posFeatures.delivery_fee, getOrderType(), activeRider, activeFeeText);
+                if (problem) { setDeliveryMsg(problem); setCartSheet(true); return; }
+                openPayment(false);
+              }}
+              style={{ flexShrink: 0, padding: '0 16px', border: 'none', borderLeft: '1px solid rgba(11,18,32,0.25)', cursor: 'pointer',
+                       fontWeight: 800, fontSize: 14, background: 'var(--pos-accent, #14b8a6)', color: '#0b1220', opacity: currentShift ? 1 : 0.6 }}>
+              Charge {fmt(orderTotal, currency)}
+            </button>
+          )}
+        </div>
       )}
       {closedElsewhere && (
         <div data-testid="shift-closed-elsewhere" role="alert"

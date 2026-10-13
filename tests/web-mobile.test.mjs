@@ -45,9 +45,24 @@ ok('the manager\'s drawer starts closed on a phone', /useState\(\(\) => !\(typeo
 // ── the web POS ──
 ok('the web POS cart is a sheet on a phone, opened from the cart bar',
   /data-testid="pos-cart"/.test(pos) && /display: cartSheet \? 'flex' : 'none'/.test(pos)
-  && /data-testid="pos-cart-bar"[^>]*onClick=\{\(\) => setCartSheet\(true\)\}/.test(pos)
+  && /data-testid="pos-cart-open" onClick=\{\(\) => setCartSheet\(true\)\}/.test(pos)
   && /data-testid="pos-cart-back"[^>]*onClick=\{\(\) => setCartSheet\(false\)\}/.test(pos));
-ok('the cart bar shows the item count and the total', /🛒 Cart · /.test(pos) && /\{fmt\(orderTotal, currency\)\} ›/.test(pos));
+// A464: the bar charges in one tap, names the open order, flashes the last item added, clears the iPhone home bar
+const bar = pos.slice(pos.indexOf('data-testid="pos-cart-bar"'), pos.indexOf('data-testid="pos-cart-bar"') + 3000);
+ok('A464: the bar shows the open order and the item count', /\{activeOrderLabel \? `\$\{activeOrderLabel\} · ` : ''\}\{cartCount\} item/.test(bar));
+ok('A464: Charge on the bar — a shift first, a delivery problem opens the cart, else payment',
+  /data-testid="pos-cart-charge"/.test(bar) && /if \(!currentShift\) \{ setShiftModal\('open'\); return; \}/.test(bar)
+  && /if \(problem\) \{ setDeliveryMsg\(problem\); setCartSheet\(true\); return; \}\s*openPayment\(false\)/.test(bar)
+  && /Charge \{fmt\(orderTotal, currency\)\}/.test(bar));
+ok('A464: the last item added shows for 2 s (not when switching to another order)',
+  /\{cartFlash \?\? 'Tap to see the order'\}/.test(bar) && /setCartFlash\(`\+ \$\{names\[added\]\} ×/.test(pos)
+  && /cartKeyRef\.current === activeKey \? cartQtyRef\.current : null/.test(pos) && /setTimeout\(\(\) => setCartFlash\(null\), 2000\)/.test(pos));
+ok('A464: the bar and the product list clear the iPhone home bar',
+  /bottom: 'calc\(10px \+ env\(safe-area-inset-bottom, 0px\)\)'/.test(bar) && /paddingBottom: 'calc\(76px \+ env\(safe-area-inset-bottom/.test(pos)
+  && /viewport-fit=cover/.test(read('apps/dashboard/index.html')));
+ok('A464: the category bar fades where there are more, and a tapped one scrolls into view',
+  /isPhone && catMore && \(/.test(pos) && /onScroll=\{checkCatMore\}/.test(pos)
+  && /if \(isPhone\) e\.currentTarget\.scrollIntoView\(\{ behavior: 'smooth', inline: 'center'/.test(pos));
 ok('the POS dialogs fit a phone', /maxWidth: 340, maxHeight: '90dvh', overflowY: 'auto'/.test(pos) && !/width: 340,/.test(pos));
 ok('the POS fills the dynamic viewport', (pos.match(/height: '100dvh'/g) || []).length >= 2 && !/height: '100vh'/.test(pos));
 
@@ -64,6 +79,19 @@ ok('purchase orders: on a phone a PO opens full width with a way back',
   /setSelected\(null\)\} className="lg:hidden[^"]*">← Back to the list/.test(read(D + 'pages/stock/PurchaseOrdersPage.tsx')));
 ok('the toast fits a phone', /w-\[calc\(100%-2rem\)\] max-w-sm/.test(read(D + 'components/Toast.tsx')));
 ok('the counted close dialog scrolls on a short screen', /max-h-\[90vh\] overflow-y-auto/.test(read(D + 'components/CountedCloseModal.tsx')));
+
+// ── A464: a wide table on a phone shows its key columns; "View more" opens the rest under the row ──
+const rowMore = read(D + 'components/RowMore.tsx');
+ok('A464: the hidden columns are hidden only on a phone', /export const DESK = 'hidden sm:table-cell'/.test(rowMore));
+ok('A464: View more and its details exist only on a phone',
+  /className="sm:hidden mt-1 block/.test(rowMore) && /<tr className="sm:hidden" data-testid="row-more-details">/.test(rowMore));
+ok('A464: View more does not open a clickable row', /e\.stopPropagation\(\); onClick\(\);/.test(rowMore));
+for (const f of ['pages/OrdersPage.tsx', 'pages/expenses/ExpensesPage.tsx', 'pages/products/ProductsPage.tsx', 'pages/stock/IngredientsPage.tsx',
+                 'pages/inventory/InventoryPage.tsx', 'pages/OpenShiftsPage.tsx', 'pages/ReportsPage.tsx', 'pages/reports/MonthlyPackTab.tsx',
+                 'pages/manager/ManagerReportsPage.tsx', 'pages/DiscountsPage.tsx', 'pages/customers/CreditAccountsPage.tsx', 'pages/FleetPage.tsx']) {
+  const src = read(D + f);
+  ok(`A464: ${f} — View more on its wide tables`, /useRowMore\(\)/.test(src) && /<ViewMore /.test(src) && /<MoreRow /.test(src) && /DESK/.test(src));
+}
 
 // ── minimart POS and the shift dialog ──
 const mini = read(D + 'pages/pos/MinimartPOS.tsx');

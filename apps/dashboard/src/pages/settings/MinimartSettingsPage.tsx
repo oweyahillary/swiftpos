@@ -3,8 +3,9 @@
  * Route: /dashboard/settings/minimart
  * Converted to Tailwind — Session 2 Phase 2
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { api } from '../../lib/api';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import BulkProductImport from '../products/BulkProductImport';
 
 interface Product {
@@ -60,6 +61,7 @@ export default function MinimartSettingsPage() {
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState('');
   const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const more = useRowMore();
 
   useEffect(() => { loadData(); }, []);
 
@@ -202,8 +204,8 @@ export default function MinimartSettingsPage() {
             <div className="overflow-x-auto"><table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
-                  {['Product', 'Category', 'Price', 'Barcode', 'PLU', 'Sold by', ''].map(h => (
-                    <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  {['Product', 'Category', 'Price', 'Barcode', 'PLU', 'Sold by', ''].map((h, i) => (
+                    <th key={h} className={`px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider${i !== 0 && i !== 2 && i !== 6 ? ` ${DESK}` : ''}`}>
                       {h}
                     </th>
                   ))}
@@ -211,17 +213,20 @@ export default function MinimartSettingsPage() {
               </thead>
               <tbody>
                 {filtered.map(p => (
-                  <tr key={p.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                    <td className="px-3 py-3 text-sm font-semibold text-white">{p.name}</td>
-                    <td className="px-3 py-3 text-xs text-gray-500">{p.categories?.name ?? '—'}</td>
+                  <Fragment key={p.id}>
+                  <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                    <td className="px-3 py-3 text-sm font-semibold text-white">{p.name}
+                      <ViewMore open={more.isOpen(p.id)} onClick={() => more.toggle(p.id)} />
+                    </td>
+                    <td className={`px-3 py-3 text-xs text-gray-500 ${DESK}`}>{p.categories?.name ?? '—'}</td>
                     <td className="px-3 py-3 text-sm font-semibold text-green-400">{Number(p.base_price).toFixed(2)}</td>
-                    <td className="px-3 py-3">
+                    <td className={`px-3 py-3 ${DESK}`}>
                       {p.barcode ? <Badge color="blue">{p.barcode}</Badge> : <span className="text-gray-700 text-xs">—</span>}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className={`px-3 py-3 ${DESK}`}>
                       {p.plu_code ? <Badge color="violet">{p.plu_code}</Badge> : <span className="text-gray-700 text-xs">—</span>}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className={`px-3 py-3 ${DESK}`}>
                       <Badge color={p.sold_by === 'weight' ? 'amber' : p.sold_by === 'volume' ? 'cyan' : 'slate'}>
                         {p.sold_by ?? 'each'}
                       </Badge>
@@ -235,6 +240,15 @@ export default function MinimartSettingsPage() {
                       </button>
                     </td>
                   </tr>
+                  <MoreRow open={more.isOpen(p.id)} colSpan={3} items={[
+                    ['Category', p.categories?.name ?? '—'],
+                    ['Barcode', p.barcode ? <Badge color="blue">{p.barcode}</Badge> : <span className="text-gray-700 text-xs">—</span>],
+                    ['PLU', p.plu_code ? <Badge color="violet">{p.plu_code}</Badge> : <span className="text-gray-700 text-xs">—</span>],
+                    ['Sold by', <Badge color={p.sold_by === 'weight' ? 'amber' : p.sold_by === 'volume' ? 'cyan' : 'slate'}>
+                        {p.sold_by ?? 'each'}
+                      </Badge>],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table></div>

@@ -5,8 +5,9 @@
  *    or post a manual adjustment.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { api } from '../../lib/api';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -38,6 +39,8 @@ export default function CreditAccountsPage() {
   const [adjAmount, setAdjAmount] = useState('');
   const [adjNotes, setAdjNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const moreCust = useRowMore();
+  const moreLedger = useRowMore();
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -135,23 +138,32 @@ export default function CreditAccountsPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="text-gray-500 text-left text-xs border-b border-gray-800">
-                <th className="p-3">Customer</th><th className="p-3">Phone</th>
-                <th className="p-3 text-right">Limit</th><th className="p-3 text-right">Owed</th>
-                <th className="p-3 text-right">Available</th><th className="p-3"></th>
+                <th className="p-3">Customer</th><th className={`p-3 ${DESK}`}>Phone</th>
+                <th className={`p-3 text-right ${DESK}`}>Limit</th><th className="p-3 text-right">Owed</th>
+                <th className={`p-3 text-right ${DESK}`}>Available</th><th className="p-3"></th>
               </tr>
             </thead>
             <tbody>
               {rows.map(c => (
-                <tr key={c.id} className="border-b border-gray-800 hover:bg-gray-800/50">
-                  <td className="p-3 text-white">{c.name}</td>
-                  <td className="p-3 text-gray-400">{c.phone ?? '—'}</td>
-                  <td className="p-3 text-right text-gray-300">{fmt(c.credit_limit)}</td>
+                <Fragment key={c.id}>
+                <tr className="border-b border-gray-800 hover:bg-gray-800/50">
+                  <td className="p-3 text-white">{c.name}
+                    <ViewMore open={moreCust.isOpen(c.id)} onClick={() => moreCust.toggle(c.id)} />
+                  </td>
+                  <td className={`p-3 text-gray-400 ${DESK}`}>{c.phone ?? '—'}</td>
+                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{fmt(c.credit_limit)}</td>
                   <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{fmt(c.credit_balance)}</td>
-                  <td className="p-3 text-right text-gray-300">{fmt(c.available_credit)}</td>
+                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{fmt(c.available_credit)}</td>
                   <td className="p-3 text-right">
                     <button onClick={() => openCustomer(c)} className="text-swift-text hover:text-swift-text-hover text-xs">Manage →</button>
                   </td>
                 </tr>
+                <MoreRow open={moreCust.isOpen(c.id)} colSpan={3} items={[
+                  ['Phone', c.phone ?? '—'],
+                  ['Limit', fmt(c.credit_limit)],
+                  ['Available', fmt(c.available_credit)],
+                ]} />
+                </Fragment>
               ))}
             </tbody>
           </table></div>
@@ -223,16 +235,25 @@ export default function CreditAccountsPage() {
             <p className="text-white font-medium text-sm mb-2">Statement</p>
             {ledger.length === 0 ? <p className="text-gray-500 text-sm">No transactions.</p> : (
               <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead><tr className="text-gray-500 text-left text-xs"><th className="pb-2">Date</th><th className="pb-2">Type</th><th className="pb-2 text-right">Amount</th><th className="pb-2 text-right">Balance</th><th className="pb-2">Note</th></tr></thead>
+                <thead><tr className="text-gray-500 text-left text-xs"><th className="pb-2">Date</th><th className={`pb-2 ${DESK}`}>Type</th><th className="pb-2 text-right">Amount</th><th className={`pb-2 text-right ${DESK}`}>Balance</th><th className={`pb-2 ${DESK}`}>Note</th></tr></thead>
                 <tbody>
                   {ledger.map(l => (
-                    <tr key={l.id} className="border-t border-gray-800">
-                      <td className="py-2 text-gray-500">{new Date(l.created_at).toLocaleDateString('en-KE')}</td>
-                      <td className="py-2 capitalize text-gray-300">{l.type}</td>
+                    <Fragment key={l.id}>
+                    <tr className="border-t border-gray-800">
+                      <td className="py-2 text-gray-500">{new Date(l.created_at).toLocaleDateString('en-KE')}
+                        <ViewMore open={moreLedger.isOpen(l.id)} onClick={() => moreLedger.toggle(l.id)} />
+                      </td>
+                      <td className={`py-2 capitalize text-gray-300 ${DESK}`}>{l.type}</td>
                       <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{Number(l.amount) > 0 ? '+' : ''}{fmt(l.amount)}</td>
-                      <td className="py-2 text-right text-gray-300">{fmt(l.balance_after)}</td>
-                      <td className="py-2 text-gray-500">{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
+                      <td className={`py-2 text-right text-gray-300 ${DESK}`}>{fmt(l.balance_after)}</td>
+                      <td className={`py-2 text-gray-500 ${DESK}`}>{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
                     </tr>
+                    <MoreRow open={moreLedger.isOpen(l.id)} colSpan={2} items={[
+                      ['Type', <span className="capitalize">{l.type}</span>],
+                      ['Balance', fmt(l.balance_after)],
+                      ['Note', l.method ?? l.notes ?? (l.order_id ? 'sale' : '')],
+                    ]} />
+                    </Fragment>
                   ))}
                 </tbody>
               </table></div>

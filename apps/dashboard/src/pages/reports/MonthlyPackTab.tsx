@@ -7,6 +7,7 @@
  * sold), the owner's personal use, bank deposits, charges.
  */
 import { Fragment, useCallback, useEffect, useState } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { api, downloadFile } from '../../lib/api';
 import { methodLabel } from '../../lib/paymentCatalogue';
 
@@ -40,6 +41,9 @@ export default function MonthlyPackTab({ branchId, currency, branches }: { branc
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<'summary' | 'expenses' | 'books'>('summary');
+  const moreS = useRowMore();    // A464: Daily sales on a phone: Date, Total, Variance
+  const moreE = useRowMore();    // A464: Expenses on a phone: Date, Item, Amount
+  const moreBk = useRowMore();   // A464: the books on a phone: Date, Sales in, Balance
   const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
   useEffect(() => { if (branchId) setBranch(branchId); }, [branchId]);
@@ -99,29 +103,40 @@ export default function MonthlyPackTab({ branchId, currency, branches }: { branc
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-200 dark:border-gray-700 text-left">
                 <th className={head}>Date</th>
-                {pack.methods.map((m) => <th key={m} className={`${head} text-right`}>{methodLabel(m)}</th>)}
-                <th className={`${head} text-right`}>Total</th><th className={`${head} text-right`}>Expected</th>
-                <th className={`${head} text-right`}>Counted</th><th className={`${head} text-right`}>Variance</th>
-                <th className={head}>Cashiers</th><th className={head}>Remarks</th>
+                {pack.methods.map((m) => <th key={m} className={`${head} text-right ${DESK}`}>{methodLabel(m)}</th>)}
+                <th className={`${head} text-right`}>Total</th><th className={`${head} text-right ${DESK}`}>Expected</th>
+                <th className={`${head} text-right ${DESK}`}>Counted</th><th className={`${head} text-right`}>Variance</th>
+                <th className={`${head} ${DESK}`}>Cashiers</th><th className={`${head} ${DESK}`}>Remarks</th>
               </tr></thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-gray-800 dark:text-gray-200">
                 {pack.summary.rows.filter((r) => r.total !== 0 || r.cashiers.length).map((r) => (
-                  <tr key={r.day}>
-                    <td className="px-2 py-1.5 whitespace-nowrap">{r.day}</td>
-                    {pack.methods.map((m) => <td key={m} className={cell}>{money(r.byMethod[m] ?? 0)}</td>)}
+                  <Fragment key={r.day}>
+                  <tr>
+                    <td className="px-2 py-1.5 whitespace-nowrap">{r.day}
+                      <ViewMore open={moreS.isOpen(String(r.day))} onClick={() => moreS.toggle(String(r.day))} />
+                    </td>
+                    {pack.methods.map((m) => <td key={m} className={`${cell} ${DESK}`}>{money(r.byMethod[m] ?? 0)}</td>)}
                     <td className={`${cell} font-medium`}>{money(r.total)}</td>
-                    <td className={cell}>{money(r.expected)}</td><td className={cell}>{money(r.counted)}</td>
+                    <td className={`${cell} ${DESK}`}>{money(r.expected)}</td><td className={`${cell} ${DESK}`}>{money(r.counted)}</td>
                     <td className={`${cell} ${r.variance != null && r.variance < 0 ? 'text-red-500' : r.variance ? 'text-amber-500' : ''}`}>{money(r.variance)}</td>
-                    <td className="px-2 py-1.5 text-xs">{r.cashiers.join(', ')}</td>
-                    <td className="px-2 py-1.5 text-xs text-gray-500">{r.remarks.join('; ')}</td>
+                    <td className={`px-2 py-1.5 text-xs ${DESK}`}>{r.cashiers.join(', ')}</td>
+                    <td className={`px-2 py-1.5 text-xs text-gray-500 ${DESK}`}>{r.remarks.join('; ')}</td>
                   </tr>
+                  <MoreRow open={moreS.isOpen(String(r.day))} colSpan={3} items={[
+                    ...pack.methods.map((m): [string, React.ReactNode] => [methodLabel(m), money(r.byMethod[m] ?? 0)]),
+                    ['Expected', money(r.expected)],
+                    ['Counted', money(r.counted)],
+                    ['Cashiers', r.cashiers.join(', ')],
+                    ['Remarks', r.remarks.join('; ')],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
               <tfoot><tr className="border-t border-gray-300 dark:border-gray-600 font-semibold text-gray-900 dark:text-white">
                 <td className="px-2 py-1.5">Total</td>
-                {pack.methods.map((m) => <td key={m} className={cell}>{money(pack.summary.byMethod[m] ?? 0)}</td>)}
-                <td className={cell}>{money(pack.summary.total)}</td><td className={cell}>{money(pack.summary.expected)}</td>
-                <td className={cell}>{money(pack.summary.counted)}</td><td className={cell}>{money(pack.summary.variance)}</td><td /><td />
+                {pack.methods.map((m) => <td key={m} className={`${cell} ${DESK}`}>{money(pack.summary.byMethod[m] ?? 0)}</td>)}
+                <td className={cell}>{money(pack.summary.total)}</td><td className={`${cell} ${DESK}`}>{money(pack.summary.expected)}</td>
+                <td className={`${cell} ${DESK}`}>{money(pack.summary.counted)}</td><td className={cell}>{money(pack.summary.variance)}</td><td className={DESK} /><td className={DESK} />
               </tr></tfoot>
             </table>
             <p className="text-xs text-gray-500 px-2 py-2">Expected and Counted come from the shifts a manager confirmed (Expected includes each drawer's float and pay-ins / pay-outs). Amounts in {currency}.</p>
@@ -133,18 +148,26 @@ export default function MonthlyPackTab({ branchId, currency, branches }: { branc
             <div className="md:col-span-2 border border-gray-200 dark:border-gray-700 rounded-xl overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="text-left border-b border-gray-200 dark:border-gray-700">
-                  <th className={head}>Date</th><th className={head}>Type</th><th className={head}>Item</th><th className={head}>Paid with</th><th className={`${head} text-right`}>Amount</th>
+                  <th className={head}>Date</th><th className={`${head} ${DESK}`}>Type</th><th className={head}>Item</th><th className={`${head} ${DESK}`}>Paid with</th><th className={`${head} text-right`}>Amount</th>
                 </tr></thead>
                 <tbody className="text-gray-800 dark:text-gray-200">
                   {pack.expenses.days.map((d) => (<Fragment key={d.day}>
                     {d.lines.map((l, i) => (
-                      <tr key={`${d.day}-${i}`} className="border-b border-gray-50 dark:border-gray-800/50">
+                      <Fragment key={`${d.day}-${i}`}>
+                      <tr className="border-b border-gray-50 dark:border-gray-800/50">
                         <td className="px-2 py-1 whitespace-nowrap text-xs">{i === 0 ? d.day : ''}</td>
-                        <td className="px-2 py-1 text-xs">{l.type ?? 'Uncategorised'}</td><td className="px-2 py-1">{l.description}</td>
-                        <td className="px-2 py-1 text-xs">{methodLabel(l.method)}</td><td className={cell}>{money(l.amount)}</td>
+                        <td className={`px-2 py-1 text-xs ${DESK}`}>{l.type ?? 'Uncategorised'}</td><td className="px-2 py-1">{l.description}
+                          <ViewMore open={moreE.isOpen(`${d.day}-${i}`)} onClick={() => moreE.toggle(`${d.day}-${i}`)} />
+                        </td>
+                        <td className={`px-2 py-1 text-xs ${DESK}`}>{methodLabel(l.method)}</td><td className={cell}>{money(l.amount)}</td>
                       </tr>
+                      <MoreRow open={moreE.isOpen(`${d.day}-${i}`)} colSpan={3} items={[
+                        ['Type', l.type ?? 'Uncategorised'],
+                        ['Paid with', methodLabel(l.method)],
+                      ]} />
+                      </Fragment>
                     ))}
-                    <tr key={`${d.day}-t`} className="border-b border-gray-200 dark:border-gray-700 font-medium"><td /><td /><td className="px-2 py-1 text-xs">Total {d.day}</td><td /><td className={cell}>{money(d.total)}</td></tr>
+                    <tr key={`${d.day}-t`} className="border-b border-gray-200 dark:border-gray-700 font-medium"><td /><td className={DESK} /><td className="px-2 py-1 text-xs">Total {d.day}</td><td className={DESK} /><td className={cell}>{money(d.total)}</td></tr>
                   </Fragment>))}
                   {pack.expenses.days.length === 0 && <tr><td colSpan={5} className="px-2 py-3 text-gray-500">No expenses recorded this month.</td></tr>}
                 </tbody>
@@ -171,19 +194,31 @@ export default function MonthlyPackTab({ branchId, currency, branches }: { branc
                 <p className="px-3 pt-3 text-sm font-medium text-gray-900 dark:text-white">{b.label} — opening {money(b.opening)} · closing {money(b.closing)}</p>
                 <table className="w-full text-sm">
                   <thead><tr className="text-left border-b border-gray-200 dark:border-gray-700">
-                    <th className={head}>Date</th><th className={`${head} text-right`}>Sales in</th><th className={`${head} text-right`}>Other income</th>
-                    <th className={`${head} text-right`}>Expenses</th>{b.method === 'cash' && <th className={`${head} text-right`}>Paid out</th>}
-                    <th className={`${head} text-right`}>Personal</th><th className={`${head} text-right`}>Bank deposit</th><th className={`${head} text-right`}>Charges</th>
+                    <th className={head}>Date</th><th className={`${head} text-right`}>Sales in</th><th className={`${head} text-right ${DESK}`}>Other income</th>
+                    <th className={`${head} text-right ${DESK}`}>Expenses</th>{b.method === 'cash' && <th className={`${head} text-right ${DESK}`}>Paid out</th>}
+                    <th className={`${head} text-right ${DESK}`}>Personal</th><th className={`${head} text-right ${DESK}`}>Bank deposit</th><th className={`${head} text-right ${DESK}`}>Charges</th>
                     <th className={`${head} text-right`}>Balance</th>
                   </tr></thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-gray-800 dark:text-gray-200">
                     {b.rows.filter((r) => r.sales || r.otherIn || r.expenses || r.paidOut || r.drawings || r.deposits || r.charges).map((r) => (
-                      <tr key={r.day}>
-                        <td className="px-2 py-1.5 whitespace-nowrap">{r.day}</td><td className={cell}>{money(r.sales)}</td><td className={cell}>{money(r.otherIn)}</td>
-                        <td className={cell}>{money(r.expenses)}</td>{b.method === 'cash' && <td className={cell}>{money(r.paidOut)}</td>}
-                        <td className={cell}>{money(r.drawings)}</td><td className={cell}>{money(r.deposits)}</td><td className={cell}>{money(r.charges)}</td>
+                      <Fragment key={r.day}>
+                      <tr>
+                        <td className="px-2 py-1.5 whitespace-nowrap">{r.day}
+                          <ViewMore open={moreBk.isOpen(`${b.method}-${r.day}`)} onClick={() => moreBk.toggle(`${b.method}-${r.day}`)} />
+                        </td><td className={cell}>{money(r.sales)}</td><td className={`${cell} ${DESK}`}>{money(r.otherIn)}</td>
+                        <td className={`${cell} ${DESK}`}>{money(r.expenses)}</td>{b.method === 'cash' && <td className={`${cell} ${DESK}`}>{money(r.paidOut)}</td>}
+                        <td className={`${cell} ${DESK}`}>{money(r.drawings)}</td><td className={`${cell} ${DESK}`}>{money(r.deposits)}</td><td className={`${cell} ${DESK}`}>{money(r.charges)}</td>
                         <td className={`${cell} font-medium`}>{money(r.balance)}</td>
                       </tr>
+                      <MoreRow open={moreBk.isOpen(`${b.method}-${r.day}`)} colSpan={3} items={[
+                        ['Other income', money(r.otherIn)],
+                        ['Expenses', money(r.expenses)],
+                        ...(b.method === 'cash' ? [['Paid out', money(r.paidOut)] as [string, React.ReactNode]] : []),
+                        ['Personal', money(r.drawings)],
+                        ['Bank deposit', money(r.deposits)],
+                        ['Charges', money(r.charges)],
+                      ]} />
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -205,6 +240,7 @@ function MovementsCard({ branch, month, methods, moves, onChange, money }: {
   const [f, setF] = useState({ movement_date: firstDay, method: 'cash', kind: 'bank_deposit' as Kind, amount: '', note: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const more = useRowMore();   // A464: a phone shows Date, Amount, Remove
   useEffect(() => { setF((x) => ({ ...x, movement_date: x.movement_date.startsWith(month) ? x.movement_date : firstDay })); }, [month, firstDay]);
   const input = 'bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-white';
 
@@ -244,11 +280,20 @@ function MovementsCard({ branch, month, methods, moves, onChange, money }: {
           <table className="w-full text-sm">
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-gray-700 dark:text-gray-300">
               {moves.map((m) => (
-                <tr key={m.id}>
-                  <td className="py-1 whitespace-nowrap">{m.movement_date}</td><td className="py-1">{methodLabel(m.method)}</td><td className="py-1">{KIND_LABEL[m.kind] ?? m.kind}</td>
-                  <td className="py-1 text-right tabular-nums">{money(Number(m.amount))}</td><td className="py-1 text-xs text-gray-500">{m.note ?? ''}{m.recorded_by_name ? ` · ${m.recorded_by_name}` : ''}</td>
+                <Fragment key={m.id}>
+                <tr>
+                  <td className="py-1 whitespace-nowrap">{m.movement_date}
+                    <ViewMore open={more.isOpen(String(m.id))} onClick={() => more.toggle(String(m.id))} />
+                  </td><td className={`py-1 ${DESK}`}>{methodLabel(m.method)}</td><td className={`py-1 ${DESK}`}>{KIND_LABEL[m.kind] ?? m.kind}</td>
+                  <td className="py-1 text-right tabular-nums">{money(Number(m.amount))}</td><td className={`py-1 text-xs text-gray-500 ${DESK}`}>{m.note ?? ''}{m.recorded_by_name ? ` · ${m.recorded_by_name}` : ''}</td>
                   <td className="py-1 text-right"><button onClick={() => void remove(m.id)} className="text-xs text-red-500">Remove</button></td>
                 </tr>
+                <MoreRow open={more.isOpen(String(m.id))} colSpan={3} items={[
+                  ['Method', methodLabel(m.method)],
+                  ['Type', KIND_LABEL[m.kind] ?? m.kind],
+                  ['Note', `${m.note ?? ''}${m.recorded_by_name ? ` · ${m.recorded_by_name}` : ''}`],
+                ]} />
+                </Fragment>
               ))}
             </tbody>
           </table>

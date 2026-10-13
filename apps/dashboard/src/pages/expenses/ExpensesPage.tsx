@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
@@ -7,6 +7,7 @@ import { useBranch } from '../../context/BranchContext';
 import { usePermissions } from '../../context/PermissionsContext';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { localDateStr } from '../../lib/localDate';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,7 @@ export default function ExpensesPage() {
   // ── State ──────────────────────────────────────────────────────────────────
 
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
+  const more = useRowMore();   // A464: a phone shows Description, Amount and the actions
   const [expenses, setExpenses]       = useState<Expense[]>([]);
   const [total, setTotal]             = useState(0);
   const [categories, setCategories]   = useState<ExpenseCategory[]>([]);
@@ -447,21 +449,22 @@ export default function ExpensesPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-800">
-                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Date</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Date</th>
                       <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Description</th>
-                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Category</th>
-                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Branch</th>
-                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid With</th>
-                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid By</th>
-                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Recorded By</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Category</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Branch</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Paid With</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Paid By</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Recorded By</th>
                       <th className="text-right text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Amount</th>
                       {canManage && <th className="px-4 py-3" />}
                     </tr>
                   </thead>
                   <tbody>
                     {shown.map(e => (
-                      <tr key={e.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
-                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{fmtDate(e.expense_date)}</td>
+                      <Fragment key={e.id}>
+                      <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
+                        <td className={`px-4 py-3 text-gray-300 whitespace-nowrap ${DESK}`}>{fmtDate(e.expense_date)}</td>
                         <td className="px-4 py-3 text-white max-w-xs">
                           <span className="block truncate">{e.description}</span>
                           {e.receipt_url && (
@@ -472,18 +475,19 @@ export default function ExpensesPage() {
                               className="text-swift-text text-xs hover:underline"
                             >Receipt ↗</a>
                           )}
+                          <ViewMore open={more.isOpen(String(e.id))} onClick={() => more.toggle(String(e.id))} />
                         </td>
-                        <td className="px-4 py-3">
+                        <td className={`px-4 py-3 ${DESK}`}>
                           {e.category_name ? (
                             <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{e.category_name}</span>
                           ) : (
                             <span className="text-gray-600 text-xs">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-400 text-xs">{e.branch_name ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-400 text-xs">{EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method}</td>
-                        <td className="px-4 py-3 text-gray-400 text-xs">{e.paid_by_name ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-400 text-xs">{e.recorded_by_name ?? '—'}
+                        <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{e.branch_name ?? '—'}</td>
+                        <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method}</td>
+                        <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{e.paid_by_name ?? '—'}</td>
+                        <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{e.recorded_by_name ?? '—'}
                           {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</td>
                         <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
                           {fmt(e.amount, currency)}
@@ -503,11 +507,27 @@ export default function ExpensesPage() {
                           </td>
                         )}
                       </tr>
+                      <MoreRow open={more.isOpen(String(e.id))} colSpan={canManage ? 3 : 2} items={[
+                        ['Date', fmtDate(e.expense_date)],
+                        ['Category', e.category_name ? (
+                          <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{e.category_name}</span>
+                        ) : '—'],
+                        ['Branch', e.branch_name ?? '—'],
+                        ['Paid With', EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method],
+                        ['Paid By', e.paid_by_name ?? '—'],
+                        ['Recorded By', <>{e.recorded_by_name ?? '—'}
+                          {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</>],
+                      ]} />
+                      </Fragment>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-gray-700">
-                      <td colSpan={7} className="px-4 py-3 text-gray-500 text-xs font-semibold">
+                      <td colSpan={7} className={`px-4 py-3 text-gray-500 text-xs font-semibold ${DESK}`}>
+                        {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
+                      </td>
+                      {/* A464: a phone shows one column before Amount */}
+                      <td className="sm:hidden px-4 py-3 text-gray-500 text-xs font-semibold">
                         {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-red-300">

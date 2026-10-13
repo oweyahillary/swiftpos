@@ -35,7 +35,8 @@
  * performed, which is the one thing this whole design refuses to do.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { api } from '../lib/api';
 import Toast from '../components/Toast';
 import ShiftConfirmations from '../components/ShiftConfirmations';
@@ -75,6 +76,7 @@ export default function OpenShiftsPage() {
   const [counting, setCounting] = useState<OpenShift | null>(null);   // A462: close with a count
   const [confirmKey, setConfirmKey] = useState(0);
   const { toast, showToast } = useToast();
+  const more = useRowMore();   // A464: a phone shows Cashier, Expected cash and the actions
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,7 +143,7 @@ export default function OpenShiftsPage() {
               <thead className="bg-gray-50 dark:bg-gray-800">
                 <tr>
                   {['Cashier', 'Till', 'Opened', 'Opening float', 'Expected cash', ''].map(h => (
-                    <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400">
+                    <th key={h} className={`px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400 ${['Till', 'Opened', 'Opening float'].includes(h) ? DESK : ''}`}>
                       {h}
                     </th>
                   ))}
@@ -154,18 +156,21 @@ export default function OpenShiftsPage() {
                   // agree about when a drawer has stopped being plausible.
                   const stale = hrs >= 18;
                   return (
-                    <tr key={s.id} className="bg-white dark:bg-gray-900">
-                      <td className="px-4 py-3 text-gray-900 dark:text-white">{s.cashier_name}</td>
-                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                    <Fragment key={s.id}>
+                    <tr className="bg-white dark:bg-gray-900">
+                      <td className="px-4 py-3 text-gray-900 dark:text-white">{s.cashier_name}
+                        <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
+                      </td>
+                      <td className={`px-4 py-3 text-gray-600 dark:text-gray-400 ${DESK}`}>
                         {s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 py-3 ${DESK}`}>
                         <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
                           {hrs}h ago
                         </span>
                         <div className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('en-KE')}</div>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums">
+                      <td className={`px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums ${DESK}`}>
                         {money(Number(s.opening_float))}
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-white tabular-nums">
@@ -186,6 +191,17 @@ export default function OpenShiftsPage() {
                         </button>
                       </td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(s.id))} colSpan={3} items={[
+                      ['Till', s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>],
+                      ['Opened', <>
+                        <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
+                          {hrs}h ago
+                        </span>
+                        <div className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('en-KE')}</div>
+                      </>],
+                      ['Opening float', <span className="tabular-nums">{money(Number(s.opening_float))}</span>],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>

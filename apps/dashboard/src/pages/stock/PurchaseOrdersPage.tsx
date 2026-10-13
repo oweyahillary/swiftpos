@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
@@ -36,6 +37,7 @@ function fmtDate(d: string) {
 
 export default function PurchaseOrdersPage() {
   const { business } = useBusiness();
+  const more = useRowMore();   // A464: a phone shows Ingredient, Received, Line Total
   const { activeBranchId } = useBranch();
   const currency = business?.currency ?? 'KES';
   const { toast, showToast } = useToast();
@@ -356,7 +358,7 @@ export default function PurchaseOrdersPage() {
                     <thead>
                       <tr className="border-b border-gray-800">
                         {['Ingredient','Ordered','Received','Unit Cost','Line Total'].map(h => (
-                          <th key={h} className={`text-gray-500 text-xs px-4 py-2.5 uppercase tracking-wider font-semibold ${h === 'Ingredient' ? 'text-left' : 'text-right'}`}>{h}</th>
+                          <th key={h} className={`text-gray-500 text-xs px-4 py-2.5 uppercase tracking-wider font-semibold ${h === 'Ingredient' ? 'text-left' : 'text-right'} ${h === 'Ordered' || h === 'Unit Cost' ? DESK : ''}`}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -367,26 +369,34 @@ export default function PurchaseOrdersPage() {
                         const unit = ing?.unit ?? item.ingredients?.unit ?? item.ingredient_unit ?? '';
                         const fullyRcvd = item.quantity_received >= item.quantity_ordered;
                         return (
-                          <tr key={item.id ?? idx} className="border-b border-gray-800/50">
+                          <Fragment key={item.id ?? idx}>
+                          <tr className="border-b border-gray-800/50">
                             <td className="px-4 py-3">
                               <p className="text-white">{name}</p>
                               {(ing?.category ?? '') && <p className="text-gray-600 text-xs">{ing?.category}</p>}
+                              <ViewMore open={more.isOpen(String(item.id ?? idx))} onClick={() => more.toggle(String(item.id ?? idx))} />
                             </td>
-                            <td className="px-4 py-3 text-right text-gray-300">{item.quantity_ordered} {unit}</td>
+                            <td className={`px-4 py-3 text-right text-gray-300 ${DESK}`}>{item.quantity_ordered} {unit}</td>
                             <td className="px-4 py-3 text-right">
                               <span className={fullyRcvd ? 'text-green-400' : item.quantity_received > 0 ? 'text-amber-400' : 'text-gray-600'}>
                                 {item.quantity_received} {unit}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-right text-gray-300">{fmt(item.unit_cost, currency)}</td>
+                            <td className={`px-4 py-3 text-right text-gray-300 ${DESK}`}>{fmt(item.unit_cost, currency)}</td>
                             <td className="px-4 py-3 text-right text-white font-medium">{fmt(item.unit_cost * item.quantity_ordered, currency)}</td>
                           </tr>
+                          <MoreRow open={more.isOpen(String(item.id ?? idx))} colSpan={3} items={[
+                            ['Ordered', `${item.quantity_ordered} ${unit}`],
+                            ['Unit Cost', fmt(item.unit_cost, currency)],
+                          ]} />
+                          </Fragment>
                         );
                       })}
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-gray-700">
-                        <td colSpan={4} className="px-4 py-3 text-gray-500 text-xs font-semibold text-right">TOTAL</td>
+                        <td colSpan={4} className={`px-4 py-3 text-gray-500 text-xs font-semibold text-right ${DESK}`}>TOTAL</td>
+                        <td colSpan={2} className="sm:hidden px-4 py-3 text-gray-500 text-xs font-semibold text-right">TOTAL</td>
                         <td className="px-4 py-3 text-right text-white font-bold">{fmt(selected.total_amount, currency)}</td>
                       </tr>
                     </tfoot>

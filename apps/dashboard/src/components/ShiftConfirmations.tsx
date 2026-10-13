@@ -8,7 +8,8 @@
  * till; now the web too): the expected figure per method and the difference as typed. Used on the owner's Open drawers
  * page and (A462) the manager's Shifts tab — `client` is whichever sign-in the page holds.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from './RowMore';   // A464
 import { api } from '../lib/api';
 import { methodName, methodsToCount, readAmounts, confirmationLabel } from '../lib/shiftConfirm';
 import { reasonsNeeded, missingReasons, REASON_MAX } from '../lib/confirmReasons';
@@ -47,6 +48,7 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
   const fmt = (v: number | null | undefined) =>
     `${currency} ${Number(v ?? 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const [shifts, setShifts] = useState<ClosedShift[]>([]);
+  const more = useRowMore();   // A464: the confirmed list on a phone shows Cashier and Cash counted / expected
   const [error, setError] = useState('');
   const [target, setTarget] = useState<ClosedShift | null>(null);
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -122,23 +124,34 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-500">
-                <th className="py-1">Cashier</th><th>Closed</th><th>Confirmed by</th><th>Cash counted / expected</th><th>Differs from cashier</th>
+                <th className="py-1">Cashier</th><th className={DESK}>Closed</th><th className={DESK}>Confirmed by</th><th>Cash counted / expected</th><th className={DESK}>Differs from cashier</th>
               </tr>
             </thead>
             <tbody>
               {confirmed.map((s) => {
                 const diff = mismatches(s);
+                const diffText = diff.length ? diff.map((m) => `${methodName(m)}: ${money(s.declared_methods?.[m])} → ${money(s.confirmed_methods?.[m])}`
+                        + (s.confirm_reasons?.[m] ? ` (${s.confirm_reasons[m]})` : '')).join('; ') : '—';
+                const diffTone = diff.length ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-400';
                 return (
-                  <tr key={s.id} className="border-t border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-200">
-                    <td className="py-1">{s.cashier_name}</td>
-                    <td>{when(s.closed_at)}</td>
-                    <td>{s.confirmer_name ?? '—'}{s.confirm_self ? <span className="ml-1 text-xs text-amber-600" data-testid="self-confirmed">(self-confirmed)</span> : null}</td>
+                  <Fragment key={s.id}>
+                  <tr className="border-t border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-200">
+                    <td className="py-1">{s.cashier_name}
+                      <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
+                    </td>
+                    <td className={DESK}>{when(s.closed_at)}</td>
+                    <td className={DESK}>{s.confirmer_name ?? '—'}{s.confirm_self ? <span className="ml-1 text-xs text-amber-600" data-testid="self-confirmed">(self-confirmed)</span> : null}</td>
                     <td>{money(s.confirmed_methods?.cash)} / {money(s.expected_methods?.cash)}</td>
-                    <td className={diff.length ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-400'}>
-                      {diff.length ? diff.map((m) => `${methodName(m)}: ${money(s.declared_methods?.[m])} → ${money(s.confirmed_methods?.[m])}`
-                        + (s.confirm_reasons?.[m] ? ` (${s.confirm_reasons[m]})` : '')).join('; ') : '—'}
+                    <td className={`${diffTone} ${DESK}`}>
+                      {diffText}
                     </td>
                   </tr>
+                  <MoreRow open={more.isOpen(String(s.id))} colSpan={2} items={[
+                    ['Closed', when(s.closed_at)],
+                    ['Confirmed by', <>{s.confirmer_name ?? '—'}{s.confirm_self ? <span className="ml-1 text-xs text-amber-600">(self-confirmed)</span> : null}</>],
+                    ['Differs from cashier', <span className={diffTone}>{diffText}</span>],
+                  ]} />
+                  </Fragment>
                 );
               })}
             </tbody>

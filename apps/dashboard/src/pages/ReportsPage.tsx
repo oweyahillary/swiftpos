@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { ReportsSkeleton } from './pos/cashier/POSSkeletons';
 import { api, downloadFile } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
@@ -166,8 +167,8 @@ function SectionCard({ title, children }: { title: string; children: React.React
   );
 }
 
-function Th({ children, right = false }: { children: React.ReactNode; right?: boolean }) {
-  return <th className={`text-xs text-gray-400 pb-2 font-medium ${right ? 'text-right' : 'text-left'}`}>{children}</th>;
+function Th({ children, right = false, className = '' }: { children: React.ReactNode; right?: boolean; className?: string }) {
+  return <th className={`text-xs text-gray-400 pb-2 font-medium ${right ? 'text-right' : 'text-left'}${className ? ` ${className}` : ''}`}>{children}</th>;
 }
 
 function Spinner() {
@@ -220,6 +221,7 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
   const [data, setData]     = useState<MasterReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState('');
+  const more = useRowMore();   // A464: Category Breakdown on a phone: Category, Net Sales, Share
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -331,21 +333,29 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-700">
               <Th>Category</Th>
-              <Th>Super Category</Th>
-              <Th right>Qty</Th>
+              <Th className={DESK}>Super Category</Th>
+              <Th right className={DESK}>Qty</Th>
               <Th right>Net Sales</Th>
               <Th right>Share</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
             {categoryBreakdown.map(row => (
-              <tr key={row.category}>
-                <td className="py-2 text-gray-800 dark:text-gray-200">{row.category}</td>
-                <td className="py-2 text-gray-400 dark:text-gray-500 text-xs">{row.superCategory}</td>
-                <td className="py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{row.qty.toLocaleString()}</td>
+              <Fragment key={row.category}>
+              <tr>
+                <td className="py-2 text-gray-800 dark:text-gray-200">{row.category}
+                  <ViewMore open={more.isOpen(String(row.category))} onClick={() => more.toggle(String(row.category))} />
+                </td>
+                <td className={`py-2 text-gray-400 dark:text-gray-500 text-xs ${DESK}`}>{row.superCategory}</td>
+                <td className={`py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{row.qty.toLocaleString()}</td>
                 <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(row.netSales, currency)}</td>
                 <td className="py-2 text-right text-gray-400 text-xs">{pct(summary.totalRevenue > 0 ? (row.netSales / summary.totalRevenue) * 100 : 0)}</td>
               </tr>
+              <MoreRow open={more.isOpen(String(row.category))} colSpan={3} items={[
+                ['Super Category', row.superCategory],
+                ['Qty', row.qty.toLocaleString()],
+              ]} />
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -376,6 +386,7 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
   const [data, setData]       = useState<HourlyReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const more = useRowMore();   // A464: Hourly Detail on a phone: Hour, Orders, Revenue
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -454,20 +465,26 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-700">
-              <Th>Hour</Th><Th right>Orders</Th><Th right>Revenue</Th><Th right>Avg Order</Th>
+              <Th>Hour</Th><Th right>Orders</Th><Th right>Revenue</Th><Th right className={DESK}>Avg Order</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
             {activeHours.map(h => (
-              <tr key={h.hour} className={h.hour === data.peakHour ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
+              <Fragment key={h.hour}>
+              <tr className={h.hour === data.peakHour ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
                 <td className="py-1.5 text-gray-700 dark:text-gray-300">
                   {h.label}
                   {h.hour === data.peakHour && <span className="ml-2 text-[10px] bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 px-1.5 py-0.5 rounded">peak</span>}
+                  <ViewMore open={more.isOpen(String(h.hour))} onClick={() => more.toggle(String(h.hour))} />
                 </td>
                 <td className="py-1.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{h.orders}</td>
                 <td className="py-1.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(h.revenue, currency)}</td>
-                <td className="py-1.5 text-right tabular-nums text-gray-500">{fmtShort(h.avgOrderValue, currency)}</td>
+                <td className={`py-1.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(h.avgOrderValue, currency)}</td>
               </tr>
+              <MoreRow open={more.isOpen(String(h.hour))} colSpan={3} items={[
+                ['Avg Order', fmtShort(h.avgOrderValue, currency)],
+              ]} />
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -482,6 +499,7 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
   const [data, setData]       = useState<ProductV2Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const more = useRowMore();   // A464: a phone shows Item, Qty, Revenue
   const [search, setSearch]   = useState('');
   const [sortBy, setSortBy]   = useState<'revenue'|'qty'|'margin'>('revenue');
 
@@ -533,25 +551,33 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-700/50">
               <tr>
-                <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">#</th>
-                <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Item</th>
-                <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Category</th>
+                <th className={`text-left text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>#</th>
+                <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium pl-4 sm:pl-2">Item</th>
+                <th className={`text-left text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Category</th>
                 <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Qty</th>
-                <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
-                <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Share</th>
-                <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Cost</th>
-                <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Margin</th>
+                <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium pr-4 sm:pr-2">Revenue</th>
+                <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Share</th>
+                <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Cost</th>
+                <th className={`text-right text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>Margin</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-              {filtered.map((p, i) => (
-                <tr key={p.product_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                  <td className="px-4 py-2 text-gray-300 dark:text-gray-600 text-xs tabular-nums">{i + 1}</td>
-                  <td className="px-2 py-2 text-gray-800 dark:text-gray-200">{p.name}</td>
-                  <td className="px-2 py-2 text-gray-500 dark:text-gray-400 text-xs">{p.category || '—'}</td>
+              {filtered.map((p, i) => {
+                const cost = p.total_cost != null ? fmtShort(p.total_cost, currency) : <span className="text-gray-300 dark:text-gray-600">—</span>;
+                const margin = p.gross_margin_pct != null
+                      ? <span className={`text-xs font-medium tabular-nums ${p.gross_margin_pct >= 60 ? 'text-green-600' : p.gross_margin_pct >= 30 ? 'text-amber-600' : 'text-red-500'}`}>{pct(p.gross_margin_pct)}</span>
+                      : <span className="text-gray-300 dark:text-gray-600 text-xs">—</span>;
+                return (
+                <Fragment key={p.product_id}>
+                <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                  <td className={`px-4 py-2 text-gray-300 dark:text-gray-600 text-xs tabular-nums ${DESK}`}>{i + 1}</td>
+                  <td className="px-2 py-2 text-gray-800 dark:text-gray-200 pl-4 sm:pl-2">{p.name}
+                    <ViewMore open={more.isOpen(String(p.product_id))} onClick={() => more.toggle(String(p.product_id))} />
+                  </td>
+                  <td className={`px-2 py-2 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{p.category || '—'}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{p.qty.toLocaleString()}</td>
-                  <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(p.revenue, currency)}</td>
-                  <td className="px-2 py-2 text-right">
+                  <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white pr-4 sm:pr-2">{fmtShort(p.revenue, currency)}</td>
+                  <td className={`px-2 py-2 text-right ${DESK}`}>
                     <div className="flex items-center justify-end gap-1.5">
                       <div className="w-14 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                         <div className="bg-blue-500 h-full rounded-full" style={{ width: `${p.contribution_pct}%` }} />
@@ -559,16 +585,23 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
                       <span className="text-xs text-gray-400 tabular-nums w-9 text-right">{pct(p.contribution_pct)}</span>
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-right tabular-nums text-gray-500 text-xs">
-                    {p.total_cost != null ? fmtShort(p.total_cost, currency) : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                  <td className={`px-2 py-2 text-right tabular-nums text-gray-500 text-xs ${DESK}`}>
+                    {cost}
                   </td>
-                  <td className="px-4 py-2 text-right">
-                    {p.gross_margin_pct != null
-                      ? <span className={`text-xs font-medium tabular-nums ${p.gross_margin_pct >= 60 ? 'text-green-600' : p.gross_margin_pct >= 30 ? 'text-amber-600' : 'text-red-500'}`}>{pct(p.gross_margin_pct)}</span>
-                      : <span className="text-gray-300 dark:text-gray-600 text-xs">—</span>}
+                  <td className={`px-4 py-2 text-right ${DESK}`}>
+                    {margin}
                   </td>
                 </tr>
-              ))}
+                <MoreRow open={more.isOpen(String(p.product_id))} colSpan={3} items={[
+                  ['#', i + 1],
+                  ['Category', p.category || '—'],
+                  ['Share', pct(p.contribution_pct)],
+                  ['Cost', cost],
+                  ['Margin', margin],
+                ]} />
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -583,6 +616,7 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
   const [data, setData]       = useState<VoidsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const more = useRowMore();   // A464: the log on a phone shows Order, Cashier, Amount
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -641,24 +675,33 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
                   <tr>
                     <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Order</th>
                     <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Cashier</th>
-                    <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Authorized by</th>
-                    <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Reason</th>
-                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Amount</th>
-                    <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Time</th>
+                    <th className={`text-left text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Authorized by</th>
+                    <th className={`text-left text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Reason</th>
+                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium pr-4 sm:pr-2">Amount</th>
+                    <th className={`text-right text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>Time</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                   {data.voids.map(v => (
-                    <tr key={v.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                      <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{v.order_number}</td>
+                    <Fragment key={v.id}>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{v.order_number}
+                        <ViewMore open={more.isOpen(String(v.id))} onClick={() => more.toggle(String(v.id))} />
+                      </td>
                       <td className="px-2 py-2 text-gray-700 dark:text-gray-300">{v.cashier_name}</td>
-                      <td className="px-2 py-2 text-xs text-gray-600 dark:text-gray-400">{v.authorized_by_name ?? '—'}</td>
-                      <td className="px-2 py-2 text-gray-500 dark:text-gray-400 text-xs">{v.void_reason || '—'}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-red-600 dark:text-red-400 font-medium">{fmtShort(v.total, currency)}</td>
-                      <td className="px-4 py-2 text-right text-xs text-gray-400">
+                      <td className={`px-2 py-2 text-xs text-gray-600 dark:text-gray-400 ${DESK}`}>{v.authorized_by_name ?? '—'}</td>
+                      <td className={`px-2 py-2 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{v.void_reason || '—'}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-red-600 dark:text-red-400 font-medium pr-4 sm:pr-2">{fmtShort(v.total, currency)}</td>
+                      <td className={`px-4 py-2 text-right text-xs text-gray-400 ${DESK}`}>
                         {new Date(v.created_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })}
                       </td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(v.id))} colSpan={3} items={[
+                      ['Authorized by', v.authorized_by_name ?? '—'],
+                      ['Reason', v.void_reason || '—'],
+                      ['Time', new Date(v.created_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })],
+                    ]} />
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -678,6 +721,7 @@ function RefundsTab({ range, branchId, currency }: { range: DateRange; branchId:
   const [data, setData]       = useState<RefundsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const more = useRowMore();   // A464: the log on a phone shows Order, Cashier, Refunded
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -736,24 +780,33 @@ function RefundsTab({ range, branchId, currency }: { range: DateRange; branchId:
                   <tr>
                     <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Order</th>
                     <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Cashier</th>
-                    <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Authorized by</th>
-                    <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Reason</th>
-                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Refunded</th>
-                    <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Time</th>
+                    <th className={`text-left text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Authorized by</th>
+                    <th className={`text-left text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Reason</th>
+                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium pr-4 sm:pr-2">Refunded</th>
+                    <th className={`text-right text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>Time</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                   {data.refunds.map(r => (
-                    <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                      <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{r.order_number}</td>
+                    <Fragment key={r.id}>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{r.order_number}
+                        <ViewMore open={more.isOpen(String(r.id))} onClick={() => more.toggle(String(r.id))} />
+                      </td>
                       <td className="px-2 py-2 text-gray-700 dark:text-gray-300">{r.cashier_name}</td>
-                      <td className="px-2 py-2 text-xs text-gray-600 dark:text-gray-400">{r.authorized_by_name ?? r.refunded_by_name ?? '—'}</td>
-                      <td className="px-2 py-2 text-gray-500 dark:text-gray-400 text-xs">{r.refund_reason || '—'}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400 font-medium">{fmtShort(r.refunded_amount, currency)}</td>
-                      <td className="px-4 py-2 text-right text-xs text-gray-400">
+                      <td className={`px-2 py-2 text-xs text-gray-600 dark:text-gray-400 ${DESK}`}>{r.authorized_by_name ?? r.refunded_by_name ?? '—'}</td>
+                      <td className={`px-2 py-2 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{r.refund_reason || '—'}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400 font-medium pr-4 sm:pr-2">{fmtShort(r.refunded_amount, currency)}</td>
+                      <td className={`px-4 py-2 text-right text-xs text-gray-400 ${DESK}`}>
                         {new Date(r.refunded_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })}
                       </td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(r.id))} colSpan={3} items={[
+                      ['Authorized by', r.authorized_by_name ?? r.refunded_by_name ?? '—'],
+                      ['Reason', r.refund_reason || '—'],
+                      ['Time', new Date(r.refunded_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })],
+                    ]} />
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -771,6 +824,7 @@ function InventoryTab({ range, branchId, currency }: { range: DateRange; branchI
   const [data, setData]       = useState<InventoryReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const more = useRowMore();   // A464: a phone shows Product, Sold, Written Off
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -809,20 +863,28 @@ function InventoryTab({ range, branchId, currency }: { range: DateRange; branchI
                   <tr>
                     <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Product</th>
                     <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Sold</th>
-                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
-                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Restocked</th>
+                    <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Revenue</th>
+                    <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Restocked</th>
                     <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Written Off</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                   {rows.map(r => (
-                    <tr key={r.product_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                      <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{r.name}</td>
+                    <Fragment key={r.product_id}>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{r.name}
+                        <ViewMore open={more.isOpen(String(r.product_id))} onClick={() => more.toggle(String(r.product_id))} />
+                      </td>
                       <td className="px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{r.sold.toLocaleString()}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtShort(r.revenue, currency)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-green-600 dark:text-green-400">{r.restocked.toLocaleString()}</td>
+                      <td className={`px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmtShort(r.revenue, currency)}</td>
+                      <td className={`px-2 py-2 text-right tabular-nums text-green-600 dark:text-green-400 ${DESK}`}>{r.restocked.toLocaleString()}</td>
                       <td className="px-4 py-2 text-right tabular-nums text-red-600 dark:text-red-400">{r.written_off.toLocaleString()}</td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(r.product_id))} colSpan={3} items={[
+                      ['Revenue', fmtShort(r.revenue, currency)],
+                      ['Restocked', <span className="text-green-600 dark:text-green-400">{r.restocked.toLocaleString()}</span>],
+                    ]} />
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -894,6 +956,8 @@ function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: str
   const [data, setData]       = useState<TaxReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const moreB = useRowMore();   // A464: By Branch on a phone: Branch, Gross Sales, Net Sales
+  const moreC = useRowMore();   // A464: By Category on a phone: Category, Gross Sales, Net Sales
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -924,18 +988,26 @@ function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: str
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-700">
-                <Th>Branch</Th><Th right>Gross Sales</Th><Th right>VAT</Th><Th right>CTL</Th><Th right>Net Sales</Th>
+                <Th>Branch</Th><Th right>Gross Sales</Th><Th right className={DESK}>VAT</Th><Th right className={DESK}>CTL</Th><Th right>Net Sales</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
               {data.byBranch.map(b => (
-                <tr key={b.branchName}>
-                  <td className="py-2 text-gray-800 dark:text-gray-200">{b.branchName}</td>
+                <Fragment key={b.branchName}>
+                <tr>
+                  <td className="py-2 text-gray-800 dark:text-gray-200">{b.branchName}
+                    <ViewMore open={moreB.isOpen(String(b.branchName))} onClick={() => moreB.toggle(String(b.branchName))} />
+                  </td>
                   <td className="py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtShort(b.grossSales, currency)}</td>
-                  <td className="py-2 text-right tabular-nums text-gray-500">{fmtShort(b.vatAmount, currency)}</td>
-                  <td className="py-2 text-right tabular-nums text-gray-500">{fmtShort(b.ctlAmount, currency)}</td>
+                  <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(b.vatAmount, currency)}</td>
+                  <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(b.ctlAmount, currency)}</td>
                   <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(b.netSales, currency)}</td>
                 </tr>
+                <MoreRow open={moreB.isOpen(String(b.branchName))} colSpan={3} items={[
+                  ['VAT', fmtShort(b.vatAmount, currency)],
+                  ['CTL', fmtShort(b.ctlAmount, currency)],
+                ]} />
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -946,18 +1018,26 @@ function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: str
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-700">
-              <Th>Category</Th><Th right>Gross Sales</Th><Th right>VAT</Th><Th right>CTL</Th><Th right>Net Sales</Th>
+              <Th>Category</Th><Th right>Gross Sales</Th><Th right className={DESK}>VAT</Th><Th right className={DESK}>CTL</Th><Th right>Net Sales</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
             {data.byCategory.map(c => (
-              <tr key={c.category}>
-                <td className="py-2 text-gray-800 dark:text-gray-200">{c.category}</td>
+              <Fragment key={c.category}>
+              <tr>
+                <td className="py-2 text-gray-800 dark:text-gray-200">{c.category}
+                  <ViewMore open={moreC.isOpen(String(c.category))} onClick={() => moreC.toggle(String(c.category))} />
+                </td>
                 <td className="py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtShort(c.grossSales, currency)}</td>
-                <td className="py-2 text-right tabular-nums text-gray-500">{fmtShort(c.vatAmount, currency)}</td>
-                <td className="py-2 text-right tabular-nums text-gray-500">{fmtShort(c.ctlAmount, currency)}</td>
+                <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(c.vatAmount, currency)}</td>
+                <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(c.ctlAmount, currency)}</td>
                 <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(c.netSales, currency)}</td>
               </tr>
+              <MoreRow open={moreC.isOpen(String(c.category))} colSpan={3} items={[
+                ['VAT', fmtShort(c.vatAmount, currency)],
+                ['CTL', fmtShort(c.ctlAmount, currency)],
+              ]} />
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -974,6 +1054,7 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
   const [openRows, setOpenRows] = useState<string[]>([]);   // A439
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const more = useRowMore();   // A464: a phone shows Cashier, Revenue and Payment methods
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -1013,12 +1094,12 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-700/50">
               <tr>
-                <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">#</th>
-                <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Cashier</th>
-                <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Orders</th>
-                <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
-                <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Avg Order</th>
-                <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Share</th>
+                <th className={`text-left text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>#</th>
+                <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium pl-4 sm:pl-2">Cashier</th>
+                <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Orders</th>
+                <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium pr-4 sm:pr-2">Revenue</th>
+                <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Avg Order</th>
+                <th className={`text-right text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>Share</th>
                 {hasMethods && <th className="px-4 py-2.5" />}
               </tr>
             </thead>
@@ -1026,12 +1107,14 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
               {data.staff.map((s, i) => (
                 <Fragment key={s.staff_id}>
                 <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                  <td className="px-4 py-2.5 text-gray-300 dark:text-gray-600 text-xs tabular-nums">{i + 1}</td>
-                  <td className="px-2 py-2.5 text-gray-800 dark:text-gray-200 font-medium">{s.staff_name}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{s.orders}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(s.revenue, currency)}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-gray-500">{fmtShort(s.avg_order_value, currency)}</td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className={`px-4 py-2.5 text-gray-300 dark:text-gray-600 text-xs tabular-nums ${DESK}`}>{i + 1}</td>
+                  <td className="px-2 py-2.5 text-gray-800 dark:text-gray-200 font-medium pl-4 sm:pl-2">{s.staff_name}
+                    <ViewMore open={more.isOpen(String(s.staff_id))} onClick={() => more.toggle(String(s.staff_id))} />
+                  </td>
+                  <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{s.orders}</td>
+                  <td className="px-2 py-2.5 text-right tabular-nums font-medium text-gray-900 dark:text-white pr-4 sm:pr-2">{fmtShort(s.revenue, currency)}</td>
+                  <td className={`px-2 py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(s.avg_order_value, currency)}</td>
+                  <td className={`px-4 py-2.5 text-right ${DESK}`}>
                     <div className="flex items-center justify-end gap-1.5">
                       <div className="w-14 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                         <div className="bg-teal-500 h-full rounded-full" style={{ width: `${total > 0 ? (s.revenue / total) * 100 : 0}%` }} />
@@ -1050,9 +1133,15 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
                     </td>
                   )}
                 </tr>
+                <MoreRow open={more.isOpen(String(s.staff_id))} colSpan={hasMethods ? 3 : 2} items={[
+                  ['#', i + 1],
+                  ['Orders', s.orders],
+                  ['Avg Order', fmtShort(s.avg_order_value, currency)],
+                  ['Share', pct(total > 0 ? (s.revenue / total) * 100 : 0)],
+                ]} />
                 {shown(s.staff_id) && (s.by_method ?? []).length > 0 && (
                   <tr className="bg-gray-50/60 dark:bg-gray-900/30" data-testid="staff-methods-row">
-                    <td />
+                    <td className={DESK} />
                     <td colSpan={hasMethods ? 6 : 5} className="px-2 pb-3 pt-1">
                       <div className="flex flex-wrap gap-2">
                         {(s.by_method ?? []).map((m) => (
@@ -1103,6 +1192,8 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
   const [data, setData]         = useState<FoodCostReport | null>(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
+  const moreI = useRowMore();   // A464: Ingredient variance on a phone: Ingredient, Variance, Actual cost
+  const moreP = useRowMore();   // A464: Cost per dish on a phone: Dish, Cost %, Gross margin
   const [view, setView]         = useState<'ingredients' | 'products'>('ingredients');
 
   const load = useCallback(async () => {
@@ -1205,10 +1296,10 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
               <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
                   <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Ingredient</th>
-                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Ideal qty</th>
-                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Actual qty</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Ideal qty</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Actual qty</th>
                   <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Variance</th>
-                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Ideal cost</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Ideal cost</th>
                   <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Actual cost</th>
                 </tr>
               </thead>
@@ -1217,15 +1308,17 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
                   const over    = ing.variance > 0;
                   const noData  = ing.actualCost === null;
                   return (
-                    <tr key={ing.ingredient_id} className={over && !noData ? 'bg-red-50/40 dark:bg-red-900/10' : ''}>
+                    <Fragment key={ing.ingredient_id}>
+                    <tr className={over && !noData ? 'bg-red-50/40 dark:bg-red-900/10' : ''}>
                       <td className="px-4 py-2.5">
                         <p className="text-gray-800 dark:text-gray-200 font-medium">{ing.name}</p>
                         <p className="text-gray-400 text-xs">{ing.unit}{ing.unit_cost ? ` · ${fmtShort(ing.unit_cost, currency)}/${ing.unit}` : ''}</p>
+                        <ViewMore open={moreI.isOpen(String(ing.ingredient_id))} onClick={() => moreI.toggle(String(ing.ingredient_id))} />
                       </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                      <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>
                         {ing.idealQty.toLocaleString()} {ing.unit}
                       </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                      <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>
                         {noData ? <span className="text-gray-300 dark:text-gray-600">—</span> : `${ing.actualQty.toLocaleString()} ${ing.unit}`}
                       </td>
                       <td className="px-2 py-2.5 text-right tabular-nums font-medium">
@@ -1236,7 +1329,7 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
                           </span>
                         )}
                       </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                      <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>
                         {fmtShort(ing.idealCost, currency)}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-medium">
@@ -1247,6 +1340,12 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
                         )}
                       </td>
                     </tr>
+                    <MoreRow open={moreI.isOpen(String(ing.ingredient_id))} colSpan={3} items={[
+                      ['Ideal qty', `${ing.idealQty.toLocaleString()} ${ing.unit}`],
+                      ['Actual qty', noData ? '—' : `${ing.actualQty.toLocaleString()} ${ing.unit}`],
+                      ['Ideal cost', fmtShort(ing.idealCost, currency)],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1270,20 +1369,23 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
               <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
                   <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Dish</th>
-                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Qty sold</th>
-                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
-                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Ideal cost</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Qty sold</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Revenue</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Ideal cost</th>
                   <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Cost %</th>
                   <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Gross margin</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                 {products.map(p => (
-                  <tr key={p.product_id}>
-                    <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{p.name}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{p.qtySold.toLocaleString()}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtShort(p.revenue, currency)}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtShort(p.idealCost, currency)}</td>
+                  <Fragment key={p.product_id}>
+                  <tr>
+                    <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{p.name}
+                      <ViewMore open={moreP.isOpen(String(p.product_id))} onClick={() => moreP.toggle(String(p.product_id))} />
+                    </td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{p.qtySold.toLocaleString()}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmtShort(p.revenue, currency)}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmtShort(p.idealCost, currency)}</td>
                     <td className="px-2 py-2.5 text-right tabular-nums">
                       <span className={`font-medium ${p.costPct > 35 ? 'text-red-500' : p.costPct > 28 ? 'text-amber-500' : 'text-green-600'}`}>
                         {pct(p.costPct)}
@@ -1295,6 +1397,12 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
                       </span>
                     </td>
                   </tr>
+                  <MoreRow open={moreP.isOpen(String(p.product_id))} colSpan={3} items={[
+                    ['Qty sold', p.qtySold.toLocaleString()],
+                    ['Revenue', fmtShort(p.revenue, currency)],
+                    ['Ideal cost', fmtShort(p.idealCost, currency)],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -1330,6 +1438,8 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
   const [data, setData]       = useState<SplhReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const moreS = useRowMore();   // A464: By staff member on a phone: Staff, SPLH, Labour %
+  const moreL = useRowMore();   // A464: Shift log on a phone: Cashier, SPLH, Labour %
   const [view, setView]       = useState<'staff' | 'shifts'>('staff');
 
   const load = useCallback(async () => {
@@ -1439,25 +1549,28 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
               <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
                   <th className="text-left   text-xs text-gray-400 px-4 py-2.5 font-medium">Staff</th>
-                  <th className="text-right  text-xs text-gray-400 px-2 py-2.5 font-medium">Shifts</th>
-                  <th className="text-right  text-xs text-gray-400 px-2 py-2.5 font-medium">Hours</th>
-                  <th className="text-right  text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
+                  <th className={`text-right  text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Shifts</th>
+                  <th className={`text-right  text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Hours</th>
+                  <th className={`text-right  text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Revenue</th>
                   <th className="text-right  text-xs text-gray-400 px-2 py-2.5 font-medium">SPLH</th>
-                  <th className="text-right  text-xs text-gray-400 px-2 py-2.5 font-medium">Labour cost</th>
+                  <th className={`text-right  text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Labour cost</th>
                   <th className="text-right  text-xs text-gray-400 px-4 py-2.5 font-medium">Labour %</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                 {staff.map(s => (
-                  <tr key={s.cashier_id}>
-                    <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{s.name}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-500">{s.shifts}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtHours(s.totalHours)}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtShort(s.totalRevenue, currency)}</td>
+                  <Fragment key={s.cashier_id}>
+                  <tr>
+                    <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{s.name}
+                      <ViewMore open={moreS.isOpen(String(s.cashier_id))} onClick={() => moreS.toggle(String(s.cashier_id))} />
+                    </td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{s.shifts}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmtHours(s.totalHours)}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmtShort(s.totalRevenue, currency)}</td>
                     <td className="px-2 py-2.5 text-right tabular-nums font-bold">
                       <span className={splhColor(s.splh)}>{fmtShort(s.splh, currency)}</span>
                     </td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>
                       {s.totalLabour !== null ? fmtShort(s.totalLabour, currency) : <span className="text-gray-300 dark:text-gray-600">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold">
@@ -1466,6 +1579,13 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
                         : <span className="text-gray-300 dark:text-gray-600 text-xs font-normal">No rate set</span>}
                     </td>
                   </tr>
+                  <MoreRow open={moreS.isOpen(String(s.cashier_id))} colSpan={3} items={[
+                    ['Shifts', s.shifts],
+                    ['Hours', fmtHours(s.totalHours)],
+                    ['Revenue', fmtShort(s.totalRevenue, currency)],
+                    ['Labour cost', s.totalLabour !== null ? fmtShort(s.totalLabour, currency) : '—'],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -1488,22 +1608,25 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
               <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
                   <th className="text-left  text-xs text-gray-400 px-4 py-2.5 font-medium">Cashier</th>
-                  <th className="text-left  text-xs text-gray-400 px-2 py-2.5 font-medium">Branch</th>
-                  <th className="text-left  text-xs text-gray-400 px-2 py-2.5 font-medium">Opened</th>
-                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Hours</th>
-                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
+                  <th className={`text-left  text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Branch</th>
+                  <th className={`text-left  text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Opened</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Hours</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Revenue</th>
                   <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">SPLH</th>
                   <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Labour %</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                 {shifts.map(s => (
-                  <tr key={s.shift_id}>
-                    <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{s.cashier_name}</td>
-                    <td className="px-2 py-2.5 text-gray-500 dark:text-gray-400 text-xs">{s.branch_name}</td>
-                    <td className="px-2 py-2.5 text-gray-500 dark:text-gray-400 text-xs">{fmtShiftTime(s.opened_at)}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtHours(s.hours)}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtShort(s.revenue, currency)}</td>
+                  <Fragment key={s.shift_id}>
+                  <tr>
+                    <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{s.cashier_name}
+                      <ViewMore open={moreL.isOpen(String(s.shift_id))} onClick={() => moreL.toggle(String(s.shift_id))} />
+                    </td>
+                    <td className={`px-2 py-2.5 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{s.branch_name}</td>
+                    <td className={`px-2 py-2.5 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{fmtShiftTime(s.opened_at)}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmtHours(s.hours)}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmtShort(s.revenue, currency)}</td>
                     <td className="px-2 py-2.5 text-right tabular-nums font-bold">
                       <span className={splhColor(s.splh)}>{fmtShort(s.splh, currency)}</span>
                     </td>
@@ -1513,6 +1636,13 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
                         : <span className="text-gray-300 dark:text-gray-600 text-xs">—</span>}
                     </td>
                   </tr>
+                  <MoreRow open={moreL.isOpen(String(s.shift_id))} colSpan={3} items={[
+                    ['Branch', s.branch_name],
+                    ['Opened', fmtShiftTime(s.opened_at)],
+                    ['Hours', fmtHours(s.hours)],
+                    ['Revenue', fmtShort(s.revenue, currency)],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -1674,6 +1804,8 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const moreP = useRowMore();   // A464: Pump Monitor on a phone: Pump, Sold (L), Revenue
+  const moreG = useRowMore();   // A464: By Fuel Grade on a phone: Grade, Litres Sold, Revenue
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -1712,9 +1844,9 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
-                    <Th>Pump</Th><Th>Grade</Th><Th right>Price/L</Th><Th right>Capacity</Th>
-                    <Th right>Opening Stock</Th><Th right>Sold (L)</Th><Th right>Remaining</Th>
-                    <Th right>Revenue</Th><Th right>Transactions</Th><Th right>Avg L/Tx</Th>
+                    <Th>Pump</Th><Th className={DESK}>Grade</Th><Th right className={DESK}>Price/L</Th><Th right className={DESK}>Capacity</Th>
+                    <Th right className={DESK}>Opening Stock</Th><Th right>Sold (L)</Th><Th right className={DESK}>Remaining</Th>
+                    <Th right>Revenue</Th><Th right className={DESK}>Transactions</Th><Th right className={DESK}>Avg L/Tx</Th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -1723,37 +1855,53 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
                     const pct = p.capacity_litres && p.current_level != null
                       ? Math.min(100, Math.round((p.current_level / p.capacity_litres) * 100)) : null;
                     return (
-                      <tr key={p.pump_id}>
-                        <td className="py-2.5 font-semibold text-gray-900 dark:text-white whitespace-nowrap">{p.pump_name}</td>
-                        <td className="py-2.5 text-gray-500">{p.product_name ?? '—'}</td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-500">
+                      <Fragment key={p.pump_id}>
+                      <tr>
+                        <td className="py-2.5 font-semibold text-gray-900 dark:text-white whitespace-nowrap">{p.pump_name}
+                          <ViewMore open={moreP.isOpen(String(p.pump_id))} onClick={() => moreP.toggle(String(p.pump_id))} />
+                        </td>
+                        <td className={`py-2.5 text-gray-500 ${DESK}`}>{p.product_name ?? '—'}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>
                           {p.price_per_litre ? `${currency} ${Number(p.price_per_litre).toFixed(2)}` : '—'}
                         </td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-500">{fmtL0(p.capacity_litres)}</td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300">{fmtL(opening)}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtL0(p.capacity_litres)}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300 ${DESK}`}>{fmtL(opening)}</td>
                         <td className="py-2.5 text-right tabular-nums font-semibold text-amber-600 dark:text-amber-400">{fmtL(p.litres)}</td>
-                        <td className="py-2.5 text-right tabular-nums">
+                        <td className={`py-2.5 text-right tabular-nums ${DESK}`}>
                           <span className={`font-semibold ${p.current_level != null && p.current_level < 1000 ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>
                             {fmtL(p.current_level)}{pct != null ? ` (${pct}%)` : ''}
                           </span>
                         </td>
                         <td className="py-2.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtC(p.revenue)}</td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-500">{p.transactions}</td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-500">
+                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{p.transactions}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>
                           {p.transactions > 0 ? fmtL(p.litres / p.transactions) : '—'}
                         </td>
                       </tr>
+                      <MoreRow open={moreP.isOpen(String(p.pump_id))} colSpan={3} items={[
+                        ['Grade', p.product_name ?? '—'],
+                        ['Price/L', p.price_per_litre ? `${currency} ${Number(p.price_per_litre).toFixed(2)}` : '—'],
+                        ['Capacity', fmtL0(p.capacity_litres)],
+                        ['Opening Stock', fmtL(opening)],
+                        ['Remaining', <span className={`font-semibold ${p.current_level != null && p.current_level < 1000 ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>
+                            {fmtL(p.current_level)}{pct != null ? ` (${pct}%)` : ''}
+                          </span>],
+                        ['Transactions', p.transactions],
+                        ['Avg L/Tx', p.transactions > 0 ? fmtL(p.litres / p.transactions) : '—'],
+                      ]} />
+                      </Fragment>
                     );
                   })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-gray-200 dark:border-gray-700 font-semibold">
-                    <td colSpan={5} className="py-2 text-xs text-gray-600 dark:text-gray-400">Total</td>
+                    <td colSpan={5} className={`py-2 text-xs text-gray-600 dark:text-gray-400 ${DESK}`}>Total</td>
+                    <td className="sm:hidden py-2 text-xs text-gray-600 dark:text-gray-400">Total</td>
                     <td className="py-2 text-right tabular-nums text-xs text-amber-600 dark:text-amber-400">{fmtL(summary.totalLitres)}</td>
-                    <td />
+                    <td className={DESK} />
                     <td className="py-2 text-right tabular-nums text-xs">{fmtC(summary.totalRevenue)}</td>
-                    <td className="py-2 text-right tabular-nums text-xs text-gray-500">{summary.totalTransactions}</td>
-                    <td />
+                    <td className={`py-2 text-right tabular-nums text-xs text-gray-500 ${DESK}`}>{summary.totalTransactions}</td>
+                    <td className={DESK} />
                   </tr>
                 </tfoot>
               </table>
@@ -1768,19 +1916,27 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-200 dark:border-gray-700">
                 <Th>Grade</Th><Th right>Litres Sold</Th><Th right>Revenue</Th>
-                <Th right>Transactions</Th><Th right>Revenue/L</Th>
+                <Th right className={DESK}>Transactions</Th><Th right className={DESK}>Revenue/L</Th>
               </tr></thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {(grades as any[]).map((g: any) => (
-                  <tr key={g.product_id}>
-                    <td className="py-2 font-medium text-gray-800 dark:text-gray-200">{g.name}</td>
+                  <Fragment key={g.product_id}>
+                  <tr>
+                    <td className="py-2 font-medium text-gray-800 dark:text-gray-200">{g.name}
+                      <ViewMore open={moreG.isOpen(String(g.product_id))} onClick={() => moreG.toggle(String(g.product_id))} />
+                    </td>
                     <td className="py-2 text-right tabular-nums">{fmtL(g.litres)}</td>
                     <td className="py-2 text-right tabular-nums">{fmtC(g.revenue)}</td>
-                    <td className="py-2 text-right tabular-nums text-gray-500">{g.transactions}</td>
-                    <td className="py-2 text-right tabular-nums text-gray-500">
+                    <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{g.transactions}</td>
+                    <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>
                       {g.litres > 0 ? `${currency} ${(g.revenue / g.litres).toFixed(2)}` : '—'}
                     </td>
                   </tr>
+                  <MoreRow open={moreG.isOpen(String(g.product_id))} colSpan={3} items={[
+                    ['Transactions', g.transactions],
+                    ['Revenue/L', g.litres > 0 ? `${currency} ${(g.revenue / g.litres).toFixed(2)}` : '—'],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -1822,6 +1978,8 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const moreT = useRowMore();   // A464: Tank Reconciliation on a phone: Tank, Current, Level %
+  const moreD = useRowMore();   // A464: Delivery Log on a phone: Date, Grade, Litres Added
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -1873,9 +2031,9 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
-                    <Th>Tank</Th><Th>Grade</Th><Th right>Price/L</Th><Th right>Capacity</Th>
-                    <Th right>Opening*</Th><Th right>Delivered</Th><Th right>Sold</Th>
-                    <Th right>Current</Th><Th right>Level %</Th><Th right>Stock Value</Th>
+                    <Th>Tank</Th><Th className={DESK}>Grade</Th><Th right className={DESK}>Price/L</Th><Th right className={DESK}>Capacity</Th>
+                    <Th right className={DESK}>Opening*</Th><Th right className={DESK}>Delivered</Th><Th right className={DESK}>Sold</Th>
+                    <Th right>Current</Th><Th right>Level %</Th><Th right className={DESK}>Stock Value</Th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -1888,21 +2046,23 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
                     const opening = Number(t.current_level ?? 0) + Number(t.consumed_litres ?? 0) - Number(t.delivered_litres ?? 0);
                     const stockValue = Number(t.current_level ?? 0) * Number(t.price_per_litre ?? 0);
                     return (
-                      <tr key={t.id}>
+                      <Fragment key={t.id}>
+                      <tr>
                         <td className="py-2.5 font-semibold text-gray-900 dark:text-white whitespace-nowrap">
                           {t.name}
                           {t.is_low && <span className="ml-1.5 text-[10px] bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-full font-semibold">LOW</span>}
+                          <ViewMore open={moreT.isOpen(String(t.id))} onClick={() => moreT.toggle(String(t.id))} />
                         </td>
-                        <td className="py-2.5 text-gray-500">{t.product_name}</td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-500">
+                        <td className={`py-2.5 text-gray-500 ${DESK}`}>{t.product_name}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>
                           {t.price_per_litre ? `${currency} ${Number(t.price_per_litre).toFixed(2)}` : '—'}
                         </td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-500">{fmtL(t.capacity_litres)}</td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300">{fmtL(opening)}</td>
-                        <td className="py-2.5 text-right tabular-nums text-green-600 dark:text-green-400 font-medium">
+                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtL(t.capacity_litres)}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300 ${DESK}`}>{fmtL(opening)}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-green-600 dark:text-green-400 font-medium ${DESK}`}>
                           {Number(t.delivered_litres ?? 0) > 0 ? `+${fmtL(t.delivered_litres)}` : '—'}
                         </td>
-                        <td className="py-2.5 text-right tabular-nums text-amber-600 dark:text-amber-400 font-medium">
+                        <td className={`py-2.5 text-right tabular-nums text-amber-600 dark:text-amber-400 font-medium ${DESK}`}>
                           {Number(t.consumed_litres ?? 0) > 0 ? `-${fmtL2(t.consumed_litres)}` : '—'}
                         </td>
                         <td className={`py-2.5 text-right tabular-nums font-semibold ${textColour}`}>{fmtL(t.current_level)}</td>
@@ -1914,28 +2074,39 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
                             <span className={`text-xs tabular-nums ${textColour}`}>{pct}%</span>
                           </div>
                         </td>
-                        <td className="py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300">
+                        <td className={`py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>
                           {stockValue > 0 ? fmtC(stockValue) : '—'}
                         </td>
                       </tr>
+                      <MoreRow open={moreT.isOpen(String(t.id))} colSpan={3} items={[
+                        ['Grade', t.product_name],
+                        ['Price/L', t.price_per_litre ? `${currency} ${Number(t.price_per_litre).toFixed(2)}` : '—'],
+                        ['Capacity', fmtL(t.capacity_litres)],
+                        ['Opening*', fmtL(opening)],
+                        ['Delivered', <span className="text-green-600 dark:text-green-400 font-medium">{Number(t.delivered_litres ?? 0) > 0 ? `+${fmtL(t.delivered_litres)}` : '—'}</span>],
+                        ['Sold', <span className="text-amber-600 dark:text-amber-400 font-medium">{Number(t.consumed_litres ?? 0) > 0 ? `-${fmtL2(t.consumed_litres)}` : '—'}</span>],
+                        ['Stock Value', stockValue > 0 ? fmtC(stockValue) : '—'],
+                      ]} />
+                      </Fragment>
                     );
                   })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-gray-200 dark:border-gray-700 text-xs font-semibold">
-                    <td colSpan={4} className="py-2 text-gray-600 dark:text-gray-400">Totals</td>
-                    <td className="py-2 text-right tabular-nums text-gray-600 dark:text-gray-300">
+                    <td colSpan={4} className={`py-2 text-gray-600 dark:text-gray-400 ${DESK}`}>Totals</td>
+                    <td className="sm:hidden py-2 text-gray-600 dark:text-gray-400">Totals</td>
+                    <td className={`py-2 text-right tabular-nums text-gray-600 dark:text-gray-300 ${DESK}`}>
                       {fmtL(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0) + Number(t.consumed_litres ?? 0) - Number(t.delivered_litres ?? 0), 0))}
                     </td>
-                    <td className="py-2 text-right tabular-nums text-green-600 dark:text-green-400">
+                    <td className={`py-2 text-right tabular-nums text-green-600 dark:text-green-400 ${DESK}`}>
                       {tanks.some((t: any) => t.delivered_litres > 0) ? fmtL(tanks.reduce((s: number, t: any) => s + Number(t.delivered_litres ?? 0), 0)) : '—'}
                     </td>
-                    <td className="py-2 text-right tabular-nums text-amber-600 dark:text-amber-400">
+                    <td className={`py-2 text-right tabular-nums text-amber-600 dark:text-amber-400 ${DESK}`}>
                       {fmtL2(tanks.reduce((s: number, t: any) => s + Number(t.consumed_litres ?? 0), 0))}
                     </td>
                     <td className="py-2 text-right tabular-nums">{fmtL(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0), 0))}</td>
                     <td />
-                    <td className="py-2 text-right tabular-nums">
+                    <td className={`py-2 text-right tabular-nums ${DESK}`}>
                       {fmtC(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0) * Number(t.price_per_litre ?? 0), 0))}
                     </td>
                   </tr>
@@ -1953,19 +2124,26 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
           : (
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-200 dark:border-gray-700">
-                <Th>Date</Th><Th>Grade</Th><Th right>Litres Added</Th><Th right>Level After</Th><Th>Notes</Th>
+                <Th>Date</Th><Th>Grade</Th><Th right>Litres Added</Th><Th right className={DESK}>Level After</Th><Th className={DESK}>Notes</Th>
               </tr></thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {(deliveryLog as any[]).map((d: any, i: number) => (
-                  <tr key={i}>
+                  <Fragment key={i}>
+                  <tr>
                     <td className="py-2 text-gray-500 text-xs whitespace-nowrap">
                       {d.recorded_at ? new Date(d.recorded_at).toLocaleString('en-KE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}
+                      <ViewMore open={moreD.isOpen(String(i))} onClick={() => moreD.toggle(String(i))} />
                     </td>
                     <td className="py-2 text-gray-800 dark:text-gray-200">{d.product_name ?? '—'}</td>
                     <td className="py-2 text-right tabular-nums text-green-600 dark:text-green-400 font-medium">+{fmtL(d.litres)}</td>
-                    <td className="py-2 text-right tabular-nums text-gray-500">{fmtL(d.level_after)}</td>
-                    <td className="py-2 text-gray-500 text-xs max-w-[200px] truncate">{d.notes ?? '—'}</td>
+                    <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtL(d.level_after)}</td>
+                    <td className={`py-2 text-gray-500 text-xs max-w-[200px] truncate ${DESK}`}>{d.notes ?? '—'}</td>
                   </tr>
+                  <MoreRow open={moreD.isOpen(String(i))} colSpan={3} items={[
+                    ['Level After', fmtL(d.level_after)],
+                    ['Notes', d.notes ?? '—'],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table>

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
@@ -71,6 +72,7 @@ export default function IngredientsPage() {
   const currency = business?.currency ?? 'KES';
   const { toast, showToast } = useToast();
   const canManage = can('ingredients.manage');
+  const more = useRowMore();   // A464: a phone shows Name, In Stock and the actions
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [ingredients, setIngredients]   = useState<Ingredient[]>([]);
@@ -304,7 +306,7 @@ export default function IngredientsPage() {
               <thead>
                 <tr className="border-b border-gray-800">
                   {['Name', 'Category', 'Unit', 'In Stock', 'Reorder At', 'Unit Cost', 'Status', ''].map(h => (
-                    <th key={h} className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">{h}</th>
+                    <th key={h} className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${['Name', 'In Stock', ''].includes(h) ? '' : DESK}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -312,7 +314,8 @@ export default function IngredientsPage() {
                 {visible.map(i => {
                   const st = stockStatus(i);
                   return (
-                    <tr key={i.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
+                    <Fragment key={i.id}>
+                    <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
                       <td className="px-4 py-3">
                         <p className="text-white font-medium">
                           {i.name}
@@ -321,13 +324,14 @@ export default function IngredientsPage() {
                           )}
                         </p>
                         {i.notes && <p className="text-gray-600 text-xs truncate max-w-xs">{i.notes}</p>}
+                        <ViewMore open={more.isOpen(String(i.id))} onClick={() => more.toggle(String(i.id))} />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 py-3 ${DESK}`}>
                         {i.category
                           ? <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{i.category}</span>
                           : <span className="text-gray-600 text-xs">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{i.unit}</td>
+                      <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{i.unit}</td>
                       <td className="px-4 py-3">
                         <span className={`font-semibold text-sm ${st === 'out' ? 'text-red-400' : st === 'low' ? 'text-amber-400' : 'text-white'}`}>
                           {i.current_stock} {i.unit}
@@ -335,13 +339,13 @@ export default function IngredientsPage() {
                         {st === 'out' && <span className="ml-1.5 text-xs text-red-500">OUT</span>}
                         {st === 'low' && <span className="ml-1.5 text-xs text-amber-500">LOW</span>}
                       </td>
-                      <td className="px-4 py-3 text-gray-400 text-sm">
+                      <td className={`px-4 py-3 text-gray-400 text-sm ${DESK}`}>
                         {i.reorder_level > 0 ? `${i.reorder_level} ${i.unit}` : <span className="text-gray-600">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-gray-300 text-sm">
+                      <td className={`px-4 py-3 text-gray-300 text-sm ${DESK}`}>
                         {i.unit_cost != null ? fmt(i.unit_cost, currency) : <span className="text-gray-600">—</span>}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 py-3 ${DESK}`}>
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${i.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
                           {i.status}
                         </span>
@@ -361,6 +365,18 @@ export default function IngredientsPage() {
                         </div>
                       </td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(i.id))} colSpan={3} items={[
+                      ['Category', i.category
+                        ? <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{i.category}</span>
+                        : '—'],
+                      ['Unit', i.unit],
+                      ['Reorder At', i.reorder_level > 0 ? `${i.reorder_level} ${i.unit}` : '—'],
+                      ['Unit Cost', i.unit_cost != null ? fmt(i.unit_cost, currency) : '—'],
+                      ['Status', <span className={`px-2 py-0.5 rounded text-xs font-medium ${i.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+                          {i.status}
+                        </span>],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>

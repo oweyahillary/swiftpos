@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
@@ -42,6 +43,7 @@ const STATUS_CONFIG = {
 
 export default function InventoryPage() {
   const { business } = useBusiness();
+  const more = useRowMore();   // A464: a phone shows Product, Stock and the actions
   const { term } = useTerm();
   const { activeBranchId } = useBranch();
   const [rows, setRows] = useState<StockRow[]>([]);
@@ -209,10 +211,10 @@ export default function InventoryPage() {
               <thead>
                 <tr className="border-b border-gray-800 text-left">
                   <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Product</th>
-                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Category</th>
+                  <th className={`px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider ${DESK}`}>Category</th>
                   <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Stock</th>
-                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Threshold</th>
-                  <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Status</th>
+                  <th className={`px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider ${DESK}`}>Threshold</th>
+                  <th className={`px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider ${DESK}`}>Status</th>
                   <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider"></th>
                 </tr>
               </thead>
@@ -221,37 +223,7 @@ export default function InventoryPage() {
                   const status = getStatus(row);
                   const cfg = STATUS_CONFIG[status];
                   const isUntracked = status === 'untracked';
-                  return (
-                    <tr key={row.product_id} className="hover:bg-gray-800/50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          {row.products.image_url ? (
-                            <img src={row.products.image_url} alt={row.products.name} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
-                          ) : (
-                            <div className="w-9 h-9 rounded-lg bg-gray-800 flex items-center justify-center text-gray-600 flex-shrink-0 text-xs">IMG</div>
-                          )}
-                          <p className={`text-sm font-medium ${isUntracked ? 'text-gray-500' : 'text-white'}`}>
-                            {row.products.name}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {row.products.categories ? (
-                          <span className="text-xs text-gray-300">{row.products.categories.name}</span>
-                        ) : (
-                          <span className="text-xs text-gray-600">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isUntracked ? (
-                          <span className="text-gray-600 text-sm">—</span>
-                        ) : (
-                          <span className={`text-sm font-semibold ${status === 'out' ? 'text-red-400' : status === 'low' ? 'text-amber-400' : 'text-white'}`}>
-                            {row.quantity}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
+                  const threshCell = (<>
                         {isUntracked ? (
                           <span className="text-gray-600 text-sm">—</span>
                         ) : editThreshId === row.product_id ? (
@@ -281,8 +253,43 @@ export default function InventoryPage() {
                         ) : (
                           <span className="text-gray-400 text-sm">{row.low_stock_threshold}</span>
                         )}
+                  </>);
+                  return (
+                    <Fragment key={row.product_id}>
+                    <tr className="hover:bg-gray-800/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          {row.products.image_url ? (
+                            <img src={row.products.image_url} alt={row.products.name} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-lg bg-gray-800 flex items-center justify-center text-gray-600 flex-shrink-0 text-xs">IMG</div>
+                          )}
+                          <p className={`text-sm font-medium ${isUntracked ? 'text-gray-500' : 'text-white'}`}>
+                            {row.products.name}
+                          </p>
+                        </div>
+                        <ViewMore open={more.isOpen(String(row.product_id))} onClick={() => more.toggle(String(row.product_id))} />
+                      </td>
+                      <td className={`px-4 py-3 ${DESK}`}>
+                        {row.products.categories ? (
+                          <span className="text-xs text-gray-300">{row.products.categories.name}</span>
+                        ) : (
+                          <span className="text-xs text-gray-600">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
+                        {isUntracked ? (
+                          <span className="text-gray-600 text-sm">—</span>
+                        ) : (
+                          <span className={`text-sm font-semibold ${status === 'out' ? 'text-red-400' : status === 'low' ? 'text-amber-400' : 'text-white'}`}>
+                            {row.quantity}
+                          </span>
+                        )}
+                      </td>
+                      <td className={`px-4 py-3 ${DESK}`}>
+                        {threshCell}
+                      </td>
+                      <td className={`px-4 py-3 ${DESK}`}>
                         <span className={`text-xs px-2 py-1 rounded-full ${cfg.bg} ${cfg.text}`}>
                           {cfg.label}
                         </span>
@@ -308,6 +315,14 @@ export default function InventoryPage() {
                         </div>
                       </td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(row.product_id))} colSpan={3} items={[
+                      ['Category', row.products.categories ? row.products.categories.name : '—'],
+                      ['Threshold', threshCell],
+                      ['Status', <span className={`text-xs px-2 py-1 rounded-full ${cfg.bg} ${cfg.text}`}>
+                          {cfg.label}
+                        </span>],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>

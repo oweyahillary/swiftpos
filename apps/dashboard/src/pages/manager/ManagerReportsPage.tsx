@@ -14,11 +14,12 @@
  *   6. Shifts        — shift list with float reconciliation
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { usePOSAuth , type PosApi } from '../../context/POSAuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { printDocument } from '../../lib/printDocument';
 import { localDateStr } from '../../lib/localDate';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -271,6 +272,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
   const maxRev = Math.max(...rows.map(r => r.revenue), 1);
   const total  = rows.reduce((s, r) => s + r.revenue, 0);
   const peakHour = rows.length ? rows.reduce((a, b) => a.revenue > b.revenue ? a : b) : null;
+  const more = useRowMore();
 
   return (
     <div className="space-y-5">
@@ -298,24 +300,32 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-gray-700/30">
                 <tr>
-                  {['Hour', 'Orders', 'Revenue', 'Share', ''].map(h => (
-                    <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
+                  {['Hour', 'Orders', 'Revenue', 'Share', ''].map((h, i) => (
+                    <th key={h} className={`text-left text-xs text-gray-400 px-4 py-3 font-medium${i !== 0 && i !== 2 ? ` ${DESK}` : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {rows.sort((a, b) => a.hour - b.hour).map(r => (
-                  <tr key={r.hour} className="hover:bg-gray-800/30 transition-colors">
-                    <td className="px-4 py-2.5 text-white font-medium">{r.hour}:00 – {r.hour+1}:00</td>
-                    <td className="px-4 py-2.5 text-gray-400">{r.orders}</td>
+                  <Fragment key={r.hour}>
+                  <tr className="hover:bg-gray-800/30 transition-colors">
+                    <td className="px-4 py-2.5 text-white font-medium">{r.hour}:00 – {r.hour+1}:00
+                      <ViewMore open={more.isOpen(String(r.hour))} onClick={() => more.toggle(String(r.hour))} />
+                    </td>
+                    <td className={`px-4 py-2.5 text-gray-400 ${DESK}`}>{r.orders}</td>
                     <td className="px-4 py-2.5 text-white font-medium">{fmt(currency, r.revenue)}</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs">{total ? `${((r.revenue / total) * 100).toFixed(1)}%` : '—'}</td>
-                    <td className="px-4 py-2.5 w-32">
+                    <td className={`px-4 py-2.5 text-gray-400 text-xs ${DESK}`}>{total ? `${((r.revenue / total) * 100).toFixed(1)}%` : '—'}</td>
+                    <td className={`px-4 py-2.5 w-32 ${DESK}`}>
                       <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
                         <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(r.revenue / maxRev) * 100}%` }} />
                       </div>
                     </td>
                   </tr>
+                  <MoreRow open={more.isOpen(String(r.hour))} colSpan={2} items={[
+                    ['Orders', r.orders],
+                    ['Share', total ? `${((r.revenue / total) * 100).toFixed(1)}%` : '—'],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table></div>
@@ -351,6 +361,7 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
 
   const totalRev = rows.reduce((s, r) => s + r.revenue, 0);
   const filtered = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+  const more = useRowMore();
 
   return (
     <div className="space-y-4">
@@ -365,8 +376,8 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-700/30">
               <tr>
-                {['Item', 'Category', 'Qty', 'Revenue', '% of Sales', 'Avg Price'].map(h => (
-                  <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
+                {['Item', 'Category', 'Qty', 'Revenue', '% of Sales', 'Avg Price'].map((h, i) => (
+                  <th key={h} className={`text-left text-xs text-gray-400 px-4 py-3 font-medium${i !== 0 && i !== 3 ? ` ${DESK}` : ''}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -374,12 +385,15 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
               {filtered.sort((a, b) => b.revenue - a.revenue).map(r => {
                 const share = totalRev ? (r.revenue / totalRev) * 100 : 0;
                 return (
-                  <tr key={r.product_id} className="hover:bg-gray-800/30 transition-colors">
-                    <td className="px-4 py-2.5 text-white font-medium">{r.name}</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs">{r.category || '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-300 tabular-nums">{r.qty.toLocaleString()}</td>
+                  <Fragment key={r.product_id}>
+                  <tr className="hover:bg-gray-800/30 transition-colors">
+                    <td className="px-4 py-2.5 text-white font-medium">{r.name}
+                      <ViewMore open={more.isOpen(String(r.product_id))} onClick={() => more.toggle(String(r.product_id))} />
+                    </td>
+                    <td className={`px-4 py-2.5 text-gray-400 text-xs ${DESK}`}>{r.category || '—'}</td>
+                    <td className={`px-4 py-2.5 text-gray-300 tabular-nums ${DESK}`}>{r.qty.toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmt(currency, r.revenue)}</td>
-                    <td className="px-4 py-2.5">
+                    <td className={`px-4 py-2.5 ${DESK}`}>
                       <div className="flex items-center gap-2">
                         <div className="w-16 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                           <div className="h-full bg-green-500 rounded-full" style={{ width: `${share}%` }} />
@@ -387,8 +401,15 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
                         <span className="text-gray-400 text-xs">{share.toFixed(1)}%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-400 tabular-nums">{fmt(currency, r.avg_price)}</td>
+                    <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmt(currency, r.avg_price)}</td>
                   </tr>
+                  <MoreRow open={more.isOpen(String(r.product_id))} colSpan={2} items={[
+                    ['Category', r.category || '—'],
+                    ['Qty', r.qty.toLocaleString()],
+                    ['% of Sales', `${share.toFixed(1)}%`],
+                    ['Avg Price', fmt(currency, r.avg_price)],
+                  ]} />
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -422,6 +443,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
   useEffect(() => { load(); }, []); // eslint-disable-line
 
   const totalVoided = rows.reduce((s, r) => s + r.total, 0);
+  const more = useRowMore();
 
   return (
     <div className="space-y-4">
@@ -445,22 +467,33 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-gray-700/30">
                 <tr>
-                  {['Order', 'Amount', 'Cashier', 'Authorized by', 'Table', 'Reason', 'Time'].map(h => (
-                    <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
+                  {['Order', 'Amount', 'Cashier', 'Authorized by', 'Table', 'Reason', 'Time'].map((h, i) => (
+                    <th key={h} className={`text-left text-xs text-gray-400 px-4 py-3 font-medium${i > 1 ? ` ${DESK}` : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {rows.map(r => (
-                  <tr key={r.id} className="hover:bg-gray-800/30 transition-colors">
-                    <td className="px-4 py-2.5 text-white font-mono text-xs">{r.order_number}</td>
+                  <Fragment key={r.id}>
+                  <tr className="hover:bg-gray-800/30 transition-colors">
+                    <td className="px-4 py-2.5 text-white font-mono text-xs">{r.order_number}
+                      <ViewMore open={more.isOpen(String(r.id))} onClick={() => more.toggle(String(r.id))} />
+                    </td>
                     <td className="px-4 py-2.5 text-red-400 font-medium tabular-nums">{fmt(currency, r.total)}</td>
-                    <td className="px-4 py-2.5 text-gray-300">{r.cashier_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs">{r.authorized_by_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-400">{r.table_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs max-w-[180px] truncate">{r.void_reason ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{fmtDate(r.voided_at)}</td>
+                    <td className={`px-4 py-2.5 text-gray-300 ${DESK}`}>{r.cashier_name ?? '—'}</td>
+                    <td className={`px-4 py-2.5 text-gray-400 text-xs ${DESK}`}>{r.authorized_by_name ?? '—'}</td>
+                    <td className={`px-4 py-2.5 text-gray-400 ${DESK}`}>{r.table_name ?? '—'}</td>
+                    <td className={`px-4 py-2.5 text-gray-400 text-xs max-w-[180px] truncate ${DESK}`}>{r.void_reason ?? '—'}</td>
+                    <td className={`px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap ${DESK}`}>{fmtDate(r.voided_at)}</td>
                   </tr>
+                  <MoreRow open={more.isOpen(String(r.id))} colSpan={2} items={[
+                    ['Cashier', r.cashier_name ?? '—'],
+                    ['Authorized by', r.authorized_by_name ?? '—'],
+                    ['Table', r.table_name ?? '—'],
+                    ['Reason', r.void_reason ?? '—'],
+                    ['Time', fmtDate(r.voided_at)],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table></div>
@@ -494,6 +527,7 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
   useEffect(() => { load(); }, []); // eslint-disable-line
 
   const maxRev = Math.max(...rows.map(r => r.revenue), 1);
+  const more = useRowMore();
 
   return (
     <div className="space-y-4">
@@ -506,14 +540,15 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-700/30">
               <tr>
-                {['Cashier', 'Orders', 'Revenue', 'Avg Order', 'Voids', ''].map(h => (
-                  <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
+                {['Cashier', 'Orders', 'Revenue', 'Avg Order', 'Voids', ''].map((h, i) => (
+                  <th key={h} className={`text-left text-xs text-gray-400 px-4 py-3 font-medium${i !== 0 && i !== 2 ? ` ${DESK}` : ''}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {rows.sort((a, b) => b.revenue - a.revenue).map(r => (
-                <tr key={r.staff_id} className="hover:bg-gray-800/30 transition-colors">
+                <Fragment key={r.staff_id}>
+                <tr className="hover:bg-gray-800/30 transition-colors">
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 rounded-full bg-swift/20 border border-swift/30 flex items-center justify-center text-swift-text text-xs font-bold flex-shrink-0">
@@ -521,21 +556,30 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
                       </div>
                       <span className="text-white font-medium">{r.staff_name ?? 'Unknown'}</span>
                     </div>
+                    <ViewMore open={more.isOpen(String(r.staff_id))} onClick={() => more.toggle(String(r.staff_id))} />
                   </td>
-                  <td className="px-4 py-2.5 text-gray-300 tabular-nums">{r.orders}</td>
+                  <td className={`px-4 py-2.5 text-gray-300 tabular-nums ${DESK}`}>{r.orders}</td>
                   <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmt(currency, r.revenue)}</td>
-                  <td className="px-4 py-2.5 text-gray-400 tabular-nums">{fmt(currency, r.avg_order_value)}</td>
-                  <td className="px-4 py-2.5">
+                  <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmt(currency, r.avg_order_value)}</td>
+                  <td className={`px-4 py-2.5 ${DESK}`}>
                     {r.voids > 0
                       ? <span className="text-red-400 text-xs font-semibold">{r.voids} void{r.voids > 1 ? 's' : ''}</span>
                       : <span className="text-green-500 text-xs">✓ None</span>}
                   </td>
-                  <td className="px-4 py-2.5 w-32">
+                  <td className={`px-4 py-2.5 w-32 ${DESK}`}>
                     <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
                       <div className="h-full bg-purple-500 rounded-full" style={{ width: `${(r.revenue / maxRev) * 100}%` }} />
                     </div>
                   </td>
                 </tr>
+                <MoreRow open={more.isOpen(String(r.staff_id))} colSpan={2} items={[
+                  ['Orders', r.orders],
+                  ['Avg Order', fmt(currency, r.avg_order_value)],
+                  ['Voids', r.voids > 0
+                    ? <span className="text-red-400 text-xs font-semibold">{r.voids} void{r.voids > 1 ? 's' : ''}</span>
+                    : <span className="text-green-500 text-xs">✓ None</span>],
+                ]} />
+                </Fragment>
               ))}
             </tbody>
           </table></div>
@@ -702,6 +746,8 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
   }
   const fmtC = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtL = (n: number) => `${n.toLocaleString('en-KE', { maximumFractionDigits: 1 })} L`;
+  const moreGrade = useRowMore();
+  const morePump = useRowMore();
 
   return (
     <div className="space-y-5">
@@ -727,23 +773,30 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-4 border-b border-gray-700">By Grade</p>
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="bg-gray-700/30"><tr>
-                  {['Grade','Litres','Revenue','Avg Price/L'].map(h => (
-                    <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
+                  {['Grade','Litres','Revenue','Avg Price/L'].map((h, i) => (
+                    <th key={h} className={`text-left text-xs text-gray-400 px-4 py-3 font-medium${i === 1 || i === 3 ? ` ${DESK}` : ''}`}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody className="divide-y divide-gray-800">
                   {data.grades.map((g: any) => (
-                    <tr key={g.product_id} className="hover:bg-gray-800/30 transition-colors">
+                    <Fragment key={g.product_id}>
+                    <tr className="hover:bg-gray-800/30 transition-colors">
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ background: gc(g.name) }} />
                           <span className="text-white font-medium">{g.name}</span>
                         </div>
+                        <ViewMore open={moreGrade.isOpen(String(g.product_id))} onClick={() => moreGrade.toggle(String(g.product_id))} />
                       </td>
-                      <td className="px-4 py-2.5 text-amber-400 font-semibold tabular-nums">{fmtL(g.litres)}</td>
+                      <td className={`px-4 py-2.5 text-amber-400 font-semibold tabular-nums ${DESK}`}>{fmtL(g.litres)}</td>
                       <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmtC(g.revenue)}</td>
-                      <td className="px-4 py-2.5 text-gray-400 tabular-nums">{fmtC(g.litres > 0 ? g.revenue / g.litres : 0)}/L</td>
+                      <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmtC(g.litres > 0 ? g.revenue / g.litres : 0)}/L</td>
                     </tr>
+                    <MoreRow open={moreGrade.isOpen(String(g.product_id))} colSpan={2} items={[
+                      ['Litres', fmtL(g.litres)],
+                      ['Avg Price/L', `${fmtC(g.litres > 0 ? g.revenue / g.litres : 0)}/L`],
+                    ]} />
+                    </Fragment>
                   ))}
                 </tbody>
               </table></div>
@@ -754,18 +807,26 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-4 border-b border-gray-700">By Pump</p>
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="bg-gray-700/30"><tr>
-                  {['Pump','Litres','Revenue','Transactions'].map(h => (
-                    <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
+                  {['Pump','Litres','Revenue','Transactions'].map((h, i) => (
+                    <th key={h} className={`text-left text-xs text-gray-400 px-4 py-3 font-medium${i === 1 || i === 3 ? ` ${DESK}` : ''}`}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody className="divide-y divide-gray-800">
                   {data.pumps.map((p: any) => (
-                    <tr key={p.pump_id} className="hover:bg-gray-800/30 transition-colors">
-                      <td className="px-4 py-2.5 text-white font-medium">⛽ {p.pump_name}</td>
-                      <td className="px-4 py-2.5 text-amber-400 tabular-nums">{fmtL(p.litres)}</td>
+                    <Fragment key={p.pump_id}>
+                    <tr className="hover:bg-gray-800/30 transition-colors">
+                      <td className="px-4 py-2.5 text-white font-medium">⛽ {p.pump_name}
+                        <ViewMore open={morePump.isOpen(String(p.pump_id))} onClick={() => morePump.toggle(String(p.pump_id))} />
+                      </td>
+                      <td className={`px-4 py-2.5 text-amber-400 tabular-nums ${DESK}`}>{fmtL(p.litres)}</td>
                       <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmtC(p.revenue)}</td>
-                      <td className="px-4 py-2.5 text-gray-400 tabular-nums">{p.transactions}</td>
+                      <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{p.transactions}</td>
                     </tr>
+                    <MoreRow open={morePump.isOpen(String(p.pump_id))} colSpan={2} items={[
+                      ['Litres', fmtL(p.litres)],
+                      ['Transactions', p.transactions],
+                    ]} />
+                    </Fragment>
                   ))}
                 </tbody>
               </table></div>

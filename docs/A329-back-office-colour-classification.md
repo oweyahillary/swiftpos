@@ -1231,3 +1231,11 @@ Reviewed: one more **identity** colour of a payment method (data, not an action)
 bar in a breakdown. The catalogue's other new methods (Airtel Money red, room charge bronze, Uber Eats slate, Bolt Food
 teal, Yum magenta) are not green or blue and do not count. Byte-identical with `shared/paymentColours.ts` and the till's
 copy (check-shared-sync); every dot passes the contrast test (tests/payment-colours.test.mjs).
+
+## Addendum 2026-10-13 — A464 "View more" on a phone repeats a row's status colours
+
+Reviewed: on a phone a wide table hides its secondary columns (`hidden sm:table-cell`) and shows them under the row with
+"View more" (`components/RowMore.tsx`). Where a hidden column was a **status, money or data** colour — Active / OK / ✓ None
+badges, a pump's idle / dispensing state, delivered or restocked litres, revenue, a margin band, the peak-hour tint — the
+same classes are drawn a second time in the phone-only details, so the count rises with no new colour and no action in
+green or blue. Baselines raised: `pages/BranchDetailPage.tsx` 7 → 8, `pages/DiscountsPage.tsx` 7 → 10, `pages/manager/ManagerDashboard.tsx` 33 → 37, `pages/manager/ManagerReportsPage.tsx` 20 → 21, `pages/products/ProductsPage.tsx` 9 → 11, `pages/ReportsPage.tsx` 49 → 55, `pages/settings/MinimartSettingsPage.tsx` 7 → 8, `pages/settings/PetrolSettingsPage.tsx` 16 → 20, `pages/stock/IngredientsPage.tsx` 10 → 12, `pages/stock/SuppliersPage.tsx` 5 → 7.

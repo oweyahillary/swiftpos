@@ -4,8 +4,9 @@
  * Converted to Tailwind — Session 2 Phase 2
  * NOTE: Tank gauge fill bar keeps inline style={{ width: `${level}%` }} — dynamic value.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { api } from '../../lib/api';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { useBranch } from '../../context/BranchContext';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 
@@ -78,6 +79,8 @@ export default function PetrolSettingsPage() {
   const [saving, setSaving]         = useState(false);
   const [history, setHistory]       = useState<any[]>([]);
   const [histLoading, setHistLoading] = useState(false);
+  const moreGrade = useRowMore();
+  const moreHist = useRowMore();
 
   const [editPump, setEditPump]     = useState<Partial<Pump> | null>(null);
   const [editTank, setEditTank]     = useState<Partial<FuelTank> | null>(null);
@@ -392,8 +395,8 @@ export default function PetrolSettingsPage() {
           <div className="overflow-x-auto"><table className="w-full">
             <thead>
               <tr className="border-b border-gray-800">
-                {['Grade', 'Price per litre', 'Unit', 'Status', ''].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                {['Grade', 'Price per litre', 'Unit', 'Status', ''].map((h, i) => (
+                  <th key={h} className={`px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider${i === 2 || i === 3 ? ` ${DESK}` : ''}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -403,16 +406,18 @@ export default function PetrolSettingsPage() {
                   No fuel products — add products with "Is fuel" enabled in the Products page
                 </td></tr>
               ) : fuelProducts.map(fp => (
-                <tr key={fp.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
+                <Fragment key={fp.id}>
+                <tr className="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: gradeColour(fp.name) }} />
                       <span className="text-sm font-semibold text-white">{fp.name}</span>
                     </div>
+                    <ViewMore open={moreGrade.isOpen(fp.id)} onClick={() => moreGrade.toggle(fp.id)} />
                   </td>
                   <td className="px-3 py-3 text-sm font-bold text-green-400">KES {Number(fp.base_price).toFixed(2)}</td>
-                  <td className="px-3 py-3 text-sm text-gray-500">{fp.fuel_unit ?? 'L'}</td>
-                  <td className="px-3 py-3">
+                  <td className={`px-3 py-3 text-sm text-gray-500 ${DESK}`}>{fp.fuel_unit ?? 'L'}</td>
+                  <td className={`px-3 py-3 ${DESK}`}>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${fp.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
                       {fp.status}
                     </span>
@@ -421,6 +426,13 @@ export default function PetrolSettingsPage() {
                     <a href="/dashboard/products" className="text-xs text-swift-text hover:text-swift-text-hover no-underline">Edit in Products →</a>
                   </td>
                 </tr>
+                <MoreRow open={moreGrade.isOpen(fp.id)} colSpan={3} items={[
+                  ['Unit', fp.fuel_unit ?? 'L'],
+                  ['Status', <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${fp.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                      {fp.status}
+                    </span>],
+                ]} />
+                </Fragment>
               ))}
             </tbody>
           </table></div>
@@ -449,8 +461,8 @@ export default function PetrolSettingsPage() {
             <div className="overflow-x-auto"><table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
-                  {['Date', 'Tank', 'Grade', 'Type', 'Litres', 'Level After', 'Note'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                  {['Date', 'Tank', 'Grade', 'Type', 'Litres', 'Level After', 'Note'].map((h, i) => (
+                    <th key={h} className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider${i !== 0 && i !== 4 ? ` ${DESK}` : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -460,13 +472,15 @@ export default function PetrolSettingsPage() {
                   const isDelivery = m.movement_type === 'restock' || Number(m.quantity_change) > 0;
                   const litres     = Math.abs(Number(m.quantity_change));
                   return (
-                    <tr key={i} className="hover:bg-gray-800/30 transition-colors">
+                    <Fragment key={i}>
+                    <tr className="hover:bg-gray-800/30 transition-colors">
                       <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
                         {m.created_at ? new Date(m.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                        <ViewMore open={moreHist.isOpen(String(i))} onClick={() => moreHist.toggle(String(i))} />
                       </td>
-                      <td className="px-4 py-3 text-sm text-white font-medium">{m.tank_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{m.product_name ?? '—'}</td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 py-3 text-sm text-white font-medium ${DESK}`}>{m.tank_name ?? '—'}</td>
+                      <td className={`px-4 py-3 text-sm text-gray-300 ${DESK}`}>{m.product_name ?? '—'}</td>
+                      <td className={`px-4 py-3 ${DESK}`}>
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
                           isSale ? 'bg-red-500/10 text-red-400' : isDelivery ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
                         }`}>
@@ -476,11 +490,23 @@ export default function PetrolSettingsPage() {
                       <td className={`px-4 py-3 text-sm font-semibold tabular-nums ${isSale ? 'text-red-400' : 'text-green-400'}`}>
                         {isSale ? '−' : '+'}{litres.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
                       </td>
-                      <td className="px-4 py-3 text-sm tabular-nums text-gray-300">
+                      <td className={`px-4 py-3 text-sm tabular-nums text-gray-300 ${DESK}`}>
                         {m.quantity_after != null ? `${Number(m.quantity_after).toLocaleString('en-KE', { maximumFractionDigits: 0 })} L` : '—'}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500 max-w-[180px] truncate">{m.notes ?? '—'}</td>
+                      <td className={`px-4 py-3 text-xs text-gray-500 max-w-[180px] truncate ${DESK}`}>{m.notes ?? '—'}</td>
                     </tr>
+                    <MoreRow open={moreHist.isOpen(String(i))} colSpan={2} items={[
+                      ['Tank', m.tank_name ?? '—'],
+                      ['Grade', m.product_name ?? '—'],
+                      ['Type', <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          isSale ? 'bg-red-500/10 text-red-400' : isDelivery ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
+                        }`}>
+                          {isSale ? '▼ Sale' : isDelivery ? '▲ Delivery' : m.movement_type}
+                        </span>],
+                      ['Level After', m.quantity_after != null ? `${Number(m.quantity_after).toLocaleString('en-KE', { maximumFractionDigits: 0 })} L` : '—'],
+                      ['Note', m.notes ?? '—'],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>

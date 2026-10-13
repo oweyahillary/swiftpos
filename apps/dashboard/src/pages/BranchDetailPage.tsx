@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useParams, Link } from "react-router-dom";
 import BranchReceiptOverrides from "./settings/BranchReceiptOverrides";
 import { api } from "../lib/api";
+import { DESK, useRowMore, ViewMore, MoreRow } from "../components/RowMore";
 
 interface Branch {
   id: string;
@@ -37,6 +38,8 @@ export default function BranchDetailPage() {
   const [stock, setStock] = useState<StockItem[]>([]);
   const [tab, setTab] = useState<"staff" | "stock">("staff");
   const [loading, setLoading] = useState(true);
+  const moreStaff = useRowMore();
+  const moreStock = useRowMore();
 
   useEffect(() => {
     async function load() {
@@ -142,27 +145,35 @@ export default function BranchDetailPage() {
               <thead>
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Name</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Role</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Phone</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Role</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Phone</th>
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {staff.map(member => (
-                  <tr key={member.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                    <td className="px-4 py-3 text-white">{member.name}</td>
-                    <td className="px-4 py-3">
+                  <Fragment key={member.id}>
+                  <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                    <td className="px-4 py-3 text-white">{member.name}
+                      <ViewMore open={moreStaff.isOpen(member.id)} onClick={() => moreStaff.toggle(member.id)} />
+                    </td>
+                    <td className={`px-4 py-3 ${DESK}`}>
                       <span className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300">
                         {member.role_name ?? "—"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-400">{member.phone ?? "—"}</td>
+                    <td className={`px-4 py-3 text-gray-400 ${DESK}`}>{member.phone ?? "—"}</td>
                     <td className="px-4 py-3">
                       <span className={`text-xs ${member.status === "active" ? "text-green-400" : "text-gray-500"}`}>
                         {member.status}
                       </span>
                     </td>
                   </tr>
+                  <MoreRow open={moreStaff.isOpen(member.id)} colSpan={2} items={[
+                    ["Role", <span className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300">{member.role_name ?? "—"}</span>],
+                    ["Phone", member.phone ?? "—"],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table></div>
@@ -182,28 +193,39 @@ export default function BranchDetailPage() {
               <thead>
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Product</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Category</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Category</th>
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Qty</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Threshold</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Status</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Threshold</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {stock.map(item => {
                   const isLow = item.quantity <= item.low_stock_threshold;
                   return (
-                    <tr key={item.id} className={`border-b border-gray-800/50 transition-colors ${isLow ? "bg-yellow-500/5" : "hover:bg-gray-800/30"}`}>
-                      <td className="px-4 py-3 text-white">{item.products?.name ?? "—"}</td>
-                      <td className="px-4 py-3 text-gray-400">{item.products?.categories?.name ?? "—"}</td>
+                    <Fragment key={item.id}>
+                    <tr className={`border-b border-gray-800/50 transition-colors ${isLow ? "bg-yellow-500/5" : "hover:bg-gray-800/30"}`}>
+                      <td className="px-4 py-3 text-white">{item.products?.name ?? "—"}
+                        <ViewMore open={moreStock.isOpen(item.id)} onClick={() => moreStock.toggle(item.id)} />
+                      </td>
+                      <td className={`px-4 py-3 text-gray-400 ${DESK}`}>{item.products?.categories?.name ?? "—"}</td>
                       <td className="px-4 py-3 text-white font-medium">{item.quantity}</td>
-                      <td className="px-4 py-3 text-gray-400">{item.low_stock_threshold}</td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 py-3 text-gray-400 ${DESK}`}>{item.low_stock_threshold}</td>
+                      <td className={`px-4 py-3 ${DESK}`}>
                         {isLow
                           ? <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Low Stock</span>
                           : <span className="text-xs text-green-400">OK</span>
                         }
                       </td>
                     </tr>
+                    <MoreRow open={moreStock.isOpen(item.id)} colSpan={2} items={[
+                      ["Category", item.products?.categories?.name ?? "—"],
+                      ["Threshold", item.low_stock_threshold],
+                      ["Status", isLow
+                        ? <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Low Stock</span>
+                        : <span className="text-xs text-green-400">OK</span>],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>

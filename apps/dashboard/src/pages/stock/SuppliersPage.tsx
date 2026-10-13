@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import SupplierAccount from '../../components/SupplierAccount';   // A395
@@ -37,6 +38,7 @@ export default function SuppliersPage() {
   const [error, setError]         = useState('');
   const { can } = usePermissions();
   const canPay = can('payables.manage');
+  const more = useRowMore();   // A464: a phone shows Supplier, Owed and the actions
   const { business } = useBusiness();
   const { branches } = useBranch();
   const currency = (business as { currency?: string } | null)?.currency || 'KES';
@@ -172,25 +174,27 @@ export default function SuppliersPage() {
               <thead>
                 <tr className="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wide">
                   <th className="text-left px-5 py-3">Supplier</th>
-                  <th className="text-left px-5 py-3">Contact</th>
-                  <th className="text-left px-5 py-3">Email</th>
-                  <th className="text-left px-5 py-3">Phone</th>
-                  <th className="text-left px-5 py-3">Status</th>
+                  <th className={`text-left px-5 py-3 ${DESK}`}>Contact</th>
+                  <th className={`text-left px-5 py-3 ${DESK}`}>Email</th>
+                  <th className={`text-left px-5 py-3 ${DESK}`}>Phone</th>
+                  <th className={`text-left px-5 py-3 ${DESK}`}>Status</th>
                   {canPay && <th className="text-right px-5 py-3">Owed</th>}
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(s => (
-                  <tr key={s.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                  <Fragment key={s.id}>
+                  <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
                     <td className="px-5 py-3.5">
                       <span className="text-white font-medium">{s.name}</span>
                       {s.address && <p className="text-gray-500 text-xs mt-0.5 truncate max-w-xs">{s.address}</p>}
+                      <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
                     </td>
-                    <td className="px-5 py-3.5 text-gray-300">{s.contact_name ?? '—'}</td>
-                    <td className="px-5 py-3.5 text-gray-300">{s.email ?? '—'}</td>
-                    <td className="px-5 py-3.5 text-gray-300">{s.phone ?? '—'}</td>
-                    <td className="px-5 py-3.5">
+                    <td className={`px-5 py-3.5 text-gray-300 ${DESK}`}>{s.contact_name ?? '—'}</td>
+                    <td className={`px-5 py-3.5 text-gray-300 ${DESK}`}>{s.email ?? '—'}</td>
+                    <td className={`px-5 py-3.5 text-gray-300 ${DESK}`}>{s.phone ?? '—'}</td>
+                    <td className={`px-5 py-3.5 ${DESK}`}>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                         s.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
                       }`}>
@@ -233,6 +237,17 @@ export default function SuppliersPage() {
                       </div>
                     </td>
                   </tr>
+                  <MoreRow open={more.isOpen(String(s.id))} colSpan={canPay ? 3 : 2} items={[
+                    ['Contact', s.contact_name ?? '—'],
+                    ['Email', s.email ?? '—'],
+                    ['Phone', s.phone ?? '—'],
+                    ['Status', <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        s.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
+                      }`}>
+                        {s.status}
+                      </span>],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
             </table>

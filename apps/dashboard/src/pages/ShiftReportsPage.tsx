@@ -14,7 +14,8 @@
  * Reads only existing routes: GET /api/shifts (the list, with the confirmation columns) and GET /api/shifts/:id (what the
  * cloud recorded per method). The rules are shared/shiftConfirm.ts, the same file the till and the web POS use.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { api } from '../lib/api';
 import { localDateStr } from '../lib/localDate';
 import { useBusiness } from '../context/BusinessContext';
@@ -71,6 +72,8 @@ const STATUS_TONE: Record<ShiftReportStatus, string> = {
 export default function ShiftReportsPage() {
   const { business } = useBusiness();
   const currency = business?.currency ?? 'KES';
+  const more = useRowMore();    // A464: a phone shows Cashier, Status, View
+  const moreV = useRowMore();   // A464: the shift's table shows Method, Variance
   const money = (n: number | null | undefined) => (n === null || n === undefined ? '—' : `${currency} ${fmtNum(n)}`);
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return localDateStr(d); });
   const [to, setTo] = useState(() => localDateStr());
@@ -198,7 +201,7 @@ export default function ShiftReportsPage() {
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-900 text-left text-xs text-gray-500">
-                <tr><th className="px-3 py-2">Cashier</th><th>Till</th><th>Shift</th><th>Status</th><th>Difference</th><th /></tr>
+                <tr><th className="px-3 py-2">Cashier</th><th className={DESK}>Till</th><th className={DESK}>Shift</th><th>Status</th><th className={DESK}>Difference</th><th /></tr>
               </thead>
               <tbody>
                 {shown.map((s) => {
@@ -206,17 +209,26 @@ export default function ShiftReportsPage() {
                   const diff = shiftDifference(s, fmtNum);
                   const bad = /[−+]/.test(diff) || /differed|Not counted/.test(diff);
                   return (
-                    <tr key={s.id} className="border-t border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-200">
-                      <td className="px-3 py-2 font-medium">{s.cashier_name}</td>
-                      <td>{s.terminal_code ?? 'Web'}</td>
-                      <td>{when(s.opened_at)} – {s.closed_at ? hm(s.closed_at) : 'now'}</td>
+                    <Fragment key={s.id}>
+                    <tr className="border-t border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-200">
+                      <td className="px-3 py-2 font-medium">{s.cashier_name}
+                        <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
+                      </td>
+                      <td className={DESK}>{s.terminal_code ?? 'Web'}</td>
+                      <td className={DESK}>{when(s.opened_at)} – {s.closed_at ? hm(s.closed_at) : 'now'}</td>
                       <td><span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_TONE[st]}`} data-testid="shift-status">{shiftStatusLabel(st, s.confirmer_name)}</span></td>
-                      <td className={bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'}>{diff || '—'}</td>
+                      <td className={`${bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'} ${DESK}`}>{diff || '—'}</td>
                       <td className="pr-3 text-right">
                         <button onClick={() => void openView(s)} data-testid={`view-${s.id}`}
                           className="px-3 py-1 rounded bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-medium">View</button>
                       </td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(s.id))} colSpan={3} items={[
+                      ['Till', s.terminal_code ?? 'Web'],
+                      ['Shift', `${when(s.opened_at)} – ${s.closed_at ? hm(s.closed_at) : 'now'}`],
+                      ['Difference', <span className={bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'}>{diff || '—'}</span>],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -250,21 +262,30 @@ export default function ShiftReportsPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm" data-testid="shift-view-table">
                     <thead className="text-left text-xs text-gray-500">
-                      <tr><th className="py-1">Method</th><th className="text-right">Cashier said</th><th className="text-right">Manager counted</th><th className="text-right">Till recorded</th><th className="text-right">Variance</th></tr>
+                      <tr><th className="py-1">Method</th><th className={`text-right ${DESK}`}>Cashier said</th><th className={`text-right ${DESK}`}>Manager counted</th><th className={`text-right ${DESK}`}>Till recorded</th><th className="text-right">Variance</th></tr>
                     </thead>
                     <tbody>
                       {lines.map((l) => {
                         const v = l.variance ?? 0;
                         return (
-                          <tr key={l.method} className={`border-t border-gray-100 dark:border-gray-800 ${l.mismatch ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
-                            <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{methodName(l.method)}</td>
-                            <td className="text-right">{money(l.cashier)}</td>
-                            <td className="text-right">{confirmed ? money(l.manager) : '—'}</td>
-                            <td className="text-right">{money(l.recorded)}</td>
+                          <Fragment key={l.method}>
+                          <tr className={`border-t border-gray-100 dark:border-gray-800 ${l.mismatch ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
+                            <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{methodName(l.method)}
+                              <ViewMore open={moreV.isOpen(String(l.method))} onClick={() => moreV.toggle(String(l.method))} />
+                            </td>
+                            <td className={`text-right ${DESK}`}>{money(l.cashier)}</td>
+                            <td className={`text-right ${DESK}`}>{confirmed ? money(l.manager) : '—'}</td>
+                            <td className={`text-right ${DESK}`}>{money(l.recorded)}</td>
                             <td className={`text-right font-medium ${Math.round(v * 100) === 0 ? 'text-gray-500' : v < 0 ? 'text-red-600 dark:text-red-400' : 'text-amber-600'}`}>
                               {l.variance === null ? '—' : Math.round(v * 100) === 0 ? '0' : `${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))}`}
                             </td>
                           </tr>
+                          <MoreRow open={moreV.isOpen(String(l.method))} colSpan={2} items={[
+                            ['Cashier said', money(l.cashier)],
+                            ['Manager counted', confirmed ? money(l.manager) : '—'],
+                            ['Till recorded', money(l.recorded)],
+                          ]} />
+                          </Fragment>
                         );
                       })}
                     </tbody>

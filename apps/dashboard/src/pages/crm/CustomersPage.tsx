@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { api } from '../../lib/api';
+import { useRowMore, ViewMore } from '../../components/RowMore';
 
 // ── Types ─────────────────────────────────────────────────────
 interface Customer {
@@ -494,6 +495,7 @@ export default function CustomersPage({ currency }: Props) {
   const [segmentFilter, setSegmentFilter] = useState<Segment | 'all'>('all');
   const [creating, setCreating]     = useState(false);
   const [createError, setCreateError] = useState('');
+  const more = useRowMore();
 
   const LIMIT = 20;
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -655,26 +657,30 @@ export default function CustomersPage({ currency }: Props) {
           </div>
         ) : (
           <div className="overflow-x-auto sm:overflow-visible">
-          <div className="min-w-[640px] sm:min-w-0">
-            {/* Header row */}
-            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4 px-5 py-2.5 border-b border-gray-800/60 sticky top-0 bg-gray-950 z-10">
+          <div>
+            {/* Header row — on a phone only Customer and Points; the rest open under a row with View more (A464) */}
+            <div className="grid grid-cols-[1fr_auto] sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4 px-5 py-2.5 border-b border-gray-800/60 sticky top-0 bg-gray-950 z-10">
               {['Customer', 'Tier', 'Points', 'Total Spent', 'Visits', 'Status'].map(h => (
-                <span key={h} className="text-gray-500 text-xs font-medium uppercase tracking-wide">{h}</span>
+                <span key={h} className={`text-gray-500 text-xs font-medium uppercase tracking-wide${h !== 'Customer' && h !== 'Points' ? ' hidden sm:block' : ''}`}>{h}</span>
               ))}
             </div>
 
-            {/* Rows */}
+            {/* Rows — a div acting as a button, so View more (a button) can sit inside it */}
             {displayList.map(c => (
-              <button
+              <div
                 key={c.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelected(c)}
-                className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4 px-5 py-3.5 border-b border-gray-800/40 hover:bg-gray-800/30 transition-colors text-left group"
+                onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSelected(c); } }}
+                className="w-full grid grid-cols-[1fr_auto] sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4 px-5 py-3.5 border-b border-gray-800/40 hover:bg-gray-800/30 transition-colors text-left group cursor-pointer"
               >
-                <div>
+                <div className="min-w-0 sm:min-w-[auto]">
                   <p className="text-white text-sm font-medium group-hover:text-swift-text-hover transition-colors truncate">{c.name}</p>
                   <p className="text-gray-500 text-xs">{c.phone}</p>
+                  <ViewMore open={more.isOpen(c.id)} onClick={() => more.toggle(c.id)} />
                 </div>
-                <div className="flex items-center">
+                <div className="hidden sm:flex items-center">
                   <TierBadge tier={c.tier} />
                 </div>
                 <div className="flex items-center">
@@ -682,16 +688,33 @@ export default function CustomersPage({ currency }: Props) {
                     {c.loyalty_points.toLocaleString()}
                   </span>
                 </div>
-                <div className="flex items-center">
+                <div className="hidden sm:flex items-center">
                   <span className="text-white text-sm">{currency} {Number(c.total_spent).toLocaleString()}</span>
                 </div>
-                <div className="flex items-center">
+                <div className="hidden sm:flex items-center">
                   <span className="text-white text-sm">{c.visit_count}</span>
                 </div>
-                <div className="flex items-center">
+                <div className="hidden sm:flex items-center">
                   <StatusBadge status={c.status} />
                 </div>
-              </button>
+                {more.isOpen(c.id) && (
+                  <div className="col-span-2 sm:hidden" data-testid="row-more-details">
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-gray-800/60 border border-gray-700/60 p-3 text-xs">
+                      {([
+                        ['Tier', <TierBadge tier={c.tier} />],
+                        ['Total Spent', <span className="text-white text-sm">{currency} {Number(c.total_spent).toLocaleString()}</span>],
+                        ['Visits', <span className="text-white text-sm">{c.visit_count}</span>],
+                        ['Status', <StatusBadge status={c.status} />],
+                      ] as [string, ReactNode][]).map(([label, value]) => (
+                        <div key={label} className="min-w-0">
+                          <dt className="text-gray-500">{label}</dt>
+                          <dd className="text-gray-200 break-words">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
           </div>

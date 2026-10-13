@@ -110,7 +110,9 @@ await ok('a tab paid later (/pay) collects the fee too, and the web sends it', (
 await ok('the web POS asks the rider and fee before Charge (switch on)', () => {
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   assert.match(cs, /const problem = deliveryProblem\(posFeatures\.delivery_fee, getOrderType\(\), activeRider, activeFeeText\);/);
-  assert.equal((cs.match(/openPayment\((false|true)\)/g) ?? []).length, 3);
+  assert.equal((cs.match(/openPayment\((false|true)\)/g) ?? []).length, 4);   // A464: + Charge on the phone's cart bar
+  // A464: the bar's Charge runs the same rider / fee check first (opening the cart, where the message shows)
+  assert.match(cs, /if \(problem\) \{ setDeliveryMsg\(problem\); setCartSheet\(true\); return; \}\s*openPayment\(false\)/);
 });
 
 // ── 5 + 9: expenses ──────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import { isRefunded } from './orderRefund';
 import { reprintOrderReceipt } from '../lib/reprintReceipt';
 import OrderItems from '../components/OrderItems';   // A444
 import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../lib/reversalRules';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 
 interface Payment { method: string; amount: number; status: string; }
 interface Order {
@@ -76,6 +77,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const canAct = can('orders.void');
   const isOwner = currentUserIsOwner();
   const cols = canAct ? 7 : 6;
+  const more = useRowMore();   // A464: a phone shows Order, Status, Total; the rest under View more
   // 0.6.30: the owner's void window (business settings; default 30 minutes).
   const [windowMin, setWindowMin] = useState(DEFAULT_VOID_WINDOW_MINUTES);
   useEffect(() => {
@@ -203,12 +205,12 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
             <thead className="bg-gray-900 text-gray-400 text-left">
               <tr>
                 <th className="px-4 py-2 font-medium">Order</th>
-                <th className="px-4 py-2 font-medium">Type</th>
+                <th className={`px-4 py-2 font-medium ${DESK}`}>Type</th>
                 <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium text-right">Total</th>
-                <th className="px-4 py-2 font-medium">When</th>
-                <th className="px-4 py-2 font-medium">Customer</th>
-                {canAct && <th className="px-4 py-2 font-medium text-right">Action</th>}
+                <th className={`px-4 py-2 font-medium ${DESK}`}>When</th>
+                <th className={`px-4 py-2 font-medium ${DESK}`}>Customer</th>
+                {canAct && <th className={`px-4 py-2 font-medium text-right ${DESK}`}>Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -218,29 +220,8 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
               {!loading && orders.length === 0 && (
                 <tr><td colSpan={cols} className="px-4 py-8 text-center text-gray-500">No orders found.</td></tr>
               )}
-              {!loading && orders.map((o) => (
-                <Fragment key={o.id}>
-                  <tr
-                    onClick={() => setExpanded(expanded === o.id ? null : o.id)}
-                    className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer"
-                  >
-                    <td className="px-4 py-2 text-gray-200 font-medium">{o.order_number}</td>
-                    <td className="px-4 py-2 text-gray-400 capitalize">{o.order_type}</td>
-                    <td className={`px-4 py-2 capitalize ${STATUS_COLOR[o.status] ?? 'text-gray-300'}`}>
-                      {o.status}
-                      {/* A195: a refund keeps status 'completed'; without this badge a refunded
-                          sale is pixel-identical to a clean one. Amber, distinct from red 'Voided'. */}
-                      {isRefunded(o.payments) && (
-                        <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-amber-500/40 text-amber-400 bg-amber-500/10">
-                          Refunded
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right text-gray-200">{fmt(o.total, currency)}</td>
-                    <td className="px-4 py-2 text-gray-400">{fmtTime(o.created_at)}</td>
-                    <td className="px-4 py-2 text-gray-400">{o.customer_name ?? '—'}</td>
-                    {canAct && (
-                      <td className="px-4 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+              {!loading && orders.map((o) => {
+                const actionBtns = canAct ? (<>
                         {actionsFor(o, isOwner, windowMin).includes('void') && (
                           <button
                             onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setPin(''); setActionError(''); }}
@@ -253,9 +234,44 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                             className="ml-1 px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
                           >Refund</button>
                         )}
+                </>) : null;
+                const hasActions = canAct && (actionsFor(o, isOwner, windowMin).includes('void')
+                  || (actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments)));
+                return (
+                <Fragment key={o.id}>
+                  <tr
+                    onClick={() => setExpanded(expanded === o.id ? null : o.id)}
+                    className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer"
+                  >
+                    <td className="px-4 py-2 text-gray-200 font-medium">{o.order_number}
+                      <ViewMore open={more.isOpen(String(o.id))} onClick={() => more.toggle(String(o.id))} />
+                    </td>
+                    <td className={`px-4 py-2 text-gray-400 capitalize ${DESK}`}>{o.order_type}</td>
+                    <td className={`px-4 py-2 capitalize ${STATUS_COLOR[o.status] ?? 'text-gray-300'}`}>
+                      {o.status}
+                      {/* A195: a refund keeps status 'completed'; without this badge a refunded
+                          sale is pixel-identical to a clean one. Amber, distinct from red 'Voided'. */}
+                      {isRefunded(o.payments) && (
+                        <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-amber-500/40 text-amber-400 bg-amber-500/10">
+                          Refunded
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-200">{fmt(o.total, currency)}</td>
+                    <td className={`px-4 py-2 text-gray-400 ${DESK}`}>{fmtTime(o.created_at)}</td>
+                    <td className={`px-4 py-2 text-gray-400 ${DESK}`}>{o.customer_name ?? '—'}</td>
+                    {canAct && (
+                      <td className={`px-4 py-2 text-right whitespace-nowrap ${DESK}`} onClick={(e) => e.stopPropagation()}>
+                        {actionBtns}
                       </td>
                     )}
                   </tr>
+                  <MoreRow open={more.isOpen(String(o.id))} colSpan={3} items={[
+                    ['Type', <span className="capitalize">{o.order_type}</span>],
+                    ['When', fmtTime(o.created_at)],
+                    ['Customer', o.customer_name ?? '—'],
+                    ['Action', hasActions ? <span className="whitespace-nowrap">{actionBtns}</span> : null],
+                  ]} />
                   {expanded === o.id && (
                     <tr className="bg-gray-900/40 border-t border-gray-800">
                       <td colSpan={cols} className="px-4 py-3">
@@ -289,7 +305,8 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                     </tr>
                   )}
                 </Fragment>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

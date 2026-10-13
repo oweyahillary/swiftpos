@@ -25,8 +25,9 @@
  * /api/sync/push was warning them all that they were behind.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, Fragment } from 'react';
 import { api } from '../lib/api';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';
 
 interface FleetDevice {
   id: string;
@@ -92,6 +93,7 @@ export default function FleetPage() {
   // A184 Tier 3 — toggle between live fleet and the retired archive.
   const [showRetired, setShowRetired] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const more = useRowMore();
 
   const saveLabel = useCallback(async (id: string) => {
     const label = draftLabel.trim();
@@ -221,8 +223,8 @@ export default function FleetPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
-                {['Terminal', 'On shift', 'App', 'Schema', 'Last sync', 'Last sign-in'].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400">
+                {['Terminal', 'On shift', 'App', 'Schema', 'Last sync', 'Last sign-in'].map((h, i) => (
+                  <th key={h} className={`px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400${i !== 0 && i !== 4 ? ` ${DESK}` : ''}`}>
                     {h}
                   </th>
                 ))}
@@ -233,8 +235,31 @@ export default function FleetPage() {
               {fleet.map(d => {
                 const sync = syncState(d);
                 const schemaBehind = required !== null && (d.schemaVersion ?? 0) < required;
+                const onShiftCell = d.activeShift ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Shift open" />
+                          <span className="text-gray-700 dark:text-gray-300 text-sm">{d.activeShift.cashier ?? 'On shift'}</span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">—</span>
+                      );
+                const appCell = d.appVersion ?? <span className="italic text-gray-400">not reported</span>;
+                const schemaCell = d.schemaVersion === null ? (
+                        <span className="italic text-gray-400">not reported</span>
+                      ) : (
+                        <span className={schemaBehind ? TONE.warn : TONE.ok}>
+                          {d.schemaVersion}
+                          {schemaBehind && required !== null && (
+                            <span className="text-xs text-gray-500"> / {required}</span>
+                          )}
+                        </span>
+                      );
+                const seenCell = d.lastSeenAt
+                        ? `${d.hoursSinceSeen}h ago`
+                        : <span className="italic text-gray-400">never</span>;
                 return (
-                  <tr key={d.id} className="bg-white dark:bg-gray-900">
+                  <Fragment key={d.id}>
+                  <tr className="bg-white dark:bg-gray-900">
                     <td className="px-4 py-3">
                       {editingId === d.id ? (
                         <div className="flex items-center gap-1.5">
@@ -286,32 +311,17 @@ export default function FleetPage() {
                           ⚠ Split-brain — two servers on this branch. Demote one.
                         </div>
                       )}
+                      <ViewMore open={more.isOpen(d.id)} onClick={() => more.toggle(d.id)} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className={`px-4 py-3 ${DESK}`}>
                       {/* A184 Tier 2 — who is on shift right now. */}
-                      {d.activeShift ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Shift open" />
-                          <span className="text-gray-700 dark:text-gray-300 text-sm">{d.activeShift.cashier ?? 'On shift'}</span>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-sm">—</span>
-                      )}
+                      {onShiftCell}
                     </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums">
-                      {d.appVersion ?? <span className="italic text-gray-400">not reported</span>}
+                    <td className={`px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums ${DESK}`}>
+                      {appCell}
                     </td>
-                    <td className="px-4 py-3 tabular-nums">
-                      {d.schemaVersion === null ? (
-                        <span className="italic text-gray-400">not reported</span>
-                      ) : (
-                        <span className={schemaBehind ? TONE.warn : TONE.ok}>
-                          {d.schemaVersion}
-                          {schemaBehind && required !== null && (
-                            <span className="text-xs text-gray-500"> / {required}</span>
-                          )}
-                        </span>
-                      )}
+                    <td className={`px-4 py-3 tabular-nums ${DESK}`}>
+                      {schemaCell}
                     </td>
                     <td className={`px-4 py-3 font-medium ${TONE[sync.tone]}`}>
                       {sync.label}
@@ -321,10 +331,8 @@ export default function FleetPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-500">
-                      {d.lastSeenAt
-                        ? `${d.hoursSinceSeen}h ago`
-                        : <span className="italic text-gray-400">never</span>}
+                    <td className={`px-4 py-3 text-gray-500 dark:text-gray-500 ${DESK}`}>
+                      {seenCell}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {/* A184 Tier 3 — retire a dead till (reversible from the Retired tab). */}
@@ -343,6 +351,13 @@ export default function FleetPage() {
                       )}
                     </td>
                   </tr>
+                  <MoreRow open={more.isOpen(d.id)} colSpan={3} items={[
+                    ['On shift', onShiftCell],
+                    ['App', appCell],
+                    ['Schema', schemaCell],
+                    ['Last sign-in', seenCell],
+                  ]} />
+                  </Fragment>
                 );
               })}
             </tbody>

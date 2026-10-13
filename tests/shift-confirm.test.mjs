@@ -268,9 +268,9 @@ try {
   await ok('0.6.23 Shift Reports page: list (cashier, till, shift, status, difference, View), filters, CSV; View = the per-method table', () => {
     const pg = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/ShiftReportsPage.tsx'), 'utf8');
     assert.match(pg, /api\.get<ShiftRow\[\]>\(`\/api\/shifts\?\$\{qs\}`\)/);
-    assert.match(pg, /<th className="px-3 py-2">Cashier<\/th><th>Till<\/th><th>Shift<\/th><th>Status<\/th><th>Difference<\/th>/);
+    assert.match(pg, /<th className="px-3 py-2">Cashier<\/th><th className=\{DESK\}>Till<\/th><th className=\{DESK\}>Shift<\/th><th>Status<\/th><th className=\{DESK\}>Difference<\/th>/);   // A464: a phone opens the rest with View more
     assert.match(pg, /api\.get<\{ by_method\?: \{ method: string; amount: number \}\[\] \}>\(`\/api\/shifts\/\$\{s\.id\}`\)/);
-    assert.match(pg, /<th className="py-1">Method<\/th><th className="text-right">Cashier said<\/th><th className="text-right">Manager counted<\/th><th className="text-right">Till recorded<\/th><th className="text-right">Variance<\/th>/);
+    assert.match(pg, /<th className="py-1">Method<\/th><th className=\{`text-right \$\{DESK\}`\}>Cashier said<\/th><th className=\{`text-right \$\{DESK\}`\}>Manager counted<\/th><th className=\{`text-right \$\{DESK\}`\}>Till recorded<\/th><th className="text-right">Variance<\/th>/);
     assert.match(pg, /\['problems', `Problems \(\$\{counts\.problems\}\)`\]/);
     assert.match(pg, /const exportCsv = \(\) =>/);
     assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/App.tsx'), 'utf8'), /<Route path="shift-reports"\s+element=\{<ShiftReportsPage \/>\} \/>/);
