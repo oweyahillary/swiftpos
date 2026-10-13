@@ -65,7 +65,8 @@ const usb = fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-usb-'));
 
 console.log('\nThe same disk, and another machine\n');
 {
-  ok('a network share is another machine — not the database\'s disk', M.onDatabaseDisk('\\\\nas\\backups') === false);
+  // Read off the path as given — on Linux (CI) path.resolve turned \\nas\backups into a folder under the current one.
+  ok('a network share is another machine — not the database\'s disk', M.onDatabaseDisk('\\\\nas\\backups') === false && M.onDatabaseDisk('//nas/backups') === false);
   const otherRoot = process.platform === 'win32' ? (L.getDbPath().toUpperCase().startsWith('Z:') ? 'Y:\\backups' : 'Z:\\backups') : '/mnt/no-such-usb/backups';
   ok('a folder on another drive is not the database\'s disk', process.platform === 'win32' ? M.onDatabaseDisk(otherRoot) === false : true);
   ok('a folder beside the database is', M.onDatabaseDisk(path.join(userData, 'backups')) === true);

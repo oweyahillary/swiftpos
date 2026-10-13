@@ -136,8 +136,10 @@ export function snapshotDir(): string {
  * A network share (\\server\share) is another machine: not the same disk.
  */
 export function onDatabaseDisk(dir: string, dbPath = getDbPath()): boolean {
+  // A share (\\server\share, or //server/share) is another machine — read off the path as given: resolving first turns
+  // it into a folder under the current one on anything but Windows.
+  if (/^(\\\\|\/\/)/.test(String(dir).trim())) return false;
   const resolved = path.resolve(dir);
-  if (/^\\\\/.test(resolved)) return false;
   try {
     const existing = fs.existsSync(resolved) ? resolved : path.dirname(resolved);
     return fs.statSync(existing).dev === fs.statSync(dbPath).dev;
