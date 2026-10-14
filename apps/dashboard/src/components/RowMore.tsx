@@ -48,7 +48,7 @@ export function MoreRow({ open, colSpan, items }: { open: boolean; colSpan: numb
   return (
     <tr className="sm:hidden" data-testid="row-more-details">
       <td colSpan={colSpan} className="px-4 pb-3 pt-0">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-gray-800/60 border border-gray-700/60 p-3 text-xs">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-gray-800/60 border border-gray-700/60 p-3 text-xs animate-fade-in">
           {shown.map(([label, value]) => (
             <div key={label} className="min-w-0">
               <dt className="text-gray-500">{label}</dt>

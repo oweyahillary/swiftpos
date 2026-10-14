@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { dateTime } from '../../lib/format';
 
 // Outbound webhook endpoints. Extracted verbatim from SettingsPage (register
 // A133) so Integrations and the legacy Staff page share one copy (rule 17).
@@ -200,7 +201,7 @@ export default function WebhooksTab() {
                         const ok = d.response_status != null && d.response_status >= 200 && d.response_status < 300;
                         return (
                           <tr key={d.id} className="border-t border-gray-800/60">
-                            <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap">{new Date(d.created_at).toLocaleString('en-KE')}</td>
+                            <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap">{dateTime(d.created_at)}</td>
                             <td className="py-1.5 pr-3 text-gray-300">{d.event}</td>
                             <td className={`py-1.5 pr-3 font-medium ${ok ? 'text-green-400' : 'text-red-400'}`}>
                               {d.response_status ?? 'no response'}

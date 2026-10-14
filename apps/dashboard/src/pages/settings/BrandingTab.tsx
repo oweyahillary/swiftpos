@@ -4,6 +4,7 @@ import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, 
 import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
+import { money } from '../../lib/format';
 
 /**
  * Settings › Business › Branding (A308, SCOPE-A295 §6). The owner/admin-facing editor for
@@ -340,7 +341,7 @@ function TillPreview({ theme, brandHex }: { theme: Theme; brandHex: string | nul
             {[['Chicken wrap', '550'], ['Soda 500 ml', '120']].map(([n, p], i) => (
               <div key={n} className="rounded-md p-2 bg-[#111827]" style={{ border: `1px solid ${i === 0 ? k.fillDark : '#1f2937'}` }}>
                 <div className="text-[11px] text-gray-100">{n}</div>
-                <div className="text-[11px] font-semibold" style={{ color: '#4ade80' }}>KES {p}</div>
+                <div className="text-[11px] font-semibold" style={{ color: '#4ade80' }}>{money(p)}</div>
               </div>
             ))}
           </div>
@@ -348,7 +349,7 @@ function TillPreview({ theme, brandHex }: { theme: Theme; brandHex: string | nul
         <div className="w-32 p-3 bg-[#111827] flex flex-col gap-1.5">
           <div className="text-[11px] text-gray-100">Order <span className="text-[10px] font-semibold px-1 rounded" style={{ color: '#4ade80', background: 'rgba(34,197,94,.14)' }}>Paid</span></div>
           <div className="text-[10px]" style={{ color: k.textDark }}>Add a note</div>
-          <div className="mt-auto rounded-md text-center text-[11px] font-bold py-1.5" data-testid="charge" style={{ background: k.fillDark, color: k.onFillDark }}>Charge KES 670</div>
+          <div className="mt-auto rounded-md text-center text-[11px] font-bold py-1.5" data-testid="charge" style={{ background: k.fillDark, color: k.onFillDark }}>Charge {money(670)}</div>
         </div>
       </div>
     </div>

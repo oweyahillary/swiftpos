@@ -24,6 +24,7 @@ import { shiftDocSpec, shiftListDocSpec } from '../lib/documentSpecs';
 import {
   methodName, shiftReportStatus, shiftStatusLabel, shiftReportLines, shiftDifference, type ShiftReportStatus,
 } from '../lib/shiftConfirm';
+import { money, num, dayTime, time } from '../lib/format';
 
 interface ShiftRow {
   id: string;
@@ -48,9 +49,6 @@ interface ShiftRow {
 
 type StatusFilter = 'all' | 'running' | 'awaiting' | 'confirmed' | 'problems';
 
-const fmtNum = (n: number) => n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
-const hm = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : '…');
 
 /** A shift the owner should look at: over/short, the manager's count differs, still awaiting, or never counted. */
 export function isProblem(s: ShiftRow): boolean {
@@ -74,7 +72,6 @@ export default function ShiftReportsPage() {
   const currency = business?.currency ?? 'KES';
   const more = useRowMore();    // A464: a phone shows Cashier, Status, View
   const moreV = useRowMore();   // A464: the shift's table shows Method, Variance
-  const money = (n: number | null | undefined) => (n === null || n === undefined ? '—' : `${currency} ${fmtNum(n)}`);
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return localDateStr(d); });
   const [to, setTo] = useState(() => localDateStr());
   const [filter, setFilter] = useState<StatusFilter>('all');
@@ -127,7 +124,7 @@ export default function ShiftReportsPage() {
     const head = ['Cashier', 'Till', 'Opened', 'Closed', 'Status', 'Difference', 'Opening float', 'Cash counted', 'Expected cash'];
     const lines = shown.map((s) => [
       s.cashier_name, s.terminal_code ?? 'Web', s.opened_at, s.closed_at ?? '',
-      shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), shiftDifference(s, fmtNum),
+      shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), shiftDifference(s, (n: number) => num(n, 2)),
       s.opening_float, s.confirmed_methods?.cash ?? s.closing_float ?? '', s.expected_methods?.cash ?? s.expected_cash ?? '',
     ].map(esc).join(','));
     const blob = new Blob([[head.map(esc).join(','), ...lines].join('\n')], { type: 'text/csv' });
@@ -142,8 +139,8 @@ export default function ShiftReportsPage() {
   const printList = () => printDocument(shiftListDocSpec({
     business: biz, from, to, filterLabel,
     rows: shown.map((s) => ({
-      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: when(s.opened_at), closed: s.closed_at ? when(s.closed_at) : 'running',
-      status: shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), difference: shiftDifference(s, fmtNum),
+      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: dayTime(s.opened_at), closed: s.closed_at ? dayTime(s.closed_at) : 'running',
+      status: shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), difference: shiftDifference(s, (n: number) => num(n, 2)),
     })),
     awaiting: shown.filter((s) => shiftReportStatus(s) === 'awaiting').length,
     problems: shown.filter(isProblem).length,
@@ -152,9 +149,9 @@ export default function ShiftReportsPage() {
     const st = shiftReportStatus(s);
     printDocument(shiftDocSpec({
       business: biz, currency,
-      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: when(s.opened_at), closed: s.closed_at ? when(s.closed_at) : 'still running',
+      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: dayTime(s.opened_at), closed: s.closed_at ? dayTime(s.closed_at) : 'still running',
       openingFloat: Number(s.opening_float) || 0, status: shiftStatusLabel(st, s.confirmer_name),
-      confirmedAt: s.confirmed_at ? when(s.confirmed_at) : null, self: st === 'self',
+      confirmedAt: s.confirmed_at ? dayTime(s.confirmed_at) : null, self: st === 'self',
       confirmed: st === 'confirmed' || st === 'self', running: st === 'running',
       lines: shiftReportLines(s, byMethod), methodName: (m) => methodName(m), notes: s.notes,
     }));
@@ -206,7 +203,7 @@ export default function ShiftReportsPage() {
               <tbody>
                 {shown.map((s) => {
                   const st = shiftReportStatus(s);
-                  const diff = shiftDifference(s, fmtNum);
+                  const diff = shiftDifference(s, (n: number) => num(n, 2));
                   const bad = /[−+]/.test(diff) || /differed|Not counted/.test(diff);
                   return (
                     <Fragment key={s.id}>
@@ -215,7 +212,7 @@ export default function ShiftReportsPage() {
                         <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
                       </td>
                       <td className={DESK}>{s.terminal_code ?? 'Web'}</td>
-                      <td className={DESK}>{when(s.opened_at)} – {s.closed_at ? hm(s.closed_at) : 'now'}</td>
+                      <td className={DESK}>{dayTime(s.opened_at)} – {s.closed_at ? time(s.closed_at, '…') : 'now'}</td>
                       <td><span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_TONE[st]}`} data-testid="shift-status">{shiftStatusLabel(st, s.confirmer_name)}</span></td>
                       <td className={`${bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'} ${DESK}`}>{diff || '—'}</td>
                       <td className="pr-3 text-right">
@@ -225,7 +222,7 @@ export default function ShiftReportsPage() {
                     </tr>
                     <MoreRow open={more.isOpen(String(s.id))} colSpan={3} items={[
                       ['Till', s.terminal_code ?? 'Web'],
-                      ['Shift', `${when(s.opened_at)} – ${s.closed_at ? hm(s.closed_at) : 'now'}`],
+                      ['Shift', `${dayTime(s.opened_at)} – ${s.closed_at ? time(s.closed_at, '…') : 'now'}`],
                       ['Difference', <span className={bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'}>{diff || '—'}</span>],
                     ]} />
                     </Fragment>
@@ -247,16 +244,16 @@ export default function ShiftReportsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-gray-900 dark:text-white">{view.cashier_name} · {view.terminal_code ?? 'Web'}</h2>
-                  <p className="text-sm text-gray-500">{when(view.opened_at)} – {view.closed_at ? when(view.closed_at) : 'still running'} · opening float {money(Number(view.opening_float))}</p>
+                  <p className="text-sm text-gray-500">{dayTime(view.opened_at)} – {view.closed_at ? dayTime(view.closed_at) : 'still running'} · opening float {money(Number(view.opening_float), currency, { blank: '—' })}</p>
                   <p className="text-sm mt-1"><span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_TONE[st]}`}>{shiftStatusLabel(st, view.confirmer_name)}</span>
-                    {view.confirmed_at && <span className="ml-2 text-xs text-gray-500">{when(view.confirmed_at)}</span>}</p>
+                    {view.confirmed_at && <span className="ml-2 text-xs text-gray-500">{dayTime(view.confirmed_at)}</span>}</p>
                 </div>
                 <button onClick={() => setView(null)} className="text-gray-400 hover:text-gray-700 dark:hover:text-white print:hidden">✕</button>
               </div>
 
               {st === 'running' ? (
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Still running. Expected cash in the drawer now: <strong>{money(view.expected_cash_live)}</strong>. The table appears once the cashier closes the shift.
+                  Still running. Expected cash in the drawer now: <strong>{money(view.expected_cash_live, currency, { blank: '—' })}</strong>. The table appears once the cashier closes the shift.
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -273,17 +270,17 @@ export default function ShiftReportsPage() {
                             <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{methodName(l.method)}
                               <ViewMore open={moreV.isOpen(String(l.method))} onClick={() => moreV.toggle(String(l.method))} />
                             </td>
-                            <td className={`text-right ${DESK}`}>{money(l.cashier)}</td>
-                            <td className={`text-right ${DESK}`}>{confirmed ? money(l.manager) : '—'}</td>
-                            <td className={`text-right ${DESK}`}>{money(l.recorded)}</td>
+                            <td className={`text-right ${DESK}`}>{money(l.cashier, currency, { blank: '—' })}</td>
+                            <td className={`text-right ${DESK}`}>{confirmed ? money(l.manager, currency, { blank: '—' }) : '—'}</td>
+                            <td className={`text-right ${DESK}`}>{money(l.recorded, currency, { blank: '—' })}</td>
                             <td className={`text-right font-medium ${Math.round(v * 100) === 0 ? 'text-gray-500' : v < 0 ? 'text-red-600 dark:text-red-400' : 'text-amber-600'}`}>
-                              {l.variance === null ? '—' : Math.round(v * 100) === 0 ? '0' : `${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))}`}
+                              {l.variance === null ? '—' : Math.round(v * 100) === 0 ? '0' : `${v > 0 ? '+' : '−'}${num(Math.abs(v), 2)}`}
                             </td>
                           </tr>
                           <MoreRow open={moreV.isOpen(String(l.method))} colSpan={2} items={[
-                            ['Cashier said', money(l.cashier)],
-                            ['Manager counted', confirmed ? money(l.manager) : '—'],
-                            ['Till recorded', money(l.recorded)],
+                            ['Cashier said', money(l.cashier, currency, { blank: '—' })],
+                            ['Manager counted', confirmed ? money(l.manager, currency, { blank: '—' }) : '—'],
+                            ['Till recorded', money(l.recorded, currency, { blank: '—' })],
                           ]} />
                           </Fragment>
                         );

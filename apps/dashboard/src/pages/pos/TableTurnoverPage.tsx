@@ -75,7 +75,7 @@ export default function TableTurnoverPage() {
       </div>
 
       {tab === 'live' ? (
-        loading ? <p className="text-gray-500">Loading…</p> : live.length === 0 ? (
+        loading ? <p className="text-gray-500"><span className="spin-dot" aria-hidden />Loading…</p> : live.length === 0 ? (
           <p className="text-gray-500">No occupied dine-in tables right now.</p>
         ) : (
           <>

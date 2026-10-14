@@ -7,6 +7,7 @@ import { usePermissions } from '../../context/PermissionsContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 import BulkIngredientImport from './BulkIngredientImport';
+import { money, dateTime } from '../../lib/format';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,9 +54,6 @@ const EMPTY_FORM: IngredientForm = {
   unit_cost: '', current_stock: '0', reorder_level: '0', notes: '', is_packaging: false,
 };
 
-function fmt(n: number, currency: string) {
-  return new Intl.NumberFormat('en-KE', { style: 'currency', currency, minimumFractionDigits: 2 }).format(n);
-}
 
 function stockStatus(i: Ingredient): 'ok' | 'low' | 'out' {
   if (i.current_stock <= 0) return 'out';
@@ -343,7 +341,7 @@ export default function IngredientsPage() {
                         {i.reorder_level > 0 ? `${i.reorder_level} ${i.unit}` : <span className="text-gray-600">—</span>}
                       </td>
                       <td className={`px-4 py-3 text-gray-300 text-sm ${DESK}`}>
-                        {i.unit_cost != null ? fmt(i.unit_cost, currency) : <span className="text-gray-600">—</span>}
+                        {i.unit_cost != null ? money(i.unit_cost, currency) : <span className="text-gray-600">—</span>}
                       </td>
                       <td className={`px-4 py-3 ${DESK}`}>
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${i.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
@@ -371,7 +369,7 @@ export default function IngredientsPage() {
                         : '—'],
                       ['Unit', i.unit],
                       ['Reorder At', i.reorder_level > 0 ? `${i.reorder_level} ${i.unit}` : '—'],
-                      ['Unit Cost', i.unit_cost != null ? fmt(i.unit_cost, currency) : '—'],
+                      ['Unit Cost', i.unit_cost != null ? money(i.unit_cost, currency) : '—'],
                       ['Status', <span className={`px-2 py-0.5 rounded text-xs font-medium ${i.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
                           {i.status}
                         </span>],
@@ -595,7 +593,7 @@ export default function IngredientsPage() {
                         {m.notes && <span className="text-gray-500 text-xs truncate">{m.notes}</span>}
                       </div>
                       <p className="text-gray-600 text-xs mt-0.5">
-                        {new Date(m.created_at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {dateTime(m.created_at)}
                         {m.users?.name && ` · ${m.users.name}`}
                       </p>
                     </div>

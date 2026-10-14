@@ -300,6 +300,12 @@ jobs:
         working-directory: apps/server
         run: npm ci
 
+      # report-downloads (A467) builds a report workbook with the dashboard's own
+      # xlsx and reads it back — the same library the Download Excel button loads.
+      - name: Install dashboard deps
+        working-directory: apps/dashboard
+        run: npm ci
+
       # order-error-classification imports apps/server/dist, so that it drives
       # the SHIPPED classifier rather than a copy of it that can drift.
       - name: Build server
@@ -943,6 +949,24 @@ jobs:
       - name: Desktop Overview layout
         working-directory: apps/desktop
         run: node --no-warnings test/overview-look.test.mjs
+
+      # A470 — the till answers every tap (press, bump, new-line tint, dialogs fade + pop, notices slide, busy rings),
+      # reduced-motion safe, and the POS grid's speed fixes (memoised list and counts, memoised tiles, lazy pictures).
+      - name: Desktop till feel and POS grid speed
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-feel.test.mjs
+
+      # A472 — the menu in pages: the till's Menu screen (25 / 50 / 100 a page, reset on a filter, clamped on a save)
+      # and its POS grid drawn a screenful at a time as the cashier scrolls; the shared page maths.
+      - name: Desktop menu pages and incremental POS grid
+        working-directory: apps/desktop
+        run: node --no-warnings test/menu-pages.test.mjs
+
+      # A473 — the PIN pad does not wait on a cloud that has refused the till's session, a known PIN waits 4 s not 8, and
+      # the whole cloud exchange (the renewal after a 401 included) is bounded.
+      - name: Desktop PIN sign-in speed
+        working-directory: apps/desktop
+        run: node --no-warnings test/fast-unlock.test.mjs
 
       # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
       - name: Desktop and web order detail, reprint, void and refund

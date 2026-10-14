@@ -6,6 +6,8 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { money } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
 
 interface Bay {
   id: string; name: string; sort_order: number;
@@ -60,6 +62,7 @@ const EMPTY_BAY: Partial<Bay> = {
 };
 
 export default function ParkingSettingsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [tab, setTab]           = useState<Tab>('bays');
   const [bays, setBays]         = useState<Bay[]>([]);
@@ -229,7 +232,7 @@ export default function ParkingSettingsPage() {
                         <div className="text-base font-bold text-white">{bay.name}</div>
                         <StatusBadge status={bay.bay_status ?? 'active'} />
                       </div>
-                      <div className="text-xs text-gray-500 my-2">Rate: KES {bay.rate_per_hour ?? '—'}/hr</div>
+                      <div className="text-xs text-gray-500 my-2">Rate: {money(bay.rate_per_hour, currency, { blank: '—' })}/hr</div>
                       <div className="flex gap-2 mt-2">
                         <button
                           onClick={() => setEditBay({ ...bay })}

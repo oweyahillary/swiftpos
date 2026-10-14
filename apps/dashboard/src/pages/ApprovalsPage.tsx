@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { dateTime } from '../lib/format';
 
 interface Change {
   id: string; entity: string; op: string; summary: string; proposed: Record<string, unknown> | null; cloud_value: Record<string, unknown> | null;
@@ -60,7 +61,7 @@ export default function ApprovalsPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-white font-medium">{c.summary}</p>
-                <p className="text-xs text-gray-400 mt-0.5">On a till by {c.made_by_name ?? 'a manager'}{c.made_at ? `, ${new Date(c.made_at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}</p>
+                <p className="text-xs text-gray-400 mt-0.5">On a till by {c.made_by_name ?? 'a manager'}{c.made_at ? `, ${dateTime(c.made_at)}` : ''}</p>
               </div>
             </div>
             <div className="overflow-x-auto">

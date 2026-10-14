@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import BranchSelector from './BranchSelector';
 import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
+import { relative } from '../lib/format';
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
 // One curated stroke path per nav concept, in place of the mixed emoji the web
@@ -180,16 +181,6 @@ const TYPE_ICON: Record<string, string> = {
   low_stock: 'warning', daily_summary: 'summary', default: 'bell',
 };
 
-function fmtTime(iso: string) {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMins = Math.floor((now.getTime() - d.getTime()) / 60000);
-  if (diffMins < 1)  return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24)  return `${diffHrs}h ago`;
-  return d.toLocaleDateString('en-KE', { day: 'numeric', month: 'short' });
-}
 
 function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: boolean; onToggle: () => void }) {
   const location = useLocation();
@@ -436,7 +427,7 @@ export default function DashboardLayout() {
 
   return (
     <div className="flex h-[100dvh] bg-gray-950 text-white overflow-hidden">
-      {navOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setNavOpen(false)} aria-hidden />}
+      {navOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden animate-fade-in" onClick={() => setNavOpen(false)} aria-hidden />}
       <aside data-testid="dashboard-sidebar"
         className={`fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0
           ${navOpen ? 'translate-x-0' : '-translate-x-full'} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col`}>
@@ -461,7 +452,7 @@ export default function DashboardLayout() {
               )}
             </button>
             {bellOpen && (
-              <div className="fixed left-3 right-3 top-16 md:absolute md:left-0 md:right-auto md:top-full md:mt-2 md:w-80 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 overflow-hidden">
+              <div className="fixed left-3 right-3 top-16 md:absolute md:left-0 md:right-auto md:top-full md:mt-2 md:w-80 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-pop-in">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
                   <p className="text-white text-sm font-semibold">Notifications</p>
                   {unreadCount > 0 && (
@@ -486,7 +477,7 @@ export default function DashboardLayout() {
                           {!n.read_at && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-action-500 mt-1" />}
                         </div>
                         {n.message && <p className="text-gray-500 text-xs mt-0.5 line-clamp-2">{n.message}</p>}
-                        <p className="text-gray-600 text-xs mt-1">{fmtTime(n.created_at)}</p>
+                        <p className="text-gray-600 text-xs mt-1">{relative(n.created_at)}</p>
                       </div>
                     </div>
                   ))}

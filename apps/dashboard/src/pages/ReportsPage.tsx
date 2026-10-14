@@ -13,10 +13,17 @@ import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
 import { methodColour } from '../lib/paymentColours';   // A439
 import MonthlyPackTab from './reports/MonthlyPackTab';   // A455
+import DownloadExcelButton from '../components/DownloadExcelButton';   // A467
+import { localStamp, type ReportColumn, type ReportSheet } from '../lib/reportDownload';   // A467
+import { reportPresets } from '../lib/reportPeriods';   // A467
+import * as fmt from '../lib/format';   // A471: one money/number/date format ('money' here is the Excel column shorthand)
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface DateRange { from: string; to: string }
+/** A467: what the About sheet of a tab's Excel names. */
+interface ReportMeta { businessName: string; branchName: string }
+interface TabProps { range: DateRange; branchId: string; currency: string; meta: ReportMeta }
 
 interface MasterReport {
   period: { from: string; to: string };
@@ -109,13 +116,24 @@ interface StaffReport {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmtShort(n: number | null | undefined, currency = 'KES') {
-  if (n == null) return '—';
-  return `${currency} ${n.toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
-}
-function pct(n: number) { return `${n.toFixed(1)}%`; }
 function today() { return localDateStr(); }
-function monthStart() { const d = new Date(); d.setDate(1); return localDateStr(d); }
+
+// ── A467: Download Excel — each tab's own data, one sheet per table ──────────
+// Column shorthands: text, money (2 dp, #,##0.00), a number to `dp` places.
+const col   = (key: string, label: string): ReportColumn => ({ key, label });
+const money = (key: string, label: string): ReportColumn => ({ key, label, money: true });
+const num   = (key: string, label: string, dp = 2): ReportColumn => ({ key, label, dp });
+/** A KPI section as a two-column sheet (the tab's cards: label → figure). */
+const kpiSheet = (name: string, rows: [string, unknown][]): ReportSheet => ({
+  name, columns: [col('metric', 'Metric'), num('value', 'Value')],
+  rows: rows.map(([metric, value]) => ({ metric, value })),
+});
+/** % of a whole, unrounded — the sheet rounds it. */
+const share = (part: number, whole: number) => (whole > 0 ? (part / whole) * 100 : 0);
+
+function ExcelButton({ report, range, meta, sheets }: { report: string; range: DateRange; meta: ReportMeta; sheets: ReportSheet[] }) {
+  return <DownloadExcelButton input={{ report, from: range.from, to: range.to, businessName: meta.businessName, branchName: meta.branchName, sheets }} />;
+}
 
 const CHANNEL_LABELS: Record<string, string> = {
   counter: 'Counter', takeaway: 'Takeaway',
@@ -185,19 +203,16 @@ function DateRangeBar({ range, onChange, branches, branchId, onBranchChange }: {
   range: DateRange; onChange: (r: DateRange) => void;
   branches: { id: string; name: string }[]; branchId: string; onBranchChange: (id: string) => void;
 }) {
-  const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localDateStr(d); })();
-  const presets = [
-    { label: 'Today',      from: today(),      to: today() },
-    { label: 'Yesterday',  from: yesterday,    to: yesterday },
-    { label: 'This month', from: monthStart(), to: today() },
-  ];
+  // A467: Today · Yesterday · This week · Last week · This month · Last month — local (EAT) days, Monday-first weeks.
+  const presets = reportPresets();
   const inputCls = 'text-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200';
   return (
     <div className="flex flex-wrap items-center gap-2 mb-5">
-      <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
+      {/* A467: six presets — on a phone the row scrolls sideways inside its box instead of widening the page. */}
+      <div data-testid="report-presets" className="flex items-center gap-1 max-w-full overflow-x-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
         {presets.map(p => (
           <button key={p.label} onClick={() => onChange({ from: p.from, to: p.to })}
-            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${range.from === p.from && range.to === p.to ? 'bg-swift-strong text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+            className={`flex-shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-md transition-colors ${range.from === p.from && range.to === p.to ? 'bg-swift-strong text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
             {p.label}
           </button>
         ))}
@@ -217,7 +232,7 @@ function DateRangeBar({ range, onChange, branches, branchId, onBranchChange }: {
 
 // ── Tab: Master / DSR ─────────────────────────────────────────────────────────
 
-function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function MasterTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]     = useState<MasterReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState('');
@@ -242,6 +257,37 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
   const maxCh = Math.max(...channels.map(c => c.amount), 1);
   const paidTotal = payments.reduce((s, p) => s + Number(p.amount || 0), 0);   // A451: what the payment methods add up to
 
+  // A467: the tab's sections, from its data.
+  const sheets: ReportSheet[] = [
+    kpiSheet('Sale Summary', [
+      ['Total Collected (incl. VAT)', summary.totalCollected ?? summary.totalSale],
+      ['Delivery fees', summary.totalDeliveryFees ?? 0],
+      ['Tips', summary.totalTips ?? 0],
+      ['Gross Sales (incl. VAT)', summary.totalSale],
+      ['VAT 16%', summary.totalVat],
+      ['CTL 2%', summary.totalCtl],
+      ['Net Sales', summary.netSales],
+      ['Total Orders', summary.totalOrders],
+      ['Avg Order', summary.avgOrderValue],
+      ['Discounts', summary.totalDiscount],
+      ['Voided Bills', summary.voidedCount],
+      ['Voided Value', summary.voidedValue],
+      ['Expenses', summary.totalExpenses],
+      ['Net Profit', summary.netProfit],
+    ]),
+    { name: 'Order Channels', columns: [col('channel', 'Channel'), money('amount', 'Amount'), num('pct', 'Share %', 1)],
+      rows: channels.filter(c => c.amount > 0).sort((a, b) => b.amount - a.amount)
+        .map(c => ({ channel: CHANNEL_LABELS[c.channel] ?? c.channel, amount: c.amount, pct: c.pct })) },
+    { name: 'Payment Methods', columns: [col('method', 'Method'), money('amount', 'Amount'), num('pct', 'Share %', 1)],
+      rows: [...[...payments].sort((a, b) => b.amount - a.amount)
+        .map(p => ({ method: p.method.replace(/_/g, ' '), amount: p.amount, pct: share(p.amount, paidTotal) })),
+        ...(payments.length > 0 ? [{ method: 'Total paid', amount: paidTotal, pct: null }] : [])] },
+    { name: 'Category Breakdown',
+      columns: [col('category', 'Category'), col('superCategory', 'Super Category'), num('qty', 'Qty', 3), money('netSales', 'Net Sales'), num('pct', 'Share %', 1)],
+      rows: categoryBreakdown.map(r => ({ ...r, pct: share(r.netSales, summary.totalRevenue) })) },
+    ...(expenses.total > 0 ? [{ name: 'Expenses', columns: [col('category', 'Category'), money('amount', 'Amount')], rows: expenses.breakdown }] : []),
+  ];
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -250,6 +296,8 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">{data.branchName || 'All branches'}</h2>
           <p className="text-xs text-gray-400 mt-0.5">{range.from} — {range.to}</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        <ExcelButton report="Master DSR" range={range} meta={meta} sheets={sheets} />
         <button
           onClick={() => {
             const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
@@ -257,8 +305,10 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
             void downloadFile(`/api/reports/export/sales?${p}`, `zaptill-sales-${range.from}_${range.to}.xlsx`)
               .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
+          title="The server's sales export — every order, tender and total"
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
-        >↓ Export Excel</button>
+        >↓ Orders export</button>
+        </div>
       </div>
 
       {/* KPI rows */}
@@ -266,18 +316,18 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Sale Summary</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
           {/* A451: what was paid, VAT included — the sales plus delivery fees and tips; the payment methods add up to it. */}
-          <KpiCard label="Total Collected (incl. VAT)" value={fmtShort(summary.totalCollected ?? summary.totalSale, currency)}
-            sub={`sales ${fmtShort(summary.totalSale, currency)}${(summary.totalDeliveryFees ?? 0) > 0 ? ` + delivery ${fmtShort(summary.totalDeliveryFees!, currency)}` : ''}${(summary.totalTips ?? 0) > 0 ? ` + tips ${fmtShort(summary.totalTips!, currency)}` : ''}`} />
-          <KpiCard label="Gross Sales (incl. VAT)"  value={fmtShort(summary.totalSale, currency)} />
-          <KpiCard label="VAT 16%"      value={fmtShort(summary.totalVat, currency)} />
-          <KpiCard label="CTL 2%"       value={fmtShort(summary.totalCtl, currency)} />
-          <KpiCard label="Net Sales"    value={fmtShort(summary.netSales, currency)} accent />
+          <KpiCard label="Total Collected (incl. VAT)" value={fmt.money(summary.totalCollected ?? summary.totalSale, currency, { blank: '—' })}
+            sub={`sales ${fmt.money(summary.totalSale, currency, { blank: '—' })}${(summary.totalDeliveryFees ?? 0) > 0 ? ` + delivery ${fmt.money(summary.totalDeliveryFees!, currency, { blank: '—' })}` : ''}${(summary.totalTips ?? 0) > 0 ? ` + tips ${fmt.money(summary.totalTips!, currency, { blank: '—' })}` : ''}`} />
+          <KpiCard label="Gross Sales (incl. VAT)"  value={fmt.money(summary.totalSale, currency, { blank: '—' })} />
+          <KpiCard label="VAT 16%"      value={fmt.money(summary.totalVat, currency, { blank: '—' })} />
+          <KpiCard label="CTL 2%"       value={fmt.money(summary.totalCtl, currency, { blank: '—' })} />
+          <KpiCard label="Net Sales"    value={fmt.money(summary.netSales, currency, { blank: '—' })} accent />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <KpiCard label="Total Orders"  value={summary.totalOrders.toString()} sub={`avg ${fmtShort(summary.avgOrderValue, currency)}`} />
-          <KpiCard label="Discounts"     value={fmtShort(summary.totalDiscount, currency)} />
-          <KpiCard label="Voided Bills"  value={summary.voidedCount.toString()} sub={fmtShort(summary.voidedValue, currency)} />
-          <KpiCard label="Net Profit"    value={fmtShort(summary.netProfit, currency)} sub={`after ${fmtShort(summary.totalExpenses, currency)} expenses`} />
+          <KpiCard label="Total Orders"  value={summary.totalOrders.toString()} sub={`avg ${fmt.money(summary.avgOrderValue, currency, { blank: '—' })}`} />
+          <KpiCard label="Discounts"     value={fmt.money(summary.totalDiscount, currency, { blank: '—' })} />
+          <KpiCard label="Voided Bills"  value={summary.voidedCount.toString()} sub={fmt.money(summary.voidedValue, currency, { blank: '—' })} />
+          <KpiCard label="Net Profit"    value={fmt.money(summary.netProfit, currency, { blank: '—' })} sub={`after ${fmt.money(summary.totalExpenses, currency, { blank: '—' })} expenses`} />
         </div>
       </div>
 
@@ -290,7 +340,7 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-700 dark:text-gray-200">{CHANNEL_LABELS[ch.channel] ?? ch.channel}</span>
                   <span className="font-medium tabular-nums text-gray-900 dark:text-white">
-                    {fmtShort(ch.amount, currency)} <span className="text-gray-400 font-normal">{pct(ch.pct)}</span>
+                    {fmt.money(ch.amount, currency, { blank: '—' })} <span className="text-gray-400 font-normal">{fmt.pct(ch.pct)}</span>
                   </span>
                 </div>
                 <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -308,7 +358,7 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
               <tfoot>
                 <tr className="border-t border-gray-200 dark:border-gray-600">
                   <td className="pt-2 font-semibold text-gray-900 dark:text-white">Total paid</td>
-                  <td className="pt-2 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{fmtShort(paidTotal, currency)}</td>
+                  <td className="pt-2 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{fmt.money(paidTotal, currency, { blank: '—' })}</td>
                   <td />
                 </tr>
               </tfoot>
@@ -317,9 +367,9 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
               {payments.sort((a, b) => b.amount - a.amount).map(p => (
                 <tr key={p.method}>
                   <td className="py-2 text-gray-700 dark:text-gray-300 capitalize">{p.method.replace(/_/g, ' ')}</td>
-                  <td className="py-2 text-right font-medium tabular-nums text-gray-900 dark:text-white">{fmtShort(p.amount, currency)}</td>
+                  <td className="py-2 text-right font-medium tabular-nums text-gray-900 dark:text-white">{fmt.money(p.amount, currency, { blank: '—' })}</td>
                   {/* A451: a share of what was PAID (it includes delivery fees and tips) — the shares add up to 100%. */}
-                  <td className="py-2 text-right text-gray-400 w-14">{pct(paidTotal > 0 ? (p.amount / paidTotal) * 100 : 0)}</td>
+                  <td className="py-2 text-right text-gray-400 w-14">{fmt.pct(paidTotal > 0 ? (p.amount / paidTotal) * 100 : 0)}</td>
                 </tr>
               ))}
             </tbody>
@@ -347,13 +397,13 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
                   <ViewMore open={more.isOpen(String(row.category))} onClick={() => more.toggle(String(row.category))} />
                 </td>
                 <td className={`py-2 text-gray-400 dark:text-gray-500 text-xs ${DESK}`}>{row.superCategory}</td>
-                <td className={`py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{row.qty.toLocaleString()}</td>
-                <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(row.netSales, currency)}</td>
-                <td className="py-2 text-right text-gray-400 text-xs">{pct(summary.totalRevenue > 0 ? (row.netSales / summary.totalRevenue) * 100 : 0)}</td>
+                <td className={`py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmt.qty(row.qty)}</td>
+                <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmt.money(row.netSales, currency, { blank: '—' })}</td>
+                <td className="py-2 text-right text-gray-400 text-xs">{fmt.pct(summary.totalRevenue > 0 ? (row.netSales / summary.totalRevenue) * 100 : 0)}</td>
               </tr>
               <MoreRow open={more.isOpen(String(row.category))} colSpan={3} items={[
                 ['Super Category', row.superCategory],
-                ['Qty', row.qty.toLocaleString()],
+                ['Qty', fmt.qty(row.qty)],
               ]} />
               </Fragment>
             ))}
@@ -363,13 +413,13 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
 
       {/* Expenses */}
       {expenses.total > 0 && (
-        <SectionCard title={`Expenses — ${fmtShort(expenses.total, currency)} total`}>
+        <SectionCard title={`Expenses — ${fmt.money(expenses.total, currency, { blank: '—' })} total`}>
           <table className="w-full text-sm">
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
               {expenses.breakdown.map(e => (
                 <tr key={e.category}>
                   <td className="py-2 text-gray-700 dark:text-gray-300">{e.category}</td>
-                  <td className="py-2 text-right font-medium tabular-nums text-gray-900 dark:text-white">{fmtShort(e.amount, currency)}</td>
+                  <td className="py-2 text-right font-medium tabular-nums text-gray-900 dark:text-white">{fmt.money(e.amount, currency, { blank: '—' })}</td>
                 </tr>
               ))}
             </tbody>
@@ -382,7 +432,7 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
 
 // ── Tab: Hourly Sales ─────────────────────────────────────────────────────────
 
-function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function HourlyTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<HourlyReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -406,10 +456,27 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
   const maxH   = Math.max(...data.hourly.map(h => h.revenue), 1);
   const maxDow = Math.max(...data.dayOfWeek.map(d => d.revenue), 1);
   const activeHours = data.hourly.filter(h => h.orders > 0);
+  const hasSales = data.hourly.some(h => h.orders > 0 || h.revenue > 0);
+
+  // A467: the tab's sections, from its data.
+  const sheets: ReportSheet[] = hasSales ? [
+    kpiSheet('Summary', [
+      ['Peak Hour', data.peakHour != null ? data.peakHour : null],
+      ['Peak Hour Revenue', data.peakRevenue],
+      ['Active Hours', activeHours.length],
+      ['Avg / Active Hour', activeHours.reduce((s, h) => s + h.revenue, 0) / Math.max(activeHours.length, 1)],
+    ]),
+    { name: 'Revenue by Hour', columns: [col('label', 'Hour'), num('orders', 'Orders', 0), money('revenue', 'Revenue')], rows: data.hourly },
+    { name: 'Revenue by Day of Week', columns: [col('day', 'Day'), num('orders', 'Orders', 0), money('revenue', 'Revenue')], rows: data.dayOfWeek },
+    { name: 'Hourly Detail',
+      columns: [col('label', 'Hour'), num('orders', 'Orders', 0), money('revenue', 'Revenue'), money('avgOrderValue', 'Avg Order'), col('peak', 'Peak')],
+      rows: activeHours.map(h => ({ ...h, peak: h.hour === data.peakHour ? 'peak' : '' })) },
+  ] : [];
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <ExcelButton report="Hourly Sales" range={range} meta={meta} sheets={sheets} />
         <button
           onClick={() => {
             const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
@@ -417,13 +484,14 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
             void downloadFile(`/api/reports/export/hourly?${p}`, `zaptill-hourly-${range.from}_${range.to}.xlsx`)
               .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
+          title="The server's hourly export — revenue by hour with the channel split"
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
-        >↓ Export Excel</button>
+        >↓ By channel export</button>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <KpiCard label="Peak Hour" value={data.peakHour != null ? `${String(data.peakHour).padStart(2,'0')}:00` : '—'} sub={fmtShort(data.peakRevenue, currency)} accent />
+        <KpiCard label="Peak Hour" value={data.peakHour != null ? `${String(data.peakHour).padStart(2,'0')}:00` : '—'} sub={fmt.money(data.peakRevenue, currency, { blank: '—' })} accent />
         <KpiCard label="Active Hours" value={activeHours.length.toString()} sub="hours with sales" />
-        <KpiCard label="Avg / Active Hour" value={fmtShort(activeHours.reduce((s,h)=>s+h.revenue,0) / Math.max(activeHours.length,1), currency)} />
+        <KpiCard label="Avg / Active Hour" value={fmt.money(activeHours.reduce((s,h)=>s+h.revenue,0) / Math.max(activeHours.length,1), currency, { blank: '—' })} />
       </div>
 
       <SectionCard title="Revenue by Hour">
@@ -433,7 +501,7 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
               const barH = h.revenue > 0 ? Math.max(3, (h.revenue / maxH) * 100) : 0;
               const isPeak = h.hour === data.peakHour;
               return (
-                <div key={h.hour} title={`${h.label}: ${fmtShort(h.revenue, currency)} (${h.orders} orders)`}
+                <div key={h.hour} title={`${h.label}: ${fmt.money(h.revenue, currency, { blank: '—' })} (${h.orders} orders)`}
                   className="flex flex-col items-center flex-1 cursor-default">
                   <div className={`w-full rounded-t transition-all ${isPeak ? 'bg-blue-600' : 'bg-blue-200 dark:bg-blue-900 hover:bg-blue-400'}`}
                     style={{ height: `${barH}%` }} />
@@ -450,7 +518,7 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
           {data.dayOfWeek.map(d => {
             const barH = d.revenue > 0 ? Math.max(3, (d.revenue / maxDow) * 100) : 0;
             return (
-              <div key={d.day} title={`${d.day}: ${fmtShort(d.revenue, currency)}`}
+              <div key={d.day} title={`${d.day}: ${fmt.money(d.revenue, currency, { blank: '—' })}`}
                 className="flex flex-col items-center flex-1 cursor-default">
                 <div className="w-full rounded-t bg-purple-200 dark:bg-purple-900 hover:bg-purple-500 transition-all"
                   style={{ height: `${barH}%` }} />
@@ -478,11 +546,11 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
                   <ViewMore open={more.isOpen(String(h.hour))} onClick={() => more.toggle(String(h.hour))} />
                 </td>
                 <td className="py-1.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{h.orders}</td>
-                <td className="py-1.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(h.revenue, currency)}</td>
-                <td className={`py-1.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(h.avgOrderValue, currency)}</td>
+                <td className="py-1.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmt.money(h.revenue, currency, { blank: '—' })}</td>
+                <td className={`py-1.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.money(h.avgOrderValue, currency, { blank: '—' })}</td>
               </tr>
               <MoreRow open={more.isOpen(String(h.hour))} colSpan={3} items={[
-                ['Avg Order', fmtShort(h.avgOrderValue, currency)],
+                ['Avg Order', fmt.money(h.avgOrderValue, currency, { blank: '—' })],
               ]} />
               </Fragment>
             ))}
@@ -495,7 +563,7 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
 
 // ── Tab: Item Mix ─────────────────────────────────────────────────────────────
 
-function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function ItemMixTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<ProductV2Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -522,6 +590,14 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
     .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => sortBy === 'qty' ? b.qty - a.qty : sortBy === 'margin' ? (b.gross_margin_pct ?? -99) - (a.gross_margin_pct ?? -99) : b.revenue - a.revenue);
 
+  // A467: the item table as shown — the search and the sort applied.
+  const sheets: ReportSheet[] = [{
+    name: 'Item Mix',
+    columns: [num('n', '#', 0), col('name', 'Item'), col('category', 'Category'), num('qty', 'Qty', 3), money('revenue', 'Revenue'),
+      num('contribution_pct', 'Share %', 1), money('total_cost', 'Cost'), num('gross_margin_pct', 'Margin %', 1)],
+    rows: filtered.map((p, i) => ({ ...p, n: i + 1 })),
+  }];
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -542,8 +618,10 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
             void downloadFile(`/api/reports/export/products?${p}`, `zaptill-products-${range.from}_${range.to}.xlsx`)
               .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
+          title="The server's products export — every product, unfiltered"
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
-        >↓ Export Excel</button>
+        >↓ Products export</button>
+        <ExcelButton report="Item Mix" range={range} meta={meta} sheets={sheets} />
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -563,9 +641,9 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
               {filtered.map((p, i) => {
-                const cost = p.total_cost != null ? fmtShort(p.total_cost, currency) : <span className="text-gray-300 dark:text-gray-600">—</span>;
+                const cost = p.total_cost != null ? fmt.money(p.total_cost, currency, { blank: '—' }) : <span className="text-gray-300 dark:text-gray-600">—</span>;
                 const margin = p.gross_margin_pct != null
-                      ? <span className={`text-xs font-medium tabular-nums ${p.gross_margin_pct >= 60 ? 'text-green-600' : p.gross_margin_pct >= 30 ? 'text-amber-600' : 'text-red-500'}`}>{pct(p.gross_margin_pct)}</span>
+                      ? <span className={`text-xs font-medium tabular-nums ${p.gross_margin_pct >= 60 ? 'text-green-600' : p.gross_margin_pct >= 30 ? 'text-amber-600' : 'text-red-500'}`}>{fmt.pct(p.gross_margin_pct)}</span>
                       : <span className="text-gray-300 dark:text-gray-600 text-xs">—</span>;
                 return (
                 <Fragment key={p.product_id}>
@@ -575,14 +653,14 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
                     <ViewMore open={more.isOpen(String(p.product_id))} onClick={() => more.toggle(String(p.product_id))} />
                   </td>
                   <td className={`px-2 py-2 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{p.category || '—'}</td>
-                  <td className="px-2 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{p.qty.toLocaleString()}</td>
-                  <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white pr-4 sm:pr-2">{fmtShort(p.revenue, currency)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmt.qty(p.qty)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white pr-4 sm:pr-2">{fmt.money(p.revenue, currency, { blank: '—' })}</td>
                   <td className={`px-2 py-2 text-right ${DESK}`}>
                     <div className="flex items-center justify-end gap-1.5">
                       <div className="w-14 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                         <div className="bg-blue-500 h-full rounded-full" style={{ width: `${p.contribution_pct}%` }} />
                       </div>
-                      <span className="text-xs text-gray-400 tabular-nums w-9 text-right">{pct(p.contribution_pct)}</span>
+                      <span className="text-xs text-gray-400 tabular-nums w-9 text-right">{fmt.pct(p.contribution_pct)}</span>
                     </div>
                   </td>
                   <td className={`px-2 py-2 text-right tabular-nums text-gray-500 text-xs ${DESK}`}>
@@ -595,7 +673,7 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
                 <MoreRow open={more.isOpen(String(p.product_id))} colSpan={3} items={[
                   ['#', i + 1],
                   ['Category', p.category || '—'],
-                  ['Share', pct(p.contribution_pct)],
+                  ['Share', fmt.pct(p.contribution_pct)],
                   ['Cost', cost],
                   ['Margin', margin],
                 ]} />
@@ -612,7 +690,7 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
 
 // ── Tab: Voids & Exceptions ───────────────────────────────────────────────────
 
-function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function VoidsTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<VoidsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -633,11 +711,21 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
   if (error)   return <ErrMsg msg={error} />;
   if (!data)   return null;
 
+  // A467: the tab's sections, from its data.
+  const sheets: ReportSheet[] = data.voids.length === 0 && data.summary.byStaff.length === 0 ? [] : [
+    kpiSheet('Summary', [['Total Voids', data.summary.totalVoids], ['Voided Value', data.summary.totalValue], ['Staff Involved', data.summary.byStaff.length]]),
+    { name: 'Voids by Cashier', columns: [col('name', 'Cashier'), num('count', 'Count', 0), money('value', 'Value')], rows: data.summary.byStaff },
+    { name: 'Void Log',
+      columns: [col('order_number', 'Order'), col('cashier_name', 'Cashier'), col('authorized_by_name', 'Authorized by'), col('void_reason', 'Reason'), money('total', 'Amount'), col('time', 'Time')],
+      rows: data.voids.map(v => ({ ...v, time: localStamp(v.created_at) })) },
+  ];
+
   return (
     <div className="space-y-5">
+      <div className="flex justify-end"><ExcelButton report="Voids & Exceptions" range={range} meta={meta} sheets={sheets} /></div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <KpiCard label="Total Voids"   value={data.summary.totalVoids.toString()} accent={data.summary.totalVoids > 0} />
-        <KpiCard label="Voided Value"  value={fmtShort(data.summary.totalValue, currency)} />
+        <KpiCard label="Voided Value"  value={fmt.money(data.summary.totalValue, currency, { blank: '—' })} />
         <KpiCard label="Staff Involved" value={data.summary.byStaff.length.toString()} />
       </div>
 
@@ -654,7 +742,7 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
                 <tr key={s.cashier_id}>
                   <td className="py-2 text-gray-800 dark:text-gray-200">{s.name}</td>
                   <td className="py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{s.count}</td>
-                  <td className="py-2 text-right tabular-nums font-medium text-red-600 dark:text-red-400">{fmtShort(s.value, currency)}</td>
+                  <td className="py-2 text-right tabular-nums font-medium text-red-600 dark:text-red-400">{fmt.money(s.value, currency, { blank: '—' })}</td>
                 </tr>
               ))}
             </tbody>
@@ -691,15 +779,15 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
                       <td className="px-2 py-2 text-gray-700 dark:text-gray-300">{v.cashier_name}</td>
                       <td className={`px-2 py-2 text-xs text-gray-600 dark:text-gray-400 ${DESK}`}>{v.authorized_by_name ?? '—'}</td>
                       <td className={`px-2 py-2 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{v.void_reason || '—'}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-red-600 dark:text-red-400 font-medium pr-4 sm:pr-2">{fmtShort(v.total, currency)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-red-600 dark:text-red-400 font-medium pr-4 sm:pr-2">{fmt.money(v.total, currency, { blank: '—' })}</td>
                       <td className={`px-4 py-2 text-right text-xs text-gray-400 ${DESK}`}>
-                        {new Date(v.created_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })}
+                        {fmt.dateTime(v.created_at)}
                       </td>
                     </tr>
                     <MoreRow open={more.isOpen(String(v.id))} colSpan={3} items={[
                       ['Authorized by', v.authorized_by_name ?? '—'],
                       ['Reason', v.void_reason || '—'],
-                      ['Time', new Date(v.created_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })],
+                      ['Time', fmt.dateTime(v.created_at)],
                     ]} />
                     </Fragment>
                   ))}
@@ -717,7 +805,7 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
 // ── Tab: Refunds ──────────────────────────────────────────────────────────────
 // A193: standalone refund log — sibling of Voids & Exceptions. A refund keeps the
 // sale 'completed', so it never shows in the Void Log; this is its audit surface.
-function RefundsTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function RefundsTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<RefundsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -738,11 +826,21 @@ function RefundsTab({ range, branchId, currency }: { range: DateRange; branchId:
   if (error)   return <ErrMsg msg={error} />;
   if (!data)   return null;
 
+  // A467: the tab's sections, from its data.
+  const sheets: ReportSheet[] = data.refunds.length === 0 && data.summary.byStaff.length === 0 ? [] : [
+    kpiSheet('Summary', [['Total Refunds', data.summary.totalRefunds], ['Refunded Value', data.summary.totalValue], ['Staff Involved', data.summary.byStaff.length]]),
+    { name: 'Refunds by Cashier', columns: [col('name', 'Cashier'), num('count', 'Count', 0), money('value', 'Value')], rows: data.summary.byStaff },
+    { name: 'Refund Log',
+      columns: [col('order_number', 'Order'), col('cashier_name', 'Cashier'), col('authorized', 'Authorized by'), col('refund_reason', 'Reason'), money('refunded_amount', 'Refunded'), col('time', 'Time')],
+      rows: data.refunds.map(r => ({ ...r, authorized: r.authorized_by_name ?? r.refunded_by_name ?? '', time: localStamp(r.refunded_at) })) },
+  ];
+
   return (
     <div className="space-y-5">
+      <div className="flex justify-end"><ExcelButton report="Refunds" range={range} meta={meta} sheets={sheets} /></div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <KpiCard label="Total Refunds"  value={data.summary.totalRefunds.toString()} accent={data.summary.totalRefunds > 0} />
-        <KpiCard label="Refunded Value" value={fmtShort(data.summary.totalValue, currency)} />
+        <KpiCard label="Refunded Value" value={fmt.money(data.summary.totalValue, currency, { blank: '—' })} />
         <KpiCard label="Staff Involved" value={data.summary.byStaff.length.toString()} />
       </div>
 
@@ -759,7 +857,7 @@ function RefundsTab({ range, branchId, currency }: { range: DateRange; branchId:
                 <tr key={s.cashier_id}>
                   <td className="py-2 text-gray-800 dark:text-gray-200">{s.name}</td>
                   <td className="py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{s.count}</td>
-                  <td className="py-2 text-right tabular-nums font-medium text-amber-600 dark:text-amber-400">{fmtShort(s.value, currency)}</td>
+                  <td className="py-2 text-right tabular-nums font-medium text-amber-600 dark:text-amber-400">{fmt.money(s.value, currency, { blank: '—' })}</td>
                 </tr>
               ))}
             </tbody>
@@ -796,15 +894,15 @@ function RefundsTab({ range, branchId, currency }: { range: DateRange; branchId:
                       <td className="px-2 py-2 text-gray-700 dark:text-gray-300">{r.cashier_name}</td>
                       <td className={`px-2 py-2 text-xs text-gray-600 dark:text-gray-400 ${DESK}`}>{r.authorized_by_name ?? r.refunded_by_name ?? '—'}</td>
                       <td className={`px-2 py-2 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{r.refund_reason || '—'}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400 font-medium pr-4 sm:pr-2">{fmtShort(r.refunded_amount, currency)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400 font-medium pr-4 sm:pr-2">{fmt.money(r.refunded_amount, currency, { blank: '—' })}</td>
                       <td className={`px-4 py-2 text-right text-xs text-gray-400 ${DESK}`}>
-                        {new Date(r.refunded_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })}
+                        {fmt.dateTime(r.refunded_at)}
                       </td>
                     </tr>
                     <MoreRow open={more.isOpen(String(r.id))} colSpan={3} items={[
                       ['Authorized by', r.authorized_by_name ?? r.refunded_by_name ?? '—'],
                       ['Reason', r.refund_reason || '—'],
-                      ['Time', new Date(r.refunded_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })],
+                      ['Time', fmt.dateTime(r.refunded_at)],
                     ]} />
                     </Fragment>
                   ))}
@@ -820,7 +918,7 @@ function RefundsTab({ range, branchId, currency }: { range: DateRange; branchId:
 // ── Tab: Inventory ────────────────────────────────────────────────────────────
 // A143: renders the existing GET /api/reports/inventory (sold / restocked /
 // written-off per product) — the endpoint was live with no UI caller.
-function InventoryTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function InventoryTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<InventoryReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -842,12 +940,20 @@ function InventoryTab({ range, branchId, currency }: { range: DateRange; branchI
   if (!data)   return null;
 
   const rows = data.summary;
+  // A467: the tab's sections, from its data.
+  const sheets: ReportSheet[] = rows.length === 0 ? [] : [
+    kpiSheet('Summary', [['Products Moved', rows.length], ['Units Sold', rows.reduce((s, r) => s + r.sold, 0)], ['Units Written Off', rows.reduce((s, r) => s + r.written_off, 0)]]),
+    { name: 'Stock Movement',
+      columns: [col('name', 'Product'), num('sold', 'Sold', 3), money('revenue', 'Revenue'), num('restocked', 'Restocked', 3), num('written_off', 'Written Off', 3)],
+      rows },
+  ];
   return (
     <div className="space-y-5">
+      <div className="flex justify-end"><ExcelButton report="Inventory" range={range} meta={meta} sheets={sheets} /></div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <KpiCard label="Products Moved" value={rows.length.toString()} />
-        <KpiCard label="Units Sold"     value={rows.reduce((s, r) => s + r.sold, 0).toLocaleString()} />
-        <KpiCard label="Units Written Off" value={rows.reduce((s, r) => s + r.written_off, 0).toLocaleString()} accent={rows.some(r => r.written_off > 0)} />
+        <KpiCard label="Units Sold"     value={fmt.qty(rows.reduce((s, r) => s + r.sold, 0))} />
+        <KpiCard label="Units Written Off" value={fmt.qty(rows.reduce((s, r) => s + r.written_off, 0))} accent={rows.some(r => r.written_off > 0)} />
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -875,14 +981,14 @@ function InventoryTab({ range, branchId, currency }: { range: DateRange; branchI
                       <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{r.name}
                         <ViewMore open={more.isOpen(String(r.product_id))} onClick={() => more.toggle(String(r.product_id))} />
                       </td>
-                      <td className="px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{r.sold.toLocaleString()}</td>
-                      <td className={`px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmtShort(r.revenue, currency)}</td>
-                      <td className={`px-2 py-2 text-right tabular-nums text-green-600 dark:text-green-400 ${DESK}`}>{r.restocked.toLocaleString()}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-red-600 dark:text-red-400">{r.written_off.toLocaleString()}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmt.qty(r.sold)}</td>
+                      <td className={`px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmt.money(r.revenue, currency, { blank: '—' })}</td>
+                      <td className={`px-2 py-2 text-right tabular-nums text-green-600 dark:text-green-400 ${DESK}`}>{fmt.qty(r.restocked)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-red-600 dark:text-red-400">{fmt.qty(r.written_off)}</td>
                     </tr>
                     <MoreRow open={more.isOpen(String(r.product_id))} colSpan={3} items={[
-                      ['Revenue', fmtShort(r.revenue, currency)],
-                      ['Restocked', <span className="text-green-600 dark:text-green-400">{r.restocked.toLocaleString()}</span>],
+                      ['Revenue', fmt.money(r.revenue, currency, { blank: '—' })],
+                      ['Restocked', <span className="text-green-600 dark:text-green-400">{fmt.qty(r.restocked)}</span>],
                     ]} />
                     </Fragment>
                   ))}
@@ -910,7 +1016,7 @@ const EXPORT_FORMATS: { key: string; label: string; desc: string }[] = [
   { key: 'audit',    label: 'Audit Log',     desc: 'Voids, refunds and sensitive actions' },
 ];
 
-function ExportsTab({ range, branchId }: { range: DateRange; branchId: string; currency: string }) {
+function ExportsTab({ range, branchId }: TabProps) {
   const [busyKey, setBusyKey] = useState('');
   const [dlError, setDlError] = useState('');
   const download = async (key: string) => {
@@ -952,7 +1058,7 @@ function ExportsTab({ range, branchId }: { range: DateRange; branchId: string; c
   );
 }
 
-function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function TaxTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<TaxReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -974,13 +1080,24 @@ function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: str
   if (error)   return <ErrMsg msg={error} />;
   if (!data)   return null;
 
+  // A467: the tab's sections, from its data (By Branch only when the tab shows it).
+  const taxCols = (first: ReportColumn): ReportColumn[] =>
+    [first, money('grossSales', 'Gross Sales'), money('vatAmount', 'VAT'), money('ctlAmount', 'CTL'), money('netSales', 'Net Sales')];
+  const sheets: ReportSheet[] = data.summary.totalOrders === 0 && data.byCategory.length === 0 ? [] : [
+    kpiSheet('Summary', [['Gross Sales', data.summary.grossSales], [`VAT ${data.rates.vatRate}%`, data.summary.vatTotal],
+      [`CTL ${data.rates.ctlRate}%`, data.summary.ctlTotal], ['Net Sales', data.summary.netSales]]),
+    ...(data.byBranch.length > 1 ? [{ name: 'By Branch', columns: taxCols(col('branchName', 'Branch')), rows: data.byBranch }] : []),
+    { name: 'By Category', columns: taxCols(col('category', 'Category')), rows: data.byCategory },
+  ];
+
   return (
     <div className="space-y-5">
+      <div className="flex justify-end"><ExcelButton report="Tax Report" range={range} meta={meta} sheets={sheets} /></div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiCard label="Gross Sales"               value={fmtShort(data.summary.grossSales, currency)} />
-        <KpiCard label={`VAT ${data.rates.vatRate}%`} value={fmtShort(data.summary.vatTotal, currency)} />
-        <KpiCard label={`CTL ${data.rates.ctlRate}%`} value={fmtShort(data.summary.ctlTotal, currency)} />
-        <KpiCard label="Net Sales"                 value={fmtShort(data.summary.netSales, currency)} accent />
+        <KpiCard label="Gross Sales"               value={fmt.money(data.summary.grossSales, currency, { blank: '—' })} />
+        <KpiCard label={`VAT ${data.rates.vatRate}%`} value={fmt.money(data.summary.vatTotal, currency, { blank: '—' })} />
+        <KpiCard label={`CTL ${data.rates.ctlRate}%`} value={fmt.money(data.summary.ctlTotal, currency, { blank: '—' })} />
+        <KpiCard label="Net Sales"                 value={fmt.money(data.summary.netSales, currency, { blank: '—' })} accent />
       </div>
 
       {data.byBranch.length > 1 && (
@@ -998,14 +1115,14 @@ function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: str
                   <td className="py-2 text-gray-800 dark:text-gray-200">{b.branchName}
                     <ViewMore open={moreB.isOpen(String(b.branchName))} onClick={() => moreB.toggle(String(b.branchName))} />
                   </td>
-                  <td className="py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtShort(b.grossSales, currency)}</td>
-                  <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(b.vatAmount, currency)}</td>
-                  <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(b.ctlAmount, currency)}</td>
-                  <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(b.netSales, currency)}</td>
+                  <td className="py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmt.money(b.grossSales, currency, { blank: '—' })}</td>
+                  <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.money(b.vatAmount, currency, { blank: '—' })}</td>
+                  <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.money(b.ctlAmount, currency, { blank: '—' })}</td>
+                  <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmt.money(b.netSales, currency, { blank: '—' })}</td>
                 </tr>
                 <MoreRow open={moreB.isOpen(String(b.branchName))} colSpan={3} items={[
-                  ['VAT', fmtShort(b.vatAmount, currency)],
-                  ['CTL', fmtShort(b.ctlAmount, currency)],
+                  ['VAT', fmt.money(b.vatAmount, currency, { blank: '—' })],
+                  ['CTL', fmt.money(b.ctlAmount, currency, { blank: '—' })],
                 ]} />
                 </Fragment>
               ))}
@@ -1028,14 +1145,14 @@ function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: str
                 <td className="py-2 text-gray-800 dark:text-gray-200">{c.category}
                   <ViewMore open={moreC.isOpen(String(c.category))} onClick={() => moreC.toggle(String(c.category))} />
                 </td>
-                <td className="py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtShort(c.grossSales, currency)}</td>
-                <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(c.vatAmount, currency)}</td>
-                <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(c.ctlAmount, currency)}</td>
-                <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(c.netSales, currency)}</td>
+                <td className="py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmt.money(c.grossSales, currency, { blank: '—' })}</td>
+                <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.money(c.vatAmount, currency, { blank: '—' })}</td>
+                <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.money(c.ctlAmount, currency, { blank: '—' })}</td>
+                <td className="py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmt.money(c.netSales, currency, { blank: '—' })}</td>
               </tr>
               <MoreRow open={moreC.isOpen(String(c.category))} colSpan={3} items={[
-                ['VAT', fmtShort(c.vatAmount, currency)],
-                ['CTL', fmtShort(c.ctlAmount, currency)],
+                ['VAT', fmt.money(c.vatAmount, currency, { blank: '—' })],
+                ['CTL', fmt.money(c.ctlAmount, currency, { blank: '—' })],
               ]} />
               </Fragment>
             ))}
@@ -1048,7 +1165,7 @@ function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: str
 
 // ── Tab: Staff Performance ─────────────────────────────────────────────────────
 
-function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function StaffTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<StaffReport | null>(null);
   const [showAll, setShowAll] = useState(false);            // A439
   const [openRows, setOpenRows] = useState<string[]>([]);   // A439
@@ -1078,17 +1195,28 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
   const METHOD_NAMES: Record<string, string> = { cash: 'Cash', mpesa: 'M-Pesa', card: 'Card', glovo: 'Glovo', credit: 'On account', unpaid: 'Not paid' };
   const methodName = (m: string) => METHOD_NAMES[m] ?? m.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
+  // A467: the staff table, and each cashier's payment methods (shown per row or for everyone).
+  const sheets: ReportSheet[] = data.staff.length === 0 ? [] : [
+    { name: 'Staff Performance',
+      columns: [num('n', '#', 0), col('staff_name', 'Cashier'), num('orders', 'Orders', 0), money('revenue', 'Revenue'), money('avg_order_value', 'Avg Order'), num('pct', 'Share %', 1)],
+      rows: data.staff.map((s, i) => ({ ...s, n: i + 1, pct: share(s.revenue, total) })) },
+    ...(hasMethods ? [{ name: 'Payment Methods',
+      columns: [col('cashier', 'Cashier'), col('method', 'Method'), money('amount', 'Amount'), num('pct', 'Share %', 1)],
+      rows: data.staff.flatMap(s => (s.by_method ?? []).map(m => ({ cashier: s.staff_name, method: methodName(m.method), amount: m.amount, pct: share(m.amount, s.revenue) }))) }] : []),
+  ];
+
   return (
     <div className="space-y-4">
       {/* A439: each cashier's money by payment method — one row at a time, or everyone's. */}
-      {hasMethods && (
-        <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {hasMethods && (
           <button type="button" onClick={() => { setShowAll((v) => !v); setOpenRows([]); }} data-testid="staff-methods-all"
             className="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/40">
             {showAll ? 'Hide payment methods' : 'Show payment methods for everyone'}
           </button>
-        </div>
-      )}
+        )}
+        <ExcelButton report="Staff Performance" range={range} meta={meta} sheets={sheets} />
+      </div>
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1112,14 +1240,14 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
                     <ViewMore open={more.isOpen(String(s.staff_id))} onClick={() => more.toggle(String(s.staff_id))} />
                   </td>
                   <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{s.orders}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums font-medium text-gray-900 dark:text-white pr-4 sm:pr-2">{fmtShort(s.revenue, currency)}</td>
-                  <td className={`px-2 py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtShort(s.avg_order_value, currency)}</td>
+                  <td className="px-2 py-2.5 text-right tabular-nums font-medium text-gray-900 dark:text-white pr-4 sm:pr-2">{fmt.money(s.revenue, currency, { blank: '—' })}</td>
+                  <td className={`px-2 py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.money(s.avg_order_value, currency, { blank: '—' })}</td>
                   <td className={`px-4 py-2.5 text-right ${DESK}`}>
                     <div className="flex items-center justify-end gap-1.5">
                       <div className="w-14 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                         <div className="bg-teal-500 h-full rounded-full" style={{ width: `${total > 0 ? (s.revenue / total) * 100 : 0}%` }} />
                       </div>
-                      <span className="text-xs text-gray-400 tabular-nums w-9 text-right">{pct(total > 0 ? (s.revenue / total) * 100 : 0)}</span>
+                      <span className="text-xs text-gray-400 tabular-nums w-9 text-right">{fmt.pct(total > 0 ? (s.revenue / total) * 100 : 0)}</span>
                     </div>
                   </td>
                   {hasMethods && (
@@ -1136,8 +1264,8 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
                 <MoreRow open={more.isOpen(String(s.staff_id))} colSpan={hasMethods ? 3 : 2} items={[
                   ['#', i + 1],
                   ['Orders', s.orders],
-                  ['Avg Order', fmtShort(s.avg_order_value, currency)],
-                  ['Share', pct(total > 0 ? (s.revenue / total) * 100 : 0)],
+                  ['Avg Order', fmt.money(s.avg_order_value, currency, { blank: '—' })],
+                  ['Share', fmt.pct(total > 0 ? (s.revenue / total) * 100 : 0)],
                 ]} />
                 {shown(s.staff_id) && (s.by_method ?? []).length > 0 && (
                   <tr className="bg-gray-50/60 dark:bg-gray-900/30" data-testid="staff-methods-row">
@@ -1148,8 +1276,8 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
                           <div key={m.method} className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs">
                             <span className="inline-block w-2 h-2 rounded-full" style={{ background: methodColour(m.method).dot }} />
                             <span className="text-gray-600 dark:text-gray-300">{methodName(m.method)}</span>
-                            <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{fmtShort(m.amount, currency)}</span>
-                            <span className="text-gray-400 tabular-nums">{pct(s.revenue > 0 ? (m.amount / s.revenue) * 100 : 0)}</span>
+                            <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{fmt.money(m.amount, currency, { blank: '—' })}</span>
+                            <span className="text-gray-400 tabular-nums">{fmt.pct(s.revenue > 0 ? (m.amount / s.revenue) * 100 : 0)}</span>
                           </div>
                         ))}
                       </div>
@@ -1188,7 +1316,7 @@ interface FoodCostReport {
   }[];
 }
 
-function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function FoodCostTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]         = useState<FoodCostReport | null>(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -1224,22 +1352,37 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
     );
   }
 
+  // A467: both views (ingredient variance and cost per dish) — the tab shows each behind its toggle.
+  const sheets: ReportSheet[] = [
+    kpiSheet('Summary', [['Revenue', summary.totalRevenue], ['Ideal food cost', summary.totalIdealCost],
+      ['Actual food cost', summary.totalActualCost], ['Variance vs ideal', summary.variance], ['Food cost %', summary.foodCostPct]]),
+    { name: 'Ingredient variance',
+      columns: [col('name', 'Ingredient'), col('unit', 'Unit'), money('unit_cost', 'Unit cost'), num('idealQty', 'Ideal qty', 3), num('actualQty', 'Actual qty', 3),
+        num('variance', 'Variance', 3), num('variancePct', 'Variance %', 1), money('idealCost', 'Ideal cost'), money('actualCost', 'Actual cost')],
+      // No stock movement yet: the tab shows a dash for actual qty / variance — so does the sheet.
+      rows: ingredients.map(i => i.actualCost === null ? { ...i, actualQty: null, variance: null, variancePct: null } : i) },
+    { name: 'Cost per dish',
+      columns: [col('name', 'Dish'), num('qtySold', 'Qty sold', 3), money('revenue', 'Revenue'), money('idealCost', 'Ideal cost'), num('costPct', 'Cost %', 1), num('grossMargin', 'Gross margin %', 1)],
+      rows: products },
+  ];
+
   return (
     <div className="space-y-5">
+      <div className="flex justify-end"><ExcelButton report="Food Cost" range={range} meta={meta} sheets={sheets} /></div>
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiCard label="Revenue"         value={fmtShort(summary.totalRevenue, currency)} />
-        <KpiCard label="Ideal food cost" value={fmtShort(summary.totalIdealCost, currency)}
-          sub={`${pct(summary.foodCostPct)} of revenue`} />
+        <KpiCard label="Revenue"         value={fmt.money(summary.totalRevenue, currency, { blank: '—' })} />
+        <KpiCard label="Ideal food cost" value={fmt.money(summary.totalIdealCost, currency, { blank: '—' })}
+          sub={`${fmt.pct(summary.foodCostPct)} of revenue`} />
         {hasActual ? (
-          <KpiCard label="Actual food cost" value={fmtShort(summary.totalActualCost!, currency)}
-            sub={summary.variance! > 0 ? `+${fmtShort(summary.variance!, currency)} over ideal` : `${fmtShort(summary.variance!, currency)} vs ideal`}
+          <KpiCard label="Actual food cost" value={fmt.money(summary.totalActualCost!, currency, { blank: '—' })}
+            sub={summary.variance! > 0 ? `+${fmt.money(summary.variance!, currency, { blank: '—' })} over ideal` : `${fmt.money(summary.variance!, currency, { blank: '—' })} vs ideal`}
             accent={summary.variance! > 0} />
         ) : (
           <KpiCard label="Actual food cost" value="—"
             sub="No stock movements yet" />
         )}
-        <KpiCard label="Food cost %"     value={pct(summary.foodCostPct)}
+        <KpiCard label="Food cost %"     value={fmt.pct(summary.foodCostPct)}
           sub={summary.foodCostPct > 35 ? '⚠ Above 35% target' : '✓ Within target'} />
       </div>
 
@@ -1248,7 +1391,7 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Food cost % gauge</h3>
           <span className={`text-sm font-bold ${summary.foodCostPct > 35 ? 'text-red-500' : summary.foodCostPct > 28 ? 'text-amber-500' : 'text-green-600'}`}>
-            {pct(summary.foodCostPct)}
+            {fmt.pct(summary.foodCostPct)}
           </span>
         </div>
         <div className="relative h-4 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -1312,38 +1455,38 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
                     <tr className={over && !noData ? 'bg-red-50/40 dark:bg-red-900/10' : ''}>
                       <td className="px-4 py-2.5">
                         <p className="text-gray-800 dark:text-gray-200 font-medium">{ing.name}</p>
-                        <p className="text-gray-400 text-xs">{ing.unit}{ing.unit_cost ? ` · ${fmtShort(ing.unit_cost, currency)}/${ing.unit}` : ''}</p>
+                        <p className="text-gray-400 text-xs">{ing.unit}{ing.unit_cost ? ` · ${fmt.money(ing.unit_cost, currency, { blank: '—' })}/${ing.unit}` : ''}</p>
                         <ViewMore open={moreI.isOpen(String(ing.ingredient_id))} onClick={() => moreI.toggle(String(ing.ingredient_id))} />
                       </td>
                       <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>
-                        {ing.idealQty.toLocaleString()} {ing.unit}
+                        {fmt.qty(ing.idealQty)} {ing.unit}
                       </td>
                       <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>
-                        {noData ? <span className="text-gray-300 dark:text-gray-600">—</span> : `${ing.actualQty.toLocaleString()} ${ing.unit}`}
+                        {noData ? <span className="text-gray-300 dark:text-gray-600">—</span> : `${fmt.qty(ing.actualQty)} ${ing.unit}`}
                       </td>
                       <td className="px-2 py-2.5 text-right tabular-nums font-medium">
                         {noData ? <span className="text-gray-300 dark:text-gray-600">—</span> : (
                           <span className={over ? 'text-red-500' : ing.variance < 0 ? 'text-green-600' : 'text-gray-500'}>
-                            {over ? '+' : ''}{ing.variance.toLocaleString()} {ing.unit}
+                            {over ? '+' : ''}{fmt.qty(ing.variance)} {ing.unit}
                             <span className="text-xs font-normal ml-1">({over ? '+' : ''}{ing.variancePct}%)</span>
                           </span>
                         )}
                       </td>
                       <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>
-                        {fmtShort(ing.idealCost, currency)}
+                        {fmt.money(ing.idealCost, currency, { blank: '—' })}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-medium">
                         {noData ? <span className="text-gray-300 dark:text-gray-600">—</span> : (
                           <span className={over ? 'text-red-500' : 'text-gray-700 dark:text-gray-300'}>
-                            {fmtShort(ing.actualCost!, currency)}
+                            {fmt.money(ing.actualCost!, currency, { blank: '—' })}
                           </span>
                         )}
                       </td>
                     </tr>
                     <MoreRow open={moreI.isOpen(String(ing.ingredient_id))} colSpan={3} items={[
-                      ['Ideal qty', `${ing.idealQty.toLocaleString()} ${ing.unit}`],
-                      ['Actual qty', noData ? '—' : `${ing.actualQty.toLocaleString()} ${ing.unit}`],
-                      ['Ideal cost', fmtShort(ing.idealCost, currency)],
+                      ['Ideal qty', `${fmt.qty(ing.idealQty)} ${ing.unit}`],
+                      ['Actual qty', noData ? '—' : `${fmt.qty(ing.actualQty)} ${ing.unit}`],
+                      ['Ideal cost', fmt.money(ing.idealCost, currency, { blank: '—' })],
                     ]} />
                     </Fragment>
                   );
@@ -1383,24 +1526,24 @@ function FoodCostTab({ range, branchId, currency }: { range: DateRange; branchId
                     <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{p.name}
                       <ViewMore open={moreP.isOpen(String(p.product_id))} onClick={() => moreP.toggle(String(p.product_id))} />
                     </td>
-                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{p.qtySold.toLocaleString()}</td>
-                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmtShort(p.revenue, currency)}</td>
-                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmtShort(p.idealCost, currency)}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmt.qty(p.qtySold)}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmt.money(p.revenue, currency, { blank: '—' })}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmt.money(p.idealCost, currency, { blank: '—' })}</td>
                     <td className="px-2 py-2.5 text-right tabular-nums">
                       <span className={`font-medium ${p.costPct > 35 ? 'text-red-500' : p.costPct > 28 ? 'text-amber-500' : 'text-green-600'}`}>
-                        {pct(p.costPct)}
+                        {fmt.pct(p.costPct)}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-medium">
                       <span className={p.grossMargin >= 60 ? 'text-green-600' : p.grossMargin >= 40 ? 'text-amber-500' : 'text-red-500'}>
-                        {pct(p.grossMargin)}
+                        {fmt.pct(p.grossMargin)}
                       </span>
                     </td>
                   </tr>
                   <MoreRow open={moreP.isOpen(String(p.product_id))} colSpan={3} items={[
-                    ['Qty sold', p.qtySold.toLocaleString()],
-                    ['Revenue', fmtShort(p.revenue, currency)],
-                    ['Ideal cost', fmtShort(p.idealCost, currency)],
+                    ['Qty sold', fmt.qty(p.qtySold)],
+                    ['Revenue', fmt.money(p.revenue, currency, { blank: '—' })],
+                    ['Ideal cost', fmt.money(p.idealCost, currency, { blank: '—' })],
                   ]} />
                   </Fragment>
                 ))}
@@ -1434,7 +1577,7 @@ interface SplhReport {
   }[];
 }
 
-function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function SplhTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<SplhReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -1485,19 +1628,34 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
     );
   }
 
+  // A467: both views (by staff member and the shift log); hours as a number of hours, not "3h 20m".
+  const sheets: ReportSheet[] = [
+    kpiSheet('Summary', [['Revenue', summary.totalRevenue], ['Hours worked', summary.totalHours], ['SPLH', summary.splh],
+      ['Labour cost', summary.totalLabour], ['Labour cost %', summary.labourCostPct]]),
+    { name: 'By staff member',
+      columns: [col('name', 'Staff'), num('shifts', 'Shifts', 0), num('totalHours', 'Hours'), money('totalRevenue', 'Revenue'), money('splh', 'SPLH'),
+        money('totalLabour', 'Labour cost'), num('labour_pct', 'Labour %', 1)],
+      rows: staff },
+    { name: 'Shift log',
+      columns: [col('cashier_name', 'Cashier'), col('branch_name', 'Branch'), col('opened', 'Opened'), num('hours', 'Hours'), money('revenue', 'Revenue'),
+        money('splh', 'SPLH'), num('labour_pct', 'Labour %', 1)],
+      rows: shifts.map(s => ({ ...s, opened: localStamp(s.opened_at) })) },
+  ];
+
   return (
     <div className="space-y-5">
+      <div className="flex justify-end"><ExcelButton report="SPLH & Labour" range={range} meta={meta} sheets={sheets} /></div>
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <KpiCard label="Revenue"       value={fmtShort(summary.totalRevenue, currency)} />
+        <KpiCard label="Revenue"       value={fmt.money(summary.totalRevenue, currency, { blank: '—' })} />
         <KpiCard label="Hours worked"  value={fmtHours(summary.totalHours)} />
-        <KpiCard label="SPLH"          value={fmtShort(summary.splh, currency)}
+        <KpiCard label="SPLH"          value={fmt.money(summary.splh, currency, { blank: '—' })}
           sub="Sales per labour hour" accent />
         <KpiCard label="Labour cost"
-          value={summary.totalLabour !== null ? fmtShort(summary.totalLabour, currency) : '—'}
-          sub={summary.labourCostPct !== null ? `${pct(summary.labourCostPct)} of revenue` : 'Set hourly rates in Staff'} />
+          value={summary.totalLabour !== null ? fmt.money(summary.totalLabour, currency, { blank: '—' }) : '—'}
+          sub={summary.labourCostPct !== null ? `${fmt.pct(summary.labourCostPct)} of revenue` : 'Set hourly rates in Staff'} />
         <KpiCard label="Labour cost %"
-          value={summary.labourCostPct !== null ? pct(summary.labourCostPct) : '—'}
+          value={summary.labourCostPct !== null ? fmt.pct(summary.labourCostPct) : '—'}
           sub={summary.labourCostPct !== null
             ? (summary.labourCostPct <= 25 ? '✓ Within target' : '⚠ Above 25% target')
             : 'Requires hourly rates'} />
@@ -1508,7 +1666,7 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">SPLH gauge</h3>
           <span className={`text-sm font-bold tabular-nums ${splhColor(summary.splh)}`}>
-            {fmtShort(summary.splh, currency)}/hr
+            {fmt.money(summary.splh, currency, { blank: '—' })}/hr
           </span>
         </div>
         <div className="relative h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -1526,8 +1684,8 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
         </div>
         <div className="flex flex-wrap text-[10px] text-gray-400 mt-1 gap-4">
           <span className="text-red-500">Low</span>
-          <span className="text-amber-500 ml-auto">KES 1,000/hr avg</span>
-          <span className="text-green-600">KES 2,000/hr+ good</span>
+          <span className="text-amber-500 ml-auto">{fmt.money(1000, currency)}/hr avg</span>
+          <span className="text-green-600">{fmt.money(2000, currency)}/hr+ good</span>
         </div>
       </div>
 
@@ -1566,24 +1724,24 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
                     </td>
                     <td className={`px-2 py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{s.shifts}</td>
                     <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmtHours(s.totalHours)}</td>
-                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmtShort(s.totalRevenue, currency)}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmt.money(s.totalRevenue, currency, { blank: '—' })}</td>
                     <td className="px-2 py-2.5 text-right tabular-nums font-bold">
-                      <span className={splhColor(s.splh)}>{fmtShort(s.splh, currency)}</span>
+                      <span className={splhColor(s.splh)}>{fmt.money(s.splh, currency, { blank: '—' })}</span>
                     </td>
                     <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>
-                      {s.totalLabour !== null ? fmtShort(s.totalLabour, currency) : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                      {s.totalLabour !== null ? fmt.money(s.totalLabour, currency, { blank: '—' }) : <span className="text-gray-300 dark:text-gray-600">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold">
                       {s.labour_pct !== null
-                        ? <span className={labourColor(s.labour_pct)}>{pct(s.labour_pct)}</span>
+                        ? <span className={labourColor(s.labour_pct)}>{fmt.pct(s.labour_pct)}</span>
                         : <span className="text-gray-300 dark:text-gray-600 text-xs font-normal">No rate set</span>}
                     </td>
                   </tr>
                   <MoreRow open={moreS.isOpen(String(s.cashier_id))} colSpan={3} items={[
                     ['Shifts', s.shifts],
                     ['Hours', fmtHours(s.totalHours)],
-                    ['Revenue', fmtShort(s.totalRevenue, currency)],
-                    ['Labour cost', s.totalLabour !== null ? fmtShort(s.totalLabour, currency) : '—'],
+                    ['Revenue', fmt.money(s.totalRevenue, currency, { blank: '—' })],
+                    ['Labour cost', s.totalLabour !== null ? fmt.money(s.totalLabour, currency, { blank: '—' }) : '—'],
                   ]} />
                   </Fragment>
                 ))}
@@ -1626,13 +1784,13 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
                     <td className={`px-2 py-2.5 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{s.branch_name}</td>
                     <td className={`px-2 py-2.5 text-gray-500 dark:text-gray-400 text-xs ${DESK}`}>{fmtShiftTime(s.opened_at)}</td>
                     <td className={`px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmtHours(s.hours)}</td>
-                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmtShort(s.revenue, currency)}</td>
+                    <td className={`px-2 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>{fmt.money(s.revenue, currency, { blank: '—' })}</td>
                     <td className="px-2 py-2.5 text-right tabular-nums font-bold">
-                      <span className={splhColor(s.splh)}>{fmtShort(s.splh, currency)}</span>
+                      <span className={splhColor(s.splh)}>{fmt.money(s.splh, currency, { blank: '—' })}</span>
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
                       {s.labour_pct !== null
-                        ? <span className={`font-semibold ${labourColor(s.labour_pct)}`}>{pct(s.labour_pct)}</span>
+                        ? <span className={`font-semibold ${labourColor(s.labour_pct)}`}>{fmt.pct(s.labour_pct)}</span>
                         : <span className="text-gray-300 dark:text-gray-600 text-xs">—</span>}
                     </td>
                   </tr>
@@ -1640,7 +1798,7 @@ function SplhTab({ range, branchId, currency }: { range: DateRange; branchId: st
                     ['Branch', s.branch_name],
                     ['Opened', fmtShiftTime(s.opened_at)],
                     ['Hours', fmtHours(s.hours)],
-                    ['Revenue', fmtShort(s.revenue, currency)],
+                    ['Revenue', fmt.money(s.revenue, currency, { blank: '—' })],
                   ]} />
                   </Fragment>
                 ))}
@@ -1673,7 +1831,7 @@ function ComingSoonTab({ title }: { title: string }) {
 //                  "High" when ≥ the average unit CM across classifiable items.
 // Items with no cost price can't have a margin, so they're set aside (not fed
 // into the average, which they'd distort) with a prompt to set cost. (A78.)
-function MatrixTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function MatrixTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<ProductV2Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -1745,7 +1903,7 @@ function MatrixTab({ range, branchId, currency }: { range: DateRange; branchId: 
                 <li key={p.product_id} className="flex items-center justify-between text-sm">
                   <span className="text-gray-700 dark:text-gray-200 truncate pr-2">{p.name}</span>
                   <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap">
-                    {p.qty.toLocaleString()} sold · {fmtShort(p.unitCM, currency)}/ea
+                    {fmt.qty(p.qty)} sold · {fmt.money(p.unitCM, currency, { blank: '—' })}/ea
                   </span>
                 </li>
               ))}
@@ -1755,6 +1913,15 @@ function MatrixTab({ range, branchId, currency }: { range: DateRange; branchId: 
     );
   };
 
+  // A467: the four quadrants as one table (Class column), the thresholds, and the items with no cost price.
+  const quadRows = ([['Star', stars], ['Puzzle', puzzles], ['Plowhorse', plowhorses], ['Dog', dogs]] as [string, Item[]][])
+    .flatMap(([cls, items]) => items.map(p => ({ cls, name: p.name, qty: p.qty, unitCM: p.unitCM })));
+  const sheets: ReportSheet[] = data.products.length === 0 ? [] : [
+    kpiSheet('Thresholds', [['Popular at or above (units)', popThreshold], ['Profitable at or above (margin per unit)', avgUnitCM], ['Items classified', N], ['Not classified (no cost price)', needsCost.length]]),
+    { name: 'Menu Matrix', columns: [col('cls', 'Class'), col('name', 'Item'), num('qty', 'Units sold', 3), money('unitCM', 'Margin per unit')], rows: quadRows },
+    { name: 'Not classified', columns: [col('name', 'Item')], rows: needsCost.map(p => ({ name: p.name })) },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -1762,9 +1929,12 @@ function MatrixTab({ range, branchId, currency }: { range: DateRange; branchId: 
           <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100">Menu Matrix</h2>
           <p className="text-xs text-gray-400 mt-0.5">{range.from} — {range.to}</p>
         </div>
-        <p className="text-[11px] text-gray-400">
-          Popular ≥ {popThreshold.toFixed(1)} units · Profitable ≥ {fmtShort(avgUnitCM, currency)}/unit margin
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[11px] text-gray-400">
+            Popular ≥ {popThreshold.toFixed(1)} units · Profitable ≥ {fmt.money(avgUnitCM, currency, { blank: '—' })}/unit margin
+          </p>
+          <ExcelButton report="Menu Matrix" range={range} meta={meta} sheets={sheets} />
+        </div>
       </div>
 
       {N === 0 ? (
@@ -1800,7 +1970,7 @@ function MatrixTab({ range, branchId, currency }: { range: DateRange; branchId: 
     </div>
   );
 }
-function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function FuelSalesTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1822,18 +1992,35 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
   if (!data)   return null;
 
   const { summary, grades, pumps, hourlySeries } = data;
-  const fmtC = (n: number) => `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtL = (n: number | null | undefined) => n != null ? `${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L` : '—';
-  const fmtL0 = (n: number | null | undefined) => n != null ? `${Number(n).toLocaleString('en-KE', { maximumFractionDigits: 0 })} L` : '—';
   const peakHour = (hourlySeries as any[]).reduce((best: any, h: any) => (!best || h.litres > best.litres) ? h : best, null);
+
+  // A467: the tab's sections, from its data — litres to 2 dp, the pump table's Total row included.
+  const pumpRows = (pumps as any[]).map((p: any) => ({
+    pump: p.pump_name, grade: p.product_name ?? '', price: p.price_per_litre || null, capacity: p.capacity_litres,
+    opening: p.current_level != null ? Number(p.current_level) + Number(p.litres) : null, litres: p.litres, remaining: p.current_level,
+    level: p.capacity_litres && p.current_level != null ? Math.min(100, Math.round((p.current_level / p.capacity_litres) * 100)) : null,
+    revenue: p.revenue, transactions: p.transactions, avg: p.transactions > 0 ? p.litres / p.transactions : null,
+  }));
+  const sheets: ReportSheet[] = (pumps as any[]).length === 0 && (grades as any[]).length === 0 ? [] : [
+    kpiSheet('Summary', [['Revenue', summary.totalRevenue], ['Total Litres Sold', summary.totalLitres], ['Transactions', summary.totalTransactions]]),
+    { name: 'Pump Monitor',
+      columns: [col('pump', 'Pump'), col('grade', 'Grade'), money('price', 'Price/L'), num('capacity', 'Capacity (L)', 0), num('opening', 'Opening Stock (L)'),
+        num('litres', 'Sold (L)'), num('remaining', 'Remaining (L)'), num('level', 'Level %', 0), money('revenue', 'Revenue'), num('transactions', 'Transactions', 0), num('avg', 'Avg L/Tx')],
+      rows: pumpRows.length ? [...pumpRows, { pump: 'Total', litres: summary.totalLitres, revenue: summary.totalRevenue, transactions: summary.totalTransactions }] : [] },
+    { name: 'By Fuel Grade',
+      columns: [col('name', 'Grade'), num('litres', 'Litres Sold'), money('revenue', 'Revenue'), num('transactions', 'Transactions', 0), money('perLitre', 'Revenue/L')],
+      rows: (grades as any[]).map((g: any) => ({ ...g, perLitre: g.litres > 0 ? g.revenue / g.litres : null })) },
+    { name: 'Hourly Sales Pattern', columns: [num('hour', 'Hour', 0), num('litres', 'Litres'), money('revenue', 'Revenue')], rows: hourlySeries as any[] },
+  ];
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end"><ExcelButton report="Fuel Sales" range={range} meta={meta} sheets={sheets} /></div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KpiCard label="Revenue" value={fmtC(summary.totalRevenue)} accent />
-        <KpiCard label="Total Litres Sold" value={fmtL(summary.totalLitres)} />
+        <KpiCard label="Revenue" value={fmt.money(summary.totalRevenue, currency)} accent />
+        <KpiCard label="Total Litres Sold" value={fmt.litres(summary.totalLitres, 2, '—')} />
         <KpiCard label="Transactions" value={String(summary.totalTransactions)}
-          sub={summary.totalTransactions > 0 ? `avg ${fmtL(summary.totalLitres / summary.totalTransactions)} / tx` : undefined} />
+          sub={summary.totalTransactions > 0 ? `avg ${fmt.litres(summary.totalLitres / summary.totalTransactions, 2, '—')} / tx` : undefined} />
       </div>
 
       <SectionCard title="Pump Monitor — Opening · Sold · Remaining">
@@ -1862,32 +2049,32 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
                         </td>
                         <td className={`py-2.5 text-gray-500 ${DESK}`}>{p.product_name ?? '—'}</td>
                         <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>
-                          {p.price_per_litre ? `${currency} ${Number(p.price_per_litre).toFixed(2)}` : '—'}
+                          {p.price_per_litre ? fmt.money(p.price_per_litre, currency) : '—'}
                         </td>
-                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtL0(p.capacity_litres)}</td>
-                        <td className={`py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300 ${DESK}`}>{fmtL(opening)}</td>
-                        <td className="py-2.5 text-right tabular-nums font-semibold text-amber-600 dark:text-amber-400">{fmtL(p.litres)}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.litres(p.capacity_litres, 0, '—')}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300 ${DESK}`}>{fmt.litres(opening, 2, '—')}</td>
+                        <td className="py-2.5 text-right tabular-nums font-semibold text-amber-600 dark:text-amber-400">{fmt.litres(p.litres, 2, '—')}</td>
                         <td className={`py-2.5 text-right tabular-nums ${DESK}`}>
                           <span className={`font-semibold ${p.current_level != null && p.current_level < 1000 ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>
-                            {fmtL(p.current_level)}{pct != null ? ` (${pct}%)` : ''}
+                            {fmt.litres(p.current_level, 2, '—')}{pct != null ? ` (${pct}%)` : ''}
                           </span>
                         </td>
-                        <td className="py-2.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtC(p.revenue)}</td>
+                        <td className="py-2.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmt.money(p.revenue, currency)}</td>
                         <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{p.transactions}</td>
                         <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>
-                          {p.transactions > 0 ? fmtL(p.litres / p.transactions) : '—'}
+                          {p.transactions > 0 ? fmt.litres(p.litres / p.transactions, 2, '—') : '—'}
                         </td>
                       </tr>
                       <MoreRow open={moreP.isOpen(String(p.pump_id))} colSpan={3} items={[
                         ['Grade', p.product_name ?? '—'],
-                        ['Price/L', p.price_per_litre ? `${currency} ${Number(p.price_per_litre).toFixed(2)}` : '—'],
-                        ['Capacity', fmtL0(p.capacity_litres)],
-                        ['Opening Stock', fmtL(opening)],
+                        ['Price/L', p.price_per_litre ? fmt.money(p.price_per_litre, currency) : '—'],
+                        ['Capacity', fmt.litres(p.capacity_litres, 0, '—')],
+                        ['Opening Stock', fmt.litres(opening, 2, '—')],
                         ['Remaining', <span className={`font-semibold ${p.current_level != null && p.current_level < 1000 ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>
-                            {fmtL(p.current_level)}{pct != null ? ` (${pct}%)` : ''}
+                            {fmt.litres(p.current_level, 2, '—')}{pct != null ? ` (${pct}%)` : ''}
                           </span>],
                         ['Transactions', p.transactions],
-                        ['Avg L/Tx', p.transactions > 0 ? fmtL(p.litres / p.transactions) : '—'],
+                        ['Avg L/Tx', p.transactions > 0 ? fmt.litres(p.litres / p.transactions, 2, '—') : '—'],
                       ]} />
                       </Fragment>
                     );
@@ -1897,9 +2084,9 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
                   <tr className="border-t-2 border-gray-200 dark:border-gray-700 font-semibold">
                     <td colSpan={5} className={`py-2 text-xs text-gray-600 dark:text-gray-400 ${DESK}`}>Total</td>
                     <td className="sm:hidden py-2 text-xs text-gray-600 dark:text-gray-400">Total</td>
-                    <td className="py-2 text-right tabular-nums text-xs text-amber-600 dark:text-amber-400">{fmtL(summary.totalLitres)}</td>
+                    <td className="py-2 text-right tabular-nums text-xs text-amber-600 dark:text-amber-400">{fmt.litres(summary.totalLitres, 2, '—')}</td>
                     <td className={DESK} />
-                    <td className="py-2 text-right tabular-nums text-xs">{fmtC(summary.totalRevenue)}</td>
+                    <td className="py-2 text-right tabular-nums text-xs">{fmt.money(summary.totalRevenue, currency)}</td>
                     <td className={`py-2 text-right tabular-nums text-xs text-gray-500 ${DESK}`}>{summary.totalTransactions}</td>
                     <td className={DESK} />
                   </tr>
@@ -1925,16 +2112,16 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
                     <td className="py-2 font-medium text-gray-800 dark:text-gray-200">{g.name}
                       <ViewMore open={moreG.isOpen(String(g.product_id))} onClick={() => moreG.toggle(String(g.product_id))} />
                     </td>
-                    <td className="py-2 text-right tabular-nums">{fmtL(g.litres)}</td>
-                    <td className="py-2 text-right tabular-nums">{fmtC(g.revenue)}</td>
+                    <td className="py-2 text-right tabular-nums">{fmt.litres(g.litres, 2, '—')}</td>
+                    <td className="py-2 text-right tabular-nums">{fmt.money(g.revenue, currency)}</td>
                     <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{g.transactions}</td>
                     <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>
-                      {g.litres > 0 ? `${currency} ${(g.revenue / g.litres).toFixed(2)}` : '—'}
+                      {g.litres > 0 ? fmt.money(g.revenue / g.litres, currency) : '—'}
                     </td>
                   </tr>
                   <MoreRow open={moreG.isOpen(String(g.product_id))} colSpan={3} items={[
                     ['Transactions', g.transactions],
-                    ['Revenue/L', g.litres > 0 ? `${currency} ${(g.revenue / g.litres).toFixed(2)}` : '—'],
+                    ['Revenue/L', g.litres > 0 ? fmt.money(g.revenue / g.litres, currency) : '—'],
                   ]} />
                   </Fragment>
                 ))}
@@ -1955,7 +2142,7 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
                   const isPeak = h.hour === peakHour?.hour;
                   return (
                     <div key={h.hour} className="flex-1 flex flex-col justify-end h-full"
-                      title={`${h.hour}:00  ${fmtL(h.litres)}  ${fmtC(h.revenue)}`}>
+                      title={`${h.hour}:00  ${fmt.litres(h.litres, 2, '—')}  ${fmt.money(h.revenue, currency)}`}>
                       <div style={{ height: `${Math.max(4, Math.round((h.litres / max) * 100))}%` }}
                         className={`rounded-sm ${isPeak ? 'bg-amber-500' : 'bg-amber-400/60'}`} />
                     </div>
@@ -1974,7 +2161,7 @@ function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchI
 }
 
 
-function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+function WetStockTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1996,12 +2183,32 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
   if (!data)   return null;
 
   const { tanks, deliveryLog } = data;
-  const fmtL  = (n: number | null | undefined) => n != null ? `${Number(n).toLocaleString('en-KE', { maximumFractionDigits: 0 })} L` : '—';
-  const fmtL2 = (n: number | null | undefined) => n != null ? `${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L` : '—';
-  const fmtC  = (n: number) => `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // A467: the tank reconciliation (with its Totals row) and the delivery log, from the data the tab loaded.
+  const tankRows = (tanks as any[]).map((t: any) => ({
+    tank: t.name, low: t.is_low ? 'LOW' : '', grade: t.product_name ?? '', price: t.price_per_litre || null, capacity: t.capacity_litres,
+    opening: Number(t.current_level ?? 0) + Number(t.consumed_litres ?? 0) - Number(t.delivered_litres ?? 0),
+    delivered: Number(t.delivered_litres ?? 0), sold: Number(t.consumed_litres ?? 0), current: t.current_level,
+    level: t.capacity_litres > 0 ? Math.min(100, Math.round((t.current_level / t.capacity_litres) * 100)) : 0,
+    value: Number(t.current_level ?? 0) * Number(t.price_per_litre ?? 0),
+  }));
+  const tankTotal = (k: 'opening' | 'delivered' | 'sold' | 'current' | 'value') => tankRows.reduce((s, r) => s + Number(r[k] ?? 0), 0);
+  const tankCap = tankRows.reduce((s, r) => s + Number(r.capacity ?? 0), 0);
+  const sheets: ReportSheet[] = tankRows.length === 0 && !deliveryLog?.length ? [] : [
+    ...(tankRows.length ? [kpiSheet('Summary', [['Current Stock (L)', tankTotal('current')], ['Current Stock % of capacity', tankCap > 0 ? Math.round((tankTotal('current') / tankCap) * 100) : 0],
+      ['Sold in period (L)', tankTotal('sold')], ['Delivered in period (L)', tankTotal('delivered')], ['Revenue Value (stock)', tankTotal('value')]])] : []),
+    { name: 'Tank Reconciliation',
+      columns: [col('tank', 'Tank'), col('low', 'Low'), col('grade', 'Grade'), money('price', 'Price/L'), num('capacity', 'Capacity (L)', 0), num('opening', 'Opening (L)'),
+        num('delivered', 'Delivered (L)'), num('sold', 'Sold (L)'), num('current', 'Current (L)'), num('level', 'Level %', 0), money('value', 'Stock Value')],
+      rows: tankRows.length ? [...tankRows, { tank: 'Totals', opening: tankTotal('opening'), delivered: tankTotal('delivered'), sold: tankTotal('sold'), current: tankTotal('current'), value: tankTotal('value') }] : [] },
+    { name: 'Delivery Log',
+      columns: [col('date', 'Date'), col('product_name', 'Grade'), num('litres', 'Litres Added'), num('level_after', 'Level After (L)'), col('notes', 'Notes')],
+      rows: ((deliveryLog ?? []) as any[]).map((d: any) => ({ ...d, date: localStamp(d.recorded_at) })) },
+  ];
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end"><ExcelButton report="Wet Stock" range={range} meta={meta} sheets={sheets} /></div>
 
       {/* KPI cards */}
       {tanks.length > 0 && (() => {
@@ -2012,12 +2219,10 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
         const pctFull   = totalCap > 0 ? Math.round((totalCurr / totalCap) * 100) : 0;
         return (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <KpiCard label="Current Stock"       value={fmtL(totalCurr)} sub={`${pctFull}% of capacity`} accent />
-            <KpiCard label="Sold (Period)"        value={fmtL2(totalSold)} />
-            <KpiCard label="Delivered (Period)"   value={fmtL(totalDel)} />
-            <KpiCard label="Revenue Value (stock)" value={fmtC(
-              tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0) * Number(t.price_per_litre ?? 0), 0)
-            )} />
+            <KpiCard label="Current Stock"       value={fmt.litres(totalCurr, 0, '—')} sub={`${pctFull}% of capacity`} accent />
+            <KpiCard label="Sold (Period)"        value={fmt.litres(totalSold, 2, '—')} />
+            <KpiCard label="Delivered (Period)"   value={fmt.litres(totalDel, 0, '—')} />
+            <KpiCard label="Revenue Value (stock)" value={fmt.money(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0) * Number(t.price_per_litre ?? 0), 0), currency)} />
           </div>
         );
       })()}
@@ -2055,17 +2260,17 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
                         </td>
                         <td className={`py-2.5 text-gray-500 ${DESK}`}>{t.product_name}</td>
                         <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>
-                          {t.price_per_litre ? `${currency} ${Number(t.price_per_litre).toFixed(2)}` : '—'}
+                          {t.price_per_litre ? fmt.money(t.price_per_litre, currency) : '—'}
                         </td>
-                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtL(t.capacity_litres)}</td>
-                        <td className={`py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300 ${DESK}`}>{fmtL(opening)}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.litres(t.capacity_litres, 0, '—')}</td>
+                        <td className={`py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300 ${DESK}`}>{fmt.litres(opening, 0, '—')}</td>
                         <td className={`py-2.5 text-right tabular-nums text-green-600 dark:text-green-400 font-medium ${DESK}`}>
-                          {Number(t.delivered_litres ?? 0) > 0 ? `+${fmtL(t.delivered_litres)}` : '—'}
+                          {Number(t.delivered_litres ?? 0) > 0 ? `+${fmt.litres(t.delivered_litres, 0, '—')}` : '—'}
                         </td>
                         <td className={`py-2.5 text-right tabular-nums text-amber-600 dark:text-amber-400 font-medium ${DESK}`}>
-                          {Number(t.consumed_litres ?? 0) > 0 ? `-${fmtL2(t.consumed_litres)}` : '—'}
+                          {Number(t.consumed_litres ?? 0) > 0 ? `-${fmt.litres(t.consumed_litres, 2, '—')}` : '—'}
                         </td>
-                        <td className={`py-2.5 text-right tabular-nums font-semibold ${textColour}`}>{fmtL(t.current_level)}</td>
+                        <td className={`py-2.5 text-right tabular-nums font-semibold ${textColour}`}>{fmt.litres(t.current_level, 0, '—')}</td>
                         <td className="py-2.5">
                           <div className="flex items-center gap-2 justify-end">
                             <div className="w-14 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -2075,17 +2280,17 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
                           </div>
                         </td>
                         <td className={`py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300 ${DESK}`}>
-                          {stockValue > 0 ? fmtC(stockValue) : '—'}
+                          {stockValue > 0 ? fmt.money(stockValue, currency) : '—'}
                         </td>
                       </tr>
                       <MoreRow open={moreT.isOpen(String(t.id))} colSpan={3} items={[
                         ['Grade', t.product_name],
-                        ['Price/L', t.price_per_litre ? `${currency} ${Number(t.price_per_litre).toFixed(2)}` : '—'],
-                        ['Capacity', fmtL(t.capacity_litres)],
-                        ['Opening*', fmtL(opening)],
-                        ['Delivered', <span className="text-green-600 dark:text-green-400 font-medium">{Number(t.delivered_litres ?? 0) > 0 ? `+${fmtL(t.delivered_litres)}` : '—'}</span>],
-                        ['Sold', <span className="text-amber-600 dark:text-amber-400 font-medium">{Number(t.consumed_litres ?? 0) > 0 ? `-${fmtL2(t.consumed_litres)}` : '—'}</span>],
-                        ['Stock Value', stockValue > 0 ? fmtC(stockValue) : '—'],
+                        ['Price/L', t.price_per_litre ? fmt.money(t.price_per_litre, currency) : '—'],
+                        ['Capacity', fmt.litres(t.capacity_litres, 0, '—')],
+                        ['Opening*', fmt.litres(opening, 0, '—')],
+                        ['Delivered', <span className="text-green-600 dark:text-green-400 font-medium">{Number(t.delivered_litres ?? 0) > 0 ? `+${fmt.litres(t.delivered_litres, 0, '—')}` : '—'}</span>],
+                        ['Sold', <span className="text-amber-600 dark:text-amber-400 font-medium">{Number(t.consumed_litres ?? 0) > 0 ? `-${fmt.litres(t.consumed_litres, 2, '—')}` : '—'}</span>],
+                        ['Stock Value', stockValue > 0 ? fmt.money(stockValue, currency) : '—'],
                       ]} />
                       </Fragment>
                     );
@@ -2096,18 +2301,18 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
                     <td colSpan={4} className={`py-2 text-gray-600 dark:text-gray-400 ${DESK}`}>Totals</td>
                     <td className="sm:hidden py-2 text-gray-600 dark:text-gray-400">Totals</td>
                     <td className={`py-2 text-right tabular-nums text-gray-600 dark:text-gray-300 ${DESK}`}>
-                      {fmtL(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0) + Number(t.consumed_litres ?? 0) - Number(t.delivered_litres ?? 0), 0))}
+                      {fmt.litres(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0) + Number(t.consumed_litres ?? 0) - Number(t.delivered_litres ?? 0), 0), 0, '—')}
                     </td>
                     <td className={`py-2 text-right tabular-nums text-green-600 dark:text-green-400 ${DESK}`}>
-                      {tanks.some((t: any) => t.delivered_litres > 0) ? fmtL(tanks.reduce((s: number, t: any) => s + Number(t.delivered_litres ?? 0), 0)) : '—'}
+                      {tanks.some((t: any) => t.delivered_litres > 0) ? fmt.litres(tanks.reduce((s: number, t: any) => s + Number(t.delivered_litres ?? 0), 0), 0, '—') : '—'}
                     </td>
                     <td className={`py-2 text-right tabular-nums text-amber-600 dark:text-amber-400 ${DESK}`}>
-                      {fmtL2(tanks.reduce((s: number, t: any) => s + Number(t.consumed_litres ?? 0), 0))}
+                      {fmt.litres(tanks.reduce((s: number, t: any) => s + Number(t.consumed_litres ?? 0), 0), 2, '—')}
                     </td>
-                    <td className="py-2 text-right tabular-nums">{fmtL(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0), 0))}</td>
+                    <td className="py-2 text-right tabular-nums">{fmt.litres(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0), 0), 0, '—')}</td>
                     <td />
                     <td className={`py-2 text-right tabular-nums ${DESK}`}>
-                      {fmtC(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0) * Number(t.price_per_litre ?? 0), 0))}
+                      {fmt.money(tanks.reduce((s: number, t: any) => s + Number(t.current_level ?? 0) * Number(t.price_per_litre ?? 0), 0), currency)}
                     </td>
                   </tr>
                 </tfoot>
@@ -2131,16 +2336,16 @@ function WetStockTab({ range, branchId, currency }: { range: DateRange; branchId
                   <Fragment key={i}>
                   <tr>
                     <td className="py-2 text-gray-500 text-xs whitespace-nowrap">
-                      {d.recorded_at ? new Date(d.recorded_at).toLocaleString('en-KE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}
+                      {fmt.dayTime(d.recorded_at)}
                       <ViewMore open={moreD.isOpen(String(i))} onClick={() => moreD.toggle(String(i))} />
                     </td>
                     <td className="py-2 text-gray-800 dark:text-gray-200">{d.product_name ?? '—'}</td>
-                    <td className="py-2 text-right tabular-nums text-green-600 dark:text-green-400 font-medium">+{fmtL(d.litres)}</td>
-                    <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmtL(d.level_after)}</td>
+                    <td className="py-2 text-right tabular-nums text-green-600 dark:text-green-400 font-medium">+{fmt.litres(d.litres, 0, '—')}</td>
+                    <td className={`py-2 text-right tabular-nums text-gray-500 ${DESK}`}>{fmt.litres(d.level_after, 0, '—')}</td>
                     <td className={`py-2 text-gray-500 text-xs max-w-[200px] truncate ${DESK}`}>{d.notes ?? '—'}</td>
                   </tr>
                   <MoreRow open={moreD.isOpen(String(i))} colSpan={3} items={[
-                    ['Level After', fmtL(d.level_after)],
+                    ['Level After', fmt.litres(d.level_after, 0, '—')],
                     ['Notes', d.notes ?? '—'],
                   ]} />
                   </Fragment>
@@ -2167,7 +2372,12 @@ export default function ReportsPage() {
   const [range, setRange]         = useState<DateRange>({ from: today(), to: today() });
   const [branchId, setBranchId]   = useState(activeBranchId ?? '');
   const currency = business?.currency ?? 'KES';
-  const tabProps = { range, branchId, currency };
+  // A467: the About sheet of every tab's Excel — the business, and the branch picked (blank = All branches).
+  const meta: ReportMeta = {
+    businessName: business?.name ?? '',
+    branchName: branchId ? ((branches ?? []).find(b => b.id === branchId)?.name ?? '') : '',
+  };
+  const tabProps: TabProps = { range, branchId, currency, meta };
 
   return (
     <div className="p-4 sm:p-6 w-full">

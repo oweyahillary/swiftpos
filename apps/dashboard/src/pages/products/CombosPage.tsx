@@ -10,6 +10,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { money } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
 
 interface ComboProduct {
   id: string; name: string; price: number; image_url: string | null;
@@ -47,6 +49,7 @@ interface ComboForm {
 const BLANK: ComboForm = { name: '', description: '', combo_price: '', category_id: '', items: [] };
 
 export default function CombosPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';
   const { term, lower } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [combos,     setCombos]     = useState<Combo[]>([]);
@@ -150,7 +153,6 @@ export default function CombosPage() {
     setForm(f => ({ ...f, items: f.items.map(i => i.product_id === productId ? { ...i, quantity: Math.max(1, qty) } : i) }));
   }
 
-  const fmt = (n: number) => `KES ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
   const filtered = combos.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
   const availableProducts = products.filter(p => !form.items.find(i => i.product_id === p.id));
 
@@ -216,15 +218,15 @@ export default function CombosPage() {
                         <div key={i.id} className="flex items-center gap-2 text-xs">
                           <span className="text-gray-600">{i.quantity}×</span>
                           <span className="text-gray-300 flex-1">{i.product.name}</span>
-                          <span className="text-gray-600">{fmt(i.product.price * i.quantity)}</span>
+                          <span className="text-gray-600">{money(i.product.price * i.quantity, currency)}</span>
                         </div>
                       ))}
                     </div>
                     <div className="border-t border-gray-800 pt-3 flex items-center justify-between">
                       <div>
-                        <p className="text-white font-bold text-lg">{fmt(c.combo_price)}</p>
+                        <p className="text-white font-bold text-lg">{money(c.combo_price, currency)}</p>
                         {saving > 0 && (
-                          <p className="text-green-400 text-xs">Save {fmt(saving)} vs individual</p>
+                          <p className="text-green-400 text-xs">Save {money(saving, currency)} vs individual</p>
                         )}
                       </div>
                     </div>
@@ -284,8 +286,8 @@ export default function CombosPage() {
                       className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                     {saving_ > 0 && comboPrice > 0 && (
                       <p className={`text-xs mt-1.5 ${savingAmount > 0 ? 'text-green-400' : 'text-amber-400'}`}>
-                        Individual total: {fmt(saving_)}
-                        {savingAmount > 0 ? ` · customer saves ${fmt(savingAmount)}` : ` · combo is ${fmt(-savingAmount)} more`}
+                        Individual total: {money(saving_, currency)}
+                        {savingAmount > 0 ? ` · customer saves ${money(savingAmount, currency)}` : ` · combo is ${money(-savingAmount, currency)} more`}
                       </p>
                     )}
                   </div>
@@ -324,7 +326,7 @@ export default function CombosPage() {
                                 <button onClick={() => changeQty(item.product_id, item.quantity + 1)}
                                   className="w-5 h-5 text-gray-400 hover:text-white bg-gray-700 rounded text-xs flex items-center justify-center">+</button>
                               </div>
-                              <span className="text-gray-500 text-xs w-20 text-right">{fmt(p.price * item.quantity)}</span>
+                              <span className="text-gray-500 text-xs w-20 text-right">{money(p.price * item.quantity, currency)}</span>
                               <button onClick={() => removeItem(item.product_id)}
                                 className="text-gray-600 hover:text-red-400 text-xs ml-1">✕</button>
                             </div>
@@ -345,7 +347,7 @@ export default function CombosPage() {
                           <button key={p.id} onClick={() => addItem(p.id)}
                             className="w-full flex items-center justify-between text-left px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors group">
                             <span className="text-gray-300 text-xs group-hover:text-white truncate">{p.name}</span>
-                            <span className="text-gray-500 text-xs flex-shrink-0 ml-2">{fmt(p.price)}</span>
+                            <span className="text-gray-500 text-xs flex-shrink-0 ml-2">{money(p.price, currency)}</span>
                           </button>
                         ))
                     }

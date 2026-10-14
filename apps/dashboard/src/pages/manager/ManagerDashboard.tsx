@@ -31,6 +31,7 @@ import Wastage from '../../components/Wastage';           // A399
 import Expiry from '../../components/Expiry';             // A413
 import { localDateStr } from '../../lib/localDate';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
+import { money, compactMoney, litres, dateShort } from '../../lib/format';
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
 function Icon({ d, size = 18, className = '' }: { d: string; size?: number; className?: string }) {
@@ -127,14 +128,6 @@ interface ExpenseCategory { id: string; name: string; }
 
 const METHOD_LABELS: Record<string, string> = { cash: 'Cash', mpesa: 'M-Pesa', card: 'Card' };
 
-function fmtNum(currency: string, n: number) {
-  return `${currency} ${(n ?? 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-function fmtShort(currency: string, n: number) {
-  if (n >= 1_000_000) return `${currency} ${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${currency} ${(n / 1_000).toFixed(1)}K`;
-  return `${currency} ${(n ?? 0).toFixed(0)}`;
-}
 
 
 
@@ -175,7 +168,6 @@ function ParkingOverviewTab() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [session?.branchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fmtCur  = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const elapsed = (started_at: string) => {
     const mins = Math.floor((Date.now() - new Date(started_at).getTime()) / 60000);
     if (mins < 60) return `${mins}m`;
@@ -237,7 +229,7 @@ function ParkingOverviewTab() {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4">
                 <p className="text-gray-500 text-xs mb-1">Today's Revenue</p>
-                <p className="text-green-400 font-bold text-2xl">{fmtCur(sales.summary.totalRevenue)}</p>
+                <p className="text-green-400 font-bold text-2xl">{money(sales.summary.totalRevenue, currency)}</p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4">
                 <p className="text-gray-500 text-xs mb-1">Sessions Today</p>
@@ -280,10 +272,10 @@ function ParkingOverviewTab() {
                           <p className={`text-sm font-mono font-bold ${over ? 'text-amber-400' : 'text-white'}`}>
                             {s.vehicle_plate ?? '—'}
                           </p>
-                          <p className="text-gray-500 text-xs">{elapsed(s.started_at)} · {fmtCur(s.rate_per_hour ?? 0)}/hr</p>
+                          <p className="text-gray-500 text-xs">{elapsed(s.started_at)} · {money(s.rate_per_hour ?? 0, currency)}/hr</p>
                         </div>
                         <div className="text-right">
-                          <p className={`text-sm font-bold tabular-nums ${over ? 'text-amber-400' : 'text-green-400'}`}>{fmtCur(due)}</p>
+                          <p className={`text-sm font-bold tabular-nums ${over ? 'text-amber-400' : 'text-green-400'}`}>{money(due, currency)}</p>
                           {over && <p className="text-amber-400/60 text-[10px]">OVERSTAY</p>}
                         </div>
                       </div>
@@ -357,8 +349,6 @@ function PetrolOverviewTab() {
   const idle       = pumps.filter(p => p.status === 'idle').length;
   const lowTanks   = tanks.filter(t => t.current_level <= t.reorder_level);
 
-  const fmtCur = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtL   = (n: number) => `${n.toLocaleString('en-KE', { maximumFractionDigits: 1 })} L`;
 
   return (
     <div className="space-y-6">
@@ -408,7 +398,7 @@ function PetrolOverviewTab() {
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <p className="text-gray-500 text-xs">Revenue</p>
-                  <p className="text-green-400 font-bold text-2xl mt-1">{fmtCur(sales.summary.totalRevenue)}</p>
+                  <p className="text-green-400 font-bold text-2xl mt-1">{money(sales.summary.totalRevenue, currency)}</p>
                 </div>
                 <div>
                   <p className="text-gray-500 text-xs">Transactions</p>
@@ -426,8 +416,8 @@ function PetrolOverviewTab() {
                         <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${(g.litres / maxL) * 100}%`, background: gradeColor(g.name) }} />
                         </div>
-                        <span className="text-gray-400 text-xs w-20 text-right tabular-nums">{fmtL(g.litres)}</span>
-                        <span className="text-white text-sm font-medium w-28 text-right tabular-nums">{fmtCur(g.revenue)}</span>
+                        <span className="text-gray-400 text-xs w-20 text-right tabular-nums">{litres(g.litres, 1)}</span>
+                        <span className="text-white text-sm font-medium w-28 text-right tabular-nums">{money(g.revenue, currency)}</span>
                       </div>
                     );
                   })}
@@ -457,7 +447,7 @@ function PetrolOverviewTab() {
                         <div className="flex items-center gap-2">
                           {isLow && <span className="text-[10px] text-red-400 font-bold">LOW</span>}
                           <span className={`font-semibold tabular-nums ${isLow ? 'text-red-400' : 'text-white'}`}>
-                            {fmtL(tank.current_level)} <span className="text-gray-600 font-normal text-xs">/ {fmtL(tank.capacity_litres)}</span>
+                            {litres(tank.current_level, 1)} <span className="text-gray-600 font-normal text-xs">/ {litres(tank.capacity_litres, 1)}</span>
                           </span>
                         </div>
                       </div>
@@ -477,8 +467,8 @@ function PetrolOverviewTab() {
               <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-700">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Pump Monitor</p>
                 <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span>{fmtCur(pumpMonitor.totals?.total_revenue_today ?? 0)}</span>
-                  <span>{(pumpMonitor.totals?.total_litres_today ?? 0).toFixed(1)} L sold</span>
+                  <span>{money(pumpMonitor.totals?.total_revenue_today ?? 0, currency)}</span>
+                  <span>{litres(pumpMonitor.totals?.total_litres_today, 1)} sold</span>
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -495,7 +485,6 @@ function PetrolOverviewTab() {
                       const pct = p.capacity_litres && p.remaining_litres != null
                         ? Math.min(100, Math.round((p.remaining_litres / p.capacity_litres) * 100)) : null;
                       const colour = p.is_low ? 'text-red-400' : (pct ?? 100) < 50 ? 'text-amber-400' : 'text-green-400';
-                      const fL = (n: number | null) => n != null ? `${n.toFixed(1)} L` : '—';
                       return (
                         <Fragment key={p.pump_id}>
                         <tr className={p.is_low ? 'bg-red-500/5' : ''}>
@@ -503,10 +492,10 @@ function PetrolOverviewTab() {
                             <ViewMore open={more.isOpen(String(p.pump_id))} onClick={() => more.toggle(String(p.pump_id))} />
                           </td>
                           <td className={`px-4 py-3 text-gray-400 ${DESK}`}>{p.product_name ?? '—'}</td>
-                          <td className={`px-4 py-3 text-gray-400 tabular-nums ${DESK}`}>{fL(p.opening_litres)}</td>
-                          <td className={`px-4 py-3 text-amber-400 font-medium tabular-nums ${DESK}`}>{fL(p.sold_litres)}</td>
+                          <td className={`px-4 py-3 text-gray-400 tabular-nums ${DESK}`}>{litres(p.opening_litres, 1, '—')}</td>
+                          <td className={`px-4 py-3 text-amber-400 font-medium tabular-nums ${DESK}`}>{litres(p.sold_litres, 1, '—')}</td>
                           <td className={`px-4 py-3 font-semibold tabular-nums ${colour}`}>
-                            {fL(p.remaining_litres)}
+                            {litres(p.remaining_litres, 1, '—')}
                             {p.is_low && <span className="ml-1 text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full">LOW</span>}
                           </td>
                           <td className={`px-4 py-3 ${DESK}`}>
@@ -520,7 +509,7 @@ function PetrolOverviewTab() {
                               </div>
                             )}
                           </td>
-                          <td className={`px-4 py-3 text-green-400 font-semibold tabular-nums ${DESK}`}>{fmtCur(p.revenue_today)}</td>
+                          <td className={`px-4 py-3 text-green-400 font-semibold tabular-nums ${DESK}`}>{money(p.revenue_today, currency)}</td>
                           <td className={`px-4 py-3 text-gray-400 tabular-nums text-center ${DESK}`}>{p.transactions_today}</td>
                           <td className={`px-4 py-3 ${DESK}`}>
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -532,10 +521,10 @@ function PetrolOverviewTab() {
                         </tr>
                         <MoreRow open={more.isOpen(String(p.pump_id))} colSpan={2} items={[
                           ['Grade', p.product_name ?? '—'],
-                          ['Opening', fL(p.opening_litres)],
-                          ['Sold', fL(p.sold_litres)],
+                          ['Opening', litres(p.opening_litres, 1, '—')],
+                          ['Sold', litres(p.sold_litres, 1, '—')],
                           ['%', pct != null ? <span className={`text-xs tabular-nums ${colour}`}>{pct}%</span> : null],
-                          ['Revenue', fmtCur(p.revenue_today)],
+                          ['Revenue', money(p.revenue_today, currency)],
                           ['Tx', p.transactions_today],
                           ['Status', <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                               p.pump_status === 'dispensing' ? 'bg-blue-500/15 text-blue-400' :
@@ -635,11 +624,11 @@ function OverviewTab() {
 
   const s = sales?.summary;
   const kpis: { label: string; value: string; icon: React.ReactNode; color: string }[] = [
-    { label: "Today's Revenue", value: fmtNum(currency, s?.totalRevenue ?? 0),  icon: <Icon d={I.revenue}  size={20} />, color: '#22c55e' },
+    { label: "Today's Revenue", value: money(s?.totalRevenue ?? 0, currency),  icon: <Icon d={I.revenue}  size={20} />, color: '#22c55e' },
     { label: 'Orders',          value: String(s?.totalOrders ?? 0),              icon: <Icon d={I.orders}   size={20} />, color: '#3b82f6' },
-    { label: 'Avg Order',       value: fmtNum(currency, s?.avgOrderValue ?? 0),  icon: <Icon d={I.reports}  size={20} />, color: '#a855f7' },
-    { label: 'VAT Collected',   value: fmtNum(currency, s?.totalVat ?? 0),       icon: <Icon d={I.building} size={20} />, color: '#f59e0b' },
-    { label: 'Discounts',       value: fmtNum(currency, s?.totalDiscount ?? 0),  icon: <Icon d={I.tag}      size={20} />, color: '#ef4444' },
+    { label: 'Avg Order',       value: money(s?.avgOrderValue ?? 0, currency),  icon: <Icon d={I.reports}  size={20} />, color: '#a855f7' },
+    { label: 'VAT Collected',   value: money(s?.totalVat ?? 0, currency),       icon: <Icon d={I.building} size={20} />, color: '#f59e0b' },
+    { label: 'Discounts',       value: money(s?.totalDiscount ?? 0, currency),  icon: <Icon d={I.tag}      size={20} />, color: '#ef4444' },
   ];
 
   // Shift SPLH
@@ -757,12 +746,12 @@ function OverviewTab() {
                 </div>
                 <div>
                   <p className="text-gray-500 text-xs">Shift revenue</p>
-                  <p className="text-white font-bold text-lg">{fmtShort(currency, shiftRevenue)}</p>
+                  <p className="text-white font-bold text-lg">{compactMoney(shiftRevenue, currency)}</p>
                 </div>
                 <div>
                   <p className="text-gray-500 text-xs">SPLH</p>
                   <p className={`font-bold text-lg ${splh >= 2000 ? 'text-green-400' : splh >= 800 ? 'text-amber-400' : 'text-gray-400'}`}>
-                    {splh > 0 ? fmtShort(currency, splh) + '/hr' : '—'}
+                    {splh > 0 ? compactMoney(splh, currency) + '/hr' : '—'}
                   </p>
                 </div>
               </div>
@@ -809,7 +798,7 @@ function OverviewTab() {
                         <p className="text-white text-xs font-medium truncate">{p.name}</p>
                         <p className="text-gray-500 text-[10px]">{p.qty} sold</p>
                       </div>
-                      <span className="text-xs text-gray-400 flex-shrink-0">{fmtShort(currency, p.revenue)}</span>
+                      <span className="text-xs text-gray-400 flex-shrink-0">{compactMoney(p.revenue, currency)}</span>
                     </div>
                   ))}
                 </div>
@@ -831,7 +820,7 @@ function OverviewTab() {
                       <div key={method}>
                         <div className="flex justify-between text-sm mb-1">
                           <span className="text-gray-300">{METHOD_LABELS[method] ?? method}</span>
-                          <span className="text-white font-medium">{fmtNum(currency, amount)}</span>
+                          <span className="text-white font-medium">{money(amount, currency)}</span>
                         </div>
                         <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
                           <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
@@ -904,7 +893,6 @@ function POSExpensesTab({ currency }: { currency: string }) {
     finally { setFormLoading(false); }
   };
 
-  const fmtE = (n: number) => `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <div className="space-y-5">
@@ -936,7 +924,7 @@ function POSExpensesTab({ currency }: { currency: string }) {
       {!loading && (
         <div className="bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 flex items-center justify-between">
           <span className="text-gray-400 text-sm">Total — {from === to ? from : `${from} → ${to}`}</span>
-          <span className="text-red-400 font-bold text-lg">{fmtE(total)}</span>
+          <span className="text-red-400 font-bold text-lg">{money(total, currency)}</span>
         </div>
       )}
       {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>}
@@ -953,7 +941,7 @@ function POSExpensesTab({ currency }: { currency: string }) {
                 {e.expense_date}{e.category_name ? ` · ${e.category_name}` : ''}
               </p>
             </div>
-            <span className="text-red-400 font-semibold text-sm">{fmtE(e.amount)}</span>
+            <span className="text-red-400 font-semibold text-sm">{money(e.amount, currency)}</span>
           </div>
         ))}
       </div>
@@ -1029,7 +1017,6 @@ interface MLedgerRow {
 function ManagerCreditTab({ currency }: { currency: string }) {
   const { posApi, hasPermission } = usePOSAuth();
   const canManage = hasPermission('customers.manage');
-  const fmt = (n: number) => `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const [rows, setRows] = useState<MCreditCustomer[]>([]);
   const [search, setSearch] = useState('');
@@ -1099,7 +1086,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white">Credit Accounts</h2>
-          <p className="text-gray-500 text-sm mt-0.5">Customers buying on account · total outstanding {fmt(totalOwed)}</p>
+          <p className="text-gray-500 text-sm mt-0.5">Customers buying on account · total outstanding {money(totalOwed, currency)}</p>
         </div>
       </div>
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name…"
@@ -1123,15 +1110,15 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                     <ViewMore open={moreCust.isOpen(String(c.id))} onClick={() => moreCust.toggle(String(c.id))} />
                   </td>
                   <td className={`p-3 text-gray-400 ${DESK}`}>{c.phone ?? '—'}</td>
-                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{fmt(c.credit_limit)}</td>
-                  <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{fmt(c.credit_balance)}</td>
-                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{fmt(c.available_credit)}</td>
+                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{money(c.credit_limit, currency)}</td>
+                  <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{money(c.credit_balance, currency)}</td>
+                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{money(c.available_credit, currency)}</td>
                   <td className="p-3 text-right"><button onClick={() => openCustomer(c)} className="text-swift-text hover:text-swift-text-hover text-xs">Manage →</button></td>
                 </tr>
                 <MoreRow open={moreCust.isOpen(String(c.id))} colSpan={3} items={[
                   ['Phone', c.phone ?? '—'],
-                  ['Limit', fmt(c.credit_limit)],
-                  ['Available', fmt(c.available_credit)],
+                  ['Limit', money(c.credit_limit, currency)],
+                  ['Available', money(c.available_credit, currency)],
                 ]} />
                 </Fragment>
               ))}
@@ -1149,9 +1136,9 @@ function ManagerCreditTab({ currency }: { currency: string }) {
             </div>
             {msg && <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm ${msg.kind === 'ok' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{msg.text}</div>}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Limit</p><p className="text-white font-semibold">{fmt(selected.credit_limit)}</p></div>
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Owed</p><p className="text-yellow-400 font-semibold">{fmt(selected.credit_balance)}</p></div>
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{fmt(selected.available_credit)}</p></div>
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Limit</p><p className="text-white font-semibold">{money(selected.credit_limit, currency)}</p></div>
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Owed</p><p className="text-yellow-400 font-semibold">{money(selected.credit_balance, currency)}</p></div>
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{money(selected.available_credit, currency)}</p></div>
             </div>
             {canManage && (
               <>
@@ -1188,17 +1175,17 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                   {ledger.map(l => (
                     <Fragment key={l.id}>
                     <tr className="border-t border-gray-800">
-                      <td className="py-2 text-gray-500">{new Date(l.created_at).toLocaleDateString('en-KE')}
+                      <td className="py-2 text-gray-500">{dateShort(l.created_at)}
                         <ViewMore open={moreLedger.isOpen(String(l.id))} onClick={() => moreLedger.toggle(String(l.id))} />
                       </td>
                       <td className={`py-2 capitalize text-gray-300 ${DESK}`}>{l.type}</td>
-                      <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{Number(l.amount) > 0 ? '+' : ''}{fmt(l.amount)}</td>
-                      <td className={`py-2 text-right text-gray-300 ${DESK}`}>{fmt(l.balance_after)}</td>
+                      <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{money(l.amount, currency, { sign: true })}</td>
+                      <td className={`py-2 text-right text-gray-300 ${DESK}`}>{money(l.balance_after, currency)}</td>
                       <td className={`py-2 text-gray-500 ${DESK}`}>{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
                     </tr>
                     <MoreRow open={moreLedger.isOpen(String(l.id))} colSpan={2} items={[
                       ['Type', <span className="capitalize">{l.type}</span>],
-                      ['Balance', fmt(l.balance_after)],
+                      ['Balance', money(l.balance_after, currency)],
                       ['Note', l.method ?? l.notes ?? (l.order_id ? 'sale' : '')],
                     ]} />
                     </Fragment>

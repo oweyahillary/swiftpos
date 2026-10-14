@@ -8,6 +8,7 @@ import { usePermissions } from '../../context/PermissionsContext';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { localDateStr } from '../../lib/localDate';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
+import { money, dateShort } from '../../lib/format';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,17 +76,7 @@ const EXPENSE_METHODS = [
   { code: 'bank', name: 'Bank transfer' },
 ];
 
-function fmt(amount: number, currency: string) {
-  return new Intl.NumberFormat('en-KE', {
-    style: 'currency', currency, minimumFractionDigits: 2,
-  }).format(amount);
-}
 
-function fmtDate(dateStr: string) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-KE', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  });
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -415,8 +406,8 @@ export default function ExpensesPage() {
             {/* Summary chip */}
             <div className="ml-auto flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2">
               <span className="text-red-400 text-xs font-medium">{narrowed ? 'Filtered expenses' : 'Total Expenses'}</span>
-              <span className="text-red-300 text-sm font-bold">{fmt(narrowed ? shownTotal : total, currency)}</span>
-              {narrowed && <span className="text-red-400/70 text-xs">of {fmt(total, currency)}</span>}
+              <span className="text-red-300 text-sm font-bold">{money(narrowed ? shownTotal : total, currency)}</span>
+              {narrowed && <span className="text-red-400/70 text-xs">of {money(total, currency)}</span>}
             </div>
           </div>
 
@@ -426,7 +417,7 @@ export default function ExpensesPage() {
               {byMethod.map(([m, amt]) => (
                 <div key={m} className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm">
                   <span className="text-gray-400">{methodName(m)}</span>
-                  <span className="ml-2 font-semibold text-white">{fmt(amt, currency)}</span>
+                  <span className="ml-2 font-semibold text-white">{money(amt, currency)}</span>
                 </div>
               ))}
             </div>
@@ -464,7 +455,7 @@ export default function ExpensesPage() {
                     {shown.map(e => (
                       <Fragment key={e.id}>
                       <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
-                        <td className={`px-4 py-3 text-gray-300 whitespace-nowrap ${DESK}`}>{fmtDate(e.expense_date)}</td>
+                        <td className={`px-4 py-3 text-gray-300 whitespace-nowrap ${DESK}`}>{dateShort(e.expense_date)}</td>
                         <td className="px-4 py-3 text-white max-w-xs">
                           <span className="block truncate">{e.description}</span>
                           {e.receipt_url && (
@@ -490,7 +481,7 @@ export default function ExpensesPage() {
                         <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{e.recorded_by_name ?? '—'}
                           {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</td>
                         <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
-                          {fmt(e.amount, currency)}
+                          {money(e.amount, currency)}
                         </td>
                         {canManage && (
                           <td className="px-4 py-3">
@@ -508,7 +499,7 @@ export default function ExpensesPage() {
                         )}
                       </tr>
                       <MoreRow open={more.isOpen(String(e.id))} colSpan={canManage ? 3 : 2} items={[
-                        ['Date', fmtDate(e.expense_date)],
+                        ['Date', dateShort(e.expense_date)],
                         ['Category', e.category_name ? (
                           <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{e.category_name}</span>
                         ) : '—'],
@@ -531,7 +522,7 @@ export default function ExpensesPage() {
                         {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-red-300">
-                        {fmt(narrowed ? shownTotal : total, currency)}
+                        {money(narrowed ? shownTotal : total, currency)}
                       </td>
                       {canManage && <td />}
                     </tr>

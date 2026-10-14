@@ -8,6 +8,8 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { api } from '../../lib/api';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
+import { money, dateShort } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -19,11 +21,9 @@ interface LedgerRow {
   reference: string | null; notes: string | null; order_id: string | null; created_at: string;
 }
 
-function fmt(n: number) {
-  return Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default function CreditAccountsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';
   const [rows, setRows] = useState<CreditCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -118,7 +118,7 @@ export default function CreditAccountsPage() {
     <div className="p-4 sm:p-6">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
         <h1 className="text-xl font-bold text-white">Credit Accounts</h1>
-        <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{fmt(totalOwed)}</span></div>
+        <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{money(totalOwed, currency)}</span></div>
       </div>
       <p className="text-sm text-gray-400 mb-5">Customers buying on account. Debtors shown first.</p>
 
@@ -151,17 +151,17 @@ export default function CreditAccountsPage() {
                     <ViewMore open={moreCust.isOpen(c.id)} onClick={() => moreCust.toggle(c.id)} />
                   </td>
                   <td className={`p-3 text-gray-400 ${DESK}`}>{c.phone ?? '—'}</td>
-                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{fmt(c.credit_limit)}</td>
-                  <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{fmt(c.credit_balance)}</td>
-                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{fmt(c.available_credit)}</td>
+                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{money(c.credit_limit, currency)}</td>
+                  <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{money(c.credit_balance, currency)}</td>
+                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{money(c.available_credit, currency)}</td>
                   <td className="p-3 text-right">
                     <button onClick={() => openCustomer(c)} className="text-swift-text hover:text-swift-text-hover text-xs">Manage →</button>
                   </td>
                 </tr>
                 <MoreRow open={moreCust.isOpen(c.id)} colSpan={3} items={[
                   ['Phone', c.phone ?? '—'],
-                  ['Limit', fmt(c.credit_limit)],
-                  ['Available', fmt(c.available_credit)],
+                  ['Limit', money(c.credit_limit, currency)],
+                  ['Available', money(c.available_credit, currency)],
                 ]} />
                 </Fragment>
               ))}
@@ -187,9 +187,9 @@ export default function CreditAccountsPage() {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Limit</p><p className="text-white font-semibold">{fmt(selected.credit_limit)}</p></div>
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Owed</p><p className="text-yellow-400 font-semibold">{fmt(selected.credit_balance)}</p></div>
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{fmt(selected.available_credit)}</p></div>
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Limit</p><p className="text-white font-semibold">{money(selected.credit_limit, currency)}</p></div>
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Owed</p><p className="text-yellow-400 font-semibold">{money(selected.credit_balance, currency)}</p></div>
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{money(selected.available_credit, currency)}</p></div>
             </div>
 
             {/* Set limit */}
@@ -240,17 +240,17 @@ export default function CreditAccountsPage() {
                   {ledger.map(l => (
                     <Fragment key={l.id}>
                     <tr className="border-t border-gray-800">
-                      <td className="py-2 text-gray-500">{new Date(l.created_at).toLocaleDateString('en-KE')}
+                      <td className="py-2 text-gray-500">{dateShort(l.created_at)}
                         <ViewMore open={moreLedger.isOpen(l.id)} onClick={() => moreLedger.toggle(l.id)} />
                       </td>
                       <td className={`py-2 capitalize text-gray-300 ${DESK}`}>{l.type}</td>
-                      <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{Number(l.amount) > 0 ? '+' : ''}{fmt(l.amount)}</td>
-                      <td className={`py-2 text-right text-gray-300 ${DESK}`}>{fmt(l.balance_after)}</td>
+                      <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{money(l.amount, currency, { sign: true })}</td>
+                      <td className={`py-2 text-right text-gray-300 ${DESK}`}>{money(l.balance_after, currency)}</td>
                       <td className={`py-2 text-gray-500 ${DESK}`}>{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
                     </tr>
                     <MoreRow open={moreLedger.isOpen(l.id)} colSpan={2} items={[
                       ['Type', <span className="capitalize">{l.type}</span>],
-                      ['Balance', fmt(l.balance_after)],
+                      ['Balance', money(l.balance_after, currency)],
                       ['Note', l.method ?? l.notes ?? (l.order_id ? 'sale' : '')],
                     ]} />
                     </Fragment>

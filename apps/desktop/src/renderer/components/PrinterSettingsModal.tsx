@@ -169,8 +169,8 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4 animate-fade-in">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[92vh] overflow-y-auto animate-pop-in">
         <div className="flex items-center justify-between">
           <h2 className="text-white font-semibold text-lg">Printers</h2>
           <button onClick={onClose} className="text-gray-300 hover:text-white transition-colors">✕</button>

@@ -10,6 +10,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { api, downloadFile } from '../../lib/api';
 import { methodLabel } from '../../lib/paymentCatalogue';
+import { num } from '../../lib/format';
 
 type Kind = 'opening' | 'other_income' | 'drawing' | 'bank_deposit' | 'charges';
 const KINDS: { id: Kind; label: string }[] = [
@@ -44,7 +45,8 @@ export default function MonthlyPackTab({ branchId, currency, branches }: { branc
   const moreS = useRowMore();    // A464: Daily sales on a phone: Date, Total, Variance
   const moreE = useRowMore();    // A464: Expenses on a phone: Date, Item, Amount
   const moreBk = useRowMore();   // A464: the books on a phone: Date, Sales in, Balance
-  const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  // The books show figures without the currency code (as the Excel pack does) — lib/format's num to 2 dp.
+  const money = (n: number | null | undefined) => (n == null ? '—' : num(n, 2));
 
   useEffect(() => { if (branchId) setBranch(branchId); }, [branchId]);
 

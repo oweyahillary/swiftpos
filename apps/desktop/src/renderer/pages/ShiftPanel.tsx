@@ -268,8 +268,8 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors';
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center px-4 z-50">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center px-4 z-50 animate-fade-in">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col animate-pop-in">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
@@ -349,7 +349,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 <input type="number" inputMode="decimal" value={openingFloat} onChange={e => setOpeningFloat(e.target.value)} placeholder="0.00" autoFocus className={inputCls} />
               </div>
               <button onClick={handleOpen} disabled={busy} className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
-                {busy ? 'Opening…' : 'Open shift'}
+                {busy && <span className="btn-spinner" aria-hidden="true" />}{busy ? 'Opening…' : 'Open shift'}
               </button>
             </>
           )}
@@ -488,7 +488,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   <textarea value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder={noteRequired ? 'Note required to explain the variance' : 'Notes (optional)'} rows={2} className={inputCls} />
                 )}
                 <button onClick={handleClose} disabled={busy || !hasCount || noteRequired || declaredRead.ok === false} className="w-full bg-red-500/90 hover:bg-red-500 disabled:opacity-40 text-white font-bold rounded-xl py-2.5 text-sm transition-colors">
-                  {busy ? 'Closing…' : blind ? 'Close shift' : 'Close shift & print Z-report'}
+                  {busy && <span className="btn-spinner" aria-hidden="true" />}{busy ? 'Closing…' : blind ? 'Close shift' : 'Close shift & print Z-report'}
                 </button>
 
                 {/* The escape hatch for a shift nobody counted — typically one
@@ -532,7 +532,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                         disabled={busy || !forceReason.trim()}
                         className="flex-1 py-2 rounded-lg text-xs bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white transition-colors"
                       >
-                        {busy ? 'Closing…' : 'Close unreconciled'}
+                        {busy && <span className="btn-spinner" aria-hidden="true" />}{busy ? 'Closing…' : 'Close unreconciled'}
                       </button>
                     </div>
                   </div>

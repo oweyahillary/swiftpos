@@ -53,6 +53,8 @@ import type { CartItem } from '../../lib/cart';
 import { cartSubtotal, extractTaxes } from '../../lib/cart';
 import { useBusiness } from '../../context/BusinessContext';
 import type { Product, Category } from '../../types';
+import { exactFirst } from '../../lib/paginate';   // A472
+import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -368,6 +370,11 @@ export default function MinimartPOS({
     }
     return true;
   });
+  // A472 (speed): GRID_STEP tiles, then GRID_STEP more as the grid is scrolled near its end; an exact name, barcode or
+  // PLU is the first tile.
+  const gridList = exactFirst(filteredProducts, catalogueSearch,
+    (p) => [p.name, (p as { barcode?: string }).barcode, (p as { plu_code?: string }).plu_code]);
+  const grid = useGridWindow(gridList.length, `${activeCategory}|${catalogueSearch}`);
 
   // ── Cart totals ────────────────────────────────────────────────────────────
   const subtotal = cartSubtotal(cart);
@@ -512,18 +519,19 @@ export default function MinimartPOS({
             </div>
 
             {/* Product grid */}
-            <div style={s.productGrid}>
+            <div ref={grid.rootRef} style={s.productGrid}>
               {filteredProducts.length === 0 ? (
                 <div style={s.emptyGrid}>No products match</div>
-              ) : filteredProducts.map(product => {
+              ) : gridList.slice(0, grid.count).map(product => {
                 const inCart = cart.find(i => i.product.id === product.id);
                 return (
                   <button
                     key={product.id}
+                    className="press"
                     style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}) }}
                     onClick={() => onAddToCart(product)}
                   >
-                    {inCart && <span style={s.cartBadge}>{inCart.quantity}</span>}
+                    {inCart && <span key={inCart.quantity} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{inCart.quantity}</span>}
                     <div style={s.productThumb}>
                       {product.image_url ? (
                         <img src={product.image_url} alt={product.name} style={s.productImg} />
@@ -536,6 +544,7 @@ export default function MinimartPOS({
                   </button>
                 );
               })}
+              {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden style={{ gridColumn: '1/-1', height: 1 }} />}
             </div>
           </div>
         )}
@@ -574,7 +583,7 @@ export default function MinimartPOS({
               cart.map((item) => {
                 const isSoldByWeight = (item.product as { sold_by?: string }).sold_by === 'weight';
                 return (
-                  <div key={item.product.id} style={s.cartRow}>
+                  <div key={item.product.id} className="animate-line-in" style={s.cartRow}>
                     <div style={s.cartRowInfo}>
                       <div style={s.cartItemName}>{item.product.name}</div>
                       <div style={s.cartItemMeta}>
@@ -590,12 +599,14 @@ export default function MinimartPOS({
                       ) : (
                         <div style={s.qtyControl}>
                           <button
+                            className="press"
                             style={s.qtyBtn}
                             onClick={() => onUpdateQty(item.product.id, -1)}
                             aria-label="Decrease"
                           >−</button>
                           <span style={s.qtyNum}>{item.quantity}</span>
                           <button
+                            className="press"
                             style={s.qtyBtn}
                             onClick={() => onUpdateQty(item.product.id, 1)}
                             aria-label="Increase"
@@ -656,8 +667,8 @@ export default function MinimartPOS({
 
       {/* ════════ WEIGHT CONFIRMATION MODAL ════════ */}
       {weightModal && (
-        <div style={s.overlay} role="dialog" aria-modal aria-label="Confirm weight">
-          <div style={s.modal}>
+        <div className="animate-fade-in" style={s.overlay} role="dialog" aria-modal aria-label="Confirm weight">
+          <div className="animate-pop-in" style={s.modal}>
             <div style={s.modalIcon}>⚖️</div>
             <h2 style={s.modalTitle}>Confirm weight</h2>
             <p style={s.modalSub}>{weightModal.product.name}</p>
@@ -708,8 +719,8 @@ export default function MinimartPOS({
 
       {/* ════════ NOT-FOUND MODAL ════════ */}
       {notFoundModal && !quickAddModal && (
-        <div style={s.overlay} role="dialog" aria-modal aria-label="Product not found">
-          <div style={{ ...s.modal, maxWidth: 480 }}>
+        <div className="animate-fade-in" style={s.overlay} role="dialog" aria-modal aria-label="Product not found">
+          <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 480 }}>
             <div style={s.modalIcon}>🔍</div>
             <h2 style={s.modalTitle}>Product not found</h2>
             <p style={s.modalSub}>
@@ -777,8 +788,8 @@ export default function MinimartPOS({
 
       {/* ════════ QUICK-ADD MODAL ════════ */}
       {quickAddModal && (
-        <div style={s.overlay} role="dialog" aria-modal aria-label="Quick-add product">
-          <div style={s.modal}>
+        <div className="animate-fade-in" style={s.overlay} role="dialog" aria-modal aria-label="Quick-add product">
+          <div className="animate-pop-in" style={s.modal}>
             <div style={s.modalIcon}>➕</div>
             <h2 style={s.modalTitle}>Quick-add product</h2>
             <p style={s.modalSub}>
@@ -826,6 +837,7 @@ export default function MinimartPOS({
                 disabled={!quickAddName.trim() || !quickAddPrice.trim() || quickAddSaving}
                 onClick={saveQuickAdd}
               >
+                {quickAddSaving && <span className="spin-dot" aria-hidden />}
                 {quickAddSaving ? 'Saving…' : 'Add to order'}
               </button>
             </div>

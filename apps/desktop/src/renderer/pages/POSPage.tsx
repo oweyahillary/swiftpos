@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
 import { applyOffers, type Offer } from '../../shared/offers';   // A445
 import { posApi } from '../lib/posApi';
 import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
@@ -39,6 +39,8 @@ import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
 import KitchenVoidModal from '../components/KitchenVoidModal';
 import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '../../shared/kitchenLines';
 import { onGrid } from '../../shared/productDays';
+import { exactFirst } from '../../shared/paginate';   // A472
+import { useGridWindow } from '../hooks/useGridWindow';   // A472
 
 interface Props {
   business: { id: string; name: string; currency: string };
@@ -74,6 +76,52 @@ interface Props {
 const newLineId = () => (globalThis.crypto?.randomUUID?.() ?? `l-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
 const withLineIds = (cart: CartItem[]): CartItem[] =>
   (cart ?? []).map((i) => ({ ...i, lineId: i.lineId ?? newLineId(), sentQty: sentQtyOf(i) }));
+
+// A470: one product on the grid. Memoised — with a stable onTap (POSPage's tapTile) it re-renders only when its own
+// product or its count on the order changes, so a tap on a 1,000-item grid redraws one tile, not all of them.
+// The press answers at once (active:scale + a deeper border); the hover lift only where there is a real pointer, so a
+// touch screen's sticky :hover does not leave the last tile enlarged. The count badge bumps on each change (keyed on the
+// count, the animation replays). Pictures load as they scroll into view and decode off the main thread.
+const ProductTile = memo(function ProductTile({ product, cartCount, currency, onTap, setInfoProduct }: {
+  product: any; cartCount: number; currency: string; onTap: (product: any) => void; setInfoProduct: (product: any) => void;
+}) {
+  const inCart = cartCount > 0;
+  return (
+    <button
+      onClick={() => onTap(product)}
+      className={`relative bg-gray-900 border rounded-xl p-3 text-left transition duration-150 ease-out [@media(hover:hover)]:hover:scale-[1.02] active:scale-[0.97] active:duration-75 active:border-action-500 ${inCart ? 'border-action-500/60 bg-action-500/5' : 'border-gray-800 hover:border-gray-700'}`}
+    >
+      {inCart && (
+        <span key={cartCount} data-testid="tile-count"
+          className="absolute top-2 right-2 bg-action-500 text-gray-950 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center animate-bump">
+          {cartCount}
+        </span>
+      )}
+      {(product.has_variants || product.has_modifiers) && (
+        <span className="absolute top-2 left-2 text-xs bg-gray-800/80 text-gray-400 px-1.5 py-0.5 rounded">⚙</span>
+      )}
+      {product.image_url ? (
+        <img src={product.image_url} alt={product.name} loading="lazy" decoding="async" className="w-full h-20 object-cover rounded-lg mb-2" />
+      ) : (
+        <div className="w-full h-20 bg-gray-800 rounded-lg mb-2 flex items-center justify-center text-2xl">
+          {product.categories ? '🍽️' : '📦'}
+        </div>
+      )}
+      <p className="text-white text-sm font-medium leading-tight truncate">{product.name}</p>
+      <p className="text-green-400 text-sm font-semibold mt-1">
+        {product.has_variants ? 'from ' : ''}{currency} {Number(effectivePrice(product)).toLocaleString()}
+      </p>
+      {String(product.description ?? '').trim() && (
+        <span role="button" tabIndex={0} aria-label={`About ${product.name}`} data-testid="product-info"
+          onClick={(e) => { e.stopPropagation(); setInfoProduct(product); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setInfoProduct(product); } }}
+          className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-gray-800 border border-gray-700 text-gray-200 text-sm flex items-center justify-center hover:border-gray-500">
+          ⓘ
+        </span>
+      )}
+    </button>
+  );
+});
 
 export default function POSPage({ business, onLogout, onShiftClosed, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false, canSeeSync = false, onHelp }: Props) {
   const [products, setProducts] = useState<any[]>([]);
@@ -1078,7 +1126,12 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     if (flags.isPetrol) setView('pumps');
   };
 
-  const filtered = products.filter(p => {
+  // A470 (speed): the grid's list is worked out when what it depends on changes — the catalogue, the category, the
+  // search, petrol, the day — not on every render. The POS re-renders on each cart tap, each keystroke in a cart field,
+  // the 30-s sync poll and the offer clock; with 1,000+ products that was a full filter (a lower-casing per product)
+  // every time. `gridDay` keeps the chosen-days rule (onGrid) turning over at midnight, as it did.
+  const gridDay = offerClock.toDateString();
+  const filtered = useMemo(() => products.filter(p => {
     const matchCat    = activeCategory === 'all' || p.category_id === activeCategory;
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     // Petrol: only show fuel grades on the product grid (shop items are still
@@ -1090,7 +1143,25 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay    = onGrid((p as any).show_days, search.trim() !== '');
     return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
-  });
+  }), [products, activeCategory, search, flags.isPetrol, gridDay]);
+  // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000
+  // tiles at once. A new category or search starts again at the top. The tiles stay memoised (ProductTile). An exact
+  // hit (a product's name, barcode or PLU typed in full) is the first tile, so it is on screen at once.
+  const gridList = useMemo(() => exactFirst(filtered, search, (p: any) => [p.name, p.barcode, p.plu]), [filtered, search]);
+  const grid = useGridWindow(gridList.length, `${activeCategory}|${search}|${flags.isPetrol}`);
+  const gridTiles = useMemo(() => gridList.slice(0, grid.count), [gridList, grid.count]);
+  // A470 (speed): how many of each product are on the order, counted once per cart change — each tile used to scan the
+  // whole cart twice (some + filter), products × lines on every render.
+  const cartCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const i of cart) m.set(i.product.id, (m.get(i.product.id) ?? 0) + i.quantity);
+    return m;
+  }, [cart]);
+  // A470 (speed): the tiles get one tap handler that never changes (it calls the current handleTap through a ref), so
+  // a memoised tile re-renders only when its own product or count changes — not all 1,000 on every cart tap.
+  const handleTapRef = useRef(handleTap);
+  handleTapRef.current = handleTap;
+  const tapTile = useCallback((product: any) => handleTapRef.current(product), []);
   // A279: which filter the grid is showing, and one Clear back to everything.
   const gridFilter = {
     categoryName: activeCategory === 'all' ? null : (categories.find((c: any) => c.id === activeCategory)?.name ?? null),
@@ -1113,7 +1184,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     );
     return (
       <div className="app-screen-min bg-gray-950 flex items-center justify-center px-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm overflow-hidden" data-testid="payment-success">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm overflow-hidden animate-pop-in" data-testid="payment-success">
           <div className="px-6 pt-8 pb-4 text-center">
             <div className="mx-auto w-14 h-14 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-3xl text-white">✓</div>
             <p className="text-green-400 font-semibold text-lg mt-3">Payment successful</p>
@@ -1154,7 +1225,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       {/* A394: an item a stock count freezes was tapped — say why it did not go on the bill. */}
       {frozenNote && (
         <div data-testid="frozen-note" role="alert"
-          className="fixed left-1/2 top-4 z-50 -translate-x-1/2 max-w-md rounded-xl border border-amber-500/40 bg-amber-950/95 px-4 py-3 text-sm text-amber-200 shadow-xl">
+          className="fixed left-1/2 top-4 z-50 -translate-x-1/2 max-w-md rounded-xl border border-amber-500/40 bg-amber-950/95 px-4 py-3 text-sm text-amber-200 shadow-xl animate-slide-in-right">
           {frozenNote}
         </div>
       )}
@@ -1162,7 +1233,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       {/* A401: the shift was closed on the web — the till closed it too. */}
       {closedElsewhere && (
         <div data-testid="shift-closed-elsewhere"
-          className="fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm max-w-[90vw] border bg-red-950 border-red-700 text-red-100">
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm max-w-[90vw] border bg-red-950 border-red-700 text-red-100 animate-slide-in-right">
           <span>{closedElsewhere}</span>
           <button onClick={() => setClosedElsewhere(null)} className="shrink-0 px-2 py-1 rounded font-medium bg-red-700 hover:bg-red-600 text-white">OK</button>
         </div>
@@ -1173,7 +1244,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         <div
           data-testid="sync-notice"
           style={{ bottom: 'calc(0.75rem + var(--update-banner-h, 0px))' }}
-          className={`fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 rounded-lg shadow-lg text-xs max-w-[90vw] border ${
+          className={`fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 rounded-lg shadow-lg text-xs max-w-[90vw] border animate-slide-up ${
             notice.tone === 'alert' ? 'bg-red-950 border-red-700 text-red-100' : 'bg-gray-900 border-gray-700 text-gray-200'}`}
         >
           <span className="truncate" title={notice.text}>{notice.text}</span>
@@ -1256,7 +1327,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             </button>
           )}
           {retryMsg && (
-            <span className="text-xs text-gray-300 max-w-[22rem] truncate" title={retryMsg}>
+            <span className="text-xs text-gray-300 max-w-[22rem] truncate animate-slide-in-right" title={retryMsg}>
               {retryMsg}
             </span>
           )}
@@ -1492,7 +1563,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div ref={grid.rootRef} className="flex-1 overflow-y-auto p-4">
             {filtered.length === 0 ? (
               <div className="text-center py-20 text-gray-400 text-sm">
                 {emptyGridMessage(gridFilter)}
@@ -1507,45 +1578,11 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                {filtered.map((product: any) => {
-                  const inCart = cart.some(i => i.product.id === product.id);
-                  const cartCount = cart.filter(i => i.product.id === product.id).reduce((s, i) => s + i.quantity, 0);
-                  return (
-                    <button
-                      key={product.id}
-                      onClick={() => handleTap(product)}
-                      className={`relative bg-gray-900 border rounded-xl p-3 text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${inCart ? 'border-action-500/60 bg-action-500/5' : 'border-gray-800 hover:border-gray-700'}`}
-                    >
-                      {inCart && (
-                        <span className="absolute top-2 right-2 bg-action-500 text-gray-950 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                          {cartCount}
-                        </span>
-                      )}
-                      {(product.has_variants || product.has_modifiers) && (
-                        <span className="absolute top-2 left-2 text-xs bg-gray-800/80 text-gray-400 px-1.5 py-0.5 rounded">⚙</span>
-                      )}
-                      {product.image_url ? (
-                        <img src={product.image_url} alt={product.name} className="w-full h-20 object-cover rounded-lg mb-2" />
-                      ) : (
-                        <div className="w-full h-20 bg-gray-800 rounded-lg mb-2 flex items-center justify-center text-2xl">
-                          {product.categories ? '🍽️' : '📦'}
-                        </div>
-                      )}
-                      <p className="text-white text-sm font-medium leading-tight truncate">{product.name}</p>
-                      <p className="text-green-400 text-sm font-semibold mt-1">
-                        {product.has_variants ? 'from ' : ''}{currency} {Number(effectivePrice(product)).toLocaleString()}
-                      </p>
-                      {String(product.description ?? '').trim() && (
-                        <span role="button" tabIndex={0} aria-label={`About ${product.name}`} data-testid="product-info"
-                          onClick={(e) => { e.stopPropagation(); setInfoProduct(product); }}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setInfoProduct(product); } }}
-                          className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-gray-800 border border-gray-700 text-gray-200 text-sm flex items-center justify-center hover:border-gray-500">
-                          ⓘ
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                {gridTiles.map((product: any) => (
+                  <ProductTile key={product.id} product={product} cartCount={cartCounts.get(product.id) ?? 0}
+                    currency={currency} onTap={tapTile} setInfoProduct={setInfoProduct} />
+                ))}
+                {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden className="col-span-full h-px" />}
               </div>
             )}
           </div>
@@ -1642,7 +1679,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                   )
                 )}
               </div>
-              {deliveryMsg && <p className="text-amber-400 text-xs" data-testid="delivery-msg">{deliveryMsg}</p>}
+              {deliveryMsg && <p className="text-amber-400 text-xs animate-fade-in" data-testid="delivery-msg">{deliveryMsg}</p>}
               <div className="flex gap-2">
                 {maySend && <button
                   onClick={() => void handleSendToKitchen()}
@@ -1661,7 +1698,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                   ⏸ Hold order
                 </button>
               </div>
-              {kitchenMsg && <p className="text-xs text-gray-300">{kitchenMsg}</p>}
+              {kitchenMsg && <p className="text-xs text-gray-300 animate-fade-in">{kitchenMsg}</p>}
             </div>
           )}
 
@@ -1682,7 +1719,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             {cart.length === 0 ? (
               <div className="text-center py-16 text-gray-400 text-sm">Add products to get started</div>
             ) : cart.map((item, index) => (
-              <div key={index} className="space-y-1">
+              // A470: keyed on the line (not its place) so only a NEW line mounts — and it arrives with a brief tint
+              // (animate-line-in) the cashier's eye catches; a line already there is left alone.
+              <div key={item.lineId ?? index} data-testid="cart-line" className="space-y-1 -mx-2 px-2 rounded-lg animate-line-in">
                 <div className="flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-sm truncate">
@@ -1705,7 +1744,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                     ) : (
                       <>
                         <button onClick={() => updateQty(index, -1)} className="w-6 h-6 bg-gray-800 hover:bg-gray-700 text-white rounded-md text-sm flex items-center justify-center transition-colors">−</button>
-                        <span className="text-white text-sm w-5 text-center">{item.quantity}</span>
+                        <span key={item.quantity} className="text-white text-sm w-5 text-center animate-bump">{item.quantity}</span>
                         <button onClick={() => updateQty(index, 1)} className="w-6 h-6 bg-gray-800 hover:bg-gray-700 text-white rounded-md text-sm flex items-center justify-center transition-colors">+</button>
                       </>
                     )}
@@ -1905,9 +1944,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
       {/* A428: an item's description, to explain it to a customer — adds nothing until "Add to order". */}
       {infoProduct && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" data-testid="product-info-card"
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-fade-in" data-testid="product-info-card"
           onClick={e => e.target === e.currentTarget && setInfoProduct(null)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl animate-pop-in">
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-800">
               <div className="min-w-0">
                 <h2 className="text-white font-semibold">{infoProduct.name}</h2>
@@ -1936,9 +1975,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
       {/* ── Order History + Void panel ────────────────────────────── */}
       {showHistory && (
-        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-40 p-4"
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-40 p-4 animate-fade-in"
           onClick={e => e.target === e.currentTarget && setShowHistory(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl animate-pop-in">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>

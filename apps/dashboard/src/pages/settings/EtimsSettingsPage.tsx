@@ -12,6 +12,7 @@ import { api } from '../../lib/api';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { useBranch } from '../../context/BranchContext';
 import BulkItemCodeModal from './BulkItemCodeModal';
+import { dateTime } from '../../lib/format';
 
 interface EtimsConfig {
   branch_id: string;
@@ -264,12 +265,12 @@ export default function EtimsSettingsPage() {
                       <td className={`py-2 text-gray-400 capitalize ${DESK}`}>{r.invoice_type}</td>
                       <td className={`py-2 capitalize ${STATUS_COLORS[r.status]}`}>{r.status}</td>
                       <td className={`py-2 text-gray-300 ${DESK}`}>{r.kra_receipt_no ?? (r.error ? <span className="text-red-400" title={r.error}>error</span> : '—')}</td>
-                      <td className={`py-2 text-gray-500 ${DESK}`}>{new Date(r.created_at).toLocaleString('en-KE')}</td>
+                      <td className={`py-2 text-gray-500 ${DESK}`}>{dateTime(r.created_at)}</td>
                     </tr>
                     <MoreRow open={more.isOpen(String(r.id))} colSpan={2} items={[
                       ['Type', <span className="capitalize">{r.invoice_type}</span>],
                       ['KRA Receipt', r.kra_receipt_no ?? (r.error ? <span className="text-red-400" title={r.error}>error</span> : '—')],
-                      ['When', new Date(r.created_at).toLocaleString('en-KE')],
+                      ['When', dateTime(r.created_at)],
                     ]} />
                     </Fragment>
                   ))}

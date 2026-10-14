@@ -9,6 +9,8 @@ import { api } from '../../lib/api';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { useBranch } from '../../context/BranchContext';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { money, litres, litres as fmtLitres, dayTime } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
 
 interface Branch { id: string; name: string; }
 
@@ -67,6 +69,7 @@ const PUMP_STATUS_CLS: Record<string, string> = {
 };
 
 export default function PetrolSettingsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const { branches } = useBranch();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [tab, setTab]               = useState<Tab>('pumps');
@@ -292,7 +295,7 @@ export default function PetrolSettingsPage() {
                     </div>
                     {assignedTank && (
                       <div className="text-xs text-gray-500 mt-0.5">
-                        Tank: {assignedTank.name} ({assignedTank.current_level.toFixed(0)}L)
+                        Tank: {assignedTank.name} ({litres(assignedTank.current_level, 0)})
                       </div>
                     )}
                     {needsTankLink && (
@@ -344,7 +347,7 @@ export default function PetrolSettingsPage() {
                 {/* Gauge bar — width is dynamic, must stay inline */}
                 <div className="mb-3">
                   <div className="flex justify-between mb-1.5">
-                    <span className="text-xs text-gray-500">{tank.current_level.toLocaleString()}L remaining</span>
+                    <span className="text-xs text-gray-500">{litres(tank.current_level, 0)} remaining</span>
                     <span className={`text-xs font-bold ${isLow ? 'text-red-400' : 'text-white'}`}>{level}%</span>
                   </div>
                   <div className="h-2 bg-gray-950 rounded-full overflow-hidden">
@@ -364,9 +367,9 @@ export default function PetrolSettingsPage() {
 
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {[
-                    { label: 'Capacity', val: `${tank.capacity_litres.toLocaleString()}L` },
-                    { label: 'Current',  val: `${tank.current_level.toLocaleString()}L` },
-                    { label: 'Reorder',  val: `${tank.reorder_level.toLocaleString()}L` },
+                    { label: 'Capacity', val: litres(tank.capacity_litres, 0) },
+                    { label: 'Current',  val: litres(tank.current_level, 0) },
+                    { label: 'Reorder',  val: litres(tank.reorder_level, 0) },
                   ].map(({ label, val }) => (
                     <div key={label} className="text-center">
                       <div className="text-xs font-bold text-white">{val}</div>
@@ -415,7 +418,7 @@ export default function PetrolSettingsPage() {
                     </div>
                     <ViewMore open={moreGrade.isOpen(fp.id)} onClick={() => moreGrade.toggle(fp.id)} />
                   </td>
-                  <td className="px-3 py-3 text-sm font-bold text-green-400">KES {Number(fp.base_price).toFixed(2)}</td>
+                  <td className="px-3 py-3 text-sm font-bold text-green-400">{money(fp.base_price, currency)}</td>
                   <td className={`px-3 py-3 text-sm text-gray-500 ${DESK}`}>{fp.fuel_unit ?? 'L'}</td>
                   <td className={`px-3 py-3 ${DESK}`}>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${fp.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
@@ -475,7 +478,7 @@ export default function PetrolSettingsPage() {
                     <Fragment key={i}>
                     <tr className="hover:bg-gray-800/30 transition-colors">
                       <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
-                        {m.created_at ? new Date(m.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                        {dayTime(m.created_at)}
                         <ViewMore open={moreHist.isOpen(String(i))} onClick={() => moreHist.toggle(String(i))} />
                       </td>
                       <td className={`px-4 py-3 text-sm text-white font-medium ${DESK}`}>{m.tank_name ?? '—'}</td>
@@ -488,10 +491,10 @@ export default function PetrolSettingsPage() {
                         </span>
                       </td>
                       <td className={`px-4 py-3 text-sm font-semibold tabular-nums ${isSale ? 'text-red-400' : 'text-green-400'}`}>
-                        {isSale ? '−' : '+'}{litres.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
+                        {isSale ? '−' : '+'}{fmtLitres(litres)}
                       </td>
                       <td className={`px-4 py-3 text-sm tabular-nums text-gray-300 ${DESK}`}>
-                        {m.quantity_after != null ? `${Number(m.quantity_after).toLocaleString('en-KE', { maximumFractionDigits: 0 })} L` : '—'}
+                        {fmtLitres(m.quantity_after, 0, '—')}
                       </td>
                       <td className={`px-4 py-3 text-xs text-gray-500 max-w-[180px] truncate ${DESK}`}>{m.notes ?? '—'}</td>
                     </tr>
@@ -503,7 +506,7 @@ export default function PetrolSettingsPage() {
                         }`}>
                           {isSale ? '▼ Sale' : isDelivery ? '▲ Delivery' : m.movement_type}
                         </span>],
-                      ['Level After', m.quantity_after != null ? `${Number(m.quantity_after).toLocaleString('en-KE', { maximumFractionDigits: 0 })} L` : '—'],
+                      ['Level After', fmtLitres(m.quantity_after, 0, '—')],
                       ['Note', m.notes ?? '—'],
                     ]} />
                     </Fragment>
@@ -579,7 +582,7 @@ export default function PetrolSettingsPage() {
                   .filter(t => !editPump.fuel_product_id || t.fuel_product_id === editPump.fuel_product_id)
                   .map(t => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.current_level.toFixed(0)}L / {t.capacity_litres.toFixed(0)}L)
+                      {t.name} ({litres(t.current_level, 0)} / {litres(t.capacity_litres, 0)})
                     </option>
                   ))}
               </select>
@@ -675,7 +678,7 @@ export default function PetrolSettingsPage() {
               <button onClick={() => setStockEntry(null)} className="w-7 h-7 bg-gray-800 hover:bg-gray-700 border-none rounded-md text-gray-400 text-sm cursor-pointer">✕</button>
             </div>
             <p className="text-sm text-gray-500 mb-4">
-              Current level: {stockEntry.tank.current_level.toLocaleString()}L of {stockEntry.tank.capacity_litres.toLocaleString()}L capacity
+              Current level: {litres(stockEntry.tank.current_level, 0)} of {litres(stockEntry.tank.capacity_litres, 0)} capacity
             </p>
             <div className="mb-4">
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Litres delivered *</label>
@@ -686,7 +689,7 @@ export default function PetrolSettingsPage() {
             {stockEntry.litres && (
               <p className="text-sm text-green-400 mb-4">
                 New level after delivery:{' '}
-                {Math.min(stockEntry.tank.current_level + parseFloat(stockEntry.litres || '0'), stockEntry.tank.capacity_litres).toLocaleString()}L
+                {litres(Math.min(stockEntry.tank.current_level + parseFloat(stockEntry.litres || '0'), stockEntry.tank.capacity_litres), 0)}
               </p>
             )}
             <div className="flex gap-2.5">

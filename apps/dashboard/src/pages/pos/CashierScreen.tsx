@@ -35,6 +35,8 @@ import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
 import { maySignedInConfirm } from '../../lib/shiftConfirm';
 import { mayRecordMoneyMovement } from '../../lib/posFeatures';   // A453
 import { onGrid } from '../../lib/productDays';
+import { exactFirst } from '../../lib/paginate';   // A472
+import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreeze';   // A394
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
@@ -1100,6 +1102,11 @@ export default function CashierScreen() {
     const matchDay = onGrid((p as any).show_days, search.trim() !== '');
     return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
   });
+  // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000 at
+  // once. A new category or search starts again at the top. An exact hit (a product's name or barcode typed in full) is
+  // the first tile, so it is on screen at once.
+  const gridList = exactFirst(filtered, search, (p) => [p.name, (p as any).barcode]);
+  const grid = useGridWindow(gridList.length, `${activeCategory}|${search}|${isPetrol}`);
 
   const currentOrderLabel = activeKey
     ? (openOrders[activeKey]?.tableName ?? 'Order')
@@ -1605,11 +1612,11 @@ export default function CashierScreen() {
               </div>
 
               {/* Product grid */}
-              <div style={s.productGrid}>
+              <div ref={grid.rootRef} style={s.productGrid}>
                 {filtered.length === 0 ? (
                   <div style={s.emptyProducts}>No products found</div>
                 ) : (
-                  filtered.map((product) => {
+                  gridList.slice(0, grid.count).map((product) => {
                     const inCart = cart.some((i) => i.product.id === product.id);
                     const cartQty = cart
                       .filter((i) => i.product.id === product.id)
@@ -1621,11 +1628,12 @@ export default function CashierScreen() {
                       <button
                         key={product.id}
                         data-testid="product-card"
+                        className="press"
                         data-has-variants={hasVariants ? 'true' : 'false'}
                         style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}) }}
                         onClick={() => addToCart(product)}
                       >
-                        {inCart && <span style={s.cartBadge}>{cartQty}</span>}
+                        {inCart && <span key={cartQty} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{cartQty}</span>}
                         {hasVariants && <span style={s.variantBadge}>options</span>}
                         {(product as any).is_fuel && <span style={s.fuelBadge}>⛽</span>}
                         <div style={s.productImage}>
@@ -1660,6 +1668,7 @@ export default function CashierScreen() {
                     );
                   })
                 )}
+                {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden style={{ gridColumn: '1/-1', height: 1 }} />}
               </div>
             </>
           )}
@@ -1668,7 +1677,7 @@ export default function CashierScreen() {
 
         {/* ── Right panel — Cart ──────────────────────────────────────────── */}
         {!isMinimart && (
-        <div data-testid="pos-cart" style={{
+        <div data-testid="pos-cart" className={isPhone ? 'animate-slide-up' : undefined} style={{
           ...s.rightPanel,
           ...(hasSlotPicker && !activeKey ? { width: 0, overflow: 'hidden', borderLeft: 'none' } : {}),
           // A463: a phone shows the cart as a full-screen sheet, opened from the bottom bar.
@@ -1787,7 +1796,7 @@ export default function CashierScreen() {
               </div>
             ) : (
               cart.map((item, index) => (
-                <div key={index}>
+                <div key={index} className="animate-line-in" data-testid="cart-line">
                 <div style={s.cartItem}>
                   <div style={s.cartItemInfo}>
                     <div style={s.cartItemName}>{item.product.name}</div>
@@ -1803,9 +1812,9 @@ export default function CashierScreen() {
                       <span style={s.qtyNum}>{item.quantity.toFixed(2)} L</span>
                     ) : (
                       <>
-                        <button style={s.qtyBtn} onClick={() => changeQty(index, -1)}>−</button>
+                        <button className="press" style={s.qtyBtn} onClick={() => changeQty(index, -1)}>−</button>
                         <span style={s.qtyNum}>{item.quantity}</span>
-                        <button style={s.qtyBtn} onClick={() => updateQty(index, 1)}>+</button>
+                        <button className="press" style={s.qtyBtn} onClick={() => updateQty(index, 1)}>+</button>
                       </>
                     )}
                     <button style={s.removeBtn} onClick={() => removeLine(index)}>✕</button>
@@ -2005,8 +2014,8 @@ export default function CashierScreen() {
 
       {/* ── Covers modal (restaurant) ──────────────────────────────────────── */}
       {showCoversModal && pendingTable && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>Opening {pendingTable.name}</h3>
             <p style={s.modalSubtitle}>How many guests?</p>
             <div style={s.coversRow}>
@@ -2038,8 +2047,8 @@ export default function CashierScreen() {
           : `${Math.floor(openMins / 60)}h ${openMins % 60}m`;
 
         return (
-          <div style={s.overlay}>
-            <div style={{
+          <div style={s.overlay} className="animate-fade-in">
+            <div className="animate-pop-in" style={{
               ...s.modal,
               maxWidth: 400, padding: 0, overflow: 'hidden',
             }}>
@@ -2146,8 +2155,8 @@ export default function CashierScreen() {
 
       {/* ── Parking modal ─────────────────────────────────────────────────── */}
       {showParkingModal && pendingBay && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>Open {pendingBay.name}</h3>
             <p style={s.modalSubtitle}>Enter vehicle details</p>
 
@@ -2201,8 +2210,8 @@ export default function CashierScreen() {
 
       {/* ── Pump modal (petrol) ───────────────────────────────────────────── */}
       {showPumpModal && pendingPump && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>{pendingPump.name}</h3>
             <p style={s.modalSubtitle}>Activate pump and select fuel grade from the product grid.</p>
             <div style={s.modalActions}>
@@ -2224,8 +2233,8 @@ export default function CashierScreen() {
           : (price > 0 ? (parseFloat(fuelAmountStr) || 0) / price : 0);
         const unit = (fuelEntry as any).fuel_unit ?? 'L';
         return (
-          <div style={s.overlay}>
-            <div style={s.modal}>
+          <div style={s.overlay} className="animate-fade-in">
+            <div style={s.modal} className="animate-pop-in">
               <h3 style={s.modalTitle}>{fuelEntry.name}</h3>
               <p style={s.modalSubtitle}>{currency} {price.toLocaleString()}/{unit} · enter amount or {unit === 'L' ? 'litres' : unit}</p>
 
@@ -2277,8 +2286,8 @@ export default function CashierScreen() {
 
       {/* ── Variant modal ────────────────────────────────────────────────── */}
       {variantProduct && (
-        <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: 420, width: '92vw' }}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 420, width: '92vw' }}>
             <div style={s.variantModalHeader}>
               <div>
                 <h3 style={s.modalTitle}>{variantProduct.name}</h3>
@@ -2365,8 +2374,8 @@ export default function CashierScreen() {
       {/* A428: an item's description, to explain it to a customer — adds nothing until "Add to order". */}
       {infoProduct && (
         <div data-testid="product-info-card" onClick={(e) => e.target === e.currentTarget && setInfoProduct(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
-          <div style={{ background: 'var(--pos-panel)', border: '1px solid var(--pos-border)', borderRadius: 16, width: '100%', maxWidth: 440, overflow: 'hidden' }}>
+          className="animate-fade-in" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
+          <div className="animate-pop-in" style={{ background: 'var(--pos-panel)', border: '1px solid var(--pos-border)', borderRadius: 16, width: '100%', maxWidth: 440, overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--pos-border)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 16 }}>{infoProduct.name}</div>
@@ -2515,8 +2524,8 @@ export default function CashierScreen() {
 
       {/* ── Table Transfer Modal ─────────────────────────────────────────── */}
       {showTransfer && isRestaurant && (
-        <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: 420, textAlign: 'left' }}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 420, textAlign: 'left' }}>
             <p style={{ ...s.modalTitle, textAlign: 'left', marginBottom: 4 }}>Transfer Table</p>
             <p style={{ ...s.modalSubtitle, textAlign: 'left', marginBottom: 16 }}>
               {(activeKey && openOrders[activeKey]?.tableName)
@@ -2594,8 +2603,8 @@ export default function CashierScreen() {
 
       {/* ── Room Charge Modal ─────────────────────────────────────────────── */}
       {showRoomCharge && isRestaurant && (
-        <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: 380, textAlign: 'left' }}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 380, textAlign: 'left' }}>
             <p style={{ ...s.modalTitle, textAlign: 'left', marginBottom: 4 }}>🏨 Post to Room</p>
             <p style={{ ...s.modalSubtitle, textAlign: 'left', marginBottom: 20 }}>
               Charge {fmt(orderTotal, currency)} to a hotel room — guest settles at checkout.
@@ -2717,7 +2726,7 @@ Signature: _______________`;
       {/* A464 (owner, 2026-10-13): the bar names the open order, flashes the last item added, and charges in one tap;
           it sits clear of the iPhone home bar. */}
       {isPhone && !cartSheet && !isMinimart && (cart.length > 0 || !!activeKey) && (
-        <div data-testid="pos-cart-bar"
+        <div data-testid="pos-cart-bar" className="animate-slide-up"
           style={{ position: 'fixed', left: 10, right: 10, bottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', zIndex: 44, display: 'flex',
                    borderRadius: 12, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
                    transform: cartFlash ? 'scale(1.03)' : 'scale(1)', transition: 'transform 0.15s ease' }}>
@@ -2750,7 +2759,7 @@ Signature: _______________`;
       )}
       {closedElsewhere && (
         <div data-testid="shift-closed-elsewhere" role="alert"
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 max-w-[92vw] px-4 py-3 rounded-lg shadow-lg text-sm border bg-red-950 border-red-700 text-red-100">
+          className="animate-slide-down fixed top-4 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 max-w-[92vw] px-4 py-3 rounded-lg shadow-lg text-sm border bg-red-950 border-red-700 text-red-100">
           <span>{closedElsewhere}</span>
           <button onClick={() => setClosedElsewhere(null)} className="shrink-0 px-2 py-1 rounded font-medium bg-red-700 hover:bg-red-600 text-white">OK</button>
         </div>
@@ -2792,8 +2801,8 @@ Signature: _______________`;
 
       {/* ── Lock confirm ──────────────────────────────────────────────────── */}
       {showLockConfirm && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>Lock Screen?</h3>
             <p style={s.modalSubtitle}>
               {Object.keys(openOrders).length > 0

@@ -45,7 +45,7 @@ import { cacheStaffCredential, verifyPinOffline } from './pinCache';
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
+import { tillSessionRefusedRecently, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { tillBranchId } from './deviceConfig';   // A446
 import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
@@ -774,15 +774,27 @@ export function registerIpcHandlers() {
       throw new Error(nodeSaidNo ?? (v.reason === 'no_match' ? 'Invalid PIN' : verdict.message));
     };
 
+    // A473: the cloud has refused this till's own session in the last minute (a technician must rejoin it) — asking again
+    // would only repeat the refusal after three round trips (the PIN, the renewal, the device sign-in). The answer is the
+    // same as A407's below, without the wait.
+    if (tillSessionRefusedRecently()) {
+      logLine('pin', 'the cloud refused this till\'s session in the last minute - signing in on the till\'s own PIN check at once');
+      return fallbackToLocalAuthority();
+    }
+
     // 2. The cloud, exactly as before.
+    // A473: a PIN this till already knows (its staff list or a saved sign-in) waits 4 s for the cloud (not 8) before the list decides —
+    // a slow line no longer holds the cashier at the PIN pad. An unknown PIN still waits the full 8 s for the cloud.
+    const knownHere = verifyPinAtNode(String(pin), branch_id).ok || verifyPinOffline(String(pin), branch_id).ok;
     let res: Awaited<ReturnType<typeof tillFetch>>;
     try {
-      res = await tillFetch('/api/auth/verify-pin', {
+      // A473: the whole exchange is bounded — the per-request limit did not cover the renewal after a 401.
+      res = await withinMs(tillFetch('/api/auth/verify-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // PIN, branch, the running build and this till's name (verifyPinBody).
       body: verifyPinBody(String(pin), branch_id),
-      }, 8_000);   // A446: 8 s, then this till's own staff list
+      }, knownHere ? 4_000 : 8_000), knownHere ? 5_000 : 10_000);   // A446: 8 s, then this till's own staff list
     } catch (netErr: any) {
       logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
       return fallbackToLocalAuthority();

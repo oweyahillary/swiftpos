@@ -91,13 +91,13 @@ export default function ConfirmModal({ state, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-title"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className={`bg-gray-900 border ${BORDER[intent]} rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4`}>
+      <div className={`bg-gray-900 border ${BORDER[intent]} rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4 animate-pop-in`}>
 
         {/* Icon + title */}
         <div className="flex items-start gap-4">
@@ -130,6 +130,7 @@ export default function ConfirmModal({ state, onClose }: Props) {
             disabled={busy}
             className={`px-5 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${CONFIRM_BTN[intent]}`}
           >
+            {busy && <span className="spin-dot" aria-hidden />}
             {busy ? 'Working…' : confirmLabel}
           </button>
         </div>

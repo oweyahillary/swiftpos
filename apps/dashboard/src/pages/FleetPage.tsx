@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useState, Fragment } from 'react';
 import { api } from '../lib/api';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';
+import { dateTime } from '../lib/format';
 
 interface FleetDevice {
   id: string;
@@ -327,7 +328,7 @@ export default function FleetPage() {
                       {sync.label}
                       {d.lastSyncAt && (
                         <div className="text-xs text-gray-400 font-normal">
-                          {new Date(d.lastSyncAt).toLocaleString('en-KE')}
+                          {dateTime(d.lastSyncAt)}
                         </div>
                       )}
                     </td>

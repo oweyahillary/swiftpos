@@ -5,6 +5,7 @@ import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 import { printDocument } from '../../lib/printDocument';
 import { transferDocSpec } from '../../lib/documentSpecs';
+import { dateShort } from '../../lib/format';
 
 interface Product { id: string; name: string; }
 interface Branch  { id: string; name: string; }
@@ -236,7 +237,7 @@ export default function StockTransfersPage() {
                     Print
                   </button>
                   <span className="text-gray-400 text-xs">{t.stock_transfer_items.length} item{t.stock_transfer_items.length !== 1 ? 's' : ''}</span>
-                  <span className="text-gray-500 text-xs">{new Date(t.created_at).toLocaleDateString('en-KE')}</span>
+                  <span className="text-gray-500 text-xs">{dateShort(t.created_at)}</span>
                   <span className="text-gray-600 text-xs">{isOpen ? '▲' : '▼'}</span>
                 </div>
               </div>

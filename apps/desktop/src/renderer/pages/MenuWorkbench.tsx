@@ -29,6 +29,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { posApi, type OfflineManage } from '../lib/posApi';
 import ChoicesEditor from '../components/ChoicesEditor';
 import { useOnlineLicence } from '../lib/onlineLicence';   // A460
+import Pager, { usePageSize } from '../components/Pager';   // A472
+import { paginate } from '../../shared/paginate';
 
 interface Category { id: string; name: string }
 interface Product {
@@ -66,6 +68,9 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  // A472: the list in pages. The size is remembered on this till; the page resets when a filter changes.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.menu');
 
   const [selected, setSelected] = useState<string | null>(null);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
@@ -156,6 +161,12 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
       return true;
     });
   }, [products, search, catFilter, typeFilter, isCombo, needsReview]);
+
+  // A472: one page of the filtered list. A new search, category or type starts at page 1; a price saved or a Refresh
+  // keeps the page — clamped, so a list that shrank shows its last page instead of an empty one.
+  useEffect(() => { setPage(1); }, [search, catFilter, typeFilter]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   const savePrice = async (p: Product) => {
     const raw = priceDrafts[p.id];
@@ -314,7 +325,7 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {filtered.map(p => {
+                {paged.items.map(p => {
                   const draft = priceDrafts[p.id];
                   const dirty = draft !== undefined && Number(draft) !== Number(p.base_price);
                   return (
@@ -359,6 +370,9 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
                 })}
               </tbody>
             </table>
+          )}
+          {filtered.length > 0 && (
+            <Pager paged={paged} noun="items" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
           )}
         </div>
 

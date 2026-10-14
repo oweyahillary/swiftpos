@@ -19,8 +19,8 @@ export default function NoteModal({ title, initial, picks, kind, onSave, onClose
   const max = kind === 'order' ? ORDER_NOTE_MAX : ITEM_NOTE_MAX;
 
   return (
-    <div style={st.overlay} onClick={onClose}>
-      <div style={st.card} onClick={(e) => e.stopPropagation()} data-testid="note-modal">
+    <div className="animate-fade-in" style={st.overlay} onClick={onClose}>
+      <div className="animate-pop-in" style={st.card} onClick={(e) => e.stopPropagation()} data-testid="note-modal">
         <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{kind === 'order' ? 'Note for the order' : 'Note'}</div>
         <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 12 }}>{title}</div>
 

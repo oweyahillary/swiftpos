@@ -64,9 +64,9 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 export default function PrinterSettingsModal({ settings, onSave, onReset, onClose }: Props) {
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 z-50" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/60 z-50 animate-fade-in" onClick={onClose} />
       <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl animate-pop-in">
 
           {/* Header */}
           <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">

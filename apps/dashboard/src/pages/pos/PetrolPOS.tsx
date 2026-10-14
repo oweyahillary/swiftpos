@@ -470,8 +470,8 @@ export default function PetrolPOS({
 
       {/* ════════ PUMP ACTIVATION MODAL ════════ */}
       {activatingPump && (
-        <div style={s.overlay} role="dialog" aria-modal aria-label="Activate pump">
-          <div style={s.modal}>
+        <div className="animate-fade-in" style={s.overlay} role="dialog" aria-modal aria-label="Activate pump">
+          <div className="animate-pop-in" style={s.modal}>
             {/* Header */}
             <div style={s.modalTop}>
               <div>

@@ -89,8 +89,8 @@ export default function OpenDrawerModal({ cashierName, currency, onOpened, onLog
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl animate-pop-in">
         <div className="px-6 pt-6 pb-4 border-b border-gray-800">
           <h2 className="text-lg font-semibold text-white">Open your drawer</h2>
           <p className="text-sm text-gray-400 mt-1">
@@ -138,7 +138,7 @@ export default function OpenDrawerModal({ cashierName, currency, onOpened, onLog
                        disabled:text-gray-500 text-white rounded-xl py-3 text-sm
                        font-semibold transition-colors"
           >
-            {busy ? 'Opening…' : 'Start selling'}
+            {busy && <span className="btn-spinner" aria-hidden="true" />}{busy ? 'Opening…' : 'Start selling'}
           </button>
 
           {/* The way out. This modal cannot be dismissed, so without this the

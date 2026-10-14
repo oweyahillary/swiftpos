@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';
+import { money, dateShort } from '../lib/format';
 
 interface Discount {
   id: string;
@@ -136,7 +137,7 @@ export default function DiscountsPage() {
   }
 
   function formatValue(d: Discount) {
-    return d.type === 'percentage' ? `${d.value}%` : `${currency} ${d.value.toLocaleString()}`;
+    return d.type === 'percentage' ? `${d.value}%` : money(d.value, currency);
   }
 
   function isExpired(d: Discount) {
@@ -195,7 +196,7 @@ export default function DiscountsPage() {
                     <td className="px-4 py-3">
                       <p className="text-white font-medium">{d.name}</p>
                       {d.min_order_value > 0 && (
-                        <p className="text-gray-500 text-xs">Min order: {currency} {d.min_order_value.toLocaleString()}</p>
+                        <p className="text-gray-500 text-xs">Min order: {money(d.min_order_value, currency)}</p>
                       )}
                       <ViewMore open={more.isOpen(d.id)} onClick={() => more.toggle(d.id)} />
                     </td>
@@ -219,7 +220,7 @@ export default function DiscountsPage() {
                     <td className={`px-4 py-3 ${DESK}`}>
                       {d.expires_at ? (
                         <span className={`text-xs ${expired ? 'text-red-400' : 'text-gray-400'}`}>
-                          {expired ? '⚠ ' : ''}{new Date(d.expires_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {expired ? '⚠ ' : ''}{dateShort(d.expires_at)}
                         </span>
                       ) : (
                         <span className="text-gray-600 text-xs">Never</span>
@@ -259,7 +260,7 @@ export default function DiscountsPage() {
                     </>],
                     ['Expires', d.expires_at ? (
                         <span className={`text-xs ${expired ? 'text-red-400' : 'text-gray-400'}`}>
-                          {expired ? '⚠ ' : ''}{new Date(d.expires_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {expired ? '⚠ ' : ''}{dateShort(d.expires_at)}
                         </span>
                       ) : (
                         <span className="text-gray-600 text-xs">Never</span>

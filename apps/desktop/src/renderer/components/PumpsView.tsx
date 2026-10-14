@@ -112,8 +112,8 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
 
       {/* Fuel-entry panel */}
       {active && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-5">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-5 animate-pop-in">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-lg font-semibold text-white">{active.name}</h3>
               <button onClick={() => setActive(null)} className="text-gray-300 hover:text-white text-xl leading-none">×</button>

@@ -70,8 +70,8 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
   const previewTotal = computeLineTotal(previewUnit, 1, Object.values(selectedModifiers));
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4 animate-fade-in">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh] animate-pop-in">
         <div className="px-6 pt-5 pb-4 border-b border-gray-800 flex items-start justify-between">
           <div>
             <h2 className="text-white font-semibold text-base">{product.name}</h2>

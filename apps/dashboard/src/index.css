@@ -251,8 +251,53 @@ input, textarea, select, button, a, [role="button"] {
     border-color 0.18s ease,
     color 0.12s ease,
     box-shadow 0.12s ease,
-    opacity 0.12s ease;
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    scale 0.12s ease;
 }
+
+/* ── A469: every tap answers ──────────────────────────────────────────────────
+   A pressed button sinks a touch. It uses the individual `scale` property (composes with any transform) and skips
+   anything that moves itself: a translate/scale class (the dashboard drawer, toggle knobs, the Toast), an inline
+   transform (the POS cart bar, the table tiles' press), a disabled button, `.no-press` (opt out) and `.press` (its own,
+   deeper press below). Reduced motion: no scale at all (block at the end). */
+button:not([class*="translate"]):not([class*="scale"]):not([style*="transform"]):not([style*="scale"]):not(:disabled):not(.no-press):not(.press):active,
+[role="button"]:not([class*="translate"]):not([class*="scale"]):not([style*="transform"]):not([style*="scale"]):not(.no-press):not(.press):active {
+  scale: 0.98;
+}
+/* `.press`: the deeper press for tiles and steppers (POS product tiles, quantity − / +). */
+.press {
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.12s ease, box-shadow 0.12s ease,
+              opacity 0.12s ease, scale 0.12s ease;
+}
+.press:not(:disabled):active { scale: 0.97; }
+
+/* One focus ring for the keyboard: the back office's teal; inside the web POS its action colour. */
+button:focus-visible, [role="button"]:focus-visible, a:focus-visible, summary:focus-visible {
+  outline: 2px solid rgb(var(--swift) / 0.85);
+  outline-offset: 2px;
+}
+[data-pos-theme] button:focus-visible, [data-pos-theme] [role="button"]:focus-visible, [data-pos-theme] a:focus-visible {
+  outline-color: rgb(var(--act-fill, 20 184 166) / 0.85);
+}
+
+/* Waiting is shown: a small spinner in the current text colour, for buttons whose request is in flight. */
+.spin-dot {
+  display: inline-block; width: 0.9em; height: 0.9em; margin-right: 0.45em; vertical-align: -0.12em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 9999px;
+  animation: spin-dot 0.7s linear infinite;
+}
+@keyframes spin-dot { to { transform: rotate(360deg); } }
+
+/* Reduced motion: nothing moves. Entrances become a plain fade, the bump and the press go, the spinner slows. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop-in, .animate-slide-up, .animate-slide-down, .animate-slide-in-right { animation-name: rm-fade-in !important; }
+  .animate-bump { animation: none !important; }
+  button:active, [role="button"]:active, .press:active { scale: none !important; }
+  button, [role="button"], .press { transition-property: background-color, border-color, color, box-shadow, opacity !important; }
+  .spin-dot { animation-duration: 1.6s; }
+}
+@keyframes rm-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ── Scrollbars ──────────────────────────────────────────────────────────── */
 .dark ::-webkit-scrollbar        { width: 6px; height: 6px; }

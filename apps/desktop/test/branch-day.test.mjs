@@ -50,7 +50,8 @@ ok('the shift report: till, cashier, time, sales, expected, counted, difference,
   /data-testid="overview-shift-report"/.test(mp)
   && ['Till', 'Cashier', 'Time', 'Sales', 'Expected cash', 'Counted', 'Difference', 'Status'].every(h => mp.includes(`font-medium${h === 'Till' || h === 'Cashier' || h === 'Time' || h === 'Status' ? '' : ' text-right'}">${h}</th>`)));
 ok('Top sellers: every till from the cloud; "(this till)" only when it is',
-  /Top sellers — \$\{when\}\$\{sales && sales\.source !== 'cloud' && !sales\.localCoversBranch \? ' \(this till\)' : ''\}/.test(mp)
+  // A468: the web's section card — "Top sellers", the day (and "(this till)") beside it.
+  (mp.match(/title="Top sellers" sub=\{`\$\{when\}\$\{sales && sales\.source !== 'cloud' && !sales\.localCoversBranch \? ' \(this till\)' : ''\}`\}/g) || []).length === 2
   && mp.includes("setTopItems(s?.source === 'cloud' ? (s.topProducts ?? []).slice(0, 8) : t)"));
 
 console.log(`\n${pass} passed, ${fail} failed`);

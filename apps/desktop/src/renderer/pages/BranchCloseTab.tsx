@@ -579,8 +579,8 @@ function ShiftMoneyModal({ till, s, mode, label, money, currency, options, time,
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-[60]" data-testid="shift-money-modal">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-[60] animate-fade-in" data-testid="shift-money-modal">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col animate-pop-in">
         <div className="flex items-start justify-between px-6 py-4 border-b border-gray-800">
           <div>
             <h2 className="text-white font-bold">{mode === 'float' ? 'Cash in / out' : 'Expense'}</h2>

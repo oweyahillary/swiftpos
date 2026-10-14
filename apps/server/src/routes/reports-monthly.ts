@@ -23,7 +23,7 @@ import { branchScope, assertBranchAccess, requirePermission, requireAnyPermissio
 import { sendError } from '../lib/sendError';
 import { supabase } from '../lib/supabase';
 import { recorderId } from '../lib/expenseRecorder';
-import { loadPack } from '../lib/monthlyPackData';
+import { loadPack, MISSING_TABLE } from '../lib/monthlyPackData';
 import { writePackWorkbook, monthDays } from '../lib/monthlyPack';
 import { cleanMovement } from '../lib/moneyMovements';
 
@@ -85,6 +85,8 @@ router.get('/movements', requireAnyPermission('reports.financial', 'expenses.vie
     .eq('business_id', req.businessId).eq('branch_id', branch)
     .gte('movement_date', days[0]).lte('movement_date', days[days.length - 1])
     .order('movement_date', { ascending: true });
+  // A467: no money_movements table yet (migration 130) — nothing recorded, not a failure.
+  if (error && MISSING_TABLE.test(String(error.message ?? ''))) { res.json([]); return; }
   if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });

@@ -20,6 +20,10 @@ import { useBusiness } from '../../context/BusinessContext';
 import { printDocument } from '../../lib/printDocument';
 import { localDateStr } from '../../lib/localDate';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
+import DownloadExcelButton from '../../components/DownloadExcelButton';   // A467
+import { localStamp, type ReportColumn, type ReportSheet } from '../../lib/reportDownload';   // A467
+import { reportPresets } from '../../lib/reportPeriods';   // A467
+import * as fmt from '../../lib/format';   // A471: one money/number/date format
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,19 +69,17 @@ interface ShiftRow {
 const today   = () => localDateStr();
 const weekAgo = () => { const d = new Date(); d.setDate(d.getDate() - 6); return localDateStr(d); };
 
-function fmt(currency: string, n: number) {
-  return `${currency} ${(n ?? 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-function fmtShort(currency: string, n: number) {
-  if (n >= 1_000_000) return `${currency} ${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${currency} ${(n / 1_000).toFixed(1)}K`;
-  return `${currency} ${(n ?? 0).toFixed(0)}`;
-}
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('en-KE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
 
 const METHOD_LABELS: Record<string, string> = { cash: '💵 Cash', mpesa: '📱 M-Pesa', card: '💳 Card' };
+
+// A467: Download Excel column shorthands (text, money to 2 dp, a number to `dp` places) and a KPI sheet.
+const col   = (key: string, label: string): ReportColumn => ({ key, label });
+const money = (key: string, label: string): ReportColumn => ({ key, label, money: true });
+const num   = (key: string, label: string, dp = 2): ReportColumn => ({ key, label, dp });
+const kpiSheet = (name: string, rows: [string, unknown][]): ReportSheet => ({
+  name, columns: [col('metric', 'Metric'), num('value', 'Value')], rows: rows.map(([metric, value]) => ({ metric, value })),
+});
+const METHOD_NAMES: Record<string, string> = { cash: 'Cash', mpesa: 'M-Pesa', card: 'Card' };
 
 const ALL_TABS = [
   { id: 'summary',    label: 'Summary' },
@@ -111,8 +113,15 @@ function Empty({ label }: { label: string }) {
 
 // ── Date range bar (shared) ───────────────────────────────────────────────────
 
-interface DateBarProps { from: string; to: string; setFrom: (v: string) => void; setTo: (v: string) => void; onApply: () => void; loading: boolean; }
-function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
+interface DateBarProps {
+  from: string; to: string; setFrom: (v: string) => void; setTo: (v: string) => void; onApply: () => void; loading: boolean;
+  /** A467: Download Excel — the report's name and the sheets the tab shows (built from its loaded data). */
+  report?: string; sheets?: ReportSheet[]; branchName?: string;
+}
+function DateBar({ from, to, setFrom, setTo, onApply, loading, report, sheets, branchName }: DateBarProps) {
+  const { business } = useBusiness();
+  // A467: between a date change and the debounced reload the tab still shows the OLD period — no download then.
+  const [pending, setPending] = useState(false);
   // A216: auto-apply. Presets and date edits both just set from/to; this debounced
   // effect runs the query ~400ms later, so there's no need to click Apply. The
   // first run is skipped (each tab already loads once on mount), and empty/partial
@@ -121,13 +130,18 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
   useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return; }
     if (!from || !to) return;
+    setPending(true);
     const id = setTimeout(() => onApply(), 400);
     return () => clearTimeout(id);
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (loading) setPending(false); }, [loading]);   // A467: the reload began — `loading` covers it now
+  // A467: Today · Yesterday · 7 days · This week · Last week · This month · Last month (local EAT days, Monday weeks).
+  const P = reportPresets();
   const presets = [
     { label: 'Today',   f: today(),   t: today() },
+    { label: 'Yesterday', f: P[1].from, t: P[1].to },
     { label: '7 days',  f: weekAgo(), t: today() },
-    { label: 'Month',   f: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; })(), t: today() },
+    ...P.slice(2).map(p => ({ label: p.label, f: p.from, t: p.to })),
   ];
   // A263: track the chosen preset explicitly so exactly one highlights (deriving
   // it from from/to could light two up when their ranges coincide), and clear it
@@ -135,10 +149,11 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
   const [active, setActive] = useState<string>(() => presets.find(p => p.f === from && p.t === to)?.label ?? '');
   return (
     <div className="flex flex-wrap gap-3 items-end mb-6">
-      <div className="flex gap-1 bg-gray-800 p-1 rounded-lg">
+      {/* A467: seven presets — on a phone the row scrolls sideways inside its box. */}
+      <div data-testid="report-presets" className="flex gap-1 max-w-full overflow-x-auto bg-gray-800 p-1 rounded-lg">
         {presets.map(p => (
           <button key={p.label} onClick={() => { setActive(p.label); setFrom(p.f); setTo(p.t); }}
-            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${active === p.label ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white'}`}>
+            className={`flex-shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-md transition-colors ${active === p.label ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white'}`}>
             {p.label}
           </button>
         ))}
@@ -151,6 +166,12 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
         </div>
       ))}
       {loading && <span className="self-end pb-1.5 text-xs text-gray-500">Updating…</span>}
+      {report && (
+        <div className="ml-auto self-end">
+          <DownloadExcelButton loading={loading || pending}
+            input={{ report, from, to, businessName: business?.name ?? '', branchName: branchName ?? '', sheets: sheets ?? [] }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -178,16 +199,26 @@ function SummaryTab({ posApi, session, currency }: { posApi: PosApi; session: an
 
   const s = data?.summary;
   const kpis = [
-    { label: 'Revenue',    value: fmt(currency, s?.totalRevenue ?? 0),  color: '#22c55e' },
+    { label: 'Revenue',    value: fmt.money(s?.totalRevenue ?? 0, currency),  color: '#22c55e' },
     { label: 'Orders',     value: String(s?.totalOrders ?? 0),          color: '#3b82f6' },
-    { label: 'Avg Order',  value: fmt(currency, s?.avgOrderValue ?? 0), color: '#a855f7' },
-    { label: 'VAT',        value: fmt(currency, s?.totalVat ?? 0),      color: '#f59e0b' },
-    { label: 'Discounts',  value: fmt(currency, s?.totalDiscount ?? 0), color: '#ef4444' },
+    { label: 'Avg Order',  value: fmt.money(s?.avgOrderValue ?? 0, currency), color: '#a855f7' },
+    { label: 'VAT',        value: fmt.money(s?.totalVat ?? 0, currency),      color: '#f59e0b' },
+    { label: 'Discounts',  value: fmt.money(s?.totalDiscount ?? 0, currency), color: '#ef4444' },
+  ];
+  // A467: the KPIs, the payment split and the daily trend, from the loaded data.
+  const sheets: ReportSheet[] = !data || (!(s?.totalOrders) && data.dailySeries.length === 0) ? [] : [
+    kpiSheet('Summary', [['Revenue', s?.totalRevenue ?? 0], ['Orders', s?.totalOrders ?? 0], ['Avg Order', s?.avgOrderValue ?? 0],
+      ['VAT', s?.totalVat ?? 0], ['Discounts', s?.totalDiscount ?? 0]]),
+    { name: 'Payment Methods', columns: [col('method', 'Method'), money('amount', 'Amount'), num('pct', 'Share %', 0)],
+      rows: Object.entries(data.paymentMethods).sort((a, b) => b[1] - a[1]).map(([method, amount]) => ({
+        method: METHOD_NAMES[method] ?? method, amount, pct: s?.totalRevenue ? Math.round((amount / s.totalRevenue) * 100) : 0 })) },
+    { name: 'Daily Revenue', columns: [col('date', 'Date'), money('revenue', 'Revenue')], rows: data.dailySeries },
   ];
 
   return (
     <div className="space-y-5">
-      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
+      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading}
+        report="Summary" sheets={sheets} branchName={session?.branchName} />
       {error && <ErrorMsg msg={error} />}
       {loading && !data && <Spinner />}
       {data && <>
@@ -210,7 +241,7 @@ function SummaryTab({ posApi, session, currency }: { posApi: PosApi; session: an
                   <div key={method} className="space-y-1">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-300">{METHOD_LABELS[method] ?? method}</span>
-                      <span className="text-white font-medium">{fmt(currency, amount)} <span className="text-gray-500 text-xs">({pct}%)</span></span>
+                      <span className="text-white font-medium">{fmt.money(amount, currency)} <span className="text-gray-500 text-xs">({pct}%)</span></span>
                     </div>
                     <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
                       <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
@@ -235,7 +266,7 @@ function SummaryTab({ posApi, session, currency }: { posApi: PosApi; session: an
                     <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                       <div className="h-full bg-green-500 rounded-full" style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="text-xs text-gray-400 w-28 text-right flex-shrink-0">{fmtShort(currency, revenue)}</span>
+                    <span className="text-xs text-gray-400 w-28 text-right flex-shrink-0">{fmt.compactMoney(revenue, currency)}</span>
                   </div>
                 );
               })}
@@ -273,10 +304,17 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
   const total  = rows.reduce((s, r) => s + r.revenue, 0);
   const peakHour = rows.length ? rows.reduce((a, b) => a.revenue > b.revenue ? a : b) : null;
   const more = useRowMore();
+  // A467: the KPIs and the hour table, from the loaded rows.
+  const sheets: ReportSheet[] = rows.length === 0 ? [] : [
+    kpiSheet('Summary', [['Total', total], ['Peak Hour', peakHour?.hour ?? null], ['Peak Revenue', peakHour?.revenue ?? null]]),
+    { name: 'Hourly', columns: [col('label', 'Hour'), num('orders', 'Orders', 0), money('revenue', 'Revenue'), num('pct', 'Share %', 1)],
+      rows: [...rows].sort((a, b) => a.hour - b.hour).map(r => ({ ...r, label: `${r.hour}:00 – ${r.hour + 1}:00`, pct: total ? (r.revenue / total) * 100 : null })) },
+  ];
 
   return (
     <div className="space-y-5">
-      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
+      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading}
+        report="Hourly" sheets={sheets} branchName={session?.branchName} />
       {error && <ErrorMsg msg={error} />}
       {loading && <Spinner />}
       {!loading && rows.length === 0 && <Empty label="No sales data for this period." />}
@@ -285,7 +323,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
               <p className="text-gray-500 text-xs">Total</p>
-              <p className="text-white font-bold text-lg mt-1">{fmtShort(currency, total)}</p>
+              <p className="text-white font-bold text-lg mt-1">{fmt.compactMoney(total, currency)}</p>
             </div>
             <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
               <p className="text-gray-500 text-xs">Peak Hour</p>
@@ -293,7 +331,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
             </div>
             <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
               <p className="text-gray-500 text-xs">Peak Revenue</p>
-              <p className="text-green-400 font-bold text-lg mt-1">{peakHour ? fmtShort(currency, peakHour.revenue) : '—'}</p>
+              <p className="text-green-400 font-bold text-lg mt-1">{peakHour ? fmt.compactMoney(peakHour.revenue, currency) : '—'}</p>
             </div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
@@ -313,8 +351,8 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
                       <ViewMore open={more.isOpen(String(r.hour))} onClick={() => more.toggle(String(r.hour))} />
                     </td>
                     <td className={`px-4 py-2.5 text-gray-400 ${DESK}`}>{r.orders}</td>
-                    <td className="px-4 py-2.5 text-white font-medium">{fmt(currency, r.revenue)}</td>
-                    <td className={`px-4 py-2.5 text-gray-400 text-xs ${DESK}`}>{total ? `${((r.revenue / total) * 100).toFixed(1)}%` : '—'}</td>
+                    <td className="px-4 py-2.5 text-white font-medium">{fmt.money(r.revenue, currency)}</td>
+                    <td className={`px-4 py-2.5 text-gray-400 text-xs ${DESK}`}>{total ? fmt.pct((r.revenue / total) * 100) : '—'}</td>
                     <td className={`px-4 py-2.5 w-32 ${DESK}`}>
                       <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
                         <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(r.revenue / maxRev) * 100}%` }} />
@@ -323,7 +361,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
                   </tr>
                   <MoreRow open={more.isOpen(String(r.hour))} colSpan={2} items={[
                     ['Orders', r.orders],
-                    ['Share', total ? `${((r.revenue / total) * 100).toFixed(1)}%` : '—'],
+                    ['Share', total ? fmt.pct((r.revenue / total) * 100) : '—'],
                   ]} />
                   </Fragment>
                 ))}
@@ -362,10 +400,17 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
   const totalRev = rows.reduce((s, r) => s + r.revenue, 0);
   const filtered = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
   const more = useRowMore();
+  // A467: the item table as shown — the search applied, by revenue.
+  const sheets: ReportSheet[] = filtered.length === 0 ? [] : [{
+    name: 'Item Mix',
+    columns: [col('name', 'Item'), col('category', 'Category'), num('qty', 'Qty', 3), money('revenue', 'Revenue'), num('pct', '% of Sales', 1), money('avg_price', 'Avg Price')],
+    rows: [...filtered].sort((a, b) => b.revenue - a.revenue).map(r => ({ ...r, pct: totalRev ? (r.revenue / totalRev) * 100 : 0 })),
+  }];
 
   return (
     <div className="space-y-4">
-      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
+      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading}
+        report="Item Mix" sheets={sheets} branchName={session?.branchName} />
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items…"
         className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
       {error && <ErrorMsg msg={error} />}
@@ -391,23 +436,23 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
                       <ViewMore open={more.isOpen(String(r.product_id))} onClick={() => more.toggle(String(r.product_id))} />
                     </td>
                     <td className={`px-4 py-2.5 text-gray-400 text-xs ${DESK}`}>{r.category || '—'}</td>
-                    <td className={`px-4 py-2.5 text-gray-300 tabular-nums ${DESK}`}>{r.qty.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmt(currency, r.revenue)}</td>
+                    <td className={`px-4 py-2.5 text-gray-300 tabular-nums ${DESK}`}>{fmt.qty(r.qty)}</td>
+                    <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmt.money(r.revenue, currency)}</td>
                     <td className={`px-4 py-2.5 ${DESK}`}>
                       <div className="flex items-center gap-2">
                         <div className="w-16 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                           <div className="h-full bg-green-500 rounded-full" style={{ width: `${share}%` }} />
                         </div>
-                        <span className="text-gray-400 text-xs">{share.toFixed(1)}%</span>
+                        <span className="text-gray-400 text-xs">{fmt.pct(share)}</span>
                       </div>
                     </td>
-                    <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmt(currency, r.avg_price)}</td>
+                    <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmt.money(r.avg_price, currency)}</td>
                   </tr>
                   <MoreRow open={more.isOpen(String(r.product_id))} colSpan={2} items={[
                     ['Category', r.category || '—'],
-                    ['Qty', r.qty.toLocaleString()],
-                    ['% of Sales', `${share.toFixed(1)}%`],
-                    ['Avg Price', fmt(currency, r.avg_price)],
+                    ['Qty', fmt.qty(r.qty)],
+                    ['% of Sales', fmt.pct(share)],
+                    ['Avg Price', fmt.money(r.avg_price, currency)],
                   ]} />
                   </Fragment>
                 );
@@ -444,10 +489,19 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
 
   const totalVoided = rows.reduce((s, r) => s + r.total, 0);
   const more = useRowMore();
+  // A467: the KPIs and the void log, from the loaded rows.
+  const sheets: ReportSheet[] = rows.length === 0 ? [] : [
+    kpiSheet('Summary', [['Void Count', rows.length], ['Total Voided Value', totalVoided]]),
+    { name: 'Voids',
+      columns: [col('order_number', 'Order'), money('total', 'Amount'), col('cashier_name', 'Cashier'), col('authorized_by_name', 'Authorized by'),
+        col('table_name', 'Table'), col('void_reason', 'Reason'), col('time', 'Time')],
+      rows: rows.map(r => ({ ...r, time: localStamp(r.voided_at) })) },
+  ];
 
   return (
     <div className="space-y-4">
-      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
+      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading}
+        report="Voids" sheets={sheets} branchName={session?.branchName} />
       {error && <ErrorMsg msg={error} />}
       {loading && <Spinner />}
       {!loading && rows.length === 0 && <Empty label="No voided orders in this period. ✓" />}
@@ -460,7 +514,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
             </div>
             <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
               <p className="text-gray-500 text-xs mb-1">Total Voided Value</p>
-              <p className="text-red-400 font-bold text-2xl">{fmtShort(currency, totalVoided)}</p>
+              <p className="text-red-400 font-bold text-2xl">{fmt.compactMoney(totalVoided, currency)}</p>
             </div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
@@ -479,19 +533,19 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
                     <td className="px-4 py-2.5 text-white font-mono text-xs">{r.order_number}
                       <ViewMore open={more.isOpen(String(r.id))} onClick={() => more.toggle(String(r.id))} />
                     </td>
-                    <td className="px-4 py-2.5 text-red-400 font-medium tabular-nums">{fmt(currency, r.total)}</td>
+                    <td className="px-4 py-2.5 text-red-400 font-medium tabular-nums">{fmt.money(r.total, currency)}</td>
                     <td className={`px-4 py-2.5 text-gray-300 ${DESK}`}>{r.cashier_name ?? '—'}</td>
                     <td className={`px-4 py-2.5 text-gray-400 text-xs ${DESK}`}>{r.authorized_by_name ?? '—'}</td>
                     <td className={`px-4 py-2.5 text-gray-400 ${DESK}`}>{r.table_name ?? '—'}</td>
                     <td className={`px-4 py-2.5 text-gray-400 text-xs max-w-[180px] truncate ${DESK}`}>{r.void_reason ?? '—'}</td>
-                    <td className={`px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap ${DESK}`}>{fmtDate(r.voided_at)}</td>
+                    <td className={`px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap ${DESK}`}>{fmt.dayTime(r.voided_at)}</td>
                   </tr>
                   <MoreRow open={more.isOpen(String(r.id))} colSpan={2} items={[
                     ['Cashier', r.cashier_name ?? '—'],
                     ['Authorized by', r.authorized_by_name ?? '—'],
                     ['Table', r.table_name ?? '—'],
                     ['Reason', r.void_reason ?? '—'],
-                    ['Time', fmtDate(r.voided_at)],
+                    ['Time', fmt.dayTime(r.voided_at)],
                   ]} />
                   </Fragment>
                 ))}
@@ -528,10 +582,17 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
 
   const maxRev = Math.max(...rows.map(r => r.revenue), 1);
   const more = useRowMore();
+  // A467: the staff table, by revenue.
+  const sheets: ReportSheet[] = rows.length === 0 ? [] : [{
+    name: 'Staff',
+    columns: [col('staff_name', 'Cashier'), num('orders', 'Orders', 0), money('revenue', 'Revenue'), money('avg_order_value', 'Avg Order'), num('voids', 'Voids', 0)],
+    rows: [...rows].sort((a, b) => b.revenue - a.revenue),
+  }];
 
   return (
     <div className="space-y-4">
-      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
+      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading}
+        report="Staff" sheets={sheets} branchName={session?.branchName} />
       {error && <ErrorMsg msg={error} />}
       {loading && <Spinner />}
       {!loading && rows.length === 0 && <Empty label="No staff transactions in this period." />}
@@ -559,8 +620,8 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
                     <ViewMore open={more.isOpen(String(r.staff_id))} onClick={() => more.toggle(String(r.staff_id))} />
                   </td>
                   <td className={`px-4 py-2.5 text-gray-300 tabular-nums ${DESK}`}>{r.orders}</td>
-                  <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmt(currency, r.revenue)}</td>
-                  <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmt(currency, r.avg_order_value)}</td>
+                  <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmt.money(r.revenue, currency)}</td>
+                  <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmt.money(r.avg_order_value, currency)}</td>
                   <td className={`px-4 py-2.5 ${DESK}`}>
                     {r.voids > 0
                       ? <span className="text-red-400 text-xs font-semibold">{r.voids} void{r.voids > 1 ? 's' : ''}</span>
@@ -574,7 +635,7 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
                 </tr>
                 <MoreRow open={more.isOpen(String(r.staff_id))} colSpan={2} items={[
                   ['Orders', r.orders],
-                  ['Avg Order', fmt(currency, r.avg_order_value)],
+                  ['Avg Order', fmt.money(r.avg_order_value, currency)],
                   ['Voids', r.voids > 0
                     ? <span className="text-red-400 text-xs font-semibold">{r.voids} void{r.voids > 1 ? 's' : ''}</span>
                     : <span className="text-green-500 text-xs">✓ None</span>],
@@ -595,7 +656,6 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
   const { business } = useBusiness();
   const [from, setFrom] = useState(today());
 
-  const zMoney = (n: number) => `${currency} ${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const printZReport = (r: ShiftRow) => {
     const rev      = Number(r.order_revenue ?? r.total_revenue ?? 0);
     const expected = r.expected_cash == null ? null : Number(r.expected_cash);
@@ -616,15 +676,15 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
       columns: [{ label: 'Line' }, { label: 'Amount', align: 'right' }],
       rows: [
         ['Orders', String(r.order_count ?? 0)],
-        ['Sales', zMoney(rev)],
-        ['Opening float', zMoney(r.opening_float)],
-        ['Paid in', zMoney(r.float_in ?? 0)],
-        ['Paid out', zMoney(r.float_out ?? 0)],
+        ['Sales', fmt.money(rev, currency)],
+        ['Opening float', fmt.money(r.opening_float, currency)],
+        ['Paid in', fmt.money(r.float_in ?? 0, currency)],
+        ['Paid out', fmt.money(r.float_out ?? 0, currency)],
       ],
       totals: [
-        ...(expected != null ? [{ label: 'Expected cash', value: zMoney(expected) }] : []),
-        ...(counted  != null ? [{ label: 'Counted cash',  value: zMoney(counted) }] : []),
-        ...(variance != null ? [{ label: 'Variance',      value: zMoney(Number(variance)) }] : []),
+        ...(expected != null ? [{ label: 'Expected cash', value: fmt.money(expected, currency) }] : []),
+        ...(counted  != null ? [{ label: 'Counted cash',  value: fmt.money(counted, currency) }] : []),
+        ...(variance != null ? [{ label: 'Variance',      value: fmt.money(Number(variance), currency) }] : []),
       ],
       signatures: ['Counted by', 'Verified by'],
     });
@@ -647,9 +707,23 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
 
   useEffect(() => { load(); }, []); // eslint-disable-line
 
+  // A467: one row per shift card — what each card shows.
+  const sheets: ReportSheet[] = rows.length === 0 ? [] : [{
+    name: 'Shifts',
+    columns: [col('cashier', 'Cashier'), col('status', 'Status'), col('opened', 'Opened'), col('closed', 'Closed'), num('hours', 'Hours', 1),
+      num('orders', 'Orders', 0), money('revenue', 'Sales'), money('opening_float', 'Opening float'), money('variance', 'Cash variance')],
+    rows: rows.map(r => ({
+      cashier: r.cashier_name ?? 'Unknown', status: r.status, opened: localStamp(r.opened_at), closed: localStamp(r.closed_at),
+      hours: ((r.closed_at ? new Date(r.closed_at).getTime() : Date.now()) - new Date(r.opened_at).getTime()) / 3_600_000,
+      orders: r.order_count ?? 0, revenue: r.order_revenue ?? r.total_revenue ?? null, opening_float: r.opening_float,
+      variance: r.cash_variance ?? r.variance ?? null,
+    })),
+  }];
+
   return (
     <div className="space-y-4">
-      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
+      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading}
+        report="Shifts" sheets={sheets} branchName={session?.branchName} />
       {error && <ErrorMsg msg={error} />}
       {loading && <Spinner />}
       {!loading && rows.length === 0 && <Empty label="No shifts in this period." />}
@@ -671,12 +745,12 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
                       {isOpen && <span className="text-[10px] text-green-400 font-semibold border border-green-500/30 rounded-full px-2 py-0.5">● Open</span>}
                     </div>
                     <p className="text-gray-500 text-xs mt-0.5">
-                      {fmtDate(r.opened_at)} {r.closed_at ? `→ ${fmtDate(r.closed_at)}` : '→ now'} · {hours}h
+                      {fmt.dayTime(r.opened_at)} {r.closed_at ? `→ ${fmt.dayTime(r.closed_at)}` : '→ now'} · {hours}h
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     {revenue != null && (
-                      <p className="text-green-400 font-bold text-lg">{fmtShort(currency, revenue)}</p>
+                      <p className="text-green-400 font-bold text-lg">{fmt.compactMoney(revenue, currency)}</p>
                     )}
                     <button onClick={() => printZReport(r)}
                       className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
@@ -691,13 +765,13 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
                   </div>
                   <div>
                     <p className="text-gray-500">Opening float</p>
-                    <p className="text-white font-semibold mt-0.5">{fmt(currency, r.opening_float)}</p>
+                    <p className="text-white font-semibold mt-0.5">{fmt.money(r.opening_float, currency)}</p>
                   </div>
                   {variance != null && (
                     <div>
                       <p className="text-gray-500">Cash variance</p>
                       <p className={`font-semibold mt-0.5 ${Math.abs(variance) < 50 ? 'text-green-400' : 'text-red-400'}`}>
-                        {variance >= 0 ? '+' : ''}{fmt(currency, variance)}
+                        {fmt.money(variance, currency, { sign: true })}
                       </p>
                     </div>
                   )}
@@ -744,22 +818,29 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
     if (n.includes('kero')) return GRADE_C.kerosene;
     return GRADE_C.petrol;
   }
-  const fmtC = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtL = (n: number) => `${n.toLocaleString('en-KE', { maximumFractionDigits: 1 })} L`;
   const moreGrade = useRowMore();
   const morePump = useRowMore();
+  // A467: the KPIs, by grade and by pump, from the loaded data.
+  const sheets: ReportSheet[] = !data || ((data.grades ?? []).length === 0 && (data.pumps ?? []).length === 0) ? [] : [
+    kpiSheet('Summary', [['Total Litres', data.summary.totalLitres], ['Revenue', data.summary.totalRevenue], ['Transactions', data.summary.totalTransactions]]),
+    { name: 'By Grade', columns: [col('name', 'Grade'), num('litres', 'Litres'), money('revenue', 'Revenue'), money('perLitre', 'Avg Price/L')],
+      rows: (data.grades ?? []).map((g: any) => ({ ...g, perLitre: g.litres > 0 ? g.revenue / g.litres : 0 })) },
+    { name: 'By Pump', columns: [col('pump_name', 'Pump'), num('litres', 'Litres'), money('revenue', 'Revenue'), num('transactions', 'Transactions', 0)],
+      rows: data.pumps ?? [] },
+  ];
 
   return (
     <div className="space-y-5">
-      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
+      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading}
+        report="Fuel Sales" sheets={sheets} branchName={session?.branchName} />
       {error && <ErrorMsg msg={error} />}
       {loading && <Spinner />}
       {!loading && data && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
-              { label: 'Total Litres', value: fmtL(data.summary.totalLitres), color: '#f59e0b' },
-              { label: 'Revenue', value: fmtC(data.summary.totalRevenue), color: '#22c55e' },
+              { label: 'Total Litres', value: fmt.litres(data.summary.totalLitres, 1), color: '#f59e0b' },
+              { label: 'Revenue', value: fmt.money(data.summary.totalRevenue, currency), color: '#22c55e' },
               { label: 'Transactions', value: String(data.summary.totalTransactions), color: '#3b82f6' },
             ].map(k => (
               <div key={k.label} className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
@@ -788,13 +869,13 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
                         </div>
                         <ViewMore open={moreGrade.isOpen(String(g.product_id))} onClick={() => moreGrade.toggle(String(g.product_id))} />
                       </td>
-                      <td className={`px-4 py-2.5 text-amber-400 font-semibold tabular-nums ${DESK}`}>{fmtL(g.litres)}</td>
-                      <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmtC(g.revenue)}</td>
-                      <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmtC(g.litres > 0 ? g.revenue / g.litres : 0)}/L</td>
+                      <td className={`px-4 py-2.5 text-amber-400 font-semibold tabular-nums ${DESK}`}>{fmt.litres(g.litres, 1)}</td>
+                      <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmt.money(g.revenue, currency)}</td>
+                      <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{fmt.money(g.litres > 0 ? g.revenue / g.litres : 0, currency)}/L</td>
                     </tr>
                     <MoreRow open={moreGrade.isOpen(String(g.product_id))} colSpan={2} items={[
-                      ['Litres', fmtL(g.litres)],
-                      ['Avg Price/L', `${fmtC(g.litres > 0 ? g.revenue / g.litres : 0)}/L`],
+                      ['Litres', fmt.litres(g.litres, 1)],
+                      ['Avg Price/L', `${fmt.money(g.litres > 0 ? g.revenue / g.litres : 0, currency)}/L`],
                     ]} />
                     </Fragment>
                   ))}
@@ -818,12 +899,12 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: 
                       <td className="px-4 py-2.5 text-white font-medium">⛽ {p.pump_name}
                         <ViewMore open={morePump.isOpen(String(p.pump_id))} onClick={() => morePump.toggle(String(p.pump_id))} />
                       </td>
-                      <td className={`px-4 py-2.5 text-amber-400 tabular-nums ${DESK}`}>{fmtL(p.litres)}</td>
-                      <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmtC(p.revenue)}</td>
+                      <td className={`px-4 py-2.5 text-amber-400 tabular-nums ${DESK}`}>{fmt.litres(p.litres, 1)}</td>
+                      <td className="px-4 py-2.5 text-white font-medium tabular-nums">{fmt.money(p.revenue, currency)}</td>
                       <td className={`px-4 py-2.5 text-gray-400 tabular-nums ${DESK}`}>{p.transactions}</td>
                     </tr>
                     <MoreRow open={morePump.isOpen(String(p.pump_id))} colSpan={2} items={[
-                      ['Litres', fmtL(p.litres)],
+                      ['Litres', fmt.litres(p.litres, 1)],
                       ['Transactions', p.transactions],
                     ]} />
                     </Fragment>
@@ -867,11 +948,20 @@ function WetStockTab({ posApi, session, currency }: { posApi: PosApi; session: a
     if (n.includes('kero')) return '#06b6d4';
     return '#22c55e';
   }
-  const fmtL = (n: number) => `${n.toLocaleString('en-KE', { maximumFractionDigits: 1 })} L`;
+  // A467: one row per tank card, and the delivery log.
+  const sheets: ReportSheet[] = !data || ((data.tanks ?? []).length === 0 && (data.deliveryLog ?? []).length === 0) ? [] : [
+    { name: 'Tanks',
+      columns: [col('name', 'Tank'), col('product_name', 'Grade'), col('low', 'Low'), num('level_pct', 'Level %', 0), num('current_level', 'Current (L)'),
+        num('delivered_litres', 'Delivered (L)'), num('consumed_litres', 'Dispensed (L)'), num('variance', 'Variance (L)')],
+      rows: (data.tanks ?? []).map((t: any) => ({ ...t, low: t.is_low ? 'LOW' : '', variance: Number(t.delivered_litres ?? 0) - Number(t.consumed_litres ?? 0) })) },
+    { name: 'Delivery Log', columns: [col('date', 'Date'), num('litres', 'Litres'), col('notes', 'Notes')],
+      rows: (data.deliveryLog ?? []).map((d: any) => ({ ...d, date: localStamp(d.recorded_at) })) },
+  ];
 
   return (
     <div className="space-y-5">
-      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
+      <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading}
+        report="Wet Stock" sheets={sheets} branchName={session?.branchName} />
       {error && <ErrorMsg msg={error} />}
       {loading && <Spinner />}
       {!loading && data && (
@@ -895,13 +985,13 @@ function WetStockTab({ posApi, session, currency }: { posApi: PosApi; session: a
                     <div className="h-full rounded-full" style={{ width: `${tank.level_pct}%`, background: isLow ? '#ef4444' : color }} />
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div><p className="text-gray-500">Current</p><p className="text-white font-medium mt-0.5">{fmtL(tank.current_level)}</p></div>
-                    <div><p className="text-green-500">Delivered</p><p className="text-white font-medium mt-0.5">+{fmtL(tank.delivered_litres)}</p></div>
-                    <div><p className="text-amber-400">Dispensed</p><p className="text-white font-medium mt-0.5">{fmtL(tank.consumed_litres)}</p></div>
+                    <div><p className="text-gray-500">Current</p><p className="text-white font-medium mt-0.5">{fmt.litres(tank.current_level, 1)}</p></div>
+                    <div><p className="text-green-500">Delivered</p><p className="text-white font-medium mt-0.5">+{fmt.litres(tank.delivered_litres, 1)}</p></div>
+                    <div><p className="text-amber-400">Dispensed</p><p className="text-white font-medium mt-0.5">{fmt.litres(tank.consumed_litres, 1)}</p></div>
                     <div>
                       <p className="text-gray-500">Variance</p>
                       <p className={`font-medium mt-0.5 ${Math.abs(tank.delivered_litres - tank.consumed_litres) < 50 ? 'text-gray-300' : 'text-red-400'}`}>
-                        {tank.delivered_litres - tank.consumed_litres >= 0 ? '+' : ''}{fmtL(tank.delivered_litres - tank.consumed_litres)}
+                        {tank.delivered_litres - tank.consumed_litres >= 0 ? '+' : ''}{fmt.litres(tank.delivered_litres - tank.consumed_litres, 1)}
                       </p>
                     </div>
                   </div>
@@ -914,9 +1004,9 @@ function WetStockTab({ posApi, session, currency }: { posApi: PosApi; session: a
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-4 border-b border-gray-700">Delivery Log</p>
               {data.deliveryLog.map((d: any, i: number) => (
                 <div key={i} className="flex items-center gap-3 px-5 py-3 border-b border-gray-800 last:border-0">
-                  <span className="text-green-400 font-semibold">+{fmtL(d.litres)}</span>
+                  <span className="text-green-400 font-semibold">+{fmt.litres(d.litres, 1)}</span>
                   <span className="text-gray-500 text-xs flex-1">{d.notes ?? '—'}</span>
-                  <span className="text-gray-600 text-xs">{new Date(d.recorded_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="text-gray-600 text-xs">{fmt.dayTime(d.recorded_at)}</span>
                 </div>
               ))}
             </div>

@@ -113,6 +113,7 @@ export default function ZReportModal({ onClose }: Props) {
 
   return (
     <div
+      className="animate-fade-in"
       style={{
         position: "fixed",
         inset: 0,
@@ -125,6 +126,7 @@ export default function ZReportModal({ onClose }: Props) {
       }}
     >
       <div
+        className="animate-pop-in"
         style={{
           background: "#1e293b",
           border: "1px solid #334155",
@@ -252,6 +254,7 @@ export default function ZReportModal({ onClose }: Props) {
                 whiteSpace: "nowrap",
               }}
             >
+              {loading && <span className="spin-dot" aria-hidden />}
               {loading ? "Loading…" : "Generate"}
             </button>
           </div>

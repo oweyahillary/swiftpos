@@ -207,6 +207,18 @@ function authHeaders() {
  */
 let _refreshInFlight: Promise<boolean> | null = null;
 
+// A473 (owner, 2026-10-14: "sometimes it takes up to 8-12 sec for the desktop app to unlock"): when the cloud has
+// REFUSED this till's session (the renewal and the device secret both said no — a technician must rejoin it), every PIN
+// sign-in still asked the cloud, waited for the same doomed renewal and device sign-in, and only then checked the PIN on
+// the till: three round trips per sign-in. The refusal is remembered (the sync loop asks again every few seconds, so it
+// stays current) and the PIN pad goes straight to the till's own check while it holds. Any successful renewal clears it.
+let _sessionRefusedAt: number | null = null;
+export function tillSessionRefusedRecently(windowMs = 60_000, now = Date.now()): boolean {
+  return _sessionRefusedAt !== null && now - _sessionRefusedAt < windowMs;
+}
+/** Test seam. */
+export function _setSessionRefusedAt(at: number | null): void { _sessionRefusedAt = at; }
+
 export async function refreshAccessToken(): Promise<boolean> {
   if (_refreshInFlight) return _refreshInFlight;
   _refreshInFlight = doRefreshAccessToken().finally(() => { _refreshInFlight = null; });
@@ -239,7 +251,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
     _accessToken  = pair.accessToken;
     _refreshToken = pair.refreshToken;
     writeSessionTokens({ token: pair.accessToken, refreshToken: pair.refreshToken });
-    clearInboundFailure('auth');
+    clearInboundFailure('auth'); _sessionRefusedAt = null;
     logLine('auth', 'access token refreshed via the branch node (cloud unreachable)');
     return true;
   };
@@ -274,7 +286,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
       _accessToken  = pair.accessToken;
       _refreshToken = pair.refreshToken;
       writeSessionTokens({ token: pair.accessToken, refreshToken: pair.refreshToken });
-      clearInboundFailure('auth');
+      clearInboundFailure('auth'); _sessionRefusedAt = null;
       logLine('auth', 'session refused - the till signed itself back in with its device secret');
       return true;
     } catch (e: any) {
@@ -305,6 +317,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
       if (res.status >= 500 && await tryNodeRefresh()) return true;
       // A407: refused (401) — the till signs itself back in with its device secret before giving up.
       if (res.status === 401 && await tryDeviceGrant()) return true;
+      if (res.status === 401) _sessionRefusedAt = Date.now();   // A473: refused for good until rejoined
       // Rotation means a revoked token can never be recovered: the owner must
       // sign in again, and with no internet they cannot. Recording it is the
       // difference between "it logged me out again" and knowing which refresh
@@ -324,7 +337,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
     // A407: a till enrolled before it kept a device secret is given one on an ordinary renewal — keep it (after the
     // tokens: their write stays first).
     if (typeof deviceSecret === 'string' && deviceSecret) { writeDeviceSecret(deviceSecret); logLine('auth', 'device secret received and kept'); }
-    clearInboundFailure('auth');
+    clearInboundFailure('auth'); _sessionRefusedAt = null;
     return true;
   } catch (err: any) {
     // A160: the cloud is unreachable (DNS/refused/timeout). Before giving up,

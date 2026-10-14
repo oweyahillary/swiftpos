@@ -7,6 +7,8 @@ import { useState, useEffect, Fragment } from 'react';
 import { api } from '../../lib/api';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import BulkProductImport from '../products/BulkProductImport';
+import { money } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
 
 interface Product {
   id: string; name: string; base_price: number;
@@ -54,6 +56,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function MinimartSettingsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const [tab, setTab]             = useState<Tab>('scan');
   const [products, setProducts]   = useState<Product[]>([]);
   const [settings, setSettings]   = useState<Record<string, string>>({});
@@ -219,7 +222,7 @@ export default function MinimartSettingsPage() {
                       <ViewMore open={more.isOpen(p.id)} onClick={() => more.toggle(p.id)} />
                     </td>
                     <td className={`px-3 py-3 text-xs text-gray-500 ${DESK}`}>{p.categories?.name ?? '—'}</td>
-                    <td className="px-3 py-3 text-sm font-semibold text-green-400">{Number(p.base_price).toFixed(2)}</td>
+                    <td className="px-3 py-3 text-sm font-semibold text-green-400">{money(p.base_price, currency)}</td>
                     <td className={`px-3 py-3 ${DESK}`}>
                       {p.barcode ? <Badge color="blue">{p.barcode}</Badge> : <span className="text-gray-700 text-xs">—</span>}
                     </td>

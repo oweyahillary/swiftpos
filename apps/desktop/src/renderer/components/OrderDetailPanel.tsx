@@ -61,9 +61,9 @@ export default function OrderDetailPanel({ orderId, currency, canVoidRefund, win
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in" onClick={onClose}>
       <div data-testid="order-detail" onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[90vh] flex flex-col bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl">
+        className="w-full max-w-lg max-h-[90vh] flex flex-col bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl animate-pop-in">
         <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3 border-b border-gray-800">
           <div className="min-w-0">
             <h2 className="text-white font-semibold text-lg font-mono">#{detail?.order_number ?? '…'}</h2>

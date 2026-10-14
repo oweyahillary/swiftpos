@@ -16,6 +16,7 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 import RemoteDayClose from './RemoteDayClose';
 import ShiftConfirmations from '../../components/ShiftConfirmations';   // A462: the manager confirms on the web too
 import CountedCloseModal from '../../components/CountedCloseModal';     // A462: close someone else's drawer WITH a count
+import { money } from '../../lib/format';
 
 interface OpenShift {
   id: string;
@@ -43,9 +44,6 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
   const [reportId, setReportId] = useState<string | null>(null);
   const [reportMsg, setReportMsg] = useState<{ id: string; text: string } | null>(null);
 
-  const money = (v: number | null) =>
-    v === null || v === undefined ? 'unavailable'
-      : `${currency} ${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const since = (iso: string) => {
     const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
     return h < 1 ? 'under 1h' : `${h}h`;
@@ -93,7 +91,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium">{s.cashier_name}{s.terminal_code ? ` · ${s.terminal_code}` : ''}</p>
-                  <p className="text-gray-500 text-xs">open {since(s.opened_at)} · float {money(s.opening_float)} · expected {money(s.expected_cash_live)}</p>
+                  <p className="text-gray-500 text-xs">open {since(s.opened_at)} · float {money(s.opening_float, currency, { blank: 'unavailable' })} · expected {money(s.expected_cash_live, currency, { blank: 'unavailable' })}</p>
                 </div>
                 <div className="sm:flex-shrink-0 flex flex-wrap items-center gap-2">
                   <button

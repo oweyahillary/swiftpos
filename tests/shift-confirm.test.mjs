@@ -263,7 +263,7 @@ try {
     assert.ok(!/expected_methods|declared_methods\[|money\(target/.test(dialog), 'the recount dialog reads no figures off the shift row');
     assert.match(dialog, /view\.expected\?\.\[m\]/);
     assert.match(c, /data-testid="self-confirmed"/);
-    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/OpenShiftsPage.tsx'), 'utf8'), /<ShiftConfirmations key=\{confirmKey\} \/>/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/OpenShiftsPage.tsx'), 'utf8'), /<ShiftConfirmations key=\{confirmKey\} currency=\{currency\} \/>/);   // A471: with the business currency
   });
   await ok('0.6.23 Shift Reports page: list (cashier, till, shift, status, difference, View), filters, CSV; View = the per-method table', () => {
     const pg = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/ShiftReportsPage.tsx'), 'utf8');

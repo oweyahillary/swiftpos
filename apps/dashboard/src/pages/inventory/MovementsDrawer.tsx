@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { dateTime } from '../../lib/format';
 
 interface Movement {
   id: string;
@@ -33,11 +34,6 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
       .catch(() => setLoading(false));
   }, [product.id]);
 
-  const fmt = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' }) +
-      ' ' + d.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
-  };
 
   return (
     <>
@@ -76,7 +72,7 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
                         }`}>{cfg.label}</span>
                       </div>
                       {m.notes && <p className="text-gray-500 text-xs mt-1 truncate">{m.notes}</p>}
-                      <p className="text-gray-600 text-xs mt-1">{fmt(m.created_at)}</p>
+                      <p className="text-gray-600 text-xs mt-1">{dateTime(m.created_at)}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className={`font-semibold text-sm ${isPositive ? 'text-green-400' : 'text-red-400'}`}>

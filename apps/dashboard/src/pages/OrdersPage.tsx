@@ -18,6 +18,7 @@ import { reprintOrderReceipt } from '../lib/reprintReceipt';
 import OrderItems from '../components/OrderItems';   // A444
 import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../lib/reversalRules';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
+import { money, dayTime } from '../lib/format';
 
 interface Payment { method: string; amount: number; status: string; }
 interface Order {
@@ -66,10 +67,6 @@ const STATUS_COLOR: Record<string, string> = {
 };
 const METHOD_ICON: Record<string, string> = { cash: '💵', mpesa: '📱', card: '💳' };
 
-const fmt = (n: number, currency: string) =>
-  `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtTime = (iso: string) =>
-  new Date(iso).toLocaleString('en-KE', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 export default function OrdersPage({ currency = 'KES' }: { currency?: string }) {
   const { can } = usePermissions();
@@ -257,8 +254,8 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-right text-gray-200">{fmt(o.total, currency)}</td>
-                    <td className={`px-4 py-2 text-gray-400 ${DESK}`}>{fmtTime(o.created_at)}</td>
+                    <td className="px-4 py-2 text-right text-gray-200">{money(o.total, currency)}</td>
+                    <td className={`px-4 py-2 text-gray-400 ${DESK}`}>{dayTime(o.created_at)}</td>
                     <td className={`px-4 py-2 text-gray-400 ${DESK}`}>{o.customer_name ?? '—'}</td>
                     {canAct && (
                       <td className={`px-4 py-2 text-right whitespace-nowrap ${DESK}`} onClick={(e) => e.stopPropagation()}>
@@ -268,7 +265,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                   </tr>
                   <MoreRow open={more.isOpen(String(o.id))} colSpan={3} items={[
                     ['Type', <span className="capitalize">{o.order_type}</span>],
-                    ['When', fmtTime(o.created_at)],
+                    ['When', dayTime(o.created_at)],
                     ['Customer', o.customer_name ?? '—'],
                     ['Action', hasActions ? <span className="whitespace-nowrap">{actionBtns}</span> : null],
                   ]} />
@@ -277,14 +274,14 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                       <td colSpan={cols} className="px-4 py-3">
                         <div className="text-xs text-gray-400 space-y-1">
                           <OrderItems orderId={o.id} currency={currency} get={(path) => api.get(path)} />
-                          <div>Subtotal: {fmt(o.subtotal, currency)}
-                            {o.discount_amount > 0 && <> · Discount: {fmt(o.discount_amount, currency)}</>}
-                            · Total: <span className="text-gray-200">{fmt(o.total, currency)}</span></div>
+                          <div>Subtotal: {money(o.subtotal, currency)}
+                            {o.discount_amount > 0 && <> · Discount: {money(o.discount_amount, currency)}</>}
+                            · Total: <span className="text-gray-200">{money(o.total, currency)}</span></div>
                           <div className="flex flex-wrap gap-3 pt-1">
                             {o.payments.length === 0 && <span>No payments recorded.</span>}
                             {o.payments.map((p, i) => (
                               <span key={i} className="text-gray-300">
-                                {METHOD_ICON[p.method] ?? '•'} {p.method} {fmt(p.amount, currency)}
+                                {METHOD_ICON[p.method] ?? '•'} {p.method} {money(p.amount, currency)}
                                 {p.status !== 'completed' && <span className="text-amber-400"> ({p.status})</span>}
                               </span>
                             ))}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { printDocument } from '../lib/printDocument';
+import { money, dateShort } from '../lib/format';
 
 /**
  * SupplierAccount — A395: one supplier's account (Stock › Suppliers › a supplier). What is owed, the bills, payments and
@@ -41,7 +42,6 @@ const STATE: Record<BillState, { label: string; cls: string }> = {
 };
 const METHODS = [['mpesa', 'M-Pesa'], ['bank', 'Bank'], ['cash', 'Cash'], ['cheque', 'Cheque'], ['other', 'Other']] as const;
 const methodLabel = (m: string) => METHODS.find(([k]) => k === m)?.[1] ?? m;
-const dmy = (d: string | null) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const errText = (e: unknown, f: string) => (e as { message?: string })?.message || f;
 const input = 'w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-swift focus:outline-none';
 
@@ -54,8 +54,6 @@ export default function SupplierAccount({ supplierId, currency, business, branch
   const [tab, setTab] = useState<'bills' | 'statement' | 'payments' | 'returns'>('bills');
   const [form, setForm] = useState<null | { kind: 'bill'; grn?: Delivery } | { kind: 'pay'; bill?: Bill } | { kind: 'return' }>(null);
   const [error, setError] = useState('');
-  const money = useCallback((n: number | string | null | undefined) =>
-    `${currency} ${Number(n ?? 0).toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`, [currency]);
 
   const load = useCallback(async () => {
     try { setAcc(await api.get<Account>(`/api/payables/suppliers/${supplierId}`)); setError(''); }
@@ -77,13 +75,13 @@ export default function SupplierAccount({ supplierId, currency, business, branch
   const p = acc.position;
 
   const printStatement = () => printDocument({
-    docType: 'SUPPLIER STATEMENT', number: acc.supplier.name, dateLabel: dmy(acc.today), accent: '#475569',
+    docType: 'SUPPLIER STATEMENT', number: acc.supplier.name, dateLabel: dateShort(acc.today), accent: '#475569',
     business: business ?? { name: 'ZapTill' },
     meta: [{ label: 'Supplier', value: acc.supplier.name }, ...(acc.supplier.phone ? [{ label: 'Phone', value: acc.supplier.phone }] : []),
-      { label: 'As at', value: dmy(acc.today) }],
+      { label: 'As at', value: dateShort(acc.today) }],
     columns: [{ label: 'Date' }, { label: 'Ref' }, { label: 'Detail' }, { label: 'Billed', align: 'right' }, { label: 'Paid / credit', align: 'right' }, { label: 'Balance', align: 'right' }],
-    rows: acc.statement.map((e) => [dmy(e.date), e.ref, e.detail, e.debit ? money(e.debit) : '', e.credit ? money(e.credit) : '', money(e.balance)]),
-    totals: [{ label: 'Owed', value: money(p.balance) }, { label: 'Overdue', value: money(p.overdue) }],
+    rows: acc.statement.map((e) => [dateShort(e.date), e.ref, e.detail, e.debit ? money(e.debit, currency) : '', e.credit ? money(e.credit, currency) : '', money(e.balance, currency)]),
+    totals: [{ label: 'Owed', value: money(p.balance, currency) }, { label: 'Overdue', value: money(p.overdue, currency) }],
     signatures: ['Prepared by', 'Supplier'],
   });
 
@@ -106,9 +104,9 @@ export default function SupplierAccount({ supplierId, currency, business, branch
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: p.balance < 0 ? 'Supplier owes you' : 'You owe', value: money(Math.abs(p.balance)), cls: p.balance > 0 ? 'text-white' : 'text-swift-text' },
-          { label: 'Overdue', value: money(p.overdue), cls: p.overdue > 0 ? 'text-red-400' : 'text-gray-400' },
-          { label: 'Due in 7 days', value: money(p.dueSoon), cls: p.dueSoon > 0 ? 'text-amber-400' : 'text-gray-400' },
+          { label: p.balance < 0 ? 'Supplier owes you' : 'You owe', value: money(Math.abs(p.balance), currency), cls: p.balance > 0 ? 'text-white' : 'text-swift-text' },
+          { label: 'Overdue', value: money(p.overdue, currency), cls: p.overdue > 0 ? 'text-red-400' : 'text-gray-400' },
+          { label: 'Due in 7 days', value: money(p.dueSoon, currency), cls: p.dueSoon > 0 ? 'text-amber-400' : 'text-gray-400' },
           { label: 'Open bills', value: String(p.openBills), cls: 'text-white' },
         ].map((c) => (
           <div key={c.label} className="rounded-xl border border-gray-800 bg-gray-900 p-3">
@@ -119,9 +117,9 @@ export default function SupplierAccount({ supplierId, currency, business, branch
       </div>
       {(p.ageing.d1_30 + p.ageing.d31_60 + p.ageing.d61_90 + p.ageing.d90plus) > 0 && (
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400" data-testid="ageing">
-          <span>Not yet due {money(p.ageing.current)}</span><span>1–30 days late {money(p.ageing.d1_30)}</span>
-          <span>31–60 {money(p.ageing.d31_60)}</span><span>61–90 {money(p.ageing.d61_90)}</span>
-          <span className={p.ageing.d90plus > 0 ? 'text-red-400' : ''}>Over 90 {money(p.ageing.d90plus)}</span>
+          <span>Not yet due {money(p.ageing.current, currency)}</span><span>1–30 days late {money(p.ageing.d1_30, currency)}</span>
+          <span>31–60 {money(p.ageing.d31_60, currency)}</span><span>61–90 {money(p.ageing.d61_90, currency)}</span>
+          <span className={p.ageing.d90plus > 0 ? 'text-red-400' : ''}>Over 90 {money(p.ageing.d90plus, currency)}</span>
         </div>
       )}
 
@@ -131,9 +129,9 @@ export default function SupplierAccount({ supplierId, currency, business, branch
           <div className="mt-2 divide-y divide-gray-800">
             {acc.unbilled.map((d) => (
               <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <span className="text-gray-200">{d.grn_number}{d.po_number ? ` · ${d.po_number}` : ''} · {dmy(d.received_date)}</span>
+                <span className="text-gray-200">{d.grn_number}{d.po_number ? ` · ${d.po_number}` : ''} · {dateShort(d.received_date)}</span>
                 <span className="flex items-center gap-3">
-                  <span className="text-gray-300">{money(d.value)}</span>
+                  <span className="text-gray-300">{money(d.value, currency)}</span>
                   <button onClick={() => setForm({ kind: 'bill', grn: d })} className="rounded-lg border border-gray-700 px-3 py-1 text-xs text-gray-200 hover:text-white">Bill it</button>
                 </span>
               </div>
@@ -162,11 +160,11 @@ export default function SupplierAccount({ supplierId, currency, business, branch
                 <tr key={b.id}>
                   <td className="px-3 py-2"><div className="text-white">{b.ref}</div>
                     <div className="text-xs text-gray-500">{b.invoice_number ? `Invoice ${b.invoice_number}` : ''}{b.status === 'void' && b.void_reason ? ` · voided: ${b.void_reason}` : ''}</div></td>
-                  <td className="px-3 py-2 text-gray-400">{dmy(b.bill_date)}</td>
-                  <td className="hidden px-3 py-2 text-gray-400 sm:table-cell">{dmy(b.due_date)}{b.daysOverdue > 0 ? <div className="text-xs text-red-400">{b.daysOverdue} days late</div> : null}</td>
-                  <td className="px-3 py-2 text-right text-gray-200">{money(b.amount)}</td>
-                  <td className="hidden px-3 py-2 text-right text-gray-400 md:table-cell">{money(b.paid)}</td>
-                  <td className="px-3 py-2 text-right"><span className={`rounded-full px-2 py-0.5 text-xs ${STATE[b.state].cls}`}>{b.state === 'paid' || b.state === 'void' ? STATE[b.state].label : money(b.due)}</span></td>
+                  <td className="px-3 py-2 text-gray-400">{dateShort(b.bill_date)}</td>
+                  <td className="hidden px-3 py-2 text-gray-400 sm:table-cell">{dateShort(b.due_date)}{b.daysOverdue > 0 ? <div className="text-xs text-red-400">{b.daysOverdue} days late</div> : null}</td>
+                  <td className="px-3 py-2 text-right text-gray-200">{money(b.amount, currency)}</td>
+                  <td className="hidden px-3 py-2 text-right text-gray-400 md:table-cell">{money(b.paid, currency)}</td>
+                  <td className="px-3 py-2 text-right"><span className={`rounded-full px-2 py-0.5 text-xs ${STATE[b.state].cls}`}>{b.state === 'paid' || b.state === 'void' ? STATE[b.state].label : money(b.due, currency)}</span></td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
                     {b.due > 0 && <button onClick={() => setForm({ kind: 'pay', bill: b })} className="rounded-lg px-2 py-1 text-xs text-swift-text hover:bg-gray-800">Pay</button>}
                     {b.status !== 'void' && b.paid === 0 && <button onClick={() => voidIt('bills', b.id, b.ref)} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-red-400">Void</button>}
@@ -183,11 +181,11 @@ export default function SupplierAccount({ supplierId, currency, business, branch
             <tbody className="divide-y divide-gray-800">
               {acc.statement.map((e) => (
                 <tr key={`${e.kind}-${e.id}`}>
-                  <td className="px-3 py-2 text-gray-400">{dmy(e.date)}</td>
+                  <td className="px-3 py-2 text-gray-400">{dateShort(e.date)}</td>
                   <td className="px-3 py-2"><div className="text-white">{e.detail}</div><div className="text-xs text-gray-500">{e.ref}</div></td>
-                  <td className="px-3 py-2 text-right text-gray-200">{e.debit ? money(e.debit) : ''}</td>
-                  <td className="px-3 py-2 text-right text-gray-200">{e.credit ? money(e.credit) : ''}</td>
-                  <td className="px-3 py-2 text-right font-medium text-white">{money(e.balance)}</td>
+                  <td className="px-3 py-2 text-right text-gray-200">{e.debit ? money(e.debit, currency) : ''}</td>
+                  <td className="px-3 py-2 text-right text-gray-200">{e.credit ? money(e.credit, currency) : ''}</td>
+                  <td className="px-3 py-2 text-right font-medium text-white">{money(e.balance, currency)}</td>
                 </tr>
               ))}
               {!acc.statement.length && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">Nothing yet.</td></tr>}
@@ -200,11 +198,11 @@ export default function SupplierAccount({ supplierId, currency, business, branch
             <tbody className="divide-y divide-gray-800">
               {acc.payments.map((x) => (
                 <tr key={x.id} className={x.voided_at ? 'opacity-50' : ''}>
-                  <td className="px-3 py-2 text-gray-400">{dmy(x.paid_on)}</td>
+                  <td className="px-3 py-2 text-gray-400">{dateShort(x.paid_on)}</td>
                   <td className="px-3 py-2 text-gray-200">{methodLabel(x.method)}{x.reference ? <div className="text-xs text-gray-500">{x.reference}</div> : null}</td>
                   <td className="px-3 py-2 text-gray-400">{x.bill_id ? acc.bills.find((b) => b.id === x.bill_id)?.ref ?? 'A bill' : 'On account'}
                     {x.voided_at ? <div className="text-xs text-red-400">Voided{x.void_reason ? `: ${x.void_reason}` : ''}</div> : null}</td>
-                  <td className="px-3 py-2 text-right text-gray-200">{money(x.amount)}</td>
+                  <td className="px-3 py-2 text-right text-gray-200">{money(x.amount, currency)}</td>
                   <td className="px-3 py-2 text-right">{!x.voided_at && <button onClick={() => voidIt('payments', x.id, 'this payment')} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-red-400">Void</button>}</td>
                 </tr>
               ))}
@@ -217,9 +215,9 @@ export default function SupplierAccount({ supplierId, currency, business, branch
             <tbody className="divide-y divide-gray-800">
               {acc.returns.map((r) => (
                 <tr key={r.id}>
-                  <td className="px-3 py-2"><div className="text-white">{r.ref}</div><div className="text-xs text-gray-500">{dmy(r.return_date)} · {r.reason}</div></td>
+                  <td className="px-3 py-2"><div className="text-white">{r.ref}</div><div className="text-xs text-gray-500">{dateShort(r.return_date)} · {r.reason}</div></td>
                   <td className="px-3 py-2 text-gray-300">{(r.supplier_return_items ?? []).map((i) => `${Number(i.quantity)} × ${i.name}`).join(', ')}</td>
-                  <td className="px-3 py-2 text-right text-gray-200">{money(r.credit_amount)}</td>
+                  <td className="px-3 py-2 text-right text-gray-200">{money(r.credit_amount, currency)}</td>
                 </tr>
               ))}
               {!acc.returns.length && <tr><td colSpan={3} className="px-3 py-6 text-center text-gray-500">Nothing sent back.</td></tr>}
@@ -229,10 +227,10 @@ export default function SupplierAccount({ supplierId, currency, business, branch
       </div>
       <p className="text-xs text-gray-500">A payment recorded here is not an expense and does not come out of a till drawer. Pay a supplier from a drawer as a pay-out, or record it here — not both.</p>
 
-      {form?.kind === 'bill' && <BillForm supplierId={supplierId} grn={form.grn} money={money} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
-      {form?.kind === 'pay' && <PayForm supplierId={supplierId} bills={acc.bills.filter((b) => b.due > 0)} bill={form.bill} money={money}
+      {form?.kind === 'bill' && <BillForm supplierId={supplierId} grn={form.grn} currency={currency} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
+      {form?.kind === 'pay' && <PayForm supplierId={supplierId} bills={acc.bills.filter((b) => b.due > 0)} bill={form.bill} currency={currency}
         onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
-      {form?.kind === 'return' && <ReturnForm supplierId={supplierId} branches={branches} money={money} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
+      {form?.kind === 'return' && <ReturnForm supplierId={supplierId} branches={branches} currency={currency} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
     </div>
   );
 }
@@ -264,7 +262,7 @@ const field = (label: string, el: React.ReactNode) => (
   <label className="block"><span className="mb-1 block text-xs font-medium text-gray-400">{label}</span>{el}</label>
 );
 
-function BillForm({ supplierId, grn, money, onClose, onDone }: { supplierId: string; grn?: Delivery; money: (n: number) => string; onClose: () => void; onDone: () => void }) {
+function BillForm({ supplierId, grn, currency, onClose, onDone }: { supplierId: string; grn?: Delivery; currency: string; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({ invoice_number: '', amount: grn ? String(grn.value || '') : '', bill_date: new Date().toISOString().slice(0, 10), terms_days: '30', note: '' });
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const save = async () => {
@@ -274,7 +272,7 @@ function BillForm({ supplierId, grn, money, onClose, onDone }: { supplierId: str
   };
   return (
     <Sheet title={grn ? `Bill for ${grn.grn_number}` : 'Add a bill'} onClose={onClose}>
-      {grn && <p className="mb-3 text-xs text-gray-400">Delivery value at cost: {money(grn.value)} — change the amount if the invoice differs.</p>}
+      {grn && <p className="mb-3 text-xs text-gray-400">Delivery value at cost: {money(grn.value, currency)} — change the amount if the invoice differs.</p>}
       <div className="grid grid-cols-2 gap-3">
         {field('Supplier invoice no.', <input className={input} value={f.invoice_number} onChange={(e) => setF({ ...f, invoice_number: e.target.value })} placeholder="e.g. INV-2231" />)}
         {field('Amount', <input className={input} inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value.replace(/[^\d.,]/g, '') })} />)}
@@ -289,7 +287,7 @@ function BillForm({ supplierId, grn, money, onClose, onDone }: { supplierId: str
   );
 }
 
-function PayForm({ supplierId, bills, bill, money, onClose, onDone }: { supplierId: string; bills: Bill[]; bill?: Bill; money: (n: number) => string; onClose: () => void; onDone: () => void }) {
+function PayForm({ supplierId, bills, bill, currency, onClose, onDone }: { supplierId: string; bills: Bill[]; bill?: Bill; currency: string; onClose: () => void; onDone: () => void }) {
   // Oldest bill first — the one a supplier expects paid first.
   const ordered = useMemo(() => [...bills].sort((a, b) => (a.due_date || a.bill_date).localeCompare(b.due_date || b.bill_date)), [bills]);
   const first = bill ?? ordered[0];
@@ -308,7 +306,7 @@ function PayForm({ supplierId, bills, bill, money, onClose, onDone }: { supplier
           const b = bills.find((x) => x.id === e.target.value);
           setF({ ...f, bill_id: e.target.value, amount: b ? String(b.due) : f.amount });
         }}>
-          {ordered.map((b) => <option key={b.id} value={b.id}>{b.ref}{b.invoice_number ? ` (${b.invoice_number})` : ''} — owes {money(b.due)}</option>)}
+          {ordered.map((b) => <option key={b.id} value={b.id}>{b.ref}{b.invoice_number ? ` (${b.invoice_number})` : ''} — owes {money(b.due, currency)}</option>)}
           <option value="">On account (no particular bill)</option>
         </select>)}
         <div className="grid grid-cols-2 gap-3">
@@ -318,7 +316,7 @@ function PayForm({ supplierId, bills, bill, money, onClose, onDone }: { supplier
             {METHODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>)}
           {field('Reference', <input className={input} value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} placeholder="M-Pesa code, cheque no." />)}
         </div>
-        {chosen && Number(f.amount) > chosen.due && <p className="text-xs text-amber-400">More than this bill owes ({money(chosen.due)}) — pay the rest on account.</p>}
+        {chosen && Number(f.amount) > chosen.due && <p className="text-xs text-amber-400">More than this bill owes ({money(chosen.due, currency)}) — pay the rest on account.</p>}
       </div>
       <Actions busy={busy} label="Record payment" onClose={onClose} onSave={save} error={error} />
     </Sheet>
@@ -327,7 +325,7 @@ function PayForm({ supplierId, bills, bill, money, onClose, onDone }: { supplier
 
 interface Pick { kind: 'product' | 'ingredient'; id: string; name: string; held: number | null; cost: number | null; unit: string | null }
 
-function ReturnForm({ supplierId, branches, money, onClose, onDone }: { supplierId: string; branches: { id: string; name: string }[]; money: (n: number) => string; onClose: () => void; onDone: () => void }) {
+function ReturnForm({ supplierId, branches, currency, onClose, onDone }: { supplierId: string; branches: { id: string; name: string }[]; currency: string; onClose: () => void; onDone: () => void }) {
   const [branchId, setBranchId] = useState(branches[0]?.id ?? '');
   const [items, setItems] = useState<Pick[]>([]);
   const [lines, setLines] = useState<Array<Pick & { qty: string; costTyped: string }>>([]);
@@ -385,7 +383,7 @@ function ReturnForm({ supplierId, branches, money, onClose, onDone }: { supplier
           </div>
         ))}
         {field('Why are they going back?', <input className={input} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Damaged, expired, wrong item…" />)}
-        <p className="text-xs text-gray-400">The stock leaves the branch now. Credit from the supplier: <span className="text-white">{money(Math.round(credit * 100) / 100)}</span> (at cost; blank cost = the item's saved cost).</p>
+        <p className="text-xs text-gray-400">The stock leaves the branch now. Credit from the supplier: <span className="text-white">{money(Math.round(credit * 100) / 100, currency)}</span> (at cost; blank cost = the item's saved cost).</p>
       </div>
       <Actions busy={busy} label="Send back" onClose={onClose} onSave={save} error={error} />
     </Sheet>

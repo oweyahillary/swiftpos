@@ -36,8 +36,8 @@ export default function JoinPrompt() {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4" data-testid="join-prompt">
-      <div className="w-full max-w-sm rounded-2xl border border-gray-700 bg-gray-900 p-6">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 animate-fade-in" data-testid="join-prompt">
+      <div className="w-full max-w-sm rounded-2xl border border-gray-700 bg-gray-900 p-6 animate-pop-in">
         <h2 className="text-lg font-semibold text-white">A till wants to join this branch server</h2>
         <p className="mt-2 text-sm text-gray-300"><span className="font-semibold text-white">{r.name}</span> at {r.ip}</p>
         <p className="mt-1 text-xs text-gray-400">Allow it only if it is a till you are setting up in this shop. It joins this branch and syncs through this server.</p>

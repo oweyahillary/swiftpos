@@ -6,6 +6,7 @@ import SupplierAccount from '../../components/SupplierAccount';   // A395
 import { usePermissions } from '../../context/PermissionsContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
+import { money } from '../../lib/format';
 
 // A395: what is owed to each supplier (only for someone holding payables.manage — the owner by default).
 interface Position { id: string; balance: number; overdue: number; dueSoon: number; openBills: number }
@@ -45,7 +46,6 @@ export default function SuppliersPage() {
   const [summary, setSummary]     = useState<Summary | null>(null);
   const [account, setAccount]     = useState<string | null>(null);
   const owedOf = (id: string) => summary?.suppliers.find(p => p.id === id);
-  const money = (n: number) => `${currency} ${n.toLocaleString('en-KE', { maximumFractionDigits: 2 })}`;
 
   const load = async () => {
     setLoading(true);
@@ -135,9 +135,9 @@ export default function SuppliersPage() {
       {canPay && summary && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5" data-testid="payables-summary">
           {[
-            { label: 'You owe suppliers', value: money(summary.owed), cls: 'text-white' },
-            { label: 'Overdue', value: money(summary.overdue), cls: summary.overdue > 0 ? 'text-red-400' : 'text-gray-400' },
-            { label: 'Due in the next 7 days', value: money(summary.dueSoon), cls: summary.dueSoon > 0 ? 'text-amber-400' : 'text-gray-400' },
+            { label: 'You owe suppliers', value: money(summary.owed, currency), cls: 'text-white' },
+            { label: 'Overdue', value: money(summary.overdue, currency), cls: summary.overdue > 0 ? 'text-red-400' : 'text-gray-400' },
+            { label: 'Due in the next 7 days', value: money(summary.dueSoon, currency), cls: summary.dueSoon > 0 ? 'text-amber-400' : 'text-gray-400' },
           ].map(c => (
             <div key={c.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <p className="text-gray-500 text-xs">{c.label}</p>
@@ -205,8 +205,8 @@ export default function SuppliersPage() {
                       const o = owedOf(s.id);
                       return (
                         <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                          <span className={o && o.balance > 0 ? 'text-white' : 'text-gray-500'}>{o ? money(o.balance) : '—'}</span>
-                          {o && o.overdue > 0 && <p className="text-red-400 text-xs mt-0.5">{money(o.overdue)} overdue</p>}
+                          <span className={o && o.balance > 0 ? 'text-white' : 'text-gray-500'}>{o ? money(o.balance, currency) : '—'}</span>
+                          {o && o.overdue > 0 && <p className="text-red-400 text-xs mt-0.5">{money(o.overdue, currency)} overdue</p>}
                         </td>
                       );
                     })()}

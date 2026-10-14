@@ -141,7 +141,9 @@ ok('every Overview asks for the day chosen and reloads when it changes', () => {
   assert.ok(mp.includes('max={today}'));
 });
 ok('fuel: the live pump cards only for today; another day says so', () => {
-  assert.ok(mp.includes("{when === 'today' && <Card title=\"Pump Monitor — today\">"));
+  // A468: the web's Pump Monitor card (title, "today", the totals), still today only.
+  assert.ok(mp.includes("{when === 'today' && (\n        <div className=\"bg-gray-900 border border-gray-800 rounded-xl overflow-hidden\" data-testid=\"overview-pump-monitor\">"));
+  assert.ok(mp.includes('<span className="text-white text-sm font-medium">Pump Monitor</span>'));
   assert.ok(mp.includes('data-testid="overview-pumps-today-only"'));
 });
 

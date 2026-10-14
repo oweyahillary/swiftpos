@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import { money } from '../../lib/format';
 
 interface Product {
   id: string;
@@ -36,7 +37,6 @@ export default function ManagerMenuTab({ currency }: { currency: string }) {
   }, [posApi]);
   useEffect(() => { void load(); }, [load]);
 
-  const money = (v: number) => `${currency} ${Number(v ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const term = q.trim().toLowerCase();
   const filtered = term
@@ -84,7 +84,7 @@ export default function ManagerMenuTab({ currency }: { currency: string }) {
                         <span className="text-gray-200 text-sm truncate">{p.name}</span>
                         {p.status !== 'active' && <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-600 text-gray-400 flex-shrink-0">inactive</span>}
                       </div>
-                      <span className="text-gray-300 text-sm tabular-nums flex-shrink-0">{p.is_fuel ? `${money(p.base_price)}/L` : money(p.base_price)}</span>
+                      <span className="text-gray-300 text-sm tabular-nums flex-shrink-0">{p.is_fuel ? `${money(p.base_price, currency)}/L` : money(p.base_price, currency)}</span>
                     </div>
                   ))}
                 </div>

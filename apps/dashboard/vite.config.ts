@@ -26,6 +26,9 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('@supabase')) return 'supabase';
+            // A469: the spreadsheet library (~400 KB) is its own chunk, fetched only by the menu import and a report's
+            // Download Excel — in 'vendor' every page downloaded it.
+            if (id.includes('/xlsx/')) return 'xlsx';
             if (id.includes('react-router')) return 'router';
             if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler')) {
               return 'react-vendor';

@@ -33,6 +33,29 @@ module.exports = {
           600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d',
         },
       },
+      // A469 (owner: "look and feel, response animations"): short entrance / feedback motion, 120–200 ms. Keyframes use
+      // the INDIVIDUAL `scale` / `translate` properties, never `transform`, so they compose with an element's own
+      // transform (the Toast's -translate-x-1/2, the cart bar's inline scale) instead of replacing it. Under
+      // prefers-reduced-motion: reduce, src/index.css turns every movement into a plain fade and drops the bump.
+      keyframes: {
+        'fade-in':        { from: { opacity: '0' }, to: { opacity: '1' } },
+        'pop-in':         { from: { opacity: '0', scale: '0.96' }, to: { opacity: '1', scale: '1' } },
+        'slide-up':       { from: { opacity: '0', translate: '0 24px' }, to: { opacity: '1', translate: '0 0' } },
+        'slide-down':     { from: { opacity: '0', translate: '0 -8px' }, to: { opacity: '1', translate: '0 0' } },
+        'slide-in-right': { from: { opacity: '0', translate: '16px 0' }, to: { opacity: '1', translate: '0 0' } },
+        bump:             { '0%, 100%': { scale: '1' }, '40%': { scale: '1.28' } },
+        // inset shadow, painted over the line's own background (the minimart row has one) and under its text
+        'line-in':        { from: { 'box-shadow': 'inset 0 0 0 100vmax rgb(var(--act-fill, 20 184 166) / 0.18)' }, to: { 'box-shadow': 'inset 0 0 0 100vmax rgb(var(--act-fill, 20 184 166) / 0)' } },
+      },
+      animation: {
+        'fade-in':        'fade-in 150ms ease-out',
+        'pop-in':         'pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        'slide-up':       'slide-up 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        'slide-down':     'slide-down 180ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        'slide-in-right': 'slide-in-right 180ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        bump:             'bump 200ms ease-out',
+        'line-in':        'line-in 700ms ease-out',   // a colour fade, not movement: the new cart line's tint clears
+      },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],

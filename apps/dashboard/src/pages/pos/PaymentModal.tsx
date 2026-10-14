@@ -554,7 +554,7 @@ export default function PaymentModal({
   if (completedOrder) {
     return (
       <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm overflow-hidden animate-pop-in">
           <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex items-center justify-between">
             <div>
               <p className="text-green-400 font-semibold">Payment successful</p>
@@ -662,7 +662,7 @@ export default function PaymentModal({
   if (mpesaPending) {
     return (
       <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm p-6 space-y-4 animate-pop-in">
           <div className="flex items-center justify-between">
             <h2 className="text-white font-semibold text-lg">M-Pesa payment</h2>
             <span className="text-gray-500 text-sm">{mpesaPending.orderNumber}</span>
@@ -681,8 +681,8 @@ export default function PaymentModal({
 
   // ── Payment entry screen ──────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4 py-6">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-full overflow-hidden">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4 py-6 animate-fade-in">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-full overflow-hidden animate-pop-in">
         {/* Fixed header */}
         <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
           <h2 className="text-white font-semibold text-lg">Payment</h2>
@@ -927,7 +927,7 @@ export default function PaymentModal({
                       <p className="text-gray-500 text-xs">Use the Customer / Loyalty panel to select who is buying on credit.</p>
                     </div>
                   ) : creditLoading ? (
-                    <p className="text-gray-400 text-sm text-center">Loading credit account…</p>
+                    <p className="text-gray-400 text-sm text-center"><span className="spin-dot" aria-hidden />Loading credit account…</p>
                   ) : !creditInfo ? (
                     <p className="text-red-400 text-sm text-center">Could not load this customer's credit account.</p>
                   ) : (
@@ -979,6 +979,7 @@ export default function PaymentModal({
                 disabled={placing}
                 className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
               >
+                {placing && <span className="spin-dot" aria-hidden />}
                 {placing ? 'Creating order…' : '📱 Initiate M-Pesa payment'}
               </button>
             ) : (
@@ -988,6 +989,7 @@ export default function PaymentModal({
                 disabled={placing || !cashValid || !creditValid}
                 className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
               >
+                {placing && <span className="spin-dot" aria-hidden />}
                 {placing
                   ? 'Processing…'
                   : method === 'credit'

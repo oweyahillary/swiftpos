@@ -121,41 +121,71 @@ function timeAgo(iso: string) {
 // A457 (owner, 2026-10-12: "can you make the desktop overview beautiful i know we can do better"): the headline cards
 // carry a colour each, the first (revenue) a full gradient; the figures are unchanged.
 // A465 (owner, 2026-10-13: "remove the icons on the cards on the desktop overview but leave the colors"): no icons.
-type KpiTone = 'action' | 'sky' | 'violet' | 'amber' | 'rose';
-const KPI_TONE: Record<KpiTone, { ring: string }> = {
-  action: { ring: 'from-action-500/20 to-transparent' },
-  sky:    { ring: 'from-sky-500/20 to-transparent' },
-  violet: { ring: 'from-violet-500/20 to-transparent' },
-  amber:  { ring: 'from-amber-500/20 to-transparent' },
-  rose:   { ring: 'from-rose-500/20 to-transparent' },
+// A468 (owner, 2026-10-13: "match the desktop look and feel of the overview of the desktop app to that of the website"):
+// the cards are the web Overview's (apps/dashboard/src/pages/OverviewPage.tsx KpiCard) — revenue the solid accent (the
+// till's theme colour, as the web's swift-strong), the others the web's one plain card, with the web's "vs yesterday".
+/** Green means good — a rise, money taken (A326: status and money keep green; the till's actions take the theme). */
+const GOOD_TEXT = 'text-green-400';
+type Delta = { pct: number; up: boolean } | null;
+/** The web's deltaLabel: the change on the day before, none when there is nothing to compare with. */
+function deltaOf(curr: number, prev: number | null | undefined): Delta {
+  if (!prev) return null;
+  const pct = Math.round(((curr - prev) / prev) * 100);
+  return { pct, up: pct >= 0 };
+}
+// A468 (owner, 2026-10-13: "remove the icons … but leave the colors"): the web's plain card keeps a soft tint per card.
+type KpiTone = 'sky' | 'violet' | 'amber' | 'rose';
+const KPI_TINT: Record<KpiTone, string> = {
+  sky: 'from-sky-500/15', violet: 'from-violet-500/15', amber: 'from-amber-500/15', rose: 'from-rose-500/15',
 };
-function KpiCard({ label, value, sub, accent, tone = 'sky' }: {
-  label: string; value: string; sub?: string; accent?: boolean; tone?: KpiTone;
+function KpiCard({ label, value, sub, accent, tone, delta = null, vs = 'yesterday' }: {
+  label: string; value: string; sub?: string; accent?: boolean; tone?: KpiTone; delta?: Delta; vs?: string;
 }) {
-  if (accent) {
-    return (
-      <div className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-action-500 to-action-700 shadow-lg shadow-action-900/30">
-        <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/10" />
-        <div className="relative">
-          <p className="text-xs font-semibold uppercase tracking-wider text-white/80">{label}</p>
-        </div>
-        <p className="relative text-2xl font-bold tabular-nums text-white mt-2">{value}</p>
-        {sub && <p className="relative text-xs mt-0.5 text-white/75">{sub}</p>}
-      </div>
-    );
-  }
-  const t = KPI_TONE[tone];
   return (
-    <div className="relative overflow-hidden rounded-2xl p-4 bg-gray-800/80 border border-gray-700/70">
-      <div className={`absolute inset-x-0 top-0 h-16 bg-gradient-to-b ${t.ring}`} />
-      <div className="relative">
-        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</p>
-      </div>
-      <p className="relative text-2xl font-bold tabular-nums text-white mt-2">{value}</p>
-      {sub && <p className="relative text-xs mt-0.5 text-gray-300">{sub}</p>}
+    <div data-testid="overview-kpi" className={`relative overflow-hidden rounded-xl p-4 flex flex-col gap-1.5 border ${accent
+      ? 'bg-action-600 border-action-600'
+      : 'bg-gray-900 border-gray-800'}`}>
+      {!accent && tone && <div aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b ${KPI_TINT[tone]} to-transparent`} />}
+      <span className={`relative text-xs uppercase tracking-wider font-medium ${accent ? 'text-white/80' : 'text-gray-500'}`}>{label}</span>
+      <span className="relative text-xl font-semibold tabular-nums text-white">{value}</span>
+      {delta != null && (
+        <span data-testid="overview-delta" className={`relative text-xs font-medium ${delta.up ? GOOD_TEXT : 'text-red-400'}`}>
+          {delta.up ? '▲' : '▼'} {Math.abs(delta.pct)}% vs {vs}
+        </span>
+      )}
+      {sub && <span className={`relative text-xs ${accent ? 'text-white/75' : 'text-gray-500'}`}>{sub}</span>}
     </div>
   );
 }
+
+/**
+ * The web Overview's section card: a title, the day (or a count) beside it in gray, an optional link on the right
+ * ("item mix →", "manage →") that opens that page of the manager screen — offered only where this role has it.
+ */
+function Section({ title, sub, link, right, className = '', testid, children }: {
+  title: string; sub?: string; link?: { label: string; onClick: () => void } | null; right?: React.ReactNode;
+  className?: string; testid?: string; children: React.ReactNode;
+}) {
+  return (
+    <div data-testid={testid} className={`bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3 ${className}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-white text-sm font-medium">{title}</span>
+          {sub && <span className="text-xs text-gray-500 truncate">{sub}</span>}
+        </div>
+        {right}
+        {link && (
+          <button type="button" onClick={link.onClick}
+            className="text-xs text-gray-500 hover:text-white transition-colors whitespace-nowrap">{link.label}</button>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Opens a page of the manager screen from an Overview link, or undefined when this role does not have that page. */
+type LinkTo = (tab: TabKey) => (() => void) | undefined;
 
 /**
  * A349: the money behind the headline revenue — VAT and, where levied, CTL (both reduced by any refund, as the cloud
@@ -169,7 +199,7 @@ function MoneyStrip({ s, currency, hideVat = false }: { s: any; currency: string
   const extras = s.ctlLevied || (s.totalRefunded ?? 0) > 0 || (s.totalDiscount ?? 0) > 0 || (s.totalTips ?? 0) > 0;
   if (hideVat && !extras) return null;
   const item = (label: string, value: number) => (
-    <span className="whitespace-nowrap rounded-full bg-gray-900/70 border border-gray-700/70 px-3 py-1"><span className="text-gray-400">{label}</span>{' '}
+    <span className="whitespace-nowrap rounded-full bg-gray-900 border border-gray-800 px-3 py-1"><span className="text-gray-500">{label}</span>{' '}
       <span className="text-white font-medium tabular-nums">{fmt(value, currency)}</span></span>
   );
   return (
@@ -210,7 +240,7 @@ function ScopeLine({ day }: { day: BranchDay | null }) {
   const cloud = day.source === 'cloud';
   return (
     <div data-testid="overview-scope" className={`text-xs rounded-lg px-3 py-2 border ${cloud
-      ? 'text-gray-300 bg-gray-800/60 border-gray-700'
+      ? 'text-gray-400 bg-gray-900 border-gray-800'
       : 'text-amber-300 bg-amber-400/10 border-amber-400/20'}`}>
       <span className="font-semibold">{day.scopeLabel}</span>
       {cloud ? ' · from the cloud' : day.fallbackReason ? ` · ${day.fallbackReason}` : ''}
@@ -241,28 +271,37 @@ function BranchShiftsAndTills({ day, currency, when = 'today' }: { day: BranchDa
   const money = (v: number | null) => (v == null ? '—' : fmt(v, currency));
   return (
     <>
-      {day.byTill.length > 1 && (
-        <Card title={`By till — ${when}`}>
-          <div className="divide-y divide-gray-700" data-testid="overview-by-till">
-            {day.byTill.map(t => (
-              <div key={t.device_id ?? 'web'} className="flex items-center justify-between py-2 text-sm">
-                <span className="text-white">{t.label}{t.this_till && <span className="text-gray-400 text-xs ml-2">this till</span>}</span>
-                <span className="tabular-nums"><span className="text-gray-400 text-xs mr-3">{t.orders} orders</span>
-                  <span className="text-white font-medium">{fmt(t.revenue, currency)}</span></span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+      {/* A468: the web's Branch comparison, for the tills of this branch — each till's takings against the best one. */}
+      {day.byTill.length > 1 && (() => {
+        const best = Math.max(...day.byTill.map(t => t.revenue), 1);
+        return (
+          <Section title="By till" sub={when}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3" data-testid="overview-by-till">
+              {day.byTill.map(t => (
+                <div key={t.device_id ?? 'web'} className="bg-gray-800 rounded-lg p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-white text-sm font-medium truncate">{t.label}{t.this_till && <span className="text-gray-500 text-xs font-normal ml-2">this till</span>}</p>
+                    <span className="text-white text-sm font-semibold tabular-nums whitespace-nowrap">{fmt(t.revenue, currency)}</span>
+                  </div>
+                  <div className="h-1 bg-gray-700 rounded-full overflow-hidden mb-1">
+                    <div className="h-full bg-action-500 rounded-full" style={{ width: `${Math.round((t.revenue / best) * 100)}%` }} />
+                  </div>
+                  <p className="text-gray-500 text-xs">{t.orders} orders · avg {fmt(t.orders > 0 ? t.revenue / t.orders : 0, currency)}</p>
+                </div>
+              ))}
+            </div>
+          </Section>
+        );
+      })()}
 
-      <Card title={when === 'today' ? 'Shift report — today' : `Shift report — ${when}`}>
+      <Section title={when === 'today' ? 'Shift report — today' : `Shift report — ${when}`}>
         {day.shifts.length === 0
-          ? <p className="text-gray-300 text-sm">{when === 'today' ? 'No shifts today.' : `No shifts on ${when}.`}</p>
+          ? <p className="text-gray-500 text-sm">{when === 'today' ? 'No shifts today.' : `No shifts on ${when}.`}</p>
           : (
             <div className="overflow-x-auto" data-testid="overview-shift-report">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
+                  <tr className="text-left text-xs text-gray-500 uppercase tracking-wide border-b border-gray-800">
                     <th className="py-2 pr-3 font-medium">Till</th>
                     <th className="py-2 pr-3 font-medium">Cashier</th>
                     <th className="py-2 pr-3 font-medium">Time</th>
@@ -273,13 +312,13 @@ function BranchShiftsAndTills({ day, currency, when = 'today' }: { day: BranchDa
                     <th className="py-2 font-medium">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-700">
+                <tbody className="divide-y divide-gray-800">
                   {day.shifts.map(sh => {
                     const st = SHIFT_STATE[sh.state];
                     const diff = sh.variance;
                     return (
                       <Fragment key={sh.id}>
-                        <tr onClick={() => setOpen(open === sh.id ? null : sh.id)} className="cursor-pointer hover:bg-gray-700/30">
+                        <tr onClick={() => setOpen(open === sh.id ? null : sh.id)} className="cursor-pointer hover:bg-gray-800/40">
                           <td className="py-2 pr-3 text-white whitespace-nowrap">{sh.till}{sh.this_till && <span className="text-gray-400 text-xs ml-1">(this)</span>}</td>
                           <td className="py-2 pr-3 text-gray-200">{sh.cashier}</td>
                           <td className="py-2 pr-3 text-gray-300 whitespace-nowrap tabular-nums">{hhmm(sh.opened_at)}–{sh.state === 'open' ? 'now' : hhmm(sh.closed_at)}</td>
@@ -302,7 +341,7 @@ function BranchShiftsAndTills({ day, currency, when = 'today' }: { day: BranchDa
                         {open === sh.id && (
                           <tr>
                             <td colSpan={8} className="pb-3 pt-1">
-                              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs bg-gray-900/60 rounded-lg px-3 py-2">
+                              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs bg-gray-800/60 rounded-lg px-3 py-2">
                                 <span className="text-gray-400">Opening float <span className="text-white tabular-nums">{fmt(sh.opening_float, currency)}</span></span>
                                 {sh.by_method.length === 0
                                   ? <span className="text-gray-400">No payments</span>
@@ -321,7 +360,7 @@ function BranchShiftsAndTills({ day, currency, when = 'today' }: { day: BranchDa
               </table>
             </div>
           )}
-      </Card>
+      </Section>
       <StaffPerformance day={day} currency={currency} when={when} />
       {confirming && (
         <ConfirmShiftModal
@@ -352,21 +391,21 @@ function StaffPerformance({ day, currency, when }: { day: BranchDay; currency: s
   const shown = (id: string) => all || openRows.includes(id);
   const toggle = (id: string) => setOpenRows((r) => (r.includes(id) ? r.filter((x) => x !== id) : [...r, id]));
   return (
-    <Card title={`Staff performance — ${when}`}>
+    <Section title="Staff performance" sub={when}>
       {rows.length === 0 ? (
-        <p className="text-gray-300 text-sm">{when === 'today' ? 'No sales yet today.' : 'No sales that day.'}</p>
+        <p className="text-gray-500 text-sm">{when === 'today' ? 'No sales yet today.' : 'No sales that day.'}</p>
       ) : (
         <div data-testid="overview-staff">
           <div className="flex justify-end mb-2">
             <button type="button" onClick={() => { setAll((v) => !v); setOpenRows([]); }} data-testid="overview-staff-all"
-              className="text-xs rounded-lg border border-gray-700 px-2.5 py-1 text-gray-300 hover:border-gray-500">
+              className="text-xs rounded-lg border border-gray-800 px-2.5 py-1 text-gray-400 hover:text-white hover:border-gray-600">
               {all ? 'Hide payment methods' : 'Payment methods for everyone'}
             </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
+                <tr className="text-left text-xs text-gray-500 uppercase tracking-wide border-b border-gray-800">
                   <th className="py-2 pr-3 font-medium">#</th>
                   <th className="py-2 pr-3 font-medium">Staff</th>
                   <th className="py-2 pr-3 font-medium text-right">Orders</th>
@@ -376,7 +415,7 @@ function StaffPerformance({ day, currency, when }: { day: BranchDay; currency: s
                   <th className="py-2 font-medium" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700">
+              <tbody className="divide-y divide-gray-800">
                 {rows.map((r, i) => {
                   const share = total > 0 ? (r.revenue / total) * 100 : 0;
                   return (
@@ -389,7 +428,7 @@ function StaffPerformance({ day, currency, when }: { day: BranchDay; currency: s
                         <td className="py-2 pr-3 text-right text-gray-300 tabular-nums">{fmt(r.avg, currency)}</td>
                         <td className="py-2 pr-3">
                           <div className="flex items-center justify-end gap-2">
-                            <div className="w-16 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                            <div className="w-16 h-1 bg-gray-800 rounded-full overflow-hidden">
                               <div className="h-full bg-action-500 rounded-full" style={{ width: `${share}%` }} />
                             </div>
                             <span className="text-xs text-gray-400 tabular-nums w-10 text-right">{share.toFixed(1)}%</span>
@@ -408,7 +447,7 @@ function StaffPerformance({ day, currency, when }: { day: BranchDay; currency: s
                         <tr>
                           <td />
                           <td colSpan={6} className="pb-3 pt-1">
-                            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs bg-gray-900/60 rounded-lg px-3 py-2">
+                            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs bg-gray-800/60 rounded-lg px-3 py-2">
                               {r.by_method.map((m) => (
                                 <span key={m.method} className="text-gray-300 capitalize">
                                   <MethodDot method={m.method} />{m.method === 'unpaid' ? 'not paid' : m.method.replace(/_/g, ' ')}{' '}
@@ -427,45 +466,167 @@ function StaffPerformance({ day, currency, when }: { day: BranchDay; currency: s
           </div>
         </div>
       )}
-    </Card>
+    </Section>
   );
 }
 
 // ── A441: the Overview's day ──────────────────────────────────────────────────
 // Owner, 2026-10-10: "under overview can we add select date to view that date?". Today unless the manager picks a day
 // (a calendar, or a day back / forward); every card follows it and says which day it is.
+// A468: laid out as the web Overview's header — the day on the left, "Updated" and ↻ Refresh on the right. Refresh asks
+// the same reads again (the cards below remount); nothing new is fetched.
 function OverviewForDay({ render }: { render: (date: string | null) => React.ReactNode }) {
   const [date, setDate] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  const [updated, setUpdated] = useState(() => new Date());
+  useEffect(() => { setUpdated(new Date()); }, [date, reload]);
   const today = todayYmd();
   const when = dayWord(date);
+  const step = 'rounded-lg border border-gray-800 bg-gray-900 px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:border-gray-600';
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2" data-testid="overview-date">
-        <button type="button" onClick={() => setDate((d) => stepDay(d, -1))} aria-label="The day before"
-          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:border-gray-500">‹</button>
-        <input type="date" value={date ?? today} max={today} data-testid="overview-date-input"
-          onChange={(e) => setDate(e.target.value && e.target.value < today ? e.target.value : null)}
-          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white [color-scheme:dark]" />
-        <button type="button" onClick={() => setDate((d) => stepDay(d, 1))} disabled={date === null} aria-label="The day after"
-          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:border-gray-500 disabled:opacity-30">›</button>
-        {date !== null && (
-          <button type="button" onClick={() => setDate(null)} data-testid="overview-date-today"
-            className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:border-gray-500">Back to today</button>
-        )}
-        <span className="text-sm text-gray-400 ml-1">Showing <span className="text-white font-medium">{when}</span></span>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div className="flex flex-wrap items-center gap-2" data-testid="overview-date">
+          <button type="button" onClick={() => setDate((d) => stepDay(d, -1))} aria-label="The day before" className={step}>‹</button>
+          <input type="date" value={date ?? today} max={today} data-testid="overview-date-input"
+            onChange={(e) => setDate(e.target.value && e.target.value < today ? e.target.value : null)}
+            className="rounded-lg border border-gray-800 bg-gray-900 px-3 py-1.5 text-sm text-white [color-scheme:dark]" />
+          <button type="button" onClick={() => setDate((d) => stepDay(d, 1))} disabled={date === null} aria-label="The day after"
+            className={`${step} disabled:opacity-30`}>›</button>
+          {date !== null && (
+            <button type="button" onClick={() => setDate(null)} data-testid="overview-date-today"
+              className="rounded-lg border border-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:border-gray-600">Back to today</button>
+          )}
+          <span className="text-sm text-gray-500 ml-1">Showing <span className="text-white font-medium">{when}</span></span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500 tabular-nums">Updated {hhmm(updated.toISOString())}</span>
+          <button type="button" onClick={() => setReload((n) => n + 1)} data-testid="overview-refresh"
+            className="text-xs text-gray-500 hover:text-white border border-gray-800 rounded-lg px-3 py-1.5 transition-colors">↻ Refresh</button>
+        </div>
       </div>
-      {render(date)}
+      <Fragment key={reload}>{render(date)}</Fragment>
     </div>
   );
 }
 
+// ── A468: the web Overview's parts the till has the data for ─────────────────
+type OverviewProps = {
+  currency: string; date?: string | null;
+  /** Opens a page from a section's link ("item mix →", "manage →") — only pages this role has. */
+  linkTo?: LinkTo;
+  /** The Stock page's own gate (A346: the web POS, and something stock-tracked) — the Low stock card follows it. */
+  showLowStock?: boolean;
+};
+function linkOf(linkTo: LinkTo | undefined, tab: TabKey, label: string) {
+  const go = linkTo?.(tab);
+  return go ? { label, onClick: go } : null;
+}
+
+/**
+ * The day before the one shown, read the same way (the branch from the cloud, else this till — manager:branchDay), for
+ * the web's "vs yesterday". Compared only when both days come from the same place, so a till's partial day is never set
+ * against the branch's; nothing to compare (offline twice is fine — both local) shows no delta.
+ */
+function useDayBefore(date: string | null): BranchDay | null {
+  const [prev, setPrev] = useState<BranchDay | null>(null);
+  useEffect(() => {
+    let live = true;
+    setPrev(null);
+    posApi.manager.branchDay(overviewRange(stepDay(date, -1))).then((d) => { if (live) setPrev(d); }).catch(() => { /* no comparison */ });
+    return () => { live = false; };
+  }, [date]);
+  return prev;
+}
+function comparable(day: BranchDay | null | undefined, prev: BranchDay | null): any {
+  return day && prev && day.source === prev.source ? prev.summary : null;
+}
+const vsWord = (when: string) => (when === 'today' ? 'yesterday' : 'the day before');
+
+/** The web's live row: the day's sales by hour (two columns) beside the shifts open now. */
+function LiveRow({ day, currency, when }: { day: BranchDay | null; currency: string; when: string }) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <HourlyChart hourly={day?.hourly ?? []} currency={currency} when={when} />
+      <OpenShifts day={day} currency={currency} />
+    </div>
+  );
+}
+
+/** The web's "Open shifts": who is on, since when, and their float — from the day's shift report (every till). */
+function OpenShifts({ day, currency }: { day: BranchDay | null; currency: string }) {
+  const open = (day?.shifts ?? []).filter((sh) => sh.state === 'open');
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-2" data-testid="overview-open-shifts">
+      <div className="flex items-center justify-between">
+        <span className="text-white text-sm font-medium">Open shifts</span>
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${open.length > 0
+          ? SHIFT_STATE.open.cls
+          : 'bg-gray-800 text-gray-500 border-gray-700'}`}>{open.length}</span>
+      </div>
+      {open.length === 0
+        ? <p className="text-gray-500 text-xs">No open shifts right now.</p>
+        : open.map((sh) => (
+          <div key={sh.id} className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-white text-xs font-medium truncate">{sh.cashier}<span className="text-gray-500 font-normal"> · {sh.till}</span></p>
+              <p className="text-gray-500 text-[10px]">opened {timeAgo(sh.opened_at)} · float {fmt(sh.opening_float, currency)}</p>
+            </div>
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
+          </div>
+        ))}
+    </div>
+  );
+}
+
+/** The web's "Low stock": the five lowest at or under their threshold, read from this till (as the Stock page reads it). */
+function LowStock({ link }: { link: { label: string; onClick: () => void } | null }) {
+  const [rows, setRows] = useState<any[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    posApi.manager.stockLevels().then((s) => { if (live) setRows(Array.isArray(s) ? s : []); }).catch(() => { if (live) setRows([]); });
+    return () => { live = false; };
+  }, []);
+  const low = (rows ?? []).filter((r) => r.quantity <= r.low_stock_threshold).sort((a, b) => a.quantity - b.quantity).slice(0, 5);
+  return (
+    <Section title="Low stock" link={link} testid="overview-low-stock">
+      {rows === null
+        ? <p className="text-gray-500 text-sm">Loading…</p>
+        : low.length === 0
+          ? <p className="text-gray-500 text-sm flex items-center gap-2"><span className={GOOD_TEXT}>✓</span> All stock healthy.</p>
+          : (
+            <div className="flex flex-col divide-y divide-gray-800">
+              {low.map((r) => {
+                const critical = r.quantity === 0 || r.quantity <= Math.floor(r.low_stock_threshold / 2);
+                return (
+                  <div key={r.product_id} className="flex items-center justify-between py-2 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${critical ? 'bg-red-500' : 'bg-amber-400'}`} />
+                      <div className="min-w-0">
+                        <p className="text-white text-sm truncate">{r.product_name}</p>
+                        <p className="text-gray-500 text-xs">threshold: {r.low_stock_threshold}</p>
+                      </div>
+                    </div>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 border ${critical
+                      ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                      : 'bg-amber-400/10 text-amber-400 border-amber-400/20'}`}>{r.quantity} left</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+    </Section>
+  );
+}
+
 // ── Overview Tab — Restaurant ─────────────────────────────────────────────────
-function RestaurantOverview({ currency, date = null }: { currency: string; date?: string | null }) {
+function RestaurantOverview({ currency, date = null, linkTo, showLowStock = false }: OverviewProps) {
   const when = dayWord(date);   // A441: the day shown — 'today' unless the manager picked another
   const [sales,    setSales]    = useState<any>(null);
   const [topItems, setTopItems] = useState<any[]>([]);
   const [tables,   setTables]   = useState<any[]>([]);
   const [loading,  setLoading]  = useState(true);
+  const prev = useDayBefore(date);   // A468: "vs yesterday"
 
   useEffect(() => {
     let live = true;
@@ -496,52 +657,52 @@ function RestaurantOverview({ currency, date = null }: { currency: string; date?
   if (loading) return <Spinner />;
 
   const s = sales?.summary;
-  const occupiedCount = 0; // Held orders cross-reference would need heldOrders lib — show total
+  const p = comparable(sales, prev);
+  const vs = vsWord(when);
 
   return (
     <div className="space-y-4">
       <ScopeLine day={sales} />
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}   value={fmt(s?.totalRevenue ?? 0, currency)} accent />
-        <KpiCard label={`Orders ${when}`}    value={String(s?.totalOrders ?? 0)} tone="sky" />
+      {/* KPIs — the web's row: revenue (accent) and orders against the day before, average, and VAT (A357: once) */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <KpiCard label={`Revenue ${when}`}   value={fmt(s?.totalRevenue ?? 0, currency)} delta={p && deltaOf(s?.totalRevenue ?? 0, p.totalRevenue)} vs={vs} accent />
+        <KpiCard label={`Orders ${when}`}    value={String(s?.totalOrders ?? 0)} delta={p && deltaOf(s?.totalOrders ?? 0, p.totalOrders)} vs={vs} tone="sky" />
         <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} tone="violet" />
         <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} tone="amber" />
       </div>
       <MoneyStrip s={s} currency={currency} hideVat />
 
+      <LiveRow day={sales} currency={currency} when={when} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Payment split */}
-        <Card title={`Payment methods — ${when}`}>
+        <Section title="Payment methods" sub={when}>
           <PaymentMix methods={sales?.paymentMethods} currency={currency}
             empty={when === 'today' ? 'No payments yet today.' : 'No payments that day.'} />
-        </Card>
+        </Section>
 
         {/* Top items */}
-        <Card title={`Top sellers — ${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}>
+        <Section title="Top sellers" sub={`${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}
+          link={linkOf(linkTo, 'items', 'item mix →')}>
           <TopSellers items={topItems} currency={currency} empty={when === 'today' ? 'No sales yet today.' : 'No sales that day.'} />
-        </Card>
+        </Section>
       </div>
 
-      {/* Tables */}
-      {tables.length > 0 && (
-        <Card title={`Tables — ${tables.length} configured`}>
-          <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
-            {tables.map(t => (
-              <div key={t.id} className="bg-gray-700/50 border border-gray-600 rounded-lg p-2 text-center">
-                <p className="text-white text-sm font-medium truncate">{t.name}</p>
-                <p className="text-gray-300 text-[10px] mt-0.5">{t.capacity} seats</p>
+      {(showLowStock || tables.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {showLowStock && <LowStock link={linkOf(linkTo, 'stock', 'manage →')} />}
+          {tables.length > 0 && (
+            <Section title="Tables" sub={`${tables.length} configured`} className={showLowStock ? '' : 'lg:col-span-2'}>
+              <div className={`grid gap-2 ${showLowStock ? 'grid-cols-3 xl:grid-cols-4' : 'grid-cols-4 sm:grid-cols-6 lg:grid-cols-8'}`}>
+                {tables.map(t => (
+                  <div key={t.id} className="bg-gray-800 rounded-lg p-2 text-center">
+                    <p className="text-white text-sm font-medium truncate">{t.name}</p>
+                    <p className="text-gray-500 text-[10px] mt-0.5">{t.capacity} seats</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* Hourly chart */}
-      {(sales?.hourly?.length ?? 0) > 0 && (
-        <Card title={`Hourly sales — ${when}`}>
-          <HourlyChart hourly={sales.hourly} currency={currency} />
-        </Card>
+            </Section>
+          )}
+        </div>
       )}
       <BranchShiftsAndTills day={sales} currency={currency} when={when} />
     </div>
@@ -549,12 +710,13 @@ function RestaurantOverview({ currency, date = null }: { currency: string; date?
 }
 
 // ── Overview Tab — Petrol ─────────────────────────────────────────────────────
-function PetrolOverview({ currency, date = null }: { currency: string; date?: string | null }) {
+function PetrolOverview({ currency, date = null, linkTo, showLowStock = false }: OverviewProps) {
   const when = dayWord(date);   // A441: the day shown — 'today' unless the manager picked another
   const [fuel,    setFuel]    = useState<any>(null);
   const [pumps,   setPumps]   = useState<any[]>([]);
   const [sales,   setSales]   = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const prev = useDayBefore(date);   // A468: "vs the day before"
 
   useEffect(() => {
     let live = true;
@@ -577,99 +739,123 @@ function PetrolOverview({ currency, date = null }: { currency: string; date?: st
   if (loading) return <Spinner />;
 
   const f = fuel?.summary;
+  // A468: today's revenue is the pumps' (fuel sales), not the branch day's — so it is compared only on another day,
+  // where the card shows the branch day's revenue and both days are read the same way.
+  const p = when === 'today' ? null : comparable(sales, prev);
+  const pumpLitres = pumps.reduce((a, x) => a + Number(x.sold_litres), 0);
+  const pumpRevenue = pumps.reduce((a, x) => a + Number(x.revenue_today), 0);
 
   return (
     <div className="space-y-4">
       <ScopeLine day={sales} />
+      {when !== 'today' && (
+        <p className="text-xs text-gray-500" data-testid="overview-pumps-today-only">Pumps, litres and fuel grades show for today only — the sales, payments, shifts and staff below are {when}'s.</p>
+      )}
+      {/* Pump monitor — first, as on the web */}
+      {when === 'today' && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden" data-testid="overview-pump-monitor">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-gray-800">
+            <div className="flex items-center gap-2">
+              <span className="text-white text-sm font-medium">Pump Monitor</span>
+              <span className="text-xs text-gray-500">today</span>
+            </div>
+            {pumps.length > 0 && (
+              <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 tabular-nums">
+                <span>{fmt(pumpRevenue, currency)} today</span>
+                <span>{fmtL(pumpLitres)} sold</span>
+              </div>
+            )}
+          </div>
+          {pumps.length === 0
+            ? <p className="text-gray-500 text-sm px-5 py-4">No pumps configured. Add pumps in server settings.</p>
+            : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800">
+                      {['Pump', 'Grade', 'Sold today', 'Revenue', 'Status'].map(h => (
+                        <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/50">
+                    {pumps.map(pu => (
+                      <tr key={pu.pump_id} className="hover:bg-gray-800/30 transition-colors">
+                        <td className="px-4 py-3 font-medium text-white whitespace-nowrap">{pu.pump_name}</td>
+                        <td className="px-4 py-3 text-gray-300">{pu.product_name ?? '—'}</td>
+                        <td className="px-4 py-3 text-amber-400 font-medium tabular-nums">{fmtL(pu.sold_litres)}</td>
+                        <td className={`px-4 py-3 ${GOOD_TEXT} font-semibold tabular-nums`}>{fmt(pu.revenue_today, currency)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            pu.pump_status === 'dispensing' ? 'bg-blue-500/15 text-blue-400' :
+                            pu.pump_status === 'idle'       ? 'bg-green-500/15 text-green-400' :
+                            pu.pump_status === 'error'      ? 'bg-red-500/15 text-red-400' :
+                                                              'bg-gray-700 text-gray-400'
+                          }`}>{pu.pump_status ?? 'idle'}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-gray-700">
+                      <td colSpan={2} className="px-4 py-2.5 text-xs text-gray-500 font-medium">Totals</td>
+                      <td className="px-4 py-2.5 text-xs font-semibold text-amber-400 tabular-nums">{fmtL(pumpLitres)}</td>
+                      <td className={`px-4 py-2.5 text-xs font-semibold ${GOOD_TEXT} tabular-nums`}>{fmt(pumpRevenue, currency)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+        </div>
+      )}
+
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}     value={fmt((when === 'today' ? f?.totalRevenue : sales?.summary?.totalRevenue) ?? 0, currency)} accent />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <KpiCard label={`Revenue ${when}`}     value={fmt((when === 'today' ? f?.totalRevenue : sales?.summary?.totalRevenue) ?? 0, currency)} delta={p && deltaOf(sales?.summary?.totalRevenue ?? 0, p.totalRevenue)} vs={vsWord(when)} accent />
         <KpiCard label="Litres sold"        value={fmtL(f?.totalLitres ?? 0)} tone="amber" />
         <KpiCard label="Transactions"       value={String(f?.totalTransactions ?? 0)} tone="sky" />
-        <KpiCard label="Avg per transaction" tone="violet"
+        <KpiCard label="Avg per transaction"
           value={f?.totalTransactions > 0
             ? fmt((f.totalRevenue / f.totalTransactions), currency)
-            : '—'} />
+            : '—'} tone="violet" />
       </div>
-
-      {when !== 'today' && (
-        <p className="text-xs text-gray-400" data-testid="overview-pumps-today-only">Pumps, litres and fuel grades show for today only — the sales, payments, shifts and staff below are {when}'s.</p>
-      )}
-      {/* Pump monitor table */}
-      {when === 'today' && <Card title="Pump Monitor — today">
-        {pumps.length === 0
-          ? <p className="text-gray-300 text-sm">No pumps configured. Add pumps in server settings.</p>
-          : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-700">
-                    {['Pump', 'Grade', 'Sold today', 'Revenue', 'Status'].map(h => (
-                      <th key={h} className="pb-2 text-left text-xs font-medium text-gray-300 pr-4">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-700/50">
-                  {pumps.map(p => (
-                    <tr key={p.pump_id}>
-                      <td className="py-2.5 font-semibold text-white pr-4 whitespace-nowrap">{p.pump_name}</td>
-                      <td className="py-2.5 text-gray-400 pr-4">{p.product_name ?? '—'}</td>
-                      <td className="py-2.5 text-amber-400 font-medium tabular-nums pr-4">{fmtL(p.sold_litres)}</td>
-                      <td className="py-2.5 text-green-400 font-semibold tabular-nums pr-4">{fmt(p.revenue_today, currency)}</td>
-                      <td className="py-2.5">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          p.pump_status === 'dispensing' ? 'bg-blue-500/20 text-blue-400' :
-                          p.pump_status === 'idle'       ? 'bg-green-500/20 text-green-400' :
-                                                           'bg-gray-700 text-gray-400'
-                        }`}>{p.pump_status ?? 'idle'}</span>
-                      </td>
-                    </tr>
-                  ))}
-                  {/* Totals row */}
-                  <tr className="border-t border-gray-600 font-semibold text-xs">
-                    <td colSpan={2} className="pt-2 text-gray-300">Total</td>
-                    <td className="pt-2 text-amber-400 tabular-nums">
-                      {fmtL(pumps.reduce((s, p) => s + Number(p.sold_litres), 0))}
-                    </td>
-                    <td className="pt-2 text-green-400 tabular-nums">
-                      {fmt(pumps.reduce((s, p) => s + Number(p.revenue_today), 0), currency)}
-                    </td>
-                    <td />
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
-      </Card>}
-
-      {/* Grade breakdown */}
-      {when === 'today' && (fuel?.grades?.length ?? 0) > 0 && (
-        <Card title="By fuel grade — today">
-          <div className="divide-y divide-gray-700">
-            {(fuel.grades as any[]).map((g: any) => {
-              const maxRev = fuel.grades[0]?.revenue ?? 1;
-              return (
-                <div key={g.grade} className="py-3 flex items-center gap-3">
-                  <span className="text-gray-300 text-sm w-28 truncate">{g.grade}</span>
-                  <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-400 rounded-full" style={{ width: `${Math.round((g.revenue / maxRev) * 100)}%` }} />
-                  </div>
-                  <span className="text-gray-400 text-xs tabular-nums w-20 text-right">{fmtL(g.litres)}</span>
-                  <span className="text-white text-sm font-medium tabular-nums w-28 text-right">{fmt(g.revenue, currency)}</span>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
       <MoneyStrip s={sales?.summary} currency={currency} />
 
-      {/* Payment split */}
-      {sales?.paymentMethods && Object.keys(sales.paymentMethods).length > 0 && (
-        <Card title={`Payment methods — ${when}`}>
-          <PaymentMix methods={sales.paymentMethods} currency={currency} empty="No payments." />
-        </Card>
+      <LiveRow day={sales} currency={currency} when={when} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Section title="Payment methods" sub={when}>
+          <PaymentMix methods={sales?.paymentMethods} currency={currency}
+            empty={when === 'today' ? 'No payments yet today.' : 'No payments that day.'} />
+        </Section>
+
+        {/* Grade breakdown — the web's "Top grades" */}
+        {when === 'today' && (fuel?.grades?.length ?? 0) > 0 && (
+          <Section title="By fuel grade" sub="today">
+            <div className="flex flex-col divide-y divide-gray-800">
+              {(fuel.grades as any[]).map((g: any) => {
+                const maxRev = fuel.grades[0]?.revenue ?? 1;
+                return (
+                  <div key={g.grade} className="py-2.5 flex items-center gap-3">
+                    <span className="text-white text-sm w-28 truncate">{g.grade}</span>
+                    <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-amber-400 rounded-full" style={{ width: `${Math.round((g.revenue / maxRev) * 100)}%` }} />
+                    </div>
+                    <span className="text-gray-500 text-xs tabular-nums w-20 text-right">{fmtL(g.litres)}</span>
+                    <span className="text-white text-sm font-medium tabular-nums w-28 text-right">{fmt(g.revenue, currency)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+      </div>
+
+      {showLowStock && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <LowStock link={linkOf(linkTo, 'stock', 'manage →')} />
+        </div>
       )}
       <BranchShiftsAndTills day={sales} currency={currency} when={when} />
     </div>
@@ -677,11 +863,12 @@ function PetrolOverview({ currency, date = null }: { currency: string; date?: st
 }
 
 // ── Overview Tab — Retail / default ──────────────────────────────────────────
-function RetailOverview({ currency, date = null }: { currency: string; date?: string | null }) {
+function RetailOverview({ currency, date = null, linkTo, showLowStock = false }: OverviewProps) {
   const when = dayWord(date);   // A441: the day shown — 'today' unless the manager picked another
   const [sales,    setSales]    = useState<any>(null);
   const [topItems, setTopItems] = useState<any[]>([]);
   const [loading,  setLoading]  = useState(true);
+  const prev = useDayBefore(date);   // A468: "vs yesterday"
 
   useEffect(() => {
     let live = true;
@@ -703,33 +890,38 @@ function RetailOverview({ currency, date = null }: { currency: string; date?: st
 
   if (loading) return <Spinner />;
   const s = sales?.summary;
+  const p = comparable(sales, prev);
+  const vs = vsWord(when);
 
   return (
     <div className="space-y-4">
       <ScopeLine day={sales} />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={`Revenue ${when}`}  value={fmt(s?.totalRevenue ?? 0, currency)} accent />
-        <KpiCard label={`Orders ${when}`}   value={String(s?.totalOrders ?? 0)} tone="sky" />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <KpiCard label={`Revenue ${when}`}  value={fmt(s?.totalRevenue ?? 0, currency)} delta={p && deltaOf(s?.totalRevenue ?? 0, p.totalRevenue)} vs={vs} accent />
+        <KpiCard label={`Orders ${when}`}   value={String(s?.totalOrders ?? 0)} delta={p && deltaOf(s?.totalOrders ?? 0, p.totalOrders)} vs={vs} tone="sky" />
         <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} tone="violet" />
         <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} tone="amber" />
       </div>
       <MoneyStrip s={s} currency={currency} hideVat />
 
+      <LiveRow day={sales} currency={currency} when={when} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card title={`Payment methods — ${when}`}>
+        <Section title="Payment methods" sub={when}>
           <PaymentMix methods={sales?.paymentMethods} currency={currency}
             empty={when === 'today' ? 'No payments yet today.' : 'No payments that day.'} />
-        </Card>
+        </Section>
 
-        <Card title={`Top sellers — ${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}>
+        <Section title="Top sellers" sub={`${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}
+          link={linkOf(linkTo, 'items', 'item mix →')}>
           <TopSellers items={topItems} currency={currency} empty={when === 'today' ? 'No sales yet today.' : 'No sales that day.'} />
-        </Card>
+        </Section>
       </div>
 
-      {(sales?.hourly?.length ?? 0) > 0 && (
-        <Card title={`Hourly sales — ${when}`}>
-          <HourlyChart hourly={sales.hourly} currency={currency} />
-        </Card>
+      {showLowStock && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <LowStock link={linkOf(linkTo, 'stock', 'manage →')} />
+        </div>
       )}
       <BranchShiftsAndTills day={sales} currency={currency} when={when} />
     </div>
@@ -737,29 +929,30 @@ function RetailOverview({ currency, date = null }: { currency: string; date?: st
 }
 
 // ── A457: payment mix (donut + bars) and top sellers, shared by the Overviews ──
+// A468: drawn as the web Overview draws its lists — thin bars on the card, the share beside the amount.
 /** Share of what was PAID (tips included, refunds out — A349), as a ring and a bar per method. */
 function PaymentMix({ methods, currency, empty }: { methods: Record<string, number> | null | undefined; currency: string; empty: string }) {
   const rows = Object.entries(methods ?? {}).map(([m, a]) => [m, Number(a) || 0] as const).sort(([, a], [, b]) => b - a);
   const total = rows.reduce((a, [, v]) => a + v, 0);
-  if (rows.length === 0) return <p className="text-gray-300 text-sm">{empty}</p>;
+  if (rows.length === 0) return <p className="text-gray-500 text-sm">{empty}</p>;
   const R = 15.915;   // circumference 100: dash lengths are percentages
   let at = 0;
   return (
     <div className="flex items-center gap-5" data-testid="overview-payment-mix">
-      <div className="relative w-28 h-28 flex-shrink-0">
+      <div className="relative w-24 h-24 flex-shrink-0">
         <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-          <circle cx="18" cy="18" r={R} fill="none" stroke="currentColor" strokeWidth="4" className="text-gray-700/60" />
+          <circle cx="18" cy="18" r={R} fill="none" stroke="currentColor" strokeWidth="3.5" className="text-gray-800" />
           {rows.map(([m, v]) => {
             const pct = total > 0 ? (v / total) * 100 : 0;
-            const seg = <circle key={m} cx="18" cy="18" r={R} fill="none" strokeWidth="4" stroke={methodColour(m).dot}
+            const seg = <circle key={m} cx="18" cy="18" r={R} fill="none" strokeWidth="3.5" stroke={methodColour(m).dot}
               strokeDasharray={`${Math.max(0, pct - 0.6)} ${100 - Math.max(0, pct - 0.6)}`} strokeDashoffset={-at} />;
             at += pct;
             return seg;
           })}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[10px] uppercase tracking-wider text-gray-400">Paid</span>
-          <span className="text-xs font-bold text-white tabular-nums">{Math.round(total).toLocaleString('en-KE')}</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500">Paid</span>
+          <span className="text-xs font-semibold text-white tabular-nums">{Math.round(total).toLocaleString('en-KE')}</span>
         </div>
       </div>
       <div className="flex-1 min-w-0 space-y-2">
@@ -769,9 +962,9 @@ function PaymentMix({ methods, currency, empty }: { methods: Record<string, numb
             <div key={method}>
               <div className="flex justify-between text-sm mb-1 gap-2">
                 <span className="text-gray-300 capitalize truncate"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
-                <span className="text-white font-medium tabular-nums whitespace-nowrap">{fmt(amount, currency)} <span className="text-gray-400 text-xs">{pct}%</span></span>
+                <span className="text-white font-medium tabular-nums whitespace-nowrap">{fmt(amount, currency)} <span className="text-gray-500 font-normal text-xs">{pct}%</span></span>
               </div>
-              <div className="h-1.5 bg-gray-700/70 rounded-full overflow-hidden">
+              <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
               </div>
             </div>
@@ -782,27 +975,26 @@ function PaymentMix({ methods, currency, empty }: { methods: Record<string, numb
   );
 }
 
-/** The day's best sellers: rank, name, units, revenue, and a bar against the top one. */
+/** The day's best sellers, as the web lists them — rank, name, units, revenue — with a thin bar against the top one. */
 function TopSellers({ items, currency, empty }: { items: any[]; currency: string; empty: string }) {
-  if (items.length === 0) return <p className="text-gray-300 text-sm">{empty}</p>;
+  if (items.length === 0) return <p className="text-gray-500 text-sm">{empty}</p>;
   const top = Math.max(...items.map((p) => Number(p.revenue) || 0), 1);
-  const medal = ['bg-amber-400/20 text-amber-300', 'bg-gray-300/15 text-gray-200', 'bg-orange-400/15 text-orange-300'];
   return (
-    <div className="space-y-2.5" data-testid="overview-top-sellers">
+    <div className="flex flex-col divide-y divide-gray-800" data-testid="overview-top-sellers">
       {items.map((p, i) => (
-        <div key={p.name} className="flex items-center gap-3">
-          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold tabular-nums flex-shrink-0 ${medal[i] ?? 'bg-gray-700/60 text-gray-400'}`}>{i + 1}</span>
-          <div className="flex-1 min-w-0">
-            <div className="flex justify-between gap-2">
-              <p className="text-white text-sm truncate">{p.name}</p>
-              <span className="text-white text-sm font-medium tabular-nums flex-shrink-0">{fmt(Number(p.revenue), currency)}</span>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="flex-1 h-1 bg-gray-700/70 rounded-full overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-action-600 to-action-400" style={{ width: `${Math.round(((Number(p.revenue) || 0) / top) * 100)}%` }} />
+        <div key={p.name} className="py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-gray-500 text-xs w-4 flex-shrink-0 tabular-nums">{i + 1}</span>
+              <div className="min-w-0">
+                <p className="text-white text-sm truncate">{p.name}</p>
+                <p className="text-gray-500 text-xs">{Number(p.qty).toFixed(0)} sold</p>
               </div>
-              <span className="text-gray-400 text-xs tabular-nums w-16 text-right">{Number(p.qty).toFixed(0)} sold</span>
             </div>
+            <span className="text-white text-sm font-medium flex-shrink-0 tabular-nums">{fmt(Number(p.revenue), currency)}</span>
+          </div>
+          <div className="ml-6 mt-1.5 h-1 bg-gray-800 rounded-full overflow-hidden">
+            <div className="h-full rounded-full bg-action-500/70" style={{ width: `${Math.round(((Number(p.revenue) || 0) / top) * 100)}%` }} />
           </div>
         </div>
       ))}
@@ -811,48 +1003,51 @@ function TopSellers({ items, currency, empty }: { items: any[]; currency: string
 }
 
 // ── Hourly chart (shared) ─────────────────────────────────────────────────────
-function HourlyChart({ hourly, currency }: { hourly: { hour: number; revenue: number; orders: number }[]; currency: string }) {
-  const max = Math.max(...hourly.map(h => h.revenue), 1);
-  const peakHour = hourly.reduce((b, h) => h.revenue > b.revenue ? h : b, hourly[0]);
+// A468: the web's live chart look — flat rounded bars in the theme colour, the figure on the right of the title: the
+// peak hour, or the hour pointed at.
+function HourlyChart({ hourly, currency, when }: { hourly: { hour: number; revenue: number; orders: number }[]; currency: string; when: string }) {
   const [hover, setHover] = useState<number | null>(null);
-  const shown = hover !== null ? hourly.find(r => r.hour === hover) ?? { hour: hover, revenue: 0, orders: 0 } : null;
+  const max = Math.max(...hourly.map(h => h.revenue), 1);
+  const peakHour = hourly.length ? hourly.reduce((b, h) => h.revenue > b.revenue ? h : b, hourly[0]) : null;
+  const shown = hover !== null ? hourly.find(r => r.hour === hover) ?? { hour: hover, revenue: 0, orders: 0 } : peakHour;
+  const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
   return (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs">
-        <span className="rounded-full bg-action-500/15 text-action-300 px-2.5 py-1 font-medium">
-          Peak {peakHour?.hour}:00 · {fmt(peakHour?.revenue ?? 0, currency)} · {peakHour?.orders ?? 0} orders
-        </span>
-        <span className="text-gray-400 tabular-nums">
-          {shown ? `${shown.hour}:00 · ${fmt(shown.revenue, currency)} · ${shown.orders} orders` : 'Point at a bar for its hour'}
-        </span>
-      </div>
-      <div className="relative h-36">
-        {[0.25, 0.5, 0.75].map(g => (
-          <div key={g} className="absolute inset-x-0 border-t border-dashed border-gray-700/60" style={{ bottom: `${g * 100}%` }} />
-        ))}
-        <div className="relative flex items-end gap-1 h-full">
-          {Array.from({ length: 24 }, (_, h) => {
-            const row  = hourly.find(r => r.hour === h);
-            const pct  = row?.revenue ? Math.max(4, Math.round((row.revenue / max) * 100)) : 2;
-            const isPeak = h === peakHour?.hour;
-            return (
-              <div key={h} className="flex-1 flex flex-col justify-end h-full cursor-default"
-                onMouseEnter={() => setHover(h)} onMouseLeave={() => setHover(null)}
-                title={`${h}:00  ${row ? fmt(row.revenue, currency) : '—'}`}>
-                <div style={{ height: `${pct}%` }}
-                  className={`rounded-t-md transition-all ${row?.revenue
-                    ? (isPeak ? 'bg-gradient-to-t from-action-600 to-action-400' : hover === h ? 'bg-sky-300' : 'bg-gradient-to-t from-sky-700/70 to-sky-400/80')
-                    : 'bg-gray-700/30'}`} />
-              </div>
-            );
-          })}
+    <Section title="Hourly sales" sub={when} className="lg:col-span-2" testid="overview-hourly"
+      right={shown && (
+        <div className="text-right ml-auto" data-testid="overview-hourly-readout">
+          <p className="text-white text-sm font-semibold tabular-nums">{fmt(shown.revenue, currency)}</p>
+          <p className="text-gray-500 text-xs tabular-nums">{hover === null ? 'Peak ' : ''}{hh(shown.hour)} · {shown.orders} orders</p>
         </div>
-      </div>
-      <div className="flex justify-between mt-1.5">
-        {[0, 3, 6, 9, 12, 15, 18, 21].map(h => <span key={h} className="text-[10px] text-gray-500 tabular-nums">{String(h).padStart(2, '0')}:00</span>)}
-      </div>
-    </>
+      )}>
+      {hourly.length === 0
+        ? <p className="text-gray-500 text-sm">{when === 'today' ? 'No sales yet today.' : 'No sales that day.'}</p>
+        : (
+          <div>
+            <div className="flex items-end gap-1 h-36">
+              {Array.from({ length: 24 }, (_, h) => {
+                const row  = hourly.find(r => r.hour === h);
+                const pct  = row?.revenue ? Math.max(4, Math.round((row.revenue / max) * 100)) : 2;
+                const isPeak = h === peakHour?.hour;
+                return (
+                  <div key={h} className="flex-1 flex flex-col justify-end h-full cursor-default"
+                    onMouseEnter={() => setHover(h)} onMouseLeave={() => setHover(null)}
+                    title={`${h}:00  ${row ? fmt(row.revenue, currency) : '—'}`}>
+                    <div style={{ height: `${pct}%` }}
+                      className={`rounded-sm transition-all ${row?.revenue
+                        ? (hover === h ? 'bg-action-400' : isPeak ? 'bg-action-500' : 'bg-action-500/60')
+                        : 'bg-gray-800'}`} />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-between mt-1">
+              {[0, 3, 6, 9, 12, 15, 18, 21].map(h => <span key={h} className="text-[10px] text-gray-600 tabular-nums">{hh(h)}</span>)}
+            </div>
+            <p className="mt-1 text-[10px] text-gray-600">Point at a bar for its hour</p>
+          </div>
+        )}
+    </Section>
   );
 }
 
@@ -1837,13 +2032,16 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     if (g && g.tabs.some(t => t.key === tab)) setLastTab(prev => ({ ...prev, [g.key]: tab }));
   };
 
+  const overviewLink: LinkTo = (tab) => (groupOf(nav, tab) ? () => openTab(tab) : undefined);   // A468
+
   function renderContent() {
     switch (active) {
       case 'overview':
         // A441: the Overview for the day the manager picks (today unless they pick another).
-        return <OverviewForDay render={(date) => (flags.isPetrol ? <PetrolOverview currency={currency} date={date} />
-          : flags.isRestaurant ? <RestaurantOverview currency={currency} date={date} />
-          : <RetailOverview currency={currency} date={date} />)} />;
+        // A468: section links open the page they name, where this role has it; Low stock follows the Stock page's gate.
+        return <OverviewForDay render={(date) => (flags.isPetrol ? <PetrolOverview currency={currency} date={date} linkTo={overviewLink} showLowStock={showStock} />
+          : flags.isRestaurant ? <RestaurantOverview currency={currency} date={date} linkTo={overviewLink} showLowStock={showStock} />
+          : <RetailOverview currency={currency} date={date} linkTo={overviewLink} showLowStock={showStock} />)} />;
       case 'orders':  return <OrdersTab currency={currency} canVoidRefund={has('orders.void')} />;
       case 'shift':   return <ShiftTab currency={currency} />;
       case 'expenses': return <ExpensesTab currency={currency} canAddType={mayAddExpenseType(staff as any)} />;

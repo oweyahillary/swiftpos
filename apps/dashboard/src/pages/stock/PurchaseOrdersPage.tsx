@@ -7,6 +7,7 @@ import { printDocument } from '../../lib/printDocument';
 import { purchaseOrderDocSpec, grnDocSpec } from '../../lib/documentSpecs';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
+import { money, dateShort } from '../../lib/format';
 
 interface Ingredient { id: string; name: string; unit: string; unit_cost: number | null; category: string | null; }
 interface Supplier   { id: string; name: string; }
@@ -25,15 +26,6 @@ const STATUS: Record<string, { label: string; color: string; bg: string }> = {
   cancelled: { label: 'Cancelled', color: 'text-gray-600',  bg: 'bg-gray-800' },
 };
 
-function fmt(n: number, currency: string) {
-  return new Intl.NumberFormat('en-KE', { style: 'currency', currency, minimumFractionDigits: 2 }).format(n);
-}
-function fmtDate(d: string) {
-  if (!d) return '—';
-  // Accept both date-only ("2026-09-05") and full ISO timestamps (GRN created_at).
-  const dt = new Date(d.length <= 10 ? d + 'T00:00:00' : d);
-  return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
-}
 
 export default function PurchaseOrdersPage() {
   const { business } = useBusiness();
@@ -178,8 +170,8 @@ export default function PurchaseOrdersPage() {
 
   const printPO = (po: PO) => {
     printDocument(purchaseOrderDocSpec({
-      poNumber: po.po_number, orderDate: fmtDate(po.order_date),
-      expectedDate: po.expected_date ? fmtDate(po.expected_date) : null,
+      poNumber: po.po_number, orderDate: dateShort(po.order_date),
+      expectedDate: po.expected_date ? dateShort(po.expected_date) : null,
       status: po.status, supplier: po.suppliers?.name ?? null,
       business: business ?? { name: 'ZapTill' }, currency,
       lines: (po.purchase_order_items ?? []).map(it => ({
@@ -193,7 +185,7 @@ export default function PurchaseOrdersPage() {
 
   const printStoredGRN = (grn: StoredGRN) => {
     printDocument(grnDocSpec({
-      grnNumber: grn.grn_number, date: fmtDate(grn.created_at),
+      grnNumber: grn.grn_number, date: dateShort(grn.created_at),
       poNumber: grn.purchase_orders?.po_number ?? selected?.po_number ?? null,
       supplier: selected?.suppliers?.name ?? null,
       business: business ?? { name: 'ZapTill' }, currency,
@@ -207,7 +199,7 @@ export default function PurchaseOrdersPage() {
 
   const printGRN = (grnNumber: string, po: PO, filled: GRNEntry[], notes: string) => {
     printDocument(grnDocSpec({
-      grnNumber, date: fmtDate(new Date().toISOString()),
+      grnNumber, date: dateShort(new Date().toISOString()),
       poNumber: po.po_number, supplier: po.suppliers?.name ?? null,
       business: business ?? { name: 'ZapTill' }, currency,
       lines: filled.map(i => ({
@@ -295,11 +287,11 @@ export default function PurchaseOrdersPage() {
                       <span className="text-white font-semibold text-sm">{po.po_number}</span>
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${sc.bg} ${sc.color}`}>{sc.label}</span>
                     </div>
-                    <p className="text-gray-500 text-xs mt-0.5">{po.suppliers?.name ?? 'No supplier'} · {fmtDate(po.order_date)}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">{po.suppliers?.name ?? 'No supplier'} · {dateShort(po.order_date)}</p>
                     <p className="text-gray-400 text-xs mt-0.5">{po.purchase_order_items?.length ?? 0} ingredient{po.purchase_order_items?.length !== 1 ? 's' : ''}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-white text-sm font-semibold">{fmt(po.total_amount, currency)}</p>
+                    <p className="text-white text-sm font-semibold">{money(po.total_amount, currency)}</p>
                     {(po.status === 'ordered' || po.status === 'partial') && (
                       <div className="flex gap-1.5 mt-1.5 justify-end">
                         <button onClick={e => { e.stopPropagation(); openReceive(po); }}
@@ -327,8 +319,8 @@ export default function PurchaseOrdersPage() {
                 {(() => { const sc = STATUS[selected.status]; return <span className={`px-2 py-0.5 rounded text-xs font-medium ${sc.bg} ${sc.color}`}>{sc.label}</span>; })()}
               </div>
               <p className="text-gray-500 text-xs mt-0.5">
-                {selected.suppliers?.name ?? 'No supplier'} · {fmtDate(selected.order_date)}
-                {selected.expected_date && ` · Expected ${fmtDate(selected.expected_date)}`}
+                {selected.suppliers?.name ?? 'No supplier'} · {dateShort(selected.order_date)}
+                {selected.expected_date && ` · Expected ${dateShort(selected.expected_date)}`}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -382,12 +374,12 @@ export default function PurchaseOrdersPage() {
                                 {item.quantity_received} {unit}
                               </span>
                             </td>
-                            <td className={`px-4 py-3 text-right text-gray-300 ${DESK}`}>{fmt(item.unit_cost, currency)}</td>
-                            <td className="px-4 py-3 text-right text-white font-medium">{fmt(item.unit_cost * item.quantity_ordered, currency)}</td>
+                            <td className={`px-4 py-3 text-right text-gray-300 ${DESK}`}>{money(item.unit_cost, currency)}</td>
+                            <td className="px-4 py-3 text-right text-white font-medium">{money(item.unit_cost * item.quantity_ordered, currency)}</td>
                           </tr>
                           <MoreRow open={more.isOpen(String(item.id ?? idx))} colSpan={3} items={[
                             ['Ordered', `${item.quantity_ordered} ${unit}`],
-                            ['Unit Cost', fmt(item.unit_cost, currency)],
+                            ['Unit Cost', money(item.unit_cost, currency)],
                           ]} />
                           </Fragment>
                         );
@@ -397,7 +389,7 @@ export default function PurchaseOrdersPage() {
                       <tr className="border-t border-gray-700">
                         <td colSpan={4} className={`px-4 py-3 text-gray-500 text-xs font-semibold text-right ${DESK}`}>TOTAL</td>
                         <td colSpan={2} className="sm:hidden px-4 py-3 text-gray-500 text-xs font-semibold text-right">TOTAL</td>
-                        <td className="px-4 py-3 text-right text-white font-bold">{fmt(selected.total_amount, currency)}</td>
+                        <td className="px-4 py-3 text-right text-white font-bold">{money(selected.total_amount, currency)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -418,7 +410,7 @@ export default function PurchaseOrdersPage() {
                     <div key={g.id} className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5">
                       <div>
                         <p className="text-white text-sm font-medium">{g.grn_number}</p>
-                        <p className="text-gray-500 text-xs">{fmtDate(g.created_at)} · {g.grn_items?.length ?? 0} item{(g.grn_items?.length ?? 0) !== 1 ? 's' : ''}</p>
+                        <p className="text-gray-500 text-xs">{dateShort(g.created_at)} · {g.grn_items?.length ?? 0} item{(g.grn_items?.length ?? 0) !== 1 ? 's' : ''}</p>
                       </div>
                       <button onClick={() => printStoredGRN(g)} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg transition-colors">Reprint</button>
                     </div>
@@ -553,7 +545,7 @@ export default function PurchaseOrdersPage() {
                   <div className="flex justify-end mt-3 pt-3 border-t border-gray-800">
                     <div className="text-right">
                       <p className="text-gray-500 text-xs">Estimated Total</p>
-                      <p className="text-white font-bold text-lg">{fmt(runningTotal, currency)}</p>
+                      <p className="text-white font-bold text-lg">{money(runningTotal, currency)}</p>
                     </div>
                   </div>
                 )}

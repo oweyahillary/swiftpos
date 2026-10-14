@@ -50,7 +50,7 @@ ok('lock preview wears the theme without a brand colour (the till\'s PinPage rul
 ok('the till preview draws action from the theme tokens and the strip/sidebar from the brand layer',
   /const k = themeTokens\(theme\);/.test(tab) && /const brand = resolveBrandLayer\(brandHex\);/.test(tab)
   && /background: brand \? brand\.tint : k\.tint/.test(tab));
-ok('…and keeps money and Paid green in the preview', /KES \{p\}/.test(tab) && /color: '#4ade80'/.test(tab) && />Paid</.test(tab));
+ok('…and keeps money and Paid green in the preview', /\{money\(p\)\}/.test(tab) && /color: '#4ade80'/.test(tab) && />Paid</.test(tab));
 ok('the suggestion comes from the shared pairing rule', /const suggested = themesEnabled \? suggestThemeFor\(accentHex\.trim\(\) \|\| null\) : null;/.test(tab));
 
 // ── Selection must read in DARK mode (the dashboard's default) as well as light ──

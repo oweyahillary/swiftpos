@@ -13,6 +13,7 @@ import { DESK, useRowMore, ViewMore, MoreRow } from './RowMore';   // A464
 import { api } from '../lib/api';
 import { methodName, methodsToCount, readAmounts, confirmationLabel } from '../lib/shiftConfirm';
 import { reasonsNeeded, missingReasons, REASON_MAX } from '../lib/confirmReasons';
+import { money, dateTime } from '../lib/format';
 
 interface ClosedShift {
   id: string;
@@ -30,9 +31,6 @@ interface ClosedShift {
   confirm_reasons?: Record<string, string> | null;   // 0.6.27
 }
 
-const money = (v: number | null | undefined) =>
-  `KES ${Number(v ?? 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const order = (codes: string[]) => [...codes].sort((a, b) => (a === 'cash' ? -1 : b === 'cash' ? 1 : a.localeCompare(b)));
 
 /** Methods where the manager's recount differs from the cashier's declaration. */
@@ -45,8 +43,6 @@ export function mismatches(s: Pick<ClosedShift, 'declared_methods' | 'confirmed_
 interface Client { get: <T>(p: string) => Promise<T>; post: <T>(p: string, body?: unknown) => Promise<T> }
 
 export default function ShiftConfirmations({ client = api as unknown as Client, currency = 'KES' }: { client?: Client; currency?: string } = {}) {
-  const fmt = (v: number | null | undefined) =>
-    `${currency} ${Number(v ?? 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const [shifts, setShifts] = useState<ClosedShift[]>([]);
   const more = useRowMore();   // A464: the confirmed list on a phone shows Cashier and Cash counted / expected
   const [error, setError] = useState('');
@@ -111,7 +107,7 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
           </p>
           {awaiting.map((s) => (
             <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 text-sm text-amber-900 dark:text-amber-100">
-              <span>{s.cashier_name} · {s.terminal_code ?? 'Web'} · closed {when(s.closed_at)}</span>
+              <span>{s.cashier_name} · {s.terminal_code ?? 'Web'} · closed {dateTime(s.closed_at)}</span>
               <button onClick={() => { setTarget(s); setInputs({}); setMsg(''); }} data-testid={`confirm-${s.id}`}
                 className="px-3 py-1 rounded bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-medium">Confirm</button>
             </div>
@@ -130,7 +126,7 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
             <tbody>
               {confirmed.map((s) => {
                 const diff = mismatches(s);
-                const diffText = diff.length ? diff.map((m) => `${methodName(m)}: ${money(s.declared_methods?.[m])} → ${money(s.confirmed_methods?.[m])}`
+                const diffText = diff.length ? diff.map((m) => `${methodName(m)}: ${money(s.declared_methods?.[m], currency)} → ${money(s.confirmed_methods?.[m], currency)}`
                         + (s.confirm_reasons?.[m] ? ` (${s.confirm_reasons[m]})` : '')).join('; ') : '—';
                 const diffTone = diff.length ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-400';
                 return (
@@ -139,15 +135,15 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
                     <td className="py-1">{s.cashier_name}
                       <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
                     </td>
-                    <td className={DESK}>{when(s.closed_at)}</td>
+                    <td className={DESK}>{dateTime(s.closed_at)}</td>
                     <td className={DESK}>{s.confirmer_name ?? '—'}{s.confirm_self ? <span className="ml-1 text-xs text-amber-600" data-testid="self-confirmed">(self-confirmed)</span> : null}</td>
-                    <td>{money(s.confirmed_methods?.cash)} / {money(s.expected_methods?.cash)}</td>
+                    <td>{money(s.confirmed_methods?.cash, currency)} / {money(s.expected_methods?.cash, currency)}</td>
                     <td className={`${diffTone} ${DESK}`}>
                       {diffText}
                     </td>
                   </tr>
                   <MoreRow open={more.isOpen(String(s.id))} colSpan={2} items={[
-                    ['Closed', when(s.closed_at)],
+                    ['Closed', dateTime(s.closed_at)],
                     ['Confirmed by', <>{s.confirmer_name ?? '—'}{s.confirm_self ? <span className="ml-1 text-xs text-amber-600">(self-confirmed)</span> : null}</>],
                     ['Differs from cashier', <span className={diffTone}>{diffText}</span>],
                   ]} />
@@ -160,8 +156,8 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
       )}
 
       {target && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-lg border border-gray-200 dark:border-gray-700 p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-lg border border-gray-200 dark:border-gray-700 p-5 space-y-3 max-h-[90vh] overflow-y-auto animate-pop-in">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">Confirm {target.cashier_name}'s shift</h3>
             <p className="text-xs text-gray-500">
               {showExpected
@@ -175,7 +171,7 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
                 (the confirm or the dispute) and the reason where they differ. */}
             <div className="grid grid-cols-2 gap-x-3 text-xs text-gray-600 dark:text-gray-300" data-testid="confirm-head">
               <span className="text-gray-500">Cashier</span><span className="text-right">{target.cashier_name}</span>
-              <span className="text-gray-500">Shift</span><span className="text-right">{when(target.opened_at)} – {when(target.closed_at)}</span>
+              <span className="text-gray-500">Shift</span><span className="text-right">{dateTime(target.opened_at)} – {dateTime(target.closed_at)}</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="confirm-table">
@@ -199,10 +195,10 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
                       <tr key={m}>
                         <td className="py-1 text-gray-800 dark:text-gray-200 whitespace-nowrap">{methodName(m)}</td>
                         {showExpected && (
-                          <td className="py-1 pr-2 text-right text-gray-700 dark:text-gray-200 tabular-nums" data-testid={`expected-${m}`}>{fmt(exp ?? 0)}</td>
+                          <td className="py-1 pr-2 text-right text-gray-700 dark:text-gray-200 tabular-nums" data-testid={`expected-${m}`}>{money(exp ?? 0, currency)}</td>
                         )}
                         {view.showCashier && (
-                          <td className="py-1 pr-2 text-right text-gray-600 dark:text-gray-300 tabular-nums" data-testid={`cashier-${m}`}>{money(cashierSaid ?? 0)}</td>
+                          <td className="py-1 pr-2 text-right text-gray-600 dark:text-gray-300 tabular-nums" data-testid={`cashier-${m}`}>{money(cashierSaid ?? 0, currency)}</td>
                         )}
                         <td className="py-1">
                           <input type="number" min={0} step="0.01" inputMode="decimal" value={typed} data-testid={`confirm-input-${m}`}
@@ -211,7 +207,7 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
                         </td>
                         {showExpected && (
                           <td data-testid={`variance-${m}`} className={`py-1 pl-2 text-right tabular-nums whitespace-nowrap ${v === null ? 'text-gray-400' : v === 0 ? 'text-gray-600 dark:text-gray-300' : v > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-red-600 dark:text-red-400'}`}>
-                            {v === null ? '—' : v === 0 ? 'balanced' : `${v > 0 ? 'over' : 'short'} ${fmt(Math.abs(v))}`}
+                            {v === null ? '—' : v === 0 ? 'balanced' : `${v > 0 ? 'over' : 'short'} ${money(Math.abs(v), currency)}`}
                           </td>
                         )}
                       </tr>,
@@ -235,6 +231,7 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
               <button onClick={() => setTarget(null)} disabled={busy} className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">Cancel</button>
               <button onClick={confirm} disabled={busy}
                 className="px-4 py-2 text-sm rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium">
+                {busy && <span className="spin-dot" aria-hidden />}
                 {busy ? 'Confirming…' : 'Confirm shift'}
               </button>
             </div>

@@ -96,8 +96,8 @@ export default function HelpScreen({ businessName, onClose }: Props) {
 
           {/* A422: step by step — the everyday tasks, then "What to do when" below. */}
           {zoom && (
-            <div className="fixed inset-0 z-[90] bg-black/85 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setZoom(null)} data-testid="help-img-zoom">
-              <img src={`./help-img/${zoom}`} alt="" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+            <div className="fixed inset-0 z-[90] bg-black/85 flex items-center justify-center p-4 cursor-zoom-out animate-fade-in" onClick={() => setZoom(null)} data-testid="help-img-zoom">
+              <img src={`./help-img/${zoom}`} alt="" className="max-w-full max-h-full rounded-lg shadow-2xl animate-pop-in" />
             </div>
           )}
           <h3 className="text-xs uppercase tracking-wide text-gray-400 pt-2" data-testid="help-howto">How to — step by step</h3>

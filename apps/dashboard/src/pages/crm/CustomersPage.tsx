@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { api } from '../../lib/api';
 import { useRowMore, ViewMore } from '../../components/RowMore';
+import { money, num, dateShort } from '../../lib/format';
 
 // ── Types ─────────────────────────────────────────────────────
 interface Customer {
@@ -116,9 +117,6 @@ function tierProgress(points: number, tier: Tier): number {
   return Math.min(100, Math.round(((points - start) / (tier.next - start)) * 100));
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' });
-}
 
 // ── Sub-components ────────────────────────────────────────────
 
@@ -300,7 +298,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                     {customer.notes}
                   </p>
                 )}
-                <p className="text-gray-600 text-xs pt-1">Member since {fmtDate(customer.created_at)}</p>
+                <p className="text-gray-600 text-xs pt-1">Member since {dateShort(customer.created_at)}</p>
               </div>
             )}
           </div>
@@ -309,8 +307,8 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
           <div className="px-5 py-4 border-b border-gray-800/60">
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Points', value: customer.loyalty_points.toLocaleString(), color: TIER_COLORS[customer.tier.name] },
-                { label: 'Total Spent', value: `${currency} ${Number(customer.total_spent).toLocaleString()}`, color: 'text-white' },
+                { label: 'Points', value: num(customer.loyalty_points), color: TIER_COLORS[customer.tier.name] },
+                { label: 'Total Spent', value: money(customer.total_spent, currency), color: 'text-white' },
                 { label: 'Visits', value: customer.visit_count.toString(), color: 'text-white' },
               ].map(s => (
                 <div key={s.label} className="bg-gray-900/60 rounded-xl px-3 py-3 text-center">
@@ -327,7 +325,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
               <p className="text-xs text-gray-400 font-medium">Tier progress</p>
               {customer.tier.next ? (
                 <p className="text-xs text-gray-500">
-                  {(customer.tier.next - customer.loyalty_points).toLocaleString()} pts to {customer.tier.name === 'Bronze' ? 'Silver' : 'Gold'}
+                  {num(customer.tier.next - customer.loyalty_points)} pts to {customer.tier.name === 'Bronze' ? 'Silver' : 'Gold'}
                 </p>
               ) : (
                 <p className={`text-xs font-semibold ${TIER_COLORS.Gold}`}>Max tier reached ★</p>
@@ -359,7 +357,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   {[
                     { label: 'Orders',    value: insights.summary.orders.toString() },
-                    { label: 'Avg order', value: `${currency} ${Math.round(insights.summary.avgOrder).toLocaleString()}` },
+                    { label: 'Avg order', value: money(insights.summary.avgOrder, currency) },
                     { label: 'Last visit', value: insights.summary.daysSinceLast == null ? '\u2014' : insights.summary.daysSinceLast === 0 ? 'Today' : `${insights.summary.daysSinceLast}d ago` },
                   ].map(st => (
                     <div key={st.label} className="bg-gray-900/60 rounded-xl px-2 py-2.5 text-center">
@@ -379,7 +377,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                           <div key={it.name}>
                             <div className="flex justify-between mb-0.5">
                               <span className="text-gray-300 text-xs truncate">{it.name}</span>
-                              <span className="text-gray-500 text-xs shrink-0 ml-2">×{it.qty} · {currency} {Number(it.spent).toLocaleString()}</span>
+                              <span className="text-gray-500 text-xs shrink-0 ml-2">×{it.qty} · {money(it.spent, currency)}</span>
                             </div>
                             <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                               <div className="h-full bg-green-500/70 rounded-full" style={{ width: `${(it.qty / max) * 100}%` }} />
@@ -401,7 +399,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                         return (
                           <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
                             <div className="w-full flex-1 flex items-end">
-                              <div className="w-full bg-blue-500/60 rounded-t" style={{ height: `${Math.max(pct, 3)}%` }} title={`${currency} ${Number(m.spent).toLocaleString()} \u00b7 ${m.orders} orders`} />
+                              <div className="w-full bg-blue-500/60 rounded-t" style={{ height: `${Math.max(pct, 3)}%` }} title={`${money(m.spent, currency)} \u00b7 ${m.orders} orders`} />
                             </div>
                             <span className="text-gray-600 text-[10px]">{m.month.slice(5)}</span>
                           </div>
@@ -432,7 +430,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                     <div>
                       <p className="text-white text-xs font-medium capitalize">{t.type}</p>
                       {t.notes && <p className="text-gray-500 text-xs">{t.notes}</p>}
-                      <p className="text-gray-600 text-xs">{fmtDate(t.created_at)}</p>
+                      <p className="text-gray-600 text-xs">{dateShort(t.created_at)}</p>
                     </div>
                     <span className={`text-sm font-bold ${t.points > 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {t.points > 0 ? '+' : ''}{t.points} pts
@@ -632,7 +630,7 @@ export default function CustomersPage({ currency }: Props) {
       {/* Stats strip */}
       <div className="px-5 py-2.5 border-b border-gray-800/50 flex items-center gap-2 flex-shrink-0">
         <span className="text-gray-500 text-xs">
-          {loading ? '—' : `${total.toLocaleString()} customer${total !== 1 ? 's' : ''}`}
+          {loading ? '—' : `${num(total)} customer${total !== 1 ? 's' : ''}`}
           {search && ` matching "${search}"`}
         </span>
       </div>
@@ -685,11 +683,11 @@ export default function CustomersPage({ currency }: Props) {
                 </div>
                 <div className="flex items-center">
                   <span className={`text-sm font-semibold ${TIER_COLORS[c.tier.name]}`}>
-                    {c.loyalty_points.toLocaleString()}
+                    {num(c.loyalty_points)}
                   </span>
                 </div>
                 <div className="hidden sm:flex items-center">
-                  <span className="text-white text-sm">{currency} {Number(c.total_spent).toLocaleString()}</span>
+                  <span className="text-white text-sm">{money(c.total_spent, currency)}</span>
                 </div>
                 <div className="hidden sm:flex items-center">
                   <span className="text-white text-sm">{c.visit_count}</span>
@@ -702,7 +700,7 @@ export default function CustomersPage({ currency }: Props) {
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-gray-800/60 border border-gray-700/60 p-3 text-xs">
                       {([
                         ['Tier', <TierBadge tier={c.tier} />],
-                        ['Total Spent', <span className="text-white text-sm">{currency} {Number(c.total_spent).toLocaleString()}</span>],
+                        ['Total Spent', <span className="text-white text-sm">{money(c.total_spent, currency)}</span>],
                         ['Visits', <span className="text-white text-sm">{c.visit_count}</span>],
                         ['Status', <StatusBadge status={c.status} />],
                       ] as [string, ReactNode][]).map(([label, value]) => (

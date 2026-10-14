@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { money, qty, dateShort } from '../lib/format';
 
 /**
  * Expiry — A413: stock batches and expiry dates. One screen for the owner (Stock › Expiry) and the manager (Manager ›
@@ -34,8 +35,6 @@ interface List {
 interface Item { kind: 'product' | 'ingredient'; id: string; name: string; unit: string | null; by_piece: boolean; stocked: boolean; held: number | null }
 
 const errText = (e: unknown, fallback: string) => (e as { message?: string })?.message || fallback;
-const fmtDate = (d: string | null) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
-const qty = (n: number) => Number(n).toLocaleString('en-KE', { maximumFractionDigits: 3 });
 
 export function expiryText(r: Pick<Row, 'status' | 'days_left'>): string {
   if (r.days_left === null) return 'no expiry date';
@@ -57,7 +56,6 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
   branchId: string | null;
   currency?: string;
 }) {
-  const money = (v: unknown) => `${currency} ${Number(v || 0).toLocaleString('en-KE', { maximumFractionDigits: 2 })}`;
   const [days, setDays] = useState(7);
   const [showOk, setShowOk] = useState(false);
   const [list, setList] = useState<List | null>(null);
@@ -145,12 +143,12 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4" data-testid="expired-total">
             <div className="text-xs text-gray-500">Expired, still in stock</div>
             <div className="mt-1 text-2xl font-bold text-red-400">{s.expired} batch{s.expired === 1 ? '' : 'es'}</div>
-            <div className="mt-0.5 text-xs text-gray-500">{money(s.expiredValue)} at cost</div>
+            <div className="mt-0.5 text-xs text-gray-500">{money(s.expiredValue, currency)} at cost</div>
           </div>
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
             <div className="text-xs text-gray-500">Expiring within {list?.soon_days} days</div>
             <div className="mt-1 text-2xl font-bold text-amber-400">{s.soon} batch{s.soon === 1 ? '' : 'es'}</div>
-            <div className="mt-0.5 text-xs text-gray-500">{money(s.soonValue)} at cost</div>
+            <div className="mt-0.5 text-xs text-gray-500">{money(s.soonValue, currency)} at cost</div>
           </div>
         </div>
       )}
@@ -173,13 +171,13 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
                   <td className="px-3 py-2 text-gray-200">{r.name}
                     <div className="text-xs text-gray-500">{r.kind === 'ingredient' ? 'ingredient' : 'product'}{!branchId && r.branch_name ? ` · ${r.branch_name}` : ''}</div></td>
                   <td className="px-3 py-2 text-gray-300">{r.batch_no ?? '—'}
-                    <div className="text-xs text-gray-500">received {fmtDate(r.received_at.slice(0, 10))}{r.source_ref ? ` · ${r.source_ref}` : ''}</div></td>
+                    <div className="text-xs text-gray-500">received {dateShort(r.received_at.slice(0, 10))}{r.source_ref ? ` · ${r.source_ref}` : ''}</div></td>
                   <td className="px-3 py-2">
                     <span className={`inline-block rounded-full border px-2 py-0.5 text-xs ${CHIP[r.status]}`}>{expiryText(r)}</span>
-                    <div className="mt-0.5 text-xs text-gray-500">{fmtDate(r.expiry_date)}</div></td>
+                    <div className="mt-0.5 text-xs text-gray-500">{dateShort(r.expiry_date)}</div></td>
                   <td className="whitespace-nowrap px-3 py-2 text-right text-gray-200">{qty(r.remaining)}{r.unit ? ` ${r.unit}` : ''}
                     <div className="text-xs text-gray-500">of {qty(r.quantity_received)}</div></td>
-                  <td className="px-3 py-2 text-right text-gray-300">{r.value === null ? '—' : money(r.value)}</td>
+                  <td className="px-3 py-2 text-right text-gray-300">{r.value === null ? '—' : money(r.value, currency)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
                     {list.can_write_off && r.remaining > 0 && (r.status === 'expired' || r.status === 'soon') && (
                       <button disabled={busy === r.id} onClick={() => writeOff(r)} data-testid="write-off"

@@ -32,7 +32,7 @@ const orders = read('apps/server/src/routes/orders.ts');
 
 console.log('\nConfirming on the web\n');
 ok('the manager\'s Shifts tab confirms shifts (their own sign-in), as the owner\'s Open drawers page does',
-  /<ShiftConfirmations key=\{confirmKey\} client=\{posApi as any\} currency=\{currency\} \/>/.test(mgr) && /<ShiftConfirmations key=\{confirmKey\} \/>/.test(own));
+  /<ShiftConfirmations key=\{confirmKey\} client=\{posApi as any\} currency=\{currency\} \/>/.test(mgr) && /<ShiftConfirmations key=\{confirmKey\} currency=\{currency\} \/>/.test(own));   // A471: the owner's page passes the business currency
 ok('the expected figure beside each count and the difference as typed (the cloud sends them to a manager / the owner)',
   /const showExpected = !!view\.expected;/.test(conf) && /data-testid=\{`expected-\$\{m\}`\}/.test(conf) && /data-testid=\{`variance-\$\{m\}`\}/.test(conf));
 ok('…read through whichever sign-in the page holds (the web POS manager, or the owner)',

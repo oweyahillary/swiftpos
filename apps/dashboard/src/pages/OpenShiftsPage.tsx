@@ -42,6 +42,8 @@ import Toast from '../components/Toast';
 import ShiftConfirmations from '../components/ShiftConfirmations';
 import CountedCloseModal from '../components/CountedCloseModal';   // A462
 import { useToast } from '../hooks/useToast';
+import { money, dateTime } from '../lib/format';
+import { useBusiness } from '../context/BusinessContext';
 
 interface OpenShift {
   id: string;
@@ -57,16 +59,13 @@ interface OpenShift {
   expected_cash_live: number | null;
 }
 
-const money = (v: number | null) =>
-  v === null || v === undefined
-    ? 'unavailable'
-    : `KES ${v.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function hoursOpen(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
 }
 
 export default function OpenShiftsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';
   const [shifts, setShifts] = useState<OpenShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -168,13 +167,13 @@ export default function OpenShiftsPage() {
                         <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
                           {hrs}h ago
                         </span>
-                        <div className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('en-KE')}</div>
+                        <div className="text-xs text-gray-400">{dateTime(s.opened_at)}</div>
                       </td>
                       <td className={`px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums ${DESK}`}>
-                        {money(Number(s.opening_float))}
+                        {money(Number(s.opening_float), currency, { blank: 'unavailable' })}
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-white tabular-nums">
-                        {money(s.expected_cash_live)}
+                        {money(s.expected_cash_live, currency, { blank: 'unavailable' })}
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <button data-testid={`count-close-${s.id}`} onClick={() => setCounting(s)}
@@ -197,9 +196,9 @@ export default function OpenShiftsPage() {
                         <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
                           {hrs}h ago
                         </span>
-                        <div className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('en-KE')}</div>
+                        <div className="text-xs text-gray-400">{dateTime(s.opened_at)}</div>
                       </>],
-                      ['Opening float', <span className="tabular-nums">{money(Number(s.opening_float))}</span>],
+                      ['Opening float', <span className="tabular-nums">{money(Number(s.opening_float), currency, { blank: 'unavailable' })}</span>],
                     ]} />
                     </Fragment>
                   );
@@ -218,10 +217,10 @@ export default function OpenShiftsPage() {
       </p>
 
       {/* A365: shifts awaiting a manager's check, and who confirmed what. A462: what each method expects is shown. */}
-      <ShiftConfirmations key={confirmKey} />
+      <ShiftConfirmations key={confirmKey} currency={currency} />
 
       {counting && (
-        <CountedCloseModal client={api as any} shift={counting} currency="KES"
+        <CountedCloseModal client={api as any} shift={counting} currency={currency}
           onCancel={() => setCounting(null)}
           onDone={() => { setCounting(null); setConfirmKey((k) => k + 1); showToast('Closed with your count — confirm it below.', 'success'); void load(); }} />
       )}
@@ -244,7 +243,7 @@ export default function OpenShiftsPage() {
             <div className="px-5 py-4 space-y-3">
               <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3">
                 <p className="text-sm text-amber-800 dark:text-amber-200">
-                  Expected in the drawer: <strong>{money(target.expected_cash_live)}</strong>
+                  Expected in the drawer: <strong>{money(target.expected_cash_live, currency, { blank: 'unavailable' })}</strong>
                 </p>
                 <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                   This will be recorded as never counted. The variance stays blank —

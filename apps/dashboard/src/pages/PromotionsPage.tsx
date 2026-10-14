@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useTerm } from '../lib/terminology';
 import { api } from '../lib/api';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
+import { money } from '../lib/format';
+import { useBusiness } from '../context/BusinessContext';
 
 interface Promotion {
   id: string;
@@ -79,6 +81,7 @@ function fmtDays(days: number[]): string {
 }
 
 export default function PromotionsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const { term } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [promos, setPromos]     = useState<Promotion[]>([]);
@@ -256,7 +259,7 @@ export default function PromotionsPage() {
                             <span>⏰ {fmtTime(p.start_time)} – {fmtTime(p.end_time)}</span>
                             <span>📅 {fmtDays(p.days_of_week)}</span>
                             {p.discount_value != null && (
-                              <span>💰 {p.discount_type === 'percentage' ? `${p.discount_value}% off` : `KES ${p.discount_value} off`}</span>
+                              <span>💰 {p.discount_type === 'percentage' ? `${p.discount_value}% off` : `${money(p.discount_value, currency)} off`}</span>
                             )}
                           </>}
                           {p.promo_type === 'bogo' && <>
@@ -266,7 +269,7 @@ export default function PromotionsPage() {
                           {p.promo_type === 'quantity_discount' && <>
                             <span>🛒 {p.min_quantity}+ items</span>
                             {p.discount_value != null && (
-                              <span>💰 {p.discount_type === 'percentage' ? `${p.discount_value}% off` : `KES ${p.discount_value} off`}</span>
+                              <span>💰 {p.discount_type === 'percentage' ? `${p.discount_value}% off` : `${money(p.discount_value, currency)} off`}</span>
                             )}
                             <span>📅 {fmtDays(p.days_of_week)}</span>
                           </>}
@@ -435,7 +438,7 @@ export default function PromotionsPage() {
                           className={`text-xs px-3 py-1 rounded-md transition-colors ${
                             form.discount_type === dt ? 'bg-gray-700 text-white' : 'text-gray-500'
                           }`}>
-                          {dt === 'percentage' ? '% off' : 'KES off'}
+                          {dt === 'percentage' ? '% off' : `${currency} off`}
                         </button>
                       ))}
                     </div>

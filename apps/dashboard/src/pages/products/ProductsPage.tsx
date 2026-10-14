@@ -1,11 +1,12 @@
-import { useEffect, useState, useRef, Fragment } from 'react';
+import { useEffect, useMemo, useState, useRef, Fragment, lazy, Suspense } from 'react';
 import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { uploadImage } from '../../lib/upload';
 import type { Product, Category } from '../../types';
 import VariantsDrawer from './VariantsDrawer';
-import MenuUpload from './MenuUpload';
+// A469: the menu import (and its ~400 KB spreadsheet reader) loads only when it is opened.
+const MenuUpload = lazy(() => import('./MenuUpload'));
 import BulkImageUpload from './BulkImageUpload';
 import BulkPriceEditor from './BulkPriceEditor';
 import RecipeDrawer from './RecipeDrawer';
@@ -13,6 +14,9 @@ import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
 import { cleanShowDays, showDaysLabel, DAY_SHORT } from '../../lib/productDays';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
+import { money, pct } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A472
+import { paginate, groupDigits } from '../../lib/paginate';
 
 const EMPTY_FORM = {
   name: '',
@@ -48,6 +52,9 @@ export default function ProductsPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
+  // A472: the list in pages. The size is remembered in this browser; the page resets when the search or category changes.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.products');
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null);
   const [recipeProduct, setRecipeProduct] = useState<Product | null>(null);
   const [productRecipes, setProductRecipes] = useState<Set<string>>(new Set());
@@ -253,7 +260,7 @@ export default function ProductsPage() {
     setProducts(cur => cur.map(x => x.id === p.id ? { ...x, base_price: n } : x));
     try {
       await api.patch(`/api/products/${p.id}`, { base_price: n });
-      setFlash(`${p.name} → ${currency} ${n.toLocaleString()}`);
+      setFlash(`${p.name} → ${money(n, currency)}`);
     } catch (e: any) {
       setProducts(cur => cur.map(x => x.id === p.id ? { ...x, base_price: prev } : x));
       setFlash(e?.message ?? 'Price update failed');
@@ -280,11 +287,21 @@ export default function ProductsPage() {
     });
   };
 
-  const filtered = products.filter(p => {
+  const filtered = useMemo(() => products.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     const matchCat = filterCategory ? p.category_id === filterCategory : true;
     return matchSearch && matchCat;
-  });
+  }), [products, search, filterCategory]);
+
+  // A472: one page of the filtered list. A new search or category starts at page 1; an edit, save or delete keeps the
+  // page — clamped, so deleting the last item of the last page shows the page before it. "Select all" still means
+  // every FILTERED product, on every page; "Select this page" is the page shown.
+  useEffect(() => { setPage(1); }, [search, filterCategory]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+  const allSelected = filtered.length > 0 && filtered.every(p => selectedIds.has(p.id));
+  const pageSelected = paged.items.length > 0 && paged.items.every(p => selectedIds.has(p.id));
+  const selectPage = () => setSelectedIds(prev => { const next = new Set(prev); for (const p of paged.items) next.add(p.id); return next; });
 
   const currency = business?.currency ?? 'KES';
 
@@ -359,6 +376,19 @@ export default function ProductsPage() {
           <option value="">All categories</option>
           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        {/* A472: with more than one page, choose the page shown or every filtered product. */}
+        {!loading && paged.pages > 1 && (
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            <button type="button" data-testid="select-page" onClick={selectPage} disabled={pageSelected}
+              className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              Select this page ({paged.items.length})
+            </button>
+            <button type="button" data-testid="select-all-filtered" onClick={() => setSelectedIds(new Set(filtered.map(p => p.id)))} disabled={allSelected}
+              className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              Select all {groupDigits(filtered.length)}
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -380,9 +410,10 @@ export default function ProductsPage() {
                 <th className="px-4 py-3 w-10">
                   <input
                     type="checkbox"
-                    aria-label="Select all"
-                    checked={filtered.length > 0 && filtered.every(p => selectedIds.has(p.id))}
-                    ref={el => { if (el) el.indeterminate = filtered.some(p => selectedIds.has(p.id)) && !filtered.every(p => selectedIds.has(p.id)); }}
+                    aria-label={`Select all ${groupDigits(filtered.length)}`}
+                    title={`Select all ${groupDigits(filtered.length)} — every page`}
+                    checked={allSelected}
+                    ref={el => { if (el) el.indeterminate = filtered.some(p => selectedIds.has(p.id)) && !allSelected; }}
                     onChange={e => setSelectedIds(e.target.checked ? new Set(filtered.map(p => p.id)) : new Set())}
                   />
                 </th>
@@ -395,7 +426,7 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
-              {filtered.map(p => (
+              {paged.items.map(p => (
                 <Fragment key={p.id}>
                 <tr className={`hover:bg-gray-800/50 transition-colors ${selectedIds.has(p.id) ? 'bg-gray-800/40' : ''}`}>
                   <td className="px-4 py-3">
@@ -450,13 +481,13 @@ export default function ProductsPage() {
                         title="Click to edit price"
                         className="text-white hover:text-swift-text-hover decoration-dotted hover:underline"
                       >
-                        {currency} {Number(p.base_price).toLocaleString()}
+                        {money(p.base_price, currency)}
                       </button>
                     )}
                   </td>
                   <td className={`px-4 py-3 text-sm ${DESK}`}>
                     {(p as any).cost_price != null
-                      ? <span className="text-gray-300">{currency} {Number((p as any).cost_price).toLocaleString()}</span>
+                      ? <span className="text-gray-300">{money((p as any).cost_price, currency)}</span>
                       : <span className="text-amber-500/70 text-xs">no cost</span>}
                   </td>
                   <td className={`px-4 py-3 ${DESK}`}>
@@ -502,7 +533,7 @@ export default function ProductsPage() {
                 <MoreRow open={more.isOpen(String(p.id))} colSpan={4} items={[
                   ['Category', p.categories ? p.categories.name : '—'],
                   ['Cost', (p as any).cost_price != null
-                    ? <span className="text-gray-300">{currency} {Number((p as any).cost_price).toLocaleString()}</span>
+                    ? <span className="text-gray-300">{money((p as any).cost_price, currency)}</span>
                     : <span className="text-amber-500/70 text-xs">no cost</span>],
                   ['Status', <span className={`text-xs px-2 py-1 rounded-full ${p.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'}`}>
                       {p.status}
@@ -513,6 +544,7 @@ export default function ProductsPage() {
             </tbody>
           </table>
           </div>
+          <Pager paged={paged} noun="products" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 
@@ -607,7 +639,7 @@ export default function ProductsPage() {
                 />
                 {form.base_price && form.cost_price && parseFloat(form.base_price) > 0 && (
                   <p className="text-[11px] text-gray-500 mt-1">
-                    Margin: {(((parseFloat(form.base_price) - parseFloat(form.cost_price)) / parseFloat(form.base_price)) * 100).toFixed(0)}%
+                    Margin: {pct(((parseFloat(form.base_price) - parseFloat(form.cost_price)) / parseFloat(form.base_price)) * 100, 0)}
                   </p>
                 )}
               </div>
@@ -766,11 +798,11 @@ export default function ProductsPage() {
                   <div key={p.id} className="flex items-center gap-3 px-5 py-2.5">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-white truncate">{p.name}</p>
-                      <p className="text-xs text-gray-500">{currency} {price.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">{money(price, currency)}</p>
                     </div>
                     {margin != null && (
                       <span className={`text-xs tabular-nums w-14 text-right ${margin >= 60 ? 'text-green-400' : margin >= 30 ? 'text-amber-400' : 'text-red-400'}`}>
-                        {margin.toFixed(0)}%
+                        {pct(margin, 0)}
                       </span>
                     )}
                     <div className="flex items-center gap-1.5">
@@ -806,11 +838,13 @@ export default function ProductsPage() {
         </div>
       )}
       {showMenuUpload && (
-        <MenuUpload
-          onDone={() => fetchAll()}
-          onClose={() => setShowMenuUpload(false)}
-          onToast={(m) => setFlash(m)}
-        />
+        <Suspense fallback={null}>
+          <MenuUpload
+            onDone={() => fetchAll()}
+            onClose={() => setShowMenuUpload(false)}
+            onToast={(m) => setFlash(m)}
+          />
+        </Suspense>
       )}
       {showBulkImages && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4" onClick={() => setShowBulkImages(false)}>

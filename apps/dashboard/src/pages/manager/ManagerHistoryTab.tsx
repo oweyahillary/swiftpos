@@ -9,6 +9,7 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { printDocument } from '../../lib/printDocument';
 import { grnDocSpec, transferDocSpec } from '../../lib/documentSpecs';
+import { dateShort } from '../../lib/format';
 
 interface GRNRow {
   id: string; grn_number: string; created_at: string; notes: string | null;
@@ -112,7 +113,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
                     <p className="text-white text-sm font-medium">{g.grn_number}
                       {g.purchase_orders?.po_number && <span className="text-gray-500 font-normal"> · {g.purchase_orders.po_number}</span>}
                     </p>
-                    <p className="text-gray-500 text-xs mt-0.5">{date(g.created_at)} · {g.grn_items?.length ?? 0} item{(g.grn_items?.length ?? 0) !== 1 ? 's' : ''}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">{dateShort(g.created_at)} · {g.grn_items?.length ?? 0} item{(g.grn_items?.length ?? 0) !== 1 ? 's' : ''}</p>
                   </div>
                   <PrintBtn onClick={() => printGRN(g)} />
                 </div>
@@ -132,7 +133,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
                         <p className="text-white text-sm font-medium">{t.transfer_number}
                           <span className="text-gray-500 font-normal"> · {out ? 'to' : 'from'} {out ? t.to_branch_name : t.from_branch_name}</span>
                         </p>
-                        <p className="text-gray-500 text-xs mt-0.5">{date(t.created_at)} · {out ? 'sent' : 'received'} · {t.stock_transfer_items.length} item{t.stock_transfer_items.length !== 1 ? 's' : ''}</p>
+                        <p className="text-gray-500 text-xs mt-0.5">{dateShort(t.created_at)} · {out ? 'sent' : 'received'} · {t.stock_transfer_items.length} item{t.stock_transfer_items.length !== 1 ? 's' : ''}</p>
                       </div>
                     </div>
                     <PrintBtn onClick={() => printTransfer(t)} />

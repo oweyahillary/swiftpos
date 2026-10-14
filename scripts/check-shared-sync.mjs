@@ -298,6 +298,15 @@ const SHARED = [
       'apps/dashboard/src/lib/contrast.ts',
     ],
   },
+  {
+    // A472: the menu in pages (web Products, the till's Menu) and the POS grids a screenful at a time.
+    name: 'paginate.ts',
+    copies: [
+      'shared/paginate.ts',
+      'apps/dashboard/src/lib/paginate.ts',      // the web Products page and the web POS grid
+      'apps/desktop/src/shared/paginate.ts',     // the till's Menu screen and its POS grid
+    ],
+  },
 ];
 
 const sha = (p) =>
