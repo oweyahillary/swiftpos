@@ -746,12 +746,24 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
   const behind = ((tills ?? []) as Array<{ device_label: string | null; terminal_code: string | null; last_sync_at: string | null }>)
     .filter((t) => !t.last_sync_at || !(Date.parse(t.last_sync_at) >= behindBefore))
     .map((t) => ({ name: t.terminal_code || t.device_label || 'A till', last_sync_at: t.last_sync_at }));
+  // A488: "N trading day(s) … still open or closed after it" named no day — and the check reads the CLOUD's days, so a
+  // close a till made that never reached the cloud looks open here while every till says closed. The same rule as
+  // purge_test_data (opened in the window; no closed_at, or closed after the window's end), listed so it can be found.
+  const { data: openDays } = await supabase.from('business_days')
+    .select('business_date, terminal_code, device_id, status, opened_at, closed_at, branches(name)')
+    .eq('business_id', biz.id).gte('opened_at', from).lte('opened_at', to)
+    .or(`closed_at.is.null,closed_at.gt.${to}`)
+    .order('opened_at', { ascending: true }).limit(20);
+  const daysInQuestion = ((openDays ?? []) as Array<any>).map((d) => ({
+    business_date: d.business_date, till: d.terminal_code || (d.device_id ? String(d.device_id).slice(0, 8) : null),
+    branch: d.branches?.name ?? null, status: d.status, opened_at: d.opened_at, closed_at: d.closed_at,
+  }));
   // A482: `menu` (migration 132) — before it the column is missing, so the history is read without it.
   const historyOf = (cols: string) => supabase.from('test_data_purges').select(cols)
     .eq('business_id', biz.id).order('created_at', { ascending: false }).limit(10);
   let { data: history, error: hErr } = await historyOf('from_at, to_at, stock_mode, counts, done_by, created_at, menu');
   if (hErr) ({ data: history } = await historyOf('from_at, to_at, stock_mode, counts, done_by, created_at'));
-  res.json({ business: { id: biz.id, name: biz.name }, defaults, window: { from, to }, stock, menu, preview, tills_behind: behind, history: history ?? [] });
+  res.json({ business: { id: biz.id, name: biz.name }, defaults, window: { from, to }, stock, menu, preview, tills_behind: behind, days_in_question: daysInQuestion, history: history ?? [] });
 });
 
 router.post('/clients/:id/test-data/clear', requireAdmin, requireSuperAdmin, async (req: any, res) => {

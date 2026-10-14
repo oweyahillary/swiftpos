@@ -53,6 +53,15 @@ ok('A487: with the window ending now, a till that synced a minute ago is NOT beh
   assert.equal(behind('2026-10-10T08:00:00+00:00', '2026-10-09T20:12:00.000Z', now), false, 'synced after an old window ended');
   assert.equal(behind(null, '2026-10-14T18:38:00.000Z', now), true, 'never synced');
 });
+ok('A488: the trading days that block the clear are named — the same rule as purge_test_data, from the cloud', () => {
+  assert.match(a, /\.eq\('business_id', biz\.id\)\.gte\('opened_at', from\)\.lte\('opened_at', to\)\s*\.or\(`closed_at\.is\.null,closed_at\.gt\.\$\{to\}`\)/);
+  assert.match(a, /days_in_question: daysInQuestion/);
+  assert.match(card, /data-testid="days-in-question"/);
+  assert.match(card, /not closed on the cloud \(\$\{d\.status\}\)/);
+  const mig = read('migrations/123_wastage.sql');   // the latest purge_test_data
+  assert.match(mig, /opened_at >= p_from AND opened_at <= p_to/);
+  assert.match(mig, /closed_at IS NULL OR closed_at > p_to/);
+});
 ok('the card shows the first sale after the window (it stays) and refuses with the reasons', () => {
   assert.match(card, /First sale after the window: <b>\{c\.next_sale_after/);
   assert.match(card, /data-testid="test-data-problems"/);
