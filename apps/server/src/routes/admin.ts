@@ -712,6 +712,9 @@ function testWindowDefaults(createdAt: string | null | undefined): { from: strin
   return { from: from.toISOString(), to: now.toISOString() };
 }
 
+/** A487: a till's sync this recent counts as "synced since testing stopped" when the window ends at about now. */
+const TILL_SYNC_GRACE_MS = 10 * 60_000;
+
 const isTime = (v: unknown): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v));
 const STOCK_MODES = new Set(['undo', 'zero', 'keep']);
 
@@ -734,10 +737,14 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
     return;
   }
   // A till that has not synced since the window ended may still hold test sales it has not sent.
+  // A487: the window ends at "now" by default, so a till that synced a minute ago was always "behind" — next to a Fleet
+  // page saying "just now". A till that synced within TILL_SYNC_GRACE_MS of now is current: it syncs every minute or so,
+  // and whatever it held when the window ended has gone up. Compared as times, not strings (+00:00 vs Z).
+  const behindBefore = Math.min(Date.parse(to), Date.now() - TILL_SYNC_GRACE_MS);
   const { data: tills } = await supabase.from('user_devices').select('device_label, terminal_code, last_sync_at, retired_at')
     .eq('business_id', biz.id).is('retired_at', null);
   const behind = ((tills ?? []) as Array<{ device_label: string | null; terminal_code: string | null; last_sync_at: string | null }>)
-    .filter((t) => !t.last_sync_at || t.last_sync_at < to)
+    .filter((t) => !t.last_sync_at || !(Date.parse(t.last_sync_at) >= behindBefore))
     .map((t) => ({ name: t.terminal_code || t.device_label || 'A till', last_sync_at: t.last_sync_at }));
   // A482: `menu` (migration 132) — before it the column is missing, so the history is read without it.
   const historyOf = (cols: string) => supabase.from('test_data_purges').select(cols)
