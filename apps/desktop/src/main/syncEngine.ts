@@ -38,7 +38,7 @@ import { buildCloudOrderPayload } from './peerRelay';
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
 import { closesToAdopt, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401
-import { applyTestDataClear, type ClearPeriod } from './testDataClear';   // A404
+import { applyTestDataClear, applyMenuClear, dropPurgedMenu, type ClearPeriod } from './testDataClear';   // A404, A482
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth, emitEvent,
@@ -1063,15 +1063,27 @@ export async function runTestDataClears(): Promise<number> {
   const res = await syncFetch(`${_serverUrl}/api/pos/test-data-clears${seen ? `?after=${encodeURIComponent(seen)}` : ''}`, { headers: authHeaders() });
   if (!res.ok) return 0;
   const clears = await res.json() as Array<ClearPeriod & { created_at: string }>;
-  let n = 0;
+  let n = 0, menuCleared = false;
   for (const c of clears ?? []) {
     const r = applyTestDataClear(db, c);
+    // A482: that clear deleted the whole menu on the cloud — the till's goes too (the pull only upserts, so it never would)
+    if (c.menu === true) {
+      const m = applyMenuClear(db);
+      menuCleared = true;
+      logLine('sync', `menu deleted by ZapTill: ${m.products} products, ${m.categories} categories, ${m.variants} variant rows, ${m.modifiers} add-on rows, ${m.combos} combo lines, ${m.offers} offers, ${m.stock} stock levels removed here too`);
+    }
     db.prepare(`INSERT INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(TEST_CLEAR_KEY, c.created_at, new Date().toISOString());
     logLine('sync', `test data cleared by ZapTill (${c.from_at} → ${c.to_at}): ${r.sales} sales, ${r.shifts} shifts, ${r.days} trading days removed here too${r.kept_shifts ? ` (${r.kept_shifts} shift(s) kept — sold on after the period)` : ''}`);
     n++;
   }
-  if (n) notifyCataloguePulled();   // the screens re-read (History, shift, day gate)
+  // A482: then the menu as the cloud has it now (empty, or what was added since) — from the cloud, not a branch server
+  // that may not have applied the clear yet.
+  if (menuCleared) {
+    _preferCloudPull = true;
+    try { await pullCatalogue(); } catch { /* the next sync pulls */ } finally { _preferCloudPull = false; }
+  }
+  if (n) notifyCataloguePulled();   // the screens re-read (History, shift, day gate, the menu)
   return n;
 }
 
@@ -1728,6 +1740,16 @@ async function pullCatalogue(): Promise<boolean> {
       }
     } catch (err: any) {
       console.warn('[sync] stations fetch error:', err?.message ?? err);
+    }
+  }
+
+  // A482: a menu the cloud deleted (Clear test data → "Also delete the whole menu") never comes back — a branch server
+  // that has not applied that clear yet still serves it, and the upserts below would restore it.
+  {
+    const f = dropPurgedMenu(db, { products, categories, comboItems, offers, variantGroups, variantOptions, modifierGroups, modifierOptions, stockLevels });
+    if (f.dropped) {
+      ({ products, categories, comboItems, offers, variantGroups, variantOptions, modifierGroups, modifierOptions, stockLevels } = f);
+      logLine('sync', `menu deleted by ZapTill: ${f.dropped} row(s) of the old menu in this pull ignored`);
     }
   }
 

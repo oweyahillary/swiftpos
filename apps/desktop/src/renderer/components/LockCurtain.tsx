@@ -98,18 +98,31 @@ export default function LockCurtain({
   // Enter or the OK key submits — the SAME interaction PinPage already uses, so
   // a cashier's muscle memory carries over.
   const press = (d: string) => {
+    setError(null);
     setPin(p => (p + d).slice(0, 6));
   };
+  // A479 (owner, 2026-10-14: "this screen … looks off"): ⌫ takes back ONE digit — it cleared the whole PIN.
+  const backspace = () => { setError(null); setPin(p => p.slice(0, -1)); };
+
+  // A479: the time and day — what a locked screen is glanced at for.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 15_000); return () => clearInterval(t); }, []);
+  const clock = now.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const day = now.toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const key = 'press h-14 rounded-xl bg-gray-900 text-white text-xl font-medium hover:bg-gray-800 active:bg-gray-700 disabled:opacity-40';
 
   return (
     // Opaque (0.6.24, owner: "the small wordings are not readable"): the old `bg-gray-950/98` is not a Tailwind opacity
     // step, so no background was generated and the blurred screen showed through the text.
-    <div data-testid="lock-curtain" className="fixed inset-0 z-[9999] bg-gray-950 flex items-center justify-center">
-      <div className="w-full max-w-xs px-6 text-center">
-        <div className="mb-8">
+    // A479: it scrolls when the window is short (the last line was cut off, the logo pressed against the top), and
+    // nothing on it can be selected (a double-tap highlighted a key's digit in blue).
+    <div data-testid="lock-curtain" className="fixed inset-0 z-[9999] bg-gray-950 flex flex-col overflow-y-auto select-none animate-fade-in">
+      <div className="m-auto w-full max-w-sm px-6 py-8 text-center">
+        <div className="mb-6">
           {logo ? (
             // The client's logo on a white card, as on the PIN screen (logos are made for a light background).
-            <span data-testid="lock-logo" className="inline-flex items-center justify-center bg-white rounded-xl mb-4"
+            <span data-testid="lock-logo" className="inline-flex items-center justify-center bg-white rounded-xl mb-4 shadow-lg shadow-black/30"
                   style={{ padding: '8px 10px' }}>
               <img src={logo} alt="" style={{ maxHeight: 150, maxWidth: 240, objectFit: 'contain', display: 'block' }} />
             </span>
@@ -122,7 +135,9 @@ export default function LockCurtain({
               </svg>
             </div>
           )}
-          <h1 className="text-xl font-semibold text-white">Till locked</h1>
+          <p data-testid="lock-clock" className="text-4xl font-light tabular-nums text-white tracking-tight">{clock}</p>
+          <p className="text-sm text-gray-400 mt-0.5 mb-4">{day}</p>
+          <h1 className="text-lg font-semibold text-white">Till locked</h1>
           {/* Naming who is still signed in matters: it tells the next person
               whether they can PIN in here or need Lock till, without making
               them guess and fail twice. */}
@@ -142,6 +157,7 @@ export default function LockCurtain({
           inputMode="none"
           value={pin}
           onChange={e => {
+            setError(null);
             setPin(e.target.value.replace(/\D/g, '').slice(0, 6));
           }}
           onKeyDown={e => { if (e.key === 'Enter') void submit(pin); }}
@@ -149,38 +165,36 @@ export default function LockCurtain({
           autoComplete="off"
         />
 
-        <div className="flex justify-center gap-3 mb-8">
+        {/* A479: an empty place is a ring, an entered digit a filled dot; a wrong PIN shakes the row. */}
+        <div key={error ? `e-${error}` : 'ok'} data-testid="lock-dots"
+             className={`flex justify-center gap-3 mb-6 h-4 items-center ${error ? 'animate-shake' : ''}`}>
           {[0, 1, 2, 3, 4, 5].map(i => (
             <div key={i}
-                 className={`w-3 h-3 rounded-full transition-colors ${
-                   i < pin.length ? 'bg-brand-400' : 'bg-gray-800'
+                 className={`w-3.5 h-3.5 rounded-full transition-colors ${
+                   i < pin.length ? 'bg-brand-400 animate-bump' : 'border-2 border-gray-700'
                  }`} />
           ))}
         </div>
 
-        {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+        <p className={`text-sm mb-4 min-h-[1.25rem] ${error ? 'text-red-400' : 'text-transparent'}`} aria-live="polite">{error ?? '·'}</p>
 
         <div className="grid grid-cols-3 gap-3">
           {['1','2','3','4','5','6','7','8','9'].map(d => (
-            <button key={d} onClick={() => press(d)} disabled={busy}
-              className="h-14 rounded-xl bg-gray-900 text-white text-lg font-medium
-                         hover:bg-gray-800 active:bg-gray-700 disabled:opacity-40">
+            <button key={d} onClick={() => press(d)} disabled={busy} className={key}>
               {d}
             </button>
           ))}
-          <button onClick={() => void submit(pin)} disabled={busy || pin.length < 4}
-            className="h-14 rounded-xl bg-brand-600 text-on-brand text-lg font-medium
+          <button data-testid="lock-ok" onClick={() => void submit(pin)} disabled={busy || pin.length < 4}
+            className="press h-14 rounded-xl bg-brand-600 text-on-brand text-lg font-semibold
                        hover:bg-brand-500 active:bg-brand-700 disabled:opacity-40
-                       disabled:cursor-not-allowed">
-            OK
+                       disabled:cursor-not-allowed inline-flex items-center justify-center gap-2">
+            {busy ? <><span className="btn-spinner" aria-hidden />Checking…</> : 'OK'}
           </button>
-          <button onClick={() => press('0')} disabled={busy}
-            className="h-14 rounded-xl bg-gray-900 text-white text-lg font-medium
-                       hover:bg-gray-800 active:bg-gray-700 disabled:opacity-40">
+          <button onClick={() => press('0')} disabled={busy} className={key}>
             0
           </button>
-          <button onClick={() => { setPin(''); setError(null); }} disabled={busy}
-            className="h-14 rounded-xl bg-gray-900 text-gray-400
+          <button data-testid="lock-backspace" onClick={backspace} disabled={busy || pin.length === 0} aria-label="Delete the last digit"
+            className="press h-14 rounded-xl bg-gray-900 text-gray-300 text-xl
                        hover:bg-gray-800 active:bg-gray-700 disabled:opacity-40">
             ⌫
           </button>
@@ -188,13 +202,13 @@ export default function LockCurtain({
         {/* A446: the way out the old message pointed at ("Use Lock till") — a different cashier, a forgotten PIN, or a PIN
             that cannot be checked: sign out to the PIN screen. The shift stays open; an unpaid order on screen is cleared (it says so). */}
         {onSignOut && (
-          <button data-testid="lock-sign-out" onClick={onSignOut} disabled={busy}
-            className="mt-6 text-sm text-gray-300 hover:text-white underline underline-offset-4 disabled:opacity-40">
-            Sign out — another person signs in
-          </button>
-        )}
-        {onSignOut && (
-          <p className="mt-1 text-[11px] text-gray-500">The shift stays open; an order not yet paid is cleared.</p>
+          <div className="mt-6 pt-5 border-t border-gray-800">
+            <button data-testid="lock-sign-out" onClick={onSignOut} disabled={busy}
+              className="text-sm text-gray-300 hover:text-white underline underline-offset-4 disabled:opacity-40">
+              Sign out — another person signs in
+            </button>
+            <p className="mt-1 text-xs text-gray-400">The shift stays open; an order not yet paid is cleared.</p>
+          </div>
         )}
       </div>
     </div>

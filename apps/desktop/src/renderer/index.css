@@ -51,7 +51,7 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
 /* A470: prefers-reduced-motion — no entrance, bump, highlight or press motion and a still busy ring; everything still
    appears, at once. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade-in, .animate-pop-in, .animate-slide-up, .animate-slide-in-right, .animate-bump, .animate-line-in,
+  .animate-fade-in, .animate-pop-in, .animate-slide-up, .animate-slide-in-right, .animate-bump, .animate-shake, .animate-line-in,
   .btn-spinner {
     animation: none !important;
   }

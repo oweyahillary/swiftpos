@@ -16,5 +16,7 @@
     "the live database, then delete the entry here. The gate will tell you if you",
     "forget."
   ],
-  "pending": {}
+  "pending": {
+    "132_test_data_menu.sql": "A482: purge_test_menu (clear test data and the whole menu) - written 2026-10-14, not yet run in production."
+  }
 }

@@ -39,6 +39,8 @@ module.exports = {
         'slide-up': { from: { opacity: '0', translate: '0 8px' }, to: { opacity: '1', translate: '0 0' } },
         'slide-in-right': { from: { opacity: '0', translate: '16px 0' }, to: { opacity: '1', translate: '0 0' } },
         bump: { '0%': { scale: '1' }, '40%': { scale: '1.25' }, '100%': { scale: '1' } },
+        // A479: a wrong PIN shakes the dots — the eye catches it before the words.
+        shake: { '0%, 100%': { translate: '0 0' }, '20%, 60%': { translate: '-6px 0' }, '40%, 80%': { translate: '6px 0' } },
         'line-in': {
           from: { opacity: '0', translate: '0 -4px', 'background-color': 'rgb(var(--action-500) / .18)' },
           '40%': { opacity: '1', translate: '0 0' },
@@ -51,6 +53,7 @@ module.exports = {
         'slide-up': 'slide-up 160ms ease-out',
         'slide-in-right': 'slide-in-right 180ms ease-out',
         bump: 'bump 180ms ease-out',
+        shake: 'shake 180ms ease-in-out',
         'line-in': 'line-in 900ms ease-out',
       },
     },

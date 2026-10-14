@@ -981,6 +981,17 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/fast-unlock.test.mjs
 
+      # A479 — the lock screen fits any window, ⌫ takes back one digit, a wrong PIN shakes, OK shows it is checking.
+      - name: Desktop lock screen look
+        working-directory: apps/desktop
+        run: node --no-warnings test/lock-screen-look.test.mjs
+
+      # A480 — a local sign-in names its branch (the update bar's Manager-PIN restart), unlocking re-holds the PIN so the
+      # session becomes a cloud one, and a branch server's own records are said quietly.
+      - name: Desktop local sign-in branch and upgrade
+        working-directory: apps/desktop
+        run: node --no-warnings test/local-signin-branch.test.mjs
+
       # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
       - name: Desktop and web order detail, reprint, void and refund
         working-directory: apps/desktop

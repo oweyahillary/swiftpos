@@ -52,14 +52,17 @@ function packMonth(req: any, res: any): string | null {
   return month;
 }
 
-router.get('/', requirePermission('reports.financial'), async (req: any, res) => {
+// A481 (owner, 2026-10-14: "the monthly pack ones I can't see them" — signed in as a Manager): the books' keeper reads them
+// too. Managers keep the books (Record for the books = expenses.manage, A455) but are denied reports.financial by default
+// (migration 82: Tax, Food Cost), so the pack was hidden from the very people who keep it.
+router.get('/', requireAnyPermission('reports.financial', 'expenses.manage'), async (req: any, res) => {
   const branch = packBranch(req, res); if (!branch) return;
   const month = packMonth(req, res); if (!month) return;
   try { res.json(await loadPack(req.businessId, branch, month)); }
   catch (err: any) { if (err?.status) { res.status(err.status).json({ error: err.message }); return; } sendError(res, err, { message: 'Could not build the monthly pack' }); }
 });
 
-router.get('/export', requirePermission('reports.financial'), async (req: any, res) => {
+router.get('/export', requireAnyPermission('reports.financial', 'expenses.manage'), async (req: any, res) => {
   const branch = packBranch(req, res); if (!branch) return;
   const month = packMonth(req, res); if (!month) return;
   try {

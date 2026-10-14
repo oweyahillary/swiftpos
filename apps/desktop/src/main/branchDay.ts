@@ -101,8 +101,10 @@ function declaredCodes(raw: string | null): string[] {
 /** The branch from the cloud. Throws with a reason the screen can show. */
 export async function cloudBranchDay(range: ReportRange): Promise<BranchDay> {
   const cfg = getDeviceConfig();
+  // A480: the reason is said to a manager signed in on this till's own check (no cloud token yet) — "sign in as a manager"
+  // read as an error to someone who is one. Unlocking (or the 30-s upgrade) brings the cloud's view back by itself.
   const token = readStaffTokens().token;
-  if (!token) throw new Error('Sign in as a manager to see every till');
+  if (!token) throw new Error('signed in on this till — the cloud view returns once the sign-in reaches the cloud');
   const q = new URLSearchParams({
     from: range.from, to: range.to,
     // Minutes east of UTC, so the cloud draws the hours as this till does (Kenya: 180).
