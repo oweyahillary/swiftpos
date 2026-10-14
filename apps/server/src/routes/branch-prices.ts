@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { assertBranchAccess } from '../middleware/rbac';
+import { assertBranchAccess, requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -35,7 +35,10 @@ interface PriceEditInput {
 // POST /api/branch-prices/sync
 // Body: { branch_id, edits: PriceEditInput[] }
 // Returns: { ok, applied: string[], failed: { product_id, error }[] }
-router.post('/sync', async (req, res) => {
+// Audit 2026-10-14: a branch check alone let any signed-in person of the branch (a cashier) set its prices. Setting a
+// price is products.manage, as on the web; the owner and '*' pass in rbac — the till's own session carries '*' (its
+// queued edits were each checked on the till against the manager who made them).
+router.post('/sync', requirePermission('products.manage'), async (req, res) => {
   const { branch_id, edits } = req.body as { branch_id?: string; edits?: PriceEditInput[] };
 
   if (!branch_id || !Array.isArray(edits)) {
@@ -47,6 +50,11 @@ router.post('/sync', async (req, res) => {
     res.status(403).json({ error: 'You do not have access to this branch' });
     return;
   }
+  // …and the branch must be this business's (the owner passes assertBranchAccess for any id).
+  const { data: ownBranch, error: bErr } = await supabase
+    .from('branches').select('id').eq('id', branch_id).eq('business_id', req.businessId).maybeSingle();
+  if (bErr) { sendError(res, bErr); return; }
+  if (!ownBranch) { res.status(404).json({ error: 'Branch not found' }); return; }
   if (edits.length === 0) { res.json({ ok: true, applied: [], failed: [] }); return; }
   if (edits.length > 1000) { res.status(413).json({ error: 'Too many edits in one batch' }); return; }
 

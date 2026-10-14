@@ -23,8 +23,6 @@ import { storeBranchStaff, pruneSavedSignIns, type BranchStaffRow } from './bran
 import { fetchRosterFromNode, hasNode, nodeUrl, nodeHeaders } from './nodeClient';
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { logLine } from './logFile';
-import { overlayLocalChanges } from './localChanges';   // A448
-import { getLocalDb } from './localDb';
 
 export interface RosterDeps {
   /** GET a cloud path with this till's sign-in (through the branch server on a till behind one). */
@@ -116,8 +114,9 @@ export function configureStaffRoster(cloudGet: RosterDeps['cloudGet']): void {
   realDeps = {
     cloudGet,
     nodeSnapshot: () => (hasNode() ? fetchRosterFromNode() : Promise.resolve(null)),
-    // A448: a cashier added or a PIN set on this till that the cloud has not taken yet stays over the list just stored.
-    store: (b, r) => { storeBranchStaff(b, r); try { overlayLocalChanges(getLocalDb()); } catch { /* the next refresh */ } },
+    // A448: a cashier added or a PIN set on this till that the cloud has not taken yet stays over the list just stored —
+    // storeBranchStaff lays them back itself now (P3), on every path that stores a list.
+    store: (b, r) => { storeBranchStaff(b, r); },
     prune: (b, r) => { pruneSavedSignIns(b, r); },
     log: (line) => logLine('staff', line),
   };

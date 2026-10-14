@@ -18,9 +18,11 @@
     "seq",
     "origin",
     "confirm_sync",
-    "expense_type_name"
+    "expense_type_name",
+    "sync_error"
   ],
   "_localOnlyColumnReasons": {
+    "sync_error": "expenses / float_transactions / kitchen_voids (local schema 72, A484): the code and words the cloud refused a row with, so a parked row can be re-queued when the refusal was transient. Verified absent from every push: pushLocalRecords selects explicit column lists without it, and the node relay names explicit COLUMNS (nodeIngest) without it.",
     "sync_status": "Per-row push state on the till: pending | synced | conflict. Verified absent from every push payload — pushLocalRecords selects an explicit column list that excludes it, and it is meaningless server-side because the server is the destination.",
     "synced_at": "When the till last pulled this row. Local cache metadata; the server has no concept of a particular terminal's freshness.",
     "seq": "Phase 1 per-device replication sequence (localDb v45): the LAN outbox/cursor checkpoint between a till and its branch node. Verified absent from every cloud push payload — pushLocalRecords and the sync arms name explicit column lists that exclude it (it appears only in WHERE scoping). Cloud replication keys on ids and idempotency, never on this counter; sending it would mean the server storing one terminal's private LAN checkpoint as data.",

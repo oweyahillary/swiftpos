@@ -35,6 +35,7 @@ import { businessReversalRules } from '../lib/reversalSettings';
 import { voidWindowOpen, windowLabel } from '../lib/reversalRules';
 import { frozenAtBranch } from '../lib/stockTakeAccess';
 import { applyOffers, cleanOffer, type AppliedOffer, type OfferLine } from '../lib/offers';   // A445
+import { chunkIn } from '../lib/pgQuery';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -175,7 +176,10 @@ const NO_APPROVER = {
 // display rows stay truthful). Returns computed money or a structured error.
 type RecomputeOk   = { ok: true; lines: { unitPrice: number; lineTotal: number }[]; subtotal: number; discount: number; total: number; vat: number; ctl: number;
   /** A445: the part of `discount` that offers took off, and which offers. */
-  offerDiscount: number; offers: AppliedOffer[] };
+  offerDiscount: number; offers: AppliedOffer[];
+  /** P0-2 (a till's sale only): lines the catalogue could not price — valued at the till's price, and why. */
+  fallbacks: TillLineFallback[] };
+export interface TillLineFallback { index: number; reason: string; unknownProduct: boolean }
 type RecomputeFail = { ok: false; status: number; error: string };
 type RecomputeResult = RecomputeOk | RecomputeFail;
 
@@ -213,13 +217,48 @@ export async function checkOfferClaim(businessId: string, branchId: string | nul
   return { offerDiscount, offers: r.applied.map((a) => ({ ...a, amount: round2(a.amount * k) })) };
 }
 
+/** What the till charged for one line: its own line total, else (its unit price + its modifiers) × quantity; never below 0. */
+export function tillLineTotal(item: OrderItemInput): number {
+  const qty = Number(item.quantity) || 0;
+  const lt = Number(item.lineTotal);
+  if (item.lineTotal !== undefined && item.lineTotal !== null && item.lineTotal !== '' && Number.isFinite(lt)) return round2(Math.max(0, lt));
+  const unit = Math.max(0, Number(item.unitPrice) || 0);
+  const mods = (item.selectedModifiers ?? []).reduce((s: number, m: { price?: number | string }) => s + Math.max(0, Number(m.price) || 0), 0);
+  return round2((unit + mods) * qty);
+}
+
+/**
+ * P1-8a: a product the till created offline, whose create the cloud answered 'identical' / 'awaiting' with the cloud's own
+ * id for the same thing (change_requests.canonical_id, A448) — the sale names the till's id, which is not a product here.
+ * The line is moved to the cloud's id (in place). Ids still unknown afterwards are left as they are.
+ */
+export async function mapCanonicalProducts(businessId: string, items: OrderItemInput[]): Promise<void> {
+  const ids = [...new Set(items.map((i) => i?.product?.id).filter((x): x is string => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x)))];
+  if (!ids.length) return;
+  const known = await chunkIn<{ id: string }>('products', 'id', ids, (q) => q.select('id').eq('business_id', businessId));
+  const have = new Set(known.map((p) => p.id));
+  const missing = ids.filter((id) => !have.has(id));
+  if (!missing.length) return;
+  const maps = await chunkIn<{ entity_id: string; canonical_id: string | null }>('change_requests', 'entity_id', missing,
+    (q) => q.select('entity_id, canonical_id').eq('business_id', businessId).eq('entity', 'product').not('canonical_id', 'is', null));
+  const to = new Map(maps.filter((m) => m.canonical_id).map((m) => [m.entity_id, m.canonical_id as string]));
+  for (const item of items) {
+    const pid = item?.product?.id;
+    if (pid && to.has(pid)) item.product!.id = to.get(pid)!;
+  }
+}
+
 async function recomputeOrderTotals(
   businessId: string,
   branchId: string,
   items: OrderItemInput[],
   discountAmount: number | string,
   claim: OfferClaim = { amount: 0, ids: [] },
+  /** P0-2: a till's sale (made, printed and paid already) — a line the catalogue cannot price is valued at the till's
+   *  price and reported in `fallbacks`, never refused. A web / live sale is refused as before (anti-tampering). */
+  opts: { tillSale?: boolean } = {},
 ): Promise<RecomputeResult> {
+  const fallbacks: TillLineFallback[] = [];
   const vKey = (pid: string, g: string, o: string) => `${pid}::${g}::${o}`;
   const lineProductIds: string[] = items
     .map(i => i?.product?.id ?? null)
@@ -271,15 +310,24 @@ async function recomputeOrderTotals(
   }
 
   const lines: { unitPrice: number; lineTotal: number }[] = [];
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     const pid: string | null = item?.product?.id ?? null;
     const qty = Number(item.quantity) || 0;
+    const name = item?.product?.name || (item as any)?.product_name || 'an item';
+    // P0-2: a till's line the catalogue cannot price — kept at what the till charged, with the reason.
+    const atTillPrice = (reason: string, unknownProduct: boolean) => {
+      fallbacks.push({ index, reason, unknownProduct });
+      lines.push({ unitPrice: round2(Math.max(0, Number(item.unitPrice) || 0)), lineTotal: tillLineTotal(item) });
+    };
 
     if (pid) {
       if (!basePriceMap.has(pid)) {
+        if (opts.tillSale) { atTillPrice(`product not on the cloud: ${name}`, true); continue; }
         return { ok: false, status: 400, error: 'Order contains a product that does not belong to this business' };
       }
       let unit = Math.max(0, basePriceMap.get(pid)!);   // never let a negative product price reduce the bill
+      let unknown: string | null = null;
+      const adjs: number[] = [];
       for (const v of (item.selectedVariants ?? [])) {
         // Accept both the canonical shape ({groupName, optionName}) and the
         // raw-option shape ({id/optionId, name}) some clients send.
@@ -288,18 +336,27 @@ async function recomputeOrderTotals(
         if (adj === undefined) adj = variantAdjById.get(String(vv.optionId ?? vv.id ?? ''));
         if (adj === undefined) {
           const label = vv.groupName || vv.optionName || vv.name || vv.id || 'unknown';
-          return { ok: false, status: 400, error: `Unknown variant: ${label}` };
+          if (!opts.tillSale) return { ok: false, status: 400, error: `Unknown variant: ${label}` };
+          unknown = `variant renamed or removed: ${name} — ${[vv.groupName, vv.optionName].filter(Boolean).join(' / ') || label}`;
+          break;
         }
-        v.priceAdjustment = adj;
-        unit += adj;
+        adjs.push(adj);
       }
-      let modifierTotal = 0;
-      for (const m of (item.selectedModifiers ?? [])) {
+      const mprices: number[] = [];
+      if (!unknown) for (const m of (item.selectedModifiers ?? [])) {
         const price = modifierPriceMap.get(vKey(pid, m.groupName, m.optionName));
-        if (price === undefined) return { ok: false, status: 400, error: `Unknown modifier: ${m.groupName} / ${m.optionName}` };
-        m.price = price;
-        modifierTotal += price;
+        if (price === undefined) {
+          if (!opts.tillSale) return { ok: false, status: 400, error: `Unknown modifier: ${m.groupName} / ${m.optionName}` };
+          unknown = `modifier renamed or removed: ${name} — ${m.groupName} / ${m.optionName}`;
+          break;
+        }
+        mprices.push(price);
       }
+      if (unknown) { atTillPrice(unknown, false); continue; }
+      // Every option is known: the catalogue's values replace the client's (the display rows stay truthful).
+      (item.selectedVariants ?? []).forEach((v, i) => { v.priceAdjustment = adjs[i]; unit += adjs[i]; });
+      let modifierTotal = 0;
+      (item.selectedModifiers ?? []).forEach((m, i) => { m.price = mprices[i]; modifierTotal += mprices[i]; });
       lines.push({ unitPrice: round2(unit), lineTotal: round2((unit + modifierTotal) * qty) });
     } else {
       // Non-catalogue charge (parking/fuel/quick-add) — trust client price, clamped >= 0.
@@ -325,7 +382,42 @@ async function recomputeOrderTotals(
 
   const { vat, ctl } = await taxSplit(businessId, total);
 
-  return { ok: true, lines, subtotal, discount, total, vat, ctl, offerDiscount, offers };
+  return { ok: true, lines, subtotal, discount, total, vat, ctl, offerDiscount, offers, fallbacks };
+}
+
+// ── P0-2: an offline till sale priced differently from the cloud's catalogue ──
+// Owner decision (2026-10-14): "let the sale go through but count it as a loss". A till's sale was priced by the till's
+// catalogue when it was made, printed and PAID; the cloud re-prices it on sync. When the two differ (a price changed
+// before the sale synced, an option renamed or removed, a product the cloud does not know), the sale is stored AT THE
+// TILL'S PRICES — the money actually taken, so its payment legs reconcile and it is never lost — and the difference is
+// recorded in order_price_variances (catalogue - till: positive = a loss) for Reports › Voids & Exceptions and the owner's
+// daily email. A web / live sale keeps the anti-tampering re-price unchanged.
+export interface TillPricing {
+  lines: { unitPrice: number; lineTotal: number }[];
+  subtotal: number; discount: number; total: number;
+  catalogueTotal: number; tillTotal: number; difference: number; reason: string; suspicious: boolean;
+}
+/** A difference above this share of the catalogue total is accepted but flagged for the owner. */
+export const SUSPICIOUS_SHARE = 0.5;
+
+/** The till's own figures for a sale, when they differ from the catalogue's (or a line had no catalogue price); else null. */
+export function tillPricing(items: OrderItemInput[], cat: RecomputeOk, body: { total?: unknown; discount_amount?: unknown }): TillPricing | null {
+  const lines = items.map((item) => ({ unitPrice: round2(Math.max(0, Number(item.unitPrice) || 0)), lineTotal: tillLineTotal(item) }));
+  const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
+  const sent = Number(body?.total);
+  const total = round2(Number.isFinite(sent) && body?.total !== null && body?.total !== '' && body?.total !== undefined
+    ? Math.max(0, sent)
+    : Math.max(0, subtotal - (Number(body?.discount_amount) || 0)));
+  const difference = round2(cat.total - total);
+  if (Math.abs(difference) < 0.01 && !cat.fallbacks.length) return null;
+  const reasons = [...(Math.abs(difference) >= 0.01 && cat.fallbacks.length < items.length ? ['price changed before sync'] : []),
+    ...cat.fallbacks.map((f) => f.reason)];
+  return {
+    lines, subtotal, discount: round2(Math.max(0, subtotal - total)), total,
+    catalogueTotal: cat.total, tillTotal: total, difference,
+    reason: [...new Set(reasons)].join('; ').slice(0, 500) || 'priced differently on the till',
+    suspicious: cat.total > 0 ? Math.abs(difference) > SUSPICIOUS_SHARE * cat.total : Math.abs(difference) >= 0.01,
+  };
 }
 
 /**
@@ -569,9 +661,18 @@ router.post('/', async (req, res) => {
     }
 
     // ── Item 4: authoritative price recomputation (anti-tampering) ───────────
-    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, items, discount_amount, offerClaimFrom(req.body));   // A445
+    // P0-2: a TILL's sale (a desktop token, made with its own time — every till sale carries created_at) was made, printed
+    // and paid already. It is re-priced to find any difference, on a copy (the till's option prices stay on its lines), and
+    // a line the catalogue cannot price is valued at the till's price instead of refusing the sale.
+    const tillSale = req.surface === 'desktop' && !!(req.body?.created_at || req.body?.client_created_at);
+    let saleItems: OrderItemInput[] = items;
+    if (tillSale) {
+      await mapCanonicalProducts(req.businessId, items);   // P1-8a: a product the till created offline, known here by another id
+      saleItems = JSON.parse(JSON.stringify(items));
+    }
+    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, saleItems, discount_amount, offerClaimFrom(req.body), { tillSale });   // A445
     if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
-    const {
+    let {
       lines: authLines,
       subtotal: authSubtotal,
       discount: authDiscount,
@@ -579,6 +680,21 @@ router.post('/', async (req, res) => {
       vat: authVat,
       ctl: authCtl,
     } = recomputed;
+    let offerDiscount = recomputed.offerDiscount;
+    let appliedOffers = recomputed.offers;
+    const variance = tillSale ? tillPricing(items, recomputed, req.body) : null;
+    if (variance) {
+      // Stored at the till's prices (the money taken; its legs reconcile), the tax split from that total.
+      authLines = variance.lines; authSubtotal = variance.subtotal; authDiscount = variance.discount; authTotal = variance.total;
+      ({ vat: authVat, ctl: authCtl } = await taxSplit(req.businessId, authTotal));
+      // The offers' share of the till's discount, at most what the catalogue's engine gave.
+      const k = offerDiscount > 0 ? Math.min(1, authDiscount / offerDiscount) : 0;
+      offerDiscount = round2(offerDiscount * k);
+      appliedOffers = appliedOffers.map((a) => ({ ...a, amount: round2(a.amount * k) }));
+      saleItems = items;   // the till's option prices on the stored lines
+    }
+    // A line whose product the cloud does not have is kept as a non-catalogue line (no product id: the foreign key).
+    const unknownProductLines = new Set(recomputed.fallbacks.filter((f) => f.unknownProduct).map((f) => f.index));
 
     // ── Finding #19: offline re-pricing divergence ──────────────────────────
     // The server ALWAYS re-prices against the current catalogue for anti-tampering
@@ -591,13 +707,14 @@ router.post('/', async (req, res) => {
     // stored total remains the authoritative re-priced figure — but now the
     // discrepancy is visible instead of silent, and can be reviewed.
     const clientTotal = Number(total);
-    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - authTotal) > 0.01) {
+    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - recomputed.total) > 0.01) {
       const isOffline = !!(req.body?.created_at || req.body?.client_created_at);
       console.warn(
         `[reprice-divergence]${isOffline ? ' OFFLINE' : ''} order ${order_number}: ` +
-        `client total ${clientTotal.toFixed(2)} vs re-priced ${authTotal.toFixed(2)} ` +
-        `(diff ${(clientTotal - authTotal).toFixed(2)}). Stored the re-priced figure; ` +
-        `review if this was an offline sale whose catalogue price changed before sync.`,
+        `client total ${clientTotal.toFixed(2)} vs re-priced ${recomputed.total.toFixed(2)} ` +
+        `(diff ${(clientTotal - recomputed.total).toFixed(2)}). ` +
+        (variance ? 'A till\'s sale: stored at the till\'s figure, the difference recorded (order_price_variances).'
+                  : 'Stored the re-priced figure (a web / live sale: anti-tampering).'),
       );
     }
 
@@ -695,9 +812,9 @@ router.post('/', async (req, res) => {
     // post-commit effects — they are consequences of the sale, not part of its
     // identity, and they now run only after a durable, complete order exists, so
     // a failure in any of them can no longer orphan the order.
-    const itemsPayload = items.map((item: OrderItemInput, idx: number) => ({
+    const itemsPayload = saleItems.map((item: OrderItemInput, idx: number) => ({
       item: {
-        product_id: item.product?.id ?? null,
+        product_id: unknownProductLines.has(idx) ? null : (item.product?.id ?? null),
         product_name: item.product?.name ?? (item as any).product_name ?? 'Item',
         category_name: Array.isArray(item.product?.categories)
           ? (item.product.categories[0]?.name ?? null)
@@ -860,11 +977,21 @@ router.post('/', async (req, res) => {
     // A367: the order's note. create_order_atomic (migration 69) does not carry orders.notes, so it is written right
     // after the order exists — a note is an instruction, not money, and a failure here is logged, never the sale's.
     // A445: which offers took what off (create_order_atomic does not carry them — written right after, like the note).
-    if (recomputed.offerDiscount > 0) {
+    if (offerDiscount > 0) {
       const { error: offErr } = await supabase.from('orders')
-        .update({ offer_discount: recomputed.offerDiscount, offers: recomputed.offers })
+        .update({ offer_discount: offerDiscount, offers: appliedOffers })
         .eq('id', createdRow.order_id).eq('business_id', req.businessId);
       if (offErr) console.error('[order-create] the offers on the sale were not saved:', offErr.message);
+    }
+    // P0-2: the difference between the catalogue's price and what the till charged, counted as a loss (positive) for the
+    // owner. Written after the sale exists; a failure is logged, never the sale's (the sale is already safe).
+    if (variance) {
+      const { error: varErr } = await supabase.from('order_price_variances').insert({
+        business_id: req.businessId, branch_id, order_id: createdRow.order_id, order_number: createdRow.order_number,
+        catalogue_total: variance.catalogueTotal, till_total: variance.tillTotal, difference: variance.difference,
+        reason: variance.reason, suspicious: variance.suspicious, sold_at: orderPayload.created_at,
+      });
+      if (varErr) console.error(`[order-create] P0-2 price difference on ${createdRow.order_number} not recorded (is migration 133 applied?):`, varErr.message);
     }
     const orderNote = cleanNote(orderNoteRaw, ORDER_NOTE_MAX);
     if (orderNote) {
@@ -906,8 +1033,8 @@ router.post('/', async (req, res) => {
       orderNumber: order_number,
       orderType:   order_type,
       pumpId:      order.pump_id ?? null,
-      lines: items.map((i: OrderItemInput) => ({
-        productId: i.product?.id ?? null,
+      lines: saleItems.map((i: OrderItemInput, idx: number) => ({
+        productId: unknownProductLines.has(idx) ? null : (i.product?.id ?? null),
         quantity:  Number(i.quantity) || 0,
         variants:  i.selectedVariants ?? [],
       })),
@@ -1305,7 +1432,31 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
   }
 
   try {
-    // 1. Reverse every completed leg, in the same tender it came in on, so the
+    // 1. CLAIM the refund first (P2-12): mark the order refunded only while it is not refunded yet, in one conditional
+    //    update. Two overlapping requests (a till's retry, a double tap) used to both pass the check above and both write
+    //    the negative payments — a double refund. Only the request whose update matched the row goes on.
+    //    Status stays 'completed' on purpose — see migration 37.
+    const { data: claimed, error: uErr } = await supabase
+      .from('orders')
+      .update({
+        refunded_at:          replay?.at ?? new Date().toISOString(),
+        refunded_amount:      round2(takenTotal),
+        refund_reason:        String(reason).trim(),
+        refunded_by:          replay ? (replay.actorId ?? me) : me,
+        refund_authorized_by: authorizedBy,
+      })
+      .eq('id', orderId)
+      .eq('business_id', req.businessId)
+      .eq('status', 'completed')
+      .is('refunded_at', null)
+      .select('id');
+    if (uErr) throw uErr;
+    if (!(claimed ?? []).length) {
+      res.status(400).json({ error: 'That order has already been refunded', code: 'ALREADY_REFUNDED' });
+      return;
+    }
+
+    // 2. Reverse every completed leg, in the same tender it came in on, so the
     //    drawer reconciles per method. Cash back for cash; an M-Pesa leg is
     //    recorded here but must still be sent back through M-Pesa by hand.
     const { error: rErr } = await supabase
@@ -1322,21 +1473,14 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
         status: 'refunded',
         sync_status: 'pending',
       })));
-    if (rErr) throw rErr;
-
-    // 2. Mark the order refunded. Status stays 'completed' on purpose — see
-    //    migration 37.
-    const { error: uErr } = await supabase
-      .from('orders')
-      .update({
-        refunded_at:          replay?.at ?? new Date().toISOString(),
-        refunded_amount:      round2(takenTotal),
-        refund_reason:        String(reason).trim(),
-        refunded_by:          replay ? (replay.actorId ?? me) : me,
-        refund_authorized_by: authorizedBy,
-      })
-      .eq('id', orderId);
-    if (uErr) throw uErr;
+    if (rErr) {
+      // The money did not go back on the books: release the claim so the refund can be tried again.
+      const { error: undoErr } = await supabase.from('orders')
+        .update({ refunded_at: null, refunded_amount: 0, refund_reason: null, refunded_by: null, refund_authorized_by: null })
+        .eq('id', orderId).eq('business_id', req.businessId);
+      if (undoErr) console.error(`[refund] ${orderId}: the claim could not be released after a failed payment write:`, undoErr.message);
+      throw rErr;
+    }
 
     // 3. Credit legs: clear the debt, same as a void.
     if (order.customer_id) {
@@ -1507,13 +1651,21 @@ router.post('/:id/void', reversalGate, async (req, res) => {
   }
 
   try {
-    // 1. Mark order voided
-    const { error: vErr } = await supabase
+    // 1. Mark order voided — a CLAIM (P2-12): only while it is not voided yet, so of two overlapping requests (a till's
+    //    retry, a double tap) exactly one reverses the payments, the stock and the loyalty; the other is told it is done.
+    const { data: claimed, error: vErr } = await supabase
       .from('orders')
       .update({ status: 'voided', void_reason: reason, voided_at: replay?.at ?? new Date().toISOString(),
                 voided_by: replay ? (replay.actorId ?? me) : me, authorized_by: authorizedBy })
-      .eq('id', orderId);
+      .eq('id', orderId)
+      .eq('business_id', req.businessId)
+      .neq('status', 'voided')
+      .select('id');
     if (vErr) throw vErr;
+    if (!(claimed ?? []).length) {
+      res.status(400).json({ error: 'Order is already voided', code: 'ALREADY_VOIDED' });
+      return;
+    }
 
     // 0.6.27: a voided web delivery's rider pay-out goes back in while its shift is open (a till's own sale: the till
     // puts its pay-out back itself when it hears of the void). Best-effort — the void has happened.

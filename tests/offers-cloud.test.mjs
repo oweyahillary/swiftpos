@@ -186,7 +186,9 @@ await ok('the manual discount is the rest of discount_amount, capped as before o
   assert(/const manualAsked = claim\.ids\.length \? Math\.max\(0, \(Number\(discountAmount\) \|\| 0\) - claim\.amount\) : discountAmount;/.test(src)
     && /const discount = round2\(offerDiscount \+ capDiscount\(manualAsked, round2\(subtotal - offerDiscount\)\)\);/.test(src), 'POST /api/orders');
   assert(/const payDiscount = round2\(payOffers\.offerDiscount \+ capDiscount\(payManualAsked, round2\(paySubtotal - payOffers\.offerDiscount\)\)\);/.test(src), 'POST /:id/pay');
-  assert(/update\(\{ offer_discount: recomputed\.offerDiscount, offers: recomputed\.offers \}\)/.test(src), 'stored on the sale');
+  // P0-2: the figures stored are recomputed's — or, for a till sale priced differently, their share of the till's discount.
+  assert(/let offerDiscount = recomputed\.offerDiscount;/.test(src) && /let appliedOffers = recomputed\.offers;/.test(src)
+    && /update\(\{ offer_discount: offerDiscount, offers: appliedOffers \}\)/.test(src), 'stored on the sale');
 });
 
 server.close();

@@ -150,7 +150,7 @@ ok('syncAll calls it', /refreshDeviceTokenIfExpiring\(\)/.test(syncAllBody),
    + 'reason ESC/POS sat built and unconnected.');
 ok('it runs BEFORE the catalogue pull',
    syncAllBody.indexOf('refreshDeviceTokenIfExpiring()') >= 0
-     && syncAllBody.indexOf('refreshDeviceTokenIfExpiring()') < syncAllBody.indexOf('pullCatalogue()'),
+     && syncAllBody.indexOf('refreshDeviceTokenIfExpiring()') < syncAllBody.search(/pullCatalogue(Once)?\(\)/),
    'Refreshing after the pull would leave the 401 exactly where it was.');
 ok('the reactive 401 backstop is still present',
    /res\.status\s*===\s*401|!pulled\s*&&\s*_refreshToken/.test(src),

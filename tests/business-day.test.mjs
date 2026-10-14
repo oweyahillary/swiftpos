@@ -65,7 +65,8 @@ await ok('the reports and the daily email count the business day', () => {
   assert.ok(!/getDateRange\(from as string, to as string\)/.test(r), 'a report still ignores the cut-off');
   const d = read('apps/server/src/jobs/dailySummary.ts');
   assert.match(d, /const cutoff = await getDayCutoff\(biz\.id\);/);
-  assert.match(d, /await sendSummaryForBusiness\(biz, range\.start, range\.end, recipients\);/);
+  // Audit 2026-10-14: and the same instant (`now`) the send decision used — the day reported is the day decided on.
+  assert.match(d, /await sendSummaryForBusiness\(biz, range\.start, range\.end, recipients, now\);/);
 });
 await ok('the web: the owner sets it (half-hour steps to 06:00), per branch too; the web POS History follows it', () => {
   assert.match(read('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx'), /onChange=\{e => saveSetting\('business_day_cutoff', e\.target\.value\)\}/);

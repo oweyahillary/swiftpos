@@ -18,9 +18,15 @@ import { safeRouter } from '../middleware/asyncHandler';
 import crypto          from 'crypto';
 import { supabase }    from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
 
 const router = safeRouter();
 router.use(requireAuth);
+
+// Audit 2026-10-14: adding, changing, deleting and test-firing a webhook were open to any signed-in user — a cashier could
+// point every completed order at their own URL. They need settings.manage (the owner and '*' pass in rbac); the lists
+// stay readable to the business's signed-in users.
+const canManage = requirePermission('settings.manage');
 
 const VALID_EVENTS = ['order.completed', 'order.voided'];
 
@@ -37,10 +43,11 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/webhooks
-router.post('/', async (req, res) => {
+router.post('/', canManage, async (req, res) => {
   const { url, events = ['order.completed'] } = req.body;
 
-  if (!url?.trim()) { res.status(400).json({ error: 'url is required' }); return; }
+  if (typeof url !== 'string' || !url.trim()) { res.status(400).json({ error: 'url is required' }); return; }
+  if (!Array.isArray(events)) { res.status(400).json({ error: 'events must be a list' }); return; }
 
   const invalid = events.filter((e: string) => !VALID_EVENTS.includes(e));
   if (invalid.length) {
@@ -70,10 +77,13 @@ router.post('/', async (req, res) => {
 });
 
 // PATCH /api/webhooks/:id
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', canManage, async (req, res) => {
   const { url, events, status } = req.body;
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
+  if (url !== undefined && (typeof url !== 'string' || !url.trim())) { res.status(400).json({ error: 'url must be a web address' }); return; }
+  if (events !== undefined && !Array.isArray(events)) { res.status(400).json({ error: 'events must be a list' }); return; }
+  if (status !== undefined && !['active', 'inactive'].includes(status)) { res.status(400).json({ error: 'status must be active or inactive' }); return; }
   if (url !== undefined)    updates.url    = url.trim();
   if (status !== undefined) updates.status = status;
   if (events !== undefined) {
@@ -99,7 +109,7 @@ router.patch('/:id', async (req, res) => {
 });
 
 // DELETE /api/webhooks/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManage, async (req, res) => {
   const { error } = await supabase
     .from('webhooks')
     .delete()
@@ -135,7 +145,7 @@ router.get('/:id/deliveries', async (req, res) => {
 
 // POST /api/webhooks/:id/test
 // Sends a test ping so the owner can verify their endpoint is reachable
-router.post('/:id/test', async (req, res) => {
+router.post('/:id/test', canManage, async (req, res) => {
   const { data: hook } = await supabase
     .from('webhooks')
     .select('id, url, secret_hash')

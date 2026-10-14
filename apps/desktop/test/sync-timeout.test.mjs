@@ -30,8 +30,8 @@ try { db = new (require0('better-sqlite3'))(':memory:'); driver = 'better-sqlite
 catch { const { DatabaseSync } = await import('node:sqlite'); db = new DatabaseSync(':memory:'); driver = 'node:sqlite'; }
 
 db.exec(`
-  CREATE TABLE sync_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, attempts INTEGER DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, status TEXT DEFAULT 'pending');
-  CREATE TABLE orders (id TEXT PRIMARY KEY, sync_status TEXT DEFAULT 'pending');
+  CREATE TABLE sync_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, attempts INTEGER DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, status TEXT DEFAULT 'pending', drawer_wait_at TEXT);
+  CREATE TABLE orders (id TEXT PRIMARY KEY, sync_status TEXT DEFAULT 'pending', shift_id TEXT);
   CREATE TABLE shifts (id TEXT, business_id TEXT, branch_id TEXT, cashier_id TEXT, opened_at TEXT, closed_at TEXT, status TEXT, opening_float REAL, closing_float REAL, expected_cash REAL, cash_variance REAL, notes TEXT, created_at TEXT, business_day_id TEXT, business_date TEXT, device_id TEXT, terminal_code TEXT, drawer_label TEXT, opened_by TEXT, sync_status TEXT);
   CREATE TABLE float_transactions (id TEXT, shift_id TEXT, branch_id TEXT, cashier_id TEXT, type TEXT, amount REAL, reason TEXT, created_at TEXT, device_id TEXT, sync_status TEXT);
   CREATE TABLE expenses (id TEXT, business_id TEXT, branch_id TEXT, expense_category_id TEXT, description TEXT, amount REAL, paid_by TEXT, expense_date TEXT, shift_id TEXT, created_at TEXT, device_id TEXT, sync_status TEXT);

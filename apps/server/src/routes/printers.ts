@@ -10,11 +10,16 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { assertBranchAccess, branchScope } from '../middleware/rbac';
+import { assertBranchAccess, branchScope, requireAnyPermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
 router.use(requireAuth);
+
+// Audit 2026-10-14: adding, editing and deleting a printer were open to any signed-in user of the branch. They need
+// stations.manage (printers are the print set-up, as the stations routes are) or settings.manage; the owner and '*' pass
+// in rbac. And a new printer's branch must be THIS business's (the owner's assertBranchAccess is true for any id).
+const canManage = requireAnyPermission('stations.manage', 'settings.manage');
 
 // GET /api/printers?branch_id=
 router.get('/', async (req, res) => {
@@ -35,7 +40,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/printers
-router.post('/', async (req, res) => {
+router.post('/', canManage, async (req, res) => {
   const {
     branch_id, name, printer_name, type, paper_width,
     category_ids, is_default_receipt, connection_type, enabled,
@@ -48,6 +53,9 @@ router.post('/', async (req, res) => {
   if (!assertBranchAccess(req, branch_id)) {
     res.status(403).json({ error: 'Branch access denied' }); return;
   }
+  const { data: ownBranch } = await supabase.from('branches')
+    .select('id').eq('id', branch_id).eq('business_id', req.businessId).maybeSingle();
+  if (!ownBranch) { res.status(404).json({ error: 'Branch not found' }); return; }
 
   // If setting as default receipt, unset others first
   if (is_default_receipt) {
@@ -75,7 +83,7 @@ router.post('/', async (req, res) => {
 });
 
 // PATCH /api/printers/:id
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', canManage, async (req, res) => {
   const {
     name, printer_name, type, paper_width,
     category_ids, is_default_receipt, connection_type, enabled,
@@ -116,7 +124,7 @@ router.patch('/:id', async (req, res) => {
 });
 
 // DELETE /api/printers/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManage, async (req, res) => {
   // Fetch to verify branch access before deleting
   const { data: existing } = await supabase.from('branch_printers')
     .select('branch_id').eq('id', req.params.id).eq('business_id', req.businessId).single();

@@ -23,7 +23,7 @@ import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, se
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
-import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, ackViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
+import { hasNode, pushRowsToNode, measureNodeClock, refreshViaNode, ackViaNode, fetchReferenceFromNode, fetchRosterFromNode, fetchNodeCursors } from './nodeClient';
 import { nodeRefusal, cloudFetch } from './cloudGateway';
 import { setReceiptPay } from './receiptPay';   // A450   // A410
 import { readPending as readPendingWaste, pushPendingWastage, type WasteOutcome } from './tillWastage';   // A414
@@ -42,7 +42,10 @@ import { applyTestDataClear, applyMenuClear, dropPurgedMenu, type ClearPeriod } 
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth, emitEvent,
+  settleNodeBatch, noteNodeTarget, nodeTargetKey, nodeRearmSkipOwed, skipHeldByNode, NODE_BATCH_BYTES,   // F1/F2/F14
+  numberOwnRows, backfillOwnSeq, emitRefundEvents, applyPendingEvents, pruneNodeQueue,                  // F8/F9/F10/P3
 } from './nodeIngest';
+import { pruneNodeInstructions } from './branchClose';   // P3
 import { v4 as uuid } from 'uuid';
 import { cleanShowDays } from './productDays';
 import { pruneChoices, VARIANT_TABLES, MODIFIER_TABLES } from './choicePrune';   // A425
@@ -90,12 +93,30 @@ let _refreshToken = '';
 let _staffToken   = '';   // per-shift staff token — used for order push
 let _staffRefresh = '';
 let _isSyncing    = false;
+// Till sync audit (F13): which pass holds _isSyncing. Only the pass that set it clears it — a pass declared stale and
+// overtaken used to clear the flag in its finally while the newer pass still ran, letting a third start beside it.
+let _syncOwner: symbol | null = null;
 let _kvWaitingLogged = 0;   // 0.6.28: kitchen voids an older cloud would not take (logged once per count)
 // A177: when the current sync started, so a wedged _isSyncing can't block forever.
 let _syncStartedAt = 0;
 // A sync running longer than this is presumed wedged and no longer blocks a new
-// pass. Generous: a legitimate pass of many timed-out fetches must not trip it.
-const SYNC_STALE_MS = 3 * 60_000;
+// pass. Generous: a legitimate pass of many timed-out fetches must not trip it. Till sync audit (F13): 3 min was shorter
+// than a real pull on a weak line (a menu of N products is 7 + N fetches of up to 2 × 20 s each), so a second pass ran
+// beside the first. 10 min, and the push stages are single-flight besides (runPushStages), so even an overlap is safe.
+const SYNC_STALE_MS = 10 * 60_000;
+function takeSyncFlag(): symbol | null {
+  if (_isSyncing && Date.now() - _syncStartedAt < SYNC_STALE_MS) return null;
+  const me = Symbol('sync-pass');
+  _syncOwner = me;
+  _isSyncing = true;
+  _syncStartedAt = Date.now();
+  return me;
+}
+function releaseSyncFlag(me: symbol): void {
+  if (_syncOwner !== me) return;   // overtaken as stale: the newer pass owns the flag now
+  _syncOwner = null;
+  _isSyncing = false;
+}
 
 // A177: every sync fetch gets a hard timeout. Without one, a connection that
 // opens but never responds — a black-holed socket, a cold-starting host, a proxy
@@ -168,6 +189,8 @@ export async function rosterCloudGet(path: string): Promise<Response> {
 export function configureStaffSession(staffToken: string, staffRefresh = '') {
   _staffToken   = staffToken;
   _staffRefresh = staffRefresh;
+  // F6: a new sign-in starts its own renewal pace (the last person's "renewed a moment ago" is not this one's).
+  _staffRenewedAt = 0; _staffRenewalFailedAt = 0;
 }
 
 function authHeaders() {
@@ -561,18 +584,37 @@ function signedInStaffId(): string | null {
 // A477: a staff token the cloud refused for good is never presented again (it can only be refused again) — the person
 // signs in with their PIN anew.
 let _staffRefusedToken = '';
+// Till sync audit (F6): the staff renewal's own pace. The 20-s pollers (web sales, shift state, confirmations) each
+// renewed on every 401 — with a staff token the cloud keeps refusing for another reason, that was a rotation every
+// 20 s per poller, all from one shop IP that the cloud's limiter allows 120 per 15 minutes. Now:
+//   - renewed in the last minute → no new renewal: the caller retries with the token it has (true), once;
+//   - a renewal that failed for a passing reason (5xx, unreachable) → none for a minute;
+//   - a 429 → the shared A477 gate (Retry-After), which also holds the till's own renewal.
+export const STAFF_RENEWAL_FRESH_MS = 60_000;
+const STAFF_RENEWAL_RETRY_MS = 60_000;
+let _staffRenewedAt = 0;
+let _staffRenewalFailedAt = 0;
+/** Test seam. */
+export function _resetStaffRenewalPace(): void { _staffRenewedAt = 0; _staffRenewalFailedAt = 0; _staffRefusedToken = ''; }
 
 async function doRefreshStaffToken(): Promise<boolean> {
   // A477: disk first, as the till's own session.
   let refresh = persistedStaffRefresh() || _staffRefresh;
   if (!refresh) return false;
   if (refresh === _staffRefusedToken) return false;
+  // F6: the same gate as the till's own renewal — a 429's Retry-After, or a refused till session, holds this one too.
+  if (renewalHeldUntil() !== null) return false;
+  const now = Date.now();
+  if (_staffRenewedAt && now - _staffRenewedAt < STAFF_RENEWAL_FRESH_MS && _staffToken) return true;
+  if (_staffRenewalFailedAt && now - _staffRenewalFailedAt < STAFF_RENEWAL_RETRY_MS) return false;
   // A446 (session audit): a renewal that finishes after its cashier signed out and another signed in must not write the
   // first cashier's session over the second's — the second's sales would go out under the first's name.
   const who = signedInStaffId();
+  // F6: which till asks (the cloud's limiter keys a till by its device id, not the shop's shared IP), and the machine.
+  const headers = { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceConfig()?.device_id ?? '', ...(await renewalHeaders()) };
   const attempt = (token: string) => syncFetch(`${_serverUrl}/api/auth/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ refreshToken: token }),
   });
   try {
@@ -587,6 +629,8 @@ async function doRefreshStaffToken(): Promise<boolean> {
     }
     if (!res.ok) {
       if (res.status === 401) { _staffRefusedToken = refresh; authLog('staff-renewal-refused', `HTTP ${res.status}`); }
+      else if (res.status === 429) noteTooManyRenewals(res, 'staff renewal');   // F6: wait as asked (the shared gate)
+      else _staffRenewalFailedAt = Date.now();                                   // F6: a passing failure — not for a minute
       noteInboundFailure('auth', `staff token refresh failed: ${await describeResponse(res)}`);
       return false;
     }
@@ -604,8 +648,10 @@ async function doRefreshStaffToken(): Promise<boolean> {
     _staffRefresh = nextRefresh;
     if (kept && ack === true && refreshToken) _ackInFlight = confirmRenewal(refreshToken, false);
     clearInboundFailure('auth');
+    _staffRenewedAt = Date.now(); _staffRenewalFailedAt = 0;
     return true;
   } catch (err: any) {
+    _staffRenewalFailedAt = Date.now();   // F6: unreachable — not again for a minute
     noteInboundFailure('auth', `staff token refresh error: ${err?.message ?? err}`);
     return false;
   }
@@ -618,7 +664,20 @@ async function doRefreshStaffToken(): Promise<boolean> {
 // must not be gated behind the shift push (that coupling is how 6 cash records
 // could sit pending while orders were fine, or vice versa). Each stage already
 // handles its own expected failures; this is the backstop for an unexpected throw.
+// Till sync audit (F13): single-flight. Two passes (a stale one overtaken, the post-sale flush beside the timer) must
+// never push the same rows side by side — a second caller waits for the pass running and takes its result.
+let _pushStagesInFlight: Promise<{ orders: number; errors: string[] }> | null = null;
 async function runPushStages(errors: string[]): Promise<number> {
+  if (!_pushStagesInFlight) {
+    const mine: string[] = [];
+    _pushStagesInFlight = runPushStagesOnce(mine).then((orders) => ({ orders, errors: mine }))
+      .finally(() => { _pushStagesInFlight = null; });
+  }
+  const r = await _pushStagesInFlight;
+  errors.push(...r.errors);
+  return r.orders;
+}
+async function runPushStagesOnce(errors: string[]): Promise<number> {
   let orders = 0;
   const stage = async <T>(name: string, fn: () => Promise<T>): Promise<T | 0> => {
     try { return await fn(); }
@@ -630,7 +689,7 @@ async function runPushStages(errors: string[]): Promise<number> {
   };
   // A338: first, give back to the queue what a sibling drawer's clash parked (0.6.10 and earlier), so it goes in this pass.
   // A363: then what a trading-day clash parked (an offline close-and-reopen), once.
-  await stage('requeue', async () => { requeueAfterDayClash(); return requeueAfterDrawerClash(); });
+  await stage('requeue', async () => { requeueAfterDayClash(); requeueTransientConflicts(); return requeueAfterDrawerClash(); });
   await stage('shift push', () => pushLocalRecords(errors));
   await stage('price push', () => pushBranchPriceEdits(errors));
   // A411: station routing saved on this till while the cloud could not be reached.
@@ -638,11 +697,13 @@ async function runPushStages(errors: string[]): Promise<number> {
   // A414: wastage recorded on this till while the cloud could not be reached.
   await stage('wastage', async () => { await pushWastageNow(); return 0; });
   orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
+  // 0.6.30 (A336 stage 3): then the voids and refunds made while offline — after the order push, so the sale is there.
+  // Till sync audit (F2): and BEFORE the shift close — a close that reached the cloud ahead of its drawer's offline voids
+  // and refunds was computed on the unvoided sales and showed a shortage that was not there.
+  await stage('reversals', () => pushOfflineReversals(errors));
   await stage('reconcile', () => reconcileClosedShifts(errors));
   // A365: then a manager's confirmation of a shift whose close is on the cloud.
   await stage('confirm', () => pushShiftConfirmations(errors));
-  // 0.6.30 (A336 stage 3): then the voids and refunds made while offline — after the order push, so the sale is there.
-  await stage('reversals', () => pushOfflineReversals(errors));
   await stage('node push', () => pushToNode(errors));
   // A363: the manager's "Last synced" — stamped only when this pass left nothing waiting for the cloud.
   await stage('last synced', async () => noteSyncedIfClear());
@@ -744,15 +805,23 @@ export function pushStationRoutingNow(): Promise<Record<string, PushOutcome>> {
 // cloud's logo back. Decided: the till's upload ALSO saves to the cloud (PUT /api/business/branding, the till session).
 // Until it lands the till keeps its own (the pull skips branding while pending); offline → it goes with the next sync.
 const BRANDING_PENDING_KEY = 'branding_push_pending';
-export function brandingPushPending(): boolean {
+// Till sync audit (F8): the pending mark carries a VERSION (a new one per upload; '1' from a build before it still
+// counts). The push clears only the version it sent — a logo uploaded again while the first was on its way stays pending.
+function brandingPendingVersion(): string | null {
   try {
-    return (getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(BRANDING_PENDING_KEY) as
-      { value: string } | undefined)?.value === '1';
-  } catch { return false; }
+    const v = (getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(BRANDING_PENDING_KEY) as
+      { value: string } | undefined)?.value;
+    return v ? v : null;
+  } catch { return null; }
 }
-function setBrandingPending(on: boolean): void {
+export function brandingPushPending(): boolean {
+  return brandingPendingVersion() !== null;
+}
+function setBrandingPending(on: boolean, version?: string | null): void {
   const db = getLocalDb();
-  if (on) db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, '1', ?)`).run(BRANDING_PENDING_KEY, new Date().toISOString());
+  if (on) db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(BRANDING_PENDING_KEY, `${Date.now()}-${uuid()}`, new Date().toISOString());
+  else if (version) db.prepare(`DELETE FROM maintenance_state WHERE key = ? AND value = ?`).run(BRANDING_PENDING_KEY, version);
   else db.prepare(`DELETE FROM maintenance_state WHERE key = ?`).run(BRANDING_PENDING_KEY);
 }
 export type BrandingPushResult = { state: 'saved' | 'pending' | 'refused'; message?: string };
@@ -764,13 +833,14 @@ export async function queueBrandingPush(): Promise<BrandingPushResult> {
 /** Send the till's branding row to the cloud. saved → pulls resume; pending → retried each sync; refused → pulls resume
  *  (the cloud's copy will come back) and the editor says why. */
 export async function pushBrandingNow(): Promise<BrandingPushResult> {
-  if (!brandingPushPending()) return { state: 'saved' };
+  const version = brandingPendingVersion();
+  if (!version) return { state: 'saved' };
   const db = getLocalDb();
   const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as { business_id: string } | undefined;
   const row = sess?.business_id ? db.prepare(
     `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding WHERE business_id = ?`,
   ).get(sess.business_id) as { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number } | undefined : undefined;
-  if (!row) { setBrandingPending(false); return { state: 'refused', message: 'No business on this till yet.' }; }
+  if (!row) { setBrandingPending(false, version); return { state: 'refused', message: 'No business on this till yet.' }; }
   if (!_accessToken || !_serverUrl || !isOnline()) return { state: 'pending', message: 'Offline — it will be saved to the cloud at the next sync.' };
   const body = JSON.stringify({
     accent_hex: row.accent_hex, logo_png: row.logo_png, logo_receipt: row.logo_receipt,
@@ -781,13 +851,17 @@ export async function pushBrandingNow(): Promise<BrandingPushResult> {
     let res = await put();
     if (res.status === 401 && await refreshAccessToken()) res = await put();
     if (res.ok) {
-      setBrandingPending(false);
+      setBrandingPending(false, version);
       logLine('sync', 'branding saved to the cloud');
       return { state: 'saved' };
     }
-    if (res.status >= 500) return { state: 'pending', message: `The cloud did not answer (HTTP ${res.status}) — it will retry at the next sync.` };
+    // F8: the cloud down (5xx), the till's session not renewable right now (401 — the A477 gate may be holding it), a
+    // timeout (408) or too many requests (429) is not a refusal of the logo: it stays pending (as stationRouting.ts).
+    if (res.status >= 500 || res.status === 401 || res.status === 408 || res.status === 429) {
+      return { state: 'pending', message: `The cloud did not take it yet (HTTP ${res.status}) — it will retry at the next sync.` };
+    }
     const err = await res.json().catch(() => ({} as any));
-    setBrandingPending(false);
+    setBrandingPending(false, version);
     const message = describeServerError(err, res.status);
     logLine('sync', `branding refused by the cloud (HTTP ${res.status}): ${message}`);
     return { state: 'refused', message };
@@ -799,10 +873,8 @@ export async function pushBrandingNow(): Promise<BrandingPushResult> {
 export async function syncAll(): Promise<{ pulled: boolean; pushed: number; errors: string[] }> {
   if (!_accessToken || !_serverUrl) return { pulled: false, pushed: 0, errors: ['Not configured'] };
   if (!isOnline()) return { pulled: false, pushed: 0, errors: ['Offline'] };
-  if (_isSyncing && Date.now() - _syncStartedAt < SYNC_STALE_MS) return { pulled: false, pushed: 0, errors: ['Sync already in progress'] };
-
-  _isSyncing = true;
-  _syncStartedAt = Date.now();
+  const me = takeSyncFlag();
+  if (!me) return { pulled: false, pushed: 0, errors: ['Sync already in progress'] };
   const errors: string[] = [];
   let pulled = false;
   let pushed = 0;
@@ -818,11 +890,18 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     if (brandingPushPending()) { try { await pushBrandingNow(); } catch { /* stays pending */ } }
     // A411: routing saved on this till goes up before the pull, so the pull brings it back rather than the old one.
     if (stationRoutingPending()) { try { await pushStationRoutingNow(); } catch { /* stays pending */ } }
-    pulled = await pullCatalogue();
-    // If pull returns false it may be a 401 — try refreshing once
-    if (!pulled && _refreshToken) {
+    // F13: a pull that throws (any fetch in it) is the pull's failure alone — the push stages below still run.
+    const pullSafely = () => pullCatalogueOnce().catch((e: any) => {
+      errors.push(`Catalogue pull: ${e?.message ?? e}`);
+      logLine('sync', `catalogue pull threw: ${e?.message ?? e}`);
+      return false;
+    });
+    pulled = await pullSafely();
+    // Till sync audit (F7): renew only when the pull was refused with a 401. Renewing after ANY failed pull (a 403, a
+    // 5xx, the cloud out of reach) rotated the till's key about three times a minute while a catalogue version waited.
+    if (!pulled && _lastPullStatus === 401 && (_refreshToken || persistedRefresh())) {
       const refreshed = await refreshAccessToken();
-      if (refreshed) pulled = await pullCatalogue();
+      if (refreshed) pulled = await pullSafely();
     }
     // A321: tell the open screens. Every pull path — the 10-min floor, startup, enrol, branch change,
     // manual sync, post-edit sync and the 20-s freshness check — goes through here, so this is the
@@ -846,7 +925,7 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
-    _isSyncing = false;
+    releaseSyncFlag(me);
   }
 
   return { pulled, pushed, errors };
@@ -895,10 +974,8 @@ async function runDayCloseInstructions(errors: string[]): Promise<void> {
 export async function syncPush(): Promise<{ pushed: number; errors: string[] }> {
   if (!_accessToken || !_serverUrl) return { pushed: 0, errors: ['Not configured'] };
   if (!isOnline()) return { pushed: 0, errors: ['Offline'] };
-  if (_isSyncing && Date.now() - _syncStartedAt < SYNC_STALE_MS) return { pushed: 0, errors: ['Sync already in progress'] };
-
-  _isSyncing = true;
-  _syncStartedAt = Date.now();
+  const me = takeSyncFlag();
+  if (!me) return { pushed: 0, errors: ['Sync already in progress'] };
   const errors: string[] = [];
   let pushed = 0;
   try {
@@ -906,7 +983,7 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
-    _isSyncing = false;
+    releaseSyncFlag(me);
   }
   return { pushed, errors };
 }
@@ -1163,7 +1240,8 @@ export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pull
 export function getSyncStatus(): {
   online: boolean; pendingCount: number; failedCount: number;
   /** A178: the pending count split by table, so the tech screen shows what's stuck. */
-  pendingBreakdown?: { orders: number; shifts: number; floats: number; expenses: number; days: number; reversals?: number };
+  pendingBreakdown?: { orders: number; shifts: number; floats: number; expenses: number; days: number; reversals?: number;
+    kitchenVoids?: number; prices?: number; confirmations?: number; wastage?: number };
   /** Why the failed ones failed. A count alone gives the cashier nothing to act on. */
   failedReason?: string;
   failedSince?: string;
@@ -1191,13 +1269,20 @@ export function getSyncStatus(): {
   /** A363: records the cloud REFUSED and this till parked ('conflict'), and the first reason it gave. */
   parkedCount?: number;
   parkedReason?: string;
+  /** Till sync audit (F5): sales waiting for a drawer the cloud refused — they go with it, so they are not "pending". */
+  parkedSales?: number;
   /** A363: the last moment this till had nothing waiting for the cloud (ISO), null if never recorded. */
   lastSyncedAt?: string | null;
   /** A448: the branch server refused this till's access code (recently) — nothing reaches the cloud through it. */
   nodeRefused?: { status: number; since: string } | null;
 } {
   const db = getLocalDb();
-  const pending = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'pending'`).get() as { count: number };
+  // Till sync audit (F5): a sale whose drawer the cloud refused (shift parked 'conflict') is not sent until the drawer is
+  // resolved — it is parked with it, not "pending" (pushPendingOrders skips it the same way, PARKED_DRAWER_SQL).
+  const pending = db.prepare(`SELECT COUNT(*) as count FROM sync_queue q WHERE q.status = 'pending' AND NOT ${PARKED_DRAWER_SQL}`).get() as { count: number };
+  let parkedSales = 0;
+  try { parkedSales = (db.prepare(`SELECT COUNT(*) as count FROM sync_queue q WHERE q.status = 'pending' AND ${PARKED_DRAWER_SQL}`).get() as { count: number }).count; }
+  catch { /* keep the zero */ }
   const failed  = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'failed'`).get() as { count: number };
 
   // The most common reason, and how long it has been stuck.
@@ -1236,15 +1321,26 @@ export function getSyncStatus(): {
     reversals = (db.prepare(`SELECT COUNT(*) AS n FROM pending_reversals WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')`)
       .get(ownDevice) as { n: number }).n;
   } catch { /* keep the zero */ }
-  const localPending = { count: bd.shifts + bd.floats + bd.expenses + bd.days + reversals };
+  // Till sync audit (F17): everything else this till still owes the cloud. The 30-s push timer (index.ts) only runs
+  // while this count is above 0, and "Last synced" is stamped only at 0 — leaving these out let them wait unsent and
+  // the manager read "Last synced: now" over them.
+  const extra = { kitchenVoids: 0, prices: 0, confirmations: 0, wastage: 0 };
+  const tryCount = (sql: string, ...args: unknown[]) => { try { return (db.prepare(sql).get(...args) as { n: number }).n; } catch { return 0; } };
+  extra.kitchenVoids  = tryCount(`SELECT COUNT(*) AS n FROM kitchen_voids WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')`, ownDevice);
+  extra.prices        = tryCount(`SELECT COUNT(*) AS n FROM local_price_edits WHERE synced = 0`);
+  extra.confirmations = tryCount(`SELECT COUNT(*) AS n FROM shifts WHERE confirm_sync='pending' AND confirmed_at IS NOT NULL AND COALESCE(device_id,'') = COALESCE(?,'')`, ownDevice);
+  try { extra.wastage = readPendingWaste(db).length; } catch { /* keep the zero */ }
+  const localPending = { count: bd.shifts + bd.floats + bd.expenses + bd.days + reversals
+    + extra.kitchenVoids + extra.prices + extra.confirmations + extra.wastage };
   // A363: a status read never throws — the badge must render even on a database missing a newer table.
   let parked: { count: number; reason: string | null } = { count: 0, reason: null };
   try { parked = parkedSummary(ownDevice); } catch { /* keep the zero */ }
   return {
+    parkedSales,
     online: isOnline(),
     pendingCount: pending.count + localPending.count,
     failedCount: failed.count,
-    pendingBreakdown: { orders: pending.count, shifts: bd.shifts, floats: bd.floats, expenses: bd.expenses, days: bd.days, reversals },
+    pendingBreakdown: { orders: pending.count, shifts: bd.shifts, floats: bd.floats, expenses: bd.expenses, days: bd.days, reversals, ...extra },
     failedReason: failureRow?.last_error ?? undefined,
     failedSince: failureRow?.since ?? undefined,
     pullError: currentInboundFailure()?.message ?? undefined,
@@ -1267,7 +1363,8 @@ function parkedSummary(ownDevice: string | null): { count: number; reason: strin
       (SELECT COUNT(*) FROM shifts             WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
       (SELECT COUNT(*) FROM business_days      WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
       (SELECT COUNT(*) FROM float_transactions WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
-      (SELECT COUNT(*) FROM expenses           WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS n
+      (SELECT COUNT(*) FROM expenses           WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
+      (SELECT COUNT(*) FROM kitchen_voids      WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS n
   `).get({ dev: ownDevice }) as { n: number };
   // 0.6.30: an offline void/refund the cloud refused is parked too, with the cloud's words.
   let refused: { n: number; why: string | null } = { n: 0, why: null };
@@ -1513,9 +1610,21 @@ export function applyBusinessIdentity(name: string | undefined, currency: string
 
 let _preferCloudPull = false;
 let _lastNodeChangeVersion: string | null = null;   // A448: the branch server's own change counter, last seen   // A446: set while a pull answers the cloud's own "something changed"
+// Till sync audit (F7): the HTTP status of the last catalogue pull's /api/pos/init (0 = not asked or out of reach), so
+// syncAll renews the till's key only on a 401.
+let _lastPullStatus = 0;
+// Till sync audit (F13): one pull at a time from syncAll — a second pass joins the pull running.
+let _pullInFlight: Promise<boolean> | null = null;
+function pullCatalogueOnce(): Promise<boolean> {
+  if (_pullInFlight) return _pullInFlight;
+  _pullInFlight = pullCatalogue().finally(() => { _pullInFlight = null; });
+  return _pullInFlight;
+}
+
 async function pullCatalogue(): Promise<boolean> {
   const db = getLocalDb();
   const now = new Date().toISOString();
+  _lastPullStatus = 0;
 
   // The branch this till operates on. The device is BOUND to a branch at
   // install / first PIN login; /api/pos/init's branchId is only a fallback.
@@ -1582,6 +1691,7 @@ async function pullCatalogue(): Promise<boolean> {
       noteInboundFailure('sync', `catalogue pull unreachable: ${err?.message ?? err}`);
       return false;
     }
+    _lastPullStatus = res.status;
     if (!res.ok) {
       noteInboundFailure('sync', `catalogue pull failed: ${await describeResponse(res)}`);
       return false;
@@ -1645,29 +1755,38 @@ async function pullCatalogue(): Promise<boolean> {
     // A425: a product with no variants has none to keep; one whose fetch failed is left out (keeps what it has).
     variantScope = products.filter((p: any) => !p.has_variants).map((p: any) => String(p.id));
     modifierScope = products.filter((p: any) => !p.has_modifiers).map((p: any) => String(p.id));
+    // Till sync audit (F13): one product's fetch that throws (a timeout, a malformed answer) is that product's alone — it
+    // keeps the choices it has (left out of the scope) and the pull, and the push stages after it, go on. A throw here
+    // used to abort the whole syncAll, so a single slow product skipped every push of the pass.
+    let choiceFailures = 0;
     for (const p of products.filter((p: any) => p.has_variants)) {
-      const vRes = await syncFetch(`${_serverUrl}/api/variants/groups?product_id=${p.id}`, { headers: authHeaders() });
-      if (vRes.ok) {
-        const groups = await vRes.json();
-        variantScope.push(String(p.id));
-        for (const g of groups) {
-          variantGroups.push(g);
-          variantOptions.push(...(g.variant_options ?? []));
+      try {
+        const vRes = await syncFetch(`${_serverUrl}/api/variants/groups?product_id=${p.id}`, { headers: authHeaders() });
+        if (vRes.ok) {
+          const groups = await vRes.json();
+          if (!Array.isArray(groups)) throw new Error('not a list');
+          const gs: any[] = [], os: any[] = [];
+          for (const g of groups) { gs.push(g); os.push(...(g.variant_options ?? [])); }
+          variantGroups.push(...gs); variantOptions.push(...os);
+          variantScope.push(String(p.id));
         }
-      }
+      } catch { choiceFailures++; }
     }
 
     for (const p of products.filter((p: any) => p.has_modifiers)) {
-      const mRes = await syncFetch(`${_serverUrl}/api/modifiers/groups?product_id=${p.id}`, { headers: authHeaders() });
-      if (mRes.ok) {
-        const groups = await mRes.json();
-        modifierScope.push(String(p.id));
-        for (const g of groups) {
-          modifierGroups.push(g);
-          modifierOptions.push(...(g.modifier_options ?? []));
+      try {
+        const mRes = await syncFetch(`${_serverUrl}/api/modifiers/groups?product_id=${p.id}`, { headers: authHeaders() });
+        if (mRes.ok) {
+          const groups = await mRes.json();
+          if (!Array.isArray(groups)) throw new Error('not a list');
+          const gs: any[] = [], os: any[] = [];
+          for (const g of groups) { gs.push(g); os.push(...(g.modifier_options ?? [])); }
+          modifierGroups.push(...gs); modifierOptions.push(...os);
+          modifierScope.push(String(p.id));
         }
-      }
+      } catch { choiceFailures++; }
     }
+    if (choiceFailures) logLine('sync', `catalogue pull: ${choiceFailures} product(s)' choices could not be fetched - they keep what they have`);
 
     // Pull stock levels for this branch
     if (effectiveBranchId) {
@@ -2128,7 +2247,8 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
   `).all(ownDevice) as any[];
   const floats = db.prepare(`
     SELECT id, shift_id, branch_id, cashier_id, type, amount, reason, created_at,
-           approved_by, approved_by_name   -- 0.6.37 (A388; a cloud before 118 ignores them)
+           approved_by, approved_by_name,  -- 0.6.37 (A388; a cloud before 118 ignores them)
+           order_id                        -- the sale a pay-out was made for (cloud migration 111)
     FROM float_transactions WHERE sync_status='pending'
       AND COALESCE(device_id,'') = COALESCE(?,'')
   `).all(ownDevice) as any[];
@@ -2158,6 +2278,56 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
 
   if (!shifts.length && !floats.length && !expenses.length && !business_days.length && !kitchen_voids.length) return 0;
 
+  // Till sync audit (F18): a till long offline must never send one body over the cloud's 1 MB JSON limit (a 413 that
+  // no retry clears). Sent in batches, days before shifts before the rest (cashBatches) — the cloud looks a float's
+  // drawer and a shift's day up in its own tables, so a parent is always in an earlier (or the same) request.
+  let total = 0;
+  for (const batch of cashBatches({ business_days, shifts, floats, expenses, kitchen_voids })) {
+    const n = await pushCashBatch(db, batch, errors);
+    if (n < 0) break;   // the cloud did not take this batch — the rest waits for the next pass
+    total += n;
+  }
+  return total;
+}
+
+/** Till sync audit (F18): rows per table per request. A shift row is ~1 KB, so 5 × 200 stays well under 1 MB. */
+export const CASH_PUSH_CAP = 200;
+export interface CashTables<T = any> { business_days: T[]; shifts: T[]; floats: T[]; expenses: T[]; kitchen_voids: T[] }
+/** Split the pending cash rows into requests of at most `cap` rows per table: every day before any shift, every shift
+ *  before any float / expense / kitchen void. Pure. */
+export function cashBatches<T>(t: CashTables<T>, cap = CASH_PUSH_CAP): CashTables<T>[] {
+  const out: CashTables<T>[] = [];
+  let di = 0, si = 0, fi = 0, ei = 0, ki = 0;
+  const left = () => di < t.business_days.length || si < t.shifts.length || fi < t.floats.length
+    || ei < t.expenses.length || ki < t.kitchen_voids.length;
+  while (left()) {
+    const b: CashTables<T> = { business_days: [], shifts: [], floats: [], expenses: [], kitchen_voids: [] };
+    b.business_days = t.business_days.slice(di, di + cap); di += b.business_days.length;
+    if (di >= t.business_days.length) {
+      b.shifts = t.shifts.slice(si, si + cap); si += b.shifts.length;
+      if (si >= t.shifts.length) {
+        b.floats = t.floats.slice(fi, fi + cap); fi += b.floats.length;
+        b.expenses = t.expenses.slice(ei, ei + cap); ei += b.expenses.length;
+        b.kitchen_voids = t.kitchen_voids.slice(ki, ki + cap); ki += b.kitchen_voids.length;
+      }
+    }
+    out.push(b);
+  }
+  return out;
+}
+
+/** Codes the cloud refuses a cash row with for its DATA (no retry fixes them): its own named codes, and Postgres classes
+ *  22 (data exception), 23 (integrity) and 42 (a column / table this payload names that the cloud does not have). */
+export function isDataErrorCode(code: string | null | undefined): boolean {
+  const c = String(code ?? '');
+  if (['missing_shift', 'missing_business_day', 'duplicate_open_day', 'duplicate_open_shift', 'forbidden',
+       'invalid_reason', 'invalid_quantity', 'invalid', 'validation'].includes(c)) return true;
+  return /^(22|23|42)[0-9A-Z]{3}$/.test(c);
+}
+
+/** One request of pushLocalRecords. The number of rows sent, or -1 when the cloud did not take the request. */
+async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTables, errors: string[]): Promise<number> {
+  const { shifts, floats, expenses, business_days, kitchen_voids } = batch;
   const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
     method: 'POST',
     headers: pushAuthHeaders(),
@@ -2175,9 +2345,16 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       const msg = describeServerError(err, res.status);
       errors.push(`Shift sync: ${msg}`);
       logLine('sync', `shift push rejected (HTTP ${res.status}): ${msg}`); // A178: was DB/errors-only — invisible in the log
-      return 0;   // leave rows pending — they retry next pass
+      return -1;   // leave rows pending — they retry next pass (a 5xx / 503 is the cloud's passing state: never a conflict)
     }
-    const body = await res.json().catch(() => ({} as any));
+    const body = await res.json().catch(() => null as any);
+    // Till sync audit (F14): only the cloud's real answer marks anything synced. An empty or foreign body (a proxy's
+    // page, a truncated answer) parsed as {} — no `rejected`, so every row was marked synced and never sent again.
+    if (!body || body.ok !== true || !body.upserted || typeof body.upserted !== 'object') {
+      errors.push('Shift sync: the cloud\'s answer could not be read — the records stay waiting');
+      logLine('sync', `shift push: HTTP ${res.status} without the expected answer - nothing marked synced`);
+      return -1;
+    }
 
     // Rows the server understood and refused on their merits — currently only a
     // cashier who already holds an open drawer elsewhere. Retrying cannot fix
@@ -2235,12 +2412,14 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       const markWithNote = (t: 'shifts' | 'business_days') => db.prepare(
         `UPDATE ${t} SET sync_status='conflict',
          notes = TRIM(COALESCE(notes,'') || char(10) || ?) WHERE id=?`);
+      // F10: the three tables without notes keep the cloud's code and words (sync_error, schema 72), so a row parked for a
+      // passing reason can be told from one refused for its data (requeueTransientConflicts).
       const stmt = {
         shifts:             markWithNote('shifts'),
         business_days:      markWithNote('business_days'),
-        float_transactions: db.prepare(`UPDATE float_transactions SET sync_status='conflict' WHERE id=?`),
-        expenses:           db.prepare(`UPDATE expenses SET sync_status='conflict' WHERE id=?`),
-        kitchen_voids:      db.prepare(`UPDATE kitchen_voids SET sync_status='conflict' WHERE id=?`),
+        float_transactions: db.prepare(`UPDATE float_transactions SET sync_status='conflict', sync_error=? WHERE id=?`),
+        expenses:           db.prepare(`UPDATE expenses SET sync_status='conflict', sync_error=? WHERE id=?`),
+        kitchen_voids:      db.prepare(`UPDATE kitchen_voids SET sync_status='conflict', sync_error=? WHERE id=?`),
       };
 
       db.transaction(() => {
@@ -2262,7 +2441,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
           if (t === 'shifts' || t === 'business_days') {
             stmt[t].run(`Sync rejected: ${r.error}`, r.id);
           } else {
-            stmt[t].run(r.id);
+            stmt[t].run(`${r.code ?? 'error'}: ${String(r.error ?? '').slice(0, 300)}`, r.id);
           }
         }
       })();
@@ -2296,14 +2475,21 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     // Server has the open-shift fields now. Only a still-open shift is fully
     // done here — a closed one waits for reconcileClosedShifts to confirm the
     // server-computed close before it's marked synced.
-    const openShiftIds = shifts
-      .filter(s => s.status !== 'closed' && !rejectedByTable.shifts.has(s.id))
-      .map(s => s.id);
-    const markShift = db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=?`);
-    const markFloat = db.prepare(`UPDATE float_transactions SET sync_status='synced' WHERE id=?`);
-    const markExp   = db.prepare(`UPDATE expenses SET sync_status='synced' WHERE id=?`);
-    const markDay   = db.prepare(`UPDATE business_days SET sync_status='synced' WHERE id=?`);
-    const markKv    = db.prepare(`UPDATE kitchen_voids SET sync_status='synced' WHERE id=?`);
+    const openShifts = shifts
+      // 'open' only: a force-closed drawer ('closed_unreconciled') waits for reconcileClosedShifts too (/force-close).
+      .filter(s => s.status === 'open' && !rejectedByTable.shifts.has(s.id));
+    // Till sync audit (F1): marked synced only if the row is STILL what was sent. A shift closed (or a day closed or
+    // reopened) while this push was on its way used to be marked synced by its id — the close then never reached the
+    // cloud: the cloud's drawer stayed open, and a lost day close got the next day refused (duplicate_open_day). A row
+    // that changed stays pending and goes (or is reconciled) next pass.
+    const markShift = db.prepare(`UPDATE shifts SET sync_status='synced'
+      WHERE id=@id AND sync_status='pending' AND status IS @status AND closed_at IS @closed_at`);
+    const markFloat = db.prepare(`UPDATE float_transactions SET sync_status='synced', sync_error=NULL WHERE id=? AND sync_status='pending'`);
+    const markExp   = db.prepare(`UPDATE expenses SET sync_status='synced', sync_error=NULL WHERE id=? AND sync_status='pending'`);
+    const markDay   = db.prepare(`UPDATE business_days SET sync_status='synced'
+      WHERE id=@id AND sync_status='pending' AND status IS @status AND closed_at IS @closed_at
+        AND counted_cash IS @counted_cash AND notes IS @notes`);
+    const markKv    = db.prepare(`UPDATE kitchen_voids SET sync_status='synced', sync_error=NULL WHERE id=? AND sync_status='pending'`);
     // 0.6.28: a cloud before migration 112 ignores `kitchen_voids` — marking them synced would lose them. Only a cloud
     // that counts them (upserted.kitchenVoids) has stored them; otherwise they wait, pending, for the cloud's update.
     const cloudTakesKv = typeof body?.upserted?.kitchenVoids === 'number';
@@ -2315,10 +2501,13 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     // `rejected` is still treated as accepted — that design constraint is
     // unchanged and is why the routing above has to be right.
     db.transaction(() => {
-      for (const id of openShiftIds) markShift.run(id);
+      for (const s of openShifts)    markShift.run({ id: s.id, status: s.status ?? null, closed_at: s.closed_at ?? null });
       for (const f of floats)        if (!rejectedByTable.float_transactions.has(f.id)) markFloat.run(f.id);
       for (const e of expenses)      if (!rejectedByTable.expenses.has(e.id))           markExp.run(e.id);
-      for (const d of business_days) if (!rejectedByTable.business_days.has(d.id))      markDay.run(d.id);
+      for (const d of business_days) if (!rejectedByTable.business_days.has(d.id)) {
+        markDay.run({ id: d.id, status: d.status ?? null, closed_at: d.closed_at ?? null,
+          counted_cash: d.counted_cash ?? null, notes: d.notes ?? null });
+      }
       if (cloudTakesKv) for (const k of kitchen_voids) if (!rejectedByTable.kitchen_voids.has(k.id)) markKv.run(k.id);
     })();
     const pushedCount = shifts.length + floats.length + expenses.length + business_days.length + kitchen_voids.length;
@@ -2327,7 +2516,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
   } catch (err: any) {
     errors.push(`Shift sync: ${err.message}`);
     logLine('sync', `shift push failed: ${err?.message ?? err}`); // A178: network/schema throw was invisible in the log
-    return 0;
+    return -1;
   }
 }
 
@@ -2377,20 +2566,55 @@ async function pushBranchPriceEdits(errors: string[]): Promise<number> {
     return 0;
   }
 }
+/** Till sync audit (F5): a queued sale whose drawer the cloud refused (parked) — it cannot go until the drawer does. */
+// branch-wide: keyed by order id to this till's own sync_queue rows; the drawer test is by id.
+export const PARKED_DRAWER_SQL = `EXISTS (SELECT 1 FROM orders o JOIN shifts s ON s.id = o.shift_id
+  WHERE o.id = q.order_id AND s.sync_status IN ('conflict', 'failed'))`;
+const SYNCED_QUEUE_KEEP_MS = 30 * 86400_000;   // F16
+let _queuePrunedAt = 0;
+/** Till sync audit (F16): synced queue rows older than 30 days go (their orders stay; failed / pending rows always stay). */
+export function pruneSyncedQueue(now = Date.now()): number {
+  const cutoff = new Date(now - SYNCED_QUEUE_KEEP_MS);
+  // created_at is either an ISO string (the till) or SQLite's 'YYYY-MM-DD HH:MM:SS' (a branch-server relay): compare instants.
+  return getLocalDb().prepare(`DELETE FROM sync_queue WHERE status = 'synced' AND julianday(created_at) < julianday(?)`)
+    .run(cutoff.toISOString()).changes;
+}
+
 async function pushPendingOrders(errors: string[]): Promise<number> {
   const db = getLocalDb();
-  const pending = db.prepare(`
-    SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 50
-  `).all() as any[];
+  // Till sync audit (F5): `ORDER BY created_at LIMIT 50` let 50 old sales waiting on a drawer not on the cloud (424, which
+  // neither counts nor stops the batch) take every place of every pass — no newer sale ever went. Now a sale of a
+  // drawer the cloud refused is left out (it goes with its drawer), and a 424 stamps drawer_wait_at: the sale then queues
+  // BEHIND every sale not waiting (and behind the ones that waited longer), and the rest of its drawer's sales sit this
+  // pass out (they would get the same answer). One drawer can no longer starve the rest; the moment the drawer is on the
+  // cloud its sales go on the next pass.
+  // Up to 50 sales are TRIED per pass. A page leaves out what this pass already tried and the drawers that answered 424 in
+  // it, so the sales behind a waiting drawer are reached in the same pass.
+  // branch-wide: this till's own sync_queue; orders are looked up by the queued order id.
+  const page = db.prepare(`
+    SELECT q.*, (SELECT o.shift_id FROM orders o WHERE o.id = q.order_id) AS _shift_id FROM sync_queue q
+     WHERE q.status = 'pending'
+       AND NOT ${PARKED_DRAWER_SQL}
+       AND q.id NOT IN (SELECT value FROM json_each(?))
+       -- branch-wide: by the queued order id (this till's own queue)
+       AND COALESCE((SELECT o.shift_id FROM orders o WHERE o.id = q.order_id), '') NOT IN (SELECT value FROM json_each(?))
+     ORDER BY (q.drawer_wait_at IS NOT NULL) ASC, q.drawer_wait_at ASC, q.created_at ASC LIMIT ?
+  `);
+  const drawerWaits = new Set<string>();   // drawers that answered 424 this pass
+  const tried: number[] = [];
+  let budget = 50;
 
   let pushed = 0;
   let triedAuthRefresh = false;  // refresh once per sync pass (A168)
+  // F6: the staff renewal failed this pass — the rest of the batch goes under the till's own session (each sale names its
+  // cashier; the cloud checks that claim against the branch's staff, routes/orders.ts), instead of each one stopping.
+  let staffRenewalFailed = false;
 
   // S3: move BOTH rows to 'synced' in one transaction, so a crash between the
   // two writes can never leave sync_queue and orders disagreeing (queue synced
   // while the order still reads pending, or vice versa). Prepared once, reused
   // per row; the same statements the two success branches ran inline before.
-  const _markQueueSynced = db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`);
+  const _markQueueSynced = db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1, drawer_wait_at=NULL WHERE id=?`);
   const _markOrderSynced = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
   const markSynced = db.transaction((queueId: number, orderId: string) => {
     _markQueueSynced.run(queueId);
@@ -2412,7 +2636,13 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   // column that can only hold one destination's opinion. The node is now a
   // replica, reached separately by pushToNode(); see nodeIngest.ts.
 
+  batch: while (budget > 0) {
+  const pending = page.all(JSON.stringify(tried), JSON.stringify([...drawerWaits]), budget) as any[];
+  if (!pending.length) break;
   for (const row of pending) {
+    tried.push(row.id);
+    if (row._shift_id && drawerWaits.has(String(row._shift_id))) continue;   // F5: its drawer just answered 424
+    budget--;
     try {
       // A446 (session audit): a sale rung by a cashier who is no longer the one signed in (queued while offline, then
       // Brian signed in) goes up under the TILL's own session, which names the cashier in the sale (cashier_id — the
@@ -2421,7 +2651,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
       let rungBy: string | null = null;
       try { rungBy = JSON.parse(row.payload)?.cashier_id ?? null; } catch { rungBy = null; }
       const now = signedInStaffId();
-      const asTill = !!_accessToken && !!rungBy && !!now && rungBy !== now;
+      let asTill = !!_accessToken && !!rungBy && ((!!now && rungBy !== now) || (staffRenewalFailed && !!_staffToken));
       const doPost = () => syncFetch(`${_serverUrl}/api/orders`, {
         method: 'POST',
         headers: {
@@ -2450,13 +2680,29 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
       // safe there and would NOT be safe here.
       if (res.status === 401 && !triedAuthRefresh) {
         triedAuthRefresh = true;
-        const refreshed = !asTill && selectPushRefresh(_staffToken) === 'staff'
-          ? await refreshStaffToken()
-          : await refreshAccessToken();
+        const staffPath = !asTill && selectPushRefresh(_staffToken) === 'staff';
+        const refreshed = staffPath ? await refreshStaffToken() : await refreshAccessToken();
         if (refreshed) res = await doPost();
+        else if (staffPath && _accessToken && rungBy) {
+          // F6: the staff session cannot be renewed right now — the sale goes under the till's own session, naming its
+          // cashier, rather than the whole batch stopping on the 401.
+          staffRenewalFailed = true;
+          asTill = true;
+          res = await doPost();
+        }
       }
 
-      if (res.ok) {
+      // F14: a 2xx is the cloud's only when it carries the order (a fresh create's orderId, or a duplicate's marker) —
+      // an empty or foreign body (a proxy, a captive portal) is not proof the sale is stored.
+      const okBody = res.ok ? await Promise.resolve().then(() => res.json()).catch(() => null) as any : null;
+      const stored = res.ok && !!okBody && (typeof okBody.orderId === 'string' || typeof okBody.id === 'string' || okBody.duplicate === true);
+      if (res.ok && !stored) {
+        const message = `the cloud answered HTTP ${res.status} without the order - not marked synced`;
+        db.prepare(`UPDATE sync_queue SET last_error=? WHERE id=?`).run(message, row.id);
+        errors.push(`Order ${row.order_id}: ${message}`);
+        logLine('sync', `order ${row.order_id}: ${message}`);
+        break batch;   // the rest of the batch would get the same answer
+      } else if (stored) {
         // res.ok covers both a fresh create (201) and an idempotent duplicate
         // (200 with { duplicate: true }) — both mean the server has this order,
         // so the local row is safely marked synced. A lost first response that
@@ -2486,7 +2732,10 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         // fault and not this sale's to give up on: it stays pending, never counts towards 'failed', and goes next pass.
         const err = await res.json().catch(() => ({} as any));
         const message = (err as any)?.error || 'drawer not on the cloud yet';
-        db.prepare(`UPDATE sync_queue SET last_error=? WHERE id=?`).run(message, row.id);
+        // F5: it queues behind the sales not waiting from now on, and its drawer's other sales sit this pass out.
+        db.prepare(`UPDATE sync_queue SET last_error=?, drawer_wait_at=? WHERE id=?`)
+          .run(message, new Date().toISOString(), row.id);
+        if (row._shift_id) drawerWaits.add(String(row._shift_id));
         logLine('sync', `order ${row.order_id} waits for its drawer: ${message}`);
       } else if (isTransientStatus(res.status)) {
         // A446 (session audit): the cloud down (5xx), busy (429), or this till's session not renewable right now (401 after
@@ -2496,7 +2745,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         const message = describeServerError(err, res.status);
         db.prepare(`UPDATE sync_queue SET last_error=? WHERE id=?`).run(message, row.id);
         errors.push(`Order ${row.order_id}: ${message}`);
-        break;   // the rest of the batch would get the same answer
+        break batch;   // the rest of the batch would get the same answer
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         const message = describeServerError(err, res.status);
@@ -2521,9 +2770,10 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
       // A177: a thrown fetch means the server is unreachable/timed out — the rest
       // of this batch will fail identically. Stop now rather than burn one full
       // timeout per remaining order; they retry next pass.
-      break;
+      break batch;
     }
   }
+  }   // batch
 
   if (pushed) {
     logLine('sync', `pushed ${pushed} order(s) to the cloud`); // A178: confirms the queue is draining
@@ -2534,6 +2784,12 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
           OR last_error LIKE '%ECONN%' OR last_error LIKE '%ENOTFOUND%' OR last_error LIKE '%EAI_AGAIN%' OR last_error LIKE '%HTTP 5%'
           OR last_error LIKE '%refused this till%' OR last_error LIKE '%network%' OR last_error LIKE '%aborted%')`).run().changes;
     if (back) logLine('sync', `${back} sale(s) left 'failed' by a connection problem are queued again`);
+  }
+  // F16: at most every 6 hours. Never fatal.
+  if (Date.now() - _queuePrunedAt > 6 * 3600_000) {
+    _queuePrunedAt = Date.now();
+    try { const n = pruneSyncedQueue(); if (n) logLine('sync', `pruned ${n} synced queue row(s) older than 30 days`); }
+    catch (e: any) { logLine('sync', `queue prune failed: ${e?.message ?? e}`); }
   }
   return pushed;
 }
@@ -2580,7 +2836,42 @@ export function isTransientStatus(status: number): boolean {
  * keeps selling and keeps syncing to the cloud.
  */
 async function pushToNode(errors: string[]): Promise<number> {
+  const r = await replicateToNode();
+  errors.push(...r.errors);
+  return r.count;
+}
+
+// F10 (2026-10-14): replication to the branch server has its own beat (index.ts, every 15 s) — it used to run only
+// inside syncPush/syncAll, which need a cloud sign-in and the internet, so a till with no cloud session never sent the
+// server a single row however long it traded. Single-flight: the beat and a sync pass share one run.
+let _nodePushInFlight: Promise<{ count: number; errors: string[] }> | null = null;
+let _nodeBatchBytes = NODE_BATCH_BYTES;
+let _clockCheckedAt = 0;
+let _clockWarnings: string[] = [];
+
+/** Send this till's own rows to its branch server now (no cloud needed). Never throws. */
+export function replicateToNode(): Promise<{ count: number; errors: string[] }> {
+  if (_nodePushInFlight) return _nodePushInFlight;
+  _nodePushInFlight = (async () => {
+    const errors: string[] = [];
+    let count = 0;
+    try { count = await pushToNodeOnce(errors); }
+    catch (err: any) { errors.push(`Branch replication: ${err?.message ?? err}`); }
+    return { count, errors };
+  })().finally(() => { _nodePushInFlight = null; });
+  return _nodePushInFlight;
+}
+
+async function pushToNodeOnce(errors: string[]): Promise<number> {
   if (!hasNode()) return 0;
+  const cfg = getDeviceConfig();
+
+  // F2: a different server (or access code) than last pass — offer everything again (nodeIngest.noteNodeTarget).
+  try {
+    const t = noteNodeTarget(nodeTargetKey(cfg?.node_url, cfg?.node_secret));
+    if (t === 'changed') logLine('node', 'the branch server (or its access code) changed — every row is offered to it again');
+    if (t === 'first') logLine('node', 'branch replication: the last 14 days are offered to the server once more (F1 repair)');
+  } catch (err: any) { logLine('node', `could not check the branch server identity: ${err?.message ?? err}`); }
 
   try {
     fillNodeOutbox();
@@ -2589,80 +2880,129 @@ async function pushToNode(errors: string[]): Promise<number> {
     return 0;
   }
 
-  const batch = takeNodeQueueBatch(200);
-  if (!batch.length) return 0;
-
-  // Group by table, remembering which queue row each payload came from so the
-  // node's per-row verdict can be applied to the right one.
-  const tables: Record<string, any[]> = {};
-  const queueIdByRow = new Map<string, number>();
-  for (const q of batch) {
-    (tables[q.table_name] ??= []).push(JSON.parse(q.payload));
-    queueIdByRow.set(`${q.table_name}:${q.row_id}`, q.id);
-  }
-
-  let results: Record<string, any> | null;
-  try {
-    results = await pushRowsToNode(tables);
-  } catch (err: any) {
-    // The node ANSWERED and refused. Escalate, so the reason reaches a human
-    // rather than becoming a count that never clears.
-    markNodeQueueFailed(batch.map(q => q.id), err.message ?? 'node refused', true);
-    errors.push(`Branch replication: ${err.message}`);
-    return 0;
-  }
-
-  if (results === null) {
-    // The node did not answer. Retry indefinitely without escalating — a branch
-    // server rebooting, or a shop with the node switched off overnight, must not
-    // exhaust an attempt budget and mark a day's cash records 'failed'.
-    markNodeQueueFailed(batch.map(q => q.id), 'branch server unreachable', false);
-    return 0;
-  }
-
-  const delivered: number[] = [];
-  const refused: Array<{ id: number; reason: string }> = [];
-
-  for (const [table, res] of Object.entries(results)) {
-    const rejectedIds = new Map<string, string>(
-      (res?.rejected ?? []).map((r: any) => [String(r.id), String(r.reason)]),
-    );
-    for (const row of tables[table] ?? []) {
-      const qid = queueIdByRow.get(`${table}:${row.id}`);
-      if (qid === undefined) continue;
-      const reason = rejectedIds.get(String(row.id));
-      // A row rejected on its merits (wrong branch, no seq, a peer clash) will be
-      // rejected identically every pass. Escalating it is what puts the node's own
-      // words in front of somebody, instead of a queue depth that only grows.
-      if (reason) refused.push({ id: qid, reason });
-      else delivered.push(qid);
+  // F2: after a re-arm, skip what the new server already holds (one /node/cursors) — re-offering is free, this only
+  // makes it short.
+  if (nodeRearmSkipOwed()) {
+    const cursors = await fetchNodeCursors();
+    if (cursors) {
+      const skipped = skipHeldByNode(cursors);
+      logLine('node', `the branch server already holds ${skipped} of this till's rows — not sent again`);
     }
   }
 
-  markNodeQueueDelivered(delivered);
-  for (const r of refused) markNodeQueueFailed([r.id], r.reason, true);
-  if (refused.length) {
-    errors.push(
-      refused.length === 1
-        ? `The branch server refused a record: ${refused[0].reason}`
-        : `The branch server refused ${refused.length} records: ${refused[0].reason}`,
-    );
+  let delivered = 0;
+  for (let round = 0; round < 3; round++) {
+    const batch = takeNodeQueueBatch(200, _nodeBatchBytes);   // F14: by size as well as count
+    if (!batch.length) break;
+
+    const tables: Record<string, any[]> = {};
+    for (const q of batch) {
+      try { (tables[q.table_name] ??= []).push(JSON.parse(q.payload)); } catch { /* the server cannot name it either — left pending */ }
+    }
+    const ids = batch.map(q => q.id);
+    const out = await pushRowsToNode(tables);
+
+    if (out.kind === 'transport') {
+      // F3: no answer, a 5xx, or a 401 — none of it is about the rows. Retried without counting an attempt: a branch
+      // server off for the weekend, or waiting for its new access code, must not mark a day's cash records 'failed'.
+      markNodeQueueFailed(ids, out.error, false);
+      if (out.status === 401) errors.push(`Branch replication: ${out.error}`);
+      break;
+    }
+    if (out.kind === 'too_large') {
+      // F14: the server named it. Halve and send again; a single row too large is the row's own problem.
+      if (batch.length > 1) { _nodeBatchBytes = Math.max(64_000, Math.floor(_nodeBatchBytes / 2)); continue; }
+      markNodeQueueFailed(ids, out.error, true);
+      errors.push(`Branch replication: ${out.error}`);
+      continue;
+    }
+    if (out.kind === 'refused') {
+      // The node ANSWERED and refused the batch as such. Escalate, so the reason reaches a human.
+      markNodeQueueFailed(ids, out.error, true);
+      errors.push(`Branch replication: ${out.error}`);
+      break;
+    }
+
+    // F1: exactly what the server holds is delivered; what it refused is refused; the rest stays pending.
+    const settled = settleNodeBatch(batch, out.results);
+    markNodeQueueDelivered(settled.delivered);
+    for (const r of settled.refused) markNodeQueueFailed([r.id], r.reason, true);
+    delivered += settled.delivered.length;
+    if (settled.refused.length) {
+      errors.push(
+        settled.refused.length === 1
+          ? `The branch server refused a record: ${settled.refused[0].reason}`
+          : `The branch server refused ${settled.refused.length} records: ${settled.refused[0].reason}`,
+      );
+    }
+    if (!settled.delivered.length) break;   // nothing moved: do not spin on the same rows this pass
   }
 
   // Clock drift. Advisory — the till keeps trading either way. business_date
   // comes from each terminal's own clock, so two tills disagreeing across
   // midnight split one evening's takings over two trading days, and no report
-  // will ever reconcile them.
-  const drift = await measureNodeDrift();
-  if (drift !== null && Math.abs(drift) > 120_000) {
-    const mins = Math.round(Math.abs(drift) / 60_000);
-    errors.push(
-      `This till's clock is ${mins} minute(s) ${drift > 0 ? 'ahead of' : 'behind'} the branch server. ` +
-      'Correct it before the next day close — trading days are dated from each till\'s own clock.',
-    );
+  // will ever reconcile them. F15: the time ZONE as well. Measured at most once a minute (the beat is 15 s); the
+  // warning stands between measurements.
+  if (Date.now() - _clockCheckedAt > 60_000) {
+    _clockCheckedAt = Date.now();
+    const clock = await measureNodeClock();
+    if (clock) {
+      const warn: string[] = [];
+      if (Math.abs(clock.driftMs) > 120_000) {
+        const mins = Math.round(Math.abs(clock.driftMs) / 60_000);
+        warn.push(`This till's clock is ${mins} minute(s) ${clock.driftMs > 0 ? 'ahead of' : 'behind'} the branch server. ` +
+          'Correct it before the next day close — trading days are dated from each till\'s own clock.');
+      }
+      if (clock.tzMismatch && clock.nodeTzOffset !== null) {
+        const zone = (off: number) => { const m = -off; const sign = m >= 0 ? '+' : '-'; const a = Math.abs(m); return `UTC${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`; };
+        warn.push(`This till's time zone (${zone(clock.tzOffset)}) is not the branch server's (${zone(clock.nodeTzOffset)}). ` +
+          'Set both to the shop\'s time zone in Windows — trading days are dated from each till\'s own time.');
+      }
+      _clockWarnings = warn;
+    }
   }
+  errors.push(..._clockWarnings);
 
-  return delivered.length;
+  return delivered;
+}
+
+// ── F9/F10/P3: the branch-server beat (index.ts runs it every 15 s) ─────────
+let _nodeBeatStarted = false;
+let _nodePrunedAt = 0;
+let _lastNodeError = '';
+
+/**
+ * One beat of LAN replication, independent of the cloud:
+ *   - on the BRANCH SERVER: number its own new rows (F9 — without a seq they were never distributed), turn its refunds
+ *     into events (F8), apply waiting events, and prune answered instructions (P3);
+ *   - on a TILL behind one: send its rows (F10 — with or without a cloud session), prune delivered outbox rows (P3).
+ * Never throws.
+ */
+export async function nodeReplicationTick(): Promise<void> {
+  try {
+    const cfg = getDeviceConfig();
+    const pruneDue = Date.now() - _nodePrunedAt > 3_600_000;
+    if (isNodeRole(cfg?.device_role)) {
+      if (!_nodeBeatStarted) {
+        _nodeBeatStarted = true;
+        const n = backfillOwnSeq();   // F9: once — the rows this server made before it numbered its own
+        if (n) logLine('node', `numbered ${n} of this server's own rows so the branch's tills receive them`);
+      }
+      numberOwnRows(500);
+      emitRefundEvents();
+      applyPendingEvents();
+      if (pruneDue) { _nodePrunedAt = Date.now(); pruneNodeInstructions(7); }
+      return;
+    }
+    if (!hasNode()) return;
+    const r = await replicateToNode();
+    const msg = r.errors.join(' | ');
+    if (msg && msg !== _lastNodeError) logLine('node', `branch replication: ${msg}`);
+    _lastNodeError = msg;
+    if (pruneDue) { _nodePrunedAt = Date.now(); pruneNodeQueue(7); }
+  } catch (err: any) {
+    logLine('node', `branch replication beat failed: ${err?.message ?? err}`);
+  }
 }
 
 /**
@@ -2676,7 +3016,49 @@ async function pushToNode(errors: string[]): Promise<number> {
  * cloud), so a row refused again for a real reason is parked again and never loops. Its floats, expenses and sales
  * follow through requeueAfterDrawerClash once the shift is no longer parked.
  */
-export const DAY_CLASH_NOTE = 'Sync rejected: This till already has an open trading day. It must be closed before this one can sync.';
+/**
+ * Till sync audit (F10) — rows an OLDER cloud parked for a passing reason go again, ONCE.
+ *
+ * Before the cloud answered 503 for its own passing errors, a kitchen void or an expense it could not write right then (a
+ * timeout, a dropped connection: code 'error', 08xxx, 57xxx…) came back in `rejected` and the till parked it 'conflict'
+ * for good. Floats and drawer expenses are given back by requeueAfterDrawerClash once their drawer is not parked; a
+ * kitchen void and an expense "Not from a drawer" (A466, no shift) had nothing to give them back. This re-sends each such
+ * row one time (a mark in maintenance_state), unless the cloud refused it for its data (isDataErrorCode) — so a row
+ * refused again is parked again and never loops.
+ */
+export function requeueTransientConflicts(): { kitchenVoids: number; expenses: number } {
+  const db = getLocalDb();
+  const own = getDeviceConfig()?.device_id ?? null;
+  const out = { kitchenVoids: 0, expenses: 0 };
+  const codeOf = (e: string | null) => (e ? e.split(':')[0].trim() : null);
+  db.transaction(() => {
+    const once = (table: string, id: string): boolean => {
+      const key = `resent_once:${table}:${id}`;
+      if (db.prepare(`SELECT 1 FROM maintenance_state WHERE key = ?`).get(key)) return false;
+      db.prepare(`INSERT INTO maintenance_state (key, value, updated_at) VALUES (?, 'transient', ?)`).run(key, new Date().toISOString());
+      return true;
+    };
+    const sets: Array<[string, string, keyof typeof out]> = [
+      // own: only this till pushes its kitchen voids and expenses, so only it re-sends them.
+      ['kitchen_voids', `SELECT id, sync_error FROM kitchen_voids WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'')`, 'kitchenVoids'],
+      ['expenses', `SELECT id, sync_error FROM expenses WHERE sync_status = 'conflict' AND shift_id IS NULL AND COALESCE(device_id,'') = COALESCE(?,'')`, 'expenses'],
+    ];
+    for (const [table, sql, k] of sets) {
+      let rows: Array<{ id: string; sync_error: string | null }> = [];
+      try { rows = db.prepare(sql).all(own) as any[]; } catch { continue; }
+      for (const r of rows) {
+        if (isDataErrorCode(codeOf(r.sync_error))) continue;
+        if (!once(table, r.id)) continue;
+        db.prepare(`UPDATE ${table} SET sync_status = 'pending' WHERE id = ? AND sync_status = 'conflict'`).run(r.id);
+        out[k]++;
+      }
+    }
+  })();
+  if (out.kitchenVoids + out.expenses) logLine('sync', `re-sending once what an older cloud parked for a passing reason: ${out.kitchenVoids} kitchen void(s), ${out.expenses} expense(s)`);
+  return out;
+}
+
+export const DAY_CLASH_NOTE ='Sync rejected: This till already has an open trading day. It must be closed before this one can sync.';
 export const MISSING_DAY_NOTE = 'Sync rejected: This shift\'s trading day is not on the server — the day was refused or has not synced yet. Resolve the trading day first.';
 export function requeueAfterDayClash(): { days: number; shifts: number } {
   const db = getLocalDb();
@@ -2780,15 +3162,24 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
   // someone edits the database by hand. Force-close is the path every forgotten
   // drawer takes, so this sat on the common route, not an edge case.
   const closed = db.prepare(`
-    SELECT id, status, closing_float, notes, declared_methods
+    SELECT id, status, closing_float, notes, declared_methods, closed_at, closed_by
       FROM shifts
      -- own: reconciling a closed shift means asking the server to compute the
      -- close for a drawer THIS till owns. A peer reconciles its own.
      WHERE status IN ('closed', 'closed_unreconciled')
        AND sync_status = 'pending'
        AND COALESCE(device_id,'') = COALESCE(?,'')
-  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; status: string; closing_float: number | null; notes: string | null; declared_methods: string | null }[];
+  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; status: string; closing_float: number | null; notes: string | null;
+    declared_methods: string | null; closed_at: string | null; closed_by: string | null }[];
   if (!closed.length) return 0;
+  // Till sync audit (F2): a drawer with an offline void or refund still to reach the cloud is not closed there yet —
+  // the cloud would compute the close on the unvoided sale and show a shortage that is not there.
+  const reversalWaits = (shiftId: string): boolean => {
+    try {
+      return !!db.prepare(`SELECT 1 FROM pending_reversals r JOIN orders o ON o.id = r.order_id
+                            WHERE o.shift_id = ? AND r.sync_status = 'pending' LIMIT 1`).get(shiftId);
+    } catch { return false; }   // a database before schema 61
+  };
 
   let reconciled = 0;
   for (const shift of closed) {
@@ -2799,6 +3190,7 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
       `SELECT COUNT(*) AS count FROM orders WHERE shift_id=? AND sync_status!='synced'`
     ).get(shift.id) as { count: number };
     if (pending.count > 0) continue;
+    if (reversalWaits(shift.id)) continue;   // F2
 
     // A forced close has no count to report, so it cannot go through /close —
     // that route requires a closing_float, and inventing one would fabricate a
@@ -2808,9 +3200,12 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
     const url = forced
       ? `${_serverUrl}/api/shifts/${shift.id}/force-close`
       : `${_serverUrl}/api/shifts/${shift.id}/close`;
+    // Till sync audit (F3): the close as the till made it — when (the till's own clock, not the moment the push landed)
+    // and by whom. A cloud before this ignores both.
+    const when = { ...(shift.closed_at ? { closed_at: shift.closed_at } : {}), ...(shift.closed_by ? { closed_by: shift.closed_by } : {}) };
     const body = forced
-      ? { reason: shift.notes?.trim() || 'Force-closed on terminal; no cash count was taken' }
-      : { closing_float: shift.closing_float, notes: shift.notes,
+      ? { reason: shift.notes?.trim() || 'Force-closed on terminal; no cash count was taken', ...when }
+      : { closing_float: shift.closing_float, notes: shift.notes, ...when,
           // A365: the cashier's declaration of every method — the cloud then shows the shift as awaiting a manager.
           ...(shift.declared_methods ? { declared_methods: safeJson(shift.declared_methods) } : {}) };
 
@@ -2826,22 +3221,27 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
         const refreshed = await refreshStaffToken();
         if (refreshed) res = await doPost();
       }
-      // 404 here means "not an open shift" — since we generated this id and
-      // pushed it as open ourselves, that can only mean an earlier pass's
-      // close succeeded but its response was lost. Treat as done, not failed.
+      // Till sync audit (F3), with the cloud's contract: 2xx = closed now; 409 ALREADY_CLOSED = an earlier pass's close
+      // landed and its answer was lost — both done. 404 = the cloud does NOT have this shift: it used to be taken as
+      // done, and the drawer never existed on the cloud at all. Now the shift stays pending (re-armed), so the shift
+      // push sends it (open) first and the close follows on the next pass. 5xx / out of reach: stays pending.
       //
       // 403 on a forced close means this staff token lacks manager rights.
       // Retrying will never fix that, but the shift must not be marked synced
       // either — it stays pending until a manager's session settles it, and the
       // message says so instead of repeating an opaque HTTP code every pass.
-      if (res.ok || res.status === 404) {
-        db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=?`).run(shift.id);
+      const answer = res.ok ? null : await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (res.ok || (res.status === 409 && (answer as any)?.code === 'ALREADY_CLOSED')) {
+        db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=? AND sync_status='pending'`).run(shift.id);
         reconciled++;
+      } else if (res.status === 404) {
+        db.prepare(`UPDATE shifts SET sync_status='pending' WHERE id=?`).run(shift.id);
+        logLine('sync', `shift ${shift.id}: the cloud does not have this drawer - it is sent again, then closed`);
+        errors.push('Shift close: the drawer is not on the cloud yet — it is sent again first.');
       } else if (forced && res.status === 403) {
         errors.push('A force-closed shift is waiting for a manager to sign in and sync it.');
       } else {
-        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        errors.push(`Shift close: ${describeServerError(err, res.status)}`);
+        errors.push(`Shift close: ${describeServerError(answer, res.status)}`);
       }
     } catch (err: any) {
       errors.push(`Shift close: ${err.message}`);

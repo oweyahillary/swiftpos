@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     shiftMoney: (req: { device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
       description?: string; expense_category_id?: string; category_name?: string; payment_method?: string }) => ipcRenderer.invoke('branchClose:shiftMoney', req),
     cancelShiftMoney: (instruction_id: number) => ipcRenderer.invoke('branchClose:cancelShiftMoney', { instruction_id }),
+    // F4: a till gone for good leaves the Close Branch list.
+    forgetTill: (device_id: string) => ipcRenderer.invoke('branchClose:forgetTill', { device_id }),
   },
   // A197: stock transfers between branches (online licence).
   transfers: {

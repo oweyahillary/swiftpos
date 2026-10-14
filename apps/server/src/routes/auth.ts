@@ -230,7 +230,12 @@ async function validateRefreshToken(refreshToken: string): Promise<{
     .eq('jti', jti)
     .maybeSingle();
 
-  if (error || !dbRow) {
+  // P2-18: a failed READ is not an unknown token — answering 401 TOKEN_UNKNOWN to a database hiccup signed a till out (or
+  // set it re-joining) for good. 503: the client keeps its token and asks again.
+  if (error) {
+    throw Object.assign(new Error('Could not check the sign-in key just now — try again'), { code: 'DB_UNAVAILABLE' });
+  }
+  if (!dbRow) {
     // Token not in DB — either never stored (old client) or already consumed.
     // Treat as invalid to be safe.
     throw Object.assign(new Error('Refresh token not recognised'), { code: 'TOKEN_UNKNOWN' });
@@ -243,11 +248,13 @@ async function validateRefreshToken(refreshToken: string): Promise<{
   const deviceSession = dbRow.session_kind === 'device' || isTillPayload(payload) || isOwnerEraTillPayload(payload);
   let successor: HandshakeSuccessor | null = null;
   if (dbRow.replaced_by) {
-    const { data: succ } = await supabase
+    const { data: succ, error: succErr } = await supabase
       .from('refresh_tokens')
       .select(handshake ? 'revoked_at, acked_at, replaced_by' : 'revoked_at, replaced_by')
       .eq('id', dbRow.replaced_by)
       .maybeSingle();
+    // P2-18: a failed successor read must not be judged a replay (revoking the whole session) or a stale copy.
+    if (succErr) throw Object.assign(new Error('Could not check the sign-in key just now — try again'), { code: 'DB_UNAVAILABLE' });
     if (succ) successor = { revokedAt: (succ as any).revoked_at, ackedAt: (succ as any).acked_at, replacedBy: (succ as any).replaced_by };
   }
   // Before migration 131 the successor's own successor was not consulted (A88): a successor that is not revoked was the
@@ -1036,7 +1043,10 @@ router.post('/refresh', async (req, res) => {
     // Deliberate token errors carry a TOKEN_* code and a user-safe message —
     // surface those so the client can react. Anything else is unexpected and
     // must not be leaked.
-    if (typeof err?.code === 'string' && err.code.startsWith('TOKEN_')) {
+    if (err?.code === 'DB_UNAVAILABLE') {
+      // P2-18: the database, not the token — keep the token, try again (a client treats 5xx as "retry later").
+      res.status(503).json({ error: err.message, code: 'DB_UNAVAILABLE' });
+    } else if (typeof err?.code === 'string' && err.code.startsWith('TOKEN_')) {
       res.status(401).json({ error: err.message, code: err.code });
     } else {
       sendError(res, err, { status: 401, message: 'Authentication failed' });

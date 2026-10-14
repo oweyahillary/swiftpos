@@ -24,6 +24,8 @@ import { buildBranchReport, type BranchOrder, type BranchShift, type TillName } 
 import { orderTax } from '../lib/orderTax';
 import { buildShiftZReport, shiftByCashier } from '../lib/shiftZReport';
 import { cashierSeesShiftSales } from '../lib/cashierShiftSales';   // A416
+import { businessDateEAT } from '../lib/businessDay';
+import { getDayCutoff } from '../lib/dayCutoff';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -246,23 +248,32 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
   const deviceId     = deviceIdFromRequest(req) || null;
   const terminalCode = (req.body?.terminal_code as string | undefined)?.trim() || null;
 
-  const { data, error } = await supabase
-    .from('shifts')
-    .insert({
-      business_id: req.businessId,
-      branch_id,
-      // cashier_id records WHO opened the drawer. Attribution of individual sales
-      // is on each order (orders.cashier_id); the session is the drawer's, and
-      // may be shared by several cashiers over its life.
-      cashier_id: req.userId,
-      opened_by:  req.userId,
-      device_id:     deviceId,
-      terminal_code: terminalCode,
-      opening_float: Number(opening_float),
-      status: 'open',
-    })
-    .select()
-    .single();
+  // P2-15: the shift's business date (the business's "day ends at" cut-off, the branch's own wins) — the monthly pack and
+  // every report by business date find a web shift as they find a till's.
+  const cutoff = await getDayCutoff(req.businessId, branch_id);
+  const openRow: Record<string, unknown> = {
+    business_id: req.businessId,
+    branch_id,
+    // cashier_id records WHO opened the drawer. Attribution of individual sales
+    // is on each order (orders.cashier_id); the session is the drawer's, and
+    // may be shared by several cashiers over its life.
+    cashier_id: req.userId,
+    opened_by:  req.userId,
+    device_id:     deviceId,
+    terminal_code: terminalCode,
+    opening_float: Number(opening_float),
+    status: 'open',
+    business_date: businessDateEAT(new Date(), cutoff),
+    // P0-1 (migration 133): this drawer was opened on the WEB. Only such a drawer is closed with a till's count (A342).
+    opened_via: 'web',
+  };
+  let { data, error } = await supabase.from('shifts').insert(openRow).select().single();
+  // Before migration 133 the column is not there: open the drawer without it (the sibling rule then reads business_day_id).
+  if (error && /opened_via/.test(error.message ?? '')) {
+    const { opened_via: _v, ...withoutVia } = openRow;
+    // business_id: forced from the token in openRow above
+    ({ data, error } = await supabase.from('shifts').insert(withoutVia).select().single());
+  }
 
   if (error) {
     // The guard above is a read-then-write, so two concurrent requests can both
@@ -298,9 +309,10 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
 // ──────────────────────────────────────────────────────────
 router.post('/:id/foreign-cash', async (req, res) => {
   const { id } = req.params;
-  const { data: shift } = await supabase
+  const { data: shift, error: shiftErr } = await supabase
     .from('shifts').select('id, status, device_id, terminal_code, branch_id, opened_by, cashier_id')
     .eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (shiftErr) { sendError(res, shiftErr); return; }   // P1-4: a failed read is not "no such shift"
   if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
 
   const sameTerminal =
@@ -326,11 +338,13 @@ router.post('/:id/foreign-cash', async (req, res) => {
           'payments', 'order_id', orderIds,
           q => q.select('order_id, method, status, amount').eq('method', 'cash').in('status', ['completed', 'refunded']))
       : [];
-    const { data: floats }   = await supabase.from('float_transactions').select('id, type, amount').eq('shift_id', id);
+    const { data: floats, error: fErr }   = await supabase.from('float_transactions').select('id, type, amount').eq('shift_id', id);
+    if (fErr) throw new Error(`foreign-cash floats: ${fErr.message}`);   // P1-4: never a 0 for a failed read
     // 0.6.27: only a cash expense is out of the drawer (migration 111: payment_method, default 'cash').
-    const { data: expenses } = await supabase.from('expenses').select('id, amount').eq('shift_id', id).eq('payment_method', 'cash');
-    // A342: other shifts open on this same till (the web standing in as it) — the till's count covers them too.
-    const siblings = siblingSummary(await openSiblingCash(shift as any, req.businessId!));
+    const { data: expenses, error: eErr } = await supabase.from('expenses').select('id, amount').eq('shift_id', id).eq('payment_method', 'cash');
+    if (eErr) throw new Error(`foreign-cash expenses: ${eErr.message}`);
+    // A342: other shifts open on this same till that the WEB opened standing in as it — the till's count covers them too.
+    const siblings = siblingSummary(await openSiblingCash(shift as any, req.businessId!, tillCloseTime(req, null)));
     res.json({
       ...foreignCash(
         { orders: orderIds.map(o => ({ id: o, status: 'completed', idempotency_key: keyById.get(o) ?? null })), payments, floats: floats ?? [], expenses: expenses ?? [] },
@@ -415,19 +429,12 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     }
   }
 
-  // Fetch the shift (must belong to this business and be open)
-  const { data: shift, error: shiftErr } = await supabase
-    .from('shifts')
-    .select('*')
-    .eq('id', id)
-    .eq('business_id', req.businessId)
-    .eq('status', 'open')
-    .single();
-
-  if (shiftErr || !shift) {
-    res.status(404).json({ error: 'Open shift not found' });
-    return;
-  }
+  // Fetch the shift (must belong to this business and be open).
+  // P1-3: three different answers, never one 404 for all of them — the till marks its close synced on 2xx or 409
+  // ALREADY_CLOSED only, so a database hiccup (5xx) is retried and a shift that is really gone (404) is flagged.
+  const found = await openShiftOr409(req, res, id);
+  if (!found) return;
+  const shift = found;
 
   // ── Authorisation (finding #13) ──────────────────────────────────────────
   // Previously ANY authenticated user in the business could close ANY drawer,
@@ -510,19 +517,21 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     cashSales = cashPayments.reduce((sum, p) => sum + Number(p.amount), 0);
   }
 
-  // Sum float_out movements (cash removed from drawer)
-  const { data: floatTxns } = await supabase
-    .from('float_transactions')
-    .select('type, amount')
-    .eq('shift_id', id);
+  // P2-11: when the drawer was counted — the till's own time (it replays the close later), else now.
+  const closeAt = tillCloseTime(req, shift.opened_at ?? null);
+  const closedBy = await tillClosedBy(req);
 
-  const floatIn  = (floatTxns ?? []).filter(f => f.type === 'float_in') .reduce((s, f) => s + Number(f.amount), 0);
-  const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
-
-  const expensesOut   = await shiftExpenses(id);
-  // A342: closed FROM THE TILL (a desktop token), the till's count also covers any other shift open on this same till —
-  // the web POS standing in as it. Owner, 2026-09-27: "Till's count covers both". A web close never closes the till's.
-  const siblings = req.surface === 'desktop' ? await openSiblingCash(shift, req.businessId!) : [];
+  // Sum float_out movements (cash removed from drawer). P1-4: a failed read is a 5xx, never a 0 stored for good.
+  let floatIn = 0, floatOut = 0, expensesOut = 0;
+  let siblings: SiblingCash[] = [];
+  try {
+    ({ floatIn, floatOut } = await shiftFloats(id));
+    expensesOut = await shiftExpenses(id);
+    // A342: closed FROM THE TILL (a desktop token), the till's count also covers the shift the WEB POS opened standing in
+    // as this till, opened before the count. Owner, 2026-09-27: "Till's count covers both". A web close never closes the
+    // till's, and the till's own next drawer is never folded in (P0-1).
+    if (req.surface === 'desktop') siblings = await openSiblingCash(shift as any, req.businessId!, closeAt);
+  } catch (e) { sendError(res, e as Error); return; }
   const siblingExpected = siblings.reduce((s2, x) => s2 + x.expected, 0);
   const expectedCash  = Number(shift.opening_float) + cashSales + floatIn - floatOut - expensesOut + siblingExpected;
   const cashVariance  = Number(closing_float) - expectedCash;
@@ -552,8 +561,8 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     .from('shifts')
     .update({
       status: 'closed',
-      closed_at: new Date().toISOString(),
-      closed_by: req.userId,
+      closed_at: closeAt,
+      closed_by: closedBy,
       close_method: 'counted',
       closing_float: Number(closing_float),
       expected_cash: expectedCash,
@@ -563,10 +572,14 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
       ...(declared ? { declared_methods: declared } : {}),
     })
     .eq('id', id)
+    .eq('business_id', req.businessId)
+    // Conditional: a close racing another close (or a force-close) never overwrites the one that landed first.
+    .eq('status', 'open')
     .select()
-    .single();
+    .maybeSingle();
 
   if (closeErr) { sendError(res, closeErr); return; }
+  if (!closed) { await alreadyClosed(req, res, id); return; }
 
   // A342: the till's count closed the web's shift(s) on this till too — recorded as counted, inside that drawer, no variance.
   const tillLabel = shift.terminal_code || 'the till';
@@ -574,7 +587,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     const { error: sibErr } = await supabase
       .from('shifts')
       .update({
-        status: 'closed', closed_at: new Date().toISOString(), closed_by: req.userId, close_method: 'counted',
+        status: 'closed', closed_at: closeAt, closed_by: closedBy, close_method: 'counted',
         closing_float: sib.expected, expected_cash: sib.expected, cash_variance: 0,
         notes: closedWithTillNote(tillLabel, id),
       })
@@ -619,8 +632,9 @@ async function expectedByMethod(shift: { id: string; expected_cash?: number | st
     }
   }
   // 0.6.27: an expense paid by M-Pesa (or another method) comes off that method's expected total — as on the till.
-  const { data: spentRows } = await supabase.from('expenses').select('amount, payment_method')
+  const { data: spentRows, error: spentErr } = await supabase.from('expenses').select('amount, payment_method')
     .eq('shift_id', shift.id).neq('payment_method', 'cash');
+  if (spentErr) throw new Error(`shift expenses by method: ${spentErr.message}`);   // P1-4
   for (const [m, v] of Object.entries(nonCashExpenses(spentRows ?? []))) out[m] = Math.round(((out[m] ?? 0) - v) * 100) / 100;
   out.cash = shift.expected_cash != null
     ? Number(shift.expected_cash)
@@ -752,11 +766,83 @@ router.get('/:id/confirm-view', async (req, res) => {
  * screen to believe.
  */
 async function shiftExpenses(shiftId: string): Promise<number> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('expenses').select('amount').eq('shift_id', shiftId)
     // 0.6.27: only a CASH expense leaves the drawer; one paid by M-Pesa comes off M-Pesa's expected (expectedByMethod).
     .eq('payment_method', 'cash');
+  // P1-4: a failed read THROWS. Returning 0 stored a wrong expected cash and variance for good on a close.
+  if (error) throw new Error(`shift expenses: ${error.message}`);
   return (data ?? []).reduce((sum, e: { amount: number }) => sum + Number(e.amount), 0);
+}
+
+/** Cash put into (float_in) and taken out of (float_out) a drawer. Throws on a failed read (P1-4). */
+async function shiftFloats(shiftId: string): Promise<{ floatIn: number; floatOut: number }> {
+  const { data, error } = await supabase.from('float_transactions').select('type, amount').eq('shift_id', shiftId);
+  if (error) throw new Error(`shift floats: ${error.message}`);
+  const rows = (data ?? []) as Array<{ type: string; amount: number | string }>;
+  return {
+    floatIn:  rows.filter(f => f.type === 'float_in') .reduce((s, f) => s + Number(f.amount), 0),
+    floatOut: rows.filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0),
+  };
+}
+
+/**
+ * P1-3: the shift to close, or the answer already sent — 404 NOT_FOUND only when there is no such shift in this business,
+ * 409 ALREADY_CLOSED (with its status and closed_at) when it is there but not open, 5xx when the read itself failed.
+ */
+async function openShiftOr409(req: Request, res: Response, id: string): Promise<Record<string, any> | null> {
+  const { data: shift, error } = await supabase
+    .from('shifts').select('*').eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error, { status: 503, message: 'Could not read the shift — try again' }); return null; }
+  if (!shift) { res.status(404).json({ error: 'Shift not found', code: 'NOT_FOUND' }); return null; }
+  if ((shift as { status?: string }).status !== 'open') {
+    res.status(409).json({
+      error: 'This shift is already closed.', code: 'ALREADY_CLOSED',
+      status: (shift as { status?: string }).status ?? null, closed_at: (shift as { closed_at?: string | null }).closed_at ?? null,
+    });
+    return null;
+  }
+  return shift as Record<string, any>;
+}
+
+/** A conditional close matched no row: somebody closed it first — answered as P1-3's 409 (or 404 if it vanished). */
+async function alreadyClosed(req: Request, res: Response, id: string): Promise<void> {
+  const { data, error } = await supabase.from('shifts').select('status, closed_at').eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error, { status: 503, message: 'Could not read the shift — try again' }); return; }
+  if (!data) { res.status(404).json({ error: 'Shift not found', code: 'NOT_FOUND' }); return; }
+  res.status(409).json({ error: 'This shift is already closed.', code: 'ALREADY_CLOSED',
+    status: (data as { status?: string }).status ?? null, closed_at: (data as { closed_at?: string | null }).closed_at ?? null });
+}
+
+/** How far ahead of the cloud's clock a till's close time may be (its clock may run a little fast). */
+const CLOSE_CLOCK_SLACK_MS = 5 * 60_000;
+
+/**
+ * P2-11 / P0-1: when the drawer was counted. A till replays its close later and sends its own `closed_at`; it is taken when
+ * it is a real time, not more than 5 minutes ahead of now and not before the shift opened — anything else (and every web
+ * close) is now. Never refused: refusing a till's replay makes it retry forever.
+ */
+export function cleanCloseTime(raw: unknown, openedAt: string | null, now: Date = new Date()): string {
+  const fallback = now.toISOString();
+  if (typeof raw !== 'string' || !raw.trim()) return fallback;
+  const t = Date.parse(raw);
+  if (!Number.isFinite(t)) return fallback;
+  if (t > now.getTime() + CLOSE_CLOCK_SLACK_MS) return fallback;
+  if (openedAt) { const o = Date.parse(openedAt); if (Number.isFinite(o) && t < o) return fallback; }
+  return new Date(t).toISOString();
+}
+function tillCloseTime(req: Request, openedAt: string | null): string {
+  return req.surface === 'desktop' ? cleanCloseTime(req.body?.closed_at, openedAt) : new Date().toISOString();
+}
+
+/** P2-11: who closed it — the person the till names (`closed_by`) when they are on this business's roster; else the caller. */
+async function tillClosedBy(req: Request): Promise<string | null> {
+  const named = req.surface === 'desktop' && typeof req.body?.closed_by === 'string' ? req.body.closed_by.trim() : '';
+  if (named && /^[0-9a-f-]{36}$/i.test(named)) {
+    const { data } = await supabase.from('users').select('id').eq('id', named).eq('business_id', req.businessId).maybeSingle();
+    if (data) return named;
+  }
+  return req.userId ?? null;
 }
 
 /**
@@ -778,12 +864,15 @@ async function shiftExpenses(shiftId: string): Promise<number> {
  * A342: the other shifts open on the same till as `shift`, with the cash each should hold. Empty for a closed shift.
  * Declared as a function (hoisted) so the routes above can use it.
  */
-async function openSiblingCash(shift: { id: string; status: string; business_id?: string; device_id?: string | null; terminal_code?: string | null; branch_id?: string | null }, businessId: string): Promise<SiblingCash[]> {
+async function openSiblingCash(shift: { id: string; status: string; business_id?: string; device_id?: string | null; terminal_code?: string | null; branch_id?: string | null }, businessId: string, closeAt: string | null): Promise<SiblingCash[]> {
   if (shift.status !== 'open') return [];
-  const { data: open } = await supabase
-    .from('shifts').select('id, status, device_id, terminal_code, branch_id, opening_float, opened_at, opened_by, cashier_id')
-    .eq('business_id', businessId).eq('status', 'open');
-  const sibs = siblingsOf(shift, (open ?? []) as any[]);
+  const cols = 'id, status, device_id, terminal_code, branch_id, opening_float, opened_at, opened_by, cashier_id, business_day_id';
+  let { data: open, error }: { data: any[] | null; error: any } = await supabase.from('shifts').select(`${cols}, opened_via`).eq('business_id', businessId).eq('status', 'open');
+  // Before migration 133 there is no opened_via: siblingDrawers.isWebStandIn reads business_day_id instead.
+  if (error && /opened_via/.test(error.message ?? '')) ({ data: open, error } = await supabase.from('shifts').select(cols).eq('business_id', businessId).eq('status', 'open'));
+  // A failed read must not close a drawer without the cash it covers: the caller answers 5xx and the till retries.
+  if (error) throw new Error(`sibling shifts: ${error.message}`);
+  const sibs = siblingsOf(shift, (open ?? []) as any[], closeAt);
   if (!sibs.length) return [];
   const ids = [...new Set(sibs.map((x: any) => x.opened_by ?? x.cashier_id).filter(Boolean))] as string[];
   const { data: users } = ids.length ? await supabase.from('users').select('id, name').in('id', ids) : { data: [] as any[] };
@@ -812,11 +901,7 @@ export async function computeExpectedCash(shiftId: string, openingFloat: number)
     cashSales = cashPayments.reduce((s, p: { amount: number }) => s + Number(p.amount), 0);
   }
 
-  const { data: floatTxns } = await supabase
-    .from('float_transactions').select('type, amount').eq('shift_id', shiftId);
-  const floatIn  = (floatTxns ?? []).filter(f => f.type === 'float_in') .reduce((s, f) => s + Number(f.amount), 0);
-  const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
-
+  const { floatIn, floatOut } = await shiftFloats(shiftId);   // P1-4: throws on a failed read
   const expenses = await shiftExpenses(shiftId);
   return Number(openingFloat) + cashSales + floatIn - floatOut - expenses;
 }
@@ -861,18 +946,9 @@ router.post('/:id/force-close', requireAnyPermission('shifts.force_close', 'sett
     return;
   }
 
-  const { data: shift, error: shiftErr } = await supabase
-    .from('shifts')
-    .select('*')
-    .eq('id', id)
-    .eq('business_id', req.businessId)
-    .eq('status', 'open')
-    .single();
-
-  if (shiftErr || !shift) {
-    res.status(404).json({ error: 'Open shift not found' });
-    return;
-  }
+  // P1-3: 404 NOT_FOUND / 409 ALREADY_CLOSED / 5xx, as /:id/close.
+  const shift = await openShiftOr409(req, res, id);
+  if (!shift) return;
 
   // Same expected-cash formula as /:id/close, including refunds as negative
   // cash rows — see the comment there for why omitting them overstates expected.
@@ -899,12 +975,12 @@ router.post('/:id/force-close', requireAnyPermission('shifts.force_close', 'sett
     cashSales = cashPayments.reduce((sum, p) => sum + Number(p.amount), 0);
   }
 
-  const { data: floatTxns } = await supabase
-    .from('float_transactions').select('type, amount').eq('shift_id', id);
-  const floatIn  = (floatTxns ?? []).filter(f => f.type === 'float_in') .reduce((s, f) => s + Number(f.amount), 0);
-  const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
-
-  const expensesOut = await shiftExpenses(id);
+  // P1-4: a failed float / expense read is a 5xx, never a 0 inside the stored expected cash.
+  let floatIn = 0, floatOut = 0, expensesOut = 0;
+  try {
+    ({ floatIn, floatOut } = await shiftFloats(id));
+    expensesOut = await shiftExpenses(id);
+  } catch (e) { sendError(res, e as Error); return; }
   const expectedCash = Number(shift.opening_float) + cashSales + floatIn - floatOut - expensesOut;
 
   const { data: closed, error: closeErr } = await supabase
@@ -920,10 +996,13 @@ router.post('/:id/force-close', requireAnyPermission('shifts.force_close', 'sett
       notes: [shift.notes, `Force-closed by manager: ${reason}`].filter(Boolean).join('\n'),
     })
     .eq('id', id)
+    .eq('business_id', req.businessId)
+    .eq('status', 'open')   // conditional: never overwrites a close that landed first
     .select()
-    .single();
+    .maybeSingle();
 
   if (closeErr) { sendError(res, closeErr); return; }
+  if (!closed) { await alreadyClosed(req, res, id); return; }
   res.json(closed);
 });
 
@@ -1038,6 +1117,9 @@ router.post('/:id/expense', async (req, res) => {
   }
 
   const who = await recorderId(req);
+  // P2-14: the business date (its "day ends at" cut-off, the branch's own wins), not the UTC date — an expense at 01:00
+  // Nairobi time was dated the day before, and one after a 04:00 cut-off belongs to the night it was spent in.
+  const expenseDate = businessDateEAT(new Date(), await getDayCutoff(req.businessId, (shift as { branch_id: string }).branch_id));
   const { data, error } = await supabase
     .from('expenses')
     .insert({
@@ -1049,7 +1131,7 @@ router.post('/:id/expense', async (req, res) => {
       amount,
       paid_by:             who,
       recorded_by:         who,
-      expense_date:        new Date().toISOString().slice(0, 10),   // as the till and POST /api/expenses do
+      expense_date:        expenseDate,
       payment_method:      paymentMethod,
       approved_by:         approval.approver.id,       // 0.6.37 (A388)
       approved_by_name:    approval.approver.name,
@@ -1349,6 +1431,9 @@ router.get('/:id', async (req, res) => {
   ]);
 
   if (sErr || !shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+  // Audit 2026-10-14: a non-owner reads only shifts of the branch they are signed in at (the business was already checked
+  // above). A person with no branch (works at every branch, A426) keeps the business-wide view GET /api/shifts gives them.
+  if (!req.isOwner && req.branchId && shift.branch_id !== req.branchId) { res.status(404).json({ error: 'Shift not found' }); return; }
 
   // Previously this query selected orders.payment_method, which is not a column.
   // The error was not destructured, so a failed query left `orders` null and the

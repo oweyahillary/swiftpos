@@ -15,6 +15,7 @@ import { supabase }    from '../lib/supabase';
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
 import { showsOnDay } from '../lib/productDays';
 
 const router = safeRouter();
@@ -67,7 +68,8 @@ router.get('/:slug/menu', async (req, res) => {
       .from('tables')
       .select('name')
       .eq('id', table_id as string)
-      .single();
+      .eq('business_id', biz.id)   // audit 2026-10-14: never another business's table name
+      .maybeSingle();
     tableName = table?.name ?? null;
   }
 
@@ -88,6 +90,11 @@ router.post('/:slug/order', async (req, res) => {
 
   if (!items?.length) { res.status(400).json({ error: 'items are required' }); return; }
   if (!branch_id)     { res.status(400).json({ error: 'branch_id is required' }); return; }
+  if (!Array.isArray(items) || items.length > 100) { res.status(400).json({ error: 'items must be a list of up to 100' }); return; }
+  // A quantity is a whole number from 1 to 99 — a negative one took money off the bill.
+  if (items.some((i: any) => !Number.isInteger(i?.quantity) || i.quantity < 1 || i.quantity > 99)) {
+    res.status(400).json({ error: 'Each item needs a quantity from 1 to 99' }); return;
+  }
 
   const { data: biz } = await supabase
     .from('businesses')
@@ -99,6 +106,12 @@ router.post('/:slug/order', async (req, res) => {
     res.status(403).json({ error: 'QR ordering is disabled' });
     return;
   }
+
+  // Audit 2026-10-14: the branch must be this business's — an anonymous caller could drop an order (and a kitchen ticket)
+  // into any business's branch by its id.
+  const { data: ownBranch } = await supabase
+    .from('branches').select('id').eq('id', branch_id).eq('business_id', biz.id).maybeSingle();
+  if (!ownBranch) { res.status(404).json({ error: 'Branch not found' }); return; }
 
   // orders has no table_id column — it stores the table's display name in
   // table_number. Resolve it here; an unknown id leaves the order unassigned
@@ -212,7 +225,8 @@ router.get('/settings', requireAuth, async (req, res) => {
   res.json(data);
 });
 
-router.patch('/settings', requireAuth, async (req, res) => {
+// Audit 2026-10-14: was requireAuth only — any signed-in user could switch public ordering on or take over the menu link.
+router.patch('/settings', requireAuth, requirePermission('settings.manage'), async (req, res) => {
   const { menu_slug, qr_ordering } = req.body;
   const updates: Record<string, unknown> = {};
   if (menu_slug   !== undefined) updates.menu_slug   = menu_slug?.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-') || null;

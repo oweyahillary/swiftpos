@@ -129,8 +129,9 @@ const tx = se.slice(se.indexOf('// Write everything in a single transaction'), s
 ok('the pull replaces variants and add-ons inside its one transaction, after the upserts',
   /for \(const o of modifierOptions\) upsertMO\.run\(o\);[\s\S]*pruneChoices\(db, VARIANT_TABLES, variantScope, variantGroups, variantOptions\);\s*\n\s*const mp = pruneChoices\(db, MODIFIER_TABLES, modifierScope, modifierGroups, modifierOptions\);/.test(tx));
 ok('a failed fetch keeps that product out of scope (only a 2xx adds it)',
-  /if \(vRes\.ok\) \{\s*\n\s*const groups = await vRes\.json\(\);\s*\n\s*variantScope\.push\(String\(p\.id\)\);/.test(se)
-  && /if \(mRes\.ok\) \{\s*\n\s*const groups = await mRes\.json\(\);\s*\n\s*modifierScope\.push\(String\(p\.id\)\);/.test(se)
+  // (till sync audit, item F13: inside a per-product try, after the groups are read and checked — still only on a 2xx)
+  /if \(vRes\.ok\) \{\s*\n\s*const groups = await vRes\.json\(\);[\s\S]{0,400}?variantScope\.push\(String\(p\.id\)\);/.test(se)
+  && /if \(mRes\.ok\) \{\s*\n\s*const groups = await mRes\.json\(\);[\s\S]{0,400}?modifierScope\.push\(String\(p\.id\)\);/.test(se)
   && /variantScope = products\.filter\(\(p: any\) => !p\.has_variants\)/.test(se));
 ok('the branch server\'s snapshot covers every product, so a peer heals too', /variantScope = products\.map\(\(p: any\) => String\(p\.id\)\);\s*\n\s*modifierScope = variantScope;/.test(se));
 

@@ -1,9 +1,9 @@
-import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission } from '../middleware/rbac';
+import { requireAnyPermission, assertBranchAccess } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 import { cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
@@ -50,9 +50,31 @@ router.post('/', requireAuth, (_req, res) => {
   });
 });
 
+// ── Audit 2026-10-14: every write here is gated ───────────────────────────────
+// The update / set-main / deactivate / stock routes were requireAuth ONLY: any signed-in cashier could rename or close a
+// branch, move the main branch, or set any stock level — and the stock route never checked the branch was this
+// business's, so it wrote another tenant's stock. Every write now needs its key (settings.manage for the branch itself,
+// inventory.adjust for stock; the owner and '*' pass in rbac), the branch must be THIS business's (404 otherwise), and a
+// non-owner may touch only the branch they are signed in at (assertBranchAccess).
+
+/** The branch row when :id is this business's and the caller may act on it; otherwise the response is sent and null. */
+async function branchForWrite(req: Request, res: Response, branchId: string, cols = 'id'): Promise<Record<string, any> | null> {
+  const { data, error } = await supabase
+    .from('branches').select(cols).eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error); return null; }
+  if (!data) { res.status(404).json({ error: 'Branch not found' }); return null; }
+  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You do not have access to this branch' }); return null; }
+  return data as unknown as Record<string, any>;
+}
+
 // PUT /api/branches/:id — update branch
-router.put('/:id', requireAuth, validate(UpdateBranchSchema), async (req, res) => {
+router.put('/:id', requireAuth, requireAnyPermission('settings.manage'), validate(UpdateBranchSchema), async (req, res) => {
   const { name, address, phone, status } = req.body;
+
+  const branch = await branchForWrite(req, res, req.params.id, 'id, is_main');
+  if (!branch) return;
+  // The same rule as DELETE: the main branch is never closed (PUT { status: 'inactive' } was a way round it).
+  if (status === 'inactive' && branch.is_main) { res.status(400).json({ error: 'Cannot deactivate the main branch' }); return; }
 
   const { data, error } = await supabase
     .from('branches')
@@ -67,7 +89,11 @@ router.put('/:id', requireAuth, validate(UpdateBranchSchema), async (req, res) =
 });
 
 // PUT /api/branches/:id/set-main — change main branch
-router.put('/:id/set-main', requireAuth, async (req, res) => {
+router.put('/:id/set-main', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+  // The target must be this business's (and the caller's) BEFORE the current main is unset — an unknown id used to leave
+  // the business with no main branch at all.
+  if (!(await branchForWrite(req, res, req.params.id))) return;
+
   // Unset current main
   await supabase
     .from('branches')
@@ -88,15 +114,9 @@ router.put('/:id/set-main', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/branches/:id — deactivate branch
-router.delete('/:id', requireAuth, async (req, res) => {
-  const { data: branch } = await supabase
-    .from('branches')
-    .select('is_main')
-    .eq('id', req.params.id)
-    .eq('business_id', req.businessId)
-    .single();
-
-  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+router.delete('/:id', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+  const branch = await branchForWrite(req, res, req.params.id, 'id, is_main');
+  if (!branch) return;
   if (branch.is_main) { res.status(400).json({ error: 'Cannot deactivate the main branch' }); return; }
 
   const { error } = await supabase
@@ -111,6 +131,9 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
 // GET /api/branches/:id/staff
 router.get('/:id/staff', requireAuth, async (req, res) => {
+  // Audit 2026-10-14: user_branches has no business_id — without this, any signed-in user read another tenant's staff
+  // (names, emails, phones) by branch id.
+  if (!(await assertOwnBranch(req.businessId, req.params.id))) { res.status(404).json({ error: 'Branch not found' }); return; }
   const { data, error } = await supabase
     .from('user_branches')
     .select(`
@@ -150,30 +173,50 @@ router.get('/:id/stock', requireAuth, async (req, res) => {
 });
 
 // PUT /api/branches/:id/stock/:productId — adjust stock
-router.put('/:id/stock/:productId', requireAuth, async (req, res) => {
+// Audit 2026-10-14: was requireAuth only, with no tenant, branch or product check and an unvalidated body.
+router.put('/:id/stock/:productId', requireAuth, requireAnyPermission('inventory.adjust'), async (req, res) => {
   const { id: branch_id, productId: product_id } = req.params;
-  const { quantity, low_stock_threshold } = req.body;
+  const body = (req.body ?? {}) as { quantity?: unknown; low_stock_threshold?: unknown };
+  const finite = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+  if (!finite(body.quantity)) { res.status(400).json({ error: 'quantity (a number) is required' }); return; }
+  if (body.low_stock_threshold !== undefined && body.low_stock_threshold !== null
+    && !(finite(body.low_stock_threshold) && (body.low_stock_threshold as number) >= 0)) {
+    res.status(400).json({ error: 'low_stock_threshold must be a number of 0 or more' });
+    return;
+  }
+  const quantity = body.quantity as number;
 
+  if (!(await branchForWrite(req, res, branch_id))) return;
+  const { data: product, error: pErr } = await supabase
+    .from('products').select('id').eq('id', product_id).eq('business_id', req.businessId).maybeSingle();
+  if (pErr) { sendError(res, pErr); return; }
+  if (!product) { res.status(404).json({ error: 'Product not found' }); return; }
+
+  // What it was, so the movement records the real change (it used to record the new level as the change).
+  const { data: before } = await supabase
+    .from('stock_levels').select('quantity').eq('branch_id', branch_id).eq('product_id', product_id).maybeSingle();
+  const previous = Number((before as { quantity?: unknown } | null)?.quantity ?? 0) || 0;
+
+  const row: Record<string, unknown> = { branch_id, product_id, quantity, updated_at: new Date().toISOString() };
+  if (body.low_stock_threshold !== undefined) row.low_stock_threshold = body.low_stock_threshold;
   const { data, error } = await supabase
     .from('stock_levels')
-    .upsert(
-      { branch_id, product_id, quantity, low_stock_threshold, updated_at: new Date().toISOString() },
-      { onConflict: 'product_id,branch_id' }
-    )
+    .upsert(row, { onConflict: 'product_id,branch_id' })
     .select()
     .single();
 
   if (error) { sendError(res, error); return; }
 
-  await supabase.from('stock_movements').insert({
+  const { error: mErr } = await supabase.from('stock_movements').insert({
     branch_id,
     product_id,
     movement_type: 'correction',
-    quantity_change: quantity,
+    quantity_change: quantity - previous,
     quantity_after: quantity,
     notes: 'Branch stock correction',
     created_by: req.userId,
   });
+  if (mErr) console.error('[branches] stock correction movement not recorded:', mErr.message);
 
   res.json(data);
 });
@@ -236,6 +279,11 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.manage'
   }
   if (!(await assertOwnBranch(req.businessId, req.params.id))) {
     res.status(404).json({ error: 'Branch not found' });
+    return;
+  }
+  // Audit 2026-10-14: a manager with settings.manage changes their own branch's overrides, not another branch's.
+  if (!assertBranchAccess(req, req.params.id)) {
+    res.status(403).json({ error: 'You do not have access to this branch' });
     return;
   }
   if (value === null || value === undefined) {

@@ -159,7 +159,7 @@ console.log('\nWired in\n');
     /for \(const catId of \(st\.category_ids \?\? \[\]\)\) linkStation\.run\(catId, st\.id\);\s*\}\s*\/\/ A411[^\n]*\n\s*overlayPendingRouting\(db\);/.test(S));
   ok('…and so does the refresh after a station edit', /insLk\.run\(cid, st\.id\);\s*\}\s*overlayPending\(db\);/.test(I));
   ok('sent before each pull, in every push pass, and on the 20 s beat',
-    /if \(stationRoutingPending\(\)\) \{ try \{ await pushStationRoutingNow\(\); \} catch[^\n]*\n\s*pulled = await pullCatalogue\(\);/.test(S)
+    /if \(stationRoutingPending\(\)\) \{ try \{ await pushStationRoutingNow\(\); \} catch[^\n]*\n[\s\S]{0,600}?pulled = await pullSafely\(\);/.test(S)
     && /stage\('station routing'/.test(S) && /if \(stationRoutingPending\(\)\) pushStationRoutingNow\(\)/.test(X));
   ok('the tap: role checked on the till, saved here FIRST, then sent',
     /if \(!mayRoute\(staff\.role_name, staff\.permissions\)\) throw/.test(I)

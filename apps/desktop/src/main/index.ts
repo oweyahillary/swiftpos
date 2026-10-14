@@ -19,6 +19,7 @@ import { WATCHDOG_ARG, watchdogStaysDown, quitByHand, clearQuitByHand } from './
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
 import { ownDayState, executeCloseDay, executeConfirmShift, executeShiftMoney } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
+import { nodeReplicationTick } from './syncEngine';   // F10: branch replication on its own beat
 import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
 import { getBuildInfo } from './buildInfo';
@@ -331,23 +332,29 @@ app.whenReady().then(() => {
   // losing the ack quietly would make the peer close once and be asked again.
   // (Re-asking is safe — the executor acks 'already closed' — but the manager
   // would watch a spinner that never resolves.)
-  const pendingAcks = new Map<number, { ok: boolean; error?: string; summary?: unknown }>();
+  // F12 (2026-10-14): keyed by the instruction's uid (its number only from a server on an older build), and the ack
+  // carries uid + this till's id — a number alone restarts at 1 on a reinstalled server and matched another's.
+  const pendingAcks = new Map<string, { id: number; uid: string | null; ack: { ok: boolean; error?: string; summary?: unknown } }>();
+  const ackKey = (ins: { id: number; uid?: string | null }) => (ins.uid ? `u:${ins.uid}` : `n:${ins.id}`);
+  const sendAck = async (ins: { id: number; uid?: string | null }, ack: { ok: boolean; error?: string; summary?: unknown }) => {
+    if (!(await ackNodeInstruction(ins.id, ack, undefined, ins.uid ?? null))) pendingAcks.set(ackKey(ins), { id: ins.id, uid: ins.uid ?? null, ack });
+  };
   setInterval(async () => {
     const cfg = getDeviceConfig();
     if (!cfg?.node_url || isNodeRole(cfg.device_role)) return;
     try {
-      for (const [id, ack] of [...pendingAcks]) {
-        if (await ackNodeInstruction(id, ack)) pendingAcks.delete(id);
+      for (const [key, p] of [...pendingAcks]) {
+        if (await ackNodeInstruction(p.id, p.ack, undefined, p.uid)) pendingAcks.delete(key);
       }
       const instructions = await pollNodeInstructions(ownDayState());
       if (!instructions) return;
       for (const ins of instructions) {
-        if (pendingAcks.has(ins.id)) continue;          // executed, ack in flight
+        if (pendingAcks.has(ackKey(ins))) continue;          // executed, ack in flight
         if (ins.kind === 'confirm_shift') {
           // A452: a manager on the branch server confirmed one of this till's shifts — recorded here, on its own books.
           const ack = executeConfirmShift(ins.payload);
           if (ack.ok) syncPush().catch(() => { /* the timer retries */ });
-          if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
+          await sendAck(ins, ack);
           continue;
         }
         if (ins.kind === 'shift_money') {
@@ -360,23 +367,29 @@ app.whenReady().then(() => {
               if (!w.isDestroyed()) w.webContents.send('shift:changedElsewhere', { id: ins.payload?.shift_id ?? null, kind: ins.payload?.kind ?? null });
             }
           }
-          if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
+          await sendAck(ins, ack);
           continue;
         }
         if (ins.kind !== 'close_day') {
           // Named, not ignored: an unknown kind means the node is on a newer
           // build — the manager must find out rather than watch it spin.
           const ack = { ok: false, error: `this till does not understand '${ins.kind}' — it is on an older build` };
-          if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
+          await sendAck(ins, ack);
           continue;
         }
         const ack = executeCloseDay(ins.payload);
-        if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
+        await sendAck(ins, ack);
       }
     } catch (err) {
       console.error('[branchClose] peer loop:', err);
     }
   }, 15_000);
+
+  // F10 (2026-10-14): branch replication on its own 15 s beat, whatever the cloud is doing — a till with no cloud
+  // session (or no internet) still sends its rows to the branch server, and the server numbers its own rows so its
+  // tills receive them (syncEngine.nodeReplicationTick). Self-guards: nothing to do without a branch server.
+  setInterval(() => { void nodeReplicationTick(); }, 15_000);
+  setTimeout(() => { void nodeReplicationTick(); }, 5_000);
 
   // Phase 2a — distribution pull. Every 30s a peer asks the node for every
   // OTHER device's new rows and runs them through applyPeerRows under each

@@ -225,7 +225,7 @@ console.log('\nWired end to end (source)\n');
   const idx = read('src/main/index.ts');
   const loop = idx.slice(idx.indexOf("if (ins.kind === 'shift_money')"), idx.indexOf("if (ins.kind !== 'close_day')"));
   ok('the till\'s peer loop executes shift_money, pushes, tells its screens and acks',
-    loop.includes('executeShiftMoney(ins.payload)') && loop.includes('syncPush()') && loop.includes("'shift:changedElsewhere'") && loop.includes('ackNodeInstruction(ins.id, ack)'));
+    loop.includes('executeShiftMoney(ins.payload)') && loop.includes('syncPush()') && loop.includes("'shift:changedElsewhere'") && loop.includes('await sendAck(ins, ack)'));   // F12: acked by uid + device
   const pre = read('src/main/preload.ts');
   ok('the bridge carries the calls and the reload event', pre.includes("'branchClose:shiftMoney'") && pre.includes("'branchClose:cancelShiftMoney'") && pre.includes("ipcRenderer.on('shift:changedElsewhere'"));
   ok('an open shift panel and the POS reload on it', /posApi\.shift\.onChangedElsewhere\(/.test(read('src/renderer/pages/ShiftPanel.tsx')) && /posApi\.shift\.onChangedElsewhere\(/.test(read('src/renderer/pages/POSPage.tsx')));

@@ -286,6 +286,31 @@ export interface PushDeps {
   log?: (line: string) => void;
 }
 
+/**
+ * Till sync audit (F9): `sent` went to the cloud and was answered; `cur` is the same row now, with an edit merged in
+ * since. Keep `cur` pending under a new change id. When the cloud took `sent` (applied / identical), the new change starts
+ * from what the cloud now holds: its base is the sent values over the old base, and a create becomes an update of the
+ * thing it created (a staff create keeps its form — its PIN is not an update field). When the cloud did not take it, the
+ * base stays as it was and the merged change is judged afresh.
+ */
+function requeueMergedChange(db: Database.Database, sent: LocalChangeRow, cur: LocalChangeRow,
+  answer: { status: string; canonical_id?: string }, secrets: Secrets): void {
+  const took = answer.status === 'applied' || answer.status === 'identical';
+  const newId = randomUUID();
+  let op = cur.op;
+  let base = cur.base;
+  if (took) {
+    if (answer.canonical_id) adoptCanonical(db, sent.entity, sent.entity_id, answer.canonical_id);
+    const sentData = (wireChange(sent, secrets).data ?? {}) as Record<string, unknown>;
+    delete sentData.pin;
+    const oldBase = sent.base ? JSON.parse(sent.base) : {};
+    if (cur.op === 'create' && cur.entity !== 'staff') { op = 'update'; base = JSON.stringify(sentData); }
+    else if (cur.op === 'update') base = JSON.stringify({ ...oldBase, ...sentData });
+  }
+  db.prepare(`UPDATE local_changes SET id = ?, op = ?, base = ?, entity_id = COALESCE(?, entity_id), tries = tries + 1, updated_at = ? WHERE id = ? AND state = 'pending'`)
+    .run(newId, op, base, took ? (answer.canonical_id ?? null) : null, new Date().toISOString(), cur.id);
+}
+
 /** Send what waits; ask after what is with the owner. Returns whether anything settled (the caller then pulls). Never throws. */
 export async function pushLocalChanges(db: Database.Database, d: PushDeps): Promise<{ sent: number; settled: number; error?: string }> {
   ensureTable(db);
@@ -302,6 +327,15 @@ export async function pushLocalChanges(db: Database.Database, d: PushDeps): Prom
     for (const r of (body?.results ?? []) as Array<{ id: string; status: string; message?: string; canonical_id?: string; retry?: boolean }>) {
       const row = pending.find((p) => p.id === r.id);
       if (!row) continue;
+      // Till sync audit (F9): an edit made while this change was on its way joined it (recordChange) — the answer is to
+      // the OLDER data. Marking it done lost the newer edit. It stays pending, under a NEW id (the cloud answers a change
+      // id it has seen with its first answer, routes/changes.ts → changeApply), its base moved to what the cloud now holds.
+      const now_ = db.prepare(`SELECT * FROM local_changes WHERE id = ?`).get(r.id) as LocalChangeRow | undefined;
+      if (!now_) continue;   // deleted meanwhile (a create deleted before it reached the cloud)
+      if (now_.data !== row.data || now_.updated_at !== row.updated_at || now_.state !== 'pending') {
+        if (now_.state === 'pending') requeueMergedChange(db, row, now_, r, d.secrets);
+        continue;
+      }
       if (r.status === 'applied' || r.status === 'identical') {
         if (r.canonical_id) adoptCanonical(db, row.entity, row.entity_id, r.canonical_id);
         up.run('done', null, r.canonical_id ?? null, now(), r.id); settled++;

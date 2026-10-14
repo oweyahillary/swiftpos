@@ -68,14 +68,17 @@ type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: numb
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from './branchClose';
 import { executeShiftMoney, createShiftMoneyInstruction, cancelShiftMoneyInstruction, SHIFT_MONEY_CLOSED, type ShiftMoneyPayload } from './branchClose';   // A465
+import { forgetTill } from './branchClose';   // F4
 import { ownOpenShift } from './shiftService';   // A465
 import { takeSnapshot, setBackupDir, maintenanceStatus } from './maintenance';
-import { emitEvent, resetOutboxCursors } from './nodeIngest';
+import { emitEvent, resetOutboxCursors, rearmNodeOutbox } from './nodeIngest';
+import { setNodeDeviceToken } from './nodeClient';   // F7
 import { localOrderDetail } from './managerReports';   // A444
 import { detailFromCloud, receiptPayloadFromDetail, type OrderDetail } from './orderDetail';   // A444
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
+import { personHolds, FORCE_CLOSE_KEYS, BRANCH_PRICE_KEYS, configSaveRefusal } from './tillGates';   // audit 2026-10-14
 import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient, fetchRosterFromNode, relayBrandingToNode } from './nodeClient';
 import { isUnreachableStatus } from './authTransport';
 import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession, OFFLINE_SESSION_MESSAGE, NO_CONNECTION_MESSAGE, type ManageOfflineReason } from './offlineSession';
@@ -116,6 +119,14 @@ export function registerIpcHandlers() {
   // fails the build first, so it can't ship. This is why the handlers no longer
   // need per-channel payload boilerplate.
   const handle = installValidatedHandle(ipcMain);
+
+  // Audit 2026-10-14: does the person signed in on this till hold any of these keys (staff_session, cached at PIN sign-in
+  // so it works offline)? No one signed in → no. The rule itself is tillGates.ts personHolds.
+  const signedInHolds = (keys: string[]): boolean => {
+    const st = getLocalDb().prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get() as
+      { staff_id?: string | null; role_name?: string | null; permissions?: string | null } | undefined;
+    return !!st?.staff_id && personHolds(st.role_name, st.permissions, keys);
+  };
 
   // ── Auth ────────────────────────────────────────────────
 
@@ -269,6 +280,12 @@ export function registerIpcHandlers() {
       // back as it was if the cloud refuses (another branch's server, say).
       const before = getDeviceConfig();
       saveDeviceConfig({ node_url: ask.url, node_secret: String(g.node_secret) } as any);
+      if (g.device_token) setNodeDeviceToken(String(g.device_token));   // F7: this till's own key at the server
+      // F2: a rejoin is a (possibly new) server — everything this till holds is offered to it again.
+      if ((before?.node_url ?? null) !== ask.url || (before?.node_secret ?? null) !== String(g.node_secret)) {
+        rearmNodeOutbox();
+        logLine('node', `rejoined through ${ask.url}; every row is offered to the branch server again`);
+      }
       try {
         const joined = await joinBusiness(String(g.business_id), String(g.code), true);
         logLine('join', `rejoined ${joined.business?.name ?? 'the business'} through the branch server at ${ask.url}`);
@@ -283,6 +300,7 @@ export function registerIpcHandlers() {
     // (A410) and works even when this till has no internet of its own. Not marked configured: setup finishes on screen.
     saveDeviceConfig({ deploy_mode: 'cloud', server_url: String(g.cloud_url), branch_id: String(g.branch_id),
       device_role: 'till', node_url: ask.url, node_secret: String(g.node_secret), configured: false } as any);
+    if (g.device_token) setNodeDeviceToken(String(g.device_token));   // F7: this till's own key at the server
     const joined = await joinBusiness(String(g.business_id), String(g.code), false);
     logLine('join', `joined ${joined.business?.name ?? 'the business'} through the branch server at ${ask.url}`);
     return {
@@ -1601,6 +1619,17 @@ export function registerIpcHandlers() {
   });
 
   handle('config:save', async (_event, patch: any) => {
+    // Audit 2026-10-14: the install flow writes the till's identity before anyone can sign in; once configured, that is
+    // the technician console's, and the money settings are a settings.manage holder's (tillGates.ts).
+    const refusal = configSaveRefusal(patch ?? {}, {
+      configured: isConfigured(),
+      techSession: !!getActiveSession(),
+      settingsManager: signedInHolds(['settings.manage']),
+    });
+    if (refusal) {
+      logLine('config', `refused ${Object.keys(patch ?? {}).join(',') || '(empty)'}`);
+      throw new Error(refusal);
+    }
     const saved = saveDeviceConfig(patch ?? {});
     try {
       if (isNodeRole(saved.device_role)) startNodeServer();
@@ -1961,6 +1990,16 @@ export function registerIpcHandlers() {
       return { ok: false, error: err?.message ?? 'Could not record it' };
     }
   });
+  // F4 (2026-10-14): "Forget this till" — a till gone for good (replaced, moved) leaves Close Branch at once. Its history
+  // stays (the branch's data); if it ever reports again it is listed again.
+  handle('branchClose:forgetTill', async (_e, payload) => {
+    const { device_id } = assertPayload<{ device_id: string }>({ device_id: { t: 'string', min: 1 } }, payload);
+    if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server forgets a till.' };
+    if (!isManager()) return { ok: false, error: 'Only a manager can forget a till.' };
+    if (!forgetTill(device_id)) return { ok: false, error: 'That till cannot be forgotten here.' };
+    logLine('branchClose', `F4 till ${device_id} forgotten by a manager`);
+    return { ok: true };
+  });
   // A465: withdraw one the till has not answered yet.
   handle('branchClose:cancelShiftMoney', async (_e, payload) => {
     const { instruction_id } = assertPayload<{ instruction_id: number }>({ instruction_id: { t: 'number' } }, payload);
@@ -1983,7 +2022,11 @@ export function registerIpcHandlers() {
       for (const t of ov.tills) {
         const st = t.state as PeerDayState | null;
         if (!st) { blockers.push(`${label(t)} has never reported in`); continue; }
-        if (!t.is_self && (!t.last_seen || Date.now() - new Date(t.last_seen).getTime() > 120_000)) blockers.push(`${label(t)} has not been heard from in the last 2 minutes`);
+        const stale = !t.is_self && (!t.last_seen || Date.now() - new Date(t.last_seen).getTime() > 120_000);
+        // F4 (2026-10-14): a till whose last word was "my day is closed" (and no drawer open) has nothing to close —
+        // switched off for the night, it no longer holds the branch's close. Forget it on the screen if it is gone.
+        if (stale && st.day_open === false && !st.open_drawer) continue;
+        if (stale) blockers.push(`${label(t)} has not been heard from in the last 2 minutes`);
         if (!st.shifts) blockers.push(`${label(t)} is on an older version — update it to close the branch from here`);
         if (st.open_drawer) blockers.push(`${label(t)} still has a drawer open${st.open_drawer.cashier_name ? ` (${st.open_drawer.cashier_name})` : ''}`);
         const waiting = (st.shifts ?? []).filter((s) => s.state === 'awaiting').length;
@@ -2037,6 +2080,8 @@ export function registerIpcHandlers() {
   const pushNow = () => { syncPush().catch(() => { /* the timer retries */ }); };
 
   handle('shift:forceClose', async (_e, { reason }: { reason: string }) => {
+    // Audit 2026-10-14: enforced HERE, not only by hiding the button — shifts.force_close or settings.manage (or '*').
+    if (!signedInHolds(FORCE_CLOSE_KEYS)) throw new Error('Only a manager who may force-close a drawer can do that.');
     const z = forceCloseShift(String(reason ?? ''));
     pushNow();
     return z;
@@ -3192,8 +3237,17 @@ export function registerIpcHandlers() {
 
   // ── Branch price management (manager = branch authority, local-first) ──────
   handle('manager:priceList',      async () => getPriceList());
-  handle('manager:setBranchPrice', async (_e, { product_id, price }) => setBranchPrice(product_id, price));
-  handle('manager:clearBranchPrice', async (_e, { product_id }) => clearBranchPrice(product_id));
+  // Audit 2026-10-14: a branch price is products.manage (the cloud's rule) or a manager by the till's rule — checked here.
+  const mayPrice = () => signedInHolds(BRANCH_PRICE_KEYS) || isManager();
+  const PRICE_REFUSED = 'Only a manager who manages the menu can change a price.';
+  handle('manager:setBranchPrice', async (_e, { product_id, price }) => {
+    if (!mayPrice()) throw new Error(PRICE_REFUSED);
+    return setBranchPrice(product_id, price);
+  });
+  handle('manager:clearBranchPrice', async (_e, { product_id }) => {
+    if (!mayPrice()) throw new Error(PRICE_REFUSED);
+    return clearBranchPrice(product_id);
+  });
 
   // ── Expenses (record petty-cash at the till) ──────────────────────────────
 

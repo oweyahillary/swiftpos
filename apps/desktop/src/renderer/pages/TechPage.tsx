@@ -321,6 +321,9 @@ export default function TechPage({ onExit }: Props) {
           <p className="text-xs text-gray-400 mb-3">
             This machine: <span className="text-gray-200 font-medium">{dev?.device_role ?? '—'}</span>
           </p>
+          <p className="text-[11px] text-gray-500 mb-3" data-testid="branch-network-note">
+            Network: put the branch server and its tills on a wired or separate network — not the customer Wi-Fi.
+          </p>
           {dev?.device_role === 'till' && (
             <>
               <button onClick={promote} disabled={busy === 'promote'}

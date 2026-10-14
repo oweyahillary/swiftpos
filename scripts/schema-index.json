@@ -711,6 +711,20 @@
     "fired_at": "\"timestamp with time zone\"",
     "sub_bill": "\"integer\""
   },
+  "order_price_variances": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "order_id": "\"uuid\" NOT NULL",
+    "order_number": "\"text\"",
+    "catalogue_total": "\"numeric\" NOT NULL",
+    "till_total": "\"numeric\" NOT NULL",
+    "difference": "\"numeric\" NOT NULL",
+    "reason": "\"text\" NOT NULL",
+    "suspicious": "\"boolean\" NOT NULL",
+    "sold_at": "\"timestamp with time zone\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "orders": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -1131,7 +1145,8 @@
     "confirmed_by": "\"uuid\"",
     "confirmed_at": "\"timestamp with time zone\"",
     "confirm_self": "\"boolean\" NOT NULL",
-    "confirm_reasons": "\"jsonb\""
+    "confirm_reasons": "\"jsonb\"",
+    "opened_via": "\"text\""
   },
   "slot_options": {
     "id": "\"uuid\" NOT NULL",

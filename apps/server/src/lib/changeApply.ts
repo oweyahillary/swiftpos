@@ -17,6 +17,7 @@ import { supabase } from './supabase';
 import { ENTITY_SPECS, judgeCreate, judgeUpdate, describeChange, type TillChange } from './tillChanges';
 import { verifyPin } from '../routes/auth';
 import { isElevatedRoleName } from './roleCeiling';
+import { isDataError } from './orderErrors';
 
 export type ChangeStatus = 'applied' | 'identical' | 'awaiting' | 'approved' | 'rejected' | 'refused';
 export interface ChangeResult { id: string; status: ChangeStatus; message?: string | null; canonical_id?: string | null;
@@ -28,13 +29,36 @@ export interface ChangeContext { businessId: string; branchId: string | null; de
 
 type Row = Record<string, any>;
 
+/**
+ * P1-8b (audit 2026-10-14): a failure that says nothing about the change itself — the database unreachable, a timeout, an
+ * unknown error. Thrown, and answered `refused` + `retry: true`: the till keeps the change and sends it again. It used to be
+ * a plain `refused`, on which the till UNDOES a create (undoRefusedCreate) — a product, a cashier or a station made on the
+ * till deleted there because the cloud had a hiccup. `refused` without retry stays for decisions only: who may, a PIN
+ * someone else has, a value the database refuses on its merits (Postgres classes 22 / 23, lib/orderErrors.isDataError).
+ */
+class TransientChangeError extends Error {}
+/** A read's error → thrown as transient (a failed read is never "not there"). */
+function readOk(error: { message?: string } | null | undefined, what: string): void {
+  if (error) throw new TransientChangeError(`${what}: ${error.message ?? 'read failed'}`);
+}
+/** A write's error → its message when the database refused the VALUES (a decision); thrown as transient otherwise. */
+function writeRefusal(error: { code?: string; message?: string } | null | undefined): string | null {
+  if (!error) return null;
+  if (!isDataError(error)) throw new TransientChangeError(error.message ?? 'write failed');
+  return error.code === '23505' ? 'already exists' : (error.message ?? 'refused by the database');
+}
+const retryLater = (c: TillChange, e: unknown): ChangeResult =>
+  ({ id: c.id, status: 'refused', message: `${(e as Error)?.message ?? 'could not be applied'} — it is sent again`, retry: true });
+
 /** May `userId` make this kind of change? The owner, '*', or one of the entity's keys (role grants + user overrides). */
 async function makerMay(businessId: string, userId: string | null, keys: string[]): Promise<{ ok: boolean; name: string | null }> {
   if (!userId) return { ok: false, name: null };
-  const { data: biz } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
-  const { data: u } = await supabase.from('users')
+  const { data: biz, error: bizErr } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
+  readOk(bizErr, 'business');
+  const { data: u, error: uErr } = await supabase.from('users')
     .select('id, name, status, roles ( role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
     .eq('id', userId).eq('business_id', businessId).maybeSingle();
+  readOk(uErr, 'who made it');   // a failed read is not "may not": refusing would undo the change on the till
   if ((biz as Row | null)?.owner_id === userId) return { ok: true, name: (u as Row | null)?.name ?? 'Owner' };
   if (!u || (u as Row).status !== 'active') return { ok: false, name: (u as Row | null)?.name ?? null };
   const eff: Record<string, boolean> = {};
@@ -54,7 +78,8 @@ async function pinTakenBy(businessId: string, pin: string, exceptId: string | nu
 }
 async function isOwnerOf(businessId: string, userId: string | null): Promise<boolean> {
   if (!userId) return false;
-  const { data } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
+  const { data, error } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
+  readOk(error, 'business');
   return (data as Row | null)?.owner_id === userId;
 }
 
@@ -86,7 +111,7 @@ async function write(ctx: ChangeContext, c: TillChange, targetId: string, create
   if (c.entity === 'staff_pin') {
     const hash = await bcrypt.hash(String(c.data.pin), 10);
     const { error } = await supabase.from('users').update({ pin_hash: hash }).eq('id', targetId).eq('business_id', ctx.businessId);
-    return error?.message ?? null;
+    return writeRefusal(error);
   }
   if (c.entity === 'staff' && create) {
     // bcrypt, so the cashier is on every till's staff list (A446) at once — the web's create kept a legacy hash that the
@@ -94,7 +119,7 @@ async function write(ctx: ChangeContext, c: TillChange, targetId: string, create
     const hash = await bcrypt.hash(String(c.data.pin), 10);
     const { error } = await supabase.from('users').insert({ id: targetId, business_id: ctx.businessId, name: c.data.name,
       role_id: c.data.role_id, pin_hash: hash, status: 'active' });
-    if (error) return (error as { code?: string }).code === '23505' ? 'already exists' : error.message;
+    if (error) return writeRefusal(error);   // 23505 → 'already exists'; a transient failure throws (retry)
     if (ctx.branchId) await addToBranch(targetId, ctx.branchId);
     return null;
   }
@@ -104,10 +129,10 @@ async function write(ctx: ChangeContext, c: TillChange, targetId: string, create
     const row: Row = { ...spec.defaults, ...values, id: targetId, business_id: ctx.businessId };
     if (c.entity === 'station') row.branch_id = ctx.branchId;
     const { error } = await supabase.from(spec.table).insert(row);
-    return error ? `${(error as { code?: string }).code === '23505' ? 'already exists' : error.message}` : null;
+    return writeRefusal(error);
   }
   const { error } = await supabase.from(spec.table).update(values).eq('id', targetId).eq('business_id', ctx.businessId);
-  return error?.message ?? null;
+  return writeRefusal(error);
 }
 
 /** Things a value names must be this business's (a product's category) and stay unique (a barcode). */
@@ -126,8 +151,9 @@ async function namesAreOurs(ctx: ChangeContext, c: TillChange): Promise<string |
 /** One change from a till. Never throws (a failure is a 'refused' with the reason). */
 export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<ChangeResult> {
   // A replay: answered as before (the till lost the first answer, or sends again until it hears).
-  const { data: seen } = await supabase.from('change_requests').select('status, message, canonical_id')
+  const { data: seen, error: seenErr } = await supabase.from('change_requests').select('status, message, canonical_id')
     .eq('id', c.id).eq('business_id', ctx.businessId).maybeSingle();
+  if (seenErr) return retryLater(c, new Error(`could not check the change: ${seenErr.message}`));   // P1-8b
   if (seen) return { id: c.id, status: (seen as Row).status, message: (seen as Row).message, canonical_id: (seen as Row).canonical_id };
 
   const spec = ENTITY_SPECS[c.entity];
@@ -135,17 +161,22 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
 
   // Who may: the person signed in (their own keys), or — sent later by the till's own session — the person who made it.
   const callerOk = ctx.callerIsOwner || (ctx.callerKeys ?? []).some((k) => k === '*' || spec.permissions.includes(k));
-  const maker = callerOk && ctx.callerUserId === c.made_by ? { ok: true } : await makerMay(ctx.businessId, c.made_by, spec.permissions);
+  let maker: { ok: boolean };
+  try {
+    maker = callerOk && ctx.callerUserId === c.made_by ? { ok: true } : await makerMay(ctx.businessId, c.made_by, spec.permissions);
+  } catch (e) { return retryLater(c, e); }
   if (!callerOk && !maker.ok) return done({ id: c.id, status: 'refused', message: `${c.made_by_name ?? 'Whoever made it'} may not make this change` });
 
   try {
     if (c.entity === 'staff' && c.op === 'create') {
-      const { data: had } = await supabase.from('users').select('id').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
+      const { data: had, error: hadErr } = await supabase.from('users').select('id').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
+      readOk(hadErr, 'staff');
       if (had) return done({ id: c.id, status: 'identical' });
       // A manager may not add someone above themselves (the web's own rule).
       const makerIsOwner = await isOwnerOf(ctx.businessId, c.made_by);
       if (!makerIsOwner) {
-        const { data: role } = await supabase.from('roles').select('name').eq('id', c.data.role_id).maybeSingle();
+        const { data: role, error: roleErr } = await supabase.from('roles').select('name').eq('id', c.data.role_id).maybeSingle();
+        readOk(roleErr, 'role');
         if (!role || isElevatedRoleName((role as Row).name)) return done({ id: c.id, status: 'refused', message: 'only the owner adds staff with that role' });
       }
       const clash = await pinTakenBy(ctx.businessId, String(c.data.pin), null);
@@ -159,13 +190,15 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
     }
 
     if (c.op === 'create') {
-      const { data: byId } = await supabase.from(spec.table).select('*').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
+      const { data: byId, error: byIdErr } = await supabase.from(spec.table).select('*').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
+      readOk(byIdErr, spec.table);
       let same = byId as Row | null;
       // The same thing created elsewhere under another id ("Grill" added on the web and on a till): by name (and category).
       if (!same && spec.sameBy.length) {
         let q = supabase.from(spec.table).select('*').eq('business_id', ctx.businessId);
         for (const k of spec.sameBy) q = c.data[k] === null || c.data[k] === undefined ? q.is(k, null) : (k === 'name' ? q.ilike(k, String(c.data[k]).replace(/[\\%_]/g, (m) => `\\${m}`)) : q.eq(k, c.data[k]));
-        const { data: rows } = await q.limit(1);
+        const { data: rows, error: sameErr } = await q.limit(1);
+        readOk(sameErr, spec.table);
         same = (rows ?? [])[0] ?? null;
       }
       if (same) {
@@ -183,18 +216,24 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       return err ? { id: c.id, status: 'refused', message: err } : done({ id: c.id, status: 'applied' });
     }
 
-    const { data: cur } = await supabase.from(spec.table).select('*').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
+    const { data: cur, error: curErr } = await supabase.from(spec.table).select('*').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
+    readOk(curErr, spec.table);   // a failed read is never "it no longer exists"
     if (c.op === 'delete') {
       if (!cur) return done({ id: c.id, status: 'identical' });   // already gone
-      const err = c.entity === 'product'
-        ? (await supabase.from('products').update({ status: 'inactive', updated_at: new Date().toISOString() }).eq('id', c.entity_id).eq('business_id', ctx.businessId)).error?.message
-        : (await supabase.from(spec.table).delete().eq('id', c.entity_id).eq('business_id', ctx.businessId)).error?.message;
+      const err = writeRefusal(c.entity === 'product'
+        ? (await supabase.from('products').update({ status: 'inactive', updated_at: new Date().toISOString() }).eq('id', c.entity_id).eq('business_id', ctx.businessId)).error
+        : (await supabase.from(spec.table).delete().eq('id', c.entity_id).eq('business_id', ctx.businessId)).error);
       return err ? { id: c.id, status: 'refused', message: err } : done({ id: c.id, status: 'applied' });
     }
 
     // Update.
     if (!cur) return done({ id: c.id, status: 'refused', message: 'it no longer exists on the cloud' });
     if (c.entity === 'staff_pin') {
+      // Audit 2026-10-14: a PIN change is a staff edit — the same rules (routes/staff.ts PATCH): only the owner sets an owner's or an
+      // admin's PIN, a manager sets the PINs of people at their own branch. Checked BEFORE the clash, so a refused change
+      // never learns whose PIN it would have matched.
+      const pinRefusal = await staffEditRefusal(ctx, c, cur as Row);
+      if (pinRefusal) return done({ id: c.id, status: 'refused', message: pinRefusal });
       // Offline supersedes online — but a PIN is one person's: refused (and the owner told) when another has it.
       const clash = await pinTakenBy(ctx.businessId, String(c.data.pin), c.entity_id);
       if (clash) {
@@ -222,7 +261,9 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
     const err = await write(ctx, c, c.entity_id, false);
     return err ? { id: c.id, status: 'refused', message: err } : done({ id: c.id, status: 'applied' });
   } catch (e: any) {
-    return { id: c.id, status: 'refused', message: e?.message ?? 'could not be applied' };
+    // P1-8b: nothing here was decided — a read or write failed, or something unexpected threw. The till keeps the change
+    // and sends it again (retry), instead of undoing what it created.
+    return retryLater(c, e);
   }
 }
 

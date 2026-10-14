@@ -16,15 +16,19 @@
  * The reason D9 existed is real and has NOT gone away, so it is handled rather
  * than ignored:
  *
- *   A TILL ONLY HOLDS ITS OWN SALES.
+ *   A TILL HOLDS ITS OWN SALES FIRST, AND THE BRANCH'S ONLY AS COPIES.
  *
- *   Each terminal has a standalone SQLite database. Orders reach a peer only via
- *   the aggregation node (POST /node/orders), so:
- *     • on a plain till, any report covers THAT TILL alone;
+ *   Each terminal has a standalone SQLite database. A till sends its rows to the
+ *   branch server (/node/sync) and, since Phase 2a, pulls every other till's rows
+ *   back from it (/node/since) — so:
+ *     • on a till with no branch server, any report covers THAT TILL alone;
+ *     • on a till behind one, it covers this till plus the copies it has pulled,
+ *       which lag the other tills by up to a minute and stop while the server is
+ *       unreachable;
  *     • on the node, it covers the whole branch.
  *
  *   A manager reading a date-range total off till 2 and treating it as the shop's
- *   takings would be wrong by however much tills 1 and 3 sold — silently, with no
+ *   takings would be wrong by whatever has not been copied yet — silently, with no
  *   indication anything was missing. That is worse than having no report.
  *
  *   So every range query is paired with getReportScope(), and the UI and the CSV
@@ -150,13 +154,18 @@ export function getReportScope(): ReportScope {
   ).get() as { n: number } | undefined)?.n ?? 0;
 
   const coversBranch = role === 'node';
+  // F8 (2026-10-14): a till behind a branch server holds the other tills' sales too (distribution). It was labelled
+  // "This till only" while its totals included them — now it says what it holds, and that copies can lag.
+  const others = Math.max(0, tills - 1);
   return {
     terminalCode: code,
     deviceRole: role,
     coversBranch,
     scopeLabel: coversBranch
       ? `All tills at this branch (${tills} seen)`
-      : `This till only${code ? ` (${code})` : ''} — other tills are not included`,
+      : others > 0
+        ? `This till${code ? ` (${code})` : ''} and ${others} other till${others === 1 ? '' : 's'} of the branch, as copied from the branch server — the newest sales of other tills may not be here yet`
+        : `This till only${code ? ` (${code})` : ''} — other tills are not included`,
     earliestOrder: earliest,
   };
 }

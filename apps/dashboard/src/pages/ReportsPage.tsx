@@ -74,6 +74,13 @@ interface VoidsReport {
     totalVoids: number; totalValue: number;
     byStaff: { cashier_id: string; name: string; count: number; value: number }[];
   };
+  /** Migration 133: offline till sales the cloud priced differently — kept at the till's price, the difference a loss.
+   *  Absent from an older cloud. */
+  price_differences?: {
+    id: string; order_id: string; order_number: string | null; catalogue_total: number | string; till_total: number | string;
+    difference: number | string; reason: string; suspicious: boolean; sold_at: string | null; created_at: string;
+  }[];
+  price_difference_summary?: { count: number; loss: number; suspicious: number };
 }
 
 interface RefundsReport {
@@ -722,18 +729,34 @@ function VoidsTab({ range, branchId, currency, meta }: TabProps) {
   useEffect(() => { setVoidPage(1); }, [range.from, range.to, branchId]);
   const voidPaged = paginate(data?.voids ?? [], voidPage, voidPageSize);
   useEffect(() => { if (voidPaged.page !== voidPage) setVoidPage(voidPaged.page); }, [voidPaged.page, voidPage]);
+  // Migration 133: the offline sales priced differently, in pages like the void log.
+  const [diffPage, setDiffPage] = useState(1);
+  const [diffPageSize, setDiffPageSize] = usePageSize('swiftpos.pageSize.reports.priceDiffs');
+  useEffect(() => { setDiffPage(1); }, [range.from, range.to, branchId]);
+  const diffPaged = paginate(data?.price_differences ?? [], diffPage, diffPageSize);
+  useEffect(() => { if (diffPaged.page !== diffPage) setDiffPage(diffPaged.page); }, [diffPaged.page, diffPage]);
 
   if (loading) return <Spinner />;
   if (error)   return <ErrMsg msg={error} />;
   if (!data)   return null;
 
   // A467: the tab's sections, from its data.
-  const sheets: ReportSheet[] = data.voids.length === 0 && data.summary.byStaff.length === 0 ? [] : [
-    kpiSheet('Summary', [['Total Voids', data.summary.totalVoids], ['Voided Value', data.summary.totalValue], ['Staff Involved', data.summary.byStaff.length]]),
-    { name: 'Voids by Cashier', columns: [col('name', 'Cashier'), num('count', 'Count', 0), money('value', 'Value')], rows: data.summary.byStaff },
-    { name: 'Void Log',
-      columns: [col('order_number', 'Order'), col('cashier_name', 'Cashier'), col('authorized_by_name', 'Authorized by'), col('void_reason', 'Reason'), money('total', 'Amount'), col('time', 'Time')],
-      rows: data.voids.map(v => ({ ...v, time: localStamp(v.created_at) })) },
+  const diffs = data.price_differences ?? [];
+  const diffSummary = data.price_difference_summary ?? { count: diffs.length, loss: 0, suspicious: 0 };
+  const sheets: ReportSheet[] = [
+    ...(data.voids.length === 0 && data.summary.byStaff.length === 0 ? [] : [
+      kpiSheet('Summary', [['Total Voids', data.summary.totalVoids], ['Voided Value', data.summary.totalValue], ['Staff Involved', data.summary.byStaff.length]]),
+      { name: 'Voids by Cashier', columns: [col('name', 'Cashier'), num('count', 'Count', 0), money('value', 'Value')], rows: data.summary.byStaff },
+      { name: 'Void Log',
+        columns: [col('order_number', 'Order'), col('cashier_name', 'Cashier'), col('authorized_by_name', 'Authorized by'), col('void_reason', 'Reason'), money('total', 'Amount'), col('time', 'Time')],
+        rows: data.voids.map(v => ({ ...v, time: localStamp(v.created_at) })) },
+    ] as ReportSheet[]),
+    ...(diffs.length === 0 ? [] : [
+      { name: 'Offline Price Differences',
+        columns: [col('order_number', 'Order'), money('catalogue_total', 'Catalogue price'), money('till_total', 'Till charged'), money('difference', 'Loss'), col('reason', 'Why'), col('flag', 'Flag'), col('time', 'Sold')],
+        rows: diffs.map(d => ({ ...d, catalogue_total: Number(d.catalogue_total), till_total: Number(d.till_total), difference: Number(d.difference),
+          flag: d.suspicious ? 'Over half the price' : '', time: localStamp(d.sold_at ?? d.created_at) })) },
+    ] as ReportSheet[]),
   ];
 
   return (
@@ -813,6 +836,62 @@ function VoidsTab({ range, branchId, currency, meta }: TabProps) {
             <Pager paged={voidPaged} noun="voids" onPage={setVoidPage} onSize={n => { setVoidPageSize(n); setVoidPage(1); }} />
           </>)}
       </div>
+
+      {/* Migration 133 (owner, 2026-10-14: "let the sale go through but count it as a loss"): a till's offline sale the
+          cloud prices differently is kept at what the till charged; the difference is shown here. */}
+      {diffs.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Price differences on offline sales</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {diffSummary.count} sale{diffSummary.count === 1 ? '' : 's'} · loss {fmt.money(diffSummary.loss, currency, { blank: '—' })}
+              {diffSummary.suspicious > 0 && <span className="ml-2 font-semibold text-red-600 dark:text-red-400">{diffSummary.suspicious} over half the price</span>}
+            </p>
+          </div>
+          <p className="px-4 pt-3 text-xs text-gray-500 dark:text-gray-400">
+            Sold on a till while offline, at the till's price; the menu price was different when the sale reached the cloud.
+            The sale is kept as the customer paid it — the difference is counted as a loss.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-700/50">
+                <tr>
+                  <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Order</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Menu price</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Till charged</th>
+                  <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Loss</th>
+                  <th className={`text-left text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Why</th>
+                  <th className={`text-right text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>Sold</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
+                {diffPaged.items.map(d => (
+                  <Fragment key={d.id}>
+                  <tr className={d.suspicious ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}>
+                    <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{d.order_number ?? '—'}
+                      {d.suspicious && <span className="ml-2 rounded bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-300">Check</span>}
+                      <ViewMore open={more.isOpen(`pd-${d.id}`)} onClick={() => more.toggle(`pd-${d.id}`)} />
+                    </td>
+                    <td className={`px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmt.money(Number(d.catalogue_total), currency, { blank: '—' })}</td>
+                    <td className={`px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400 ${DESK}`}>{fmt.money(Number(d.till_total), currency, { blank: '—' })}</td>
+                    <td className={`px-2 py-2 text-right tabular-nums font-medium ${Number(d.difference) > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>{fmt.money(Number(d.difference), currency, { blank: '—' })}</td>
+                    <td className={`px-2 py-2 text-xs text-gray-500 dark:text-gray-400 ${DESK}`}>{d.reason}</td>
+                    <td className={`px-4 py-2 text-right text-xs text-gray-400 ${DESK}`}>{fmt.dateTime(d.sold_at ?? d.created_at)}</td>
+                  </tr>
+                  <MoreRow open={more.isOpen(`pd-${d.id}`)} colSpan={2} items={[
+                    ['Menu price', fmt.money(Number(d.catalogue_total), currency, { blank: '—' })],
+                    ['Till charged', fmt.money(Number(d.till_total), currency, { blank: '—' })],
+                    ['Why', d.reason],
+                    ['Sold', fmt.dateTime(d.sold_at ?? d.created_at)],
+                  ]} />
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager paged={diffPaged} noun="sales" onPage={setDiffPage} onSize={n => { setDiffPageSize(n); setDiffPage(1); }} />
+        </div>
+      )}
     </div>
   );
 }

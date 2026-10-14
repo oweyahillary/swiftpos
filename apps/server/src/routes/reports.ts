@@ -1016,6 +1016,23 @@ router.get('/voids', async (req, res) => {
     .map(([cashier_id, v]) => ({ cashier_id, ...v }))
     .sort((a, b) => b.value - a.value);
 
+  // P0-2 (migration 133): offline till sales the cloud priced differently — stored at the till's prices, the difference
+  // counted as a loss (catalogue - till; positive = a loss). Dated by when the sale was made. Before migration 133 the
+  // table is not there: the section is simply empty.
+  const priceDifferences: Array<Record<string, unknown>> = [];
+  for (let at = 0; ; at += 500) {
+    let pq = supabase.from('order_price_variances')
+      .select('id, order_id, order_number, branch_id, catalogue_total, till_total, difference, reason, suspicious, sold_at, created_at')
+      .eq('business_id', req.businessId).gte('sold_at', start).lte('sold_at', end);
+    if (scopedBranch) pq = pq.eq('branch_id', scopedBranch);
+    const { data: page, error: pErr } = await pq.order('id', { ascending: true }).range(at, at + 499);
+    if (pErr) { console.warn('[reports/voids] price differences not read (is migration 133 applied?):', pErr.message); break; }
+    priceDifferences.push(...(page ?? []));
+    if ((page ?? []).length < 500) break;
+  }
+  priceDifferences.sort((a, b) => String(b.sold_at ?? '').localeCompare(String(a.sold_at ?? '')));
+  const lossTotal = Math.round(priceDifferences.reduce((s, p) => s + (Number(p.difference) || 0), 0) * 100) / 100;
+
   res.json({
     period:    { from: start, to: end },
     voids:     enriched,
@@ -1023,6 +1040,12 @@ router.get('/voids', async (req, res) => {
       totalVoids: enriched.length,
       totalValue: enriched.reduce((s, o) => s + Number(o.total), 0),
       byStaff,
+    },
+    price_differences: priceDifferences,
+    price_difference_summary: {
+      count: priceDifferences.length,
+      loss: lossTotal,
+      suspicious: priceDifferences.filter((p) => p.suspicious === true).length,
     },
   });
 });

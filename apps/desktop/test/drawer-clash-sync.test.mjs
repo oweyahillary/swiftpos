@@ -69,7 +69,7 @@ globalThis.fetch = async (url, init = {}) => {
       if (!e.shift_id || cloud.shifts.has(e.shift_id)) cloud.expenses.add(e.id);
       else rejected.push({ id: e.id, code: 'missing_shift', table: 'expenses', error: 'parent shift not synced' });
     }
-    return json(200, { ok: true, rejected });
+    return json(200, { ok: true, upserted: { shifts: 0, floats: 0, expenses: 0, businessDays: 0 }, rejected });
   }
   if (u.endsWith('/api/orders') && init.method === 'POST') {
     const order = body;
@@ -108,8 +108,12 @@ sale('o-2', s1.id);
 await passes(6);
 ok('BEFORE 107 (the owner\'s failure): the till\'s drawer is refused and parked', st('shifts', s1.id) === 'conflict');
 ok('…its float and expense are parked with it', st('float_transactions', floatId) === 'conflict' && st('expenses', 'e-1') === 'conflict');
-ok('…and its sales fail and give up (\'failed\' after 5 tries) — nothing on that drawer reached the cloud',
-  q('o-1').status === 'failed' && q('o-2').status === 'failed' && cloud.orders.size === 0, JSON.stringify(q('o-1')));
+// Till sync audit (F5): a sale of a drawer the cloud refused is no longer sent (it used to fail its foreign key five
+// times and go 'failed'): it waits, pending, for its drawer — and is counted as parked with it, not as pending.
+ok('…and its sales wait with it (pending, never sent, attempts not spent) — nothing on that drawer reached the cloud',
+  q('o-1').status === 'pending' && q('o-2').status === 'pending' && q('o-1').attempts === 0 && cloud.orders.size === 0, JSON.stringify(q('o-1')));
+ok('…counted as parked with their drawer, not as pending', E.getSyncStatus().parkedSales === 2 && E.getSyncStatus().pendingBreakdown.orders === 0,
+  JSON.stringify(E.getSyncStatus()));
 ok('…while the shift notes carry the rejection', /already has an open shift/.test(db.prepare(`SELECT notes FROM shifts WHERE id=?`).get(s1.id).notes ?? ''));
 
 // A sale refused for a DIFFERENT reason must never be swept up by the requeue.

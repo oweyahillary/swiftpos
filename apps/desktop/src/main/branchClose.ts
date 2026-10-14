@@ -21,13 +21,14 @@
 //      again — and a day it already closed acks success rather than failing or,
 //      worse, double-closing.
 
+import { randomUUID } from 'crypto';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
 import {
   closeDayInstructed, getOpenDay, getDayCloseSummary, businessDateNow,
 } from './dayService';
 import { getOpenShift } from './syncEngine';
-import { listPeers } from './nodeIngest';
+import { listPeers, forgetDeviceKey } from './nodeIngest';
 import { computeZReport, expectedMethods, methodsToCount, confirmShift, type Confirmation } from './shiftService';   // A452
 import { addFloatToShift, recordExpense, ownOpenShift } from './shiftService';   // A465
 import { getPosFeatures } from './deviceConfig';   // A452
@@ -236,8 +237,9 @@ export function executeShiftMoney(payload: ShiftMoneyPayload):
 
 /** A465: queue one cash in / out or expense for a till (each row its own instruction — others pending are kept). */
 export function createShiftMoneyInstruction(deviceId: string, payload: ShiftMoneyPayload, createdByStaffId: string | null): { id: number } {
-  const r = getLocalDb().prepare(`INSERT INTO node_instructions (device_id, kind, payload, created_by, created_at) VALUES (?, 'shift_money', ?, ?, ?)`)
-    .run(deviceId, JSON.stringify(payload), createdByStaffId, new Date().toISOString());
+  ensureInstructionUid();
+  const r = getLocalDb().prepare(`INSERT INTO node_instructions (device_id, kind, payload, created_by, created_at, uid) VALUES (?, 'shift_money', ?, ?, ?, ?)`)
+    .run(deviceId, JSON.stringify(payload), createdByStaffId, new Date().toISOString(), randomUUID());
   return { id: Number(r.lastInsertRowid) };
 }
 
@@ -265,6 +267,12 @@ export function executeCloseDay(payload: CloseDayPayload):
     if (!day) {
       return { ok: true, already_closed: true };
     }
+    // F11 (2026-10-14): a close for an EARLIER date than the day now open is stale — that day was closed and a new
+    // one opened since (the instruction came round again, or waited in a till that was off). It used to close
+    // whatever day was open: today's, mid-service. The state it asked for exists.
+    if (payload?.business_date && day.business_date > payload.business_date) {
+      return { ok: true, already_closed: true };
+    }
 
     // A452 (owner, 2026-10-12: "when a branch is closed all tills reset to a new day and the server time is the final
     // time"): the server's close closes the day this till has open — yesterday's left open too (it used to refuse:
@@ -289,14 +297,23 @@ export function executeCloseDay(payload: CloseDayPayload):
 
 // ── Node side: instruction lifecycle ─────────────────────────────────────────
 
-/** A452: queue a shift confirmation for one peer (one live instruction per shift — a second replaces the first). */
+/** A452: queue a shift confirmation for one peer (one live instruction per shift — a second replaces the first).
+ *  P3 (2026-10-14): only one the till has NOT collected yet is replaced. One it already collected may be on its books
+ *  (its ack can lag); replacing it would send a second, different count for the same shift — refused instead. */
+export const CONFIRM_IN_FLIGHT = 'The till has already taken an earlier confirmation of this shift — wait for its answer (about 15 seconds).';
 export function createConfirmInstruction(deviceId: string, payload: ConfirmShiftPayload, createdByStaffId: string | null): { id: number } {
+  ensureInstructionUid();
   const db = getLocalDb();
+  const inFlight = db.prepare(`SELECT id FROM node_instructions
+               WHERE device_id = ? AND kind = 'confirm_shift' AND status = 'pending' AND delivered_at IS NOT NULL
+                 AND json_extract(payload, '$.shift_id') = ?`).get(deviceId, payload.shift_id);
+  if (inFlight) throw new Error(CONFIRM_IN_FLIGHT);
   db.prepare(`DELETE FROM node_instructions
-               WHERE device_id = ? AND kind = 'confirm_shift' AND status = 'pending' AND json_extract(payload, '$.shift_id') = ?`)
+               WHERE device_id = ? AND kind = 'confirm_shift' AND status = 'pending' AND delivered_at IS NULL
+                 AND json_extract(payload, '$.shift_id') = ?`)
     .run(deviceId, payload.shift_id);
-  const r = db.prepare(`INSERT INTO node_instructions (device_id, kind, payload, created_by, created_at) VALUES (?, 'confirm_shift', ?, ?, ?)`)
-    .run(deviceId, JSON.stringify(payload), createdByStaffId, new Date().toISOString());
+  const r = db.prepare(`INSERT INTO node_instructions (device_id, kind, payload, created_by, created_at, uid) VALUES (?, 'confirm_shift', ?, ?, ?, ?)`)
+    .run(deviceId, JSON.stringify(payload), createdByStaffId, new Date().toISOString(), randomUUID());
   return { id: Number(r.lastInsertRowid) };
 }
 
@@ -304,6 +321,7 @@ export function createConfirmInstruction(deviceId: string, payload: ConfirmShift
 export function createCloseInstruction(
   deviceId: string, payload: CloseDayPayload, createdByStaffId: string | null,
 ): { id: number } {
+  ensureInstructionUid();
   const db = getLocalDb();
 
   // Replace any still-pending close for this peer rather than stacking them:
@@ -314,39 +332,121 @@ export function createCloseInstruction(
     .run(deviceId);
 
   const r = db.prepare(`
-    INSERT INTO node_instructions (device_id, kind, payload, created_by, created_at)
-    VALUES (?, 'close_day', ?, ?, ?)
-  `).run(deviceId, JSON.stringify(payload), createdByStaffId, new Date().toISOString());
+    INSERT INTO node_instructions (device_id, kind, payload, created_by, created_at, uid)
+    VALUES (?, 'close_day', ?, ?, ?, ?)
+  `).run(deviceId, JSON.stringify(payload), createdByStaffId, new Date().toISOString(), randomUUID());
   return { id: Number(r.lastInsertRowid) };
 }
+
+// ── F12: instruction uids (node-local column) ────────────────────────────────
+// node_instructions.id is an AUTOINCREMENT integer, and a reinstalled server starts again at 1 — so a till holding an
+// unacked "instruction 3" from the old server acked the NEW server's instruction 3, which may be another till's or
+// another kind. Each instruction now also carries a random uid; a till acks by uid and its own device id. Added on
+// first use (ALTER … ADD COLUMN, idempotent), like node_state: a server-only column, nothing replicated or pushed.
+const uidReady = new WeakSet<object>();
+export function ensureInstructionUid(): void {
+  const db = getLocalDb();
+  if (uidReady.has(db)) return;
+  const cols = db.prepare(`PRAGMA table_info(node_instructions)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'uid')) db.exec(`ALTER TABLE node_instructions ADD COLUMN uid TEXT`);
+  db.exec(`CREATE INDEX IF NOT EXISTS node_instructions_uid_idx ON node_instructions (uid)`);
+  uidReady.add(db);
+}
+
+/** F11: an instruction not answered within a day is withdrawn — a close or a count from yesterday is not today's. */
+export const INSTRUCTION_TTL_MS = 24 * 3_600_000;
 
 /**
  * Instructions a polling peer should act on. Marks delivered_at (visibility for
  * the manager screen) but keeps status 'pending' — only an ack retires it.
  */
-export function collectInstructions(deviceId: string): Array<{ id: number; kind: string; payload: any }> {
+export function collectInstructions(deviceId: string, nowMs: number = Date.now()): Array<{ id: number; uid: string | null; kind: string; payload: any }> {
+  ensureInstructionUid();
   const db = getLocalDb();
+  const now = new Date(nowMs).toISOString();
+  // F11: older than a day and still unanswered → expired, never handed out again (the screen shows it as such).
+  db.prepare(`UPDATE node_instructions SET status = 'expired', acked_at = ?, ack = ?
+               WHERE device_id = ? AND status = 'pending' AND created_at < ?`)
+    .run(now, JSON.stringify({ ok: false, error: 'Not answered within 24 hours — withdrawn' }), deviceId,
+      new Date(nowMs - INSTRUCTION_TTL_MS).toISOString());
   const rows = db.prepare(`
-    SELECT id, kind, payload FROM node_instructions
+    SELECT id, uid, kind, payload FROM node_instructions
      WHERE device_id = ? AND status = 'pending'
      ORDER BY id
-  `).all(deviceId) as Array<{ id: number; kind: string; payload: string }>;
+  `).all(deviceId) as Array<{ id: number; uid: string | null; kind: string; payload: string }>;
   if (rows.length) {
-    const now = new Date().toISOString();
-    const mark = db.prepare(`UPDATE node_instructions SET delivered_at = COALESCE(delivered_at, ?) WHERE id = ?`);
-    for (const r of rows) mark.run(now, r.id);
+    const mark = db.prepare(`UPDATE node_instructions SET delivered_at = COALESCE(delivered_at, ?), uid = COALESCE(uid, ?) WHERE id = ?`);
+    for (const r of rows) { if (!r.uid) r.uid = randomUUID(); mark.run(now, r.uid, r.id); }
   }
-  return rows.map(r => ({ id: r.id, kind: r.kind, payload: JSON.parse(r.payload) }));
+  const out: Array<{ id: number; uid: string | null; kind: string; payload: any }> = [];
+  for (const r of rows) {
+    try { out.push({ id: r.id, uid: r.uid, kind: r.kind, payload: JSON.parse(r.payload) }); } catch { /* unreadable: left for the screen */ }
+  }
+  return out;
 }
 
-/** A peer's verdict on an instruction. */
-export function recordAck(instructionId: number, ack: { ok: boolean; error?: string; summary?: unknown }): void {
+/**
+ * A peer's verdict on an instruction.
+ * F12: matched by uid when the till sends one, and always to the device that sends it when it says which — an ack can
+ * no longer retire another till's instruction. A till on an older build sends only the number (matched as before).
+ * Returns whether an instruction was retired.
+ */
+export function recordAck(instructionId: number | null, ack: { ok: boolean; error?: string; summary?: unknown },
+  match: { deviceId?: string | null; uid?: string | null } = {}): boolean {
+  ensureInstructionUid();
   const db = getLocalDb();
-  db.prepare(`
-    UPDATE node_instructions
-       SET status = ?, ack = ?, acked_at = ?
-     WHERE id = ? AND status = 'pending'
-  `).run(ack.ok ? 'acked' : 'failed', JSON.stringify(ack), new Date().toISOString(), instructionId);
+  const set = [ack.ok ? 'acked' : 'failed', JSON.stringify(ack), new Date().toISOString()];
+  const dev = match.deviceId ? String(match.deviceId) : null;
+  if (match.uid) {
+    return db.prepare(`UPDATE node_instructions SET status = ?, ack = ?, acked_at = ?
+                        WHERE uid = ? AND status = 'pending' AND (? IS NULL OR device_id = ?)`)
+      .run(...set, String(match.uid), dev, dev).changes > 0;
+  }
+  if (!Number.isInteger(instructionId)) return false;
+  return db.prepare(`UPDATE node_instructions SET status = ?, ack = ?, acked_at = ?
+                      WHERE id = ? AND status = 'pending' AND (? IS NULL OR device_id = ?)`)
+    .run(...set, instructionId, dev, dev).changes > 0;
+}
+
+/** P3: instructions answered (or withdrawn) more than `days` ago go. Returns how many. */
+export function pruneNodeInstructions(days = 7): number {
+  ensureInstructionUid();
+  const cutoff = new Date(Date.now() - Math.max(1, days) * 86_400_000).toISOString();
+  return getLocalDb().prepare(`DELETE FROM node_instructions
+                                WHERE status IN ('acked', 'failed', 'expired') AND COALESCE(acked_at, created_at) < ?`).run(cutoff).changes;
+}
+
+// ── F4: tills the server no longer hears from ────────────────────────────────
+// Close Branch listed every device ever seen (peer_cursors and node_peer_state are never pruned), and refused to close
+// while any of them had not reported in two minutes — a till replaced last month blocked tonight's close for good.
+// Now: a till not heard from in 7 days drops off the list; a manager can "Forget this till" at once; and a till whose
+// last word was "my day is closed" never blocks a close. Forgetting keeps the replicated history (peer_cursors) —
+// that is the branch's data — and drops only what the screen shows, its pending instructions and its device key.
+
+export const TILL_AGE_OUT_MS = 7 * 86_400_000;
+
+/** SQLite's datetime('now') ("2026-10-14 09:00:00", UTC) or an ISO stamp, as epoch ms. NaN when unreadable. */
+function stampMs(s: string | null | undefined): number {
+  if (!s) return NaN;
+  const t = String(s);
+  return Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t) ? `${t.replace(' ', 'T')}Z` : t);
+}
+
+/** The manager's "Forget this till". Never the server itself. Returns whether there was anything to forget. */
+export function forgetTill(deviceId: string): boolean {
+  const id = String(deviceId ?? '');
+  const own = getDeviceConfig()?.device_id ?? '';
+  if (!id || id === own) return false;
+  const db = getLocalDb();
+  const now = new Date().toISOString();
+  db.transaction(() => {
+    db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`).run(`forgotten_till:${id}`, now, now);
+    db.prepare(`DELETE FROM node_peer_state WHERE device_id = ?`).run(id);
+    db.prepare(`UPDATE node_instructions SET status = 'expired', acked_at = ?, ack = ? WHERE device_id = ? AND status = 'pending'`)
+      .run(now, JSON.stringify({ ok: false, error: 'The till was forgotten on the branch server' }), id);
+  })();
+  try { forgetDeviceKey(id); } catch { /* no key table yet */ }
+  return true;
 }
 
 /** Remember what a peer last said about itself, and when. */
@@ -450,11 +550,28 @@ export function branchCloseOverview(): { business_date: string; tills: BranchClo
   const own = getDeviceConfig()?.device_id ?? '';
   const today = businessDateNow();
 
+  // F4: every device the server has heard of, with when it last did — and only the ones still worth listing.
+  const heard = new Map<string, number>();
+  const note = (id: string, at: number) => {
+    if (!id) return;
+    const t = Number.isFinite(at) ? at : -Infinity;
+    heard.set(id, Math.max(heard.get(id) ?? -Infinity, t));
+  };
+  for (const p of listPeers()) note(p.device_id, stampMs(p.updated_at));
+  for (const r of db.prepare(`SELECT device_id, updated_at FROM node_peer_state`).all() as any[]) note(String(r.device_id), stampMs(r.updated_at));
+  const forgotten = new Map<string, number>();
+  for (const r of db.prepare(`SELECT key, value FROM maintenance_state WHERE key LIKE 'forgotten_till:%'`).all() as any[]) {
+    forgotten.set(String(r.key).slice('forgotten_till:'.length), stampMs(r.value));
+  }
+  const nowMs = Date.now();
   const deviceIds = new Set<string>();
   if (own) deviceIds.add(own);
-  for (const p of listPeers()) deviceIds.add(p.device_id);
-  for (const r of db.prepare(`SELECT device_id FROM node_peer_state`).all() as any[]) {
-    deviceIds.add(String(r.device_id));
+  for (const [id, at] of heard) {
+    if (id === own) continue;
+    const gone = forgotten.get(id);
+    if (gone !== undefined && !(at > gone)) continue;               // forgotten, and not heard from since
+    if (!Number.isFinite(at) || nowMs - at > TILL_AGE_OUT_MS) continue;   // not heard from in 7 days
+    deviceIds.add(id);
   }
 
   const latestInstruction = db.prepare(`

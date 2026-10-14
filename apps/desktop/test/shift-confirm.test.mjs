@@ -75,7 +75,7 @@ const json = (status, body) => ({ ok: status >= 200 && status < 300, status, jso
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
   const body = init.body ? JSON.parse(init.body) : {};
-  if (u.endsWith('/api/sync/push')) return json(200, { ok: true, rejected: [] });
+  if (u.endsWith('/api/sync/push')) return json(200, { ok: true, upserted: { shifts: 0, floats: 0, expenses: 0, businessDays: 0 }, rejected: [] });
   if (u.endsWith('/close')) { cloud.closes.push(body); return json(200, {}); }
   if (u.endsWith('/confirm') && cloud.notDeployed) return json(404, { error: 'Not found' });
   if (u.endsWith('/confirm')) {

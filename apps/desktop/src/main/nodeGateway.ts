@@ -23,6 +23,7 @@ const UPSTREAM_IDLE_MS = 60_000;
 const DROP_REQUEST = new Set([
   'host', 'connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'te', 'trailer',
   'content-length', 'accept-encoding', 'x-node-secret', 'origin', 'referer',
+  'x-device-token',   // F7: a till's key for THIS server — never the cloud's business
 ]);
 /** Response headers never passed back: the body is re-sent decoded, so length/encoding would lie. */
 const DROP_RESPONSE = new Set(['connection', 'keep-alive', 'transfer-encoding', 'content-encoding', 'content-length']);

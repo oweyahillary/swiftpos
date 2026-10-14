@@ -29,12 +29,12 @@ export function applyTestDataClear(db: Database.Database, p: ClearPeriod): Clear
   const from = p.from_at, to = p.to_at;
   const run = db.transaction((): ClearCounts => {
     // branch-wide: the cloud's clear covers the business — every terminal's rows of the period
-    const orderIds = (db.prepare(`SELECT id FROM orders WHERE created_at >= ? AND created_at <= ?`).all(from, to) as Array<{ id: string }>).map((r) => r.id);
+    const orderIds = (db.prepare(`SELECT id FROM orders WHERE julianday(created_at) >= julianday(?) AND julianday(created_at) <= julianday(?)`).all(from, to) as Array<{ id: string }>).map((r) => r.id);
     // branch-wide: shifts of the period; one a later sale belongs to was real and stays
     const shifts = db.prepare(`
       SELECT s.id, s.business_day_id,
-             EXISTS (SELECT 1 FROM orders o WHERE o.shift_id = s.id AND o.created_at > ?) AS used_after
-        FROM shifts s WHERE s.opened_at >= ? AND s.opened_at <= ?`).all(to, from, to) as Array<{ id: string; business_day_id: string | null; used_after: number }>;
+             EXISTS (SELECT 1 FROM orders o WHERE o.shift_id = s.id AND julianday(o.created_at) > julianday(?)) AS used_after
+        FROM shifts s WHERE julianday(s.opened_at) >= julianday(?) AND julianday(s.opened_at) <= julianday(?)`).all(to, from, to) as Array<{ id: string; business_day_id: string | null; used_after: number }>;
     const goShifts = shifts.filter((s) => !s.used_after).map((s) => s.id);
     const kept = shifts.length - goShifts.length;
 
@@ -68,15 +68,15 @@ export function applyTestDataClear(db: Database.Database, p: ClearPeriod): Clear
       db.prepare(`DELETE FROM shifts WHERE id IN (${q})`).run(...goShifts);
     }
     // branch-wide: the period's cash in / out and expenses not on any shift that stays
-    cash += db.prepare(`DELETE FROM float_transactions WHERE created_at >= ? AND created_at <= ?
+    cash += db.prepare(`DELETE FROM float_transactions WHERE julianday(created_at) >= julianday(?) AND julianday(created_at) <= julianday(?)
                           AND (shift_id IS NULL OR shift_id NOT IN (SELECT id FROM shifts))`).run(from, to).changes;
-    exp += db.prepare(`DELETE FROM expenses WHERE created_at >= ? AND created_at <= ?
+    exp += db.prepare(`DELETE FROM expenses WHERE julianday(created_at) >= julianday(?) AND julianday(created_at) <= julianday(?)
                          AND (shift_id IS NULL OR shift_id NOT IN (SELECT id FROM shifts))`).run(from, to).changes;
     // branch-wide: trading days of the period that no remaining shift belongs to
-    const days = db.prepare(`DELETE FROM business_days WHERE opened_at >= ? AND opened_at <= ?
+    const days = db.prepare(`DELETE FROM business_days WHERE julianday(opened_at) >= julianday(?) AND julianday(opened_at) <= julianday(?)
                                AND id NOT IN (SELECT business_day_id FROM shifts WHERE business_day_id IS NOT NULL)`).run(from, to).changes;
-    db.prepare(`DELETE FROM held_orders WHERE held_at >= ? AND held_at <= ?`).run(from, to);
-    db.prepare(`DELETE FROM stock_movements WHERE created_at >= ? AND created_at <= ?`).run(from, to);
+    db.prepare(`DELETE FROM held_orders WHERE julianday(held_at) >= julianday(?) AND julianday(held_at) <= julianday(?)`).run(from, to);
+    db.prepare(`DELETE FROM stock_movements WHERE julianday(created_at) >= julianday(?) AND julianday(created_at) <= julianday(?)`).run(from, to);
 
     return { sales, shifts: goShifts.length, days, cash_moves: cash, expenses: exp, kept_shifts: kept };
   });

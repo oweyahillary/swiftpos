@@ -918,6 +918,24 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/branch-close-shifts.test.mjs
 
+      # Branch-server audit (2026-10-14) — a failing row no longer loses its batch (F1), a new server gets everything
+      # (F2), transport never counts (F3), Close Branch ages out / forgets tills (F4), ISO relay stamps (F5), per-till
+      # device keys and staff roles from the server's own roles (F7), refunds replicate (F8), the server numbers its own
+      # rows (F9), stale closes and expired instructions (F11), uid acks (F12), one bad event (F13), 413 by name (F14),
+      # time zones (F15), PIN rate limit (F16). The P1 guards are mutation-checked.
+      - name: Desktop branch server — replication, device keys, Close Branch tills
+        working-directory: apps/desktop
+        run: node --no-warnings test/branch-server-audit.test.mjs
+
+      # Till sync audit (2026-10-14) — the till's cloud push and pull: a close made while its push was in flight, offline
+      # voids before the close, the close contract (404 re-armed, 409 ALREADY_CLOSED done), one drawer never starving the
+      # rest, staff renewal gated, branding / local changes never lost, 5xx a retry, the business date on expenses, only
+      # the cloud's real answer marks synced, float order_id, queue pruning, the badge, batched cash push, instants in the
+      # test-data clear. The P1 guards are mutation-checked.
+      - name: Desktop till sync audit — push, pull and the close contract
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-sync-audit.test.mjs
+
       # A460 + A459 + A197 — premium screens only with the online licence; staff renamed / re-roled / deactivated on
       # the till (offline too); stock transfers in the Stock group.
       - name: Desktop online-licence gating, staff edits offline, stock transfers
@@ -991,6 +1009,13 @@ jobs:
       - name: Desktop local sign-in branch and upgrade
         working-directory: apps/desktop
         run: node --no-warnings test/local-signin-branch.test.mjs
+
+      # Audit 2026-10-14 — the till's main process checks a branch price (products.manage / a manager), a forced shift
+      # close (shifts.force_close / settings.manage) and config:save (identity: install or the technician console; money
+      # settings: settings.manage) itself.
+      - name: Desktop main-process gates
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-gates.test.mjs
 
       # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
       - name: Desktop and web order detail, reprint, void and refund

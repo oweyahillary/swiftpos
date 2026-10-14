@@ -68,6 +68,44 @@ export async function chunkIn<T>(
 }
 
 /**
+ * Every row a query returns, page by page in id order (so no row is read twice or missed), up to `maxRows`. `build` makes
+ * a FRESH query each page (a builder is spent once awaited). Throws on a database error.
+ *
+ *     const products = await pageAll<Product>(() => supabase.from('products').select('*').eq('business_id', id));
+ */
+export async function pageAll<T>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  build: () => any,
+  pageSize = 500,
+  maxRows = 200_000,
+  orderColumn = 'id',
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let at = 0; at < maxRows; at += pageSize) {
+    const { data, error } = await build().order(orderColumn, { ascending: true }).range(at, at + pageSize - 1);
+    if (error) throw new Error(`pageAll: ${error.message}`);
+    out.push(...((data ?? []) as T[]));
+    if ((data ?? []).length < pageSize) break;
+  }
+  return out;
+}
+
+/** chunkIn and pageAll together: an id list of any length, each chunk read page by page (a chunk can pass the row cap). */
+export async function chunkPaged<T>(
+  ids: string[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  build: (chunk: string[]) => any,
+  chunkSize: number = SAFE_CHUNK,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    out.push(...await pageAll<T>(() => build(chunk)));
+  }
+  return out;
+}
+
+/**
  * Read every matching id, paging explicitly rather than trusting one response
  * to hold them all.
  *

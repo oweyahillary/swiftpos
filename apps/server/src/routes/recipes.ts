@@ -41,6 +41,20 @@ function flattenRecipeStock(rows: any[], scopedBranch: string | null): any[] {
 const router = safeRouter();
 router.use(requireAuth);
 
+// Audit 2026-10-14: saving / clearing a recipe and its packaging were open to any signed-in user — and a recipe drives
+// stock deduction on every sale. They need products.manage, as POST /bulk (the import of the same table) always has; the
+// owner and '*' pass in rbac. Every ingredient a line names must be this business's.
+const canManage = requirePermission('products.manage');
+
+/** True when every id is one of this business's ingredients. */
+async function ingredientsAreOurs(businessId: string, ids: string[]): Promise<boolean> {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return true;
+  const { data, error } = await supabase.from('ingredients').select('id').eq('business_id', businessId).in('id', unique);
+  if (error) return false;
+  return (data ?? []).length === unique.length;
+}
+
 // GET /api/recipes
 // Returns all recipes for this business, grouped by product
 router.get('/', async (req, res) => {
@@ -140,7 +154,7 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
 });
 
 // POST /api/recipes/:productId  — save/replace a single product's recipe
-router.post('/:productId', async (req, res) => {
+router.post('/:productId', canManage, async (req, res) => {
   const { productId } = req.params;
   const { lines = [] } = req.body as {
     lines: { ingredient_id: string; quantity_per_serving: number; unit?: string }[];
@@ -163,6 +177,9 @@ router.post('/:productId', async (req, res) => {
     if (!line.quantity_per_serving || line.quantity_per_serving <= 0) {
       res.status(400).json({ error: 'Each line needs a positive quantity_per_serving' }); return;
     }
+  }
+  if (!(await ingredientsAreOurs(req.businessId, lines.map((l) => String(l.ingredient_id))))) {
+    res.status(400).json({ error: "A line names an ingredient that is not this business's" }); return;
   }
 
   // Delete existing recipe lines for this product
@@ -204,7 +221,7 @@ router.post('/:productId', async (req, res) => {
 
 // DELETE /api/recipes/:productId
 // Clear the entire recipe for a product
-router.delete('/:productId', async (req, res) => {
+router.delete('/:productId', canManage, async (req, res) => {
   const { error } = await supabase
     .from('recipes')
     .delete()
@@ -235,7 +252,7 @@ router.get('/:productId/packaging', async (req, res) => {
 
 // POST /api/recipes/:productId/packaging  — full replace
 // Body: { lines: [{ ingredient_id, quantity }] }
-router.post('/:productId/packaging', async (req, res) => {
+router.post('/:productId/packaging', canManage, async (req, res) => {
   const { productId } = req.params;
   const { lines = [] } = req.body as { lines: { ingredient_id: string; quantity: number }[] };
 
@@ -253,6 +270,9 @@ router.post('/:productId/packaging', async (req, res) => {
     if (!line.quantity || line.quantity <= 0) {
       res.status(400).json({ error: 'Each line needs a positive quantity' }); return;
     }
+  }
+  if (!(await ingredientsAreOurs(req.businessId, lines.map((l) => String(l.ingredient_id))))) {
+    res.status(400).json({ error: "A line names an ingredient that is not this business's" }); return;
   }
 
   const { error: delErr } = await supabase

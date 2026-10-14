@@ -107,8 +107,8 @@ console.log('\n0. Harness matches nodeIngest.ts');
   ok('origin-only clause in the applier',
      SRC_NI.includes(`WHERE id = ? AND COALESCE(device_id,'') = COALESCE(?,'')`));
   ok('sweep runs after node ingest AND after distribution pull',
-     /applyPeerRows\(table, peerDeviceId, rows\);\s*\}\s*[\s\S]{0,400}applyPendingEvents\(\)/.test(SRC_NS)
-     && /applyDistribution[\s\S]{0,800}applyPendingEvents\(\)/.test(SRC_NI));
+     /applyPeerRows\(table, peerDeviceId, rows(, \{ relay \})?\);[\s\S]{0,700}applyPendingEvents\(\)/.test(SRC_NS)
+     && /export function applyDistribution\([\s\S]*?\n\}/.exec(SRC_NI)?.[0].includes('applyPendingEvents()'));
   ok('local schema has the events table + unapplied index',
      SRC_DB.includes('CREATE TABLE IF NOT EXISTS events') && SRC_DB.includes('idx_events_unapplied'));
   {
@@ -175,7 +175,8 @@ console.log('\n3. Origin-only; an early event waits for its row');
      && db.prepare(`SELECT status FROM shifts WHERE id='sh-T4'`).get().status === 'closed');
 
   // A kind this build does not know: a newer till emitted it. Wait, never guess.
-  addEvent(db, 'ev-future', 'dev-T5', 'order_refunded', 'orders', 'o1', { status: 'refunded' });
+  // (order_refunded became a real kind in A485 — the stand-in for "a newer till's kind" is one no build knows.)
+  addEvent(db, 'ev-future', 'dev-T5', 'order_teleported', 'orders', 'o1', { status: 'refunded' });
   const r4 = sweep(db);
   ok('unknown kinds wait for an upgrade, not guessed at', r4.waiting === 1
      && db.prepare(`SELECT applied FROM events WHERE id='ev-future'`).get().applied === 0);

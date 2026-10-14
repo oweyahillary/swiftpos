@@ -8,6 +8,10 @@
  * code. The till collects it once, with the private token it got when it asked, and enrols itself.
  *
  * Kept in memory: a request lives 10 minutes, at most 5 wait at once, one per address; a server restart forgets them.
+ * P3 (2026-10-14): the person at the server is told of a request at most once a minute per address and at most
+ * MAX_NOTICES_PER_MINUTE times a minute in all — asking again and again from one machine replaced its request
+ * silently but raised a fresh Windows notification (and brought the window forward) every time.
+ * F7: an allowed till's grant carries its own device key (nodeServer issues it; `device_id` says for whom).
  */
 import crypto from 'crypto';
 
@@ -23,7 +27,22 @@ interface JoinRequest {
 
 export const JOIN_TTL_MS = 10 * 60_000;
 export const MAX_PENDING = 5;
+export const MAX_NOTICES_PER_MINUTE = 3;
 const requests = new Map<string, JoinRequest>();
+/** When each address last raised a notice, and every notice in the last minute. */
+const noticedAt = new Map<string, number>();
+let notices: number[] = [];
+
+/** P3: may this request raise a notice at the server? Once a minute per address; a few a minute in all. */
+function mayNotify(ip: string, now: number): boolean {
+  notices = notices.filter((t) => now - t < 60_000);
+  if (now - (noticedAt.get(ip) ?? -Infinity) < 60_000) return false;
+  if (notices.length >= MAX_NOTICES_PER_MINUTE) return false;
+  noticedAt.set(ip, now);
+  notices.push(now);
+  if (noticedAt.size > 200) for (const [k, t] of noticedAt) if (now - t >= 60_000) noticedAt.delete(k);
+  return true;
+}
 
 /** A436: told of every new request, so the server can bring its window forward and raise a Windows notification —
  *  in server mode the window is usually hidden in the tray, and an unseen request runs out. Kept free of Electron. */
@@ -51,7 +70,8 @@ export function createJoinRequest(body: any, ip: string, now: number = Date.now(
   const id = crypto.randomBytes(8).toString('hex');
   const token = crypto.randomBytes(24).toString('hex');
   requests.set(id, { id, token, device_id, name, ip, at: now, status: 'pending' });
-  try { joinListener?.({ name, ip }); } catch { /* a notice failing never refuses the till */ }
+  // The request is listed either way (the screen shows it); only the pop-up is capped.
+  if (mayNotify(ip, now)) { try { joinListener?.({ name, ip }); } catch { /* a notice failing never refuses the till */ } }
   return { ok: true, id, token };
 }
 
@@ -64,12 +84,13 @@ export function pendingJoins(now: number = Date.now()): Array<{ id: string; name
 
 /** The till polls. The grant goes out ONCE, to the holder of the request's token, and the request is then gone. */
 export function readJoin(id: string, token: string, now: number = Date.now()):
-  { status: Status | 'unknown'; grant?: JoinGrant } {
+  { status: Status | 'unknown'; grant?: JoinGrant; device_id?: string } {
   sweep(now);
   const r = requests.get(String(id));
   if (!r || typeof token !== 'string' || token.length !== r.token.length
       || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(r.token))) return { status: 'unknown' };
-  if (r.status === 'approved') { requests.delete(r.id); return { status: 'approved', grant: r.grant }; }
+  // device_id: which till the grant is for (nodeServer issues its device key; it is not sent on as is).
+  if (r.status === 'approved') { requests.delete(r.id); return { status: 'approved', grant: r.grant, device_id: r.device_id }; }
   if (r.status === 'denied') { requests.delete(r.id); return { status: 'denied' }; }
   return { status: 'pending' };
 }
@@ -88,4 +109,4 @@ export async function answerJoin(id: string, allow: boolean, issue: () => Promis
 }
 
 /** Tests only. */
-export function _resetJoins(): void { requests.clear(); }
+export function _resetJoins(): void { requests.clear(); noticedAt.clear(); notices = []; }

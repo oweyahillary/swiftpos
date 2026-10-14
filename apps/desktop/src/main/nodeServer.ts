@@ -18,9 +18,10 @@
 //     via `sync_queue`, and the node via `node_queue`. One status column cannot
 //     hold two destinations' opinions; the attempt to make it do so is what let
 //     a peer close its shift against a server that did not have the sales.
-//   * The node is a REPLICA, not a relay. `INSERT INTO sync_queue` exists in
-//     exactly one place — syncEngine.ts:1566, at order creation on the till
-//     that made the sale. **The node does not forward peer rows to the cloud.**
+//   * The node is a REPLICA first. Since A19 it ALSO forwards a peer's sale to the cloud: an order applied from a
+//     till it knows (F7) is put in this node's own sync_queue with the peer's original payload
+//     (nodeIngest.enqueuePeerRelay), and pushed under the peer's id as the idempotency key. The till still queues
+//     the same sale for the cloud itself — two paths, one cloud row.
 //   * Duplicates are prevented by stable client-generated UUIDs and
 //     upsert-by-id / X-Idempotency-Key, NOT by there being a single path.
 //
@@ -49,8 +50,10 @@ import crypto from 'crypto';
 import { getLocalDb, applyPulledBranding } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
-import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents } from './nodeIngest';
-import { verifyPinAtNode, readBranchStaffForServe } from './branchStaff';
+import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents,
+  checkDeviceKey, isKnownTill, issueDeviceKey, type DeviceKeyVerdict } from './nodeIngest';
+import { verifyPinAtNodeAsync, readBranchStaffForServe, vetRelayedStaffChanges } from './branchStaff';
+import { logLine } from './logFile';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 import { buildReferenceBundle } from './referenceBundle';
 import { buildRosterSnapshot } from './rosterSnapshot';
@@ -93,14 +96,73 @@ function beaconInfo() {
   return { port: boundPort, business, server: c?.device_name || (c?.terminal_code ? `Server ${c.terminal_code}` : null) };
 }
 
+/** The most this server reads of one request. */
+export const NODE_BODY_LIMIT = 5_000_000;
+
+/** F14: a body over the limit — answered 413 by name, so the till sends smaller instead of the same batch forever. */
+class BodyTooLarge extends Error { constructor() { super(`request body over ${NODE_BODY_LIMIT} bytes`); } }
+
 function readBody(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', c => { data += c; if (data.length > 5_000_000) req.destroy(); });
-    req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
+    let over = false;
+    req.on('data', (c) => {
+      if (over) return;                       // the rest is drained and dropped, never held
+      data += c;
+      if (data.length > NODE_BODY_LIMIT) { over = true; data = ''; reject(new BodyTooLarge()); req.resume(); }
+    });
+    req.on('end', () => { if (over) return; try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
     req.on('error', reject);
   });
 }
+
+// ── F7: which till is asking ──────────────────────────────────────────────────
+// The branch code proves "a till of this branch"; the device key (nodeIngest.checkDeviceKey) proves WHICH. A request
+// naming a device that holds a key here must present it. One that names a device and presents no key is an older till.
+function presentedKey(req: http.IncomingMessage): string | null {
+  const raw = req.headers['x-device-token'];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === 'string' && v ? v : null;
+}
+function headerDevice(req: http.IncomingMessage): string | null {
+  const raw = req.headers['x-device-id'];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === 'string' && v ? v : null;
+}
+/** The device a request speaks for, and whether it proved it. A header and body that disagree prove nothing. */
+function whoIsAsking(req: http.IncomingMessage, bodyDevice?: unknown): { device: string | null; verdict: DeviceKeyVerdict | 'conflict' } {
+  const fromHeader = headerDevice(req);
+  const fromBody = bodyDevice ? String(bodyDevice) : null;
+  if (fromHeader && fromBody && fromHeader !== fromBody) return { device: fromBody, verdict: 'conflict' };
+  const device = fromBody ?? fromHeader;
+  return { device, verdict: checkDeviceKey(device, presentedKey(req)) };
+}
+const proven = (v: DeviceKeyVerdict | 'conflict') => v === 'ok' || v === 'enrolled';
+const KEY_REFUSED = 'This till\'s device key does not match the branch server\'s record — rejoin it from the branch server (or forget it there and let it reconnect).';
+
+const warnedOld = new Map<string, number>();
+function warnOlderTill(device: string | null, route: string): void {
+  const k = `${device ?? '?'}|${route}`;
+  const now = Date.now();
+  if ((warnedOld.get(k) ?? 0) > now - 10 * 60_000) return;   // once per 10 minutes per till and route
+  warnedOld.set(k, now);
+  logLine('node', `F7: ${route} from ${device ?? 'a till that names no device'} with no device key — an older till; accepted for now. Update it.`);
+}
+
+// ── F16: PIN attempts per till (or address) ───────────────────────────────────
+export const PIN_ATTEMPTS_PER_MINUTE = 10;
+const pinAttempts = new Map<string, number[]>();
+/** True when this caller may try another PIN now. Exported for the test. */
+export function pinAttemptAllowed(key: string, now: number = Date.now()): boolean {
+  const recent = (pinAttempts.get(key) ?? []).filter((t) => now - t < 60_000);
+  if (recent.length >= PIN_ATTEMPTS_PER_MINUTE) { pinAttempts.set(key, recent); return false; }
+  recent.push(now);
+  pinAttempts.set(key, recent);
+  if (pinAttempts.size > 500) for (const [k, v] of pinAttempts) if (!v.some((t) => now - t < 60_000)) pinAttempts.delete(k);
+  return true;
+}
+/** Tests only. */
+export function _resetPinAttempts(): void { pinAttempts.clear(); }
 
 // ── LAN authentication ───────────────────────────────────────────────────────
 // Every /node/* request must present the branch secret in X-Node-Secret.
@@ -130,9 +192,9 @@ function authorised(req: http.IncomingMessage): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
-function json(res: http.ServerResponse, status: number, body: any) {
+function json(res: http.ServerResponse, status: number, body: any, extra: Record<string, string> = {}) {
   const payload = JSON.stringify(body);
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), ...extra });
   res.end(payload);
 }
 
@@ -172,7 +234,14 @@ export function startNodeServer(): void {
       }
       if (req.method === 'GET' && url === '/node/join/status') {
         const q = new URL(req.url ?? '', 'http://x').searchParams;
-        return json(res, 200, readJoin(q.get('id') ?? '', q.get('token') ?? ''));
+        const r = readJoin(q.get('id') ?? '', q.get('token') ?? '');
+        // F7: a till allowed to join gets its own device key with the grant (the server keeps only its hash).
+        if (r.status === 'approved' && r.grant && r.device_id) {
+          let device_token: string | undefined;
+          try { device_token = issueDeviceKey(r.device_id); } catch (e: any) { logLine('node', `could not issue a device key: ${e?.message ?? e}`); }
+          return json(res, 200, { status: r.status, grant: { ...r.grant, ...(device_token ? { device_token } : {}) } });
+        }
+        return json(res, 200, { status: r.status, ...(r.grant ? { grant: r.grant } : {}) });
       }
 
       // Applied before routing, so it covers health, orders, report and the
@@ -235,8 +304,21 @@ export function startNodeServer(): void {
           return json(res, 403, { error: 'branch mismatch' });
         }
         if (!pin || !branchId) return json(res, 400, { error: 'pin and branch_id are required' });
+        // F7: only a till that proves which it is. 503 — not 401 — for one that cannot: the till then treats this
+        // server as unreachable and checks the PIN against its own copy / the cloud, instead of a final "no".
+        const who = whoIsAsking(req);
+        if (!proven(who.verdict)) {
+          if (who.verdict === 'absent') warnOlderTill(who.device, '/node/verify-pin');
+          return json(res, 503, { ok: false, reason: 'unavailable',
+            error: who.verdict === 'absent' ? 'Update this till — the branch server checks PINs only for tills with a device key.' : KEY_REFUSED });
+        }
+        // F16: at most 10 PINs a minute from one till (or address) — a guessing loop is slowed to uselessness.
+        if (!pinAttemptAllowed(who.device ?? lanAddress(req))) {
+          logLine('node', `verify-pin: too many attempts from ${who.device ?? lanAddress(req)} — refused for a minute`);
+          return json(res, 429, { ok: false, reason: 'rate_limited', error: 'Too many PIN attempts — wait a minute and try again.' });
+        }
 
-        const verdict = verifyPinAtNode(pin, branchId);
+        const verdict = await verifyPinAtNodeAsync(pin, branchId);
         if (verdict.ok) return json(res, 200, { ok: true, staff: verdict.staff });
         // A rejection is FINAL (the peer must not fall back to another authority
         // on a 'no'): 401 for a bad/ambiguous PIN, 503 only when the node cannot
@@ -262,7 +344,8 @@ export function startNodeServer(): void {
         if (!serverUrl) return json(res, 503, { error: 'node has no cloud URL configured' });
         const peerHeaders: Record<string, string> = {};
         for (const [k, v] of Object.entries(req.headers)) {
-          if (/^x-device-/i.test(k) && typeof v === 'string' && v) peerHeaders[k] = v;
+          // F7: never the till's key for THIS server (X-Device-Token) — that is not the cloud's.
+          if (/^x-device-/i.test(k) && k.toLowerCase() !== 'x-device-token' && typeof v === 'string' && v) peerHeaders[k] = v;
         }
         try {
           const up = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/auth/${url === '/node/refresh' ? 'refresh' : 'refresh/ack'}`, {
@@ -286,6 +369,17 @@ export function startNodeServer(): void {
         if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
           return json(res, 403, { error: 'branch mismatch' });
         }
+        // F7: the device the rows claim must be the device asking. Older tills (no key at all) keep working here —
+        // only here — with a warning in the log; see nodeIngest's device keys.
+        const who = whoIsAsking(req, peerDeviceId || null);
+        if (who.verdict === 'conflict' || who.verdict === 'mismatch' || who.verdict === 'missing') {
+          logLine('node', `/node/sync refused for ${peerDeviceId || '?'} (${who.verdict}) from ${lanAddress(req)}`);
+          return json(res, 401, { error: who.verdict === 'conflict' ? 'the request names two different tills' : KEY_REFUSED });
+        }
+        if (who.verdict === 'absent') warnOlderTill(peerDeviceId || null, '/node/sync');
+        // A19 relay to the cloud only for a till this server knows (joined: a device key here, or it reports to the
+        // Close Branch poll) — never for a device id first seen in this very request.
+        const relay = proven(who.verdict) || isKnownTill(peerDeviceId);
 
         const results: Record<string, any> = {};
         for (const [table, rows] of Object.entries(body?.tables ?? {})) {
@@ -298,7 +392,9 @@ export function startNodeServer(): void {
             continue;
           }
           if (!Array.isArray(rows)) continue;
-          results[table] = applyPeerRows(table, peerDeviceId, rows);
+          results[table] = applyPeerRows(table, peerDeviceId, rows, { relay });
+          // F7: who relayed what, on record.
+          if (results[table].relayed) logLine('node', `relayed ${results[table].relayed} sale(s) to the cloud for till ${peerDeviceId.slice(0, 8)}`);
         }
         // Phase 2b: newly-ingested events mutate their replicas now, and any
         // event that arrived BEFORE its target row gets another chance —
@@ -332,6 +428,11 @@ export function startNodeServer(): void {
         if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
           return json(res, 403, { error: 'branch mismatch' });
         }
+        // F7: a till's instructions (and the state the Close Branch screen trusts) only to that till.
+        const who = whoIsAsking(req, deviceId);
+        if (who.verdict === 'conflict' || who.verdict === 'mismatch' || who.verdict === 'missing') {
+          return json(res, 401, { error: KEY_REFUSED });
+        }
         if (body.state) recordPeerState(deviceId, body.state);
         return json(res, 200, { instructions: collectInstructions(deviceId) });
       }
@@ -341,12 +442,19 @@ export function startNodeServer(): void {
       if (req.method === 'POST' && url === '/node/instructions/ack') {
         const body = await readBody(req);
         const id = Number(body?.instruction_id);
-        if (!Number.isInteger(id)) return json(res, 400, { error: 'instruction_id is required' });
-        recordAck(id, {
+        const uid = typeof body?.instruction_uid === 'string' && body.instruction_uid ? body.instruction_uid : null;
+        if (!Number.isInteger(id) && !uid) return json(res, 400, { error: 'instruction_id is required' });
+        // F12: matched on the uid and the till that answers (an older till sends neither — the number, as before).
+        const deviceId = typeof body?.device_id === 'string' && body.device_id ? body.device_id : null;
+        if (deviceId) {
+          const who = whoIsAsking(req, deviceId);
+          if (who.verdict === 'conflict' || who.verdict === 'mismatch' || who.verdict === 'missing') return json(res, 401, { error: KEY_REFUSED });
+        }
+        recordAck(Number.isInteger(id) ? id : null, {
           ok: body?.ok === true,
           error: body?.error ?? undefined,
           summary: body?.summary ?? undefined,
-        });
+        }, { deviceId, uid });
         return json(res, 200, { ok: true });
       }
 
@@ -396,9 +504,19 @@ export function startNodeServer(): void {
       // PIN): applied here too — the branch's other tills see it with no internet — and sent to the cloud from here as well
       // (the cloud recognises a change sent twice by its id).
       if (req.method === 'POST' && url === '/node/changes') {
+        // F7: only from a till that proves which it is (an older till's changes still reach the cloud from that till).
+        const who = whoIsAsking(req);
+        if (!proven(who.verdict)) {
+          if (who.verdict === 'absent') warnOlderTill(who.device, '/node/changes');
+          return json(res, 401, { error: who.verdict === 'absent' ? 'Update this till to hand changes to the branch server.' : KEY_REFUSED });
+        }
         const body = await readBody(req);
-        const n = acceptRelayedChanges(getLocalDb(), Array.isArray(body?.changes) ? body.changes.slice(0, 50) : [], nodeSecrets);
-        return json(res, 200, { accepted: n, version: changeVersion(getLocalDb()) });
+        // F7: a staff change's role and permissions come from THIS server's roles, never from the change; no relayed
+        // change makes anyone an owner / admin / manager or changes one's PIN (branchStaff.vetRelayedStaffChanges).
+        const vetted = vetRelayedStaffChanges(Array.isArray(body?.changes) ? body.changes.slice(0, 50) : [], getDeviceConfig()?.branch_id ?? null);
+        for (const r of vetted.refused) logLine('node', `/node/changes from ${who.device}: refused ${r.id} — ${r.reason}`);
+        const n = acceptRelayedChanges(getLocalDb(), vetted.accepted, nodeSecrets);
+        return json(res, 200, { accepted: n, refused: vetted.refused, version: changeVersion(getLocalDb()) });
       }
       // A381: a till set the business's logo / accent — applied here (the branch's other tills take it with their next pull
       // from this server; the change counter tells a till with no internet to pull now). The till sends it to the cloud.
@@ -444,7 +562,8 @@ export function startNodeServer(): void {
       // time is wrong keeps selling. A POS that stops trading because of NTP is
       // worse than one that reports a date its manager can correct.
       if (req.method === 'GET' && url === '/node/time') {
-        return json(res, 200, { now: new Date().toISOString() });
+        // F15: and the zone — two tills on the same instant but different time zones date their days differently.
+        return json(res, 200, { now: new Date().toISOString(), tz_offset: new Date().getTimezoneOffset() });
       }
 
       // Combined branch report — any till's manager view reads this.
@@ -471,6 +590,9 @@ export function startNodeServer(): void {
 
       json(res, 404, { error: 'not found' });
     } catch (err: any) {
+      if (res.headersSent) return;
+      // F14: named, and the connection closed (the rest of an oversized body is not waited for).
+      if (err instanceof BodyTooLarge) return json(res, 413, { error: `The batch is too large for the branch server (over ${NODE_BODY_LIMIT} bytes) — send fewer rows at a time.` }, { Connection: 'close' });
       json(res, 500, { error: err?.message ?? 'node error' });
     }
   });

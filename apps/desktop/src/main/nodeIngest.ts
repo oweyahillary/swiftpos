@@ -28,6 +28,7 @@ import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
 import { buildPeerRelay, buildCloudOrderPayload } from './peerRelay';
+import { logLine } from './logFile';
 
 /** The tables that replicate across the branch LAN. */
 export const REPLICATED_TABLES = [
@@ -58,6 +59,9 @@ const COLUMNS: Record<ReplicatedTable, string[]> = {
     'notes',   // A367 (58): the order's note. An older node ignores it; an older peer sends none (NULL).
     'delivery_fee',   // 0.6.27 (59): on top of the bill (pass-through). Same rule as notes.
     'delivery_free',  // 0.6.33 (63): a free delivery (the shop paid the rider). Same rule as notes.
+    // F8 (2026-10-14): a refund on the order as it stood when offered. A refund made AFTER the order crossed travels as
+    // an `order_refunded` event (below) — rows are append-only. An older node ignores these; an older peer sends none.
+    'refunded_at', 'refunded_amount', 'refund_reason',
   ],
   shifts: [
     'id', 'business_id', 'branch_id', 'cashier_id', 'opened_at', 'closed_at', 'status',
@@ -178,18 +182,38 @@ export function nextSeq(table: ReplicatedTable): number {
  * Runs once; rows that already have a seq are left alone.
  */
 export function backfillOwnSeq(): number {
+  let total = 0;
+  // Bounded rounds of the same step fillNodeOutbox runs, so the two can never number differently.
+  for (let round = 0; round < 1000; round++) {
+    const n = numberOwnRows(500);
+    total += n;
+    if (!n) break;
+  }
+  return total;
+}
+
+/**
+ * Number this device's own unnumbered rows (seq), oldest first, at most `limit` per table. Returns how many.
+ *
+ * F9 (2026-10-14): this step used to live only inside fillNodeOutbox, which runs on a till WITH a branch server — so
+ * the branch server itself never numbered its own orders, shifts, expenses or days, and collectDistribution (which
+ * serves `seq > cursor`) never handed them to a single peer. The node now runs this on its own replication beat.
+ *
+ * own: only this terminal's rows are its to number — a node holds peers' rows and must not renumber them. A web sale
+ * downloaded onto this till's drawer (orders.origin) is not this till's to offer either.
+ */
+export function numberOwnRows(limit = 500): number {
   const db = getLocalDb();
   const own = getDeviceConfig()?.device_id ?? null;
   let total = 0;
-
   for (const table of REPLICATED_TABLES) {
+    const notDownloaded = table === 'orders' ? 'AND origin IS NULL' : '';
     const rows = db.prepare(
       `SELECT id FROM ${table}
-        WHERE seq IS NULL AND COALESCE(device_id,'') = COALESCE(?,'')
-        ORDER BY created_at, rowid`,
-    ).all(own) as Array<{ id: string }>;
+        WHERE seq IS NULL AND COALESCE(device_id,'') = COALESCE(?,'') ${notDownloaded}
+        ORDER BY created_at, rowid LIMIT ?`,
+    ).all(own, limit) as Array<{ id: string }>;
     if (!rows.length) continue;
-
     const setSeq = db.prepare(`UPDATE ${table} SET seq = ? WHERE id = ?`);
     db.transaction(() => {
       for (const r of rows) setSeq.run(nextSeq(table), r.id);
@@ -208,6 +232,10 @@ export interface IngestResult {
   rejected: Array<{ id: string; table: string; reason: string }>;
   /** Highest seq now held per (device, table), for the peer to checkpoint against. */
   cursor: number;
+  /** F1 (2026-10-14): the ids this device now HOLDS from the batch (applied or already held). The peer marks exactly
+   *  these delivered — a row in neither this list nor `rejected` stays pending and is offered again. A node on an
+   *  older build sends no list; the peer then falls back to "not rejected and seq <= cursor". */
+  applied_ids: string[];
   /** A19: peer orders forwarded into this node's cloud sync_queue this pass. Not
    *  every applied order relays — an old peer that sends no payload, or one that
    *  can't be relayed faithfully, is applied for branch reports but not forwarded. */
@@ -221,9 +249,9 @@ export interface IngestResult {
  * peer retrying is the normal case and an outage should cost a no-op rather than
  * a conflict.
  *
- * Rows are applied in seq order and the cursor advances only over rows actually
- * applied, so a batch that fails halfway resumes from the right place instead of
- * skipping the remainder.
+ * Rows are applied in seq order, each on its own: a row that cannot be applied is
+ * refused alone (F1) and the rest still go in. The answer names every id now held
+ * (`applied_ids`), which is all the sending till marks delivered.
  */
 /**
  * Insert an ingested order's children — lines and payments. Always additive:
@@ -269,20 +297,34 @@ function insertOrderChildren(db: ReturnType<typeof getLocalDb>, row: any): void 
  * (node_queue) is untouched; this only adds a peer-origin row to the cloud queue.
  */
 function enqueuePeerRelay(db: ReturnType<typeof getLocalDb>, orderId: string, payload: Record<string, any>): void {
+  // F5 (2026-10-14): stamped ISO like every row the till itself queues. datetime('now') ("2026-10-14 09:00:00") sorts
+  // BEFORE every ISO stamp ("2026-10-14T…"), so a backlog of relayed peer sales went out ahead of the node's own.
   db.prepare(
     `INSERT OR IGNORE INTO sync_queue (order_id, payload, created_at, status)
-     VALUES (?, ?, datetime('now'), 'pending')`,
-  ).run(orderId, JSON.stringify(payload));
+     VALUES (?, ?, ?, 'pending')`,
+  ).run(orderId, JSON.stringify(payload), new Date().toISOString());
+}
+
+export interface ApplyOptions {
+  /** A19: forward an applied peer order to the cloud from this device's sync_queue. Only the branch server does this,
+   *  and (F7) only for a till it knows — one that joined / polls it — sending its own rows. Off on a peer applying
+   *  distribution: the order's own till (and the server) already send it. */
+  relay?: boolean;
+  /** Distribution (a peer pulling from the server): a row that cannot be applied is refused ALONE and the cursor moves
+   *  past it — otherwise one bad row stalls that origin's table on this till forever. The node's own ingest keeps its
+   *  cursor at what it holds (the peer re-offers anything not acknowledged). */
+  advancePastFailures?: boolean;
 }
 
 export function applyPeerRows(
   table: ReplicatedTable,
   peerDeviceId: string,
   rows: any[],
+  opts: ApplyOptions = {},
 ): IngestResult {
   const db = getLocalDb();
   const cfg = getDeviceConfig();
-  const result: IngestResult = { applied: 0, duplicate: 0, rejected: [], cursor: 0, relayed: 0 };
+  const result: IngestResult = { applied: 0, duplicate: 0, rejected: [], cursor: 0, relayed: 0, applied_ids: [] };
 
   // A peer that presents no device_id cannot be attributed, and NULL is not
   // neutral here: "mine" is COALESCE(device_id,'') = COALESCE(own,''), so a NULL
@@ -321,32 +363,32 @@ export function applyPeerRows(
   const exists = db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`);
 
   const ordered = [...rows].sort((a, b) => (Number(a?.seq) || 0) - (Number(b?.seq) || 0));
+  // The highest seq the cursor may move to: held rows always; refused rows only when the caller moves past failures.
+  let passed = 0;
+  const refuse = (id: string, reason: string, seq: number) => {
+    result.rejected.push({ id, table, reason });
+    if (opts.advancePastFailures && Number.isInteger(seq) && seq > passed) passed = seq;
+  };
 
   for (const row of ordered) {
     const id = row?.id ? String(row.id) : null;
-    if (!id) { result.rejected.push({ id: '?', table, reason: 'row has no id' }); continue; }
+    const seq = Number(row?.seq);
+    if (!id) { refuse('?', 'row has no id', seq); continue; }
 
     // The peer's own attribution must survive the trip. If it disagrees with the
     // device the payload came from, something re-stamped it in transit and the
     // row can no longer be attributed to anyone honestly.
     const rowDevice = row.device_id ? String(row.device_id) : null;
     if (rowDevice && rowDevice !== peerDeviceId) {
-      result.rejected.push({
-        id, table,
-        reason: `row device_id ${rowDevice} does not match the sending device ${peerDeviceId}`,
-      });
+      refuse(id, `row device_id ${rowDevice} does not match the sending device ${peerDeviceId}`, seq);
       continue;
     }
 
     // A row with no seq cannot be checkpointed: the cursor would not advance past
     // it, so it would be re-offered forever, or it would be skipped and lost. It
     // means the peer is on a build older than 45.
-    const seq = Number(row.seq);
     if (!Number.isInteger(seq) || seq <= 0) {
-      result.rejected.push({
-        id, table,
-        reason: 'row has no sequence number — that till is on a build older than schema 45',
-      });
+      refuse(id, 'row has no sequence number — that till is on a build older than schema 45', seq);
       continue;
     }
 
@@ -354,7 +396,7 @@ export function applyPeerRows(
     // misconfigured till or a device moved between sites, and ingesting it would
     // put another branch's cash into this branch's report.
     if (cfg?.branch_id && row.branch_id && String(row.branch_id) !== cfg.branch_id) {
-      result.rejected.push({ id, table, reason: 'row belongs to a different branch' });
+      refuse(id, 'row belongs to a different branch', seq);
       continue;
     }
 
@@ -379,6 +421,7 @@ export function applyPeerRows(
         try { db.transaction(() => insertOrderChildren(db, row))(); } catch { /* repair is best-effort */ }
       }
       result.duplicate++;
+      result.applied_ids.push(id);
       if (seq > result.cursor) result.cursor = seq;
       continue;
     }
@@ -399,23 +442,28 @@ export function applyPeerRows(
           // (no payload / no items / no payments / mis-attributed) — that order
           // still lands here for branch reports, it just isn't forwarded, which
           // is the pre-A19 status quo rather than a regression.
-          const relay = buildPeerRelay(row);
-          if (relay.ok) { enqueuePeerRelay(db, relay.orderId, relay.payload); relayedThisRow = true; }
+          // F7: only for a till this server knows, and only its OWN sale (the row names the sending device).
+          if (opts.relay && rowDevice === peerDeviceId) {
+            const relay = buildPeerRelay(row);
+            if (relay.ok) { enqueuePeerRelay(db, relay.orderId, relay.payload); relayedThisRow = true; }
+          }
         }
       })();
       result.applied++;
+      result.applied_ids.push(id);
       if (relayedThisRow) result.relayed = (result.relayed ?? 0) + 1;
       if (seq > result.cursor) result.cursor = seq;
     } catch (err: any) {
-      // Stop at the first genuine failure rather than continuing past it. The
-      // cursor has not advanced over this row, so the peer re-offers it and the
-      // rest of the batch next pass — where a partial advance would leave a hole
-      // nothing ever fills.
-      result.rejected.push({ id, table, reason: String(err?.message ?? 'insert failed') });
-      break;
+      // F1 (2026-10-14): refuse THIS row and carry on with the rest. It used to `break` here, expecting the peer to
+      // re-offer the remainder — but the peer marked every row not named in `rejected` as delivered, so the rest of
+      // the batch was lost from the node for good. Now the answer names exactly what is held (applied_ids); the
+      // refused row is reported with its reason, and the cursor does not claim it (unless the caller moves past).
+      refuse(id, String(err?.message ?? 'insert failed'), seq);
+      continue;
     }
   }
 
+  if (passed > result.cursor) result.cursor = passed;
   if (result.cursor > 0) advanceCursor(peerDeviceId, table, result.cursor);
   return result;
 }
@@ -443,6 +491,84 @@ export function advanceCursor(deviceId: string, table: ReplicatedTable, seq: num
        SET last_seq = MAX(peer_cursors.last_seq, excluded.last_seq),
            updated_at = excluded.updated_at`,
   ).run(deviceId, table, seq);
+}
+
+// ── F7: each till's own key on the branch server ─────────────────────────────
+//
+// The branch code (X-Node-Secret) is one secret for the whole branch — every till has it, and so does anything that
+// ever read it off a till. On its own it let its holder speak AS any till: push rows under another device_id, relay
+// "sales" to the cloud in its name, hand the server staff changes. Now each till also carries its own key
+// (X-Device-Token, 32 random bytes); the server keeps only a SHA-256 of it, per device.
+//
+//   - Issued by the server when a person allows a till to join (the join grant carries it), or
+//   - recorded the first time a till presents one (every till installed before this build, or set up with the typed
+//     code). From then on that device id is spoken for: a request naming it without its key is refused.
+//   - Older tills that send no key at all: /node/sync still works (with a warning in the log), nothing else that
+//     needs the key does — see nodeServer.ts.
+//
+// Node-local table, created on first use (like node_state): no LOCAL_SCHEMA_VERSION change, nothing sent anywhere.
+
+function ensureDeviceKeys(): void {
+  getLocalDb().exec(`CREATE TABLE IF NOT EXISTS node_device_keys (
+    device_id  TEXT PRIMARY KEY,
+    key_hash   TEXT NOT NULL,
+    source     TEXT NOT NULL,      -- 'join' (issued at Allow) | 'first_use' (recorded when first presented)
+    created_at TEXT NOT NULL,
+    last_seen  TEXT
+  )`);
+}
+
+const keyHash = (token: string) => crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+
+/** ok: the key matches · enrolled: first sight, recorded · mismatch: wrong key · missing: none sent for a device that
+ *  has one · absent: no key sent and none on record (an older till) — or no device named. */
+export type DeviceKeyVerdict = 'ok' | 'enrolled' | 'mismatch' | 'missing' | 'absent';
+
+export function checkDeviceKey(deviceId: string | null | undefined, token: string | null | undefined): DeviceKeyVerdict {
+  const id = String(deviceId ?? '').trim();
+  if (!id) return 'absent';
+  ensureDeviceKeys();
+  const db = getLocalDb();
+  const row = db.prepare(`SELECT key_hash FROM node_device_keys WHERE device_id = ?`).get(id) as { key_hash: string } | undefined;
+  const t = typeof token === 'string' && /^[0-9a-f]{64}$/.test(token) ? token : null;
+  if (!t) return row ? 'missing' : 'absent';
+  const now = new Date().toISOString();
+  if (!row) {
+    db.prepare(`INSERT OR IGNORE INTO node_device_keys (device_id, key_hash, source, created_at, last_seen) VALUES (?, ?, 'first_use', ?, ?)`)
+      .run(id, keyHash(t), now, now);
+    return 'enrolled';
+  }
+  const a = Buffer.from(keyHash(t), 'hex');
+  const b = Buffer.from(row.key_hash, 'hex');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return 'mismatch';
+  db.prepare(`UPDATE node_device_keys SET last_seen = ? WHERE device_id = ?`).run(now, id);
+  return 'ok';
+}
+
+/** Join: a person allowed this till — issue it a fresh key (replacing any it had). Returns the key, once. */
+export function issueDeviceKey(deviceId: string): string {
+  ensureDeviceKeys();
+  const token = crypto.randomBytes(32).toString('hex');
+  const now = new Date().toISOString();
+  getLocalDb().prepare(`INSERT OR REPLACE INTO node_device_keys (device_id, key_hash, source, created_at, last_seen) VALUES (?, ?, 'join', ?, NULL)`)
+    .run(String(deviceId), keyHash(token), now);
+  return token;
+}
+
+/** "Forget this till": its key goes too — if it comes back it is recorded afresh. */
+export function forgetDeviceKey(deviceId: string): void {
+  ensureDeviceKeys();
+  getLocalDb().prepare(`DELETE FROM node_device_keys WHERE device_id = ?`).run(String(deviceId));
+}
+
+/** A till this server knows: it holds a key here, or it reports to the Close Branch poll. */
+export function isKnownTill(deviceId: string | null | undefined): boolean {
+  const id = String(deviceId ?? '');
+  if (!id) return false;
+  ensureDeviceKeys();
+  const db = getLocalDb();
+  return !!db.prepare(`SELECT 1 FROM node_device_keys WHERE device_id = ?`).get(id)
+      || !!db.prepare(`SELECT 1 FROM node_peer_state WHERE device_id = ?`).get(id);
 }
 
 /** Every peer this node has heard from, with how recently. Feeds staleness. */
@@ -538,7 +664,106 @@ function advanceOutboxCursor(table: ReplicatedTable, seq: number): void {
  * retention, and it happens only on an explicit, human-initiated repoint.
  */
 export function resetOutboxCursors(): void {
-  getLocalDb().prepare(`DELETE FROM outbox_cursors`).run();
+  const db = getLocalDb();
+  db.transaction(() => {
+    db.prepare(`DELETE FROM outbox_cursors`).run();
+    // F2 (2026-10-14): resetting the cursor alone re-offered nothing. The scan re-enqueues with INSERT OR IGNORE on
+    // (table_name, row_id), and every row it found was already in node_queue as 'delivered' (or 'failed') — so the
+    // "re-offer" was a no-op and the new server never got the rows. The queue rows themselves are re-armed here.
+    // node_queue holds only this till's own rows (fillNodeOutbox is own-scoped), so this touches nothing else.
+    // last_error is kept: it is how skipHeldByNode tells a row the old server REFUSED from one it simply holds.
+    db.prepare(`UPDATE node_queue SET status = 'pending', attempts = 0 WHERE status <> 'pending' OR attempts > 0`).run();
+    // Then ask the new server what it already holds and skip that (pushToNode, /node/cursors) — once.
+    db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('node_rearm_skip', '1', ?)`)
+      .run(new Date().toISOString());
+  })();
+}
+
+/**
+ * F2: the branch server this till sends to has changed (a rejoin, a repoint or promotion, a new access code — what a
+ * 401 that a fresh code fixes looks like). Everything is offered again: cursors reset, every queue row pending with a
+ * clean attempt count, failed rows included (F3 — a new server deserves a fresh try). Re-offering is free: ingest is
+ * idempotent on the row's own id.
+ */
+export function rearmNodeOutbox(): void {
+  resetOutboxCursors();
+}
+
+/** The identity of the server this till sends to — its address and access code, hashed (never stored in clear here). */
+export function nodeTargetKey(url: string | null | undefined, secret: string | null | undefined): string {
+  return crypto.createHash('sha256').update(`${String(url ?? '').replace(/\/+$/, '')}|${String(secret ?? '')}`).digest('hex').slice(0, 32);
+}
+
+/**
+ * F2: re-arm when the server changed since the last pass. Returns what happened: 'same', 'changed' (re-armed) or
+ * 'first' — the first pass on this build. On 'first' only the last 14 days are offered again, without the
+ * /node/cursors skip: before F1 a batch with one failing row lost the rest of itself from the node while the till
+ * marked it delivered, and this is the one chance to put those rows back. Duplicates are ignored on arrival.
+ */
+export function noteNodeTarget(key: string): 'same' | 'changed' | 'first' {
+  const db = getLocalDb();
+  const row = db.prepare(`SELECT value FROM maintenance_state WHERE key = 'node_target'`).get() as { value?: string } | undefined;
+  if (row?.value === key) return 'same';
+  const now = new Date().toISOString();
+  if (!row) {
+    db.transaction(() => {
+      db.prepare(`UPDATE node_queue SET status = 'pending', attempts = 0
+                   WHERE status = 'delivered' AND created_at >= datetime('now', '-14 days')`).run();
+      db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('node_target', ?, ?)`).run(key, now);
+    })();
+    return 'first';
+  }
+  db.transaction(() => {
+    resetOutboxCursors();
+    db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('node_target', ?, ?)`).run(key, now);
+  })();
+  return 'changed';
+}
+
+/** F2: is the one-time "skip what the new server already holds" step still owed? */
+export function nodeRearmSkipOwed(): boolean {
+  return !!getLocalDb().prepare(`SELECT 1 FROM maintenance_state WHERE key = 'node_rearm_skip'`).get();
+}
+
+/**
+ * F2: the server answered /node/cursors — mark delivered the pending rows it already holds (seq at or below its
+ * cursor for this device and table). Rows a server ever REFUSED (a last_error that is not a transport note) are left
+ * pending: a cursor is a high-water mark, and a row refused below it is exactly the one it does not prove.
+ * Returns how many were skipped.
+ */
+export function skipHeldByNode(cursors: Array<{ table_name: string; last_seq: number }>): number {
+  const db = getLocalDb();
+  let n = 0;
+  db.transaction(() => {
+    const mark = db.prepare(`UPDATE node_queue SET status = 'delivered'
+                              WHERE status = 'pending' AND table_name = ?
+                                AND (last_error IS NULL OR last_error LIKE '${TRANSPORT_NOTE}%')
+                                AND CAST(json_extract(payload, '$.seq') AS INTEGER) <= ?`);
+    for (const c of cursors ?? []) {
+      if (!isReplicatedTable(String(c?.table_name)) || !(Number(c?.last_seq) > 0)) continue;
+      n += mark.run(String(c.table_name), Number(c.last_seq)).changes;
+    }
+    db.prepare(`DELETE FROM maintenance_state WHERE key = 'node_rearm_skip'`).run();
+  })();
+  return n;
+}
+
+/** F3: how a transport failure (not counted) is written in node_queue.last_error. */
+export const TRANSPORT_NOTE = 'transport: ';
+
+/** F3: put rows the old server refused back in line (on a server change, or asked for on the Tech page). */
+export function rearmFailedNodeRows(): number {
+  return getLocalDb().prepare(`UPDATE node_queue SET status = 'pending', attempts = 0 WHERE status = 'failed'`).run().changes;
+}
+
+/**
+ * P3: housekeeping. Delivered outbox rows older than 7 days go (a re-arm re-enqueues from the tables themselves, so
+ * nothing is lost by it); on the server, instructions answered more than 7 days ago go too.
+ */
+export function pruneNodeQueue(days = 7): number {
+  return getLocalDb().prepare(
+    `DELETE FROM node_queue WHERE status = 'delivered' AND created_at < datetime('now', ?)`,
+  ).run(`-${Math.max(1, Math.floor(days))} days`).changes;
 }
 
 /**
@@ -560,6 +785,8 @@ export function fillNodeOutbox(): number {
   const db = getLocalDb();
   const own = getDeviceConfig()?.device_id ?? null;
   let enqueued = 0;
+  // F8: a refund made since the order crossed becomes an event first, so it goes in this same pass.
+  try { emitRefundEvents(); } catch { /* the next pass */ }
 
   for (const table of REPLICATED_TABLES) {
     // own: a till offers the node ITS OWN rows. A node running this same code
@@ -659,12 +886,67 @@ export function fillNodeOutbox(): number {
  * 'failed' rows are excluded: the node answered and refused on the merits, and
  * re-offering every pass would loop forever while burying the reason.
  */
-export function takeNodeQueueBatch(limit = 100): NodeQueueRow[] {
-  return getLocalDb().prepare(
+export function takeNodeQueueBatch(limit = 100, maxBytes = NODE_BATCH_BYTES): NodeQueueRow[] {
+  const rows = getLocalDb().prepare(
     `SELECT id, table_name, row_id, payload, attempts, created_at
        FROM node_queue WHERE status = 'pending'
       ORDER BY created_at, id LIMIT ?`,
   ).all(limit) as NodeQueueRow[];
+  // F14 (2026-10-14): a batch is capped by SIZE as well as count. 200 orders with their lines, payments and the relay
+  // payload could pass the server's 5 MB body limit — it cut the request, the till saw "unreachable" and sent the same
+  // batch again, forever. Always at least one row (a single row over the limit is the server's to refuse, by name).
+  const out: NodeQueueRow[] = [];
+  let bytes = 0;
+  for (const r of rows) {
+    const size = Buffer.byteLength(r.payload ?? '', 'utf8') + 64;
+    if (out.length && bytes + size > maxBytes) break;
+    out.push(r);
+    bytes += size;
+  }
+  return out;
+}
+
+/** F14: the most a till sends the server in one /node/sync (the server refuses over 5 MB with a 413). */
+export const NODE_BATCH_BYTES = 2_000_000;
+
+/**
+ * F1: what a /node/sync answer means for each queue row of the batch.
+ *   delivered — the server holds it (named in `applied_ids`);
+ *   refused   — named in `rejected`, with the server's reason (counts toward 'failed');
+ *   pending   — neither: it is offered again next pass, no attempt counted.
+ * A server on an older build sends no `applied_ids`: then a row not rejected counts as held only when its seq is at or
+ * below the server's cursor for the table — that build stopped at its first failure, and the cursor is the last row
+ * it really took, so the rows after the stop stay pending instead of being lost.
+ */
+export function settleNodeBatch(batch: NodeQueueRow[], results: Record<string, any>):
+  { delivered: number[]; refused: Array<{ id: number; reason: string }>; pending: number[] } {
+  const delivered: number[] = [];
+  const refused: Array<{ id: number; reason: string }> = [];
+  const pending: number[] = [];
+  const cache = new Map<string, { rejected: Map<string, string>; held: Set<string> | null; cursor: number }>();
+  const verdictFor = (table: string) => {
+    let v = cache.get(table);
+    if (!v) {
+      const res = results?.[table];
+      v = res ? {
+        rejected: new Map<string, string>((Array.isArray(res.rejected) ? res.rejected : []).map((r: any) => [String(r?.id), String(r?.reason ?? 'refused')])),
+        held: Array.isArray(res.applied_ids) ? new Set<string>(res.applied_ids.map(String)) : null,
+        cursor: Number(res.cursor) || 0,
+      } : { rejected: new Map(), held: new Set<string>(), cursor: 0 };
+      cache.set(table, v);
+    }
+    return v;
+  };
+  for (const q of batch) {
+    const v = verdictFor(q.table_name);
+    const reason = v.rejected.get(String(q.row_id)) ?? v.rejected.get('*');
+    if (reason) { refused.push({ id: q.id, reason }); continue; }
+    if (v.held) { (v.held.has(String(q.row_id)) ? delivered : pending).push(q.id); continue; }
+    let seq = NaN;
+    try { seq = Number(JSON.parse(q.payload)?.seq); } catch { /* unreadable: stays pending */ }
+    (Number.isFinite(seq) && seq > 0 && seq <= v.cursor ? delivered : pending).push(q.id);
+  }
+  return { delivered, refused, pending };
 }
 
 export function markNodeQueueDelivered(ids: number[]): void {
@@ -682,6 +964,10 @@ export function markNodeQueueDelivered(ids: number[]): void {
  * branch server rebooting must not exhaust anything) versus a node that answered
  * and refused (escalate to 'failed' after five attempts, so the reason reaches a
  * human instead of a count that never clears).
+ *
+ * F3 (2026-10-14): a pass that did not land for a TRANSPORT reason (no answer, a 5xx, a 401 the next access code
+ * fixes) no longer counts as an attempt at all. It used to add one even with escalate=false, so a node switched off
+ * for a weekend put every row one refusal away from 'failed'. Only an answer on the row's merits counts.
  */
 export function markNodeQueueFailed(ids: number[], error: string, escalate: boolean): void {
   if (!ids.length) return;
@@ -690,9 +976,10 @@ export function markNodeQueueFailed(ids: number[], error: string, escalate: bool
     escalate
       ? `UPDATE node_queue SET attempts=attempts+1, last_error=?,
            status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'pending' END WHERE id=?`
-      : `UPDATE node_queue SET attempts=attempts+1, last_error=? WHERE id=?`,
+      : `UPDATE node_queue SET last_error=? WHERE id=?`,
   );
-  db.transaction(() => { for (const id of ids) mark.run(error, id); })();
+  const note = escalate ? error : `${TRANSPORT_NOTE}${error}`;
+  db.transaction(() => { for (const id of ids) mark.run(note, id); })();
 }
 
 /** Counts for the POS header and the tech panel. Own rows only, by construction. */
@@ -779,20 +1066,33 @@ export function collectDistribution(
 
 /**
  * Peer side: apply a distribution response. Each batch goes through
- * applyPeerRows under its ORIGIN's identity, and the per-origin cursor
- * advances only to what actually applied — a mid-batch failure leaves the
- * remainder for the next pull, exactly like the push direction.
+ * applyPeerRows under its ORIGIN's identity.
+ *
+ * F1 (2026-10-14): a row this till cannot apply is refused ALONE — recorded (maintenance_state
+ * `distribution_refused:<origin>:<table>:<id>`, and the log) — and the origin's cursor moves past it. It used to stop
+ * at the row and ask again from there, so one bad row stalled that till's whole table here for good.
+ * Never relays: forwarding a sale to the cloud is the branch server's job (and the sale's own till's).
  */
 export function applyDistribution(
   batches: Array<{ device_id: string; table: string; rows: any[] }>,
 ): { applied: number; duplicate: number; rejected: number } {
   const totals = { applied: 0, duplicate: 0, rejected: 0 };
+  const db = getLocalDb();
   for (const b of batches) {
     if (!isReplicatedTable(b.table)) continue;   // a newer node's table this build doesn't know
-    const r = applyPeerRows(b.table, b.device_id, b.rows ?? []);
+    const r = applyPeerRows(b.table, b.device_id, b.rows ?? [], { relay: false, advancePastFailures: true });
     totals.applied += r.applied;
     totals.duplicate += r.duplicate;
     totals.rejected += r.rejected.length;
+    if (r.rejected.length) {
+      const now = new Date().toISOString();
+      const note = db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`);
+      for (const x of r.rejected) {
+        try { note.run(`distribution_refused:${b.device_id}:${b.table}:${x.id}`, String(x.reason).slice(0, 300), now); } catch { /* the log has it */ }
+      }
+      logLine('node', `distribution: refused ${r.rejected.length} ${b.table} row(s) from ${String(b.device_id).slice(0, 8)} `
+        + `and moved on — first: ${r.rejected[0].id} (${String(r.rejected[0].reason).slice(0, 160)})`);
+    }
     if (r.cursor > getCursor(b.device_id, b.table)) {
       advanceCursor(b.device_id, b.table, r.cursor);
     }
@@ -846,7 +1146,17 @@ const EVENT_WHITELIST: Record<string, { table: ReplicatedTable; columns: string[
     table: 'orders',
     columns: ['status', 'void_reason', 'voided_at', 'voided_by'],
   },
+  // F8 (2026-10-14): a refund on a sale that already crossed. Rows are append-only, so without this every other till
+  // and the branch server kept the sale at full value. The refund legs (payments, status 'refunded', negative amounts)
+  // ride along as `payments` and are inserted — additively, by their own ids — only once the order update landed.
+  order_refunded: {
+    table: 'orders',
+    columns: ['refunded_at', 'refunded_amount', 'refund_reason'],
+  },
 };
+
+/** F8: what an `order_refunded` event may carry besides its columns — the refund legs, by their own ids. */
+const REFUND_PAYMENT_COLUMNS = ['id', 'method', 'amount', 'reference', 'status', 'created_at'];
 
 /**
  * Record a mutation that just happened to one of THIS device's rows.
@@ -867,6 +1177,9 @@ export function emitEvent(
   const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as { business_id?: string } | undefined;
   const clean: Record<string, unknown> = {};
   for (const c of spec.columns) if (c in payload) clean[c] = payload[c];
+  if (kind === 'order_refunded' && Array.isArray(payload.payments)) {
+    clean.payments = (payload.payments as any[]).map((p) => Object.fromEntries(REFUND_PAYMENT_COLUMNS.map((c) => [c, p?.[c] ?? null])));
+  }
   db.prepare(`
     INSERT INTO events (id, business_id, branch_id, device_id, seq,
                         kind, target_table, target_id, payload, created_at, applied)
@@ -902,35 +1215,93 @@ export function applyPendingEvents(): { applied: number; waiting: number; refuse
 
   const markApplied = db.prepare(`UPDATE events SET applied = 1 WHERE id = ?`);
   const markRefused = db.prepare(`UPDATE events SET applied = -1 WHERE id = ?`);
+  const refuse = (id: string, kind: string, reason: string) => {
+    try { markRefused.run(id); } catch { /* the next sweep */ }
+    out.refused++;
+    logLine('node', `event ${id} (${kind}) refused: ${reason.slice(0, 200)}`);
+  };
 
   for (const ev of pending) {
-    const spec = EVENT_WHITELIST[ev.kind];
-    // An event kind (or a retargeted table) this build does not know is left
-    // waiting, not guessed at: a newer till emitted it, and this till will
-    // understand it after its own upgrade.
-    if (!spec || spec.table !== ev.target_table) { out.waiting++; continue; }
+    // F13 (2026-10-14): every event on its own. A value SQLite cannot bind (an object, say) used to throw out of the
+    // sweep — and the sweep runs inside every /node/sync, so ONE bad event answered every till's push with a 500.
+    try {
+      const spec = EVENT_WHITELIST[ev.kind];
+      // An event kind (or a retargeted table) this build does not know is left
+      // waiting, not guessed at: a newer till emitted it, and this till will
+      // understand it after its own upgrade.
+      if (!spec || spec.table !== ev.target_table) { out.waiting++; continue; }
 
-    let payload: Record<string, unknown>;
-    try { payload = JSON.parse(ev.payload) ?? {}; } catch { markRefused.run(ev.id); out.refused++; continue; }
-    const cols = spec.columns.filter(c => c in payload);
-    if (!cols.length) { markApplied.run(ev.id); out.applied++; continue; }  // nothing to do IS done
+      let payload: Record<string, unknown>;
+      try { payload = JSON.parse(ev.payload) ?? {}; } catch { refuse(ev.id, ev.kind, 'payload is not JSON'); continue; }
+      if (typeof payload !== 'object' || Array.isArray(payload)) { refuse(ev.id, ev.kind, 'payload is not an object'); continue; }
+      const cols = spec.columns.filter(c => c in payload);
+      const bad = cols.find(c => payload[c] !== null && typeof payload[c] === 'object');
+      if (bad) { refuse(ev.id, ev.kind, `${bad} is not a plain value`); continue; }
+      if (!cols.length) { markApplied.run(ev.id); out.applied++; continue; }  // nothing to do IS done
 
-    const r = db.prepare(
-      // branch-wide: mutates the ORIGIN's replica row by design; the device_id
-      // equality IS the origin-only rule.
-      `UPDATE ${spec.table} SET ${cols.map(c => `${c} = ?`).join(', ')}
-        WHERE id = ? AND COALESCE(device_id,'') = COALESCE(?,'')`,
-    ).run(...cols.map(c => payload[c] ?? null), ev.target_id, ev.device_id);
+      let changed = 0;
+      db.transaction(() => {
+        changed = db.prepare(
+          // branch-wide: mutates the ORIGIN's replica row by design; the device_id
+          // equality IS the origin-only rule.
+          `UPDATE ${spec.table} SET ${cols.map(c => `${c} = ?`).join(', ')}
+            WHERE id = ? AND COALESCE(device_id,'') = COALESCE(?,'')`,
+        ).run(...cols.map(c => payload[c] ?? null), ev.target_id, ev.device_id).changes;
+        // F8: the refund legs, once the origin-owned order took the refund. Additive by id, stamped 'peer' like every
+        // replicated payment, so no push path on this device ever picks them up.
+        if (changed > 0 && ev.kind === 'order_refunded' && Array.isArray(payload.payments)) {
+          const ins = db.prepare(`INSERT OR IGNORE INTO payments (id, order_id, method, amount, amount_tendered, change_given, reference, status, created_at, sync_status)
+                                  VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, '${PEER_SYNC_STATUS}')`);
+          for (const p of payload.payments as any[]) {
+            if (!p?.id) continue;
+            ins.run(String(p.id), ev.target_id, String(p.method ?? 'cash'), Number(p.amount) || 0, p.reference == null ? null : String(p.reference),
+              String(p.status ?? 'refunded'), String(p.created_at ?? new Date().toISOString()));
+          }
+        }
+      })();
 
-    if (r.changes > 0) { markApplied.run(ev.id); out.applied++; continue; }
+      if (changed > 0) { markApplied.run(ev.id); out.applied++; continue; }
 
-    const holder = db.prepare(
-      // branch-wide: existence probe to tell "not here yet" from "owned by
-      // someone else" — the first waits, the second is refused.
-      `SELECT device_id FROM ${spec.table} WHERE id = ?`,
-    ).get(ev.target_id) as { device_id: string | null } | undefined;
-    if (!holder) { out.waiting++; continue; }
-    markRefused.run(ev.id); out.refused++;
+      const holder = db.prepare(
+        // branch-wide: existence probe to tell "not here yet" from "owned by
+        // someone else" — the first waits, the second is refused.
+        `SELECT device_id FROM ${spec.table} WHERE id = ?`,
+      ).get(ev.target_id) as { device_id: string | null } | undefined;
+      if (!holder) { out.waiting++; continue; }
+      refuse(ev.id, ev.kind, 'the target row belongs to another device');
+    } catch (err: any) {
+      refuse(ev.id, ev.kind, String(err?.message ?? err));
+    }
   }
   return out;
+}
+
+/**
+ * F8: turn this device's refunds into `order_refunded` events — once each. Scanned rather than emitted at each refund
+ * site (the online refund, the offline one, a refund made on the web of a sale rung here), for the same reason the
+ * outbox is scanned: a path that depends on every site remembering a second call is one that silently misses rows.
+ * Returns how many were emitted.
+ */
+export function emitRefundEvents(limit = 200): number {
+  const db = getLocalDb();
+  const own = getDeviceConfig()?.device_id ?? null;
+  const rows = db.prepare(
+    // own: only this terminal's sales are its to report refunded; a web sale downloaded here (origin) is the cloud's.
+    `SELECT o.id, o.refunded_at, o.refunded_amount, o.refund_reason FROM orders o
+      WHERE o.refunded_at IS NOT NULL AND o.origin IS NULL AND COALESCE(o.device_id,'') = COALESCE(?,'')
+        AND NOT EXISTS (SELECT 1 FROM events e WHERE e.kind = 'order_refunded' AND e.target_id = o.id)
+      ORDER BY o.refunded_at LIMIT ?`,
+  ).all(own, limit) as Array<{ id: string; refunded_at: string; refunded_amount: number | null; refund_reason: string | null }>;
+  if (!rows.length) return 0;
+  // branch-wide: keyed by order_id to the own-scoped order above (a payment has no device of its own).
+  const legs = db.prepare(`SELECT id, method, amount, reference, status, created_at FROM payments WHERE order_id = ? AND status = 'refunded'`);
+  db.transaction(() => {
+    for (const r of rows) {
+      emitEvent('order_refunded', r.id, {
+        refunded_at: r.refunded_at, refunded_amount: Number(r.refunded_amount) || 0, refund_reason: r.refund_reason ?? null,
+        payments: legs.all(r.id),
+      });
+    }
+  })();
+  return rows.length;
 }
