@@ -13,7 +13,7 @@
 
 import { latestReady, shareDir, tillVersions } from './updateShare';   // A443
 import { cleanOffer, type Offer } from './offers';   // A445
-import { getMacAddressCached } from './machineFingerprint';
+import { getMacAddressCached, identityHeaders } from './machineFingerprint';
 import { app, ipcMain, net, dialog, BrowserWindow } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
 import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from './escposBridge';
@@ -34,7 +34,7 @@ function resolveReceiptLogo(): MonoRaster | undefined {
 import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
 import { getUpdateStatus, installUpdateNow } from './autoUpdate';
-import { logLine } from './logFile';
+import { logLine, authLog } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
 import { getReceiptPay } from './receiptPay';   // A450
 import { isSessionRefusal } from './sessionRecovery';   // A407
@@ -45,14 +45,14 @@ import { cacheStaffCredential, verifyPinOffline } from './pinCache';
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
+import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { tillBranchId } from './deviceConfig';   // A446
 import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
+import { openShift, addFloat, recordExpense, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { branchDay } from './branchDay';   // A431 / A432
 import { cloudBranchOrders, mirrorTillRefund, reverseRiderPayout } from './webSales';
@@ -67,6 +67,8 @@ import { exportDailySalesReport } from './dailySalesReport';
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from './branchClose';
+import { executeShiftMoney, createShiftMoneyInstruction, cancelShiftMoneyInstruction, SHIFT_MONEY_CLOSED, type ShiftMoneyPayload } from './branchClose';   // A465
+import { ownOpenShift } from './shiftService';   // A465
 import { takeSnapshot, setBackupDir, maintenanceStatus } from './maintenance';
 import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { localOrderDetail } from './managerReports';   // A444
@@ -134,7 +136,9 @@ export function registerIpcHandlers() {
     }
     const res = await cloudFetch(`${getCloudUrl()}/api/auth/enrol/redeem`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // A477: which machine this is (MAC as A182; the MachineGuid and BIOS serial hashed) — the cloud binds the till's
+      // key to it; a technician's rejoin records the machine it is done on.
+      headers: { 'Content-Type': 'application/json', ...(await identityHeaders().catch(() => ({}))) },
       body: JSON.stringify({
         business_id: businessId,
         code,
@@ -153,7 +157,7 @@ export function registerIpcHandlers() {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? (rejoin ? 'Rejoin failed' : 'Enrolment failed'));
+    if (!res.ok) { authLog(rejoin ? 'rejoin-refused' : 'join-refused', String(data?.code ?? `HTTP ${res.status}`)); throw new Error(data.error ?? (rejoin ? 'Rejoin failed' : 'Enrolment failed')); }
 
     if (!rejoin) clearCatalogue(db);
     db.prepare(`
@@ -192,6 +196,9 @@ export function registerIpcHandlers() {
     }
 
     configureSyncEngine(getCloudUrl(), data.token, data.refreshToken ?? '');
+    // A477: a technician's action — the renewal gate opens at once (a refused session waits 15 min otherwise).
+    resetRenewalGate(rejoin ? 'a technician rejoined this till' : 'the till joined its business');
+    authLog(rejoin ? 'rejoin' : 'join', `business ${data.business?.id ?? businessId}${data.deviceSecret ? ', device secret kept' : ''}`);
     refreshTechConfig(data.token).catch(() => {});
     logLine('enrol', rejoin ? 'the technician rejoined this till to its business — everything on it kept' : 'joined the business');
     await syncAll().catch(console.error);
@@ -694,7 +701,10 @@ export function registerIpcHandlers() {
     // under the till's own token (syncEngine authHeaders) and cashier_id comes from
     // this staff_session row, so the sale queues, attributes correctly and syncs
     // when the line returns. Shared by the node, node-own-roster and cache paths.
+    // A477: where the sign-in was decided, for auth.log — the branch server, or this till itself.
+    let signInSource: 'node' | 'local' = 'local';
     const signInLocal = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
+      authLog('sign-in', `source=${signInSource}`);
       const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
       // A167: token is TEXT NOT NULL (localDb.ts). An offline session has no
       // server JWT, but writing NULL here throws `NOT NULL constraint failed:
@@ -749,7 +759,7 @@ export function registerIpcHandlers() {
     let nodeSaidNo: string | null = null;
     if (hasNodeUrl) {
       const r = await verifyPinAtNodeClient(String(pin), branch_id);
-      if (r.status === 'ok') { logLine('pin', `node sign-in: ${r.staff.name}`); return signInLocal(r.staff); }
+      if (r.status === 'ok') { logLine('pin', `node sign-in: ${r.staff.name}`); signInSource = 'node'; return signInLocal(r.staff); }
       if (r.status === 'rejected') { nodeSaidNo = r.message; logLine('pin', `the branch server did not know that PIN (${r.message}) - asking the cloud`); }
       // transport failure → fall through to the cloud
     }
@@ -772,15 +782,27 @@ export function registerIpcHandlers() {
       throw new Error(nodeSaidNo ?? (v.reason === 'no_match' ? 'Invalid PIN' : verdict.message));
     };
 
+    // A473: the cloud has refused this till's own session in the last minute (a technician must rejoin it) — asking again
+    // would only repeat the refusal after three round trips (the PIN, the renewal, the device sign-in). The answer is the
+    // same as A407's below, without the wait.
+    if (tillSessionRefusedRecently()) {
+      logLine('pin', 'the cloud refused this till\'s session in the last minute - signing in on the till\'s own PIN check at once');
+      return fallbackToLocalAuthority();
+    }
+
     // 2. The cloud, exactly as before.
+    // A473: a PIN this till already knows (its staff list or a saved sign-in) waits 4 s for the cloud (not 8) before the list decides —
+    // a slow line no longer holds the cashier at the PIN pad. An unknown PIN still waits the full 8 s for the cloud.
+    const knownHere = verifyPinAtNode(String(pin), branch_id).ok || verifyPinOffline(String(pin), branch_id).ok;
     let res: Awaited<ReturnType<typeof tillFetch>>;
     try {
-      res = await tillFetch('/api/auth/verify-pin', {
+      // A473: the whole exchange is bounded — the per-request limit did not cover the renewal after a 401.
+      res = await withinMs(tillFetch('/api/auth/verify-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // PIN, branch, the running build and this till's name (verifyPinBody).
       body: verifyPinBody(String(pin), branch_id),
-      }, 8_000);   // A446: 8 s, then this till's own staff list
+      }, knownHere ? 4_000 : 8_000), knownHere ? 5_000 : 10_000);   // A446: 8 s, then this till's own staff list
     } catch (netErr: any) {
       logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
       return fallbackToLocalAuthority();
@@ -811,6 +833,7 @@ export function registerIpcHandlers() {
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
 
     // Online sign-in succeeded: an offline PIN held from an earlier sign-in is no longer needed (A345).
+    authLog('sign-in', 'source=cloud');
     clearOfflinePin();
     const branchRow = persistCloudSignIn(data, branch_id);
 
@@ -1864,6 +1887,72 @@ export function registerIpcHandlers() {
       return { ok: false, error: err?.message ?? 'Could not confirm the shift' };
     }
   });
+  // A465 (owner, 2026-10-13): a manager on the BRANCH SERVER records a cash in, cash out or expense on ANY running shift
+  // of the branch. The server never writes another till's row: it queues an instruction that till collects (~15 s) and
+  // records on its own books — its Z-report, its push and Close Branch stay one story. The server's own drawer: at once.
+  handle('branchClose:shiftMoney', async (_e, payload) => {
+    const p = assertPayload<{ device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number;
+      reason?: string; description?: string; expense_category_id?: string; category_name?: string; payment_method?: string }>({
+      device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] },
+      amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true },
+      expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true },
+    }, payload);
+    try {
+      const cfg = getDeviceConfig();
+      if (!isNodeRole(cfg?.device_role)) return { ok: false, error: 'Only the branch server records money on another till\'s shift.' };
+      // A manager signed in here approves it as themselves (A388); A453's manager-only switch always lets a manager through.
+      const me = signedInConfirmer();
+      if (!me || !mayRecordMoneyMovement(getPosFeatures(), true)) return { ok: false, error: 'Only a manager (or the owner) signed in here can do this.' };
+      const amount = Math.round(Number(p.amount) * 100) / 100;
+      if (!(amount > 0)) return { ok: false, error: 'Enter an amount greater than zero.' };
+      if (p.kind === 'expense' && !String(p.description ?? '').trim()) return { ok: false, error: 'Description is required.' };
+      const isSelf = p.device_id === cfg?.device_id;
+      if (isSelf) {
+        if (!ownOpenShift(p.shift_id)) return { ok: false, error: SHIFT_MONEY_CLOSED };
+      } else {
+        // Only to a till heard from in the last minute that reports this shift open — never queued into the dark.
+        const row = getLocalDb().prepare(`SELECT state, updated_at FROM node_peer_state WHERE device_id = ?`).get(p.device_id) as { state: string; updated_at: string } | undefined;
+        if (!row || Date.now() - new Date(row.updated_at).getTime() > 60_000) return { ok: false, error: 'That till has not been heard from — check it is on' };
+        let st: PeerDayState | null = null;
+        try { st = JSON.parse(row.state); } catch { /* unreadable */ }
+        if (!st?.shifts) return { ok: false, error: 'That till is on an older version — update it to record money on it from here.' };
+        if (!st.shifts.some((s) => s.id === p.shift_id && s.state === 'open')) return { ok: false, error: 'That shift is no longer open on its till.' };
+      }
+      const instr: ShiftMoneyPayload = {
+        row_id: uuid(), shift_id: p.shift_id, kind: p.kind, amount,
+        reason: p.kind === 'expense' ? null : (String(p.reason ?? '').trim().slice(0, 200) || null),
+        description: p.kind === 'expense' ? String(p.description).trim().slice(0, 200) : null,
+        expense_category_id: p.kind === 'expense' ? (p.expense_category_id || null) : null,
+        category_name: p.kind === 'expense' ? (p.category_name ?? null) : null,
+        payment_method: p.kind === 'expense' ? (p.payment_method || 'cash') : null,
+        approver: me, recorded_by: me,
+      };
+      const what = `${p.kind === 'expense' ? 'expense' : p.kind === 'float_in' ? 'cash in' : 'cash out'} ${amount}`;
+      if (isSelf) {
+        const r = executeShiftMoney(instr);
+        if (!r.ok) return { ok: false, error: r.error };
+        pushNow();
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send('shift:changedElsewhere', { id: p.shift_id, kind: p.kind });
+        }
+        logLine('branchClose', `A465 ${what} on this server's shift ${p.shift_id} by ${me.name ?? me.id}`);
+        return { ok: true, row_id: instr.row_id, direct: true, summary: r.summary ?? null };
+      }
+      const { id } = createShiftMoneyInstruction(p.device_id, instr, me.id);
+      logLine('branchClose', `A465 ${what} on shift ${p.shift_id} sent to ${p.device_id} by ${me.name ?? me.id}`);
+      return { ok: true, instruction_id: id, row_id: instr.row_id };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? 'Could not record it' };
+    }
+  });
+  // A465: withdraw one the till has not answered yet.
+  handle('branchClose:cancelShiftMoney', async (_e, payload) => {
+    const { instruction_id } = assertPayload<{ instruction_id: number }>({ instruction_id: { t: 'number' } }, payload);
+    if (!isNodeRole(getDeviceConfig()?.device_role) || !signedInConfirmer()) return { ok: false, error: 'Only a manager on the branch server can do this.' };
+    const removed = cancelShiftMoneyInstruction(instruction_id);
+    if (removed) logLine('branchClose', `A465 instruction ${instruction_id} withdrawn`);
+    return removed ? { ok: true } : { ok: false, error: 'The till has already answered — it cannot be withdrawn now.' };
+  });
   // A452: Close Branch — every till's day, once no drawer is open and no shift waits for a manager (owner: "when all
   // shifts are closed and confirmed they get a close branch"). No second count: each till closes with its confirmed
   // shifts' cash. The server's date is final — a till still on yesterday closes that day too.
@@ -2295,7 +2384,7 @@ export function registerIpcHandlers() {
    * real rejection (revoked, deactivated, permissions changed) and must reach
    * the user rather than looping.
    */
-  async function manageFetch(path: string, method: string, body?: any) {
+  async function manageFetch(path: string, method: string, body?: any, opts?: { binary?: boolean }) {
     const db = getLocalDb();
     const readToken = () => readStaffTokens().token;
 
@@ -2336,6 +2425,11 @@ export function registerIpcHandlers() {
       throw new Error(NO_CONNECTION_MESSAGE);
     }
     lastManageFailure = null;
+
+    // A466: a file from the cloud (the monthly pack's Excel) — its bytes and the name the cloud gave it.
+    if (opts?.binary && res.ok) {
+      return { bytes: Buffer.from(await res.arrayBuffer()), disposition: res.headers.get('content-disposition') };
+    }
 
     const text = await res.text();
     let data: any = null;
@@ -2813,6 +2907,76 @@ export function registerIpcHandlers() {
     return r;
   });
 
+  // ── A466: the monthly pack on the till (Manager › Sales › Monthly pack) ─────────────────────────────────────────────
+  // Owner, 2026-10-13: "desktop app does not have some reports I added yesterday, can you add them" — A455's monthly pack.
+  // The cloud builds it from every till's records (routes/reports-monthly.ts), so it is online only; the manager's own
+  // PIN sign-in reads it (reports.financial) and records for the books (expenses.manage), for this till's branch.
+  const MONTHLY_OFFLINE = 'The monthly pack needs a connection — it is built from every till\'s records on the cloud.';
+  const monthlyAnswer = async (fn: () => Promise<any>, refused = 'Your role does not open the monthly pack (it needs financial reports).') => {
+    try { return { ok: true, data: await fn() }; }
+    catch (e: any) {
+      const offline = e?.message === NO_CONNECTION_MESSAGE || e?.message === OFFLINE_SESSION_MESSAGE;
+      // A plain 403 (no code) is the person's permission; manageFetch words it for a change, this says which.
+      const error = offline ? MONTHLY_OFFLINE : e?.status === 403 && !e?.code ? refused : (e?.message ?? MONTHLY_OFFLINE);
+      return { ok: false, error, code: offline ? 'offline' : (e?.code ?? null), status: e?.status ?? null };
+    }
+  };
+  const MONTHLY_RECORD_REFUSED = 'Your role does not record for the books (it needs expense management), or this is not your branch.';
+  /** month=YYYY-MM&branch_id=… for this till's branch (or the one asked for), or why not. */
+  const monthlyQuery = (month: string, branchId?: string): { q: string; branch: string } | { error: string } => {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month ?? ''))) return { error: 'Pick a month.' };
+    const branch = (branchId && branchId.trim()) || transferBranch();
+    if (!branch) return { error: 'This till is not bound to a branch.' };
+    return { q: `month=${month}&branch_id=${encodeURIComponent(branch)}`, branch };
+  };
+  handle('monthly:get', async (_e, payload) => {
+    const p = assertPayload<{ month: string; branch_id?: string }>({ month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } }, payload);
+    const mq = monthlyQuery(p.month, p.branch_id);
+    if ('error' in mq) return { ok: false, error: mq.error };
+    const r = await monthlyAnswer(() => manageFetch(`/api/reports/monthly?${mq.q}`, 'GET'));
+    return r.ok ? { ...r, branch_id: mq.branch } : r;
+  });
+  handle('monthly:export', async (_e, payload) => {
+    const p = assertPayload<{ month: string; branch_id?: string }>({ month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } }, payload);
+    const mq = monthlyQuery(p.month, p.branch_id);
+    if ('error' in mq) return { ok: false, error: mq.error };
+    const got = await monthlyAnswer(() => manageFetch(`/api/reports/monthly/export?${mq.q}`, 'GET', undefined, { binary: true }));
+    if (!got.ok) return got;
+    const { bytes, disposition } = got.data as { bytes: Buffer; disposition: string | null };
+    // The name the cloud gave it (the web's: zaptill-monthly-<branch>-<month>.xlsx).
+    const named = /filename="?([^";]+)"?/i.exec(disposition ?? '')?.[1];
+    const suggested = named && /^[\w.-]+\.xlsx$/i.test(named) ? named : `zaptill-monthly-branch-${p.month}.xlsx`;
+    try {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const choice = await dialog.showSaveDialog(win!, { title: 'Save the monthly pack', defaultPath: suggested,
+        filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+      if (choice.canceled || !choice.filePath) return { ok: false, canceled: true };   // cancelling is not a failure
+      const target = /\.xlsx$/i.test(choice.filePath) ? choice.filePath : `${choice.filePath}.xlsx`;
+      fs.writeFileSync(target, bytes);
+      return { ok: true, path: target };
+    } catch (e: any) { return { ok: false, error: e?.message ?? 'Could not save the file.' }; }
+  });
+  handle('monthly:movements', async (_e, payload) => {
+    const p = assertPayload<{ month: string; branch_id?: string }>({ month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } }, payload);
+    const mq = monthlyQuery(p.month, p.branch_id);
+    if ('error' in mq) return { ok: false, error: mq.error };
+    return monthlyAnswer(async () => (await manageFetch(`/api/reports/monthly/movements?${mq.q}`, 'GET')) ?? []);
+  });
+  handle('monthly:addMovement', async (_e, payload) => {
+    const p = assertPayload<{ movement_date: string; method: string; kind: string; amount: number; note?: string; branch_id?: string }>(
+      { movement_date: { t: 'string', min: 10 }, method: { t: 'string', min: 1 }, kind: { t: 'string', min: 1 }, amount: { t: 'number' },
+        note: { t: 'string', optional: true }, branch_id: { t: 'string', optional: true } }, payload);
+    const branch = (p.branch_id && p.branch_id.trim()) || transferBranch();
+    if (!branch) return { ok: false, error: 'This till is not bound to a branch.' };
+    // The cloud checks the rest (kind, amount, a note for other income / personal) and the person's expenses.manage.
+    return monthlyAnswer(() => manageFetch('/api/reports/monthly/movements', 'POST', { branch_id: branch, movement_date: p.movement_date,
+      method: p.method, kind: p.kind, amount: p.amount, note: p.note?.trim() || undefined }), MONTHLY_RECORD_REFUSED);
+  });
+  handle('monthly:removeMovement', async (_e, payload) => {
+    const p = assertPayload<{ id: string }>({ id: { t: 'string', min: 1 } }, payload);
+    return monthlyAnswer(() => manageFetch(`/api/reports/monthly/movements/${encodeURIComponent(p.id)}`, 'DELETE'), MONTHLY_RECORD_REFUSED);
+  });
+
   // A460: premium writes (combos, variants, modifiers, offers, wastage) refuse without the online licence — the screens
   // are hidden then, and a screen hidden is not a door locked.
   const requireOnlineLicence = (): void => {
@@ -3041,47 +3205,21 @@ export function registerIpcHandlers() {
 
   // Save expense locally (syncs up on next push pass)
   handle('expense:create', async (_event, {
-    description, amount, expense_category_id, paid_by, payment_method, category_name, pin,
+    description, amount, expense_category_id, paid_by, payment_method, category_name, pin, no_drawer,
   }: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
-       payment_method?: string; category_name?: string; pin?: string }) => {
-    const db = getLocalDb();
+       payment_method?: string; category_name?: string; pin?: string; no_drawer?: boolean }) => {
     // A453: with 'cashier_no_money_out' only a manager signed in here records an expense.
     if (!mayRecordMoneyMovement(getPosFeatures(), signedInConfirmer() !== null)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
     const approver = await payoutApprover(pin);   // 0.6.37 (A388): every expense needs a manager
-    const session  = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
-    const staff    = db.prepare(`SELECT branch_id, staff_id FROM staff_session WHERE id=1`).get() as any;
-    const shift    = db.prepare(`SELECT id FROM shifts WHERE status='open'
-       AND COALESCE(device_id,'') = COALESCE(?,'')
-     ORDER BY created_at DESC LIMIT 1`).get(getDeviceConfig()?.device_id ?? null) as any;
-
-    if (!session?.business_id) throw new Error('No active session');
-    if (!staff?.branch_id)     throw new Error('No staff session');
-
-    const id = uuid();   // A179: MUST be a UUID — the cloud expenses.id is uuid; a
-                         // prefixed id (exp_…) fails 22P02 and, batched with shifts/
-                         // days/floats, blocks ALL of them from syncing.
-    const now = new Date().toISOString();
-
-    db.prepare(`
-      INSERT INTO expenses
-        (id, business_id, branch_id, expense_category_id, description, amount,
-         paid_by, expense_date, shift_id, created_at, device_id, payment_method, expense_type_name,
-         approved_by, approved_by_name, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).run(
-      id, session.business_id, staff.branch_id,
-      expense_category_id ?? null, description, amount,
-      paid_by ?? staff.staff_id ?? null,
-      now.slice(0, 10), shift?.id ?? null, now,
-      // See the note in shiftService.recordFloat: a NULL-attributed row matches
-      // nothing under COALESCE(device_id,'') = COALESCE(own,''), so it is never
-      // collected by the push and the expense silently never leaves the till.
-      getDeviceConfig()?.device_id ?? null,
-      // 0.6.27: how it was paid (only cash leaves the drawer) and the type's name (the Z-report shows it, offline too).
-      cleanExpenseMethod(payment_method),
-      expense_category_id ? (String(category_name ?? '').trim().slice(0, 100) || null) : null,
-      approver.id, approver.name,
-    );
+    // the till's own open drawer (none: paid outside any drawer). A466: on the branch server a manager may record it
+    // "Not from a drawer" even while this terminal has a shift open (owner: "the manager can fail to choose a drawer").
+    const outside = no_drawer === true && isNodeRole(getDeviceConfig()?.device_role) && signedInConfirmer() !== null;
+    const shift = outside ? null : getOpenShift();
+    // A465: the insert lives in shiftService.recordExpense — the branch server's instruction records the same way.
+    const { id } = recordExpense({
+      shiftId: shift?.id ?? null, description, amount, expense_category_id: expense_category_id ?? null,
+      category_name: category_name ?? null, payment_method: payment_method ?? null, paid_by: paid_by ?? null, approver,
+    });
     logLine('shift', `expense ${Number(amount)} approved by ${approver.name ?? approver.id}`);
     return { id, approvedBy: approver.name };
   });

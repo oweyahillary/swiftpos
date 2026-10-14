@@ -364,16 +364,16 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
   }
 
   return (
-    <div className="p-6 max-w-4xl space-y-8">
+    <div className="p-4 sm:p-6 max-w-4xl space-y-8">
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">{toast}</div>
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">{toast}</div>
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Printers</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Printers</h1>
           <p className="text-sm text-gray-500 mt-1">Configure receipt and kitchen printers for this branch</p>
         </div>
         <div className="flex items-center gap-3">
@@ -459,7 +459,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
               <p className="text-xs text-gray-500 mt-0.5">These always print all items — no category filter needed.</p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {FULL_ORDER_SLOTS.map(slot => {
                 const existing = printerOfType(slot.type);
                 return (

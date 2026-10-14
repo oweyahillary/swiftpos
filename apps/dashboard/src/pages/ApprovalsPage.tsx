@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { dateTime } from '../lib/format';
 
 interface Change {
   id: string; entity: string; op: string; summary: string; proposed: Record<string, unknown> | null; cloud_value: Record<string, unknown> | null;
@@ -44,7 +45,7 @@ export default function ApprovalsPage() {
   };
 
   return (
-    <div className="space-y-5 max-w-4xl">
+    <div className="p-4 sm:p-6 space-y-5 max-w-4xl">
       <div>
         <h1 className="text-xl font-semibold text-white">Approvals</h1>
         <p className="text-sm text-gray-400 mt-1">Changes made on a till that differ from what was changed elsewhere. The till keeps its own until you decide.</p>
@@ -60,22 +61,24 @@ export default function ApprovalsPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-white font-medium">{c.summary}</p>
-                <p className="text-xs text-gray-400 mt-0.5">On a till by {c.made_by_name ?? 'a manager'}{c.made_at ? `, ${new Date(c.made_at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}</p>
+                <p className="text-xs text-gray-400 mt-0.5">On a till by {c.made_by_name ?? 'a manager'}{c.made_at ? `, ${dateTime(c.made_at)}` : ''}</p>
               </div>
             </div>
-            <table className="w-full text-sm">
-              <thead><tr className="text-xs text-gray-400"><th className="text-left font-medium py-1">Field</th><th className="text-left font-medium py-1">The till's</th><th className="text-left font-medium py-1">The cloud's now</th></tr></thead>
-              <tbody className="divide-y divide-gray-800">
-                {fields.map((k) => (
-                  <tr key={k}>
-                    <td className="py-1.5 text-gray-400">{FIELD[k] ?? k}</td>
-                    <td className="py-1.5 text-white">{show(c.proposed?.[k])}</td>
-                    <td className="py-1.5 text-gray-300">{show(c.cloud_value?.[k])}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="flex gap-2">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-xs text-gray-400"><th className="text-left font-medium py-1">Field</th><th className="text-left font-medium py-1">The till's</th><th className="text-left font-medium py-1">The cloud's now</th></tr></thead>
+                <tbody className="divide-y divide-gray-800">
+                  {fields.map((k) => (
+                    <tr key={k}>
+                      <td className="py-1.5 text-gray-400">{FIELD[k] ?? k}</td>
+                      <td className="py-1.5 text-white">{show(c.proposed?.[k])}</td>
+                      <td className="py-1.5 text-gray-300">{show(c.cloud_value?.[k])}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap gap-2">
               <button data-testid="approve" disabled={busy === c.id} onClick={() => void decide(c, true)}
                 className="px-4 py-2 bg-swift hover:bg-swift-light text-black text-sm font-semibold rounded-lg disabled:opacity-50">Take the till's</button>
               <button disabled={busy === c.id} onClick={() => void decide(c, false)}

@@ -17,7 +17,7 @@ import { getDeviceConfig, canSell, getPosFeatures, getCashierHistoryMethods, get
 import { checkStaleDay, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
-import { nonCashExpenses, expenseLabel } from './expenseMethod';
+import { nonCashExpenses, expenseLabel, cleanExpenseMethod } from './expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from './confirmReasons';
 import { kitchenVoidsForShift, type KitchenVoidLine } from './kitchenService';
 import type { KitchenVoidSummary } from './kitchenLines';
@@ -270,14 +270,38 @@ export function openShift(opening_float = 0, drawerLabel?: string | null): any {
 // 0.6.37 (A388): `approver` — the manager who approved a cash-out (ipcHandlers asks for it; a pay-in needs none).
 export function addFloat(type: 'float_in' | 'float_out', amount: number, reason?: string,
                          approver?: { id: string; name: string | null } | null): any {
+  if (type !== 'float_in' && type !== 'float_out') throw new Error('type must be float_in or float_out');
+  if (!(Number(amount) > 0)) throw new Error('amount must be greater than zero');
+  const shift = getOpenShift();
+  if (!shift) throw new Error('No open shift');
+  return addFloatToShift(shift.id, type, amount, reason, approver);
+}
+
+/** A465: one of THIS till's open shifts by id (null when it is closed, missing, or another till's). */
+export function ownOpenShift(shiftId: string): any | null {
+  const row = getLocalDb().prepare(`SELECT * FROM shifts WHERE id = ? AND status = 'open' AND COALESCE(device_id,'') = COALESCE(?,'')`)
+    .get(String(shiftId ?? ''), getDeviceConfig()?.device_id ?? null);
+  return row ?? null;
+}
+
+/**
+ * A465: a float_in / float_out on a named shift of this till — the till's own open drawer (addFloat), or one a manager on
+ * the branch server chose (branchClose.executeShiftMoney). `rowId` makes it idempotent: an instruction delivered twice
+ * records once.
+ */
+export function addFloatToShift(shiftId: string, type: 'float_in' | 'float_out', amount: number, reason?: string | null,
+                                approver?: { id: string; name: string | null } | null, rowId?: string | null): any {
   const db = getLocalDb();
   if (type !== 'float_in' && type !== 'float_out') throw new Error('type must be float_in or float_out');
   if (!(Number(amount) > 0)) throw new Error('amount must be greater than zero');
-
-  const shift = getOpenShift();
+  if (rowId) {
+    const had = db.prepare(`SELECT * FROM float_transactions WHERE id = ?`).get(rowId);
+    if (had) return had;   // asked again: already recorded
+  }
+  const shift = ownOpenShift(shiftId);
   if (!shift) throw new Error('No open shift');
 
-  const id = uuid();
+  const id = rowId || uuid();
   const now = new Date().toISOString();
   // device_id is what makes this row THIS terminal's. Without it the row is
   // NULL-attributed, and "mine" is COALESCE(device_id,'') = COALESCE(own,'') —
@@ -293,6 +317,70 @@ export function addFloat(type: 'float_in' | 'float_out', amount: number, reason?
          getDeviceConfig()?.device_id ?? null, approver?.id ?? null, approver?.name ?? null);
 
   return db.prepare(`SELECT * FROM float_transactions WHERE id=?`).get(id);
+}
+
+/** A465: an expense as this till records it — Shift → Expenses, Manager › Expenses, or a branch server's instruction. */
+export interface ExpenseInput {
+  /** The drawer it comes out of: one of this till's OPEN shifts, or null (paid outside any drawer). */
+  shiftId: string | null;
+  /** Idempotency: an instruction delivered twice records once. */
+  rowId?: string | null;
+  description: string;
+  amount: number;
+  expense_category_id?: string | null;
+  category_name?: string | null;
+  payment_method?: string | null;
+  paid_by?: string | null;
+  approver: { id: string; name: string | null };
+}
+
+/**
+ * A465: record an expense on this till's books (moved out of IPC expense:create, rules unchanged). A179: the id is a
+ * uuid. device_id is this till's. Named shift → it must be this till's and open.
+ */
+export function recordExpense(e: ExpenseInput): { id: string; already?: boolean } {
+  const db = getLocalDb();
+  if (e.rowId) {
+    const had = db.prepare(`SELECT id FROM expenses WHERE id = ?`).get(e.rowId) as { id: string } | undefined;
+    if (had) return { id: had.id, already: true };
+  }
+  let shift: any = null;
+  if (e.shiftId) {
+    shift = ownOpenShift(e.shiftId);
+    if (!shift) throw new Error('That shift is not open on this till');
+  }
+  const session = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
+  const staff   = db.prepare(`SELECT branch_id, staff_id FROM staff_session WHERE id=1`).get() as any;
+  const businessId = session?.business_id ?? null;
+  const branchId = staff?.branch_id ?? shift?.branch_id ?? null;   // A465: else the drawer's branch (nobody may be signed in)
+  if (!businessId) throw new Error('No active session');
+  if (!branchId)   throw new Error('No staff session');
+
+  const id = e.rowId || uuid();   // A179: MUST be a UUID — the cloud expenses.id is uuid; a
+                                  // prefixed id (exp_…) fails 22P02 and, batched with shifts/
+                                  // days/floats, blocks ALL of them from syncing.
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO expenses
+      (id, business_id, branch_id, expense_category_id, description, amount,
+       paid_by, expense_date, shift_id, created_at, device_id, payment_method, expense_type_name,
+       approved_by, approved_by_name, sync_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+  `).run(
+    id, businessId, branchId,
+    e.expense_category_id ?? null, e.description, Number(e.amount),
+    e.paid_by ?? staff?.staff_id ?? null,
+    now.slice(0, 10), shift?.id ?? null, now,
+    // See the note in addFloatToShift: a NULL-attributed row matches
+    // nothing under COALESCE(device_id,'') = COALESCE(own,''), so it is never
+    // collected by the push and the expense silently never leaves the till.
+    getDeviceConfig()?.device_id ?? null,
+    // 0.6.27: how it was paid (only cash leaves the drawer) and the type's name (the Z-report shows it, offline too).
+    cleanExpenseMethod(e.payment_method ?? undefined),
+    e.expense_category_id ? (String(e.category_name ?? '').trim().slice(0, 100) || null) : null,
+    e.approver.id, e.approver.name,
+  );
+  return { id };
 }
 
 /** 0.6.37 (A388): " · approved Mary" on a Z-report line; nothing for a line recorded before approvals. */

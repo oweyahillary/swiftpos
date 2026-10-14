@@ -300,6 +300,12 @@ jobs:
         working-directory: apps/server
         run: npm ci
 
+      # report-downloads (A467) builds a report workbook with the dashboard's own
+      # xlsx and reads it back — the same library the Download Excel button loads.
+      - name: Install dashboard deps
+        working-directory: apps/dashboard
+        run: npm ci
+
       # order-error-classification imports apps/server/dist, so that it drives
       # the SHIPPED classifier rather than a copy of it that can drift.
       - name: Build server
@@ -723,6 +729,13 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/till-session-recovery.test.mjs
 
+      # A477 — the renewal handshake on the till: the refresh token read from disk only, written before the ack, an ack
+      # failure harmless, one back-off gate for every caller after a refusal (15 min; Retry-After on a 429), the machine
+      # sent hashed, the ack through the branch server, logs 5 MB x 10 with repeats collapsed and auth.log 2 MB x 20.
+      - name: Desktop renewal handshake (A477)
+        working-directory: apps/desktop
+        run: node --no-warnings test/refresh-handshake-till.test.mjs
+
       # A415 — the till signs in as itself: nothing on the till signs it out of the business; a technician rejoins it
       # from the tech console (keeping everything on it); a branch server with no roster checks PINs on the till itself.
       - name: Desktop till rejoin (no owner on the till)
@@ -916,6 +929,18 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/backup-folder.test.mjs
 
+      # A465 — a manager on the branch server records cash in / out or an expense on any running shift; the till that
+      # holds the drawer records it on its own books.
+      - name: Desktop cash in / out and expenses on any drawer from the branch server
+        working-directory: apps/desktop
+        run: node --no-warnings test/server-drawer-money.test.mjs
+
+      # A466 — the web's Monthly pack (A455) on the till: Manager › Sales › Monthly pack, from the cloud with the
+      # manager's own sign-in (online only), Download Excel, Record for the books (expenses.manage).
+      - name: Desktop monthly pack
+        working-directory: apps/desktop
+        run: node --no-warnings test/monthly-pack-till.test.mjs
+
       # A454 — the cashier's Z-report at shift close is their own count (no reconciliation), on the till's receipt
       # printer even when that is a Windows printer.
       - name: Desktop cashier's Z-report copy and the Z-report on the Windows receipt printer
@@ -931,6 +956,30 @@ jobs:
       - name: Desktop Overview layout
         working-directory: apps/desktop
         run: node --no-warnings test/overview-look.test.mjs
+
+      # A470 — the till answers every tap (press, bump, new-line tint, dialogs fade + pop, notices slide, busy rings),
+      # reduced-motion safe, and the POS grid's speed fixes (memoised list and counts, memoised tiles, lazy pictures).
+      - name: Desktop till feel and POS grid speed
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-feel.test.mjs
+
+      # A472 — the menu in pages: the till's Menu screen (25 / 50 / 100 a page, reset on a filter, clamped on a save)
+      # and its POS grid drawn a screenful at a time as the cashier scrolls; the shared page maths.
+      - name: Desktop menu pages and incremental POS grid
+        working-directory: apps/desktop
+        run: node --no-warnings test/menu-pages.test.mjs
+
+      # A475 — every till manager list that can run past 50 rows is in pages (Orders, Expenses, Stock Levels, Branch
+      # Prices, Staff): one page drawn, a new filter → page 1, an edit keeps the page; counts and totals stay every row.
+      - name: Desktop pages on every long list
+        working-directory: apps/desktop
+        run: node --no-warnings test/pages-everywhere.test.mjs
+
+      # A473 — the PIN pad does not wait on a cloud that has refused the till's session, a known PIN waits 4 s not 8, and
+      # the whole cloud exchange (the renewal after a 401 included) is bounded.
+      - name: Desktop PIN sign-in speed
+        working-directory: apps/desktop
+        run: node --no-warnings test/fast-unlock.test.mjs
 
       # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
       - name: Desktop and web order detail, reprint, void and refund

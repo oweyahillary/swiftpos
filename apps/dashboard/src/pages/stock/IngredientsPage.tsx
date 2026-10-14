@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
@@ -6,6 +7,9 @@ import { usePermissions } from '../../context/PermissionsContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 import BulkIngredientImport from './BulkIngredientImport';
+import { money, dateTime } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,9 +56,6 @@ const EMPTY_FORM: IngredientForm = {
   unit_cost: '', current_stock: '0', reorder_level: '0', notes: '', is_packaging: false,
 };
 
-function fmt(n: number, currency: string) {
-  return new Intl.NumberFormat('en-KE', { style: 'currency', currency, minimumFractionDigits: 2 }).format(n);
-}
 
 function stockStatus(i: Ingredient): 'ok' | 'low' | 'out' {
   if (i.current_stock <= 0) return 'out';
@@ -71,6 +72,7 @@ export default function IngredientsPage() {
   const currency = business?.currency ?? 'KES';
   const { toast, showToast } = useToast();
   const canManage = can('ingredients.manage');
+  const more = useRowMore();   // A464: a phone shows Name, In Stock and the actions
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [ingredients, setIngredients]   = useState<Ingredient[]>([]);
@@ -228,19 +230,26 @@ export default function IngredientsPage() {
 
   const categories = [...new Set(ingredients.map(i => i.category).filter(Boolean))] as string[];
   const lowCount = ingredients.filter(i => stockStatus(i) !== 'ok').length;
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser). A new search or filter → page 1; an edit or a
+  // stock adjustment keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.ingredients');
+  useEffect(() => { setPage(1); }, [search, filterCat, filterStatus, activeBranchId]);
+  const paged = paginate(visible, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
       <Toast toast={toast} />
-    <div className="flex-1 overflow-y-auto p-6 space-y-5">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-white">Ingredients<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
           <p className="text-gray-400 text-sm mt-0.5">Raw supplies you order from suppliers</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {lowCount > 0 && (
             <span className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-xs font-medium">
               ⚠ {lowCount} low/out of stock
@@ -268,7 +277,7 @@ export default function IngredientsPage() {
           placeholder="Search ingredients…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift w-56"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift w-full sm:w-56"
         />
         <select
           value={filterCat}
@@ -299,86 +308,105 @@ export default function IngredientsPage() {
             {canManage && <p className="text-gray-600 text-xs mt-1">Click "+ Add Ingredient" to get started.</p>}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800">
-                {['Name', 'Category', 'Unit', 'In Stock', 'Reorder At', 'Unit Cost', 'Status', ''].map(h => (
-                  <th key={h} className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map(i => {
-                const st = stockStatus(i);
-                return (
-                  <tr key={i.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
-                    <td className="px-4 py-3">
-                      <p className="text-white font-medium">
-                        {i.name}
-                        {i.is_packaging && (
-                          <span className="ml-2 text-xs text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded align-middle">Packaging</span>
-                        )}
-                      </p>
-                      {i.notes && <p className="text-gray-600 text-xs truncate max-w-xs">{i.notes}</p>}
-                    </td>
-                    <td className="px-4 py-3">
-                      {i.category
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  {['Name', 'Category', 'Unit', 'In Stock', 'Reorder At', 'Unit Cost', 'Status', ''].map(h => (
+                    <th key={h} className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${['Name', 'In Stock', ''].includes(h) ? '' : DESK}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {paged.items.map(i => {
+                  const st = stockStatus(i);
+                  return (
+                    <Fragment key={i.id}>
+                    <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
+                      <td className="px-4 py-3">
+                        <p className="text-white font-medium">
+                          {i.name}
+                          {i.is_packaging && (
+                            <span className="ml-2 text-xs text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded align-middle">Packaging</span>
+                          )}
+                        </p>
+                        {i.notes && <p className="text-gray-600 text-xs truncate max-w-xs">{i.notes}</p>}
+                        <ViewMore open={more.isOpen(String(i.id))} onClick={() => more.toggle(String(i.id))} />
+                      </td>
+                      <td className={`px-4 py-3 ${DESK}`}>
+                        {i.category
+                          ? <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{i.category}</span>
+                          : <span className="text-gray-600 text-xs">—</span>}
+                      </td>
+                      <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{i.unit}</td>
+                      <td className="px-4 py-3">
+                        <span className={`font-semibold text-sm ${st === 'out' ? 'text-red-400' : st === 'low' ? 'text-amber-400' : 'text-white'}`}>
+                          {i.current_stock} {i.unit}
+                        </span>
+                        {st === 'out' && <span className="ml-1.5 text-xs text-red-500">OUT</span>}
+                        {st === 'low' && <span className="ml-1.5 text-xs text-amber-500">LOW</span>}
+                      </td>
+                      <td className={`px-4 py-3 text-gray-400 text-sm ${DESK}`}>
+                        {i.reorder_level > 0 ? `${i.reorder_level} ${i.unit}` : <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className={`px-4 py-3 text-gray-300 text-sm ${DESK}`}>
+                        {i.unit_cost != null ? money(i.unit_cost, currency) : <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className={`px-4 py-3 ${DESK}`}>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${i.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+                          {i.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 sm:opacity-0 sm:group-hover:opacity-100 justify-end transition-opacity">
+                          <button onClick={() => openMovements(i)} className="text-gray-500 hover:text-swift-text-hover text-xs transition-colors" title="History">History</button>
+                          {canManage && (
+                            <>
+                              <button onClick={() => openAdjust(i)} className="text-gray-500 hover:text-amber-400 text-xs transition-colors">Adjust</button>
+                              <button onClick={() => openEdit(i)} className="text-gray-500 hover:text-white text-xs transition-colors">Edit</button>
+                              <button onClick={() => toggleStatus(i)} className="text-gray-500 hover:text-red-400 text-xs transition-colors">
+                                {i.status === 'active' ? 'Deactivate' : 'Activate'}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    <MoreRow open={more.isOpen(String(i.id))} colSpan={3} items={[
+                      ['Category', i.category
                         ? <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{i.category}</span>
-                        : <span className="text-gray-600 text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{i.unit}</td>
-                    <td className="px-4 py-3">
-                      <span className={`font-semibold text-sm ${st === 'out' ? 'text-red-400' : st === 'low' ? 'text-amber-400' : 'text-white'}`}>
-                        {i.current_stock} {i.unit}
-                      </span>
-                      {st === 'out' && <span className="ml-1.5 text-xs text-red-500">OUT</span>}
-                      {st === 'low' && <span className="ml-1.5 text-xs text-amber-500">LOW</span>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-sm">
-                      {i.reorder_level > 0 ? `${i.reorder_level} ${i.unit}` : <span className="text-gray-600">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-300 text-sm">
-                      {i.unit_cost != null ? fmt(i.unit_cost, currency) : <span className="text-gray-600">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${i.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
-                        {i.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 justify-end transition-opacity">
-                        <button onClick={() => openMovements(i)} className="text-gray-500 hover:text-swift-text-hover text-xs transition-colors" title="History">History</button>
-                        {canManage && (
-                          <>
-                            <button onClick={() => openAdjust(i)} className="text-gray-500 hover:text-amber-400 text-xs transition-colors">Adjust</button>
-                            <button onClick={() => openEdit(i)} className="text-gray-500 hover:text-white text-xs transition-colors">Edit</button>
-                            <button onClick={() => toggleStatus(i)} className="text-gray-500 hover:text-red-400 text-xs transition-colors">
-                              {i.status === 'active' ? 'Deactivate' : 'Activate'}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                        : '—'],
+                      ['Unit', i.unit],
+                      ['Reorder At', i.reorder_level > 0 ? `${i.reorder_level} ${i.unit}` : '—'],
+                      ['Unit Cost', i.unit_cost != null ? money(i.unit_cost, currency) : '—'],
+                      ['Status', <span className={`px-2 py-0.5 rounded text-xs font-medium ${i.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+                          {i.status}
+                        </span>],
+                    ]} />
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!loading && visible.length > 0 && (
+          <Pager paged={paged} noun="ingredients" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         )}
       </div>
 
       {/* ── Add / Edit Modal ── */}
       {modal !== null && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-800">
               <h2 className="text-white font-semibold">{modal === 'add' ? 'Add Ingredient' : `Edit — ${(modal as Ingredient).name}`}</h2>
             </div>
             <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
 
               {/* Name */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
                   <label className="block text-gray-400 text-xs mb-1.5">Name <span className="text-red-400">*</span></label>
                   <input type="text" placeholder="e.g. Maize Flour, Kales, Cooking Oil…"
                     value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
@@ -425,7 +453,7 @@ export default function IngredientsPage() {
 
                 {/* Opening Stock — only on add */}
                 {modal === 'add' && (
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="block text-gray-400 text-xs mb-1.5">Opening Stock (current qty on hand)</label>
                     <input type="number" min="0" step="0.01" placeholder="0"
                       value={form.current_stock} onChange={e => setForm(f => ({ ...f, current_stock: e.target.value }))}
@@ -435,7 +463,7 @@ export default function IngredientsPage() {
                 )}
 
                 {/* Packaging flag */}
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -451,7 +479,7 @@ export default function IngredientsPage() {
                 </div>
 
                 {/* Notes */}
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="block text-gray-400 text-xs mb-1.5">Notes (optional)</label>
                   <input type="text" placeholder="e.g. Keep refrigerated, buy from Wakulima…"
                     value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -478,7 +506,7 @@ export default function IngredientsPage() {
       {/* ── Adjust Stock Modal ── */}
       {adjustTarget && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-800">
               <h2 className="text-white font-semibold">Adjust Stock</h2>
               <p className="text-gray-500 text-xs mt-0.5">{adjustTarget.name} — current: <span className="text-white">{adjustTarget.current_stock} {adjustTarget.unit}</span></p>
@@ -577,7 +605,7 @@ export default function IngredientsPage() {
                         {m.notes && <span className="text-gray-500 text-xs truncate">{m.notes}</span>}
                       </div>
                       <p className="text-gray-600 text-xs mt-0.5">
-                        {new Date(m.created_at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {dateTime(m.created_at)}
                         {m.users?.name && ` · ${m.users.name}`}
                       </p>
                     </div>

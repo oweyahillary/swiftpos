@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { dateTime } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface Movement {
   id: string;
@@ -32,12 +35,12 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
       .then(data => { setMovements(data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, [product.id]);
-
-  const fmt = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' }) +
-      ' ' + d.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
-  };
+  // A475: the last 100 movements in pages (25 / 50 / 100, remembered in this browser); another product → page 1.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.stockMovements');
+  useEffect(() => { setPage(1); }, [product.id]);
+  const paged = paginate(movements, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <>
@@ -61,7 +64,7 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
             <div className="text-center py-16 text-gray-600 text-sm">No stock movements yet</div>
           ) : (
             <div className="divide-y divide-gray-800">
-              {movements.map(m => {
+              {paged.items.map(m => {
                 const cfg = TYPE_CONFIG[m.movement_type] ?? { label: m.movement_type, color: 'text-gray-400', sign: '' };
                 const isPositive = m.quantity_change > 0;
                 return (
@@ -76,7 +79,7 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
                         }`}>{cfg.label}</span>
                       </div>
                       {m.notes && <p className="text-gray-500 text-xs mt-1 truncate">{m.notes}</p>}
-                      <p className="text-gray-600 text-xs mt-1">{fmt(m.created_at)}</p>
+                      <p className="text-gray-600 text-xs mt-1">{dateTime(m.created_at)}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className={`font-semibold text-sm ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
@@ -90,6 +93,9 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
             </div>
           )}
         </div>
+        {!loading && movements.length > 0 && (
+          <Pager paged={paged} noun="movements" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+        )}
       </div>
     </>
   );

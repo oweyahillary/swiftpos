@@ -5,8 +5,13 @@
  *    or post a manual adjustment.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { api } from '../../lib/api';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
+import { money, dateShort } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -18,11 +23,9 @@ interface LedgerRow {
   reference: string | null; notes: string | null; order_id: string | null; created_at: string;
 }
 
-function fmt(n: number) {
-  return Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default function CreditAccountsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';
   const [rows, setRows] = useState<CreditCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -38,6 +41,13 @@ export default function CreditAccountsPage() {
   const [adjAmount, setAdjAmount] = useState('');
   const [adjNotes, setAdjNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const moreCust = useRowMore();
+  const moreLedger = useRowMore();
+  // A475: the customers (up to 200) and a statement (up to 100 lines) in pages; the total owed stays over every row.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.creditAccounts');
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = usePageSize('swiftpos.pageSize.creditStatement');
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -110,12 +120,19 @@ export default function CreditAccountsPage() {
   };
 
   const totalOwed = rows.reduce((s, r) => s + Number(r.credit_balance), 0);
+  // A475: a new search → page 1; a payment or limit change keeps the page (clamped). Another customer → statement page 1.
+  useEffect(() => { setPage(1); }, [search]);
+  const paged = paginate(rows, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+  useEffect(() => { setLedgerPage(1); }, [selected?.id]);
+  const ledgerPaged = paginate(ledger, ledgerPage, ledgerPageSize);
+  useEffect(() => { if (ledgerPaged.page !== ledgerPage) setLedgerPage(ledgerPaged.page); }, [ledgerPaged.page, ledgerPage]);
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-1">
+    <div className="p-4 sm:p-6">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
         <h1 className="text-xl font-bold text-white">Credit Accounts</h1>
-        <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{fmt(totalOwed)}</span></div>
+        <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{money(totalOwed, currency)}</span></div>
       </div>
       <p className="text-sm text-gray-400 mb-5">Customers buying on account. Debtors shown first.</p>
 
@@ -132,29 +149,39 @@ export default function CreditAccountsPage() {
         <p className="text-gray-500">No credit customers yet. Set a credit limit on a customer to start.</p>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="text-gray-500 text-left text-xs border-b border-gray-800">
-                <th className="p-3">Customer</th><th className="p-3">Phone</th>
-                <th className="p-3 text-right">Limit</th><th className="p-3 text-right">Owed</th>
-                <th className="p-3 text-right">Available</th><th className="p-3"></th>
+                <th className="p-3">Customer</th><th className={`p-3 ${DESK}`}>Phone</th>
+                <th className={`p-3 text-right ${DESK}`}>Limit</th><th className="p-3 text-right">Owed</th>
+                <th className={`p-3 text-right ${DESK}`}>Available</th><th className="p-3"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(c => (
-                <tr key={c.id} className="border-b border-gray-800 hover:bg-gray-800/50">
-                  <td className="p-3 text-white">{c.name}</td>
-                  <td className="p-3 text-gray-400">{c.phone ?? '—'}</td>
-                  <td className="p-3 text-right text-gray-300">{fmt(c.credit_limit)}</td>
-                  <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{fmt(c.credit_balance)}</td>
-                  <td className="p-3 text-right text-gray-300">{fmt(c.available_credit)}</td>
+              {paged.items.map(c => (
+                <Fragment key={c.id}>
+                <tr className="border-b border-gray-800 hover:bg-gray-800/50">
+                  <td className="p-3 text-white">{c.name}
+                    <ViewMore open={moreCust.isOpen(c.id)} onClick={() => moreCust.toggle(c.id)} />
+                  </td>
+                  <td className={`p-3 text-gray-400 ${DESK}`}>{c.phone ?? '—'}</td>
+                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{money(c.credit_limit, currency)}</td>
+                  <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{money(c.credit_balance, currency)}</td>
+                  <td className={`p-3 text-right text-gray-300 ${DESK}`}>{money(c.available_credit, currency)}</td>
                   <td className="p-3 text-right">
                     <button onClick={() => openCustomer(c)} className="text-swift-text hover:text-swift-text-hover text-xs">Manage →</button>
                   </td>
                 </tr>
+                <MoreRow open={moreCust.isOpen(c.id)} colSpan={3} items={[
+                  ['Phone', c.phone ?? '—'],
+                  ['Limit', money(c.credit_limit, currency)],
+                  ['Available', money(c.available_credit, currency)],
+                ]} />
+                </Fragment>
               ))}
             </tbody>
-          </table>
+          </table></div>
+          <Pager paged={paged} noun="customers" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 
@@ -174,10 +201,10 @@ export default function CreditAccountsPage() {
               <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm ${msg.kind === 'ok' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{msg.text}</div>
             )}
 
-            <div className="grid grid-cols-3 gap-3 mb-5">
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Limit</p><p className="text-white font-semibold">{fmt(selected.credit_limit)}</p></div>
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Owed</p><p className="text-yellow-400 font-semibold">{fmt(selected.credit_balance)}</p></div>
-              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{fmt(selected.available_credit)}</p></div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Limit</p><p className="text-white font-semibold">{money(selected.credit_limit, currency)}</p></div>
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Owed</p><p className="text-yellow-400 font-semibold">{money(selected.credit_balance, currency)}</p></div>
+              <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{money(selected.available_credit, currency)}</p></div>
             </div>
 
             {/* Set limit */}
@@ -193,7 +220,7 @@ export default function CreditAccountsPage() {
             {/* Record payment */}
             <div className="bg-gray-800/50 rounded-lg p-4 mb-4">
               <p className="text-white font-medium text-sm mb-3">Record repayment</p>
-              <div className="grid grid-cols-3 gap-2 mb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                 <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="Amount" min={0}
                   className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
                 <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
@@ -210,7 +237,7 @@ export default function CreditAccountsPage() {
             <div className="bg-gray-800/50 rounded-lg p-4 mb-5">
               <p className="text-white font-medium text-sm mb-1">Manual adjustment</p>
               <p className="text-xs text-gray-500 mb-3">Use a negative amount to reduce the balance, positive to increase. Reason required.</p>
-              <div className="grid grid-cols-3 gap-2 mb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                 <input type="number" value={adjAmount} onChange={e => setAdjAmount(e.target.value)} placeholder="+/- amount"
                   className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
                 <input value={adjNotes} onChange={e => setAdjNotes(e.target.value)} placeholder="Reason"
@@ -222,20 +249,32 @@ export default function CreditAccountsPage() {
             {/* Ledger */}
             <p className="text-white font-medium text-sm mb-2">Statement</p>
             {ledger.length === 0 ? <p className="text-gray-500 text-sm">No transactions.</p> : (
-              <table className="w-full text-sm">
-                <thead><tr className="text-gray-500 text-left text-xs"><th className="pb-2">Date</th><th className="pb-2">Type</th><th className="pb-2 text-right">Amount</th><th className="pb-2 text-right">Balance</th><th className="pb-2">Note</th></tr></thead>
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead><tr className="text-gray-500 text-left text-xs"><th className="pb-2">Date</th><th className={`pb-2 ${DESK}`}>Type</th><th className="pb-2 text-right">Amount</th><th className={`pb-2 text-right ${DESK}`}>Balance</th><th className={`pb-2 ${DESK}`}>Note</th></tr></thead>
                 <tbody>
-                  {ledger.map(l => (
-                    <tr key={l.id} className="border-t border-gray-800">
-                      <td className="py-2 text-gray-500">{new Date(l.created_at).toLocaleDateString('en-KE')}</td>
-                      <td className="py-2 capitalize text-gray-300">{l.type}</td>
-                      <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{Number(l.amount) > 0 ? '+' : ''}{fmt(l.amount)}</td>
-                      <td className="py-2 text-right text-gray-300">{fmt(l.balance_after)}</td>
-                      <td className="py-2 text-gray-500">{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
+                  {ledgerPaged.items.map(l => (
+                    <Fragment key={l.id}>
+                    <tr className="border-t border-gray-800">
+                      <td className="py-2 text-gray-500">{dateShort(l.created_at)}
+                        <ViewMore open={moreLedger.isOpen(l.id)} onClick={() => moreLedger.toggle(l.id)} />
+                      </td>
+                      <td className={`py-2 capitalize text-gray-300 ${DESK}`}>{l.type}</td>
+                      <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{money(l.amount, currency, { sign: true })}</td>
+                      <td className={`py-2 text-right text-gray-300 ${DESK}`}>{money(l.balance_after, currency)}</td>
+                      <td className={`py-2 text-gray-500 ${DESK}`}>{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
                     </tr>
+                    <MoreRow open={moreLedger.isOpen(l.id)} colSpan={2} items={[
+                      ['Type', <span className="capitalize">{l.type}</span>],
+                      ['Balance', money(l.balance_after, currency)],
+                      ['Note', l.method ?? l.notes ?? (l.order_id ? 'sale' : '')],
+                    ]} />
+                    </Fragment>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
+            )}
+            {ledger.length > 0 && (
+              <Pager paged={ledgerPaged} noun="lines" onPage={setLedgerPage} onSize={n => { setLedgerPageSize(n); setLedgerPage(1); }} />
             )}
           </div>
         </div>

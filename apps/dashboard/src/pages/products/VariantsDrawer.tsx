@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import type { Product, VariantGroup, VariantOption, ModifierGroup } from '../../types';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { money } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
 
 interface Props {
   product: Product;
@@ -476,7 +478,7 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
   const [editingOption, setEditingOption] = useState<VariantOption | null>(null);
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
 
-  const currency = 'KES'; // TODO: pull from business context if needed
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
 
   const fetchAll = async () => {
     const [vg, mg] = await Promise.all([
@@ -661,7 +663,7 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
                             const badge = stockBadge(opt, productName, ingredientName);
                             const priceLabel = Number(opt.price_adjustment) === 0
                               ? 'Included'
-                              : `+${currency} ${Number(opt.price_adjustment).toLocaleString()}`;
+                              : money(opt.price_adjustment, currency, { sign: true });
                             return (
                               <div key={opt.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-800/60 rounded-lg text-sm">
                                 <span className="text-gray-300">{opt.name}</span>
@@ -728,7 +730,7 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
                             <div key={opt.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-800/60 rounded-lg text-sm">
                               <span className="text-gray-300">{opt.name}</span>
                               <div className="flex items-center gap-3">
-                                <span className="text-gray-500 text-xs">{opt.price === 0 ? 'Free' : `+${currency} ${opt.price.toLocaleString()}`}</span>
+                                <span className="text-gray-500 text-xs">{opt.price === 0 ? 'Free' : money(opt.price, currency, { sign: true })}</span>
                                 <button onClick={() => deleteModifierOption(opt.id)} className="text-gray-600 hover:text-red-400 transition-colors text-xs">✕</button>
                               </div>
                             </div>

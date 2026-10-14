@@ -98,7 +98,7 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
       id, device_label, device_id, status, app_version, schema_version,
       last_seen_at, last_sync_at,
       terminal_code, device_role, branch_id, mac_address, retired_at, retired_by,
-      role_conflict_at, role_conflict_with,
+      role_conflict_at, role_conflict_with, device_secret_hash,
       users!user_devices_user_id_fkey ( name )
     `)
     .eq('business_id', req.businessId)
@@ -176,6 +176,9 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
     // the server console.
     servingConflict: !!d.role_conflict_at,
     conflictAt:      d.role_conflict_at ?? null,
+    // A477: a till with no device secret cannot sign itself back in if its session is ever refused (it is handed one on
+    // its next renewal). Only whether it has one — never the hash.
+    noDeviceSecret:  !!d.device_id && !d.device_secret_hash,
   }));
 
   // Never-synced sorts first, then longest-silent. The device needing attention

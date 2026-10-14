@@ -182,8 +182,8 @@ export default function PinPage({ businessName, onStaffLogin, onTechUnlock, onHe
         </button>
       )}
       {joined && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-50">
-          <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-6 w-full max-w-sm" data-testid="joined-drawer">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-50 animate-fade-in">
+          <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-6 w-full max-w-sm animate-pop-in" data-testid="joined-drawer">
             <h2 className="text-lg font-bold text-white">{joined.till} is already open</h2>
             <p className="text-sm text-gray-300 mt-2">
               Opened by <span className="text-white font-semibold">{joined.who}</span>{joined.since ? ` at ${joined.since}` : ''} on the web POS.
@@ -197,8 +197,8 @@ export default function PinPage({ businessName, onStaffLogin, onTechUnlock, onHe
         </div>
       )}
       {techStage && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-50" onClick={closeTech}>
-          <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-50 animate-fade-in" onClick={closeTech}>
+          <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-6 w-full max-w-sm animate-pop-in" onClick={e => e.stopPropagation()}>
             {techStage === 'reveal' ? (
               <>
                 <h2 className="text-lg font-bold text-white">Technician access</h2>

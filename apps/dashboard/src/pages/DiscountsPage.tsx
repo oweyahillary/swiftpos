@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { api } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';
+import { money, dateShort } from '../lib/format';
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 interface Discount {
   id: string;
@@ -40,6 +44,9 @@ export default function DiscountsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);   // A475
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.discounts');
+  const more = useRowMore();
 
   const fetchDiscounts = useCallback(async () => {
     try {
@@ -134,17 +141,22 @@ export default function DiscountsPage() {
   }
 
   function formatValue(d: Discount) {
-    return d.type === 'percentage' ? `${d.value}%` : `${currency} ${d.value.toLocaleString()}`;
+    return d.type === 'percentage' ? `${d.value}%` : money(d.value, currency);
   }
 
   function isExpired(d: Discount) {
     return d.expires_at ? new Date(d.expires_at) < new Date() : false;
   }
 
+  // A475: the discounts and promo codes in pages (25 / 50 / 100, remembered in this browser); an edit or a status
+  // toggle keeps the page (clamped).
+  const paged = paginate(discounts, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-gray-950">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-950">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
         <div>
           <h1 className="text-xl font-semibold text-white">Discounts & Promotions<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
           <p className="text-gray-500 text-sm mt-0.5">{discounts.length} discount{discounts.length !== 1 ? 's' : ''}</p>
@@ -171,34 +183,36 @@ export default function DiscountsPage() {
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
                 <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Name</th>
                 <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Value</th>
-                <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Promo Code</th>
-                <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Applies To</th>
-                <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Usage</th>
-                <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Expires</th>
-                <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Status</th>
+                <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Promo Code</th>
+                <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Applies To</th>
+                <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Usage</th>
+                <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Expires</th>
+                <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {discounts.map(d => {
+              {paged.items.map(d => {
                 const expired = isExpired(d);
                 return (
-                  <tr key={d.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                  <Fragment key={d.id}>
+                  <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
                     <td className="px-4 py-3">
                       <p className="text-white font-medium">{d.name}</p>
                       {d.min_order_value > 0 && (
-                        <p className="text-gray-500 text-xs">Min order: {currency} {d.min_order_value.toLocaleString()}</p>
+                        <p className="text-gray-500 text-xs">Min order: {money(d.min_order_value, currency)}</p>
                       )}
+                      <ViewMore open={more.isOpen(d.id)} onClick={() => more.toggle(d.id)} />
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-green-400 font-semibold">{formatValue(d)}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className={`px-4 py-3 ${DESK}`}>
                       {d.promo_code ? (
                         <span className="font-mono text-xs bg-gray-800 text-yellow-400 px-2 py-1 rounded border border-gray-700">
                           {d.promo_code}
@@ -207,21 +221,21 @@ export default function DiscountsPage() {
                         <span className="text-gray-600 text-xs">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-400 capitalize">{d.applies_to}</td>
-                    <td className="px-4 py-3 text-gray-400">
+                    <td className={`px-4 py-3 text-gray-400 capitalize ${DESK}`}>{d.applies_to}</td>
+                    <td className={`px-4 py-3 text-gray-400 ${DESK}`}>
                       {d.used_count}
                       {d.max_uses !== null && <span className="text-gray-600"> / {d.max_uses}</span>}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className={`px-4 py-3 ${DESK}`}>
                       {d.expires_at ? (
                         <span className={`text-xs ${expired ? 'text-red-400' : 'text-gray-400'}`}>
-                          {expired ? '⚠ ' : ''}{new Date(d.expires_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {expired ? '⚠ ' : ''}{dateShort(d.expires_at)}
                         </span>
                       ) : (
                         <span className="text-gray-600 text-xs">Never</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className={`px-4 py-3 ${DESK}`}>
                       <button
                         onClick={() => handleToggle(d)}
                         className={`text-xs px-2 py-1 rounded-full border transition-colors ${
@@ -240,17 +254,50 @@ export default function DiscountsPage() {
                       </div>
                     </td>
                   </tr>
+                  <MoreRow open={more.isOpen(d.id)} colSpan={3} items={[
+                    ['Promo Code', d.promo_code ? (
+                      <span className="font-mono text-xs bg-gray-800 text-yellow-400 px-2 py-1 rounded border border-gray-700">
+                        {d.promo_code}
+                      </span>
+                    ) : (
+                      <span className="text-gray-600 text-xs">—</span>
+                    )],
+                    ['Applies To', <span className="capitalize">{d.applies_to}</span>],
+                    ['Usage', <>
+                      {d.used_count}
+                      {d.max_uses !== null && <span className="text-gray-600"> / {d.max_uses}</span>}
+                    </>],
+                    ['Expires', d.expires_at ? (
+                        <span className={`text-xs ${expired ? 'text-red-400' : 'text-gray-400'}`}>
+                          {expired ? '⚠ ' : ''}{dateShort(d.expires_at)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-600 text-xs">Never</span>
+                      )],
+                    ['Status', <button
+                        onClick={() => handleToggle(d)}
+                        className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                          d.status === 'active' && !expired
+                            ? 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
+                            : 'bg-gray-800 text-gray-500 border-gray-700 hover:bg-swift/10 hover:text-swift-text-hover hover:border-swift/20'
+                        }`}
+                      >
+                        {d.status === 'active' ? 'Active' : 'Inactive'}
+                      </button>],
+                  ]} />
+                  </Fragment>
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
+          <Pager paged={paged} noun="discounts" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 
       {/* Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-white font-semibold text-lg mb-5">{editTarget ? 'Edit Discount' : 'New Discount'}</h2>
 
             {error && <p className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
@@ -268,7 +315,7 @@ export default function DiscountsPage() {
               </div>
 
               {/* Type + Value */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Type *</label>
                   <select
@@ -319,7 +366,7 @@ export default function DiscountsPage() {
               </div>
 
               {/* Min order + Max uses */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Min Order ({currency}) <span className="text-gray-600">(optional)</span></label>
                   <input

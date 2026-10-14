@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
@@ -7,6 +7,10 @@ import { useBranch } from '../../context/BranchContext';
 import { usePermissions } from '../../context/PermissionsContext';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { localDateStr } from '../../lib/localDate';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
+import { money, dateShort } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,17 +78,7 @@ const EXPENSE_METHODS = [
   { code: 'bank', name: 'Bank transfer' },
 ];
 
-function fmt(amount: number, currency: string) {
-  return new Intl.NumberFormat('en-KE', {
-    style: 'currency', currency, minimumFractionDigits: 2,
-  }).format(amount);
-}
 
-function fmtDate(dateStr: string) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-KE', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  });
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -98,6 +92,7 @@ export default function ExpensesPage() {
   // ── State ──────────────────────────────────────────────────────────────────
 
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
+  const more = useRowMore();   // A464: a phone shows Description, Amount and the actions
   const [expenses, setExpenses]       = useState<Expense[]>([]);
   const [total, setTotal]             = useState(0);
   const [categories, setCategories]   = useState<ExpenseCategory[]>([]);
@@ -114,6 +109,9 @@ export default function ExpensesPage() {
   // A452 (owner, 2026-10-12): filter by how it was paid and who paid it; a subtotal per method while filtered.
   const [filterMethod, setFilterMethod]     = useState('');
   const [filterPayer, setFilterPayer]       = useState('');
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.expenses');
 
   // Expense modal
   const [expenseModal, setExpenseModal] = useState<'add' | Expense | null>(null);
@@ -131,13 +129,24 @@ export default function ExpensesPage() {
   // A452: the filters run on the period's rows (already loaded); the subtotals follow them.
   const methodOf = (e: Expense) => e.payment_method ?? 'cash';
   const methodName = (code: string) => EXPENSE_METHODS.find(m => m.code === code)?.name ?? code;
-  const methodOptions = [...new Set(expenses.map(methodOf))].sort();
-  const payerOptions = [...new Map(expenses.filter(e => e.paid_by).map(e => [e.paid_by as string, e.paid_by_name ?? 'Unknown'])).entries()];
+  // A474 (owner, 2026-10-14: "payment method and who paid are empty"): the choices were only what the period's rows
+  // held, so a period with no expenses offered nothing. Every method an expense can be paid with, and every staff member,
+  // are always offered — plus any other found in the rows (an older method, someone since removed).
+  const methodOptions = [...new Set([...EXPENSE_METHODS.map(m => m.code), ...expenses.map(methodOf)])];
+  const payerOptions = [...new Map<string, string>([
+    ...staff.map(s => [s.id, s.name] as [string, string]),
+    ...expenses.filter(e => e.paid_by).map(e => [e.paid_by as string, e.paid_by_name ?? 'Unknown'] as [string, string]),
+  ]).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const shown = expenses.filter(e => (!filterMethod || methodOf(e) === filterMethod) && (!filterPayer || e.paid_by === filterPayer));
   const narrowed = !!(filterMethod || filterPayer);
   const shownTotal = shown.reduce((a, e) => a + Number(e.amount || 0), 0);
   const byMethod = [...shown.reduce((m, e) => m.set(methodOf(e), (m.get(methodOf(e)) ?? 0) + Number(e.amount || 0)), new Map<string, number>()).entries()]
     .sort((a, b) => b[1] - a[1]);
+  // A475: one page of the filtered rows. The count, the total and the subtotals above stay over every filtered row.
+  // A new period, branch or filter starts at page 1; an edit or delete keeps the page (clamped).
+  useEffect(() => { setPage(1); }, [filterFrom, filterTo, filterCategory, filterMethod, filterPayer, activeBranchId]);
+  const paged = paginate(shown, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   // ── Data loading ───────────────────────────────────────────────────────────
 
@@ -293,9 +302,9 @@ export default function ExpensesPage() {
   return (
     <>
       <Toast toast={toast} />
-    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
       {/* Page header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-white">Expenses</h1>
           <p className="text-gray-400 text-sm mt-0.5">Record and categorise business expenses</p>
@@ -311,10 +320,10 @@ export default function ExpensesPage() {
       </div>
 
       {/* Layout: categories sidebar + main table */}
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-6 lg:items-start">
 
         {/* ── Categories panel ── */}
-        <div className="w-56 flex-shrink-0 bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div className="w-full lg:w-56 lg:flex-shrink-0 bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
             <p className="text-white text-sm font-semibold">Categories</p>
             {canManage && (
@@ -350,7 +359,7 @@ export default function ExpensesPage() {
             >
               <span className="text-sm truncate flex-1">{cat.name}</span>
               {canManage && (
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 flex-shrink-0 ml-1">
+                <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0 ml-1">
                   <button
                     onClick={e => { e.stopPropagation(); openEditCat(cat); }}
                     className="text-gray-500 hover:text-white text-xs transition-colors p-0.5"
@@ -413,8 +422,8 @@ export default function ExpensesPage() {
             {/* Summary chip */}
             <div className="ml-auto flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2">
               <span className="text-red-400 text-xs font-medium">{narrowed ? 'Filtered expenses' : 'Total Expenses'}</span>
-              <span className="text-red-300 text-sm font-bold">{fmt(narrowed ? shownTotal : total, currency)}</span>
-              {narrowed && <span className="text-red-400/70 text-xs">of {fmt(total, currency)}</span>}
+              <span className="text-red-300 text-sm font-bold">{money(narrowed ? shownTotal : total, currency)}</span>
+              {narrowed && <span className="text-red-400/70 text-xs">of {money(total, currency)}</span>}
             </div>
           </div>
 
@@ -424,7 +433,7 @@ export default function ExpensesPage() {
               {byMethod.map(([m, amt]) => (
                 <div key={m} className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm">
                   <span className="text-gray-400">{methodName(m)}</span>
-                  <span className="ml-2 font-semibold text-white">{fmt(amt, currency)}</span>
+                  <span className="ml-2 font-semibold text-white">{money(amt, currency)}</span>
                 </div>
               ))}
             </div>
@@ -443,79 +452,102 @@ export default function ExpensesPage() {
                 </p>
               </div>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-800">
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Date</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Description</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Category</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Branch</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid With</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid By</th>
-                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Recorded By</th>
-                    <th className="text-right text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Amount</th>
-                    {canManage && <th className="px-4 py-3" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map(e => (
-                    <tr key={e.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
-                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{fmtDate(e.expense_date)}</td>
-                      <td className="px-4 py-3 text-white max-w-xs">
-                        <span className="block truncate">{e.description}</span>
-                        {e.receipt_url && (
-                          <a
-                            href={e.receipt_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-swift-text text-xs hover:underline"
-                          >Receipt ↗</a>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {e.category_name ? (
-                          <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{e.category_name}</span>
-                        ) : (
-                          <span className="text-gray-600 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{e.branch_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{e.paid_by_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{e.recorded_by_name ?? '—'}
-                        {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
-                        {fmt(e.amount, currency)}
-                      </td>
-                      {canManage && (
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 justify-end transition-opacity">
-                            <button
-                              onClick={() => openEditExpense(e)}
-                              className="text-gray-500 hover:text-white text-xs transition-colors"
-                            >Edit</button>
-                            <button
-                              onClick={() => deleteExpense(e.id)}
-                              className="text-gray-500 hover:text-red-400 text-xs transition-colors"
-                            >Delete</button>
-                          </div>
-                        </td>
-                      )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800">
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Date</th>
+                      <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Description</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Category</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Branch</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Paid With</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Paid By</th>
+                      <th className={`text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider ${DESK}`}>Recorded By</th>
+                      <th className="text-right text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Amount</th>
+                      {canManage && <th className="px-4 py-3" />}
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-gray-700">
-                    <td colSpan={7} className="px-4 py-3 text-gray-500 text-xs font-semibold">
-                      {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold text-red-300">
-                      {fmt(narrowed ? shownTotal : total, currency)}
-                    </td>
-                    {canManage && <td />}
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {paged.items.map(e => (
+                      <Fragment key={e.id}>
+                      <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
+                        <td className={`px-4 py-3 text-gray-300 whitespace-nowrap ${DESK}`}>{dateShort(e.expense_date)}</td>
+                        <td className="px-4 py-3 text-white max-w-xs">
+                          <span className="block truncate">{e.description}</span>
+                          {e.receipt_url && (
+                            <a
+                              href={e.receipt_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-swift-text text-xs hover:underline"
+                            >Receipt ↗</a>
+                          )}
+                          <ViewMore open={more.isOpen(String(e.id))} onClick={() => more.toggle(String(e.id))} />
+                        </td>
+                        <td className={`px-4 py-3 ${DESK}`}>
+                          {e.category_name ? (
+                            <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{e.category_name}</span>
+                          ) : (
+                            <span className="text-gray-600 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{e.branch_name ?? '—'}</td>
+                        <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method}</td>
+                        <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{e.paid_by_name ?? '—'}</td>
+                        <td className={`px-4 py-3 text-gray-400 text-xs ${DESK}`}>{e.recorded_by_name ?? '—'}
+                          {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
+                          {money(e.amount, currency)}
+                        </td>
+                        {canManage && (
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2 sm:opacity-0 sm:group-hover:opacity-100 justify-end transition-opacity">
+                              <button
+                                onClick={() => openEditExpense(e)}
+                                className="text-gray-500 hover:text-white text-xs transition-colors"
+                              >Edit</button>
+                              <button
+                                onClick={() => deleteExpense(e.id)}
+                                className="text-gray-500 hover:text-red-400 text-xs transition-colors"
+                              >Delete</button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                      <MoreRow open={more.isOpen(String(e.id))} colSpan={canManage ? 3 : 2} items={[
+                        ['Date', dateShort(e.expense_date)],
+                        ['Category', e.category_name ? (
+                          <span className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-xs">{e.category_name}</span>
+                        ) : '—'],
+                        ['Branch', e.branch_name ?? '—'],
+                        ['Paid With', EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method],
+                        ['Paid By', e.paid_by_name ?? '—'],
+                        ['Recorded By', <>{e.recorded_by_name ?? '—'}
+                          {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</>],
+                      ]} />
+                      </Fragment>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-gray-700">
+                      <td colSpan={7} className={`px-4 py-3 text-gray-500 text-xs font-semibold ${DESK}`}>
+                        {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
+                      </td>
+                      {/* A464: a phone shows one column before Amount */}
+                      <td className="sm:hidden px-4 py-3 text-gray-500 text-xs font-semibold">
+                        {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-red-300">
+                        {money(narrowed ? shownTotal : total, currency)}
+                      </td>
+                      {canManage && <td />}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            {!loading && shown.length > 0 && (
+              <Pager paged={paged} noun="expenses" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
             )}
           </div>
         </div>
@@ -524,7 +556,7 @@ export default function ExpensesPage() {
       {/* ── Expense Modal ── */}
       {expenseModal !== null && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-800">
               <h2 className="text-white font-semibold">
                 {expenseModal === 'add' ? 'Add Expense' : 'Edit Expense'}
@@ -664,7 +696,7 @@ export default function ExpensesPage() {
       {/* ── Category Modal ── */}
       {catModal !== null && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-800">
               <h2 className="text-white font-semibold">
                 {catModal === 'add' ? 'New Category' : 'Rename Category'}

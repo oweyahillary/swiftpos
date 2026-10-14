@@ -25,8 +25,8 @@ export default function NoteModal({ title, initial, picks, kind, onSave, onClose
   const save = () => onSave(cleanNote(text, max));
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-5 space-y-4"
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4 animate-fade-in" onClick={onClose}>
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-5 space-y-4 animate-pop-in"
            onClick={(e) => e.stopPropagation()} data-testid="note-modal">
         <div>
           <h3 className="text-white font-semibold">{kind === 'order' ? 'Note for the order' : 'Note'}</h3>

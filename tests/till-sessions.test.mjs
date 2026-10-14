@@ -59,7 +59,8 @@ await ok('the cloud: sessions say what they are; a renewal hands a till its devi
   assert.match(a, /\.insert\(\{ \.\.\.row, session_kind: sessionKind\(payload as \{ surface\?: string; pinSignIn\?: boolean \}\) \}\)/);
   // A415: the till renewing is identified by its own session (tillDevice), not a header.
   assert.match(a, /if \(tillDevice\) \{\s*try \{\s*if \(!tillDevice\.device_secret_hash\) \{/);
-  assert.match(a, /res\.json\(\{ accessToken, refreshToken: newRefreshToken, token: accessToken, \.\.\.\(deviceSecret \? \{ deviceSecret \} : \{\}\) \}\);/);
+  // A477: the answer also asks the till to confirm the new token (ack) once migration 131 is in.
+  assert.match(a, /res\.json\(\{ accessToken, refreshToken: newRefreshToken, token: accessToken, \.\.\.\(deviceSecret \? \{ deviceSecret \} : \{\}\), \.\.\.\(handshake \? \{ ack: true \} : \{\}\) \}\);/);
   assert.match(a, /if \(!secret\) \{\s*await markTillSessionLost\(businessId, deviceId, 'Its sign-in was refused and it holds no device secret'\);/);
   assert.match(a, /if \(dev && !blocked\) await markTillSessionLost\(/);
   assert.match(a, /await clearTillSessionLost\(businessId, deviceId\);   \/\/ A407: back/);

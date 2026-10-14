@@ -796,7 +796,7 @@ async function openSiblingCash(shift: { id: string; status: string; business_id?
   return out;
 }
 
-async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {
+export async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {   // A476: the owner emails show it too
   // Paged: a plain .select('id') silently truncates at Supabase's row cap, and
   // expected cash computed from a TRUNCATED order list reports a large phantom
   // surplus at close with no error anywhere. See lib/pgQuery.ts.

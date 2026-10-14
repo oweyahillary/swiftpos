@@ -7,10 +7,14 @@
  * a manual retry. Transmission itself happens server-side.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { api } from '../../lib/api';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { useBranch } from '../../context/BranchContext';
 import BulkItemCodeModal from './BulkItemCodeModal';
+import { dateTime } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface EtimsConfig {
   branch_id: string;
@@ -71,6 +75,9 @@ export default function EtimsSettingsPage() {
   const [retrying, setRetrying] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const more = useRowMore();
+  const [page, setPage] = useState(1);   // A475
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.etimsLog');
 
   const load = useCallback(async () => {
     if (!branchId) return;
@@ -137,10 +144,16 @@ export default function EtimsSettingsPage() {
     } finally { setRetrying(false); }
   };
 
-  if (!branchId) return <div className="p-6 text-gray-400">Select a branch to configure eTIMS.</div>;
+  // A475: the fiscal records (the last 200) in pages (25 / 50 / 100, remembered in this browser); the counts above are
+  // the cloud's. Another branch → page 1; a retry keeps the page (clamped).
+  useEffect(() => { setPage(1); }, [branchId]);
+  const paged = paginate(invoices, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+
+  if (!branchId) return <div className="p-4 sm:p-6 text-gray-400">Select a branch to configure eTIMS.</div>;
 
   return (
-    <div className="p-6 max-w-3xl">
+    <div className="p-4 sm:p-6 max-w-3xl">
       <h1 className="text-xl font-bold text-white mb-1">KRA eTIMS</h1>
       <p className="text-sm text-gray-400 mb-6">Fiscalisation settings for {activeBranch?.name}.</p>
 
@@ -173,7 +186,7 @@ export default function EtimsSettingsPage() {
           </div>
 
           {/* Config */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4 grid grid-cols-2 gap-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">Environment</label>
               <select value={environment} onChange={e => setEnvironment(e.target.value as any)}
@@ -245,25 +258,37 @@ export default function EtimsSettingsPage() {
             {invoices.length === 0 ? (
               <p className="text-gray-500 text-sm">No records yet.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-500 text-left text-xs">
-                    <th className="pb-2">No.</th><th className="pb-2">Type</th><th className="pb-2">Status</th>
-                    <th className="pb-2">KRA Receipt</th><th className="pb-2">When</th>
+                    <th className="pb-2">No.</th><th className={`pb-2 ${DESK}`}>Type</th><th className="pb-2">Status</th>
+                    <th className={`pb-2 ${DESK}`}>KRA Receipt</th><th className={`pb-2 ${DESK}`}>When</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map(r => (
-                    <tr key={r.id} className="border-t border-gray-800">
-                      <td className="py-2 text-gray-300">{r.invoice_no ?? '—'}</td>
-                      <td className="py-2 text-gray-400 capitalize">{r.invoice_type}</td>
+                  {paged.items.map(r => (
+                    <Fragment key={r.id}>
+                    <tr className="border-t border-gray-800">
+                      <td className="py-2 text-gray-300">{r.invoice_no ?? '—'}
+                        <ViewMore open={more.isOpen(String(r.id))} onClick={() => more.toggle(String(r.id))} />
+                      </td>
+                      <td className={`py-2 text-gray-400 capitalize ${DESK}`}>{r.invoice_type}</td>
                       <td className={`py-2 capitalize ${STATUS_COLORS[r.status]}`}>{r.status}</td>
-                      <td className="py-2 text-gray-300">{r.kra_receipt_no ?? (r.error ? <span className="text-red-400" title={r.error}>error</span> : '—')}</td>
-                      <td className="py-2 text-gray-500">{new Date(r.created_at).toLocaleString('en-KE')}</td>
+                      <td className={`py-2 text-gray-300 ${DESK}`}>{r.kra_receipt_no ?? (r.error ? <span className="text-red-400" title={r.error}>error</span> : '—')}</td>
+                      <td className={`py-2 text-gray-500 ${DESK}`}>{dateTime(r.created_at)}</td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(r.id))} colSpan={2} items={[
+                      ['Type', <span className="capitalize">{r.invoice_type}</span>],
+                      ['KRA Receipt', r.kra_receipt_no ?? (r.error ? <span className="text-red-400" title={r.error}>error</span> : '—')],
+                      ['When', dateTime(r.created_at)],
+                    ]} />
+                    </Fragment>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
+            )}
+            {invoices.length > 0 && (
+              <Pager paged={paged} noun="records" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
             )}
           </div>
         </>

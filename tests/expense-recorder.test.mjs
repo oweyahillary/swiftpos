@@ -73,7 +73,9 @@ ok('A361: names come from explicit foreign keys (two links to users now — a ba
 ok('A361: a till\'s expense is stamped on sync with the till\'s signed-in staff', () => {
   assert.match(read('apps/server/src/routes/sync.ts'), /recorded_by:\s+e\.recorded_by \?\? e\.paid_by \?\? null,/);
   // …which is who the till puts in paid_by (the Shift panel offers no pick)
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /paid_by \?\? staff\.staff_id \?\? null,/);
+  // A465: expense:create's body moved to shiftService.recordExpense (also used by the branch server's instruction)
+  assert.match(read('apps/desktop/src/main/shiftService.ts'), /e\.paid_by \?\? staff\?\.staff_id \?\? null,/);
+  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /recordExpense\(\{/);
   const sp = read('apps/desktop/src/renderer/pages/ShiftPanel.tsx');
   const call = sp.slice(sp.indexOf('await posApi.expense.create({'), sp.indexOf('});', sp.indexOf('await posApi.expense.create({')));
   assert.ok(!/paid_by/.test(call), 'the till never sends a picked paid_by');

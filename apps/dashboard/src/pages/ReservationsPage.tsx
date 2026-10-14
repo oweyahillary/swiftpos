@@ -200,7 +200,7 @@ export default function ReservationsPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden flex gap-0 divide-x divide-gray-800">
+      <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-0 divide-y lg:divide-y-0 lg:divide-x divide-gray-800">
         {/* Reservations panel */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-800 flex items-center gap-3">
@@ -258,7 +258,7 @@ export default function ReservationsPage() {
         </div>
 
         {/* Waitlist panel */}
-        <div className="w-80 flex-shrink-0 flex flex-col overflow-hidden">
+        <div className="w-full max-h-[45%] lg:max-h-none lg:w-80 lg:flex-shrink-0 flex flex-col overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-800 flex items-center gap-3">
             <p className="text-sm font-semibold text-white">Waitlist</p>
             {waitlist.length > 0 && (
@@ -305,7 +305,7 @@ export default function ReservationsPage() {
       {/* Reservation form modal */}
       {showRes && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-800">
               <h3 className="text-white font-bold">New reservation</h3>
               <button onClick={() => setShowRes(false)} className="text-gray-500 hover:text-white text-xl">✕</button>
@@ -321,7 +321,7 @@ export default function ReservationsPage() {
                   <input value={resForm.guest_phone} onChange={e => setResForm(f => ({ ...f, guest_phone: e.target.value }))} className={InputCls} placeholder="+254..." />
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Party size</label>
                   <input type="number" min={1} value={resForm.party_size} onChange={e => setResForm(f => ({ ...f, party_size: e.target.value }))} className={InputCls} />
@@ -363,7 +363,7 @@ export default function ReservationsPage() {
       {/* Waitlist form modal */}
       {showWait && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-800">
               <h3 className="text-white font-bold">Add to waitlist</h3>
               <button onClick={() => setShowWait(false)} className="text-gray-500 hover:text-white text-xl">✕</button>

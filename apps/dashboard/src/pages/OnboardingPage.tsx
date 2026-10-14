@@ -265,7 +265,7 @@ export default function OnboardingPage() {
 
           {/* ── STEP 1: Business profile ──────────────────────────────────── */}
           {step === 1 && (
-            <div className="p-8 space-y-5">
+            <div className="p-5 sm:p-8 space-y-5">
               <div>
                 <h2 className="text-lg font-semibold text-white">Business profile</h2>
                 <p className="text-[#475569] text-xs mt-1">Core details about the business you're setting up.</p>
@@ -294,7 +294,7 @@ export default function OnboardingPage() {
               </div>
 
               {/* Business name + Owner name side by side */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Business name <span className="text-red-400">*</span></label>
                   <input
@@ -344,7 +344,7 @@ export default function OnboardingPage() {
               </div>
 
               {/* Phone + Email */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Business phone</label>
                   <input
@@ -367,7 +367,7 @@ export default function OnboardingPage() {
               </div>
 
               {/* Tax PIN + VAT + Currency */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className={labelCls}>KRA PIN</label>
                   <input
@@ -414,7 +414,7 @@ export default function OnboardingPage() {
 
           {/* ── STEP 2: First branch ──────────────────────────────────────── */}
           {step === 2 && (
-            <div className="p-8 space-y-5">
+            <div className="p-5 sm:p-8 space-y-5">
               <div>
                 <h2 className="text-lg font-semibold text-white">First branch</h2>
                 <p className="text-[#475569] text-xs mt-1">Most businesses start with one location. More can be added in Settings.</p>
@@ -457,7 +457,7 @@ export default function OnboardingPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>City / Town</label>
                   <input
@@ -509,7 +509,7 @@ export default function OnboardingPage() {
 
           {/* ── STEP 3: Owner credentials ─────────────────────────────────── */}
           {step === 3 && (
-            <div className="p-8 space-y-5">
+            <div className="p-5 sm:p-8 space-y-5">
               <div>
                 <h2 className="text-lg font-semibold text-white">Owner access</h2>
                 <p className="text-[#475569] text-xs mt-1">
@@ -537,7 +537,7 @@ export default function OnboardingPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className={labelCls}>Password <span className="text-red-400">*</span></label>
                     <div className="relative">

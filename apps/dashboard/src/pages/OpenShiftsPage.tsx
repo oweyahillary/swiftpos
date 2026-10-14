@@ -35,11 +35,17 @@
  * performed, which is the one thing this whole design refuses to do.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { api } from '../lib/api';
 import Toast from '../components/Toast';
 import ShiftConfirmations from '../components/ShiftConfirmations';
+import CountedCloseModal from '../components/CountedCloseModal';   // A462
 import { useToast } from '../hooks/useToast';
+import { money, dateTime } from '../lib/format';
+import { useBusiness } from '../context/BusinessContext';
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 interface OpenShift {
   id: string;
@@ -55,23 +61,23 @@ interface OpenShift {
   expected_cash_live: number | null;
 }
 
-const money = (v: number | null) =>
-  v === null || v === undefined
-    ? 'unavailable'
-    : `KES ${v.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function hoursOpen(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
 }
 
 export default function OpenShiftsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';
   const [shifts, setShifts] = useState<OpenShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [target, setTarget] = useState<OpenShift | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [counting, setCounting] = useState<OpenShift | null>(null);   // A462: close with a count
+  const [confirmKey, setConfirmKey] = useState(0);
   const { toast, showToast } = useToast();
+  const more = useRowMore();   // A464: a phone shows Cashier, Expected cash and the actions
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,6 +94,12 @@ export default function OpenShiftsPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  // A475: the open drawers (up to 100) in pages (25 / 50 / 100, remembered in this browser); a release keeps the page
+  // (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.openDrawers');
+  const paged = paginate(shifts, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   const forceClose = async () => {
     if (!target) return;
@@ -107,7 +119,7 @@ export default function OpenShiftsPage() {
   };
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 sm:p-6 space-y-5">
       <div>
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Open drawers</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -126,80 +138,108 @@ export default function OpenShiftsPage() {
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : shifts.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 sm:p-8 text-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             No drawers are open. Nothing to release.
           </p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                {['Cashier', 'Till', 'Opened', 'Opening float', 'Expected cash', ''].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {shifts.map(s => {
-                const hrs = hoursOpen(s.opened_at);
-                // 18h matches STALE_SHIFT_HOURS on the till, so the two surfaces
-                // agree about when a drawer has stopped being plausible.
-                const stale = hrs >= 18;
-                return (
-                  <tr key={s.id} className="bg-white dark:bg-gray-900">
-                    <td className="px-4 py-3 text-gray-900 dark:text-white">{s.cashier_name}</td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
-                        {hrs}h ago
-                      </span>
-                      <div className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('en-KE')}</div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums">
-                      {money(Number(s.opening_float))}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white tabular-nums">
-                      {money(s.expected_cash_live)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => { setTarget(s); setReason(''); }}
-                        className="text-xs px-3 py-1.5 rounded-md border border-red-300 text-red-700
-                                   hover:bg-red-50 dark:border-red-800 dark:text-red-400
-                                   dark:hover:bg-red-900/20 transition-colors"
-                      >
-                        Force close
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  {['Cashier', 'Till', 'Opened', 'Opening float', 'Expected cash', ''].map(h => (
+                    <th key={h} className={`px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400 ${['Till', 'Opened', 'Opening float'].includes(h) ? DESK : ''}`}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {paged.items.map(s => {
+                  const hrs = hoursOpen(s.opened_at);
+                  // 18h matches STALE_SHIFT_HOURS on the till, so the two surfaces
+                  // agree about when a drawer has stopped being plausible.
+                  const stale = hrs >= 18;
+                  return (
+                    <Fragment key={s.id}>
+                    <tr className="bg-white dark:bg-gray-900">
+                      <td className="px-4 py-3 text-gray-900 dark:text-white">{s.cashier_name}
+                        <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
+                      </td>
+                      <td className={`px-4 py-3 text-gray-600 dark:text-gray-400 ${DESK}`}>
+                        {s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>}
+                      </td>
+                      <td className={`px-4 py-3 ${DESK}`}>
+                        <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
+                          {hrs}h ago
+                        </span>
+                        <div className="text-xs text-gray-400">{dateTime(s.opened_at)}</div>
+                      </td>
+                      <td className={`px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums ${DESK}`}>
+                        {money(Number(s.opening_float), currency, { blank: 'unavailable' })}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-white tabular-nums">
+                        {money(s.expected_cash_live, currency, { blank: 'unavailable' })}
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <button data-testid={`count-close-${s.id}`} onClick={() => setCounting(s)}
+                          className="mr-2 text-xs px-3 py-1.5 rounded-md border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors">
+                          Close with count
+                        </button>
+                        <button
+                          onClick={() => { setTarget(s); setReason(''); }}
+                          className="text-xs px-3 py-1.5 rounded-md border border-red-300 text-red-700
+                                     hover:bg-red-50 dark:border-red-800 dark:text-red-400
+                                     dark:hover:bg-red-900/20 transition-colors"
+                        >
+                          Force close
+                        </button>
+                      </td>
+                    </tr>
+                    <MoreRow open={more.isOpen(String(s.id))} colSpan={3} items={[
+                      ['Till', s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>],
+                      ['Opened', <>
+                        <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
+                          {hrs}h ago
+                        </span>
+                        <div className="text-xs text-gray-400">{dateTime(s.opened_at)}</div>
+                      </>],
+                      ['Opening float', <span className="tabular-nums">{money(Number(s.opening_float), currency, { blank: 'unavailable' })}</span>],
+                    ]} />
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pager paged={paged} noun="drawers" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 
       <p className="text-xs text-gray-500 dark:text-gray-500">
         Force-closing records the drawer as <strong>uncounted</strong> — no closing
         float and no variance, because nobody counted it. Only use it when the
-        terminal cannot be reached. If the till still works, count the drawer there.
+        terminal cannot be reached. If the till still works, count the drawer there — or use
+        <strong> Close with count</strong>: you count each method here and it closes counted, under your name.
       </p>
 
-      {/* A365: shifts awaiting a manager's check (confirm here, blind), and who confirmed what. */}
-      <ShiftConfirmations />
+      {/* A365: shifts awaiting a manager's check, and who confirmed what. A462: what each method expects is shown. */}
+      <ShiftConfirmations key={confirmKey} currency={currency} />
+
+      {counting && (
+        <CountedCloseModal client={api as any} shift={counting} currency={currency}
+          onCancel={() => setCounting(null)}
+          onDone={() => { setCounting(null); setConfirmKey((k) => k + 1); showToast('Closed with your count — confirm it below.', 'success'); void load(); }} />
+      )}
 
       {/* Confirmation. Shows the figure being written off, and will not proceed
           without a reason: an unexplained hole in the cash record is worse than
           the open shift it replaces. */}
       {target && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-md border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-md border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
             <div className="px-5 pt-5 pb-3 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">
                 Force close {target.cashier_name}'s drawer
@@ -212,7 +252,7 @@ export default function OpenShiftsPage() {
             <div className="px-5 py-4 space-y-3">
               <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3">
                 <p className="text-sm text-amber-800 dark:text-amber-200">
-                  Expected in the drawer: <strong>{money(target.expected_cash_live)}</strong>
+                  Expected in the drawer: <strong>{money(target.expected_cash_live, currency, { blank: 'unavailable' })}</strong>
                 </p>
                 <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                   This will be recorded as never counted. The variance stays blank —

@@ -12,6 +12,8 @@
 // device_id remains the hard key for everything else.
 
 import os from 'os';
+import { execFile } from 'child_process';
+import crypto from 'crypto';
 
 export interface Nic { mac: string; internal: boolean; family: string }
 
@@ -55,3 +57,102 @@ export function getMacAddressCached(): string | null {
   if (_cached === undefined) _cached = getMacAddress();
   return _cached;
 }
+
+// ── A477: the machine behind the till's key ──────────────────────────────────
+//
+// Owner, 2026-10-14: the key bound to the machine (MAC + serial) "to confirm that this till is in the system". Two
+// identifiers that survive everything short of a new machine: the Windows MachineGuid (set at Windows install) and the
+// BIOS serial. They are sent on enrolment, renewal, the renewal's ack and the device grant (X-Device-Guid /
+// X-Device-Serial), HASHED here with SHA-256 — the raw values never leave the till. The cloud keeps the first ones it
+// sees and refuses the till's key from a machine where neither matches (DEVICE_MISMATCH; the session is not revoked).
+//
+// Read once per run, in the background, each with a short time limit: startup never waits for them, and a renewal that
+// runs before they are read simply sends none (the cloud lets it through, as for a till from before A477).
+
+
+export interface MachineIdentity { mac: string | null; machine_guid: string | null; serial: string | null }
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The MachineGuid out of `reg query HKLM\SOFTWARE\Microsoft\Cryptography /v MachineGuid`. Pure. */
+export function parseMachineGuid(regOutput: string | null | undefined): string | null {
+  const m = /MachineGuid\s+REG_SZ\s+(\S+)/i.exec(String(regOutput ?? ''));
+  const v = m ? m[1].trim().toLowerCase() : '';
+  return GUID.test(v) && !/^0{8}-/.test(v) ? v : null;
+}
+
+// What board makers leave in the serial field when they did not set one — the same on thousands of machines, so useless.
+const SERIAL_PLACEHOLDERS = new Set([
+  'to be filled by o.e.m.', 'to be filled by oem', 'default string', 'system serial number', 'not specified', 'not applicable',
+  'none', 'n/a', 'na', 'unknown', 'invalid', 'oem', 'o.e.m.', 'serial', 'chassis serial number', 'base board serial number',
+  '123456789', '1234567890', 'xxxxxxxx', 'empty', 'null',
+]);
+
+/** A BIOS serial worth binding to, or null (placeholders, all zeros, too short). Pure. */
+export function cleanSerial(raw: string | null | undefined): string | null {
+  const v = String(raw ?? '').replace(/[\r\n]+/g, ' ').trim();
+  if (v.length < 3 || v.length > 128) return null;
+  if (SERIAL_PLACEHOLDERS.has(v.toLowerCase())) return null;
+  if (/^[0\s.\-_]+$/.test(v) || /^(.)\1+$/.test(v)) return null;   // 0000…, FFFFFFFF, ……
+  return v;
+}
+
+/** SHA-256 (hex) of an identifier, normalised. What the cloud sees — never the raw value. Pure. */
+export function hashIdentifier(v: string): string {
+  return crypto.createHash('sha256').update(String(v).trim().toLowerCase()).digest('hex');
+}
+
+const IDENTITY_TIMEOUT_MS = 5_000;
+
+function run(cmd: string, args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      execFile(cmd, args, { timeout: IDENTITY_TIMEOUT_MS, windowsHide: true, maxBuffer: 64 * 1024 }, (err, stdout) => {
+        resolve(err ? null : String(stdout ?? ''));
+      });
+    } catch { resolve(null); }
+  });
+}
+
+let _identity: MachineIdentity | null = null;
+let _identityLoading: Promise<MachineIdentity> | null = null;
+
+/** Read the machine's identity (once per run; later calls get the same answer). Never throws, never waits > ~5 s. */
+export function loadMachineIdentity(platform: string = process.platform): Promise<MachineIdentity> {
+  if (_identity) return Promise.resolve(_identity);
+  if (_identityLoading) return _identityLoading;
+  _identityLoading = (async () => {
+    const mac = getMacAddressCached();
+    if (platform !== 'win32') return (_identity = { mac, machine_guid: null, serial: null });
+    const [reg, bios] = await Promise.all([
+      // /reg:64 — a 32-bit process would otherwise be shown the WOW6432Node view, which has no MachineGuid.
+      run('reg', ['query', 'HKLM\SOFTWARE\Microsoft\Cryptography', '/v', 'MachineGuid', '/reg:64']),
+      run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '(Get-CimInstance Win32_BIOS).SerialNumber']),
+    ]);
+    return (_identity = { mac, machine_guid: parseMachineGuid(reg), serial: cleanSerial(bios) });
+  })().catch(() => (_identity = { mac: getMacAddressCached(), machine_guid: null, serial: null }));
+  return _identityLoading;
+}
+
+/** What has been read so far (nulls until loadMachineIdentity has finished). Starts the read if it has not begun. */
+export function machineIdentity(): MachineIdentity {
+  if (!_identity && !_identityLoading) void loadMachineIdentity();
+  return _identity ?? { mac: getMacAddressCached(), machine_guid: null, serial: null };
+}
+
+/** The headers that tell the cloud which machine this is: the MAC as A182, the guid and serial hashed. Pure. */
+export function identityHeadersFor(id: MachineIdentity): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (id.mac) h['X-Device-Mac'] = id.mac;
+  if (id.machine_guid) h['X-Device-Guid'] = hashIdentifier(id.machine_guid);
+  if (id.serial) h['X-Device-Serial'] = hashIdentifier(id.serial);
+  return h;
+}
+
+/** The identity headers, waiting (bounded) for the first read. */
+export async function identityHeaders(): Promise<Record<string, string>> {
+  return identityHeadersFor(await loadMachineIdentity());
+}
+
+/** Test seam: forget the read (or set it). */
+export function _setMachineIdentity(id: MachineIdentity | null): void { _identity = id; _identityLoading = null; }

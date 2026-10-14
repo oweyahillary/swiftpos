@@ -65,7 +65,7 @@ export function VerticalSetupRoute() {
 // of the old Staff Management page.
 export function IntegrationsRoute() {
   return (
-    <div className="p-6 space-y-10">
+    <div className="p-4 sm:p-6 space-y-10">
       <WebhooksTab />
       <div className="border-t border-gray-800" />
       <ReportSchedulerTab />

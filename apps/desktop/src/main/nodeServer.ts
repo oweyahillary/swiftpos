@@ -251,16 +251,23 @@ export function startNodeServer(): void {
       // node can't reach the cloud either, 503 so the peer keeps trading offline
       // and retries. Authenticated by X-Node-Secret (checked above). Only the
       // node needs the internet.
-      if (req.method === 'POST' && url === '/node/refresh') {
+      // A477: the renewal's ack goes the same way (/node/refresh/ack → /api/auth/refresh/ack), and both pass the till's
+      // own X-Device-* headers on (its id, its machine, a lost device secret) — the cloud checks the PEER's machine, not
+      // this server's.
+      if (req.method === 'POST' && (url === '/node/refresh' || url === '/node/refresh/ack')) {
         const body = await readBody(req);
         const token = body?.refreshToken;
         if (!token) return json(res, 400, { error: 'refreshToken is required' });
         const serverUrl = getDeviceConfig()?.server_url;
         if (!serverUrl) return json(res, 503, { error: 'node has no cloud URL configured' });
+        const peerHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(req.headers)) {
+          if (/^x-device-/i.test(k) && typeof v === 'string' && v) peerHeaders[k] = v;
+        }
         try {
-          const up = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/auth/refresh`, {
+          const up = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/auth/${url === '/node/refresh' ? 'refresh' : 'refresh/ack'}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...peerHeaders },
             body: JSON.stringify({ refreshToken: token }),
             signal: AbortSignal.timeout(10_000),   // A446: the till waits 12 s for this; never hang it
           });

@@ -41,7 +41,7 @@ const td = src.slice(tdOpen, src.indexOf('>', tdOpen) + 1);
 ok('the actions cell holds Edit', tdOpen > 0 && editAt > tdOpen);
 ok('the actions cell is pinned right (sticky right-0)', /\bsticky\b/.test(td) && /\bright-0\b/.test(td), td);
 ok('…with an opaque background, so scrolled cells pass beneath it', /\bbg-gray-900\b/.test(td), td);
-ok('the actions never wrap out of the cell', /justify-end whitespace-nowrap/.test(src.slice(tdOpen, editAt)));
+ok('the actions never wrap out of the cell', /justify-end sm:whitespace-nowrap/.test(src.slice(tdOpen, editAt)) /* A463: a phone wraps them in the cell */);
 
 // Header: the last <th> of the products table's header row.
 const headEnd = src.indexOf('</tr>', tableAt);

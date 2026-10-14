@@ -27,7 +27,7 @@ const guard = route.indexOf("res.status(424).json({ code: 'shift_not_synced'");
 
 ok('unknown drawer → 424 shift_not_synced, looked up by id inside the caller\'s business', () => {
   assert.ok(guard > 0, 'no 424 guard in POST /api/orders');
-  assert.match(route, /\.from\('shifts'\)\.select\('id'\)\.eq\('id', resolvedShiftId\)\.eq\('business_id', req\.businessId\)\.maybeSingle\(\)/);
+  assert.match(route, /\.from\('shifts'\)\.select\('id(?:, status)?'\)\.eq\('id', resolvedShiftId\)\.eq\('business_id', req\.businessId\)\.maybeSingle\(\)/);
 });
 ok('…BEFORE the sale is written (create_order_atomic), so the foreign key never fails as a 500/422', () => {
   const create = route.indexOf("rpc('create_order_atomic'");

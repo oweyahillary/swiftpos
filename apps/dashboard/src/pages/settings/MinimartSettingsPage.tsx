@@ -3,9 +3,14 @@
  * Route: /dashboard/settings/minimart
  * Converted to Tailwind — Session 2 Phase 2
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { api } from '../../lib/api';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import BulkProductImport from '../products/BulkProductImport';
+import { money } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
+import { useBusiness } from '../../context/BusinessContext';
 
 interface Product {
   id: string; name: string; base_price: number;
@@ -53,6 +58,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function MinimartSettingsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const [tab, setTab]             = useState<Tab>('scan');
   const [products, setProducts]   = useState<Product[]>([]);
   const [settings, setSettings]   = useState<Record<string, string>>({});
@@ -60,6 +66,7 @@ export default function MinimartSettingsPage() {
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState('');
   const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const more = useRowMore();
 
   useEffect(() => { loadData(); }, []);
 
@@ -107,6 +114,13 @@ export default function MinimartSettingsPage() {
     (p.barcode ?? '').includes(search) ||
     (p.plu_code ?? '').includes(search)
   );
+  // A475: the products in pages (25 / 50 / 100, remembered in this browser). A new search → page 1; a barcode / PLU
+  // edit keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.minimartProducts');
+  useEffect(() => { setPage(1); }, [search]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'scan',     label: '📡 Scanner' },
@@ -115,27 +129,27 @@ export default function MinimartSettingsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-4 sm:p-6 max-w-5xl">
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
           {toast}
         </div>
       )}
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Minimart Settings</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-white">Minimart Settings</h1>
         <p className="text-sm text-gray-500 mt-1">Configure your minimart POS behaviour, products and barcode scanner</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-gray-800">
+      <div className="flex gap-1 mb-5 border-b border-gray-800 overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors whitespace-nowrap ${
               tab === t.key
                 ? 'border-swift text-swift-text'
                 : 'border-transparent text-gray-500 hover:text-gray-300'
@@ -199,29 +213,32 @@ export default function MinimartSettingsPage() {
           </div>
 
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <table className="w-full">
+            <div className="overflow-x-auto"><table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
-                  {['Product', 'Category', 'Price', 'Barcode', 'PLU', 'Sold by', ''].map(h => (
-                    <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  {['Product', 'Category', 'Price', 'Barcode', 'PLU', 'Sold by', ''].map((h, i) => (
+                    <th key={h} className={`px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider${i !== 0 && i !== 2 && i !== 6 ? ` ${DESK}` : ''}`}>
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(p => (
-                  <tr key={p.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                    <td className="px-3 py-3 text-sm font-semibold text-white">{p.name}</td>
-                    <td className="px-3 py-3 text-xs text-gray-500">{p.categories?.name ?? '—'}</td>
-                    <td className="px-3 py-3 text-sm font-semibold text-green-400">{Number(p.base_price).toFixed(2)}</td>
-                    <td className="px-3 py-3">
+                {paged.items.map(p => (
+                  <Fragment key={p.id}>
+                  <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                    <td className="px-3 py-3 text-sm font-semibold text-white">{p.name}
+                      <ViewMore open={more.isOpen(p.id)} onClick={() => more.toggle(p.id)} />
+                    </td>
+                    <td className={`px-3 py-3 text-xs text-gray-500 ${DESK}`}>{p.categories?.name ?? '—'}</td>
+                    <td className="px-3 py-3 text-sm font-semibold text-green-400">{money(p.base_price, currency)}</td>
+                    <td className={`px-3 py-3 ${DESK}`}>
                       {p.barcode ? <Badge color="blue">{p.barcode}</Badge> : <span className="text-gray-700 text-xs">—</span>}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className={`px-3 py-3 ${DESK}`}>
                       {p.plu_code ? <Badge color="violet">{p.plu_code}</Badge> : <span className="text-gray-700 text-xs">—</span>}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className={`px-3 py-3 ${DESK}`}>
                       <Badge color={p.sold_by === 'weight' ? 'amber' : p.sold_by === 'volume' ? 'cyan' : 'slate'}>
                         {p.sold_by ?? 'each'}
                       </Badge>
@@ -235,15 +252,25 @@ export default function MinimartSettingsPage() {
                       </button>
                     </td>
                   </tr>
+                  <MoreRow open={more.isOpen(p.id)} colSpan={3} items={[
+                    ['Category', p.categories?.name ?? '—'],
+                    ['Barcode', p.barcode ? <Badge color="blue">{p.barcode}</Badge> : <span className="text-gray-700 text-xs">—</span>],
+                    ['PLU', p.plu_code ? <Badge color="violet">{p.plu_code}</Badge> : <span className="text-gray-700 text-xs">—</span>],
+                    ['Sold by', <Badge color={p.sold_by === 'weight' ? 'amber' : p.sold_by === 'volume' ? 'cyan' : 'slate'}>
+                        {p.sold_by ?? 'each'}
+                      </Badge>],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
-            </table>
+            </table></div>
+            <Pager paged={paged} noun="products" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
           </div>
 
           {/* Edit product modal */}
           {editProduct && (
-            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-5">
                   <h3 className="text-base font-bold text-white">Edit: {editProduct.name}</h3>
                   <button onClick={() => setEditProduct(null)} className="w-7 h-7 bg-gray-800 hover:bg-gray-700 border-none rounded-md text-gray-400 text-sm cursor-pointer">✕</button>

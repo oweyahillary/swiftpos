@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import SupplierAccount from '../../components/SupplierAccount';   // A395
 import { usePermissions } from '../../context/PermissionsContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
+import { money } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // A395: what is owed to each supplier (only for someone holding payables.manage — the owner by default).
 interface Position { id: string; balance: number; overdue: number; dueSoon: number; openBills: number }
@@ -37,13 +41,13 @@ export default function SuppliersPage() {
   const [error, setError]         = useState('');
   const { can } = usePermissions();
   const canPay = can('payables.manage');
+  const more = useRowMore();   // A464: a phone shows Supplier, Owed and the actions
   const { business } = useBusiness();
   const { branches } = useBranch();
   const currency = (business as { currency?: string } | null)?.currency || 'KES';
   const [summary, setSummary]     = useState<Summary | null>(null);
   const [account, setAccount]     = useState<string | null>(null);
   const owedOf = (id: string) => summary?.suppliers.find(p => p.id === id);
-  const money = (n: number) => `${currency} ${n.toLocaleString('en-KE', { maximumFractionDigits: 2 })}`;
 
   const load = async () => {
     setLoading(true);
@@ -103,6 +107,13 @@ export default function SuppliersPage() {
     (s.contact_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
     (s.email ?? '').toLowerCase().includes(search.toLowerCase())
   );
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser). The owed cards are over every supplier.
+  // A new search → page 1; an edit keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.suppliers');
+  useEffect(() => { setPage(1); }, [search]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   if (account) {
     return (
@@ -114,9 +125,9 @@ export default function SuppliersPage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto p-6">
+    <div className="flex-1 overflow-auto p-4 sm:p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl font-bold text-white">Suppliers<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
           <p className="text-gray-500 text-sm mt-0.5">{suppliers.filter(s => s.status === 'active').length} active suppliers</p>
@@ -133,9 +144,9 @@ export default function SuppliersPage() {
       {canPay && summary && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5" data-testid="payables-summary">
           {[
-            { label: 'You owe suppliers', value: money(summary.owed), cls: 'text-white' },
-            { label: 'Overdue', value: money(summary.overdue), cls: summary.overdue > 0 ? 'text-red-400' : 'text-gray-400' },
-            { label: 'Due in the next 7 days', value: money(summary.dueSoon), cls: summary.dueSoon > 0 ? 'text-amber-400' : 'text-gray-400' },
+            { label: 'You owe suppliers', value: money(summary.owed, currency), cls: 'text-white' },
+            { label: 'Overdue', value: money(summary.overdue, currency), cls: summary.overdue > 0 ? 'text-red-400' : 'text-gray-400' },
+            { label: 'Due in the next 7 days', value: money(summary.dueSoon, currency), cls: summary.dueSoon > 0 ? 'text-amber-400' : 'text-gray-400' },
           ].map(c => (
             <div key={c.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <p className="text-gray-500 text-xs">{c.label}</p>
@@ -167,74 +178,92 @@ export default function SuppliersPage() {
             <p className="text-gray-500 text-sm">{search ? 'Try a different search' : 'Add your first supplier to get started'}</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wide">
-                <th className="text-left px-5 py-3">Supplier</th>
-                <th className="text-left px-5 py-3">Contact</th>
-                <th className="text-left px-5 py-3">Email</th>
-                <th className="text-left px-5 py-3">Phone</th>
-                <th className="text-left px-5 py-3">Status</th>
-                {canPay && <th className="text-right px-5 py-3">Owed</th>}
-                <th className="px-5 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(s => (
-                <tr key={s.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                  <td className="px-5 py-3.5">
-                    <span className="text-white font-medium">{s.name}</span>
-                    {s.address && <p className="text-gray-500 text-xs mt-0.5 truncate max-w-xs">{s.address}</p>}
-                  </td>
-                  <td className="px-5 py-3.5 text-gray-300">{s.contact_name ?? '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-300">{s.email ?? '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-300">{s.phone ?? '—'}</td>
-                  <td className="px-5 py-3.5">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                      s.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
-                    }`}>
-                      {s.status}
-                    </span>
-                  </td>
-                  {canPay && (() => {
-                    const o = owedOf(s.id);
-                    return (
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                        <span className={o && o.balance > 0 ? 'text-white' : 'text-gray-500'}>{o ? money(o.balance) : '—'}</span>
-                        {o && o.overdue > 0 && <p className="text-red-400 text-xs mt-0.5">{money(o.overdue)} overdue</p>}
-                      </td>
-                    );
-                  })()}
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2 justify-end">
-                      {canPay && (
-                        <button
-                          onClick={() => setAccount(s.id)}
-                          className="text-swift-text hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
-                        >
-                          Account
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openEdit(s)}
-                        className="text-gray-500 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
-                      >
-                        Edit
-                      </button>
-                      {s.status === 'active' && (
-                        <button
-                          onClick={() => deactivate(s)}
-                          className="text-gray-500 hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
-                        >
-                          Deactivate
-                        </button>
-                      )}
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wide">
+                  <th className="text-left px-5 py-3">Supplier</th>
+                  <th className={`text-left px-5 py-3 ${DESK}`}>Contact</th>
+                  <th className={`text-left px-5 py-3 ${DESK}`}>Email</th>
+                  <th className={`text-left px-5 py-3 ${DESK}`}>Phone</th>
+                  <th className={`text-left px-5 py-3 ${DESK}`}>Status</th>
+                  {canPay && <th className="text-right px-5 py-3">Owed</th>}
+                  <th className="px-5 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {paged.items.map(s => (
+                  <Fragment key={s.id}>
+                  <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                    <td className="px-5 py-3.5">
+                      <span className="text-white font-medium">{s.name}</span>
+                      {s.address && <p className="text-gray-500 text-xs mt-0.5 truncate max-w-xs">{s.address}</p>}
+                      <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
+                    </td>
+                    <td className={`px-5 py-3.5 text-gray-300 ${DESK}`}>{s.contact_name ?? '—'}</td>
+                    <td className={`px-5 py-3.5 text-gray-300 ${DESK}`}>{s.email ?? '—'}</td>
+                    <td className={`px-5 py-3.5 text-gray-300 ${DESK}`}>{s.phone ?? '—'}</td>
+                    <td className={`px-5 py-3.5 ${DESK}`}>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        s.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
+                      }`}>
+                        {s.status}
+                      </span>
+                    </td>
+                    {canPay && (() => {
+                      const o = owedOf(s.id);
+                      return (
+                        <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                          <span className={o && o.balance > 0 ? 'text-white' : 'text-gray-500'}>{o ? money(o.balance, currency) : '—'}</span>
+                          {o && o.overdue > 0 && <p className="text-red-400 text-xs mt-0.5">{money(o.overdue, currency)} overdue</p>}
+                        </td>
+                      );
+                    })()}
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2 justify-end">
+                        {canPay && (
+                          <button
+                            onClick={() => setAccount(s.id)}
+                            className="text-swift-text hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
+                          >
+                            Account
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openEdit(s)}
+                          className="text-gray-500 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        {s.status === 'active' && (
+                          <button
+                            onClick={() => deactivate(s)}
+                            className="text-gray-500 hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
+                          >
+                            Deactivate
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  <MoreRow open={more.isOpen(String(s.id))} colSpan={canPay ? 3 : 2} items={[
+                    ['Contact', s.contact_name ?? '—'],
+                    ['Email', s.email ?? '—'],
+                    ['Phone', s.phone ?? '—'],
+                    ['Status', <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        s.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
+                      }`}>
+                        {s.status}
+                      </span>],
+                  ]} />
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!loading && filtered.length > 0 && (
+          <Pager paged={paged} noun="suppliers" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         )}
       </div>
 

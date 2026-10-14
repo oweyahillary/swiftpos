@@ -656,9 +656,16 @@ router.post('/', async (req, res) => {
     // tries), rather than letting the orders.shift_id foreign key fail as a 500.
     if (resolvedShiftId) {
       const { data: drawer } = await supabase
-        .from('shifts').select('id').eq('id', resolvedShiftId).eq('business_id', req.businessId).maybeSingle();
+        .from('shifts').select('id, status').eq('id', resolvedShiftId).eq('business_id', req.businessId).maybeSingle();
       if (!drawer) {
         res.status(424).json({ code: 'shift_not_synced', error: 'This sale\'s drawer has not reached the cloud yet — it will sync right after it.' });
+        return;
+      }
+      // A462: a web sale into a drawer that was closed elsewhere (force-closed, or counted by a manager / the owner) is
+      // refused — the web POS then asks for a new shift. A till's sale is never refused for it: it may have been rung
+      // offline before the till heard of the close, and a sale is never lost (it stays on the shift it was rung into).
+      if ((drawer as { status?: string }).status !== 'open' && !req.isTill && req.surface !== 'desktop') {
+        res.status(409).json({ code: 'SHIFT_CLOSED', error: 'This shift was closed — open a new shift to keep selling.' });
         return;
       }
     }

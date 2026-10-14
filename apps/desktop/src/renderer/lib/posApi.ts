@@ -213,6 +213,22 @@ export interface StockTransfer {
   stock_transfer_items: Array<{ id: string; product_id: string; quantity: number; quantity_received: number | null; products?: { name: string } | null }>;
 }
 
+/** A466: the monthly pack (A455) as the cloud builds it (apps/server/src/lib/monthlyPack.ts Pack). */
+export type MovementKind = 'opening' | 'other_income' | 'drawing' | 'bank_deposit' | 'charges';
+export interface MonthlySummaryRow { day: string; byMethod: Record<string, number>; total: number; expected: number | null; counted: number | null; variance: number | null; cashiers: string[]; remarks: string[] }
+export interface MonthlyBookRow { day: string; sales: number; otherIn: number; expenses: number; paidOut: number; drawings: number; deposits: number; charges: number; balance: number }
+export interface MonthlyPack {
+  title: string; methods: string[];
+  summary: { rows: MonthlySummaryRow[]; byMethod: Record<string, number>; total: number; expected: number; counted: number; variance: number };
+  expenses: { days: { day: string; lines: { type: string | null; description: string; amount: number; method: string; by: string | null }[]; total: number }[];
+    byType: { type: string; amount: number }[]; byMethod: { method: string; amount: number }[]; total: number };
+  books: { method: string; label: string; opening: number; rows: MonthlyBookRow[]; totals: Omit<MonthlyBookRow, 'day' | 'balance'>; closing: number }[];
+}
+/** A466: what a manager recorded for the books (money_movements). */
+export interface MoneyMovement { id: string; movement_date: string; method: string; kind: MovementKind; amount: number; note: string | null; recorded_by_name: string | null }
+/** A466: a monthly-pack answer from main — never thrown; `code: 'offline'` when there is no connection. */
+export interface MonthlyAnswer<T> { ok: boolean; data?: T; branch_id?: string; error?: string; code?: string | null; status?: number | null }
+
 /** A452: one shift as its till reports it to the branch server (main/branchClose.ts PeerShift). */
 /** A458: one payment method's line in the branch's day totals (main/branchClose.ts branchMethodTotals). */
 export interface BranchMethodLine { method: string; sales: number; expected: number; confirmed: number; variance: number }
@@ -221,6 +237,18 @@ export interface BranchTotals {
   total: Omit<BranchMethodLine, 'method'>;
   orders: number;
   shifts: { all: number; open: number; awaiting: number; confirmed: number; uncounted: number };
+}
+
+/** A465: a cash in / out or expense the branch server sent to a till (main/branchClose.ts ShiftMoneyView). */
+export interface ShiftMoneyView {
+  id: number; status: string; error: string | null; created_at: string;
+  shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; note: string | null;
+  /** set once the till has picked it up — from then on it may be on its books, so it can no longer be withdrawn */
+  delivered_at: string | null; acked_at: string | null;
+}
+export interface ShiftMoneyRequest {
+  device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
+  description?: string; expense_category_id?: string; category_name?: string; payment_method?: string;
 }
 
 export interface BranchPeerShift {
@@ -481,9 +509,13 @@ declare global {
               /** A452: the till's shifts (absent from an older till), and its clock when it reported. */
               shifts?: BranchPeerShift[];
               clock?: string;
+              /** A465: the till's code and name (absent from an older till). */
+              terminal?: { code?: string | null; name?: string | null };
             } | null;
             /** A452: the latest confirm sent per shift. */
             confirms?: Record<string, { status: string; error: string | null; created_at: string }>;
+            /** A465: cash in / out and expenses sent to this till from the server (last 24 h). */
+            money?: ShiftMoneyView[];
             instruction: {
               id: number; status: string; created_at: string;
               delivered_at: string | null; acked_at: string | null;
@@ -506,6 +538,13 @@ declare global {
           ok: boolean; error?: string; blockers?: string[];
           results?: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }>;
         }>;
+        /** A465: a cash in / out or expense on any running shift of the branch — the till records it (server only). */
+        shiftMoney: (req: ShiftMoneyRequest) => Promise<{
+          ok: boolean; error?: string; instruction_id?: number; row_id?: string; direct?: boolean;
+          summary?: { kind: string; amount: number; shift_id: string; expected_cash: number } | null;
+        }>;
+        /** A465: withdraw one the till has not answered yet. */
+        cancelShiftMoney: (instructionId: number) => Promise<{ ok: boolean; error?: string }>;
       };
       /** A197: stock transfers between branches (online licence; inventory.transfer). */
       transfers: {
@@ -516,6 +555,16 @@ declare global {
         status: (body: { id: string; status: 'in_transit' | 'received' | 'cancelled'; reason?: string;
           received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
           Promise<{ ok: boolean; data?: StockTransfer; error?: string; code?: string | null }>;
+      };
+      /** A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in; online only. */
+      monthly: {
+        get: (month: string, branchId?: string) => Promise<MonthlyAnswer<MonthlyPack>>;
+        export: (month: string, branchId?: string) => Promise<{ ok: boolean; path?: string; error?: string; code?: string | null; canceled?: boolean }>;
+        movements: {
+          list: (month: string, branchId?: string) => Promise<MonthlyAnswer<MoneyMovement[]>>;
+          add: (m: { movement_date: string; method: string; kind: MovementKind; amount: number; note?: string; branch_id?: string }) => Promise<MonthlyAnswer<MoneyMovement>>;
+          remove: (id: string) => Promise<MonthlyAnswer<{ ok: true }>>;
+        };
       };
       print: {
         list: () => Promise<PrinterInfo[]>;
@@ -601,6 +650,8 @@ declare global {
         forceClose: (reason: string) => Promise<ZReport>;
         /** A401: the shift was closed on the web and the till closed it too. Returns an unsubscribe. */
         onClosedElsewhere: (cb: (e: { id: string; message: string }) => void) => () => void;
+        /** A465: the branch server recorded a cash in / out or expense on this till's shift. Returns an unsubscribe. */
+        onChangedElsewhere: (cb: (e: { id: string | null; kind: string | null }) => void) => () => void;
         current: (opts?: { includeForeign?: boolean }) => Promise<ZReport | null>;
         open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
         /** 0.6.37 (A388): a pay out needs a manager — signed in, or `pin` (a manager's). */
@@ -731,6 +782,8 @@ declare global {
         create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
                   /** 0.6.27: how it was paid ('cash' leaves the drawer) and the type's name. */
                   payment_method?: string; category_name?: string;
+                  /** A466: the branch server's manager — recorded outside any drawer even with a shift open here. */
+                  no_drawer?: boolean;
                   /** 0.6.37 (A388): a manager's PIN — every expense needs a manager (none when one is signed in). */
                   pin?: string }) => Promise<{ id: string; approvedBy?: string | null }>;
         list: () => Promise<any[]>;

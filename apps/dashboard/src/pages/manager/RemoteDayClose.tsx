@@ -30,8 +30,6 @@ interface TillDay {
   instruction: Instruction | null;
 }
 
-const fmt = (n: number, c: string) =>
-  `${c} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function statusLine(ins: Instruction | null): string {
   if (!ins) return '';

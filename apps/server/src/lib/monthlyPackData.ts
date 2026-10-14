@@ -49,6 +49,9 @@ const asReasons = (v: unknown): Record<string, string> | null => {
   return Object.keys(out).length ? out : null;
 };
 
+/** A467: PostgREST's answer for a table the database does not have (42P01 / not in the schema cache). */
+export const MISSING_TABLE = /does not exist|schema cache|42P01|Could not find the table/i;
+
 export async function loadPack(businessId: string, branchId: string, month: string): Promise<Pack> {
   const days = monthDays(month);
   if (!days.length) throw Object.assign(new Error('month must be YYYY-MM'), { status: 400 });
@@ -63,24 +66,35 @@ export async function loadPack(businessId: string, branchId: string, month: stri
   const range = businessRangeEAT(first, last, cutoff);
   const dayOf = (iso: string) => businessDateEAT(new Date(iso), cutoff);
 
+  // A467: each read names itself in the log when it fails ("Could not build the monthly pack" said nothing of which).
+  const named = <T,>(label: string, p: Promise<T>) => p.then((v) => v, (e: any) => { throw new Error(`monthly pack — ${label}: ${e?.message ?? e}`); });
   const [orders, shifts, expenses, floats, movements] = await Promise.all([
-    pageAll<any>(() => supabase.from('orders').select('id, created_at, payments ( method, amount, status )')
+    named('orders', pageAll<any>(() => supabase.from('orders').select('id, created_at, payments ( method, amount, status )')
       .eq('business_id', businessId).eq('branch_id', branchId).eq('status', 'completed')
-      .gte('created_at', range.start).lte('created_at', range.end)),
-    pageAll<any>(() => supabase.from('shifts')
+      .gte('created_at', range.start).lte('created_at', range.end))),
+    named('shifts', pageAll<any>(() => supabase.from('shifts')
       .select('id, business_date, opened_at, status, cashier_id, expected_methods, confirmed_methods, confirm_reasons, confirmed_at')
       .eq('business_id', businessId).eq('branch_id', branchId)
-      .gte('business_date', first).lte('business_date', last)),
-    pageAll<any>(() => supabase.from('expenses')
+      .gte('business_date', first).lte('business_date', last))),
+    named('expenses', pageAll<any>(() => supabase.from('expenses')
       .select('id, expense_date, description, amount, payment_method, recorded_by, paid_by, expense_categories ( name )')
       .eq('business_id', businessId).eq('branch_id', branchId)
-      .gte('expense_date', first).lte('expense_date', last)),
-    pageAll<any>(() => supabase.from('float_transactions').select('id, created_at, type, amount, reason')
-      .eq('branch_id', branchId).gte('created_at', range.start).lte('created_at', range.end)),
+      .gte('expense_date', first).lte('expense_date', last))),
+    named('float_transactions', pageAll<any>(() => supabase.from('float_transactions').select('id, created_at, type, amount, reason')
+      .eq('branch_id', branchId).gte('created_at', range.start).lte('created_at', range.end))),
+    // A467: the books' own entries live in money_movements (migration 130). A database without it still gets its pack —
+    // without those entries — instead of "Could not build the monthly pack" for everything.
     pageAll<any>(() => supabase.from('money_movements')
       .select('id, movement_date, method, kind, amount, note, recorded_by_name')
       .eq('business_id', businessId).eq('branch_id', branchId)
-      .gte('movement_date', first).lte('movement_date', last)),
+      .gte('movement_date', first).lte('movement_date', last))
+      .then((rows) => rows, (e: any) => {
+        if (MISSING_TABLE.test(String(e?.message ?? ''))) {
+          console.warn('[monthly] money_movements is missing — apply migration 130; the pack is built without the books\' own entries');
+          return [] as any[];
+        }
+        throw new Error(`monthly pack — money_movements: ${e?.message ?? e}`);
+      }),
   ]);
   const names = await namesOf([...shifts.map((s) => s.cashier_id), ...expenses.map((e) => e.recorded_by ?? e.paid_by)]);
 

@@ -19,6 +19,7 @@ import { supabase } from '../lib/supabase';
 import { useBusiness } from '../context/BusinessContext';
 import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
+import { money, litres, time, elapsed } from '../lib/format';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,18 +39,6 @@ interface Shift { id: string; cashier_name: string; branch_name: string; opened_
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(n: number, currency = 'KES') {
-  return `${currency} ${n.toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
-}
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
-}
-function hoursAgo(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const h = Math.floor(diff / 3_600_000);
-  const m = Math.floor((diff % 3_600_000) / 60_000);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
 function deltaLabel(curr: number, prev: number) {
   if (!prev) return null;
   const pct = Math.round(((curr - prev) / prev) * 100);
@@ -110,7 +99,7 @@ function Section({ title, sub, linkTo, linkLabel, live, children }: {
   );
 }
 
-function MiniBarChart({ series }: { series: { date: string; revenue: number }[] }) {
+function MiniBarChart({ series, currency }: { series: { date: string; revenue: number }[]; currency: string }) {
   const last7 = series.slice(-7);
   const max = Math.max(...last7.map(d => d.revenue), 1);
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -125,7 +114,7 @@ function MiniBarChart({ series }: { series: { date: string; revenue: number }[] 
               <div
                 style={{ height: `${pct}%` }}
                 className={`rounded-sm transition-all ${isToday ? 'bg-blue-500' : 'bg-gray-700'}`}
-                title={`${d.date}: ${d.revenue.toLocaleString()}`}
+                title={`${d.date}: ${money(d.revenue, currency)}`}
               />
             </div>
           );
@@ -303,7 +292,7 @@ export default function OverviewPage() {
   if (loading && !sales) return <OverviewSkeleton />;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-gray-950">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-950">
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3 mb-6">
         <div>
@@ -321,7 +310,7 @@ export default function OverviewPage() {
         <div className="flex items-center gap-3">
           {lastUpdated && (
             <span className="text-xs text-gray-600">
-              Updated {fmtTime(lastUpdated.toISOString())}
+              Updated {time(lastUpdated.toISOString())}
             </span>
           )}
           <button onClick={load} disabled={loading}
@@ -335,16 +324,16 @@ export default function OverviewPage() {
       {isPetrol && pumpMonitor && (
         <div className="mb-5">
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-gray-800">
               <div className="flex items-center gap-2">
                 <span className="text-white text-sm font-medium">Pump Monitor</span>
                 <span className="flex items-center gap-1 text-[10px] text-green-400 font-medium">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />live
                 </span>
               </div>
-              <div className="flex items-center gap-4 text-xs text-gray-500">
-                <span>{fmt(pumpMonitor.totals?.total_revenue_today ?? 0, currency)} today</span>
-                <span>{(pumpMonitor.totals?.total_litres_today ?? 0).toLocaleString('en-KE', { maximumFractionDigits: 1 })} L sold</span>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-500">
+                <span>{money(pumpMonitor.totals?.total_revenue_today ?? 0, currency)} today</span>
+                <span>{litres(pumpMonitor.totals?.total_litres_today, 1)} sold</span>
                 <span>{pumpMonitor.totals?.total_transactions ?? 0} transactions</span>
               </div>
             </div>
@@ -366,18 +355,17 @@ export default function OverviewPage() {
                       const pct = p.capacity_litres && p.remaining_litres != null
                         ? Math.min(100, Math.round((p.remaining_litres / p.capacity_litres) * 100)) : null;
                       const colour = p.is_low ? 'text-red-400' : (pct ?? 100) < 50 ? 'text-amber-400' : 'text-green-400';
-                      const fmtL = (n: number | null) => n != null ? `${n.toLocaleString('en-KE', { maximumFractionDigits: 1 })} L` : '—';
                       return (
                         <tr key={p.pump_id} className={`hover:bg-gray-800/30 transition-colors ${p.is_low ? 'bg-red-500/5' : ''}`}>
                           <td className="px-4 py-3 font-medium text-white whitespace-nowrap">{p.pump_name}</td>
                           <td className="px-4 py-3 text-gray-300">{p.product_name ?? '—'}</td>
                           <td className="px-4 py-3 text-gray-400 tabular-nums">
-                            {p.price_per_litre ? `${currency} ${Number(p.price_per_litre).toFixed(2)}` : '—'}
+                            {p.price_per_litre ? money(p.price_per_litre, currency) : '—'}
                           </td>
-                          <td className="px-4 py-3 text-gray-400 tabular-nums">{fmtL(p.opening_litres)}</td>
-                          <td className="px-4 py-3 text-amber-400 font-medium tabular-nums">{fmtL(p.sold_litres)}</td>
+                          <td className="px-4 py-3 text-gray-400 tabular-nums">{litres(p.opening_litres, 1, '—')}</td>
+                          <td className="px-4 py-3 text-amber-400 font-medium tabular-nums">{litres(p.sold_litres, 1, '—')}</td>
                           <td className={`px-4 py-3 font-semibold tabular-nums ${colour}`}>
-                            {fmtL(p.remaining_litres)}
+                            {litres(p.remaining_litres, 1, '—')}
                             {p.is_low && <span className="ml-1.5 text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full">LOW</span>}
                           </td>
                           <td className="px-4 py-3">
@@ -391,7 +379,7 @@ export default function OverviewPage() {
                             ) : '—'}
                           </td>
                           <td className="px-4 py-3 text-green-400 font-semibold tabular-nums">
-                            {fmt(p.revenue_today, currency)}
+                            {money(p.revenue_today, currency)}
                           </td>
                           <td className="px-4 py-3 text-gray-400 tabular-nums text-center">{p.transactions_today}</td>
                           <td className="px-4 py-3">
@@ -410,11 +398,11 @@ export default function OverviewPage() {
                     <tr className="border-t border-gray-700">
                       <td colSpan={4} className="px-4 py-2.5 text-xs text-gray-500 font-medium">Totals</td>
                       <td className="px-4 py-2.5 text-xs font-semibold text-amber-400 tabular-nums">
-                        {(pumpMonitor.totals?.total_litres_today ?? 0).toLocaleString('en-KE', { maximumFractionDigits: 1 })} L
+                        {litres(pumpMonitor.totals?.total_litres_today, 1)}
                       </td>
                       <td colSpan={2} />
                       <td className="px-4 py-2.5 text-xs font-semibold text-green-400 tabular-nums">
-                        {fmt(pumpMonitor.totals?.total_revenue_today ?? 0, currency)}
+                        {money(pumpMonitor.totals?.total_revenue_today ?? 0, currency)}
                       </td>
                       <td className="px-4 py-2.5 text-xs font-semibold text-gray-400 tabular-nums text-center">
                         {pumpMonitor.totals?.total_transactions ?? 0}
@@ -431,10 +419,10 @@ export default function OverviewPage() {
 
       {/* KPI row — live values */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        <KpiCard label="Revenue today"                    value={fmt(rev, currency)} delta={deltaLabel(rev, ydRev)} accent />
+        <KpiCard label="Revenue today"                    value={money(rev, currency)} delta={deltaLabel(rev, ydRev)} accent />
         <KpiCard label={isPetrol ? 'Transactions today' : 'Orders today'} value={orders.toString()} delta={deltaLabel(orders, ydOrders)} />
-        <KpiCard label={isPetrol ? 'Avg transaction' : 'Avg order'}       value={fmt(avg, currency)} />
-        <KpiCard label="M-Pesa"                           value={fmt(mpesa, currency)}
+        <KpiCard label={isPetrol ? 'Avg transaction' : 'Avg order'}       value={money(avg, currency)} />
+        <KpiCard label="M-Pesa"                           value={money(mpesa, currency)}
           sub={rev > 0 ? `${Math.round((mpesa / rev) * 100)}% of revenue` : undefined} />
       </div>
 
@@ -450,7 +438,7 @@ export default function OverviewPage() {
               </span>
             </div>
             <div className="text-right">
-              <p className="text-white text-sm font-semibold tabular-nums">{fmt(orders60rev, currency)}</p>
+              <p className="text-white text-sm font-semibold tabular-nums">{money(orders60rev, currency)}</p>
               <p className="text-gray-500 text-xs">{orders60count} orders</p>
             </div>
           </div>
@@ -478,7 +466,7 @@ export default function OverviewPage() {
               <div key={s.id} className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-white text-xs font-medium truncate">{s.cashier_name}</p>
-                  <p className="text-gray-600 text-[10px]">{hoursAgo(s.opened_at)} · float {fmt(s.opening_float, currency)}</p>
+                  <p className="text-gray-600 text-[10px]">{elapsed(s.opened_at)} · float {money(s.opening_float, currency)}</p>
                 </div>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
               </div>
@@ -505,7 +493,7 @@ export default function OverviewPage() {
                         <div className="flex justify-between text-sm mb-1">
                           <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
                           <span className="text-white font-medium tabular-nums">
-                            {fmt(amount, currency)} <span className="text-gray-500 font-normal text-xs">{pct}%</span>
+                            {money(amount, currency)} <span className="text-gray-500 font-normal text-xs">{pct}%</span>
                           </span>
                         </div>
                         <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
@@ -534,7 +522,7 @@ export default function OverviewPage() {
                         <p className="text-gray-600 text-xs">{p.qty} sold</p>
                       </div>
                     </div>
-                    <span className="text-white text-sm font-medium flex-shrink-0 tabular-nums">{fmt(p.revenue, currency)}</span>
+                    <span className="text-white text-sm font-medium flex-shrink-0 tabular-nums">{money(p.revenue, currency)}</span>
                   </div>
                 ))}
               </div>
@@ -547,7 +535,7 @@ export default function OverviewPage() {
         {/* Revenue trend */}
         <Section title="7-day trend" linkTo="/dashboard/reports" linkLabel="full report →">
           {(sales?.dailySeries?.length ?? 0) > 0
-            ? <MiniBarChart series={sales!.dailySeries} />
+            ? <MiniBarChart series={sales!.dailySeries} currency={currency} />
             : <p className="text-gray-600 text-sm">No data yet.</p>}
         </Section>
 
@@ -600,19 +588,19 @@ export default function OverviewPage() {
                         {i === 0 && <span className="text-[10px] text-amber-400">★</span>}
                         <p className="text-white text-sm font-medium">{b.name}</p>
                       </div>
-                      <span className="text-white text-sm font-semibold tabular-nums">{fmt(b.revenue, currency)}</span>
+                      <span className="text-white text-sm font-semibold tabular-nums">{money(b.revenue, currency)}</span>
                     </div>
                     <div className="h-1 bg-gray-700 rounded-full overflow-hidden mb-1">
                       <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                     </div>
-                    <p className="text-gray-500 text-xs">{b.orders} orders · avg {fmt(b.orders > 0 ? b.revenue / b.orders : 0, currency)}</p>
+                    <p className="text-gray-500 text-xs">{b.orders} orders · avg {money(b.orders > 0 ? b.revenue / b.orders : 0, currency)}</p>
                   </div>
                 );
               })}
           </div>
           <div className="flex justify-between items-center pt-2 border-t border-gray-800">
             <span className="text-gray-500 text-xs">Combined today</span>
-            <span className="text-white text-base font-semibold tabular-nums">{fmt(rev, currency)}</span>
+            <span className="text-white text-base font-semibold tabular-nums">{money(rev, currency)}</span>
           </div>
         </Section>
       ) : null}

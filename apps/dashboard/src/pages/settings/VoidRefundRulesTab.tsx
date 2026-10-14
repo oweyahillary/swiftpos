@@ -81,7 +81,7 @@ export default function VoidRefundRulesTab() {
     void save('offline_refund_methods', list, { ...rules, offlineRefundMethods: list });
   }
 
-  if (loading) return <div className="p-6 text-gray-500 text-sm">Loading…</div>;
+  if (loading) return <div className="p-4 sm:p-6 text-gray-500 text-sm">Loading…</div>;
 
   const web = rules.offlineReverseWebSales;
   const free = rules.freeDeliveryAllowed;   // 0.6.33
@@ -98,9 +98,9 @@ export default function VoidRefundRulesTab() {
   }
 
   return (
-    <div className="p-6 max-w-2xl space-y-8" data-testid="void-refund-rules">
+    <div className="p-4 sm:p-6 max-w-2xl space-y-8" data-testid="void-refund-rules">
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-gray-800 border border-gray-700 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">{toast}</div>
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-gray-800 border border-gray-700 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">{toast}</div>
       )}
 
       <p className="text-sm text-gray-400">

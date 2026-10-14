@@ -105,6 +105,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
     confirmShift: (device_id: string, shift_id: string, counts: Record<string, number>, reasons?: Record<string, string>) =>
       ipcRenderer.invoke('branchClose:confirmShift', { device_id, shift_id, counts, reasons }),
     closeBranch: (notes?: string, totalsConfirmed?: boolean) => ipcRenderer.invoke('branchClose:closeBranch', { notes, totals_confirmed: totalsConfirmed === true }),   // A458
+    // A465: a cash in / out or expense on any running shift of the branch (the till records it); withdraw one not yet taken.
+    shiftMoney: (req: { device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
+      description?: string; expense_category_id?: string; category_name?: string; payment_method?: string }) => ipcRenderer.invoke('branchClose:shiftMoney', req),
+    cancelShiftMoney: (instruction_id: number) => ipcRenderer.invoke('branchClose:cancelShiftMoney', { instruction_id }),
   },
   // A197: stock transfers between branches (online licence).
   transfers: {
@@ -115,6 +119,17 @@ contextBridge.exposeInMainWorld('swiftpos', {
     status:   (body: { id: string; status: 'in_transit' | 'received' | 'cancelled'; reason?: string;
                 received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
       ipcRenderer.invoke('transfers:status', body),
+  },
+  // A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in.
+  monthly: {
+    get:     (month: string, branch_id?: string) => ipcRenderer.invoke('monthly:get', { month, branch_id }),
+    export:  (month: string, branch_id?: string) => ipcRenderer.invoke('monthly:export', { month, branch_id }),
+    movements: {
+      list:   (month: string, branch_id?: string) => ipcRenderer.invoke('monthly:movements', { month, branch_id }),
+      add:    (m: { movement_date: string; method: string; kind: string; amount: number; note?: string; branch_id?: string }) =>
+        ipcRenderer.invoke('monthly:addMovement', m),
+      remove: (id: string) => ipcRenderer.invoke('monthly:removeMovement', { id }),
+    },
   },
   print: {
     list: () => ipcRenderer.invoke('print:list'),
@@ -208,6 +223,12 @@ contextBridge.exposeInMainWorld('swiftpos', {
       const h = (_e: unknown, e: { id: string; message: string }) => cb(e);
       ipcRenderer.on('shift:closedElsewhere', h);
       return () => { ipcRenderer.removeListener('shift:closedElsewhere', h); };
+    },
+    // A465: the branch server recorded a cash in / out or expense on this till's shift — reload the drawer's figures.
+    onChangedElsewhere: (cb: (e: { id: string | null; kind: string | null }) => void) => {
+      const h = (_e: unknown, e: { id: string | null; kind: string | null }) => cb(e);
+      ipcRenderer.on('shift:changedElsewhere', h);
+      return () => { ipcRenderer.removeListener('shift:changedElsewhere', h); };
     },
     float:   (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason, pin }),   // 0.6.37: pin
     close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),
@@ -390,7 +411,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   expense: {
     categories: () => ipcRenderer.invoke('expense:categories'),
     addCategory: (name: string) => ipcRenderer.invoke('expense:addCategory', { name }),   // A341
-    create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string; pin?: string }) =>
+    create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string; pin?: string; no_drawer?: boolean }) =>
               ipcRenderer.invoke('expense:create', payload),
     list: () => ipcRenderer.invoke('expense:list'),
     range: (range?: any) => ipcRenderer.invoke('expense:range', range),

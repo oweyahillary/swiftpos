@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import BranchSelector from './BranchSelector';
 import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
+import { relative } from '../lib/format';
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
 // One curated stroke path per nav concept, in place of the mixed emoji the web
@@ -180,16 +181,6 @@ const TYPE_ICON: Record<string, string> = {
   low_stock: 'warning', daily_summary: 'summary', default: 'bell',
 };
 
-function fmtTime(iso: string) {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMins = Math.floor((now.getTime() - d.getTime()) / 60000);
-  if (diffMins < 1)  return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24)  return `${diffHrs}h ago`;
-  return d.toLocaleDateString('en-KE', { day: 'numeric', month: 'short' });
-}
 
 function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: boolean; onToggle: () => void }) {
   const location = useLocation();
@@ -354,6 +345,11 @@ export default function DashboardLayout() {
   }, [openGroup]);
   const toggleGroup = (label: string) => setOpenGroup(cur => (cur === label ? null : label));
 
+  // A463 (owner, 2026-10-13: "make it mobile responsive"): on a phone the sidebar is a drawer behind ☰ — it took 224 of a
+  // 360-pixel screen. Closed whenever a page is opened. From md (768px) up it is the fixed sidebar, as before.
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => { setNavOpen(false); }, [navLocation.pathname]);
+
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount]     = useState(0);
   const [bellOpen, setBellOpen]           = useState(false);
@@ -430,8 +426,11 @@ export default function DashboardLayout() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
-      <aside className="w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
+    <div className="flex h-[100dvh] bg-gray-950 text-white overflow-hidden">
+      {navOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden animate-fade-in" onClick={() => setNavOpen(false)} aria-hidden />}
+      <aside data-testid="dashboard-sidebar"
+        className={`fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0
+          ${navOpen ? 'translate-x-0' : '-translate-x-full'} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col`}>
 
         {/* Logo + bell */}
         <div className="px-5 py-5 border-b border-gray-800 flex items-center justify-between">
@@ -453,7 +452,7 @@ export default function DashboardLayout() {
               )}
             </button>
             {bellOpen && (
-              <div className="absolute left-0 top-full mt-2 w-80 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 overflow-hidden">
+              <div className="fixed left-3 right-3 top-16 md:absolute md:left-0 md:right-auto md:top-full md:mt-2 md:w-80 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-pop-in">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
                   <p className="text-white text-sm font-semibold">Notifications</p>
                   {unreadCount > 0 && (
@@ -478,7 +477,7 @@ export default function DashboardLayout() {
                           {!n.read_at && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-action-500 mt-1" />}
                         </div>
                         {n.message && <p className="text-gray-500 text-xs mt-0.5 line-clamp-2">{n.message}</p>}
-                        <p className="text-gray-600 text-xs mt-1">{fmtTime(n.created_at)}</p>
+                        <p className="text-gray-600 text-xs mt-1">{relative(n.created_at)}</p>
                       </div>
                     </div>
                   ))}
@@ -543,7 +542,19 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto flex flex-col">
+      <main className="flex-1 min-w-0 overflow-y-auto flex flex-col">
+        {/* A463: the phone's top bar — ☰ opens the menu; the business and its unread notifications at a glance. */}
+        <div className="md:hidden sticky top-0 z-20 flex items-center gap-3 px-3 h-12 bg-gray-900 border-b border-gray-800">
+          <button data-testid="nav-open" onClick={() => setNavOpen(true)} aria-label="Open the menu"
+            className="p-2 -ml-1 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
+          <p className="flex-1 min-w-0 truncate text-sm font-semibold text-white">{business?.name ?? 'ZapTill'}</p>
+          {unreadCount > 0 && (
+            <button onClick={() => { setNavOpen(true); setBellOpen(true); }} aria-label="Notifications"
+              className="min-w-[1.5rem] h-6 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold">{unreadCount > 99 ? '99+' : unreadCount}</button>
+          )}
+        </div>
         <Outlet key={activeBranchId ?? 'all'} />
       </main>
     </div>

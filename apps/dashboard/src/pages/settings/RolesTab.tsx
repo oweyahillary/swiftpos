@@ -100,7 +100,7 @@ export default function RolesTab({ onRolesChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-white font-semibold text-lg">Roles</h2>
           <p className="text-gray-500 text-sm">Define what each role can access. Expand a role to edit its permissions.</p>
@@ -115,7 +115,7 @@ export default function RolesTab({ onRolesChange }: Props) {
       {showNewRole && (
         <div className="bg-gray-800/50 border border-gray-700 rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-700 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Role Name</label>
                 <input value={newName} onChange={e => setNewName(e.target.value)}

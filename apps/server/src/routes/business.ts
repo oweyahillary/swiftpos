@@ -15,6 +15,8 @@ import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/payment
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
+import { cleanReportSchedule } from '../jobs/ownerAlertsDecision';   // A476
+import { isOwnerAlertJobKey } from '../jobs/ownerAlerts';             // A476
 
 const router = safeRouter();
 
@@ -327,7 +329,8 @@ router.get('/settings/report-schedule', requireAuth, async (req, res) => {
     .maybeSingle();
 
   if (error) { sendError(res, error); return; }
-  if (!data) { res.json(DEFAULT); return; }
+  // A476: every switch and amount, defaults filled in (what the job will actually do).
+  if (!data) { res.json(cleanReportSchedule(DEFAULT)); return; }
 
   // POST /settings stores the JSON string the client sent; tolerate a column
   // that hands back already-parsed JSON too, and never let a malformed row throw.
@@ -336,7 +339,7 @@ router.get('/settings/report-schedule', requireAuth, async (req, res) => {
     parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
   } catch { parsed = DEFAULT; }
 
-  res.json({ ...DEFAULT, ...(parsed && typeof parsed === 'object' ? parsed : {}) });
+  res.json(cleanReportSchedule({ ...DEFAULT, ...(parsed && typeof parsed === 'object' ? parsed : {}) }) ?? DEFAULT);
 });
 
 // POST /api/business/settings
@@ -368,6 +371,30 @@ router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'se
       // that offered them the field. A45 is what the vaguer message cost.
       detail: `receipt.manage may only write the receipt text (header, footer, how to pay), not "${key}"`,
     });
+    return;
+  }
+
+  // ── A476: the owner's email schedule — only the known keys, each cleaned (amounts in range, real addresses) ──
+  // Who may write it is unchanged: settings.manage / owner (checked above). The alert job's own bookkeeping keys are
+  // never written from here.
+  if (isOwnerAlertJobKey(String(key))) {
+    res.status(403).json({ error: 'That setting is kept by ZapTill itself.', code: 'READ_ONLY_KEY' });
+    return;
+  }
+  if (key === 'report_schedule') {
+    const clean = cleanReportSchedule(value);
+    if (!clean) {
+      res.status(400).json({ error: 'The report schedule must be an object.', code: 'INVALID_VALUE' });
+      return;
+    }
+    const stored = JSON.stringify(clean);
+    const { data: existingRs } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: rsErr } = existingRs
+      ? await supabase.from('business_settings').update({ value: stored, updated_at: new Date().toISOString() }).eq('id', existingRs.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: stored });
+    if (rsErr) { sendError(res, rsErr); return; }
+    res.json({ key, value: stored });
     return;
   }
 

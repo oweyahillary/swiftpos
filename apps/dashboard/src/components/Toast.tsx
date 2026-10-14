@@ -43,8 +43,8 @@ export default function Toast({ toast, onDismiss }: Props) {
       className={`
         fixed top-4 left-1/2 -translate-x-1/2 z-[9999]
         flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl
-        text-sm font-medium max-w-sm w-full mx-4
-        animate-in fade-in slide-in-from-top-2 duration-200
+        text-sm font-medium w-[calc(100%-2rem)] max-w-sm
+        animate-slide-down
         ${STYLES[toast.type]}
       `}
     >

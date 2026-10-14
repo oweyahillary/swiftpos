@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useTerm } from '../lib/terminology';
 import { api } from '../lib/api';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
+import { money } from '../lib/format';
+import { useBusiness } from '../context/BusinessContext';
 
 interface Promotion {
   id: string;
@@ -79,6 +81,7 @@ function fmtDays(days: number[]): string {
 }
 
 export default function PromotionsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const { term } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [promos, setPromos]     = useState<Promotion[]>([]);
@@ -202,9 +205,9 @@ export default function PromotionsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex-shrink-0 flex items-center justify-between">
+      <div className="px-4 sm:px-6 pt-6 pb-4 border-b border-gray-800 flex-shrink-0 flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-white text-2xl font-bold">{term('promotions')}</h1>
+          <h1 className="text-white text-xl sm:text-2xl font-bold">{term('promotions')}</h1>
           <p className="text-gray-500 text-sm mt-1">
             Happy hour, BOGO, and quantity deals — applied automatically at the POS
           </p>
@@ -216,7 +219,7 @@ export default function PromotionsPage() {
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {loading ? (
           <div className="text-center py-16 text-gray-500 text-sm">Loading…</div>
         ) : promos.length === 0 ? (
@@ -256,7 +259,7 @@ export default function PromotionsPage() {
                             <span>⏰ {fmtTime(p.start_time)} – {fmtTime(p.end_time)}</span>
                             <span>📅 {fmtDays(p.days_of_week)}</span>
                             {p.discount_value != null && (
-                              <span>💰 {p.discount_type === 'percentage' ? `${p.discount_value}% off` : `KES ${p.discount_value} off`}</span>
+                              <span>💰 {p.discount_type === 'percentage' ? `${p.discount_value}% off` : `${money(p.discount_value, currency)} off`}</span>
                             )}
                           </>}
                           {p.promo_type === 'bogo' && <>
@@ -266,7 +269,7 @@ export default function PromotionsPage() {
                           {p.promo_type === 'quantity_discount' && <>
                             <span>🛒 {p.min_quantity}+ items</span>
                             {p.discount_value != null && (
-                              <span>💰 {p.discount_type === 'percentage' ? `${p.discount_value}% off` : `KES ${p.discount_value} off`}</span>
+                              <span>💰 {p.discount_type === 'percentage' ? `${p.discount_value}% off` : `${money(p.discount_value, currency)} off`}</span>
                             )}
                             <span>📅 {fmtDays(p.days_of_week)}</span>
                           </>}
@@ -337,7 +340,7 @@ export default function PromotionsPage() {
               {/* Type */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Type</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {(['happy_hour', 'bogo', 'quantity_discount'] as PromoType[]).map(t => {
                     const meta = TYPE_META[t];
                     return (
@@ -435,7 +438,7 @@ export default function PromotionsPage() {
                           className={`text-xs px-3 py-1 rounded-md transition-colors ${
                             form.discount_type === dt ? 'bg-gray-700 text-white' : 'text-gray-500'
                           }`}>
-                          {dt === 'percentage' ? '% off' : 'KES off'}
+                          {dt === 'percentage' ? '% off' : `${currency} off`}
                         </button>
                       ))}
                     </div>

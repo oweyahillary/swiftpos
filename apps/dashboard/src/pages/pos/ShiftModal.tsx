@@ -403,8 +403,8 @@ export default function ShiftModal({
     // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={s.overlay}>
-      <div style={s.modal}>
+    <div className="animate-fade-in" style={s.overlay}>
+      <div className="animate-pop-in" style={s.modal}>
 
         {/* ── OPEN SHIFT ─────────────────────────────────────── */}
         {mode === 'open' && (
@@ -466,6 +466,7 @@ export default function ShiftModal({
             <div style={s.actions}>
               <button style={s.cancelBtn} onClick={onClose} disabled={loading}>Cancel</button>
               <button style={s.primaryBtn} onClick={handleOpen} disabled={loading}>
+                {loading && <span className="spin-dot" aria-hidden />}
                 {loading ? (joining ? 'Joining…' : 'Opening…') : (joining ? 'Join this drawer' : 'Open Shift')}
               </button>
             </div>
@@ -544,6 +545,7 @@ export default function ShiftModal({
             <div style={s.actions}>
               <button style={s.cancelBtn} onClick={onClose} disabled={loading}>Cancel</button>
               <button style={{ ...s.primaryBtn, background: '#ef4444' }} onClick={handleClose} disabled={loading}>
+                {loading && <span className="spin-dot" aria-hidden />}
                 {loading ? 'Closing…' : 'Close Shift'}
               </button>
             </div>
@@ -677,6 +679,7 @@ export default function ShiftModal({
                 )}
                 {error && <p style={s.error}>{error}</p>}
                 <button style={{ ...s.primaryBtn, width: '100%', marginTop: 8 }} onClick={handleConfirm} disabled={loading}>
+                  {loading && <span className="spin-dot" aria-hidden />}
                   {loading ? 'Confirming…' : 'Confirm shift'}
                 </button>
               </div>
@@ -770,6 +773,7 @@ export default function ShiftModal({
             <div style={s.actions}>
               <button style={s.cancelBtn} onClick={onClose} disabled={loading}>Cancel</button>
               <button style={s.primaryBtn} onClick={handleFloat} disabled={loading}>
+                {loading && <span className="spin-dot" aria-hidden />}
                 {loading ? 'Saving…' : 'Record'}
               </button>
             </div>
@@ -838,6 +842,7 @@ export default function ShiftModal({
             <div style={s.actions}>
               <button style={s.cancelBtn} onClick={onClose} disabled={loading}>Cancel</button>
               <button style={s.primaryBtn} onClick={handleExpense} disabled={loading}>
+                {loading && <span className="spin-dot" aria-hidden />}
                 {loading ? 'Saving…' : 'Record'}
               </button>
             </div>
@@ -879,10 +884,12 @@ const s: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60,
+    padding: 12,
   },
   modal: {
     background: '#1e293b', border: '1px solid #334155', borderRadius: 16,
     padding: '28px 28px 24px', width: 340, maxWidth: '92vw',
+    maxHeight: '90dvh', overflowY: 'auto',
     boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
   },
   iconRow: { textAlign: 'center', marginBottom: 10 },

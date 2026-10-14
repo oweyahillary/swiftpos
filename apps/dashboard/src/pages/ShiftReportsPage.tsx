@@ -14,15 +14,19 @@
  * Reads only existing routes: GET /api/shifts (the list, with the confirmation columns) and GET /api/shifts/:id (what the
  * cloud recorded per method). The rules are shared/shiftConfirm.ts, the same file the till and the web POS use.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { api } from '../lib/api';
 import { localDateStr } from '../lib/localDate';
 import { useBusiness } from '../context/BusinessContext';
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../lib/paginate';
 import { printDocument } from '../lib/printDocument';
 import { shiftDocSpec, shiftListDocSpec } from '../lib/documentSpecs';
 import {
   methodName, shiftReportStatus, shiftStatusLabel, shiftReportLines, shiftDifference, type ShiftReportStatus,
 } from '../lib/shiftConfirm';
+import { money, num, dayTime, time } from '../lib/format';
 
 interface ShiftRow {
   id: string;
@@ -47,9 +51,6 @@ interface ShiftRow {
 
 type StatusFilter = 'all' | 'running' | 'awaiting' | 'confirmed' | 'problems';
 
-const fmtNum = (n: number) => n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
-const hm = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : '…');
 
 /** A shift the owner should look at: over/short, the manager's count differs, still awaiting, or never counted. */
 export function isProblem(s: ShiftRow): boolean {
@@ -71,7 +72,8 @@ const STATUS_TONE: Record<ShiftReportStatus, string> = {
 export default function ShiftReportsPage() {
   const { business } = useBusiness();
   const currency = business?.currency ?? 'KES';
-  const money = (n: number | null | undefined) => (n === null || n === undefined ? '—' : `${currency} ${fmtNum(n)}`);
+  const more = useRowMore();    // A464: a phone shows Cashier, Status, View
+  const moreV = useRowMore();   // A464: the shift's table shows Method, Variance
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return localDateStr(d); });
   const [to, setTo] = useState(() => localDateStr());
   const [filter, setFilter] = useState<StatusFilter>('all');
@@ -104,6 +106,13 @@ export default function ShiftReportsPage() {
     if (filter === 'problems') return isProblem(s);
     return true;
   }), [rows, filter]);
+  // A475: the shifts (up to 200) in pages (25 / 50 / 100, remembered in this browser). The counts, the printed report and
+  // the CSV use every filtered shift. New dates or a filter → page 1.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.shiftReports');
+  useEffect(() => { setPage(1); }, [from, to, filter]);
+  const paged = paginate(shown, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   const counts = useMemo(() => ({
     running: rows.filter((s) => shiftReportStatus(s) === 'running').length,
@@ -124,7 +133,7 @@ export default function ShiftReportsPage() {
     const head = ['Cashier', 'Till', 'Opened', 'Closed', 'Status', 'Difference', 'Opening float', 'Cash counted', 'Expected cash'];
     const lines = shown.map((s) => [
       s.cashier_name, s.terminal_code ?? 'Web', s.opened_at, s.closed_at ?? '',
-      shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), shiftDifference(s, fmtNum),
+      shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), shiftDifference(s, (n: number) => num(n, 2)),
       s.opening_float, s.confirmed_methods?.cash ?? s.closing_float ?? '', s.expected_methods?.cash ?? s.expected_cash ?? '',
     ].map(esc).join(','));
     const blob = new Blob([[head.map(esc).join(','), ...lines].join('\n')], { type: 'text/csv' });
@@ -139,8 +148,8 @@ export default function ShiftReportsPage() {
   const printList = () => printDocument(shiftListDocSpec({
     business: biz, from, to, filterLabel,
     rows: shown.map((s) => ({
-      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: when(s.opened_at), closed: s.closed_at ? when(s.closed_at) : 'running',
-      status: shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), difference: shiftDifference(s, fmtNum),
+      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: dayTime(s.opened_at), closed: s.closed_at ? dayTime(s.closed_at) : 'running',
+      status: shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), difference: shiftDifference(s, (n: number) => num(n, 2)),
     })),
     awaiting: shown.filter((s) => shiftReportStatus(s) === 'awaiting').length,
     problems: shown.filter(isProblem).length,
@@ -149,9 +158,9 @@ export default function ShiftReportsPage() {
     const st = shiftReportStatus(s);
     printDocument(shiftDocSpec({
       business: biz, currency,
-      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: when(s.opened_at), closed: s.closed_at ? when(s.closed_at) : 'still running',
+      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: dayTime(s.opened_at), closed: s.closed_at ? dayTime(s.closed_at) : 'still running',
       openingFloat: Number(s.opening_float) || 0, status: shiftStatusLabel(st, s.confirmer_name),
-      confirmedAt: s.confirmed_at ? when(s.confirmed_at) : null, self: st === 'self',
+      confirmedAt: s.confirmed_at ? dayTime(s.confirmed_at) : null, self: st === 'self',
       confirmed: st === 'confirmed' || st === 'self', running: st === 'running',
       lines: shiftReportLines(s, byMethod), methodName: (m) => methodName(m), notes: s.notes,
     }));
@@ -160,7 +169,7 @@ export default function ShiftReportsPage() {
   const inputCls = 'rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-1.5 text-sm text-gray-900 dark:text-white';
 
   return (
-    <div className="p-6 space-y-4" data-testid="shift-reports">
+    <div className="p-4 sm:p-6 space-y-4" data-testid="shift-reports">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Shift Reports</h1>
@@ -181,7 +190,7 @@ export default function ShiftReportsPage() {
         <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} />
         <label className="text-sm text-gray-600 dark:text-gray-400">to</label>
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
-        <div className="flex gap-1 ml-2">
+        <div className="flex flex-wrap gap-1 ml-2">
           {([['all', 'All'], ['running', `Running (${counts.running})`], ['awaiting', `Awaiting check (${counts.awaiting})`],
              ['confirmed', 'Confirmed'], ['problems', `Problems (${counts.problems})`]] as [StatusFilter, string][]).map(([k, l]) => (
             <button key={k} onClick={() => setFilter(k)} data-testid={`filter-${k}`}
@@ -198,29 +207,39 @@ export default function ShiftReportsPage() {
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-900 text-left text-xs text-gray-500">
-                <tr><th className="px-3 py-2">Cashier</th><th>Till</th><th>Shift</th><th>Status</th><th>Difference</th><th /></tr>
+                <tr><th className="px-3 py-2">Cashier</th><th className={DESK}>Till</th><th className={DESK}>Shift</th><th>Status</th><th className={DESK}>Difference</th><th /></tr>
               </thead>
               <tbody>
-                {shown.map((s) => {
+                {paged.items.map((s) => {
                   const st = shiftReportStatus(s);
-                  const diff = shiftDifference(s, fmtNum);
+                  const diff = shiftDifference(s, (n: number) => num(n, 2));
                   const bad = /[−+]/.test(diff) || /differed|Not counted/.test(diff);
                   return (
-                    <tr key={s.id} className="border-t border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-200">
-                      <td className="px-3 py-2 font-medium">{s.cashier_name}</td>
-                      <td>{s.terminal_code ?? 'Web'}</td>
-                      <td>{when(s.opened_at)} – {s.closed_at ? hm(s.closed_at) : 'now'}</td>
+                    <Fragment key={s.id}>
+                    <tr className="border-t border-gray-100 dark:border-gray-800 text-gray-800 dark:text-gray-200">
+                      <td className="px-3 py-2 font-medium">{s.cashier_name}
+                        <ViewMore open={more.isOpen(String(s.id))} onClick={() => more.toggle(String(s.id))} />
+                      </td>
+                      <td className={DESK}>{s.terminal_code ?? 'Web'}</td>
+                      <td className={DESK}>{dayTime(s.opened_at)} – {s.closed_at ? time(s.closed_at, '…') : 'now'}</td>
                       <td><span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_TONE[st]}`} data-testid="shift-status">{shiftStatusLabel(st, s.confirmer_name)}</span></td>
-                      <td className={bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'}>{diff || '—'}</td>
+                      <td className={`${bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'} ${DESK}`}>{diff || '—'}</td>
                       <td className="pr-3 text-right">
                         <button onClick={() => void openView(s)} data-testid={`view-${s.id}`}
                           className="px-3 py-1 rounded bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-medium">View</button>
                       </td>
                     </tr>
+                    <MoreRow open={more.isOpen(String(s.id))} colSpan={3} items={[
+                      ['Till', s.terminal_code ?? 'Web'],
+                      ['Shift', `${dayTime(s.opened_at)} – ${s.closed_at ? time(s.closed_at, '…') : 'now'}`],
+                      ['Difference', <span className={bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'}>{diff || '—'}</span>],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>
             </table>
+            <Pager paged={paged} noun="shifts" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
           </div>
         )
       )}
@@ -231,43 +250,54 @@ export default function ShiftReportsPage() {
         const confirmed = st === 'confirmed' || st === 'self';
         return (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 p-5 space-y-4" data-testid="shift-view">
+            <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 p-5 space-y-4 max-h-[90vh] overflow-y-auto" data-testid="shift-view">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-gray-900 dark:text-white">{view.cashier_name} · {view.terminal_code ?? 'Web'}</h2>
-                  <p className="text-sm text-gray-500">{when(view.opened_at)} – {view.closed_at ? when(view.closed_at) : 'still running'} · opening float {money(Number(view.opening_float))}</p>
+                  <p className="text-sm text-gray-500">{dayTime(view.opened_at)} – {view.closed_at ? dayTime(view.closed_at) : 'still running'} · opening float {money(Number(view.opening_float), currency, { blank: '—' })}</p>
                   <p className="text-sm mt-1"><span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_TONE[st]}`}>{shiftStatusLabel(st, view.confirmer_name)}</span>
-                    {view.confirmed_at && <span className="ml-2 text-xs text-gray-500">{when(view.confirmed_at)}</span>}</p>
+                    {view.confirmed_at && <span className="ml-2 text-xs text-gray-500">{dayTime(view.confirmed_at)}</span>}</p>
                 </div>
                 <button onClick={() => setView(null)} className="text-gray-400 hover:text-gray-700 dark:hover:text-white print:hidden">✕</button>
               </div>
 
               {st === 'running' ? (
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Still running. Expected cash in the drawer now: <strong>{money(view.expected_cash_live)}</strong>. The table appears once the cashier closes the shift.
+                  Still running. Expected cash in the drawer now: <strong>{money(view.expected_cash_live, currency, { blank: '—' })}</strong>. The table appears once the cashier closes the shift.
                 </p>
               ) : (
-                <table className="w-full text-sm" data-testid="shift-view-table">
-                  <thead className="text-left text-xs text-gray-500">
-                    <tr><th className="py-1">Method</th><th className="text-right">Cashier said</th><th className="text-right">Manager counted</th><th className="text-right">Till recorded</th><th className="text-right">Variance</th></tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((l) => {
-                      const v = l.variance ?? 0;
-                      return (
-                        <tr key={l.method} className={`border-t border-gray-100 dark:border-gray-800 ${l.mismatch ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
-                          <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{methodName(l.method)}</td>
-                          <td className="text-right">{money(l.cashier)}</td>
-                          <td className="text-right">{confirmed ? money(l.manager) : '—'}</td>
-                          <td className="text-right">{money(l.recorded)}</td>
-                          <td className={`text-right font-medium ${Math.round(v * 100) === 0 ? 'text-gray-500' : v < 0 ? 'text-red-600 dark:text-red-400' : 'text-amber-600'}`}>
-                            {l.variance === null ? '—' : Math.round(v * 100) === 0 ? '0' : `${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))}`}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="shift-view-table">
+                    <thead className="text-left text-xs text-gray-500">
+                      <tr><th className="py-1">Method</th><th className={`text-right ${DESK}`}>Cashier said</th><th className={`text-right ${DESK}`}>Manager counted</th><th className={`text-right ${DESK}`}>Till recorded</th><th className="text-right">Variance</th></tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((l) => {
+                        const v = l.variance ?? 0;
+                        return (
+                          <Fragment key={l.method}>
+                          <tr className={`border-t border-gray-100 dark:border-gray-800 ${l.mismatch ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
+                            <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{methodName(l.method)}
+                              <ViewMore open={moreV.isOpen(String(l.method))} onClick={() => moreV.toggle(String(l.method))} />
+                            </td>
+                            <td className={`text-right ${DESK}`}>{money(l.cashier, currency, { blank: '—' })}</td>
+                            <td className={`text-right ${DESK}`}>{confirmed ? money(l.manager, currency, { blank: '—' }) : '—'}</td>
+                            <td className={`text-right ${DESK}`}>{money(l.recorded, currency, { blank: '—' })}</td>
+                            <td className={`text-right font-medium ${Math.round(v * 100) === 0 ? 'text-gray-500' : v < 0 ? 'text-red-600 dark:text-red-400' : 'text-amber-600'}`}>
+                              {l.variance === null ? '—' : Math.round(v * 100) === 0 ? '0' : `${v > 0 ? '+' : '−'}${num(Math.abs(v), 2)}`}
+                            </td>
+                          </tr>
+                          <MoreRow open={moreV.isOpen(String(l.method))} colSpan={2} items={[
+                            ['Cashier said', money(l.cashier, currency, { blank: '—' })],
+                            ['Manager counted', confirmed ? money(l.manager, currency, { blank: '—' }) : '—'],
+                            ['Till recorded', money(l.recorded, currency, { blank: '—' })],
+                          ]} />
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               <div className="text-xs text-gray-500 space-y-1">

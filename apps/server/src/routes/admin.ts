@@ -1660,7 +1660,7 @@ router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
 
   const { data: devices, error } = await supabase
     .from('user_devices')
-    .select('id, device_label, device_role, status, branch_id, last_seen_at, created_at, app_version')
+    .select('id, device_id, device_label, device_role, status, branch_id, last_seen_at, created_at, app_version, device_secret_hash')
     .eq('business_id', businessId)
     .order('created_at', { ascending: false })
     .limit(500);
@@ -1686,6 +1686,8 @@ router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
       lastSeenAt: d.last_seen_at,
       enrolledAt: d.created_at,
       appVersion: d.app_version ?? null,
+      // A477: a till that holds no device secret (it cannot sign itself back in until its next renewal hands one over).
+      noDeviceSecret: !!d.device_id && !d.device_secret_hash,
     })),
   });
 });

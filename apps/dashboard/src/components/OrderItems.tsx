@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { detailFromCloud, type OrderDetail } from '../lib/orderDetail';
+import { money } from '../lib/format';
 
 interface Props {
   orderId: string;
@@ -14,8 +15,6 @@ interface Props {
   get: <T>(path: string) => Promise<T>;
 }
 
-const money = (currency: string, v: number) =>
-  `${currency} ${Number(v).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function OrderItems({ orderId, currency, get }: Props) {
   const [detail, setDetail] = useState<OrderDetail | null>(null);
@@ -49,7 +48,7 @@ export default function OrderItems({ orderId, currency, get }: Props) {
               {l.options.length > 0 && <div className="text-gray-400">{l.options.join(' · ')}</div>}
               {l.notes && <div className="text-amber-300/90">Note: {l.notes}</div>}
             </div>
-            <span className="tabular-nums text-gray-200 whitespace-nowrap">{money(currency, l.subtotal)}</span>
+            <span className="tabular-nums text-gray-200 whitespace-nowrap">{money(l.subtotal, currency)}</span>
           </li>
         ))}
       </ul>

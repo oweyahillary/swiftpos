@@ -11,6 +11,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 
 import { API_URL } from '../lib/config';
+import { money } from '../lib/format';
 const API = API_URL;
 
 interface Business { id: string; name: string; currency: string; }
@@ -18,9 +19,6 @@ interface Category  { id: string; name: string; sort_order: number; }
 interface Product   { id: string; name: string; description: string | null; price: number; image_url: string | null; category_id: string | null; }
 interface CartItem  { product: Product; quantity: number; notes: string; }
 
-function fmt(currency: string, n: number) {
-  return `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
-}
 
 export default function QRMenuPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -153,7 +151,7 @@ export default function QRMenuPage() {
               className="flex items-center gap-2 bg-swift-strong hover:bg-swift-deep text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors">
               🛒 <span>{cartCount}</span>
               <span className="hidden sm:inline">·</span>
-              <span className="hidden sm:inline">{fmt(business?.currency ?? 'KES', cartTotal)}</span>
+              <span className="hidden sm:inline">{money(cartTotal, business?.currency ?? 'KES')}</span>
             </button>
           )}
         </div>
@@ -191,7 +189,7 @@ export default function QRMenuPage() {
                   {p.description && <p className="text-gray-500 text-xs mt-0.5 line-clamp-2">{p.description}</p>}
                 </div>
                 <div className="flex items-center justify-between mt-3">
-                  <p className="text-green-400 font-bold">{fmt(business?.currency ?? 'KES', p.price)}</p>
+                  <p className="text-green-400 font-bold">{money(p.price, business?.currency ?? 'KES')}</p>
                   {qty === 0 ? (
                     <button onClick={() => addToCart(p)}
                       className="px-4 py-1.5 bg-swift-strong hover:bg-swift-deep text-white text-sm font-semibold rounded-xl transition-colors">
@@ -220,7 +218,7 @@ export default function QRMenuPage() {
             className="w-full max-w-lg bg-swift-strong hover:bg-swift-deep text-white font-bold py-4 rounded-2xl shadow-2xl flex items-center justify-between px-6 transition-colors">
             <span className="bg-swift-deep/50 text-white text-xs font-bold w-6 h-6 rounded-lg flex items-center justify-center">{cartCount}</span>
             <span>View order</span>
-            <span>{fmt(business?.currency ?? 'KES', cartTotal)}</span>
+            <span>{money(cartTotal, business?.currency ?? 'KES')}</span>
           </button>
         </div>
       )}
@@ -238,7 +236,7 @@ export default function QRMenuPage() {
                 <div key={i.product.id} className="flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-sm font-medium truncate">{i.product.name}</p>
-                    <p className="text-gray-500 text-xs">{fmt(business?.currency ?? 'KES', i.product.price)} each</p>
+                    <p className="text-gray-500 text-xs">{money(i.product.price, business?.currency ?? 'KES')} each</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => updateQty(i.product.id, i.quantity - 1)}
@@ -248,13 +246,13 @@ export default function QRMenuPage() {
                       className="w-7 h-7 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-base flex items-center justify-center">+</button>
                   </div>
                   <span className="text-white text-sm font-medium w-20 text-right">
-                    {fmt(business?.currency ?? 'KES', i.product.price * i.quantity)}
+                    {money(i.product.price * i.quantity, business?.currency ?? 'KES')}
                   </span>
                 </div>
               ))}
               <div className="border-t border-gray-800 pt-3 flex justify-between text-sm font-bold">
                 <span className="text-gray-400">Total</span>
-                <span className="text-white">{fmt(business?.currency ?? 'KES', cartTotal)}</span>
+                <span className="text-white">{money(cartTotal, business?.currency ?? 'KES')}</span>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Your name (optional)</label>
@@ -265,7 +263,7 @@ export default function QRMenuPage() {
             <div className="px-6 py-5 border-t border-gray-800">
               <button onClick={submitOrder} disabled={submitting || cart.length === 0}
                 className="w-full bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white font-bold py-4 rounded-2xl text-base transition-colors">
-                {submitting ? 'Sending to kitchen…' : `Place order · ${fmt(business?.currency ?? 'KES', cartTotal)}`}
+                {submitting ? 'Sending to kitchen…' : `Place order · ${money(cartTotal, business?.currency ?? 'KES')}`}
               </button>
             </div>
           </div>

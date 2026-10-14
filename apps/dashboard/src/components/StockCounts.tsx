@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { printDocument } from '../lib/printDocument';
+import { money, dateTime } from '../lib/format';
+import Pager, { usePageSize } from './Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 /**
  * StockCounts — A394: stock take. One screen for the owner (Stock › Stock counts) and the manager (Manager › Stock
@@ -49,7 +52,6 @@ const STATUS: Record<Take['status'], { label: string; cls: string }> = {
 
 const num = (v: unknown): number | null => (v === null || v === undefined || v === '' ? null : Number(v));
 const fmtQty = (v: unknown): string => { const n = num(v); return n === null ? '—' : String(Math.round(n * 100) / 100); };
-const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const errText = (e: unknown, fallback: string) => (e as { message?: string })?.message || fallback;
 
 export default function StockCounts({ client, branchId, branches, currency = 'KES', business, canStart = true, isOwner = false }: {
@@ -77,6 +79,13 @@ export default function StockCounts({ client, branchId, branches, currency = 'KE
   }, [branchId]);   // eslint-disable-line react-hooks/exhaustive-deps — client is a new object every render (POSAuthContext)
 
   useEffect(() => { void loadList(); }, [loadList]);
+  // A475: the counts (the last 60) in pages (25 / 50 / 100, remembered in this browser). The open count is found in
+  // every row. Another branch → page 1.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.stockCounts');
+  useEffect(() => { setPage(1); }, [branchId]);
+  const paged = paginate(list, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   if (openId) {
     return <CountScreen client={client} id={openId} currency={currency} business={business}
@@ -108,7 +117,7 @@ export default function StockCounts({ client, branchId, branches, currency = 'KE
           <div>
             <div className="text-sm font-semibold text-white">{open.ref} — {STATUS[open.status].label}{open.branches?.name ? ` · ${open.branches.name}` : ''}</div>
             <div className="mt-0.5 text-xs text-gray-400">
-              Started {when(open.started_at)} by {open.started_by_name ?? '—'}
+              Started {dateTime(open.started_at)} by {open.started_by_name ?? '—'}
               {open.freeze ? ' · items cannot be sold until they are counted' : ' · selling carries on'}
             </div>
           </div>
@@ -129,19 +138,22 @@ export default function StockCounts({ client, branchId, branches, currency = 'KE
           <tbody className="divide-y divide-gray-800">
             {loading && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">Loading…</td></tr>}
             {!loading && !list.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">No stock counts yet.</td></tr>}
-            {list.map((t) => (
+            {paged.items.map((t) => (
               <tr key={t.id} onClick={() => setOpenId(t.id)} className="cursor-pointer hover:bg-gray-900/60">
                 <td className="px-4 py-3 text-white">{t.ref}<div className="text-xs text-gray-500">{t.branches?.name ?? branchName(null) ?? ''}</div></td>
                 <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-xs ${STATUS[t.status].cls}`}>{STATUS[t.status].label}</span></td>
-                <td className="hidden px-4 py-3 text-gray-400 sm:table-cell">{when(t.started_at)}<div className="text-xs text-gray-500">{t.started_by_name ?? ''}</div></td>
-                <td className="hidden px-4 py-3 text-gray-400 md:table-cell">{when(t.posted_at)}<div className="text-xs text-gray-500">{t.posted_by_name ?? ''}</div></td>
+                <td className="hidden px-4 py-3 text-gray-400 sm:table-cell">{dateTime(t.started_at)}<div className="text-xs text-gray-500">{t.started_by_name ?? ''}</div></td>
+                <td className="hidden px-4 py-3 text-gray-400 md:table-cell">{dateTime(t.posted_at)}<div className="text-xs text-gray-500">{t.posted_by_name ?? ''}</div></td>
                 <td className={`px-4 py-3 text-right ${t.summary && t.summary.netValue < 0 ? 'text-red-400' : 'text-gray-300'}`}>
-                  {t.summary && t.status === 'posted' ? `${currency} ${t.summary.netValue.toLocaleString('en-KE')}` : '—'}
+                  {t.summary && t.status === 'posted' ? money(t.summary.netValue, currency) : '—'}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        {!loading && list.length > 0 && (
+          <Pager paged={paged} noun="counts" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+        )}
       </div>
 
       {starting && branchId && (
@@ -315,6 +327,20 @@ function CountScreen({ client, id, currency, business, onClose }: {
   }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
 
+  // A475: the count's lines in pages (25 / 50 / 100, remembered in this browser) — a count runs to thousands of lines.
+  // What is typed is kept per line across pages and Save sends every changed line; the progress, the summary and the
+  // printed sheets use every line. A new search or filter → page 1; a save keeps the page (clamped).
+  const q = search.trim().toLowerCase();
+  const rows = (take?.lines ?? []).filter((l) =>
+    (!q || l.name.toLowerCase().includes(q) || (l.category ?? '').toLowerCase().includes(q)) &&
+    (!onlyLeft || l.counted_qty === null) &&
+    (!onlyDiff || (num(l.variance) ?? 0) !== 0));
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.countLines');
+  useEffect(() => { setPage(1); }, [search, onlyLeft, onlyDiff, id]);
+  const paged = paginate(rows, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+
   const dirty = useMemo(() => {
     if (!take) return [] as Array<{ line_id: string; qty: string }>;
     return take.lines.filter((l) => typed[l.id] !== undefined && typed[l.id] !== (l.counted_qty === null ? '' : fmtQty(l.counted_qty)))
@@ -351,34 +377,28 @@ function CountScreen({ client, id, currency, business, onClose }: {
   const counting = take.status === 'counting';
   const review = take.status === 'review' && take.can_review;
   const showDiff = take.can_review && (take.status === 'review' || take.status === 'posted');
-  const q = search.trim().toLowerCase();
-  const rows = take.lines.filter((l) =>
-    (!q || l.name.toLowerCase().includes(q) || (l.category ?? '').toLowerCase().includes(q)) &&
-    (!onlyLeft || l.counted_qty === null) &&
-    (!onlyDiff || (num(l.variance) ?? 0) !== 0));
   const s = take.summary;
-  const money = (n: number | null | undefined) => `${currency} ${(n ?? 0).toLocaleString('en-KE', { maximumFractionDigits: 2 })}`;
 
   const printSheet = (withFigures: boolean) => printDocument({
     docType: withFigures ? 'STOCK COUNT — DIFFERENCES' : 'STOCK COUNT SHEET',
     number: take.ref,
-    dateLabel: when(take.started_at),
+    dateLabel: dateTime(take.started_at),
     accent: withFigures ? '#b45309' : '#475569',
     business: business ?? { name: 'ZapTill' },
     meta: [
       { label: 'Branch', value: take.branch_name ?? '—' },
-      { label: 'Started', value: `${when(take.started_at)} — ${take.started_by_name ?? ''}` },
-      ...(take.posted_at ? [{ label: 'Posted', value: `${when(take.posted_at)} — ${take.posted_by_name ?? ''}` }] : []),
+      { label: 'Started', value: `${dateTime(take.started_at)} — ${take.started_by_name ?? ''}` },
+      ...(take.posted_at ? [{ label: 'Posted', value: `${dateTime(take.posted_at)} — ${take.posted_by_name ?? ''}` }] : []),
     ],
     // Blind sheet: no system figure — only the space to write what is on the shelf.
     columns: withFigures
       ? [{ label: 'Item' }, { label: 'Counted', align: 'right' }, { label: 'Expected', align: 'right' }, { label: 'Difference', align: 'right' }, { label: 'Value', align: 'right' }]
       : [{ label: 'Item' }, { label: 'Category' }, { label: 'Unit' }, { label: 'Counted', align: 'right' }],
     rows: withFigures
-      ? take.lines.filter((l) => l.counted_qty !== null).map((l) => [l.name, fmtQty(l.counted_qty), fmtQty(l.expected_final), fmtQty(l.variance), money(num(l.variance_value))])
+      ? take.lines.filter((l) => l.counted_qty !== null).map((l) => [l.name, fmtQty(l.counted_qty), fmtQty(l.expected_final), fmtQty(l.variance), money(num(l.variance_value), currency)])
       : take.lines.map((l) => [l.name, l.category ?? '', l.unit ?? '', '']),
     totals: withFigures && s ? [
-      { label: 'Short', value: money(s.shortValue) }, { label: 'Over', value: money(s.overValue) }, { label: 'Net', value: money(s.netValue) },
+      { label: 'Short', value: money(s.shortValue, currency) }, { label: 'Over', value: money(s.overValue, currency) }, { label: 'Net', value: money(s.netValue, currency) },
     ] : undefined,
     note: take.note,
     signatures: withFigures ? ['Reviewed by', 'Approved by'] : ['Counted by', 'Checked by'],
@@ -395,7 +415,7 @@ function CountScreen({ client, id, currency, business, onClose }: {
             <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS[take.status].cls}`}>{STATUS[take.status].label}</span>
           </div>
           <p className="mt-0.5 text-sm text-gray-400">
-            {take.branch_name ?? ''} · started {when(take.started_at)} by {take.started_by_name ?? '—'}
+            {take.branch_name ?? ''} · started {dateTime(take.started_at)} by {take.started_by_name ?? '—'}
             {take.freeze && (take.status === 'counting' || take.status === 'review') ? ' · items cannot be sold until counted' : ''}
           </p>
           {take.note && <p className="mt-1 text-xs text-gray-500">{take.note}</p>}
@@ -421,9 +441,9 @@ function CountScreen({ client, id, currency, business, onClose }: {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="count-summary">
           {[
             { label: 'Items with a difference', value: String(s.withVariance), cls: 'text-white' },
-            { label: 'Short', value: money(s.shortValue), cls: 'text-red-400' },
-            { label: 'Over', value: money(s.overValue), cls: 'text-swift-text' },
-            { label: 'Net', value: money(s.netValue), cls: s.netValue < 0 ? 'text-red-400' : 'text-white' },
+            { label: 'Short', value: money(s.shortValue, currency), cls: 'text-red-400' },
+            { label: 'Over', value: money(s.overValue, currency), cls: 'text-swift-text' },
+            { label: 'Net', value: money(s.netValue, currency), cls: s.netValue < 0 ? 'text-red-400' : 'text-white' },
           ].map((c) => (
             <div key={c.label} className="rounded-xl border border-gray-800 bg-gray-900 p-3">
               <div className="text-xs text-gray-500">{c.label}</div>
@@ -434,7 +454,7 @@ function CountScreen({ client, id, currency, business, onClose }: {
       )}
 
       {take.status === 'review' && !take.can_review && (
-        <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-300">Handed in {when(take.submitted_at)}. Waiting for the owner to review the differences.</p>
+        <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-300">Handed in {dateTime(take.submitted_at)}. Waiting for the owner to review the differences.</p>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -456,7 +476,7 @@ function CountScreen({ client, id, currency, business, onClose }: {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
-            {rows.map((l) => {
+            {paged.items.map((l) => {
               const v = num(l.variance) ?? 0;
               const late = num(l.late_sales) ?? 0;
               return (
@@ -489,7 +509,7 @@ function CountScreen({ client, id, currency, business, onClose }: {
                     <td className={`px-3 py-2 text-right font-medium ${v < 0 ? 'text-red-400' : v > 0 ? 'text-swift-text' : 'text-gray-500'}`}>
                       {l.counted_qty === null ? '—' : v > 0 ? `+${fmtQty(v)}` : fmtQty(v)}
                     </td>
-                    <td className="hidden px-3 py-2 text-right text-gray-400 md:table-cell">{l.counted_qty === null || num(l.unit_cost) === null ? '—' : money(num(l.variance_value))}</td>
+                    <td className="hidden px-3 py-2 text-right text-gray-400 md:table-cell">{l.counted_qty === null || num(l.unit_cost) === null ? '—' : money(num(l.variance_value), currency)}</td>
                   </>}
                 </tr>
               );
@@ -497,6 +517,9 @@ function CountScreen({ client, id, currency, business, onClose }: {
             {!rows.length && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">Nothing here.</td></tr>}
           </tbody>
         </table>
+        {rows.length > 0 && (
+          <Pager paged={paged} noun="items" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+        )}
       </div>
 
       {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
@@ -522,7 +545,7 @@ function CountScreen({ client, id, currency, business, onClose }: {
           <button disabled={busy || !picked.length} onClick={() => act('recount', { line_ids: picked })}
             className="rounded-xl border border-gray-700 px-4 py-2 text-sm text-gray-200 disabled:opacity-40">Count again{picked.length ? ` (${picked.length})` : ''}</button>
           <button disabled={busy} data-testid="post-count" onClick={() => act('post', {},
-            `Post ${take.ref}? Stock changes by the differences${s ? ` (net ${money(s.netValue)})` : ''}. Items not counted stay as they are.`)}
+            `Post ${take.ref}? Stock changes by the differences${s ? ` (net ${money(s.netValue, currency)})` : ''}. Items not counted stay as they are.`)}
             className="rounded-xl bg-swift px-4 py-2 text-sm font-semibold text-gray-950 disabled:opacity-40">{busy ? 'Posting…' : 'Post to stock'}</button>
         </>}
       </div>

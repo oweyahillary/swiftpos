@@ -15,6 +15,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import type { Product } from '../../types';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { money, pct } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,7 @@ interface Props {
 }
 
 export default function RecipeDrawer({ product, onClose }: Props) {
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [lines, setLines]             = useState<RecipeLine[]>([]);
@@ -388,20 +391,20 @@ export default function RecipeDrawer({ product, onClose }: Props) {
                         <div className="flex items-center justify-between">
                           <span className="text-gray-400 text-xs">Cost per serving</span>
                           <span className="text-white text-sm font-bold tabular-nums">
-                            KES {costPerServing.toFixed(2)}
+                            {money(costPerServing, currency)}
                           </span>
                         </div>
                         {sellingPrice > 0 && (
                           <div className="flex items-center justify-between mt-1">
                             <span className="text-gray-400 text-xs">Selling price</span>
-                            <span className="text-gray-300 text-sm tabular-nums">KES {Number(sellingPrice).toFixed(2)}</span>
+                            <span className="text-gray-300 text-sm tabular-nums">{money(sellingPrice, currency)}</span>
                           </div>
                         )}
                         {margin !== null && (
                           <div className="flex items-center justify-between mt-1">
                             <span className="text-gray-400 text-xs">Gross margin</span>
                             <span className={`text-sm font-bold tabular-nums ${margin >= 60 ? 'text-green-400' : margin >= 30 ? 'text-amber-400' : 'text-red-400'}`}>
-                              {margin.toFixed(1)}%
+                              {pct(margin)}
                             </span>
                           </div>
                         )}

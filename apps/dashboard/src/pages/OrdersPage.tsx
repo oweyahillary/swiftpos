@@ -17,6 +17,8 @@ import { isRefunded } from './orderRefund';
 import { reprintOrderReceipt } from '../lib/reprintReceipt';
 import OrderItems from '../components/OrderItems';   // A444
 import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../lib/reversalRules';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
+import { money, dayTime } from '../lib/format';
 
 interface Payment { method: string; amount: number; status: string; }
 interface Order {
@@ -65,10 +67,6 @@ const STATUS_COLOR: Record<string, string> = {
 };
 const METHOD_ICON: Record<string, string> = { cash: '💵', mpesa: '📱', card: '💳' };
 
-const fmt = (n: number, currency: string) =>
-  `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtTime = (iso: string) =>
-  new Date(iso).toLocaleString('en-KE', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 export default function OrdersPage({ currency = 'KES' }: { currency?: string }) {
   const { can } = usePermissions();
@@ -76,6 +74,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const canAct = can('orders.void');
   const isOwner = currentUserIsOwner();
   const cols = canAct ? 7 : 6;
+  const more = useRowMore();   // A464: a phone shows Order, Status, Total; the rest under View more
   // 0.6.30: the owner's void window (business settings; default 30 minutes).
   const [windowMin, setWindowMin] = useState(DEFAULT_VOID_WINDOW_MINUTES);
   useEffect(() => {
@@ -149,7 +148,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
 
   if (!allowed) {
     return (
-      <div className="p-8 text-gray-400">
+      <div className="p-4 sm:p-8 text-gray-400">
         You don't have permission to view orders. Ask an owner to enable
         "View all orders" for your role.
       </div>
@@ -159,7 +158,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="p-6 max-w-6xl">
+    <div className="p-4 sm:p-6 max-w-6xl">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold text-white">Orders</h1>
         <span className="text-sm text-gray-400">{total} order{total === 1 ? '' : 's'}</span>
@@ -198,99 +197,116 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
         </div>
       )}
       <div className="border border-gray-800 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-900 text-gray-400 text-left">
-            <tr>
-              <th className="px-4 py-2 font-medium">Order</th>
-              <th className="px-4 py-2 font-medium">Type</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 font-medium text-right">Total</th>
-              <th className="px-4 py-2 font-medium">When</th>
-              <th className="px-4 py-2 font-medium">Customer</th>
-              {canAct && <th className="px-4 py-2 font-medium text-right">Action</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr><td colSpan={cols} className="px-4 py-8 text-center text-gray-500">Loading…</td></tr>
-            )}
-            {!loading && orders.length === 0 && (
-              <tr><td colSpan={cols} className="px-4 py-8 text-center text-gray-500">No orders found.</td></tr>
-            )}
-            {!loading && orders.map((o) => (
-              <Fragment key={o.id}>
-                <tr
-                  onClick={() => setExpanded(expanded === o.id ? null : o.id)}
-                  className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer"
-                >
-                  <td className="px-4 py-2 text-gray-200 font-medium">{o.order_number}</td>
-                  <td className="px-4 py-2 text-gray-400 capitalize">{o.order_type}</td>
-                  <td className={`px-4 py-2 capitalize ${STATUS_COLOR[o.status] ?? 'text-gray-300'}`}>
-                    {o.status}
-                    {/* A195: a refund keeps status 'completed'; without this badge a refunded
-                        sale is pixel-identical to a clean one. Amber, distinct from red 'Voided'. */}
-                    {isRefunded(o.payments) && (
-                      <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-amber-500/40 text-amber-400 bg-amber-500/10">
-                        Refunded
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right text-gray-200">{fmt(o.total, currency)}</td>
-                  <td className="px-4 py-2 text-gray-400">{fmtTime(o.created_at)}</td>
-                  <td className="px-4 py-2 text-gray-400">{o.customer_name ?? '—'}</td>
-                  {canAct && (
-                    <td className="px-4 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      {actionsFor(o, isOwner, windowMin).includes('void') && (
-                        <button
-                          onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setPin(''); setActionError(''); }}
-                          className="px-3 py-1 text-xs font-medium rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
-                        >Void</button>
-                      )}
-                      {actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments) && (
-                        <button
-                          onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setPin(''); setActionError(''); }}
-                          className="ml-1 px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
-                        >Refund</button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-                {expanded === o.id && (
-                  <tr className="bg-gray-900/40 border-t border-gray-800">
-                    <td colSpan={cols} className="px-4 py-3">
-                      <div className="text-xs text-gray-400 space-y-1">
-                        <OrderItems orderId={o.id} currency={currency} get={(path) => api.get(path)} />
-                        <div>Subtotal: {fmt(o.subtotal, currency)}
-                          {o.discount_amount > 0 && <> · Discount: {fmt(o.discount_amount, currency)}</>}
-                          · Total: <span className="text-gray-200">{fmt(o.total, currency)}</span></div>
-                        <div className="flex flex-wrap gap-3 pt-1">
-                          {o.payments.length === 0 && <span>No payments recorded.</span>}
-                          {o.payments.map((p, i) => (
-                            <span key={i} className="text-gray-300">
-                              {METHOD_ICON[p.method] ?? '•'} {p.method} {fmt(p.amount, currency)}
-                              {p.status !== 'completed' && <span className="text-amber-400"> ({p.status})</span>}
-                            </span>
-                          ))}
-                        </div>
-                        {canReprint && <div className="pt-2">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-900 text-gray-400 text-left">
+              <tr>
+                <th className="px-4 py-2 font-medium">Order</th>
+                <th className={`px-4 py-2 font-medium ${DESK}`}>Type</th>
+                <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium text-right">Total</th>
+                <th className={`px-4 py-2 font-medium ${DESK}`}>When</th>
+                <th className={`px-4 py-2 font-medium ${DESK}`}>Customer</th>
+                {canAct && <th className={`px-4 py-2 font-medium text-right ${DESK}`}>Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={cols} className="px-4 py-8 text-center text-gray-500">Loading…</td></tr>
+              )}
+              {!loading && orders.length === 0 && (
+                <tr><td colSpan={cols} className="px-4 py-8 text-center text-gray-500">No orders found.</td></tr>
+              )}
+              {!loading && orders.map((o) => {
+                const actionBtns = canAct ? (<>
+                        {actionsFor(o, isOwner, windowMin).includes('void') && (
                           <button
-                            onClick={async () => {
-                              setReprintingId(o.id); setReprintMsg('');
-                              const res = await reprintOrderReceipt(o.id);
-                              setReprintMsg(res.message); setReprintingId(null);
-                            }}
-                            disabled={reprintingId === o.id}
-                            className="px-3 py-1 text-xs font-medium rounded-lg border border-swift/40 text-swift-text hover:bg-swift/10 transition-colors disabled:opacity-50"
-                          >{reprintingId === o.id ? 'Printing…' : 'Reprint receipt'}</button>
-                        </div>}
-                      </div>
+                            onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setPin(''); setActionError(''); }}
+                            className="px-3 py-1 text-xs font-medium rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
+                          >Void</button>
+                        )}
+                        {actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments) && (
+                          <button
+                            onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setPin(''); setActionError(''); }}
+                            className="ml-1 px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
+                          >Refund</button>
+                        )}
+                </>) : null;
+                const hasActions = canAct && (actionsFor(o, isOwner, windowMin).includes('void')
+                  || (actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments)));
+                return (
+                <Fragment key={o.id}>
+                  <tr
+                    onClick={() => setExpanded(expanded === o.id ? null : o.id)}
+                    className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer"
+                  >
+                    <td className="px-4 py-2 text-gray-200 font-medium">{o.order_number}
+                      <ViewMore open={more.isOpen(String(o.id))} onClick={() => more.toggle(String(o.id))} />
                     </td>
+                    <td className={`px-4 py-2 text-gray-400 capitalize ${DESK}`}>{o.order_type}</td>
+                    <td className={`px-4 py-2 capitalize ${STATUS_COLOR[o.status] ?? 'text-gray-300'}`}>
+                      {o.status}
+                      {/* A195: a refund keeps status 'completed'; without this badge a refunded
+                          sale is pixel-identical to a clean one. Amber, distinct from red 'Voided'. */}
+                      {isRefunded(o.payments) && (
+                        <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-amber-500/40 text-amber-400 bg-amber-500/10">
+                          Refunded
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-200">{money(o.total, currency)}</td>
+                    <td className={`px-4 py-2 text-gray-400 ${DESK}`}>{dayTime(o.created_at)}</td>
+                    <td className={`px-4 py-2 text-gray-400 ${DESK}`}>{o.customer_name ?? '—'}</td>
+                    {canAct && (
+                      <td className={`px-4 py-2 text-right whitespace-nowrap ${DESK}`} onClick={(e) => e.stopPropagation()}>
+                        {actionBtns}
+                      </td>
+                    )}
                   </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+                  <MoreRow open={more.isOpen(String(o.id))} colSpan={3} items={[
+                    ['Type', <span className="capitalize">{o.order_type}</span>],
+                    ['When', dayTime(o.created_at)],
+                    ['Customer', o.customer_name ?? '—'],
+                    ['Action', hasActions ? <span className="whitespace-nowrap">{actionBtns}</span> : null],
+                  ]} />
+                  {expanded === o.id && (
+                    <tr className="bg-gray-900/40 border-t border-gray-800">
+                      <td colSpan={cols} className="px-4 py-3">
+                        <div className="text-xs text-gray-400 space-y-1">
+                          <OrderItems orderId={o.id} currency={currency} get={(path) => api.get(path)} />
+                          <div>Subtotal: {money(o.subtotal, currency)}
+                            {o.discount_amount > 0 && <> · Discount: {money(o.discount_amount, currency)}</>}
+                            · Total: <span className="text-gray-200">{money(o.total, currency)}</span></div>
+                          <div className="flex flex-wrap gap-3 pt-1">
+                            {o.payments.length === 0 && <span>No payments recorded.</span>}
+                            {o.payments.map((p, i) => (
+                              <span key={i} className="text-gray-300">
+                                {METHOD_ICON[p.method] ?? '•'} {p.method} {money(p.amount, currency)}
+                                {p.status !== 'completed' && <span className="text-amber-400"> ({p.status})</span>}
+                              </span>
+                            ))}
+                          </div>
+                          {canReprint && <div className="pt-2">
+                            <button
+                              onClick={async () => {
+                                setReprintingId(o.id); setReprintMsg('');
+                                const res = await reprintOrderReceipt(o.id);
+                                setReprintMsg(res.message); setReprintingId(null);
+                              }}
+                              disabled={reprintingId === o.id}
+                              className="px-3 py-1 text-xs font-medium rounded-lg border border-swift/40 text-swift-text hover:bg-swift/10 transition-colors disabled:opacity-50"
+                            >{reprintingId === o.id ? 'Printing…' : 'Reprint receipt'}</button>
+                          </div>}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {pages > 1 && (
@@ -315,7 +331,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
           onClick={() => !submitting && setAction(null)}
         >
           <div
-            className="bg-gray-900 border border-gray-800 rounded-2xl p-5 w-full max-w-md"
+            className="bg-gray-900 border border-gray-800 rounded-2xl p-5 w-full max-w-md max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-semibold text-white mb-1 capitalize">

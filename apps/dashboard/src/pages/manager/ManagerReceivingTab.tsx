@@ -290,7 +290,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-0 sm:p-6 space-y-6">
       <div>
         <h2 className="text-white text-lg font-semibold">Receiving</h2>
         <p className="text-gray-500 text-sm">Mark stock arriving at your branch as received. You can receive stock but not adjust it.</p>
@@ -358,8 +358,8 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
           {outgoing.length > 0 && (
             <div className="space-y-2 mb-4">
               {outgoing.map(t => (
-                <div key={t.id} className="bg-gray-900 border border-gray-800 rounded-xl p-3 flex items-center justify-between">
-                  <div>
+                <div key={t.id} className="bg-gray-900 border border-gray-800 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
+                  <div className="min-w-0">
                     <p className="text-white text-sm font-medium">{t.transfer_number} → {t.to_branch_name}</p>
                     <p className="text-gray-500 text-xs">
                       {t.stock_transfer_items.length} item(s) · {t.status === 'pending' ? 'not yet despatched' : 'in transit — awaiting receipt'}
@@ -483,8 +483,8 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
             ) : (
               <div className="space-y-3">
                 {openPOs.map(po => (
-                  <div key={po.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between">
-                    <div>
+                  <div key={po.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between flex-wrap gap-2">
+                    <div className="min-w-0">
                       <p className="text-white text-sm font-medium">{po.po_number}</p>
                       <p className="text-gray-500 text-xs">{po.suppliers?.name ?? 'Supplier'} · {po.purchase_order_items.length} item(s){po.status === 'partial' ? ' · partially received' : ''}</p>
                     </div>
@@ -573,7 +573,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
               {target.purchase_order_items.map(i => {
                 const remaining = Number(i.quantity_ordered) - Number(i.quantity_received);
                 return (
-                  <div key={i.ingredient_id} className="flex items-center justify-between gap-3">
+                  <div key={i.ingredient_id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-gray-200 text-sm truncate">{i.ingredients?.name ?? 'Item'}</p>
                       <p className="text-gray-500 text-xs">ordered {i.quantity_ordered}{i.ingredients?.unit ? ` ${i.ingredients.unit}` : ''} · received {i.quantity_received} · remaining {remaining > 0 ? remaining : 0}</p>

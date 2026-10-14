@@ -254,20 +254,23 @@ try {
     const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2500, mpesa: 3250, card: 700 }, confirm_reasons: { card: '700 on the card machine' } }, { user: MANAGER, surface: 'web', keys: ['orders.void'] });   // 0.6.29
     assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(shift().confirmed_by, MANAGER);
   });
-  await ok('the dashboard lists shifts awaiting a manager and confirms them blind; mismatches and self-confirms shown', () => {
+  // A462 (owner, 2026-10-13: the manager sees what the system holds before confirming): the expected figures come from
+  // the cloud's confirm-view — sent to a manager / the owner only — never from the shift row itself.
+  await ok('the dashboard lists shifts awaiting a manager and confirms them — expected from confirm-view only; mismatches and self-confirms shown', () => {
     const c = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/components/ShiftConfirmations.tsx'), 'utf8');
-    assert.match(c, /api\.post\(`\/api\/shifts\/\$\{target\.id\}\/confirm`, \{ confirmed_methods: r\.map, \.\.\.\(view\.showCashier \? \{ confirm_reasons: reasons \} : \{\}\) \}\)/);
+    assert.match(c, /client\.post\(`\/api\/shifts\/\$\{target\.id\}\/confirm`, \{ confirmed_methods: r\.map, \.\.\.\(view\.showCashier \? \{ confirm_reasons: reasons \} : \{\}\) \}\)/);
     const dialog = c.split('{target && (')[1];
-    assert.ok(!/expected_methods|declared_methods\[|money\(target/.test(dialog), 'the recount dialog shows no figures');
+    assert.ok(!/expected_methods|declared_methods\[|money\(target/.test(dialog), 'the recount dialog reads no figures off the shift row');
+    assert.match(dialog, /view\.expected\?\.\[m\]/);
     assert.match(c, /data-testid="self-confirmed"/);
-    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/OpenShiftsPage.tsx'), 'utf8'), /<ShiftConfirmations \/>/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/OpenShiftsPage.tsx'), 'utf8'), /<ShiftConfirmations key=\{confirmKey\} currency=\{currency\} \/>/);   // A471: with the business currency
   });
   await ok('0.6.23 Shift Reports page: list (cashier, till, shift, status, difference, View), filters, CSV; View = the per-method table', () => {
     const pg = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/ShiftReportsPage.tsx'), 'utf8');
     assert.match(pg, /api\.get<ShiftRow\[\]>\(`\/api\/shifts\?\$\{qs\}`\)/);
-    assert.match(pg, /<th className="px-3 py-2">Cashier<\/th><th>Till<\/th><th>Shift<\/th><th>Status<\/th><th>Difference<\/th>/);
+    assert.match(pg, /<th className="px-3 py-2">Cashier<\/th><th className=\{DESK\}>Till<\/th><th className=\{DESK\}>Shift<\/th><th>Status<\/th><th className=\{DESK\}>Difference<\/th>/);   // A464: a phone opens the rest with View more
     assert.match(pg, /api\.get<\{ by_method\?: \{ method: string; amount: number \}\[\] \}>\(`\/api\/shifts\/\$\{s\.id\}`\)/);
-    assert.match(pg, /<th className="py-1">Method<\/th><th className="text-right">Cashier said<\/th><th className="text-right">Manager counted<\/th><th className="text-right">Till recorded<\/th><th className="text-right">Variance<\/th>/);
+    assert.match(pg, /<th className="py-1">Method<\/th><th className=\{`text-right \$\{DESK\}`\}>Cashier said<\/th><th className=\{`text-right \$\{DESK\}`\}>Manager counted<\/th><th className=\{`text-right \$\{DESK\}`\}>Till recorded<\/th><th className="text-right">Variance<\/th>/);
     assert.match(pg, /\['problems', `Problems \(\$\{counts\.problems\}\)`\]/);
     assert.match(pg, /const exportCsv = \(\) =>/);
     assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/App.tsx'), 'utf8'), /<Route path="shift-reports"\s+element=\{<ShiftReportsPage \/>\} \/>/);

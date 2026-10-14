@@ -165,7 +165,7 @@ export default function MigrationsPage({ req }: { req?: (path: string) => Promis
       </div>
 
       <div style={S.card}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
               <th style={S.th}>Status</th>
@@ -206,7 +206,7 @@ export default function MigrationsPage({ req }: { req?: (path: string) => Promis
               <tr><td style={{ ...S.td, color: "#98a2b3" }} colSpan={7}>No migration runs recorded yet.</td></tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   );

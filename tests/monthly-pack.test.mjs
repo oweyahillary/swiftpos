@@ -184,6 +184,7 @@ const reset = () => {
   };
 };
 let nextId = 1;
+const MISSING = new Set();   // A467: a table the database does not have yet
 supabase.from = (table) => {
   const f = []; let patch = null; let inserted = null; let del = false; let rng = null;
   const rows = () => (db[table] ?? []).filter((r) => f.every(([k, fn]) => fn(r[k])));
@@ -205,7 +206,8 @@ supabase.from = (table) => {
       if (prop === 'insert') return (r) => { const list = (db[table] ??= []); inserted = (Array.isArray(r) ? r : [r]).map((x) => ({ id: `row-${nextId++}`, ...x })); list.push(...inserted); return q; };
       if (prop === 'maybeSingle') return () => Promise.resolve({ data: run()[0] ?? null, error: null });
       if (prop === 'single') return () => { const r = run()[0]; return Promise.resolve(r ? { data: r, error: null } : { data: null, error: { message: 'none' } }); };
-      if (prop === 'then') return (res, rej) => Promise.resolve({ data: run(), error: null }).then(res, rej);
+      if (prop === 'then') return (res, rej) => Promise.resolve(MISSING.has(table)
+        ? { data: null, error: { message: `relation "public.${table}" does not exist` } } : { data: run(), error: null }).then(res, rej);
       return () => q;
     },
   });
@@ -252,6 +254,18 @@ try {
     assert.equal((await call(owner, 'GET', '?month=2026-06')).status, 400);
     assert.equal((await call(owner, 'GET', `?month=2026-06&branch_id=${BR2}`)).status, 200);
   });
+  await ok('A467: without migration 130 (no money_movements) the pack still builds, and the books list is empty', async () => {
+    reset(); MISSING.add('money_movements');
+    try {
+      const r = await call(MANAGER, 'GET', `?month=2026-06&branch_id=${BR}`);
+      assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.summary.total, 1200);
+      const m = await call(MANAGER, 'GET', `/movements?month=2026-06&branch_id=${BR}`);
+      assert.equal(m.status, 200); assert.deepEqual(m.body, []);
+      MISSING.add('shifts');
+      const bad = await call(MANAGER, 'GET', `?month=2026-06&branch_id=${BR}`);
+      assert.equal(bad.status, 500, 'any other missing read still fails (it is not hidden)');
+    } finally { MISSING.clear(); }
+  });
   await ok('a manager records a bank deposit; it is in the cash book; a cashier cannot record', async () => {
     reset();
     const a = await call(MANAGER, 'POST', '/movements', { branch_id: BR, movement_date: '2026-06-02', method: 'cash', kind: 'bank_deposit', amount: 300 });
@@ -262,6 +276,23 @@ try {
     assert.equal(p.books.find((b) => b.method === 'cash').rows[1].deposits, 300);
     const del = await call(MANAGER, 'DELETE', `/movements/${a.body.id}`);
     assert.equal(del.status, 200); assert.equal(db.money_movements.length, 0);
+  });
+  await ok('A466: a manager signed in on a till with their PIN reads the pack and records for the books; the till\'s own token cannot', async () => {
+    reset();
+    db.user_devices = [{ business_id: BZ, device_id: 'dev-T1', status: 'active', retired_at: null }];
+    const TILL_MGR = token(MGR, ['reports.financial', 'expenses.manage'], { surface: 'desktop', pinSignIn: true });
+    const TILL_CASHIER = token(CASH, ['orders.create'], { surface: 'desktop', pinSignIn: true });
+    const DEVICE = token(null, ['*'], { surface: 'desktop', till: true, deviceId: 'dev-T1' });
+    const g = await call(TILL_MGR, 'GET', `?month=2026-06&branch_id=${BR}`);
+    assert.equal(g.status, 200, JSON.stringify(g.body)); assert.equal(g.body.summary.total, 1200);
+    assert.equal((await call(TILL_MGR, 'GET', `/export?month=2026-06&branch_id=${BR}`)).status, 200);
+    const a = await call(TILL_MGR, 'POST', '/movements', { branch_id: BR, movement_date: '2026-06-02', method: 'cash', kind: 'bank_deposit', amount: 300 });
+    assert.equal(a.status, 201, JSON.stringify(a.body));
+    assert.equal((await call(TILL_MGR, 'DELETE', `/movements/${a.body.id}`)).status, 200);
+    assert.equal((await call(TILL_MGR, 'GET', `?month=2026-06&branch_id=${BR2}`)).status, 403, 'own branch only, on the till too');
+    assert.equal((await call(TILL_CASHIER, 'GET', `?month=2026-06&branch_id=${BR}`)).status, 403, 'their own permissions apply');
+    const d = await call(DEVICE, 'GET', `?month=2026-06&branch_id=${BR}`);
+    assert.equal(d.status, 403, JSON.stringify(d.body)); assert.equal(d.body.code, 'WEB_SURFACE_REQUIRED');
   });
   await ok('the Excel download has the client\'s sheets, with the figures in them', async () => {
     reset();

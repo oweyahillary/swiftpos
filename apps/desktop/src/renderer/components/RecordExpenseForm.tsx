@@ -7,6 +7,13 @@
  * signed-in manager themselves (no PIN, A388). Paid in cash while this till has a shift open, it comes out of that
  * drawer (the shift's expected cash goes down, as for the cashier's); with no shift open it is recorded as paid
  * outside any drawer. Syncs like any expense.
+ *
+ * A465: on the BRANCH SERVER only, "Which drawer" lists every drawer open at the branch — picking another till's sends it
+ * there (branchClose.shiftMoney; that till records it on its own books). The default is today's behaviour. On a plain
+ * till nothing changes.
+ *
+ * A466 (owner, 2026-10-13: "the manager can fail to choose a drawer and still record an expense"): on the server
+ * "Not from a drawer" is always offered — also while this terminal has a shift open.
  */
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
@@ -24,11 +31,27 @@ export default function RecordExpenseForm({ currency, onSaved, onCancel }: { cur
   const [shiftOpen, setShiftOpen] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // A465: the branch server's open drawers (another till's included); '' = as before.
+  const [isServer, setIsServer] = useState(false);
+  const [drawers, setDrawers] = useState<{ key: string; device_id: string; shift_id: string; label: string }[]>([]);
+  const [drawer, setDrawer] = useState('');
+  const NONE = '__none__';   // A466: paid outside any drawer
 
   useEffect(() => {
     posApi.expense.categories().then(setCategories).catch(() => {});
     posApi.pos.paymentMethods().then((m) => setMethods([...new Set(['cash', 'mpesa', 'card', ...(m ?? []).map((x) => String(x.code).toLowerCase())])])).catch(() => {});
     posApi.shift.current().then((r) => setShiftOpen(!!r)).catch(() => setShiftOpen(false));
+    // A465: only the branch server (node / office) offers another till's drawer.
+    posApi.config.get().then(async (c) => {
+      if (c?.device_role !== 'node' && c?.device_role !== 'office') return;
+      setIsServer(true);
+      const ov = await posApi.branchClose.overview();
+      if ('error' in ov) return;
+      setDrawers(ov.tills.filter((t) => !t.is_self).flatMap((t) => (t.state?.shifts ?? []).filter((sh) => sh.state === 'open').map((sh) => {
+        const n = t.state?.terminal?.name?.trim() || (t.state?.terminal?.code ? `Till ${t.state.terminal.code}` : `Terminal ${t.device_id.slice(0, 8)}`);
+        return { key: `${t.device_id}:${sh.id}`, device_id: t.device_id, shift_id: sh.id, label: `${n} — ${sh.cashier_name}` };
+      })));
+    }).catch(() => {});
   }, []);
 
   const save = async () => {
@@ -36,10 +59,20 @@ export default function RecordExpenseForm({ currency, onSaved, onCancel }: { cur
     if (!(Number(amount) > 0)) { setError('Enter an amount greater than zero.'); return; }
     setBusy(true); setError('');
     try {
+      const target = isServer && drawer !== NONE ? drawers.find((d) => d.key === drawer) : undefined;
+      if (target) {
+        // A465: another till's drawer — that till records it (within ~15 s).
+        const r = await posApi.branchClose.shiftMoney({ device_id: target.device_id, shift_id: target.shift_id, kind: 'expense', amount: Number(amount),
+          description: desc.trim(), expense_category_id: catId || undefined, category_name: categories.find((c) => c.id === catId)?.name, payment_method: method });
+        if (!r.ok) { setError(r.error ?? 'Could not save the expense.'); return; }
+        onSaved(`Expense sent to ${target.label} — that till records it within about 15 seconds.`);
+        return;
+      }
       const saved = await posApi.expense.create({
         description: desc.trim(), amount: Number(amount),
         expense_category_id: catId || undefined, category_name: categories.find((c) => c.id === catId)?.name,
         payment_method: method,
+        ...(isServer && drawer === NONE ? { no_drawer: true } : {}),
       });
       onSaved(`Expense saved${saved?.approvedBy ? ` — approved by ${saved.approvedBy}` : ''}. It syncs on the next connection.`);
     } catch (e: any) { setError(e?.message ?? 'Could not save the expense.'); }
@@ -72,8 +105,20 @@ export default function RecordExpenseForm({ currency, onSaved, onCancel }: { cur
           </select>
         </label>
       </div>
+      {isServer && (drawers.length > 0 || shiftOpen) && (
+        <label className="block space-y-1" data-testid="record-expense-which-drawer">
+          <span className="text-xs text-gray-400">Which drawer</span>
+          <select className={input} value={drawer} onChange={(e) => setDrawer(e.target.value)}>
+            <option value="">{shiftOpen ? 'This terminal\'s drawer' : 'Not from a drawer'}</option>
+            {shiftOpen && <option value={NONE}>Not from a drawer</option>}
+            {drawers.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+          </select>
+        </label>
+      )}
       <p data-testid="record-expense-drawer" className="text-xs text-gray-400">
         {method !== 'cash' ? 'Not cash — no drawer is affected.'
+          : drawer === NONE ? 'Recorded as paid outside any drawer — no drawer\'s expected cash changes.'
+          : drawer ? 'Cash comes out of that drawer — its till records it and its expected cash goes down.'
           : shiftOpen ? 'Cash comes out of this till\'s drawer (its shift is open) — the shift\'s expected cash goes down.'
           : 'No shift is open on this till — recorded as cash paid outside any drawer.'}
       </p>

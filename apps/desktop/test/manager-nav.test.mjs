@@ -53,6 +53,13 @@ ok('A460: without the online licence — no Offers, no Wastage, no Transfers (ne
   assert.ok(!keys.includes('offers') && !keys.includes('wastage') && !keys.includes('transfers') && keys.includes('menu'), JSON.stringify(keys));
 });
 
+ok('A466: the Monthly pack is the last Sales tab, only for reports.financial (the rule the cloud applies)', () => {
+  assert.deepEqual(N.groupOf(N.buildManagerNav({ ...FULL, canMonthly: true }), 'monthly').tabs.map((t) => t.label),
+    ['Orders', 'Item Mix', 'Current shift', 'Shift report', 'Monthly pack']);
+  assert.equal(N.groupOf(N.buildManagerNav({ ...FULL, canMonthly: false }), 'monthly'), null);
+  assert.equal(N.groupOf(N.buildManagerNav({ ...FULL, online: false, canMonthly: true }), 'monthly').key, 'sales', 'not part of the online licence');
+});
+
 ok('a shop (not a restaurant): Sales has no Item Mix; no web POS → no Stock', () => {
   const nav = N.buildManagerNav({ ...FULL, isRestaurant: false, showStock: false, online: false });   // no web POS = no online licence (A460)
   assert.deepEqual(N.groupOf(nav, 'orders').tabs.map((t) => t.key), ['orders', 'shift', 'zreport']);
@@ -105,7 +112,7 @@ ok('every page ManagerPage can show belongs to exactly one group', () => {
 
 const mp = fs.readFileSync(path.join(DESKTOP, 'src/renderer/pages/ManagerPage.tsx'), 'utf8');
 ok('ManagerPage renders the sidebar from buildManagerNav with each page\'s own gate', () => {
-  assert.match(mp, /const nav = buildManagerNav\(\{\n\s+isRestaurant: flags\.isRestaurant,\n\s+isManagerRole,\n\s+canManageProducts,\n\s+canManageStaff,\n\s+canManageSettings,\n\s+canPrinting: has\('stations\.manage'\) \|\| canManageReceipt,\n\s+showStock,\n\s+canWaste: has\('inventory\.waste'\) \|\| has\('inventory\.adjust'\) \|\| \['owner', 'admin'\]\.includes\(String\(\(staff as any\)\?\.role \?\? ''\)\.toLowerCase\(\)\),   \/\/ A414\n\s+online,   \/\/ A460\n\s+canTransfer: [^\n]+\n\s+\}\);/);
+  assert.match(mp, /const nav = buildManagerNav\(\{\n\s+isRestaurant: flags\.isRestaurant,\n\s+isManagerRole,\n\s+canManageProducts,\n\s+canManageStaff,\n\s+canManageSettings,\n\s+canPrinting: has\('stations\.manage'\) \|\| canManageReceipt,\n\s+showStock,\n\s+canWaste: has\('inventory\.waste'\) \|\| has\('inventory\.adjust'\) \|\| \['owner', 'admin'\]\.includes\(String\(\(staff as any\)\?\.role \?\? ''\)\.toLowerCase\(\)\),   \/\/ A414\n\s+online,   \/\/ A460\n\s+canTransfer: [^\n]+\n\s+canMonthly: has\('reports\.financial'\),[^\n]*\n\s+\}\);/);
   assert.match(mp, /\{nav\.map\(group => \(\n\s+<button key=\{group\.key\} onClick=\{\(\) => openTab\(openGroup\(group, lastTab\)\)\}/);
   assert.ok(!/navItems/.test(mp), 'the old flat list is gone');
 });

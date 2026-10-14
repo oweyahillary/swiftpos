@@ -77,8 +77,8 @@ export default function BranchesPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-gray-950">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-950">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
         <div>
           <h1 className="text-xl font-semibold text-white">Branches</h1>
           <p className="text-gray-500 text-sm mt-0.5">{branches.length} location{branches.length !== 1 ? "s" : ""}</p>

@@ -88,8 +88,8 @@ export default function BusinessProfileTab() {
     }
   }
 
-  if (loading) return <div className="p-6 text-gray-500 text-sm">Loading…</div>;
-  if (!record) return <div className="p-6 text-gray-500 text-sm">Could not load your business profile.</div>;
+  if (loading) return <div className="p-4 sm:p-6 text-gray-500 text-sm">Loading…</div>;
+  if (!record) return <div className="p-4 sm:p-6 text-gray-500 text-sm">Could not load your business profile.</div>;
 
   const continuous = settings.continuous_operation === 'true';
   // A416: a cashier closing a shift sees their sales — off unless turned on here (or for one branch).
@@ -100,9 +100,9 @@ export default function BusinessProfileTab() {
   const CUTOFF_CHOICES = Array.from({ length: MAX_CUTOFF_MINUTES / 30 + 1 }, (_, i) => cutoffLabel(i * 30));
 
   return (
-    <div className="p-6 max-w-2xl space-y-8">
+    <div className="p-4 sm:p-6 max-w-2xl space-y-8">
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">{toast}</div>
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">{toast}</div>
       )}
 
       {/* ── Identity ── */}

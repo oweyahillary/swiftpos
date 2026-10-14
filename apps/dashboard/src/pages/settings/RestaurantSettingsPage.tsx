@@ -204,20 +204,20 @@ export default function RestaurantSettingsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-4 sm:p-6 max-w-5xl">
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
           {toast}
         </div>
       )}
 
-      <div className="flex items-start justify-between mb-5">
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-white">{pageTitle}</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">{pageTitle}</h1>
           <p className="text-sm text-gray-500 mt-1">Tables, service configuration and menu periods</p>
         </div>
         {tab === 'tables' && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setBulkOpen(true)}
               className="px-4 py-2 border border-gray-700 hover:border-swift/50 text-gray-300 text-sm font-semibold rounded-lg transition-colors"
@@ -235,7 +235,7 @@ export default function RestaurantSettingsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[
           { label: 'Total tables',  value: stats.total,    cls: 'text-white' },
           { label: 'Total covers',  value: stats.covers,   cls: 'text-blue-400' },
@@ -264,12 +264,12 @@ export default function RestaurantSettingsPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-gray-800">
+      <div className="flex gap-1 mb-5 border-b border-gray-800 overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors whitespace-nowrap ${
               tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-500 hover:text-gray-300'
             }`}
           >
@@ -493,7 +493,7 @@ export default function RestaurantSettingsPage() {
       {/* ── EDIT TABLE MODAL ── */}
       {bulkOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm p-6 space-y-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white">Add multiple tables</h3>
               <button onClick={() => setBulkOpen(false)} className="w-7 h-7 bg-gray-800 hover:bg-gray-700 border-none rounded-md text-gray-400 text-sm cursor-pointer">✕</button>
@@ -520,7 +520,7 @@ export default function RestaurantSettingsPage() {
       )}
 
       {editTable && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-base font-bold text-white">{editTable.id ? `Edit ${editTable.name}` : 'Add table'}</h3>

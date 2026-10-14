@@ -40,24 +40,55 @@ export function nodeHeaders(extra: Record<string, string> = {}): Record<string, 
 // new pair back — so only the node needs internet. Returns null on any failure
 // (node unreachable, cloud unreachable from the node, or a revoked token), which
 // the caller treats as "couldn't refresh — keep trading offline".
-export async function refreshViaNode(refreshToken: string): Promise<{ accessToken: string; refreshToken: string } | null> {
+export interface NodeRenewal { accessToken: string; refreshToken: string; deviceSecret?: string; ack?: boolean }
+
+/** The till's own headers a renewal carries to the cloud (A477: which machine, whether its device secret is lost). */
+const forwardable = (h: Record<string, string>): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(h ?? {})) if (/^x-device-/i.test(k) && v) out[k] = String(v);
+  return out;
+};
+
+export async function refreshViaNode(refreshToken: string, headers: Record<string, string> = {}): Promise<NodeRenewal | null> {
   const base = nodeUrl();
   if (!base || !refreshToken) return null;
   try {
     const res = await fetch(`${base}/node/refresh`, {
       method: 'POST',
-      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      // A477: the branch server passes the till's X-Device-* headers on, so the cloud checks THIS till's machine.
+      headers: nodeHeaders({ 'Content-Type': 'application/json', 'X-Device-Id': getDeviceConfig()?.device_id ?? '', ...forwardable(headers) }),
       body: JSON.stringify({ refreshToken }),
       signal: AbortSignal.timeout(12_000),   // A446: a branch server that answers nothing must not hang the refresh
     });
     if (res.status !== 200) return null; // 401 revoked · 503 node offline — nothing usable
     const data = await res.json().catch(() => null);
     if (data?.accessToken && data?.refreshToken) {
-      return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+      return {
+        accessToken: data.accessToken, refreshToken: data.refreshToken,
+        ...(typeof data.deviceSecret === 'string' && data.deviceSecret ? { deviceSecret: data.deviceSecret } : {}),
+        ...(data.ack === true ? { ack: true } : {}),   // A477: the cloud asks for the ack — sent through the node too
+      };
     }
     return null;
   } catch {
     return null;
+  }
+}
+
+/** A477: the renewal's ack, through the branch server (the A160 path). True when the cloud confirmed it. */
+export async function ackViaNode(refreshToken: string, headers: Record<string, string> = {}): Promise<boolean> {
+  const base = nodeUrl();
+  if (!base || !refreshToken) return false;
+  try {
+    const res = await fetch(`${base}/node/refresh/ack`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json', ...forwardable(headers) }),
+      body: JSON.stringify({ refreshToken }),
+      signal: AbortSignal.timeout(12_000),
+    });
+    return res.status === 200;
+  } catch {
+    return false;
   }
 }
 

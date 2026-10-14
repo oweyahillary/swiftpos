@@ -38,7 +38,7 @@ export default function KitchenDisplayTab() {
   };
 
   return (
-    <div className="p-6 max-w-xl space-y-4">
+    <div className="p-4 sm:p-6 max-w-xl space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-white">Kitchen display (KDS)</h2>
         <p className="text-sm text-gray-400 mt-1">

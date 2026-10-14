@@ -35,6 +35,8 @@ import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
 import { maySignedInConfirm } from '../../lib/shiftConfirm';
 import { mayRecordMoneyMovement } from '../../lib/posFeatures';   // A453
 import { onGrid } from '../../lib/productDays';
+import { exactFirst } from '../../lib/paginate';   // A472
+import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreeze';   // A394
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
@@ -356,6 +358,20 @@ export default function CashierScreen() {
   const [roomChargeError,  setRoomChargeError]    = useState('');
   const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [shiftModal, setShiftModal] = useState<ShiftModalMode | null>(null);
+  // A462 (owner, 2026-10-13: "when an owner force closes a till it cascades to all tills, both desktop and web"): the web POS
+  // learns within 20 s that its drawer was closed elsewhere — force-closed, or closed with a count by a manager or the owner —
+  // stops selling into it and asks for a new shift. It used to keep the shift it loaded until the page was reloaded.
+  const [closedElsewhere, setClosedElsewhere] = useState<string | null>(null);
+  // A463 (owner, 2026-10-13: "make it mobile responsive"): on a phone the products fill the screen and the cart opens as
+  // a full-screen sheet from a bar at the bottom — the cart sat beside the products at a fixed 320 px, leaving them ~40.
+  const [isPhone, setIsPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
+  const [cartSheet, setCartSheet] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const on = () => { setIsPhone(mq.matches); if (!mq.matches) setCartSheet(false); };
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
   const [showPrinterSettings, setShowPrinterSettings] = useState(false);
   const { settings: printerSettings, save: savePrinterSettings, reset: resetPrinterSettings } = usePrinterSettings();
   // branchPrinters comes from usePOSData hook above
@@ -466,6 +482,27 @@ export default function CashierScreen() {
       .catch(() => setShiftModal('open'));
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
+
+  useEffect(() => {
+    const id = currentShift?.id;
+    if (!id) return;
+    let live = true;
+    const check = async () => {
+      try {
+        const rows = await posApi.get<Array<{ id: string; status: string; close_method?: string | null; closed_by?: string | null; closed_by_name?: string | null }>>(
+          `/api/shifts/state?ids=${encodeURIComponent(id)}`);
+        const st = Array.isArray(rows) ? rows.find((r) => r.id === id) : null;
+        if (!live || !st || st.status === 'open') return;
+        if (st.closed_by && st.closed_by === session?.staffId) return;   // closed here, by this cashier (Close shift)
+        setCurrentShift(null);
+        setClosedElsewhere(`This shift was ${st.close_method === 'forced' || st.status === 'force_closed' ? 'force-closed' : 'closed'}`
+          + `${st.closed_by_name ? ` by ${st.closed_by_name}` : ' elsewhere'}. Open a new shift to keep selling.`);
+        setShiftModal('open');
+      } catch { /* checked again in 20 s */ }
+    };
+    const t = setInterval(() => { void check(); }, 20_000);
+    return () => { live = false; clearInterval(t); };
+  }, [currentShift?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── A445: offers apply by themselves (shared/offers.ts, the till's and the cloud's rules) ──────────────────────
   // The old promotions here were shown on the cart but never charged or stored. Offers come with the menu (pos/init)
@@ -744,6 +781,52 @@ export default function CashierScreen() {
     setPaymentEvenSplit(evenSplit); setShowPayment(true);
   }
 
+  // A464: the phone's cart bar — the item count, the open order (table / bay / pump) and, for 2 s, the item just added
+  // (the cart is out of sight on a phone, so the tap needs an answer).
+  const cartCount = cart.reduce((n, i) => n + (Number(i.quantity) || 0), 0);
+  const activeOrder = activeKey ? openOrders[activeKey] : undefined;
+  const activeOrderLabel = !activeOrder ? ''
+    : isPetrol ? (activeOrder.pumpName || activeOrder.tableName || '')
+    : isParking ? (activeOrder.vehiclePlate || activeOrder.tableName || '')
+    : (activeOrder.tableName || '');
+  const [cartFlash, setCartFlash] = useState<string | null>(null);
+  const cartQtyRef = useRef<Record<string, number> | null>(null);
+  const cartKeyRef = useRef<string | null>(null);
+  const cartFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const now: Record<string, number> = {};
+    const names: Record<string, string> = {};
+    for (const i of cart) {
+      now[i.product.id] = (now[i.product.id] ?? 0) + (Number(i.quantity) || 0);
+      names[i.product.id] = i.product.name;
+    }
+    const before = cartKeyRef.current === activeKey ? cartQtyRef.current : null;   // another table's order is not "adding"
+    cartQtyRef.current = now;
+    cartKeyRef.current = activeKey;
+    if (!before) return;   // the first render, or a switched / resumed order: nothing was just added
+    const added = Object.keys(now).find(id => now[id] > (before[id] ?? 0));
+    if (!added) return;
+    const delta = now[added] - (before[added] ?? 0);
+    setCartFlash(`+ ${names[added]} ×${Number.isInteger(delta) ? delta : delta.toFixed(2)}`);
+    if (cartFlashTimer.current) clearTimeout(cartFlashTimer.current);
+    cartFlashTimer.current = setTimeout(() => setCartFlash(null), 2000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart]);
+  useEffect(() => () => { if (cartFlashTimer.current) clearTimeout(cartFlashTimer.current); }, []);
+
+  // A464: the category bar has more to the right (a phone shows a fade there until it is scrolled to the end).
+  const catRowRef = useRef<HTMLDivElement | null>(null);
+  const [catMore, setCatMore] = useState(false);
+  const checkCatMore = useCallback(() => {
+    const el = catRowRef.current;
+    setCatMore(!!el && el.scrollWidth - el.scrollLeft - el.clientWidth > 4);
+  }, []);
+  useEffect(() => {
+    checkCatMore();
+    window.addEventListener('resize', checkCatMore);
+    return () => window.removeEventListener('resize', checkCatMore);
+  }, [checkCatMore, categories.length, isPhone, activeKey]);
+
   function resumeParked(key: string) {
     const order = openOrders[key];
     if (!order) return;
@@ -1019,6 +1102,11 @@ export default function CashierScreen() {
     const matchDay = onGrid((p as any).show_days, search.trim() !== '');
     return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
   });
+  // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000 at
+  // once. A new category or search starts again at the top. An exact hit (a product's name or barcode typed in full) is
+  // the first tile, so it is on screen at once.
+  const gridList = exactFirst(filtered, search, (p) => [p.name, (p as any).barcode]);
+  const grid = useGridWindow(gridList.length, `${activeCategory}|${search}|${isPetrol}`);
 
   const currentOrderLabel = activeKey
     ? (openOrders[activeKey]?.tableName ?? 'Order')
@@ -1110,8 +1198,8 @@ export default function CashierScreen() {
       <style>{spinCss}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header style={s.header}>
-        <div style={s.headerLeft}>
+      <header style={isPhone ? { ...s.header, padding: '0 8px', gap: 8 } : s.header}>
+        <div style={isPhone ? { ...s.headerLeft, minWidth: 0, flexShrink: 1 } : s.headerLeft}>
           <span style={s.logoMark}>⚡</span>
           <div>
             <div style={s.branchLabel}>{session?.branchName}</div>
@@ -1158,8 +1246,8 @@ export default function CashierScreen() {
           </span>
         </div>
 
-        <div style={s.headerRight}>
-          <span style={s.clock}>{clockStr}</span>
+        <div style={isPhone ? { ...s.headerRight, minWidth: 0, flexShrink: 1, overflowX: 'auto', justifyContent: 'flex-start' } : s.headerRight}>
+          {!isPhone && <span style={s.clock}>{clockStr}</span>}
           {/* Theme toggle */}
           <button
             onClick={togglePosTheme}
@@ -1221,7 +1309,7 @@ export default function CashierScreen() {
       </header>
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
-      <div style={s.body}>
+      <div style={isPhone && !cartSheet ? { ...s.body, paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))' } : s.body}>
 
         {/* Minimart: self-contained POS replacing both panels */}
         {isMinimart && (
@@ -1490,7 +1578,14 @@ export default function CashierScreen() {
               </div>
 
               {/* Category tabs */}
-              <div style={s.catRow}>
+              {/* A464: on a phone a fade at the right edge says there are more categories; a tapped one scrolls into view. */}
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+              {isPhone && catMore && (
+                <div data-testid="cat-more-fade" aria-hidden
+                  style={{ position: 'absolute', top: 0, right: 0, bottom: 1, width: 36, pointerEvents: 'none', zIndex: 1,
+                           background: 'linear-gradient(to right, transparent, var(--pos-panel))' }} />
+              )}
+              <div style={s.catRow} ref={catRowRef} onScroll={checkCatMore}>
                 {[{ id: 'all', name: 'All', color: null, icon: null }, ...categories].map((cat) => (
                   <button
                     key={cat.id}
@@ -1504,20 +1599,24 @@ export default function CashierScreen() {
                           }
                         : {}),
                     }}
-                    onClick={() => setActiveCategory(cat.id)}
+                    onClick={(e) => {
+                      setActiveCategory(cat.id);
+                      if (isPhone) e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }}
                   >
                     {(cat as Category).icon && <span>{(cat as Category).icon} </span>}
                     {cat.name}
                   </button>
                 ))}
               </div>
+              </div>
 
               {/* Product grid */}
-              <div style={s.productGrid}>
+              <div ref={grid.rootRef} style={s.productGrid}>
                 {filtered.length === 0 ? (
                   <div style={s.emptyProducts}>No products found</div>
                 ) : (
-                  filtered.map((product) => {
+                  gridList.slice(0, grid.count).map((product) => {
                     const inCart = cart.some((i) => i.product.id === product.id);
                     const cartQty = cart
                       .filter((i) => i.product.id === product.id)
@@ -1529,11 +1628,12 @@ export default function CashierScreen() {
                       <button
                         key={product.id}
                         data-testid="product-card"
+                        className="press"
                         data-has-variants={hasVariants ? 'true' : 'false'}
                         style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}) }}
                         onClick={() => addToCart(product)}
                       >
-                        {inCart && <span style={s.cartBadge}>{cartQty}</span>}
+                        {inCart && <span key={cartQty} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{cartQty}</span>}
                         {hasVariants && <span style={s.variantBadge}>options</span>}
                         {(product as any).is_fuel && <span style={s.fuelBadge}>⛽</span>}
                         <div style={s.productImage}>
@@ -1568,6 +1668,7 @@ export default function CashierScreen() {
                     );
                   })
                 )}
+                {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden style={{ gridColumn: '1/-1', height: 1 }} />}
               </div>
             </>
           )}
@@ -1576,10 +1677,18 @@ export default function CashierScreen() {
 
         {/* ── Right panel — Cart ──────────────────────────────────────────── */}
         {!isMinimart && (
-        <div style={{
+        <div data-testid="pos-cart" className={isPhone ? 'animate-slide-up' : undefined} style={{
           ...s.rightPanel,
           ...(hasSlotPicker && !activeKey ? { width: 0, overflow: 'hidden', borderLeft: 'none' } : {}),
+          // A463: a phone shows the cart as a full-screen sheet, opened from the bottom bar.
+          ...(isPhone ? { position: 'fixed', inset: 0, width: '100%', zIndex: 45, borderLeft: 'none', background: 'var(--pos-bg)',
+                          display: cartSheet ? 'flex' : 'none' } : {}),
         }}>
+          {isPhone && (
+            <button data-testid="pos-cart-back" onClick={() => setCartSheet(false)}
+              style={{ margin: '10px 14px 0', alignSelf: 'flex-start', background: 'none', border: '1px solid var(--pos-border)', borderRadius: 8,
+                       padding: '6px 12px', color: 'var(--pos-text)', fontSize: 13, cursor: 'pointer' }}>← Back to the menu</button>
+          )}
           <div style={s.cartHeader}>
             <div>
               <div style={s.cartTitle}>{currentOrderLabel}</div>
@@ -1614,7 +1723,7 @@ export default function CashierScreen() {
           )}
           {/* 0.6.27: a delivery's rider (and, with the 'delivery_fee' switch, the fee the customer pays on top). */}
           {isRestaurant && activeKey && getOrderType() === 'delivery' && (
-            <div style={{ display: 'flex', gap: 8, margin: '0 14px 10px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '0 14px 10px' }}>
               <input value={activeRider} onChange={e => setActiveDelivery({ rider: e.target.value })} data-testid="rider-name"
                 placeholder={posFeatures.delivery_fee ? 'Rider name (required)' : 'Rider name'} maxLength={60}
                 style={{ flex: 1, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '7px 10px', color: '#f1f5f9', fontSize: 12 }} />
@@ -1687,7 +1796,7 @@ export default function CashierScreen() {
               </div>
             ) : (
               cart.map((item, index) => (
-                <div key={index}>
+                <div key={index} className="animate-line-in" data-testid="cart-line">
                 <div style={s.cartItem}>
                   <div style={s.cartItemInfo}>
                     <div style={s.cartItemName}>{item.product.name}</div>
@@ -1703,9 +1812,9 @@ export default function CashierScreen() {
                       <span style={s.qtyNum}>{item.quantity.toFixed(2)} L</span>
                     ) : (
                       <>
-                        <button style={s.qtyBtn} onClick={() => changeQty(index, -1)}>−</button>
+                        <button className="press" style={s.qtyBtn} onClick={() => changeQty(index, -1)}>−</button>
                         <span style={s.qtyNum}>{item.quantity}</span>
-                        <button style={s.qtyBtn} onClick={() => updateQty(index, 1)}>+</button>
+                        <button className="press" style={s.qtyBtn} onClick={() => updateQty(index, 1)}>+</button>
                       </>
                     )}
                     <button style={s.removeBtn} onClick={() => removeLine(index)}>✕</button>
@@ -1905,8 +2014,8 @@ export default function CashierScreen() {
 
       {/* ── Covers modal (restaurant) ──────────────────────────────────────── */}
       {showCoversModal && pendingTable && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>Opening {pendingTable.name}</h3>
             <p style={s.modalSubtitle}>How many guests?</p>
             <div style={s.coversRow}>
@@ -1938,8 +2047,8 @@ export default function CashierScreen() {
           : `${Math.floor(openMins / 60)}h ${openMins % 60}m`;
 
         return (
-          <div style={s.overlay}>
-            <div style={{
+          <div style={s.overlay} className="animate-fade-in">
+            <div className="animate-pop-in" style={{
               ...s.modal,
               maxWidth: 400, padding: 0, overflow: 'hidden',
             }}>
@@ -2046,8 +2155,8 @@ export default function CashierScreen() {
 
       {/* ── Parking modal ─────────────────────────────────────────────────── */}
       {showParkingModal && pendingBay && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>Open {pendingBay.name}</h3>
             <p style={s.modalSubtitle}>Enter vehicle details</p>
 
@@ -2101,8 +2210,8 @@ export default function CashierScreen() {
 
       {/* ── Pump modal (petrol) ───────────────────────────────────────────── */}
       {showPumpModal && pendingPump && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>{pendingPump.name}</h3>
             <p style={s.modalSubtitle}>Activate pump and select fuel grade from the product grid.</p>
             <div style={s.modalActions}>
@@ -2124,8 +2233,8 @@ export default function CashierScreen() {
           : (price > 0 ? (parseFloat(fuelAmountStr) || 0) / price : 0);
         const unit = (fuelEntry as any).fuel_unit ?? 'L';
         return (
-          <div style={s.overlay}>
-            <div style={s.modal}>
+          <div style={s.overlay} className="animate-fade-in">
+            <div style={s.modal} className="animate-pop-in">
               <h3 style={s.modalTitle}>{fuelEntry.name}</h3>
               <p style={s.modalSubtitle}>{currency} {price.toLocaleString()}/{unit} · enter amount or {unit === 'L' ? 'litres' : unit}</p>
 
@@ -2177,8 +2286,8 @@ export default function CashierScreen() {
 
       {/* ── Variant modal ────────────────────────────────────────────────── */}
       {variantProduct && (
-        <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: 420, width: '92vw' }}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 420, width: '92vw' }}>
             <div style={s.variantModalHeader}>
               <div>
                 <h3 style={s.modalTitle}>{variantProduct.name}</h3>
@@ -2265,8 +2374,8 @@ export default function CashierScreen() {
       {/* A428: an item's description, to explain it to a customer — adds nothing until "Add to order". */}
       {infoProduct && (
         <div data-testid="product-info-card" onClick={(e) => e.target === e.currentTarget && setInfoProduct(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
-          <div style={{ background: 'var(--pos-panel)', border: '1px solid var(--pos-border)', borderRadius: 16, width: '100%', maxWidth: 440, overflow: 'hidden' }}>
+          className="animate-fade-in" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
+          <div className="animate-pop-in" style={{ background: 'var(--pos-panel)', border: '1px solid var(--pos-border)', borderRadius: 16, width: '100%', maxWidth: 440, overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--pos-border)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 16 }}>{infoProduct.name}</div>
@@ -2415,8 +2524,8 @@ export default function CashierScreen() {
 
       {/* ── Table Transfer Modal ─────────────────────────────────────────── */}
       {showTransfer && isRestaurant && (
-        <div style={s.overlay}>
-          <div style={{ ...s.modal, width: 420, textAlign: 'left' }}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 420, textAlign: 'left' }}>
             <p style={{ ...s.modalTitle, textAlign: 'left', marginBottom: 4 }}>Transfer Table</p>
             <p style={{ ...s.modalSubtitle, textAlign: 'left', marginBottom: 16 }}>
               {(activeKey && openOrders[activeKey]?.tableName)
@@ -2494,8 +2603,8 @@ export default function CashierScreen() {
 
       {/* ── Room Charge Modal ─────────────────────────────────────────────── */}
       {showRoomCharge && isRestaurant && (
-        <div style={s.overlay}>
-          <div style={{ ...s.modal, width: 380, textAlign: 'left' }}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 380, textAlign: 'left' }}>
             <p style={{ ...s.modalTitle, textAlign: 'left', marginBottom: 4 }}>🏨 Post to Room</p>
             <p style={{ ...s.modalSubtitle, textAlign: 'left', marginBottom: 20 }}>
               Charge {fmt(orderTotal, currency)} to a hotel room — guest settles at checkout.
@@ -2614,6 +2723,47 @@ Signature: _______________`;
 
       {showZReport && <ZReportModal onClose={() => setShowZReport(false)} />}
 
+      {/* A464 (owner, 2026-10-13): the bar names the open order, flashes the last item added, and charges in one tap;
+          it sits clear of the iPhone home bar. */}
+      {isPhone && !cartSheet && !isMinimart && (cart.length > 0 || !!activeKey) && (
+        <div data-testid="pos-cart-bar" className="animate-slide-up"
+          style={{ position: 'fixed', left: 10, right: 10, bottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', zIndex: 44, display: 'flex',
+                   borderRadius: 12, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                   transform: cartFlash ? 'scale(1.03)' : 'scale(1)', transition: 'transform 0.15s ease' }}>
+          <button data-testid="pos-cart-open" onClick={() => setCartSheet(true)}
+            style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 1,
+                     padding: '9px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                     background: 'var(--pos-accent, #14b8a6)', color: '#0b1220' }}>
+            <span style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+              🛒 {activeOrderLabel ? `${activeOrderLabel} · ` : ''}{cartCount} item{cartCount === 1 ? '' : 's'} ›
+            </span>
+            <span data-testid="pos-cart-last" style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+              {cartFlash ?? 'Tap to see the order'}
+            </span>
+          </button>
+          {cart.length > 0 && (
+            <button data-testid="pos-cart-charge"
+              onClick={() => {
+                if (!currentShift) { setShiftModal('open'); return; }
+                // a delivery still missing its rider or fee: open the cart, where the message shows
+                const problem = deliveryProblem(posFeatures.delivery_fee, getOrderType(), activeRider, activeFeeText);
+                if (problem) { setDeliveryMsg(problem); setCartSheet(true); return; }
+                openPayment(false);
+              }}
+              style={{ flexShrink: 0, padding: '0 16px', border: 'none', borderLeft: '1px solid rgba(11,18,32,0.25)', cursor: 'pointer',
+                       fontWeight: 800, fontSize: 14, background: 'var(--pos-accent, #14b8a6)', color: '#0b1220', opacity: currentShift ? 1 : 0.6 }}>
+              Charge {fmt(orderTotal, currency)}
+            </button>
+          )}
+        </div>
+      )}
+      {closedElsewhere && (
+        <div data-testid="shift-closed-elsewhere" role="alert"
+          className="animate-slide-down fixed top-4 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 max-w-[92vw] px-4 py-3 rounded-lg shadow-lg text-sm border bg-red-950 border-red-700 text-red-100">
+          <span>{closedElsewhere}</span>
+          <button onClick={() => setClosedElsewhere(null)} className="shrink-0 px-2 py-1 rounded font-medium bg-red-700 hover:bg-red-600 text-white">OK</button>
+        </div>
+      )}
       {shiftModal && (
         <ShiftModal
           mode={shiftModal}
@@ -2651,8 +2801,8 @@ Signature: _______________`;
 
       {/* ── Lock confirm ──────────────────────────────────────────────────── */}
       {showLockConfirm && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
+        <div style={s.overlay} className="animate-fade-in">
+          <div style={s.modal} className="animate-pop-in">
             <h3 style={s.modalTitle}>Lock Screen?</h3>
             <p style={s.modalSubtitle}>
               {Object.keys(openOrders).length > 0
@@ -2679,12 +2829,12 @@ const spinCss = `@keyframes spin { to { transform: rotate(360deg); } }`;
 
 const s: Record<string, React.CSSProperties> = {
   root: {
-    height: '100vh', display: 'flex', flexDirection: 'column',
+    height: '100dvh', display: 'flex', flexDirection: 'column',   // A463: dvh — the phone's address bar no longer hides the bottom
     background: 'var(--pos-bg)', fontFamily: "'DM Sans','Segoe UI',sans-serif",
     color: 'var(--pos-text)', overflow: 'hidden',
   },
   loadingRoot: {
-    height: '100vh', display: 'flex', flexDirection: 'column',
+    height: '100dvh', display: 'flex', flexDirection: 'column',   // A463: dvh — the phone's address bar no longer hides the bottom
     alignItems: 'center', justifyContent: 'center', background: 'var(--pos-bg)',
   },
   spinnerLg: {
@@ -2743,7 +2893,7 @@ const s: Record<string, React.CSSProperties> = {
   // Shared slot view (tables / bays / pumps)
   slotView: { flex: 1, padding: '20px 24px', overflowY: 'auto' as const, background: 'var(--pos-bg)' },
   slotViewHeader: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 8,
   },
   slotViewTitle: { fontSize: 12, fontWeight: 700, color: 'var(--pos-text3)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' },
   slotLegend: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--pos-text3)' },
@@ -2923,11 +3073,12 @@ const s: Record<string, React.CSSProperties> = {
   // Modals
   overlay: {
     position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 12,   // A463: never edge to edge
   },
   modal: {
     background: 'var(--pos-modal)', border: '1px solid var(--pos-border)', borderRadius: 16,
-    padding: '28px 32px', width: 340, boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+    padding: '24px 22px', width: '100%', maxWidth: 340, maxHeight: '90dvh', overflowY: 'auto', boxSizing: 'border-box',   // A463
+    boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
     textAlign: 'center' as const,
   },
   modalTitle: { fontSize: 18, fontWeight: 700, color: 'var(--pos-text)', margin: '0 0 6px' },

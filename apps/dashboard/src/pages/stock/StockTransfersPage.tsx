@@ -5,6 +5,7 @@ import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 import { printDocument } from '../../lib/printDocument';
 import { transferDocSpec } from '../../lib/documentSpecs';
+import { dateShort } from '../../lib/format';
 
 interface Product { id: string; name: string; }
 interface Branch  { id: string; name: string; }
@@ -181,10 +182,10 @@ export default function StockTransfersPage() {
   };
 
   return (
-    <div className="flex-1 overflow-auto p-6">
+    <div className="flex-1 overflow-auto p-4 sm:p-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl font-bold text-white">Stock Transfers</h1>
           <p className="text-gray-500 text-sm mt-0.5">Move stock between branches</p>
@@ -200,9 +201,9 @@ export default function StockTransfersPage() {
       {/* Transfer list */}
       <div className="space-y-2">
         {loading ? (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center text-gray-500 text-sm">Loading…</div>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 sm:p-12 text-center text-gray-500 text-sm">Loading…</div>
         ) : transfers.length === 0 ? (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 sm:p-12 text-center">
             <p className="text-3xl mb-3">🔄</p>
             <p className="text-white font-medium mb-1">No transfers yet</p>
             <p className="text-gray-500 text-sm">Create a transfer to move stock between branches</p>
@@ -217,7 +218,7 @@ export default function StockTransfersPage() {
             >
               <div
                 onClick={() => setExpanded(isOpen ? null : t.id)}
-                className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-gray-800/30 transition-colors"
+                className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-4 cursor-pointer hover:bg-gray-800/30 transition-colors"
               >
                 <div className="flex items-center gap-4 min-w-0">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${st.cls}`}>
@@ -230,43 +231,45 @@ export default function StockTransfersPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-3 sm:flex-shrink-0">
                   <button onClick={(e) => { e.stopPropagation(); printTransferDoc(t); }}
                     className="text-xs font-medium px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
                     Print
                   </button>
                   <span className="text-gray-400 text-xs">{t.stock_transfer_items.length} item{t.stock_transfer_items.length !== 1 ? 's' : ''}</span>
-                  <span className="text-gray-500 text-xs">{new Date(t.created_at).toLocaleDateString('en-KE')}</span>
+                  <span className="text-gray-500 text-xs">{dateShort(t.created_at)}</span>
                   <span className="text-gray-600 text-xs">{isOpen ? '▲' : '▼'}</span>
                 </div>
               </div>
 
               {isOpen && (
-                <div className="px-5 pb-4 border-t border-gray-800">
-                  <table className="w-full text-xs mt-3">
-                    <thead>
-                      <tr className="text-gray-500 uppercase tracking-wide">
-                        <th className="text-left pb-2">Product</th>
-                        <th className="text-right pb-2">Sent</th>
-                        <th className="text-right pb-2">Received</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {t.stock_transfer_items.map((item, i) => {
-                        const rec = item.quantity_received;
-                        const short = rec != null && Number(rec) < Number(item.quantity);
-                        return (
-                          <tr key={i} className="border-t border-gray-800/50">
-                            <td className="py-1.5 text-gray-300">{item.products?.name ?? item.product_id}</td>
-                            <td className="py-1.5 text-white text-right font-medium">{item.quantity}</td>
-                            <td className={`py-1.5 text-right font-medium ${rec == null ? 'text-gray-600' : short ? 'text-amber-400' : 'text-white'}`}>
-                              {rec == null ? '—' : rec}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="px-4 sm:px-5 pb-4 border-t border-gray-800">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs mt-3">
+                      <thead>
+                        <tr className="text-gray-500 uppercase tracking-wide">
+                          <th className="text-left pb-2">Product</th>
+                          <th className="text-right pb-2">Sent</th>
+                          <th className="text-right pb-2">Received</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {t.stock_transfer_items.map((item, i) => {
+                          const rec = item.quantity_received;
+                          const short = rec != null && Number(rec) < Number(item.quantity);
+                          return (
+                            <tr key={i} className="border-t border-gray-800/50">
+                              <td className="py-1.5 text-gray-300">{item.products?.name ?? item.product_id}</td>
+                              <td className="py-1.5 text-white text-right font-medium">{item.quantity}</td>
+                              <td className={`py-1.5 text-right font-medium ${rec == null ? 'text-gray-600' : short ? 'text-amber-400' : 'text-white'}`}>
+                                {rec == null ? '—' : rec}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                   {t.notes && <p className="text-gray-500 text-xs mt-3 italic">Despatch note: {t.notes}</p>}
                   {t.receipt_note && <p className="text-amber-400/90 text-xs mt-1 italic">Receipt note: {t.receipt_note}</p>}
 
@@ -351,13 +354,13 @@ export default function StockTransfersPage() {
 
                 <div className="space-y-2">
                   <div className="grid grid-cols-12 gap-2 text-xs text-gray-500 uppercase tracking-wide px-1">
-                    <span className="col-span-8">Product</span>
-                    <span className="col-span-3 text-right">Quantity</span>
+                    <span className="col-span-7 sm:col-span-8">Product</span>
+                    <span className="col-span-4 sm:col-span-3 text-right">Quantity</span>
                     <span className="col-span-1"></span>
                   </div>
                   {lines.map((line, i) => (
                     <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                      <div className="col-span-8">
+                      <div className="col-span-7 sm:col-span-8">
                         <select
                           className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-swift"
                           value={line.product_id}
@@ -367,7 +370,7 @@ export default function StockTransfersPage() {
                           {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       </div>
-                      <div className="col-span-3">
+                      <div className="col-span-4 sm:col-span-3">
                         <input
                           type="number"
                           min="1"
@@ -420,7 +423,7 @@ export default function StockTransfersPage() {
       )}
       {sameUserPrompt && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-white font-semibold text-lg mb-2">Confirm your own despatch?</h3>
             <p className="text-gray-400 text-sm mb-5">{sameUserPrompt.msg}</p>
             <div className="flex gap-3">
@@ -440,7 +443,7 @@ export default function StockTransfersPage() {
       {/* A204: cancel a transfer with a required reason (no native confirm). */}
       {cancelPrompt && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-white font-semibold text-lg mb-2">Cancel this transfer?</h3>
             <p className="text-gray-400 text-sm mb-4">
               Nothing is moved back — reverse settled stock with an adjustment instead.

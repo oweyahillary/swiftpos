@@ -78,7 +78,7 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">{toast}</div>
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">{toast}</div>
       )}
       <div>
         <h2 className="text-white font-semibold">Receipt &amp; hours for this branch</h2>

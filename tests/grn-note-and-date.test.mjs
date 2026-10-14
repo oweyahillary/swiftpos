@@ -1,7 +1,7 @@
 /**
  * grn-note-and-date.test.mjs — A229 + A230 source guards (rule 24), mutation-checkable.
  * A229: the manager GRN receive carries a note (sent to the server) and can print.
- * A230: fmtDate handles full ISO timestamps and never renders "Invalid Date".
+ * A230: fmtDate handles full ISO timestamps and never renders "Invalid Date" (A471: now lib/format's dateShort).
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -30,11 +30,20 @@ ok('A229: manager can Confirm & print the GRN', () => {
 });
 
 // ── A230 ──────────────────────────────────────────────────────────────────
-ok('A230: fmtDate handles full timestamps (not just date-only)', () => {
-  assert.match(po, /d\.length <= 10 \? d \+ 'T00:00:00' : d/);
+// A471: the page's own fmtDate moved to lib/format's dateShort — same meaning, pinned there (and run in tests/format.test.mjs).
+const fmtLib = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/format.ts'), 'utf8');
+ok('A230: the PO page dates go through dateShort (lib/format), no local fmtDate', () => {
+  assert.match(po, /import \{[^}]*\bdateShort\b[^}]*\} from '\.\.\/\.\.\/lib\/format';/);
+  assert.match(po, /dateShort\(po\.order_date\)/);
+  assert.match(po, /dateShort\(g\.created_at\)/);   // a full GRN timestamp
+  assert.ok(!/function fmtDate\(/.test(po), 'no local fmtDate left');
 });
-ok('A230: fmtDate never renders Invalid Date', () => {
-  assert.match(po, /isNaN\(dt\.getTime\(\)\) \? '—'/);
+ok('A230: dateShort handles full timestamps (not just date-only)', () => {
+  assert.match(fmtLib, /\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/\.test\(v\) \? new Date\(`\$\{v\}T00:00:00`\)\s*: new Date\(v\)/);
+});
+ok('A230: dateShort never renders Invalid Date', () => {
+  assert.match(fmtLib, /return Number\.isNaN\(d\.getTime\(\)\) \? null : d;/);
+  assert.match(fmtLib, /return d \? d\.toLocaleDateString\(LOCALE, \{ day: 'numeric', month: 'short', year: 'numeric' \}\) : empty;/);
 });
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);

@@ -4,10 +4,13 @@
  * Converted to Tailwind — Session 2 Phase 2
  * NOTE: Tank gauge fill bar keeps inline style={{ width: `${level}%` }} — dynamic value.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { api } from '../../lib/api';
+import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { useBranch } from '../../context/BranchContext';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { money, litres, litres as fmtLitres, dayTime } from '../../lib/format';
+import { useBusiness } from '../../context/BusinessContext';
 
 interface Branch { id: string; name: string; }
 
@@ -66,6 +69,7 @@ const PUMP_STATUS_CLS: Record<string, string> = {
 };
 
 export default function PetrolSettingsPage() {
+  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const { branches } = useBranch();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [tab, setTab]               = useState<Tab>('pumps');
@@ -78,6 +82,8 @@ export default function PetrolSettingsPage() {
   const [saving, setSaving]         = useState(false);
   const [history, setHistory]       = useState<any[]>([]);
   const [histLoading, setHistLoading] = useState(false);
+  const moreGrade = useRowMore();
+  const moreHist = useRowMore();
 
   const [editPump, setEditPump]     = useState<Partial<Pump> | null>(null);
   const [editTank, setEditTank]     = useState<Partial<FuelTank> | null>(null);
@@ -197,18 +203,18 @@ export default function PetrolSettingsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-4 sm:p-6 max-w-5xl">
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
+        <div className="fixed bottom-6 right-6 left-4 sm:left-auto bg-green-500 text-white px-5 py-2.5 rounded-lg font-semibold z-50 shadow-lg">
           {toast}
         </div>
       )}
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-5">
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-white">Petrol Station Settings</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Petrol Station Settings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage pumps, tanks, fuel grades and station policies</p>
         </div>
         <div className="flex gap-2.5">
@@ -232,7 +238,7 @@ export default function PetrolSettingsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         {[
           { label: 'Pumps',     value: pumps.length, cls: 'text-white' },
           { label: 'Idle',      value: pumps.filter(p => p.status === 'idle').length, cls: 'text-green-400' },
@@ -255,12 +261,12 @@ export default function PetrolSettingsPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-gray-800">
+      <div className="flex gap-1 mb-5 border-b border-gray-800 overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors whitespace-nowrap ${
               tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-500 hover:text-gray-300'
             }`}
           >
@@ -289,7 +295,7 @@ export default function PetrolSettingsPage() {
                     </div>
                     {assignedTank && (
                       <div className="text-xs text-gray-500 mt-0.5">
-                        Tank: {assignedTank.name} ({assignedTank.current_level.toFixed(0)}L)
+                        Tank: {assignedTank.name} ({litres(assignedTank.current_level, 0)})
                       </div>
                     )}
                     {needsTankLink && (
@@ -314,7 +320,7 @@ export default function PetrolSettingsPage() {
 
       {/* ── WET STOCK / TANKS ── */}
       {tab === 'tanks' && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-4">
           {tanks.length === 0 ? (
             <div className="col-span-full text-center text-gray-500 text-sm py-16">No tanks configured yet</div>
           ) : tanks.map(tank => {
@@ -341,7 +347,7 @@ export default function PetrolSettingsPage() {
                 {/* Gauge bar — width is dynamic, must stay inline */}
                 <div className="mb-3">
                   <div className="flex justify-between mb-1.5">
-                    <span className="text-xs text-gray-500">{tank.current_level.toLocaleString()}L remaining</span>
+                    <span className="text-xs text-gray-500">{litres(tank.current_level, 0)} remaining</span>
                     <span className={`text-xs font-bold ${isLow ? 'text-red-400' : 'text-white'}`}>{level}%</span>
                   </div>
                   <div className="h-2 bg-gray-950 rounded-full overflow-hidden">
@@ -361,9 +367,9 @@ export default function PetrolSettingsPage() {
 
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {[
-                    { label: 'Capacity', val: `${tank.capacity_litres.toLocaleString()}L` },
-                    { label: 'Current',  val: `${tank.current_level.toLocaleString()}L` },
-                    { label: 'Reorder',  val: `${tank.reorder_level.toLocaleString()}L` },
+                    { label: 'Capacity', val: litres(tank.capacity_litres, 0) },
+                    { label: 'Current',  val: litres(tank.current_level, 0) },
+                    { label: 'Reorder',  val: litres(tank.reorder_level, 0) },
                   ].map(({ label, val }) => (
                     <div key={label} className="text-center">
                       <div className="text-xs font-bold text-white">{val}</div>
@@ -389,11 +395,11 @@ export default function PetrolSettingsPage() {
           <p className="text-sm text-gray-500 mb-4">
             Fuel grades are managed as products with the "Is fuel" flag enabled. Go to Products to add new grades.
           </p>
-          <table className="w-full">
+          <div className="overflow-x-auto"><table className="w-full">
             <thead>
               <tr className="border-b border-gray-800">
-                {['Grade', 'Price per litre', 'Unit', 'Status', ''].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                {['Grade', 'Price per litre', 'Unit', 'Status', ''].map((h, i) => (
+                  <th key={h} className={`px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider${i === 2 || i === 3 ? ` ${DESK}` : ''}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -403,16 +409,18 @@ export default function PetrolSettingsPage() {
                   No fuel products — add products with "Is fuel" enabled in the Products page
                 </td></tr>
               ) : fuelProducts.map(fp => (
-                <tr key={fp.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
+                <Fragment key={fp.id}>
+                <tr className="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: gradeColour(fp.name) }} />
                       <span className="text-sm font-semibold text-white">{fp.name}</span>
                     </div>
+                    <ViewMore open={moreGrade.isOpen(fp.id)} onClick={() => moreGrade.toggle(fp.id)} />
                   </td>
-                  <td className="px-3 py-3 text-sm font-bold text-green-400">KES {Number(fp.base_price).toFixed(2)}</td>
-                  <td className="px-3 py-3 text-sm text-gray-500">{fp.fuel_unit ?? 'L'}</td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 text-sm font-bold text-green-400">{money(fp.base_price, currency)}</td>
+                  <td className={`px-3 py-3 text-sm text-gray-500 ${DESK}`}>{fp.fuel_unit ?? 'L'}</td>
+                  <td className={`px-3 py-3 ${DESK}`}>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${fp.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
                       {fp.status}
                     </span>
@@ -421,9 +429,16 @@ export default function PetrolSettingsPage() {
                     <a href="/dashboard/products" className="text-xs text-swift-text hover:text-swift-text-hover no-underline">Edit in Products →</a>
                   </td>
                 </tr>
+                <MoreRow open={moreGrade.isOpen(fp.id)} colSpan={3} items={[
+                  ['Unit', fp.fuel_unit ?? 'L'],
+                  ['Status', <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${fp.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                      {fp.status}
+                    </span>],
+                ]} />
+                </Fragment>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -446,11 +461,11 @@ export default function PetrolSettingsPage() {
               No movements yet. Stock deductions appear here automatically when fuel sales are made.
             </div>
           ) : (
-            <table className="w-full">
+            <div className="overflow-x-auto"><table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
-                  {['Date', 'Tank', 'Grade', 'Type', 'Litres', 'Level After', 'Note'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                  {['Date', 'Tank', 'Grade', 'Type', 'Litres', 'Level After', 'Note'].map((h, i) => (
+                    <th key={h} className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider${i !== 0 && i !== 4 ? ` ${DESK}` : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -460,13 +475,15 @@ export default function PetrolSettingsPage() {
                   const isDelivery = m.movement_type === 'restock' || Number(m.quantity_change) > 0;
                   const litres     = Math.abs(Number(m.quantity_change));
                   return (
-                    <tr key={i} className="hover:bg-gray-800/30 transition-colors">
+                    <Fragment key={i}>
+                    <tr className="hover:bg-gray-800/30 transition-colors">
                       <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
-                        {m.created_at ? new Date(m.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                        {dayTime(m.created_at)}
+                        <ViewMore open={moreHist.isOpen(String(i))} onClick={() => moreHist.toggle(String(i))} />
                       </td>
-                      <td className="px-4 py-3 text-sm text-white font-medium">{m.tank_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{m.product_name ?? '—'}</td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 py-3 text-sm text-white font-medium ${DESK}`}>{m.tank_name ?? '—'}</td>
+                      <td className={`px-4 py-3 text-sm text-gray-300 ${DESK}`}>{m.product_name ?? '—'}</td>
+                      <td className={`px-4 py-3 ${DESK}`}>
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
                           isSale ? 'bg-red-500/10 text-red-400' : isDelivery ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
                         }`}>
@@ -474,17 +491,29 @@ export default function PetrolSettingsPage() {
                         </span>
                       </td>
                       <td className={`px-4 py-3 text-sm font-semibold tabular-nums ${isSale ? 'text-red-400' : 'text-green-400'}`}>
-                        {isSale ? '−' : '+'}{litres.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
+                        {isSale ? '−' : '+'}{fmtLitres(litres)}
                       </td>
-                      <td className="px-4 py-3 text-sm tabular-nums text-gray-300">
-                        {m.quantity_after != null ? `${Number(m.quantity_after).toLocaleString('en-KE', { maximumFractionDigits: 0 })} L` : '—'}
+                      <td className={`px-4 py-3 text-sm tabular-nums text-gray-300 ${DESK}`}>
+                        {fmtLitres(m.quantity_after, 0, '—')}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500 max-w-[180px] truncate">{m.notes ?? '—'}</td>
+                      <td className={`px-4 py-3 text-xs text-gray-500 max-w-[180px] truncate ${DESK}`}>{m.notes ?? '—'}</td>
                     </tr>
+                    <MoreRow open={moreHist.isOpen(String(i))} colSpan={2} items={[
+                      ['Tank', m.tank_name ?? '—'],
+                      ['Grade', m.product_name ?? '—'],
+                      ['Type', <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          isSale ? 'bg-red-500/10 text-red-400' : isDelivery ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'
+                        }`}>
+                          {isSale ? '▼ Sale' : isDelivery ? '▲ Delivery' : m.movement_type}
+                        </span>],
+                      ['Level After', fmtLitres(m.quantity_after, 0, '—')],
+                      ['Note', m.notes ?? '—'],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}
@@ -522,7 +551,7 @@ export default function PetrolSettingsPage() {
 
       {/* ── EDIT PUMP MODAL ── */}
       {editPump && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-base font-bold text-white">{editPump.id ? `Edit ${editPump.name}` : 'Add pump'}</h3>
@@ -553,7 +582,7 @@ export default function PetrolSettingsPage() {
                   .filter(t => !editPump.fuel_product_id || t.fuel_product_id === editPump.fuel_product_id)
                   .map(t => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.current_level.toFixed(0)}L / {t.capacity_litres.toFixed(0)}L)
+                      {t.name} ({litres(t.current_level, 0)} / {litres(t.capacity_litres, 0)})
                     </option>
                   ))}
               </select>
@@ -589,7 +618,7 @@ export default function PetrolSettingsPage() {
 
       {/* ── EDIT TANK MODAL ── */}
       {editTank && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-base font-bold text-white">{editTank.id ? `Edit ${editTank.name}` : 'Add tank'}</h3>
@@ -617,7 +646,7 @@ export default function PetrolSettingsPage() {
                 {fuelProducts.map(fp => <option key={fp.id} value={fp.id}>{fp.name}</option>)}
               </select>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
                 { label: 'Capacity (L)', field: 'capacity_litres' as const },
                 { label: 'Current (L)',  field: 'current_level' as const },
@@ -642,14 +671,14 @@ export default function PetrolSettingsPage() {
 
       {/* ── DELIVERY MODAL ── */}
       {stockEntry && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-base font-bold text-white">Record delivery — {stockEntry.tank.name}</h3>
               <button onClick={() => setStockEntry(null)} className="w-7 h-7 bg-gray-800 hover:bg-gray-700 border-none rounded-md text-gray-400 text-sm cursor-pointer">✕</button>
             </div>
             <p className="text-sm text-gray-500 mb-4">
-              Current level: {stockEntry.tank.current_level.toLocaleString()}L of {stockEntry.tank.capacity_litres.toLocaleString()}L capacity
+              Current level: {litres(stockEntry.tank.current_level, 0)} of {litres(stockEntry.tank.capacity_litres, 0)} capacity
             </p>
             <div className="mb-4">
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Litres delivered *</label>
@@ -660,7 +689,7 @@ export default function PetrolSettingsPage() {
             {stockEntry.litres && (
               <p className="text-sm text-green-400 mb-4">
                 New level after delivery:{' '}
-                {Math.min(stockEntry.tank.current_level + parseFloat(stockEntry.litres || '0'), stockEntry.tank.capacity_litres).toLocaleString()}L
+                {litres(Math.min(stockEntry.tank.current_level + parseFloat(stockEntry.litres || '0'), stockEntry.tank.capacity_litres), 0)}
               </p>
             )}
             <div className="flex gap-2.5">

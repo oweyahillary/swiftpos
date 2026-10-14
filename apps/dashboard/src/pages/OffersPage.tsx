@@ -101,8 +101,8 @@ export function OffersManager({ client, isOwner, branchId, currency }: { client:
       saving={saving} error={error} products={products} categories={categories} branches={branches} isOwner={isOwner} currency={currency} />;
   }
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between gap-3">
+    <div className="p-4 sm:p-6 space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-white">Offers</h1>
           <p className="text-sm text-gray-400 mt-1">They apply by themselves at the tills and the web POS, on the days and hours you set. A cashier can still add a discount on top, up to the usual limit.</p>

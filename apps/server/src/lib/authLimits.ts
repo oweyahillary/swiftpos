@@ -15,7 +15,7 @@
  */
 
 /** The till's (and the dashboard's) background renewals — not a person typing a password, PIN or code. */
-const RENEWALS = new Set(['/refresh', '/device-token', '/logout']);
+const RENEWALS = new Set(['/refresh', '/refresh/ack', '/device-token', '/logout']);   // A477: the renewal's ack
 
 /** `path` is relative to /api/auth (Express strips the mount). */
 export function isRenewalPath(path: string): boolean {

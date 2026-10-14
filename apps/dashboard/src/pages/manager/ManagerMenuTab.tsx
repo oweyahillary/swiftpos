@@ -9,6 +9,9 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import { money } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface Product {
   id: string;
@@ -36,7 +39,6 @@ export default function ManagerMenuTab({ currency }: { currency: string }) {
   }, [posApi]);
   useEffect(() => { void load(); }, [load]);
 
-  const money = (v: number) => `${currency} ${Number(v ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const term = q.trim().toLowerCase();
   const filtered = term
@@ -51,6 +53,21 @@ export default function ManagerMenuTab({ currency }: { currency: string }) {
     groups.get(g)!.push(p);
   }
   const orderedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  // The menu in the order it is shown (category by category) — paged as one list.
+  const menuRows = orderedGroups.flatMap(([, items]) => items);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [menuPage, setMenuPage] = useState(1);
+  const [menuPageSize, setMenuPageSize] = usePageSize('swiftpos.pageSize.manager.menu');
+  useEffect(() => { setMenuPage(1); }, [q]);
+  const menuPaged = paginate(menuRows, menuPage, menuPageSize);
+  useEffect(() => { if (menuPaged.page !== menuPage) setMenuPage(menuPaged.page); }, [menuPaged.page, menuPage]);
+  // This page's products, under their category headings (the count stays the category's whole count).
+  const pageGroups: [string, Product[]][] = [];
+  for (const p of menuPaged.items) {
+    const g = p.categories?.name ?? 'Uncategorised';
+    const last = pageGroups[pageGroups.length - 1];
+    if (last && last[0] === g) last[1].push(p); else pageGroups.push([g, [p]]);
+  }
 
   return (
     <div className="p-6 space-y-5">
@@ -74,9 +91,9 @@ export default function ManagerMenuTab({ currency }: { currency: string }) {
           </div>
         ) : (
           <div className="space-y-5">
-            {orderedGroups.map(([cat, items]) => (
+            {pageGroups.map(([cat, items]) => (
               <div key={cat}>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">{cat} <span className="text-gray-600">· {items.length}</span></h3>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">{cat} <span className="text-gray-600">· {groups.get(cat)?.length ?? items.length}</span></h3>
                 <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800">
                   {items.map(p => (
                     <div key={p.id} className="flex items-center justify-between px-4 py-2.5">
@@ -84,12 +101,13 @@ export default function ManagerMenuTab({ currency }: { currency: string }) {
                         <span className="text-gray-200 text-sm truncate">{p.name}</span>
                         {p.status !== 'active' && <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-600 text-gray-400 flex-shrink-0">inactive</span>}
                       </div>
-                      <span className="text-gray-300 text-sm tabular-nums flex-shrink-0">{p.is_fuel ? `${money(p.base_price)}/L` : money(p.base_price)}</span>
+                      <span className="text-gray-300 text-sm tabular-nums flex-shrink-0">{p.is_fuel ? `${money(p.base_price, currency)}/L` : money(p.base_price, currency)}</span>
                     </div>
                   ))}
                 </div>
               </div>
             ))}
+            <Pager paged={menuPaged} noun="products" onPage={setMenuPage} onSize={n => { setMenuPageSize(n); setMenuPage(1); }} />
           </div>
         )}
     </div>

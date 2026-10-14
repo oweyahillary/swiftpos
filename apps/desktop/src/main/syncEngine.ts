@@ -13,8 +13,8 @@ import { nodeChangeVersion } from './nodeClient';   // A448
 import { cleanOffer, type Offer } from './offers';   // A445
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
-import { logLine, describeResponse, getLogPath } from './logFile';
-import { getMacAddressCached } from './machineFingerprint';
+import { logLine, describeResponse, getLogPath, authLog } from './logFile';
+import { getMacAddressCached, identityHeaders } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, readDeviceSecret, writeDeviceSecret } from './tokenStore';
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
@@ -23,7 +23,7 @@ import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, se
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
-import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
+import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, ackViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
 import { nodeRefusal, cloudFetch } from './cloudGateway';
 import { setReceiptPay } from './receiptPay';   // A450   // A410
 import { readPending as readPendingWaste, pushPendingWastage, type WasteOutcome } from './tillWastage';   // A414
@@ -197,15 +197,28 @@ function authHeaders() {
  * SINGLE-FLIGHT. Three call sites reach this — tillFetch (the PIN pad), the
  * sync loop, and the order push — and they overlap at boot.
  *
- * Refresh tokens ROTATE: auth.ts revokes the consumed one before issuing the
- * replacement. So two concurrent refreshes present the same token, one wins,
- * and the loser is handed a 401 for a token that was valid when it read it.
- * That is not an auth failure, it is a race — but it surfaces as "signed out
- * again", and offline it is worse, because there is no way to sign back in.
+ * Refresh tokens ROTATE. Before A477 auth.ts revoked the consumed one before
+ * issuing the replacement, so two concurrent refreshes presenting the same token
+ * raced and the loser was handed a 401 for a token that was valid when it read
+ * it. A477's handshake re-asks instead, but one renewal at a time is still what
+ * keeps the chain single-headed — and it is what the A477 gate hangs on.
  *
  * While a refresh is in flight every other caller awaits the same promise.
  */
 let _refreshInFlight: Promise<boolean> | null = null;
+
+// A473 (owner, 2026-10-14: "sometimes it takes up to 8-12 sec for the desktop app to unlock"): when the cloud has
+// REFUSED this till's session (the renewal and the device secret both said no — a technician must rejoin it), every PIN
+// sign-in still asked the cloud, waited for the same doomed renewal and device sign-in, and only then checked the PIN on
+// the till: three round trips per sign-in. The refusal is remembered and the PIN pad goes straight to the till's own
+// check while it holds. Any successful renewal clears it. A477: it also drives the renewal gate — after a refusal no
+// caller asks the cloud again for 15 minutes (renewalHeldUntil), unless a technician acts (resetRenewalGate).
+let _sessionRefusedAt: number | null = null;
+export function tillSessionRefusedRecently(windowMs = 60_000, now = Date.now()): boolean {
+  return _sessionRefusedAt !== null && now - _sessionRefusedAt < windowMs;
+}
+/** Test seam. */
+export function _setSessionRefusedAt(at: number | null): void { _sessionRefusedAt = at; }
 
 export async function refreshAccessToken(): Promise<boolean> {
   if (_refreshInFlight) return _refreshInFlight;
@@ -213,18 +226,117 @@ export async function refreshAccessToken(): Promise<boolean> {
   return _refreshInFlight;
 }
 
-// Reads the persisted refresh token. Also the recovery path on a 401: the
-// in-memory copy can lag what is on disk, and presenting a stale token to a
-// rotating endpoint is an unnecessary logout.
+// ── A477: one gate for every caller ──────────────────────────────────────────
+// Owner, 2026-10-14: on 2026-10-12 several callers (the sync loop, the shift push, the web-sales poll, the version
+// check, the PIN pad) asked the cloud to renew a refused session many times a minute — 429 "Too many renewals" — and
+// the log rotated away how it started. Now, after a definitive refusal (the renewal AND the device grant said no:
+// TOKEN_STALE, TOKEN_REPLAYED, DEVICE_MISMATCH, DEVICE_NO_SECRET, any 401) no caller asks again for 15 minutes; after
+// a 429 none asks before its Retry-After (else 15 minutes). Only a technician's action (a rejoin) opens it early. The
+// till keeps selling meanwhile — nothing is shown to the cashier (the owner is emailed by the cloud).
+export const RENEWAL_BACKOFF_MS = 15 * 60_000;
+const RETRY_AFTER_CAP_MS = 60 * 60_000;
+let _renewalRetryAt = 0;
+let _renewalHeldLogged = 0;
+
+/** Until when no renewal may be attempted (ms since epoch), or null when one may. */
+export function renewalHeldUntil(now = Date.now()): number | null {
+  const refused = _sessionRefusedAt !== null ? _sessionRefusedAt + RENEWAL_BACKOFF_MS : 0;
+  const until = Math.max(refused, _renewalRetryAt);
+  return until > now ? until : null;
+}
+
+/** A technician's action (a rejoin, a new enrolment code): the gate opens at once. */
+export function resetRenewalGate(reason: string): void {
+  _sessionRefusedAt = null;
+  _renewalRetryAt = 0;
+  _renewalHeldLogged = 0;
+  authLog('gate-open', reason);
+}
+
+/** How long a 429 asks the till to wait: Retry-After (seconds or an HTTP date), else RateLimit-Reset, else 15 min. */
+export function retryAfterMs(headers: { get(name: string): string | null } | null | undefined, now = Date.now()): number {
+  const ra = String(headers?.get('retry-after') ?? '').trim();
+  let ms: number | null = null;
+  if (/^\d+$/.test(ra)) ms = Number(ra) * 1000;
+  else if (ra) { const t = Date.parse(ra); if (Number.isFinite(t)) ms = t - now; }
+  if (ms === null) { const reset = String(headers?.get('ratelimit-reset') ?? '').trim(); if (/^\d+$/.test(reset)) ms = Number(reset) * 1000; }
+  if (ms === null || ms <= 0) ms = RENEWAL_BACKOFF_MS;
+  return Math.min(ms, RETRY_AFTER_CAP_MS);
+}
+
+function noteTooManyRenewals(res: Response, what: string): void {
+  const wait = retryAfterMs(res.headers);
+  _renewalRetryAt = Date.now() + wait;
+  authLog('renewal-limited', `${what}: HTTP 429 - no renewal for ${Math.round(wait / 1000)} s`);
+}
+
+/** A refusal's code and a log-safe description, reading the body once. */
+async function readRefusal(res: Response): Promise<{ code: string; detail: string }> {
+  let text = '';
+  try { text = await res.text(); } catch { text = ''; }
+  let code = '';
+  try { code = String(JSON.parse(text)?.code ?? ''); } catch { code = ''; }
+  const detail = await describeResponse({ status: res.status, statusText: res.statusText, text: async () => text });
+  return { code, detail };
+}
+
+/** The headers that say which machine this is (A477, hashed) and whether the till lost its device secret. */
+async function renewalHeaders(): Promise<Record<string, string>> {
+  let ident: Record<string, string> = {};
+  try { ident = await identityHeaders(); } catch { ident = {}; }
+  let missing = false;
+  try { missing = !readDeviceSecret(); } catch { missing = false; }
+  return { ...ident, ...(missing ? { 'X-Device-Secret-Missing': '1' } : {}) };
+}
+
+/** A477: the ack in flight (test seam: await it). */
+let _ackInFlight: Promise<void> | null = null;
+export function _awaitAck(): Promise<void> { return _ackInFlight ?? Promise.resolve(); }
+
+/** A477: tell the cloud the new token is kept (written to disk) — it then retires the old one. A failure is harmless:
+ *  the next renewal presents the new token, which confirms it. */
+async function confirmRenewal(token: string, viaNode: boolean): Promise<void> {
+  try {
+    const headers = { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceConfig()?.device_id ?? '', ...(await identityHeaders().catch(() => ({}))) };
+    const ok = viaNode
+      ? await ackViaNode(token, headers)
+      : (await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/refresh/ack`, { method: 'POST', headers, body: JSON.stringify({ refreshToken: token }) })).ok;
+    authLog(ok ? 'ack' : 'ack-failed', ok ? (viaNode ? 'via the branch server' : '') : 'not confirmed now - the next renewal confirms it');
+  } catch (e: any) {
+    authLog('ack-failed', `${e?.message ?? e} - the next renewal confirms it`);
+  }
+}
+
+/** A477: keep a new pair — disk FIRST (the only source of the token at the next renewal), then memory, then the ack. */
+function keepRenewedPair(pair: { accessToken: string; refreshToken: string; ack?: boolean }, viaNode: boolean): void {
+  let kept = true;
+  try { writeSessionTokens({ token: pair.accessToken, refreshToken: pair.refreshToken }); }
+  catch (e: any) { kept = false; logLine('auth', `the renewed sign-in could not be written to disk (${e?.message ?? e}) - the next renewal asks again`); }
+  _accessToken  = pair.accessToken;
+  _refreshToken = pair.refreshToken;
+  // Unconfirmed until it is on disk: an ack for a token the till could lose would retire the one it still holds.
+  if (kept && pair.ack) _ackInFlight = confirmRenewal(pair.refreshToken, viaNode);
+}
+
+// Reads the persisted refresh token. A477: the ONLY source of the token at renewal time — the in-memory copy is a cache
+// that can lag what is on disk (the 2026-10-12 sign-out: a stale copy presented to a rotating endpoint).
 function persistedRefresh(): string {
-  return readSessionTokens().refreshToken;
+  try { return readSessionTokens().refreshToken; } catch { return ''; }
 }
 
 async function doRefreshAccessToken(): Promise<boolean> {
-  // The in-memory token is empty until configureSyncEngine() has run, which
-  // happens on auth:getSession. Don't depend on that ordering — a handler can
-  // fire before it. Fall back to whatever is persisted.
-  let refresh = _refreshToken || persistedRefresh();
+  // A477: the gate every caller shares.
+  const held = renewalHeldUntil();
+  if (held !== null) {
+    if (Date.now() - _renewalHeldLogged > 60_000) {
+      _renewalHeldLogged = Date.now();
+      logLine('auth', `renewal held back until ${new Date(held).toISOString()} (the cloud refused it, or asked the till to wait)`);
+    }
+    return false;
+  }
+  // A477: disk first, read right before the attempt. Memory only when nothing is on disk (configureSyncEngine ran
+  // before the first write).
+  let refresh = persistedRefresh() || _refreshToken;
   if (!refresh) return false;
 
   // A160: when the cloud can't be reached (thrown) or answers a 5xx (down but
@@ -234,13 +346,13 @@ async function doRefreshAccessToken(): Promise<boolean> {
   // (revoked) is NOT retried here: the node returns null and the session ends.
   const tryNodeRefresh = async (): Promise<boolean> => {
     if (!hasNode()) return false;
-    const pair = await refreshViaNode(refresh);
+    const pair = await refreshViaNode(refresh, await renewalHeaders());
     if (!pair) return false;
-    _accessToken  = pair.accessToken;
-    _refreshToken = pair.refreshToken;
-    writeSessionTokens({ token: pair.accessToken, refreshToken: pair.refreshToken });
-    clearInboundFailure('auth');
+    keepRenewedPair(pair, true);   // A477: disk, memory, then the ack (through the branch server)
+    if (pair.deviceSecret) { writeDeviceSecret(pair.deviceSecret); authLog('device-secret', 'received through the branch server and kept'); }
+    clearInboundFailure('auth'); _sessionRefusedAt = null;
     logLine('auth', 'access token refreshed via the branch node (cloud unreachable)');
+    authLog('renewal-ok', 'via the branch server');
     return true;
   };
 
@@ -248,7 +360,8 @@ async function doRefreshAccessToken(): Promise<boolean> {
     const res = await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/refresh`, {
       method: 'POST',
       // A407: the device id lets the cloud hand this till a device secret if it has none yet.
-      headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceConfig()?.device_id ?? '' },
+      // A477: and which machine this is (hashed), and whether the till lost its device secret.
+      headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceConfig()?.device_id ?? '', ...(await renewalHeaders()) },
       body: JSON.stringify({ refreshToken: token }),
     });
     return res;
@@ -264,18 +377,20 @@ async function doRefreshAccessToken(): Promise<boolean> {
     if (!body) return false;
     try {
       const res = await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/device-token`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(await identityHeaders().catch(() => ({}))) }, body: JSON.stringify(body),
       });
       if (!res.ok) {
-        noteInboundFailure('auth', `the till could not sign itself back in: ${await describeResponse(res)}`);
+        if (res.status === 429) noteTooManyRenewals(res, 'device sign-in');
+        const r = await readRefusal(res);
+        authLog('device-grant-refused', `${r.code || `HTTP ${res.status}`}`);
+        noteInboundFailure('auth', `the till could not sign itself back in: ${r.detail}`);
         return false;
       }
       const pair = await res.json() as { accessToken: string; refreshToken: string };
-      _accessToken  = pair.accessToken;
-      _refreshToken = pair.refreshToken;
-      writeSessionTokens({ token: pair.accessToken, refreshToken: pair.refreshToken });
-      clearInboundFailure('auth');
+      keepRenewedPair(pair, false);   // a new session: nothing to confirm
+      clearInboundFailure('auth'); _sessionRefusedAt = null;
       logLine('auth', 'session refused - the till signed itself back in with its device secret');
+      authLog('device-grant-ok', 'signed back in with the device secret');
       return true;
     } catch (e: any) {
       logLine('auth', `device sign-in error: ${e?.message ?? e}`);
@@ -287,8 +402,8 @@ async function doRefreshAccessToken(): Promise<boolean> {
     let res = await attempt(refresh);
 
     // One retry, and only when disk holds a DIFFERENT token from the one just
-    // rejected — that means something rotated it while we were holding a stale
-    // copy, so the rejection is bookkeeping rather than a revoked session.
+    // rejected — that means something rotated it while the request was in flight,
+    // so the rejection is bookkeeping rather than a revoked session.
     // Retrying the SAME token would just re-ask a question already answered.
     if (res.status === 401) {
       const onDisk = persistedRefresh();
@@ -300,31 +415,43 @@ async function doRefreshAccessToken(): Promise<boolean> {
     }
 
     if (!res.ok) {
+      // A477: too many renewals — wait as asked; asking again only extends the wait.
+      if (res.status === 429) {
+        noteTooManyRenewals(res, 'renewal');
+        noteInboundFailure('auth', `till token refresh failed: ${(await readRefusal(res)).detail}`);
+        return false;
+      }
       // A160: a 5xx means the cloud answered but can't serve — treat it like
       // unreachable and let the node broker the refresh before giving up.
       if (res.status >= 500 && await tryNodeRefresh()) return true;
+      const refusal = res.status === 401 ? await readRefusal(res) : null;
+      if (refusal) authLog('renewal-refused', `${refusal.code || 'HTTP 401'} - trying the device secret`);
       // A407: refused (401) — the till signs itself back in with its device secret before giving up.
       if (res.status === 401 && await tryDeviceGrant()) return true;
+      if (res.status === 401) _sessionRefusedAt = Date.now();   // A473: refused for good until rejoined
+      if (refusal) authLog('renewal-held', `no renewal for ${RENEWAL_BACKOFF_MS / 60_000} min (${refusal.code || 'HTTP 401'})`);
       // Rotation means a revoked token can never be recovered: the owner must
       // sign in again, and with no internet they cannot. Recording it is the
       // difference between "it logged me out again" and knowing which refresh
       // was rejected and when.
-      noteInboundFailure('auth', `till token refresh failed: ${await describeResponse(res)}`);
+      noteInboundFailure('auth', `till token refresh failed: ${refusal ? refusal.detail : await describeResponse(res)}`);
       return false;
     }
-    const { accessToken, refreshToken, deviceSecret } = await res.json();
-    _accessToken  = accessToken;
-    _refreshToken = refreshToken;
-    // Persist immediately. The server has ALREADY revoked the old token by the
-    // time this response arrives, so every instruction between here and the
-    // write is a window in which a crash strands the till holding a dead token.
-    // Client code cannot close that window — only a server-side grace period
-    // can (register D13, part 3). Keep this write first and unconditional.
-    writeSessionTokens({ token: accessToken, refreshToken });
+    const { accessToken, refreshToken, deviceSecret, ack } = (await res.json()) ?? {};
+    if (typeof accessToken !== 'string' || !accessToken || typeof refreshToken !== 'string' || !refreshToken) {
+      noteInboundFailure('auth', 'till token refresh: the answer carried no sign-in');
+      return false;
+    }
+    // A477: disk first, then memory, then the ack (keepRenewedPair). With the handshake the cloud has NOT retired the
+    // old token yet — a crash before the write leaves the till holding the old one, and presenting it again simply
+    // re-asks (register D13, A477).
+    keepRenewedPair({ accessToken, refreshToken, ack: ack === true }, false);
     // A407: a till enrolled before it kept a device secret is given one on an ordinary renewal — keep it (after the
     // tokens: their write stays first).
-    if (typeof deviceSecret === 'string' && deviceSecret) { writeDeviceSecret(deviceSecret); logLine('auth', 'device secret received and kept'); }
-    clearInboundFailure('auth');
+    if (typeof deviceSecret === 'string' && deviceSecret) { writeDeviceSecret(deviceSecret); logLine('auth', 'device secret received and kept'); authLog('device-secret', 'received and kept'); }
+    clearInboundFailure('auth'); _sessionRefusedAt = null;
+    _renewalRetryAt = 0;
+    authLog('renewal-ok', ack === true ? 'confirming the new key' : '');
     return true;
   } catch (err: any) {
     // A160: the cloud is unreachable (DNS/refused/timeout). Before giving up,
@@ -431,9 +558,15 @@ function signedInStaffId(): string | null {
   catch { return null; }
 }
 
+// A477: a staff token the cloud refused for good is never presented again (it can only be refused again) — the person
+// signs in with their PIN anew.
+let _staffRefusedToken = '';
+
 async function doRefreshStaffToken(): Promise<boolean> {
-  let refresh = _staffRefresh || persistedStaffRefresh();
+  // A477: disk first, as the till's own session.
+  let refresh = persistedStaffRefresh() || _staffRefresh;
   if (!refresh) return false;
+  if (refresh === _staffRefusedToken) return false;
   // A446 (session audit): a renewal that finishes after its cashier signed out and another signed in must not write the
   // first cashier's session over the second's — the second's sales would go out under the first's name.
   const who = signedInStaffId();
@@ -453,17 +586,23 @@ async function doRefreshStaffToken(): Promise<boolean> {
       }
     }
     if (!res.ok) {
+      if (res.status === 401) { _staffRefusedToken = refresh; authLog('staff-renewal-refused', `HTTP ${res.status}`); }
       noteInboundFailure('auth', `staff token refresh failed: ${await describeResponse(res)}`);
       return false;
     }
-    const { accessToken, refreshToken } = await res.json();
+    const { accessToken, refreshToken, ack } = await res.json();
     if (signedInStaffId() !== who) {
       logLine('auth', 'staff token renewed after a different person signed in — discarded');
       return false;
     }
+    // A477: disk first, then memory, then the ack.
+    const nextRefresh = refreshToken ?? _staffRefresh;
+    let kept = true;
+    try { writeStaffTokens({ token: accessToken, refreshToken: nextRefresh }); }
+    catch (e: any) { kept = false; logLine('auth', `the renewed staff sign-in could not be written to disk (${e?.message ?? e})`); }
     _staffToken   = accessToken;
-    _staffRefresh = refreshToken ?? _staffRefresh;
-    writeStaffTokens({ token: _staffToken, refreshToken: _staffRefresh });
+    _staffRefresh = nextRefresh;
+    if (kept && ack === true && refreshToken) _ackInFlight = confirmRenewal(refreshToken, false);
     clearInboundFailure('auth');
     return true;
   } catch (err: any) {

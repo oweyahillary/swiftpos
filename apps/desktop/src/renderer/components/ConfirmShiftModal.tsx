@@ -70,8 +70,8 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
   const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-action-500';
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-[60]" data-testid="confirm-shift">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-[60] animate-fade-in" data-testid="confirm-shift">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col animate-pop-in">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <h2 className="text-white font-bold">{result ? 'Shift confirmed' : `Confirm ${cashierName}'s shift`}</h2>
           <button onClick={() => (result ? onDone(result) : onClose())} className="text-gray-300 hover:text-white">✕</button>
@@ -154,7 +154,7 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
               )}
               <button onClick={() => void submit()} disabled={busy}
                 className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-2.5 text-sm">
-                {busy ? 'Confirming…' : 'Confirm shift'}
+                {busy && <span className="btn-spinner" aria-hidden="true" />}{busy ? 'Confirming…' : 'Confirm shift'}
               </button>
             </>
           )}

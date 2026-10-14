@@ -10,9 +10,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { deviceLabelShown } from '../../lib/posTerminal';   // 0.6.37: old "SwiftPOS till" reads ZapTill
 import { api } from '../../lib/api';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Toast from '../../components/Toast';
 import { useToast } from '../../hooks/useToast';
+import { dateShort, dateTime, relative } from '../../lib/format';
 
 interface DeviceUser {
   id:    string;
@@ -41,24 +44,7 @@ interface Device {
   users:        DeviceUser | null;
 }
 
-// A71: absolute date + time, so "last active" is a real timestamp, not just "2h ago".
-function fmtDateTime(iso: string | null): string {
-  if (!iso) return 'never';
-  return new Date(iso).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' });
-}
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-KE', { dateStyle: 'medium' });
-}
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return '—';
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1)   return 'just now';
-  if (mins < 60)  return `${mins}m ago`;
-  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
-  return `${Math.floor(mins / 1440)}d ago`;
-}
+// A71: "last active" is a real timestamp (dateTime), not just "2h ago" — lib/format (A471).
 
 const STATUS_BADGE: Record<Device['status'], string> = {
   pending:  'bg-amber-500/15 text-amber-400 border-amber-500/30',
@@ -166,6 +152,13 @@ export default function DevicesTab() {
 
   const pending  = devices.filter(d => d.status === 'pending');
   const filtered = filter === 'all' ? devices : devices.filter(d => d.status === filter);
+  // A475: the devices in pages (25 / 50 / 100, remembered in this browser); the pending ones above are all of them.
+  // Another status filter → page 1; an approve, revoke or rename keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.devices');
+  useEffect(() => { setPage(1); }, [filter]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -215,7 +208,7 @@ export default function DevicesTab() {
                   {d.users?.name ?? 'Unknown staff'} · {deviceLabelShown(d.device_label) ?? 'Unknown device'}
                 </p>
                 <p className="text-amber-400/70 text-xs mt-0.5">
-                  {d.users?.roles?.name} · {d.ip_address ?? 'Unknown IP'} · {timeAgo(d.requested_at)}
+                  {d.users?.roles?.name} · {d.ip_address ?? 'Unknown IP'} · {relative(d.requested_at)}
                 </p>
               </div>
               <div className="flex gap-2 flex-shrink-0">
@@ -238,7 +231,7 @@ export default function DevicesTab() {
       )}
 
       {/* ── Filter tabs ─────────────────────────────────────────────────────── */}
-      <div className="flex gap-2 border-b border-gray-800 pb-px">
+      <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-px">
         {(['all', 'approved', 'pending', 'rejected'] as const).map(f => (
           <button
             key={f}
@@ -275,7 +268,7 @@ export default function DevicesTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(d => (
+          {paged.items.map(d => (
             <div
               key={d.id}
               className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4"
@@ -324,25 +317,25 @@ export default function DevicesTab() {
                   {d.status === 'approved' && d.last_sync_at &&
                     (Date.now() - new Date(d.last_sync_at).getTime()) > 24 * 60 * 60 * 1000 && (
                     <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-amber-500/15 text-amber-400 border-amber-500/30">
-                      not synced {timeAgo(d.last_sync_at)}
+                      not synced {relative(d.last_sync_at)}
                     </span>
                   )}
                 </div>
                 <p className="text-gray-600 text-xs mt-0.5">
                   {d.users?.roles?.name ?? (d.device_id ? 'Signs in as itself' : 'Staff')}
                   {d.ip_address && ` · ${d.ip_address}`}
-                  {d.status === 'pending'  && ` · Requested ${timeAgo(d.requested_at)}`}
-                  {d.status === 'approved' && ` · Last seen ${timeAgo(d.last_seen_at)}`}
-                  {d.status === 'rejected' && ` · Rejected ${timeAgo(d.reviewed_at)}`}
+                  {d.status === 'pending'  && ` · Requested ${relative(d.requested_at)}`}
+                  {d.status === 'approved' && ` · Last seen ${relative(d.last_seen_at)}`}
+                  {d.status === 'rejected' && ` · Rejected ${relative(d.reviewed_at)}`}
                 </p>
                 {/* A71: device detail — branch, role, absolute last-active, version, enrolled */}
                 <div className="text-gray-500 text-xs mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                   {d.branch_name    && <span>📍 {d.branch_name}</span>}
                   {d.device_role    && <span className="capitalize">{d.device_role}</span>}
                   {d.terminal_code  && <span>Terminal {d.terminal_code}</span>}
-                  {d.status === 'approved' && <span>Last active {fmtDateTime(d.last_seen_at)}</span>}
+                  {d.status === 'approved' && <span>Last active {dateTime(d.last_seen_at, 'never')}</span>}
                   {d.app_version    && <span>v{d.app_version}</span>}
-                  {d.created_at     && <span>Enrolled {fmtDate(d.created_at)}</span>}
+                  {d.created_at     && <span>Enrolled {dateShort(d.created_at)}</span>}
                 </div>
               </div>
 
@@ -375,6 +368,7 @@ export default function DevicesTab() {
               </div>
             </div>
           ))}
+          <Pager paged={paged} noun="devices" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
     </div>

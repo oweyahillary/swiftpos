@@ -61,8 +61,8 @@ export default function KitchenVoidModal({ orderNumber, orderType, tableNumber, 
   const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-action-500';
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-[60]" data-testid="kitchen-void">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-[60] animate-fade-in" data-testid="kitchen-void">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col animate-pop-in">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <h2 className="text-white font-bold">{title}</h2>
           <button onClick={onClose} className="text-gray-300 hover:text-white">✕</button>
@@ -117,7 +117,7 @@ export default function KitchenVoidModal({ orderNumber, orderType, tableNumber, 
           )}
           <button onClick={() => void submit()} disabled={busy}
             className="w-full bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-bold rounded-xl py-2.5 text-sm">
-            {busy ? 'Voiding…' : `Void ${money(total)}`}
+            {busy && <span className="btn-spinner" aria-hidden="true" />}{busy ? 'Voiding…' : `Void ${money(total)}`}
           </button>
         </div>
       </div>

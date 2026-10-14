@@ -48,8 +48,8 @@ export default function KitchenVoidModal({ title, orderNumber, lines, needsManag
   };
 
   return (
-    <div style={st.overlay} onClick={onClose}>
-      <div style={st.card} onClick={(e) => e.stopPropagation()} data-testid="kitchen-void">
+    <div className="animate-fade-in" style={st.overlay} onClick={onClose}>
+      <div className="animate-pop-in" style={st.card} onClick={(e) => e.stopPropagation()} data-testid="kitchen-void">
         <div style={{ fontWeight: 600, color: '#f1f5f9', marginBottom: 8 }}>{title}</div>
         <div style={st.warn}>
           Already sent to the kitchen (order #{orderNumber}). Taking it back is a kitchen void: the kitchen gets a VOID

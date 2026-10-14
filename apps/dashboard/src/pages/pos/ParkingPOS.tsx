@@ -494,8 +494,8 @@ export default function ParkingPOS({
 
       {/* ════════ VEHICLE ENTRY MODAL ════════ */}
       {entryBay && (
-        <div style={s.overlay} role="dialog" aria-modal aria-label="Vehicle entry">
-          <div style={s.modal}>
+        <div className="animate-fade-in" style={s.overlay} role="dialog" aria-modal aria-label="Vehicle entry">
+          <div className="animate-pop-in" style={s.modal}>
             {/* Header */}
             <div style={s.modalTop}>
               <div>
@@ -589,8 +589,8 @@ export default function ParkingPOS({
 
       {/* ════════ CHECKOUT MODAL ════════ */}
       {checkoutBay && checkoutSession && checkoutElapsed && (
-        <div style={s.overlay} role="dialog" aria-modal aria-label="Parking checkout">
-          <div style={s.modal}>
+        <div className="animate-fade-in" style={s.overlay} role="dialog" aria-modal aria-label="Parking checkout">
+          <div className="animate-pop-in" style={s.modal}>
             <div style={s.modalTop}>
               <div>
                 <div style={s.modalEyebrow}>Checkout</div>

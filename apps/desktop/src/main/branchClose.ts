@@ -29,6 +29,7 @@ import {
 import { getOpenShift } from './syncEngine';
 import { listPeers } from './nodeIngest';
 import { computeZReport, expectedMethods, methodsToCount, confirmShift, type Confirmation } from './shiftService';   // A452
+import { addFloatToShift, recordExpense, ownOpenShift } from './shiftService';   // A465
 import { getPosFeatures } from './deviceConfig';   // A452
 
 // ── Shared shapes ────────────────────────────────────────────────────────────
@@ -54,6 +55,8 @@ export interface PeerDayState {
   shifts?: PeerShift[];
   /** A452: the till's own clock when it reported — the screen warns when it is off from the server's. */
   clock?: string;
+  /** A465: the till's name and code (T1…) so the server's lists can name it. Absent from an older till. */
+  terminal?: { code?: string | null; name?: string | null };
 }
 
 /** A452: one shift as its till reports it — its own books, never the server's replicated copies. */
@@ -173,7 +176,76 @@ export function ownDayState(): PeerDayState {
     cashiers_counted_total: summary?.countedCash ?? 0,
     shifts: ownShifts(),              // A452
     clock: new Date().toISOString(),  // A452
+    terminal: { code: getDeviceConfig()?.terminal_code ?? null, name: getDeviceConfig()?.device_name ?? null },   // A465
   };
+}
+
+// ── A465: cash in / out and expenses on any running shift, from the branch server ─────────────────────────────────────
+// Owner, 2026-10-13: a manager on the branch server records a cash in, cash out or expense against ANY running shift of
+// the branch. The server never writes the row: it queues an instruction and the till that holds the drawer records it
+// in its OWN books (its device id) — so its Z-report, its push to the cloud and Close Branch all agree.
+
+export interface ShiftMoneyPayload {
+  /** The row's id, minted on the server: the instruction delivered twice records once. */
+  row_id: string;
+  shift_id: string;
+  kind: 'float_in' | 'float_out' | 'expense';
+  amount: number;
+  reason?: string | null;
+  description?: string | null;
+  expense_category_id?: string | null;
+  category_name?: string | null;
+  payment_method?: string | null;
+  approver: { id: string; name: string | null };
+  recorded_by?: { id: string; name: string | null } | null;
+}
+
+export const SHIFT_MONEY_CLOSED = 'That shift is closed on this till — record it on the shift now open';
+
+/** A465: record a server manager's cash in / out or expense on one of this till's open shifts. Never throws. */
+export function executeShiftMoney(payload: ShiftMoneyPayload):
+  { ok: boolean; error?: string; already?: boolean; summary?: { kind: string; amount: number; shift_id: string; expected_cash: number } } {
+  try {
+    const db = getLocalDb();
+    const p = payload ?? ({} as ShiftMoneyPayload);
+    if (!p.row_id || !p.shift_id) return { ok: false, error: 'The instruction is incomplete' };
+    const had = db.prepare(`SELECT 1 FROM float_transactions WHERE id = ? UNION ALL SELECT 1 FROM expenses WHERE id = ?`).get(p.row_id, p.row_id);
+    if (had) return { ok: true, already: true };   // delivered again after it was recorded
+    if (p.kind !== 'float_in' && p.kind !== 'float_out' && p.kind !== 'expense') return { ok: false, error: `Unknown kind '${String(p.kind)}'` };
+    const amount = Number(p.amount);
+    if (!(amount > 0) || !Number.isFinite(amount)) return { ok: false, error: 'The amount must be more than zero' };
+    if (!p.approver?.id) return { ok: false, error: 'No manager approved it' };
+    if (!ownOpenShift(p.shift_id)) return { ok: false, error: SHIFT_MONEY_CLOSED };
+    if (p.kind === 'expense') {
+      const description = String(p.description ?? '').trim();
+      if (!description) return { ok: false, error: 'An expense needs a description' };
+      recordExpense({
+        shiftId: p.shift_id, rowId: p.row_id, description, amount,
+        expense_category_id: p.expense_category_id ?? null, category_name: p.category_name ?? null,
+        payment_method: p.payment_method ?? 'cash', paid_by: p.recorded_by?.id ?? p.approver.id, approver: p.approver,
+      });
+    } else {
+      addFloatToShift(p.shift_id, p.kind, amount, p.reason ?? null, p.approver, p.row_id);
+    }
+    const expected = computeZReport(p.shift_id).totals.expectedCash;
+    return { ok: true, summary: { kind: p.kind, amount, shift_id: p.shift_id, expected_cash: expected } };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? 'Could not record it on this till' };
+  }
+}
+
+/** A465: queue one cash in / out or expense for a till (each row its own instruction — others pending are kept). */
+export function createShiftMoneyInstruction(deviceId: string, payload: ShiftMoneyPayload, createdByStaffId: string | null): { id: number } {
+  const r = getLocalDb().prepare(`INSERT INTO node_instructions (device_id, kind, payload, created_by, created_at) VALUES (?, 'shift_money', ?, ?, ?)`)
+    .run(deviceId, JSON.stringify(payload), createdByStaffId, new Date().toISOString());
+  return { id: Number(r.lastInsertRowid) };
+}
+
+/** A465: withdraw a shift_money instruction the till has not picked up yet. True when one was removed. Once delivered the
+ *  till may already have recorded it (its ack can lag) — withdrawing then would say "cancelled" for money on the books. */
+export function cancelShiftMoneyInstruction(id: number): boolean {
+  const r = getLocalDb().prepare(`DELETE FROM node_instructions WHERE id = ? AND kind = 'shift_money' AND status = 'pending' AND delivered_at IS NULL`).run(Number(id));
+  return r.changes > 0;
 }
 
 /**
@@ -364,6 +436,13 @@ export interface BranchCloseTillView {
   } | null;                        // the latest close_day instruction today, any status
   /** A452: the latest confirm_shift instruction per shift (pending, acked or refused — with the till's reason). */
   confirms: Record<string, { status: string; error: string | null; created_at: string }>;
+  /** A465: cash in / out and expenses sent from the server to this till (last 24 h), oldest first. */
+  money: ShiftMoneyView[];
+}
+
+export interface ShiftMoneyView {
+  id: number; status: string; error: string | null; created_at: string;
+  shift_id: string; kind: ShiftMoneyPayload['kind']; amount: number; note: string | null;
 }
 
 export function branchCloseOverview(): { business_date: string; tills: BranchCloseTillView[]; totals: BranchTotals } {
@@ -388,6 +467,10 @@ export function branchCloseOverview(): { business_date: string; tills: BranchClo
   const confirmRows = db.prepare(`
     SELECT json_extract(payload, '$.shift_id') AS shift_id, status, ack, created_at
       FROM node_instructions WHERE device_id = ? AND kind = 'confirm_shift' ORDER BY id`);
+  const moneyRows = db.prepare(`
+    SELECT id, status, ack, payload, created_at FROM node_instructions
+     WHERE device_id = ? AND kind = 'shift_money' AND created_at >= ? ORDER BY id`);
+  const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
 
   const tills: BranchCloseTillView[] = [];
   for (const id of deviceIds) {
@@ -407,8 +490,19 @@ export function branchCloseOverview(): { business_date: string; tills: BranchClo
       try { error = c.ack ? (JSON.parse(c.ack).error ?? null) : null; } catch { /* none */ }
       confirms[String(c.shift_id)] = { status: c.status, error, created_at: c.created_at };
     }
+    const money: ShiftMoneyView[] = [];
+    for (const m of moneyRows.all(id, since) as any[]) {
+      let error: string | null = null;
+      let p: Partial<ShiftMoneyPayload> = {};
+      try { error = m.ack ? (JSON.parse(m.ack).error ?? null) : null; } catch { /* none */ }
+      try { p = JSON.parse(m.payload); } catch { /* none */ }
+      money.push({ id: m.id, status: m.status, error, created_at: m.created_at, shift_id: String(p.shift_id ?? ''),
+        kind: (p.kind ?? 'float_in') as ShiftMoneyPayload['kind'], amount: Number(p.amount ?? 0),
+        note: (p.kind === 'expense' ? p.description : p.reason) ?? null });
+    }
     tills.push({
       confirms,
+      money,
       device_id: id,
       is_self: isSelf,
       last_seen: lastSeen,

@@ -124,9 +124,9 @@ export default function VoidModal({ order, currency, windowMin = VOID_WINDOW_MIN
   };
 
   return (
-    <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4"
+    <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4 animate-fade-in"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl max-h-[92vh] overflow-y-auto">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl max-h-[92vh] overflow-y-auto animate-pop-in">
 
         {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-gray-800">
@@ -279,7 +279,7 @@ export default function VoidModal({ order, currency, windowMin = VOID_WINDOW_MIN
               isRefund ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-600 hover:bg-red-500'
             }`}
           >
-            {loading
+            {loading && <span className="btn-spinner" aria-hidden="true" />}{loading
               ? (isRefund ? 'Refunding…' : 'Voiding…')
               : (isRefund ? `Refund ${fmt(order.total)}` : 'Confirm Void')}
           </button>

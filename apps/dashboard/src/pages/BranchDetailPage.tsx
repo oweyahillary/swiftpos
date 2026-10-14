@@ -1,7 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useParams, Link } from "react-router-dom";
 import BranchReceiptOverrides from "./settings/BranchReceiptOverrides";
 import { api } from "../lib/api";
+import { DESK, useRowMore, ViewMore, MoreRow } from "../components/RowMore";
+import Pager, { usePageSize } from "../components/Pager";   // A475
+import { paginate } from "../lib/paginate";
 
 interface Branch {
   id: string;
@@ -37,6 +40,19 @@ export default function BranchDetailPage() {
   const [stock, setStock] = useState<StockItem[]>([]);
   const [tab, setTab] = useState<"staff" | "stock">("staff");
   const [loading, setLoading] = useState(true);
+  const moreStaff = useRowMore();
+  const moreStock = useRowMore();
+  // A475: the staff and the stock in pages (25 / 50 / 100, remembered in this browser); the low-stock count is over every
+  // row. Another branch → page 1.
+  const [staffPage, setStaffPage] = useState(1);
+  const [staffPageSize, setStaffPageSize] = usePageSize("swiftpos.pageSize.branchStaff");
+  const [stockPage, setStockPage] = useState(1);
+  const [stockPageSize, setStockPageSize] = usePageSize("swiftpos.pageSize.branchStock");
+  useEffect(() => { setStaffPage(1); setStockPage(1); }, [id]);
+  const staffPaged = paginate(staff, staffPage, staffPageSize);
+  useEffect(() => { if (staffPaged.page !== staffPage) setStaffPage(staffPaged.page); }, [staffPaged.page, staffPage]);
+  const stockPaged = paginate(stock, stockPage, stockPageSize);
+  useEffect(() => { if (stockPaged.page !== stockPage) setStockPage(stockPaged.page); }, [stockPaged.page, stockPage]);
 
   useEffect(() => {
     async function load() {
@@ -74,9 +90,9 @@ export default function BranchDetailPage() {
   const lowStock = stock.filter(s => s.quantity <= (s.low_stock_threshold ?? 5));
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-gray-950">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-950">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-6">
         <div>
           <Link to="/dashboard/branches" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
             ← Branches
@@ -97,7 +113,7 @@ export default function BranchDetailPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
           <p className="text-2xl font-bold text-white">{staff.length}</p>
           <p className="text-gray-500 text-xs mt-1">Staff</p>
@@ -134,38 +150,49 @@ export default function BranchDetailPage() {
       {tab === "staff" && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           {staff.length === 0 ? (
-            <div className="p-10 text-center">
+            <div className="p-6 sm:p-10 text-center">
               <p className="text-gray-500 text-sm">No staff assigned to this branch yet.</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Name</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Role</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Phone</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Role</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Phone</th>
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {staff.map(member => (
-                  <tr key={member.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                    <td className="px-4 py-3 text-white">{member.name}</td>
-                    <td className="px-4 py-3">
+                {staffPaged.items.map(member => (
+                  <Fragment key={member.id}>
+                  <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                    <td className="px-4 py-3 text-white">{member.name}
+                      <ViewMore open={moreStaff.isOpen(member.id)} onClick={() => moreStaff.toggle(member.id)} />
+                    </td>
+                    <td className={`px-4 py-3 ${DESK}`}>
                       <span className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300">
                         {member.role_name ?? "—"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-400">{member.phone ?? "—"}</td>
+                    <td className={`px-4 py-3 text-gray-400 ${DESK}`}>{member.phone ?? "—"}</td>
                     <td className="px-4 py-3">
                       <span className={`text-xs ${member.status === "active" ? "text-green-400" : "text-gray-500"}`}>
                         {member.status}
                       </span>
                     </td>
                   </tr>
+                  <MoreRow open={moreStaff.isOpen(member.id)} colSpan={2} items={[
+                    ["Role", <span className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300">{member.role_name ?? "—"}</span>],
+                    ["Phone", member.phone ?? "—"],
+                  ]} />
+                  </Fragment>
                 ))}
               </tbody>
-            </table>
+            </table></div>
+          )}
+          {staff.length > 0 && (
+            <Pager paged={staffPaged} noun="staff" onPage={setStaffPage} onSize={n => { setStaffPageSize(n); setStaffPage(1); }} />
           )}
         </div>
       )}
@@ -174,40 +201,54 @@ export default function BranchDetailPage() {
       {tab === "stock" && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           {stock.length === 0 ? (
-            <div className="p-10 text-center">
+            <div className="p-6 sm:p-10 text-center">
               <p className="text-gray-500 text-sm">No stock records for this branch.</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Product</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Category</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Category</th>
                   <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Qty</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Threshold</th>
-                  <th className="text-left px-4 py-3 text-gray-500 text-xs font-medium">Status</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Threshold</th>
+                  <th className={`text-left px-4 py-3 text-gray-500 text-xs font-medium ${DESK}`}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {stock.map(item => {
+                {stockPaged.items.map(item => {
                   const isLow = item.quantity <= item.low_stock_threshold;
                   return (
-                    <tr key={item.id} className={`border-b border-gray-800/50 transition-colors ${isLow ? "bg-yellow-500/5" : "hover:bg-gray-800/30"}`}>
-                      <td className="px-4 py-3 text-white">{item.products?.name ?? "—"}</td>
-                      <td className="px-4 py-3 text-gray-400">{item.products?.categories?.name ?? "—"}</td>
+                    <Fragment key={item.id}>
+                    <tr className={`border-b border-gray-800/50 transition-colors ${isLow ? "bg-yellow-500/5" : "hover:bg-gray-800/30"}`}>
+                      <td className="px-4 py-3 text-white">{item.products?.name ?? "—"}
+                        <ViewMore open={moreStock.isOpen(item.id)} onClick={() => moreStock.toggle(item.id)} />
+                      </td>
+                      <td className={`px-4 py-3 text-gray-400 ${DESK}`}>{item.products?.categories?.name ?? "—"}</td>
                       <td className="px-4 py-3 text-white font-medium">{item.quantity}</td>
-                      <td className="px-4 py-3 text-gray-400">{item.low_stock_threshold}</td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 py-3 text-gray-400 ${DESK}`}>{item.low_stock_threshold}</td>
+                      <td className={`px-4 py-3 ${DESK}`}>
                         {isLow
                           ? <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Low Stock</span>
                           : <span className="text-xs text-green-400">OK</span>
                         }
                       </td>
                     </tr>
+                    <MoreRow open={moreStock.isOpen(item.id)} colSpan={2} items={[
+                      ["Category", item.products?.categories?.name ?? "—"],
+                      ["Threshold", item.low_stock_threshold],
+                      ["Status", isLow
+                        ? <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Low Stock</span>
+                        : <span className="text-xs text-green-400">OK</span>],
+                    ]} />
+                    </Fragment>
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
+          )}
+          {stock.length > 0 && (
+            <Pager paged={stockPaged} noun="products" onPage={setStockPage} onSize={n => { setStockPageSize(n); setStockPage(1); }} />
           )}
         </div>
       )}
