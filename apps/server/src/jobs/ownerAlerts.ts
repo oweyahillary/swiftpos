@@ -20,7 +20,10 @@
  * so it is tried again on the next run.
  */
 import cron from 'node-cron';
-import { format as tzFormat } from 'date-fns-tz';
+// A478: formatInTimeZone CONVERTS to EAT; date-fns-tz's format(…, { timeZone }) only labels the machine's local time — on
+// Render (UTC) the 21:00 / 09:00 / Monday 08:00 / 1st-07:00 sends ran three hours late. A Nairobi-time PC hid it.
+import { formatInTimeZone } from 'date-fns-tz';
+const tzFormat = (d: Date, fmt: string, o: { timeZone: string }) => formatInTimeZone(d, o.timeZone, fmt);
 import { supabase } from '../lib/supabase';
 import { sendEmail } from '../lib/mailer';
 import { getDayCutoff } from '../lib/dayCutoff';
