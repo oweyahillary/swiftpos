@@ -83,7 +83,8 @@ console.log('\n0. Harness matches branchClose.ts');
   ok('replace-then-insert on create', SRC_BC.includes(`kind = 'close_day' AND status = 'pending'`)
                                     && SRC_BC.includes(`INSERT INTO node_instructions`));
   ok('collect keeps status pending (delivery never retires)',
-     /UPDATE node_instructions SET delivered_at = COALESCE\(delivered_at, \?\) WHERE id = \?/.test(SRC_BC)
+     // A485 (F12): the same statement also stamps the instruction's uid for the ack — status is still left alone.
+     /UPDATE node_instructions SET delivered_at = COALESCE\(delivered_at, \?\)(, uid = COALESCE\(uid, \?\))? WHERE id = \?/.test(SRC_BC)
      && !/collectInstructions[\s\S]{0,600}status\s*=\s*'delivered'/.test(SRC_BC));
   ok('ack updates only pending rows', SRC_BC.includes(`WHERE id = ? AND status = 'pending'`));
   ok('local schema creates both tables', SRC_DB.includes('node_instructions') && SRC_DB.includes('node_peer_state'));
