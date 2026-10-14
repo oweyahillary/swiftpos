@@ -10,6 +10,8 @@ import { api } from '../../lib/api';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { money, dateShort } from '../../lib/format';
 import { useBusiness } from '../../context/BusinessContext';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -41,6 +43,11 @@ export default function CreditAccountsPage() {
   const [busy, setBusy] = useState(false);
   const moreCust = useRowMore();
   const moreLedger = useRowMore();
+  // A475: the customers (up to 200) and a statement (up to 100 lines) in pages; the total owed stays over every row.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.creditAccounts');
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = usePageSize('swiftpos.pageSize.creditStatement');
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -113,6 +120,13 @@ export default function CreditAccountsPage() {
   };
 
   const totalOwed = rows.reduce((s, r) => s + Number(r.credit_balance), 0);
+  // A475: a new search → page 1; a payment or limit change keeps the page (clamped). Another customer → statement page 1.
+  useEffect(() => { setPage(1); }, [search]);
+  const paged = paginate(rows, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+  useEffect(() => { setLedgerPage(1); }, [selected?.id]);
+  const ledgerPaged = paginate(ledger, ledgerPage, ledgerPageSize);
+  useEffect(() => { if (ledgerPaged.page !== ledgerPage) setLedgerPage(ledgerPaged.page); }, [ledgerPaged.page, ledgerPage]);
 
   return (
     <div className="p-4 sm:p-6">
@@ -144,7 +158,7 @@ export default function CreditAccountsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(c => (
+              {paged.items.map(c => (
                 <Fragment key={c.id}>
                 <tr className="border-b border-gray-800 hover:bg-gray-800/50">
                   <td className="p-3 text-white">{c.name}
@@ -167,6 +181,7 @@ export default function CreditAccountsPage() {
               ))}
             </tbody>
           </table></div>
+          <Pager paged={paged} noun="customers" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 
@@ -237,7 +252,7 @@ export default function CreditAccountsPage() {
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead><tr className="text-gray-500 text-left text-xs"><th className="pb-2">Date</th><th className={`pb-2 ${DESK}`}>Type</th><th className="pb-2 text-right">Amount</th><th className={`pb-2 text-right ${DESK}`}>Balance</th><th className={`pb-2 ${DESK}`}>Note</th></tr></thead>
                 <tbody>
-                  {ledger.map(l => (
+                  {ledgerPaged.items.map(l => (
                     <Fragment key={l.id}>
                     <tr className="border-t border-gray-800">
                       <td className="py-2 text-gray-500">{dateShort(l.created_at)}
@@ -257,6 +272,9 @@ export default function CreditAccountsPage() {
                   ))}
                 </tbody>
               </table></div>
+            )}
+            {ledger.length > 0 && (
+              <Pager paged={ledgerPaged} noun="lines" onPage={setLedgerPage} onSize={n => { setLedgerPageSize(n); setLedgerPage(1); }} />
             )}
           </div>
         </div>

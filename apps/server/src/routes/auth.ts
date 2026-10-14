@@ -46,9 +46,10 @@ import { requireAuth } from '../middleware/auth';
 import { findTenant, ownedTenantBusiness } from '../lib/tenant';   // A378: a client's own sign-in address
 import { getWebAccess } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
-import { refreshGraceDecision } from '../lib/refreshGrace';
+import { refreshHandshakeDecision, type HandshakeDecision, type HandshakeSuccessor } from '../lib/refreshHandshake';   // A477
+import { checkTillIdentity, resetTillIdentity } from '../lib/tillIdentity';   // A477
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A398
-import { sessionKind, revokeBrowserSessions, markTillSessionLost, clearTillSessionLost } from '../lib/tillSessions';   // A407
+import { sessionKind, revokeBrowserSessions, markTillSessionLost, clearTillSessionLost, markTillSecurityAlert } from '../lib/tillSessions';   // A407, A477
 import { cleanEmail, passwordProblem, ownerAccountForEmail, sendResetCode, checkResetCode, setOwnerPassword } from '../lib/passwordReset';   // A402
 import { otpGate, roleNeedsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
 import jwt           from 'jsonwebtoken';
@@ -204,7 +205,10 @@ async function storeRefreshToken(
 async function validateRefreshToken(refreshToken: string): Promise<{
   payload: any;
   dbRow:   any;
-  graceReissue?: boolean;
+  decision: HandshakeDecision;
+  /** Migration 131 is in (refresh_tokens.acked_at): the A477 handshake runs. */
+  handshake: boolean;
+  deviceSession: boolean;
 }> {
   // 1. Verify JWT signature + expiry
   let payload: any;
@@ -232,35 +236,31 @@ async function validateRefreshToken(refreshToken: string): Promise<{
     throw Object.assign(new Error('Refresh token not recognised'), { code: 'TOKEN_UNKNOWN' });
   }
 
-  if (dbRow.revoked_at) {
-    // Chain-based reuse detection (A88 / D13). A revoked token is not always a
-    // replay: if it was rotated and its replacement is STILL the live head, the
-    // client never received the rotation response — a lost packet, not an
-    // attack. Nuking every session there logs the owner out of the till on a
-    // dropped response. Look at the successor to tell them apart.
-    let successorExists = false;
-    let successorRevokedAt: string | null | undefined;
-    if (dbRow.replaced_by) {
-      const { data: succ } = await supabase
-        .from('refresh_tokens')
-        .select('revoked_at')
-        .eq('id', dbRow.replaced_by)
-        .maybeSingle();
-      if (succ) { successorExists = true; successorRevokedAt = (succ as any).revoked_at; }
-    }
+  // A477: the handshake (lib/refreshHandshake.ts). Chain-based, as A88 / D13: the successor this token names tells a
+  // lost reply (re-ask) from an outdated copy. Nothing is written here — the handler applies the decision only once
+  // the till may renew (a blocked till keeps its token unspent).
+  const handshake = Object.prototype.hasOwnProperty.call(dbRow, 'acked_at');   // migration 131 is in
+  const deviceSession = dbRow.session_kind === 'device' || isTillPayload(payload) || isOwnerEraTillPayload(payload);
+  let successor: HandshakeSuccessor | null = null;
+  if (dbRow.replaced_by) {
+    const { data: succ } = await supabase
+      .from('refresh_tokens')
+      .select(handshake ? 'revoked_at, acked_at, replaced_by' : 'revoked_at, replaced_by')
+      .eq('id', dbRow.replaced_by)
+      .maybeSingle();
+    if (succ) successor = { revokedAt: (succ as any).revoked_at, ackedAt: (succ as any).acked_at, replacedBy: (succ as any).replaced_by };
+  }
+  // Before migration 131 the successor's own successor was not consulted (A88): a successor that is not revoked was the
+  // head, because the old rotation revoked every token it consumed. Keep that reading exactly.
+  if (!handshake && successor) successor = { ...successor, replacedBy: null };
+  const decision = refreshHandshakeDecision({
+    row: { revokedAt: dbRow.revoked_at, ackedAt: dbRow.acked_at, replacedBy: dbRow.replaced_by, expiresAt: dbRow.expires_at },
+    successor, deviceSession, handshake,
+  });
 
-    const decision = refreshGraceDecision({
-      revokedAt: dbRow.revoked_at, successorExists, successorRevokedAt,
-    });
-
-    if (decision === 'reissue') {
-      // Lost rotation response — let the client recover. The handler mints a
-      // fresh pair and re-points the chain; do NOT revoke the session.
-      return { payload, dbRow, graceReissue: true };
-    }
-
-    // Genuine replay (successor already rotated, or the token was revoked by
-    // logout with no successor) — revoke the whole session, as before.
+  if (decision.action === 'replay') {
+    // A person's session: an outdated token (its successor already rotated, or revoked by logout) — revoke the whole
+    // session, as before (A88).
     await supabase
       .from('refresh_tokens')
       .update({ revoked_at: new Date().toISOString() })
@@ -272,12 +272,22 @@ async function validateRefreshToken(refreshToken: string): Promise<{
       { code: 'TOKEN_REPLAYED' },
     );
   }
-
-  if (new Date(dbRow.expires_at) < new Date()) {
+  if (decision.action === 'stale') {
+    // A477: the till's own session is never revoked for an outdated token — an honest till reads its token from disk
+    // and confirms every one it keeps, so an older copy is somebody else's (a copied disk or backup). Refuse THIS token,
+    // keep the session, tell the owner.
+    const deviceId = String(payload.deviceId ?? dbRow.device_hint ?? '').slice(0, 64);
+    console.error(`[auth] A477 TOKEN_STALE: an outdated refresh token of till ${deviceId || '?'} (business ${payload.businessId}) was presented — refused alone, the session kept`);
+    if (deviceId && payload.businessId) {
+      await markTillSecurityAlert(payload.businessId, deviceId, 'An outdated copy of this till\'s sign-in key was used — possibly a copy of the till\'s data on another computer');
+    }
+    throw Object.assign(new Error('This sign-in key was already replaced — the till uses its newest one'), { code: 'TOKEN_STALE' });
+  }
+  if (decision.action === 'expired') {
     throw Object.assign(new Error('Refresh token expired'), { code: 'TOKEN_EXPIRED' });
   }
 
-  return { payload, dbRow };
+  return { payload, dbRow, decision, handshake, deviceSession };
 }
 
 /**
@@ -293,6 +303,9 @@ async function revokeRefreshToken(refreshToken: string): Promise<void> {
       .update({ revoked_at: new Date().toISOString() })
       .eq('jti', jti)
       .is('revoked_at', null);
+    // A477: a token not confirmed yet leaves the one it replaced alive (the handshake) — signing out retires that too.
+    const { data: row } = await supabase.from('refresh_tokens').select('id').eq('jti', jti).maybeSingle();
+    if ((row as { id?: string } | null)?.id) await revokeParentOf((row as { id: string }).id);
   } catch {
     // Best-effort — don't fail the logout if revocation errors
   }
@@ -907,6 +920,7 @@ router.post('/enrol/redeem', async (req, res) => {
   const { accessToken, refreshToken } = issueTokenPair(payload);
   await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
   await clearTillSessionLost(businessId, deviceId);   // A407: joined again — the alert clears
+  await resetTillIdentity(businessId, deviceId, (n) => req.header(n));   // A477: the machine it was (re)joined on
   console.log(`[enrol] till ${deviceId} ${rejoin ? 'rejoined' : 'joined'} business ${businessId}${branchId ? ` (branch ${branchId})` : ''}`);
 
   // A182: if this machine's MAC was seen before at this business (a reinstall),
@@ -968,6 +982,12 @@ router.post('/device-token', async (req, res) => {
     res.status(401).json({ error: 'Device grant refused', code: 'DEVICE_GRANT_INVALID' });
     return;
   }
+  // A477: the secret is the machine's — from another computer it is refused and the owner alerted.
+  const ident = await checkTillIdentity(businessId, deviceId, (n) => req.header(n));
+  if (ident.verdict === 'mismatch') {
+    res.status(401).json({ error: 'This till\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' });
+    return;
+  }
   await clearTillSessionLost(businessId, deviceId);   // A407: back
 
   // A suspended business must not bring a session online, same as the other paths.
@@ -995,8 +1015,9 @@ router.post('/device-token', async (req, res) => {
 });
 
 
-// Validates the refresh token against the DB, rotates it (old revoked, new issued),
-// and re-fetches permissions so role changes propagate immediately.
+// Validates the refresh token against the DB, rotates it and re-fetches permissions so role changes propagate
+// immediately. A477: the consumed token is NOT revoked here — the till confirms the new one (POST /refresh/ack, or by
+// presenting it) and only then is the old one revoked (lib/refreshHandshake.ts). Answers `ack: true` so a till knows to.
 
 router.post('/refresh', async (req, res) => {
   const { refreshToken } = req.body;
@@ -1007,9 +1028,10 @@ router.post('/refresh', async (req, res) => {
 
   let payload: any;
   let dbRow: any;
-  let graceReissue = false;
+  let decision: HandshakeDecision;
+  let handshake = false;
   try {
-    ({ payload, dbRow, graceReissue = false } = await validateRefreshToken(refreshToken));
+    ({ payload, dbRow, decision, handshake } = await validateRefreshToken(refreshToken));
   } catch (err: any) {
     // Deliberate token errors carry a TOKEN_* code and a user-safe message —
     // surface those so the client can react. Anything else is unexpected and
@@ -1029,7 +1051,7 @@ router.post('/refresh', async (req, res) => {
   // nothing half-done.
   const tillSession = isTillPayload(cleanPayload) || isOwnerEraTillPayload(cleanPayload);
   let newPayload: TokenPayload;
-  let tillDevice: { device_id: string; device_secret_hash: string | null } | null = null;
+  let tillDevice: { device_id: string; device_secret_hash: string | null; identityMatched: boolean } | null = null;
   if (tillSession) {
     const header = String(req.header('x-device-id') ?? '').split(',')[0].trim();
     // Which till: the token's own id; a pre-A415 session is matched by the device it was issued to (or the id the till
@@ -1050,7 +1072,14 @@ router.post('/refresh', async (req, res) => {
       res.status(401).json({ error: 'This till is no longer joined to the business. A technician can rejoin it.', code: 'DEVICE_BLOCKED' });
       return;
     }
-    tillDevice = { device_id: row.device_id, device_secret_hash: row.device_secret_hash ?? null };
+    // A477: the key is bound to the machine — from another computer it is refused (the session is NOT revoked, the
+    // owner is alerted); the token stays unspent.
+    const ident = await checkTillIdentity(cleanPayload.businessId, row.device_id, (n) => req.header(n));
+    if (ident.verdict === 'mismatch') {
+      res.status(401).json({ error: 'This till\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' });
+      return;
+    }
+    tillDevice = { device_id: row.device_id, device_secret_hash: row.device_secret_hash ?? null, identityMatched: ident.matched };
     newPayload = buildDeviceTokenPayload({
       deviceId: row.device_id, businessId: cleanPayload.businessId,
       branchId: tillBranch(null, row.branch_id, cleanPayload.branchId), sessionId: cleanPayload.sessionId,
@@ -1080,24 +1109,30 @@ router.post('/refresh', async (req, res) => {
     newPayload = { ...cleanPayload };
   }
 
-  if (graceReissue) {
-    // Lost rotation response (A88 / D13): the consumed token is already revoked
-    // and the successor it points to was never received by the client. Revoke
-    // that orphan successor so the session stays single-headed, then mint a
-    // fresh pair below. No session-wide revoke — this is recovery, not a replay.
+  // A477: apply the handshake's decision, now that the till may renew.
+  const nowIso = new Date().toISOString();
+  if (decision!.implicitAck) {
+    // The client's first use of a successor it never confirmed (an older till never calls /ack): confirm it, and
+    // retire the token it replaced.
+    const { error: ackErr } = await supabase.from('refresh_tokens').update({ acked_at: nowIso }).eq('id', dbRow.id).is('acked_at', null);
+    if (ackErr) console.warn('[refresh] A477: implicit ack not recorded', ackErr.message);
+    await revokeParentOf(dbRow.id);
+  }
+  if (decision!.action === 'reask') {
+    // The successor never reached the client (a lost reply, a crash before the till wrote it): revoke that orphan so the
+    // session stays single-headed, then mint a fresh one below and re-point the chain. No session-wide revoke.
     if (dbRow.replaced_by) {
       await supabase
         .from('refresh_tokens')
-        .update({ revoked_at: new Date().toISOString() })
+        .update({ revoked_at: nowIso })
         .eq('id', dbRow.replaced_by)
         .is('revoked_at', null);
     }
-  } else {
-    // Normal rotation: revoke the consumed token atomically before issuing the
-    // new pair.
+  } else if (decision!.revokeConsumed) {
+    // Before migration 131: the old rotation — revoke the consumed token before issuing the new pair.
     await supabase
       .from('refresh_tokens')
-      .update({ revoked_at: new Date().toISOString() })
+      .update({ revoked_at: nowIso })
       .eq('id', dbRow.id);
   }
 
@@ -1114,10 +1149,8 @@ router.post('/refresh', async (req, res) => {
     tillDevice?.device_id ?? dbRow.device_hint ?? req.headers['user-agent'] ?? undefined,
   );
 
-  // Link the consumed (or superseded, on the grace path) token to its
-  // replacement so a later presentation can tell a lost response from a replay
-  // (A88 / D13). On the grace path this re-points the chain from the orphaned
-  // successor to the fresh token.
+  // Link the consumed (or re-asked) token to its replacement so a later presentation can tell a lost reply from an
+  // outdated copy (A88 / D13, A477). On the re-ask this re-points the chain from the orphaned successor to the fresh one.
   if (newId) {
     await supabase
       .from('refresh_tokens')
@@ -1125,23 +1158,79 @@ router.post('/refresh', async (req, res) => {
       .eq('id', dbRow.id);
   }
 
-  // A407: a till that never kept a device secret (enrolled before 1.0.0, or the secret was never stored) gets one on
-  // an ordinary renewal — so it can sign itself back in if this session is ever refused.
+  // A407 / A477: every till holds a device secret — its way back in if this session is ever refused. Given on a
+  // renewal when the till's row has none; and when the till says it lost its copy (X-Device-Secret-Missing: 1) a fresh
+  // one replaces it — only for a request from the machine on record (its guid or serial matched).
   let deviceSecret: string | null = null;
+  const lostCopy = String(req.header('x-device-secret-missing') ?? '').trim() === '1';
+  const issueSecret = async (till: { device_id: string; device_secret_hash: string | null }, businessId: string): Promise<string | null> => {
+    const raw = generateDeviceSecret();
+    let q = supabase.from('user_devices')
+      .update({ device_secret_hash: hashDeviceSecret(raw), device_secret_set_at: nowIso })
+      .eq('business_id', businessId).eq('device_id', till.device_id);
+    // Only over the hash this renewal saw (none, or the lost one) — two renewals at once never hand out two secrets.
+    q = till.device_secret_hash ? q.eq('device_secret_hash', till.device_secret_hash) : q.is('device_secret_hash', null);
+    const { error: secErr } = await q;
+    if (secErr) return null;
+    console.log(`[refresh] till ${till.device_id}: ${till.device_secret_hash ? 'its lost device secret replaced' : 'given a device secret'}`);
+    return raw;
+  };
   if (tillDevice) {
     try {
       if (!tillDevice.device_secret_hash) {
-        const raw = generateDeviceSecret();
-        const { error: secErr } = await supabase.from('user_devices')
-          .update({ device_secret_hash: hashDeviceSecret(raw), device_secret_set_at: new Date().toISOString() })
-          .eq('business_id', newPayload.businessId).eq('device_id', tillDevice.device_id).is('device_secret_hash', null);
-        if (!secErr) deviceSecret = raw;
+        deviceSecret = await issueSecret(tillDevice, newPayload.businessId);
+      } else if (lostCopy && tillDevice.identityMatched) {
+        // A477: the till lost its copy — a fresh one, only for the machine on record.
+        deviceSecret = await issueSecret(tillDevice, newPayload.businessId);
       }
       await clearTillSessionLost(newPayload.businessId, tillDevice.device_id);
     } catch { /* additive — the renewal stands without it */ }
   }
 
-  res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken, ...(deviceSecret ? { deviceSecret } : {}) });
+  // A477: `ack: true` — confirm the new token (POST /refresh/ack) once it is kept.
+  res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken, ...(deviceSecret ? { deviceSecret } : {}), ...(handshake ? { ack: true } : {}) });
+});
+
+/** A477: retire the token a confirmed successor replaced (one row, by id). */
+async function revokeParentOf(id: string): Promise<void> {
+  const { data: parents, error } = await supabase.from('refresh_tokens').select('id').eq('replaced_by', id).is('revoked_at', null);
+  if (error) { console.warn('[refresh] A477: the replaced token could not be found', error.message); return; }
+  for (const p of (parents ?? []) as Array<{ id: string }>) {
+    await supabase.from('refresh_tokens').update({ revoked_at: new Date().toISOString() }).eq('id', p.id).is('revoked_at', null);
+  }
+}
+
+// ── POST /api/auth/refresh/ack ────────────────────────────────────────────────
+// A477: the till has written its new token to disk — the token it replaced is retired. Harmless to repeat, harmless to
+// lose (the next renewal with the new token is an implicit ack). Answers 401 for a token that is not the live head.
+router.post('/refresh/ack', async (req, res) => {
+  const presented = String(req.body?.refreshToken ?? '');
+  if (!presented) { res.status(400).json({ error: 'refreshToken is required' }); return; }
+  let payload: any;
+  try {
+    payload = jwt.verify(presented, JWT_SECRET, { algorithms: ['HS256'] });
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired refresh token', code: 'TOKEN_INVALID' }); return;
+  }
+  if (payload?.tokenType !== 'refresh' || !payload.jti) { res.status(401).json({ error: 'Not a refresh token', code: 'TOKEN_INVALID' }); return; }
+  const { data: row, error } = await supabase.from('refresh_tokens').select('*').eq('jti', hashToken(payload.jti)).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  if (!row) { res.status(401).json({ error: 'Refresh token not recognised', code: 'TOKEN_UNKNOWN' }); return; }
+  if (!Object.prototype.hasOwnProperty.call(row, 'acked_at')) { res.json({ ok: true, acked: false }); return; }   // before migration 131
+  if ((row as any).revoked_at) { res.status(401).json({ error: 'This sign-in key was already replaced', code: 'TOKEN_STALE' }); return; }
+  // The till's own session: only from the machine on record (the same rule as the renewal).
+  if (isTillPayload(payload) && payload.businessId) {
+    const ident = await checkTillIdentity(payload.businessId, String(payload.deviceId), (n) => req.header(n));
+    if (ident.verdict === 'mismatch') {
+      res.status(401).json({ error: 'This till\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' }); return;
+    }
+  }
+  if (!(row as any).acked_at) {
+    const { error: ackErr } = await supabase.from('refresh_tokens').update({ acked_at: new Date().toISOString() }).eq('id', (row as any).id).is('acked_at', null);
+    if (ackErr) { sendError(res, ackErr); return; }
+  }
+  await revokeParentOf((row as any).id);
+  res.json({ ok: true, acked: true });
 });
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────

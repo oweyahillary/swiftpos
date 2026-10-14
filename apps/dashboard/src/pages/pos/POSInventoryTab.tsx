@@ -7,6 +7,8 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,13 @@ export default function POSInventoryTab() {
 
   const outCount = tracked.filter(r => r.quantity !== null && r.quantity <= 0).length;
   const lowCount = tracked.filter(r => r.quantity !== null && r.quantity > 0 && r.quantity <= r.low_stock_threshold).length;
+  // A475: the stock list in pages (25 / 50 / 100, remembered in this browser); the All / Low / Out counts are over every
+  // tracked product. A new search or filter → page 1; a threshold change keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.posInventory');
+  useEffect(() => { setPage(1); }, [search, filter]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <div style={s.root}>
@@ -117,7 +126,7 @@ export default function POSInventoryTab() {
 
       {/* Stock list */}
       <div style={s.list}>
-        {filtered.map(row => {
+        {paged.items.map(row => {
           // A394: blind count — an item being counted shows no figure.
           const { color, label } = row.quantity === null
             ? { color: '#7dd3fc', label: 'Being counted' }
@@ -151,6 +160,9 @@ export default function POSInventoryTab() {
           );
         })}
       </div>
+      {!loading && filtered.length > 0 && (
+        <Pager paged={paged} noun="products" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+      )}
     </div>
   );
 }

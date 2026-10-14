@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import BranchReceiptOverrides from "./settings/BranchReceiptOverrides";
 import { api } from "../lib/api";
 import { DESK, useRowMore, ViewMore, MoreRow } from "../components/RowMore";
+import Pager, { usePageSize } from "../components/Pager";   // A475
+import { paginate } from "../lib/paginate";
 
 interface Branch {
   id: string;
@@ -40,6 +42,17 @@ export default function BranchDetailPage() {
   const [loading, setLoading] = useState(true);
   const moreStaff = useRowMore();
   const moreStock = useRowMore();
+  // A475: the staff and the stock in pages (25 / 50 / 100, remembered in this browser); the low-stock count is over every
+  // row. Another branch → page 1.
+  const [staffPage, setStaffPage] = useState(1);
+  const [staffPageSize, setStaffPageSize] = usePageSize("swiftpos.pageSize.branchStaff");
+  const [stockPage, setStockPage] = useState(1);
+  const [stockPageSize, setStockPageSize] = usePageSize("swiftpos.pageSize.branchStock");
+  useEffect(() => { setStaffPage(1); setStockPage(1); }, [id]);
+  const staffPaged = paginate(staff, staffPage, staffPageSize);
+  useEffect(() => { if (staffPaged.page !== staffPage) setStaffPage(staffPaged.page); }, [staffPaged.page, staffPage]);
+  const stockPaged = paginate(stock, stockPage, stockPageSize);
+  useEffect(() => { if (stockPaged.page !== stockPage) setStockPage(stockPaged.page); }, [stockPaged.page, stockPage]);
 
   useEffect(() => {
     async function load() {
@@ -151,7 +164,7 @@ export default function BranchDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {staff.map(member => (
+                {staffPaged.items.map(member => (
                   <Fragment key={member.id}>
                   <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
                     <td className="px-4 py-3 text-white">{member.name}
@@ -178,6 +191,9 @@ export default function BranchDetailPage() {
               </tbody>
             </table></div>
           )}
+          {staff.length > 0 && (
+            <Pager paged={staffPaged} noun="staff" onPage={setStaffPage} onSize={n => { setStaffPageSize(n); setStaffPage(1); }} />
+          )}
         </div>
       )}
 
@@ -200,7 +216,7 @@ export default function BranchDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {stock.map(item => {
+                {stockPaged.items.map(item => {
                   const isLow = item.quantity <= item.low_stock_threshold;
                   return (
                     <Fragment key={item.id}>
@@ -230,6 +246,9 @@ export default function BranchDetailPage() {
                 })}
               </tbody>
             </table></div>
+          )}
+          {stock.length > 0 && (
+            <Pager paged={stockPaged} noun="products" onPage={setStockPage} onSize={n => { setStockPageSize(n); setStockPage(1); }} />
           )}
         </div>
       )}

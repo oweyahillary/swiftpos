@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBranch } from '../../context/BranchContext';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface Branch { id: string; name: string; }
 interface Permission { id: string; key: string; label: string; module: string; }
@@ -42,6 +44,8 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [mode, setMode] = useState<'pin' | 'invite'>('pin');
+  const [page, setPage] = useState(1);   // A475
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.staff');
 
   const fetchAll = async () => {
     try {
@@ -93,6 +97,12 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
     fetchAll();
   };
 
+  // A475: the staff in pages (25 / 50 / 100, remembered in this browser); the active count is over everyone. Another
+  // branch → page 1; an edit, deactivate or activate keeps the page (clamped).
+  useEffect(() => { setPage(1); }, [activeBranchId]);
+  const paged = paginate(staff, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -112,7 +122,7 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
         <div className="text-gray-600 text-sm py-10 text-center">No staff members yet</div>
       ) : (
         <div className="space-y-2">
-          {staff.map(s => {
+          {paged.items.map(s => {
             const branchNames = s.user_branches?.map(b => b.branches?.name).filter(Boolean) ?? [];
             const overrideCount = s.user_permissions?.length ?? 0;
             return (
@@ -169,6 +179,7 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
               </div>
             );
           })}
+          <Pager paged={paged} noun="staff" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 

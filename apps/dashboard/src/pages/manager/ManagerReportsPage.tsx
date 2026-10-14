@@ -24,6 +24,8 @@ import DownloadExcelButton from '../../components/DownloadExcelButton';   // A46
 import { localStamp, type ReportColumn, type ReportSheet } from '../../lib/reportDownload';   // A467
 import { reportPresets } from '../../lib/reportPeriods';   // A467
 import * as fmt from '../../lib/format';   // A471: one money/number/date format
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -399,7 +401,14 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
 
   const totalRev = rows.reduce((s, r) => s + r.revenue, 0);
   const filtered = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+  const byRevenue = [...filtered].sort((a, b) => b.revenue - a.revenue);
   const more = useRowMore();
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [itemPage, setItemPage] = useState(1);
+  const [itemPageSize, setItemPageSize] = usePageSize('swiftpos.pageSize.manager.reports.itemMix');
+  useEffect(() => { setItemPage(1); }, [from, to, search]);
+  const itemPaged = paginate(byRevenue, itemPage, itemPageSize);
+  useEffect(() => { if (itemPaged.page !== itemPage) setItemPage(itemPaged.page); }, [itemPaged.page, itemPage]);
   // A467: the item table as shown — the search applied, by revenue.
   const sheets: ReportSheet[] = filtered.length === 0 ? [] : [{
     name: 'Item Mix',
@@ -427,7 +436,7 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
-              {filtered.sort((a, b) => b.revenue - a.revenue).map(r => {
+              {itemPaged.items.map(r => {
                 const share = totalRev ? (r.revenue / totalRev) * 100 : 0;
                 return (
                   <Fragment key={r.product_id}>
@@ -459,6 +468,7 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
               })}
             </tbody>
           </table></div>
+          <Pager paged={itemPaged} noun="items" onPage={setItemPage} onSize={n => { setItemPageSize(n); setItemPage(1); }} />
         </div>
       )}
     </div>
@@ -489,6 +499,12 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
 
   const totalVoided = rows.reduce((s, r) => s + r.total, 0);
   const more = useRowMore();
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [voidPage, setVoidPage] = useState(1);
+  const [voidPageSize, setVoidPageSize] = usePageSize('swiftpos.pageSize.manager.reports.voids');
+  useEffect(() => { setVoidPage(1); }, [from, to]);
+  const voidPaged = paginate(rows, voidPage, voidPageSize);
+  useEffect(() => { if (voidPaged.page !== voidPage) setVoidPage(voidPaged.page); }, [voidPaged.page, voidPage]);
   // A467: the KPIs and the void log, from the loaded rows.
   const sheets: ReportSheet[] = rows.length === 0 ? [] : [
     kpiSheet('Summary', [['Void Count', rows.length], ['Total Voided Value', totalVoided]]),
@@ -527,7 +543,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {rows.map(r => (
+                {voidPaged.items.map(r => (
                   <Fragment key={r.id}>
                   <tr className="hover:bg-gray-800/30 transition-colors">
                     <td className="px-4 py-2.5 text-white font-mono text-xs">{r.order_number}
@@ -551,6 +567,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any;
                 ))}
               </tbody>
             </table></div>
+            <Pager paged={voidPaged} noun="voids" onPage={setVoidPage} onSize={n => { setVoidPageSize(n); setVoidPage(1); }} />
           </div>
         </>
       )}
@@ -706,6 +723,12 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
   }, [session?.branchId, from, to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, []); // eslint-disable-line
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [shiftPage, setShiftPage] = useState(1);
+  const [shiftPageSize, setShiftPageSize] = usePageSize('swiftpos.pageSize.manager.reports.shifts');
+  useEffect(() => { setShiftPage(1); }, [from, to]);
+  const shiftPaged = paginate(rows, shiftPage, shiftPageSize);
+  useEffect(() => { if (shiftPaged.page !== shiftPage) setShiftPage(shiftPaged.page); }, [shiftPaged.page, shiftPage]);
 
   // A467: one row per shift card — what each card shows.
   const sheets: ReportSheet[] = rows.length === 0 ? [] : [{
@@ -729,7 +752,7 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
       {!loading && rows.length === 0 && <Empty label="No shifts in this period." />}
       {!loading && rows.length > 0 && (
         <div className="space-y-3">
-          {rows.map(r => {
+          {shiftPaged.items.map(r => {
             const variance = r.cash_variance ?? r.variance ?? null;
             const revenue  = r.order_revenue ?? r.total_revenue ?? null;
             const isOpen   = r.status === 'open';
@@ -779,6 +802,7 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
               </div>
             );
           })}
+          <Pager paged={shiftPaged} noun="shifts" onPage={setShiftPage} onSize={n => { setShiftPageSize(n); setShiftPage(1); }} />
         </div>
       )}
     </div>
@@ -940,6 +964,12 @@ function WetStockTab({ posApi, session, currency }: { posApi: PosApi; session: a
   }, [session?.branchId, from, to]); // eslint-disable-line
 
   useEffect(() => { load(); }, []); // eslint-disable-line
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [deliveryPage, setDeliveryPage] = useState(1);
+  const [deliveryPageSize, setDeliveryPageSize] = usePageSize('swiftpos.pageSize.manager.reports.wetStock.deliveries');
+  useEffect(() => { setDeliveryPage(1); }, [from, to]);
+  const deliveryPaged = paginate(((data?.deliveryLog ?? []) as any[]), deliveryPage, deliveryPageSize);
+  useEffect(() => { if (deliveryPaged.page !== deliveryPage) setDeliveryPage(deliveryPaged.page); }, [deliveryPaged.page, deliveryPage]);
 
   function gc(name: string) {
     const n = name.toLowerCase();
@@ -1002,13 +1032,14 @@ function WetStockTab({ posApi, session, currency }: { posApi: PosApi; session: a
           {(data.deliveryLog ?? []).length > 0 && (
             <div className="bg-gray-800/50 border border-gray-700 rounded-2xl overflow-hidden">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-4 border-b border-gray-700">Delivery Log</p>
-              {data.deliveryLog.map((d: any, i: number) => (
-                <div key={i} className="flex items-center gap-3 px-5 py-3 border-b border-gray-800 last:border-0">
+              {deliveryPaged.items.map((d: any, j: number) => (
+                <div key={deliveryPaged.from - 1 + j} className="flex items-center gap-3 px-5 py-3 border-b border-gray-800 last:border-0">
                   <span className="text-green-400 font-semibold">+{fmt.litres(d.litres, 1)}</span>
                   <span className="text-gray-500 text-xs flex-1">{d.notes ?? '—'}</span>
                   <span className="text-gray-600 text-xs">{fmt.dayTime(d.recorded_at)}</span>
                 </div>
               ))}
+              <Pager paged={deliveryPaged} noun="deliveries" onPage={setDeliveryPage} onSize={n => { setDeliveryPageSize(n); setDeliveryPage(1); }} />
             </div>
           )}
         </>

@@ -65,6 +65,28 @@ export async function markTillSessionLost(businessId: string, deviceId: string, 
   } catch { /* before migration 125 — the till still gets its answer */ }
 }
 
+/**
+ * A477: something about the till's sign-in looks like ANOTHER computer holding its data — an outdated copy of its key
+ * presented (TOKEN_STALE), or its key from a machine that is not the one on record (DEVICE_MISMATCH). The owner's alert
+ * job (jobs/ownerAlerts.ts) emails it. Unlike session_lost_at it is NOT cleared by the till's next healthy renewal (the
+ * honest till keeps renewing — that is the point); a new incident is recorded at most once a day per till, so a copy
+ * that keeps trying does not become an email every 15 minutes.
+ */
+export async function markTillSecurityAlert(businessId: string, deviceId: string, reason: string, now = new Date()): Promise<void> {
+  try {
+    const dayAgo = new Date(now.getTime() - 86_400_000).toISOString();
+    const { data, error } = await supabase.from('user_devices').select('id, status, retired_at, security_alert_at')
+      .eq('business_id', businessId).eq('device_id', deviceId).maybeSingle();
+    if (error || !data) return;   // before migration 131, or not a till of this business
+    // A till the owner or ZapTill retired / blocked: its old key being refused is the point, not an intrusion.
+    if (!['approved', 'active'].includes(String((data as { status?: string }).status)) || (data as { retired_at?: string | null }).retired_at) return;
+    const last = (data as { security_alert_at?: string | null }).security_alert_at;
+    if (last && last > dayAgo) return;
+    await supabase.from('user_devices').update({ security_alert_at: now.toISOString(), security_alert_reason: reason.slice(0, 200) })
+      .eq('id', (data as { id: string }).id);
+  } catch { /* the refusal stands without the alert */ }
+}
+
 /** The till is signed in again (device secret, a new enrolment code, a healthy renewal) — the alert clears. */
 export async function clearTillSessionLost(businessId: string, deviceId: string): Promise<void> {
   try {

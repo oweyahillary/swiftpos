@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { dateTime } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface Movement {
   id: string;
@@ -33,7 +35,12 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
       .then(data => { setMovements(data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, [product.id]);
-
+  // A475: the last 100 movements in pages (25 / 50 / 100, remembered in this browser); another product → page 1.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.stockMovements');
+  useEffect(() => { setPage(1); }, [product.id]);
+  const paged = paginate(movements, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <>
@@ -57,7 +64,7 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
             <div className="text-center py-16 text-gray-600 text-sm">No stock movements yet</div>
           ) : (
             <div className="divide-y divide-gray-800">
-              {movements.map(m => {
+              {paged.items.map(m => {
                 const cfg = TYPE_CONFIG[m.movement_type] ?? { label: m.movement_type, color: 'text-gray-400', sign: '' };
                 const isPositive = m.quantity_change > 0;
                 return (
@@ -86,6 +93,9 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
             </div>
           )}
         </div>
+        {!loading && movements.length > 0 && (
+          <Pager paged={paged} noun="movements" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+        )}
       </div>
     </>
   );

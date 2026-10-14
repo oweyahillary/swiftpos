@@ -10,6 +10,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { deviceLabelShown } from '../../lib/posTerminal';   // 0.6.37: old "SwiftPOS till" reads ZapTill
 import { api } from '../../lib/api';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Toast from '../../components/Toast';
 import { useToast } from '../../hooks/useToast';
@@ -150,6 +152,13 @@ export default function DevicesTab() {
 
   const pending  = devices.filter(d => d.status === 'pending');
   const filtered = filter === 'all' ? devices : devices.filter(d => d.status === filter);
+  // A475: the devices in pages (25 / 50 / 100, remembered in this browser); the pending ones above are all of them.
+  // Another status filter → page 1; an approve, revoke or rename keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.devices');
+  useEffect(() => { setPage(1); }, [filter]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -259,7 +268,7 @@ export default function DevicesTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(d => (
+          {paged.items.map(d => (
             <div
               key={d.id}
               className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4"
@@ -359,6 +368,7 @@ export default function DevicesTab() {
               </div>
             </div>
           ))}
+          <Pager paged={paged} noun="devices" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
     </div>

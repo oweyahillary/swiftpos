@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { money, qty, dateShort } from '../lib/format';
+import Pager, { usePageSize } from './Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 /**
  * Expiry — A413: stock batches and expiry dates. One screen for the owner (Stock › Expiry) and the manager (Manager ›
@@ -109,6 +111,13 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
 
   const rows = (list?.batches ?? []).filter((r) => showOk || r.status === 'expired' || r.status === 'soon');
   const s = list?.summary;
+  // A475: the batches in pages (25 / 50 / 100, remembered in this browser); the summary cards are over every batch.
+  // A new window, "show all" or branch → page 1; a write-off or a date change keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.expiry');
+  useEffect(() => { setPage(1); }, [days, showOk, branchId]);
+  const paged = paginate(rows, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <div className="space-y-5" data-testid="expiry">
@@ -166,7 +175,7 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
                   {showOk ? 'No batches with stock left.' : `Nothing expired or expiring within ${list.soon_days} days.`}
                 </td></tr>
               )}
-              {rows.map((r) => (
+              {paged.items.map((r) => (
                 <tr key={r.id}>
                   <td className="px-3 py-2 text-gray-200">{r.name}
                     <div className="text-xs text-gray-500">{r.kind === 'ingredient' ? 'ingredient' : 'product'}{!branchId && r.branch_name ? ` · ${r.branch_name}` : ''}</div></td>
@@ -191,6 +200,9 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
               ))}
             </tbody>
           </table>
+          {rows.length > 0 && (
+            <Pager paged={paged} noun="batches" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+          )}
         </div>
       )}
 

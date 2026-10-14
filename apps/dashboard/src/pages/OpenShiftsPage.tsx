@@ -44,6 +44,8 @@ import CountedCloseModal from '../components/CountedCloseModal';   // A462
 import { useToast } from '../hooks/useToast';
 import { money, dateTime } from '../lib/format';
 import { useBusiness } from '../context/BusinessContext';
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 interface OpenShift {
   id: string;
@@ -92,6 +94,12 @@ export default function OpenShiftsPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  // A475: the open drawers (up to 100) in pages (25 / 50 / 100, remembered in this browser); a release keeps the page
+  // (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.openDrawers');
+  const paged = paginate(shifts, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   const forceClose = async () => {
     if (!target) return;
@@ -149,7 +157,7 @@ export default function OpenShiftsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {shifts.map(s => {
+                {paged.items.map(s => {
                   const hrs = hoursOpen(s.opened_at);
                   // 18h matches STALE_SHIFT_HOURS on the till, so the two surfaces
                   // agree about when a drawer has stopped being plausible.
@@ -206,6 +214,7 @@ export default function OpenShiftsPage() {
               </tbody>
             </table>
           </div>
+          <Pager paged={paged} noun="drawers" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 

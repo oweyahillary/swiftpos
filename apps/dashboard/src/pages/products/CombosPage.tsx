@@ -11,6 +11,8 @@ import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { money } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 import { useBusiness } from '../../context/BusinessContext';
 
 interface ComboProduct {
@@ -62,6 +64,8 @@ export default function CombosPage() {
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
   const [search,     setSearch]     = useState('');
+  const [page, setPage] = useState(1);   // A475
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.combos');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,6 +158,11 @@ export default function CombosPage() {
   }
 
   const filtered = combos.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  // A475: the combos in pages (25 / 50 / 100, remembered in this browser). A new search → page 1; an edit or delete keeps
+  // the page (clamped).
+  useEffect(() => { setPage(1); }, [search]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
   const availableProducts = products.filter(p => !form.items.find(i => i.product_id === p.id));
 
   function individualTotal() {
@@ -194,9 +203,9 @@ export default function CombosPage() {
             <p className="text-gray-400 text-sm mb-1">No combos yet.</p>
             <p className="text-gray-600 text-xs">Create a combo meal to bundle products at a fixed price.</p>
           </div>
-        ) : (
+        ) : (<>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map(c => {
+            {paged.items.map(c => {
               const indiv = c.combo_items.reduce((s, i) => s + i.product.price * i.quantity, 0);
               const saving = indiv - c.combo_price;
               return (
@@ -249,7 +258,8 @@ export default function CombosPage() {
               );
             })}
           </div>
-        )}
+          <Pager paged={paged} noun="combos" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+        </>)}
       </div>
 
       {/* Create / Edit drawer */}

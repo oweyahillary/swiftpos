@@ -4,6 +4,8 @@ import { useBusiness } from '../context/BusinessContext';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';
 import { money, dateShort } from '../lib/format';
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 interface Discount {
   id: string;
@@ -42,6 +44,8 @@ export default function DiscountsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);   // A475
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.discounts');
   const more = useRowMore();
 
   const fetchDiscounts = useCallback(async () => {
@@ -144,6 +148,11 @@ export default function DiscountsPage() {
     return d.expires_at ? new Date(d.expires_at) < new Date() : false;
   }
 
+  // A475: the discounts and promo codes in pages (25 / 50 / 100, remembered in this browser); an edit or a status
+  // toggle keeps the page (clamped).
+  const paged = paginate(discounts, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-950">
       {/* Header */}
@@ -188,7 +197,7 @@ export default function DiscountsPage() {
               </tr>
             </thead>
             <tbody>
-              {discounts.map(d => {
+              {paged.items.map(d => {
                 const expired = isExpired(d);
                 return (
                   <Fragment key={d.id}>
@@ -281,6 +290,7 @@ export default function DiscountsPage() {
               })}
             </tbody>
           </table></div>
+          <Pager paged={paged} noun="discounts" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 

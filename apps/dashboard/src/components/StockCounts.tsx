@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { printDocument } from '../lib/printDocument';
 import { money, dateTime } from '../lib/format';
+import Pager, { usePageSize } from './Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 /**
  * StockCounts — A394: stock take. One screen for the owner (Stock › Stock counts) and the manager (Manager › Stock
@@ -77,6 +79,13 @@ export default function StockCounts({ client, branchId, branches, currency = 'KE
   }, [branchId]);   // eslint-disable-line react-hooks/exhaustive-deps — client is a new object every render (POSAuthContext)
 
   useEffect(() => { void loadList(); }, [loadList]);
+  // A475: the counts (the last 60) in pages (25 / 50 / 100, remembered in this browser). The open count is found in
+  // every row. Another branch → page 1.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.stockCounts');
+  useEffect(() => { setPage(1); }, [branchId]);
+  const paged = paginate(list, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   if (openId) {
     return <CountScreen client={client} id={openId} currency={currency} business={business}
@@ -129,7 +138,7 @@ export default function StockCounts({ client, branchId, branches, currency = 'KE
           <tbody className="divide-y divide-gray-800">
             {loading && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">Loading…</td></tr>}
             {!loading && !list.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">No stock counts yet.</td></tr>}
-            {list.map((t) => (
+            {paged.items.map((t) => (
               <tr key={t.id} onClick={() => setOpenId(t.id)} className="cursor-pointer hover:bg-gray-900/60">
                 <td className="px-4 py-3 text-white">{t.ref}<div className="text-xs text-gray-500">{t.branches?.name ?? branchName(null) ?? ''}</div></td>
                 <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-xs ${STATUS[t.status].cls}`}>{STATUS[t.status].label}</span></td>
@@ -142,6 +151,9 @@ export default function StockCounts({ client, branchId, branches, currency = 'KE
             ))}
           </tbody>
         </table>
+        {!loading && list.length > 0 && (
+          <Pager paged={paged} noun="counts" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+        )}
       </div>
 
       {starting && branchId && (
@@ -315,6 +327,20 @@ function CountScreen({ client, id, currency, business, onClose }: {
   }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
 
+  // A475: the count's lines in pages (25 / 50 / 100, remembered in this browser) — a count runs to thousands of lines.
+  // What is typed is kept per line across pages and Save sends every changed line; the progress, the summary and the
+  // printed sheets use every line. A new search or filter → page 1; a save keeps the page (clamped).
+  const q = search.trim().toLowerCase();
+  const rows = (take?.lines ?? []).filter((l) =>
+    (!q || l.name.toLowerCase().includes(q) || (l.category ?? '').toLowerCase().includes(q)) &&
+    (!onlyLeft || l.counted_qty === null) &&
+    (!onlyDiff || (num(l.variance) ?? 0) !== 0));
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.countLines');
+  useEffect(() => { setPage(1); }, [search, onlyLeft, onlyDiff, id]);
+  const paged = paginate(rows, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+
   const dirty = useMemo(() => {
     if (!take) return [] as Array<{ line_id: string; qty: string }>;
     return take.lines.filter((l) => typed[l.id] !== undefined && typed[l.id] !== (l.counted_qty === null ? '' : fmtQty(l.counted_qty)))
@@ -351,11 +377,6 @@ function CountScreen({ client, id, currency, business, onClose }: {
   const counting = take.status === 'counting';
   const review = take.status === 'review' && take.can_review;
   const showDiff = take.can_review && (take.status === 'review' || take.status === 'posted');
-  const q = search.trim().toLowerCase();
-  const rows = take.lines.filter((l) =>
-    (!q || l.name.toLowerCase().includes(q) || (l.category ?? '').toLowerCase().includes(q)) &&
-    (!onlyLeft || l.counted_qty === null) &&
-    (!onlyDiff || (num(l.variance) ?? 0) !== 0));
   const s = take.summary;
 
   const printSheet = (withFigures: boolean) => printDocument({
@@ -455,7 +476,7 @@ function CountScreen({ client, id, currency, business, onClose }: {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
-            {rows.map((l) => {
+            {paged.items.map((l) => {
               const v = num(l.variance) ?? 0;
               const late = num(l.late_sales) ?? 0;
               return (
@@ -496,6 +517,9 @@ function CountScreen({ client, id, currency, business, onClose }: {
             {!rows.length && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">Nothing here.</td></tr>}
           </tbody>
         </table>
+        {rows.length > 0 && (
+          <Pager paged={paged} noun="items" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+        )}
       </div>
 
       {error && <p className="text-sm text-red-400" role="alert">{error}</p>}

@@ -4,6 +4,8 @@ import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import type { Category } from '../../types';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -20,6 +22,8 @@ export default function CategoriesPage() {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);   // A475
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.categories');
 
   const fetchCategories = async () => {
     if (!business) return;
@@ -94,6 +98,11 @@ export default function CategoriesPage() {
     });
   };
 
+  // A475: the categories in pages (25 / 50 / 100, remembered in this browser); an edit, enable / disable or delete keeps
+  // the page (clamped).
+  const paged = paginate(categories, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+
   return (
     <div className="p-4 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -115,9 +124,9 @@ export default function CategoriesPage() {
           <p className="text-lg">No categories yet</p>
           <p className="text-sm mt-1">Create your first category to get started</p>
         </div>
-      ) : (
+      ) : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categories.map(cat => (
+          {paged.items.map(cat => (
             <div key={cat.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center text-base font-semibold" style={{ backgroundColor: cat.color + '22', color: cat.color ?? '#fff' }}>
@@ -144,7 +153,8 @@ export default function CategoriesPage() {
             </div>
           ))}
         </div>
-      )}
+        <Pager paged={paged} noun="categories" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+      </>)}
 
       {/* Modal */}
       {showModal && (

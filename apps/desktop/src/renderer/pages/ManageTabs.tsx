@@ -19,6 +19,8 @@ import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import { parseCsvRows, csvBool } from '../lib/csv';
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../../shared/paginate';
 import type { CsvRow } from '../lib/csv';
 
 const input =
@@ -462,6 +464,13 @@ export function StaffTab({ branchId }: { branchId?: string }) {
     finally { setBusy(false); }
   };
 
+  // A475: the roster in pages (25 / 50 / 100, remembered on this till). It has no search or filter to reset on; an
+  // add, a PIN, a rename or a (de)activation keeps the page (clamped).
+  const [staffPage, setStaffPage] = useState(1);
+  const [staffPageSize, setStaffPageSize] = usePageSize('swiftpos.pageSize.staff');
+  const staffPaged = paginate(staff, staffPage, staffPageSize);
+  useEffect(() => { if (staffPaged.page !== staffPage) setStaffPage(staffPaged.page); }, [staffPaged.page, staffPage]);
+
   if (loading) return <p className="text-gray-300 p-4">Loading staff…</p>;
 
   return (
@@ -536,7 +545,7 @@ export function StaffTab({ branchId }: { branchId?: string }) {
       )}
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800">
-        {staff.map(m => (
+        {staffPaged.items.map(m => (
           <div key={m.id} className="flex items-center gap-3 px-4 py-2.5">
             <div className="min-w-0 flex-1">
               <p className={`truncate ${!isActive(m) ? 'text-gray-300 line-through' : 'text-white'}`}>
@@ -603,6 +612,7 @@ export function StaffTab({ branchId }: { branchId?: string }) {
             </button>
           </div>
         ))}
+        <Pager paged={staffPaged} noun="staff" onPage={setStaffPage} onSize={n => { setStaffPageSize(n); setStaffPage(1); }} />
       </div>
 
       <p className="text-xs text-gray-400 mt-3">

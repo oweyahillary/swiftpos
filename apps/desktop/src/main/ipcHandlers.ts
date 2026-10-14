@@ -13,7 +13,7 @@
 
 import { latestReady, shareDir, tillVersions } from './updateShare';   // A443
 import { cleanOffer, type Offer } from './offers';   // A445
-import { getMacAddressCached } from './machineFingerprint';
+import { getMacAddressCached, identityHeaders } from './machineFingerprint';
 import { app, ipcMain, net, dialog, BrowserWindow } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
 import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from './escposBridge';
@@ -34,7 +34,7 @@ function resolveReceiptLogo(): MonoRaster | undefined {
 import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
 import { getUpdateStatus, installUpdateNow } from './autoUpdate';
-import { logLine } from './logFile';
+import { logLine, authLog } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
 import { getReceiptPay } from './receiptPay';   // A450
 import { isSessionRefusal } from './sessionRecovery';   // A407
@@ -45,7 +45,7 @@ import { cacheStaffCredential, verifyPinOffline } from './pinCache';
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { tillSessionRefusedRecently, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
+import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { tillBranchId } from './deviceConfig';   // A446
 import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
@@ -136,7 +136,9 @@ export function registerIpcHandlers() {
     }
     const res = await cloudFetch(`${getCloudUrl()}/api/auth/enrol/redeem`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // A477: which machine this is (MAC as A182; the MachineGuid and BIOS serial hashed) — the cloud binds the till's
+      // key to it; a technician's rejoin records the machine it is done on.
+      headers: { 'Content-Type': 'application/json', ...(await identityHeaders().catch(() => ({}))) },
       body: JSON.stringify({
         business_id: businessId,
         code,
@@ -155,7 +157,7 @@ export function registerIpcHandlers() {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? (rejoin ? 'Rejoin failed' : 'Enrolment failed'));
+    if (!res.ok) { authLog(rejoin ? 'rejoin-refused' : 'join-refused', String(data?.code ?? `HTTP ${res.status}`)); throw new Error(data.error ?? (rejoin ? 'Rejoin failed' : 'Enrolment failed')); }
 
     if (!rejoin) clearCatalogue(db);
     db.prepare(`
@@ -194,6 +196,9 @@ export function registerIpcHandlers() {
     }
 
     configureSyncEngine(getCloudUrl(), data.token, data.refreshToken ?? '');
+    // A477: a technician's action — the renewal gate opens at once (a refused session waits 15 min otherwise).
+    resetRenewalGate(rejoin ? 'a technician rejoined this till' : 'the till joined its business');
+    authLog(rejoin ? 'rejoin' : 'join', `business ${data.business?.id ?? businessId}${data.deviceSecret ? ', device secret kept' : ''}`);
     refreshTechConfig(data.token).catch(() => {});
     logLine('enrol', rejoin ? 'the technician rejoined this till to its business — everything on it kept' : 'joined the business');
     await syncAll().catch(console.error);
@@ -696,7 +701,10 @@ export function registerIpcHandlers() {
     // under the till's own token (syncEngine authHeaders) and cashier_id comes from
     // this staff_session row, so the sale queues, attributes correctly and syncs
     // when the line returns. Shared by the node, node-own-roster and cache paths.
+    // A477: where the sign-in was decided, for auth.log — the branch server, or this till itself.
+    let signInSource: 'node' | 'local' = 'local';
     const signInLocal = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
+      authLog('sign-in', `source=${signInSource}`);
       const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
       // A167: token is TEXT NOT NULL (localDb.ts). An offline session has no
       // server JWT, but writing NULL here throws `NOT NULL constraint failed:
@@ -751,7 +759,7 @@ export function registerIpcHandlers() {
     let nodeSaidNo: string | null = null;
     if (hasNodeUrl) {
       const r = await verifyPinAtNodeClient(String(pin), branch_id);
-      if (r.status === 'ok') { logLine('pin', `node sign-in: ${r.staff.name}`); return signInLocal(r.staff); }
+      if (r.status === 'ok') { logLine('pin', `node sign-in: ${r.staff.name}`); signInSource = 'node'; return signInLocal(r.staff); }
       if (r.status === 'rejected') { nodeSaidNo = r.message; logLine('pin', `the branch server did not know that PIN (${r.message}) - asking the cloud`); }
       // transport failure → fall through to the cloud
     }
@@ -825,6 +833,7 @@ export function registerIpcHandlers() {
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
 
     // Online sign-in succeeded: an offline PIN held from an earlier sign-in is no longer needed (A345).
+    authLog('sign-in', 'source=cloud');
     clearOfflinePin();
     const branchRow = persistCloudSignIn(data, branch_id);
 

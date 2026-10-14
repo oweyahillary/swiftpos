@@ -23,6 +23,7 @@ import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
 import { getBuildInfo } from './buildInfo';
 import { installConsoleCapture, logLine } from './logFile';
+import { loadMachineIdentity } from './machineFingerprint';   // A477
 import { moveTillData, oldFolderNames, type MoveResult } from './userDataMove';   // A386
 
 const isDev = !app.isPackaged;
@@ -194,6 +195,8 @@ app.whenReady().then(() => {
   // A298: stamp the log with the build this till is actually running, so "is the
   // fix on this machine?" is answerable from the log, not just the Tech screen.
   { const b = getBuildInfo(); logLine('startup', `ZapTill ${app.getVersion()} build ${b.sha} @ ${b.time}`); }
+  // A477: read the machine's identity (MachineGuid, BIOS serial) in the background — never waited for here.
+  void loadMachineIdentity();
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {

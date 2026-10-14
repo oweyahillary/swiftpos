@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { money, dateTime } from '../lib/format';
+import Pager, { usePageSize } from './Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 /**
  * Wastage — A399: the wastage log. One screen for the owner (Stock › Wastage) and the manager (Manager › Wastage); the
@@ -67,6 +69,13 @@ export default function Wastage({ client, branchId, branches, currency = 'KES' }
 
   const s = report?.summary;
   const branchName = (id: string) => branches?.find((b) => b.id === id)?.name;
+  // A475: the entries (up to 2,000) in pages (25 / 50 / 100, remembered in this browser). The total, by reason and the
+  // costly items come from the cloud's summary of every entry. A new period or branch → page 1; a void keeps the page.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.wastage');
+  useEffect(() => { setPage(1); }, [from, to, branchId]);
+  const paged = paginate(report?.entries ?? [], page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <div className="space-y-5" data-testid="wastage">
@@ -124,7 +133,7 @@ export default function Wastage({ client, branchId, branches, currency = 'KES' }
             </thead>
             <tbody className="divide-y divide-gray-800">
               {report.entries.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">No wastage in this period.</td></tr>}
-              {report.entries.map((e) => (
+              {paged.items.map((e) => (
                 <tr key={e.id} className={e.voided_at ? 'opacity-50' : ''}>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-400">{dateTime(e.created_at)}<div className="text-xs text-gray-600">{e.ref}{!branchId && branchName(e.branch_id) ? ` · ${branchName(e.branch_id)}` : ''}</div></td>
                   <td className="px-3 py-2 text-gray-200">{Number(e.quantity)} × {e.name}{!e.stock_moved && !e.voided_at && <div className="text-xs text-gray-500">made to order — value only</div>}</td>
@@ -140,6 +149,9 @@ export default function Wastage({ client, branchId, branches, currency = 'KES' }
               ))}
             </tbody>
           </table>
+          {report.entries.length > 0 && (
+            <Pager paged={paged} noun="entries" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+          )}
         </div>
       )}
 

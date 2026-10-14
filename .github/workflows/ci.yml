@@ -729,6 +729,13 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/till-session-recovery.test.mjs
 
+      # A477 — the renewal handshake on the till: the refresh token read from disk only, written before the ack, an ack
+      # failure harmless, one back-off gate for every caller after a refusal (15 min; Retry-After on a 429), the machine
+      # sent hashed, the ack through the branch server, logs 5 MB x 10 with repeats collapsed and auth.log 2 MB x 20.
+      - name: Desktop renewal handshake (A477)
+        working-directory: apps/desktop
+        run: node --no-warnings test/refresh-handshake-till.test.mjs
+
       # A415 — the till signs in as itself: nothing on the till signs it out of the business; a technician rejoins it
       # from the tech console (keeping everything on it); a branch server with no roster checks PINs on the till itself.
       - name: Desktop till rejoin (no owner on the till)
@@ -961,6 +968,12 @@ jobs:
       - name: Desktop menu pages and incremental POS grid
         working-directory: apps/desktop
         run: node --no-warnings test/menu-pages.test.mjs
+
+      # A475 — every till manager list that can run past 50 rows is in pages (Orders, Expenses, Stock Levels, Branch
+      # Prices, Staff): one page drawn, a new filter → page 1, an edit keeps the page; counts and totals stay every row.
+      - name: Desktop pages on every long list
+        working-directory: apps/desktop
+        run: node --no-warnings test/pages-everywhere.test.mjs
 
       # A473 — the PIN pad does not wait on a cloud that has refused the till's session, a known PIN waits 4 s not 8, and
       # the whole cloud exchange (the renewal after a 401 included) is bounded.

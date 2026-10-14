@@ -8,6 +8,8 @@ import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 import BulkIngredientImport from './BulkIngredientImport';
 import { money, dateTime } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -228,6 +230,13 @@ export default function IngredientsPage() {
 
   const categories = [...new Set(ingredients.map(i => i.category).filter(Boolean))] as string[];
   const lowCount = ingredients.filter(i => stockStatus(i) !== 'ok').length;
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser). A new search or filter → page 1; an edit or a
+  // stock adjustment keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.ingredients');
+  useEffect(() => { setPage(1); }, [search, filterCat, filterStatus, activeBranchId]);
+  const paged = paginate(visible, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -309,7 +318,7 @@ export default function IngredientsPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map(i => {
+                {paged.items.map(i => {
                   const st = stockStatus(i);
                   return (
                     <Fragment key={i.id}>
@@ -380,6 +389,9 @@ export default function IngredientsPage() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && visible.length > 0 && (
+          <Pager paged={paged} noun="ingredients" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         )}
       </div>
 

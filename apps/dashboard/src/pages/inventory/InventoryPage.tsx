@@ -8,6 +8,8 @@ import { useBranch } from '../../context/BranchContext';
 import AdjustmentModal from './AdjustmentModal';
 import MovementsDrawer from './MovementsDrawer';
 import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface StockRow {
   id: string | null;
@@ -87,6 +89,13 @@ export default function InventoryPage() {
     const matchSearch = row.products.name.toLowerCase().includes(search.toLowerCase());
     return matchFilter && matchSearch;
   });
+  // A475: the stock list in pages (25 / 50 / 100, remembered in this browser). The status cards count every row; the
+  // reorder print uses every row. A new search, status or branch → page 1; an adjustment keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.inventory');
+  useEffect(() => { setPage(1); }, [search, filter, activeBranchId]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   // Summary counts
   const counts = { ok: 0, low: 0, out: 0, untracked: 0 };
@@ -219,7 +228,7 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {filtered.map(row => {
+                {paged.items.map(row => {
                   const status = getStatus(row);
                   const cfg = STATUS_CONFIG[status];
                   const isUntracked = status === 'untracked';
@@ -328,6 +337,7 @@ export default function InventoryPage() {
               </tbody>
             </table>
           </div>
+          <Pager paged={paged} noun="products" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 

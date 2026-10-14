@@ -1048,7 +1048,8 @@
     "revoked_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "replaced_by": "\"uuid\"",
-    "session_kind": "\"text\""
+    "session_kind": "\"text\"",
+    "acked_at": "\"timestamp with time zone\""
   },
   "reservations": {
     "id": "\"uuid\" NOT NULL",
@@ -1493,7 +1494,12 @@
     "retired_at": "\"timestamp with time zone\"",
     "retired_by": "\"uuid\"",
     "session_lost_at": "\"timestamp with time zone\"",
-    "session_lost_reason": "\"text\""
+    "session_lost_reason": "\"text\"",
+    "machine_guid_hash": "\"text\"",
+    "serial_hash": "\"text\"",
+    "identity_seen_at": "\"timestamp with time zone\"",
+    "security_alert_at": "\"timestamp with time zone\"",
+    "security_alert_reason": "\"text\""
   },
   "user_permissions": {
     "id": "\"uuid\" NOT NULL",

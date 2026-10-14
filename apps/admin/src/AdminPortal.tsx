@@ -10,6 +10,8 @@ import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and
 import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
 import SignInCodeCard from "./SignInCodeCard";   // A391
 import TestDataCard from "./TestDataCard";   // A396
+import AdminPager, { usePageSize } from "./AdminPager";   // A475
+import { paginate } from "./lib/paginate";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -642,11 +644,16 @@ function ClientsPage({ req, onSelectClient }) {
   const [status, setStatus]   = useState("");
   const [type, setType]       = useState("");
   const [loading, setLoading] = useState(false);
+  // A475 (owner, 2026-10-14: "proceed and build"): every client reachable, a page at a time — the list asked for the first
+  // 50 only, so client 51 on could be found only by search. The server pages (limit / offset); the pager drives it.
+  const [page, setPage]       = useState(1);
+  const [pageSize, setPageSize] = usePageSize("swiftpos.admin.pageSize.clients");
+  useEffect(() => { setPage(1); }, [search, status, type, pageSize]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: "50" });
+      const params = new URLSearchParams({ limit: String(pageSize), offset: String((page - 1) * pageSize) });
       if (search) params.set("search", search);
       if (status) params.set("status", status);
       if (type)   params.set("type", type);
@@ -654,9 +661,12 @@ function ClientsPage({ req, onSelectClient }) {
       setClients(data.clients); setTotal(data.total);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
-  }, [search, status, type]);
+  }, [search, status, type, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const pagedClients = { items: clients, page, pages, size: pageSize, total,
+    from: clients.length ? (page - 1) * pageSize + 1 : 0, to: (page - 1) * pageSize + clients.length };
 
   return (
     <div style={S.content}>
@@ -706,6 +716,7 @@ function ClientsPage({ req, onSelectClient }) {
           </tbody>
         </table>
         </div>
+        {total > 0 && <AdminPager paged={pagedClients} onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />}
       </div>
     </div>
   );
@@ -1387,7 +1398,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                     <div key={dev.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 500 }}>{dev.label}{dev.role && <span style={{ fontSize: 10, color: C.muted, marginLeft: 6, textTransform: "uppercase" }}>{dev.role}</span>}</div>
-                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dev.lastSeenAt ? `seen ${new Date(dev.lastSeenAt).toLocaleDateString("en-KE")}` : "never seen"}{dev.appVersion ? ` · v${dev.appVersion}` : ""}{dev.status !== "approved" ? ` · ${dev.status}` : ""}</div>
+                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dev.lastSeenAt ? `seen ${new Date(dev.lastSeenAt).toLocaleDateString("en-KE")}` : "never seen"}{dev.appVersion ? ` · v${dev.appVersion}` : ""}{dev.status !== "approved" ? ` · ${dev.status}` : ""}{dev.noDeviceSecret && <span style={{ color: C.danger, fontWeight: 600 }} title="Holds no device secret: it cannot sign itself back in until its next renewal hands one over"> · no device secret</span>}</div>
                       </div>
                       <button onClick={() => openDeviceLog(dev)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Tech log →</button>
                       <button onClick={() => revokeDevice(dev)} style={{ ...S.btn, ...S.btnDanger, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Revoke</button>
@@ -1434,6 +1445,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                 <div style={{ fontSize: 11, color: C.muted, textAlign: "right", flexShrink: 0 }}>
                   <div>{dv.lastSeenAt ? `seen ${new Date(dv.lastSeenAt).toLocaleDateString("en-KE")}` : "never seen"}</div>
                   <div style={{ marginTop: 2 }}>{dv.appVersion ? `v${dv.appVersion}` : "—"}{dv.status !== "approved" ? ` · ${dv.status}` : ""}</div>
+                  {dv.noDeviceSecret && <div style={{ marginTop: 2, color: C.danger, fontWeight: 600 }} title="Holds no device secret: it cannot sign itself back in until its next renewal hands one over">no device secret</div>}
                 </div>
                 <button onClick={() => revokeDevice(dv)} style={{ ...S.btn, ...S.btnDanger, fontSize: 10, padding: "4px 9px", flexShrink: 0 }}>Revoke</button>
               </div>
@@ -1772,6 +1784,11 @@ function BillingPage({ req }) {
   const total       = invoices.reduce((s, i) => s + Number(i.amount), 0);
   const paid        = invoices.filter(i => i.status === "paid").reduce((s, i) => s + Number(i.amount), 0);
   const outstanding = total - paid;
+  // A475: the invoices in pages (25 / 50 / 100, remembered in this browser); the three totals above are over every one.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize("swiftpos.admin.pageSize.billing");
+  const paged = paginate(invoices, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <div style={S.content}>
@@ -1789,7 +1806,7 @@ function BillingPage({ req }) {
           <div className="sp-table-wrap"><table style={S.table}>
             <thead><tr>{["Invoice #","Client","Amount","Status","Date"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
             <tbody>
-              {invoices.map(inv => (
+              {paged.items.map(inv => (
                 <tr key={inv.id}>
                   <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12, color: C.accent }}>{inv.invoice_number}</td>
                   <td style={{ ...S.td, fontSize: 13 }}>{inv.business_name}</td>
@@ -1801,6 +1818,7 @@ function BillingPage({ req }) {
             </tbody>
           </table>
           </div>
+          {invoices.length > 0 && <AdminPager paged={paged} onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />}
         </div>
       )}
     </div>
@@ -1825,6 +1843,12 @@ function AuditPage({ req }) {
     return C.muted;
   };
 
+  // A475: the last 100 events in pages (25 / 50 / 100, remembered in this browser); the total is the cloud's.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize("swiftpos.admin.pageSize.audit");
+  const paged = paginate(logs, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
+
   return (
     <div style={S.content}>
       <h1 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 20px" }}>Audit Log</h1>
@@ -1834,7 +1858,7 @@ function AuditPage({ req }) {
           <div className="sp-table-wrap"><table style={S.table}>
             <thead><tr>{["When","Admin","Action","Client","Resource"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
             <tbody>
-              {logs.map(l => (
+              {paged.items.map(l => (
                 <tr key={l.id}>
                   <td style={{ ...S.td, color: C.muted, fontSize: 12, whiteSpace: "nowrap" }}>{timeAgo(l.event_time)}</td>
                   <td style={{ ...S.td, fontSize: 12 }}>{l.admin_email}</td>
@@ -1846,6 +1870,7 @@ function AuditPage({ req }) {
             </tbody>
           </table>
           </div>
+          {logs.length > 0 && <AdminPager paged={paged} onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />}
         </div>
       )}
     </div>

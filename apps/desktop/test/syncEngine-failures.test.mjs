@@ -247,6 +247,9 @@ check('the D13 re-login case is now recorded, not silent', () => {
   assert.match(log(), /\[auth\] till token refresh failed/);
 });
 
+// A477: a definitive refusal holds every renewal for 15 minutes (one gate for all callers); a technician's action
+// opens it. Each scenario below starts with the gate open.
+engine.resetRenewalGate('test: the next scenario');
 globalThis.fetch = async () => { throw new Error('socket hang up'); };
 await engine.refreshAccessToken();
 check('a thrown refresh is recorded rather than swallowed', () => {
@@ -326,16 +329,16 @@ globalThis.fetch = async (_url, opts) => {
 };
 const recovered = await engine.refreshAccessToken();
 
-check('a 401 on a stale token retries with the persisted one', () => {
-  assert.deepStrictEqual(seen, ['stale-in-memory', 'fresh-on-disk']);
+// A477: disk is the only source at renewal time — the lagging in-memory copy is never presented at all (before, it was
+// presented first and the persisted one only on its 401; against a rotating endpoint that first 401 could already have
+// cost the session — the 2026-10-12 sign-out).
+check('the persisted token is presented, never the stale in-memory copy (A477: disk first)', () => {
+  assert.deepStrictEqual(seen, ['fresh-on-disk']);
   assert.strictEqual(recovered, true, 'this is an avoidable logout, and offline it is fatal');
 });
 
-check('the retry is logged so it is not invisible', () => {
-  assert.match(log(), /refresh rejected on a stale token/);
-});
-
 seen = [];
+engine.resetRenewalGate('test: the next scenario');
 globalThis.__dbState.session.refresh_token = 'same-token';
 engine.configureSyncEngine('http://127.0.0.1:1', 'access', 'same-token');
 globalThis.fetch = async (_url, opts) => { seen.push(JSON.parse(opts.body).refreshToken); return resp(401, '{"error":"Revoked"}', 'Unauthorized'); };

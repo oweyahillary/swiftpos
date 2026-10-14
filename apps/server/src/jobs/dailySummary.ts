@@ -6,8 +6,14 @@ import { toZonedTime, fromZonedTime, format as tzFormat } from 'date-fns-tz';
 import { decideDailySend } from './reportScheduleDecision';
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';   // 0.6.34
 import { getDayCutoff } from '../lib/dayCutoff';
+import { readAlerts } from './ownerAlertsDecision';     // A476: what the owner chose the email includes
+import { dailyExtrasHtml } from './ownerAlertsData';    // A476: open tills, cash differences, voids, tills, expenses
+import { esc } from './ownerEmails';
 
 /**
+ * A476: the owner also chooses what it includes (Settings › Report Scheduler › "What the daily email includes"): tills
+ * not closed or confirmed, cash differences at confirm, voids and refunds, tills not syncing, expenses, low stock.
+ *
  * Daily summary job — runs every 15 min and, for each business that has enabled
  * the daily report (dashboard → Settings → Report Scheduler), sends once per day
  * at that business's own send_time, to the owner + branch managers + any extra
@@ -44,11 +50,10 @@ export function startDailySummaryJob(): void {
   console.log(`[dailySummary] Scheduled: ${schedule} (per-business send_time honoured)`);
 }
 
-async function runDailySummary(): Promise<void> {
+export async function runDailySummary(now: Date = new Date()): Promise<void> {   // A476: exported (and `now`) for the tests
   // Date range: midnight-to-midnight in East Africa Time (UTC+3).
   // date-fns-tz handles DST-safe conversions — no manual hour arithmetic needed.
   const EAT = 'Africa/Nairobi';
-  const now = new Date();
 
   // Start of today in EAT, converted back to UTC for Supabase queries
   const todayStartEAT = toZonedTime(now, EAT);
@@ -199,6 +204,14 @@ async function sendSummaryForBusiness(
 
   const currency = biz.currency ?? 'KES';
 
+  // A476: the owner's switches, and the business day being reported (the same cut-off the range came from).
+  const settings = readAlerts(await readReportSchedule(biz.id));
+  const dayCutoff = await getDayCutoff(biz.id);
+  const extrasHtml = await dailyExtrasHtml({
+    businessId: biz.id, currency, settings, reportDate: businessDateEAT(new Date(), dayCutoff), cutoff: dayCutoff,
+    range: { start: dateFrom, end: dateTo }, now: new Date(),
+  });
+
   // ── 1. Sales summary ──────────────────────────────────────
   const { data: orders } = await supabase
     .from('orders')
@@ -291,7 +304,7 @@ async function sendSummaryForBusiness(
   const branchIds = (branches ?? []).map(b => b.id);
   let lowStockItems: { name: string; quantity: number; threshold: number }[] = [];
 
-  if (branchIds.length) {
+  if (branchIds.length && settings.low_stock) {
     // stock_levels, not stock (audit B6) — see lib/lowStockChecker.ts for the
     // full reasoning. `stock` is the table nothing writes.
     //
@@ -367,6 +380,9 @@ async function sendSummaryForBusiness(
       staffRows,
       lowStockItems,
       dateLabel: todayLabel,
+      showLowStock: settings.low_stock,
+      showTopProducts: settings.top_products,
+      extrasHtml,
     }),
     // TODO (Step 19/21): pass fromOverride from business_settings 'notify_from_email'
     // e.g. from: `${biz.name} <reports@${biz.domain}>`
@@ -389,7 +405,14 @@ function buildSummaryEmail(opts: {
   staffRows: { name: string; orders: number; revenue: number }[];
   lowStockItems: { name: string; quantity: number; threshold: number }[];
   dateLabel: string;
+  /** A476: the owner's switches (default on) and the new sections, already built (ownerEmails.ts) */
+  showLowStock?: boolean;
+  showTopProducts?: boolean;
+  extrasHtml?: string;
 }): string {
+  const showLowStock = opts.showLowStock !== false;
+  const showTopProducts = opts.showTopProducts !== false;
+  const biz = esc(opts.businessName);
   const { currency: c } = opts;
   const date = opts.dateLabel;
 
@@ -413,7 +436,7 @@ function buildSummaryEmail(opts: {
     ? opts.topProducts.map((p, i) => `
         <tr style="border-bottom:1px solid #1a1a1a;">
           <td style="padding:10px 0;font-size:13px;color:#9ca3af;">${i + 1}</td>
-          <td style="padding:10px 8px;font-size:13px;color:#fff;">${p.name}</td>
+          <td style="padding:10px 8px;font-size:13px;color:#fff;">${esc(p.name)}</td>
           <td style="padding:10px 0;font-size:13px;color:#9ca3af;text-align:center;">${p.qty}</td>
           <td style="padding:10px 0;font-size:13px;color:#22c55e;text-align:right;font-weight:600;">${c} ${fmt(p.revenue)}</td>
         </tr>`).join('')
@@ -422,7 +445,7 @@ function buildSummaryEmail(opts: {
   const staffRowsHtml = opts.staffRows.length
     ? opts.staffRows.map(s => `
         <tr style="border-bottom:1px solid #1a1a1a;">
-          <td style="padding:10px 0;font-size:13px;color:#fff;">${s.name}</td>
+          <td style="padding:10px 0;font-size:13px;color:#fff;">${esc(s.name)}</td>
           <td style="padding:10px 0;font-size:13px;color:#9ca3af;text-align:center;">${s.orders}</td>
           <td style="padding:10px 0;font-size:13px;color:#22c55e;text-align:right;font-weight:600;">${c} ${fmt(s.revenue)}</td>
         </tr>`).join('')
@@ -431,7 +454,7 @@ function buildSummaryEmail(opts: {
   const lowStockRowsHtml = opts.lowStockItems.length
     ? opts.lowStockItems.map(item => `
         <tr style="border-bottom:1px solid #1a1a1a;">
-          <td style="padding:10px 0;font-size:13px;color:#fff;">${item.name}</td>
+          <td style="padding:10px 0;font-size:13px;color:#fff;">${esc(item.name)}</td>
           <td style="padding:10px 0;font-size:13px;font-weight:700;color:#f97316;text-align:center;">${item.quantity}</td>
           <td style="padding:10px 0;font-size:13px;color:#6b7280;text-align:right;">${item.threshold}</td>
         </tr>`).join('')
@@ -452,13 +475,13 @@ function buildSummaryEmail(opts: {
   <!-- Header -->
   <tr><td style="padding-bottom:32px;">
     <p style="margin:0;font-size:22px;font-weight:700;color:#22c55e;">ZapTill</p>
-    <p style="margin:4px 0 0;font-size:12px;color:#6b7280;">${opts.businessName} · Daily Report</p>
+    <p style="margin:4px 0 0;font-size:12px;color:#6b7280;">${biz} · Daily Report</p>
   </td></tr>
 
   <!-- Date banner -->
   <tr><td style="background:#111;border:1px solid #1a1a1a;border-radius:12px;padding:20px 24px;margin-bottom:24px;">
     <p style="margin:0;font-size:16px;font-weight:600;color:#fff;">📊 ${date}</p>
-    <p style="margin:4px 0 0;font-size:13px;color:#6b7280;">Here's how ${opts.businessName} performed today.</p>
+    <p style="margin:4px 0 0;font-size:13px;color:#6b7280;">Here's how ${biz} performed today.</p>
   </td></tr>
 
   <!-- Stat cards -->
@@ -468,13 +491,16 @@ function buildSummaryEmail(opts: {
         ${statCard('Orders', String(opts.totalOrders), opts.voidedCount ? `${opts.voidedCount} voided` : undefined)}
         ${statCard('Revenue', `${c} ${fmt(opts.totalRevenue)}`)}
         ${statCard('VAT Collected', `${c} ${fmt(opts.totalVat)}`)}
-        ${statCard('Low Stock', String(opts.lowStockItems.length), opts.lowStockItems.length ? 'needs attention' : 'all good')}
+        ${showLowStock ? statCard('Low Stock', String(opts.lowStockItems.length), opts.lowStockItems.length ? 'needs attention' : 'all good') : ''}
       </tr>
     </table>
   </td></tr>
 
+  <!-- A476: tills not closed or confirmed, cash differences, voids and refunds, tills not syncing, expenses -->
+  ${opts.extrasHtml ?? ''}
+
   <!-- Top products -->
-  ${sectionHeader('Top Products')}
+  ${showTopProducts ? `${sectionHeader('Top Products')}
   <tr><td style="background:#111;border:1px solid #1a1a1a;border-radius:12px;padding:4px 20px;">
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr style="border-bottom:1px solid #222;">
@@ -485,7 +511,7 @@ function buildSummaryEmail(opts: {
       </tr>
       ${topProductsRows}
     </table>
-  </td></tr>
+  </td></tr>` : ''}
 
   <!-- Staff -->
   ${sectionHeader('Staff Performance')}
@@ -501,7 +527,7 @@ function buildSummaryEmail(opts: {
   </td></tr>
 
   <!-- Low stock -->
-  ${sectionHeader('Inventory Alert')}
+  ${showLowStock ? `${sectionHeader('Inventory Alert')}
   <tr><td style="background:#111;border:1px solid #1a1a1a;border-radius:12px;padding:4px 20px;">
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr style="border-bottom:1px solid #222;">
@@ -511,7 +537,7 @@ function buildSummaryEmail(opts: {
       </tr>
       ${lowStockRowsHtml}
     </table>
-  </td></tr>
+  </td></tr>` : ''}
 
   <!-- CTA -->
   <tr><td style="padding-top:28px;text-align:center;">
@@ -524,7 +550,7 @@ function buildSummaryEmail(opts: {
   <!-- Footer -->
   <tr><td style="padding-top:32px;text-align:center;">
     <p style="margin:0;font-size:11px;color:#374151;">
-      Sent by ZapTill · ${opts.businessName}
+      Sent by ZapTill · ${biz} · Choose what this email includes in Settings › Report Scheduler.
       <!-- TODO (Step 19/21): Replace with per-business domain sender -->
     </p>
   </td></tr>

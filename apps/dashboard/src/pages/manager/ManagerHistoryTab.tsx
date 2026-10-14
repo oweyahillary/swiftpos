@@ -10,6 +10,8 @@ import { useBusiness } from '../../context/BusinessContext';
 import { printDocument } from '../../lib/printDocument';
 import { grnDocSpec, transferDocSpec } from '../../lib/documentSpecs';
 import { dateShort } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface GRNRow {
   id: string; grn_number: string; created_at: string; notes: string | null;
@@ -55,6 +57,17 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
     finally { setLoading(false); }
   }, [posApi, branchId]);
   useEffect(() => { void load(); }, [load]);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [grnPage, setGrnPage] = useState(1);
+  const [grnPageSize, setGrnPageSize] = usePageSize('swiftpos.pageSize.manager.history.deliveries');
+  useEffect(() => { setGrnPage(1); }, [branchId]);
+  const grnPaged = paginate(grns, grnPage, grnPageSize);
+  useEffect(() => { if (grnPaged.page !== grnPage) setGrnPage(grnPaged.page); }, [grnPaged.page, grnPage]);
+  const [transferPage, setTransferPage] = useState(1);
+  const [transferPageSize, setTransferPageSize] = usePageSize('swiftpos.pageSize.manager.history.transfers');
+  useEffect(() => { setTransferPage(1); }, [branchId]);
+  const transferPaged = paginate(transfers, transferPage, transferPageSize);
+  useEffect(() => { if (transferPaged.page !== transferPage) setTransferPage(transferPaged.page); }, [transferPaged.page, transferPage]);
 
   const date  = (s: string) => new Date(s).toLocaleDateString('en-KE');
 
@@ -107,7 +120,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
         grns.length === 0
           ? <p className="text-gray-500 text-sm py-10 text-center">No deliveries received yet.</p>
           : <div className="space-y-2">
-              {grns.map(g => (
+              {grnPaged.items.map(g => (
                 <div key={g.id} className="flex items-center justify-between gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
                   <div className="min-w-0">
                     <p className="text-white text-sm font-medium">{g.grn_number}
@@ -118,12 +131,13 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
                   <PrintBtn onClick={() => printGRN(g)} />
                 </div>
               ))}
+              <Pager paged={grnPaged} noun="deliveries" onPage={setGrnPage} onSize={n => { setGrnPageSize(n); setGrnPage(1); }} />
             </div>
       ) : (
         transfers.length === 0
           ? <p className="text-gray-500 text-sm py-10 text-center">No transfers yet.</p>
           : <div className="space-y-2">
-              {transfers.map(t => {
+              {transferPaged.items.map(t => {
                 const out = t.from_branch_id === branchId;
                 return (
                   <div key={t.id} className="flex items-center justify-between gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
@@ -140,6 +154,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
                   </div>
                 );
               })}
+              <Pager paged={transferPaged} noun="transfers" onPage={setTransferPage} onSize={n => { setTransferPageSize(n); setTransferPage(1); }} />
             </div>
       )}
     </div>

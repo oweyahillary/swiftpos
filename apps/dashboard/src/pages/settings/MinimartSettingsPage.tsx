@@ -8,6 +8,8 @@ import { api } from '../../lib/api';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import BulkProductImport from '../products/BulkProductImport';
 import { money } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 import { useBusiness } from '../../context/BusinessContext';
 
 interface Product {
@@ -112,6 +114,13 @@ export default function MinimartSettingsPage() {
     (p.barcode ?? '').includes(search) ||
     (p.plu_code ?? '').includes(search)
   );
+  // A475: the products in pages (25 / 50 / 100, remembered in this browser). A new search → page 1; a barcode / PLU
+  // edit keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.minimartProducts');
+  useEffect(() => { setPage(1); }, [search]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'scan',     label: '📡 Scanner' },
@@ -215,7 +224,7 @@ export default function MinimartSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(p => (
+                {paged.items.map(p => (
                   <Fragment key={p.id}>
                   <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
                     <td className="px-3 py-3 text-sm font-semibold text-white">{p.name}
@@ -255,6 +264,7 @@ export default function MinimartSettingsPage() {
                 ))}
               </tbody>
             </table></div>
+            <Pager paged={paged} noun="products" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
           </div>
 
           {/* Edit product modal */}

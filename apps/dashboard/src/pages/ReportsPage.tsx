@@ -17,6 +17,8 @@ import DownloadExcelButton from '../components/DownloadExcelButton';   // A467
 import { localStamp, type ReportColumn, type ReportSheet } from '../lib/reportDownload';   // A467
 import { reportPresets } from '../lib/reportPeriods';   // A467
 import * as fmt from '../lib/format';   // A471: one money/number/date format ('money' here is the Excel column shorthand)
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -582,13 +584,19 @@ function ItemMixTab({ range, branchId, currency, meta }: TabProps) {
   }, [range.from, range.to, branchId]);
   useEffect(() => { load(); }, [load]);
 
+  const filtered = (data?.products ?? [])
+    .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => sortBy === 'qty' ? b.qty - a.qty : sortBy === 'margin' ? (b.gross_margin_pct ?? -99) - (a.gross_margin_pct ?? -99) : b.revenue - a.revenue);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [itemPage, setItemPage] = useState(1);
+  const [itemPageSize, setItemPageSize] = usePageSize('swiftpos.pageSize.reports.itemMix');
+  useEffect(() => { setItemPage(1); }, [range.from, range.to, branchId, search, sortBy]);
+  const itemPaged = paginate(filtered, itemPage, itemPageSize);
+  useEffect(() => { if (itemPaged.page !== itemPage) setItemPage(itemPaged.page); }, [itemPaged.page, itemPage]);
+
   if (loading) return <Spinner />;
   if (error)   return <ErrMsg msg={error} />;
   if (!data)   return null;
-
-  const filtered = data.products
-    .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => sortBy === 'qty' ? b.qty - a.qty : sortBy === 'margin' ? (b.gross_margin_pct ?? -99) - (a.gross_margin_pct ?? -99) : b.revenue - a.revenue);
 
   // A467: the item table as shown — the search and the sort applied.
   const sheets: ReportSheet[] = [{
@@ -640,7 +648,8 @@ function ItemMixTab({ range, branchId, currency, meta }: TabProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-              {filtered.map((p, i) => {
+              {itemPaged.items.map((p, j) => {
+                const i = itemPaged.from - 1 + j;   // A475: the rank over the whole list, not the page
                 const cost = p.total_cost != null ? fmt.money(p.total_cost, currency, { blank: '—' }) : <span className="text-gray-300 dark:text-gray-600">—</span>;
                 const margin = p.gross_margin_pct != null
                       ? <span className={`text-xs font-medium tabular-nums ${p.gross_margin_pct >= 60 ? 'text-green-600' : p.gross_margin_pct >= 30 ? 'text-amber-600' : 'text-red-500'}`}>{fmt.pct(p.gross_margin_pct)}</span>
@@ -683,6 +692,7 @@ function ItemMixTab({ range, branchId, currency, meta }: TabProps) {
             </tbody>
           </table>
         </div>
+        <Pager paged={itemPaged} noun="items" onPage={setItemPage} onSize={n => { setItemPageSize(n); setItemPage(1); }} />
       </div>
     </div>
   );
@@ -706,6 +716,12 @@ function VoidsTab({ range, branchId, currency, meta }: TabProps) {
     finally { setLoading(false); }
   }, [range.from, range.to, branchId]);
   useEffect(() => { load(); }, [load]);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [voidPage, setVoidPage] = useState(1);
+  const [voidPageSize, setVoidPageSize] = usePageSize('swiftpos.pageSize.reports.voids');
+  useEffect(() => { setVoidPage(1); }, [range.from, range.to, branchId]);
+  const voidPaged = paginate(data?.voids ?? [], voidPage, voidPageSize);
+  useEffect(() => { if (voidPaged.page !== voidPage) setVoidPage(voidPaged.page); }, [voidPaged.page, voidPage]);
 
   if (loading) return <Spinner />;
   if (error)   return <ErrMsg msg={error} />;
@@ -756,7 +772,7 @@ function VoidsTab({ range, branchId, currency, meta }: TabProps) {
         </div>
         {data.voids.length === 0
           ? <p className="text-center text-gray-400 py-10 text-sm">No voids in this period ✓</p>
-          : (
+          : (<>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
@@ -770,7 +786,7 @@ function VoidsTab({ range, branchId, currency, meta }: TabProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                  {data.voids.map(v => (
+                  {voidPaged.items.map(v => (
                     <Fragment key={v.id}>
                     <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                       <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{v.order_number}
@@ -794,7 +810,8 @@ function VoidsTab({ range, branchId, currency, meta }: TabProps) {
                 </tbody>
               </table>
             </div>
-          )}
+            <Pager paged={voidPaged} noun="voids" onPage={setVoidPage} onSize={n => { setVoidPageSize(n); setVoidPage(1); }} />
+          </>)}
       </div>
     </div>
   );
@@ -821,6 +838,12 @@ function RefundsTab({ range, branchId, currency, meta }: TabProps) {
     finally { setLoading(false); }
   }, [range.from, range.to, branchId]);
   useEffect(() => { load(); }, [load]);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [refundPage, setRefundPage] = useState(1);
+  const [refundPageSize, setRefundPageSize] = usePageSize('swiftpos.pageSize.reports.refunds');
+  useEffect(() => { setRefundPage(1); }, [range.from, range.to, branchId]);
+  const refundPaged = paginate(data?.refunds ?? [], refundPage, refundPageSize);
+  useEffect(() => { if (refundPaged.page !== refundPage) setRefundPage(refundPaged.page); }, [refundPaged.page, refundPage]);
 
   if (loading) return <Spinner />;
   if (error)   return <ErrMsg msg={error} />;
@@ -871,7 +894,7 @@ function RefundsTab({ range, branchId, currency, meta }: TabProps) {
         </div>
         {data.refunds.length === 0
           ? <p className="text-center text-gray-400 py-10 text-sm">No refunds in this period ✓</p>
-          : (
+          : (<>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
@@ -885,7 +908,7 @@ function RefundsTab({ range, branchId, currency, meta }: TabProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                  {data.refunds.map(r => (
+                  {refundPaged.items.map(r => (
                     <Fragment key={r.id}>
                     <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                       <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{r.order_number}
@@ -909,7 +932,8 @@ function RefundsTab({ range, branchId, currency, meta }: TabProps) {
                 </tbody>
               </table>
             </div>
-          )}
+            <Pager paged={refundPaged} noun="refunds" onPage={setRefundPage} onSize={n => { setRefundPageSize(n); setRefundPage(1); }} />
+          </>)}
       </div>
     </div>
   );
@@ -934,6 +958,12 @@ function InventoryTab({ range, branchId, currency, meta }: TabProps) {
     finally { setLoading(false); }
   }, [range.from, range.to, branchId]);
   useEffect(() => { load(); }, [load]);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [stockPage, setStockPage] = useState(1);
+  const [stockPageSize, setStockPageSize] = usePageSize('swiftpos.pageSize.reports.inventory');
+  useEffect(() => { setStockPage(1); }, [range.from, range.to, branchId]);
+  const stockPaged = paginate(data?.summary ?? [], stockPage, stockPageSize);
+  useEffect(() => { if (stockPaged.page !== stockPage) setStockPage(stockPaged.page); }, [stockPaged.page, stockPage]);
 
   if (loading) return <Spinner />;
   if (error)   return <ErrMsg msg={error} />;
@@ -962,7 +992,7 @@ function InventoryTab({ range, branchId, currency, meta }: TabProps) {
         </div>
         {rows.length === 0
           ? <p className="text-center text-gray-400 py-10 text-sm">No stock movement in this period.</p>
-          : (
+          : (<>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
@@ -975,7 +1005,7 @@ function InventoryTab({ range, branchId, currency, meta }: TabProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                  {rows.map(r => (
+                  {stockPaged.items.map(r => (
                     <Fragment key={r.product_id}>
                     <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                       <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{r.name}
@@ -995,7 +1025,8 @@ function InventoryTab({ range, branchId, currency, meta }: TabProps) {
                 </tbody>
               </table>
             </div>
-          )}
+            <Pager paged={stockPaged} noun="products" onPage={setStockPage} onSize={n => { setStockPageSize(n); setStockPage(1); }} />
+          </>)}
       </div>
     </div>
   );
@@ -1334,6 +1365,18 @@ function FoodCostTab({ range, branchId, currency, meta }: TabProps) {
     finally { setLoading(false); }
   }, [range.from, range.to, branchId]);
   useEffect(() => { load(); }, [load]);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [ingredientPage, setIngredientPage] = useState(1);
+  const [ingredientPageSize, setIngredientPageSize] = usePageSize('swiftpos.pageSize.reports.foodCost.ingredients');
+  useEffect(() => { setIngredientPage(1); }, [range.from, range.to, branchId]);
+  const ingredientPaged = paginate(data?.ingredients ?? [], ingredientPage, ingredientPageSize);
+  useEffect(() => { if (ingredientPaged.page !== ingredientPage) setIngredientPage(ingredientPaged.page); }, [ingredientPaged.page, ingredientPage]);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [dishPage, setDishPage] = useState(1);
+  const [dishPageSize, setDishPageSize] = usePageSize('swiftpos.pageSize.reports.foodCost.dishes');
+  useEffect(() => { setDishPage(1); }, [range.from, range.to, branchId]);
+  const dishPaged = paginate(data?.products ?? [], dishPage, dishPageSize);
+  useEffect(() => { if (dishPaged.page !== dishPage) setDishPage(dishPaged.page); }, [dishPaged.page, dishPage]);
 
   if (loading) return <Spinner />;
   if (error)   return <ErrMsg msg={error} />;
@@ -1447,7 +1490,7 @@ function FoodCostTab({ range, branchId, currency, meta }: TabProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                {ingredients.map(ing => {
+                {ingredientPaged.items.map(ing => {
                   const over    = ing.variance > 0;
                   const noData  = ing.actualCost === null;
                   return (
@@ -1494,6 +1537,7 @@ function FoodCostTab({ range, branchId, currency, meta }: TabProps) {
               </tbody>
             </table>
           </div>
+          <Pager paged={ingredientPaged} noun="ingredients" onPage={setIngredientPage} onSize={n => { setIngredientPageSize(n); setIngredientPage(1); }} />
           {!hasActual && (
             <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
               <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -1520,7 +1564,7 @@ function FoodCostTab({ range, branchId, currency, meta }: TabProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                {products.map(p => (
+                {dishPaged.items.map(p => (
                   <Fragment key={p.product_id}>
                   <tr>
                     <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{p.name}
@@ -1550,6 +1594,7 @@ function FoodCostTab({ range, branchId, currency, meta }: TabProps) {
               </tbody>
             </table>
           </div>
+          <Pager paged={dishPaged} noun="dishes" onPage={setDishPage} onSize={n => { setDishPageSize(n); setDishPage(1); }} />
         </div>
       )}
     </div>
@@ -1595,6 +1640,12 @@ function SplhTab({ range, branchId, currency, meta }: TabProps) {
     finally { setLoading(false); }
   }, [range.from, range.to, branchId]);
   useEffect(() => { load(); }, [load]);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [shiftPage, setShiftPage] = useState(1);
+  const [shiftPageSize, setShiftPageSize] = usePageSize('swiftpos.pageSize.reports.splh.shifts');
+  useEffect(() => { setShiftPage(1); }, [range.from, range.to, branchId]);
+  const shiftPaged = paginate(data?.shifts ?? [], shiftPage, shiftPageSize);
+  useEffect(() => { if (shiftPaged.page !== shiftPage) setShiftPage(shiftPaged.page); }, [shiftPaged.page, shiftPage]);
 
   if (loading) return <Spinner />;
   if (error)   return <ErrMsg msg={error} />;
@@ -1775,7 +1826,7 @@ function SplhTab({ range, branchId, currency, meta }: TabProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                {shifts.map(s => (
+                {shiftPaged.items.map(s => (
                   <Fragment key={s.shift_id}>
                   <tr>
                     <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{s.cashier_name}
@@ -1805,6 +1856,7 @@ function SplhTab({ range, branchId, currency, meta }: TabProps) {
               </tbody>
             </table>
           </div>
+          <Pager paged={shiftPaged} noun="shifts" onPage={setShiftPage} onSize={n => { setShiftPageSize(n); setShiftPage(1); }} />
         </div>
       )}
     </div>
@@ -1831,6 +1883,60 @@ function ComingSoonTab({ title }: { title: string }) {
 //                  "High" when ≥ the average unit CM across classifiable items.
 // Items with no cost price can't have a margin, so they're set aside (not fed
 // into the average, which they'd distort) with a prompt to set cost. (A78.)
+type MatrixItem = ProductV2Report['products'][number] & { unitCM: number };
+
+function MatrixQuad({ title, tag, items, tone, action, currency, resetKey }: {
+  title: string; tag: string; items: MatrixItem[]; action: string;
+  tone: 'green' | 'amber' | 'blue' | 'red';
+  currency: string;
+  /** The period and branch: a new one → page 1. */
+  resetKey: string;
+}) {
+  // A475: a big menu puts hundreds of items in one quadrant — each quadrant in pages (25 / 50 / 100, remembered in this
+  // browser). The count beside the title and the Excel sheet are every item.
+  const [quadPage, setQuadPage] = useState(1);
+  const [quadPageSize, setQuadPageSize] = usePageSize('swiftpos.pageSize.reports.matrix');
+  useEffect(() => { setQuadPage(1); }, [resetKey]);
+  const quadPaged = paginate(items, quadPage, quadPageSize);
+  useEffect(() => { if (quadPaged.page !== quadPage) setQuadPage(quadPaged.page); }, [quadPaged.page, quadPage]);
+  const ring = {
+    green: 'border-green-500/40 bg-green-500/5',
+    amber: 'border-amber-500/40 bg-amber-500/5',
+    blue:  'border-blue-500/40 bg-blue-500/5',
+    red:   'border-red-500/40 bg-red-500/5',
+  }[tone];
+  const dot = { green: 'bg-green-500', amber: 'bg-amber-500', blue: 'bg-blue-500', red: 'bg-red-500' }[tone];
+  return (
+    <div className={`rounded-xl border p-4 ${ring}`}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <span className={`w-2.5 h-2.5 rounded-full ${dot}`} />
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">{title}</h3>
+        </div>
+        <span className="text-xs text-gray-400 tabular-nums">{items.length}</span>
+      </div>
+      <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">{tag} · {action}</p>
+      {items.length === 0
+        ? <p className="text-xs text-gray-400 dark:text-gray-600">No items.</p>
+        : (
+          <ul className="space-y-1.5">
+            {quadPaged.items.map(p => (
+              <li key={p.product_id} className="flex items-center justify-between text-sm">
+                <span className="text-gray-700 dark:text-gray-200 truncate pr-2">{p.name}</span>
+                <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap">
+                  {fmt.qty(p.qty)} sold · {fmt.money(p.unitCM, currency, { blank: '—' })}/ea
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      {items.length > 0 && (
+        <Pager paged={quadPaged} noun="items" onPage={setQuadPage} onSize={n => { setQuadPageSize(n); setQuadPage(1); }} />
+      )}
+    </div>
+  );
+}
+
 function MatrixTab({ range, branchId, currency, meta }: TabProps) {
   const [data, setData]       = useState<ProductV2Report | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1851,7 +1957,7 @@ function MatrixTab({ range, branchId, currency, meta }: TabProps) {
   if (error)   return <ErrMsg msg={error} />;
   if (!data)   return null;
 
-  type Item = ProductV2Report['products'][number] & { unitCM: number };
+  type Item = MatrixItem;
   const needsCost = data.products.filter(p => p.total_cost == null || p.cost_price == null);
   const classifiable: Item[] = data.products
     .filter(p => p.total_cost != null && p.qty > 0 && p.revenue > 0)
@@ -1873,45 +1979,6 @@ function MatrixTab({ range, branchId, currency, meta }: TabProps) {
   }
   const byQty = (a: Item, b: Item) => b.qty - a.qty;
   [stars, plowhorses, puzzles, dogs].forEach(g => g.sort(byQty));
-
-  const Quad = ({ title, tag, items, tone, action }: {
-    title: string; tag: string; items: Item[]; action: string;
-    tone: 'green' | 'amber' | 'blue' | 'red';
-  }) => {
-    const ring = {
-      green: 'border-green-500/40 bg-green-500/5',
-      amber: 'border-amber-500/40 bg-amber-500/5',
-      blue:  'border-blue-500/40 bg-blue-500/5',
-      red:   'border-red-500/40 bg-red-500/5',
-    }[tone];
-    const dot = { green: 'bg-green-500', amber: 'bg-amber-500', blue: 'bg-blue-500', red: 'bg-red-500' }[tone];
-    return (
-      <div className={`rounded-xl border p-4 ${ring}`}>
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${dot}`} />
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">{title}</h3>
-          </div>
-          <span className="text-xs text-gray-400 tabular-nums">{items.length}</span>
-        </div>
-        <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">{tag} · {action}</p>
-        {items.length === 0
-          ? <p className="text-xs text-gray-400 dark:text-gray-600">No items.</p>
-          : (
-            <ul className="space-y-1.5">
-              {items.map(p => (
-                <li key={p.product_id} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700 dark:text-gray-200 truncate pr-2">{p.name}</span>
-                  <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap">
-                    {fmt.qty(p.qty)} sold · {fmt.money(p.unitCM, currency, { blank: '—' })}/ea
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-      </div>
-    );
-  };
 
   // A467: the four quadrants as one table (Class column), the thresholds, and the items with no cost price.
   const quadRows = ([['Star', stars], ['Puzzle', puzzles], ['Plowhorse', plowhorses], ['Dog', dogs]] as [string, Item[]][])
@@ -1944,10 +2011,10 @@ function MatrixTab({ range, branchId, currency, meta }: TabProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Quad title="Stars"      tag="Popular · High margin" tone="green" action="protect & feature" items={stars} />
-          <Quad title="Puzzles"    tag="Unpopular · High margin" tone="blue" action="reposition / promote" items={puzzles} />
-          <Quad title="Plowhorses" tag="Popular · Low margin" tone="amber" action="raise price / cut cost" items={plowhorses} />
-          <Quad title="Dogs"       tag="Unpopular · Low margin" tone="red" action="rework or remove" items={dogs} />
+          <MatrixQuad currency={currency} resetKey={`${range.from}|${range.to}|${branchId ?? ''}`} title="Stars"      tag="Popular · High margin" tone="green" action="protect & feature" items={stars} />
+          <MatrixQuad currency={currency} resetKey={`${range.from}|${range.to}|${branchId ?? ''}`} title="Puzzles"    tag="Unpopular · High margin" tone="blue" action="reposition / promote" items={puzzles} />
+          <MatrixQuad currency={currency} resetKey={`${range.from}|${range.to}|${branchId ?? ''}`} title="Plowhorses" tag="Popular · Low margin" tone="amber" action="raise price / cut cost" items={plowhorses} />
+          <MatrixQuad currency={currency} resetKey={`${range.from}|${range.to}|${branchId ?? ''}`} title="Dogs"       tag="Unpopular · Low margin" tone="red" action="rework or remove" items={dogs} />
         </div>
       )}
 
@@ -2177,6 +2244,12 @@ function WetStockTab({ range, branchId, currency, meta }: TabProps) {
     finally { setLoading(false); }
   }, [range.from, range.to, branchId]);
   useEffect(() => { load(); }, [load]);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [deliveryPage, setDeliveryPage] = useState(1);
+  const [deliveryPageSize, setDeliveryPageSize] = usePageSize('swiftpos.pageSize.reports.wetStock.deliveries');
+  useEffect(() => { setDeliveryPage(1); }, [range.from, range.to, branchId]);
+  const deliveryPaged = paginate(((data?.deliveryLog ?? []) as any[]), deliveryPage, deliveryPageSize);
+  useEffect(() => { if (deliveryPaged.page !== deliveryPage) setDeliveryPage(deliveryPaged.page); }, [deliveryPaged.page, deliveryPage]);
 
   if (loading) return <Spinner />;
   if (error)   return <ErrMsg msg={error} />;
@@ -2327,12 +2400,13 @@ function WetStockTab({ range, branchId, currency, meta }: TabProps) {
         {!deliveryLog?.length
           ? <p className="text-sm text-gray-500">No deliveries recorded in this period.</p>
           : (
+            <>
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-200 dark:border-gray-700">
                 <Th>Date</Th><Th>Grade</Th><Th right>Litres Added</Th><Th right className={DESK}>Level After</Th><Th className={DESK}>Notes</Th>
               </tr></thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {(deliveryLog as any[]).map((d: any, i: number) => (
+                {deliveryPaged.items.map((d: any, j: number) => { const i = deliveryPaged.from - 1 + j; return (   // A475: keyed over the whole log
                   <Fragment key={i}>
                   <tr>
                     <td className="py-2 text-gray-500 text-xs whitespace-nowrap">
@@ -2349,9 +2423,11 @@ function WetStockTab({ range, branchId, currency, meta }: TabProps) {
                     ['Notes', d.notes ?? '—'],
                   ]} />
                   </Fragment>
-                ))}
+                ); })}
               </tbody>
             </table>
+            <Pager paged={deliveryPaged} noun="deliveries" onPage={setDeliveryPage} onSize={n => { setDeliveryPageSize(n); setDeliveryPage(1); }} />
+            </>
           )}
       </SectionCard>
     </div>

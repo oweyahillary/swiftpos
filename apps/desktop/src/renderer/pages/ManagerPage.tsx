@@ -29,6 +29,8 @@ import { mayAddExpenseType } from '../lib/expenseTypes';
 import { buildManagerNav, groupOf, openGroup, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
 import TillWastage from '../components/TillWastage';   // A414
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../../shared/paginate';
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
 // A PRINTER is a machine and belongs to ONE terminal — which is why the
@@ -1122,6 +1124,13 @@ function OrdersTab({ currency, canVoidRefund = false }: { currency: string; canV
   }, [range.preset, range.from, range.to, scope]);
 
   const rangeTotal = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
+  // A475: the list in pages (25 / 50 / 100, remembered on this till); a new period or scope → page 1, a Refresh or a
+  // void / refund keeps the page (clamped). The count and the total above stay every order in the range.
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersPageSize, setOrdersPageSize] = usePageSize('swiftpos.pageSize.orders');
+  useEffect(() => { setOrdersPage(1); }, [range.preset, range.from, range.to, scope]);
+  const ordersPaged = paginate(orders, ordersPage, ordersPageSize);
+  useEffect(() => { if (ordersPaged.page !== ordersPage) setOrdersPage(ordersPaged.page); }, [ordersPaged.page, ordersPage]);
 
   return (
     <div className="space-y-3">
@@ -1164,7 +1173,7 @@ function OrdersTab({ currency, canVoidRefund = false }: { currency: string; canV
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700/50">
-                {orders.map(o => {
+                {ordersPaged.items.map(o => {
                   const method = o.payments?.[0]?.method ?? '—';
                   return (
                     <tr key={o.id} data-testid="manager-order-row" onClick={() => setDetailId(o.id)} title="See the items in this order"
@@ -1198,6 +1207,7 @@ function OrdersTab({ currency, canVoidRefund = false }: { currency: string; canV
                 })}
               </tbody>
             </table>
+            <Pager paged={ordersPaged} noun="orders" onPage={setOrdersPage} onSize={n => { setOrdersPageSize(n); setOrdersPage(1); }} />
           </div>
         )}
       {/* A444: the order's items, payments, Reprint and Void / Refund. */}
@@ -1478,6 +1488,13 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
   const shownTotal = rows.reduce((a, e) => a + Number(e.amount || 0), 0);
   const byMethod = [...rows.reduce((m, e) => m.set(e.payment_method || 'cash', (m.get(e.payment_method || 'cash') ?? 0) + Number(e.amount || 0)), new Map<string, number>()).entries()]
     .sort((a, b) => b[1] - a[1]);
+  // A475: the list in pages (25 / 50 / 100, remembered on this till); a new period or filter → page 1, a new expense
+  // keeps the page (clamped). The summary, the per-method subtotals and the Total row stay every filtered expense.
+  const [expensesPage, setExpensesPage] = useState(1);
+  const [expensesPageSize, setExpensesPageSize] = usePageSize('swiftpos.pageSize.expenses');
+  useEffect(() => { setExpensesPage(1); }, [range.preset, range.from, range.to, method, payer]);
+  const expensesPaged = paginate(rows, expensesPage, expensesPageSize);
+  useEffect(() => { if (expensesPaged.page !== expensesPage) setExpensesPage(expensesPaged.page); }, [expensesPaged.page, expensesPage]);
   const selectCls = 'bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200';
   return (
     <div className="space-y-3">
@@ -1539,7 +1556,7 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/50">
-              {rows.map(e => (
+              {expensesPaged.items.map(e => (
                 <tr key={e.id} className="hover:bg-gray-700/30 transition-colors">
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                     {new Date(e.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -1562,6 +1579,7 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
               </tr>
             </tfoot>
           </table>
+          <Pager paged={expensesPaged} noun="expenses" onPage={setExpensesPage} onSize={n => { setExpensesPageSize(n); setExpensesPage(1); }} />
         </div>
       )}
     </div>
@@ -1580,10 +1598,16 @@ function StockTab({ currency }: { currency: string }) {
     return () => { live = false; };
   }, []);
 
-  if (loading) return <Spinner />;
-
   const low      = stock.filter(s => s.quantity <= s.low_stock_threshold);
   const visible  = filter === 'low' ? low : stock;
+  // A475: the list in pages (25 / 50 / 100, remembered on this till); All / Low stock → page 1. The counts stay every product.
+  const [stockPage, setStockPage] = useState(1);
+  const [stockPageSize, setStockPageSize] = usePageSize('swiftpos.pageSize.stock');
+  useEffect(() => { setStockPage(1); }, [filter]);
+  const stockPaged = paginate(visible, stockPage, stockPageSize);
+  useEffect(() => { if (stockPaged.page !== stockPage) setStockPage(stockPaged.page); }, [stockPaged.page, stockPage]);
+
+  if (loading) return <Spinner />;
 
   return (
     <div className="space-y-3">
@@ -1619,7 +1643,7 @@ function StockTab({ currency }: { currency: string }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700/50">
-                {visible.map(s => {
+                {stockPaged.items.map(s => {
                   const critical = s.quantity === 0 || s.quantity <= Math.floor(s.low_stock_threshold / 2);
                   const isLow    = s.quantity <= s.low_stock_threshold;
                   return (
@@ -1642,6 +1666,7 @@ function StockTab({ currency }: { currency: string }) {
                 })}
               </tbody>
             </table>
+            <Pager paged={stockPaged} noun="products" onPage={setStockPage} onSize={n => { setStockPageSize(n); setStockPage(1); }} />
           </div>
         )}
     </div>
@@ -1760,13 +1785,20 @@ function PricesTab({ currency }: { currency: string }) {
   };
   useEffect(load, []);
 
-  if (loading) return <Spinner />;
-
   const visible = rows.filter(r =>
     r.product_name.toLowerCase().includes(query.toLowerCase()) ||
     (r.category_name ?? '').toLowerCase().includes(query.toLowerCase())
   );
   const overrides = rows.filter(r => r.branch_price !== null).length;
+  // A475: the list in pages (25 / 50 / 100, remembered on this till); a new search → page 1, a Save / Clear keeps the
+  // page (clamped). The counts above stay every product.
+  const [pricesPage, setPricesPage] = useState(1);
+  const [pricesPageSize, setPricesPageSize] = usePageSize('swiftpos.pageSize.prices');
+  useEffect(() => { setPricesPage(1); }, [query]);
+  const pricesPaged = paginate(visible, pricesPage, pricesPageSize);
+  useEffect(() => { if (pricesPaged.page !== pricesPage) setPricesPage(pricesPaged.page); }, [pricesPaged.page, pricesPage]);
+
+  if (loading) return <Spinner />;
 
   async function save(r: any) {
     const raw = drafts[r.product_id];
@@ -1817,7 +1849,7 @@ function PricesTab({ currency }: { currency: string }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700/50">
-                {visible.map(r => {
+                {pricesPaged.items.map(r => {
                   const hasOverride = r.branch_price !== null;
                   const draft = drafts[r.product_id];
                   return (
@@ -1865,6 +1897,7 @@ function PricesTab({ currency }: { currency: string }) {
                 })}
               </tbody>
             </table>
+            <Pager paged={pricesPaged} noun="products" onPage={setPricesPage} onSize={n => { setPricesPageSize(n); setPricesPage(1); }} />
           </div>
         )}
     </div>

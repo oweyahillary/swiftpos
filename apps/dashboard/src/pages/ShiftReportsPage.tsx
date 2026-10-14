@@ -19,6 +19,8 @@ import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   /
 import { api } from '../lib/api';
 import { localDateStr } from '../lib/localDate';
 import { useBusiness } from '../context/BusinessContext';
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../lib/paginate';
 import { printDocument } from '../lib/printDocument';
 import { shiftDocSpec, shiftListDocSpec } from '../lib/documentSpecs';
 import {
@@ -104,6 +106,13 @@ export default function ShiftReportsPage() {
     if (filter === 'problems') return isProblem(s);
     return true;
   }), [rows, filter]);
+  // A475: the shifts (up to 200) in pages (25 / 50 / 100, remembered in this browser). The counts, the printed report and
+  // the CSV use every filtered shift. New dates or a filter → page 1.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.shiftReports');
+  useEffect(() => { setPage(1); }, [from, to, filter]);
+  const paged = paginate(shown, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   const counts = useMemo(() => ({
     running: rows.filter((s) => shiftReportStatus(s) === 'running').length,
@@ -201,7 +210,7 @@ export default function ShiftReportsPage() {
                 <tr><th className="px-3 py-2">Cashier</th><th className={DESK}>Till</th><th className={DESK}>Shift</th><th>Status</th><th className={DESK}>Difference</th><th /></tr>
               </thead>
               <tbody>
-                {shown.map((s) => {
+                {paged.items.map((s) => {
                   const st = shiftReportStatus(s);
                   const diff = shiftDifference(s, (n: number) => num(n, 2));
                   const bad = /[−+]/.test(diff) || /differed|Not counted/.test(diff);
@@ -230,6 +239,7 @@ export default function ShiftReportsPage() {
                 })}
               </tbody>
             </table>
+            <Pager paged={paged} noun="shifts" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
           </div>
         )
       )}

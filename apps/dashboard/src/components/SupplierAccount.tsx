@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { printDocument } from '../lib/printDocument';
 import { money, dateShort } from '../lib/format';
+import Pager, { usePageSize } from './Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 /**
  * SupplierAccount — A395: one supplier's account (Stock › Suppliers › a supplier). What is owed, the bills, payments and
@@ -60,6 +62,19 @@ export default function SupplierAccount({ supplierId, currency, business, branch
     catch (e) { setError(errText(e, 'Could not load the account.')); }
   }, [supplierId]);
   useEffect(() => { void load(); }, [load]);
+
+  // A475: the tab shown in pages (25 / 50 / 100, remembered in this browser) — bills and payments run to 2,000. The
+  // printed statement, the cards and the Pay form use every row. Another tab or supplier → page 1; a void or a payment
+  // keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.supplierAccount');
+  useEffect(() => { setPage(1); }, [tab, supplierId]);
+  const billsPaged = paginate(acc?.bills ?? [], page, pageSize);
+  const statementPaged = paginate(acc?.statement ?? [], page, pageSize);
+  const paymentsPaged = paginate(acc?.payments ?? [], page, pageSize);
+  const returnsPaged = paginate(acc?.returns ?? [], page, pageSize);
+  const paged = tab === 'bills' ? billsPaged : tab === 'statement' ? statementPaged : tab === 'payments' ? paymentsPaged : returnsPaged;
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   const voidIt = async (what: 'bills' | 'payments', id: string, label: string) => {
     const reason = window.prompt(`Why is ${label} voided?`);
@@ -156,7 +171,7 @@ export default function SupplierAccount({ supplierId, currency, business, branch
               <th className="px-3 py-2 text-right">Amount</th><th className="hidden px-3 py-2 text-right md:table-cell">Paid</th>
               <th className="px-3 py-2 text-right">Owed</th><th className="px-3 py-2" /></tr></thead>
             <tbody className="divide-y divide-gray-800">
-              {acc.bills.map((b) => (
+              {billsPaged.items.map((b) => (
                 <tr key={b.id}>
                   <td className="px-3 py-2"><div className="text-white">{b.ref}</div>
                     <div className="text-xs text-gray-500">{b.invoice_number ? `Invoice ${b.invoice_number}` : ''}{b.status === 'void' && b.void_reason ? ` · voided: ${b.void_reason}` : ''}</div></td>
@@ -179,7 +194,7 @@ export default function SupplierAccount({ supplierId, currency, business, branch
               <th className="px-3 py-2">Date</th><th className="px-3 py-2">Detail</th><th className="px-3 py-2 text-right">Billed</th>
               <th className="px-3 py-2 text-right">Paid / credit</th><th className="px-3 py-2 text-right">Balance</th></tr></thead>
             <tbody className="divide-y divide-gray-800">
-              {acc.statement.map((e) => (
+              {statementPaged.items.map((e) => (
                 <tr key={`${e.kind}-${e.id}`}>
                   <td className="px-3 py-2 text-gray-400">{dateShort(e.date)}</td>
                   <td className="px-3 py-2"><div className="text-white">{e.detail}</div><div className="text-xs text-gray-500">{e.ref}</div></td>
@@ -196,7 +211,7 @@ export default function SupplierAccount({ supplierId, currency, business, branch
               <th className="px-3 py-2">Paid on</th><th className="px-3 py-2">How</th><th className="px-3 py-2">For</th>
               <th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2" /></tr></thead>
             <tbody className="divide-y divide-gray-800">
-              {acc.payments.map((x) => (
+              {paymentsPaged.items.map((x) => (
                 <tr key={x.id} className={x.voided_at ? 'opacity-50' : ''}>
                   <td className="px-3 py-2 text-gray-400">{dateShort(x.paid_on)}</td>
                   <td className="px-3 py-2 text-gray-200">{methodLabel(x.method)}{x.reference ? <div className="text-xs text-gray-500">{x.reference}</div> : null}</td>
@@ -213,7 +228,7 @@ export default function SupplierAccount({ supplierId, currency, business, branch
             <thead className="bg-gray-900 text-left text-xs uppercase tracking-wide text-gray-500"><tr>
               <th className="px-3 py-2">Return</th><th className="px-3 py-2">Items</th><th className="px-3 py-2 text-right">Credit</th></tr></thead>
             <tbody className="divide-y divide-gray-800">
-              {acc.returns.map((r) => (
+              {returnsPaged.items.map((r) => (
                 <tr key={r.id}>
                   <td className="px-3 py-2"><div className="text-white">{r.ref}</div><div className="text-xs text-gray-500">{dateShort(r.return_date)} · {r.reason}</div></td>
                   <td className="px-3 py-2 text-gray-300">{(r.supplier_return_items ?? []).map((i) => `${Number(i.quantity)} × ${i.name}`).join(', ')}</td>
@@ -224,6 +239,9 @@ export default function SupplierAccount({ supplierId, currency, business, branch
             </tbody>
           </>}
         </table>
+        {paged.total > 0 && (
+          <Pager paged={paged} noun="rows" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
+        )}
       </div>
       <p className="text-xs text-gray-500">A payment recorded here is not an expense and does not come out of a till drawer. Pay a supplier from a drawer as a pay-out, or record it here — not both.</p>
 

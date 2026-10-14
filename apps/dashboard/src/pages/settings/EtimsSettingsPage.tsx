@@ -13,6 +13,8 @@ import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { useBranch } from '../../context/BranchContext';
 import BulkItemCodeModal from './BulkItemCodeModal';
 import { dateTime } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 interface EtimsConfig {
   branch_id: string;
@@ -74,6 +76,8 @@ export default function EtimsSettingsPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const more = useRowMore();
+  const [page, setPage] = useState(1);   // A475
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.etimsLog');
 
   const load = useCallback(async () => {
     if (!branchId) return;
@@ -139,6 +143,12 @@ export default function EtimsSettingsPage() {
       setMsg({ kind: 'err', text: e?.message ?? 'Retry failed' });
     } finally { setRetrying(false); }
   };
+
+  // A475: the fiscal records (the last 200) in pages (25 / 50 / 100, remembered in this browser); the counts above are
+  // the cloud's. Another branch → page 1; a retry keeps the page (clamped).
+  useEffect(() => { setPage(1); }, [branchId]);
+  const paged = paginate(invoices, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   if (!branchId) return <div className="p-4 sm:p-6 text-gray-400">Select a branch to configure eTIMS.</div>;
 
@@ -256,7 +266,7 @@ export default function EtimsSettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map(r => (
+                  {paged.items.map(r => (
                     <Fragment key={r.id}>
                     <tr className="border-t border-gray-800">
                       <td className="py-2 text-gray-300">{r.invoice_no ?? '—'}
@@ -276,6 +286,9 @@ export default function EtimsSettingsPage() {
                   ))}
                 </tbody>
               </table></div>
+            )}
+            {invoices.length > 0 && (
+              <Pager paged={paged} noun="records" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
             )}
           </div>
         </>

@@ -29,6 +29,8 @@ import { useCallback, useEffect, useState, Fragment } from 'react';
 import { api } from '../lib/api';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';
 import { dateTime } from '../lib/format';
+import Pager, { usePageSize } from '../components/Pager';   // A475
+import { paginate } from '../lib/paginate';
 
 interface FleetDevice {
   id: string;
@@ -53,6 +55,8 @@ interface FleetDevice {
   // A22 — split-brain: two servers on this branch
   servingConflict?: boolean;
   conflictAt?: string | null;
+  // A477 — holds no device secret (cannot sign itself back in until its next renewal hands one over)
+  noDeviceSecret?: boolean;
 }
 
 interface FleetResponse {
@@ -144,6 +148,13 @@ export default function FleetPage() {
   const required = data?.requiredSchema ?? null;
   const behind = fleet.filter(d => required !== null && (d.schemaVersion ?? 0) < required);
   const silent = fleet.filter(d => d.lastSyncAt === null || (d.hoursSinceSync ?? 0) >= WARN_HOURS);
+  // A475: the devices in pages (25 / 50 / 100, remembered in this browser); the "silent" / "behind" warnings are over
+  // every device. Showing retired ones → page 1; a rename or retire keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.fleet');
+  useEffect(() => { setPage(1); }, [showRetired]);
+  const paged = paginate(fleet, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   return (
     <div className="p-4 sm:p-6 space-y-5">
@@ -233,7 +244,7 @@ export default function FleetPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {fleet.map(d => {
+              {paged.items.map(d => {
                 const sync = syncState(d);
                 const schemaBehind = required !== null && (d.schemaVersion ?? 0) < required;
                 const onShiftCell = d.activeShift ? (
@@ -312,6 +323,12 @@ export default function FleetPage() {
                           ⚠ Split-brain — two servers on this branch. Demote one.
                         </div>
                       )}
+                      {d.noDeviceSecret && (
+                        <div className="mt-1 inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/40"
+                          title="This till holds no device secret, so it cannot sign itself back in if its session is refused. It is given one on its next renewal.">
+                          No device secret
+                        </div>
+                      )}
                       <ViewMore open={more.isOpen(d.id)} onClick={() => more.toggle(d.id)} />
                     </td>
                     <td className={`px-4 py-3 ${DESK}`}>
@@ -363,6 +380,7 @@ export default function FleetPage() {
               })}
             </tbody>
           </table></div>
+          <Pager paged={paged} noun="devices" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
       )}
 

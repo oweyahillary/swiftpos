@@ -9,6 +9,8 @@ import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { localDateStr } from '../../lib/localDate';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';   // A464
 import { money, dateShort } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +109,9 @@ export default function ExpensesPage() {
   // A452 (owner, 2026-10-12): filter by how it was paid and who paid it; a subtotal per method while filtered.
   const [filterMethod, setFilterMethod]     = useState('');
   const [filterPayer, setFilterPayer]       = useState('');
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.expenses');
 
   // Expense modal
   const [expenseModal, setExpenseModal] = useState<'add' | Expense | null>(null);
@@ -124,13 +129,24 @@ export default function ExpensesPage() {
   // A452: the filters run on the period's rows (already loaded); the subtotals follow them.
   const methodOf = (e: Expense) => e.payment_method ?? 'cash';
   const methodName = (code: string) => EXPENSE_METHODS.find(m => m.code === code)?.name ?? code;
-  const methodOptions = [...new Set(expenses.map(methodOf))].sort();
-  const payerOptions = [...new Map(expenses.filter(e => e.paid_by).map(e => [e.paid_by as string, e.paid_by_name ?? 'Unknown'])).entries()];
+  // A474 (owner, 2026-10-14: "payment method and who paid are empty"): the choices were only what the period's rows
+  // held, so a period with no expenses offered nothing. Every method an expense can be paid with, and every staff member,
+  // are always offered — plus any other found in the rows (an older method, someone since removed).
+  const methodOptions = [...new Set([...EXPENSE_METHODS.map(m => m.code), ...expenses.map(methodOf)])];
+  const payerOptions = [...new Map<string, string>([
+    ...staff.map(s => [s.id, s.name] as [string, string]),
+    ...expenses.filter(e => e.paid_by).map(e => [e.paid_by as string, e.paid_by_name ?? 'Unknown'] as [string, string]),
+  ]).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const shown = expenses.filter(e => (!filterMethod || methodOf(e) === filterMethod) && (!filterPayer || e.paid_by === filterPayer));
   const narrowed = !!(filterMethod || filterPayer);
   const shownTotal = shown.reduce((a, e) => a + Number(e.amount || 0), 0);
   const byMethod = [...shown.reduce((m, e) => m.set(methodOf(e), (m.get(methodOf(e)) ?? 0) + Number(e.amount || 0)), new Map<string, number>()).entries()]
     .sort((a, b) => b[1] - a[1]);
+  // A475: one page of the filtered rows. The count, the total and the subtotals above stay over every filtered row.
+  // A new period, branch or filter starts at page 1; an edit or delete keeps the page (clamped).
+  useEffect(() => { setPage(1); }, [filterFrom, filterTo, filterCategory, filterMethod, filterPayer, activeBranchId]);
+  const paged = paginate(shown, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   // ── Data loading ───────────────────────────────────────────────────────────
 
@@ -452,7 +468,7 @@ export default function ExpensesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {shown.map(e => (
+                    {paged.items.map(e => (
                       <Fragment key={e.id}>
                       <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
                         <td className={`px-4 py-3 text-gray-300 whitespace-nowrap ${DESK}`}>{dateShort(e.expense_date)}</td>
@@ -529,6 +545,9 @@ export default function ExpensesPage() {
                   </tfoot>
                 </table>
               </div>
+            )}
+            {!loading && shown.length > 0 && (
+              <Pager paged={paged} noun="expenses" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
             )}
           </div>
         </div>

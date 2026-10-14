@@ -179,6 +179,9 @@ fired = 0; c = await engine.pullIfCatalogueChanged();
 check('20-s check: the same version again does nothing', !c.changed && fired === 0, JSON.stringify(c));
 
 // 5. A 401 on the check is refreshed and retried — it used to be dropped as "no change".
+// A477: the unrouted renewals above were refusals, which hold every renewal for 15 minutes (one gate for all callers);
+// this scenario starts with the gate open, as after a technician's action.
+engine.resetRenewalGate('test: the next scenario');
 let versionCalls = 0;
 route = (u, o) => {
   if (u.startsWith('/api/auth/refresh')) return resp(200, { accessToken: 'fresh-token', refreshToken: 'refresh-2' });

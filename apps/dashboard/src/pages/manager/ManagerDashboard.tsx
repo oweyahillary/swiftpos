@@ -32,6 +32,8 @@ import Expiry from '../../components/Expiry';             // A413
 import { localDateStr } from '../../lib/localDate';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { money, compactMoney, litres, dateShort } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
 function Icon({ d, size = 18, className = '' }: { d: string; size?: number; className?: string }) {
@@ -877,6 +879,12 @@ function POSExpensesTab({ currency }: { currency: string }) {
     posApi.get<ExpenseCategory[]>('/api/expenses/categories').then(d => setCategories(d ?? [])).catch(() => {});
     load();
   }, []); // eslint-disable-line
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [expensePage, setExpensePage] = useState(1);
+  const [expensePageSize, setExpensePageSize] = usePageSize('swiftpos.pageSize.manager.expenses');
+  useEffect(() => { setExpensePage(1); }, [from, to]);
+  const expensePaged = paginate(expenses, expensePage, expensePageSize);
+  useEffect(() => { if (expensePaged.page !== expensePage) setExpensePage(expensePaged.page); }, [expensePaged.page, expensePage]);
 
   const handleAdd = async () => {
     if (!formDesc.trim())    { setFormError('Description is required'); return; }
@@ -933,7 +941,7 @@ function POSExpensesTab({ currency }: { currency: string }) {
         <div className="text-gray-600 text-sm py-12 text-center">No expenses for this period.</div>
       )}
       <div className="space-y-2">
-        {expenses.map(e => (
+        {expensePaged.items.map(e => (
           <div key={e.id} className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-white text-sm font-medium truncate">{e.description}</p>
@@ -944,6 +952,9 @@ function POSExpensesTab({ currency }: { currency: string }) {
             <span className="text-red-400 font-semibold text-sm">{money(e.amount, currency)}</span>
           </div>
         ))}
+        {!loading && expenses.length > 0 && (
+          <Pager paged={expensePaged} noun="expenses" onPage={setExpensePage} onSize={n => { setExpensePageSize(n); setExpensePage(1); }} />
+        )}
       </div>
       {showForm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -1080,6 +1091,17 @@ function ManagerCreditTab({ currency }: { currency: string }) {
   };
 
   const totalOwed = rows.reduce((s, r) => s + Number(r.credit_balance), 0);
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
+  const [creditPage, setCreditPage] = useState(1);
+  const [creditPageSize, setCreditPageSize] = usePageSize('swiftpos.pageSize.manager.credit');
+  useEffect(() => { setCreditPage(1); }, [search]);
+  const creditPaged = paginate(rows, creditPage, creditPageSize);
+  useEffect(() => { if (creditPaged.page !== creditPage) setCreditPage(creditPaged.page); }, [creditPaged.page, creditPage]);
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = usePageSize('swiftpos.pageSize.manager.credit.statement');
+  useEffect(() => { setLedgerPage(1); }, [selected?.id]);
+  const ledgerPaged = paginate(ledger, ledgerPage, ledgerPageSize);
+  useEffect(() => { if (ledgerPaged.page !== ledgerPage) setLedgerPage(ledgerPaged.page); }, [ledgerPaged.page, ledgerPage]);
 
   return (
     <div className="space-y-4">
@@ -1103,7 +1125,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
               <th className={`p-3 text-right ${DESK}`}>Available</th><th className="p-3"></th>
             </tr></thead>
             <tbody>
-              {rows.map(c => (
+              {creditPaged.items.map(c => (
                 <Fragment key={c.id}>
                 <tr className="border-b border-gray-800 hover:bg-gray-800/50">
                   <td className="p-3 text-white">{c.name}
@@ -1124,6 +1146,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
               ))}
             </tbody>
           </table></div>
+          <Pager paged={creditPaged} noun="customers" onPage={setCreditPage} onSize={n => { setCreditPageSize(n); setCreditPage(1); }} />
         </div>
       )}
 
@@ -1168,11 +1191,11 @@ function ManagerCreditTab({ currency }: { currency: string }) {
               </>
             )}
             <p className="text-white font-medium text-sm mb-2">Statement</p>
-            {ledger.length === 0 ? <p className="text-gray-500 text-sm">No transactions.</p> : (
+            {ledger.length === 0 ? <p className="text-gray-500 text-sm">No transactions.</p> : (<>
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead><tr className="text-gray-500 text-left text-xs"><th className="pb-2">Date</th><th className={`pb-2 ${DESK}`}>Type</th><th className="pb-2 text-right">Amount</th><th className={`pb-2 text-right ${DESK}`}>Balance</th><th className={`pb-2 ${DESK}`}>Note</th></tr></thead>
                 <tbody>
-                  {ledger.map(l => (
+                  {ledgerPaged.items.map(l => (
                     <Fragment key={l.id}>
                     <tr className="border-t border-gray-800">
                       <td className="py-2 text-gray-500">{dateShort(l.created_at)}
@@ -1192,7 +1215,8 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                   ))}
                 </tbody>
               </table></div>
-            )}
+              <Pager paged={ledgerPaged} noun="entries" onPage={setLedgerPage} onSize={n => { setLedgerPageSize(n); setLedgerPage(1); }} />
+            </>)}
           </div>
         </div>
       )}

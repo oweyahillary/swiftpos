@@ -7,6 +7,8 @@ import { usePermissions } from '../../context/PermissionsContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 import { money } from '../../lib/format';
+import Pager, { usePageSize } from '../../components/Pager';   // A475
+import { paginate } from '../../lib/paginate';
 
 // A395: what is owed to each supplier (only for someone holding payables.manage — the owner by default).
 interface Position { id: string; balance: number; overdue: number; dueSoon: number; openBills: number }
@@ -105,6 +107,13 @@ export default function SuppliersPage() {
     (s.contact_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
     (s.email ?? '').toLowerCase().includes(search.toLowerCase())
   );
+  // A475: the list in pages (25 / 50 / 100, remembered in this browser). The owed cards are over every supplier.
+  // A new search → page 1; an edit keeps the page (clamped).
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.suppliers');
+  useEffect(() => { setPage(1); }, [search]);
+  const paged = paginate(filtered, page, pageSize);
+  useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   if (account) {
     return (
@@ -183,7 +192,7 @@ export default function SuppliersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(s => (
+                {paged.items.map(s => (
                   <Fragment key={s.id}>
                   <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
                     <td className="px-5 py-3.5">
@@ -252,6 +261,9 @@ export default function SuppliersPage() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && filtered.length > 0 && (
+          <Pager paged={paged} noun="suppliers" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         )}
       </div>
 
