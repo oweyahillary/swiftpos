@@ -23,6 +23,12 @@ import { cleanHistoryMethods } from '../lib/cashierHistory';
 import { cleanSeesSales, historyTotalsOn } from '../lib/cashierShiftSales';   // A416 / A418   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { frozenAtBranch } from '../lib/stockTakeAccess';   // A394
+import { pageAll, chunkPaged } from '../lib/pgQuery';
+
+/** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
+async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
+  try { return { data: await read(), error: null }; } catch (e: any) { return { data: null, error: { message: e?.message ?? 'read failed' } }; }
+}
 
 const router = safeRouter();
 
@@ -227,26 +233,28 @@ router.get('/init', async (req, res) => {
     { data: business },
     { data: branding },
   ] = await Promise.all([
-    supabase
+    // P1-9: paged — one plain read stops at the row cap (1000), and a menu past it reached the till cut short, silently.
+    pagedResult<any>(() => pageAll(() => supabase
       .from('products')
       .select('*, categories(name, color)')
       .eq('business_id', req.businessId)
-      .eq('status', 'active'),
-    supabase
+      .eq('status', 'active'))),
+    // Paged in id order, then put in the menu's own order (sort_order) as before.
+    pagedResult<any>(async () => (await pageAll<any>(() => supabase
       .from('categories')
       .select('*')
       .eq('business_id', req.businessId)
-      .eq('status', 'active')
-      .order('sort_order'),
+      .eq('status', 'active')))
+      .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))),
     // Combo definitions. The till sells a combo as ONE line, but the dispatcher
     // and kitchen tickets must expand it into components — and each component
     // routes to the kitchen on its OWN category, so is_kitchen comes along.
-    supabase
+    pagedResult<any>(() => pageAll(() => supabase
       .from('products')
       .select('id, combo_items!combo_id ( quantity, sort_order, product:product_id ( id, name, is_kitchen, category_id, categories ( is_kitchen ) ) )')
       .eq('business_id', req.businessId)
       .eq('is_combo', true)
-      .eq('status', 'active'),
+      .eq('status', 'active'))),
     // Owner-controlled receipt text. Lives in business_settings so it is set
     // once and reaches all three tills, rather than being retyped per device
     // and lost on reinstall.
@@ -344,13 +352,15 @@ router.get('/init', async (req, res) => {
   const productIds = (products ?? []).map((p) => p.id);
 
   const [{ data: variantGroups, error: vErr }, { data: loyaltyFlag }] = await Promise.all([
+    // P1-9: every product id in ONE .in() put ~37 characters per product in the URL — past ~220 products the request
+    // line overflowed (8 KB) and /init failed. Chunked (150 ids) and paged; then in the menu's order (sort_order) as before.
     productIds.length > 0
-      ? supabase
+      ? pagedResult<any>(async () => (await chunkPaged<any>(productIds, (chunk) => supabase
           .from('variant_groups')
           .select('*, variant_options(*)')
-          .in('product_id', productIds)
-          .order('sort_order')
-      : Promise.resolve({ data: [], error: null }),
+          .in('product_id', chunk)))
+          .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)))
+      : Promise.resolve({ data: [] as any[], error: null }),
     supabase
       .from('feature_flags')
       .select('enabled')
@@ -382,11 +392,17 @@ router.get('/init', async (req, res) => {
 
   const productsOut = products ?? [];
   if (pricingBranchId && productIds.length > 0) {
-    const { data: branchPrices } = await supabase
-      .from('branch_prices')
-      .select('product_id, price')
-      .eq('branch_id', pricingBranchId)
-      .in('product_id', productIds);
+    // P1-9: chunked + paged (the one .in() of every product id overflowed the URL past ~220 products, and the failed
+    // read was ignored — the till then sold at the BASE price, silently). A failed read now fails /init: the till keeps
+    // the catalogue it has, rather than taking one without its branch's prices.
+    let branchPrices: Array<{ product_id: string; price: number }>;
+    try {
+      branchPrices = await chunkPaged<{ product_id: string; price: number }>(productIds, (chunk) => supabase
+        .from('branch_prices')
+        .select('id, product_id, price')
+        .eq('branch_id', pricingBranchId)
+        .in('product_id', chunk));
+    } catch (e) { sendError(res, e as Error); return; }
 
     const priceByProduct: Record<string, number> = {};
     (branchPrices ?? []).forEach((bp: any) => { priceByProduct[bp.product_id] = bp.price; });

@@ -1174,6 +1174,18 @@ function initSchema(db: Database.Database) {
   db.exec(`CREATE INDEX IF NOT EXISTS local_changes_open ON local_changes (state, made_at)`);
   migrateColumns(db, 'orders', [['offer_discount', 'REAL DEFAULT 0'], ['offers', 'TEXT']]);
 
+  // 72 (till sync audit, 2026-10-14). All local only, nothing new is sent:
+  //   sync_queue.drawer_wait_at — a sale whose drawer is not on the cloud yet (424) waits its turn BEHIND newer sales instead
+  //     of holding the first 50 places of every pass (syncEngine.pushPendingOrders);
+  //   sync_error on the three cash tables without a notes column — the code the cloud refused a row with, so a row parked
+  //     for a passing reason by an older cloud can be told from one refused for its data (requeueTransientConflicts);
+  //   an index on sync_queue (status) — every pass and every badge read filters on it, and synced rows are now pruned.
+  migrateColumns(db, 'sync_queue', [['drawer_wait_at', 'TEXT']]);
+  migrateColumns(db, 'expenses', [['sync_error', 'TEXT']]);
+  migrateColumns(db, 'float_transactions', [['sync_error', 'TEXT']]);
+  migrateColumns(db, 'kitchen_voids', [['sync_error', 'TEXT']]);
+  db.exec(`CREATE INDEX IF NOT EXISTS sync_queue_status_idx ON sync_queue (status, created_at)`);
+
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
   // already exist, so a till that ran the trial with thermal OFF would keep 0 —
   // and with the HTML sale path removed it would print nothing at all. Guarded
@@ -1279,7 +1291,9 @@ function initSchema(db: Database.Database) {
 // 69 adds A429: device_config.payment_methods_enabled (pulled) — the payment methods the branch takes. REQUIRED moves.
 // 70 adds A445: offers (pulled, the branch's offers) and orders.offer_discount + orders.offers (the order payload). REQUIRED moves.
 // 71 adds A448: local_changes (local only — a manager's change made on this till, queued for the cloud). REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 71;
+// 72 adds the till sync audit's local columns: sync_queue.drawer_wait_at, sync_error on expenses / float_transactions /
+// kitchen_voids, and an index on sync_queue (status). Local only. REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 72;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

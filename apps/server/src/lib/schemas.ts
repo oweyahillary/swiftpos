@@ -180,6 +180,10 @@ export const CloseShiftSchema = z.object({
   // A365: the cashier's declaration of every payment method at End Shift ({"cash": n, "mpesa": n, …}). Cash is always
   // the counted closing_float. Absent from an older till or web build — then nothing awaits a manager's confirmation.
   declared_methods: z.record(z.string(), z.number().nonnegative()).optional(),
+  // P2-11 / P0-1: a till's replayed close names when the drawer was counted and who counted it (checked in shifts.ts:
+  // a time not in the future nor before the shift opened; a person on this business's roster). Ignored from the web.
+  closed_at: z.string().max(64).nullable().optional(),
+  closed_by: z.string().max(64).nullable().optional(),
 });
 
 // ── Discounts ─────────────────────────────────────────────────────────────────

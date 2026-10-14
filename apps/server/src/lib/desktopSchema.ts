@@ -69,7 +69,9 @@
  *  syncing; its manager screens simply write to the cloud first, as before. */
 /** 70 = A445: offers (pulled) and orders.offer_discount / orders.offers (the order payload). A till on 69 keeps syncing;
  *  it simply applies no offers (its sales carry none, so the cloud applies none to them). */
-export const REQUIRED_DESKTOP_SCHEMA = 71;
+/** 72 = the till sync audit (2026-10-14): sync_queue.drawer_wait_at, sync_error on the cash tables, an index — all local only.
+ *  A till on 71 keeps syncing; it simply keeps the old order of its sale queue. */
+export const REQUIRED_DESKTOP_SCHEMA = 72;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

@@ -14,9 +14,11 @@
 // Everything here is best-effort and non-blocking: if the node is unreachable a
 // till keeps selling and its orders stay queued locally until the node returns.
 
+import crypto from 'crypto';
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { isUnreachableStatus } from './authTransport';
 import { noteNodeRefused, noteNodeAccepted } from './cloudGateway';   // A448
+import { getLocalDb } from './localDb';
 
 export function nodeUrl(): string | null {
   const cfg = getDeviceConfig();
@@ -30,8 +32,39 @@ export function nodeUrl(): string | null {
 // refused by the node — which is the intended outcome, not a regression: it
 // means this till was never given the branch access code at install.
 export function nodeHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const secret = getDeviceConfig()?.node_secret ?? '';
-  return { 'X-Node-Secret': secret, ...extra };
+  const cfg = getDeviceConfig();
+  const secret = cfg?.node_secret ?? '';
+  // F7 (2026-10-14): this till's own key and id travel with the branch code, so the server can tell its tills apart —
+  // a holder of the branch code alone can no longer speak as another till (/node/sync, /node/changes, /node/verify-pin).
+  const token = nodeDeviceToken();
+  const who: Record<string, string> = {};
+  if (cfg?.device_id) who['X-Device-Id'] = cfg.device_id;
+  if (token) who['X-Device-Token'] = token;
+  return { 'X-Node-Secret': secret, ...who, ...extra };
+}
+
+/**
+ * F7: this till's device key for the branch server — 32 random bytes, made once and kept in maintenance_state. The
+ * server keeps only its hash. A till that joined through the server holds the key the server issued at Allow; a till
+ * set up with the typed access code makes its own, and the server records it the first time it sees it (back-compat
+ * for every till installed before this build). Never throws: no key means the server treats this as an older till.
+ */
+export function nodeDeviceToken(): string | null {
+  try {
+    const db = getLocalDb();
+    const row = db.prepare(`SELECT value FROM maintenance_state WHERE key = 'node_device_token'`).get() as { value?: string } | undefined;
+    if (row?.value && /^[0-9a-f]{64}$/.test(row.value)) return row.value;
+    const made = crypto.randomBytes(32).toString('hex');
+    db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('node_device_token', ?, ?)`).run(made, new Date().toISOString());
+    return made;
+  } catch { return null; }
+}
+
+/** F7: keep the key the branch server issued when it allowed this till to join. */
+export function setNodeDeviceToken(token: string): void {
+  if (!/^[0-9a-f]{64}$/.test(String(token ?? ''))) return;
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('node_device_token', ?, ?)`)
+    .run(token, new Date().toISOString());
 }
 
 /** Is this till configured to push to a branch node? */
@@ -118,22 +151,31 @@ export async function isNodeReachable(timeoutMs = 2500): Promise<boolean> {
 export interface NodeSyncResult {
   applied: number; duplicate: number; cursor: number;
   rejected: Array<{ id: string; table: string; reason: string }>;
+  /** F1: the ids the server now holds. Absent from a server on an older build. */
+  applied_ids?: string[];
 }
 
 /**
- * Offer a batch of this till's own rows to the node.
- *
- * Throws on a node that answered and refused, returns null on one that did not
- * answer at all. The caller must treat those differently: a branch server that
- * is rebooting should cost a retry, and one that refused a row on its merits
- * should surface the reason rather than loop on it forever.
+ * What a /node/sync came back with. F3 (2026-10-14): three kinds, and only one of them is about the rows.
+ *   ok        — the server answered per row (`results`).
+ *   transport — no answer, a 5xx, or a 401 (the access code / device key: a till-level problem the next code fixes,
+ *               never a verdict on a row). Retried without counting an attempt.
+ *   too_large — 413: the batch was over the server's body limit; send smaller.
+ *   refused   — any other answer: the server refused the batch as such (400 branch mismatch, …). Counts.
  */
+export type NodePushOutcome =
+  | { kind: 'ok'; results: Record<string, NodeSyncResult> }
+  | { kind: 'transport'; status: number | null; error: string }
+  | { kind: 'too_large'; error: string }
+  | { kind: 'refused'; status: number; error: string };
+
+/** Offer a batch of this till's own rows to the node. Never throws. */
 export async function pushRowsToNode(
   tables: Record<string, any[]>,
   timeoutMs = 15000,
-): Promise<Record<string, NodeSyncResult> | null> {
+): Promise<NodePushOutcome> {
   const base = nodeUrl();
-  if (!base) return null;
+  if (!base) return { kind: 'transport', status: null, error: 'no branch server configured' };
   const cfg = getDeviceConfig();
 
   const ctrl = new AbortController();
@@ -152,19 +194,35 @@ export async function pushRowsToNode(
     });
   } catch {
     clearTimeout(t);
-    return null;              // unreachable — not a refusal
+    return { kind: 'transport', status: null, error: 'branch server unreachable' };
   }
   clearTimeout(t);
 
+  const detail = await res.json().catch(() => null as any);
   if (res.status === 401) {
-    throw new Error('branch server rejected the access code — re-run install on this till with the code from the branch server');
+    noteNodeRefused(401);   // A448: the manager is told (sync notice), not only the log
+    return { kind: 'transport', status: 401, error: detail?.error ?? 'branch server rejected the access code — re-run install on this till with the code from the branch server' };
   }
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null as any);
-    throw new Error(detail?.error ?? `branch server refused the batch (HTTP ${res.status})`);
+  if (res.status === 413) return { kind: 'too_large', error: detail?.error ?? 'the batch was too large for the branch server' };
+  if (isUnreachableStatus(res.status)) return { kind: 'transport', status: res.status, error: detail?.error ?? `branch server could not take the batch (HTTP ${res.status})` };
+  if (!res.ok) return { kind: 'refused', status: res.status, error: detail?.error ?? `branch server refused the batch (HTTP ${res.status})` };
+  if (!detail || typeof detail.results !== 'object' || detail.results === null) {
+    return { kind: 'transport', status: res.status, error: 'branch server sent an answer this till could not read' };
   }
-  const data = await res.json().catch(() => null as any);
-  return (data && typeof data.results === 'object') ? data.results : null;
+  return { kind: 'ok', results: detail.results };
+}
+
+/** F2: what the server already holds from THIS till, per table (GET /node/cursors). null = no answer. */
+export async function fetchNodeCursors(timeoutMs = 5000): Promise<Array<{ table_name: string; last_seq: number }> | null> {
+  const base = nodeUrl();
+  const device = getDeviceConfig()?.device_id;
+  if (!base || !device) return null;
+  try {
+    const res = await fetch(`${base}/node/cursors?device=${encodeURIComponent(device)}`, { headers: nodeHeaders(), signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null as any);
+    return Array.isArray(data?.cursors) ? data.cursors.filter((c: any) => c?.device_id === undefined || c.device_id === device) : null;
+  } catch { return null; }
 }
 
 /**
@@ -177,6 +235,17 @@ export async function pushRowsToNode(
  * like a drifting one, and then the warning gets ignored.
  */
 export async function measureNodeDrift(timeoutMs = 4000): Promise<number | null> {
+  return (await measureNodeClock(timeoutMs))?.driftMs ?? null;
+}
+
+/**
+ * F15 (2026-10-14): the clock AND the time zone. Two tills on the same instant but different Windows time zones date
+ * their trading days differently just as surely as two drifting clocks do — and drift (UTC instants) cannot see it.
+ * `tzMismatch` is set when the server reported its zone (an older server does not) and it differs from this till's.
+ * Offsets are Date#getTimezoneOffset() — minutes, positive WEST of UTC (Nairobi is -180).
+ */
+export async function measureNodeClock(timeoutMs = 4000):
+  Promise<{ driftMs: number; nodeTzOffset: number | null; tzOffset: number; tzMismatch: boolean } | null> {
   const base = nodeUrl();
   if (!base) return null;
   try {
@@ -187,9 +256,13 @@ export async function measureNodeDrift(timeoutMs = 4000): Promise<number | null>
     const received = Date.now();
     clearTimeout(t);
     if (!res.ok) return null;
-    const nodeNow = Date.parse((await res.json())?.now ?? '');
+    const body = await res.json().catch(() => null as any);
+    const nodeNow = Date.parse(body?.now ?? '');
     if (!Number.isFinite(nodeNow)) return null;
-    return Math.round((sent + received) / 2) - nodeNow;
+    const tzOffset = new Date().getTimezoneOffset();
+    const nodeTzOffset = Number.isFinite(Number(body?.tz_offset)) && body?.tz_offset !== null ? Number(body.tz_offset) : null;
+    return { driftMs: Math.round((sent + received) / 2) - nodeNow, nodeTzOffset, tzOffset,
+      tzMismatch: nodeTzOffset !== null && nodeTzOffset !== tzOffset };
   } catch { return null; }
 }
 
@@ -243,7 +316,7 @@ export async function fetchNodeTechToken(timeoutMs = 2500): Promise<string | nul
  */
 export async function pollNodeInstructions(
   state: unknown, timeoutMs = 5000,
-): Promise<Array<{ id: number; kind: string; payload: any }> | null> {
+): Promise<Array<{ id: number; uid?: string | null; kind: string; payload: any }> | null> {
   const base = nodeUrl();
   if (!base) return null;
   const cfg = getDeviceConfig();
@@ -277,16 +350,20 @@ export async function ackNodeInstruction(
   instructionId: number,
   ack: { ok: boolean; error?: string; summary?: unknown },
   timeoutMs = 5000,
+  uid: string | null = null,
 ): Promise<boolean> {
   const base = nodeUrl();
   if (!base) return false;
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    // F12 (2026-10-14): the ack names this till and the instruction's uid. Ids alone restart at 1 on a reinstalled
+    // server, so an ack held across that matched SOMEONE ELSE's instruction with the same number.
     const res = await fetch(`${base}/node/instructions/ack`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ instruction_id: instructionId, ...ack }),
+      body: JSON.stringify({ instruction_id: instructionId, instruction_uid: uid ?? undefined,
+        device_id: getDeviceConfig()?.device_id ?? null, ...ack }),
       signal: ctrl.signal,
     });
     return res.ok;

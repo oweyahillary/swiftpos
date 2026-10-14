@@ -48,6 +48,18 @@ export function describePgError(err: PgLikeError): string {
 }
 
 /**
+ * Is this database error about the DATA (a retry of the same row can never succeed), rather than the connection, the
+ * server or a timeout? Postgres classes 22 (data exception: a bad uuid, date, number) and 23 (integrity: a foreign key, a
+ * unique index, a NOT NULL, a CHECK) only. Everything else — no code (network), 57014 (statement timeout), 40xxx
+ * (serialization), 53xxx (resources), 08xxx (connection), PGRST* (the gateway), 42xxx (the server's own query) — is
+ * worth sending again, so a till must never park the row for it.
+ */
+export function isDataError(err: PgLikeError | null | undefined): boolean {
+  const code = String(err?.code ?? '');
+  return /^2[23][0-9A-Z]{3}$/.test(code);
+}
+
+/**
  * Classify. Note what is NOT handled here: 23505 (duplicate) needs a database
  * read to tell an idempotent retry from an order-number collision, so it stays
  * in orders.ts where that read already happens.
@@ -59,7 +71,7 @@ export function classifyOrderCreateError(err: PgLikeError): OrderErrorVerdict {
   // The RPC's own reconciliation guard. The client sent legs that do not add
   // up to total + tip; its message is safe and specific, so it is passed through.
   if (code === '23514' || /payment legs sum/.test(err?.message ?? '')) {
-    return { status: 400, message: err?.message ?? 'Payment legs do not reconcile', detail };
+    return { status: 400, message: err?.message ?? 'Payment legs do not reconcile', code: 'PAYMENT_LEGS_MISMATCH', detail };
   }
 
   // Foreign key. On public.orders the live constraints are cashier_id → users,

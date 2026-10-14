@@ -406,8 +406,11 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     // Business mode from the device config written at install time.
     posApi.auth.getStaffSession().then(ss => {
       setCashierName(ss?.staff?.name ?? null);
-      const perms = ((ss?.staff as any)?.permissions ?? {}) as Record<string, boolean>;
-      const has = (k: string) => perms['*'] === true || perms[k] === true;
+      // Audit 2026-10-14: permissions are top-level on the session (auth:getStaffSession), never on `staff` — reading
+      // ss.staff.permissions hid Force close from every manager. The main process enforces the same rule (tillGates.ts).
+      const perms = (ss?.permissions ?? {}) as Record<string, boolean>;
+      const ownerRole = ['owner', 'admin'].includes(String(ss?.role ?? '').toLowerCase());
+      const has = (k: string) => ownerRole || perms['*'] === true || perms[k] === true;
       setCanForceClose(has('shifts.force_close') || has('settings.manage'));
     }).catch(() => {});
     posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});

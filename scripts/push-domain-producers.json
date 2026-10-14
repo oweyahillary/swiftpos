@@ -33,6 +33,10 @@
       "emits": ["counted", "forced"],
       "source": "apps/desktop shift close path (counted | forced); NULL while open"
     },
+    "shifts.opened_via": {
+      "emits": ["web", "till"],
+      "source": "migration 133: set by the cloud only — apps/server/src/routes/sync.ts (a till's pushed shift: 'till') and routes/shifts.ts POST /open (the web POS: 'web'); a till never sends it"
+    },
     "float_transactions.type": {
       "emits": ["float_in", "float_out"],
       "source": "apps/desktop float drawer in/out"

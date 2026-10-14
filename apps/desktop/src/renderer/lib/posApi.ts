@@ -545,6 +545,8 @@ declare global {
         }>;
         /** A465: withdraw one the till has not answered yet. */
         cancelShiftMoney: (instructionId: number) => Promise<{ ok: boolean; error?: string }>;
+        /** F4: "Forget this till" — off the Close Branch list (manager, branch server only). */
+        forgetTill: (deviceId: string) => Promise<{ ok: boolean; error?: string }>;
       };
       /** A197: stock transfers between branches (online licence; inventory.transfer). */
       transfers: {

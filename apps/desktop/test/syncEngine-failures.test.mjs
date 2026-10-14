@@ -190,6 +190,26 @@ check('an unreachable server is captured, not swallowed', () => {
   assert.match(log(), /\[sync\] catalogue pull unreachable: ECONNREFUSED/);
 });
 
+// Till sync audit (F7): only a 401 pull renews the till's key. A 403, a 5xx or an unreachable cloud renewed it after every
+// failed pull — about three rotations a minute while a catalogue version waited.
+{
+  const asked = { refresh: 0 };
+  const counting = (init) => async (u) => {
+    if (String(u).includes('/api/auth/refresh')) { asked.refresh++; return resp(500, '{"error":"down"}'); }
+    return init();
+  };
+  globalThis.fetch = counting(() => resp(403, '{"error":"Branch not licensed","code":"BRANCH_NOT_LICENSED"}', 'Forbidden'));
+  await engine.syncAll();
+  globalThis.fetch = counting(() => resp(503, '{"error":"busy"}'));
+  await engine.syncAll();
+  globalThis.fetch = counting(() => { throw new Error('ECONNREFUSED 127.0.0.1:1'); });
+  await engine.syncAll();
+  check('F7: a 403, a 503 or an unreachable pull does not renew the key', () => assert.strictEqual(asked.refresh, 0));
+  globalThis.fetch = counting(() => resp(401, '{"error":"Invalid or expired token"}', 'Unauthorized'));
+  await engine.syncAll();
+  check('F7: a 401 pull renews it, once', () => assert.strictEqual(asked.refresh, 1));
+}
+
 check('auth is reported ahead of sync when both are broken', () => {
   const s = engine.getSyncStatus();
   assert.match(s.pullError, /token refresh/,

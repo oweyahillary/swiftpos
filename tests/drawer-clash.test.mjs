@@ -36,7 +36,12 @@ ok('…BEFORE the sale is written (create_order_atomic), so the foreign key neve
 });
 ok('the till recognises exactly that status and keeps the sale pending', () => {
   const se = read('apps/desktop/src/main/syncEngine.ts');
-  assert.match(se, /\} else if \(res\.status === 424\) \{[\s\S]{0,700}UPDATE sync_queue SET last_error=\? WHERE id=\?/);
+  // A484 (till sync audit F5): the 424 also stamps drawer_wait_at so the sale queues behind the ones not waiting —
+  // still pending, its error recorded, never 'failed'.
+  const m = se.match(/\} else if \(res\.status === 424\) \{([\s\S]{0,900}?)\} else if/);
+  assert.ok(m, 'no 424 branch in the order push');
+  assert.match(m[1], /UPDATE sync_queue SET last_error=\?(, drawer_wait_at=\?)? WHERE id=\?/);
+  assert.doesNotMatch(m[1], /status\s*=\s*'failed'|attempts\s*=/);
 });
 ok('migration 107 replaces the unique index with a plain one', () => {
   const m = read('migrations/107_open_shifts_never_block_sync.sql');

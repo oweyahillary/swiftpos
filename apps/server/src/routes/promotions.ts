@@ -16,9 +16,30 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
 
 const router = safeRouter();
 router.use(requireAuth);
+
+// Audit 2026-10-14: create / edit / delete were open to any signed-in user. They need products.manage (the Menu's key —
+// a promotion prices the menu); the owner and '*' pass in rbac. Reads stay open (the POS polls /active).
+const canManage = requirePermission('products.manage');
+
+/** Every product / category a promotion names must be this business's — null when they are, else the refusal. */
+async function foreignIds(businessId: string, body: Record<string, unknown>): Promise<string | null> {
+  for (const [field, table] of [['product_ids', 'products'], ['category_ids', 'categories']] as const) {
+    const v = body[field];
+    if (v === undefined || v === null) continue;
+    if (!Array.isArray(v) || v.some((id) => typeof id !== 'string')) return `${field} must be a list of ids`;
+    const ids = [...new Set(v as string[])];
+    if (!ids.length) continue;
+    if (ids.length > 1000) return `too many ${field}`;
+    const { data, error } = await supabase.from(table).select('id').eq('business_id', businessId).in('id', ids);
+    if (error) return 'Could not check the items this promotion names';
+    if ((data ?? []).length !== ids.length) return `${field} names something that is not this business's`;
+  }
+  return null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -105,7 +126,7 @@ router.get('/active', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/promotions
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/', async (req, res) => {
+router.post('/', canManage, async (req, res) => {
   const {
     name, promo_type, start_date, end_date, start_time, end_time,
     days_of_week, applies_to, product_ids, category_ids,
@@ -114,6 +135,8 @@ router.post('/', async (req, res) => {
 
   if (!name?.trim())  { res.status(400).json({ error: 'name is required' }); return; }
   if (!promo_type)    { res.status(400).json({ error: 'promo_type is required' }); return; }
+  const foreign = await foreignIds(req.businessId, req.body ?? {});
+  if (foreign) { res.status(400).json({ error: foreign }); return; }
 
   const { data, error } = await supabase
     .from('promotions')
@@ -145,12 +168,14 @@ router.post('/', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/promotions/:id
 // ─────────────────────────────────────────────────────────────────────────────
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', canManage, async (req, res) => {
   const allowed = [
     'name','promo_type','start_date','end_date','start_time','end_time',
     'days_of_week','applies_to','product_ids','category_ids',
     'discount_type','discount_value','min_quantity','free_quantity','status',
   ];
+  const foreign = await foreignIds(req.businessId, req.body ?? {});
+  if (foreign) { res.status(400).json({ error: foreign }); return; }
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -172,7 +197,7 @@ router.patch('/:id', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/promotions/:id
 // ─────────────────────────────────────────────────────────────────────────────
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManage, async (req, res) => {
   const { error } = await supabase
     .from('promotions')
     .delete()

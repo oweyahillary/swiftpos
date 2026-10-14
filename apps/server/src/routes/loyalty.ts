@@ -2,10 +2,17 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission, requireAnyPermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
 router.use(requireAuth);
+
+// Audit 2026-10-14: editing and deactivating a customer were open to any signed-in user. They need customers.manage (the
+// credit routes' key); the owner and '*' pass in rbac. Adding a customer stays the POS's (the Loyalty panel looks a
+// customer up and adds them: customers.view) or a customers.manage holder's.
+// Reads stay scoped to the business. (There is no loyalty-settings write route here.)
+const canManageCustomers = requirePermission('customers.manage');
 
 // ── Loyalty feature flag guard ────────────────────────────────
 // All routes in this file are blocked if loyalty_enabled = false for the business.
@@ -56,7 +63,7 @@ router.get('/customer', async (req, res) => {
 });
 
 // POST /api/loyalty/customer
-router.post('/customer', async (req, res) => {
+router.post('/customer', requireAnyPermission('customers.manage', 'customers.view'), async (req, res) => {
   const { name, phone, email, notes } = req.body;
   if (!name || !phone) { res.status(400).json({ error: 'name and phone are required' }); return; }
 
@@ -200,7 +207,7 @@ router.get('/customers', async (req, res) => {
 
 // PATCH /api/loyalty/customer/:id
 // Edit a customer's name, phone, email, or notes.
-router.patch('/customer/:id', async (req, res) => {
+router.patch('/customer/:id', canManageCustomers, async (req, res) => {
   const { name, phone, email, notes, status } = req.body;
 
   // Build only the fields that were actually sent
@@ -239,7 +246,7 @@ router.patch('/customer/:id', async (req, res) => {
 // DELETE /api/loyalty/customer/:id
 // Soft-delete: sets status = 'inactive'. Hard delete is intentionally avoided
 // because customers are referenced by orders (ON DELETE SET NULL) and loyalty_transactions.
-router.delete('/customer/:id', async (req, res) => {
+router.delete('/customer/:id', canManageCustomers, async (req, res) => {
   const { error } = await supabase
     .from('customers')
     .update({ status: 'inactive' })

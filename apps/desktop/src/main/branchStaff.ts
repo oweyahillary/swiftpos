@@ -19,6 +19,7 @@ import { safeStorage } from 'electron';
 import bcrypt from 'bcryptjs';
 import { getLocalDb } from './localDb';
 import { logLine } from './logFile';
+import { overlayLocalChanges } from './localChanges';   // P3: a change made here stays over a stored list
 
 export interface BranchStaffRow {
   staff_id: string;
@@ -67,7 +68,11 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
     }
   });
 
-  try { tx(); } catch (err: any) { logLine('node', `could not store branch roster: ${err?.message ?? err}`); }
+  try { tx(); } catch (err: any) { logLine('node', `could not store branch roster: ${err?.message ?? err}`); return; }
+  // P3 (2026-10-14): every path that stores a list lays the changes still waiting back over it — a cashier added or a PIN
+  // set here (or relayed to this server) that the cloud has not taken yet. Only staffRoster's path used to; the
+  // catalogue pull and promotion stored a list and quietly undid them until the next roster beat.
+  try { overlayLocalChanges(db); } catch { /* the next store lays them again */ }
 }
 
 /**
@@ -119,6 +124,114 @@ export type NodeVerdict =
  * gets the identity and permissions and pushes orders under its own till token
  * with this cashier_id, unchanged from the online path.
  */
+/**
+ * F16 (2026-10-14): the same check without blocking. The branch server answers /node/verify-pin inside the app's own
+ * main process, and bcrypt.compareSync over a branch of 20 staff is ~20 × 80 ms of a frozen server window per PIN
+ * typed on any till. Scans every candidate and refuses on two, exactly like verifyPinAtNode.
+ */
+export async function verifyPinAtNodeAsync(pin: string, branchId: string): Promise<NodeVerdict> {
+  if (!canWrap()) {
+    return { ok: false, reason: 'unavailable', message: 'This branch server cannot read its roster.' };
+  }
+  let rows: any[];
+  try {
+    rows = getLocalDb().prepare(`SELECT * FROM branch_staff WHERE branch_id = ? AND COALESCE(status, 'active') = 'active'`).all(branchId) as any[];
+  } catch { rows = []; }
+  if (rows.length === 0) {
+    return { ok: false, reason: 'no_roster', message: 'This branch server has no staff roster yet.' };
+  }
+  const matches: any[] = [];
+  for (const row of rows) {
+    let hash: string;
+    try { hash = safeStorage.decryptString(Buffer.from(row.pin_hash_enc, 'base64')); }
+    catch { continue; }
+    if (await bcrypt.compare(pin, hash)) matches.push(row);
+  }
+  if (matches.length > 1) {
+    logLine('node', `node verify-pin refused: ${matches.length} staff share this PIN`);
+    return { ok: false, reason: 'ambiguous', message: 'This PIN is shared by more than one staff member. Ask a manager to reset it.' };
+  }
+  if (matches.length === 0) return { ok: false, reason: 'no_match', message: 'Invalid PIN' };
+  const m = matches[0];
+  let permissions: unknown = {};
+  try { permissions = JSON.parse(m.permissions ?? '{}'); } catch { /* default */ }
+  logLine('node', `node verify-pin: ${m.name}`);
+  return { ok: true, staff: { staffId: m.staff_id, name: m.name, roleName: m.role_name, permissions } };
+}
+
+// ── F7: staff changes handed to the branch server by a till ───────────────────────────────────────────────────────
+// /node/changes applies a till's change here too (A448). For staff, the till used to send the new person's role NAME
+// and PERMISSIONS alongside (`_local`) — and the server wrote them into its list as given. Anyone with the branch code
+// could therefore add a "cashier" with the owner's permissions and a PIN of their choosing, and sign in with it at
+// every till of the branch. Now:
+//   - a role is taken ONLY from the roles this server saved (roles_cache), by role_id — never from the change;
+//   - a relayed change never creates (or moves anyone to) an owner / admin / manager role, or one that manages staff;
+//   - a relayed PIN change never touches an owner / admin / manager (or anyone who manages staff).
+// A refused change still reaches the cloud from the till that made it (it sends every change itself), and comes back
+// in the branch's staff list from there.
+
+const ELEVATED_NAME = /owner|admin|manager/i;
+const ELEVATED_PERMS = ['staff.manage', 'roles.manage', 'settings.manage'];
+
+function permsOf(role: any): Record<string, boolean> {
+  const perms: Record<string, boolean> = {};
+  for (const p of (role?.permissions ?? role?.role_permissions ?? [])) { const k = p?.key ?? p?.permissions?.key; if (k) perms[k] = true; }
+  return perms;
+}
+const elevatedPerms = (perms: unknown): boolean => {
+  if (!perms || typeof perms !== 'object') return false;
+  return ELEVATED_PERMS.some((k) => (perms as Record<string, unknown>)[k] === true);
+};
+export function isElevatedRole(name: string | null | undefined, perms: unknown): boolean {
+  return ELEVATED_NAME.test(String(name ?? '')) || elevatedPerms(perms);
+}
+
+/** The relayed changes this server may apply, each staff change made safe; the rest named with why. Never throws. */
+export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null):
+  { accepted: unknown[]; refused: Array<{ id: string; reason: string }> } {
+  const accepted: unknown[] = [];
+  const refused: Array<{ id: string; reason: string }> = [];
+  const db = getLocalDb();
+  let roles: any[] = [];
+  try { roles = JSON.parse((db.prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as any)?.value ?? '[]'); } catch { roles = []; }
+  if (!Array.isArray(roles)) roles = [];
+  for (const raw of raws ?? []) {
+    const c = raw as any;
+    const id = String(c?.id ?? '?');
+    const entity = String(c?.entity ?? '');
+    if (entity !== 'staff' && entity !== 'staff_pin') { accepted.push(raw); continue; }
+    const data = (c?.data && typeof c.data === 'object') ? c.data : {};
+    try {
+      if (entity === 'staff_pin' || (entity === 'staff' && c?.op !== 'create')) {
+        const target = db.prepare(`SELECT role_name, permissions FROM branch_staff WHERE staff_id = ?`).get(String(c?.entity_id ?? '')) as
+          { role_name: string | null; permissions: string | null } | undefined;
+        let perms: unknown = null;
+        try { perms = target?.permissions ? JSON.parse(target.permissions) : null; } catch { perms = null; }
+        if (target && isElevatedRole(target.role_name, perms)) {
+          refused.push({ id, reason: entity === 'staff_pin'
+            ? 'a PIN for an owner, admin or manager is not changed from another till'
+            : 'an owner, admin or manager is not changed from another till' });
+          continue;
+        }
+      }
+      if (entity === 'staff_pin') { accepted.push({ ...c, _local: { role_name: null, permissions: null, branch_id: branchId } }); continue; }
+      if (data.role_id !== undefined && data.role_id !== null) {
+        const role = roles.find((r) => r?.id === data.role_id);
+        if (!role) { refused.push({ id, reason: 'that role is not known on the branch server yet — it arrives from the cloud' }); continue; }
+        const perms = permsOf(role);
+        if (isElevatedRole(role?.name, perms)) { refused.push({ id, reason: `the ${role?.name ?? 'chosen'} role is not given from another till` }); continue; }
+        accepted.push({ ...c, _local: { role_name: role?.name ?? null, permissions: perms, branch_id: branchId } });
+        continue;
+      }
+      if (c?.op === 'create') { refused.push({ id, reason: 'a new staff member needs a role' }); continue; }
+      accepted.push({ ...c, _local: { role_name: null, permissions: null, branch_id: branchId } });
+    } catch (err: any) {
+      refused.push({ id, reason: String(err?.message ?? 'could not check the change') });
+    }
+  }
+  return { accepted, refused };
+}
+
 export function verifyPinAtNode(pin: string, branchId: string): NodeVerdict {
   if (!canWrap()) {
     return { ok: false, reason: 'unavailable', message: 'This branch server cannot read its roster.' };

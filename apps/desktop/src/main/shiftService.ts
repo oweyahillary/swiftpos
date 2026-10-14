@@ -14,7 +14,7 @@ import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
 import { getDeviceConfig, canSell, getPosFeatures, getCashierHistoryMethods, getCashierSeesShiftSales, getCashierHistoryTotals } from './deviceConfig';
-import { checkStaleDay, ensureDayOpen } from './dayService';
+import { checkStaleDay, ensureDayOpen, businessDateNow } from './dayService';
 import { v4 as uuid } from 'uuid';
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
 import { nonCashExpenses, expenseLabel, cleanExpenseMethod } from './expenseMethod';
@@ -370,7 +370,9 @@ export function recordExpense(e: ExpenseInput): { id: string; already?: boolean 
     id, businessId, branchId,
     e.expense_category_id ?? null, e.description, Number(e.amount),
     e.paid_by ?? staff?.staff_id ?? null,
-    now.slice(0, 10), shift?.id ?? null, now,
+    // Till sync audit (F11): the BUSINESS date on this till (its local clock and the owner's day cut-off), not the UTC
+    // date — at 01:00 Nairobi the UTC date is still yesterday's, and with a 04:00 cut-off so is the business day.
+    businessDateNow(), shift?.id ?? null, now,
     // See the note in addFloatToShift: a NULL-attributed row matches
     // nothing under COALESCE(device_id,'') = COALESCE(own,''), so it is never
     // collected by the push and the expense silently never leaves the till.

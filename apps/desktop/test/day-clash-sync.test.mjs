@@ -80,7 +80,7 @@ globalThis.fetch = async (url, init = {}) => {
         rejected.push({ id: s.id, code: 'missing_business_day', table: 'shifts', error: 'This shift\'s trading day is not on the server — the day was refused or has not synced yet. Resolve the trading day first.' });
       } else cloud.shifts.set(s.id, { device_id: s.device_id, status: 'open' });
     }
-    return json(200, { ok: true, rejected });
+    return json(200, { ok: true, upserted: { shifts: 0, floats: 0, expenses: 0, businessDays: 0 }, rejected });
   }
   if (u.endsWith('/api/orders') && init.method === 'POST') {
     if (body.shift_id && !cloud.shifts.has(body.shift_id)) {

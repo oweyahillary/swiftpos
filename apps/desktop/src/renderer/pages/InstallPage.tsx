@@ -531,6 +531,9 @@ export default function InstallPage({ onComplete }: Props) {
                     The branch server till this one pushes to for combined manager reports. Enter its
                     IP address only &mdash; the port is fixed. Leave blank for a single-till branch.
                   </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Network: put the branch server and its tills on a wired or separate network &mdash; not the customer Wi-Fi.
+                  </p>
                   {nodeIpTrim !== '' && !nodeIpValid && (
                     <p className="text-xs text-amber-300 mt-1.5">
                       That is not a valid IP address. It should look like 192.168.1.100.

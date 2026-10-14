@@ -5,9 +5,15 @@ import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { CreateDiscountSchema } from '../lib/schemas';
+import { requirePermission } from '../middleware/rbac';
 
 const router = safeRouter();
 router.use(requireAuth);
+
+// Audit 2026-10-14: creating, editing, switching and deleting a discount were open to any signed-in user (a cashier could
+// make a 100% code and use it). They need products.manage, the Menu's key (Discounts sits under Menu); the owner and '*'
+// pass in rbac. Reading the list and POST /apply (the POS checking a code) stay open to every signed-in user.
+const canManage = requirePermission('products.manage');
 
 // GET /api/discounts — list all discounts for business
 router.get('/', async (req, res) => {
@@ -22,7 +28,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/discounts — create discount
-router.post('/', validate(CreateDiscountSchema), async (req, res) => {
+router.post('/', canManage, validate(CreateDiscountSchema), async (req, res) => {
   const { name, type, value, applies_to, promo_code, min_order_value, max_uses, expires_at } = req.body;
 
   if (!name || !type || value === undefined) {
@@ -69,8 +75,21 @@ router.post('/', validate(CreateDiscountSchema), async (req, res) => {
 });
 
 // PUT /api/discounts/:id — update discount
-router.put('/:id', async (req, res) => {
+router.put('/:id', canManage, async (req, res) => {
   const { name, type, value, applies_to, promo_code, min_order_value, max_uses, expires_at, status } = req.body;
+  // The create rules hold for an edit too (an edit could turn a 10% code into 1000%).
+  if (type !== undefined && !['percentage', 'fixed'].includes(type)) {
+    res.status(400).json({ error: 'type must be percentage or fixed' });
+    return;
+  }
+  if (value !== undefined && !(typeof value === 'number' && Number.isFinite(value) && value > 0)) {
+    res.status(400).json({ error: 'value must be a number greater than 0' });
+    return;
+  }
+  if (type === 'percentage' && value !== undefined && value > 100) {
+    res.status(400).json({ error: 'Percentage discount must be between 1 and 100' });
+    return;
+  }
 
   const { data, error } = await supabase
     .from('discounts')
@@ -99,7 +118,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // PATCH /api/discounts/:id/toggle — activate / deactivate
-router.patch('/:id/toggle', async (req, res) => {
+router.patch('/:id/toggle', canManage, async (req, res) => {
   const { data: current } = await supabase
     .from('discounts')
     .select('status')
@@ -124,7 +143,7 @@ router.patch('/:id/toggle', async (req, res) => {
 });
 
 // DELETE /api/discounts/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManage, async (req, res) => {
   const { error } = await supabase
     .from('discounts')
     .delete()

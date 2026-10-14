@@ -6,6 +6,15 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { POS_FEATURE_KEYS } from '../lib/posFeatures';
 
+/**
+ * Audit 2026-10-14: the feature switches a client may flip themselves. EVERY other key is set by ZapTill in the admin portal
+ * (ADMIN_ONLY_FEATURE). This used to be a deny-list of the POS keys only, so a settings.manage holder could switch on the
+ * paid features (web_hosting, themes, loyalty_enabled, ...) with one PUT. Today no client screen writes a flag here — eTIMS
+ * has its own route (PUT /api/etims/config) — so the list is empty; add a key only for a switch that is free and the
+ * client's own to make.
+ */
+export const CLIENT_SETTABLE_FLAGS: readonly string[] = [];
+
 const router = safeRouter();
 
 // GET /api/flags — returns all feature flags for this business as { key: boolean }
@@ -29,6 +38,11 @@ router.put('/:key', requireAuth, requirePermission('settings.manage'), async (re
 
   // 0.6.27: the POS switches are set per client in the admin portal only (owner's decision) — never by the client.
   if ((POS_FEATURE_KEYS as readonly string[]).includes(req.params.key)) {
+    res.status(403).json({ error: 'This setting is managed by ZapTill support.', code: 'ADMIN_ONLY_FEATURE' });
+    return;
+  }
+  // Audit 2026-10-14: and so is every other key not on the allow-list (web_hosting, themes, ...).
+  if (!CLIENT_SETTABLE_FLAGS.includes(req.params.key)) {
     res.status(403).json({ error: 'This setting is managed by ZapTill support.', code: 'ADMIN_ONLY_FEATURE' });
     return;
   }

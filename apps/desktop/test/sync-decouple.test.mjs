@@ -22,8 +22,8 @@ let db; try { db = new (require0('better-sqlite3'))(':memory:'); } catch { const
 // NOTE: shifts is deliberately MISSING business_id (and most columns) so the real
 // pushLocalRecords SELECT throws "no such column" — the exact class this decouples.
 db.exec(`
-  CREATE TABLE sync_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, attempts INTEGER DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, status TEXT DEFAULT 'pending');
-  CREATE TABLE orders (id TEXT PRIMARY KEY, sync_status TEXT DEFAULT 'pending');
+  CREATE TABLE sync_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, attempts INTEGER DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, status TEXT DEFAULT 'pending', drawer_wait_at TEXT);
+  CREATE TABLE orders (id TEXT PRIMARY KEY, sync_status TEXT DEFAULT 'pending', shift_id TEXT);
   CREATE TABLE shifts (id TEXT, sync_status TEXT, device_id TEXT);            -- intentionally broken
   CREATE TABLE float_transactions (id TEXT, sync_status TEXT, device_id TEXT);
   CREATE TABLE expenses (id TEXT, sync_status TEXT, device_id TEXT);

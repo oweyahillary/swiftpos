@@ -1,8 +1,10 @@
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
-import { chunkIn } from '../lib/pgQuery';
+import { chunkIn, pageAll } from '../lib/pgQuery';
 import { sendEmail } from '../lib/mailer';
-import { toZonedTime, fromZonedTime, format as tzFormat } from 'date-fns-tz';
+// P1-7: formatInTimeZone CONVERTS to Nairobi's clock. date-fns-tz's `format(…, { timeZone })` does not (it formats the
+// machine's own time — UTC on Render), so the 21:00 send decision ran at 00:00 Nairobi and reported "No sales recorded today".
+import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import { decideDailySend } from './reportScheduleDecision';
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';   // 0.6.34
 import { getDayCutoff } from '../lib/dayCutoff';
@@ -72,8 +74,8 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
   if (!businesses?.length) return;
 
   // Current EAT wall-clock, for the per-business send decision.
-  const nowEatDate = tzFormat(now, 'yyyy-MM-dd', { timeZone: EAT });
-  const nowEatHHMM = tzFormat(now, 'HH:mm', { timeZone: EAT });
+  const nowEatDate = formatInTimeZone(now, EAT, 'yyyy-MM-dd');
+  const nowEatHHMM = formatInTimeZone(now, EAT, 'HH:mm');
 
   for (const biz of businesses) {
     try {
@@ -94,7 +96,7 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
       const cutoff = await getDayCutoff(biz.id);
       const range = cutoff ? businessRangeEAT(businessDateEAT(now, cutoff), businessDateEAT(now, cutoff), cutoff)
                            : { start: dateFrom, end: dateTo };
-      await sendSummaryForBusiness(biz, range.start, range.end, recipients);
+      await sendSummaryForBusiness(biz, range.start, range.end, recipients, now);
       // Stamp AFTER a successful send, so a failure retries on the next run
       // rather than being silently marked done.
       await writeLastSent(biz.id, nowEatDate);
@@ -197,6 +199,7 @@ async function sendSummaryForBusiness(
   dateFrom: string,
   dateTo: string,
   recipients: string[],
+  now: Date = new Date(),
 ): Promise<void> {
   // Recipients (owner + branch managers + added addresses) are resolved and
   // de-duped by gatherRecipients before this is called; an empty set never
@@ -208,18 +211,25 @@ async function sendSummaryForBusiness(
   const settings = readAlerts(await readReportSchedule(biz.id));
   const dayCutoff = await getDayCutoff(biz.id);
   const extrasHtml = await dailyExtrasHtml({
-    businessId: biz.id, currency, settings, reportDate: businessDateEAT(new Date(), dayCutoff), cutoff: dayCutoff,
-    range: { start: dateFrom, end: dateTo }, now: new Date(),
+    businessId: biz.id, currency, settings, reportDate: businessDateEAT(now, dayCutoff), cutoff: dayCutoff,
+    range: { start: dateFrom, end: dateTo }, now,
   });
 
   // ── 1. Sales summary ──────────────────────────────────────
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('id, total, vat_amount, status, cashier_id')
-    .eq('business_id', biz.id)
-    .eq('status', 'completed')
-    .gte('created_at', dateFrom)
-    .lt('created_at', dateTo);
+  // P2-16: paged. One plain read stopped at the row cap (1000) and a busy day's email under-reported its sales silently.
+  // A failed read throws: this business's email is retried on the next run, never sent with wrong figures.
+  const orders = await pageAll<{ id: string; total: number | string; vat_amount: number | string; status: string; cashier_id: string | null }>(
+    () => supabase
+      .from('orders')
+      .select('id, total, vat_amount, status, cashier_id')
+      .eq('business_id', biz.id)
+      .eq('status', 'completed')
+      .gte('created_at', dateFrom)
+      .lt('created_at', dateTo));
+
+  // P0-2 (migration 133): offline till sales the cloud priced differently — kept at the till's price, the difference a
+  // loss. A line in the email only when there are any; before migration 133 there are none to read.
+  const priceDiffs = await offlinePriceDifferences(biz.id, dateFrom, dateTo);
 
   const totalOrders  = orders?.length ?? 0;
   const totalRevenue = (orders ?? []).reduce((s, o) => s + Number(o.total), 0);
@@ -280,13 +290,10 @@ async function sendSummaryForBusiness(
 
     if (staffTotals.size) {
       const staffIds = [...staffTotals.keys()];
-      const { data: staffMembers } = await supabase
-        // There is no `staff` table — staff are rows in `users`, and the
-        // column is `name`, not `full_name`. This query has never returned a row,
-        // so the daily summary's staff-performance section has always been empty.
-        .from('users')
-        .select('id, name')
-        .in('id', staffIds);
+      // There is no `staff` table — staff are rows in `users`, and the
+      // column is `name`, not `full_name`. This query has never returned a row,
+      // so the daily summary's staff-performance section has always been empty.
+      const staffMembers = await chunkIn<{ id: string; name: string | null }>('users', 'id', staffIds, q => q.select('id, name'));
 
       staffRows = (staffMembers ?? []).map(s => ({
         name: s.name ?? 'Unknown',
@@ -322,12 +329,14 @@ async function sendSummaryForBusiness(
     //
     // The manual filter below was always doing the real work, so the .lt() was
     // dead weight that broke the query it sat in. Removed; the filter stays.
-    const { data: levels, error: lvlErr } = await supabase
-      .from('stock_levels')
-      .select('product_id, quantity, low_stock_threshold')
-      .in('branch_id', branchIds);
-
-    if (lvlErr) console.error('[dailySummary] stock level read failed:', lvlErr.message);
+    // Paged (P2-16): a business with many products across branches passes the row cap.
+    let levels: Array<{ product_id: string; quantity: number | string; low_stock_threshold: number | string }> = [];
+    try {
+      levels = await pageAll(() => supabase
+        .from('stock_levels')
+        .select('id, product_id, quantity, low_stock_threshold')
+        .in('branch_id', branchIds));
+    } catch (lvlErr: any) { console.error('[dailySummary] stock level read failed:', lvlErr?.message); }
 
     // Number() on both sides (audit C7): numeric arrives as a string and
     // "9" < "10" is false.
@@ -335,12 +344,10 @@ async function sendSummaryForBusiness(
       l => Number(l.quantity) < Number(l.low_stock_threshold));
 
     if (lowLevels.length) {
-      const { data: products } = await supabase
-        .from('products')
-        .select('id, name')
-        .in('id', lowLevels.map(l => l.product_id));
+      const products = await chunkIn<{ id: string; name: string }>('products', 'id', [...new Set(lowLevels.map(l => l.product_id))],
+        q => q.select('id, name'));
 
-      const productMap = new Map((products ?? []).map(p => [p.id, p.name]));
+      const productMap = new Map(products.map(p => [p.id, p.name]));
       lowStockItems = lowLevels.map(l => ({
         name: productMap.get(l.product_id) ?? 'Unknown',
         // Typed `number` on lowStockItems, so coerce here or the template
@@ -354,8 +361,8 @@ async function sendSummaryForBusiness(
 
   // ── 5. Write in-app notification ──────────────────────────
   const EAT = 'Africa/Nairobi';
-  const todayLabel = tzFormat(toZonedTime(new Date(), EAT), 'EEEE, d MMMM', { timeZone: EAT });
-  const todayShort = tzFormat(toZonedTime(new Date(), EAT), 'd MMM', { timeZone: EAT });
+  const todayLabel = formatInTimeZone(now, EAT, 'EEEE, d MMMM');
+  const todayShort = formatInTimeZone(now, EAT, 'd MMM');
   await supabase.from('notifications').insert({
     business_id: biz.id,
     user_id: biz.owner_id,
@@ -383,12 +390,51 @@ async function sendSummaryForBusiness(
       showLowStock: settings.low_stock,
       showTopProducts: settings.top_products,
       extrasHtml,
+      priceDiffs,
     }),
     // TODO (Step 19/21): pass fromOverride from business_settings 'notify_from_email'
     // e.g. from: `${biz.name} <reports@${biz.domain}>`
   });
 
   console.log(`[dailySummary] Sent for ${biz.name} → ${recipients.length} recipient(s)`);
+}
+
+/**
+ * P0-2 (migration 133): the day's offline till sales the cloud priced differently (dated by when they were sold) — how
+ * many, the loss (catalogue - till, summed), and how many were flagged (a difference over half the price). Zero when the
+ * table is not there yet or cannot be read: the line is left out, the email still goes.
+ */
+export async function offlinePriceDifferences(businessId: string, dateFrom: string, dateTo: string):
+  Promise<{ count: number; loss: number; suspicious: number }> {
+  try {
+    const rows = await pageAll<{ id: string; difference: number | string; suspicious: boolean | null }>(() => supabase
+      .from('order_price_variances').select('id, difference, suspicious')
+      .eq('business_id', businessId).gte('sold_at', dateFrom).lt('sold_at', dateTo));
+    return {
+      count: rows.length,
+      loss: Math.round(rows.reduce((s, r) => s + (Number(r.difference) || 0), 0) * 100) / 100,
+      suspicious: rows.filter((r) => r.suspicious === true).length,
+    };
+  } catch (e: any) {
+    console.warn(`[dailySummary] price differences not read for ${businessId} (is migration 133 applied?):`, e?.message);
+    return { count: 0, loss: 0, suspicious: 0 };
+  }
+}
+
+/** The email's line for offline sales priced differently; '' when there are none. */
+export function priceDiffLine(d: { count: number; loss: number; suspicious: number } | undefined, currency: string): string {
+  if (!d || d.count <= 0) return '';
+  const c = esc(currency);
+  return `
+  <tr><td style="padding-top:20px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#111;border:1px solid ${d.suspicious ? '#7f1d1d' : '#222'};border-radius:8px;">
+      <tr><td style="padding:14px 18px;font-size:13px;color:#fff;">
+        Offline sales priced differently: <strong>${d.count}</strong>, loss <strong style="color:#f97316;">${c} ${fmt(d.loss)}</strong>
+        ${d.suspicious ? `<span style="color:#ef4444;font-weight:700;"> · ${d.suspicious} over half the price — check them</span>` : ''}
+        <p style="margin:6px 0 0;font-size:11px;color:#6b7280;">Sold on a till while offline at the till's price; the menu price had changed when they reached the cloud. Reports › Voids &amp; Exceptions lists them.</p>
+      </td></tr>
+    </table>
+  </td></tr>`;
 }
 
 // ── Email template ────────────────────────────────────────────
@@ -409,6 +455,8 @@ function buildSummaryEmail(opts: {
   showLowStock?: boolean;
   showTopProducts?: boolean;
   extrasHtml?: string;
+  /** P0-2: offline sales priced differently (the line shows only when count > 0). */
+  priceDiffs?: { count: number; loss: number; suspicious: number };
 }): string {
   const showLowStock = opts.showLowStock !== false;
   const showTopProducts = opts.showTopProducts !== false;
@@ -495,6 +543,9 @@ function buildSummaryEmail(opts: {
       </tr>
     </table>
   </td></tr>
+
+  <!-- P0-2: offline sales priced differently (only when there are any) -->
+  ${priceDiffLine(opts.priceDiffs, c)}
 
   <!-- A476: tills not closed or confirmed, cash differences, voids and refunds, tills not syncing, expenses -->
   ${opts.extrasHtml ?? ''}

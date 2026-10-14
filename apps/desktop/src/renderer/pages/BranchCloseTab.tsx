@@ -101,6 +101,8 @@ export default function BranchCloseTab({ currency }: Props) {
   for (const t of ov.tills) {
     const st = t.state;
     if (!st) { blockers.push(`${tillLabel(t)} has never reported in`); continue; }
+    // F4: a till whose day is closed (and no drawer open) does not hold the close, however long it has been off.
+    if (!t.is_self && ageOf(t.last_seen).stale && st.day_open === false && !st.open_drawer) continue;
     if (!t.is_self && ageOf(t.last_seen).stale) blockers.push(`${tillLabel(t)} has not been heard from in the last 2 minutes`);
     if (!st.shifts) blockers.push(`${tillLabel(t)} needs the update to close from here`);
     if (st.open_drawer) blockers.push(`${tillLabel(t)}: ${st.open_drawer.cashier_name ?? 'a cashier'}'s drawer is still open`);
@@ -128,6 +130,13 @@ export default function BranchCloseTab({ currency }: Props) {
   // A465: every drawer open at the branch — a manager here records cash in / out or an expense on it (server only).
   const isServer = role === 'node' || role === 'office';
   const openDrawers = ov.tills.flatMap(t => (t.state?.shifts ?? []).filter(s => s.state === 'open').map(s => ({ t, s })));
+  // F4: a till gone for good (replaced, moved) — off this list at once; it is listed again if it ever reports.
+  const forget = async (t: TillView) => {
+    if (!window.confirm(`Forget ${tillLabel(t)}? It leaves this list now. Its sales stay in the branch's records, and it comes back if it reports again.`)) return;
+    const r = await posApi.branchClose.forgetTill(t.device_id).catch(() => ({ ok: false, error: 'Could not forget it.' }));
+    setCloseMsg(r.ok ? { ok: true, text: `${tillLabel(t)} forgotten.` } : { ok: false, text: r.error ?? 'Could not forget it.' });
+    await load();
+  };
   const cancelMoney = async (id: number) => {
     const r = await posApi.branchClose.cancelShiftMoney(id).catch(() => ({ ok: false, error: 'Could not withdraw it.' }));
     setMoneyMsg(r.ok ? 'Withdrawn — the till will not record it.' : (r.error ?? 'Could not withdraw it.'));
@@ -290,6 +299,10 @@ export default function BranchCloseTab({ currency }: Props) {
                   <span className={`text-xs ${age.stale ? 'text-amber-400' : 'text-gray-500'}`}>
                     last seen {age.label}{age.stale ? ' — figures may be stale' : ''}
                   </span>
+                )}
+                {!t.is_self && age.stale && isServer && (
+                  <button data-testid={`forget-${t.device_id}`} onClick={() => void forget(t)}
+                    className="text-xs px-2 py-0.5 rounded border border-gray-600 text-gray-300 hover:bg-gray-700/40">Forget this till</button>
                 )}
                 {st && !st.day_open && <span className="text-xs px-2 py-0.5 rounded bg-gray-600/30 text-gray-300 border border-gray-600/50">day closed</span>}
                 {closedNow && <span className="text-xs px-2 py-0.5 rounded bg-action-600/20 text-action-300 border border-action-600/40">closed with the branch</span>}

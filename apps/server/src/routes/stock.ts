@@ -591,6 +591,17 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
   const { branch_id, purchase_order_id, received_date, notes, items = [] } = req.body;
   if (!branch_id)    { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
+  // Audit 2026-10-14: the body's branch was never checked — a manager could receive stock into another branch, and
+  // (owners pass assertBranchAccess for any id) into another business's. The PO it receives against must be ours too.
+  if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
+  const { data: grnBranch } = await supabase.from('branches')
+    .select('id').eq('id', branch_id).eq('business_id', req.businessId).maybeSingle();
+  if (!grnBranch) { res.status(404).json({ error: 'Branch not found in this business' }); return; }
+  if (purchase_order_id) {
+    const { data: grnPo } = await supabase.from('purchase_orders')
+      .select('id').eq('id', purchase_order_id).eq('business_id', req.businessId).maybeSingle();
+    if (!grnPo) { res.status(404).json({ error: 'Purchase order not found' }); return; }
+  }
 
   const grn_number = await nextRef('goods_received_notes', 'GRN', req.businessId);
 

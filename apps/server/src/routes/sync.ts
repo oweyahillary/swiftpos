@@ -11,9 +11,35 @@ import { confirmServingRole } from '../lib/deviceRole';
 import { REQUIRED_DESKTOP_SCHEMA, HARD_MIN_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 import { cleanExpenseMethod } from '../lib/expenseMethod';
 import { closesFirst } from '../lib/dayOrder';
+import { chunkIn } from '../lib/pgQuery';
+import { isDataError } from '../lib/orderErrors';
 
 const router = safeRouter();
 router.use(requireAuth);
+
+// ── P1-5 / P1-6: which failures a till parks, and which it sends again ───────
+// `rejected` is for rows refused ON THEIR MERITS: a Postgres data error (class 22: a bad value; class 23: a foreign key, a
+// unique index, a NOT NULL, a CHECK) or this route's own validation (invalid_id, missing_shift, invalid_reason …). The till
+// parks those for a person. Anything else — the network, a timeout (57014), the gateway, an unknown error — says nothing
+// about the row: parking it lost a good float or expense. Those answer 503 SYNC_RETRY for the WHOLE push (every write
+// here is an idempotent upsert by id, so sending the lot again is safe) and the till retries it as it retries any 5xx.
+type PgErr = { code?: string; message?: string } | null | undefined;
+class SyncRetry extends Error {
+  constructor(public table: string, public cause: PgErr) { super(`${table}: ${cause?.message ?? 'write failed'}`); }
+}
+/** A row's write error → a rejection the till parks, or a SyncRetry thrown for the whole push. */
+function judgeRowError(table: string, id: string, err: PgErr): { id: string; code: string; table: string; error: string } {
+  if (isDataError(err)) return { id, code: String(err!.code), table, error: err!.message ?? 'refused by the database' };
+  throw new SyncRetry(table, err);
+}
+/** 23505 on business_days: which unique index refused the day (P2-17). */
+export function duplicateDayCode(err: PgErr & { details?: string }): { code: string; error: string } {
+  const text = `${err?.message ?? ''} ${err?.details ?? ''}`;
+  if (/business_days_till_date_uniq/.test(text)) {
+    return { code: 'duplicate_business_date', error: 'This till already has a trading day for that date on the cloud (under another id).' };
+  }
+  return { code: 'duplicate_open_day', error: 'This till already has an open trading day. It must be closed before this one can sync.' };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/sync/push
@@ -224,16 +250,19 @@ router.post('/push', async (req, res) => {
     // Parents before children. Do not reorder these arms without checking the FK
     // graph in migrations/41_business_days_and_shift_attribution.sql.
     const syncedDayIds = new Set<string>();
-    if (businessDays.length) {
-      const ids = businessDays.map((d: any) => d.id);
-      const { data: existing } = await supabase
-        .from('business_days').select('id, business_id').in('id', ids);
-      if ((existing ?? []).some((r: any) => r.business_id !== businessId)) {
+    // P1-6: a non-UUID id is refused alone (it used to 22P02 the pre-check and 500 the whole push).
+    const { valid: validDays, rejected: badDays } = partitionByValidId(businessDays as { id: unknown }[], 'business_days');
+    for (const r of badDays) rejected.push(r);
+    if (validDays.length) {
+      const ids = validDays.map((d: any) => d.id);
+      // chunkIn: the id list never overflows the URL, and a failed read throws (never "none of them exist").
+      const existing = await chunkIn<{ id: string; business_id: string }>('business_days', 'id', ids, q => q.select('id, business_id'));
+      if (existing.some((r) => r.business_id !== businessId)) {
         res.status(409).json({ error: 'business_day id belongs to another business' });
         return;
       }
 
-      const rows = businessDays.map((d: any) => ({
+      const rows = validDays.map((d: any) => ({
         id:            d.id,
         business_id:   businessId,                 // forced from token
         branch_id:     d.branch_id,
@@ -271,16 +300,11 @@ router.post('/push', async (req, res) => {
       for (const r of results) {
         if (!r.error) { upserted.businessDays++; syncedDayIds.add(r.id); continue; }
         if ((r.error as { code?: string }).code === '23505') {
-          rejected.push({
-            id: r.id,
-            code: 'duplicate_open_day',
-            table: 'business_days',
-            error: 'This till already has an open trading day. It must be closed before this one can sync.',
-          });
+          // P2-17: the one-open-day index and the one-day-per-date index both raise 23505 — say which.
+          rejected.push({ id: r.id, table: 'business_days', ...duplicateDayCode(r.error as PgErr & { details?: string }) });
           continue;
         }
-        sendError(res, r.error);
-        return;
+        rejected.push(judgeRowError('business_days', r.id, r.error as PgErr));   // a data error, or SyncRetry → 503
       }
     }
 
@@ -295,18 +319,23 @@ router.post('/push', async (req, res) => {
     // through the existing POST /:id/close (same formula the online till
     // already uses), called by the sync engine once this shift's orders have
     // synced. See syncEngine.ts's reconcileClosedShifts().
-    if (shifts.length) {
-      const ids = shifts.map((s: any) => s.id);
-      const { data: existing } = await supabase
-        .from('shifts').select('id, business_id, status').in('id', ids);
-      if ((existing ?? []).some(r => r.business_id !== businessId)) {
+    const { valid: validShifts, rejected: badShifts } = partitionByValidId(shifts as { id: unknown }[], 'shifts');   // P1-6
+    for (const r of badShifts) rejected.push(r);
+    if (validShifts.length) {
+      const ids = validShifts.map((s: any) => s.id);
+      const existing = await chunkIn<{ id: string; business_id: string; status: string }>(
+        'shifts', 'id', ids, q => q.select('id, business_id, status'));
+      if (existing.some(r => r.business_id !== businessId)) {
         res.status(409).json({ error: 'shift id belongs to another business' });
         return;
       }
 
       // A shift the server already closed (via /:id/close) must never be
       // reopened by a stale/retried push — just leave it alone.
-      const alreadyClosed = new Set((existing ?? []).filter(r => r.status === 'closed').map(r => r.id));
+      // F12: ANY status but 'open' is closed — a web force-close writes 'closed_unreconciled', and a till's stale open
+      // push used to reopen it.
+      const alreadyClosed = new Set(existing.filter(r => r.status !== 'open').map(r => r.id));
+      const existingOpen = new Set(existing.filter(r => r.status === 'open').map(r => r.id));
 
       // ── The parent trading day must exist, or the upsert fails 23503 ────────
       // With the days arm running first, the parent is normally already in
@@ -319,7 +348,7 @@ router.post('/push', async (req, res) => {
       // skip is not: syncEngine marks every shift NOT in `rejected` as synced, so
       // a skipped shift would be recorded as delivered and never retried — the
       // drawer would simply disappear from the cloud with nothing reporting it.
-      const candidates = shifts.filter((s: any) => !alreadyClosed.has(s.id));
+      const candidates = validShifts.filter((s: any) => !alreadyClosed.has(s.id));
       const neededDayIds: string[] = Array.from(new Set<string>(
         candidates
           .map((s: any) => (typeof s.business_day_id === 'string' ? s.business_day_id : ''))
@@ -327,12 +356,10 @@ router.post('/push', async (req, res) => {
       ));
       const lookupDayIds = neededDayIds.filter(id => !syncedDayIds.has(id));
       if (lookupDayIds.length) {
-        const { data: presentDays } = await supabase
-          .from('business_days')
-          .select('id')
-          .in('id', lookupDayIds)
-          .eq('business_id', businessId);
-        for (const d of (presentDays ?? []) as { id: string }[]) syncedDayIds.add(d.id);
+        // Only UUIDs reach the query (a malformed day id would 22P02 it); a non-UUID day is simply not present.
+        const presentDays = await chunkIn<{ id: string }>('business_days', 'id', lookupDayIds.filter(isUuid),
+          q => q.select('id').eq('business_id', businessId));
+        for (const d of presentDays) syncedDayIds.add(d.id);
       }
       const orphanedDayIds = new Set(neededDayIds.filter(id => !syncedDayIds.has(id)));
 
@@ -393,12 +420,27 @@ router.post('/push', async (req, res) => {
         //
         // The fast path is preserved: rows are upserted concurrently, so this is
         // one round trip's worth of latency, not one per shift.
-        const results = await Promise.all(
-          rows.map(async row => {
+        // P2-10: a write that can never reopen a closed shift, even racing a close. An existing row is UPDATED only while
+        // it is still open (.eq('status','open')); a new row is INSERTED with ON CONFLICT DO NOTHING (ignoreDuplicates),
+        // so a row that appeared — and was closed — since the read above is left alone.
+        const writeShift = async (row: (typeof rows)[number]): Promise<PgErr> => {
+          if (existingOpen.has(row.id)) {
+            const { id: _id, business_id: _b, status: _s, ...open } = row;
+            const { error } = await supabase.from('shifts').update(open)
+              .eq('id', row.id).eq('business_id', businessId).eq('status', 'open');
+            return error;
+          }
+          // P0-1 (migration 133): pushed by a till — never folded into another drawer's count as a web stand-in.
+          // business_id: forced from the token where `rows` is built above
+          const { error } = await supabase.from('shifts').upsert({ ...row, opened_via: 'till' }, { onConflict: 'id', ignoreDuplicates: true });
+          if (error && /opened_via/.test(error.message ?? '')) {   // before migration 133
             // business_id: forced from the token where `rows` is built above
-            const { error } = await supabase.from('shifts').upsert(row, { onConflict: 'id' });
-            return { id: row.id, error };
-          }),
+            return (await supabase.from('shifts').upsert(row, { onConflict: 'id', ignoreDuplicates: true })).error;
+          }
+          return error;
+        };
+        const results = await Promise.all(
+          rows.map(async row => ({ id: row.id, error: await writeShift(row) })),   // business_id: forced from the token where `rows` is built above
         );
 
         for (const r of results) {
@@ -414,27 +456,35 @@ router.post('/push', async (req, res) => {
             continue;
           }
 
-          // Anything else is a genuine failure worth surfacing and retrying.
-          sendError(res, r.error);
-          return;
+          // P1-6: any other data error (23503 shifts.cashier_id for a cashier created offline, a bad value …) is refused
+          // for THIS shift alone, with its code — it used to 500 the whole push on every pass. A transport failure → 503.
+          rejected.push(judgeRowError('shifts', r.id, r.error));
         }
       }
     }
 
     // ── Float movements — must reference a shift owned by this business, and
     //    must not overwrite a float that currently belongs to another business.
-    if (floats.length) {
-      const incomingShiftIds = [...new Set(floats.map((f: any) => f.shift_id))];
-      const { data: ownedShifts } = await supabase
-        .from('shifts').select('id').eq('business_id', businessId).in('id', incomingShiftIds);
-      const ownedShiftSet = new Set((ownedShifts ?? []).map(s => s.id));
+    const { valid: validFloats, rejected: badFloats } = partitionByValidId(floats as { id: unknown }[], 'float_transactions');   // P1-6
+    for (const r of badFloats) rejected.push(r);
+    if (validFloats.length) {
+      const incomingShiftIds = [...new Set(validFloats.map((f: any) => f.shift_id))].filter(isUuid) as string[];
+      const ownedShifts = await chunkIn<{ id: string }>('shifts', 'id', incomingShiftIds,
+        q => q.select('id').eq('business_id', businessId));
+      const ownedShiftSet = new Set(ownedShifts.map(s => s.id));
+      // Till sync audit (A484): the sale a pay-out was made for. float_transactions.order_id references orders, and a
+      // till's float can arrive before its sale does — so the link is kept only when this business's sale is already
+      // here; otherwise it is left empty rather than refusing the cash movement (a 23503 would park it for good).
+      const incomingOrderIds = [...new Set(validFloats.map((f: any) => f.order_id))].filter(isUuid) as string[];
+      const knownOrders = incomingOrderIds.length
+        ? await chunkIn<{ id: string }>('orders', 'id', incomingOrderIds, q => q.select('id').eq('business_id', businessId))
+        : [];
+      const knownOrderSet = new Set(knownOrders.map(o => o.id));
 
-      const floatIds = floats.map((f: any) => f.id);
-      const { data: existingFloats } = await supabase
-        .from('float_transactions')
-        .select('id, shifts!inner(business_id)')
-        .in('id', floatIds);
-      if ((existingFloats ?? []).some((r: any) => r.shifts?.business_id !== businessId)) {
+      const floatIds = validFloats.map((f: any) => f.id);
+      const existingFloats = await chunkIn<any>('float_transactions', 'id', floatIds,
+        q => q.select('id, shifts!inner(business_id)'));
+      if (existingFloats.some((r: any) => r.shifts?.business_id !== businessId)) {
         res.status(409).json({ error: 'float id belongs to another business' });
         return;
       }
@@ -447,9 +497,9 @@ router.post('/push', async (req, res) => {
       // push, which the till parks as a conflict — the float joins it there,
       // instead of vanishing). A batch upsert is also avoided so one bad row
       // cannot fail the whole set.
-      const results = await Promise.all(floats.map(async (f: any) => {
+      const results = await Promise.all(validFloats.map(async (f: any) => {
         if (!ownedShiftSet.has(f.shift_id)) {
-          return { id: f.id, code: 'missing_shift', error: 'parent shift not synced' };
+          return { id: f.id, code: 'missing_shift', error: 'parent shift not synced', own: true };
         }
         const row = {
           id:         f.id,
@@ -463,18 +513,17 @@ router.post('/push', async (req, res) => {
           // 0.6.37 (A388): who approved a pay-out. Never a reason to refuse the row: a bad id is dropped, not rejected.
           approved_by:      isUuid(f.approved_by) ? String(f.approved_by) : null,
           approved_by_name: typeof f.approved_by_name === 'string' ? f.approved_by_name.slice(0, 100) : null,
+          order_id:         knownOrderSet.has(f.order_id) ? String(f.order_id) : null,
         };
         const { error } = await supabase.from('float_transactions').upsert(row, { onConflict: 'id' });
-        return { id: f.id, code: (error as { code?: string })?.code, error: error?.message };
+        return { id: f.id, code: (error as { code?: string })?.code, error: error ? (error.message || 'write failed') : undefined, own: false, pg: error as PgErr };
       }));
       for (const r of results) {
         if (!r.error) { upserted.floats++; continue; }
-        rejected.push({
-          id: r.id,
-          code: r.code ?? 'error',
-          table: 'float_transactions',
-          error: r.error,
-        });
+        // The route's own refusal (missing_shift) is parked; a database error only when it is about the data (P1-5).
+        rejected.push(r.own
+          ? { id: r.id, code: r.code ?? 'error', table: 'float_transactions', error: r.error }
+          : judgeRowError('float_transactions', r.id, (r as { pg?: PgErr }).pg));
       }
     }
 
@@ -489,9 +538,8 @@ router.post('/push', async (req, res) => {
 
       if (validExpenses.length) {
         const ids = validExpenses.map((e: any) => e.id);
-        const { data: existing } = await supabase
-          .from('expenses').select('id, business_id').in('id', ids);
-        if ((existing ?? []).some(r => r.business_id !== businessId)) {
+        const existing = await chunkIn<{ id: string; business_id: string }>('expenses', 'id', ids, q => q.select('id, business_id'));
+        if (existing.some(r => r.business_id !== businessId)) {
           res.status(409).json({ error: 'expense id belongs to another business' });
           return;
         }
@@ -517,11 +565,11 @@ router.post('/push', async (req, res) => {
             approved_by_name:    typeof e.approved_by_name === 'string' ? e.approved_by_name.slice(0, 100) : null,
           };
           const { error } = await supabase.from('expenses').upsert(row, { onConflict: 'id' });
-          return { id: e.id, code: (error as { code?: string })?.code, error: error?.message };
+          return { id: e.id as string, pg: error as PgErr };
         }));
         for (const r of results) {
-          if (!r.error) { upserted.expenses++; continue; }
-          rejected.push({ id: r.id, code: r.code ?? 'error', table: 'expenses', error: r.error });
+          if (!r.pg) { upserted.expenses++; continue; }
+          rejected.push(judgeRowError('expenses', r.id, r.pg));   // P1-5: parked only for a data error; else 503
         }
       }
     }
@@ -532,9 +580,9 @@ router.post('/push', async (req, res) => {
       const { valid: validKv, rejected: badIdKv } = partitionByValidId(kitchenVoids as { id: unknown }[], 'kitchen_voids');
       for (const r of badIdKv) rejected.push(r);
       if (validKv.length) {
-        const { data: existing } = await supabase
-          .from('kitchen_voids').select('id, business_id').in('id', validKv.map((k: any) => k.id));
-        const foreign = new Set((existing ?? []).filter((r) => r.business_id !== businessId).map((r) => r.id));
+        const existing = await chunkIn<{ id: string; business_id: string }>('kitchen_voids', 'id', validKv.map((k: any) => k.id),
+          q => q.select('id, business_id'));
+        const foreign = new Set(existing.filter((r) => r.business_id !== businessId).map((r) => r.id));
         const uuidOrNull = (v: unknown) => (isUuid(v) ? String(v) : null);
         const results = await Promise.all(validKv.map(async (k: any) => {
           if (foreign.has(k.id)) return { id: k.id, code: 'forbidden', error: 'kitchen void id belongs to another business' };
@@ -565,11 +613,16 @@ router.post('/push', async (req, res) => {
             created_at:       k.created_at ?? new Date().toISOString(),
           };
           const { error } = await supabase.from('kitchen_voids').upsert(row, { onConflict: 'id' });
-          return { id: k.id, code: (error as { code?: string })?.code, error: error?.message };
+          return { id: k.id, code: undefined, error: undefined, pg: error as PgErr };
         }));
         for (const r of results) {
-          if (!r.error) { upserted.kitchenVoids++; continue; }
-          rejected.push({ id: r.id, code: r.code ?? 'error', table: 'kitchen_voids', error: r.error });
+          const pg = (r as { pg?: PgErr }).pg;
+          if (!r.error && !pg) { upserted.kitchenVoids++; continue; }
+          // The route's own refusals (forbidden, invalid_reason, invalid_quantity) are parked as before; a database error
+          // only when it is about the data — anything else answers 503 and the push is sent again (P1-5).
+          rejected.push(r.error
+            ? { id: r.id, code: r.code ?? 'error', table: 'kitchen_voids', error: r.error }
+            : judgeRowError('kitchen_voids', r.id, pg));
         }
       }
     }
@@ -580,7 +633,15 @@ router.post('/push', async (req, res) => {
     // the whole payload, which is the behaviour this change exists to remove.
     res.json({ ok: true, upserted, rejected, schema: schemaStatus });
   } catch (err: any) {
-    sendError(res, err, { message: 'sync push failed' });
+    // P1-5: a write that failed for a reason other than its data (the network, a timeout, the gateway) — nothing is
+    // parked; the till sends the whole push again (every write above is an idempotent upsert by id).
+    if (err instanceof SyncRetry) {
+      console.error(`[sync] push to retry — ${err.message}`);
+      res.status(503).json({ error: 'The cloud could not save this sync just now — it will be sent again.', code: 'SYNC_RETRY', table: err.table });
+      return;
+    }
+    // A read that failed (chunkIn throws) is just as transient: 503, never a 200 that marks rows synced.
+    sendError(res, err, { status: 503, message: 'sync push failed — it will be sent again', code: 'SYNC_RETRY' });
   }
 });
 
