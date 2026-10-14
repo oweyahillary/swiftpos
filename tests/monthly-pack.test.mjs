@@ -248,6 +248,14 @@ try {
     assert.equal((await call(CASHIER, 'GET', `?month=2026-06&branch_id=${BR}`)).status, 403);
     assert.equal((await call(MANAGER, 'GET', `?month=June&branch_id=${BR}`)).status, 400);
   });
+  await ok('A481: a manager who keeps the books (expenses.manage, no reports.financial) reads and exports their own branch pack, not another branch', async () => {
+    reset();
+    const KEEPER = token(MGR, ['expenses.manage']);
+    assert.equal((await call(KEEPER, 'GET', `?month=2026-06&branch_id=${BR}`)).status, 200);
+    assert.equal((await call(KEEPER, 'GET', `/export?month=2026-06&branch_id=${BR}`)).status, 200);
+    assert.equal((await call(KEEPER, 'GET', `?month=2026-06&branch_id=${BR2}`)).status, 403);
+    assert.equal((await call(token(CASH, ['expenses.view']), 'GET', `?month=2026-06&branch_id=${BR}`)).status, 403, 'viewing expenses alone does not open the pack');
+  });
   await ok('the owner must pick a branch (one workbook per branch, as the clients keep them)', async () => {
     reset();
     const owner = token(MGR, ['*'], { isOwner: true });

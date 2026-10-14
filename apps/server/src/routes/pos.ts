@@ -550,11 +550,15 @@ router.get('/init', async (req, res) => {
 
 // A404 — the test-data clears ZapTill made for this business (admin portal, A396) after `after`, oldest first; the
 // till removes the same periods from its own database (main/testDataClear.ts). Last 60 days only.
+// A482: `menu` = that clear deleted the whole menu (migration 132) — the till empties its own menu too. Before 132 the
+// column is missing: the clears are listed without it (menu false).
 router.get('/test-data-clears', async (req, res) => {
   const floor = new Date(Date.now() - 60 * 86_400_000).toISOString();
   const after = typeof req.query.after === 'string' && !Number.isNaN(Date.parse(req.query.after)) && req.query.after > floor ? req.query.after : floor;
-  const { data, error } = await supabase.from('test_data_purges').select('id, from_at, to_at, created_at')
+  const clearsOf = (cols: string) => supabase.from('test_data_purges').select(cols)
     .eq('business_id', req.businessId).gt('created_at', after).order('created_at', { ascending: true }).limit(20);
+  let { data, error } = await clearsOf('id, from_at, to_at, created_at, menu');
+  if (error) ({ data, error } = await clearsOf('id, from_at, to_at, created_at'));
   if (error) { res.json([]); return; }   // before migration 122: nothing to clear
   res.set('Cache-Control', 'no-store');
   res.json(data ?? []);

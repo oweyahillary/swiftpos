@@ -6,20 +6,26 @@
  * client was set up and the end to now; the preview shows what falls inside, the first and last test sale, and the first
  * sale AFTER the window (so a real sale is never caught). The clear itself is one database transaction on the cloud
  * (migration 122) — super admin only, the client's name typed to confirm.
+ *
+ * A482 (owner, 2026-10-14: "can we add purge menu where we delete everything in the menu even the test data, should be a
+ * check box when deleting test data"): "Also delete the whole menu" — unticked by default; ticked, the preview counts the
+ * menu too and the clear deletes it in the same transaction (migration 132, purge_test_menu). Refused while a real sale
+ * outside the window uses the menu. The tills empty their menu on their next sync.
  */
 import { useEffect, useState } from "react";
 import { C, S } from "./theme";
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 
-interface Counts { [k: string]: number | string | null }
+interface Counts { [k: string]: number | string | boolean | null }
 interface Preview {
   business: { id: string; name: string };
   defaults: { from: string; to: string };
   window: { from: string; to: string };
+  menu?: boolean;
   preview: { ok: boolean; problems: string[]; counts: Counts };
   tills_behind: Array<{ name: string; last_sync_at: string | null }>;
-  history: Array<{ from_at: string; to_at: string; stock_mode: string; counts: Counts; done_by: string | null; created_at: string }>;
+  history: Array<{ from_at: string; to_at: string; stock_mode: string; counts: Counts; done_by: string | null; created_at: string; menu?: boolean }>;
 }
 
 /** ISO → the value a datetime-local box shows (the admin's own clock). */
@@ -35,12 +41,21 @@ const LABELS: Array<[string, string]> = [
   ["customers_created", "Customers added"],
 ];
 
+/** A482: what "Also delete the whole menu" adds to the preview. */
+const MENU_LABELS: Array<[string, string]> = [
+  ["menu_products", "Products"], ["menu_categories", "Categories"], ["menu_variants", "Variants / choice groups"],
+  ["menu_modifiers", "Add-ons"], ["menu_extras", "Extras"], ["menu_combos", "Combo lines"], ["menu_recipes", "Recipe lines"],
+  ["menu_offers", "Offers"], ["menu_branch_prices", "Branch prices"], ["menu_stock_lines", "Stock lines"],
+];
+const MENU_WARNING = "Every product, category, variant / choice group, extra, combo, recipe, branch price, offer and the menu's stock levels are deleted. The till menus empty on their next sync. This cannot be undone.";
+
 export default function TestDataCard({ clientId, req, isSuper }: { clientId: string; req: Req; isSuper: boolean }) {
   const [open, setOpen] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [stock, setStock] = useState<"undo" | "zero" | "keep">("undo");
   const [customers, setCustomers] = useState(true);
+  const [menu, setMenu] = useState(false);   // A482: unticked by default
   const [data, setData] = useState<Preview | null>(null);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,7 +65,7 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
   const load = async (f?: string, t?: string) => {
     setBusy(true); setError("");
     try {
-      const qs = new URLSearchParams({ stock, customers: String(customers) });
+      const qs = new URLSearchParams({ stock, customers: String(customers), menu: String(menu) });
       if (f) qs.set("from", fromLocal(f));
       if (t) qs.set("to", fromLocal(t));
       const d: Preview = await req("GET", `/clients/${clientId}/test-data?${qs}`);
@@ -67,9 +82,10 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
     setBusy(true); setError(""); setDone("");
     try {
       const r = await req("POST", `/clients/${clientId}/test-data/clear`, {
-        from: fromLocal(from), to: fromLocal(to), stock_mode: stock, delete_customers: customers, confirm_name: confirm,
+        from: fromLocal(from), to: fromLocal(to), stock_mode: stock, delete_customers: customers, menu, confirm_name: confirm,
       });
-      setDone(`Cleared: ${r.counts?.sales ?? 0} sales, ${r.counts?.shifts ?? 0} shifts, ${r.counts?.expenses ?? 0} expenses and the rest of the window.`);
+      setDone(`Cleared: ${r.counts?.sales ?? 0} sales, ${r.counts?.shifts ?? 0} shifts, ${r.counts?.expenses ?? 0} expenses and the rest of the window${menu ? ` — and the whole menu (${r.counts?.menu_products ?? 0} products)` : ""}.`);
+      setMenu(false);
       setConfirm(""); setData(null); await load(from, to);
     } catch (e: any) { setError(e?.message || "Nothing was cleared."); }
     finally { setBusy(false); }
@@ -77,8 +93,12 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
 
   const c = data?.preview.counts ?? {};
   const problems = data?.preview.problems ?? [];
-  const nothing = data && Number(c.sales ?? 0) === 0 && LABELS.every(([k]) => Number(c[k] ?? 0) === 0);
-  const canClear = isSuper && data && problems.length === 0 && !nothing && confirm.trim().toLowerCase() === data.business.name.trim().toLowerCase();
+  // A482: the preview on screen must be the one for the box as it is now (ticking it asks for a new preview)
+  const menuShown = !!data?.menu;
+  const stale = !!data && menuShown !== menu;
+  const nothing = data && Number(c.sales ?? 0) === 0 && LABELS.every(([k]) => Number(c[k] ?? 0) === 0)
+    && (!menuShown || MENU_LABELS.every(([k]) => Number(c[k] ?? 0) === 0));
+  const canClear = isSuper && data && !stale && problems.length === 0 && !nothing && confirm.trim().toLowerCase() === data.business.name.trim().toLowerCase();
   const input = { ...S.input, maxWidth: 230 } as const;
 
   return (
@@ -86,7 +106,7 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.danger }}>Clear test data</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Remove the sales, shifts and stock activity made while testing — before the client starts trading. Menu, staff, branches, tills and settings stay.</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Remove the sales, shifts and stock activity made while testing — before the client starts trading. Staff, branches, tills and settings stay; the menu stays unless you tick "Also delete the whole menu".</div>
         </div>
         {!open && <button onClick={() => setOpen(true)} style={{ ...S.btn, ...S.btnDanger, fontSize: 12 }}>Clear test data…</button>}
       </div>
@@ -106,8 +126,16 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
               </select></label>
             <label style={{ fontSize: 12, color: C.muted, display: "flex", gap: 6, alignItems: "center", paddingBottom: 8 }}>
               <input type="checkbox" checked={customers} onChange={(e) => setCustomers(e.target.checked)} /> Remove customers added while testing</label>
+            <label style={{ fontSize: 12, color: menu ? C.danger : C.muted, display: "flex", gap: 6, alignItems: "center", paddingBottom: 8, fontWeight: menu ? 600 : 400 }}>
+              <input type="checkbox" checked={menu} onChange={(e) => setMenu(e.target.checked)} data-testid="test-menu" /> Also delete the whole menu</label>
             <button disabled={busy || !from || !to} onClick={() => load(from, to)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>{busy ? "Checking…" : "Show what will be removed"}</button>
           </div>
+          {menu && (
+            <div style={{ fontSize: 12, color: C.danger, lineHeight: 1.6, border: "1px solid rgba(255,92,108,0.4)", borderRadius: 10, padding: "8px 10px" }} data-testid="test-menu-warning">
+              {MENU_WARNING} Ingredients and suppliers stay.
+            </div>
+          )}
+          {stale && <div style={{ fontSize: 12, color: "#f59e0b" }} data-testid="test-menu-stale">Press "Show what will be removed" again — the preview on screen is {menuShown ? "with" : "without"} the menu.</div>}
           {data && <div style={{ fontSize: 11, color: C.muted }}>Defaults: set up {when(data.defaults.from)} → now. Change them to the exact start and end of testing.</div>}
 
           {data && (
@@ -118,6 +146,19 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
                   <div style={{ fontSize: 16, fontWeight: 600 }}>{Number(c[k] ?? 0)}</div>
                 </div>
               ))}
+            </div>
+          )}
+          {data && menuShown && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.danger, marginBottom: 6 }}>The whole menu</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }} data-testid="test-menu-counts">
+                {MENU_LABELS.map(([k, l]) => (
+                  <div key={k} style={{ border: "1px solid rgba(255,92,108,0.35)", borderRadius: 10, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 11, color: C.muted }}>{l}</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: C.danger }}>{Number(c[k] ?? 0)}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {data && Number(c.sales ?? 0) > 0 && (
@@ -144,7 +185,7 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={`Type "${data.business.name}" to confirm`} style={{ ...S.input, maxWidth: 300 }} data-testid="test-confirm" />
               <button disabled={!canClear || busy} onClick={clear} data-testid="test-clear"
-                style={{ ...S.btn, ...S.btnDanger, fontSize: 12, opacity: canClear && !busy ? 1 : 0.5 }}>{busy ? "Clearing…" : "Clear test data"}</button>
+                style={{ ...S.btn, ...S.btnDanger, fontSize: 12, opacity: canClear && !busy ? 1 : 0.5 }}>{busy ? "Clearing…" : menuShown ? "Clear test data and the whole menu" : "Clear test data"}</button>
               {!isSuper && <span style={{ fontSize: 12, color: C.muted }}>Only a super admin can clear.</span>}
             </div>
           )}
@@ -155,7 +196,7 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
             <div style={{ fontSize: 12, color: C.muted }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Earlier clears</div>
               {data.history.map((h) => (
-                <div key={h.created_at}>{when(h.created_at)} — {when(h.from_at)} → {when(h.to_at)}: {Number(h.counts?.sales ?? 0)} sales{h.done_by ? ` · ${h.done_by}` : ""}</div>
+                <div key={h.created_at}>{when(h.created_at)} — {when(h.from_at)} → {when(h.to_at)}: {Number(h.counts?.sales ?? 0)} sales{h.menu || h.counts?.menu === true ? ` · whole menu deleted (${Number(h.counts?.menu_products ?? 0)} products)` : ""}{h.done_by ? ` · ${h.done_by}` : ""}</div>
               ))}
             </div>
           )}

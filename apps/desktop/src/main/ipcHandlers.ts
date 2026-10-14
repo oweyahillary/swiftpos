@@ -742,6 +742,11 @@ export function registerIpcHandlers() {
         role: staff.roleName,
         permissions: staff.permissions,
         branch: { id: branch_id, name: branchRowOff?.name ?? null },
+        // A480 (owner, 2026-10-14: "No branch bound to this till … happens to all tills which are trying to update"): the
+        // screens read `branchId` / `branchName`, as the online answer gives them — a local sign-in carried only `branch`,
+        // so the update bar's Manager-PIN restart said "No branch bound" and the manager screen had no branch.
+        branchId: branch_id,
+        branchName: branchRowOff?.name ?? null,
         business: { name: session?.business_name ?? null, currency: session?.currency ?? null },
         offline: true,
       };
@@ -873,7 +878,18 @@ export function registerIpcHandlers() {
     const { pin } = assertPayload<{ pin: string }>({ pin: { t: 'string', min: 1 } }, payload);
     const st = getLocalDb().prepare(`SELECT staff_id, branch_id FROM staff_session WHERE id=1`).get() as { staff_id?: string; branch_id?: string } | undefined;
     if (!st?.staff_id || !st.branch_id) throw new Error('Nobody is signed in on this till — sign in again.');
-    const mine = (id: string | null | undefined) => ({ ok: id === st.staff_id, reason: id === st.staff_id ? undefined : 'other' as const });
+    // A480: a session signed in on this till's own check (no cloud token — offline, a slow line, a refused till, or after a
+    // restart lost the held PIN) becomes a cloud one again from the unlock: the PIN is held and the upgrade tried at once,
+    // as after the offline sign-in itself (A345). The manager's Overview then shows the cloud's branch, not the
+    // "Sign in as a manager" fallback, without signing out.
+    const mine = (id: string | null | undefined) => {
+      const ok = id === st.staff_id;
+      if (ok && !readStaffTokens().token) {
+        holdOfflinePin({ staffId: st.staff_id!, branchId: st.branch_id!, pin: String(pin) });
+        void tryUpgradeOfflineSession();
+      }
+      return { ok, reason: ok ? undefined : 'other' as const };
+    };
     const local = verifyPinAtNode(String(pin), st.branch_id);
     if (local.ok) return mine(local.staff.staffId);
     const saved = verifyPinOffline(String(pin), st.branch_id);

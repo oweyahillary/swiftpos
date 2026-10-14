@@ -700,7 +700,9 @@ async function countFor(table: string, businessId: string): Promise<number | nul
 // Owner, 2026-10-04: "the purge i should be able to select the date it starts and time (which the system should give
 // by default) and the date and time testing stopped so that i should not purge a real sale". The work is one database
 // function (migration 122, purge_test_data) — one transaction, a preview first, refusals instead of cutting a real shift
-// or day in two. Menu, staff, branches, tills and settings are never touched.
+// or day in two. Menu, staff, branches, tills and settings are never touched — unless (A482, migration 132) the box
+// "Also delete the whole menu" is ticked: then purge_test_menu runs the same clear AND deletes every menu row of the
+// business in the same transaction, refusing while a real sale outside the window still uses the menu.
 
 /** The window the admin sees first: from when the client was set up to now (to the minute). */
 function testWindowDefaults(createdAt: string | null | undefined): { from: string; to: string } {
@@ -720,12 +722,15 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
   const from = isTime(req.query.from) ? new Date(req.query.from).toISOString() : defaults.from;
   const to = isTime(req.query.to) ? new Date(req.query.to).toISOString() : defaults.to;
   const stock = STOCK_MODES.has(String(req.query.stock)) ? String(req.query.stock) : 'undo';
-  const { data: preview, error } = await supabase.rpc('purge_test_data', {
+  const menu = req.query.menu === 'true';   // A482: the preview counts the whole menu too
+  const { data: preview, error } = await supabase.rpc(menu ? 'purge_test_menu' : 'purge_test_data', {
     p_business: biz.id, p_from: from, p_to: to, p_stock_mode: stock, p_delete_customers: req.query.customers === 'true', p_dry_run: true,
   });
   if (error) {
-    // Before migration 122 the function does not exist — say so rather than a raw database error.
-    res.status(503).json({ error: /purge_test_data/.test(error.message) ? 'Run migration 122 first (clear test data).' : error.message, code: 'NOT_READY' });
+    // Before migration 122 (132 for the menu) the function does not exist — say so rather than a raw database error.
+    const missing = /purge_test_menu/.test(error.message) ? 'Run migration 132 first (delete the whole menu).'
+      : /purge_test_data/.test(error.message) ? 'Run migration 122 first (clear test data).' : null;
+    res.status(503).json({ error: missing ?? error.message, code: 'NOT_READY' });
     return;
   }
   // A till that has not synced since the window ended may still hold test sales it has not sent.
@@ -734,9 +739,12 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
   const behind = ((tills ?? []) as Array<{ device_label: string | null; terminal_code: string | null; last_sync_at: string | null }>)
     .filter((t) => !t.last_sync_at || t.last_sync_at < to)
     .map((t) => ({ name: t.terminal_code || t.device_label || 'A till', last_sync_at: t.last_sync_at }));
-  const { data: history } = await supabase.from('test_data_purges').select('from_at, to_at, stock_mode, counts, done_by, created_at')
+  // A482: `menu` (migration 132) — before it the column is missing, so the history is read without it.
+  const historyOf = (cols: string) => supabase.from('test_data_purges').select(cols)
     .eq('business_id', biz.id).order('created_at', { ascending: false }).limit(10);
-  res.json({ business: { id: biz.id, name: biz.name }, defaults, window: { from, to }, stock, preview, tills_behind: behind, history: history ?? [] });
+  let { data: history, error: hErr } = await historyOf('from_at, to_at, stock_mode, counts, done_by, created_at, menu');
+  if (hErr) ({ data: history } = await historyOf('from_at, to_at, stock_mode, counts, done_by, created_at'));
+  res.json({ business: { id: biz.id, name: biz.name }, defaults, window: { from, to }, stock, menu, preview, tills_behind: behind, history: history ?? [] });
 });
 
 router.post('/clients/:id/test-data/clear', requireAdmin, requireSuperAdmin, async (req: any, res) => {
@@ -746,12 +754,15 @@ router.post('/clients/:id/test-data/clear', requireAdmin, requireSuperAdmin, asy
   if (!isTime(b.from) || !isTime(b.to)) { res.status(400).json({ error: 'Give when testing started and when it stopped.' }); return; }
   const stock = STOCK_MODES.has(String(b.stock_mode)) ? String(b.stock_mode) : null;
   if (!stock) { res.status(400).json({ error: 'Choose what happens to stock.' }); return; }
+  // A482: "Also delete the whole menu" — only an explicit true deletes it; anything else but false/absent is refused.
+  if (b.menu !== undefined && typeof b.menu !== 'boolean') { res.status(400).json({ error: 'menu must be true or false.' }); return; }
+  const menu = b.menu === true;
   if (String(b.confirm_name ?? '').trim().toLowerCase() !== String(biz.name).trim().toLowerCase()) {
     res.status(400).json({ error: 'Type the client\'s name exactly to confirm.', code: 'CONFIRM_NAME' });
     return;
   }
   const reason = String(b.reason ?? '').trim().slice(0, 300) || 'Test data cleared before go-live';
-  const { data: result, error } = await supabase.rpc('purge_test_data', {
+  const { data: result, error } = await supabase.rpc(menu ? 'purge_test_menu' : 'purge_test_data', {
     p_business: biz.id, p_from: new Date(b.from).toISOString(), p_to: new Date(b.to).toISOString(), p_stock_mode: stock,
     p_delete_customers: b.delete_customers === true, p_dry_run: false, p_done_by: req.adminEmail ?? null, p_reason: reason,
   });
@@ -761,7 +772,7 @@ router.post('/clients/:id/test-data/clear', requireAdmin, requireSuperAdmin, asy
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail, action: 'test_data_cleared', resource: 'business',
     businessId: biz.id, businessName: biz.name, reason,
-    after: { from: b.from, to: b.to, stock_mode: stock, delete_customers: b.delete_customers === true, counts: r.counts },
+    after: { from: b.from, to: b.to, stock_mode: stock, delete_customers: b.delete_customers === true, menu, counts: r.counts },
   });
   res.json(r);
 });

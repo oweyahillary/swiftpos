@@ -1437,7 +1437,8 @@
     "counts": "\"jsonb\" NOT NULL",
     "done_by": "\"text\"",
     "reason": "\"text\"",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "menu": "\"boolean\" NOT NULL"
   },
   "usage_snapshots": {
     "id": "\"uuid\" NOT NULL",

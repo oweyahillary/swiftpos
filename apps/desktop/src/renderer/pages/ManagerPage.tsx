@@ -240,12 +240,15 @@ function Spinner() {
 function ScopeLine({ day }: { day: BranchDay | null }) {
   if (!day) return null;
   const cloud = day.source === 'cloud';
+  // A480 (owner, 2026-10-14: the yellow line on every branch server): a branch server's own records ARE the branch (every
+  // till syncs to it) — that is said quietly, in gray, like the cloud's; amber is kept for "this till only".
+  const calm = cloud || day.localCoversBranch;
   return (
-    <div data-testid="overview-scope" className={`text-xs rounded-lg px-3 py-2 border ${cloud
+    <div data-testid="overview-scope" className={`text-xs rounded-lg px-3 py-2 border ${calm
       ? 'text-gray-400 bg-gray-900 border-gray-800'
       : 'text-amber-300 bg-amber-400/10 border-amber-400/20'}`}>
       <span className="font-semibold">{day.scopeLabel}</span>
-      {cloud ? ' · from the cloud' : day.fallbackReason ? ` · ${day.fallbackReason}` : ''}
+      {cloud ? ' · from the cloud' : !day.localCoversBranch && day.fallbackReason ? ` · ${day.fallbackReason}` : ''}
     </div>
   );
 }
@@ -2048,7 +2051,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canWaste: has('inventory.waste') || has('inventory.adjust') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A414
     online,   // A460
     canTransfer: has('inventory.transfer') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A197
-    canMonthly: has('reports.financial'),   // A466: the cloud reads the pack for reports.financial (routes/reports-monthly.ts)
+    // A466 / A481: the cloud reads the pack for reports.financial OR expenses.manage (the manager who keeps the books).
+    canMonthly: has('reports.financial') || has('expenses.manage'),
   });
   const GROUP_ICON: Record<GroupKey, string> = {
     overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,

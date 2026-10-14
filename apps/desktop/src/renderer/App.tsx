@@ -214,7 +214,8 @@ function AppScreens() {
 
   // A306: the auto-update banner rides alongside the working surface (like the curtain), so a
   // pending update is communicated while staff are logged in — never on the lock/PIN screens.
-  const updateBanner = <UpdateBanner branchId={staff?.branchId ?? null} />;
+  // A480: a local sign-in used to carry only `branch` — read either, so the Manager-PIN restart always has the branch.
+  const updateBanner = <UpdateBanner branchId={staff?.branchId ?? (staff as any)?.branch?.id ?? null} />;
 
   if (state === 'manager' && staff) {
     return (

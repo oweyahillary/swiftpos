@@ -151,7 +151,7 @@ console.log('\nThe screen (source)\n');
   const sales = (a) => Nav.groupOf(Nav.buildManagerNav({ ...base, ...a }), 'orders').tabs.map((t) => t.key);
   ok('Sales › Monthly pack with reports.financial — with or without the online licence', sales({ canMonthly: true, online: false }).includes('monthly') && !sales({ canMonthly: false, online: true }).includes('monthly'));
   const mp = read('src/renderer/pages/ManagerPage.tsx');
-  ok('ManagerPage: the tab for reports.financial, recording for expenses.manage', /canMonthly: has\('reports\.financial'\),/.test(mp)
+  ok('ManagerPage: the tab for reports.financial, recording for expenses.manage', /canMonthly: has\('reports\.financial'\) \|\| has\('expenses\.manage'\),/.test(mp)
     && /case 'monthly': return <MonthlyPackTab currency=\{currency\} canRecord=\{has\('expenses\.manage'\)\} \/>;/.test(mp));
   const tab = read('src/renderer/components/MonthlyPackTab.tsx');
   ok('the record form and Remove only for expenses.manage', /\{canRecord && \(\s*<div className="flex flex-wrap gap-2 items-end" data-testid="pack-record-form">/.test(tab)
