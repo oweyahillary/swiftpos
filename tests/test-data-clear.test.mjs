@@ -37,8 +37,30 @@ ok('the preview is a dry run; the clear is super admin only, the name typed, aud
   assert.match(a, /if \(!r\.ok\) \{ res\.status\(409\)/);
 });
 ok('a till that has not synced since testing stopped is named (it may hold unsent test sales)', () => {
-  assert.match(a, /\.filter\(\(t\) => !t\.last_sync_at \|\| t\.last_sync_at < to\)/);
+  assert.match(a, /const behindBefore = Math\.min\(Date\.parse\(to\), Date\.now\(\) - TILL_SYNC_GRACE_MS\);/);
+  assert.match(a, /\.filter\(\(t\) => !t\.last_sync_at \|\| !\(Date\.parse\(t\.last_sync_at\) >= behindBefore\)\)/);
+  assert.match(a, /const TILL_SYNC_GRACE_MS = 10 \* 60_000;/);
   assert.match(card, /data-testid="tills-behind"/);
+});
+ok('A487: with the window ending now, a till that synced a minute ago is NOT behind; one silent since before the end is', () => {
+  // The rule as the route runs it (pinned above), on the owner's case: T1 synced 21:37:12, preview opened 21:38, to = 21:38.
+  const GRACE = 10 * 60_000;
+  const behind = (last, to, now) => !last || !(Date.parse(last) >= Math.min(Date.parse(to), now - GRACE));
+  const now = Date.parse('2026-10-14T18:38:30Z');
+  assert.equal(behind('2026-10-14T18:37:12.5+00:00', '2026-10-14T18:38:00.000Z', now), false, 'synced a minute ago: current');
+  assert.equal(behind('2026-10-14T17:00:00+00:00', '2026-10-14T18:38:00.000Z', now), true, 'silent for 1.5 h: behind');
+  assert.equal(behind('2026-10-09T20:00:00+00:00', '2026-10-09T20:12:00.000Z', now), true, 'window ended days ago, last sync before it');
+  assert.equal(behind('2026-10-10T08:00:00+00:00', '2026-10-09T20:12:00.000Z', now), false, 'synced after an old window ended');
+  assert.equal(behind(null, '2026-10-14T18:38:00.000Z', now), true, 'never synced');
+});
+ok('A488: the trading days that block the clear are named — the same rule as purge_test_data, from the cloud', () => {
+  assert.match(a, /\.eq\('business_id', biz\.id\)\.gte\('opened_at', from\)\.lte\('opened_at', to\)\s*\.or\(`closed_at\.is\.null,closed_at\.gt\.\$\{to\}`\)/);
+  assert.match(a, /days_in_question: daysInQuestion/);
+  assert.match(card, /data-testid="days-in-question"/);
+  assert.match(card, /not closed on the cloud \(\$\{d\.status\}\)/);
+  const mig = read('migrations/123_wastage.sql');   // the latest purge_test_data
+  assert.match(mig, /opened_at >= p_from AND opened_at <= p_to/);
+  assert.match(mig, /closed_at IS NULL OR closed_at > p_to/);
 });
 ok('the card shows the first sale after the window (it stays) and refuses with the reasons', () => {
   assert.match(card, /First sale after the window: <b>\{c\.next_sale_after/);

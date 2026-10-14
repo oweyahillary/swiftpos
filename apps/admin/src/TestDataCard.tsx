@@ -25,6 +25,7 @@ interface Preview {
   menu?: boolean;
   preview: { ok: boolean; problems: string[]; counts: Counts };
   tills_behind: Array<{ name: string; last_sync_at: string | null }>;
+  days_in_question?: Array<{ business_date: string; till: string | null; branch: string | null; status: string; opened_at: string; closed_at: string | null }>;
   history: Array<{ from_at: string; to_at: string; stock_mode: string; counts: Counts; done_by: string | null; created_at: string; menu?: boolean }>;
 }
 
@@ -178,6 +179,18 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
           )}
           {problems.length > 0 && (
             <div style={{ fontSize: 12, color: C.danger, lineHeight: 1.6 }} data-testid="test-data-problems">{problems.map((p) => <div key={p}>• {p}</div>)}</div>
+          )}
+          {(data?.days_in_question?.length ?? 0) > 0 && (
+            <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }} data-testid="days-in-question">
+              Trading days as the cloud holds them:
+              {data!.days_in_question!.map((d) => (
+                <div key={`${d.till}-${d.opened_at}`}>
+                  {d.business_date} · {d.till ?? "a till"}{d.branch ? ` · ${d.branch}` : ""} · opened {when(d.opened_at)} ·{" "}
+                  {d.closed_at ? `closed ${when(d.closed_at)}, after the window's end` : `not closed on the cloud (${d.status})`}
+                </div>
+              ))}
+              If the till shows this day closed, its close has not reached the cloud yet — sync that till (update it if it is on an old build), then preview again.
+            </div>
           )}
           {nothing && <div style={{ fontSize: 12, color: C.muted }}>Nothing in this window.</div>}
 
