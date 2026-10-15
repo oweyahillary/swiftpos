@@ -10,12 +10,13 @@
 import type { Request } from 'express';
 import { supabase } from './supabase';
 import { frozenProductIds } from './stockTakeRules';
+import { holds } from './historyScope';
 
 export const MAX_LINES = 5000;
 
+/** A490: the token's fine keys (requireAuth expanded them); the owner always. */
 export function may(req: Request, key: string): boolean {
-  const keys = req.permissionKeys ?? [];
-  return Boolean(req.isOwner) || keys.includes('*') || keys.includes(key);
+  return holds(req, key);
 }
 
 export interface TakeRow {

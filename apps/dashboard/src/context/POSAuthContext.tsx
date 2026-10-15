@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from 'react';
 import { API_URL } from '../lib/config';
+import { expandMap, hasPermission as holds } from '../lib/permissions';   // A490
 import { getCoveredTerminal } from '../lib/posTerminal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -41,7 +42,10 @@ interface POSAuthContextType {
   session:             CashierSession | null;
   setCashierSession:   (s: CashierSession) => void;
   clearCashierSession: (callServer?: boolean) => Promise<void>;
+  /** A490: does the signed-in person hold this FINE key (their map expanded — broad keys of an older map count). */
   hasPermission:       (key: string) => boolean;
+  /** A490: the fine keys the signed-in person holds (expandMap of session.permissions; '*' for the owner). */
+  held:                ReadonlySet<string>;
   posApi: PosApi;
 }
 
@@ -129,12 +133,15 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('swiftpos:session-expired', onExpired);
   }, [clearCashierSession]);
 
-  const hasPermission = useCallback(
-    (key: string) => {
-      if (!session) return false;
-      return session.permissions['*'] === true || session.permissions[key] === true;
-    },
+  // A490: ONE rule for every PIN-session screen — the session's permission map expanded into fine keys (an older map's
+  // broad keys become what they stood for; a map without the catalogue marker keeps what nobody was refused before).
+  const held = useMemo<ReadonlySet<string>>(
+    () => (session ? expandMap(session.permissions ?? {}) : new Set<string>()),
     [session],
+  );
+  const hasPermission = useCallback(
+    (key: string) => !!session && holds(held, key),
+    [session, held],
   );
 
   const posRequest = useCallback(
@@ -171,6 +178,9 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
                 ...session,
                 token:        newToken,
                 refreshToken: refreshData.refreshToken ?? session.refreshToken,
+                // A490: the refresh answers the person's CURRENT permission map (PERMISSIONS_CHANGED) — take it.
+                ...(refreshData.permissions && typeof refreshData.permissions === 'object'
+                  ? { permissions: refreshData.permissions as Record<string, boolean> } : {}),
               });
               const retryRes = await fetch(`${BASE_URL}${path}`, {
                 method,
@@ -215,7 +225,7 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <POSAuthContext.Provider value={{
-      session, setCashierSession, clearCashierSession, hasPermission, posApi,
+      session, setCashierSession, clearCashierSession, hasPermission, held, posApi,
     }}>
       {children}
     </POSAuthContext.Provider>

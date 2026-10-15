@@ -43,7 +43,8 @@ function statusLine(ins: Instruction | null): string {
 
 export default function RemoteDayClose({ currency }: { currency: string }) {
   const { posApi, hasPermission } = usePOSAuth();
-  const allowed = hasPermission('shifts.force_close') || hasPermission('settings.manage');
+  // A490: closing a till's day from here is shifts.close_day (the cloud's day-close instruct / overview).
+  const allowed = hasPermission('shifts.close_day');
 
   const [tills, setTills]     = useState<TillDay[]>([]);
   const [loading, setLoading] = useState(true);

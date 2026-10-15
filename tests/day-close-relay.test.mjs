@@ -16,9 +16,9 @@ ok('A275: the route is mounted at /day-close', () => {
   assert.match(r(IX), /import dayCloseRoutes\s+from '\.\/day-close'/);
 });
 
-ok('A275: manager endpoints are gated on shifts.force_close | settings.manage', () => {
+ok('A275: manager endpoints are gated (A490: on shifts.close_day — what shifts.force_close | settings.manage stood for here)', () => {
   const s = r(DC);
-  assert.match(s, /requireAnyPermission\('shifts\.force_close', 'settings\.manage'\)/);
+  assert.match(s, /const MANAGER = requirePermission\('shifts\.close_day'\);/);
   assert.match(s, /router\.post\('\/instruct', MANAGER,/);
   assert.match(s, /router\.get\('\/overview', MANAGER,/);
 });

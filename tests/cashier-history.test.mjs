@@ -95,7 +95,7 @@ await ok('GET /api/orders: a cashier\'s list filtered in the query (pages right)
   assert.match(o, /if \(historyMethods\.length\)\s+q = q\.in\('pm\.method', historyMethods\);/);
   assert.match(o, /query = filtered\(query\);/);
   assert.match(o, /if \(historyMethods\.length\) orders = cashierHistoryView\(orders, historyMethods\);/);
-  assert.match(o, /total: count \?\? 0, own_only: ownOnly,\s*history_methods: historyMethods, can_reprint: manager(?:, \.\.\.\(totals \? \{ totals \} : \{\}\))? \}\);/);
+  assert.match(o, /total: count \?\? 0, own_only: ownOnly,\s*history_methods: historyMethods, can_reprint: holds\(req, 'sales\.reprint'\)(?:, \.\.\.\(totals \? \{ totals \} : \{\}\))? \}\);/);
 });
 
 await ok('the web: POS History shows the allowed part; Settings and the branch override offer the methods', () => {
@@ -123,9 +123,13 @@ await ok('the till: pulled and relayed, cached, filtered for a cashier, set from
   assert.match(ipc, /handle\('manage:setCashierHistoryMethods'/);
   assert.match(read('apps/desktop/src/main/ipcSchemas.ts'), /'manage:setCashierHistoryMethods': \{ kind: 'stringArray' \}/);
   assert.match(read('apps/desktop/src/main/preload.ts'), /setCashierHistoryMethods: \(methods: string\[\]\)/);
-  assert.match(read('apps/desktop/src/renderer/components/SettingsPanel.tsx'), /<CashierHistoryPanel canEdit=\{canEdit\} \/>/);
+  // A490: set by whoever holds settings.business (the panel shows, and edits, for that key; ManagerPage passes it).
+  assert.match(read('apps/desktop/src/renderer/components/SettingsPanel.tsx'), /\{canBusiness && <section className="border-t border-gray-800 pt-6">\s*<CashierHistoryPanel canEdit=\{canBusiness\} \/>/);
+  assert.match(read('apps/desktop/src/renderer/pages/ManagerPage.tsx'), /<SettingsPanel canBusiness=\{has\('settings\.business'\)\}/);
   assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /o\.history_partial \? fmtMoney\(Number\(o\.history_shown_total \?\? 0\)\)/);
-  assert.match(read('apps/desktop/src/main/shiftService.ts'), /canReprint: manager,\s*methods: manager \? \[\] : getCashierHistoryMethods\(\),/);
+  // A490: reprint is its own key (sales.reprint); "manager" is shifts.confirm — they see every method, a cashier the chosen.
+  assert.match(read('apps/desktop/src/main/shiftService.ts'), /const manager = !!st && personCan\(st, 'shifts\.confirm'\);/);
+  assert.match(read('apps/desktop/src/main/shiftService.ts'), /canReprint: !!st && personCan\(st, 'sales\.reprint'\),[\s\S]{0,160}methods: manager \? \[\] : getCashierHistoryMethods\(\),/);
 });
 
 await ok('schema 66 on both sides', () => {

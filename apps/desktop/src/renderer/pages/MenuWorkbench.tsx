@@ -49,9 +49,13 @@ interface Props {
   currency: string;
   /** Opens the CSV/Excel import, kept as its own flow but reachable from here. */
   onOpenImport?: () => void;
+  /** A490: menu.edit — the item's details, import. Without it the item is shown read-only. Absent: allowed. */
+  canEdit?: boolean;
+  /** A490: menu.prices — the inline price. Without it the price is read-only. Absent: allowed. */
+  canPrices?: boolean;
 }
 
-export default function MenuWorkbench({ currency, onOpenImport }: Props) {
+export default function MenuWorkbench({ currency, onOpenImport, canEdit = true, canPrices = true }: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [comboItems, setComboItems] = useState<Record<string, any[]>>({});
@@ -213,7 +217,7 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
           </p>
         </div>
         <div className="flex gap-2">
-          {onOpenImport && !offline && (
+          {onOpenImport && !offline && canEdit && (
             <button onClick={onOpenImport}
               className="text-xs text-gray-300 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5 transition-colors">
               Import / export
@@ -359,8 +363,8 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
                           onChange={e => setPriceDrafts(d => ({ ...d, [p.id]: e.target.value }))}
                           onBlur={() => savePrice(p)}
                           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                          disabled={savingId === p.id || !!offline}
-                          readOnly={!!offline}
+                          disabled={savingId === p.id || !!offline || !canPrices}
+                          readOnly={!!offline || !canPrices}
                           className={`w-24 text-right tabular-nums bg-gray-900 border rounded px-2 py-1 text-white
                             ${dirty ? 'border-amber-500' : 'border-gray-700'} disabled:opacity-50`}
                         />
@@ -382,7 +386,7 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
             <p className="text-sm text-gray-500 text-center py-10">
               Select an item to see what it comes with.
             </p>
-          ) : offline ? (
+          ) : offline || !canEdit ? (
             <SavedItemDetail
               product={sel}
               components={comboItems[sel.id] ?? []}

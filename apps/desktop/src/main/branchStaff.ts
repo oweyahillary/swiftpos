@@ -20,6 +20,7 @@ import bcrypt from 'bcryptjs';
 import { getLocalDb } from './localDb';
 import { logLine } from './logFile';
 import { overlayLocalChanges } from './localChanges';   // P3: a change made here stays over a stored list
+import { isOwnerRole, isOwnerRoleEntry, backOffice, roleMap, refreshPermissionsFromRoster } from './tillAccess';   // A490
 
 export interface BranchStaffRow {
   staff_id: string;
@@ -69,6 +70,11 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
   });
 
   try { tx(); } catch (err: any) { logLine('node', `could not store branch roster: ${err?.message ?? err}`); return; }
+  // A490: the list carries each person's CURRENT role and permissions — the saved sign-ins take them, and the person
+  // signed in on this till takes theirs at once (a manager who lost a key loses it now, not at their next sign-in).
+  if (refreshPermissionsFromRoster(roster.map((r) => ({ staff_id: r.staff_id, role_name: r.role_name, permissions: r.permissions })))) {
+    logLine('staff', 'the signed-in person’s permissions changed — the screens follow');
+  }
   // P3 (2026-10-14): every path that stores a list lays the changes still waiting back over it — a cashier added or a PIN
   // set here (or relayed to this server) that the cloud has not taken yet. Only staffRoster's path used to; the
   // catalogue pull and promotion stored a list and quietly undid them until the next roster beat.
@@ -165,25 +171,17 @@ export async function verifyPinAtNodeAsync(pin: string, branchId: string): Promi
 // could therefore add a "cashier" with the owner's permissions and a PIN of their choosing, and sign in with it at
 // every till of the branch. Now:
 //   - a role is taken ONLY from the roles this server saved (roles_cache), by role_id — never from the change;
-//   - a relayed change never creates (or moves anyone to) an owner / admin / manager role, or one that manages staff;
-//   - a relayed PIN change never touches an owner / admin / manager (or anyone who manages staff).
+//   - a relayed change never creates (or moves anyone to) the owner's role or a role beyond the shop floor (A490);
+//   - a relayed PIN change never touches the owner or anyone beyond the shop floor (A490: by permission, not by name).
 // A refused change still reaches the cloud from the till that made it (it sends every change itself), and comes back
 // in the branch's staff list from there.
 
-const ELEVATED_NAME = /owner|admin|manager/i;
-const ELEVATED_PERMS = ['staff.manage', 'roles.manage', 'settings.manage'];
-
-function permsOf(role: any): Record<string, boolean> {
-  const perms: Record<string, boolean> = {};
-  for (const p of (role?.permissions ?? role?.role_permissions ?? [])) { const k = p?.key ?? p?.permissions?.key; if (k) perms[k] = true; }
-  return perms;
-}
-const elevatedPerms = (perms: unknown): boolean => {
-  if (!perms || typeof perms !== 'object') return false;
-  return ELEVATED_PERMS.some((k) => (perms as Record<string, unknown>)[k] === true);
-};
+// A490: "elevated" is a permission question now, not a role's name (it was /owner|admin|manager/ and three broad keys):
+// the owner's role, or anyone holding a key beyond the shop floor (isBackOffice, tillAccess backOffice). The intent is
+// unchanged — no relayed change makes anyone more powerful, and nobody more powerful than a cashier is changed from
+// another till. The role's keys come only from this server's roles_cache (roleMap), never from the change.
 export function isElevatedRole(name: string | null | undefined, perms: unknown): boolean {
-  return ELEVATED_NAME.test(String(name ?? '')) || elevatedPerms(perms);
+  return isOwnerRole(name) || backOffice(name, perms);
 }
 
 /** The relayed changes this server may apply, each staff change made safe; the rest named with why. Never throws. */
@@ -218,8 +216,8 @@ export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null)
       if (data.role_id !== undefined && data.role_id !== null) {
         const role = roles.find((r) => r?.id === data.role_id);
         if (!role) { refused.push({ id, reason: 'that role is not known on the branch server yet — it arrives from the cloud' }); continue; }
-        const perms = permsOf(role);
-        if (isElevatedRole(role?.name, perms)) { refused.push({ id, reason: `the ${role?.name ?? 'chosen'} role is not given from another till` }); continue; }
+        const perms = roleMap(role);
+        if (isOwnerRoleEntry(role) || isElevatedRole(role?.name, perms)) { refused.push({ id, reason: `the ${role?.name ?? 'chosen'} role is not given from another till` }); continue; }
         accepted.push({ ...c, _local: { role_name: role?.name ?? null, permissions: perms, branch_id: branchId } });
         continue;
       }

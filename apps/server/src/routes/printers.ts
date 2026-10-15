@@ -10,7 +10,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { assertBranchAccess, branchScope, requireAnyPermission } from '../middleware/rbac';
+import { assertBranchAccess, branchScope, requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -19,7 +19,7 @@ router.use(requireAuth);
 // Audit 2026-10-14: adding, editing and deleting a printer were open to any signed-in user of the branch. They need
 // stations.manage (printers are the print set-up, as the stations routes are) or settings.manage; the owner and '*' pass
 // in rbac. And a new printer's branch must be THIS business's (the owner's assertBranchAccess is true for any id).
-const canManage = requireAnyPermission('stations.manage', 'settings.manage');
+const canManage = requirePermission('stations.manage');
 
 // GET /api/printers?branch_id=
 router.get('/', async (req, res) => {

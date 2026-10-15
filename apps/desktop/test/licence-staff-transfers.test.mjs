@@ -71,11 +71,12 @@ globalThis.fetch = async (url, init = {}) => {
 
 const L = require(path.join(dist, 'localDb.js'));
 const db = L.getLocalDb();
+// A490: Mary holds orders.void too — the till's ceiling lets her give only a role that does no more than she does.
 db.prepare(`INSERT INTO session (id, token, user_id, business_id, business_name, logged_in_at) VALUES (1, 't', 'dev-T1', 'biz-1', 'Pizza House', '2026-10-13T00:00:00Z')`).run();
 const C = require(path.join(dist, 'deviceConfig.js'));
 C.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: BR, device_id: 'dev-T1', device_role: 'till', terminal_code: 'T1', device_name: 'Front' });
 db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
-  VALUES (1, 'u-mary', 'Mary', 'manager', '{"staff.manage":true,"products.manage":true,"inventory.transfer":true}', ?, 'mgr-tok', '2026-10-13T06:00:00Z')`).run(BR);
+  VALUES (1, 'u-mary', 'Mary', 'manager', '{"staff.manage":true,"products.manage":true,"inventory.transfer":true,"orders.void":true}', ?, 'mgr-tok', '2026-10-13T06:00:00Z')`).run(BR);
 db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('roles_cache', ?, ?)`)
   .run(JSON.stringify([{ id: R_CASH, name: 'cashier', permissions: [{ key: 'orders.create' }] }, { id: R_SUP, name: 'supervisor', permissions: [{ key: 'orders.void' }] }]), new Date().toISOString());
 const bcrypt = require('bcryptjs');
@@ -84,8 +85,10 @@ db.prepare(`INSERT INTO branch_staff (staff_id, name, role_name, branch_id, perm
 require(path.join(dist, 'ipcHandlers.js')).registerIpcHandlers();
 const H = global.__handlers;
 const Nav = await import(pathToFileURL(path.join(here, '..', 'src', 'renderer', 'lib', 'managerNav.ts')).href);
-const tabsOf = (a) => Nav.buildManagerNav({ isRestaurant: true, isManagerRole: true, canManageProducts: true, canManageStaff: true,
-  canManageSettings: true, canPrinting: true, showStock: false, canWaste: true, canTransfer: true, ...a }).flatMap((g) => g.tabs.map((t) => t.key));
+// A490: every page by its own fine key (lib/managerNav NavAccess) — here someone who holds them all.
+const tabsOf = (a) => Nav.buildManagerNav({ isRestaurant: true, canOverview: true, canOrders: true, canItems: true, canShifts: true,
+  canExpenses: true, canCloseDay: true, canMenu: true, canOffers: true, canSettings: true, canPrinting: true, canStaff: true,
+  showStock: false, canWaste: true, canTransfer: true, ...a }).flatMap((g) => g.tabs.map((t) => t.key));
 
 console.log('\nThe online licence (A460)\n');
 {
@@ -118,14 +121,14 @@ const verify = async (pin) => { try { return await H['auth:verifyPin'](null, { p
   ok('a new role: its name and permissions on this till at once', row.role_name === 'supervisor' && JSON.parse(row.permissions)['orders.void'] === true, JSON.stringify(row));
   ok('Amy signs in with her PIN', (await verify('2580'))?.staff?.name === 'Amy W', JSON.stringify(await verify('2580')));
   db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
-    VALUES (1, 'u-mary', 'Mary', 'manager', '{"staff.manage":true,"products.manage":true,"inventory.transfer":true}', ?, 'mgr-tok', '2026-10-13T06:00:00Z')`).run(BR);
+    VALUES (1, 'u-mary', 'Mary', 'manager', '{"staff.manage":true,"products.manage":true,"inventory.transfer":true,"orders.void":true}', ?, 'mgr-tok', '2026-10-13T06:00:00Z')`).run(BR);
   await H['manage:updateStaff'](null, { id: AMY, patch: { is_active: false } });   // what the old screen sent
   ok('Deactivate (even as the old screen sent it) stops the PIN on this till at once', !!(await verify('2580')).error
     && db.prepare(`SELECT status FROM branch_staff WHERE staff_id = ?`).get(AMY).status === 'inactive');
   const ch = db.prepare(`SELECT data FROM local_changes WHERE entity = 'staff' AND entity_id = ? ORDER BY made_at DESC`).get(AMY);
   ok('…and the cloud is sent a status, never { is_active }', JSON.parse(ch.data).status === 'inactive' && !('is_active' in JSON.parse(ch.data)), ch.data);
   db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
-    VALUES (1, 'u-mary', 'Mary', 'manager', '{"staff.manage":true,"products.manage":true,"inventory.transfer":true}', ?, 'mgr-tok', '2026-10-13T06:00:00Z')`).run(BR);
+    VALUES (1, 'u-mary', 'Mary', 'manager', '{"staff.manage":true,"products.manage":true,"inventory.transfer":true,"orders.void":true}', ?, 'mgr-tok', '2026-10-13T06:00:00Z')`).run(BR);
   await H['manage:updateStaff'](null, { id: AMY, patch: { status: 'active' } });
   ok('Reactivate brings the PIN back on this till', (await verify('2580'))?.staff?.name === 'Amy W');
   const ui = read('src/renderer/pages/ManageTabs.tsx');
@@ -136,7 +139,7 @@ const verify = async (pin) => { try { return await H['auth:verifyPin'](null, { p
 console.log('\nStock transfers (A197)\n');
 {
   db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
-    VALUES (1, 'u-mary', 'Mary', 'manager', '{"staff.manage":true,"products.manage":true,"inventory.transfer":true}', ?, 'mgr-tok', '2026-10-13T06:00:00Z')`).run(BR);
+    VALUES (1, 'u-mary', 'Mary', 'manager', '{"staff.manage":true,"products.manage":true,"inventory.transfer":true,"orders.void":true}', ?, 'mgr-tok', '2026-10-13T06:00:00Z')`).run(BR);
   let refused = null;
   try { await H['transfers:list'](null); } catch (e) { refused = e; }
   ok('without the licence the till refuses the transfers too', /online licence/.test(String(refused?.message)));

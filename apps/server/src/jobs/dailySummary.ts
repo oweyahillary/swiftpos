@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import { receivesBranchReports } from './ownerAlertsData';   // A490
 import { supabase } from '../lib/supabase';
 import { chunkIn, pageAll } from '../lib/pgQuery';
 import { sendEmail } from '../lib/mailer';
@@ -109,7 +110,6 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
 // ── A54: per-business scheduling, recipients, and once-per-day dedup ─────────
 // The send decision itself lives in ./reportScheduleDecision (pure + tested).
 
-const normRole = (s: string) => (s || '').toLowerCase().replace(/ /g, '_');
 
 export async function readReportSchedule(
   businessId: string,
@@ -146,7 +146,8 @@ async function writeLastSent(businessId: string, dateStr: string): Promise<void>
   }
 }
 
-/** Owner + active branch managers (with an email) + the scheduler's added addresses, deduped. */
+/** Owner + active staff holding reports.overview (with an email; A490 — was the role name branch_manager) + the
+ *  scheduler's added addresses, deduped. */
 export async function gatherRecipients(
   biz: { id: string; owner_id: string; name: string },
   schedule: { recipients?: string[] },
@@ -162,12 +163,12 @@ export async function gatherRecipients(
     }
   }
 
-  // Active branch managers who have an email on file.
+  // Active staff who hold reports.overview and have an email on file (A490: receivesBranchReports).
   const { data: staff } = await supabase
-    .from('users').select('email, roles ( name )')
+    .from('users').select('email, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
     .eq('business_id', biz.id).eq('status', 'active').not('email', 'is', null);
   for (const u of staff ?? []) {
-    if (normRole((u as any).roles?.name) === 'branch_manager') {
+    if (receivesBranchReports(u as any)) {
       const e = String((u as any).email ?? '').trim().toLowerCase();
       if (e) set.add(e);
     }

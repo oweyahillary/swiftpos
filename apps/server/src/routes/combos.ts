@@ -65,7 +65,7 @@ router.get('/:id', async (req, res) => {
 
 // ── Create combo ──────────────────────────────────────────────────────────────
 
-router.post('/', requirePermission('products.manage'), async (req, res) => {
+router.post('/', requirePermission('menu.edit'), async (req, res) => {
   const { name, description, combo_price, category_id, items = [] } = req.body;
 
   if (!name?.trim())  { res.status(400).json({ error: 'name is required' }); return; }
@@ -122,7 +122,7 @@ router.post('/', requirePermission('products.manage'), async (req, res) => {
 
 // ── Update combo ──────────────────────────────────────────────────────────────
 
-router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
+router.patch('/:id', requirePermission('menu.edit'), async (req, res) => {
   const { name, description, combo_price, status } = req.body;
   const updates: Record<string, unknown> = {};
   if (name        !== undefined) { updates.name = name.trim(); }
@@ -146,7 +146,7 @@ router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
 
 // ── Replace all items ─────────────────────────────────────────────────────────
 
-router.put('/:id/items', requirePermission('products.manage'), async (req, res) => {
+router.put('/:id/items', requirePermission('menu.edit'), async (req, res) => {
   const { items = [] } = req.body;
 
   // Verify ownership
@@ -185,7 +185,7 @@ router.put('/:id/items', requirePermission('products.manage'), async (req, res) 
 
 // ── Delete combo ──────────────────────────────────────────────────────────────
 
-router.delete('/:id', requirePermission('products.manage'), async (req, res) => {
+router.delete('/:id', requirePermission('menu.edit'), async (req, res) => {
   const { error } = await supabase
     .from('products')
     .delete()

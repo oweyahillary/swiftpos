@@ -30,6 +30,8 @@ import { escposEnabled, setEscposEnabled } from '../escposBridge';
 import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@swiftpos/printing';
 import { printHtmlSilent } from '../printService';   // A454: the Z-report on the Windows receipt printer
 import { getBranding } from '../localDb';
+import { signedInCan } from '../tillAccess';   // A490
+import { getActiveSession } from '../techService';   // A490: a technician sets printers up before anyone signs in
 import { sampleOrder, sampleBusiness, SAMPLE_KITCHEN, SAMPLE_DISPATCH,
   kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 
@@ -204,7 +206,11 @@ function registerIpc(): void {
   const handle = installValidatedHandle(ipcMain);
   handle('escpos:assignments', () => assignments());
 
+  // A490: which printer prints what is the print set-up — stations.manage (or a technician). Printing never asks.
+  const PRINTERS_REFUSED = 'Only someone who sets up printers and print stations can change that.';
+  const mayEditPrinters = (): boolean => !!getActiveSession() || signedInCan('stations.manage');
   handle('escpos:assign', (_e, a: Assignment) => {
+    if (!mayEditPrinters()) return { ok: false, error: PRINTERS_REFUSED };
     db!.prepare(`
       INSERT INTO station_printers (station_id, target, paper_width_mm, updated_at)
       VALUES (?, ?, ?, ?)
@@ -217,6 +223,7 @@ function registerIpc(): void {
   });
 
   handle('escpos:unassign', (_e, stationId: string) => {
+    if (!mayEditPrinters()) return { ok: false, error: PRINTERS_REFUSED };
     db!.prepare(`DELETE FROM station_printers WHERE station_id=?`).run(stationId);
     return { ok: true };
   });
@@ -232,6 +239,7 @@ function registerIpc(): void {
    */
   handle('escpos:enabled', () => escposEnabled());
   handle('escpos:setEnabled', (_e, on: boolean) => {
+    if (!mayEditPrinters()) return { ok: false, error: PRINTERS_REFUSED, enabled: escposEnabled() };
     setEscposEnabled(!!on);
     return { ok: true, enabled: escposEnabled() };
   });

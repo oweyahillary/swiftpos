@@ -35,7 +35,8 @@ router.use(requireWebSurface);   // export is a web-portal surface — block des
 // H6: exports were reachable by any authenticated web user. Classified with
 // tax/food-cost/splh under the stricter key, not the broader reports.view —
 // a downloadable file is easier to walk out with than an on-screen report.
-router.use(requirePermission('reports.financial'));
+// A490: downloading is reports.export, AND each export needs the report it is a copy of (below).
+router.use(requirePermission('reports.export'));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ function sendCsv(res: any, headers: string[], rows: (string | number)[][], filen
 
 // ── GET /api/reports/export/sales ─────────────────────────────────────────────
 
-router.get('/sales', async (req, res) => {
+router.get('/sales', requirePermission('reports.sales'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);
@@ -222,7 +223,7 @@ router.get('/sales', async (req, res) => {
 
 // ── GET /api/reports/export/products ─────────────────────────────────────────
 
-router.get('/products', async (req, res) => {
+router.get('/products', requirePermission('reports.items'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);
@@ -296,7 +297,7 @@ router.get('/products', async (req, res) => {
 
 // ── GET /api/reports/export/pnl ───────────────────────────────────────────────
 
-router.get('/pnl', async (req, res) => {
+router.get('/pnl', requirePermission('reports.costs'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);
@@ -415,7 +416,7 @@ router.get('/pnl', async (req, res) => {
 
 // ── GET /api/reports/export/shifts ────────────────────────────────────────────
 
-router.get('/shifts', async (req, res) => {
+router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
 
@@ -489,7 +490,7 @@ router.get('/shifts', async (req, res) => {
 // A143: this route was documented in the header and offered by the Exports hub,
 // but was never implemented — the hub's Expenses button 404'd. Flat table of
 // expenses in the period, mirroring the /shifts export shape.
-router.get('/expenses', async (req, res) => {
+router.get('/expenses', requirePermission('expenses.view'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);

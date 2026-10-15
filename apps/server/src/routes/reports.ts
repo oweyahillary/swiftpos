@@ -3,7 +3,8 @@ import { Router } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import type { ReportOrderRow, DbShift, DbFloatTransaction } from '../lib/dbTypes';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { branchScope, requirePermission } from '../middleware/rbac';
+import { branchScope, requirePermission, requireAnyPermission, can } from '../middleware/rbac';
+import { withoutCosts } from '../lib/costAccess';   // A490
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { summariseKitchenVoids, kitchenVoidText } from '../lib/kitchenLines';
@@ -18,7 +19,14 @@ router.use(requireWebSurface);   // reports are a web-portal surface — block d
 // H6: every report endpoint was reachable by any authenticated web user —
 // requireWebSurface blocks desktop till tokens, not staff. A waiter login
 // could pull the Master DSR, staff performance, food cost, tax, etc.
-router.use(requirePermission('reports.view'));
+// A490: each report is its own key (shared permissions.ts). The gate here admits anyone holding ANY report key; each
+// route below then names its own — so a route added without one still refuses a person with no report at all.
+// The Overview page (reports.overview) reads /sales, /products and /pump-monitor — those three also admit it.
+// /eod is the exception: a cashier's own Z-report (the web POS) is answered without a report key — scoped to their own
+// sales and drawers (below).
+const anyReport = requireAnyPermission('reports.overview', 'reports.sales', 'reports.items', 'reports.staff', 'reports.shifts',
+  'reports.voids', 'reports.inventory', 'reports.fuel', 'reports.tax', 'reports.costs', 'reports.labour');
+router.use((req, res, next) => (req.path === '/eod' ? next() : anyReport(req, res, next)));
 // 0.6.34: the business day's end, once per request, for getDateRange (a branch report uses the branch's own).
 router.use(async (req, _res, next) => {
   const branch = typeof req.query?.branch_id === 'string' && req.query.branch_id ? String(req.query.branch_id) : null;
@@ -73,7 +81,7 @@ void BIZ_TZ_OFFSET;
 // GET /api/reports/sales
 // Owner: all branches or filtered by ?branch_id=
 // Staff: locked to their branch via branchScope
-router.get('/sales', async (req, res) => {
+router.get('/sales', requireAnyPermission('reports.sales', 'reports.overview'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -167,7 +175,7 @@ router.get('/sales', async (req, res) => {
 });
 
 // GET /api/reports/products
-router.get('/products', async (req, res) => {
+router.get('/products', requireAnyPermission('reports.items', 'reports.overview'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -210,7 +218,7 @@ router.get('/products', async (req, res) => {
 });
 
 // GET /api/reports/staff
-router.get('/staff', async (req, res) => {
+router.get('/staff', requirePermission('reports.staff'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -308,7 +316,7 @@ router.get('/staff', async (req, res) => {
 
 // GET /api/reports/inventory
 // Derives sold qty from order_items, restocked/adjustments from stock_adjustments
-router.get('/inventory', async (req, res) => {
+router.get('/inventory', requirePermission('reports.inventory'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -383,9 +391,22 @@ router.get('/inventory', async (req, res) => {
 });
 
 // GET /api/reports/eod  — End-of-day Z-report for a specific cashier session
-// Query: ?branch_id=&from=&to=&cashier_id= (all optional)
+// Query: ?branch_id=&from=&to=&cashier_id=&shift_id= (all optional)
+// A490: reports.sales sees any cashier. Without it, a person sees only THEIR OWN Z-report — their own sales, and only the
+// drawers they opened (the web POS's Z-report) — asking for someone else's is refused. Expected cash and the variance
+// are sent only with reports.shifts or shifts.confirm; the expense lines with reports.costs or expenses.view; net profit
+// with reports.costs (rule 4: not sent, not merely hidden).
 router.get('/eod', async (req, res) => {
-  const { from, to, cashier_id } = req.query;
+  const ownOnly = !can(req, 'reports.sales');
+  if (ownOnly && (!req.userId || (req.query.cashier_id && req.query.cashier_id !== req.userId))) {
+    res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: reports.sales' }); return;
+  }
+  const { from, to } = req.query;
+  const cashier_id = ownOnly ? req.userId : req.query.cashier_id;
+  const shiftId = typeof req.query.shift_id === 'string' && req.query.shift_id ? req.query.shift_id : null;
+  const seesCash = can(req, 'reports.shifts', 'shifts.confirm');
+  const seesProfit = can(req, 'reports.costs');
+  const seesExpenses = seesProfit || can(req, 'expenses.view');
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
@@ -406,6 +427,7 @@ router.get('/eod', async (req, res) => {
 
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
   if (cashier_id) query = query.eq('cashier_id', cashier_id as string);
+  if (shiftId) query = query.eq('shift_id', shiftId);
 
   const { data: orders, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
@@ -491,13 +513,16 @@ router.get('/eod', async (req, res) => {
   // Closed shifts use the value stored at close; open shifts are computed live.
   let shiftsQ = supabase
     .from('shifts')
-    .select('id, status, opening_float, closing_float, expected_cash, cash_variance, opened_at')
+    .select('id, status, opening_float, closing_float, expected_cash, cash_variance, opened_at, opened_by, cashier_id')
     .eq('business_id', req.businessId)
     .lte('opened_at', end)
     .or(`status.eq.open,opened_at.gte.${start}`)   // A258: include active open shifts
     .order('opened_at', { ascending: false });
   if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
-  const { data: shiftRows } = await shiftsQ;
+  if (shiftId) shiftsQ = shiftsQ.eq('id', shiftId);
+  const { data: allShiftRows } = await shiftsQ;
+  // A490: someone seeing only their own Z-report sees only the drawers they opened.
+  const shiftRows = (allShiftRows ?? []).filter((s: any) => !ownOnly || s.opened_by === req.userId || s.cashier_id === req.userId);
 
   const shiftIds = (shiftRows ?? []).map(s => s.id);
   const cashByShift: Record<string, number> = {};
@@ -538,8 +563,7 @@ router.get('/eod', async (req, res) => {
       float_in,
       float_out,
       closing_float: s.closing_float != null ? Number(s.closing_float) : null,
-      expected_cash,
-      cash_variance: s.cash_variance != null ? Number(s.cash_variance) : null,
+      ...(seesCash ? { expected_cash, cash_variance: s.cash_variance != null ? Number(s.cash_variance) : null } : {}),
     };
   });
 
@@ -570,12 +594,12 @@ router.get('/eod', async (req, res) => {
       totalDiscount,
       totalVat,
       voidedCount: voided.length,
-      totalExpenses,
-      netProfit: netRevenue - totalExpenses,
+      ...(seesExpenses ? { totalExpenses } : {}),
+      ...(seesProfit ? { netProfit: netRevenue - totalExpenses } : {}),
     },
     paymentMethods: methodTotals,
     topProducts,
-    expenses: { total: totalExpenses, breakdown: expenseBreakdown },
+    ...(seesExpenses ? { expenses: { total: totalExpenses, breakdown: expenseBreakdown } } : {}),
     shifts,
     orders: o,
   });
@@ -587,7 +611,7 @@ router.get('/eod', async (req, res) => {
 // Owner: all branches or filtered; Staff: locked to their branch via branchScope.
 // Query: from, to, branch_id, status ('open'|'closed'), cashier_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/shifts', async (req, res) => {
+router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
   const { from, to, status, cashier_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -695,7 +719,7 @@ router.get('/shifts', async (req, res) => {
 //          category × super-category breakdown, expenses.
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/master', async (req, res) => {
+router.get('/master', requirePermission('reports.sales'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -842,6 +866,11 @@ router.get('/master', async (req, res) => {
 
   const totalRevenue = completed.reduce((s, o) => s + Number(o.total), 0);
 
+  // A490: net profit is reports.costs; the expense lines (total and breakdown) are reports.costs or expenses.view.
+  // Not sent without them — the Master report shows sales only.
+  const seesProfit = can(req, 'reports.costs');
+  const seesExpenses = seesProfit || can(req, 'expenses.view');
+
   res.json({
     period:     { from: start, to: end },
     branchName,
@@ -856,8 +885,8 @@ router.get('/master', async (req, res) => {
       voidedCount:  voided.length,
       voidedValue:  voided.reduce((s, o) => s + Number(o.total), 0),
       avgOrderValue: completed.length ? totalRevenue / completed.length : 0,
-      totalExpenses,
-      netProfit:    netSales - totalExpenses,
+      ...(seesExpenses ? { totalExpenses } : {}),
+      ...(seesProfit ? { netProfit: netSales - totalExpenses } : {}),
       totalDeliveryFees,   // A451
       totalTips,           // A451
       totalCollected,      // A451: sales (incl. VAT) + delivery fees + tips — what the payment methods add up to
@@ -869,10 +898,10 @@ router.get('/master', async (req, res) => {
     })),
     payments: Object.entries(payments).map(([method, amount]) => ({ method, amount })),
     categoryBreakdown,
-    expenses: {
+    ...(seesExpenses ? { expenses: {
       total: totalExpenses,
       breakdown: Object.entries(expByCategory).map(([category, amount]) => ({ category, amount })),
-    },
+    } } : {}),
   });
 });
 
@@ -881,7 +910,7 @@ router.get('/master', async (req, res) => {
 // Hourly + day-of-week breakdown for peak-hour analysis.
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/hourly', async (req, res) => {
+router.get('/hourly', requirePermission('reports.sales'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -962,7 +991,7 @@ router.get('/hourly', async (req, res) => {
 // All voided orders with cashier attribution, reason, and per-staff summary.
 // Query: from, to, branch_id, cashier_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/voids', async (req, res) => {
+router.get('/voids', requirePermission('reports.voids'), async (req, res) => {
   const { from, to, cashier_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -1058,7 +1087,7 @@ router.get('/voids', async (req, res) => {
 // refunded_at, not by status, and dated by the refund event (refunded_at).
 // Query: from, to (by refund date), branch_id, cashier_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/refunds', async (req, res) => {
+router.get('/refunds', requirePermission('reports.voids'), async (req, res) => {
   const { from, to, cashier_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -1129,7 +1158,7 @@ router.get('/refunds', async (req, res) => {
 // Kenya tax report — VAT 16% + CTL 2% per period, with category and branch split.
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
+router.get('/tax', requirePermission('reports.tax'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -1237,7 +1266,7 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
 // GET /api/reports/products  (enhanced — adds % contribution + cost/margin)
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/products-v2', async (req, res) => {
+router.get('/products-v2', requirePermission('reports.items'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -1296,7 +1325,7 @@ router.get('/products-v2', async (req, res) => {
     })
     .sort((a, b) => b.revenue - a.revenue);
 
-  res.json({ products, totalRevenue });
+  res.json(withoutCosts(req, { products, totalRevenue }));   // A490: cost price, total cost and margin need menu.costs / reports.costs
 });
 
 
@@ -1310,7 +1339,7 @@ router.get('/products-v2', async (req, res) => {
 //
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/food-cost', requirePermission('reports.financial'), async (req, res) => {
+router.get('/food-cost', requirePermission('reports.costs'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -1485,7 +1514,7 @@ router.get('/food-cost', requirePermission('reports.financial'), async (req, res
 //
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/splh', requirePermission('reports.financial'), async (req, res) => {
+router.get('/splh', requirePermission('reports.labour'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
@@ -1615,7 +1644,7 @@ router.get('/splh', requirePermission('reports.financial'), async (req, res) => 
 //   - Hourly dispensing pattern
 //   - Average price per litre per grade
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/fuel-sales', async (req, res) => {
+router.get('/fuel-sales', requirePermission('reports.fuel'), async (req, res) => {
   const { from, to, branch_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
 
@@ -1736,7 +1765,7 @@ router.get('/fuel-sales', async (req, res) => {
 // ── GET /api/reports/pump-monitor ────────────────────────────────────────────
 // Real-time pump + tank status for the cockpit. Returns every pump with its
 // linked tank's opening/sold/remaining for today, plus total revenue today.
-router.get('/pump-monitor', async (req, res) => {
+router.get('/pump-monitor', requireAnyPermission('reports.fuel', 'reports.overview'), async (req, res) => {
   // 0.6.34: today's BUSINESS date in East Africa Time (was the UTC date — off by a day from 21:00 to midnight EAT).
   const today = businessDateEAT(new Date(), (req as any).dayCutoff ?? 0);
   const { start, end } = getDateRange(today, today, (req as any).dayCutoff ?? 0);
@@ -1840,7 +1869,7 @@ router.get('/pump-monitor', async (req, res) => {
 //   - Theoretical consumption (from order_items)
 //   - Actual dip readings are manual — flag variance if recorded
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/wet-stock', async (req, res) => {
+router.get('/wet-stock', requirePermission('reports.fuel'), async (req, res) => {
   const { from, to, branch_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
 

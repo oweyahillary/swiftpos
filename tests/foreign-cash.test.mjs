@@ -105,7 +105,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.FOREIGN_CASH_TS) {
   });
   ok('authorised like /:id/close — the opener, a cashier on the same terminal, or a manager', () => {
     assert.match(route, /const sameTerminal =/); assert.match(route, /const openedByRequester =/);
-    assert.match(route, /if \(!openedByRequester && !sameTerminal && !isManager\) \{\s*res\.status\(403\)/);
+    assert.match(route, /if \(!openedByRequester && !sameTerminal && !can\(req, 'shifts\.confirm'\)\) \{\s*res\.status\(403\)/);
   });
   ok('same arithmetic source as the close: completed orders, cash payments completed|refunded', () => {
     assert.match(route, /fetchAllIds\('orders', q => q\.eq\('shift_id', id\)\.eq\('status', 'completed'\)\)/);

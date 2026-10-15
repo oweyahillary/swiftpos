@@ -88,7 +88,9 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   const posSrc = fs.readdirSync(posDir).filter((f) => /\.tsx?$/.test(f)).map((f) => fs.readFileSync(path.join(posDir, f), 'utf8')).join('\n');
   const themedUses = (posSrc.match(/var\(--act-(?:fill|strong|text),/g) || []).length;
   // 0.6.28: + 2 — the kitchen-void dialog's selected option (KitchenVoidModal optOn border and fill).
-  ok(`96 inline uses take the theme (found ${themedUses})`, themedUses === 96);
+  // A490: − 3 — the POS Menu drawer lost its sub-tab row (subTabActive's colour, border and fill): each screen is one
+  // catalogue key now, so there are no sub-tabs; its rail's active tab still takes the theme.
+  ok(`93 inline uses take the theme (found ${themedUses})`, themedUses === 93);
   const cs = fs.readFileSync(path.join(posDir, 'CashierScreen.tsx'), 'utf8');
   ok('Charge (dark label) is the theme\'s 500 (the per-use fallback is its original green; the alias default is teal)', /chargeBtn: \{[\s\S]{0,120}background: 'rgb\(var\(--act-fill, 34 197 94\)\)'/.test(cs));
   ok('Open Table / modal confirm (white label) is the theme\'s 700 (per-use fallback its original blue; alias default teal)', /modalConfirm: \{[\s\S]{0,120}background: 'rgb\(var\(--act-strong, 59 130 246\)\)'/.test(cs));

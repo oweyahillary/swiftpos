@@ -26,7 +26,7 @@ router.use(requireAuth);
 // Audit 2026-10-14: adding, changing, deleting and test-firing a webhook were open to any signed-in user — a cashier could
 // point every completed order at their own URL. They need settings.manage (the owner and '*' pass in rbac); the lists
 // stay readable to the business's signed-in users.
-const canManage = requirePermission('settings.manage');
+const canManage = requirePermission('settings.integrations');
 
 const VALID_EVENTS = ['order.completed', 'order.voided'];
 

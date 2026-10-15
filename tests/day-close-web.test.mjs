@@ -12,9 +12,11 @@ const MIG = 'migrations/102_day_close_instructions.sql';
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log('PASS ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n   ' + e.message); } };
 
-ok('A275: the panel is gated on shifts.force_close | settings.manage', () => {
+// A490: the day close is its own key — shifts.close_day (what force_close / settings.manage stood for here).
+ok('A275: the panel is gated on shifts.close_day (A490)', () => {
   const s = r(UI);
-  assert.match(s, /hasPermission\('shifts\.force_close'\) \|\| hasPermission\('settings\.manage'\)/);
+  assert.match(s, /const allowed = hasPermission\('shifts\.close_day'\);/);
+  assert.doesNotMatch(s, /settings\.manage/);
   assert.match(s, /if \(!allowed\) return null;/);
 });
 

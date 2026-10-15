@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -53,6 +53,7 @@
     "test:failover:electron": "node test/run-under-electron.mjs test/failover-cursors.test.mjs",
     "test:desktop": "npx tsc -b tsconfig.main.json --force && npm run test:contrast && npm run test:branding && npm run test:log && npm run test:sync && npm run test:synctimeout && npm run test:syncdecouple && npm run test:expenseid && npm run test:order409 && npm run test:macfp && npm run test:refbundle && npm run test:refunpack && npm run test:peerrelay && npm run test:roster && npm run test:held:electron && npm run test:pin:electron && npm run test:token:electron && npm run test:failover:electron && npm run test:managefetch && npm run test:devicetoken && npm run test:idlelock && npm run test:tabs",
     "test:pin": "node test/pinCache.test.mjs",
+    "test:a490": "node test/a490-permissions.test.mjs",
     "test:pin:electron": "node test/run-under-electron.mjs test/pinCache.test.mjs",
     "test:token": "node test/tokenStore.test.mjs",
     "test:token:electron": "node test/run-under-electron.mjs test/tokenStore.test.mjs",

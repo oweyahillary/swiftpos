@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
 // Writes were ungated: any authenticated session, including a cashier's, could
 // create, rename or delete a category — which also moves every product in it and
 // changes what prints on the kitchen ticket.
-router.post('/', requirePermission('products.manage'), validateLoose(CreateCategorySchema), async (req, res) => {
+router.post('/', requirePermission('menu.edit'), validateLoose(CreateCategorySchema), async (req, res) => {
   const { name, color, icon, sort_order, super_category, is_kitchen } = req.body;
 
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
@@ -44,7 +44,7 @@ router.post('/', requirePermission('products.manage'), validateLoose(CreateCateg
 });
 
 // PATCH /api/categories/:id
-router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
+router.patch('/:id', requirePermission('menu.edit'), async (req, res) => {
   const { id } = req.params;
   const { name, color, icon, status, super_category, is_kitchen } = req.body;
 
@@ -73,7 +73,7 @@ router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
 });
 
 // DELETE /api/categories/:id
-router.delete('/:id', requirePermission('products.manage'), async (req, res) => {
+router.delete('/:id', requirePermission('menu.edit'), async (req, res) => {
   const { id } = req.params;
 
   const { error } = await supabase

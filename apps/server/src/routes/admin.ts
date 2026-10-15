@@ -65,7 +65,8 @@ import { requireAdmin, requireSuperAdmin, signAdminToken } from '../middleware/a
 import { signTechToken, generateRevealCode } from '../lib/techToken';
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
 import { resolveOwnerUserId } from '../lib/ownerBusiness';
-import { isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
+import { listDesktopReleasesOrStale } from '../lib/desktopReleases';
+import { ownerSetsFeature, OWNER_SETS_UPDATES } from './controls';        // A490
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
@@ -1024,6 +1025,10 @@ router.get('/clients/:id/features', requireAdmin, async (req, res) => {
 router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   const { id, key } = req.params;
   const { enabled, notes } = req.body as { enabled: boolean; notes?: string };
+  // A490: the POS options and loyalty are the OWNER's now (Settings › Business, /api/controls); the cashier switches are
+  // permissions per role. The portal shows them read-only.
+  const refusal = ownerSetsFeature(key);
+  if (refusal) { res.status(403).json({ error: refusal, code: 'OWNER_SETS' }); return; }
 
   const { data: biz } = await supabase.from('businesses').select('name').eq('id', id).single();
 
@@ -1103,41 +1108,11 @@ router.get('/desktop-releases', requireAdmin, async (req, res) => {
   }
 });
 
-router.patch('/clients/:id/desktop-version', requireAdmin, async (req, res) => {
-  const id = String(req.params.id);
-  const raw = (req.body as { version?: unknown })?.version;
-  const version = raw === null || raw === undefined || raw === '' ? null : raw;
-  if (version !== null && !isVersion(version)) {
-    res.status(400).json({ error: 'version must be x.y.z (e.g. 0.6.16) or null to hold' });
-    return;
-  }
-  // Approving a version the tills cannot download would leave them failing every check — refuse it here instead.
-  if (version !== null) {
-    let rel;
-    try { rel = (await listDesktopReleasesOrStale({ fresh: true })).releases.find((r) => r.version === version); }
-    catch (e: any) { res.status(502).json({ error: `Could not read the releases from GitHub: ${e?.message ?? e}` }); return; }
-    if (!rel) { res.status(400).json({ error: `There is no release ${version}.` }); return; }
-    if (!rel.complete) { res.status(400).json({ error: `Release ${version} is missing ${rel.missing.join(', ')} — rebuild it first.` }); return; }
-  }
-
-  const { data: biz } = await supabase.from('businesses').select('name, desktop_approved_version').eq('id', id).single();
-  const { data, error } = await supabase
-    .from('businesses')
-    .update({ desktop_approved_version: version })
-    .eq('id', id)
-    .select('id, name, desktop_approved_version')
-    .single();
-  if (error) { sendError(res, error); return; }
-
-  await writeAdminAudit({
-    adminId: req.adminId, adminEmail: req.adminEmail,
-    action: version ? 'desktop_update.approve' : 'desktop_update.hold', resource: 'business',
-    businessId: id, businessName: biz?.name ?? undefined,
-    before: { desktop_approved_version: (biz as any)?.desktop_approved_version ?? null },
-    after:  { desktop_approved_version: version },
-  });
-
-  res.json(data);
+router.patch('/clients/:id/desktop-version', requireAdmin, async (_req, res) => {
+  // A490: the owner approves or holds the tills' version now (Settings › Business › Till updates, PUT /api/controls/updates
+  // — `settings.updates`, validated by lib/desktopVersionApproval.ts, the check this route made). The portal shows it
+  // read-only; GET /desktop-releases above still lists what exists.
+  res.status(403).json({ error: OWNER_SETS_UPDATES, code: 'OWNER_SETS' });
 });
 
 // ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────

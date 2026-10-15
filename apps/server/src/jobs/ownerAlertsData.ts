@@ -5,6 +5,9 @@
  *
  * The decisions are in ownerAlertsDecision.ts and the HTML in ownerEmails.ts; this file only fetches and shapes.
  */
+import { hasPermission } from '../lib/permissions';   // A490
+import { isOwnerRoleName } from '../lib/ownerRole';
+import { keysForRow } from '../lib/effectiveKeys';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { webTillName } from '../lib/terminalLabel';
@@ -59,25 +62,30 @@ export async function ownerAndExtras(biz: { owner_id: string }, schedule: { reci
   return [...set];
 }
 
-const MANAGER_ROLES = new Set(['manager', 'branch_manager']);
-const normRole = (s: unknown) => String(s ?? '').toLowerCase().replace(/ /g, '_');
+/**
+ * A490: who gets a branch's report e-mails — staff (never the owner's role: the owner is sent theirs anyway) whose
+ * effective keys hold `reports.overview`. It used to be the role NAMES Manager / Branch Manager.
+ */
+export function receivesBranchReports(u: { roles?: any; user_permissions?: any[] | null }): boolean {
+  const role = Array.isArray(u.roles) ? u.roles[0] : u.roles;
+  if (isOwnerRoleName(role?.name)) return false;
+  return hasPermission(keysForRow({ roles: role ?? null, user_permissions: u.user_permissions ?? [] }, false), 'reports.overview');
+}
 
 /**
- * Each branch's managers: active users with an email whose role is Manager or Branch Manager, on the branches they are
- * assigned to (user_branches; a manager with no assignment works every branch, as sign-in treats them). The owner is
- * not here unless the owner's own user row carries a manager role on that branch.
+ * Each branch's managers: active users with an email who hold reports.overview (receivesBranchReports), on the branches
+ * they are assigned to (user_branches; a manager with no assignment works every branch, as sign-in treats them).
  */
 export async function branchManagerEmails(businessId: string): Promise<{ byBranch: Map<string, string[]>; everyBranch: string[] }> {
   const { data, error } = await supabase
-    .from('users').select('id, email, roles ( name ), user_branches ( branch_id )')
+    .from('users').select('id, email, roles ( name, role_permissions ( permissions ( key ) ) ), user_branches ( branch_id ), user_permissions ( granted, permissions ( key ) )')
     .eq('business_id', businessId).eq('status', 'active').not('email', 'is', null)
     .limit(2000);
   if (error) throw new Error(error.message);
   const byBranch = new Map<string, string[]>();
   const every = new Set<string>();
   for (const u of (data ?? []) as any[]) {
-    const role = Array.isArray(u.roles) ? u.roles[0]?.name : u.roles?.name;
-    if (!MANAGER_ROLES.has(normRole(role))) continue;
+    if (!receivesBranchReports(u)) continue;
     const email = String(u.email ?? '').trim().toLowerCase();
     if (!email.includes('@')) continue;
     const branches = ((u.user_branches ?? []) as any[]).map((b) => b?.branch_id).filter(Boolean) as string[];

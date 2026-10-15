@@ -23,7 +23,9 @@ let pass = 0, fail = 0;
 const ok = (n, fn) => { try { fn(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n       ${e.message}`); } };
 
 ok('routing: a manager resolves to /manager (why the old guard bounced them)', () => {
-  assert.match(routing, /isManagerByRole \|\| isManagerByPerm\) return '\/manager'/, 'managers resolve to /manager');
+  // A490: by permission, not role name — anyone holding a key beyond the shop floor's (isBackOffice) lands on /manager.
+  assert.match(routing, /if \(isBackOffice\(backOfficeKeys\(permissions\)\)\) return '\/manager'/, 'managers resolve to /manager');
+  assert.doesNotMatch(routing, /MANAGER_ROLE_NAMES|toLowerCase\(\)/, 'no role names decide the route');
 });
 
 ok('cashier guard: only the OWNER is redirected (managers may ring sales)', () => {

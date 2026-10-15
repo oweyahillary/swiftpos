@@ -154,11 +154,12 @@ console.log('\n4. The executor is idempotent; an older open day closes with the 
 // ── 5. Authority: local close still gated, instructed close is not ───────────
 console.log('\n5. closeDay keeps its manager gate; the instruction is its own authority');
 {
-  ok('closeDay still checks isManager()',
-     /export function closeDay\([\s\S]{0,200}isManager\(\)/.test(SRC_DS));
+  // A490: the manager gate is the permission shifts.close_day (mayCloseDay), no longer a role-name list (isManager).
+  ok('closeDay still checks the close-day permission (mayCloseDay)',
+     /export function closeDay\([\s\S]{0,200}mayCloseDay\(\)/.test(SRC_DS));
   ok('closeDayInstructed exists and does not re-check isManager',
      /export function closeDayInstructed\(/.test(SRC_DS)
-     && !/export function closeDayInstructed\([\s\S]{0,900}isManager\(\)/.test(SRC_DS));
+     && !/export function closeDayInstructed\([\s\S]{0,900}(isManager|mayCloseDay)\(\)/.test(SRC_DS));
   ok('the central close is named in the notes',
      SRC_DS.includes('Closed centrally from the branch server'));
   ok('open-drawer refusal survives in the shared core',

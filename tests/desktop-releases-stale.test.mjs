@@ -80,7 +80,8 @@ await ok('the routes use it: admin list (?meta=1 → { releases, warning }, else
   const admin = read('apps/server/src/routes/admin.ts');
   assert.match(admin, /const \{ releases, warning \} = await listDesktopReleasesOrStale\(\{ fresh: req\.query\.fresh === '1' \}\);/);
   assert.match(admin, /res\.json\(req\.query\.meta === '1' \? \{ releases: list, warning \} : list\);/);
-  assert.match(admin, /rel = \(await listDesktopReleasesOrStale\(\{ fresh: true \}\)\)\.releases\.find/);
+  // A490: the approval moved to the owner (PUT /api/controls/updates); the check is lib/desktopVersionApproval.ts.
+  assert.match(read('apps/server/src/lib/desktopVersionApproval.ts'), /rel = \(await listDesktopReleasesOrStale\(\{ fresh: true \}\)\)\.releases\.find/);
   assert.match(read('apps/server/src/routes/desktopUpdate.ts'), /releases = \(await listDesktopReleasesOrStale\(\)\)\.releases;/);
 });
 

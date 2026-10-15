@@ -40,7 +40,10 @@ function stockStatus(qty: number, threshold: number): { color: string; label: st
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function POSInventoryTab() {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
+  // A490: seeing stock is inventory.view (the screen's key); changing a low-stock level is the cloud's own rule —
+  // inventory.adjust or inventory.receive. Without either the level is shown, not edited.
+  const mayEditLevels = hasPermission('inventory.adjust') || hasPermission('inventory.receive');
 
   const [rows, setRows]       = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,7 +148,7 @@ export default function POSInventoryTab() {
                 <span style={{ ...s.qty, color }}>{row.quantity === null ? '—' : row.quantity}</span>
                 <span style={{ ...s.badge, background: `${color}22`, color }}>{label}</span>
                 <span style={{ fontSize: 10, color: '#6b7280' }}>min</span>
-                <input
+                {mayEditLevels ? <input
                   type="number" min={0}
                   defaultValue={row.low_stock_threshold}
                   onBlur={e => {
@@ -154,7 +157,7 @@ export default function POSInventoryTab() {
                   }}
                   title="Low-stock threshold"
                   style={{ width: 48, background: '#1f2937', border: '1px solid #374151', borderRadius: 6, color: '#e5e7eb', fontSize: 12, padding: '3px 6px', textAlign: 'center' }}
-                />
+                /> : <span style={{ fontSize: 12, color: '#e5e7eb', minWidth: 24, textAlign: 'center' }}>{row.low_stock_threshold}</span>}
               </div>
             </div>
           );

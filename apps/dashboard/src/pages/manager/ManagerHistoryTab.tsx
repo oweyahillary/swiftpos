@@ -35,7 +35,8 @@ const STATUS_CLS: Record<TRow['status'], string> = {
 };
 
 export default function ManagerHistoryTab({ currency }: { currency: string }) {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
+  const seesCosts = hasPermission('menu.costs') || hasPermission('reports.costs');   // A490
   const { business } = useBusiness();
   const branchId = session?.branchId;
 
@@ -81,7 +82,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
         name: i.ingredients?.name ?? 'Item', unit: i.ingredients?.unit ?? '',
         received: Number(i.quantity_received) || 0, unitCost: Number(i.unit_cost) || 0,
       })),
-      note: grn.notes,
+      note: grn.notes, hideCosts: !seesCosts,   // A490: cost prices are menu.costs / reports.costs
     }));
   };
 

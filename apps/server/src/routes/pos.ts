@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { effectiveKeysForRow, clientPermissionMap } from '../lib/effectivePermissions';   // A490
 import { offersForBranch } from './offers';   // A445
 import { enabledFromSetting } from '../lib/paymentCatalogue';   // A429
 import { sendError } from '../lib/sendError';
@@ -182,15 +183,14 @@ router.get('/branch-staff', async (req, res) => {
     .eq('status', 'active');
   if (error) { sendError(res, error); return; }
 
-  // Effective permissions = role grants (all true) then per-user overrides
-  // (granted true/false) — identical resolution to /verify-pin and the JWT.
+  // Effective permissions = role grants then per-user overrides — A490: the one rule (lib/effectivePermissions), sent as
+  // the map the clients hold (clientPermissionMap: fine keys + the broad keys an older till checks + the marker; the
+  // owner's role {'*': true}) — identical to /verify-pin and the JWT.
   const roster = (staffList ?? [])
     // A426: the same rule as PIN sign-in — no branch assigned means every branch (lib/branchAccess.ts)
     .filter((u: any) => worksAtBranch(u.user_branches, branchId))
     .map((u: any) => {
-      const permissions: Record<string, boolean> = {};
-      (u.roles?.role_permissions ?? []).forEach((rp: any) => { if (rp.permissions?.key) permissions[rp.permissions.key] = true; });
-      (u.user_permissions ?? []).forEach((up: any) => { if (up.permissions?.key) permissions[up.permissions.key] = up.granted; });
+      const permissions = clientPermissionMap(effectiveKeysForRow(u));
       return {
         staff_id:          u.id,
         name:              u.name,

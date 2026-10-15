@@ -12,7 +12,7 @@ router.use(requireAuth);
 // credit routes' key); the owner and '*' pass in rbac. Adding a customer stays the POS's (the Loyalty panel looks a
 // customer up and adds them: customers.view) or a customers.manage holder's.
 // Reads stay scoped to the business. (There is no loyalty-settings write route here.)
-const canManageCustomers = requirePermission('customers.manage');
+const canManageCustomers = requirePermission('customers.edit');
 
 // ── Loyalty feature flag guard ────────────────────────────────
 // All routes in this file are blocked if loyalty_enabled = false for the business.
@@ -63,7 +63,7 @@ router.get('/customer', async (req, res) => {
 });
 
 // POST /api/loyalty/customer
-router.post('/customer', requireAnyPermission('customers.manage', 'customers.view'), async (req, res) => {
+router.post('/customer', requireAnyPermission('customers.edit', 'customers.view'), async (req, res) => {
   const { name, phone, email, notes } = req.body;
   if (!name || !phone) { res.status(400).json({ error: 'name and phone are required' }); return; }
 

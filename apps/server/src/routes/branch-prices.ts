@@ -38,7 +38,7 @@ interface PriceEditInput {
 // Audit 2026-10-14: a branch check alone let any signed-in person of the branch (a cashier) set its prices. Setting a
 // price is products.manage, as on the web; the owner and '*' pass in rbac — the till's own session carries '*' (its
 // queued edits were each checked on the till against the manager who made them).
-router.post('/sync', requirePermission('products.manage'), async (req, res) => {
+router.post('/sync', requirePermission('menu.prices'), async (req, res) => {
   const { branch_id, edits } = req.body as { branch_id?: string; edits?: PriceEditInput[] };
 
   if (!branch_id || !Array.isArray(edits)) {

@@ -1,5 +1,5 @@
-// Central routing logic — one source of truth used everywhere
-// Put this in: apps/dashboard/src/lib/posRouting.ts
+// Central routing logic — one source of truth used everywhere (PIN sign-in, the manager portal's guard, the web POS).
+import { expandMap, isBackOffice, OPEN_BEFORE_A490 } from './permissions';   // A490
 
 export type POSRoute = '/pos/cashier' | '/manager' | '/';
 
@@ -8,25 +8,31 @@ export interface PermissionMap {
 }
 
 /**
- * Given a set of permissions and a role name, return where this user should land.
+ * Given a person's permission map, return where they land.
  *
- * Owner  (wildcard *)      → '/'          full dashboard (Supabase)
- * Manager (role OR perm)   → '/manager'   branch manager dashboard
- * Everyone else            → '/pos/cashier'
+ * Owner ('*')                                  → '/'             the full dashboard (Supabase sign-in)
+ * Back office (holds anything beyond the shop
+ *   floor's keys — isBackOffice, A490)         → '/manager'      the manager portal
+ * Everyone else                                → '/pos/cashier'
+ *
+ * A490: no role names. "Is a manager" is a permission (isBackOffice of the expanded map) — a role renamed or created
+ * by the owner lands where its keys say. `_role` stays in the signature for the callers; it decides nothing.
+ * The keys nobody was refused before A490 (OPEN_BEFORE_A490 — every cashier holds them until migration 134, and an
+ * older map is expanded with them) never make a person back office on their own: they include sales.history_all and
+ * staff.view, which are not shop-floor keys, so without this every cashier would land on the manager portal.
  */
 export function resolveRoute(
-  permissions: PermissionMap,
-  role: string,
+  permissions: PermissionMap | null | undefined,
+  _role?: string | null,
 ): POSRoute {
-  // Owner — has wildcard
-  if (permissions['*'] === true) return '/';
-
-  // Manager — either role name matches OR has settings.manage permission
-  const MANAGER_ROLE_NAMES = ['manager', 'supervisor', 'admin', 'branch_manager'];
-  const isManagerByRole = MANAGER_ROLE_NAMES.includes((role ?? '').toLowerCase());
-  const isManagerByPerm = permissions['settings.manage'] === true;
-
-  if (isManagerByRole || isManagerByPerm) return '/manager';
-
+  if (permissions?.['*'] === true) return '/';
+  if (isBackOffice(backOfficeKeys(permissions))) return '/manager';
   return '/pos/cashier';
+}
+
+/** The keys that decide "back office": the map's own (broad keys expanded), without the keys nobody was refused. */
+export function backOfficeKeys(permissions: PermissionMap | null | undefined): Set<string> {
+  const held = expandMap(permissions ?? {}, false);
+  for (const k of OPEN_BEFORE_A490) held.delete(k);
+  return held;
 }

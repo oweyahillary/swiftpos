@@ -80,7 +80,8 @@ const notTom = threw(() => S.closeShift(2050, undefined, null));
 ok('A366: Tom (another cashier at the till) cannot close Jane\'s drawer', notTom?.code === 'SHIFT_NOT_YOURS'
   && /^Only .* or a manager can close this shift\.$/.test(notTom.message), notTom?.message);
 ok('A366: the till tells the screen so before the count', S.shiftCloseRights(db.prepare(`SELECT * FROM shifts WHERE id='sh-web-1'`).get()).allowed === false);
-db.prepare(`UPDATE staff_session SET staff_id='u-mgr', staff_name='Mary', role_name='manager' WHERE id=1`).run();
+// A490: a manager by permissions (an older cloud's manager map), not by the role's name.
+db.prepare(`UPDATE staff_session SET staff_id='u-mgr', staff_name='Mary', role_name='manager', permissions='{"orders.void":true,"settings.manage":true}' WHERE id=1`).run();
 ok('A366: a manager may', S.shiftCloseRights(db.prepare(`SELECT * FROM shifts WHERE id='sh-web-1'`).get()).allowed === true);
 
 // The drawer holds 2050. Counted with the web's part → balances, no note needed (a manager counts it).

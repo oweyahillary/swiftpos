@@ -64,9 +64,9 @@ export default function SignInSecurity() {
     <div className="max-w-2xl space-y-4" data-testid="signin-security">
       <div>
         <h2 className="text-lg font-semibold text-white">My sign-in</h2>
-        {/* A398: the admin portal turns sign-in codes on or off per client. */}
+        {/* A398 / A491: sign-in codes are switched on or off by the owner (Settings › Business › POS options, settings.pos). */}
         <p className="text-sm text-gray-400">{info && info.enabled === false
-          ? 'Sign-in codes are off for this business — you sign in with your password or PIN only. ZapTill support can turn them on; choose how you would get your code below.'
+          ? 'Sign-in codes are off for this business — you sign in with your password or PIN only. The owner turns them on in Settings › Business › POS options; choose how you would get your code below.'
           : 'Every web sign-in asks for a 6-digit code as well as your password or PIN.'}</p>
       </div>
       {info && (

@@ -51,8 +51,10 @@ const db = L.getLocalDb();
 db.prepare(`INSERT INTO session (id, token, user_id, business_id, business_name, logged_in_at) VALUES (1, 't', 'u-owner', 'biz-1', 'B', '2026-09-30T00:00:00Z')`).run();
 C.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1', device_id: 'dev-T1', device_role: 'till', terminal_code: 'T1', device_name: 'Front' });
 db.prepare(`INSERT INTO users (id, name) VALUES ('u-amy', 'Amy'), ('u-ben', 'Ben'), ('u-mgr', 'Mary')`).run();
+// A490: a role's NAME decides nothing on the till — a manager is the permissions an older cloud sent a manager.
+const A490_MANAGER = '{"orders.void":true,"settings.manage":true}';
 const signIn = (id, name, role) => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
-  VALUES (1, ?, ?, ?, '{}', 'br-1', 'tok', '2026-09-30T06:00:00Z')`).run(id, name, role);
+  VALUES (1, ?, ?, ?, ?, 'br-1', 'tok', '2026-09-30T06:00:00Z')`).run(id, name, role, role === 'manager' ? A490_MANAGER : '{}');
 db.prepare(`INSERT INTO products (id, name, base_price, status) VALUES ('p-chk', 'Chicken', 1000, 'active')`).run();
 const features = (on) => C.setPosFeatures({ blind_shift_close: on, delivery_fee: on, cashier_own_history: on, cashier_no_reprint: on, confirm_shows_cashier_figures: on });
 

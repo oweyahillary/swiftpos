@@ -22,13 +22,17 @@ const pos = read('apps/desktop/src/renderer/pages/POSPage.tsx');
 const app = read('apps/desktop/src/renderer/App.tsx');
 const mgr = read('apps/desktop/src/renderer/pages/ManagerPage.tsx');
 ok('a manager signed in: "Close day now" on the red lock and the amber reminder → Manager › Close Day', () => {
-  assert.match(pos, /\{onOpenManager \? \(\s*<button onClick=\{\(\) => onOpenManager\('dayclose'\)\} data-testid="close-day-now"/);
-  assert.match(pos, /\? <button onClick=\{\(\) => onOpenManager\('dayclose'\)\}[^>]*>Close day now<\/button>/);
+  // A490: "a manager" is someone who may close the day (shifts.close_day) — App passes canCloseDay; the button opens Manager.
+  assert.match(pos, /\{onOpenManager && canCloseDay \? \(\s*<button onClick=\{\(\) => onOpenManager\('dayclose'\)\} data-testid="close-day-now"/);
+  assert.match(pos, /\{onOpenManager && canCloseDay\s*\? <button onClick=\{\(\) => onOpenManager\('dayclose'\)\}[^>]*>Close day now<\/button>/);
+  assert.match(app, /canCloseDay=\{can\(staff, 'shifts\.close_day'\)\}/);
 });
 ok('opens on Close Day (App passes the tab; Manager starts on it when this manager may see it)', () => {
   assert.match(app, /onOpenManager=\{hasManagerRights\(staff\) \? \(tab\?: 'dayclose'\) => \{ setManagerTab\(tab \?\? null\); setState\('manager'\); \} : undefined\}/);
   assert.match(app, /initialTab=\{managerTab \?\? undefined\}/);
-  assert.match(mgr, /useState<TabKey>\(\(\) => \(initialTab && groupOf\(nav, initialTab\) \? initialTab : 'overview'\)\)/);
+  // A490: firstTab — the tab asked for when this person has it (Close Day needs shifts.close_day), else their first page.
+  assert.match(mgr, /useState<TabKey>\(\(\) => firstTab\(nav, initialTab\) \?\? 'overview'\)/);
+  assert.match(read('apps/desktop/src/renderer/lib/managerNav.ts'), /export function firstTab\(nav: NavGroup\[\], wanted\?: TabKey \| null\): TabKey \| null \{\s*if \(wanted && groupOf\(nav, wanted\)\) return wanted;/);
 });
 ok('a cashier is told who can clear it', () => {
   assert.match(pos, /A manager signs in with their PIN and closes it here — or closes it from the web \(Manager › Close day\)\./);

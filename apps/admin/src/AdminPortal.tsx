@@ -3,6 +3,8 @@ import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Ba
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
 import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
+// A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
+import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, OWNER_UPDATES_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
 import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "./lib/tenantHost";   // A378: a client's own sign-in address
 import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
@@ -751,13 +753,11 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
   const [error, setError] = useState("");
   const [expiryDraft, setExpiryDraft] = useState("");   // A147: web-access expiry setter
   const [savingExpiry, setSavingExpiry] = useState(false);
-  // A348: desktop updates per business — releases the cloud can serve, the version picked, saving.
+  // A348: desktop updates per business — releases the cloud can serve (A491: shown only; the owner approves).
   const [desktopReleases, setDesktopReleases] = useState(null);   // null = loading; { error } on failure
-  const [desktopPick, setDesktopPick] = useState("");
   // A356: GitHub's refusal, when the list shown is the last good one; and the short list's "show all" switch.
   const [desktopWarning, setDesktopWarning] = useState(null);
   const [showAllVersions, setShowAllVersions] = useState(false);
-  const [savingDesktop, setSavingDesktop] = useState(false);
   // A378: the client's own sign-in address (africanfries.<root>) — ZapTill sets it here, never the client.
   const [subDraft, setSubDraft] = useState(null);          // null = not editing
   const [subError, setSubError] = useState("");
@@ -789,7 +789,10 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
       .catch(e => setDesktopReleases({ error: e.message }));
   }, [client.id]);
 
+  // A491: only the flags the admin portal still holds (themes, web hosting and the like); the owner's POS options and
+  // the per-role switches are never written from here — the cloud answers OWNER_SETS, and its message is shown.
   async function toggleFeature(key, enabled) {
+    if (!adminSwitches(key)) { setError(`${key}: ${PER_ROLE_SWITCHES[key] ? PER_ROLE_WHERE : OWNER_POS_OPTIONS_WHERE}.`); return; }
     try {
       await req("PATCH", `/clients/${client.id}/features/${key}`, { enabled });
       setFeatures(prev => {
@@ -797,7 +800,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
         if (existing) return prev.map(f => f.key === key ? { ...f, enabled } : f);
         return [...prev, { key, enabled }];
       });
-    } catch(e) { setError(e.message); }
+    } catch(e) { setError(ownerSetsMessage(e) ?? e.message); }
   }
 
   async function suspend() {
@@ -856,20 +859,8 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     finally { setSavingExpiry(false); }
   }
 
-  // A348: approve one desktop version for this business (its tills update to it within the hour), or hold (null).
-  async function setDesktopVersion(version) {
-    const msg = version
-      ? `Approve desktop ${version} for ${detail?.name ?? 'this client'}? Their tills download it within the hour and install it the next time each till is closed.`
-      : `Hold desktop updates for ${detail?.name ?? 'this client'}? Their tills stay on the version they run now.`;
-    if (!(await askConfirm(msg))) return;
-    setSavingDesktop(true);
-    try {
-      const updated = await req("PATCH", `/clients/${client.id}/desktop-version`, { version });
-      setDetail(prev => prev ? { ...prev, desktop_approved_version: updated?.desktop_approved_version ?? null } : prev);
-      setDesktopPick("");
-    } catch (e) { setError(e.message); }
-    finally { setSavingDesktop(false); }
-  }
+  // A491: approving or holding a desktop version (A348) moved to the owner (Settings › Business › Till updates); the
+  // cloud refuses PATCH /clients/:id/desktop-version from here (OWNER_SETS). The Updates tab only shows it.
 
   async function toggleWebHosting(enable) {
     const confirmMsg = enable
@@ -1120,6 +1111,15 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
       style={{ flex: "0 0 auto", width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: on ? "#22c55e" : C.border, position: "relative", transition: "background 0.2s" }}>
       <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 0.2s" }} />
     </button>
+  );
+
+  // A491: a setting the owner holds — its state, not a switch.
+  const statePill = (on, label) => (
+    <span data-testid="owner-set-state" aria-label={`${label}: ${on ? "on" : "off"}`}
+      style={{ flex: "0 0 auto", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, letterSpacing: 0.4,
+        background: on ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.05)", color: on ? "#22c55e" : C.muted, border: `1px solid ${on ? "rgba(34,197,94,0.3)" : C.border}` }}>
+      {on ? "ON" : "OFF"}
+    </span>
   );
 
   const enrolPanel = (
@@ -1579,17 +1579,27 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           {settingRow("App themes",
             hasThemes ? "The client picks an app theme on the Branding page; tills follow it." : "Tills keep the standard look. Turn on to let the client pick an app theme.",
             toggle(hasThemes, () => toggleThemes(!hasThemes), "App themes"))}
-          {/* 0.6.27: the POS switches — always listed (off until set), named and explained. */}
+          {/* 0.6.27: the POS switches — always listed (off until set), named and explained.
+              A491: the owner sets them now (A490) — shown read-only with where the owner sets each. */}
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
+          <div data-testid="pos-options-owner-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_WHERE}.</div>
           {POS_FEATURES.map(pf => {
             const on = features.some(f => f.key === pf.key && f.enabled);
+            const perRole = PER_ROLE_SWITCHES[pf.key];
             return (
               <div key={pf.key} data-testid={`pos-feature-${pf.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{pf.label}</div>
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pf.description}</div>
+                  {perRole ? (
+                    <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4, lineHeight: 1.5 }}>
+                      {PER_ROLE_WHERE}: “{perRole}”. The stored value shown no longer applies once roles hold the permission.
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_WHERE}</div>
+                  )}
                 </div>
-                {toggle(on, () => toggleFeature(pf.key, !on), pf.label)}
+                {statePill(on, pf.label)}
               </div>
             );
           })}
@@ -1597,12 +1607,14 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             <>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
               {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").map(f => (
-                <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, gap: 12 }}>
+                <div key={f.key} data-testid={`other-flag-${f.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, gap: 12 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>
                     {f.notes && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{f.notes}</div>}
+                    {/* A491: loyalty_enabled (and any other owner-held key) — the owner's POS options. */}
+                    {!adminSwitches(f.key) && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{PER_ROLE_SWITCHES[f.key] ? PER_ROLE_WHERE : OWNER_POS_OPTIONS_WHERE}</div>}
                   </div>
-                  {toggle(f.enabled, () => toggleFeature(f.key, !f.enabled), f.key)}
+                  {adminSwitches(f.key) ? toggle(f.enabled, () => toggleFeature(f.key, !f.enabled), f.key) : statePill(f.enabled, f.key)}
                 </div>
               ))}
             </>
@@ -1623,28 +1635,29 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
           )}
           {desktopWarning && <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{desktopWarning}</div>}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 14 }}>
-            <select value={desktopPick} disabled={savingDesktop || !Array.isArray(desktopReleases)} onChange={e => setDesktopPick(e.target.value)}
-              style={{ ...S.input, width: "auto" }}>
-              <option value="">{desktopReleases === null ? "Loading releases…" : "Choose a version…"}</option>
-              {Array.isArray(desktopReleases) && visibleVersions(desktopReleases, detail?.desktop_approved_version, showAllVersions).map(r => (
-                <option key={r.version} value={r.version} disabled={!r.complete}>
-                  {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}{r.complete ? "" : ` — missing ${r.missing.join(", ")}`}
-                </option>
-              ))}
-            </select>
-            <button disabled={savingDesktop || !desktopPick} onClick={() => setDesktopVersion(desktopPick)}
-              style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingDesktop || !desktopPick) ? 0.4 : 1 }}>
-              {savingDesktop ? "Saving…" : "Approve"}
-            </button>
-            {detail?.desktop_approved_version && (
-              <button disabled={savingDesktop} onClick={() => setDesktopVersion(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingDesktop ? 0.4 : 1 }}>Hold</button>
-            )}
-            {Array.isArray(desktopReleases) && desktopReleases.length > RECENT_VERSIONS && (
-              <button type="button" onClick={() => setShowAllVersions(v => !v)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 8px" }}>
-                {showAllVersions ? `Show the latest ${RECENT_VERSIONS} only` : `Show all ${desktopReleases.length} versions`}
-              </button>
-            )}
+          {/* A491: the owner approves or holds (Settings › Business › Till updates); the portal shows the releases for support. */}
+          <div data-testid="updates-owner-note" style={{ fontSize: 12, color: "#f59e0b", marginTop: 8 }}>{OWNER_UPDATES_WHERE}.</div>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>Releases</div>
+              {Array.isArray(desktopReleases) && desktopReleases.length > RECENT_VERSIONS && (
+                <button type="button" onClick={() => setShowAllVersions(v => !v)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 8px" }}>
+                  {showAllVersions ? `Show the latest ${RECENT_VERSIONS} only` : `Show all ${desktopReleases.length} versions`}
+                </button>
+              )}
+            </div>
+            {desktopReleases === null && <div style={{ fontSize: 12, color: C.muted }}>Loading releases…</div>}
+            {Array.isArray(desktopReleases) && desktopReleases.length === 0 && <div style={{ fontSize: 12, color: C.muted }}>No releases listed.</div>}
+            {Array.isArray(desktopReleases) && visibleVersions(desktopReleases, detail?.desktop_approved_version, showAllVersions).map(r => (
+              <div key={r.version} data-testid={`desktop-release-${r.version}`} style={{ display: "flex", gap: 10, fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
+                <span style={{ flex: 1, fontWeight: r.version === detail?.desktop_approved_version ? 600 : 400 }}>
+                  {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}
+                </span>
+                <span style={{ color: r.version === detail?.desktop_approved_version ? "#22c55e" : r.complete ? C.muted : "#f59e0b" }}>
+                  {r.version === detail?.desktop_approved_version ? "Approved" : r.complete ? "" : `missing ${r.missing.join(", ")}`}
+                </span>
+              </div>
+            ))}
           </div>
           {devices.length > 0 && (
             <div style={{ marginTop: 18 }}>

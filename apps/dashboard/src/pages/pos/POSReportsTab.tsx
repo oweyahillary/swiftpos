@@ -2,7 +2,8 @@
  * POSReportsTab
  * Branch-scoped sales summary accessible from the POS drawer.
  * Uses posApi (cashier JWT) — backend branchScope() locks it to the cashier's branch.
- * Permission required: reports.view
+ * A490: each report by its own key — the sales summary is reports.sales (was reports.view). POS_REPORT_KEYS lists the
+ * reports this screen shows; the drawer offers it to anyone holding any of them, and nothing is fetched without its key.
  */
 
 import MethodDot from '../../components/MethodDot';
@@ -43,10 +44,14 @@ const METHOD_LABELS: Record<string, string> = {
   card: '💳 Card',
 };
 
+/** A490: the reports this screen shows, each by its catalogue key. */
+export const POS_REPORT_KEYS: readonly string[] = ['reports.sales'];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function POSReportsTab({ currency }: { currency: string }) {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
+  const seesSales = hasPermission('reports.sales');
 
   const [from, setFrom] = useState(weekAgo());
   const [to,   setTo]   = useState(today());
@@ -55,6 +60,7 @@ export default function POSReportsTab({ currency }: { currency: string }) {
   const [error, setError]     = useState('');
 
   const load = async () => {
+    if (!seesSales) return;
     setLoading(true);
     setError('');
     try {

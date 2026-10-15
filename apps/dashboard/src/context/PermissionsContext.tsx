@@ -1,5 +1,5 @@
 /**
- * PermissionsContext — loads roles and permissions for the owner.
+ * PermissionsContext — the owner dashboard's permissions: the owner holds '*' (A202, A490).
  *
  * Fixes:
  * 1. Stable dependency: previously subscribed to `session?.access_token`
@@ -10,35 +10,20 @@
  *
  * 2. Resets cleanly on sign-out so the next login starts with a clean slate.
  *
- * 3. Parallel fetch: roles and permissions are fetched simultaneously,
- *    not sequentially.
+ * 3. A490: nothing is fetched — the owner holds '*' (see below).
  */
 
 import {
   createContext, useContext, useEffect, useState, useCallback, type ReactNode,
 } from 'react';
-import { api } from '../lib/api';
 import { useAuth } from './AuthContext';
 
-interface Permission {
-  id:     string;
-  key:    string;
-  label:  string;
-  module: string;
-}
-
-interface Role {
-  id:          string;
-  name:        string;
-  description: string | null;
-  is_default:  boolean;
-  role_permissions: { permission_id: string }[];
-}
+// A490: the owner dashboard's user is ALWAYS the business owner — '*' (the cloud never refuses the owner). The role and
+// permission lists this context used to fetch were never read (Settings › Roles and permissions loads its own, on the
+// catalogue API), so they are gone; the PIN-session apps use POSAuthContext.hasPermission (expandMap of the session).
 
 interface PermissionsContextType {
   permissionKeys:  Set<string>;
-  roles:           Role[];
-  allPermissions:  Permission[];
   can:             (key: string) => boolean;
   loading:         boolean;
   refresh:         () => void;
@@ -49,61 +34,23 @@ const PermissionsContext = createContext<PermissionsContextType | null>(null);
 export function PermissionsProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const [permissionKeys,  setPermissionKeys]  = useState<Set<string>>(new Set());
-  const [roles,           setRoles]           = useState<Role[]>([]);
-  const [allPermissions,  setAllPermissions]  = useState<Permission[]>([]);
   const [loading,         setLoading]         = useState(true);
   const [tick,            setTick]            = useState(0);
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    try {
-      // Parallel fetch — both in flight simultaneously
-      const [rolesData, permsData] = await Promise.all([
-        api.get<Role[]>('/api/staff/roles'),
-        api.get<Permission[]>('/api/staff/permissions'),
-      ]);
-
-      if (signal?.aborted) return;
-
-      setRoles(rolesData ?? []);
-      setAllPermissions(permsData ?? []);
-
-      // A202: the dashboard user is ALWAYS the business owner, and the server treats
-      // the owner as all-access — requirePermission() bypasses on req.isOwner, and
-      // migration 24 states "owners are never role-gated (auth grants them a
-      // wildcard), so the owner-only permissions don't need an explicit grant."
-      // Mirror that wildcard here. Previously we filtered permissionKeys to the owner
-      // ROLE's explicit role_permissions, which hid owner-only features the owner
-      // role isn't explicitly granted (ingredients.manage, inventory.adjust) even
-      // though the server allows them — e.g. the "+ Add Ingredient" button vanished.
-      // roles/allPermissions stay loaded above for the Roles management screen.
-      setPermissionKeys(new Set(['*']));
-    } catch {
-      if (!signal?.aborted) {
-        setPermissionKeys(new Set(['*'])); // don't lock the owner out on error
-      }
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
     if (!session) {
       // Sign-out: clear immediately
       setPermissionKeys(new Set());
-      setRoles([]);
-      setAllPermissions([]);
       setLoading(false);
       return;
     }
+    // A202: the dashboard user is ALWAYS the business owner, and the server treats the owner as all-access
+    // (requirePermission() bypasses on req.isOwner). Mirror that wildcard here — never a filtered explicit set, which
+    // once hid owner-only features (ingredients.manage, inventory.adjust).
+    setPermissionKeys(new Set(['*']));
+    setLoading(false);
 
-    const controller = new AbortController();
-    load(controller.signal);
-    return () => controller.abort();
-
-  // ── Stable dependency: user ID, not access_token.
-  // access_token rotates every 15 min → would reload permissions repeatedly.
-  // user.id is fixed for the lifetime of the login session.
+  // ── Stable dependency: user ID, not access_token (it rotates every 15 min).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user.id, tick]);
 
@@ -116,7 +63,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
   return (
     <PermissionsContext.Provider
-      value={{ permissionKeys, roles, allPermissions, can, loading, refresh }}
+      value={{ permissionKeys, can, loading, refresh }}
     >
       {children}
     </PermissionsContext.Provider>

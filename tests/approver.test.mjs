@@ -99,7 +99,7 @@ const src = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/orders.ts'),
 const body = (marker) => { const i = src.indexOf(marker); const rest = src.slice(i + marker.length); return rest.slice(0, rest.indexOf('router.post(')); };
 await ok('orders.ts: verifyOverrideAuthorizer asks findApprover with the real sign-in PIN check and the business owner', async () => {
   assert.match(src, /import \{ verifyPin \} from '\.\/auth';/);
-  assert.match(src, /findApprover\(\(rows \?\? \[\]\) as ApproverRow\[\], \{ pin, authorizerId, ownerId: \(biz as any\)\?\.owner_id \?\? null \}/);
+  assert.match(src, /findApprover\(\(rows \?\? \[\]\) as ApproverRow\[\], \{ pin, authorizerId, ownerId: \(biz as any\)\?\.owner_id \?\? null,\s*may: \(row, ownerId\) => mayApprove\(row, ownerId, action\) \}/);
   assert.match(src, /loginPin:\s+async \(p, h\) => \(await verifyPin\(p, h, businessId\)\)\.valid/);
 });
 await ok('void AND refund: legacy business PIN still accepted; otherwise one clear refusal (no "Invalid supervisor PIN")', async () => {

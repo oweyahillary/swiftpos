@@ -21,6 +21,7 @@
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { storeBranchStaff, pruneSavedSignIns, type BranchStaffRow } from './branchStaff';
 import { fetchRosterFromNode, hasNode, nodeUrl, nodeHeaders } from './nodeClient';
+import { lanFetch } from './lanTls';   // A489
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { logLine } from './logFile';
 
@@ -134,7 +135,7 @@ export async function staffChangedHere(): Promise<void> {
   const base = hasNode() ? nodeUrl() : null;
   if (!base) return;
   try {
-    await fetch(`${base}/node/roster/refresh`, { method: 'POST', headers: nodeHeaders(), signal: AbortSignal.timeout(4000) });
+    await lanFetch(`${base}/node/roster/refresh`, { method: 'POST', headers: nodeHeaders(), signal: AbortSignal.timeout(4000) });
   } catch { /* the server pulls on its own within 10 s */ }
 }
 

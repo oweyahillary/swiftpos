@@ -13,7 +13,7 @@ router.use(requireAuth);
 // Audit 2026-10-14: creating, editing, switching and deleting a discount were open to any signed-in user (a cashier could
 // make a 100% code and use it). They need products.manage, the Menu's key (Discounts sits under Menu); the owner and '*'
 // pass in rbac. Reading the list and POST /apply (the POS checking a code) stay open to every signed-in user.
-const canManage = requirePermission('products.manage');
+const canManage = requirePermission('menu.offers');
 
 // GET /api/discounts — list all discounts for business
 router.get('/', async (req, res) => {
@@ -157,7 +157,8 @@ router.delete('/:id', canManage, async (req, res) => {
 // POST /api/discounts/apply — validate and apply a discount at POS
 // Body: { code?, discount_id?, order_total }
 // Returns: { discount, discount_amount }
-router.post('/apply', async (req, res) => {
+// A490: giving a discount is sales.discount (everyone held it before migration 134 — OPEN_BEFORE_A490).
+router.post('/apply', requirePermission('sales.discount'), async (req, res) => {
   const { code, discount_id, order_total } = req.body;
 
   if (!order_total || order_total <= 0) {

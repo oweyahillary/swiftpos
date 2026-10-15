@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 
-type Req = { id: string; name: string; ip: string; at: string };
+type Req = { id: string; name: string; ip: string; at: string; securityCode?: string | null };
 
 export default function JoinPrompt() {
   const [reqs, setReqs] = useState<Req[]>([]);
@@ -41,6 +41,12 @@ export default function JoinPrompt() {
         <h2 className="text-lg font-semibold text-white">A till wants to join this branch server</h2>
         <p className="mt-2 text-sm text-gray-300"><span className="font-semibold text-white">{r.name}</span> at {r.ip}</p>
         <p className="mt-1 text-xs text-gray-400">Allow it only if it is a till you are setting up in this shop. It joins this branch and syncs through this server.</p>
+        {/* A489: the till's screen shows this server's code; a different one there means something else answered it. */}
+        {r.securityCode && (
+          <p className="mt-2 text-sm text-gray-300" data-testid="join-prompt-code">
+            Security code <span className="font-mono font-semibold text-white">{r.securityCode}</span> — the till's screen shows the same code (an older till shows none). If it shows a different one, press Deny.
+          </p>
+        )}
         {reqs.length > 1 && <p className="mt-1 text-xs text-gray-400">{reqs.length - 1} more waiting after this one.</p>}
         {error && <p className="mt-3 rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-300">{error}</p>}
         <div className="mt-5 flex gap-3">

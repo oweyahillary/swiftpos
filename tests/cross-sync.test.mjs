@@ -108,7 +108,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.CROSS_SYNC_TS) {
     assert.ok(route.length > 0);
     assert.match(route, /\.eq\('shift_id', id\)\s*\.eq\('business_id', req\.businessId\)/);
     assert.doesNotMatch(route, /\.(update|insert|upsert|delete)\(/);
-    assert.match(route, /if \(!openedByRequester && !sameTerminal && !isManager\) \{\s*res\.status\(403\)/);
+    assert.match(route, /if \(!openedByRequester && !sameTerminal && !can\(req, 'shifts\.confirm'\)\) \{\s*res\.status\(403\)/);
     assert.match(route, /res\.json\(\{ orders: foreignOrders\(/);
   });
 

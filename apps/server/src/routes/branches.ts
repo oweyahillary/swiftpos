@@ -3,7 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission, assertBranchAccess } from '../middleware/rbac';
+import { requireAnyPermission, requirePermission, assertBranchAccess, can } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 import { cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
@@ -68,7 +68,7 @@ async function branchForWrite(req: Request, res: Response, branchId: string, col
 }
 
 // PUT /api/branches/:id — update branch
-router.put('/:id', requireAuth, requireAnyPermission('settings.manage'), validate(UpdateBranchSchema), async (req, res) => {
+router.put('/:id', requireAuth, requirePermission('settings.branches'), validate(UpdateBranchSchema), async (req, res) => {
   const { name, address, phone, status } = req.body;
 
   const branch = await branchForWrite(req, res, req.params.id, 'id, is_main');
@@ -89,7 +89,7 @@ router.put('/:id', requireAuth, requireAnyPermission('settings.manage'), validat
 });
 
 // PUT /api/branches/:id/set-main — change main branch
-router.put('/:id/set-main', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+router.put('/:id/set-main', requireAuth, requirePermission('settings.branches'), async (req, res) => {
   // The target must be this business's (and the caller's) BEFORE the current main is unset — an unknown id used to leave
   // the business with no main branch at all.
   if (!(await branchForWrite(req, res, req.params.id))) return;
@@ -114,7 +114,7 @@ router.put('/:id/set-main', requireAuth, requireAnyPermission('settings.manage')
 });
 
 // DELETE /api/branches/:id — deactivate branch
-router.delete('/:id', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+router.delete('/:id', requireAuth, requirePermission('settings.branches'), async (req, res) => {
   const branch = await branchForWrite(req, res, req.params.id, 'id, is_main');
   if (!branch) return;
   if (branch.is_main) { res.status(400).json({ error: 'Cannot deactivate the main branch' }); return; }
@@ -130,7 +130,7 @@ router.delete('/:id', requireAuth, requireAnyPermission('settings.manage'), asyn
 });
 
 // GET /api/branches/:id/staff
-router.get('/:id/staff', requireAuth, async (req, res) => {
+router.get('/:id/staff', requireAuth, requirePermission('staff.view'), async (req, res) => {   // A490: staff.view
   // Audit 2026-10-14: user_branches has no business_id — without this, any signed-in user read another tenant's staff
   // (names, emails, phones) by branch id.
   if (!(await assertOwnBranch(req.businessId, req.params.id))) { res.status(404).json({ error: 'Branch not found' }); return; }
@@ -225,7 +225,7 @@ router.put('/:id/stock/:productId', requireAuth, requireAnyPermission('inventory
 //   POST   /api/branches/:id/assign-user
 //   DELETE /api/branches/:id/remove-user/:userId
 // They were redundant with the staff flow (POST/PATCH /api/staff write
-// user_branches, gated by requirePermission('staff.manage') + business/branch
+// user_branches, gated by requirePermission('staff.edit') + business/branch
 // scoping) and, unlike that flow, were guarded by requireAuth ONLY — no
 // permission, no business/branch scoping, service-role client — which allowed
 // within-tenant privilege escalation and cross-tenant user_branches writes.
@@ -242,6 +242,13 @@ const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operat
   'cashier_history_totals',    // A418: a cashier's History shows the total of what is filtered
   'payment_methods_enabled',   // A429: the payment methods this branch takes
   'receipt_pay_label', 'receipt_pay_number'];   // A450: each branch its own Buy Goods / Paybill number
+
+/** A490: the keys that may set one branch override (any one of them). */
+export function branchSettingKeys(key: string): string[] {
+  if (key === 'payment_methods_enabled') return ['settings.payments'];
+  if (['receipt_header', 'receipt_footer', 'receipt_pay_label', 'receipt_pay_number'].includes(key)) return ['settings.branches', 'receipt.manage'];
+  return ['settings.branches'];
+}
 
 // Confirms :id is a branch of THIS business — never let an owner read or write
 // overrides on another tenant's branch (the till resolves by branch_id alone).
@@ -271,12 +278,16 @@ router.get('/:id/settings', requireAuth, async (req, res) => {
 // POST /api/branches/:id/settings — set or clear one override.
 //   { key, value }        → upsert the override (branch value wins over default)
 //   { key, value: null }  → delete the override (branch reverts to the default)
-router.post('/:id/settings', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branches', 'settings.payments', 'receipt.manage'), async (req, res) => {
   const { key, value } = req.body ?? {};
   if (!OVERRIDABLE_KEYS.includes(key)) {
     res.status(400).json({ error: 'That setting cannot be overridden per branch' });
     return;
   }
+  // A490: the branch's payment methods are settings.payments; its receipt lines settings.branches or receipt.manage;
+  // everything else settings.branches.
+  const needed = branchSettingKeys(key);
+  if (!can(req, ...needed)) { res.status(403).json({ error: 'Forbidden', detail: `Missing permission: ${needed[0]}` }); return; }
   if (!(await assertOwnBranch(req.businessId, req.params.id))) {
     res.status(404).json({ error: 'Branch not found' });
     return;

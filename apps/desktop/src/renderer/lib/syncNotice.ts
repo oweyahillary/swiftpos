@@ -26,16 +26,8 @@ export interface SyncStatusLike {
   nodeRefused?: { status: number; since: string } | null;
 }
 
-interface StaffLike { role?: string | null; permissions?: Record<string, boolean> | null }
-
-/** Managers, supervisors and the owner — never a cashier. */
-export function maySeeSync(staff: StaffLike | null | undefined): boolean {
-  if (!staff) return false;
-  const p = staff.permissions ?? {};
-  if (p['*'] === true) return true;
-  if (p['settings.manage'] === true || p['shifts.manage'] === true || p['orders.void'] === true) return true;
-  return /\b(owner|manager|supervisor|admin)\b/i.test(staff.role ?? '');
-}
+// A490: WHO sees it is lib/access.ts backOffice(session) — anyone beyond the shop floor, or the owner; never a cashier.
+// (It was maySeeSync: a role-name pattern and three broad keys.)
 
 const two = (n: number) => String(n).padStart(2, '0');
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

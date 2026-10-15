@@ -25,7 +25,9 @@
 
 import { supabase } from './supabase';
 
-export interface PermissionDef {
+import { PERMISSIONS, LEGACY } from './permissions';
+
+export interface PermissionRow {
   key: string;
   label: string;
   module: string;
@@ -33,48 +35,14 @@ export interface PermissionDef {
 }
 
 /**
- * Every permission key in the system. Keep this in sync with the code — the
- * `check-permission-catalogue` gate enforces that every key referenced anywhere
- * (server enforcement, UI nav gates, hasPermission calls, the default-role sets)
- * appears here.
+ * A490: the rows the live `permissions` table must hold — every FINE key of the shared catalogue (permissions.ts, the
+ * one place a key is defined), plus the broad keys it replaced, which stay registered (old role grants and overrides
+ * reference them by id until migration 134 rewrites them; nothing checks them any more).
  */
-export const PERMISSION_CATALOGUE: PermissionDef[] = [
-  // Orders
-  { key: 'orders.create',    label: 'Create orders',            module: 'orders',    description: 'Ring up and create orders at the POS' },
-  { key: 'orders.view_all',  label: 'View all orders',          module: 'orders',    description: 'See every order, not only your own' },
-  { key: 'orders.void',      label: 'Void orders',              module: 'orders',    description: 'Void or cancel an order' },
-  { key: 'invoice.create',   label: 'Create invoices',          module: 'orders',    description: 'Raise an invoice for an order or customer' },
-  // Products / menu
-  { key: 'products.view',    label: 'View products & menu',     module: 'products',  description: 'Read-only view of the product/menu catalogue' },
-  { key: 'products.manage',  label: 'Manage products',          module: 'products',  description: 'Create, edit and deactivate products' },
-  // Inventory
-  { key: 'inventory.view',     label: 'View inventory',                 module: 'inventory', description: 'See branch stock levels' },
-  { key: 'inventory.receive',  label: 'Receive stock',                  module: 'inventory', description: 'Receive deliveries and incoming transfers' },
-  { key: 'inventory.transfer', label: 'Transfer stock between branches', module: 'inventory', description: 'Create and receive branch stock transfers' },
-  { key: 'inventory.count',    label: 'Count stock',                    module: 'inventory', description: 'Take part in a stock count (blind: never sees the expected figure)' },
-  { key: 'inventory.waste',    label: 'Record wastage',                 module: 'inventory', description: 'Write off spoiled, expired or damaged stock, with a reason' },
-  { key: 'inventory.adjust',   label: 'Adjust stock levels',            module: 'inventory', description: 'Manually change a stock quantity (owner-only by default)' },
-  { key: 'payables.manage',    label: 'Supplier bills & payments',      module: 'inventory', description: 'Record supplier bills and payments; see what is owed (owner-only by default)' },
-  { key: 'ingredients.manage', label: 'Manage ingredient catalogue',    module: 'inventory', description: 'Create and edit the ingredient catalogue' },
-  // Customers
-  { key: 'customers.view',   label: 'View customers & credit',   module: 'customers', description: 'View customer records and credit balances' },
-  { key: 'customers.manage', label: 'Manage customers & credit', module: 'customers', description: 'Create/edit customers and manage credit' },
-  // Reports
-  { key: 'reports.view',      label: 'View reports',            module: 'reports',   description: 'Operational reports (sales, shifts, item mix)' },
-  { key: 'reports.financial', label: 'View financial reports',  module: 'reports',   description: 'Financial reports, margins, tax and exports (owner-only by default)' },
-  // Expenses
-  { key: 'expenses.view',    label: 'View expenses',            module: 'expenses',  description: 'View recorded expenses' },
-  { key: 'expenses.manage',  label: 'Manage expenses',          module: 'expenses',  description: 'Record and edit expenses' },
-  // Staff / shifts
-  { key: 'staff.manage',       label: 'Manage staff',           module: 'staff',     description: 'Create staff, assign roles and PINs' },
-  { key: 'shifts.force_close', label: 'Force-close a drawer',   module: 'shifts',    description: 'Force-close another user\u2019s open shift/drawer' },
-  // Settings
-  { key: 'settings.manage',  label: 'Manage business settings', module: 'settings',  description: 'Business configuration (owner-only by default)' },
-  { key: 'stations.manage',  label: 'Manage print stations',    module: 'settings',  description: 'Configure printers and kitchen/bar routing' },
-  { key: 'tables.manage',    label: 'Manage tables and zones',  module: 'settings',  description: 'Configure tables and floor zones' },
-  { key: 'receipt.manage',   label: 'Edit receipt text',        module: 'settings',  description: 'Edit receipt header/footer text' },
-  { key: 'devices.approve',  label: 'Approve and revoke terminals', module: 'settings', description: 'Approve or revoke POS terminals' },
-  { key: 'etims.manage',     label: 'Manage eTIMS / KRA',       module: 'settings',  description: 'Configure eTIMS / KRA integration' },
+export const PERMISSION_CATALOGUE: PermissionRow[] = [
+  ...PERMISSIONS.map((p) => ({ key: p.key, label: p.label, module: p.group, description: p.description })),
+  ...Object.keys(LEGACY).map((k) => ({ key: k, label: `${k} (replaced)`, module: 'legacy',
+    description: `Replaced by A490 — stands for: ${LEGACY[k].join(', ')}` })),
 ];
 
 /** All canonical keys, for quick membership checks. */

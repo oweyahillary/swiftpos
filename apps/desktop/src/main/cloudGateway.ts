@@ -20,6 +20,7 @@
  *     `X-Node-Gateway` mark): the till calls the cloud itself so it is not stranded while the branch updates. Logged.
  */
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
+import { lanFetch } from './lanTls';   // A489: the hop to the branch server is TLS once its certificate is pinned
 
 export const GATEWAY_PREFIX = '/node/cloud';
 /** Set by the branch server on every forwarded answer, so a till can tell it from an old server's 404. */
@@ -110,7 +111,7 @@ function mergeHeaders(h: any, extra: Record<string, string>): any {
  * `deps` exists for tests.
  */
 export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: typeof fetch; cfg?: GatewayConfig | null; now?: () => number; log?: (l: string) => void } = {}): Promise<Response> {
-  const f = deps.fetch ?? globalThis.fetch;
+  const f = deps.fetch ?? lanFetch;
   const cfg = deps.cfg !== undefined ? deps.cfg : getDeviceConfig();
   const now = (deps.now ?? Date.now)();
   const route = routeCloudRequest(url, cfg);

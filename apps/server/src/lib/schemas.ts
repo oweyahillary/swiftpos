@@ -152,6 +152,8 @@ export const CreateStaffSchema = z.object({
   override_pin: z.string().optional().nullable(),
   // Per-user permission overrides relative to the role defaults.
   overrides: z.array(z.object({ permission_id: uuid, granted: z.boolean() })).optional(),
+  // A490: the same overrides by permission KEY ({ 'reports.sales': true, 'sales.void': false }).
+  override_keys: z.record(z.string(), z.boolean()).optional(),
   hourly_rate: z.union([z.number(), z.string(), z.null()]).optional(),
 });
 

@@ -25,8 +25,8 @@ import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
 import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
-import { mayAddExpenseType } from '../lib/expenseTypes';
-import { buildManagerNav, groupOf, openGroup, type TabKey, type GroupKey } from '../lib/managerNav';
+import { can, canAny, isOwner as isOwnerSession, mayMoveMoney } from '../lib/access';   // A490: the one rule
+import { buildManagerNav, groupOf, openGroup, firstTab, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
 import TillWastage from '../components/TillWastage';   // A414
 import Pager, { usePageSize } from '../components/Pager';   // A475
@@ -73,7 +73,7 @@ import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
 import OffersScreen from '../screens/OffersScreen';   // A445
 import RecordExpenseForm from '../components/RecordExpenseForm';   // A447
 import TillChangesNotice from '../components/TillChangesNotice';   // A448
-import { VOID_WINDOW_MIN } from '../lib/voidRefund';
+import { VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
 function Icon({ d, size = 18, cls = '' }: { d: string; size?: number; cls?: string }) {
@@ -1085,7 +1085,7 @@ function SegmentedSelector<T extends string>({ options, value, onChange }: {
 
 // A351: Orders, Item Mix, Current shift and Shift report are the tabs of the Sales page (lib/managerNav.ts); before
 // that A105 had put them in pairs under Orders and Shift.
-function OrdersTab({ currency, canVoidRefund = false }: { currency: string; canVoidRefund?: boolean }) {
+function OrdersTab({ currency, rights = { void: false, refund: false } }: { currency: string; rights?: ReverseRights }) {
   const [orders,  setOrders]  = useState<any[]>([]);
   // A444: the order opened here — its items, Reprint and Void / Refund (this till's or, from the cloud, any till's).
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -1215,7 +1215,7 @@ function OrdersTab({ currency, canVoidRefund = false }: { currency: string; canV
         )}
       {/* A444: the order's items, payments, Reprint and Void / Refund. */}
       {detailId && (
-        <OrderDetailPanel orderId={detailId} currency={currency} canVoidRefund={canVoidRefund} windowMin={voidWindowMin}
+        <OrderDetailPanel orderId={detailId} currency={currency} rights={rights} windowMin={voidWindowMin}
           onClose={() => setDetailId(null)} onChanged={() => load(range)} />
       )}
     </div>
@@ -1462,7 +1462,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
 // ── Expenses Tab (0.6.11) ─────────────────────────────────────────────────────
 // Owner (2026-09-27): "I should be able to see expenses". Cash this till's drawers paid out, by date range —
 // the same rows the shift report deducts. Recorded from the POS (Shift → Expenses); this screen only reads.
-function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: boolean }) {
+function ExpensesTab({ currency, canAddType, canRecord = false }: { currency: string; canAddType: boolean; canRecord?: boolean }) {
   const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
   const [data, setData] = useState<{ rows: ExpenseRow[]; total: number; label: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1508,7 +1508,7 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
             {loading ? 'Loading…' : `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(shownTotal, currency)} paid out${filtered ? ` (of ${fmt(data?.total ?? 0, currency)})` : ''}`}
           </p>
         </div>
-        {!recording && (
+        {!recording && canRecord && (
           <button data-testid="record-expense" onClick={() => { setRecording(true); setSaved(''); }}
             className="shrink-0 px-3 py-2 rounded-lg bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold">
             + Record expense
@@ -1988,32 +1988,14 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
   }, [flags.isRestaurant]);
   useEffect(() => { reloadStations(); }, [reloadStations]);
 
-  // Server enforces these too — hiding a tab is a courtesy, not the control.
-  const perms = (staff as any)?.permissions ?? {};
-  const has = (key: string) => perms['*'] === true || perms[key] === true;
-  const canManageProducts = has('products.manage');
-  const canManageStaff    = has('staff.manage');
-  const canManageSettings = has('settings.manage');
-  // A59/A45 · Gate Receipt on the permission KEYS the cloud enforces, not the role.
-  // Cloud: business.ts POST /settings → requireAnyPermission('receipt.manage','settings.manage').
-  // receipt.manage is granted to manager roles by migration 78; settings.manage
-  // covers managers who already hold it, so no current manager loses the tab.
-  const canManageReceipt  = has('receipt.manage') || canManageSettings;
-
-  // Closing the trading day is a CASH operation, not a settings one, so it must
-  // not hide behind settings.manage. Gated on the same rule dayService.isManager()
-  // applies in the main process — role, wildcard, or settings.manage — so the
-  // button appears exactly when the action will actually be permitted.
-  //
-  // This was wrong on first release: the tab was gated on settings.manage alone,
-  // so a user whose role IS Manager but who lacks that specific permission saw no
-  // Close Day tab at all — and since the day gate blocks the till until the day is
-  // closed, that left the terminal with no way out. Same gate is why Receipt and
-  // Printers were also missing for that user.
-  const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
-  const isManagerRole =
-    MANAGER_ROLES.includes(String((staff as any)?.role ?? '').toLowerCase())
-    || has('settings.manage');
+  // A490: every gate names a FINE key (lib/access.ts — the owner's role holds everything; an older cloud's broad keys are
+  // expanded). The main process checks the same keys again — hiding a tab is a courtesy, not the control.
+  const has = (key: string) => can(staff, key);
+  const hasAny = (...keys: string[]) => canAny(staff, ...keys);
+  const canManageReceipt = has('receipt.manage');
+  // A453 → A490: recording money (an expense here) — shifts.cash_movements (before migration 134, the admin switch).
+  const [noMoneyOut, setNoMoneyOut] = useState(false);
+  useEffect(() => { posApi.pos.features().then((f: any) => setNoMoneyOut(f?.cashier_no_money_out === true)).catch(() => {}); }, []);
 
   // A460: the online licence — offers, variants / combos, wastage and transfers are shown only with it.
   const online = useOnlineLicence();
@@ -2023,7 +2005,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     let live = true;
     (async () => {
       const cfg = await posApi.config.get().catch(() => null);
-      if (cfg?.web_pos_enabled !== true) { if (live) setShowStock(false); return; }
+      if (cfg?.web_pos_enabled !== true || !can(staff, 'inventory.view')) { if (live) setShowStock(false); return; }   // A490
       const rows = await posApi.manager.stockLevels().catch(() => []);
       if (live) setShowStock(Array.isArray(rows) && rows.length > 0);
     })();
@@ -2031,35 +2013,46 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
   }, []);
 
   // A351 (2026-09-28): the sidebar in groups — Sales, Close and Settings open as one page with tabs across the top.
-  // The rules (which tabs each role sees, where a tap lands) live in lib/managerNav.ts; every gate below is the one each
-  // page had as its own sidebar item. Why each gate is what it is:
-  //  - Close Day / Close Branch — isManagerRole: closing the trading day is a CASH operation and the escape route for
-  //    the day gate, so it never hides behind settings.manage alone.
-  //  - Printing — stations.manage OR the receipt text (A59/A90). NOT settings.manage, which migration 59 makes
-  //    owner/admin-only; re-pointing a printer mid-service sends receipts to the wrong station, so cashiers keep only
-  //    the read-only view on the POS screen. PrintersScreen shows the sub-tabs each permission allows.
-  //  - Stock — only with the web POS and something stock-tracked (A346).
-  //  - Menu — ONE Menu page (prices, combos and import are reached from inside it).
+  // The rules live in lib/managerNav.ts. A490: each page by its own fine key — a person with no key for a page does not
+  // see it, a group with none leaves the sidebar:
+  //  - Overview reports.overview · Orders orders.view_all · Item Mix reports.items · Current shift / Shift report
+  //    reports.shifts or shifts.confirm · Monthly pack reports.monthly_pack or expenses.manage (A481) · Expenses
+  //    expenses.view or expenses.manage · Close Day / Close Branch shifts.close_day (the day gate's escape route).
+  //  - Menu menu.edit or menu.prices · Offers menu.offers (online licence) · Settings › General settings.business or
+  //    settings.payments (each panel by its own) · Printing stations.manage or receipt.manage (A59/A90) · Staff staff.view.
+  //  - Stock inventory.view (web POS on and something stock-tracked, A346) · Wastage inventory.waste · Transfers
+  //    inventory.transfer (both with the online licence, A460).
   const nav = buildManagerNav({
     isRestaurant: flags.isRestaurant,
-    isManagerRole,
-    canManageProducts,
-    canManageStaff,
-    canManageSettings,
+    canOverview: has('reports.overview'),
+    canOrders: has('orders.view_all'),
+    canItems: has('reports.items'),
+    canShifts: hasAny('reports.shifts', 'shifts.confirm'),
+    canMonthly: has('reports.monthly_pack') || has('expenses.manage'),
+    canExpenses: hasAny('expenses.view', 'expenses.manage'),
+    canCloseDay: has('shifts.close_day'),
+    canMenu: hasAny('menu.edit', 'menu.prices'),
+    canOffers: has('menu.offers'),
+    canSettings: hasAny('settings.business', 'settings.payments'),
     canPrinting: has('stations.manage') || canManageReceipt,
+    canStaff: hasAny('staff.view', 'staff.edit'),
     showStock,
-    canWaste: has('inventory.waste') || has('inventory.adjust') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A414
+    canWaste: has('inventory.waste'),   // A414
     online,   // A460
-    canTransfer: has('inventory.transfer') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A197
-    // A466 / A481: the cloud reads the pack for reports.financial OR expenses.manage (the manager who keeps the books).
-    canMonthly: has('reports.financial') || has('expenses.manage'),
+    canTransfer: has('inventory.transfer'),   // A197
   });
   const GROUP_ICON: Record<GroupKey, string> = {
     overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,
     menu: I.menu, settings: I.receipt, stock: I.stock,
   };
 
-  const [active, setActive] = useState<TabKey>(() => (initialTab && groupOf(nav, initialTab) ? initialTab : 'overview'));
+  // A490: the page asked for when the person has it, else the first page they have (not always the Overview).
+  const [active, setActive] = useState<TabKey>(() => firstTab(nav, initialTab) ?? 'overview');
+  // The person's keys can change while the screen is open (a fresher map, auth:permissionsChanged): a page they no
+  // longer have is left for the first one they do.
+  useEffect(() => {
+    if (!groupOf(nav, active)) { const t = firstTab(nav); if (t) setActive(t); }
+  });
   // The tab last used in each group, so Settings reopens on Printing if that is where the manager was.
   const [lastTab, setLastTab] = useState<Partial<Record<GroupKey, TabKey>>>({});
   const activeGroup = groupOf(nav, active);
@@ -2071,7 +2064,12 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
 
   const overviewLink: LinkTo = (tab) => (groupOf(nav, tab) ? () => openTab(tab) : undefined);   // A468
 
+  const renderNothing = () => (
+    <p className="text-sm text-gray-300" data-testid="manager-nothing">Nothing here is open to your role. Use Open POS, or ask the owner (Settings › Roles and permissions).</p>
+  );
   function renderContent() {
+    // A490: a page the person does not have is never drawn (a stale `active`, an Overview link).
+    if (!groupOf(nav, active)) return renderNothing();
     switch (active) {
       case 'overview':
         // A441: the Overview for the day the manager picks (today unless they pick another).
@@ -2079,23 +2077,24 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
         return <OverviewForDay render={(date) => (flags.isPetrol ? <PetrolOverview currency={currency} date={date} linkTo={overviewLink} showLowStock={showStock} />
           : flags.isRestaurant ? <RestaurantOverview currency={currency} date={date} linkTo={overviewLink} showLowStock={showStock} />
           : <RetailOverview currency={currency} date={date} linkTo={overviewLink} showLowStock={showStock} />)} />;
-      case 'orders':  return <OrdersTab currency={currency} canVoidRefund={has('orders.void')} />;
+      case 'orders':  return <OrdersTab currency={currency} rights={{ void: has('sales.void'), refund: has('sales.refund') }} />;
       case 'shift':   return <ShiftTab currency={currency} />;
-      case 'expenses': return <ExpensesTab currency={currency} canAddType={mayAddExpenseType(staff as any)} />;
+      case 'expenses': return <ExpensesTab currency={currency} canAddType={has('expenses.manage')}
+                                           canRecord={mayMoveMoney(staff, noMoneyOut)} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} />;
       // Tabs of Sales (A351): Shift report, Item Mix (restaurant).
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
-      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => openTab('import')} />;
+      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => openTab('import')} canEdit={has('menu.edit')} canPrices={has('menu.prices')} />;
       // A445: the owner sets offers for every branch or this one; anyone else for this branch (the cloud enforces it).
-      case 'offers':  return online ? <OffersScreen currency={currency} isOwner={String(staff?.role ?? '').toLowerCase() === 'owner' || perms['*'] === true} /> : <RetailOverview currency={currency} />;   // A460
+      case 'offers':  return online ? <OffersScreen currency={currency} isOwner={isOwnerSession(staff)} /> : <RetailOverview currency={currency} />;   // A460
       case 'combos':  return online ? <CombosTab  currency={currency} /> : <RetailOverview currency={currency} />;   // A460
       case 'import':  return <ImportTab  currency={currency} />;
-      case 'staff':   return <StaffTab   branchId={staff.branchId} />;
-      case 'settings': return <SettingsPanel canEdit={canManageSettings || canManageProducts}
-                                             isOwner={String(staff?.role ?? '').toLowerCase() === 'owner'} />;   // 0.6.30
+      case 'staff':   return <StaffTab   branchId={staff.branchId} canEdit={has('staff.edit')} />;   // A490
+      case 'settings': return <SettingsPanel canBusiness={has('settings.business')} canPayments={has('settings.payments')}
+                                             isOwner={isOwnerSession(staff)} />;   // 0.6.30; A490: each panel by its key
       // PrintersScreen (A83/A90): sub-tabs under one "Printing" nav item —
       // Stations, Printers, Exclusions (all stations.manage) and Receipt
       // (receipt.manage/settings.manage). Per-tab gating passed in below.
@@ -2110,7 +2109,9 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'transfers': return online ? <TransfersTab /> : <RetailOverview currency={currency} />;   // A197
       // A466: the web's Monthly pack; recording for the books as the web gates it (expenses.manage).
       case 'monthly': return <MonthlyPackTab currency={currency} canRecord={has('expenses.manage')} />;
-      default:        return <RetailOverview currency={currency} />;
+      default:        return nav.length ? <RetailOverview currency={currency} /> : (
+        <p className="text-sm text-gray-300" data-testid="manager-nothing">Nothing here is open to your role. Use Open POS, or ask the owner (Settings › Roles and permissions).</p>
+      );
     }
   }
 

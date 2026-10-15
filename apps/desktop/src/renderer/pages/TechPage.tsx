@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import ServerKeepRunning from '../components/ServerKeepRunning';   // A435
 import TillVersionsPanel from '../components/TillVersionsPanel';   // A443
+import LanSecurityRow from '../components/LanSecurityRow';   // A489
 import type { TechSession, TechStatus } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
 
@@ -227,6 +228,7 @@ export default function TechPage({ onExit }: Props) {
             <dt className="text-gray-300">Mode</dt><dd className="text-gray-300">{dev?.deploy_mode ?? '—'}</dd>
             <dt className="text-gray-300">Server</dt><dd className="font-mono text-gray-300 truncate">{dev?.server_url ?? '—'}</dd>
             {dev?.node_url && (<><dt className="text-gray-300">Branch server</dt><dd className="font-mono text-gray-300 truncate">{dev.node_url}</dd></>)}
+            <LanSecurityRow />
             {status?.build && (<><dt className="text-gray-300">Build</dt><dd className="font-mono text-gray-300 truncate">{status.build.sha} · {status.build.time}</dd></>)}
           </dl>
         </section>

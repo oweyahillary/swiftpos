@@ -53,10 +53,10 @@ await ok('a till\'s replay: from a till, from THE till that holds the sale, with
   assert.match(orders, /return req\.surface === 'desktop' && typeof req\.body\?\.offline_approved_by === 'string'/);
   assert.match(orders, /let holds = !!dev && order\.device_id === dev;/);
   assert.match(orders, /code: 'NOT_THIS_TILL'/);
-  assert.match(orders, /if \(!approver \|\| !mayApprove\(approver, ownerId\)\) \{/);
-  assert.match(orders, /isTillReplay\(req\) \? next\(\) : requirePermission\('orders\.void'\)\(req, res, next\)/);
-  assert.match(orders, /router\.post\('\/:id\/void', reversalGate,/);
-  assert.match(orders, /router\.post\('\/:id\/refund', reversalGate,/);
+  assert.match(orders, /if \(!approver \|\| !mayApprove\(approver, ownerId, action\)\) \{/  /* A490: sales.void / sales.refund per action */);
+  assert.match(orders, /isTillReplay\(req\) \? next\(\) : \(action === 'void' \? voidKey : refundKey\)\(req, res, next\)/  /* A490: sales.void / sales.refund */);
+  assert.match(orders, /router\.post\('\/:id\/void', reversalGate\('void'\),/);
+  assert.match(orders, /router\.post\('\/:id\/refund', reversalGate\('refund'\),/);
   assert.match(orders, /voided_at: replay\?\.at \?\? new Date\(\)\.toISOString\(\)/);
   assert.match(orders, /refunded_at:          replay\?\.at \?\? new Date\(\)\.toISOString\(\)/);
   assert.match(orders, /code: 'ALREADY_VOIDED'/);

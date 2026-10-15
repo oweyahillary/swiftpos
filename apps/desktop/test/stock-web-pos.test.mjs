@@ -72,7 +72,8 @@ ok('the cloud pull reads webPosEnabled (a real boolean only) and stores it', /we
   && /setWebPosEnabled\(c\.webPosEnabled\);/.test(se));
 const mp = src('renderer/pages/ManagerPage.tsx');
 ok('Stock only with the web POS: the manager screen checks web_pos_enabled === true before anything else',
-  /if \(cfg\?\.web_pos_enabled !== true\) \{ if \(live\) setShowStock\(false\); return; \}/.test(mp));
+  // A490: and the person's inventory.view.
+  /if \(cfg\?\.web_pos_enabled !== true \|\| !can\(staff, 'inventory\.view'\)\) \{ if \(live\) setShowStock\(false\); return; \}/.test(mp));
 ok('…and a stale jump to the Stock page falls back to the overview', /case 'stock':\s+return showStock \? <StockTab currency=\{currency\} \/> : <RetailOverview/.test(mp));
 
 console.log(`\n${pass} passed, ${fail} failed`);

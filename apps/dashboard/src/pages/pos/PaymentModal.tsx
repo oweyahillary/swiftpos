@@ -202,7 +202,10 @@ export default function PaymentModal({
 
   const receiptRef = useRef<HTMLDivElement>(null);
   const { settings: printerSettings } = usePrinterSettings();
-  const { session } = usePOSAuth();
+  const { session, hasPermission } = usePOSAuth();
+  // A490: giving a discount on a sale is sales.discount — without it no manual discount (a promo code) reaches the
+  // sale; offers (automatic) are not a discount the cashier gives and still come off.
+  const mayDiscount = hasPermission('sales.discount');
 
   // Double-submit protection. chargingRef blocks a second call synchronously
   // (before React re-renders the button as disabled — a fast touchscreen
@@ -218,7 +221,7 @@ export default function PaymentModal({
   }
 
   const rawLoyaltyDiscount = loyaltyState?.discountAmount ?? 0;
-  const rawPromoDiscount   = discountState?.discount_amount ?? 0;
+  const rawPromoDiscount   = mayDiscount ? (discountState?.discount_amount ?? 0) : 0;
   const rawDiscount        = rawLoyaltyDiscount + rawPromoDiscount;
 
   // Clamp the combined discount to the server's ceiling BEFORE charging. The
@@ -321,7 +324,7 @@ export default function PaymentModal({
       ctl_amount:      chargedCtl,
       discount_amount: allDiscount,
       ...offerFields,   // A445
-      discount_id:     discountState?.discount.id ?? null,
+      discount_id:     mayDiscount ? (discountState?.discount.id ?? null) : null,
       total:           chargedTotal,
       tip_amount:      tipAmount,
       customer_id:     loyaltyState?.customer.id ?? null,
@@ -357,7 +360,7 @@ export default function PaymentModal({
       payments,
       discount_amount: allDiscount,
       ...offerFields,   // A445
-      discount_id:     discountState?.discount.id ?? null,
+      discount_id:     mayDiscount ? (discountState?.discount.id ?? null) : null,
       tip_amount:      tipAmount,
       ...feeFields,   // 0.6.33: + delivery_free (the cloud then leaves the fee out of the amount due)
     };

@@ -13,6 +13,8 @@
  * (/api/stock/ingredients/:id/adjust) and goods-received notes (/api/stock/grn) take expiry_date and batch_no.
  * A manager sees their own branch only.
  */
+import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
+import { holds } from '../lib/historyScope';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -26,6 +28,8 @@ import { recordReceivedBatch } from '../lib/batchStore';
 
 const router = safeRouter();
 router.use(requireAuth);
+// A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
+router.use(stripCostsUnlessAllowed(['value']));
 
 type BatchRow = BatchLike & { branch_id: string; item_kind: 'product' | 'ingredient'; product_id: string | null; ingredient_id: string | null;
   batch_no: string | null; source: string; source_ref: string | null; created_by_name: string | null };
@@ -103,8 +107,8 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust', 'inv
   const rank: Record<string, number> = { expired: 0, soon: 1, ok: 2, none: 3 };
   rows.sort((x, y) => rank[x.status] - rank[y.status] || String(x.expiry_date ?? '9999').localeCompare(String(y.expiry_date ?? '9999')) || x.name.localeCompare(y.name));
   res.json({ today, soon_days: soonDays, batches: rows, unbatched, summary: expirySummary(rows),
-    can_write_off: req.isOwner || (req.permissionKeys ?? []).some((k) => k === 'inventory.waste' || k === 'inventory.adjust'),
-    can_close: req.isOwner || (req.permissionKeys ?? []).includes('inventory.adjust') });
+    can_write_off: holds(req, 'inventory.waste') || holds(req, 'inventory.adjust'),
+    can_close: holds(req, 'inventory.adjust') });
 });
 
 router.post('/', requireAnyPermission('inventory.receive', 'inventory.adjust'), async (req, res) => {

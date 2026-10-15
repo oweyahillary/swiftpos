@@ -35,7 +35,8 @@ ok('the local shift report has no till filter (on a branch server that is every 
 ok('it says what it shows', /source: 'cloud',\s*scopeLabel: 'All tills at this branch'/.test(cloud) && /source: 'local',\s*scopeLabel:/.test(local));
 
 ok('the IPC channel is handled, bridged and validated',
-  /handle\('manager:branchDay', async \(_e, r\?: RangeArg\) => branchDay\(resolveRange\(/.test(read('src/main/ipcHandlers.ts'))
+  // A490: the handler first asks the person's key (reports.overview / orders.view_all), then reads the branch.
+  /handle\('manager:branchDay', async \(_e, r\?: RangeArg\) => \{\s*requireKey\(\['reports\.overview', 'orders\.view_all'\][^\n]*\n\s*return branchDay\(resolveRange\(/.test(read('src/main/ipcHandlers.ts'))
   && /branchDay: +\(range\?: any\) => ipcRenderer\.invoke\('manager:branchDay', range\)/.test(read('src/main/preload.ts'))
   && /'manager:branchDay': +\{ \.\.\.rangeArg \}/.test(read('src/main/ipcSchemas.ts')));
 

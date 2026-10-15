@@ -11,7 +11,7 @@ const router = safeRouter();
 router.use(requireAuth);
 
 // GET /api/etims/config?branch_id=  — current eTIMS config + enabled flag
-router.get('/config', requireAnyPermission('etims.manage', 'settings.manage'), async (req, res) => {
+router.get('/config', requirePermission('etims.manage'), async (req, res) => {
   const branchId = branchScope(req) || req.branchId;
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
@@ -34,7 +34,7 @@ router.get('/config', requireAnyPermission('etims.manage', 'settings.manage'), a
 
 // PUT /api/etims/config — upsert per-branch config + per-business enabled flag.
 // Body: { branch_id, enabled?, environment?, mode?, bhf_id?, device_serial? }
-router.put('/config', requireAnyPermission('etims.manage', 'settings.manage'), async (req, res) => {
+router.put('/config', requirePermission('etims.manage'), async (req, res) => {
   const { branch_id, enabled, environment, mode, bhf_id, device_serial } = req.body;
   if (!branch_id) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'Forbidden' }); return; }
@@ -120,7 +120,7 @@ router.get('/status', async (req, res) => {
 });
 
 // GET /api/etims/invoices?branch_id=&status=  — list fiscalisation records
-router.get('/invoices', requirePermission('reports.view'), async (req, res) => {
+router.get('/invoices', requirePermission('reports.tax'), async (req, res) => {
   const branchId = branchScope(req) || req.branchId;
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
@@ -139,7 +139,7 @@ router.get('/invoices', requirePermission('reports.view'), async (req, res) => {
 });
 
 // POST /api/etims/branches/:branchId/register — one-time control unit registration
-router.post('/branches/:branchId/register', requireAnyPermission('etims.manage', 'settings.manage'), async (req, res) => {
+router.post('/branches/:branchId/register', requirePermission('etims.manage'), async (req, res) => {
   const { branchId } = req.params;
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
 
@@ -159,7 +159,7 @@ router.post('/branches/:branchId/register', requireAnyPermission('etims.manage',
 });
 
 // POST /api/etims/retry — reprocess pending/failed fiscalisations (owner-triggered)
-router.post('/retry', requireAnyPermission('etims.manage', 'settings.manage'), async (_req, res) => {
+router.post('/retry', requirePermission('etims.manage'), async (_req, res) => {
   const result = await processPending();
   res.json(result);
 });

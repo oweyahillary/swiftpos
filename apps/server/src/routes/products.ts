@@ -17,7 +17,8 @@ import { Router }    from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, can } from '../middleware/rbac';
+import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
 import { supabase }  from '../lib/supabase';
 import { buildProductPatch, rowMatchKeys, importKey } from '../lib/productImport';
 import { applyPriceOp, parsePriceOp } from '../lib/priceOps';
@@ -25,6 +26,16 @@ import { cleanShowDays } from '../lib/productDays';
 
 const router = safeRouter();
 router.use(requireAuth);
+// A490: cost prices and margins go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
+router.use(stripCostsUnlessAllowed());
+
+/** A490: a cost value someone without menu.costs sends is IGNORED when it is empty (their form never saw the cost —
+ *  it was stripped) and refused when it is a value. */
+const costSent = (v: unknown) => v !== undefined && v !== null && v !== '';
+const PRODUCT_WRITE = requireAnyPermission('menu.edit', 'menu.prices', 'menu.costs');
+const PRODUCT_FIELDS = ['name', 'description', 'base_price', 'category_id', 'image_url', 'track_stock', 'has_variants',
+  'has_modifiers', 'status', 'barcode', 'plu_code', 'sold_by', 'is_fuel', 'fuel_unit', 'cost_price', 'reorder_level',
+  'pieces_per_unit', 'unit_label', 'source', 'tax_type', 'kra_item_class_code', 'is_kitchen', 'show_days'];
 
 // ── GET /api/products ─────────────────────────────────────────────────────────
 
@@ -92,7 +103,12 @@ router.get('/barcode/:code', async (req, res) => {
 
 // ── POST /api/products ────────────────────────────────────────────────────────
 
-router.post('/', requirePermission('products.manage'), validateLoose(CreateProductSchema), async (req, res) => {
+router.post('/', requirePermission('menu.edit'), validateLoose(CreateProductSchema), async (req, res) => {
+  // A490: adding a product is menu.edit (its first price with it); a cost price with it is menu.costs.
+  if (costSent(req.body?.cost_price) && !can(req, 'menu.costs')) {
+    res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs' }); return;
+  }
+  if (!can(req, 'menu.costs')) delete req.body.cost_price;
   const {
     name, description, base_price, category_id, image_url,
     track_stock, has_variants, has_modifiers,
@@ -181,8 +197,28 @@ router.post('/', requirePermission('products.manage'), validateLoose(CreateProdu
 
 // ── PATCH /api/products/:id ───────────────────────────────────────────────────
 
-router.patch('/:id', requirePermission('products.manage'), validateLoose(UpdateProductSchema), async (req, res) => {
+router.patch('/:id', PRODUCT_WRITE, validateLoose(UpdateProductSchema), async (req, res) => {
   const { id } = req.params;
+  // A490: what the edit changes decides the key — a selling price menu.prices, a cost price menu.costs, anything else
+  // menu.edit. A field sent unchanged (the form sends the whole product) changes nothing and needs nothing.
+  {
+    const body = req.body ?? {};
+    if (!can(req, 'menu.costs') && !costSent(body.cost_price)) delete body.cost_price;
+    const { data: cur } = await supabase.from('products').select('*').eq('id', id).eq('business_id', req.businessId).maybeSingle();
+    if (!cur) { res.status(404).json({ error: 'Product not found' }); return; }
+    const same = (k: string) => {
+      const a = (cur as Record<string, unknown>)[k], b = body[k];
+      if (typeof a === 'number' || k === 'base_price' || k === 'cost_price') return (a == null ? null : Number(a)) === (b == null || b === '' ? null : Number(b));
+      return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    };
+    const need = new Set<string>();
+    for (const k of PRODUCT_FIELDS) {
+      if (body[k] === undefined || same(k)) continue;
+      need.add(k === 'base_price' ? 'menu.prices' : k === 'cost_price' ? 'menu.costs' : 'menu.edit');
+    }
+    const missing = [...need].find((k) => !can(req, k));
+    if (missing) { res.status(403).json({ error: 'Forbidden', detail: `Missing permission: ${missing}` }); return; }
+  }
   const {
     name, description, base_price, category_id, image_url,
     track_stock, has_variants, has_modifiers, status,
@@ -258,7 +294,7 @@ router.patch('/:id', requirePermission('products.manage'), validateLoose(UpdateP
 
 // ── DELETE /api/products/:id ──────────────────────────────────────────────────
 
-router.delete('/:id', requirePermission('products.manage'), async (req, res) => {
+router.delete('/:id', requirePermission('menu.edit'), async (req, res) => {
   const { id } = req.params;
 
   // Soft delete — set status to 'inactive' (archived not in DB constraint)
@@ -291,7 +327,7 @@ const VALID_TAX_TYPES = ['A', 'B', 'C', 'D', 'E'];
 // Body: { category_id?: string|null, tax_type?, kra_item_class_code?, only_unset?: boolean }
 // Applies to every product in the business (optionally filtered to one category).
 // only_unset=true touches just products missing a class code (safe re-runs).
-router.patch('/bulk-tax/by-category', requirePermission('products.manage'), async (req, res) => {
+router.patch('/bulk-tax/by-category', requirePermission('menu.edit'), async (req, res) => {
   const { category_id, tax_type, kra_item_class_code, only_unset } = req.body ?? {};
 
   if (tax_type === undefined && kra_item_class_code === undefined) {
@@ -320,7 +356,7 @@ router.patch('/bulk-tax/by-category', requirePermission('products.manage'), asyn
 // PATCH /api/products/bulk-tax/by-ids
 // Body: { items: [{ id, tax_type?, kra_item_class_code? }, ...] }
 // Per-row codes — drives CSV import. Each id is verified to belong to the business.
-router.patch('/bulk-tax/by-ids', requirePermission('products.manage'), async (req, res) => {
+router.patch('/bulk-tax/by-ids', requirePermission('menu.edit'), async (req, res) => {
   const { items } = req.body ?? {};
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'items array is required' }); return;
@@ -359,7 +395,7 @@ router.patch('/bulk-tax/by-ids', requirePermission('products.manage'), async (re
 // Set cost_price on many products at once — each a different value — for the
 // cost-price editor. Mirrors bulk-tax/by-ids' business scoping. cost_price is
 // the unit cost that drives margin, COGS and the Menu Matrix; null/'' clears it.
-router.patch('/bulk-cost/by-ids', requirePermission('products.manage'), async (req, res) => {
+router.patch('/bulk-cost/by-ids', requirePermission('menu.costs'), async (req, res) => {
   const { items } = req.body ?? {};
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'items array is required' }); return;
@@ -401,7 +437,7 @@ router.patch('/bulk-cost/by-ids', requirePermission('products.manage'), async (r
 // Body: { ids: string[], track_stock: boolean }
 // Turn stock tracking on/off for many existing products at once — the retro path the
 // "+ New product" toggle alone did not provide (A144). Scoped to the caller's business.
-router.patch('/bulk-track/by-ids', requirePermission('products.manage'), async (req, res) => {
+router.patch('/bulk-track/by-ids', requirePermission('menu.edit'), async (req, res) => {
   const { ids, track_stock } = req.body ?? {};
   if (!Array.isArray(ids) || ids.length === 0) {
     res.status(400).json({ error: 'ids array is required' }); return;
@@ -421,7 +457,7 @@ router.patch('/bulk-track/by-ids', requirePermission('products.manage'), async (
 // otherwise it applies. Both compute with the same applyPriceOp, so the preview a
 // user confirms is exactly what gets written. Selection is by explicit ids or one
 // category — never the whole catalogue by accident.
-router.post('/bulk-price', requirePermission('products.manage'), async (req, res) => {
+router.post('/bulk-price', requirePermission('menu.prices'), async (req, res) => {
   const { ids, category_id, op: rawOp, dry_run } = req.body ?? {};
   const op = parsePriceOp(rawOp);
   if ('error' in op) { res.status(400).json({ error: op.error }); return; }
@@ -469,7 +505,7 @@ router.post('/bulk-price', requirePermission('products.manage'), async (req, res
   res.json({ updated, errors, preview });
 });
 
-router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
+router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
   const { rows } = req.body;
 
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -542,6 +578,7 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
   }
 
   const results = { created: 0, updated: 0, errors: [] as { row: number; error: string }[], createdNames: [] as string[] };
+  const mayCost = can(req, 'menu.costs'), mayPrice = can(req, 'menu.prices');
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -562,7 +599,11 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
 
     const built = buildProductPatch(row, { isCreate, categoryProvided, categoryId });
     if ('error' in built) { results.errors.push({ row: i + 1, error: built.error }); continue; }
-    const patch = built.patch;
+    const patch = built.patch as Record<string, unknown>;
+    // A490: the import is menu.edit; the cost column is applied only for menu.costs, and a price change to a product
+    // that exists only for menu.prices (a new product takes its first price with it).
+    if (!mayCost) delete patch.cost_price;
+    if (!isCreate && !mayPrice) delete patch.base_price;
 
     if (isCreate) {
       const { data: inserted, error } = await supabase

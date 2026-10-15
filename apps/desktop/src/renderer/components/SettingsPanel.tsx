@@ -8,7 +8,11 @@ import CashierHistoryPanel from './CashierHistoryPanel';
 // The till's Settings screen (A104) — business-wide options plus the payment
 // methods manager moved in here. 24-hour operation controls whether an unclosed
 // prior day hard-locks the till at rollover or gets a short grace window first.
-export default function SettingsPanel({ canEdit = true, isOwner = false }: { canEdit?: boolean; isOwner?: boolean }) {
+// A490: each panel by its own key — 24-hour operation and what a cashier's History shows are the business's settings
+// (settings.business); the payment methods settings.payments; the void / refund rules stay the owner's.
+export default function SettingsPanel({ canBusiness = false, canPayments = false, isOwner = false }:
+  { canBusiness?: boolean; canPayments?: boolean; isOwner?: boolean }) {
+  const canEdit = canBusiness;
   const [continuous, setContinuous] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -41,7 +45,7 @@ export default function SettingsPanel({ canEdit = true, isOwner = false }: { can
       </div>
 
       {/* 24-hour operation */}
-      <section>
+      {canBusiness && <section>
         <div className="flex items-start justify-between gap-4 border border-gray-800 rounded-xl p-4">
           <div className="flex-1">
             <p className="text-white text-sm font-medium">24-hour operation</p>
@@ -72,7 +76,7 @@ export default function SettingsPanel({ canEdit = true, isOwner = false }: { can
           {error && <span className="text-xs text-red-400">{error}</span>}
           {saved && !error && <span className="text-xs text-emerald-400">Saved</span>}
         </div>
-      </section>
+      </section>}
 
       {/* 0.6.30: the owner's void window and offline void/refund rules. */}
       <section className="border-t border-gray-800 pt-6">
@@ -80,19 +84,19 @@ export default function SettingsPanel({ canEdit = true, isOwner = false }: { can
       </section>
 
       {/* 0.6.37 (A387): the payment methods a cashier's History shows. */}
-      <section className="border-t border-gray-800 pt-6">
-        <CashierHistoryPanel canEdit={canEdit} />
-      </section>
+      {canBusiness && <section className="border-t border-gray-800 pt-6">
+        <CashierHistoryPanel canEdit={canBusiness} />
+      </section>}
 
       {/* A429: the payment methods this branch takes — Kenya's common ones and the delivery apps, each a switch. */}
-      <section className="border-t border-gray-800 pt-6">
-        <BranchPaymentMethodsPanel canEdit={canEdit} />
-      </section>
+      {canPayments && <section className="border-t border-gray-800 pt-6">
+        <BranchPaymentMethodsPanel canEdit={canPayments} />
+      </section>}
 
       {/* Payment methods, moved here from its own tab. */}
-      <section className="border-t border-gray-800 pt-6">
-        <PaymentMethodsPanel canEdit={canEdit} />
-      </section>
+      {canPayments && <section className="border-t border-gray-800 pt-6">
+        <PaymentMethodsPanel canEdit={canPayments} />
+      </section>}
     </div>
   );
 }

@@ -24,13 +24,19 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission, requireAnyPermission } from '../middleware/rbac';
+
+// A490: setting up pumps and tanks, deliveries and pump state are fuel.manage (everyone held it before migration 134 —
+// OPEN_BEFORE_A490). Reading the pumps and tanks also serves selling fuel and the fuel reports.
+const canManageFuel = requirePermission('fuel.manage');
+const canReadFuel = requireAnyPermission('fuel.manage', 'reports.fuel', 'orders.create');
 
 // ── FUEL TANKS ────────────────────────────────────────────────────────────────
 
 export const fuelTanksRouter = safeRouter();
 fuelTanksRouter.use(requireAuth);
 
-fuelTanksRouter.get('/', async (req, res) => {
+fuelTanksRouter.get('/', canReadFuel, async (req, res) => {
   const { branch_id } = req.query;
   let query = supabase
     .from('fuel_tanks')
@@ -43,7 +49,7 @@ fuelTanksRouter.get('/', async (req, res) => {
   res.json(data ?? []);
 });
 
-fuelTanksRouter.post('/', async (req, res) => {
+fuelTanksRouter.post('/', canManageFuel, async (req, res) => {
   const { name, fuel_product_id, capacity_litres, current_level, reorder_level, branch_id } = req.body;
   if (!name || !fuel_product_id || !capacity_litres) {
     res.status(400).json({ error: 'name, fuel_product_id, capacity_litres are required' });
@@ -66,7 +72,7 @@ fuelTanksRouter.post('/', async (req, res) => {
   res.status(201).json(data);
 });
 
-fuelTanksRouter.patch('/:id', async (req, res) => {
+fuelTanksRouter.patch('/:id', canManageFuel, async (req, res) => {
   const { id } = req.params;
   const { name, fuel_product_id, capacity_litres, current_level, reorder_level } = req.body;
   const updates: Record<string, unknown> = {};
@@ -88,7 +94,7 @@ fuelTanksRouter.patch('/:id', async (req, res) => {
   res.json(data);
 });
 
-fuelTanksRouter.delete('/:id', async (req, res) => {
+fuelTanksRouter.delete('/:id', canManageFuel, async (req, res) => {
   const { error } = await supabase
     .from('fuel_tanks')
     .delete()
@@ -100,7 +106,7 @@ fuelTanksRouter.delete('/:id', async (req, res) => {
 
 // Record a fuel delivery — increments current_level (capped at capacity)
 // GET /api/fuel-tanks/movements — stock movement history (sales + deliveries)
-fuelTanksRouter.get('/movements', async (req, res) => {
+fuelTanksRouter.get('/movements', canReadFuel, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
   const { branch_id } = req.query;
 
@@ -152,7 +158,7 @@ fuelTanksRouter.get('/movements', async (req, res) => {
   res.json(result);
 });
 
-fuelTanksRouter.post('/:id/delivery', async (req, res) => {
+fuelTanksRouter.post('/:id/delivery', canManageFuel, async (req, res) => {
   const { id } = req.params;
   const { litres, delivery_note, supplier_id } = req.body;
 
@@ -211,7 +217,7 @@ fuelTanksRouter.post('/:id/delivery', async (req, res) => {
 export const pumpsRouter = safeRouter();
 pumpsRouter.use(requireAuth);
 
-pumpsRouter.get('/', async (req, res) => {
+pumpsRouter.get('/', canReadFuel, async (req, res) => {
   const { branch_id } = req.query;
   let query = supabase
     .from('pumps')
@@ -230,7 +236,7 @@ pumpsRouter.get('/', async (req, res) => {
   res.json(data ?? []);
 });
 
-pumpsRouter.post('/', async (req, res) => {
+pumpsRouter.post('/', canManageFuel, async (req, res) => {
   const { name, fuel_product_id, tank_id, status, sort_order, branch_id } = req.body;
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
   const { data, error } = await supabase
@@ -250,7 +256,7 @@ pumpsRouter.post('/', async (req, res) => {
   res.status(201).json(data);
 });
 
-pumpsRouter.patch('/:id', async (req, res) => {
+pumpsRouter.patch('/:id', canManageFuel, async (req, res) => {
   const { name, fuel_product_id, tank_id, status, sort_order } = req.body;
   const updates: Record<string, unknown> = {};
   if (name !== undefined)            updates.name            = name.trim();
@@ -271,7 +277,7 @@ pumpsRouter.patch('/:id', async (req, res) => {
   res.json(data);
 });
 
-pumpsRouter.delete('/:id', async (req, res) => {
+pumpsRouter.delete('/:id', canManageFuel, async (req, res) => {
   const { error } = await supabase
     .from('pumps')
     .delete()
@@ -284,7 +290,7 @@ pumpsRouter.delete('/:id', async (req, res) => {
 // PATCH /api/pumps/:id/activate
 // Called by CashierScreen when a cashier starts a fuel sale on a pump.
 // Sets status to 'dispensing'. Records which order is using this pump.
-pumpsRouter.patch('/:id/activate', async (req, res) => {
+pumpsRouter.patch('/:id/activate', canManageFuel, async (req, res) => {
   const { order_id } = req.body;
 
   const { data, error } = await supabase
@@ -314,7 +320,7 @@ pumpsRouter.patch('/:id/activate', async (req, res) => {
 
 // PATCH /api/pumps/:id/idle
 // Called when a fuel sale is completed or cancelled — releases the pump.
-pumpsRouter.patch('/:id/idle', async (req, res) => {
+pumpsRouter.patch('/:id/idle', canManageFuel, async (req, res) => {
   const { data, error } = await supabase
     .from('pumps')
     .update({ status: 'idle', updated_at: new Date().toISOString() })

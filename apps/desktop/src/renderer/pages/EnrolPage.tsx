@@ -31,7 +31,7 @@ export default function EnrolPage({ onComplete }: Props) {
   const [searching, setSearching]   = useState(false);
   const [servers, setServers]       = useState<FoundServer[] | null>(null);
   const [joinTarget, setJoinTarget] = useState<FoundServer | null>(null);
-  const [joinWait, setJoinWait]     = useState<{ tillName: string; at: number } | null>(null);
+  const [joinWait, setJoinWait]     = useState<{ tillName: string; at: number; code?: string | null } | null>(null);
   const [joinNote, setJoinNote]     = useState('');
 
   const findServer = async () => {
@@ -47,7 +47,7 @@ export default function EnrolPage({ onComplete }: Props) {
     try {
       const r = await posApi.install.requestJoin(srv.url, true);
       setJoinTarget(srv);
-      setJoinWait({ tillName: r.name, at: Date.now() });
+      setJoinWait({ tillName: r.name, at: Date.now(), code: r.securityCode ?? null });   // A489
     } catch (e: any) { setJoinNote(e?.message ?? 'Could not ask that server.'); }
   };
 
@@ -124,7 +124,7 @@ export default function EnrolPage({ onComplete }: Props) {
               ))}
             </div>
           )}
-          {joinTarget && joinWait && <JoinWaitPanel tillName={joinWait.tillName} srv={joinTarget} askedAt={joinWait.at} />}
+          {joinTarget && joinWait && <JoinWaitPanel tillName={joinWait.tillName} srv={joinTarget} askedAt={joinWait.at} securityCode={joinWait.code} />}
           {joinNote && <p className="text-sm mt-3 rounded-lg px-3 py-2 border text-amber-300 bg-amber-400/10 border-amber-400/20">{joinNote}</p>}
           {!joinTarget && (
             <button type="button" onClick={findServer} disabled={searching} data-testid="enrol-find-server-btn"

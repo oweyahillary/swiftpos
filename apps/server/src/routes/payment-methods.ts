@@ -12,7 +12,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission } from '../middleware/rbac';
+import { requirePermission } from '../middleware/rbac';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/payment-methods — create. Body: { name, sort_order? }
-router.post('/', requireAnyPermission('settings.manage', 'products.manage'), async (req, res) => {
+router.post('/', requirePermission('settings.payments'), async (req, res) => {
   const name = String(req.body?.name ?? '').trim();
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
 
@@ -68,7 +68,7 @@ router.post('/', requireAnyPermission('settings.manage', 'products.manage'), asy
 // PATCH /api/payment-methods/:id — rename, reorder, or activate/deactivate.
 // `code` is deliberately immutable: it is stamped on historical orders, so
 // changing it would strand their reporting under a name that no longer maps.
-router.patch('/:id', requireAnyPermission('settings.manage', 'products.manage'), async (req, res) => {
+router.patch('/:id', requirePermission('settings.payments'), async (req, res) => {
   const patch: Record<string, unknown> = {};
   if (typeof req.body?.name === 'string' && req.body.name.trim()) patch.name = req.body.name.trim();
   if (typeof req.body?.is_active === 'boolean') patch.is_active = req.body.is_active;
@@ -89,7 +89,7 @@ router.patch('/:id', requireAnyPermission('settings.manage', 'products.manage'),
 
 // DELETE /api/payment-methods/:id — hard delete. Safe because payments.method is
 // a free string, not an FK: past sales keep their method label regardless.
-router.delete('/:id', requireAnyPermission('settings.manage', 'products.manage'), async (req, res) => {
+router.delete('/:id', requirePermission('settings.payments'), async (req, res) => {
   const { error } = await supabase
     .from('payment_methods')
     .delete()

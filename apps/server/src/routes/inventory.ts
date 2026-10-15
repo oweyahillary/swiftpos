@@ -1,3 +1,4 @@
+import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -11,6 +12,8 @@ import { actor } from '../lib/actor';
 
 const router = safeRouter();
 router.use(requireAuth);
+// A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
+router.use(stripCostsUnlessAllowed());
 
 // GET /api/inventory
 // Returns stock levels for all products in the business, joined with product info.

@@ -596,7 +596,7 @@ router.get('/config', requireAuth, async (req, res) => {
 // that table; no dashboard UI page consumes it yet (flagged as a follow-up,
 // not built here). Same permission tier as the other financial-sensitive
 // report reads (H6).
-router.get('/exceptions', requireAuth, requirePermission('reports.financial'), async (req, res) => {
+router.get('/exceptions', requireAuth, requirePermission('reports.payments'), async (req, res) => {
   const { resolved } = req.query as Record<string, string>;
   let query = supabase
     .from('payment_exceptions')

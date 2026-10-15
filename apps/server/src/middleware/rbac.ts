@@ -1,10 +1,30 @@
 import type { Request, Response, NextFunction } from 'express';
+import { isPermissionKey } from '../lib/permissions';
+import { tillMay } from '../lib/tillScope';
+
+// A490: every check names a FINE key (shared permissions.ts). A broad key (reports.view, settings.manage, …) here would
+// be checked against tokens that no longer carry it — requireAuth expands every grant into fine keys — and refuse
+// everyone. Refused when the route file loads, so a missed conversion fails the build's tests, not a shop at noon.
+function assertFineKeys(keys: string[]): void {
+  for (const k of keys) {
+    if (!isPermissionKey(k)) throw new Error(`'${k}' is not a permission key of the catalogue (A490: check the fine key it stands for — shared/permissions.ts)`);
+  }
+}
+
+/** A490: may this caller do what any of `keys` allows? The owner and '*' always may; the till's own sign-in is limited
+ *  to what a till does by itself (lib/tillScope.ts, dry-run until TILL_SCOPE_ENFORCE). Use inside a handler. */
+export function can(req: Request, ...keys: string[]): boolean {
+  assertFineKeys(keys);
+  const held = req.permissionKeys ?? [];
+  if (req.isTill) return tillMay(req, keys);
+  return Boolean(req.isOwner) || held.includes('*') || keys.some((k) => held.includes(k));
+}
 
 // requirePermission returns an Express middleware that checks whether the
 // authenticated user holds a specific permission key.
 //
 // Usage:
-//   router.delete('/:id', requireAuth, requirePermission('products.manage'), handler);
+//   router.delete('/:id', requireAuth, requirePermission('menu.edit'), handler);
 //
 // Permission resolution order (set by requireAuth in auth.ts):
 //   1. req.permissionKeys includes '*'  → wildcard, always allow (owner fallback)
@@ -12,12 +32,11 @@ import type { Request, Response, NextFunction } from 'express';
 //   3. Otherwise → 403 Forbidden
 
 export function requirePermission(permission: string) {
+  assertFineKeys([permission]);
   return (req: Request, res: Response, next: NextFunction): void => {
-    const keys = req.permissionKeys ?? [];
-
     // The business owner is never permission-gated, regardless of how their role
     // is configured (mirrors the wildcard the Supabase owner path already grants).
-    if (req.isOwner || keys.includes('*') || keys.includes(permission)) {
+    if (can(req, permission)) {
       next();
       return;
     }
@@ -39,7 +58,7 @@ export function requirePermission(permission: string) {
 //
 // The split is ADDITIVE, and that is the whole design. A route becomes
 //
-//   requireAnyPermission('devices.approve', 'settings.manage')
+//   requireAnyPermission('devices.approve', 'settings.business')
 //
 // so a role holding `settings.manage` today keeps EXACTLY what it has — no
 // existing user loses access at the moment of the split, which is what makes it
@@ -59,11 +78,10 @@ export function requireAnyPermission(...permissions: string[]) {
     // caller writing this line intends. Fail at module load, not at request time.
     throw new Error('requireAnyPermission called with no permission keys');
   }
+  assertFineKeys(permissions);
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    const keys = req.permissionKeys ?? [];
-
-    if (req.isOwner || keys.includes('*') || permissions.some(p => keys.includes(p))) {
+    if (can(req, ...permissions)) {
       next();
       return;
     }
@@ -92,8 +110,8 @@ export function requireAnyPermission(...permissions: string[]) {
  * then narrows per key. Anyone for whom this returns false gets an allow-list.
  */
 export function hasFullSettingsAccess(req: Request): boolean {
-  const keys = req.permissionKeys ?? [];
-  return Boolean(req.isOwner) || keys.includes('*') || keys.includes('settings.manage');
+  // A490: what settings.manage stood for here — the business's settings (the receipt text alone is receipt.manage).
+  return can(req, 'settings.business');
 }
 
 // branchScope resolves the effective branch_id for a query.

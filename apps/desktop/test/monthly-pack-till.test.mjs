@@ -147,11 +147,14 @@ console.log('\nRecord for the books\n');
 console.log('\nThe screen (source)\n');
 {
   const Nav = await import(pathToFileURL(path.join(here, '..', 'src', 'renderer', 'lib', 'managerNav.ts')).href);
-  const base = { isRestaurant: false, isManagerRole: true, canManageProducts: true, canManageStaff: true, canManageSettings: true, canPrinting: true, showStock: false };
+  // A490: each page by its own fine key (NavAccess).
+  const base = { isRestaurant: false, canOverview: true, canOrders: true, canItems: true, canShifts: true, canExpenses: true, canCloseDay: true,
+    canMenu: true, canOffers: true, canSettings: true, canPrinting: true, canStaff: true, showStock: false };
   const sales = (a) => Nav.groupOf(Nav.buildManagerNav({ ...base, ...a }), 'orders').tabs.map((t) => t.key);
-  ok('Sales › Monthly pack with reports.financial — with or without the online licence', sales({ canMonthly: true, online: false }).includes('monthly') && !sales({ canMonthly: false, online: true }).includes('monthly'));
+  ok('Sales › Monthly pack with reports.monthly_pack (or expenses.manage) — with or without the online licence', sales({ canMonthly: true, online: false }).includes('monthly') && !sales({ canMonthly: false, online: true }).includes('monthly'));
   const mp = read('src/renderer/pages/ManagerPage.tsx');
-  ok('ManagerPage: the tab for reports.financial, recording for expenses.manage', /canMonthly: has\('reports\.financial'\) \|\| has\('expenses\.manage'\),/.test(mp)
+  // A490: reports.financial is a broad key — the fine key is reports.monthly_pack (A481: or expenses.manage).
+  ok('ManagerPage: the tab for reports.monthly_pack or expenses.manage, recording for expenses.manage', /canMonthly: has\('reports\.monthly_pack'\) \|\| has\('expenses\.manage'\),/.test(mp)
     && /case 'monthly': return <MonthlyPackTab currency=\{currency\} canRecord=\{has\('expenses\.manage'\)\} \/>;/.test(mp));
   const tab = read('src/renderer/components/MonthlyPackTab.tsx');
   ok('the record form and Remove only for expenses.manage', /\{canRecord && \(\s*<div className="flex flex-wrap gap-2 items-end" data-testid="pack-record-form">/.test(tab)

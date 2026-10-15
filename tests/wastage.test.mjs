@@ -49,7 +49,7 @@ await ok('recording is the manager tier\'s (inventory.waste); voiding — stock 
   assert.match(r, /router\.post\('\/', requireAnyPermission\('inventory\.waste', 'inventory\.adjust'\)/);
   assert.match(r, /router\.post\('\/:id\/void', requirePermission\('inventory\.adjust'\)/);
   assert.match(read('apps/server/src/routes/index.ts'), /router\.use\('\/wastage',\s+wastageRoutes\);/);
-  assert.match(read('apps/server/src/lib/permissionCatalogue.ts'), /key: 'inventory\.waste'/);
+  assert.match(read('shared/permissions.ts'), /key: 'inventory\.waste',[^\n]*manager: true/  /* A490: shared catalogue; a new manager gets it */);
   assert.ok(!/'inventory\.waste'/.test(read('apps/server/src/lib/defaultRolePermissions.ts')), 'not in MANAGER_DENY — a new manager role gets it');
   assert.match(r, /if \(!assertBranchAccess\(req, branchId\)\) \{ res\.status\(403\)\.json\(\{ error: 'You can only record wastage at your own branch\.' \}\)/);
 });

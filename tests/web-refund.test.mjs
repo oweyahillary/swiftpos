@@ -31,9 +31,15 @@ let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
 const paid = { status: 'completed', payments: [{ status: 'completed' }] };
-ok('a completed sale can be refunded by someone with orders.void — only by them', () => {
+ok('a completed sale can be refunded by someone with sales.refund — only by them (A490)', () => {
   assert.equal(R.canRefundOrder(paid, true), true);
   assert.equal(R.canRefundOrder(paid, false), false);
+});
+ok('A490: voiding is its own check (sales.void) — same order rules', () => {
+  assert.equal(R.canVoidOrder(paid, true), true);
+  assert.equal(R.canVoidOrder(paid, false), false);
+  assert.equal(R.canVoidOrder({ status: 'completed', payments: [{ status: 'refunded' }] }, true), false);
+  assert.equal(R.canVoidOrder({ status: 'voided', payments: [] }, true), false);
 });
 ok('never twice, never a voided or open order', () => {
   assert.equal(R.canRefundOrder({ status: 'completed', payments: [{ status: 'completed' }, { status: 'refunded' }] }, true), false);
@@ -46,9 +52,13 @@ ok('the reasons are the till\'s (VoidModal), so both surfaces record the same wo
 });
 
 const tab = read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx');
-ok('the list offers Refund only when canRefundOrder says so, gated on orders.void', () => {
-  assert.match(tab, /const mayVoid = hasPermission\('orders\.void'\);/);
-  assert.match(tab, /\{canRefundOrder\(order, mayVoid\) && refunding !== order\.id && \(/);
+// A490: refund is sales.refund and void is sales.void — each its own key (orders.void stood for both).
+ok('the list offers Refund only when canRefundOrder says so (sales.refund); Void by canVoidOrder (sales.void)', () => {
+  assert.match(tab, /const mayVoid\s+= hasPermission\('sales\.void'\);/);
+  assert.match(tab, /const mayRefund = hasPermission\('sales\.refund'\);/);
+  assert.match(tab, /\{canRefundOrder\(order, mayRefund\) && \(\s*<button/);
+  assert.match(tab, /\{canVoidOrder\(order, mayVoid\) && inVoidWindow\(order\) && \(\s*<button data-testid="history-void"/);
+  assert.doesNotMatch(tab, /hasPermission\('orders\.void'\)/);
   assert.match(tab, /\{isRefunded\(order\.payments\) && <span style=\{s\.refundedBadge\}>refunded<\/span>\}/);
 });
 ok('it posts to the cloud refund with a reason and the manager\'s PIN, and shows the cloud\'s own words', () => {

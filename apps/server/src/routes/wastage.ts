@@ -13,6 +13,8 @@
  * puts stock back — is inventory.adjust, the owner's by default. A manager sees and records only their own branch.
  * The rules (reasons, value, summary) are lib/wastage.ts.
  */
+import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
+import { holds } from '../lib/historyScope';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -32,6 +34,8 @@ function tillTime(v: unknown): string | null {
   return new Date(t).toISOString();
 }
 router.use(requireAuth);
+// A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
+router.use(stripCostsUnlessAllowed(['value', 'total']));
 
 type Entry = EntryLike & { id: string; branch_id: string; ref: string; unit_cost: number | string | null; stock_moved: boolean;
   note: string | null; recorded_by_name: string | null; voided_by_name: string | null; void_reason: string | null };
@@ -51,7 +55,7 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), asy
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
   const rows = (data ?? []) as Entry[];
-  res.json({ from, to, entries: rows, summary: wastageSummary(rows), reasons: WASTE_REASONS, can_void: req.isOwner || (req.permissionKeys ?? []).includes('inventory.adjust') });
+  res.json({ from, to, entries: rows, summary: wastageSummary(rows), reasons: WASTE_REASONS, can_void: holds(req, 'inventory.adjust') });
 });
 
 router.get('/items', requireAnyPermission('inventory.waste', 'inventory.adjust'), async (req, res) => {

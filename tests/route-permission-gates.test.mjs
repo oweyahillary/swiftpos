@@ -320,7 +320,9 @@ try {
   const { applyChange } = require(path.join(DIST, 'lib/changeApply.js'));
   const pinChange = (target, by = MGR) => ({ id: id(), entity: 'staff_pin', entity_id: target, op: 'update', base: null,
     data: { pin: '4321' }, made_by: by, made_by_name: 'Max', made_at: new Date().toISOString() });
-  const ctx = { businessId: BZ, branchId: BR_A, deviceId: 'dev-T1', callerKeys: ['staff.manage'], callerIsOwner: false, callerUserId: MGR };
+  // A490: callerKeys are what the route passes — req.permissionKeys, already FINE keys (requireAuth expands a token's
+  // staff.manage into staff.view / staff.edit / staff.roles). A broad key is never handed to changeApply as such.
+  const ctx = { businessId: BZ, branchId: BR_A, deviceId: 'dev-T1', callerKeys: ['staff.view', 'staff.edit', 'staff.roles'], callerIsOwner: false, callerUserId: MGR };
   await ok('a manager cannot reset the owner\'s PIN, or an admin\'s, from a till', async () => {
     reset();
     const a = await applyChange(ctx, pinChange(OWNER));

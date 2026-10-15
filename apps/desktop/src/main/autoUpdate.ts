@@ -33,7 +33,7 @@
  *     download would make one check per block.
  */
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, session } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { cloudFetch, cloudBaseFor } from './cloudGateway';
@@ -42,6 +42,7 @@ import { refreshAccessToken } from './syncEngine';
 import { isNodeRole } from './deviceConfig';
 import { getNodePort } from './nodeServer';
 import { prepareShare, shareDir, onShareWanted } from './updateShare';   // A443
+import { lanFetch, lanUrl, trustPinnedNodeIn } from './lanTls';   // A489
 
 const ONE_HOUR = 60 * 60 * 1000;   // A348: the approval check is one small JSON call
 
@@ -203,6 +204,11 @@ export function initAutoUpdate(): void {
   if (started) return;                         // idempotent
   started = true;
 
+  // A489: a till behind a branch server downloads its update from the server over TLS — electron-updater's own session
+  // (partition 'electron-updater', created exactly as electron-updater creates it) trusts the pinned certificate.
+  try { trustPinnedNodeIn(session.fromPartition('electron-updater', { cache: false })); }
+  catch (e: any) { console.warn('[autoUpdate] could not trust the branch server certificate for downloads:', e?.message ?? e); }
+
   autoUpdater.autoDownload = true;             // fetch in the background
   autoUpdater.autoInstallOnAppQuit = true;     // still swap on a normal quit — never mid-run
   autoUpdater.allowPrerelease = false;
@@ -238,7 +244,8 @@ export function initAutoUpdate(): void {
       const r = await runUpdateCheck({
         updater: autoUpdater as any,
         fetch: ((u: any, i: any) => cloudFetch(String(u), i)) as typeof fetch,   // A410: through the branch server on a peer
-        route: (c) => cloudBaseFor(c, getDeviceConfig()),
+        // A489: the branch server's address as https:// once this till pins its certificate.
+        route: (c) => { const r = cloudBaseFor(c, getDeviceConfig()); return { ...r, base: lanUrl(r.base) }; },
         cloudUrl: () => { try { return getCloudUrl(); } catch { return null; } },
         token: () => readSessionTokens().token || null,
         refresh: () => refreshAccessToken(),
@@ -249,7 +256,7 @@ export function initAutoUpdate(): void {
         // from the server over the shop network). A server that does not answer the question (an older build) → as before.
         share: !port && cfg?.node_url && !isNodeRole(cfg?.device_role ?? null) ? {
           prepare: async (v) => {
-            const r = await askBranchServer({ cfg: cfg as any, running: app.getVersion(), fetch: globalThis.fetch });
+            const r = await askBranchServer({ cfg: cfg as any, running: app.getVersion(), fetch: lanFetch as typeof fetch });
             return !r ? 'ready' : r.version === v ? 'ready' : 'busy';
           },
           route: () => null,
@@ -274,7 +281,7 @@ export function initAutoUpdate(): void {
   // it is back): told of a newer version the server holds, it checks with the cloud at once and takes it from the server.
   const askServer = async () => {
     if (busy || current.state === 'downloading' || current.state === 'downloaded') return;
-    const r = await askBranchServer({ cfg: getDeviceConfig() as any, running: app.getVersion(), fetch: globalThis.fetch });
+    const r = await askBranchServer({ cfg: getDeviceConfig() as any, running: app.getVersion(), fetch: lanFetch as typeof fetch });
     if (r?.newer) { console.log(`[autoUpdate] the branch server holds ${r.version} — checking now`); void check(); }
   };
   void askServer();

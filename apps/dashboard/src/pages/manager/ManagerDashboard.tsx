@@ -20,7 +20,7 @@ import POSInventoryTab    from '../pos/POSInventoryTab';
 import POSCustomersTab    from '../pos/POSCustomersTab';
 import StaffTab           from '../settings/StaffTab';
 import PrintersPage       from '../settings/PrintersPage';
-import ManagerReportsPage from './ManagerReportsPage';
+import ManagerReportsPage, { MANAGER_REPORT_KEYS, tabsForBusiness } from './ManagerReportsPage';
 import ManagerReceivingTab from './ManagerReceivingTab';
 import ManagerHistoryTab   from './ManagerHistoryTab';
 import ManagerShiftTab from './ManagerShiftTab';
@@ -34,6 +34,7 @@ import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { money, compactMoney, litres, dateShort } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
+import { hasAnyPermission } from '../../lib/permissions';   // A490
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
 function Icon({ d, size = 18, className = '' }: { d: string; size?: number; className?: string }) {
@@ -73,18 +74,20 @@ const I = {
 
 // `label` is JSX (icon + text); `title` is the plain-text tooltip used when
 // the sidebar is collapsed. The two cannot be the same value.
-interface NavItem { key: string; label: React.ReactNode; title: string; permission: string | null; group: string | null; }
+// A490: `permission` is the FINE key (or keys — any one opens it) that matches what the page shows; null only for the
+// person's own sign-in. Every page inside checks its own actions' keys too.
+interface NavItem { key: string; label: React.ReactNode; title: string; permission: string | readonly string[] | null; group: string | null; }
 
 // A133 Slice 2 — manager-dashboard nav parity with the owner sidebar: the flat list
 // is grouped into labelled sections (the same group→items pattern the owner got in
 // Slice 1). Top-level items carry group: null. Group order is fixed by GROUP_ORDER.
 const NAV_ITEMS: NavItem[] = [
-  { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  title: 'Overview', permission: null, group: null },
+  { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  title: 'Overview', permission: 'reports.overview', group: null },
   { key: 'menu',      label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Menu</span></>,      title: 'Menu', permission: 'products.view', group: null },
   // A445: offers for this branch (the people who edit the menu).
-  { key: 'offers',    label: <><Icon d={I.tag}       className="flex-shrink-0" /><span className="truncate">Offers</span></>,    title: 'Offers', permission: 'products.manage', group: null },
+  { key: 'offers',    label: <><Icon d={I.tag}       className="flex-shrink-0" /><span className="truncate">Offers</span></>,    title: 'Offers', permission: 'menu.offers', group: null },
   { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: 'Inventory' },
-  { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: 'inventory.receive', group: 'Inventory' },
+  { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: ['inventory.receive', 'inventory.transfer'], group: 'Inventory' },
   // A394: stock take — the manager counts (blind); the owner reviews and posts.
   { key: 'counts',    label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Stock count</span></>, title: 'Stock count', permission: 'inventory.count', group: 'Inventory' },
   // A399: wastage — what spoiled on the shift, with the reason.
@@ -94,12 +97,12 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'history',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">History</span></>,   title: 'Stock history', permission: 'inventory.receive', group: 'Inventory' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
   { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: 'orders.view_all', group: 'Finance' },
-  { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: 'reports.view', group: 'Finance' },
+  { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: MANAGER_REPORT_KEYS, group: 'Finance' },
   { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  title: 'Turnover', permission: 'orders.view_all', group: 'Finance' },
   { key: 'expenses',  label: <><Icon d={I.expenses}  className="flex-shrink-0" /><span className="truncate">Expenses</span></>,  title: 'Expenses', permission: 'expenses.view', group: 'Finance' },
   { key: 'customers', label: <><Icon d={I.customers} className="flex-shrink-0" /><span className="truncate">Customers</span></>, title: 'Customers', permission: 'customers.view', group: 'Customers' },
   { key: 'credit',    label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Credit</span></>,    title: 'Credit', permission: 'customers.view', group: 'Customers' },
-  { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.manage', group: 'Settings' },
+  { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.view', group: 'Settings' },
   { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'stations.manage', group: 'Settings' },
   // A391: the manager's own sign-in code (email or authenticator app).
   { key: 'security',  label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">My sign-in</span></>, title: 'My sign-in', permission: null, group: 'Settings' },
@@ -136,7 +139,8 @@ const METHOD_LABELS: Record<string, string> = { cash: 'Cash', mpesa: 'M-Pesa', c
 // ── Parking Station Overview Tab ──────────────────────────────────────────────
 
 function ParkingOverviewTab() {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
+  const seesSales = hasPermission('reports.sales');   // A490: today's revenue is reports.sales
   const currency = session?.currency ?? 'KES';
   const today    = localDateStr();
 
@@ -153,8 +157,10 @@ function ParkingOverviewTab() {
     async function load() {
       try {
         const p = new URLSearchParams({ from: today, to: today, branch_id: session!.branchId });
+        const skip = Promise.reject(new Error('not given'));
+        skip.catch(() => {});
         const [salesRes, sessionsRes, baysRes] = await Promise.allSettled([
-          posApi.get<any>(`/api/reports/sales?${p}`),
+          seesSales ? posApi.get<any>(`/api/reports/sales?${p}`) : skip,
           posApi.get<any[]>(`/api/parking-sessions?branch_id=${session!.branchId}&status=open`),
           posApi.get<any[]>(`/api/tables?branch_id=${session!.branchId}&slot_type=parking_bay`),
         ]);
@@ -301,7 +307,8 @@ function ParkingOverviewTab() {
 // KEY: same rule — call posApi directly inside useEffect, never in useCallback deps.
 
 function PetrolOverviewTab() {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
+  const seesFuel = hasPermission('reports.fuel');   // A490: fuel sales and the pump monitor are reports.fuel
   const currency = session?.currency ?? 'KES';
   const today    = localDateStr();
 
@@ -320,13 +327,15 @@ function PetrolOverviewTab() {
     async function load() {
       try {
         const p = new URLSearchParams({ from: today, to: today, branch_id: session!.branchId });
+        const skip = Promise.reject(new Error('not given'));
+        skip.catch(() => {});
         const [salesRes, tanksRes, pumpsRes] = await Promise.allSettled([
-          posApi.get<any>(`/api/reports/fuel-sales?${p}`),
+          seesFuel ? posApi.get<any>(`/api/reports/fuel-sales?${p}`) : skip,
           posApi.get<any[]>(`/api/fuel-tanks?branch_id=${session!.branchId}`),
           posApi.get<any[]>(`/api/pumps?branch_id=${session!.branchId}`),
         ]);
         // Pump monitor (best-effort)
-        try { const pm = await posApi.get<any>(`/api/reports/pump-monitor?branch_id=${session!.branchId}`); if (!cancelled) setPumpMonitor(pm); } catch {}
+        if (seesFuel) { try { const pm = await posApi.get<any>(`/api/reports/pump-monitor?branch_id=${session!.branchId}`); if (!cancelled) setPumpMonitor(pm); } catch {} }
         if (cancelled) return;
         if (salesRes.status === 'fulfilled') setSales(salesRes.value);
         if (tanksRes.status === 'fulfilled') setTanks(tanksRes.value ?? []);
@@ -553,7 +562,7 @@ function PetrolOverviewTab() {
 // Call posApi.get directly inside useEffect to avoid infinite re-render loops.
 
 function OverviewTab() {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
   const currency = session?.currency ?? 'KES';
 
   const [sales,    setSales]    = useState<SalesSummary | null>(null);
@@ -577,14 +586,15 @@ function OverviewTab() {
 
     async function fetchAll() {
       try {
-        // Run all 4 requests in parallel; individual failures don't block others
+        // Run the requests in parallel; individual failures don't block others. A490: a report is fetched only when the
+        // person holds its key (the Overview page is reports.overview; each figure on it is its own report's key).
+        const skip = Promise.reject(new Error('not given'));
+        skip.catch(() => {});
         const [salesRes, hourlyRes, productsRes, shiftRes] = await Promise.allSettled([
-          posApi.get<SalesSummary>(`/api/reports/sales?${params}`),
-          posApi.get<{ series: HourlyRow[] }>(`/api/reports/hourly?${params}`),
-          posApi.get<{ products: TopProduct[] }>(`/api/reports/products-v2?${params}`),
+          hasPermission('reports.sales') ? posApi.get<SalesSummary>(`/api/reports/sales?${params}`) : skip,
+          hasPermission('reports.sales') ? posApi.get<{ series: HourlyRow[] }>(`/api/reports/hourly?${params}`) : skip,
+          hasPermission('reports.items') ? posApi.get<{ products: TopProduct[] }>(`/api/reports/products-v2?${params}`) : skip,
           posApi.get<Shift | null>('/api/shifts/current'),
-          posApi.get<{ voids: { cashier_name: string | null }[]; }>(`/api/reports/voids?${params}`),
-          posApi.get<{ staff: { staff_name: string; orders: number; voids: number }[] }>(`/api/reports/staff?${params}`),
         ]);
 
         if (cancelled) return;
@@ -661,7 +671,8 @@ function OverviewTab() {
         <div className="text-gray-500 text-sm py-12 text-center">Loading today's data…</div>
       ) : (
         <>
-          {/* KPI cards */}
+          {/* KPI cards — A490: the day's sales figures are reports.sales */}
+          {hasPermission('reports.sales') && (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             {kpis.map(k => (
               <div key={k.label} className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4">
@@ -671,6 +682,7 @@ function OverviewTab() {
               </div>
             ))}
           </div>
+          )}
 
           {/* ── Stock Alerts (negative = sold beyond stock; low) ──────────── */}
           {stockAlerts.length > 0 && (() => {
@@ -1027,7 +1039,8 @@ interface MLedgerRow {
 
 function ManagerCreditTab({ currency }: { currency: string }) {
   const { posApi, hasPermission } = usePOSAuth();
-  const canManage = hasPermission('customers.manage');
+  // A490: limits, repayments and adjustments are customers.credit (seeing the accounts is customers.view, the page's key).
+  const canManage = hasPermission('customers.credit');
 
   const [rows, setRows] = useState<MCreditCustomer[]>([]);
   const [search, setSearch] = useState('');
@@ -1229,7 +1242,9 @@ interface MLiveRow { order_id: string; table_number: string | null; covers: numb
 interface MReportRow { table_number: string; covers_served: number; avg_minutes: number; }
 
 function ManagerTurnoverTab() {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
+  // A490: the live tables are the page's key (orders.view_all); the turnover REPORT is reports.sales.
+  const seesReport = hasPermission('reports.sales');
   const branchId = session?.branchId;
   const [tab, setTab] = useState<'live' | 'report'>('live');
   const [threshold, setThreshold] = useState(90);
@@ -1251,14 +1266,14 @@ function ManagerTurnoverTab() {
   }, [posApi, branchId]);
 
   useEffect(() => { if (tab !== 'live') return; loadLive(); const t = setInterval(loadLive, 30000); return () => clearInterval(t); }, [tab, loadLive]);
-  useEffect(() => { if (tab === 'report') loadReport(); }, [tab, loadReport]);
+  useEffect(() => { if (tab === 'report' && seesReport) loadReport(); }, [tab, loadReport, seesReport]);
 
   return (
     <div className="space-y-4">
       <div><h2 className="text-xl font-bold text-white">Table Turnover</h2><p className="text-gray-500 text-sm mt-0.5">Live dwell time and average turnover for {session?.branchName}</p></div>
       <div className="flex gap-2">
         <button onClick={() => setTab('live')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'live' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>Live tables</button>
-        <button onClick={() => setTab('report')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'report' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>Turnover report</button>
+        {seesReport && <button onClick={() => setTab('report')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'report' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>Turnover report</button>}
       </div>
       {tab === 'live' ? (
         loading ? <p className="text-gray-500">Loading…</p> : live.length === 0 ? <p className="text-gray-500">No occupied dine-in tables right now.</p> : (
@@ -1291,12 +1306,19 @@ function ManagerTurnoverTab() {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+/** A490: may this person open this page? Its key(s) — any one; Reports: any report its tabs show for this business. */
+export function navAllowed(item: NavItem, held: ReadonlySet<string>, isPetrol: boolean): boolean {
+  if (item.permission === null) return true;
+  if (item.key === 'reports') return hasAnyPermission(held, tabsForBusiness(isPetrol).map(t => t.permission));
+  return hasAnyPermission(held, typeof item.permission === 'string' ? [item.permission] : item.permission);
+}
+
 export default function ManagerDashboard() {
   const navigate  = useNavigate();
-  const { session, clearCashierSession, hasPermission, posApi } = usePOSAuth();
+  const { session, clearCashierSession, held, posApi } = usePOSAuth();
   const { business }                = useBusiness();
   const { branches, setActiveBranch } = useBranch();
-  const [active, setActive]           = useState('overview');
+  const [active, setActive]           = useState<string | null>(null);
   // A463: on a phone the sidebar is a drawer (closed to start, closed again once a page is picked) — it was a rail that
   // still took 64 of 360 pixels and showed clipped labels. From md (768px) up it opens and collapses as before.
   const [isPhone, setIsPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
@@ -1333,7 +1355,13 @@ export default function ManagerDashboard() {
 
   const currency      = session.currency ?? 'KES';
   const managerBranch = [{ id: session.branchId, name: session.branchName }];
-  const visibleNav    = NAV_ITEMS.filter(i => i.permission === null || hasPermission(i.permission));
+  // A490: every page by the fine key matching what it shows (navAllowed). Reports opens with any report its tabs show
+  // for this business type. The first page is the first one this person may open (Overview needs reports.overview).
+  const isPetrol      = session.businessType === 'petrol_station';
+  const visibleNav    = NAV_ITEMS.filter(i => navAllowed(i, held, isPetrol));
+  const current       = active && visibleNav.some(n => n.key === active) ? active : (visibleNav[0]?.key ?? 'security');
+  // A490: cost prices and values at cost (wastage, expiry, deliveries) — menu.costs or reports.costs.
+  const seesCosts     = hasAnyPermission(held, ['menu.costs', 'reports.costs']);
 
   function handleLogout() {
     clearCashierSession();
@@ -1343,7 +1371,7 @@ export default function ManagerDashboard() {
   }
 
   function renderContent() {
-    switch (active) {
+    switch (current) {
       case 'overview':
         if (session.businessType === 'petrol_station') return <PetrolOverviewTab />;
         if (session.businessType === 'parking')         return <ParkingOverviewTab />;
@@ -1367,7 +1395,8 @@ export default function ManagerDashboard() {
               <h2 className="text-xl font-bold text-white">Staff</h2>
               <p className="text-gray-500 text-sm mt-0.5">Manage cashiers for {session.branchName}</p>
             </div>
-            <StaffTab branches={managerBranch} excludeRoles={['manager', 'owner', 'admin', 'supervisor']} />
+            {/* A490: which roles may be given is the cloud's `assignable` (never beyond this person's own keys). */}
+            <StaffTab branches={managerBranch} canEdit={hasAnyPermission(held, ['staff.edit'])} />
           </div>
         );
       case 'printers':
@@ -1387,12 +1416,12 @@ export default function ManagerDashboard() {
         return <StockCounts client={posApi} branchId={session.branchId} currency={currency} business={business}
           branches={managerBranch} />;
       case 'wastage':
-        return <Wastage client={posApi} branchId={session.branchId} currency={currency} branches={managerBranch} />;
+        return <Wastage client={posApi} branchId={session.branchId} currency={currency} branches={managerBranch} showCosts={seesCosts} />;
       case 'expiry':
-        return <Expiry client={posApi} branchId={session.branchId} currency={currency} />;
+        return <Expiry client={posApi} branchId={session.branchId} currency={currency} showCosts={seesCosts} />;
       case 'offers':   // A445: this branch's offers (the cloud keeps a manager to their own branch)
         return <OffersManager client={posApi} isOwner={false} branchId={session.branchId ?? null} currency={currency} />;
-      default: return <OverviewTab />;
+      default: return <SignInSecurity />;
     }
   }
 
@@ -1424,7 +1453,7 @@ export default function ManagerDashboard() {
                   <button key={item.key} onClick={() => { setActive(item.key); if (isPhone) setSidebarOpen(false); }}
                     title={!sidebarOpen ? item.title : undefined}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                      active === item.key
+                      current === item.key
                         ? 'bg-swift/20 text-swift-text border border-swift/30'
                         : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                     }`}>
@@ -1457,7 +1486,7 @@ export default function ManagerDashboard() {
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <button onClick={() => setSidebarOpen(o => !o)} className="text-gray-500 hover:text-white transition-colors"><Icon d={I.menu} size={20} /></button>
             <h1 className="text-base font-semibold text-white truncate">
-              {visibleNav.find(n => n.key === active)?.label ?? 'Overview'}
+              {visibleNav.find(n => n.key === current)?.label ?? 'My sign-in'}
             </h1>
           </div>
           <div className="flex items-center gap-3">

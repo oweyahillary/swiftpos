@@ -3,7 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import bcrypt from 'bcrypt';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission, hasFullSettingsAccess } from '../middleware/rbac';
+import { requireAnyPermission, requirePermission, can } from '../middleware/rbac';
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 import { themesEnabled, themeWriteError } from '../lib/themeAccess';
@@ -38,6 +38,19 @@ const BCRYPT_ROUNDS = 12;
 // add it — and the thing they would forget is whichever one is newest, which is
 // also the one least likely to be noticed.
 const RECEIPT_SETTING_KEYS = new Set(['receipt_header', 'receipt_footer', 'receipt_pay_label', 'receipt_pay_number']);   // A450: + how to pay
+
+/** A490: the keys that write business settings — the route admits any of them, then narrows per setting. */
+const SETTING_WRITE_KEYS = ['receipt.manage', 'settings.business', 'settings.payments', 'settings.pos', 'settings.integrations'];
+const LOYALTY_SETTING_KEYS = new Set(['loyalty_enabled', 'loyalty_earn_rate']);
+
+/** A490: the one key that may write this business setting. */
+export function settingPermission(key: string): string {
+  if (RECEIPT_SETTING_KEYS.has(key)) return 'receipt.manage';
+  if (key === PAYMENT_METHODS_ENABLED_KEY) return 'settings.payments';
+  if (LOYALTY_SETTING_KEYS.has(key)) return 'settings.pos';
+  if (key === 'report_schedule') return 'settings.integrations';
+  return 'settings.business';
+}
 
 const HASHED_SETTING_KEYS = new Set(['supervisor_pin']);
 
@@ -133,7 +146,7 @@ router.get('/', requireAuth, async (req, res) => {
 // dates etc. stay admin-controlled); currency is locked once any sale exists,
 // because historical amounts are denominated in it; `email` here is the business
 // CONTACT email, not a login credential.
-router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+router.patch('/', requireAuth, requirePermission('settings.business'), async (req, res) => {
   const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'ctl_rate', 'currency', 'logo_url'] as const;
   const updates: Record<string, unknown> = {};
   for (const k of EDITABLE) if (k in req.body) updates[k] = req.body[k];
@@ -211,7 +224,7 @@ router.get('/branding', requireAuth, async (req, res) => {
 // (the SVG-upload research: a direct request skips any browser check): accent must be a hex
 // colour; a logo must be a PNG/JPEG base64 data-URI under 250 KB; SVG is rejected until the
 // sanitiser slice. Omitted field = leave as-is; explicit null = clear.
-router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'settings.manage'), async (req, res) => {
+router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'settings.business'), async (req, res) => {
   const has = (k: string) => Object.prototype.hasOwnProperty.call(req.body ?? {}, k);
   const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
   const RASTER = /^data:image\/(?:png|jpeg);base64,/i;
@@ -345,7 +358,7 @@ router.get('/settings/report-schedule', requireAuth, async (req, res) => {
 // POST /api/business/settings
 // Upserts a single key/value pair for this business.
 // Body: { key: string, value: string }
-router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'settings.manage'), async (req, res) => {
+router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS), async (req, res) => {
   const { key, value } = req.body;
 
   if (!key || value === undefined) {
@@ -363,13 +376,19 @@ router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'se
   //
   // Fails closed: settings.manage (or owner / wildcard) writes anything, and
   // everyone else writes only what is explicitly allowed.
-  if (!hasFullSettingsAccess(req) && !RECEIPT_SETTING_KEYS.has(key)) {
+  // A490: each setting names its own key (settingPermission) — the receipt text receipt.manage, the payment methods
+  // settings.payments, loyalty settings.pos, the report schedule settings.integrations, everything else
+  // settings.business. The void/refund rules and the stock-count freeze stay the owner's (below).
+  const needed = settingPermission(String(key));
+  if (!can(req, needed)) {
     res.status(403).json({
       error: 'Forbidden',
       // Name the key they tried, not the permission they lack: the caller with
       // receipt.manage is a manager who has just been told "no" on a screen
       // that offered them the field. A45 is what the vaguer message cost.
-      detail: `receipt.manage may only write the receipt text (header, footer, how to pay), not "${key}"`,
+      detail: can(req, 'receipt.manage')
+        ? `receipt.manage may only write the receipt text (header, footer, how to pay), not "${key}"`
+        : `Missing permission: ${needed}`,
     });
     return;
   }

@@ -51,7 +51,9 @@ db.prepare(`INSERT INTO session (id, token, user_id, business_id, business_name,
 const C = require(path.join(dist, 'deviceConfig.js'));
 C.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1', device_id: 'dev-T1', device_role: 'till', terminal_code: 'T1', device_name: 'Front' });
 db.prepare(`INSERT INTO users (id, name) VALUES ('u-amy', 'Amy'), ('u-brian', 'Brian'), ('u-mary', 'Mary')`).run();
-const signIn = (id, name, role, perms = '{}') => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
+// A490: a role's NAME decides nothing on the till — a manager is the permissions an older cloud sent a manager.
+const A490_MANAGER = '{"orders.void":true,"settings.manage":true}';
+const signIn = (id, name, role, perms = ['manager', 'supervisor'].includes(role) ? A490_MANAGER : '{}') => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
   VALUES (1, ?, ?, ?, ?, 'br-1', 'tok', '2026-10-11T06:00:00Z')`).run(id, name, role, perms);
 
 // Amy's sale: a large burger with cheese and a note, and two sodas; paid 500 cash + 450 M-Pesa.
@@ -172,10 +174,11 @@ console.log('\nThe screens\n');
   ok('till History: tapping a sale opens it', /data-testid="history-row" onClick=\{\(\) => setDetailId\(o\.id\)\}/.test(pos) && /<OrderDetailPanel\s+orderId=\{detailId\}/.test(pos));
   ok('…and its Reprint / Void buttons do not also open it', (pos.match(/e\.stopPropagation\(\);/g) ?? []).length >= 2);
   const mgr = read('apps/desktop/src/renderer/pages/ManagerPage.tsx');
-  ok('till Manager › Orders: a sale opens with Void / Refund for orders.void holders',
-    /data-testid="manager-order-row" onClick=\{\(\) => setDetailId\(o\.id\)\}/.test(mgr) && /<OrdersTab currency=\{currency\} canVoidRefund=\{has\('orders\.void'\)\} \/>/.test(mgr));
+  // A490: void and refund are separate keys (sales.void / sales.refund), each its own right.
+  ok('till Manager › Orders: a sale opens with Void / Refund for sales.void / sales.refund holders',
+    /data-testid="manager-order-row" onClick=\{\(\) => setDetailId\(o\.id\)\}/.test(mgr) && /<OrdersTab currency=\{currency\} rights=\{\{ void: has\('sales\.void'\), refund: has\('sales\.refund'\) \}\} \/>/.test(mgr));
   const panel = read('apps/desktop/src/renderer/components/OrderDetailPanel.tsx');
-  ok('the panel reverses through the same VoidModal and rules as History', /reverseAction\(detail, Date\.now\(\), windowMin\)/.test(panel) && /<VoidModal/.test(panel));
+  ok('the panel reverses through the same VoidModal and rules as History', /reverseActionFor\(detail, rights, Date\.now\(\), windowMin\)/.test(panel) && /<VoidModal/.test(panel));
   const web = read('apps/dashboard/src/pages/OrdersPage.tsx');
   ok('web Orders: the items, Reprint only as the cloud allows, and a manager\'s PIN', /<OrderItems orderId=\{o\.id\}/.test(web)
     && /\{canReprint && <div className="pt-2">/.test(web) && /override_pin: pin\.trim\(\)/.test(web));

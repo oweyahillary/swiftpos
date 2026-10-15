@@ -3,8 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission } from '../middleware/rbac';
-import { branchScope, assertBranchAccess } from '../middleware/rbac';
+import { branchScope, assertBranchAccess, requirePermission } from '../middleware/rbac';
 
 const router = safeRouter();
 
@@ -37,7 +36,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // GET /api/tables/all?branch_id= — list all tables including inactive (for admin)
-router.get('/all', requireAuth, requireAnyPermission('tables.manage', 'settings.manage'), async (req, res) => {
+router.get('/all', requireAuth, requirePermission('tables.manage'), async (req, res) => {
   const queryBranchId = req.query.branch_id as string;
 
   if (!queryBranchId) {
@@ -58,7 +57,7 @@ router.get('/all', requireAuth, requireAnyPermission('tables.manage', 'settings.
 });
 
 // POST /api/tables — create a table
-router.post('/', requireAuth, requireAnyPermission('tables.manage', 'settings.manage'), async (req, res) => {
+router.post('/', requireAuth, requirePermission('tables.manage'), async (req, res) => {
   const { branch_id, name, capacity, sort_order } = req.body;
 
   if (!branch_id || !name) {
@@ -97,7 +96,7 @@ router.post('/', requireAuth, requireAnyPermission('tables.manage', 'settings.ma
 });
 
 // PATCH /api/tables/:id — update name, capacity, sort_order, or status
-router.patch('/:id', requireAuth, requireAnyPermission('tables.manage', 'settings.manage'), async (req, res) => {
+router.patch('/:id', requireAuth, requirePermission('tables.manage'), async (req, res) => {
   const { name, capacity, sort_order, status, shape, zone, pos_x, pos_y } = req.body;
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -125,7 +124,7 @@ router.patch('/:id', requireAuth, requireAnyPermission('tables.manage', 'setting
 });
 
 // DELETE /api/tables/:id — soft delete (set inactive)
-router.delete('/:id', requireAuth, requireAnyPermission('tables.manage', 'settings.manage'), async (req, res) => {
+router.delete('/:id', requireAuth, requirePermission('tables.manage'), async (req, res) => {
   const { data, error } = await supabase
     .from('tables')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })

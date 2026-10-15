@@ -146,7 +146,8 @@ ok('Shift report: a picker of this till\'s previous shifts, each opened via shif
   && /remote\(selected\) \? posApi\.manager\.remoteZReport\(selected\) : posApi\.shift\.zreport\(selected\)/.test(mp)
   && /Print report/.test(mp));
 // A351: the sidebar is built in lib/managerNav.ts now; Expenses stays its own sidebar item there.
-ok('Expenses: its own manager tab, by date range', /\{ key: 'expenses', label: 'Expenses', tabs: \[\{ key: 'expenses', label: 'Expenses' \}\] \}/.test(read('src/renderer/lib/managerNav.ts')) && /posApi\.expense\.range\(range\)/.test(mp));
+// A490: shown to expenses.view / expenses.manage holders (canExpenses).
+ok('Expenses: its own manager tab, by date range', /\{ key: 'expenses', label: 'Expenses', tabs: a\.canExpenses \? \[\{ key: 'expenses', label: 'Expenses' \}\] : \[\] \}/.test(read('src/renderer/lib/managerNav.ts')) && /posApi\.expense\.range\(range\)/.test(mp));
 const zv = read('src/renderer/components/ZReportView.tsx');
 ok('the on-screen report shows "− Expenses" and the EXPENSES lines', /row\('− Expenses', money\(totals\.expenses\)\)/.test(zv) && /EXPENSES \(\{report\.expenseLines!\.length\}\)/.test(zv));
 ok('the print payload sends them', /expenses:\s+totals\.expenses == null \? null : toCents\(totals\.expenses\)/.test(read('src/renderer/lib/printShiftReport.ts')));

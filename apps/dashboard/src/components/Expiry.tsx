@@ -52,8 +52,10 @@ const CHIP: Record<Row['status'], string> = {
   none:    'bg-gray-800 text-gray-400 border-gray-700',
 };
 
-export default function Expiry({ client, branchId, currency = 'KES' }: {
+export default function Expiry({ client, branchId, currency = 'KES', showCosts = true }: {
   client: ExpiryClient;
+  /** A490: values are at cost — shown only to someone holding menu.costs or reports.costs (the owner always). */
+  showCosts?: boolean;
   /** The branch to show. The owner picks it in the sidebar (none = every branch); a manager is locked to their own. */
   branchId: string | null;
   currency?: string;
@@ -152,12 +154,12 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4" data-testid="expired-total">
             <div className="text-xs text-gray-500">Expired, still in stock</div>
             <div className="mt-1 text-2xl font-bold text-red-400">{s.expired} batch{s.expired === 1 ? '' : 'es'}</div>
-            <div className="mt-0.5 text-xs text-gray-500">{money(s.expiredValue, currency)} at cost</div>
+            {showCosts && <div className="mt-0.5 text-xs text-gray-500">{money(s.expiredValue, currency)} at cost</div>}
           </div>
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
             <div className="text-xs text-gray-500">Expiring within {list?.soon_days} days</div>
             <div className="mt-1 text-2xl font-bold text-amber-400">{s.soon} batch{s.soon === 1 ? '' : 'es'}</div>
-            <div className="mt-0.5 text-xs text-gray-500">{money(s.soonValue, currency)} at cost</div>
+            {showCosts && <div className="mt-0.5 text-xs text-gray-500">{money(s.soonValue, currency)} at cost</div>}
           </div>
         </div>
       )}
@@ -167,7 +169,7 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
           <table className="w-full text-sm">
             <thead className="bg-gray-900 text-left text-xs text-gray-500">
               <tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Batch</th><th className="px-3 py-2">Expiry</th>
-                <th className="px-3 py-2 text-right">Left</th><th className="px-3 py-2 text-right">Value</th><th className="px-3 py-2" /></tr>
+                <th className="px-3 py-2 text-right">Left</th>{showCosts && <th className="px-3 py-2 text-right">Value</th>}<th className="px-3 py-2" /></tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {rows.length === 0 && (
@@ -186,7 +188,7 @@ export default function Expiry({ client, branchId, currency = 'KES' }: {
                     <div className="mt-0.5 text-xs text-gray-500">{dateShort(r.expiry_date)}</div></td>
                   <td className="whitespace-nowrap px-3 py-2 text-right text-gray-200">{qty(r.remaining)}{r.unit ? ` ${r.unit}` : ''}
                     <div className="text-xs text-gray-500">of {qty(r.quantity_received)}</div></td>
-                  <td className="px-3 py-2 text-right text-gray-300">{r.value === null ? '—' : money(r.value, currency)}</td>
+                  {showCosts && <td className="px-3 py-2 text-right text-gray-300">{r.value === null ? '—' : money(r.value, currency)}</td>}
                   <td className="whitespace-nowrap px-3 py-2 text-right">
                     {list.can_write_off && r.remaining > 0 && (r.status === 'expired' || r.status === 'soon') && (
                       <button disabled={busy === r.id} onClick={() => writeOff(r)} data-testid="write-off"

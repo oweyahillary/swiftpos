@@ -23,7 +23,8 @@ import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
 import VoidModal from '../components/VoidModal';
 import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
-import { reverseAction, isRefunded, ageMinutes, VOID_WINDOW_MIN } from '../lib/voidRefund';
+import { reverseActionFor, isRefunded, ageMinutes, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
+import { can } from '../lib/access';   // A490: the one rule
 import { windowLabel } from '../../shared/reversalRules';
 import { filterSummary, emptyGridMessage } from '../lib/posFilter';
 import { syncNotice } from '../lib/syncNotice';
@@ -62,11 +63,15 @@ interface Props {
    * button.
    */
   canManagePrinters?: boolean;
-  /** A355: may this person void or refund (orders.void / owner)? Cashiers get no History reversal buttons. */
-  canVoidRefund?: boolean;
+  /** A355 → A490: may this person void (sales.void) / refund (sales.refund)? Cashiers get no History reversal buttons. */
+  reverseRights?: ReverseRights;
+  /** A490: may this person close the day (shifts.close_day)? The day-lock banner's "Close day now" is theirs. */
+  canCloseDay?: boolean;
+  /** A490: may this person give a discount by hand (sales.discount)? The main process refuses the sale otherwise. */
+  canDiscount?: boolean;
   /** A341: may this person add an expense type from the Shift panel (expenses.manage)? */
   canAddExpenseType?: boolean;
-  /** A363: may this person see the till's sync status (managers, supervisors, owner)? A cashier sees none of it. */
+  /** A363 → A490: may this person see the till's sync status (back office — lib/access backOffice)? A cashier sees none. */
   canSeeSync?: boolean;
 }
 
@@ -123,7 +128,7 @@ const ProductTile = memo(function ProductTile({ product, cartCount, currency, on
   );
 });
 
-export default function POSPage({ business, onLogout, onShiftClosed, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false, canSeeSync = false, onHelp }: Props) {
+export default function POSPage({ business, onLogout, onShiftClosed, onOpenManager, canManagePrinters = false, reverseRights = { void: false, refund: false }, canCloseDay = false, canDiscount = false, canAddExpenseType = false, canSeeSync = false, onHelp }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
@@ -253,7 +258,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const [dayGate, setDayGate] = useState<{ canTrade: boolean; reason?: string;
     needsManager?: boolean; needsShift?: boolean; staleGrace?: string } | null>(null);
   const [staleShift, setStaleShift] = useState<null | {
-    id: string; opened_at: string; hoursOpen: number; cashier_name: string; expectedCash: number; orders: number;
+    id: string; opened_at: string; hoursOpen: number; cashier_name: string; expectedCash: number | null; orders: number;
   }>(null);
 
   // Table map — synced reference data. Restaurants with tables configured
@@ -372,7 +377,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // rule (A336): voids and refunds by owner / manager, cashiers neither. The cloud enforces it too.
   // A358 (0.6.19): History ITSELF is for everyone — 0.6.18 gated the History button on this too, and cashiers lost
   // their order list (owner: "The cashier should be able to see their orders", all orders).
-  const canVoid = canVoidRefund;
+  const canVoid = reverseRights.void || reverseRights.refund;   // A490: History's reversal column
 
   const currency = business.currency ?? 'KES';
 
@@ -406,12 +411,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     // Business mode from the device config written at install time.
     posApi.auth.getStaffSession().then(ss => {
       setCashierName(ss?.staff?.name ?? null);
-      // Audit 2026-10-14: permissions are top-level on the session (auth:getStaffSession), never on `staff` — reading
-      // ss.staff.permissions hid Force close from every manager. The main process enforces the same rule (tillGates.ts).
-      const perms = (ss?.permissions ?? {}) as Record<string, boolean>;
-      const ownerRole = ['owner', 'admin'].includes(String(ss?.role ?? '').toLowerCase());
-      const has = (k: string) => ownerRole || perms['*'] === true || perms[k] === true;
-      setCanForceClose(has('shifts.force_close') || has('settings.manage'));
+      // Audit 2026-10-14: permissions are top-level on the session (auth:getStaffSession), never on `staff`. A490: the
+      // one rule (lib/access.ts) — shifts.force_close; the main process checks the same key (shift:forceClose).
+      setCanForceClose(can(ss, 'shifts.force_close'));
     }).catch(() => {});
     posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});
     posApi.pos.paymentMethodsEnabled().then((r) => setEnabledMethods(r?.enabled ?? null)).catch(() => {});   // A429
@@ -1430,7 +1432,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             <p className="text-xs text-red-300/80 mt-0.5">{dayGate?.reason}</p>
           </div>
           {/* A405: a manager signed in closes the day from here; anyone else is told who can. */}
-          {onOpenManager ? (
+          {onOpenManager && canCloseDay ? (
             <button onClick={() => onOpenManager('dayclose')} data-testid="close-day-now"
               className="shrink-0 px-3 py-2 rounded-lg text-sm font-semibold bg-red-700 hover:bg-red-600 text-white">
               Close day now
@@ -1451,7 +1453,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center gap-3">
           <span className="text-amber-400 text-base">⏳</span>
           <p className="flex-1 text-xs text-amber-200/90">{staleGrace}</p>
-          {onOpenManager
+          {onOpenManager && canCloseDay
             ? <button onClick={() => onOpenManager('dayclose')} className="shrink-0 px-2 py-1 rounded text-xs font-medium bg-amber-700 hover:bg-amber-600 text-white">Close day now</button>
             : <span className="text-xs text-amber-300/70 whitespace-nowrap">A manager closes it (Manager → Close Day)</span>}
         </div>
@@ -1463,7 +1465,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           <p className="text-xs text-amber-200 flex-1">
             <span className="font-semibold">{staleShift.cashier_name}</span>'s shift has been open{' '}
             <span className="font-semibold">{staleShift.hoursOpen} hours</span> —{' '}
-            {staleShift.orders} sales, {currency} {staleShift.expectedCash.toLocaleString('en-KE', { minimumFractionDigits: 2 })} expected in the drawer.
+            {staleShift.orders} sales{staleShift.expectedCash != null
+              ? <>, {currency} {staleShift.expectedCash.toLocaleString('en-KE', { minimumFractionDigits: 2 })} expected in the drawer</>
+              : null}.{/* A490: the expected cash only to someone who confirms drawers (main sends null otherwise) */}
             Today's sales are being counted against it.
           </p>
           <button
@@ -1890,6 +1894,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           vatRate={vatRate}
           ctlRate={ctlRate}
           maxDiscountPct={maxDiscountPct ?? undefined}
+          allowDiscount={canDiscount}
           currency={currency}
           placing={placing}
           error={payError}
@@ -2087,7 +2092,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                       const method   = orderMethod(o);
                       const ageMin   = ageMinutes(o);
                       // A355: "Void / Refund" inside the void window, "Refund" after it (it used to vanish at 30 min).
-                      const reverse  = canVoid ? reverseAction(o, Date.now(), voidWindowMin) : null;
+                      const reverse  = reverseActionFor(o, reverseRights, Date.now(), voidWindowMin);   // A490
                       const fmtMoney = (n: number) =>
                         `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       return (
@@ -2180,7 +2185,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         <OrderDetailPanel
           orderId={detailId}
           currency={currency}
-          canVoidRefund={canVoid}
+          rights={reverseRights}
           windowMin={voidWindowMin}
           onClose={() => setDetailId(null)}
           onChanged={() => { loadHistory().catch(() => {}); }}
@@ -2193,6 +2198,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           order={voidTarget}
           currency={currency}
           windowMin={voidWindowMin}
+          rights={reverseRights}
           onSuccess={() => {
             setVoidTarget(null);
             // Refresh local order list so the voided status shows immediately

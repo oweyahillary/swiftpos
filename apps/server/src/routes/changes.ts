@@ -5,11 +5,12 @@
  *                                      own session (sent after the manager signed out — the maker's permission is checked)
  *                                      and for a manager's sign-in. Each answered applied / identical / awaiting / refused.
  *   GET  /api/changes/state?ids=a,b    where a till's changes stand (one waiting for the owner: approved, rejected)
- *   GET  /api/changes?status=awaiting  what waits for the owner (the owner, or settings.manage); /count = how many (A450)
- *   POST /api/changes/:id/decide       { approve: true|false } — the owner (or settings.manage)
+ *   GET  /api/changes?status=awaiting  what waits for the owner (the owner, or changes.approve); /count = how many (A450)
+ *   POST /api/changes/:id/decide       { approve: true|false } — the owner (or changes.approve)
  */
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
+import { can } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { cleanChange, describeChange } from '../lib/tillChanges';
@@ -18,9 +19,8 @@ import { applyChange, decideChange, type ChangeResult } from '../lib/changeApply
 const router = safeRouter();
 router.use(requireAuth);
 
-/** The owner, or a person with settings.manage — never a till's own session (it carries '*' but is no person). */
-const mayDecide = (req: any) => !req.isTill
-  && (req.isOwner === true || (req.permissionKeys ?? []).includes('*') || (req.permissionKeys ?? []).includes('settings.manage'));
+/** The owner, or a person holding changes.approve (A490) — never a till's own session (it is no person). */
+const mayDecide = (req: any) => !req.isTill && can(req, 'changes.approve');
 
 router.post('/', async (req, res) => {
   const list = Array.isArray(req.body?.changes) ? req.body.changes.slice(0, 50) : [];

@@ -1,72 +1,43 @@
 import { supabase } from './supabase';
 import { roleTier } from './roleTier';
+import { defaultKeysFor } from './permissions';
+import { permissionIds } from './roleKeys';
 
 // Default permission grants for the roles seeded at business creation.
 //
 // Both onboarding paths (self-service /api/onboarding and agent
 // /api/admin/clients) create default roles but historically left them with NO
 // role_permissions — so the roles screen showed empty rights and any staff on
-// those roles had no access. (Owners are unaffected: the auth middleware grants
-// the Supabase owner wildcard permissions regardless of role.)
+// those roles had no access. (Owners are unaffected: the owner's role holds
+// everything by its name — lib/ownerRole.ts.)
 //
-// Tiers, by role name (case-insensitive):
-//   • admin / owner            → every permission in the catalogue
-//   • manager / supervisor / branch_manager → everything except the owner-only
-//                                deny-list below (owner can grant more later)
-//   • cashier                  → a POS-floor subset
-//   • anything else            → nothing (a custom role the owner configures)
-//
-// The grant is future-proof: it reads the live permissions catalogue, so any
-// permission added later is automatically included for admin/manager unless it
-// is on MANAGER_DENY.
+// A490: the grants are the shared catalogue's own defaults (permissions.ts defaultKeysFor — each fine key says whether a
+// new business's Cashier and Manager get it), in FINE keys only. Which kind a seeded role is still comes from its name
+// (roleTier): these are the system's OWN roles being created at onboarding — seeding, not a check; from then on the
+// owner decides per role on Settings › Roles and permissions.
+//   • admin / owner                          → every fine key
+//   • manager / supervisor / branch_manager → the catalogue's manager defaults
+//   • cashier                               → the catalogue's cashier defaults (the shop floor)
+//   • anything else                         → nothing (a custom role the owner configures)
 
-const CASHIER_KEYS = new Set([
-  'orders.create', 'products.view', 'inventory.view',
-  'customers.view', 'customers.manage', 'invoice.create',
-]);
+export function defaultKindFor(name: string): 'owner' | 'manager' | 'cashier' | 'none' {
+  const tier = roleTier(name);
+  return tier === 'full' ? 'owner' : tier;
+}
 
-// Owner-only permissions. Managers/supervisors do NOT get these by default.
-//   • settings.manage    — business configuration
-//   • inventory.adjust   — manual stock changes (where shrinkage/theft hides;
-//                          managers RECEIVE against a delivery, only the owner
-//                          can silently change a number)
-//   • ingredients.manage — the ingredient catalogue is a business-level
-//                          definition the owner owns
-//   • reports.financial  — tax report, food cost/margins, SPLH & labour cost,
-//                          aggregator commission, and all report exports
-//                          (audit H6; managers still get reports.view)
-const MANAGER_DENY = new Set([
-  'settings.manage',
-  'inventory.adjust',
-  'ingredients.manage',
-  'reports.financial',
-  // A395: what the business owes its suppliers, and paying it — the owner's.
-  'payables.manage',
-]);
-
-/**
- * The grant tier for each role is decided by `roleTier` (lib/roleTier.ts), which
- * normalises the name the same way the grant migrations do — see A63/A61.
- */
 export async function seedDefaultRolePermissions(
   roles: { id: string; name: string }[],
 ): Promise<void> {
   if (!roles?.length) return;
 
-  const { data: perms } = await supabase.from('permissions').select('id, key');
-  if (!perms?.length) return;
+  const wanted = roles.map((r) => ({ id: r.id, keys: defaultKeysFor(defaultKindFor(r.name)) }));
+  const ids = await permissionIds(wanted.flatMap((w) => w.keys));   // a key with no row yet is registered first
 
   const rows: { role_id: string; permission_id: string }[] = [];
-  for (const role of roles) {
-    const tier = roleTier(role.name);
-
-    for (const p of perms) {
-      const grant =
-        tier === 'full'    ? true :
-        tier === 'manager' ? !MANAGER_DENY.has(p.key) :
-        tier === 'cashier' ? CASHIER_KEYS.has(p.key) :
-        false;
-      if (grant) rows.push({ role_id: role.id, permission_id: p.id });
+  for (const w of wanted) {
+    for (const k of w.keys) {
+      const pid = ids.get(k);
+      if (pid) rows.push({ role_id: w.id, permission_id: pid });
     }
   }
 

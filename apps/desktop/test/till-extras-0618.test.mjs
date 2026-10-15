@@ -26,6 +26,13 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_0618_TS) {
 const DESKTOP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const F = await import(pathToFileURL(path.join(DESKTOP, 'src/renderer/lib/posFilter.ts')).href);
 const X = await import(pathToFileURL(path.join(DESKTOP, 'src/renderer/lib/expenseTypes.ts')).href);
+// A490: who may is lib/access.ts `can(session, 'expenses.manage')` — bundled with esbuild (it imports shared/permissions).
+const { createRequire } = await import('node:module');
+const accessOut = path.join(fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'zaptill-access-')), 'access.mjs');
+createRequire(import.meta.url)('esbuild').buildSync({ entryPoints: [path.join(DESKTOP, 'src/renderer/lib/access.ts')], bundle: true,
+  format: 'esm', outfile: accessOut, logLevel: 'silent' });
+const A = await import(pathToFileURL(accessOut).href);
+const mayAddExpenseType = (s) => A.can(s, 'expenses.manage');
 const read = (p) => fs.readFileSync(path.join(DESKTOP, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
@@ -54,14 +61,15 @@ ok('A279: POSPage shows the line and one Clear that restores All and empties the
 
 // ── A341 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 ok('A341: only expenses.manage (managers, owner) may add a type — never a cashier', () => {
-  assert.equal(X.mayAddExpenseType({ permissions: { '*': true } }), true);
-  assert.equal(X.mayAddExpenseType({ permissions: { 'expenses.manage': true } }), true);
-  assert.equal(X.mayAddExpenseType({ permissions: { 'orders.create': true, 'expenses.view': true } }), false);
-  // A358: a manager-level role sees it even without the key (the cloud still decides); a cashier role never.
-  assert.equal(X.mayAddExpenseType({ role: 'Manager', permissions: { 'orders.create': true } }), true);
-  assert.equal(X.mayAddExpenseType({ role: 'Branch Manager', permissions: {} }), true);
-  assert.equal(X.mayAddExpenseType({ role: 'Cashier', permissions: { 'orders.create': true } }), false);
-  assert.equal(X.mayAddExpenseType(null), false);
+  assert.equal(mayAddExpenseType({ permissions: { '*': true } }), true);
+  assert.equal(mayAddExpenseType({ role: 'Owner', permissions: {} }), true, 'the owner\'s role');
+  assert.equal(mayAddExpenseType({ permissions: { 'expenses.manage': true } }), true);
+  assert.equal(mayAddExpenseType({ permissions: { 'orders.create': true, 'expenses.view': true } }), false);
+  // A358 → A490: the manager-role-name rule is gone — a role's NAME gives nothing (the owner gives the key per role).
+  assert.equal(mayAddExpenseType({ role: 'Manager', permissions: { 'orders.create': true } }), false);
+  assert.equal(mayAddExpenseType({ role: 'Branch Manager', permissions: {} }), false);
+  assert.equal(mayAddExpenseType({ role: 'Cashier', permissions: { 'orders.create': true } }), false);
+  assert.equal(mayAddExpenseType(null), false);
 });
 ok('A341: a name is tidied; empty or too long is refused', () => {
   assert.deepEqual(X.checkTypeName('  Gas   refill ', []), { ok: true, name: 'Gas refill' });
@@ -73,7 +81,8 @@ ok('A341: an existing type in other capitals is selected, never duplicated', () 
 });
 ok('A341: the till saves it on the cloud through manageFetch (offline / role messages), validated IPC', () => {
   const h = fs.readFileSync(path.join(DESKTOP, 'src/main/ipcHandlers.ts'), 'utf8');
-  assert.match(h, /handle\('expense:addCategory', async \(_e, \{ name \}: \{ name: string \}\) =>\s+manageFetch\('\/api\/expenses\/categories', 'POST', \{ name: String\(name \?\? ''\)\.trim\(\) \}\)\);/);
+  // A490: the till refuses anyone without expenses.manage before asking the cloud.
+  assert.match(h, /handle\('expense:addCategory', async \(_e, \{ name \}: \{ name: string \}\) => \{\s+requireKey\(\['expenses\.manage'\], [^\n]+\n\s+return manageFetch\('\/api\/expenses\/categories', 'POST', \{ name: String\(name \?\? ''\)\.trim\(\) \}\);/);
   assert.match(fs.readFileSync(path.join(DESKTOP, 'src/main/ipcSchemas.ts'), 'utf8'), /'expense:addCategory': \{ name: \{ t: 'string', min: 1 \} \}/);
   assert.match(fs.readFileSync(path.join(DESKTOP, 'src/main/preload.ts'), 'utf8'), /addCategory: \(name: string\) => ipcRenderer\.invoke\('expense:addCategory', \{ name \}\)/);
 });
@@ -83,14 +92,14 @@ ok('A341: the Shift panel shows "+ Add type" only to those who may, and selects 
   assert.match(sp, /\{canAddExpenseType && addingType && \(/);
   assert.match(sp, /const created = await posApi\.expense\.addCategory\(check\.name\);/);
   assert.match(sp, /setExpCatId\(created\.id\);/);
-  assert.match(read('src/renderer/App.tsx'), /canAddExpenseType=\{mayAddExpenseType\(staff\)\}/);
+  assert.match(read('src/renderer/App.tsx'), /canAddExpenseType=\{can\(staff, 'expenses\.manage'\)\}/);
   assert.match(pos, /canAddExpenseType=\{canAddExpenseType\}/);
 });
 
 ok('A358: the manager\'s Expenses page lists the types and has "+ Add type" (Shift keeps its own)', () => {
   const mp = read('src/renderer/pages/ManagerPage.tsx');
   assert.match(mp, /<ExpenseTypesPanel canAdd=\{canAddType\} \/>/);
-  assert.match(mp, /case 'expenses': return <ExpensesTab currency=\{currency\} canAddType=\{mayAddExpenseType\(staff as any\)\} \/>;/);
+  assert.match(mp, /case 'expenses': return <ExpensesTab currency=\{currency\} canAddType=\{has\('expenses\.manage'\)\}/);
   const panel = read('src/renderer/components/ExpenseTypesPanel.tsx');
   assert.match(panel, /const check = checkTypeName\(name, types\);/);
   assert.match(panel, /const created = await posApi\.expense\.addCategory\(check\.name\);/);

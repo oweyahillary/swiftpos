@@ -21,6 +21,7 @@ import type Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { cleanChange, ENTITY_SPECS, describeChange, type TillChange, type ChangeEntity } from './tillChanges';
+import { roleMap } from './personAccess';   // A490
 
 export type LocalState = 'pending' | 'awaiting' | 'done' | 'refused' | 'rejected';
 export interface LocalChangeRow {
@@ -122,9 +123,8 @@ export function applyLocal(db: Database.Database, c: Pick<TillChange, 'entity' |
         const roles = JSON.parse((db.prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as any)?.value ?? '[]') as any[];
         const role = roles.find((x) => x?.id === d.role_id);
         if (role) {
-          const perms: Record<string, boolean> = {};
-          for (const p of (role.permissions ?? role.role_permissions ?? [])) { const k = p?.key ?? p?.permissions?.key; if (k) perms[k] = true; }
-          cols.role_name = role.name; cols.permissions = JSON.stringify(perms);
+          // A490: the role's map as the cloud would send it (fine keys and the marker from a cloud that knows the catalogue).
+          cols.role_name = role.name; cols.permissions = JSON.stringify(roleMap(role));
         }
       } catch { /* the role stays until the next list */ }
     }

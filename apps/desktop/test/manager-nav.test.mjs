@@ -31,8 +31,12 @@ const N = await import(pathToFileURL(path.join(DESKTOP, 'src/renderer/lib/manage
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-const FULL = { isRestaurant: true, isManagerRole: true, canManageProducts: true, canManageStaff: true,
-  canManageSettings: true, canPrinting: true, showStock: true, online: true, canTransfer: true };
+// A490: each page by its own FINE key (NavAccess) — FULL is someone who holds them all (the owner).
+const FULL = { isRestaurant: true, canOverview: true, canOrders: true, canItems: true, canShifts: true, canExpenses: true,
+  canCloseDay: true, canMenu: true, canOffers: true, canSettings: true, canPrinting: true, canStaff: true,
+  showStock: true, online: true, canTransfer: true };
+// The old broad switches, as the keys they now are (canManageProducts → Menu + Offers; canManageSettings → General).
+const NO_MENU = { canMenu: false, canOffers: false };
 const labels = (nav) => nav.map((g) => `${g.label}${g.tabs.length > 1 ? ` [${g.tabs.map((t) => t.label).join(' · ')}]` : ''}`);
 
 ok('an owner at a restaurant: seven sidebar items, the groups the owner asked for', () => {
@@ -53,7 +57,7 @@ ok('A460: without the online licence — no Offers, no Wastage, no Transfers (ne
   assert.ok(!keys.includes('offers') && !keys.includes('wastage') && !keys.includes('transfers') && keys.includes('menu'), JSON.stringify(keys));
 });
 
-ok('A466: the Monthly pack is the last Sales tab, only for reports.financial (the rule the cloud applies)', () => {
+ok('A466: the Monthly pack is the last Sales tab, only for reports.monthly_pack / expenses.manage (the rule the cloud applies)', () => {
   assert.deepEqual(N.groupOf(N.buildManagerNav({ ...FULL, canMonthly: true }), 'monthly').tabs.map((t) => t.label),
     ['Orders', 'Item Mix', 'Current shift', 'Shift report', 'Monthly pack']);
   assert.equal(N.groupOf(N.buildManagerNav({ ...FULL, canMonthly: false }), 'monthly'), null);
@@ -67,18 +71,34 @@ ok('a shop (not a restaurant): Sales has no Item Mix; no web POS → no Stock', 
 });
 
 ok('every tab keeps its own permission: Settings shows only what the role may open', () => {
-  const printOnly = N.buildManagerNav({ ...FULL, canManageSettings: false, canManageProducts: false, canManageStaff: false });
+  const printOnly = N.buildManagerNav({ ...FULL, canSettings: false, ...NO_MENU, canStaff: false });
   assert.deepEqual(N.groupOf(printOnly, 'printers').tabs.map((t) => t.key), ['printers'], 'one tab → no tab bar');
-  const staffOnly = N.buildManagerNav({ ...FULL, canManageSettings: false, canManageProducts: false, canPrinting: false });
+  const staffOnly = N.buildManagerNav({ ...FULL, canSettings: false, ...NO_MENU, canPrinting: false });
   assert.deepEqual(staffOnly.find((g) => g.key === 'settings').tabs.map((t) => t.key), ['staff']);
-  assert.equal(staffOnly.find((g) => g.key === 'menu'), undefined, 'no products.manage → no Menu');
+  assert.equal(staffOnly.find((g) => g.key === 'menu'), undefined, 'no menu.edit / menu.prices / menu.offers → no Menu');
+  // A490: Offers alone (menu.offers) keeps the Menu group with Offers only.
+  assert.deepEqual(N.buildManagerNav({ ...FULL, canMenu: false }).find((g) => g.key === 'menu').tabs.map((t) => t.key), ['offers']);
 });
 
-ok('a cashier-level role: no Close, Menu or Settings in the sidebar at all', () => {
-  const nav = N.buildManagerNav({ isRestaurant: true, isManagerRole: false, canManageProducts: false, canManageStaff: false,
-    canManageSettings: false, canPrinting: false, showStock: false });
+ok('a role with only the reports: no Close, Menu or Settings in the sidebar at all', () => {
+  const nav = N.buildManagerNav({ ...FULL, canCloseDay: false, ...NO_MENU, canSettings: false, canPrinting: false, canStaff: false, showStock: false, canTransfer: false });
   assert.deepEqual(nav.map((g) => g.key), ['overview', 'sales', 'expenses']);
   assert.ok(nav.every((g) => g.tabs.length > 0));
+});
+
+ok('A490: a person with no key for a page does not see it — even the Overview; one key is one page', () => {
+  const none = { isRestaurant: true, canOverview: false, canOrders: false, canItems: false, canShifts: false, canExpenses: false,
+    canCloseDay: false, canMenu: false, canOffers: false, canSettings: false, canPrinting: false, canStaff: false, showStock: false };
+  assert.deepEqual(N.buildManagerNav(none), []);
+  assert.equal(N.firstTab(N.buildManagerNav(none)), null);
+  const ordersOnly = N.buildManagerNav({ ...none, canOrders: true });
+  assert.deepEqual(labels(ordersOnly), ['Sales']);
+  assert.equal(N.firstTab(ordersOnly), 'orders', 'opens on the one page they have, not the Overview');
+  assert.equal(N.firstTab(ordersOnly, 'dayclose'), 'orders', 'a page asked for that they do not have → their first');
+  assert.equal(N.firstTab(N.buildManagerNav(FULL), 'dayclose'), 'dayclose');
+  assert.deepEqual(N.buildManagerNav({ ...none, canShifts: true }).flatMap((g) => g.tabs.map((t) => t.key)), ['shift', 'zreport']);
+  assert.deepEqual(N.buildManagerNav({ ...none, canItems: true }).flatMap((g) => g.tabs.map((t) => t.key)), ['items']);
+  assert.deepEqual(N.buildManagerNav({ ...none, canItems: true, isRestaurant: false }), [], 'Item Mix is a restaurant page');
 });
 
 ok('Close opens on Close Day (the everyday one); Close Branch is a deliberate second tap', () => {
@@ -99,7 +119,7 @@ ok('a group remembers the last tab used in it — and forgets one the role can n
 ok('Menu → Import stays in the Menu group (sidebar highlight and page title)', () => {
   const nav = N.buildManagerNav(FULL);
   assert.equal(N.groupOf(nav, 'import').key, 'menu');
-  assert.equal(N.groupOf(N.buildManagerNav({ ...FULL, canManageProducts: false }), 'import'), null);
+  assert.equal(N.groupOf(N.buildManagerNav({ ...FULL, ...NO_MENU }), 'import'), null);
 });
 
 ok('every page ManagerPage can show belongs to exactly one group', () => {
@@ -112,7 +132,9 @@ ok('every page ManagerPage can show belongs to exactly one group', () => {
 
 const mp = fs.readFileSync(path.join(DESKTOP, 'src/renderer/pages/ManagerPage.tsx'), 'utf8');
 ok('ManagerPage renders the sidebar from buildManagerNav with each page\'s own gate', () => {
-  assert.match(mp, /const nav = buildManagerNav\(\{\n\s+isRestaurant: flags\.isRestaurant,\n\s+isManagerRole,\n\s+canManageProducts,\n\s+canManageStaff,\n\s+canManageSettings,\n\s+canPrinting: has\('stations\.manage'\) \|\| canManageReceipt,\n\s+showStock,\n\s+canWaste: has\('inventory\.waste'\) \|\| has\('inventory\.adjust'\) \|\| \['owner', 'admin'\]\.includes\(String\(\(staff as any\)\?\.role \?\? ''\)\.toLowerCase\(\)\),   \/\/ A414\n\s+online,   \/\/ A460\n\s+canTransfer: [^\n]+\n\s+(?:\/\/[^\n]*\n\s+)?canMonthly: has\('reports\.financial'\) \|\| has\('expenses\.manage'\),[^\n]*\n\s+\}\);/);
+  // A490: each page by its own fine key — never a role's name.
+  assert.match(mp, /const nav = buildManagerNav\(\{\n\s+isRestaurant: flags\.isRestaurant,\n\s+canOverview: has\('reports\.overview'\),\n\s+canOrders: has\('orders\.view_all'\),\n\s+canItems: has\('reports\.items'\),\n\s+canShifts: hasAny\('reports\.shifts', 'shifts\.confirm'\),\n\s+canMonthly: has\('reports\.monthly_pack'\) \|\| has\('expenses\.manage'\),\n\s+canExpenses: hasAny\('expenses\.view', 'expenses\.manage'\),\n\s+canCloseDay: has\('shifts\.close_day'\),\n\s+canMenu: hasAny\('menu\.edit', 'menu\.prices'\),\n\s+canOffers: has\('menu\.offers'\),\n\s+canSettings: hasAny\('settings\.business', 'settings\.payments'\),\n\s+canPrinting: has\('stations\.manage'\) \|\| canManageReceipt,\n\s+canStaff: hasAny\('staff\.view', 'staff\.edit'\),\n\s+showStock,\n\s+canWaste: has\('inventory\.waste'\),   \/\/ A414\n\s+online,   \/\/ A460\n\s+canTransfer: has\('inventory\.transfer'\),[^\n]*\n\s+\}\);/);
+  assert.ok(!/\['owner', 'admin'\]|MANAGER_ROLES|isManagerRole/.test(mp), 'no role-name gate left');
   assert.match(mp, /\{nav\.map\(group => \(\n\s+<button key=\{group\.key\} onClick=\{\(\) => openTab\(openGroup\(group, lastTab\)\)\}/);
   assert.ok(!/navItems/.test(mp), 'the old flat list is gone');
 });
@@ -122,7 +144,7 @@ ok('the tab bar shows only when the group has more than one tab for this role', 
 });
 ok('each tab renders its own page (no nested Orders/Shift selectors left)', () => {
   // A444: the Orders page also gets who may void / refund from its row panel.
-  assert.match(mp, /case 'orders':\s+return <OrdersTab currency=\{currency\}(?: canVoidRefund=\{has\('orders\.void'\)\})? \/>;/);
+  assert.match(mp, /case 'orders':\s+return <OrdersTab currency=\{currency\}(?: rights=\{\{ void: has\('sales\.void'\), refund: has\('sales\.refund'\) \}\})? \/>;/);
   assert.match(mp, /case 'shift':\s+return <ShiftTab currency=\{currency\} \/>;/);
   assert.match(mp, /case 'zreport': return <ZReportTab/);
   assert.match(mp, /case 'items':\s+return <TopItemsTab/);

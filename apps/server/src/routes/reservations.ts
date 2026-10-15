@@ -16,7 +16,7 @@
  */
 
 import { Router } from 'express';
-import { branchScope } from '../middleware/rbac';
+import { branchScope, requirePermission } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
@@ -24,6 +24,8 @@ import { requireAuth } from '../middleware/auth';
 
 const router = safeRouter();
 router.use(requireAuth);
+// A490: reservations and the waitlist are reservations.manage (everyone held it before migration 134 — OPEN_BEFORE_A490).
+router.use(requirePermission('reservations.manage'));
 
 // ── Reservations ──────────────────────────────────────────────────────────────
 

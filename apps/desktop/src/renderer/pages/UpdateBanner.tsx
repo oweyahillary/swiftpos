@@ -6,9 +6,11 @@ import { posApi } from '../lib/posApi';
  * never silently vanishes-and-reappears mid-service. Shows "Downloading…" while it fetches and
  * "Update ready" once downloaded (the update installs automatically on the next normal close).
  *
- * "Restart & update now" is gated to a MANAGER/TECH PIN (owner decision): a cashier can't close
- * the till mid-day. On a valid manager PIN it calls update.installNow(), which applies the update
- * with the installer progress VISIBLE and relaunches — no broken-shortcut gap.
+ * "Restart & update now" is gated to a PIN (owner decision): a cashier can't close the till mid-day. A490: the PIN's
+ * holder must hold shifts.close_day (the owner's role always — it used to be refused here: the role-name list had no
+ * owner), and the PIN is only IDENTIFIED in the main process (update:installWithPin) — the person signed in stays signed
+ * in. (It went through auth:verifyPin, which signed the PIN's holder in over the cashier's session.) On a good PIN the
+ * update applies with the installer progress VISIBLE and relaunches — no broken-shortcut gap.
  *
  * Gentle reminder (owner decision): "Later" only hides it for a while; it re-surfaces after
  * REMIND_AFTER_MS so a ready update isn't forgotten.
@@ -18,8 +20,6 @@ import { posApi } from '../lib/posApi';
  * the Close Day button, the cart's Pay button — sits under it. It stays below modals (z-40), which keep the full screen.
  */
 
-// Mirrors MANAGER_ROLES in App.tsx — the restart is a manager/tech action.
-const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 const REMIND_AFTER_MS = 2 * 60 * 60 * 1000; // re-surface a dismissed "ready" banner after 2h
 
 interface Props { branchId: string | null; }
@@ -70,15 +70,11 @@ export default function UpdateBanner({ branchId }: Props) {
     setMsg(''); setBusy(true);
     try {
       if (!branchId) { setMsg('No branch bound to this till.'); return; }
-      const s = await posApi.auth.verifyPin(pin.trim(), branchId);
-      if (!MANAGER_ROLES.includes((s.role ?? '').toLowerCase())) {
-        setMsg('That PIN is not a manager.');
-        return;
-      }
-      const r = await posApi.update.installNow();   // visible installer progress + relaunch
-      if (!r.ok) { setMsg(r.reason === 'manager_required' ? 'A manager must be signed in to restart.' : `Cannot install: ${r.reason ?? 'unknown'}`); return; }
-    } catch {
-      setMsg('PIN not recognised.');
+      // A490: identified, never signed in — the session at the till is untouched.
+      const r = await posApi.update.installWithPin(pin.trim());   // visible installer progress + relaunch
+      if (!r.ok) { setMsg(r.message ?? (r.reason === 'wrong_pin' ? 'PIN not recognised.' : `Cannot install: ${r.reason ?? 'unknown'}`)); return; }
+    } catch (e: any) {
+      setMsg(e?.message ?? 'PIN not recognised.');
     } finally {
       setBusy(false); setPin('');
     }
@@ -108,7 +104,7 @@ export default function UpdateBanner({ branchId }: Props) {
           ) : (
             <>
               <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)}
-                     placeholder="Manager PIN" autoFocus
+                     placeholder="PIN (may close the day)" autoFocus
                      className="bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-1.5 w-32" />
               <button onClick={restartNow} disabled={busy || !pin.trim()}
                       className="bg-action-700 hover:bg-action-600 disabled:opacity-40 rounded-lg px-3 py-1.5">

@@ -6,9 +6,7 @@ import PinPage from './pages/PinPage';
 import LockCurtain from './components/LockCurtain';
 import POSPage from './pages/POSPage';
 import ManagerPage from './pages/ManagerPage';
-import { mayVoidRefund } from './lib/voidRefund';
-import { maySeeSync } from './lib/syncNotice';
-import { mayAddExpenseType } from './lib/expenseTypes';
+import { can, backOffice } from './lib/access';   // A490: the one rule — permissions, never a role's name
 import TechPage from './pages/TechPage';
 import UpdateBanner from './pages/UpdateBanner';
 import HelpScreen from './components/HelpScreen';   // 0.6.35 (A384)
@@ -17,8 +15,6 @@ import OnScreenKeyboard from './components/OnScreenKeyboard';   // A417
 import { computeThemeVars, applyThemeVars } from './lib/themeVars';
 
 type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech';
-
-const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 
 // A427: on the branch server, "a till wants to join" shows over every screen — PIN pad, till, manager, tech.
 // A417: the on-screen keyboard serves every screen too — it opens when a field is tapped with a finger or pen.
@@ -111,22 +107,21 @@ function AppScreens() {
     boot();
   };
 
-  // Does this staff member get the manager tools? Used both to route after PIN
-  // entry and to decide whether the POS screen offers a way back to them.
-  //
-  // The wildcard matters: ManagerPage gates each of its own tabs with
-  // `perms['*'] === true || perms[key] === true`, so an owner carrying '*' can
-  // see every tab — but this check didn't recognise '*' at all. Anyone granted
-  // blanket permission rather than a named role or an explicit
-  // 'settings.manage' was therefore routed to the till and, once the Manager
-  // button became the way back, had no route to the manager screen at all.
-  const hasManagerRights = (s: StaffSession | null) => {
-    if (!s) return false;
-    const perms = (s.permissions ?? {}) as Record<string, unknown>;
-    return MANAGER_ROLES.includes((s.role ?? '').toLowerCase())
-      || perms['*'] === true
-      || perms['settings.manage'] === true;
-  };
+  // Does this staff member get the manager tools? Used both to route after PIN entry and to decide whether the POS
+  // screen offers a way back to them. A490: anyone beyond the shop floor (or the owner) — lib/access backOffice — never
+  // a role's name; ManagerPage then shows each page by its own key.
+  const hasManagerRights = (s: StaffSession | null) => backOffice(s);
+
+  // A490: main stored a fresher permission map for the person signed in (the staff list, a staff token renewal) — read
+  // the session again, so a key given or taken away shows at once. Someone no longer back office leaves the manager
+  // screens for the till.
+  useEffect(() => posApi.auth.onPermissionsChanged(() => {
+    posApi.auth.getStaffSession().then((s) => {
+      if (!s) return;
+      setStaff((prev) => (prev && prev.staff?.id === s.staff?.id ? { ...prev, role: s.role, permissions: s.permissions } : prev));
+      if (!backOffice(s)) setState((st) => (st === 'manager' ? 'pos' : st));
+    }).catch(() => { /* the next change */ });
+  }), []);
 
   // Which surface is showing decides the threshold — 5 minutes on the manager
   // screens (Close Day, Close Branch, Staff, Receipt, and settings.manage also
@@ -245,10 +240,12 @@ function AppScreens() {
       // Cashiers get no button at all — the tools they can't use shouldn't be
       // visible, and ManagerPage gates each tab on its own permission anyway.
       onOpenManager={hasManagerRights(staff) ? (tab?: 'dayclose') => { setManagerTab(tab ?? null); setState('manager'); } : undefined}
-      canManagePrinters={hasManagerRights(staff)}
-      canVoidRefund={mayVoidRefund(staff)}
-      canSeeSync={maySeeSync(staff as any)}
-      canAddExpenseType={mayAddExpenseType(staff)}
+      canManagePrinters={can(staff, 'stations.manage')}
+      reverseRights={{ void: can(staff, 'sales.void'), refund: can(staff, 'sales.refund') }}
+      canCloseDay={can(staff, 'shifts.close_day')}
+      canDiscount={can(staff, 'sales.discount')}
+      canSeeSync={backOffice(staff)}
+      canAddExpenseType={can(staff, 'expenses.manage')}
       onHelp={openHelp}
     />
     {help}

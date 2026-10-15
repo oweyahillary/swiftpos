@@ -401,20 +401,27 @@ declare global {
         unlock: (pin: string) => Promise<{ ok: boolean; reason?: 'other' | 'wrong' }>;
         getStaffSession: () => Promise<StaffSession | null>;
         clearStaffSession: () => Promise<boolean>;
+        /** A490: main stored a fresher permission map for the person signed in; returns its unsubscribe. */
+        onPermissionsChanged: (cb: () => void) => () => void;
       };
       /** A427: a new till finds the branch server on the shop network and asks to join it. */
       install: {
         findServers: () => Promise<FoundServer[]>;
         /** A436: `rejoin` — a till already set up, signed out: joins again keeping everything on it. */
-        requestJoin: (url: string, rejoin?: boolean) => Promise<{ ok: true; name: string }>;
+        /** A489: `securityCode` — from the server's certificate (null: a server on an older build, joined unencrypted). */
+        requestJoin: (url: string, rejoin?: boolean) => Promise<{ ok: true; name: string; securityCode?: string | null }>;
         joinStatus: () => Promise<JoinStatus>;
       };
       /** A427: on the branch server — tills waiting to join, and the answer. */
       serverJoin: {
-        requests: () => Promise<Array<{ id: string; name: string; ip: string; at: string }>>;
+        requests: () => Promise<Array<{ id: string; name: string; ip: string; at: string; securityCode?: string | null }>>;
         answer: (id: string, allow: boolean) => Promise<{ ok: true }>;
         /** A443: on the branch server — the version it holds for its tills, and what each till runs. */
         tillVersions: () => Promise<{ serverVersion: string; ready: string | null; tills: Array<{ deviceId: string; name: string | null; version: string; seenAt: string; current: boolean }> }>;
+        /** A489: this till's connection to its branch server — or, on the server, its own security code. */
+        tlsStatus: () => Promise<{ state: 'none' | 'plain' | 'encrypted' | 'old_server' | 'mismatch' | 'server'; code: string | null; error: string | null }>;
+        /** A489: forget the server's certificate (it was reinstalled); the next one it hands out is trusted. */
+        tlsRetrust: () => Promise<{ ok: true }>;
       };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
@@ -443,7 +450,7 @@ declare global {
         features: () => Promise<PosFeatures>;
         stockCountFreeze: () => Promise<StockCountFreeze>;   // A394
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
-        history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean; methods: string[]; showTotal?: boolean }; orders: any[] }>;
+        history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean; canVoid?: boolean; canRefund?: boolean; methods: string[]; showTotal?: boolean }; orders: any[] }>;
         /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */
         reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean; freeDeliveryAllowed: boolean; freeDeliveryOver: number | null }>;
         /** 0.6.35 (A384): the Help screen — who to call (the shop's tech or SwiftPOS support), this till's name and version. */
@@ -595,6 +602,8 @@ declare global {
       update: {
         getStatus: () => Promise<{ state: string; version: string | null; percent: number | null }>;
         installNow: () => Promise<{ ok: boolean; reason?: string }>;
+        /** A490: identify the PIN's holder (never sign them in); they must hold shifts.close_day. */
+        installWithPin: (pin: string) => Promise<{ ok: boolean; reason?: string; message?: string }>;
         onStatus: (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => () => void;
       };
       config: {
@@ -645,7 +654,7 @@ declare global {
         // the open one is still plausibly today's.
         stale: () => Promise<null | {
           id: string; opened_at: string; hoursOpen: number;
-          cashier_name: string; expectedCash: number; orders: number;
+          cashier_name: string; expectedCash: number | null; orders: number;   // A490: null without shifts.confirm
         }>;
         // Ends it WITHOUT a cash count. Records closed_unreconciled with a null
         // variance — never zero, which would claim a check that never happened.

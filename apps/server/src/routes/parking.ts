@@ -21,11 +21,13 @@
 import { safeRouter }        from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth }       from '../middleware/auth';
-import { branchScope, assertBranchAccess } from '../middleware/rbac';
+import { branchScope, assertBranchAccess, requirePermission } from '../middleware/rbac';
 import { supabase }          from '../lib/supabase';
 
 const router = safeRouter();
 router.use(requireAuth);
+// A490: parking is parking.manage (everyone held it before migration 134 — OPEN_BEFORE_A490).
+router.use(requirePermission('parking.manage'));
 
 // ── POST /api/parking-sessions ────────────────────────────────────────────────
 

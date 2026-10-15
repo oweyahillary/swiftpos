@@ -6,6 +6,8 @@ import jwt from 'jsonwebtoken';
 import { recordWriteGuard } from '../lib/watchdogCounters';   // A383
 import { otpDisabled } from '../lib/loginOtp';   // A391
 import { isTillPayload, isOwnerEraTillPayload, tillBlockReason } from '../lib/deviceGrant';   // A415
+import { expandKeys } from '../lib/permissions';                 // A490
+import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
 
 declare global {
   namespace Express {
@@ -114,7 +116,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.businessId         = payload.businessId;
     req.branchId           = payload.branchId ?? null;
     req.roleId             = payload.roleId ?? null;
-    req.permissionKeys     = payload.permissionKeys ?? [];
+    // A490: fine keys only. A token from before A490 (or a role not yet rewritten by migration 134) carries broad keys —
+    // expanded here into exactly the fine keys they stood for, so every check below reads one vocabulary.
+    req.permissionKeys     = [...expandKeys(payload.permissionKeys ?? [], permissionsOpenBefore())];
     req.isOwner            = payload.isOwner ?? false;
     req.surface            = payload.surface ?? null;
     req.pinSignIn          = (payload as { pinSignIn?: unknown }).pinSignIn === true;

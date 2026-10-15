@@ -17,6 +17,7 @@
  * inventory.count is the manager tier's (migration 120); inventory.adjust is the owner's by default — only the owner
  * changes a stock figure without a delivery behind it.
  */
+import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
 import type { Request } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -33,6 +34,8 @@ import { openTake, may, frozenAtBranch, MAX_LINES, type TakeRow } from '../lib/s
 
 const router = safeRouter();
 router.use(requireAuth);
+// A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
+router.use(stripCostsUnlessAllowed(['variance_value']));
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

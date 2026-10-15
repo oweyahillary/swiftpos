@@ -10,19 +10,10 @@
  * Pure, so the test runs it.
  */
 /**
- * Who sees "+ Add type": `expenses.manage`, the owner ('*'), or a manager-level role. A358 (0.6.19): the manager role
- * is included because a business whose manager role was never granted `expenses.manage` would otherwise see no button
- * at all and no reason — shown, the cloud still decides, and a refusal reads "Your role does not allow this change."
- * Never a cashier.
+ * Who sees "+ Add type": A490 — `expenses.manage` (lib/access.ts `can`; the owner's role always). The manager-role-name
+ * rule (A358) is gone: the owner gives the key per role (Settings › Roles and permissions), and the till's main process
+ * refuses anyone without it before asking the cloud.
  */
-const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager', 'owner'];
-export function mayAddExpenseType(
-  staff: { permissions?: Record<string, unknown> | null; role?: string | null } | null | undefined,
-): boolean {
-  const p = (staff?.permissions ?? {}) as Record<string, unknown>;
-  return p['*'] === true || p['expenses.manage'] === true
-    || MANAGER_ROLES.includes(String(staff?.role ?? '').toLowerCase().replace(/\s+/g, '_'));
-}
 
 export type TypeNameCheck =
   | { ok: true; name: string }

@@ -49,6 +49,7 @@ import { pruneNodeInstructions } from './branchClose';   // P3
 import { v4 as uuid } from 'uuid';
 import { cleanShowDays } from './productDays';
 import { pruneChoices, VARIANT_TABLES, MODIFIER_TABLES } from './choicePrune';   // A425
+import { storeSessionPermissions } from './tillAccess';   // A490
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
 // table would overwrite unsynced till data with stale/empty server rows). So
@@ -634,10 +635,15 @@ async function doRefreshStaffToken(): Promise<boolean> {
       noteInboundFailure('auth', `staff token refresh failed: ${await describeResponse(res)}`);
       return false;
     }
-    const { accessToken, refreshToken, ack } = await res.json();
+    const { accessToken, refreshToken, ack, permissions } = await res.json();
     if (signedInStaffId() !== who) {
       logLine('auth', 'staff token renewed after a different person signed in — discarded');
       return false;
+    }
+    // A490: a cloud that knows the catalogue answers a person's renewal with their CURRENT permissions — kept for the
+    // person still signed in (the screens re-read them), so a key taken away goes at the next renewal, not the next sign-in.
+    if (permissions && typeof permissions === 'object' && storeSessionPermissions(who, permissions)) {
+      logLine('auth', 'the signed-in person’s permissions changed at the staff renewal — the screens follow');
     }
     // A477: disk first, then memory, then the ack.
     const nextRefresh = refreshToken ?? _staffRefresh;

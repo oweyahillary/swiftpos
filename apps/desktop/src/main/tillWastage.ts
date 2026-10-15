@@ -13,6 +13,7 @@
  *   - The person and the time are the till's (recorded_by_name, recorded_at), not the till's sign-in.
  */
 import type Database from 'better-sqlite3';
+import { personCan } from './personAccess';   // A490
 
 export const PENDING_KEY = 'wastage_pending';
 export const REFUSED_KEY = 'wastage_refused';
@@ -42,12 +43,9 @@ function writeJson(db: Database.Database, key: string, value: unknown, empty: bo
 export const readPending = (db: Database.Database): WasteRecording[] => readJson<WasteRecording[]>(db, PENDING_KEY, []);
 export const readRefused = (db: Database.Database): Refused[] => readJson<Refused[]>(db, REFUSED_KEY, []);
 
-/** May this person write off stock? The cloud's own rule: inventory.waste or inventory.adjust (or the owner). */
+/** May this person write off stock? A490: inventory.waste (tillAccess.ts — the owner's role holds all). */
 export function mayWaste(roleName: string | null | undefined, permissionsJson: string | null | undefined): boolean {
-  if (['owner', 'admin'].includes(String(roleName ?? '').toLowerCase())) return true;
-  let p: Record<string, unknown> = {};
-  try { p = JSON.parse(permissionsJson || '{}'); } catch { p = {}; }
-  return p['*'] === true || p['inventory.waste'] === true || p['inventory.adjust'] === true;
+  return personCan({ roleName, permissions: permissionsJson }, 'inventory.waste');
 }
 
 /** What is wrong with a recording before it is kept, or null. The cloud checks again (stock held, the catalogue). */

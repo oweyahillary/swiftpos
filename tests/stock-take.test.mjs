@@ -107,7 +107,7 @@ await ok('who: counting is inventory.count; recount and post are inventory.adjus
   assert.match(st, /router\.post\('\/:id\/count', requireAnyPermission\('inventory\.count', 'inventory\.adjust'\)/);
   assert.match(st, /router\.post\('\/:id\/recount', requirePermission\('inventory\.adjust'\)/);
   assert.match(st, /router\.post\('\/:id\/post', requirePermission\('inventory\.adjust'\)/);
-  assert.match(read('apps/server/src/lib/permissionCatalogue.ts'), /key: 'inventory\.count'/);
+  assert.match(read('shared/permissions.ts'), /key: 'inventory\.count'/  /* A490: the catalogue is shared/permissions.ts */);
   assert.match(read('apps/server/src/routes/index.ts'), /router\.use\('\/stock-takes',\s+stockTakeRoutes\);/);
 });
 await ok('blind on the cloud: the items and totals reach only someone who may change stock', () => {

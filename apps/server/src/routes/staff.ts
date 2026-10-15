@@ -3,13 +3,16 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { verifyPin } from './auth';
-import { requirePermission, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
-import { isElevatedRoleName, canAssignRole, overridesBeyondCaller } from '../lib/roleCeiling';
+import { callerHeld, canAssignRole, roleEditRefusal, overridesBeyondCaller } from '../lib/roleCeiling';
+import { isOwnerRoleName } from '../lib/ownerRole';
+import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey } from '../lib/permissions';
+import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf } from '../lib/roleKeys';
 import { useEmailCodes } from '../lib/loginOtp';   // A391
 
 const router = safeRouter();
@@ -27,47 +30,76 @@ function hashOverridePin(pin: string): Promise<string> {
   return bcrypt.hash(String(pin), 10);
 }
 
-// Roles a non-owner (e.g. a branch manager) must never be able to assign or
-// grant — otherwise a manager with staff.manage could escalate by creating or
-// promoting a user into an owner/admin/manager role. The dashboard hides these
-// in the role picker, but that is client-side only; this is the server guard.
-// A340: the list and the rule now live in lib/roleCeiling.ts, shared with the role list the pickers use.
+// ── A490: the ceiling is by PERMISSION (lib/roleCeiling.ts) ──────────────────────────────────────────────────────────
+// A340 matched role names (owner, admin, manager, supervisor, branch_manager). Now: the owner's role (lib/ownerRole.ts)
+// is the owner's alone, and anyone else may assign a role, grant a permission or manage a person only when that holds
+// nothing beyond their own keys.
 
-// Returns true if role_id refers to an elevated role.
-//
-// Two deliberate changes from the original, both about failing CLOSED:
-//
-//  1. No business_id filter. Roles may be seeded globally (business_id NULL) and
-//     shared across tenants. With the filter, the lookup found nothing for such
-//     a role, the function returned false, and every caller concluded "not
-//     elevated" — so a branch manager could deactivate the proprietor's account
-//     and nothing stopped them. Business ownership of a role is checked
-//     separately where it matters (assigning one); this function answers only
-//     "is this role privileged".
-//
-//  2. A missing or unreadable role is treated as elevated. If we cannot tell,
-//     the safe answer to "may a manager modify this account" is no.
-async function roleIsElevated(roleId: string, _businessId: string): Promise<boolean> {
-  const { data: role, error } = await supabase
-    .from('roles').select('name').eq('id', roleId).maybeSingle();
-  if (error || !role) return true;
-  return isElevatedRoleName(role.name);
+/**
+ * Why this caller may not give someone this role, or null. Fails CLOSED: a role that cannot be read, or one of another
+ * business, is refused. No business_id filter on the read (roles may be seeded globally — a NULL business_id), but a
+ * role of ANOTHER business is never assignable.
+ */
+async function roleAssignRefusal(req: any, roleId: string): Promise<string | null> {
+  const held = callerHeld(req);
+  const { data: role, error } = await supabase.from('roles').select('id, name, business_id').eq('id', roleId).maybeSingle();
+  if (error || !role) return held.has('*') ? null : 'You are not allowed to assign this role';
+  if ((role as any).business_id && (role as any).business_id !== req.businessId) return 'You are not allowed to assign this role';
+  let keys: Set<string>;
+  try { keys = (await roleKeyMap([roleId])).get(roleId) ?? new Set(); } catch { return 'Could not check this role — please try again'; }
+  return canAssignRole(held, { name: (role as any).name, keys }) ? null : 'You are not allowed to assign this role';
 }
 
-// A340: a non-owner may grant a staff member only permissions they hold themselves. Returns a refusal reason, or null.
-// `overrides` is [{ permission_id, granted }]; only GRANTS are checked (taking a permission away is never an escalation).
-async function refuseOverridesBeyondCaller(req: any, overrides: unknown): Promise<{ error: string; missing: string[] } | null> {
-  if (req.isOwner || !Array.isArray(overrides)) return null;
+/** The keys a body GRANTS a person: `overrides` by permission id (granted: true) and `override_keys` by key. Unknown
+ *  ids are reported (refused — fail closed). */
+async function grantedKeysOf(body: any): Promise<{ keys: string[]; unknown: number }> {
+  const keys: string[] = [];
+  let unknown = 0;
+  const overrides = Array.isArray(body?.overrides) ? body.overrides : [];
   const grantIds = overrides.filter((o: any) => o && o.granted === true && typeof o.permission_id === 'string').map((o: any) => o.permission_id);
-  if (!grantIds.length) return null;
-  const { data: rows, error } = await supabase.from('permissions').select('id, key').in('id', grantIds);
-  if (error) return { error: 'Could not check the permissions being granted', missing: [] };
-  // An id that is not a known permission is refused too — fail closed.
-  const keys = (rows ?? []).map((r: any) => r.key as string);
-  const unknown = grantIds.length - (rows ?? []).length;
-  const missing = overridesBeyondCaller(false, req.permissionKeys ?? [], keys);
-  if (missing.length || unknown > 0) return { error: 'You cannot grant permissions you do not hold', missing };
+  if (grantIds.length) {
+    const { data: rows, error } = await supabase.from('permissions').select('id, key').in('id', grantIds);
+    if (error) throw error;
+    keys.push(...(rows ?? []).map((r: any) => r.key as string));
+    unknown += grantIds.length - (rows ?? []).length;
+  }
+  const byKey = body?.override_keys && typeof body.override_keys === 'object' ? body.override_keys : {};
+  for (const [k, v] of Object.entries(byKey)) if (v === true) keys.push(k);
+  return { keys, unknown };
+}
+
+// A340: a non-owner may grant a staff member only permissions they hold themselves. Returns a refusal, or null.
+// Only GRANTS are checked (taking a permission away is never an escalation).
+async function refuseOverridesBeyondCaller(req: any): Promise<{ error: string; missing: string[] } | null> {
+  const held = callerHeld(req);
+  if (held.has('*')) return null;
+  let granted: { keys: string[]; unknown: number };
+  try { granted = await grantedKeysOf(req.body); } catch { return { error: 'Could not check the permissions being granted', missing: [] }; }
+  const missing = overridesBeyondCaller(held, granted.keys);
+  if (missing.length || granted.unknown > 0) return { error: 'You cannot grant permissions you do not hold', missing };
   return null;
+}
+
+/**
+ * The user_permissions rows a body asks for — `overrides` (by id) and `override_keys` (by key; a broad key becomes the
+ * fine keys it stands for; unknown keys are dropped) — or undefined when it names neither (leave them as they are).
+ */
+async function overrideRows(userId: string, body: any): Promise<Array<{ user_id: string; permission_id: string; granted: boolean }> | undefined> {
+  const hasIds = Array.isArray(body?.overrides);
+  const hasKeys = body?.override_keys && typeof body.override_keys === 'object';
+  if (!hasIds && !hasKeys) return undefined;
+  const byId = new Map<string, boolean>();
+  if (hasIds) for (const o of body.overrides) if (o && typeof o.permission_id === 'string') byId.set(o.permission_id, o.granted === true);
+  if (hasKeys) {
+    const want = new Map<string, boolean>();
+    for (const [k, v] of Object.entries(body.override_keys as Record<string, unknown>)) {
+      if (typeof v !== 'boolean') continue;
+      for (const f of expandKeys([k])) if (f !== '*' && isPermissionKey(f)) want.set(f, v);
+    }
+    const ids = await permissionIds(want.keys());
+    for (const [k, v] of want) { const id = ids.get(k); if (id) byId.set(id, v); }
+  }
+  return [...byId].map(([permission_id, granted]) => ({ user_id: userId, permission_id, granted }));
 }
 
 // Blocks a non-owner from touching a proprietor account at all.
@@ -86,11 +118,20 @@ async function refuseIfProprietor(targetUserId: string, businessId: string): Pro
   if (error) return 'Could not verify this staff member';
   if (!target) return null;   // handled as 404 by the caller
 
-  const roleName = String((target as any)?.roles?.name ?? '').toLowerCase();
-  if (roleName === 'owner' || roleName === 'admin') {
+  if (isOwnerRoleName((target as any)?.roles?.name)) {   // A490: the one place a role name decides — lib/ownerRole.ts
     return 'The business owner account can only be changed by the owner';
   }
   return null;
+}
+
+/** A490: a non-owner manages only someone holding nothing beyond them (replaces "a manager may not touch a manager"). */
+async function refuseIfBeyondCaller(req: any, targetUserId: string): Promise<string | null> {
+  const held = callerHeld(req);
+  if (held.has('*')) return null;
+  let target: Awaited<ReturnType<typeof personKeys>>;
+  try { target = await personKeys(req.businessId, targetUserId); } catch { return 'Could not verify this staff member'; }
+  if (!target) return null;
+  return overridesBeyondCaller(held, target.keys).length ? 'You are not allowed to manage this staff member' : null;
 }
 
 // GET /api/staff — list staff for business
@@ -101,15 +142,24 @@ async function refuseIfProprietor(targetUserId: string, businessId: string): Pro
 // override_pin_hash). Naming a role "Supervisor" grants nothing on its own, so
 // the staff list has to show the thing that actually matters. The hash itself is
 // stripped before the response leaves.
+// A490: each person's own overrides also come as `override_keys` — { fine key: granted } (a broad override row from
+// before migration 134 shown as the fine keys it stands for).
 function shapeStaff(rows: any[]): any[] {
   return (rows ?? []).map((u: any) => {
     const { override_pin_hash, pin_hash, ...rest } = u ?? {};
-    return { ...rest, can_authorize: !!override_pin_hash };
+    const override_keys: Record<string, boolean> = {};
+    for (const up of (u?.user_permissions ?? []) as Array<{ granted?: boolean; permissions?: { key?: string | null } | null }>) {
+      const k = up?.permissions?.key;
+      if (!k) continue;
+      for (const f of expandKeys([k])) if (f !== '*') override_keys[f] = up.granted === true;
+    }
+    return { ...rest, can_authorize: !!override_pin_hash, override_keys };
   });
 }
 
 // Owner: sees all staff. Non-owners: only staff assigned to their branch.
-router.get('/', async (req, res) => {
+// A490: staff.view (everyone held it before migration 134 — OPEN_BEFORE_A490).
+router.get('/', requirePermission('staff.view'), async (req, res) => {
   if (req.isOwner) {
     // Owner sees everyone
     const { data, error } = await supabase
@@ -118,7 +168,7 @@ router.get('/', async (req, res) => {
         id, name, email, phone, status, created_at, updated_at, override_pin_hash,
         roles ( id, name, description ),
         user_branches ( branch_id, branches ( id, name ) ),
-        user_permissions ( permission_id, granted )
+        user_permissions ( permission_id, granted, permissions ( key ) )
       `)
       .eq('business_id', req.businessId)
       .order('name');
@@ -136,7 +186,7 @@ router.get('/', async (req, res) => {
         id, name, email, phone, status, created_at, updated_at, override_pin_hash,
         roles ( id, name, description ),
         user_branches ( branch_id, branches ( id, name ) ),
-        user_permissions ( permission_id, granted )
+        user_permissions ( permission_id, granted, permissions ( key ) )
       )
     `)
     .eq('branch_id', req.branchId!)
@@ -158,10 +208,7 @@ router.get('/', async (req, res) => {
   // Enforced here rather than hidden in the UI: the desktop sends the STAFF
   // token for these calls, so the server knows who is asking, and a client-side
   // filter would be undone by anyone talking to the API directly.
-  staff = staff.filter((u: any) => {
-    const roleName = String(u?.roles?.name ?? '').toLowerCase();
-    return roleName !== 'owner' && roleName !== 'admin';
-  });
+  staff = staff.filter((u: any) => !isOwnerRoleName(u?.roles?.name));
 
   res.json(shapeStaff(staff));
 });
@@ -188,7 +235,7 @@ router.get('/authorizers', async (req, res) => {
 });
 
 // POST /api/staff — create staff member with PIN
-router.post('/', requirePermission('staff.manage'), validate(CreateStaffSchema), async (req, res) => {
+router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), async (req, res) => {
   const { name, email, phone, role_id, pin, branch_ids } = req.body;
 
   if (!name || !role_id || !pin) {
@@ -210,12 +257,10 @@ router.post('/', requirePermission('staff.manage'), validate(CreateStaffSchema),
     return;
   }
 
-  // Server-side role guard: non-owners cannot create elevated-role staff.
-  if (!req.isOwner && await roleIsElevated(role_id, req.businessId)) {
-    res.status(403).json({ error: 'You are not allowed to assign this role' });
-    return;
-  }
-  const overRefusal = await refuseOverridesBeyondCaller(req, req.body.overrides);   // A340
+  // Server-side role guard: a non-owner gives only a role within their own keys (never the owner's).
+  const roleRefusal = await roleAssignRefusal(req, role_id);
+  if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
+  const overRefusal = await refuseOverridesBeyondCaller(req);   // A340
   if (overRefusal) { res.status(403).json(overRefusal); return; }
 
   const pin_hash = hashPin(pin, req.businessId);
@@ -249,21 +294,14 @@ router.post('/', requirePermission('staff.manage'), validate(CreateStaffSchema),
     );
   }
 
-  if (req.body.overrides?.length) {
-    await supabase.from('user_permissions').insert(
-      req.body.overrides.map((o: { permission_id: string; granted: boolean }) => ({
-        user_id: user.id,
-        permission_id: o.permission_id,
-        granted: o.granted,
-      }))
-    );
-  }
+  const rows = await overrideRows(user.id, req.body);
+  if (rows?.length) await supabase.from('user_permissions').insert(rows);
 
   res.status(201).json(user);
 });
 
 // POST /api/staff/invite — invite staff by email
-router.post('/invite', requirePermission('staff.manage'), async (req, res) => {
+router.post('/invite', requirePermission('staff.edit'), async (req, res) => {
   const { name, email, role_id, branch_ids } = req.body;
 
   if (!name || !email || !role_id) {
@@ -274,10 +312,8 @@ router.post('/invite', requirePermission('staff.manage'), async (req, res) => {
   // A340: the invite path had NO role or branch guard — a manager could invite anyone as the owner, the one gap in
   // an otherwise guarded set (POST /, PATCH, DELETE). Same rules as POST /.
   if (!req.isOwner) {
-    if (await roleIsElevated(role_id, req.businessId)) {
-      res.status(403).json({ error: 'You are not allowed to assign this role' });
-      return;
-    }
+    const roleRefusal = await roleAssignRefusal(req, role_id);
+    if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
     if (branch_ids?.length && !branch_ids.every((bid: string) => bid === req.branchId)) {
       res.status(403).json({ error: 'You can only assign staff to your own branch' });
       return;
@@ -313,7 +349,7 @@ router.post('/invite', requirePermission('staff.manage'), async (req, res) => {
 });
 
 // PATCH /api/staff/:id — update staff member
-router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSchema), async (req, res) => {
+router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema), async (req, res) => {
   const { name, email, role_id, pin, status, branch_ids, hourly_rate } = req.body;
 
   const { data: existing } = await supabase
@@ -347,19 +383,15 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
     }
 
     // Server-side role guard (client-side excludeRoles is not sufficient):
-    //  - cannot promote a user INTO an elevated role, and
-    //  - cannot modify a user who ALREADY holds an elevated role.
-    if (role_id && await roleIsElevated(role_id, req.businessId)) {
-      res.status(403).json({ error: 'You are not allowed to assign this role' });
-      return;
+    //  - cannot give a role holding more than the caller, and
+    //  - cannot modify someone who ALREADY holds more than the caller (A490: by keys, not role names).
+    if (role_id) {
+      const roleRefusal = await roleAssignRefusal(req, role_id);
+      if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
     }
-    const { data: target } = await supabase
-      .from('users').select('role_id').eq('id', req.params.id).single();
-    if (target?.role_id && await roleIsElevated(target.role_id, req.businessId)) {
-      res.status(403).json({ error: 'You are not allowed to manage this staff member' });
-      return;
-    }
-    const overRefusal = await refuseOverridesBeyondCaller(req, req.body.overrides);   // A340
+    const beyond = await refuseIfBeyondCaller(req, req.params.id);
+    if (beyond) { res.status(403).json({ error: beyond }); return; }
+    const overRefusal = await refuseOverridesBeyondCaller(req);   // A340
     if (overRefusal) { res.status(403).json(overRefusal); return; }
   }
 
@@ -388,6 +420,9 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
     }
   }
 
+  // (Their token renews on its own: the database bumps permissions_version on any override or role change, migration 13.)
+  const rows = await overrideRows(req.params.id, req.body);
+
   const { data, error } = await supabase
     .from('users').update(updates).eq('id', req.params.id).select().single();
   if (error) { sendError(res, error); return; }
@@ -401,19 +436,10 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
     }
   }
 
-  // Update per-user permission overrides
-  // overrides: Array of { permission_id: string, granted: boolean }
-  if (req.body.overrides !== undefined) {
+  // Update per-user permission overrides — `overrides` [{ permission_id, granted }] and/or `override_keys` { key: granted }
+  if (rows !== undefined) {
     await supabase.from('user_permissions').delete().eq('user_id', req.params.id);
-    if (req.body.overrides.length) {
-      await supabase.from('user_permissions').insert(
-        req.body.overrides.map((o: { permission_id: string; granted: boolean }) => ({
-          user_id: req.params.id,
-          permission_id: o.permission_id,
-          granted: o.granted,
-        }))
-      );
-    }
+    if (rows.length) await supabase.from('user_permissions').insert(rows);
   }
 
   res.json(data);
@@ -421,7 +447,7 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
 
 // DELETE /api/staff/:id — soft deactivate
 // A391: a manager lost the phone with their authenticator app → back to emailed sign-in codes. The owner only.
-router.post('/:id/reset-otp', requirePermission('staff.manage'), async (req, res) => {
+router.post('/:id/reset-otp', requirePermission('staff.edit'), async (req, res) => {
   if (!req.isOwner) { res.status(403).json({ error: 'Only the owner can reset a sign-in code.' }); return; }
   const { data: target } = await supabase
     .from('users').select('id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
@@ -430,7 +456,7 @@ router.post('/:id/reset-otp', requirePermission('staff.manage'), async (req, res
   res.json({ method: 'email' });
 });
 
-router.delete('/:id', requirePermission('staff.manage'), async (req, res) => {
+router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
   // Non-owners: verify target is in their branch
   if (!req.isOwner) {
     // Same refusal as PATCH. This route had NO elevated-role check whatsoever —
@@ -440,14 +466,9 @@ router.delete('/:id', requirePermission('staff.manage'), async (req, res) => {
     const refusal = await refuseIfProprietor(req.params.id, req.businessId);
     if (refusal) { res.status(403).json({ error: refusal }); return; }
 
-    // And a manager must not be able to deactivate a peer manager or
-    // supervisor either — the same rule PATCH already applies.
-    const { data: target } = await supabase
-      .from('users').select('role_id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
-    if (target?.role_id && await roleIsElevated(target.role_id, req.businessId)) {
-      res.status(403).json({ error: 'You are not allowed to manage this staff member' });
-      return;
-    }
+    // And a manager must not be able to deactivate someone holding more than they do — the same rule PATCH applies.
+    const beyond = await refuseIfBeyondCaller(req, req.params.id);
+    if (beyond) { res.status(403).json({ error: beyond }); return; }
 
     const { data: branchCheck } = await supabase
       .from('user_branches')
@@ -474,9 +495,22 @@ router.delete('/:id', requirePermission('staff.manage'), async (req, res) => {
 // NOTE: POST /api/staff/verify-pin has been moved to POST /api/auth/verify-pin
 // It now issues a branch-scoped JWT. Update any frontend calls accordingly.
 
+// ── Roles and permissions (A490: docs/PERMISSIONS-A490.md "Roles") ───────────────────────────────────────────────────
 
+/** Replace a role's grants with these FINE keys (registered first when a key has no row yet). */
+async function writeRoleKeys(roleId: string, keys: string[]): Promise<void> {
+  const ids = await permissionIds(keys);
+  const { error: dErr } = await supabase.from('role_permissions').delete().eq('role_id', roleId);
+  if (dErr) throw dErr;
+  const rows = keys.map((k) => ids.get(k)).filter((id): id is string => !!id).map((permission_id) => ({ role_id: roleId, permission_id }));
+  if (rows.length) {
+    const { error } = await supabase.from('role_permissions').insert(rows);
+    if (error) throw error;
+  }
+}
 
-// GET /api/staff/roles — list all roles with their permissions
+// GET /api/staff/roles — every role of the business: its fine keys, whether it is the owner's, whether THIS caller may
+// give it (assignable) and change it (editable), and how many people hold it (members).
 router.get('/roles', async (req, res) => {
   const { data, error } = await supabase
     .from('roles')
@@ -491,95 +525,142 @@ router.get('/roles', async (req, res) => {
     .order('name');
 
   if (error) { sendError(res, error); return; }
+  const roles = (data ?? []) as any[];
+  const { data: members } = await supabase.from('users').select('id, role_id').eq('business_id', req.businessId).eq('status', 'active');
+  const count = new Map<string, number>();
+  for (const u of (members ?? []) as Array<{ role_id: string | null }>) if (u.role_id) count.set(u.role_id, (count.get(u.role_id) ?? 0) + 1);
+  const held = callerHeld(req);
   // A340: which of these THIS caller may hand out — the dashboard's and the till's role pickers show only these, so a
   // manager is never offered Owner (the routes refuse it regardless).
-  res.json((data ?? []).map((r: any) => ({ ...r, assignable: canAssignRole(!!req.isOwner, r.name) })));
+  res.json(roles.map((r) => {
+    const isOwnerRole = isOwnerRoleName(r.name);
+    const keys = isOwnerRole ? ['*'] : [...expandKeys((r.role_permissions ?? []).map((rp: any) => rp?.permissions?.key).filter(Boolean))].filter((k) => k !== '*');
+    const role = { name: r.name, keys };
+    return {
+      ...r, keys, is_owner_role: isOwnerRole,
+      assignable: canAssignRole(held, role),
+      editable: (held.has('*') || held.has('staff.roles')) && roleEditRefusal(held, role) === null,
+      members: count.get(r.id) ?? 0,
+    };
+  }));
 });
 
-// GET /api/staff/permissions — list all available permissions
+// GET /api/staff/permissions — the catalogue: fine keys only, in catalogue order, with the words the owner reads.
 router.get('/permissions', async (req, res) => {
-  const { data, error } = await supabase
-    .from('permissions')
-    .select('*')
-    .order('module, label');
-
-  if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  let ids: Map<string, string>;
+  try { ids = await permissionIds(PERMISSIONS.map((p) => p.key)); } catch (e) { sendError(res, e as Error); return; }
+  res.json(PERMISSIONS.map((p) => ({
+    id: ids.get(p.key) ?? null, key: p.key, label: p.label, description: p.description, group: p.group, surface: p.surface,
+  })));
 });
 
-// PUT /api/staff/roles/:roleId/permissions — replace all permissions for a role
-router.put('/roles/:roleId/permissions', requirePermission('staff.manage'), async (req, res) => {
-  const { permission_ids } = req.body;
-  if (!Array.isArray(permission_ids)) {
-    res.status(400).json({ error: 'permission_ids array is required' });
+// GET /api/staff/permission-groups — the groups the catalogue is listed under, in order.
+router.get('/permission-groups', (_req, res) => { res.json(PERMISSION_GROUPS); });
+
+// PUT /api/staff/roles/:roleId/permissions — replace a role's keys. { keys: string[] } (or the old { permission_ids }).
+// Stores FINE keys only. Never the owner's role; never beyond the caller's own keys (lib/roleCeiling.ts).
+router.put('/roles/:roleId/permissions', requirePermission('staff.roles'), async (req, res) => {
+  const { keys, permission_ids } = req.body ?? {};
+  let wanted: string[];
+  if (Array.isArray(keys)) wanted = fineKeysOf(keys);
+  else if (Array.isArray(permission_ids)) {
+    const { data: rows, error } = permission_ids.length
+      ? await supabase.from('permissions').select('id, key').in('id', permission_ids)
+      : { data: [], error: null };
+    if (error) { sendError(res, error); return; }
+    if ((rows ?? []).length !== new Set(permission_ids).size) { res.status(400).json({ error: 'Unknown permission id' }); return; }
+    wanted = fineKeysOf((rows ?? []).map((r: any) => r.key));
+  } else {
+    res.status(400).json({ error: 'keys (or permission_ids) array is required' });
     return;
   }
 
-  // Verify role belongs to this business
-  const { data: role } = await supabase
-    .from('roles').select('id, name, is_default').eq('id', req.params.roleId).eq('business_id', req.businessId).single();
+  let role: Awaited<ReturnType<typeof loadRole>>;
+  try { role = await loadRole(req.businessId, req.params.roleId); } catch (e) { sendError(res, e as Error); return; }
   if (!role) { res.status(404).json({ error: 'Role not found' }); return; }
 
-  // ── C3: a non-owner with staff.manage had no further restriction here — they
-  // could grant ANY role (including their own) permissions they don't hold
-  // themselves (e.g. settings.manage, which defaultRolePermissions.ts already
-  // treats as owner-only), or wipe an elevated role's permissions outright.
-  // Two guards, both owner-exempt:
-  //   1. Can never grant a permission the caller doesn't currently hold —
-  //      structurally closes every escalation path (own role, another role,
-  //      a freshly created custom role) without needing to special-case each.
-  //   2. Can never touch an elevated role's permissions at all (reuses the
-  //      same ELEVATED_ROLE_NAMES this file already guards role ASSIGNMENT
-  //      with) — otherwise a manager could silently strip another manager's
-  //      or a role-based "owner" account's access.
-  if (!req.isOwner) {
-    if (isElevatedRoleName(role.name)) {
-      res.status(403).json({ error: "Only the owner can edit an elevated role's permissions" });
-      return;
-    }
-    if (permission_ids.length) {
-      const callerKeys = new Set(req.permissionKeys ?? []);
-      const { data: requested } = await supabase
-        .from('permissions').select('key').in('id', permission_ids);
-      const notHeld = (requested ?? []).map((p: any) => p.key).filter((k: string) => !callerKeys.has(k));
-      if (notHeld.length) {
-        res.status(403).json({ error: 'You cannot grant permissions you do not hold', missing: notHeld });
-        return;
-      }
-    }
-  }
+  const refusal = roleEditRefusal(callerHeld(req), role, wanted);
+  if (refusal) { res.status(403).json(refusal); return; }
 
-  // Delete existing, insert new
-  await supabase.from('role_permissions').delete().eq('role_id', req.params.roleId);
-
-  if (permission_ids.length) {
-    const { error } = await supabase.from('role_permissions').insert(
-      permission_ids.map((pid: string) => ({ role_id: req.params.roleId, permission_id: pid }))
-    );
-    if (error) { sendError(res, error); return; }
-  }
-
-  res.json({ success: true });
+  try { await writeRoleKeys(role.id, wanted); } catch (e) { sendError(res, e as Error); return; }
+  // Everyone on the role renews their token on its own (migration 13's trigger bumps permissions_version).
+  res.json({ success: true, keys: wanted });
 });
 
-// POST /api/staff/roles — create a custom role
-router.post('/roles', requirePermission('staff.manage'), async (req, res) => {
-  const { name, description } = req.body;
-  if (!name) { res.status(400).json({ error: 'name is required' }); return; }
-  // A340: a non-owner may not mint a role carrying an elevated name ("Owner", "Admin" …).
-  if (!req.isOwner && isElevatedRoleName(name)) {
-    res.status(403).json({ error: 'Only the owner can create this role' });
-    return;
+// POST /api/staff/roles — create a role. { name, description?, keys?, copy_from?: roleId }
+router.post('/roles', requirePermission('staff.roles'), async (req, res) => {
+  const { name, description, keys, copy_from } = req.body ?? {};
+  const clean = typeof name === 'string' ? name.trim() : '';
+  if (!clean) { res.status(400).json({ error: 'name is required' }); return; }
+  if (clean.length > 60) { res.status(400).json({ error: 'name is too long' }); return; }
+  // The owner's role is the owner's — nobody mints another one (it would hold everything by its name).
+  if (isOwnerRoleName(clean)) { res.status(403).json({ error: 'That name belongs to the owner\'s role — choose another.' }); return; }
+
+  let wanted: string[] = Array.isArray(keys) ? fineKeysOf(keys) : [];
+  if (copy_from) {
+    let src: Awaited<ReturnType<typeof loadRole>>;
+    try { src = await loadRole(req.businessId, String(copy_from)); } catch (e) { sendError(res, e as Error); return; }
+    if (!src) { res.status(404).json({ error: 'The role to copy was not found' }); return; }
+    const srcKeys = isOwnerRoleName(src.name) ? fineKeysOf(PERMISSIONS.map((p) => p.key)) : [...src.keys].filter((k) => k !== '*');
+    wanted = [...new Set([...srcKeys, ...wanted])];
   }
+  const refusal = roleEditRefusal(callerHeld(req), { name: clean, keys: [] }, wanted);
+  if (refusal) { res.status(403).json(refusal); return; }
 
   const { data, error } = await supabase
     .from('roles')
-    .insert({ business_id: req.businessId, name, description: description || null })
+    .insert({ business_id: req.businessId, name: clean, description: description || null })
     .select()
     .single();
 
   if (error) { sendError(res, error); return; }
-  res.status(201).json(data);
+  if (wanted.length) {
+    try { await writeRoleKeys((data as any).id, wanted); } catch (e) { sendError(res, e as Error); return; }
+  }
+  res.status(201).json({ ...data, keys: wanted });
+});
+
+// PATCH /api/staff/roles/:roleId — rename or describe a role. Never the owner's role.
+router.patch('/roles/:roleId', requirePermission('staff.roles'), async (req, res) => {
+  const { name, description } = req.body ?? {};
+  let role: Awaited<ReturnType<typeof loadRole>>;
+  try { role = await loadRole(req.businessId, req.params.roleId); } catch (e) { sendError(res, e as Error); return; }
+  if (!role) { res.status(404).json({ error: 'Role not found' }); return; }
+  const refusal = roleEditRefusal(callerHeld(req), role);
+  if (refusal) { res.status(403).json(refusal); return; }
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) {
+    const clean = typeof name === 'string' ? name.trim() : '';
+    if (!clean || clean.length > 60) { res.status(400).json({ error: 'name must be 1–60 characters' }); return; }
+    if (isOwnerRoleName(clean)) { res.status(403).json({ error: 'That name belongs to the owner\'s role — choose another.' }); return; }
+    updates.name = clean;
+  }
+  if (description !== undefined) updates.description = description ? String(description) : null;
+  if (!Object.keys(updates).length) { res.status(400).json({ error: 'Nothing to change' }); return; }
+  const { data, error } = await supabase.from('roles').update(updates).eq('id', role.id).eq('business_id', req.businessId).select().single();
+  if (error) { sendError(res, error); return; }
+  res.json(data);
+});
+
+// DELETE /api/staff/roles/:roleId — remove a role nobody holds. 409 ROLE_IN_USE (with members) while anyone does.
+router.delete('/roles/:roleId', requirePermission('staff.roles'), async (req, res) => {
+  let role: Awaited<ReturnType<typeof loadRole>>;
+  try { role = await loadRole(req.businessId, req.params.roleId); } catch (e) { sendError(res, e as Error); return; }
+  if (!role) { res.status(404).json({ error: 'Role not found' }); return; }
+  const refusal = roleEditRefusal(callerHeld(req), role);
+  if (refusal) { res.status(403).json(refusal); return; }
+  const { data: holders, error: hErr } = await supabase.from('users').select('id').eq('role_id', role.id).eq('business_id', req.businessId);
+  if (hErr) { sendError(res, hErr); return; }
+  const members = (holders ?? []).length;
+  if (members > 0) {
+    res.status(409).json({ error: `${members} ${members === 1 ? 'person has' : 'people have'} this role — give them another role first.`, code: 'ROLE_IN_USE', members });
+    return;
+  }
+  const { error: dErr } = await supabase.from('role_permissions').delete().eq('role_id', role.id);
+  if (dErr) { sendError(res, dErr); return; }
+  const { error } = await supabase.from('roles').delete().eq('id', role.id).eq('business_id', req.businessId);
+  if (error) { sendError(res, error); return; }
+  res.json({ success: true });
 });
 
 

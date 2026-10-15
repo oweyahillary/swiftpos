@@ -50,7 +50,12 @@ const PERM = { void: 'bbbbbbbb-0000-4000-8000-000000000001', settings: 'bbbbbbbb
 const MGR = 'cccccccc-0000-4000-8000-000000000001';
 let seq = 0;
 const db = {
-  roles: [{ id: R.owner, name: 'owner', business_id: B }, { id: R.manager, name: 'manager', business_id: B }, { id: R.cashier, name: 'cashier', business_id: B }],
+  // A490: the ceiling is by KEYS — the Manager role here holds settings.manage (more than Mary, who holds staff.manage +
+  // orders.void), so it is not hers to give; the Cashier role holds nothing beyond her.
+  roles: [{ id: R.owner, name: 'owner', business_id: B }, { id: R.manager, name: 'manager', business_id: B,
+    role_permissions: [{ permission_id: PERM.settings, permissions: { id: PERM.settings, key: 'settings.manage' } }] },
+    { id: R.cashier, name: 'cashier', business_id: B }],
+  role_permissions: [{ role_id: R.manager, permission_id: PERM.settings, permissions: { key: 'settings.manage' } }],
   permissions: [{ id: PERM.void, key: 'orders.void' }, { id: PERM.settings, key: 'settings.manage' }],
   users: [{ id: MGR, business_id: B, name: 'Mary', role_id: R.manager, status: 'active', permissions_version: 1 }],
   user_branches: [{ user_id: MGR, branch_id: BR }],
@@ -103,15 +108,20 @@ const usersNamed = (n) => db.users.filter((u) => u.name === n);
 
 try {
   // ── The rule ──
-  await ok('the rule: a non-owner may assign cashier, never owner/admin/manager/supervisor; unknown → refused', () => {
-    assert.equal(rule.canAssignRole(false, 'cashier'), true);
-    for (const r of ['owner', 'Owner', 'ADMIN', 'manager', 'supervisor', 'branch_manager']) assert.equal(rule.canAssignRole(false, r), false, r);
-    assert.equal(rule.canAssignRole(false, null), false);
-    assert.equal(rule.canAssignRole(true, 'owner'), true);
+  // A490: by permission — a role within the caller's keys is theirs to give, whatever its name; the owner's role never.
+  const held = new Set(['staff.edit', 'sales.void', 'orders.create']);
+  await ok('the rule: a non-owner may assign a role within their keys, never the owner\'s role or one beyond them; unknown → refused', () => {
+    assert.equal(rule.canAssignRole(held, { name: 'cashier', keys: ['orders.create'] }), true);
+    assert.equal(rule.canAssignRole(held, { name: 'Shift lead', keys: ['orders.create', 'sales.void'] }), true, 'a name decides nothing');
+    for (const r of ['owner', 'Owner', 'ADMIN']) assert.equal(rule.canAssignRole(held, { name: r, keys: [] }), false, r);
+    assert.equal(rule.canAssignRole(held, { name: 'manager', keys: ['settings.business'] }), false, 'beyond the caller');
+    assert.equal(rule.canAssignRole(held, { name: null, keys: [] }), false);
+    assert.equal(rule.canAssignRole(new Set(['*']), { name: 'owner', keys: [] }), true);
   });
-  await ok('the rule: a non-owner grants only what they hold', () => {
-    assert.deepEqual(rule.overridesBeyondCaller(false, ['orders.void'], ['orders.void', 'settings.manage']), ['settings.manage']);
-    assert.deepEqual(rule.overridesBeyondCaller(true, [], ['settings.manage']), []);
+  await ok('the rule: a non-owner grants only what they hold (a broad key counts as the fine keys it stands for)', () => {
+    assert.deepEqual(rule.overridesBeyondCaller(held, ['sales.void', 'settings.business']), ['settings.business']);
+    assert.ok(rule.overridesBeyondCaller(held, ['orders.void']).includes('sales.refund'));
+    assert.deepEqual(rule.overridesBeyondCaller(new Set(['*']), ['settings.manage']), []);
   });
 
   // ── The routes, as a manager ──
@@ -141,7 +151,9 @@ try {
   });
   await ok('…nor grant a permission they do not hold (settings.manage) — on create or on update', async () => {
     const c = await manager('POST', '/', { name: 'Sly', role_id: R.cashier, pin: '2468', overrides: [{ permission_id: PERM.settings, granted: true }] });
-    assert.equal(c.status, 403, JSON.stringify(c.body)); assert.deepEqual(c.body.missing, ['settings.manage']);
+    // A490: answered in fine keys — what settings.manage stands for beyond what Mary holds.
+    assert.equal(c.status, 403, JSON.stringify(c.body));
+    assert.ok(c.body.missing.includes('settings.business') && !c.body.missing.includes('shifts.confirm'), JSON.stringify(c.body.missing));
     const carl = usersNamed('Carl')[0];
     const u = await manager('PATCH', `/${carl.id}`, { overrides: [{ permission_id: PERM.settings, granted: true }] });
     assert.equal(u.status, 403, JSON.stringify(u.body));
@@ -173,7 +185,10 @@ try {
   // ── The pickers (source — React not run here) ──
   await ok('both role pickers show only `assignable` roles', () => {
     assert.match(read('apps/desktop/src/renderer/pages/ManageTabs.tsx'), /roles\.filter\(r => r\.assignable !== false\)\.map\(r => <option/);
-    assert.match(read('apps/dashboard/src/pages/settings/StaffTab.tsx'), /\.filter\(r => \(r as \{ assignable\?: boolean \}\)\.assignable !== false\)/);
+    // A490: the Role type carries `assignable` now (no cast), and the owner's role is never offered; no role names.
+    const st = read('apps/dashboard/src/pages/settings/StaffTab.tsx');
+    assert.match(st, /\.filter\(r => r\.assignable !== false && !r\.is_owner_role\)/);
+    assert.doesNotMatch(st, /excludeRoles/);
   });
 } finally {
   server.close();

@@ -28,7 +28,8 @@ const ok = (name, fn) => {
 };
 
 ok('server: requirePermission bypasses on the owner (the wildcard the client must mirror)', () => {
-  assert.match(rbac, /req\.isOwner \|\| keys\.includes\('\*'\) \|\| keys\.includes\(permission\)/,
+  // A490: the one check is can() — the owner, '*', or any of the keys.
+  assert.match(rbac, /Boolean\(req\.isOwner\) \|\| held\.includes\('\*'\) \|\| keys\.some\(\(k\) => held\.includes\(k\)\)/,
     'the server owner-bypass is the contract the client mirrors');
 });
 

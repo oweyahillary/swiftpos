@@ -27,7 +27,7 @@
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission } from '../middleware/rbac';
+import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -113,7 +113,7 @@ router.get('/unassigned', async (req, res) => {
 // Kitchen, and ALL categories go to Packing (the packer bags the whole order).
 // Till is the customer receipt and carries no category routing. Guarded: refuses
 // if any station already exists, so it can't duplicate or clobber a real setup.
-router.post('/seed-defaults', requireAnyPermission('stations.manage', 'products.manage'), async (req, res) => {
+router.post('/seed-defaults', requirePermission('stations.manage'), async (req, res) => {
   const { data: existing } = await supabase
     .from('print_stations').select('id').eq('business_id', req.businessId).limit(1);
   if ((existing ?? []).length > 0) {
@@ -159,7 +159,7 @@ router.post('/seed-defaults', requireAnyPermission('stations.manage', 'products.
   });
 });
 
-router.post('/', requireAnyPermission('stations.manage', 'products.manage'), async (req, res) => {
+router.post('/', requirePermission('stations.manage'), async (req, res) => {
   const name = String(req.body?.name ?? '').trim();
   const kind = String(req.body?.kind ?? 'kitchen') as Kind;
 
@@ -195,7 +195,7 @@ router.post('/', requireAnyPermission('stations.manage', 'products.manage'), asy
 });
 
 // ── PATCH /api/stations/:id ──────────────────────────────────────────────────
-router.patch('/:id', requireAnyPermission('stations.manage', 'products.manage'), async (req, res) => {
+router.patch('/:id', requirePermission('stations.manage'), async (req, res) => {
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
   if (req.body?.name !== undefined) {
@@ -238,7 +238,7 @@ router.patch('/:id', requireAnyPermission('stations.manage', 'products.manage'),
 // than diffing add/remove calls — a dropped request in a diff-based scheme leaves
 // routing half-applied, and half-applied routing prints half an order.
 // ─────────────────────────────────────────────────────────────────────────────
-router.put('/:id/categories', requireAnyPermission('stations.manage', 'products.manage'), async (req, res) => {
+router.put('/:id/categories', requirePermission('stations.manage'), async (req, res) => {
   const stationId = req.params.id;
   const incoming: string[] = Array.isArray(req.body?.category_ids) ? req.body.category_ids : [];
 
@@ -283,7 +283,7 @@ router.put('/:id/categories', requireAnyPermission('stations.manage', 'products.
 
 // ── DELETE /api/stations/:id ─────────────────────────────────────────────────
 // category_stations cascades (migration 44), so routing rows cannot be stranded.
-router.delete('/:id', requireAnyPermission('stations.manage', 'products.manage'), async (req, res) => {
+router.delete('/:id', requirePermission('stations.manage'), async (req, res) => {
   const { error } = await supabase
     .from('print_stations').delete()
     .eq('id', req.params.id).eq('business_id', req.businessId);

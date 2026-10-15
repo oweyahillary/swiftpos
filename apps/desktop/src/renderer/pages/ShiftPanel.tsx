@@ -9,7 +9,8 @@ import ConfirmShiftModal from '../components/ConfirmShiftModal';
 import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
 import { expenseLabel } from '../../shared/expenseMethod';
 import { methodLabel } from '../../shared/paymentCatalogue';   // A442
-import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from '../../shared/posFeatures';   // A453
+import { MONEY_MOVEMENT_MANAGER_ONLY } from '../../shared/posFeatures';   // A453
+import { mayMoveMoney, type SessionLike } from '../lib/access';   // A490: shifts.cash_movements (the main process's rule)
 
 /** 0.6.27: what an expense can be paid with — cash, M-Pesa, card and the business's own methods. */
 function expenseMethodChoices(options: MethodOption[]): string[] {
@@ -56,6 +57,8 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const [isManager, setIsManager] = useState(false);
   // A453: 'cashier_no_money_out' — only a manager signed in records an expense or cash in / out.
   const [managerOnlyMoney, setManagerOnlyMoney] = useState(false);
+  // A490: the person signed in — cash in / out and expenses are shifts.cash_movements.
+  const [me, setMe] = useState<SessionLike | null>(null);
   const [floatPin, setFloatPin] = useState('');
   const [expPin, setExpPin] = useState('');
 
@@ -130,7 +133,8 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     // Load expense categories (online only — falls back to empty list offline)
     posApi.expense.categories().then(setCategories).catch(() => {});
     posApi.pos.paymentMethods().then(setMethodOptions).catch(() => {});   // A365
-    posApi.shift.canConfirm().then(setIsManager).catch(() => setIsManager(false));   // 0.6.37: no PIN for a manager
+    posApi.shift.canConfirm().then(setIsManager).catch(() => setIsManager(false));   // 0.6.37: no PIN for a manager (A490: shifts.confirm)
+    posApi.auth.getStaffSession().then((s) => setMe(s ?? null)).catch(() => setMe(null));   // A490
     posApi.pos.features().then((f) => { setManagerOnlyMoney(!!f.cashier_no_money_out); setPayLater(!!(f as any).pay_later_tabs); }).catch(() => {});   // A453; A461
   }, []);
 
@@ -194,7 +198,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     finally { setExpBusy(false); }
   };
 
-  const moneyAllowed = mayRecordMoneyMovement({ cashier_no_money_out: managerOnlyMoney }, isManager);   // A453
+  const moneyAllowed = mayMoveMoney(me, managerOnlyMoney);   // A453 → A490: shifts.cash_movements
   const expected   = report?.totals.expectedCash ?? 0;
   const counted    = Number(closingFloat);
   const hasCount   = closingFloat.trim() !== '' && !Number.isNaN(counted);
