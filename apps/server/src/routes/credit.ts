@@ -59,7 +59,7 @@ router.get('/customer/:id', async (req, res) => {
 });
 
 // PATCH /api/credit/customer/:id/limit — set the credit limit
-router.patch('/customer/:id/limit', requirePermission('customers.manage'), async (req, res) => {
+router.patch('/customer/:id/limit', requirePermission('customers.credit'), async (req, res) => {
   const limit = Number(req.body?.credit_limit);
   if (!Number.isFinite(limit) || limit < 0) {
     res.status(400).json({ error: 'credit_limit must be a non-negative number' });
@@ -80,7 +80,7 @@ router.patch('/customer/:id/limit', requirePermission('customers.manage'), async
 
 // POST /api/credit/customer/:id/payment — record a repayment (decreases balance)
 // Body: { amount, method, reference?, notes? }
-router.post('/customer/:id/payment', requirePermission('customers.manage'), async (req, res) => {
+router.post('/customer/:id/payment', requirePermission('customers.credit'), async (req, res) => {
   const amount = Number(req.body?.amount);
   const { method, reference, notes } = req.body ?? {};
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -111,7 +111,7 @@ router.post('/customer/:id/payment', requirePermission('customers.manage'), asyn
 
 // POST /api/credit/customer/:id/adjustment — manual correction (+/-) with a reason
 // Body: { amount (signed), notes }
-router.post('/customer/:id/adjustment', requirePermission('customers.manage'), async (req, res) => {
+router.post('/customer/:id/adjustment', requirePermission('customers.credit'), async (req, res) => {
   const amount = Number(req.body?.amount);
   const notes = (req.body?.notes ?? '').trim();
   if (!Number.isFinite(amount) || amount === 0) {

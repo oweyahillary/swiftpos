@@ -9,7 +9,7 @@ import MethodDot from '../../components/MethodDot';
 import { useState, useEffect, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';
-import { canRefundOrder, isRefunded, REFUND_REASONS } from '../orderRefund';
+import { canRefundOrder, canVoidOrder, isRefunded, REFUND_REASONS } from '../orderRefund';
 import { historyView, orderMethod, type HistorySort } from '../../lib/historyView';
 import { orderTypeLabel, customerDeliveryFee } from '../../lib/delivery';
 import { businessDateLocal } from '../../lib/businessDay';   // 0.6.34
@@ -69,9 +69,11 @@ const paidOf = (o: { total: number; tip_amount?: number | null; delivery_fee?: n
 
 export default function POSOrderHistoryTab({ currency }: { currency: string }) {
   const { posApi, session, hasPermission } = usePOSAuth();
-  // A359: refund from this list (web POS → Orders, manager dashboard → Orders) — orders.void holders only; the cloud
-  // asks a manager's (or the owner's) own PIN and records who approved (A355).
-  const mayVoid = hasPermission('orders.void');
+  // A359: refund from this list (web POS → Orders, manager dashboard → Orders); the cloud asks a manager's (or the
+  // owner's) own PIN and records who approved (A355). A490: void is sales.void and refund is sales.refund — each on
+  // its own (orders.void stood for both).
+  const mayVoid   = hasPermission('sales.void');
+  const mayRefund = hasPermission('sales.refund');
   const [refunding, setRefunding]     = useState<string | null>(null);   // order id with the refund form open
   // A444: Void too (it was refund-only here) — inside the owner's void window, with the same reason + manager PIN.
   const [revMode, setRevMode]         = useState<'void' | 'refund'>('refund');
@@ -297,19 +299,21 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                   {reprintMsg?.id === order.id && (
                     <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>{reprintMsg.text}</div>
                   )}
-                  {/* A359: Refund (orders.void; completed, not refunded). */}
-                  {canRefundOrder(order, mayVoid) && refunding !== order.id && (<>
-                    {inVoidWindow(order) && (
+                  {/* A359: Refund (sales.refund) / A444: Void (sales.void, inside the window) — completed, not refunded. */}
+                  {refunding !== order.id && ((canVoidOrder(order, mayVoid) && inVoidWindow(order)) || canRefundOrder(order, mayRefund)) && (<>
+                    {canVoidOrder(order, mayVoid) && inVoidWindow(order) && (
                       <button data-testid="history-void"
                         onClick={(e) => { e.stopPropagation(); setRevMode('void'); setRefunding(order.id); setRefundReason(''); setRefundOther(''); setRefundPin(''); setRefundMsg(null); }}
                         style={{ ...s.refundBtn, marginRight: 6 }}
                         title={`Inside the ${windowLabel(windowMin)} void window`}
                       >Void</button>
                     )}
+                    {canRefundOrder(order, mayRefund) && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setRevMode('refund'); setRefunding(order.id); setRefundReason(''); setRefundOther(''); setRefundPin(''); setRefundMsg(null); }}
                       style={s.refundBtn}
                     >Refund</button>
+                    )}
                   </>)}
                   {refunding === order.id && (
                     <div style={s.refundForm} onClick={e => e.stopPropagation()}>

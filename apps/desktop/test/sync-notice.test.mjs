@@ -9,7 +9,7 @@
  *
  * RUNS the real src/renderer/lib/syncNotice.ts (type-stripped), then pins the screens that use it (React is not run).
  *
- * MUTATIONS TO CONFIRM BITE: maySeeSync true for a cashier → "never a cashier" fails; syncNotice putting pending before
+ * MUTATIONS TO CONFIRM BITE: backOffice (lib/access.ts, A490) true for a cashier → "never a cashier" fails; syncNotice putting pending before
  * refusals → "refusals first" fails; the POS header status not gated on canSeeSync → its pin fails; the Z-report view
  * without zBackupNote → its pin fails.
  */
@@ -27,18 +27,30 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.SYNC_NOTICE_TS) {
 }
 const DESKTOP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const N = await import(pathToFileURL(path.join(DESKTOP, 'src/renderer/lib/syncNotice.ts')).href);
+// A490: who sees it is lib/access.ts backOffice — it imports shared/permissions (extensionless), so it is bundled with
+// esbuild (as theme-vars.test.mjs) and the bundle imported.
+const { createRequire } = await import('node:module');
+const accessOut = path.join(fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'zaptill-access-')), 'access.mjs');
+createRequire(import.meta.url)('esbuild').buildSync({ entryPoints: [path.join(DESKTOP, 'src/renderer/lib/access.ts')], bundle: true,
+  format: 'esm', outfile: accessOut, logLevel: 'silent' });
+const A = await import(pathToFileURL(accessOut).href);
 const read = (p) => fs.readFileSync(path.join(DESKTOP, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
-ok('who sees sync: owner, manager, supervisor — never a cashier', () => {
-  assert.equal(N.maySeeSync({ permissions: { '*': true } }), true);
-  assert.equal(N.maySeeSync({ role: 'Manager', permissions: { 'orders.create': true } }), true);
-  assert.equal(N.maySeeSync({ role: 'Branch Supervisor', permissions: {} }), true);
-  assert.equal(N.maySeeSync({ role: 'Cashier', permissions: { 'orders.void': true } }), true, 'a role granted reversals is a manager in practice');
-  assert.equal(N.maySeeSync({ role: 'Cashier', permissions: { 'orders.create': true } }), false);
-  assert.equal(N.maySeeSync({ role: 'Waiter', permissions: {} }), false);
-  assert.equal(N.maySeeSync(null), false);
+// A490: by PERMISSIONS (backOffice: anything beyond the shop floor, or the owner's role) — a role's name decides nothing.
+ok('who sees sync: the owner and anyone beyond the shop floor — never a cashier', () => {
+  assert.equal(A.backOffice({ permissions: { '*': true } }), true);
+  assert.equal(A.backOffice({ role: 'Owner', permissions: {} }), true, 'the owner\'s role');
+  assert.equal(A.backOffice({ role: 'Manager', permissions: { 'orders.create': true, 'reports.view': true } }), true);
+  assert.equal(A.backOffice({ role: 'Manager', permissions: { 'orders.create': true } }), false, 'a name alone is not a manager');
+  assert.equal(A.backOffice({ role: 'Branch Supervisor', permissions: {} }), false);
+  assert.equal(A.backOffice({ role: 'Cashier', permissions: { 'orders.void': true } }), true, 'a role granted reversals is a manager in practice');
+  assert.equal(A.backOffice({ role: 'Cashier', permissions: { 'orders.create': true } }), false);
+  assert.equal(A.backOffice({ role: 'Cashier', permissions: { 'orders.create': true, 'staff.view': true, 'sales.history_all': true, 'catalogue.v2': true } }), false,
+    'what every role keeps after migration 134 is not back office');
+  assert.equal(A.backOffice({ role: 'Waiter', permissions: {} }), false);
+  assert.equal(A.backOffice(null), false);
 });
 
 const NOW = new Date(2026, 8, 29, 11, 28);
@@ -95,7 +107,7 @@ ok('POS: the header status is inside canSeeSync; the bottom notice only for mana
   assert.match(pos, /const notice = canSeeSync \? syncNotice\(syncStatus\) : null;/);
   assert.match(pos, /\{notice && \(\s*<div\s+data-testid="sync-notice"/);
   assert.match(pos, /if \(notice\.action === 'retry-failed'\) await posApi\.sync\.retryFailed\(\);\s+else await posApi\.sync\.trigger\(\);/);
-  assert.match(read('src/renderer/App.tsx'), /canSeeSync=\{maySeeSync\(staff as any\)\}/);
+  assert.match(read('src/renderer/App.tsx'), /canSeeSync=\{backOffice\(staff\)\}/);
 });
 ok('manager screen: a neutral "Last synced" line', () => {
   const mp = read('src/renderer/pages/ManagerPage.tsx');

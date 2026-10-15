@@ -14,9 +14,19 @@
  */
 import bcrypt from 'bcrypt';
 import { supabase } from './supabase';
-import { ENTITY_SPECS, judgeCreate, judgeUpdate, describeChange, type TillChange } from './tillChanges';
+import { ENTITY_SPECS, changeKeys, judgeCreate, judgeUpdate, describeChange, type TillChange } from './tillChanges';
 import { verifyPin } from '../routes/auth';
-import { isElevatedRoleName } from './roleCeiling';
+import { canAssignRole } from './roleCeiling';
+import { hasPermission, keysBeyond } from './permissions';   // A490
+import { effectiveKeysForRow } from './effectivePermissions';
+import { isOwnerRoleName } from './ownerRole';
+import { roleKeyMap, personKeys } from './roleKeys';
+
+/** A490: a person holds EVERY key a change needs (tillChanges.changeKeys — fine keys, never expanded from broad ones). */
+const holdsAll = (held: Iterable<string>, keys: readonly string[]): boolean => {
+  const set = new Set(held);
+  return keys.every((k) => hasPermission(set, k));
+};
 import { isDataError } from './orderErrors';
 
 export type ChangeStatus = 'applied' | 'identical' | 'awaiting' | 'approved' | 'rejected' | 'refused';
@@ -50,21 +60,20 @@ function writeRefusal(error: { code?: string; message?: string } | null | undefi
 const retryLater = (c: TillChange, e: unknown): ChangeResult =>
   ({ id: c.id, status: 'refused', message: `${(e as Error)?.message ?? 'could not be applied'} — it is sent again`, retry: true });
 
-/** May `userId` make this kind of change? The owner, '*', or one of the entity's keys (role grants + user overrides). */
+/** May `userId` make this kind of change? The owner, '*', or one of the entity's keys (role grants + user overrides, in
+ *  fine keys — A490: lib/effectivePermissions.ts, the one place a person's keys are worked out). */
 async function makerMay(businessId: string, userId: string | null, keys: string[]): Promise<{ ok: boolean; name: string | null }> {
   if (!userId) return { ok: false, name: null };
   const { data: biz, error: bizErr } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
   readOk(bizErr, 'business');
   const { data: u, error: uErr } = await supabase.from('users')
-    .select('id, name, status, roles ( role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
+    .select('id, name, status, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
     .eq('id', userId).eq('business_id', businessId).maybeSingle();
   readOk(uErr, 'who made it');   // a failed read is not "may not": refusing would undo the change on the till
   if ((biz as Row | null)?.owner_id === userId) return { ok: true, name: (u as Row | null)?.name ?? 'Owner' };
   if (!u || (u as Row).status !== 'active') return { ok: false, name: (u as Row | null)?.name ?? null };
-  const eff: Record<string, boolean> = {};
-  for (const rp of ((u as Row).roles?.role_permissions ?? [])) if (rp.permissions?.key) eff[rp.permissions.key] = true;
-  for (const up of ((u as Row).user_permissions ?? [])) if (up.permissions?.key) eff[up.permissions.key] = up.granted;
-  return { ok: eff['*'] === true || keys.some((k) => eff[k] === true), name: (u as Row).name ?? null };
+  const held = effectiveKeysForRow(u as Row);
+  return { ok: holdsAll(held, keys), name: (u as Row).name ?? null };
 }
 
 /** Whose PIN is this already (another active person of the business), or null. */
@@ -160,10 +169,11 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
   const done = async (r: ChangeResult, extra?: { cloud_value?: Row | null }) => { await record(ctx, c, r, extra); return r; };
 
   // Who may: the person signed in (their own keys), or — sent later by the till's own session — the person who made it.
-  const callerOk = ctx.callerIsOwner || (ctx.callerKeys ?? []).some((k) => k === '*' || spec.permissions.includes(k));
+  const needed = changeKeys(c.entity, c.op, c.data);   // A490: all of them (a price change needs menu.prices, …)
+  const callerOk = ctx.callerIsOwner || holdsAll(ctx.callerKeys ?? [], needed);
   let maker: { ok: boolean };
   try {
-    maker = callerOk && ctx.callerUserId === c.made_by ? { ok: true } : await makerMay(ctx.businessId, c.made_by, spec.permissions);
+    maker = callerOk && ctx.callerUserId === c.made_by ? { ok: true } : await makerMay(ctx.businessId, c.made_by, needed);
   } catch (e) { return retryLater(c, e); }
   if (!callerOk && !maker.ok) return done({ id: c.id, status: 'refused', message: `${c.made_by_name ?? 'Whoever made it'} may not make this change` });
 
@@ -177,7 +187,9 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       if (!makerIsOwner) {
         const { data: role, error: roleErr } = await supabase.from('roles').select('name').eq('id', c.data.role_id).maybeSingle();
         readOk(roleErr, 'role');
-        if (!role || isElevatedRoleName((role as Row).name)) return done({ id: c.id, status: 'refused', message: 'only the owner adds staff with that role' });
+        // A490: by keys — the maker gives only a role holding nothing beyond them (never the owner's role).
+        const mayGive = role ? await makerMayGiveRole(ctx.businessId, c.made_by, String(c.data.role_id), (role as Row).name) : false;
+        if (!mayGive) return done({ id: c.id, status: 'refused', message: 'only the owner adds staff with that role' });
       }
       const clash = await pinTakenBy(ctx.businessId, String(c.data.pin), null);
       if (clash) {
@@ -290,6 +302,15 @@ export async function decideChange(businessId: string, id: string, approve: bool
   return { ok: true, status };
 }
 
+/** A490: may this maker (not the owner) give this role? Their own fine keys against the role's (lib/roleCeiling.ts). */
+async function makerMayGiveRole(businessId: string, makerId: string | null, roleId: string, roleName: string | null): Promise<boolean> {
+  if (!makerId) return false;
+  const maker = await personKeys(businessId, makerId);
+  if (!maker) return false;
+  const keys = (await roleKeyMap([roleId])).get(roleId) ?? new Set<string>();
+  return canAssignRole(maker.keys, { name: roleName, keys });
+}
+
 /** A459: why a staff edit from a till may not be made — the web's rules (routes/staff.ts PATCH) — or null. */
 async function staffEditRefusal(ctx: ChangeContext, c: TillChange, cur: Row): Promise<string | null> {
   if (await isOwnerOf(ctx.businessId, c.made_by)) return null;
@@ -298,8 +319,13 @@ async function staffEditRefusal(ctx: ChangeContext, c: TillChange, cur: Row): Pr
     const { data } = await supabase.from('roles').select('name').eq('id', String(id)).maybeSingle();
     return (data as Row | null)?.name ?? null;
   };
-  if (await isOwnerOf(ctx.businessId, c.entity_id) || isElevatedRoleName(await roleName(cur.role_id))) return 'only the owner changes an owner or an admin';
-  if (c.data.role_id !== undefined && isElevatedRoleName(await roleName(c.data.role_id))) return 'only the owner gives that role';
+  // A490: the owner's role is the owner's; anyone else is changed only by someone holding at least what they hold.
+  if (await isOwnerOf(ctx.businessId, c.entity_id) || isOwnerRoleName(await roleName(cur.role_id))) return 'only the owner changes an owner or an admin';
+  const maker = c.made_by ? await personKeys(ctx.businessId, c.made_by) : null;
+  const target = await personKeys(ctx.businessId, c.entity_id);
+  if (!maker || (target && keysBeyond(maker.keys, target.keys).length)) return 'only the owner changes someone with more rights than the one who made the change';
+  if (c.data.role_id !== undefined && c.data.role_id !== cur.role_id
+    && !(await makerMayGiveRole(ctx.businessId, c.made_by, String(c.data.role_id), await roleName(c.data.role_id)))) return 'only the owner gives that role';
   if (ctx.branchId) {
     const { data: theirs } = await supabase.from('user_branches').select('branch_id').eq('user_id', c.entity_id);
     const list = ((theirs ?? []) as Row[]).map((b) => b.branch_id);

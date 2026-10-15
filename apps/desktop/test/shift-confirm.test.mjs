@@ -57,7 +57,9 @@ db.prepare(`INSERT INTO session (id, token, user_id, business_id, business_name,
 require(path.join(dist, 'deviceConfig.js')).saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1',
   device_id: 'dev-T1', device_role: 'till', terminal_code: 'T1', device_name: 'Front Counter' });
 db.prepare(`INSERT INTO users (id, name) VALUES ('u-test', 'Test Cashier'), ('u-mary', 'Mary')`).run();
-const signIn = (id, name, role, perms = '{}') => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
+// A490: a role's NAME decides nothing on the till — a manager is the permissions an older cloud sent a manager.
+const A490_MANAGER = '{"orders.void":true,"settings.manage":true}';
+const signIn = (id, name, role, perms = ['manager', 'supervisor'].includes(role) ? A490_MANAGER : '{}') => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
   VALUES (1, ?, ?, ?, ?, 'br-1', 'tok', '2026-09-29T06:00:00Z')`).run(id, name, role, perms);
 let n = 0;
 const sale = (shiftId, method, amount) => {
@@ -172,14 +174,23 @@ const before = cloud.confirms.length;
 await E.syncPush();
 ok('a later pass sends nothing again', cloud.confirms.length === before);
 
-// ── The renderer helper (type-stripped) ──
-const H = await import(pathToFileURL(path.join(here, '..', 'src/shared/shiftConfirm.ts')).href);
+// ── The renderer helper ──
+// A490: shiftConfirm.ts imports ./permissions (maySignedInConfirm is permission-based) — an extensionless import that
+// type-stripping cannot resolve, so it is bundled with esbuild (as theme-vars.test.mjs) and the bundle imported.
+const shiftConfirmOut = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-shiftconfirm-')), 'shiftConfirm.mjs');
+createRequire(import.meta.url)('esbuild').buildSync({ entryPoints: [path.join(here, '..', 'src/shared/shiftConfirm.ts')], bundle: true,
+  format: 'esm', outfile: shiftConfirmOut, logLevel: 'silent' });
+const H = await import(pathToFileURL(shiftConfirmOut).href);
 ok('0.6.23 — methods to declare: only those the shift recorded money on, never cash (a method at 0 does not appear)',
   JSON.stringify(H.methodsToDeclare([{ method: 'mpesa', amount: 0 }, { method: 'Card', amount: 200 }, { method: 'cash', amount: 500 }, { method: 'glovo', amount: 100 }])) === '["card","glovo"]');
 ok('0.6.23 — the manager counts cash, what the cashier declared money on, and what the shift recorded (even if declared 0)',
   JSON.stringify(H.methodsToCount({ cash: 2500, mpesa: 0, card: 200 }, [{ method: 'glovo', amount: 100 }, { method: 'mpesa', amount: 0 }])) === '["cash","card","glovo"]');
+// A490: the permission (shifts.confirm, or an older map's orders.void / settings.manage), never the role's name — a
+// "Manager" with no permissions no longer confirms; the owner's role always does.
 ok('0.6.23 — a signed-in manager confirms without a PIN; a cashier does not',
-  H.maySignedInConfirm({ role: 'Manager', permissions: {} }) === true && H.maySignedInConfirm({ role: 'Cashier', permissions: { 'orders.void': true } }) === true
+  H.maySignedInConfirm({ role: 'Manager', permissions: { 'settings.manage': true } }) === true && H.maySignedInConfirm({ role: 'Cashier', permissions: { 'orders.void': true } }) === true
+  && H.maySignedInConfirm({ role: 'Manager', permissions: {} }) === false && H.maySignedInConfirm({ role: 'Owner', permissions: {} }) === true
+  && H.maySignedInConfirm({ role: 'Cashier', permissions: { 'shifts.confirm': true, 'catalogue.v2': true } }) === true
   && H.maySignedInConfirm({ role: 'Cashier', permissions: { 'orders.create': true } }) === false && H.maySignedInConfirm(null) === false);
 ok('every method must be entered (0 is an answer, blank is not)',
   JSON.stringify(H.readAmounts({ card: '0', mpesa: '' }, ['card', 'mpesa'])) === '{"ok":false,"missing":["mpesa"]}'

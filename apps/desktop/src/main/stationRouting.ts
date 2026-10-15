@@ -18,6 +18,7 @@
  *   5. Two tills changing one station: the later save to reach the cloud wins (the whole set is sent, never a diff).
  */
 import type Database from 'better-sqlite3';
+import { personCan } from './personAccess';   // A490
 
 export const PENDING_KEY = 'station_routing_pending';
 
@@ -38,12 +39,9 @@ function writePending(db: Database.Database, map: PendingMap): void {
     .run(PENDING_KEY, JSON.stringify(map), new Date().toISOString());
 }
 
-/** May this person change where categories print? The cloud's own rule: stations.manage or products.manage. */
+/** May this person change where categories print? A490: stations.manage (tillAccess.ts — the owner's role holds all). */
 export function mayRoute(roleName: string | null | undefined, permissionsJson: string | null | undefined): boolean {
-  if (['owner', 'admin'].includes(String(roleName ?? '').toLowerCase())) return true;
-  let p: Record<string, unknown> = {};
-  try { p = JSON.parse(permissionsJson || '{}'); } catch { p = {}; }
-  return p['*'] === true || p['stations.manage'] === true || p['products.manage'] === true;
+  return personCan({ roleName, permissions: permissionsJson }, 'stations.manage');
 }
 
 function setLinks(db: Database.Database, stationId: string, ids: string[]): void {

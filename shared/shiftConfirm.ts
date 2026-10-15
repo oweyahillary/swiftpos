@@ -10,6 +10,7 @@
  * use it; the tests run it. ONE file: shared/shiftConfirm.ts, copied byte-for-byte to the till and the web
  * (scripts/check-shared-sync.mjs).
  */
+import { expandMap, hasPermission } from './permissions';   // A490
 
 export interface MethodOption { code: string; name: string }
 
@@ -58,9 +59,10 @@ export function methodsToCount(declared: Record<string, number> | null | undefin
  */
 export function maySignedInConfirm(s: { role?: string | null; permissions?: Record<string, boolean> | null } | null | undefined): boolean {
   if (!s) return false;
-  const p = s.permissions ?? {};
-  if (p['*'] === true || p['orders.void'] === true || p['shifts.manage'] === true || p['settings.manage'] === true) return true;
-  return ['owner', 'admin', 'manager', 'supervisor', 'branch_manager'].includes(String(s.role ?? '').toLowerCase());
+  // A490: the permission, not the role's name — shifts.confirm (what orders.void / shifts.manage / settings.manage
+  // stood for here: expandMap turns an older map's broad keys into it). The owner's role is the owner: everything.
+  if (['owner', 'admin'].includes(String(s.role ?? '').trim().toLowerCase())) return true;
+  return hasPermission(expandMap(s.permissions ?? {}), 'shifts.confirm');
 }
 
 /** Typed amounts → a method map when EVERY listed method has a number ≥ 0; else the ones still missing. */

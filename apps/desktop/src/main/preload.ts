@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('swiftpos', {
     unlock:            (pin: string)                      => ipcRenderer.invoke('auth:unlock', { pin }),   // A446
     getStaffSession:   ()                                 => ipcRenderer.invoke('auth:getStaffSession'),
     clearStaffSession: ()                                 => ipcRenderer.invoke('auth:clearStaffSession'),
+    // A490: main stored a fresher permission map for the person signed in (the staff list, a token renewal) — re-read it.
+    onPermissionsChanged: (cb: () => void) => {
+      const h = () => cb();
+      ipcRenderer.on('auth:permissionsChanged', h);
+      return () => { ipcRenderer.removeListener('auth:permissionsChanged', h); };
+    },
   },
 
   // A427: a new till finds the branch server on the network and asks to join; the server answers.
@@ -38,6 +44,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     requests: ()                            => ipcRenderer.invoke('node:joinRequests'),
     answer:   (id: string, allow: boolean)  => ipcRenderer.invoke('node:answerJoin', { id, allow }),
     tillVersions: ()                        => ipcRenderer.invoke('node:tillVersions'),   // A443
+    tlsStatus:    ()                        => ipcRenderer.invoke('node:tlsStatus'),      // A489
+    tlsRetrust:   ()                        => ipcRenderer.invoke('node:tlsRetrust'),     // A489
   },
 
   pos: {
@@ -190,6 +198,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
   update: {
     getStatus:  () => ipcRenderer.invoke('update:getStatus'),
     installNow: () => ipcRenderer.invoke('update:installNow'),
+    // A490: restart for the update with someone's PIN — they are identified (shifts.close_day), the session stays.
+    installWithPin: (pin: string) => ipcRenderer.invoke('update:installWithPin', { pin }),
     // Push, not poll: main tells the screen when the update state changes.
     // Returns its own unsubscribe so a React effect can clean up.
     onStatus:   (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => {
@@ -310,6 +320,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
     setReversalRule: (key: string, value: unknown)       => ipcRenderer.invoke('manage:setReversalRule', { key, value }),   // 0.6.30
     setPaymentMethodsEnabled: (codes: string[])          => ipcRenderer.invoke('manage:setPaymentMethodsEnabled', codes),   // A429
+    getMpesa:                 ()                         => ipcRenderer.invoke('manage:getMpesa'),                          // A492
+    setMpesa:                 (v: { kind?: string; number?: string; account?: string; clear?: boolean }) => ipcRenderer.invoke('manage:setMpesa', v),   // A492
     offers: ()                                           => ipcRenderer.invoke('manage:offers'),   // A445
     saveOffer: (offer: unknown)                          => ipcRenderer.invoke('manage:saveOffer', offer),
     deleteOffer: (id: string)                            => ipcRenderer.invoke('manage:deleteOffer', id),

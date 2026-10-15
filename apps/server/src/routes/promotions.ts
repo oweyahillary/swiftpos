@@ -23,7 +23,7 @@ router.use(requireAuth);
 
 // Audit 2026-10-14: create / edit / delete were open to any signed-in user. They need products.manage (the Menu's key —
 // a promotion prices the menu); the owner and '*' pass in rbac. Reads stay open (the POS polls /active).
-const canManage = requirePermission('products.manage');
+const canManage = requirePermission('menu.offers');
 
 /** Every product / category a promotion names must be this business's — null when they are, else the refusal. */
 async function foreignIds(businessId: string, body: Record<string, unknown>): Promise<string | null> {

@@ -264,6 +264,30 @@ const SHARED = [
     ],
   },
   {
+    // A492: a branch's M-Pesa number (Buy Goods till number, or Paybill + account) — set on the till, validated on the
+    // cloud, printed on every receipt, shown on the web.
+    name: 'mpesaReceive.ts',
+    copies: [
+      'shared/mpesaReceive.ts',
+      'apps/server/src/lib/mpesaReceive.ts',
+      'apps/dashboard/src/lib/mpesaReceive.ts',
+      'apps/desktop/src/main/mpesaReceive.ts',
+      'apps/desktop/src/shared/mpesaReceive.ts',
+    ],
+  },
+  {
+    // A490: the ONE permission catalogue — every fine key, the broad keys it replaces, expansion and the ceiling.
+    name: 'permissions.ts',
+    copies: [
+      'shared/permissions.ts',
+      'apps/server/src/lib/permissions.ts',     // the cloud checks fine keys, expands old grants, builds tokens
+      'apps/dashboard/src/lib/permissions.ts',  // the web POS, manager portal and the Roles and permissions screen
+      'apps/admin/src/lib/permissions.ts',      // the admin portal shows a client's roles read-only
+      'apps/desktop/src/shared/permissions.ts', // the till's screens
+      'apps/desktop/src/main/permissions.ts',   // the till's main process (rootDir is src/main)
+    ],
+  },
+  {
     // A365: the shift-confirmation rules the till and the web POS share (methods to declare, amounts, labels, paper).
     name: 'shiftConfirm.ts',
     copies: [

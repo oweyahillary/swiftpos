@@ -55,7 +55,7 @@ await ok('the setting is stored only as a valid "HH:MM"; a branch may override i
 await ok('the till hears it with pos/init (the branch\'s own wins)', () => {
   const p = read('apps/server/src/routes/pos.ts');
   assert.match(p, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',/);   // 0.6.37, A429
-  assert.match(p, /\.in\('key', \['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff'(?:, 'cashier_history_methods')?(?:, 'cashier_sees_shift_sales')?(?:, 'cashier_history_totals')?(?:, 'payment_methods_enabled')?(?:, 'receipt_pay_label', 'receipt_pay_number')?\]\)/);   // A429, A450
+  assert.match(p, /\.in\('key', \['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff'(?:, 'cashier_history_methods')?(?:, 'cashier_sees_shift_sales')?(?:, 'cashier_history_totals')?(?:, 'payment_methods_enabled')?(?:, 'receipt_pay_label', 'receipt_pay_number'(?:, 'receipt_pay_account')?)?\]\)/);   // A429, A450, A492
   assert.match(p, /businessDayCutoff: cleanCutoff\(receiptText\.business_day_cutoff\) \?\? 0,/);
 });
 await ok('the reports and the daily email count the business day', () => {

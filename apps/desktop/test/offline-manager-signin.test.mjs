@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -68,11 +68,16 @@ require(path.join(dist, 'ipcHandlers.js')).registerIpcHandlers();
 const verify = global.__handlers['auth:verifyPin'];
 ok('setup: the real auth:verifyPin handler is registered', typeof verify === 'function');
 
-// The PIN screen's rule (App.tsx) — the list is read from the source so it cannot drift from what ships.
+// The PIN screen's rule (App.tsx). A490: it routes on PERMISSIONS (lib/access.ts backOffice — anyone beyond the shop
+// floor, or the owner's role), never a role-name list. The real access.ts, bundled (it imports shared/permissions).
 const app = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'App.tsx'), 'utf8');
-const MANAGER_ROLES = JSON.parse(app.match(/const MANAGER_ROLES = (\[[^\]]*\]);/)[1].replace(/'/g, '"'));
-const routesToManager = (s) => MANAGER_ROLES.includes((s.role ?? '').toLowerCase()) || s.permissions?.['*'] === true || s.permissions?.['settings.manage'] === true;
-ok('the PIN screen still routes on the top-level role', /MANAGER_ROLES\.includes\(\(s\.role \?\? ''\)\.toLowerCase\(\)\)/.test(app));
+const accessOut = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-access-')), 'access.mjs');
+require('esbuild').buildSync({ entryPoints: [path.join(here, '..', 'src', 'renderer', 'lib', 'access.ts')], bundle: true, format: 'esm',
+  outfile: accessOut, logLevel: 'silent' });
+const Access = await import(pathToFileURL(accessOut).href);
+const routesToManager = (s) => Access.backOffice(s);
+ok('the PIN screen routes on the person\'s permissions (and the owner\'s role) — the offline answer carries both at the top level',
+  /const hasManagerRights = \(s: StaffSession \| null\) => backOffice\(s\);/.test(app) && !/MANAGER_ROLES/.test(app));
 
 const mary = await verify({}, { pin: '4321', branch_id: 'br-1' });
 ok('offline: the manager\'s PIN is accepted from the saved credential', mary?.offline === true && mary.staff?.name === 'Mary', JSON.stringify(mary));

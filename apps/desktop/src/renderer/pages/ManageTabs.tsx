@@ -339,7 +339,9 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
 
 /* ── Staff ────────────────────────────────────────────────────────────────── */
 
-export function StaffTab({ branchId }: { branchId?: string }) {
+// A490: the list is staff.view; adding, renaming, a role, a PIN or (de)activating is staff.edit (`canEdit`) — the main
+// process checks it again, with the ceiling (never a role that can do more than the person, never the owner's role).
+export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canEdit?: boolean }) {
   const [staff, setStaff] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -494,7 +496,7 @@ export function StaffTab({ branchId }: { branchId?: string }) {
           </button>
         </div>
       ) : null}
-      {(!offline || roles.length > 0) && (
+      {canEdit && (!offline || roles.length > 0) && (
         <button onClick={() => setShowNew(v => !v)} className={`${btn} mb-4`}>
           {showNew ? 'Cancel' : 'Add staff member'}
         </button>
@@ -594,22 +596,22 @@ export function StaffTab({ branchId }: { branchId?: string }) {
                 </div>
               )}
             </div>
-            {editFor !== m.id && pinFor !== m.id && (
+            {canEdit && editFor !== m.id && pinFor !== m.id && (
               <button data-testid="staff-edit-open" onClick={() => { setEditFor(m.id); setEditName(m.name ?? ''); setEditRole(m.role_id ?? m.roles?.id ?? ''); setErr(''); }} disabled={busy}
                 className="text-xs text-gray-300 hover:text-white px-2">
                 Edit
               </button>
             )}
-            {pinFor !== m.id && (
+            {canEdit && pinFor !== m.id && (
               <button data-testid="staff-change-pin" onClick={() => { setPinFor(m.id); setNewPin(''); setErr(''); }} disabled={busy}
                 className="text-xs text-gray-300 hover:text-white px-2">
                 Change PIN
               </button>
             )}
-            <button data-testid="staff-toggle-active" onClick={() => toggleActive(m)} disabled={busy}
+            {canEdit && <button data-testid="staff-toggle-active" onClick={() => toggleActive(m)} disabled={busy}
               className="text-xs text-gray-300 hover:text-amber-400 px-2">
               {isActive(m) ? 'Deactivate' : 'Reactivate'}
-            </button>
+            </button>}
           </div>
         ))}
         <Pager paged={staffPaged} noun="staff" onPage={setStaffPage} onSize={n => { setStaffPageSize(n); setStaffPage(1); }} />

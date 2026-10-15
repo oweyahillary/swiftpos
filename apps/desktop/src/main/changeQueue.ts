@@ -7,11 +7,12 @@ import { safeStorage } from 'electron';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { recordChange, pushLocalChanges, changeStates, relayChange, type RecordInput, type Secrets, type LocalChangeRow } from './localChanges';
-import { ENTITY_SPECS, type ChangeEntity, type TillChange } from './tillChanges';
+import { type ChangeEntity, type TillChange, changeKeys } from './tillChanges';
 import { tillChangesPost, tillChangesState, syncAll } from './syncEngine';
 import { relayChangesToNode, hasNode } from './nodeClient';
 import { refreshStaffRosterNow } from './staffRoster';
 import { logLine } from './logFile';
+import { personCan, signedIn as sessionPerson } from './tillAccess';   // A490
 
 /** safeStorage when the machine has it (Windows: DPAPI); a till without it keeps the PIN marked plain until sent. */
 export const tillSecrets: Secrets = {
@@ -23,26 +24,27 @@ export const tillSecrets: Secrets = {
   seal: (s) => safeStorage.encryptString(s).toString('base64'),
 };
 
-/** The signed-in person and their permission keys (staff_session). */
-function signedIn(): { id: string | null; name: string | null; role: string | null; perms: Record<string, unknown> } {
-  const st = getLocalDb().prepare(`SELECT staff_id, staff_name, role_name, permissions FROM staff_session WHERE id = 1`).get() as any;
-  let perms: Record<string, unknown> = {};
-  try { perms = JSON.parse(st?.permissions || '{}'); } catch { perms = {}; }
-  return { id: st?.staff_id ?? null, name: st?.staff_name ?? null, role: st?.role_name ?? null, perms };
+/** The signed-in person (staff_session). */
+function signedIn(): { id: string | null; name: string | null; role: string | null; perms: string } {
+  const st = sessionPerson();
+  return { id: st?.staffId ?? null, name: st?.name ?? null, role: st?.roleName ?? null, perms: st?.permissions ?? '{}' };
 }
 
-/** May the signed-in person make this kind of change? The cloud's own keys (checked there again for the maker). */
-export function mayChange(entity: ChangeEntity): boolean {
+/** A490: the fine keys a change needs come from the shared rule (tillChanges.changeKeys) — the cloud checks the same. */
+export { changeKeys };
+
+/** May the signed-in person make this change? The cloud checks again for the maker. */
+export function mayChange(entity: ChangeEntity, op = 'create', data?: Record<string, unknown> | null): boolean {
   const me = signedIn();
   if (!me.id) return false;
-  if (['owner', 'admin'].includes(String(me.role ?? '').toLowerCase())) return true;
-  return me.perms['*'] === true || ENTITY_SPECS[entity].permissions.some((k) => me.perms[k] === true);
+  const person = { roleName: me.role, permissions: me.perms };
+  return changeKeys(entity, op, data).every((k) => personCan(person, k));
 }
 
 /** Record a change made on this till by the signed-in person: it works here at once; it goes to the cloud (and the
  *  branch server) now if they can be reached, else on the next beat. */
 export function recordTillChange(input: RecordInput, local: { roleName?: string | null; permissions?: unknown } = {}): TillChange {
-  if (!mayChange(input.entity)) throw new Error('Your role does not allow this change.');
+  if (!mayChange(input.entity, input.op, (input.data ?? null) as Record<string, unknown> | null)) throw new Error('Your role does not allow this change.');
   const me = signedIn();
   const r = recordChange(getLocalDb(), input, { id: me.id, name: me.name }, tillSecrets,
     { ...local, branchId: getDeviceConfig()?.branch_id ?? null });

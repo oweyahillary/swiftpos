@@ -9,13 +9,16 @@
 import { PAYMENT_CATALOGUE, enabledFromSetting } from '../../lib/paymentCatalogue';
 import { methodColour } from '../../lib/paymentColours';
 
-export default function BranchPaymentMethods({ override, businessDefault, onSave }: {
+export default function BranchPaymentMethods({ override, businessDefault, onSave, scope = 'branch' }: {
   /** The branch's own list as stored (a JSON string), or undefined when the branch uses the default. */
   override: string | undefined;
   /** The business's default as stored, if any. */
   businessDefault: string | undefined;
   onSave: (value: string | null) => void;
+  /** A490: 'business' — the business-wide list (Settings › Business › Payments) that every branch takes by default. */
+  scope?: 'branch' | 'business';
 }) {
+  const business = scope === 'business';
   const fallback = enabledFromSetting(businessDefault ?? null);
   const enabled = override !== undefined ? enabledFromSetting(override) : fallback;
 
@@ -51,15 +54,17 @@ export default function BranchPaymentMethods({ override, businessDefault, onSave
   );
 
   return (
-    <div className="border-t border-gray-800 pt-4 mt-4" data-testid="branch-payment-methods">
+    <div className={business ? '' : 'border-t border-gray-800 pt-4 mt-4'} data-testid={business ? 'business-payment-methods' : 'branch-payment-methods'}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Payment methods</div>
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{business ? 'Payment methods the business takes' : 'Payment methods'}</div>
           <div className="text-xs text-gray-600 mt-0.5">
-            {override !== undefined ? 'Chosen for this branch' : 'Using the default — switch any method to choose for this branch'}
+            {business
+              ? 'Every branch takes these unless it chooses its own (Settings › Business › Branches › a branch).'
+              : override !== undefined ? 'Chosen for this branch' : 'Using the default — switch any method to choose for this branch'}
           </div>
         </div>
-        {override !== undefined && (
+        {!business && override !== undefined && (
           <button type="button" onClick={() => onSave(null)} className="text-xs text-gray-400 hover:text-white underline">
             Back to the default
           </button>

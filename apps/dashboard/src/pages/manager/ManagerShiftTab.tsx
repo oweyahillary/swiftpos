@@ -30,8 +30,11 @@ interface OpenShift {
 export default function ManagerShiftTab({ currency }: { currency: string }) {
   const { posApi, hasPermission } = usePOSAuth();
   const canForceClose = hasPermission('shifts.force_close');
-  // A462: a manager closes another person's drawer counted (the cloud's own rule: callerMayConfirm) and confirms shifts.
-  const canCountClose = hasPermission('orders.void') || hasPermission('settings.manage');
+  // A462: a manager closes another person's drawer counted and confirms shifts — A490: shifts.confirm (the cloud's
+  // own rule; it was orders.void / settings.manage, which stood for it).
+  const canCountClose = hasPermission('shifts.confirm');
+  // A490: a drawer's expected cash (and its shift report, which shows it) is reports.shifts or shifts.confirm.
+  const seesExpected = hasPermission('reports.shifts') || canCountClose;
   const [counting, setCounting] = useState<OpenShift | null>(null);
   const [confirmKey, setConfirmKey] = useState(0);
 
@@ -91,10 +94,10 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium">{s.cashier_name}{s.terminal_code ? ` · ${s.terminal_code}` : ''}</p>
-                  <p className="text-gray-500 text-xs">open {since(s.opened_at)} · float {money(s.opening_float, currency, { blank: 'unavailable' })} · expected {money(s.expected_cash_live, currency, { blank: 'unavailable' })}</p>
+                  <p className="text-gray-500 text-xs">open {since(s.opened_at)} · float {money(s.opening_float, currency, { blank: 'unavailable' })}{seesExpected && <> · expected {money(s.expected_cash_live, currency, { blank: 'unavailable' })}</>}</p>
                 </div>
                 <div className="sm:flex-shrink-0 flex flex-wrap items-center gap-2">
-                  <button
+                  {seesExpected && <button
                     onClick={async () => {
                       setReportId(s.id); setReportMsg(null);
                       const res = await printShiftReport(s.id);
@@ -103,7 +106,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
                     disabled={reportId === s.id}
                     className="text-xs font-medium px-3 py-1.5 rounded-lg border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors disabled:opacity-50">
                     {reportId === s.id ? 'Printing…' : 'Shift report'}
-                  </button>
+                  </button>}
                   {canCountClose && (
                     <button data-testid={`count-close-${s.id}`} onClick={() => setCounting(s)}
                       className="text-xs font-medium px-3 py-1.5 rounded-lg border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors">

@@ -55,6 +55,7 @@ import techRoutes          from './tech';
 import syncRoutes          from './sync';
 import devicesRoutes       from './devices';
 import parkingRoutes       from './parking';
+import controlsRoutes      from './controls';   // A490: the owner's business options
 import branchPricesRoutes  from './branch-prices';
 
 const router = Router();
@@ -121,5 +122,6 @@ router.use('/tech',           techRoutes);
 router.use('/sync',           syncRoutes);
 router.use('/devices',        devicesRoutes);
 router.use('/parking-sessions', parkingRoutes);
+router.use('/controls',       controlsRoutes);   // A490
 
 export default router;

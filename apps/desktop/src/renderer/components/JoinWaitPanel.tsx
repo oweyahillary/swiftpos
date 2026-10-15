@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { joinWaitNotice, JOIN_WAIT_MINUTES, type JoinServer } from '../lib/joinNotice';
 
-export default function JoinWaitPanel({ tillName, srv, askedAt }: { tillName: string; srv: JoinServer; askedAt: number }) {
+export default function JoinWaitPanel({ tillName, srv, askedAt, securityCode }: { tillName: string; srv: JoinServer; askedAt: number; securityCode?: string | null }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 15_000); return () => clearInterval(t); }, []);
   const n = joinWaitNotice(tillName, srv, JOIN_WAIT_MINUTES - (now - askedAt) / 60_000);
@@ -15,6 +15,12 @@ export default function JoinWaitPanel({ tillName, srv, askedAt }: { tillName: st
       <ol className="mt-2 space-y-1.5 text-sm text-gray-200 list-decimal list-inside">
         {n.steps.map((s, i) => <li key={i}>{s}</li>)}
       </ol>
+      {/* A489: the server's screen shows the same code — the join is encrypted with the certificate it comes from. */}
+      {securityCode && (
+        <p className="mt-2 text-sm text-gray-200" data-testid="join-security-code">
+          Security code <span className="font-mono font-semibold text-white">{securityCode}</span> — the server shows the same code. If it shows a different one, press Deny there.
+        </p>
+      )}
       <p className="mt-2 text-xs text-gray-400 flex items-center gap-2">
         <span className="inline-block w-2 h-2 rounded-full bg-amber-300 animate-pulse" />{n.footer}
       </p>

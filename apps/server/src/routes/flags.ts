@@ -32,8 +32,8 @@ router.get('/', requireAuth, async (req, res) => {
   res.json(flags);
 });
 
-// PUT /api/flags/:key — enable or disable a flag (owner/settings.manage only)
-router.put('/:key', requireAuth, requirePermission('settings.manage'), async (req, res) => {
+// PUT /api/flags/:key — enable or disable a flag (settings.business; A490: owners set POS options at /api/controls)
+router.put('/:key', requireAuth, requirePermission('settings.business'), async (req, res) => {
   const { enabled } = req.body;
 
   // 0.6.27: the POS switches are set per client in the admin portal only (owner's decision) — never by the client.

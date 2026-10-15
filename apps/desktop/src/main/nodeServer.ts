@@ -43,8 +43,15 @@
 //
 // Transport: Node's built-in http (no extra dependency). LAN-local; scoped by
 // branch_id so a stray device from another branch can't inject orders.
+//
+// A489 (2026-10-14): and TLS on the same port. Each connection's first byte says which it is (0x16 opens a TLS
+// handshake); the same request handler serves both. This server's certificate is its own (lanTls.ts) and its tills pin
+// it; plain HTTP stays open for tills on an older build, each logged so the branch can see who still needs updating.
 
 import http from 'http';
+import https from 'https';
+import net from 'net';
+import { serverIdentity, securityCode } from './lanTls';
 import { isNodeRole } from './deviceConfig';
 import crypto from 'crypto';
 import { getLocalDb, applyPulledBranding } from './localDb';
@@ -75,7 +82,12 @@ const PORT_FALLBACKS = [NODE_PORT, NODE_PORT + 1, NODE_PORT + 2, NODE_PORT + 3];
 let portAttempt = 0;
 let boundPort: number | null = null;
 
-let server: http.Server | null = null;
+let server: net.Server | null = null;
+/** A489: the two protocol handlers the listening socket hands each connection to. */
+let plainServer: http.Server | null = null;
+let tlsServer: https.Server | null = null;
+/** A489: this server's certificate (what GET /node/tls hands out), or null when it could not be made — plain only. */
+let tlsCert: string | null = null;
 
 // A427: told when this machine starts or stops serving the branch — index.ts keeps a server awake and in the tray.
 // A hook rather than an import so this module still loads without Electron's window and tray (the gateway test).
@@ -85,6 +97,22 @@ const announce = (serving: boolean) => { try { servingHook?.(serving); } catch (
 
 function lanAddress(req: http.IncomingMessage): string {
   return String(req.socket?.remoteAddress ?? '').replace(/^::ffff:/, '');
+}
+
+/** A489: did this request come over TLS? */
+const encrypted = (req: http.IncomingMessage): boolean => !!(req.socket as any)?.encrypted;
+
+/** A489: a till still talking plain HTTP — logged once per 30 minutes per till (or address), never refused. */
+const warnedPlain = new Map<string, number>();
+function notePlainTill(req: http.IncomingMessage): void {
+  const addr = lanAddress(req);
+  if (encrypted(req) || addr === '127.0.0.1' || addr === '::1') return;   // this machine's own calls stay on loopback
+  const k = headerDevice(req) ?? addr;
+  const now = Date.now();
+  if ((warnedPlain.get(k) ?? 0) > now - 30 * 60_000) return;
+  warnedPlain.set(k, now);
+  if (warnedPlain.size > 200) for (const [key, t] of warnedPlain) if (t < now - 30 * 60_000) warnedPlain.delete(key);
+  logLine('node', `A489: ${k} (${addr}) talks to this server unencrypted — it switches to an encrypted connection by itself once it runs 1.0.15 or later`);
 }
 
 /** What the beacon says: the port that bound, and names a person recognises. Nothing secret. */
@@ -221,9 +249,16 @@ export function startNodeServer(): void {
   const secret = ensureNodeSecret();
   console.log(`[node] branch access code: ${secret}`);
 
-  server = http.createServer(async (req, res) => {
+  const handler = async (req: http.IncomingMessage, res: http.ServerResponse) => {
     try {
       const url = (req.url ?? '').split('?')[0];
+
+      // A489: this server's certificate — public by nature (a till pins it, then trusts nothing else), so open like
+      // the join routes. Served over either protocol.
+      if (req.method === 'GET' && url === '/node/tls') {
+        if (!tlsCert) return json(res, 404, { error: 'this branch server has no certificate' });
+        return json(res, 200, { cert: tlsCert, code: securityCode(tlsCert) });
+      }
 
       // A427: the only two routes open WITHOUT the access code — a till being installed has none yet. A request only
       // queues a question for the person at this server (serverJoin.ts); nothing is handed out until they allow it,
@@ -249,6 +284,7 @@ export function startNodeServer(): void {
       if (!authorised(req)) {
         return json(res, 401, { error: 'unauthorised — bad or missing X-Node-Secret' });
       }
+      notePlainTill(req);
 
       // A410: the branch's tills reach the cloud ONLY through this server. Raw pass-through of the till's own request
       // (its token, device and idempotency headers) to the cloud, and the answer straight back. See nodeGateway.ts.
@@ -512,7 +548,7 @@ export function startNodeServer(): void {
         }
         const body = await readBody(req);
         // F7: a staff change's role and permissions come from THIS server's roles, never from the change; no relayed
-        // change makes anyone an owner / admin / manager or changes one's PIN (branchStaff.vetRelayedStaffChanges).
+        // change makes anyone more than a cashier (A490: by permission) or changes such a person's PIN (branchStaff.vetRelayedStaffChanges).
         const vetted = vetRelayedStaffChanges(Array.isArray(body?.changes) ? body.changes.slice(0, 50) : [], getDeviceConfig()?.branch_id ?? null);
         for (const r of vetted.refused) logLine('node', `/node/changes from ${who.device}: refused ${r.id} — ${r.reason}`);
         const n = acceptRelayedChanges(getLocalDb(), vetted.accepted, nodeSecrets);
@@ -595,6 +631,33 @@ export function startNodeServer(): void {
       if (err instanceof BodyTooLarge) return json(res, 413, { error: `The batch is too large for the branch server (over ${NODE_BODY_LIMIT} bytes) — send fewer rows at a time.` }, { Connection: 'close' });
       json(res, 500, { error: err?.message ?? 'node error' });
     }
+  };
+
+  // A489: one port, both protocols. Made once per start; a certificate that cannot be made (the database unreadable)
+  // leaves this server on plain HTTP, as before, rather than not serving the branch at all.
+  plainServer = http.createServer(handler);
+  tlsServer = null; tlsCert = null;
+  try {
+    const id = serverIdentity();
+    tlsServer = https.createServer({ key: id.key, cert: id.cert }, handler);
+    tlsServer.on('tlsClientError', () => { /* a till with the wrong certificate pinned, or a port scan — nothing to do */ });
+    tlsCert = id.cert;
+  } catch (e: any) {
+    logLine('node', `A489: no certificate for this branch server (${e?.message ?? e}) — serving plain HTTP only`);
+  }
+  server = net.createServer((sock) => {
+    sock.on('error', () => { /* a till that went away mid-connection — never an uncaught error */ });
+    // Nothing said within 15 s: dropped (the handlers' own timeouts start only once a protocol is chosen).
+    sock.setTimeout(15_000, () => sock.destroy());
+    sock.once('data', (first: Buffer) => {
+      sock.setTimeout(0);
+      sock.pause();
+      sock.unshift(first);
+      const target = first[0] === 0x16 && tlsServer ? tlsServer : plainServer;
+      if (!target) { sock.destroy(); return; }
+      target.emit('connection', sock);
+      process.nextTick(() => sock.resume());
+    });
   });
 
   // ── Port conflict ────────────────────────────────────────────────────────
@@ -647,6 +710,9 @@ export function getNodePort(): number | null {
 export function stopNodeServer(): void {
   const was = !!server;
   if (server) { server.close(); server = null; }
+  // A489: the connections already handed to a protocol handler are closed too (the listening socket alone does not).
+  for (const s of [plainServer, tlsServer]) { try { s?.closeAllConnections(); s?.close(); } catch { /* already closed */ } }
+  plainServer = null; tlsServer = null;
   stopBeacon();
   boundPort = null;
   portAttempt = 0;

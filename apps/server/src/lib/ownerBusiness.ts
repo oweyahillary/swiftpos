@@ -30,6 +30,7 @@
  * by caller: login can ask which one, and middleware cannot ask anything. What
  * none of them may do is guess, or claim there are none.
  */
+import { isOwnerRoleName } from './ownerRole';   // A490
 import { supabase } from './supabase';
 
 export interface OwnedBusiness {
@@ -121,7 +122,8 @@ export function pickOwnerUserId(
     const hits = users.filter((u) => norm(u.email) === email);
     if (hits.length === 1) return hits[0].id;
   }
-  const owners = users.filter((u) => norm(u.role_name) === 'owner' && norm(u.status || 'active') === 'active');
+  // A490: the owner's role by lib/ownerRole.ts (owner, or admin — onboarding names the owner's role 'Admin').
+  const owners = users.filter((u) => isOwnerRoleName(u.role_name) && norm(u.status || 'active') === 'active');
   return owners.length === 1 ? owners[0].id : null;
 }
 

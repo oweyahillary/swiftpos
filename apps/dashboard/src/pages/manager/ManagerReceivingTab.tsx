@@ -56,6 +56,9 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   };
   const canTransfer = hasPermission('inventory.transfer');
   const canReceive  = hasPermission('inventory.receive');
+  // A490: cost prices only with menu.costs or reports.costs (the cloud strips them otherwise); without, a PO and a
+  // delivery send no cost and the cloud keeps the saved one.
+  const seesCosts   = hasPermission('menu.costs') || hasPermission('reports.costs');
   const branchId = session?.branchId;
 
   const [transfers, setTransfers] = useState<Transfer[]>([]);
@@ -118,7 +121,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
 
   const createPO = async () => {
     const items = poIngredients
-      .map(g => ({ ingredient_id: g.id, quantity_ordered: Number(poLines[g.id]?.qty || 0), unit_cost: Number(poLines[g.id]?.cost || 0) }))
+      .map(g => ({ ingredient_id: g.id, quantity_ordered: Number(poLines[g.id]?.qty || 0), unit_cost: seesCosts ? Number(poLines[g.id]?.cost || 0) : undefined }))
       .filter(i => i.quantity_ordered > 0);
     if (!items.length) { setPoError('Enter a quantity for at least one ingredient.'); return; }
     setPoBusy(true); setPoError('');
@@ -258,7 +261,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
       poNumber: po.po_number, supplier: po.suppliers?.name ?? null,
       business: business ?? { name: 'ZapTill' }, currency,
       lines: filled.map(i => ({ name: i.name, unit: i.unit, received: i.quantity_received, unitCost: i.unit_cost })),
-      note,
+      note, hideCosts: !seesCosts,
     }));
   };
 
@@ -274,7 +277,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
     try {
       const grn = await posApi.post<{ grn_number: string }>('/api/stock/grn', {
         branch_id: branchId, purchase_order_id: po.id, notes: note || undefined,
-        items: filled.map(i => ({ ingredient_id: i.ingredient_id, quantity_received: i.quantity_received, unit_cost: i.unit_cost,
+        items: filled.map(i => ({ ingredient_id: i.ingredient_id, quantity_received: i.quantity_received, unit_cost: seesCosts ? i.unit_cost : undefined,
           expiry_date: expiries[i.ingredient_id] || undefined })),
       });
       if (alsoPrint && grn?.grn_number) printReceivedGRN(grn.grn_number, po, filled, note);
@@ -527,21 +530,21 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Ingredients</label>
                 <input value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="Search ingredients…"
                   className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm mb-1 focus:outline-none focus:border-swift" />
-                <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-[10px] uppercase tracking-wider text-gray-600 px-1">
-                  <span>Ingredient</span><span className="text-right">Qty</span><span className="text-right pr-1">Unit cost</span>
+                <div className={`grid ${seesCosts ? 'grid-cols-[1fr_auto_auto]' : 'grid-cols-[1fr_auto]'} gap-2 items-center text-[10px] uppercase tracking-wider text-gray-600 px-1`}>
+                  <span>Ingredient</span><span className="text-right">Qty</span>{seesCosts && <span className="text-right pr-1">Unit cost</span>}
                 </div>
                 <div className="max-h-52 overflow-y-auto space-y-1 pr-1">
                   {poIngredients
                     .filter(g => g.name.toLowerCase().includes(poSearch.trim().toLowerCase()))
                     .map(g => (
-                      <div key={g.id} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-sm">
+                      <div key={g.id} className={`grid ${seesCosts ? 'grid-cols-[1fr_auto_auto]' : 'grid-cols-[1fr_auto]'} gap-2 items-center text-sm`}>
                         <span className="text-gray-300 truncate">{g.name}{g.unit ? <span className="text-gray-600"> ({g.unit})</span> : null}</span>
                         <input type="number" min={0} step="any" value={poLines[g.id]?.qty ?? ''} placeholder="0"
                           onChange={e => setPoLines(prev => ({ ...prev, [g.id]: { qty: e.target.value, cost: prev[g.id]?.cost ?? (g.unit_cost != null ? String(g.unit_cost) : '') } }))}
                           className="w-16 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-swift" />
-                        <input type="number" min={0} step="any" value={poLines[g.id]?.cost ?? (g.unit_cost != null ? String(g.unit_cost) : '')} placeholder="0.00"
+                        {seesCosts && <input type="number" min={0} step="any" value={poLines[g.id]?.cost ?? (g.unit_cost != null ? String(g.unit_cost) : '')} placeholder="0.00"
                           onChange={e => setPoLines(prev => ({ ...prev, [g.id]: { qty: prev[g.id]?.qty ?? '', cost: e.target.value } }))}
-                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-swift" />
+                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-swift" />}
                       </div>
                     ))}
                 </div>

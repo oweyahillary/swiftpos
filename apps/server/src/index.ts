@@ -19,6 +19,7 @@ import { startOwnerAlertsJob }  from './jobs/ownerAlerts';       // A476
 import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt } from './lib/watchdogCounters';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
+import { refreshPermissionsState } from './lib/permissionsState';   // A490
 import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own sign-in addresses
 import { isRenewalPath, renewalKey, RENEWALS_PER_WINDOW } from './lib/authLimits';   // A415
 
@@ -302,6 +303,7 @@ app.listen(PORT, () => {
   // every canonical key (DO NOTHING on conflict) so no DB can drift missing one.
   // Not awaited and never throws — startup must not depend on it.
   void ensurePermissionsRegistered();
+  void refreshPermissionsState();   // A490: has migration 134 rewritten the grants into fine keys?
 
   // Same shape and the same reason: make a broken mail path visible at boot
   // instead of at 18:00 UTC in a log nobody reads. Nine businesses got no daily

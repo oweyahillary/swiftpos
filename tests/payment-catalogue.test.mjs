@@ -138,7 +138,11 @@ ok('the payment screen shows the branch\'s methods (not a fixed list), starting 
   assert.ok(read('apps/desktop/src/renderer/pages/POSPage.tsx').includes('enabledMethods={enabledMethods}'));
 });
 ok('Manager › Settings › Payment methods — a switch per method, saved for the branch', () => {
-  assert.ok(read('apps/desktop/src/renderer/components/SettingsPanel.tsx').includes('<BranchPaymentMethodsPanel canEdit={canEdit} />'));
+  // A490: shown and edited for settings.payments (ManagerPage passes it; main checks it again).
+  assert.ok(read('apps/desktop/src/renderer/components/SettingsPanel.tsx').includes('<BranchPaymentMethodsPanel canEdit={canPayments} />'));
+  assert.ok(/\{canPayments && <section className="border-t border-gray-800 pt-6">\s*<BranchPaymentMethodsPanel/.test(read('apps/desktop/src/renderer/components/SettingsPanel.tsx')));
+  assert.ok(read('apps/desktop/src/renderer/pages/ManagerPage.tsx').includes("canPayments={has('settings.payments')}"));
+  assert.ok(read('apps/desktop/src/main/ipcHandlers.ts').includes("handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {\n    requireKey(['settings.payments'], PAYMENTS_REFUSED);"));
   assert.ok(read('apps/desktop/src/renderer/components/BranchPaymentMethodsPanel.tsx').includes('await posApi.manage.setPaymentMethodsEnabled(enabledFromSetting(next));'));
   assert.ok(read('apps/desktop/src/main/ipcHandlers.ts').includes("const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });"));
 });

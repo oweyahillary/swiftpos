@@ -1,3 +1,4 @@
+import { mpesaFromSettings, mpesaDescribe } from '../../lib/mpesaReceive';   // A492
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
@@ -162,23 +163,17 @@ export default function BusinessProfileTab() {
               />
             </div>
           ))}
-          {/* A450: how a customer pays by M-Pesa — printed under the payments on every receipt ("Buy Goods: 123456"). */}
-          <div>
+          {/* A492: the M-Pesa number is per branch, set on the branch's till by its manager (owner, 2026-10-15). Shown here
+              read-only when an older business-wide one is still printed by branches that have not set their own. */}
+          <div data-testid="receipt-pay-readonly">
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Pay by M-Pesa (printed under the payments)</label>
-            <div className="flex gap-2">
-              <select data-testid="receipt-pay-label"
-                value={settings.receipt_pay_label || 'Buy Goods'}
-                onChange={e => { setSettings(prev => ({ ...prev, receipt_pay_label: e.target.value })); saveSetting('receipt_pay_label', e.target.value); }}
-                className="bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift">
-                {['Buy Goods', 'Paybill', 'Till No.'].map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
-              <input data-testid="receipt-pay-number" inputMode="numeric" placeholder="e.g. 123456 (empty = not printed)"
-                value={settings.receipt_pay_number ?? ''}
-                onChange={e => setSettings(prev => ({ ...prev, receipt_pay_number: e.target.value }))}
-                onBlur={e => saveSetting('receipt_pay_number', e.target.value.trim())}
-                className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
-            </div>
-            <p className="text-gray-600 text-xs mt-1">A branch with its own number sets it under Branches › the branch › Receipt &amp; hours.</p>
+            {(() => {
+              const v = mpesaFromSettings(settings.receipt_pay_label, settings.receipt_pay_number, settings.receipt_pay_account);
+              return v
+                ? <p className="text-sm text-gray-300">Business-wide (older set-up): {mpesaDescribe(v)} — printed by branches that have not set their own.</p>
+                : null;
+            })()}
+            <p className="text-gray-500 text-xs mt-1">Each branch sets its own M-Pesa number on its till: Manager › Settings › M-Pesa (Buy Goods till number, or Paybill with its account number). You are notified whenever it changes.</p>
           </div>
         </div>
       </section>

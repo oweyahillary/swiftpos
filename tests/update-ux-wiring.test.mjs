@@ -13,7 +13,7 @@
  *
  * MUTATIONS TO CONFIRM BITE:
  *   - drop quitAndInstall(false,true) → "install-now shows visible progress" fails
- *   - remove the verifyPin/MANAGER_ROLES gate → "restart gated behind a manager PIN" fails
+ *   - remove the shifts.close_day check from update:installWithPin → "restart gated behind a PIN that may close the day" fails
  *   - unmount <UpdateBanner/> from App → "App mounts UpdateBanner" fails
  *   - stop broadcasting update:status → "autoUpdate broadcasts status" fails
  */
@@ -46,21 +46,35 @@ ok('onStatus returns an unsubscribe', /removeListener\('update:status'/.test(pre
 ok('schemas: both update channels present', /'update:getStatus'/.test(sch) && /'update:installNow'/.test(sch));
 
 // 2026-09-22 hardening: the gate must exist in MAIN, not only in the banner. The handler body
-// must consult isManager() BEFORE installUpdateNow() — a renderer-only gate is bypassable.
+// must consult the gate BEFORE installUpdateNow() — a renderer-only gate is bypassable.
+// A490: "a manager" is the permission shifts.close_day (dayService mayCloseDay), not a role's name.
 {
   const m = /handle\('update:installNow',\s*async\s*\(\)\s*=>\s*\{([\s\S]*?)\n\s*\}\);/.exec(ih);
-  // Strip comments first: the handler's own comment names isManager(), and an index into prose
+  // Strip comments first: the handler's own comment names the gate, and an index into prose
   // would pass with the call anywhere (or nowhere) — the A171 / rule-24 class.
   const body = (m ? m[1] : '').replace(/\/\/[^\n]*/g, '');
-  const gate = body.indexOf('isManager()'), install = body.indexOf('installUpdateNow()');
-  ok('main: update:installNow refuses unless isManager()', gate >= 0 && /manager_required/.test(body));
+  const gate = body.indexOf('mayCloseDay()'), install = body.indexOf('installUpdateNow()');
+  ok('main: update:installNow refuses unless mayCloseDay() (shifts.close_day)', gate >= 0 && /manager_required/.test(body)
+    && /export function mayCloseDay\(\): boolean \{\s*return signedInCan\('shifts\.close_day'\);/.test(r('apps/desktop/src/main/dayService.ts')));
   ok('main: the gate runs BEFORE installUpdateNow()', gate >= 0 && install > gate);
-  ok('banner surfaces a main-side refusal', /manager_required/.test(banner));
+  // A490: the banner's own path — the PIN's holder is identified (never signed in) and must hold shifts.close_day, in MAIN,
+  // before installUpdateNow().
+  const w = /handle\('update:installWithPin',\s*async\s*\(_e, payload\)\s*=>\s*\{([\s\S]*?)\n\s*\}\);/.exec(ih);
+  const wb = (w ? w[1] : '').replace(/\/\/[^\n]*/g, '');
+  const wgate = wb.indexOf("personCan(who, 'shifts.close_day')"), winstall = wb.indexOf('installUpdateNow()');
+  ok('main: update:installWithPin refuses a PIN that may not close the day, BEFORE installUpdateNow()',
+    wgate >= 0 && winstall > wgate && /reason: 'not_allowed'/.test(wb) && /identifyPerson\(/.test(wb) && !/persistCloudSignIn|signInLocal/.test(wb));
+  ok('banner surfaces a main-side refusal', /if \(!r\.ok\) \{ setMsg\(r\.message \?\? /.test(banner));
 }
 
 ok('banner shows on downloaded', /state\s*===\s*'downloaded'/.test(banner));
-ok('restart gated behind a manager PIN', /verifyPin\(/.test(banner) && /MANAGER_ROLES/.test(banner));
-ok('restart calls installNow', /posApi\.update\.installNow\(/.test(banner));
+// A490: gated behind a PIN checked in main (update:installWithPin) — never auth.verifyPin, which signed the PIN's holder
+// in over the person at the till, and never a role-name list (the owner was refused by it).
+ok('restart gated behind a PIN that may close the day', /posApi\.update\.installWithPin\(pin\.trim\(\)\)/.test(banner)
+  && !/verifyPin\(/.test(banner) && !/MANAGER_ROLES/.test(banner) && /disabled=\{busy \|\| !pin\.trim\(\)\}/.test(banner));
+ok('restart calls install', /posApi\.update\.installWithPin\(/.test(banner)
+  && /installWithPin:\s*\(pin: string\)\s*=>\s*ipcRenderer\.invoke\('update:installWithPin', \{ pin \}\)/.test(pre)
+  && /'update:installWithPin':\s*\{ pin: \{ t: 'string', min: 1 \} \}/.test(sch));
 ok('gentle reminder re-surfaces a dismissal', /REMIND_AFTER_MS/.test(banner) && /setDismissed\(false\)/.test(banner));
 
 ok('App imports and mounts UpdateBanner', /import\s+UpdateBanner\s+from\s+['"]\.\/pages\/UpdateBanner['"]/.test(app)

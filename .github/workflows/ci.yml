@@ -520,6 +520,14 @@ jobs:
       - name: Permission keys agree across cloud, migrations and UI
         run: node scripts/check-permission-parity.mjs
 
+      # A490 — one catalogue (shared/permissions.ts): every key named in any app is in it, and no broad key
+      # (reports.view, settings.manage, …) is checked anywhere — they are expanded into the fine keys they stood for.
+      - name: Permission catalogue — fine keys only, in every app
+        run: |
+          node --no-warnings scripts/check-permission-catalogue.mjs --self-test
+          node --no-warnings scripts/check-permission-catalogue.mjs
+          node --no-warnings scripts/test-permission-catalogue.mjs
+
       # A60: nine audit IDs had two entries with contradictory statuses, and the
       # header claimed 0 P0 while A17 sat OPEN at P0. Also ratchets A53's orphan
       # audit-ID citations, which may shrink and may never grow.
@@ -926,6 +934,19 @@ jobs:
       - name: Desktop branch server — replication, device keys, Close Branch tills
         working-directory: apps/desktop
         run: node --no-warnings test/branch-server-audit.test.mjs
+
+      # A489 — the branch server and its tills over TLS: one port for both protocols, the till pins the server's own
+      # certificate (at join, or by itself once the server answers TLS), never falls back to plain once pinned; the join,
+      # the gateway and update downloads ride it. Real server, real TLS; mutation-checked.
+      - name: Desktop branch server — encrypted shop network (TLS, pinned)
+        working-directory: apps/desktop
+        run: node --no-warnings test/lan-tls.test.mjs
+
+      # A490 — the till's one permission rule (fine keys, the owner's role, older maps), every gated IPC handler, no
+      # role-name checks left, the update bar never switching the session, fresher permissions reaching the screens.
+      - name: Desktop A490 permissions (one rule, every gate, no role names)
+        working-directory: apps/desktop
+        run: node --no-warnings test/a490-permissions.test.mjs
 
       # Till sync audit (2026-10-14) — the till's cloud push and pull: a close made while its push was in flight, offline
       # voids before the close, the close contract (404 re-armed, 409 ALREADY_CLOSED done), one drawer never starving the

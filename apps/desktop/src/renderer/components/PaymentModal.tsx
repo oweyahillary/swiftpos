@@ -50,6 +50,9 @@ interface Props {
   // Discount ceiling the SERVER will enforce. Passed in so the till clamps to
   // the same number rather than printing a discount the books won't record.
   maxDiscountPct?: number;
+  /** A490: may this person give a discount by hand (sales.discount)? Without it the Discount box is not offered (the
+   *  main process refuses a sale carrying one). Offers still apply. Absent: allowed, as before. */
+  allowDiscount?: boolean;
   currency: string;
   placing: boolean;
   error: string;
@@ -73,7 +76,7 @@ interface Props {
 // business's own methods (A96). Delivery apps (Glovo …) collect from the customer and settle later, so nothing enters
 // the drawer: cash reconciliation filters on method = 'cash' specifically, so no other method can inflate expected cash.
 
-export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers = [], onConfirm, onClose }: Props) {
+export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers = [], onConfirm, onClose }: Props) {
   const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);
   // The first leg starts on cash when the branch takes cash, else on its first method.
   const firstMethod = buttons.some((b) => b.code === 'cash') ? 'cash' : (buttons[0]?.code ?? 'cash');
@@ -84,7 +87,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
   const [showAdjustments, setShowAdjustments] = useState(false);
   const [localError, setLocalError] = useState('');
 
-  const discountRaw = parseFloat(discountInput) || 0;
+  const discountRaw = allowDiscount ? (parseFloat(discountInput) || 0) : 0;   // A490: no hand discount without sales.discount
   const offersOff = round2(offers.reduce((s, o) => s + o.amount, 0));
   const { discountAmount, offerDiscount, manualDiscount, tipAmount, vatAmount, ctlAmount, total, amountDue: billAndTip, discountCapped } = useMemo(
     () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw: parseFloat(tipInput) || 0, vatRate, ctlRate, maxDiscountPct, offerDiscount: offersOff }),
@@ -209,11 +212,11 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
           onClick={() => setShowAdjustments(s => !s)}
           className="text-xs text-gray-300 hover:text-white transition-colors"
         >
-          {showAdjustments ? '▾' : '▸'} Discount / tip
+          {showAdjustments ? '▾' : '▸'} {allowDiscount ? 'Discount / tip' : 'Tip'}
         </button>
         {showAdjustments && (
           <div className="grid grid-cols-2 gap-3">
-            <div>
+            {allowDiscount && <div>
               <label className="block text-xs text-gray-400 mb-1">Discount</label>
               <div className="flex">
                 <input
@@ -239,7 +242,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                   Capped at {maxDiscountPct}% — {fmt(manualDiscount)} applied. Ask a manager for more.
                 </p>
               )}
-            </div>
+            </div>}
             <div>
               <label className="block text-xs text-gray-400 mb-1">Tip ({currency})</label>
               <input

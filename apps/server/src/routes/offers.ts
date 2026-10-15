@@ -70,7 +70,7 @@ router.get('/', async (req, res) => {
   res.json(rows.map((r) => ({ ...r, editable: mayEdit(req, r) })));
 });
 
-router.post('/', requirePermission('products.manage'), async (req, res) => {
+router.post('/', requirePermission('menu.offers'), async (req, res) => {
   const c = cleanOffer(req.body);
   if (!c.ok) { res.status(400).json({ error: (c as { error: string }).error }); return; }
   const offer = (c as { offer: Offer }).offer;
@@ -90,7 +90,7 @@ router.post('/', requirePermission('products.manage'), async (req, res) => {
   res.status(201).json({ ...(data as Row), editable: true });
 });
 
-router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
+router.patch('/:id', requirePermission('menu.offers'), async (req, res) => {
   const { data: row } = await supabase.from('offers').select(COLS)
     .eq('id', req.params.id).eq('business_id', req.businessId).is('deleted_at', null).maybeSingle();
   if (!row) { res.status(404).json({ error: 'Offer not found' }); return; }
@@ -107,7 +107,7 @@ router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
   res.json({ ...(data as Row), editable: true });
 });
 
-router.delete('/:id', requirePermission('products.manage'), async (req, res) => {
+router.delete('/:id', requirePermission('menu.offers'), async (req, res) => {
   const { data: row } = await supabase.from('offers').select('id, branch_ids')
     .eq('id', req.params.id).eq('business_id', req.businessId).is('deleted_at', null).maybeSingle();
   if (!row) { res.status(404).json({ error: 'Offer not found' }); return; }

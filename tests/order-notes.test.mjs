@@ -65,7 +65,7 @@ ok('a dine-in order opened from the web keeps its order note', () => {
 });
 ok('pos/init sends the quick picks (always a list)', () => {
   const pos = read('apps/server/src/routes/pos.ts');
-  assert.match(pos, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',(?: 'receipt_pay_label', 'receipt_pay_number',)?\s*\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // A450: + the receipt's M-Pesa line   // A429   // 0.6.37: + History methods   // 0.6.30: + the owner's void/refund rules
+  assert.match(pos, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',(?: 'receipt_pay_label', 'receipt_pay_number',(?: 'receipt_pay_account',)?)?\s*\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // A492: + the Paybill account   // A450: + the receipt's M-Pesa line   // A429   // 0.6.37: + History methods   // 0.6.30: + the owner's void/refund rules
   assert.match(pos, /\n\s+noteQuickPicks: parseNotePicks\(receiptTextRows\?\.find\(\(r: any\) => r\.key === 'order_note_picks'\)\?\.value\)/);
 });
 ok('the owner\'s list is readable by the settings page', () => {

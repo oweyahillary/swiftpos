@@ -8,14 +8,19 @@
  *
  * The rule, in order:
  *   1. an override PIN (existing clients who set them keep working);
- *   2. the approver's OWN sign-in PIN — only for someone who may approve: the business owner, an owner/admin role, a
- *      '*' grant, or a role/person holding `orders.void` (managers by default, migration 59; never cashiers);
+ *   2. the approver's OWN sign-in PIN — only for someone who may approve: the business owner, the owner's role, a
+ *      '*' grant, or a role/person holding `sales.void` for a void / `sales.refund` for a refund (A490; managers by
+ *      default; never cashiers);
  *   3. the caller then falls back to the legacy business-wide supervisor PIN (routes/orders.ts), unchanged.
  * A PIN that matches a person who may NOT approve (a cashier) is simply not a match — the answer never reveals that a
  * PIN belongs to someone.
  *
- * Pure: the rows and the two PIN checks are passed in, so the test runs this exact rule.
+ * Pure (no database): the rows and the two PIN checks are passed in, so the test runs this exact rule.
  */
+
+import { hasPermission, hasAnyPermission } from './permissions';
+import { isOwnerRoleName } from './ownerRole';
+import { keysForRow } from './effectiveKeys';
 
 export interface ApproverRow {
   id: string;
@@ -31,18 +36,20 @@ export type ApproverResult =
   /** Nobody in the business can approve with a PIN (no override PINs, no approver with a sign-in PIN). */
   | { result: 'none' };
 
-const APPROVE_KEY = 'orders.void';
+/** A490: what is being approved — a void needs `sales.void`, a refund `sales.refund` (orders.void covered both). */
+export type ApproveAction = 'void' | 'refund';
+const APPROVE_KEY: Record<ApproveAction, string> = { void: 'sales.void', refund: 'sales.refund' };
 
-/** May this person approve voids and refunds? Owner, owner/admin role, '*', or an effective `orders.void`. */
-export function mayApprove(row: ApproverRow, ownerId: string | null | undefined): boolean {
+/**
+ * May this person approve this void or refund? The business owner, the owner's role (lib/ownerRole.ts), '*', or the
+ * action's own key held (role grants + their overrides, worked out by lib/effectivePermissions.ts — a broad orders.void
+ * grant from before migration 134 still counts, expanded). No action given: either key (the rule before A490).
+ */
+export function mayApprove(row: ApproverRow, ownerId: string | null | undefined, action?: ApproveAction): boolean {
   if (ownerId && row.id === ownerId) return true;
-  const role = String(row.roles?.name ?? '').toLowerCase();
-  if (role === 'owner' || role === 'admin') return true;
-  const eff: Record<string, boolean> = {};
-  for (const rp of row.roles?.role_permissions ?? []) { const k = rp?.permissions?.key; if (k) eff[k] = true; }
-  // A per-person grant or revoke wins over the role (same order as the sign-in's effective permissions, auth.ts).
-  for (const up of row.user_permissions ?? []) { const k = up?.permissions?.key; if (k) eff[k] = up.granted === true; }
-  return eff['*'] === true || eff[APPROVE_KEY] === true;
+  if (isOwnerRoleName(row.roles?.name)) return true;
+  const held = keysForRow(row, false);
+  return action ? hasPermission(held, APPROVE_KEY[action]) : hasAnyPermission(held, [APPROVE_KEY.void, APPROVE_KEY.refund]);
 }
 
 export async function findApprover(

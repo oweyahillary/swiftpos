@@ -36,8 +36,10 @@ interface Item { kind: 'product' | 'ingredient'; id: string; name: string; unit:
 const isoDay = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const errText = (e: unknown, fallback: string) => (e as { message?: string })?.message || fallback;
 
-export default function Wastage({ client, branchId, branches, currency = 'KES' }: {
+export default function Wastage({ client, branchId, branches, currency = 'KES', showCosts = true }: {
   client: WastageClient;
+  /** A490: values are at cost — shown only to someone holding menu.costs or reports.costs (the owner always). */
+  showCosts?: boolean;
   /** The branch to record at. The owner picks it in the sidebar; a manager is locked to their own. */
   branchId: string | null;
   branches?: { id: string; name: string }[];
@@ -106,19 +108,21 @@ export default function Wastage({ client, branchId, branches, currency = 'KES' }
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4" data-testid="wastage-total">
             <div className="text-xs text-gray-500">Wasted in this period</div>
-            <div className="mt-1 text-2xl font-bold text-red-400">{money(s.total, currency)}</div>
-            <div className="mt-0.5 text-xs text-gray-500">{s.entries} entr{s.entries === 1 ? 'y' : 'ies'} · at cost</div>
+            {showCosts
+              ? <><div className="mt-1 text-2xl font-bold text-red-400">{money(s.total, currency)}</div>
+                <div className="mt-0.5 text-xs text-gray-500">{s.entries} entr{s.entries === 1 ? 'y' : 'ies'} · at cost</div></>
+              : <div className="mt-1 text-2xl font-bold text-red-400">{s.entries} entr{s.entries === 1 ? 'y' : 'ies'}</div>}
           </div>
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
             <div className="mb-2 text-xs text-gray-500">By reason</div>
             {s.byReason.length === 0 ? <div className="text-sm text-gray-500">Nothing recorded.</div> : s.byReason.map((r) => (
-              <div key={r.reason} className="flex justify-between py-0.5 text-sm"><span className="text-gray-300">{r.label} <span className="text-gray-500">({r.entries})</span></span><span className="text-gray-200">{money(r.value, currency)}</span></div>
+              <div key={r.reason} className="flex justify-between py-0.5 text-sm"><span className="text-gray-300">{r.label} <span className="text-gray-500">({r.entries})</span></span>{showCosts && <span className="text-gray-200">{money(r.value, currency)}</span>}</div>
             ))}
           </div>
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
-            <div className="mb-2 text-xs text-gray-500">Most costly items</div>
+            <div className="mb-2 text-xs text-gray-500">{showCosts ? 'Most costly items' : 'Items'}</div>
             {s.byItem.length === 0 ? <div className="text-sm text-gray-500">Nothing recorded.</div> : s.byItem.slice(0, 8).map((i) => (
-              <div key={`${i.kind}:${i.name}`} className="flex justify-between py-0.5 text-sm"><span className="truncate text-gray-300">{i.quantity} × {i.name}</span><span className="text-gray-200">{money(i.value, currency)}</span></div>
+              <div key={`${i.kind}:${i.name}`} className="flex justify-between py-0.5 text-sm"><span className="truncate text-gray-300">{i.quantity} × {i.name}</span>{showCosts && <span className="text-gray-200">{money(i.value, currency)}</span>}</div>
             ))}
           </div>
         </div>
@@ -129,7 +133,7 @@ export default function Wastage({ client, branchId, branches, currency = 'KES' }
           <table className="w-full text-sm">
             <thead className="bg-gray-900 text-left text-xs text-gray-500">
               <tr><th className="px-3 py-2">When</th><th className="px-3 py-2">Item</th><th className="px-3 py-2">Reason</th>
-                <th className="px-3 py-2 text-right">Value</th><th className="px-3 py-2">By</th><th className="px-3 py-2" /></tr>
+                {showCosts && <th className="px-3 py-2 text-right">Value</th>}<th className="px-3 py-2">By</th><th className="px-3 py-2" /></tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {report.entries.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">No wastage in this period.</td></tr>}
@@ -138,7 +142,7 @@ export default function Wastage({ client, branchId, branches, currency = 'KES' }
                   <td className="whitespace-nowrap px-3 py-2 text-gray-400">{dateTime(e.created_at)}<div className="text-xs text-gray-600">{e.ref}{!branchId && branchName(e.branch_id) ? ` · ${branchName(e.branch_id)}` : ''}</div></td>
                   <td className="px-3 py-2 text-gray-200">{Number(e.quantity)} × {e.name}{!e.stock_moved && !e.voided_at && <div className="text-xs text-gray-500">made to order — value only</div>}</td>
                   <td className="px-3 py-2 text-gray-300">{report.reasons.find((r) => r.key === e.reason)?.label ?? e.reason}{e.note && <div className="text-xs text-gray-500">{e.note}</div>}</td>
-                  <td className="px-3 py-2 text-right text-gray-200">{money(e.value, currency)}</td>
+                  {showCosts && <td className="px-3 py-2 text-right text-gray-200">{money(e.value, currency)}</td>}
                   <td className="px-3 py-2 text-gray-400">{e.recorded_by_name ?? '—'}</td>
                   <td className="px-3 py-2 text-right">
                     {e.voided_at
@@ -156,15 +160,15 @@ export default function Wastage({ client, branchId, branches, currency = 'KES' }
       )}
 
       {recording && branchId && report && (
-        <RecordSheet client={client} branchId={branchId} reasons={report.reasons} currency={currency}
+        <RecordSheet client={client} branchId={branchId} reasons={report.reasons} currency={currency} showCosts={showCosts}
           onClose={() => setRecording(false)} onDone={() => { setRecording(false); void load(); }} />
       )}
     </div>
   );
 }
 
-function RecordSheet({ client, branchId, reasons, currency, onClose, onDone }: {
-  client: WastageClient; branchId: string; reasons: Array<{ key: string; label: string }>; currency: string;
+function RecordSheet({ client, branchId, reasons, currency, showCosts, onClose, onDone }: {
+  client: WastageClient; branchId: string; reasons: Array<{ key: string; label: string }>; currency: string; showCosts: boolean;
   onClose: () => void; onDone: () => void;
 }) {
   const [items, setItems] = useState<Item[]>([]);
@@ -217,7 +221,7 @@ function RecordSheet({ client, branchId, reasons, currency, onClose, onDone }: {
         <div className="mt-3 space-y-2">
           {lines.map((l) => (
             <div key={l.id} className="grid grid-cols-[1fr_90px_24px] items-center gap-2 text-sm">
-              <span className="truncate text-gray-200">{l.name}{l.cost !== null && <span className="text-xs text-gray-500"> · {money(l.cost, currency)} each</span>}</span>
+              <span className="truncate text-gray-200">{l.name}{showCosts && l.cost !== null && <span className="text-xs text-gray-500"> · {money(l.cost, currency)} each</span>}</span>
               <input value={l.qty} inputMode="decimal" onChange={(e) => setLines(lines.map((x) => (x.id === l.id ? { ...x, qty: e.target.value } : x)))}
                 className="rounded-lg border border-gray-700 bg-gray-950 px-2 py-1 text-right text-gray-200" aria-label={`Quantity of ${l.name}`} />
               <button onClick={() => setLines(lines.filter((x) => x.id !== l.id))} className="text-gray-500 hover:text-red-400" aria-label="Remove">×</button>
@@ -233,7 +237,7 @@ function RecordSheet({ client, branchId, reasons, currency, onClose, onDone }: {
         <label className="mt-3 block text-xs text-gray-400">Note{reason === 'other' ? '' : ' (optional)'}<br />
           <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300}
             className="mt-1 w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200" /></label>
-        {lines.length > 0 && <p className="mt-3 text-sm text-gray-300">Value at cost: <b className="text-white">{money(total, currency)}</b></p>}
+        {showCosts && lines.length > 0 && <p className="mt-3 text-sm text-gray-300">Value at cost: <b className="text-white">{money(total, currency)}</b></p>}
         <p className="mt-1 text-xs text-gray-500">Stocked items and ingredients leave this branch's stock now. Only the owner can undo an entry.</p>
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">

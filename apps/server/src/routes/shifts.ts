@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import { branchScope, requirePermission, requireAnyPermission } from '../middleware/rbac';
+import { branchScope, requirePermission, can } from '../middleware/rbac';
+import { mayMoveMoney } from '../lib/historyScope';   // A490
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -15,7 +16,7 @@ import { recorderId } from '../lib/expenseRecorder';
 import { cleanExpenseMethod, nonCashExpenses } from '../lib/expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from '../lib/confirmReasons';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
-import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from '../lib/posFeatures';   // A453
+import { MONEY_MOVEMENT_MANAGER_ONLY } from '../lib/posFeatures';   // A453
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
 import { confirmerRows, confirmerByPin } from '../lib/confirmerLookup';
@@ -318,9 +319,8 @@ router.post('/:id/foreign-cash', async (req, res) => {
   const sameTerminal =
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
   const openedByRequester = !!req.userId && (shift.opened_by === req.userId || shift.cashier_id === req.userId);
-  const keys = req.permissionKeys ?? [];
-  const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
-  if (!openedByRequester && !sameTerminal && !isManager) {
+  // A490: a manager is shifts.confirm (what shifts.manage stood for); checked last, so the till's own drawer is not logged.
+  if (!openedByRequester && !sameTerminal && !can(req, 'shifts.confirm')) {
     res.status(403).json({ error: 'Not your drawer' });
     return;
   }
@@ -372,9 +372,8 @@ router.post('/:id/foreign-orders', async (req, res) => {
   const sameTerminal =
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
   const openedByRequester = !!req.userId && (shift.opened_by === req.userId || shift.cashier_id === req.userId);
-  const keys = req.permissionKeys ?? [];
-  const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
-  if (!openedByRequester && !sameTerminal && !isManager) {
+  // A490: a manager is shifts.confirm (what shifts.manage stood for); checked last, so the till's own drawer is not logged.
+  if (!openedByRequester && !sameTerminal && !can(req, 'shifts.confirm')) {
     res.status(403).json({ error: 'Not your drawer' });
     return;
   }
@@ -443,7 +442,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   // be closed by:
   //   * the cashier who opened it (opened_by / cashier_id), or
   //   * a cashier physically on that same terminal (they share the session), or
-  //   * a manager (permission 'shifts.manage' — the same gate force-close uses).
+  //   * a manager (A490: shifts.confirm — callerMayConfirm).
   const sameTerminal =
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '')
       === terminalKeyFromRequest(req);
@@ -935,7 +934,7 @@ export async function computeExpectedCash(shiftId: string, openingFloat: number)
 // requireAnyPermission (A59): the dedicated `shifts.force_close` key OR the
 // broad `settings.manage` — additive, so anyone who could force-close before
 // (via settings.manage) still can, and the now-granted key (migration 83) works.
-router.post('/:id/force-close', requireAnyPermission('shifts.force_close', 'settings.manage'), async (req, res) => {
+router.post('/:id/force-close', requirePermission('shifts.force_close'), async (req, res) => {
   const { id } = req.params;
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
 
@@ -1015,7 +1014,8 @@ router.post('/:id/force-close', requireAnyPermission('shifts.force_close', 'sett
 /** A453: with 'cashier_no_money_out' only a manager signed in records an expense or cash in / out at the POS (no PIN
  *  route for a cashier). Answers 403 and returns false when refused. */
 async function moneyMovementAllowed(req: Request, res: Response): Promise<boolean> {
-  if (mayRecordMoneyMovement(await businessPosFeatures(req.businessId), callerMayConfirm(req as any))) return true;
+  // A490: shifts.cash_movements (lib/historyScope.ts — before migration 134 the switch still applies to non-confirmers).
+  if (mayMoveMoney(req as any, await businessPosFeatures(req.businessId))) return true;
   res.status(403).json({ error: MONEY_MOVEMENT_MANAGER_ONLY, code: 'MANAGER_ONLY_MONEY' });
   return false;
 }
@@ -1184,7 +1184,8 @@ function toBranchOrder(o: any): BranchOrder {
 }
 
 router.get('/branch-report', async (req, res) => {
-  if (!callerMayConfirm(req)) { res.status(403).json({ error: 'A manager signs in to see the branch.', code: 'MANAGER_ONLY' }); return; }
+  // A490: reports.shifts or shifts.confirm (never the till's own sign-in — a manager signs in).
+  if (req.isTill || !can(req, 'reports.shifts', 'shifts.confirm')) { res.status(403).json({ error: 'A manager signs in to see the branch.', code: 'MANAGER_ONLY' }); return; }
   const branchId = branchScope(req);
   if (!branchId) { res.status(400).json({ error: 'Which branch? (branch_id)' }); return; }
   const from = String(req.query.from ?? ''), to = String(req.query.to ?? '');
@@ -1283,7 +1284,8 @@ router.get('/branch-report', async (req, res) => {
 // till that does not hold it. A manager only, the caller's branch.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/:id/zreport', async (req, res) => {
-  if (!callerMayConfirm(req)) { res.status(403).json({ error: 'A manager signs in to see another till\'s shift.', code: 'MANAGER_ONLY' }); return; }
+  // A490: reports.shifts or shifts.confirm (never the till's own sign-in — a manager signs in).
+  if (req.isTill || !can(req, 'reports.shifts', 'shifts.confirm')) { res.status(403).json({ error: 'A manager signs in to see another till\'s shift.', code: 'MANAGER_ONLY' }); return; }
   const { data: shift, error } = await supabase.from('shifts').select('*')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (error) { sendError(res, error); return; }

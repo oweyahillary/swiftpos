@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
+import { BusinessPaymentMethods } from './settings/OwnerControls';   // A490: the business-wide list
 
 // Custom payment methods, per business (register A95 / #4). The built-in tenders
 // (Cash, M-Pesa, Card) are always available at the POS and are not listed here —
@@ -81,6 +82,8 @@ export default function PaymentMethodsPage() {
 
   return (
     <div className="max-w-2xl mx-auto p-4 sm:p-6">
+      {/* A490: which of Kenya's ways to pay the business takes by default (a branch can choose its own). */}
+      <div className="mb-8"><BusinessPaymentMethods /></div>
       <h1 className="text-xl font-semibold text-white">Payment methods</h1>
       <p className="text-sm text-gray-400 mt-1">
         Cash, M-Pesa and Card are always available. Add any other methods you accept —

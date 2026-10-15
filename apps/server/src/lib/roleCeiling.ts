@@ -1,31 +1,56 @@
-// roleCeiling.ts — who may hand out which role and which permission (A340, 2026-09-27).
+// roleCeiling.ts — who may hand out which role and which permission (A340, 2026-09-27; by permission since A490).
 //
 // Owner, 2026-09-27: "i have seen the manager can create an owner that should not happen".
 //
-// Pure (no Supabase import) so the rule runs in a test. ONE rule, used by every staff route and by the role list the
-// dashboard and the till draw their pickers from — so what a manager is offered and what the cloud accepts cannot drift:
-//   - the OWNER (and admin, which the cloud treats as the owner) may assign any role and grant any permission;
-//   - anyone else with staff.manage may assign only NON-elevated roles, and may grant a staff member only permissions
-//     they hold themselves (the same ceiling C3 put on editing a role's permissions).
-// Elevated = owner, admin, manager, supervisor, branch_manager — matched by name, case-insensitively.
+// Pure (no Supabase import) so the rule runs in a test. ONE rule, used by every staff route, the role routes and the
+// role list the dashboard and the till draw their pickers from — so what a manager is offered and what the cloud accepts
+// cannot drift:
+//   - the OWNER ('*') may assign any role and grant any permission;
+//   - the owner's role (named owner / admin — lib/ownerRole.ts) is the owner's: nobody else assigns it;
+//   - anyone else may assign a role, edit a role, grant a person a permission or manage a person only within what
+//     they hold themselves: keysBeyond(caller, those keys) must be empty (shared permissions.ts).
+// A490: this used to match role NAMES (owner, admin, manager, supervisor, branch_manager) — a role called "Shift lead"
+// holding everything passed, and a "Manager" role holding nothing was untouchable. Now the keys decide.
+import { keysBeyond } from './permissions';
+import { isOwnerRoleName } from './ownerRole';
 
-export const ELEVATED_ROLE_NAMES = ['owner', 'admin', 'manager', 'supervisor', 'branch_manager'] as const;
+export interface RoleLike { name?: string | null; keys: Iterable<string> }
 
-export function isElevatedRoleName(name: string | null | undefined): boolean {
-  return (ELEVATED_ROLE_NAMES as readonly string[]).includes(String(name ?? '').trim().toLowerCase());
+/** The caller's keys as the ceiling reads them: the owner holds '*'. */
+export function callerHeld(req: { isOwner?: boolean; permissionKeys?: string[] | null }): Set<string> {
+  if (req.isOwner) return new Set(['*']);
+  return new Set(req.permissionKeys ?? []);
 }
 
-/** May this caller give someone this role? An unknown role (no name) is refused to non-owners — fail closed. */
-export function canAssignRole(callerIsOwner: boolean, roleName: string | null | undefined): boolean {
-  if (callerIsOwner) return true;
-  if (roleName == null || String(roleName).trim() === '') return false;
-  return !isElevatedRoleName(roleName);
+export const isOwnerHeld = (held: ReadonlySet<string>): boolean => held.has('*');
+
+/** May this caller give someone this role? The owner's role only by the owner; an unknown role (no name) never by
+ *  anyone else — fail closed; any other role only when it holds nothing beyond the caller. */
+export function canAssignRole(held: ReadonlySet<string>, role: RoleLike | null | undefined): boolean {
+  if (isOwnerHeld(held)) return true;
+  if (!role || role.name == null || String(role.name).trim() === '') return false;
+  if (isOwnerRoleName(role.name)) return false;
+  return keysBeyond(held, role.keys).length === 0;
 }
 
-/** The permission keys a non-owner is trying to GRANT that they do not hold themselves. Empty = allowed. */
-export function overridesBeyondCaller(callerIsOwner: boolean, callerKeys: string[], grantedKeys: string[]): string[] {
-  if (callerIsOwner) return [];
-  const held = new Set(callerKeys);
-  if (held.has('*')) return [];
-  return [...new Set(grantedKeys)].filter((k) => !held.has(k));
+/**
+ * Why this caller may not change this role's keys (or name), or null. The owner's role is never edited (it is
+ * everything by name — its rows mean nothing); a role holding more than the caller is not theirs to change; nor may
+ * they give it more than they hold.
+ */
+export function roleEditRefusal(held: ReadonlySet<string>, role: RoleLike, wanted?: Iterable<string>): { error: string; missing?: string[] } | null {
+  if (isOwnerRoleName(role.name)) return { error: 'The owner\'s role always has every permission — it cannot be changed.' };
+  if (isOwnerHeld(held)) return null;
+  const over = keysBeyond(held, role.keys);
+  if (over.length) return { error: 'You cannot change a role that has permissions you do not hold', missing: over };
+  if (wanted) {
+    const missing = keysBeyond(held, wanted);
+    if (missing.length) return { error: 'You cannot grant permissions you do not hold', missing };
+  }
+  return null;
+}
+
+/** The permission keys a non-owner is trying to GRANT that they do not hold themselves (fine keys). Empty = allowed. */
+export function overridesBeyondCaller(held: ReadonlySet<string>, grantedKeys: Iterable<string>): string[] {
+  return keysBeyond(held, grantedKeys);
 }

@@ -67,13 +67,14 @@ const asOwner = () => ({ isOwner: true, permissionKeys: [] });
 // ── 1. The route gate admits both, which is the point of the split ─────────
 console.log('\n1. route gate — additive, so nobody loses access');
 {
-  const gate = requireAnyPermission('receipt.manage', 'settings.manage');
+  // A490: settings.manage is a legacy key (refused at load); what it stood for here is settings.business.
+  const gate = requireAnyPermission('receipt.manage', 'settings.business');
 
   ok('a manager holding only receipt.manage gets in',
      run(gate, asStaff('receipt.manage')).allowed);
 
-  ok('someone holding only settings.manage STILL gets in',
-     run(gate, asStaff('settings.manage')).allowed,
+  ok('someone holding only settings.business STILL gets in',
+     run(gate, asStaff('settings.business')).allowed,
      'The split is additive. If this fails, every existing role lost access the '
      + 'moment A46 deployed, which is the outcome the design exists to avoid.');
 
@@ -95,7 +96,7 @@ console.log('\n1. route gate — additive, so nobody loses access');
 // ── 2. hasFullSettingsAccess — who escapes the allow-list ──────────────────
 console.log('\n2. only full settings access escapes the allow-list');
 {
-  ok('settings.manage  -> full',   hasFullSettingsAccess(asStaff('settings.manage')));
+  ok('settings.business -> full (A490: what settings.manage stood for)', hasFullSettingsAccess(asStaff('settings.business')));
   ok('wildcard         -> full',   hasFullSettingsAccess(asStaff('*')));
   ok('owner            -> full',   hasFullSettingsAccess(asOwner()));
   ok('receipt.manage   -> NOT full', !hasFullSettingsAccess(asStaff('receipt.manage')),
@@ -138,7 +139,8 @@ console.log('\n3. the allow-list, and the order of the checks');
   // write a bcrypt hash or an encrypted credential. If it drifts below them, a
   // caller holding only receipt.manage reaches code that writes supervisor_pin
   // before anyone asks whether they may.
-  const guard  = src.indexOf('!hasFullSettingsAccess(req)');
+  // A490: the per-key guard is settingPermission(key) checked with can() (receipt text → receipt.manage, …).
+  const guard  = src.indexOf('if (!can(req, needed))');
   const hashed = src.indexOf('HASHED_SETTING_KEYS.has(key)');
   const encd   = src.indexOf('ENCRYPTED_SETTING_KEYS.has(key)');
 
@@ -159,11 +161,12 @@ console.log('\n3. the allow-list, and the order of the checks');
   // removing 'settings.manage' from the real route left all nineteen
   // assertions green while every existing role silently lost access to every
   // business setting. The route's own wiring has to be read.
-  const gateCall = (src.match(/post\('\/settings',[\s\S]{0,160}?\)\s*,\s*async/) ?? [])[0] ?? '';
+  // A490: the route admits any of SETTING_WRITE_KEYS, then narrows per key (settingPermission).
+  const gateCall = (src.match(/SETTING_WRITE_KEYS = \[[^\]]*\]/) ?? [])[0] ?? '';
   ok('the ROUTE names receipt.manage',
-     /'receipt\.manage'/.test(gateCall), `route gate reads: ${gateCall.slice(0, 120)}`);
-  ok('the ROUTE still names settings.manage',
-     /'settings\.manage'/.test(gateCall),
+     /'receipt\.manage'/.test(gateCall) && /requireAnyPermission\(\.\.\.SETTING_WRITE_KEYS\)/.test(src), `route gate reads: ${gateCall.slice(0, 120)}`);
+  ok('the ROUTE still names settings.business (what settings.manage stood for)',
+     /'settings\.business'/.test(gateCall),
      'Without it, everyone holding settings.manage today loses every business '
      + 'setting the moment this deploys — the exact outcome the additive design '
      + 'exists to prevent, and it would look like a clean green.');

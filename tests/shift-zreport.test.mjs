@@ -91,7 +91,7 @@ ok("the till's own shape: shift, byMethod, totals", () => {
 console.log('\nThe routes\n');
 const route = read('apps/server/src/routes/shifts.ts');
 ok('GET /:id/zreport: a manager only, the caller\'s branch', () => {
-  assert.match(route, /router\.get\('\/:id\/zreport', async \(req, res\) => \{\s*if \(!callerMayConfirm\(req\)\) \{ res\.status\(403\)/);
+  assert.match(route, /router\.get\('\/:id\/zreport', async \(req, res\) => \{\s*(\/\/[^\n]*\n\s*)?if \(req\.isTill \|\| !can\(req, 'reports\.shifts', 'shifts\.confirm'\)\) \{ res\.status\(403\)/  /* A490 */);
   assert.match(route, /if \(!shift \|\| \(branchId && shift\.branch_id !== branchId\)\) \{ res\.status\(404\)/);
 });
 ok('the confirmation travels back: /state answers confirmed_at, who and the counts', () => {

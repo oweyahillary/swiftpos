@@ -146,22 +146,35 @@ try {
 
   console.log('\nThe till and the web POS follow the same rule\n');
   await ok('the till refuses it in its own main process (float and expense), not only on screen', () => {
+    // A490: the rule is shifts.cash_movements (tillAccess mayMoveMoney); on a map from before migration 134 the switch
+    // still applies unless the person may confirm drawers — exactly this guard's meaning before.
     const h = read('apps/desktop/src/main/ipcHandlers.ts');
-    const n = (h.match(/if \(!mayRecordMoneyMovement\(getPosFeatures\(\), signedInConfirmer\(\) !== null\)\) throw new Error\(MONEY_MOVEMENT_MANAGER_ONLY\);/g) ?? []).length;
+    const n = (h.match(/if \(!mayMoveMoney\(sessionPerson\(\), getPosFeatures\(\)\.cashier_no_money_out\)\) throw new Error\(MONEY_MOVEMENT_MANAGER_ONLY\);/g) ?? []).length;
     assert.equal(n, 2, 'shift:float and expense:create');
     const fl = h.slice(h.indexOf("handle('shift:float'"), h.indexOf("handle('shift:close'"));
-    assert.ok(fl.indexOf('mayRecordMoneyMovement') < fl.indexOf('payoutApprover'), 'before any PIN is checked');
+    assert.ok(fl.indexOf('mayMoveMoney') >= 0 && fl.indexOf('mayMoveMoney') < fl.indexOf('payoutApprover'), 'before any PIN is checked');
+    const ex = h.slice(h.indexOf("handle('expense:create'"), h.indexOf("handle('expense:range'"));
+    assert.ok(ex.indexOf('mayMoveMoney') >= 0 && ex.indexOf('mayMoveMoney') < ex.indexOf('payoutApprover'), 'expense: before any PIN too');
+    // …and the rule itself (read from source: the root suites run before the till is built): the switch binds an older
+    // map's cashier, not someone who may confirm; a catalogue map decides by shifts.cash_movements alone; the owner always.
+    assert.match(read('apps/desktop/src/main/personAccess.ts'), /export function mayMoveMoney\(p: PersonLike \| null \| undefined, cashierNoMoneyOut: boolean\): boolean \{\s*if \(!p\) return false;\s*const held = personKeys\(p\.roleName, p\.permissions\);\s*if \(held\.has\('\*'\)\) return true;\s*if \(hasMarker\(p\.permissions\)\) return hasPermission\(held, 'shifts\.cash_movements'\);\s*return !cashierNoMoneyOut \|\| hasPermission\(held, 'shifts\.confirm'\);/);
   });
   await ok('the till\'s shift screen hides the Expenses tab and the cash movement form from a cashier', () => {
     const p = read('apps/desktop/src/renderer/pages/ShiftPanel.tsx');
-    assert.match(p, /const moneyAllowed = mayRecordMoneyMovement\(\{ cashier_no_money_out: managerOnlyMoney \}, isManager\);/);
+    // A490: the same rule on screen (lib/access.ts mayMoveMoney, on the signed-in session and the switch).
+    assert.match(p, /const moneyAllowed = mayMoveMoney\(me, managerOnlyMoney\);/);
+    assert.match(p, /posApi\.auth\.getStaffSession\(\)\.then\(\(s\) => setMe\(s \?\? null\)\)/);
+    assert.match(read('apps/desktop/src/renderer/lib/access.ts'), /export function mayMoveMoney\(s: SessionLike \| null \| undefined, cashierNoMoneyOut: boolean\): boolean \{\s*if \(!s\) return false;\s*if \(isOwner\(s\)\) return true;\s*if \(hasMarker\(s\)\) return can\(s, 'shifts\.cash_movements'\);\s*return !cashierNoMoneyOut \|\| can\(s, 'shifts\.confirm'\);/);
     assert.match(p, /\(moneyAllowed \? \(\['shift', 'expenses'\] as const\) : \(\['shift'\] as const\)\)/);
     assert.match(p, /activeTab === 'expenses' && moneyAllowed &&/);
     assert.match(p, /data-testid="money-manager-only"/);
   });
   await ok('the web POS shows Float and Expense only when allowed', () => {
     const w = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-    assert.match(w, /\{mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\) && \(<>[\s\S]{0,400}setShiftModal\('float'\)[\s\S]{0,500}setShiftModal\('expense'\)[\s\S]{0,120}<\/>\)\}/);
+    // A490: the key (shifts.cash_movements) AND, as before, the switch for anyone who cannot confirm drawers — a map
+    // from before the catalogue holds the key for everyone, so the switch alone decides there (unchanged meaning).
+    assert.match(w, /const mayMoveMoney = hasPermission\('shifts\.cash_movements'\)\s*&& mayRecordMoneyMovement\(posFeatures, maySignedInConfirm\(session as any\)\);/);
+    assert.match(w, /\{mayMoveMoney && \(<>[\s\S]{0,400}setShiftModal\('float'\)[\s\S]{0,500}setShiftModal\('expense'\)[\s\S]{0,120}<\/>\)\}/);
   });
 } finally { server.close(); }
 

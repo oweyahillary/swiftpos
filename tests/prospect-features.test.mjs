@@ -65,7 +65,10 @@ await ok('the client cannot set a POS switch — only the admin portal (owner\'s
   assert.match(read('apps/server/src/routes/flags.ts'), /if \(\(POS_FEATURE_KEYS as readonly string\[\]\)\.includes\(req\.params\.key\)\) \{\s*res\.status\(403\)/);
   const ap = read('apps/admin/src/AdminPortal.tsx');
   assert.match(ap, /\{POS_FEATURES\.map\(pf => \{/);
-  assert.match(ap, /\{toggle\(on, \(\) => toggleFeature\(pf\.key, !on\), pf\.label\)\}/);   // A393: one switch component
+  // A491: the owner sets them now (A490, Settings › Business › POS options) — the admin portal still lists every switch
+  // but shows its state read-only (was: `toggle(on, () => toggleFeature(pf.key, !on), pf.label)`).
+  assert.match(ap, /\{statePill\(on, pf\.label\)\}/);
+  assert.doesNotMatch(ap, /toggleFeature\(pf\.key/);
 });
 
 // ── 2 + 3 + 4: the delivery fee ──────────────────────────────────────────────
@@ -155,10 +158,10 @@ await ok('History filters and orders by payment method or type (never changes th
   assert.equal(list[0].created_at, '2026-09-30T10:00:00Z');
 });
 await ok('the cloud narrows a cashier to their own sales and says whether Reprint is offered (a manager sees all)', () => {
-  // A418: the filters are written once (`filtered`) and applied to the page — and to the total of every page.
-  assert.match(orders, /const ownOnly = !manager && features\.cashier_own_history;[\s\S]{0,1200}?if \(ownOnly\) q = q\.eq\('cashier_id', req\.userId/);
+  // A490: sales.history_all / sales.reprint (lib/historyScope.ts; the switch still applies before migration 134).\n  // A418: the filters are written once (`filtered`) and applied to the page — and to the total of every page.
+  assert.match(orders, /const ownOnly = ownHistoryOnly\(req, features\);[\s\S]{0,1200}?if \(ownOnly\) q = q\.eq\('cashier_id', req\.userId/);
   assert.match(orders, /query = filtered\(query\);/);
-  assert.match(orders, /can_reprint: manager(?:, \.\.\.\(totals \? \{ totals \} : \{\}\))? \}\);/);   // 0.6.37: a cashier never reprints
+  assert.match(orders, /can_reprint: holds\(req, 'sales\.reprint'\)(?:, \.\.\.\(totals \? \{ totals \} : \{\}\))? \}\);/);   // 0.6.37: a cashier never reprints
   const h = read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx');
   assert.match(h, /\{canReprint && <button/);
   assert.match(h, /\{orderTypeLabel\(order\.order_type, order\.delivery_person\)\}/);

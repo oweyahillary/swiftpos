@@ -73,7 +73,10 @@ db.prepare(`INSERT INTO combo_items (combo_id, product_id, name, quantity, sort_
 // Earlier online sign-ins cached these (what the cloud's verify-pin returns as offlineAuth.pinHash).
 const bcrypt = require('bcryptjs');
 const P = require(path.join(dist, 'pinCache.js'));
-P.cacheStaffCredential({ staffId: 'u-mary', name: 'Mary', roleName: 'manager', permissions: { 'reports.view': true } }, bcrypt.hashSync('4321', 4), 'br-1');
+// A490: Mary is a manager by her PERMISSIONS (an older cloud's broad keys: the menu, staff, settings), and may refund
+// (sales.refund) but not void — the till checks the person's own key first, offline or online.
+P.cacheStaffCredential({ staffId: 'u-mary', name: 'Mary', roleName: 'manager', permissions: { 'reports.view': true, 'sales.refund': true,
+  'products.manage': true, 'staff.manage': true, 'settings.manage': true } }, bcrypt.hashSync('4321', 4), 'br-1');
 P.cacheStaffCredential({ staffId: 'u-tom', name: 'Tom', roleName: 'cashier', permissions: {} }, bcrypt.hashSync('1111', 4), 'br-1');
 
 // ── The network: away, then a fake cloud ──
@@ -221,10 +224,10 @@ ok('…and nobody signed in sees no saved lists', lockedMenu.offline === null);
 await call('auth:clearStaffSession');
 online = false; await call('auth:verifyPin', { pin: '4321', branch_id: 'br-1' });
 const vOff = await attempt(() => call('order:void', { orderId: 'o-1', reason: 'wrong item' }));
-// 0.6.30 (A336 stage 3): an offline sign-in no longer refuses a void — the till voids offline by the owner's rules, so
-// with no approver's PIN it asks for one (never "This till is not signed in").
-ok('a void with an offline sign-in goes the offline way: it asks for a manager\'s PIN (not "This till is not signed in")',
-  /Enter the PIN of a manager/.test(vOff.error?.message ?? '') && !/not signed in/i.test(vOff.error?.message ?? ''), vOff.error?.message);
+// 0.6.30 (A336 stage 3): an offline sign-in no longer refuses a void as "not signed in" — the till decides offline.
+// A490: it decides by the person's own key first (sales.void) — Mary may refund, not void, so the till says so.
+ok('a void with an offline sign-in is the till\'s decision: refused by the person\'s key (not "This till is not signed in")',
+  /does not void sales/.test(vOff.error?.message ?? '') && !/not signed in/i.test(vOff.error?.message ?? ''), vOff.error?.message);
 online = true;
 verifyAnswer = () => ({ status: 200, json: { staff: { id: 'u-mary', name: 'Mary', role: 'manager' }, permissions: {}, accessToken: 'cloud-tok-v', refreshToken: 'x' } });
 n = calls.length;
@@ -242,7 +245,8 @@ const menuPage = src('renderer/pages/MenuWorkbench.tsx');
 ok('Menu page: falls back ONLY when the till says it is offline, and says why', /if \(cached\?\.offline\) \{/.test(menuPage)
   && /\{offline\.message\}/.test(menuPage) && /Showing the menu saved on this till — read-only/.test(menuPage));
 ok('Menu page: offline, prices cannot be edited, import is hidden, the detail is the read-only one',
-  /disabled=\{savingId === p\.id \|\| !!offline\}/.test(menuPage) && /onOpenImport && !offline &&/.test(menuPage) && /\) : offline \? \(\s*<SavedItemDetail/.test(menuPage));
+  // A490: the same read-only view also without the key (menu.prices for the price, menu.edit for the detail and import).
+  /disabled=\{savingId === p\.id \|\| !!offline \|\| !canPrices\}/.test(menuPage) && /onOpenImport && !offline && canEdit &&/.test(menuPage) && /\) : offline \|\| !canEdit \? \(\s*<SavedItemDetail/.test(menuPage));
 const staffPage = src('renderer/pages/ManageTabs.tsx');
 // A459 (owner, 2026-10-13: rename, role and deactivate offline — "yes, all three"): Deactivate works offline now.
 ok('Staff page: offline, the saved list with the reason; Deactivate and Edit work offline (A459)', /if \(cached\?\.offline\) \{/.test(staffPage)

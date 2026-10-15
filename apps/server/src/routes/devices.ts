@@ -14,7 +14,7 @@
 import { safeRouter } from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission } from '../middleware/rbac';
+import { requirePermission } from '../middleware/rbac';
 import { isNodeRole } from '../lib/deviceRegistry';
 import { ROLE_HANDOVER_WINDOW_MINUTES } from '../lib/deviceRole';
 import { supabase }    from '../lib/supabase';
@@ -88,7 +88,7 @@ router.get('/', async (req, res) => {
 // The server states the facts and computes nothing subjective beyond staleness in
 // hours; whether "behind" is acceptable is a judgement for whoever reads it.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
+router.get('/fleet', requirePermission('devices.approve'), async (req, res) => {
   // A184 Tier 3 — by default the fleet is LIVE terminals only (retired ones drop
   // out of the health view and the not-syncing count). ?retired=1 shows the archive.
   const showRetired = String(req.query.retired ?? '') === '1';
@@ -203,7 +203,7 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
 // refresh applies `patch`, which does not touch it), so a chosen name persists
 // across sign-ins and is not clobbered. Tenant-guarded — you can only rename your
 // own devices.
-router.patch('/:id/label', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
+router.patch('/:id/label', requirePermission('devices.approve'), async (req, res) => {
   const label = String(req.body?.label ?? '').trim();
   if (!label)            { res.status(400).json({ error: 'A device name is required.' }); return; }
   if (label.length > 60) { res.status(400).json({ error: 'Device name must be 60 characters or fewer.' }); return; }
@@ -223,7 +223,7 @@ router.patch('/:id/label', requireAnyPermission('devices.approve', 'settings.man
 // ── PATCH /api/devices/:id/retire ── A184 Tier 3: mark a dead terminal retired ──
 // Retiring drops the till out of the fleet health view and the not-syncing banner
 // but keeps all its history (orders/shifts). Reversible via /unretire. Owner-scoped.
-router.patch('/:id/retire', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
+router.patch('/:id/retire', requirePermission('devices.approve'), async (req, res) => {
   const { data: device } = await supabase
     .from('user_devices').select('id, business_id, retired_at')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
@@ -240,7 +240,7 @@ router.patch('/:id/retire', requireAnyPermission('devices.approve', 'settings.ma
 });
 
 // ── PATCH /api/devices/:id/unretire ── A184 Tier 3: bring a retired terminal back ──
-router.patch('/:id/unretire', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
+router.patch('/:id/unretire', requirePermission('devices.approve'), async (req, res) => {
   const { data: device } = await supabase
     .from('user_devices').select('id, business_id')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
@@ -257,7 +257,7 @@ router.patch('/:id/unretire', requireAnyPermission('devices.approve', 'settings.
 
 // ── PATCH /api/devices/:id/approve ───────────────────────────────────────────
 
-router.patch('/:id/approve', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.patch('/:id/approve', requirePermission('devices.approve'), async (req, res) => {  // M22: was requireAuth only
   const { id } = req.params;
 
   const { data: device, error: fetchErr } = await supabase
@@ -297,7 +297,7 @@ router.patch('/:id/approve', requireAnyPermission('devices.approve', 'settings.m
 
 // ── PATCH /api/devices/:id/reject ────────────────────────────────────────────
 
-router.patch('/:id/reject', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.patch('/:id/reject', requirePermission('devices.approve'), async (req, res) => {  // M22: was requireAuth only
   const { id } = req.params;
 
   const { data: device, error: fetchErr } = await supabase
@@ -328,7 +328,7 @@ router.patch('/:id/reject', requireAnyPermission('devices.approve', 'settings.ma
 // ── DELETE /api/devices/:id ───────────────────────────────────────────────────
 // Revoke a previously approved device — e.g. lost/stolen or staff departure.
 
-router.delete('/:id', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.delete('/:id', requirePermission('devices.approve'), async (req, res) => {  // M22: was requireAuth only
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
     .select('id, business_id')
@@ -366,7 +366,7 @@ router.delete('/:id', requireAnyPermission('devices.approve', 'settings.manage')
 // incumbent rather than the newcomer is deliberate: the operator names the
 // machine being replaced, which is the one they can identify, and there may be
 // no row yet for a replacement that has never synced.
-router.post('/:id/authorise-handover', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
+router.post('/:id/authorise-handover', requirePermission('devices.approve'), async (req, res) => {
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
     .select('id, device_id, device_label, branch_id, device_role, role_confirmed_at')

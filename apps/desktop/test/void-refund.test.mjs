@@ -27,6 +27,12 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.VOID_REFUND_TS) {
 }
 const DESKTOP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const V = await import(pathToFileURL(path.join(DESKTOP, 'src/renderer/lib/voidRefund.ts')).href);
+// A490: who may is lib/access.ts `can` (sales.void / sales.refund) — bundled with esbuild (it imports shared/permissions).
+const { createRequire } = await import('node:module');
+const accessOut = path.join(fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'zaptill-access-')), 'access.mjs');
+createRequire(import.meta.url)('esbuild').buildSync({ entryPoints: [path.join(DESKTOP, 'src/renderer/lib/access.ts')], bundle: true,
+  format: 'esm', outfile: accessOut, logLevel: 'silent' });
+const A = await import(pathToFileURL(accessOut).href);
 const read = (p) => fs.readFileSync(path.join(DESKTOP, p), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
@@ -56,12 +62,22 @@ ok('a till clock slightly ahead never makes a negative age', () => {
   assert.equal(V.ageMinutes({ created_at: at(-3) }, NOW), 0);
   assert.equal(V.ageMinutes({ created_at: 'not a date' }, NOW), 0);
 });
-ok('who may void or refund: owner ("*") and orders.void — never a cashier (the owner\'s rule)', () => {
-  assert.equal(V.mayVoidRefund({ permissions: { '*': true } }), true);
-  assert.equal(V.mayVoidRefund({ permissions: { 'orders.void': true, 'orders.create': true } }), true);
-  assert.equal(V.mayVoidRefund({ permissions: { 'orders.create': true } }), false);
-  assert.equal(V.mayVoidRefund({ permissions: { 'orders.void': false } }), false);
-  assert.equal(V.mayVoidRefund(null), false);
+ok('who may void or refund: owner ("*"), sales.void / sales.refund (an older map\'s orders.void: both) — never a cashier', () => {
+  const rights = (s) => ({ void: A.can(s, 'sales.void'), refund: A.can(s, 'sales.refund') });
+  assert.deepEqual(rights({ permissions: { '*': true } }), { void: true, refund: true });
+  assert.deepEqual(rights({ role: 'owner', permissions: {} }), { void: true, refund: true });
+  assert.deepEqual(rights({ permissions: { 'orders.void': true, 'orders.create': true } }), { void: true, refund: true });
+  assert.deepEqual(rights({ permissions: { 'sales.refund': true, 'catalogue.v2': true } }), { void: false, refund: true });
+  assert.deepEqual(rights({ permissions: { 'orders.create': true } }), { void: false, refund: false });
+  assert.deepEqual(rights({ permissions: { 'orders.void': false } }), { void: false, refund: false });
+  assert.deepEqual(rights(null), { void: false, refund: false });
+  // A490: the History button follows what the person holds.
+  const sale = { status: 'completed', created_at: at(5) }, old = { status: 'completed', created_at: at(120) };
+  assert.equal(V.reverseActionFor(sale, { void: true, refund: true }, NOW)?.label, 'Void / Refund');
+  assert.equal(V.reverseActionFor(sale, { void: true, refund: false }, NOW)?.label, 'Void');
+  assert.equal(V.reverseActionFor(old, { void: true, refund: false }, NOW), null);
+  assert.equal(V.reverseActionFor(sale, { void: false, refund: true }, NOW)?.mode, 'refund');
+  assert.equal(V.reverseActionFor(sale, { void: false, refund: false }, NOW), null);
 });
 ok('the refusal shows the cloud\'s own words; a wrong PIN clears the box', () => {
   assert.deepEqual(V.reverseErrorMessage('That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', 'Refund failed'),
@@ -75,10 +91,10 @@ ok('the refusal shows the cloud\'s own words; a wrong PIN clears the box', () =>
 });
 
 const pos = read('src/renderer/pages/POSPage.tsx');
-ok('POSPage: History buttons from reverseAction, gated on canVoidRefund (no more "canVoid = true")', () => {
-  assert.match(pos, /const canVoid = canVoidRefund;/);
+ok('POSPage: History buttons from reverseActionFor, gated on the person\'s void / refund rights (no more "canVoid = true")', () => {
+  assert.match(pos, /const canVoid = reverseRights\.void \|\| reverseRights\.refund;/);
   assert.ok(!/const canVoid = true;/.test(pos));
-  assert.match(pos, /const reverse  = canVoid \? reverseAction\(o, Date\.now\(\), voidWindowMin\) : null;/);   // 0.6.30: the owner's window
+  assert.match(pos, /const reverse  = reverseActionFor\(o, reverseRights, Date\.now\(\), voidWindowMin\);/);   // 0.6.30: the owner's window
   assert.match(pos, /\{reverse && \(\s*<button[\s\S]*?\{reverse\.label\}/);
   assert.ok(!/ageMin <= 30/.test(pos) && !/>expired</.test(pos), 'the 30-minute cut-off and the "expired" label are gone');
   assert.match(pos, /\{isRefunded\(o\) && \(/);
@@ -90,8 +106,8 @@ ok('A358: History ITSELF is for everyone (0.6.18 hid it from cashiers) — only 
   assert.ok(!/canVoid &&/.test(block), 'the History button is not wrapped in canVoid');
   assert.match(pos, /max-w-4xl max-h-\[80vh\]/, 'the wider window (the longer buttons no longer scroll sideways)');
 });
-ok('App passes canVoidRefund from the signed-in staff\'s permissions', () => {
-  assert.match(read('src/renderer/App.tsx'), /canVoidRefund=\{mayVoidRefund\(staff\)\}/);
+ok('App passes the void / refund rights from the signed-in staff\'s permissions', () => {
+  assert.match(read('src/renderer/App.tsx'), /reverseRights=\{\{ void: can\(staff, 'sales\.void'\), refund: can\(staff, 'sales\.refund'\) \}\}/);
 });
 const vm = read('src/renderer/components/VoidModal.tsx');
 ok('VoidModal: "Manager PIN", the cloud\'s message, no "Invalid supervisor PIN" rewrite', () => {
@@ -99,7 +115,7 @@ ok('VoidModal: "Manager PIN", the cloud\'s message, no "Invalid supervisor PIN" 
   assert.match(vm, /const shown = reverseErrorMessage\(msg, isRefund \? 'Refund failed' : 'Void failed'\);/);
   const code = vm.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   assert.ok(!/Invalid supervisor PIN/.test(code) && !/Supervisor PIN/.test(code));
-  assert.match(vm, /const isExpired = ageMin > windowMin;/);   // 0.6.30: the owner's window (default VOID_WINDOW_MIN)
+  assert.match(vm, /const isExpired = ageMin > windowMin \|\| !rights\.void;/);   // A490: no sales.void → as if the window had closed   // 0.6.30: the owner's window (default VOID_WINDOW_MIN)
   assert.match(vm, /windowMin = VOID_WINDOW_MIN,/);
 });
 

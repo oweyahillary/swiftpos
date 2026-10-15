@@ -22,6 +22,7 @@ import { reasonsNeeded, cleanReasons, missingReasons } from './confirmReasons';
 import { kitchenVoidsForShift, type KitchenVoidLine } from './kitchenService';
 import type { KitchenVoidSummary } from './kitchenLines';
 import { riderSummary, type RiderLine } from './delivery';   // 0.6.33: the riders summary
+import { signedIn as sessionPerson, personCan, seesAllHistory } from './tillAccess';   // A490: the till's one rule
 
 /**
  * A334 (2026-09-26): cash on a SHARED drawer that this till does not hold — sales, floats and
@@ -620,11 +621,11 @@ export function shiftCloseRights(shift: { cashier_id?: string | null; opened_by?
   const db = getLocalDb();
   const ownerId = shift.cashier_id ?? shift.opened_by ?? null;
   const ownerName = ownerId ? ((db.prepare(`SELECT name FROM users WHERE id=?`).get(ownerId) as { name?: string } | undefined)?.name ?? null) : null;
-  const st = db.prepare(`SELECT staff_id, staff_name, role_name, permissions FROM staff_session WHERE id=1`).get() as
-    { staff_id: string; staff_name: string; role_name: string | null; permissions: string | null } | undefined;
-  if (!st?.staff_id) return { allowed: false, ownerName };
-  const isOwner = st.staff_id === shift.cashier_id || st.staff_id === shift.opened_by;
-  return { allowed: isOwner || isShiftManager(st.role_name, st.permissions), ownerName: ownerName ?? (isOwner ? st.staff_name : null) };
+  const st = sessionPerson(db);
+  if (!st) return { allowed: false, ownerName };
+  const isOwner = st.staffId === shift.cashier_id || st.staffId === shift.opened_by;
+  // A490: closing ANOTHER person's drawer is an approval — shifts.confirm (the cloud's mayConfirm).
+  return { allowed: isOwner || personCan(st, 'shifts.confirm'), ownerName: ownerName ?? (isOwner ? st.name : null) };
 }
 
 /**
@@ -633,26 +634,36 @@ export function shiftCloseRights(shift: { cashier_id?: string | null; opened_by?
  * History. A manager (the shift-manager rule) always sees every sale and may reprint. Nobody signed in → own-only
  * with nobody to match, i.e. nothing, when the switch is on.
  */
-export interface HistoryScope { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean;
+export interface HistoryScope { staffId: string | null;
+  /** A490: may confirm drawers (shifts.confirm) — sees every payment method and the total, and a close is not blind. */
+  manager: boolean;
+  ownOnly: boolean;
+  /** A490: sales.reprint. */
+  canReprint: boolean;
+  /** A490: may void (sales.void) / refund (sales.refund) from History — the screen offers what main allows. */
+  canVoid: boolean; canRefund: boolean;
   /** 0.6.37 (A387): the payment methods this person's History shows ([] = every; a manager always every). */
   methods: string[];
   /** A418: does History show the total of what the filters show? */
   showTotal: boolean }
-/** The signed-in person, and whether they are a manager for shift purposes (isShiftManager). */
+/** The signed-in person, and whether they may confirm drawers (shifts.confirm) — "a manager for shift purposes". */
 function signedIn(): { staffId: string | null; manager: boolean } {
-  const st = getLocalDb().prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get() as
-    { staff_id: string | null; role_name: string | null; permissions: string | null } | undefined;
-  return { staffId: st?.staff_id ?? null, manager: !!st?.staff_id && isShiftManager(st.role_name, st.permissions) };
+  const st = sessionPerson();
+  return { staffId: st?.staffId ?? null, manager: !!st && personCan(st, 'shifts.confirm') };
 }
 export function historyScope(): HistoryScope {
   const f = getPosFeatures();
-  const { staffId, manager } = signedIn();
+  const st = sessionPerson();
+  const manager = !!st && personCan(st, 'shifts.confirm');
   return {
-    staffId,
+    staffId: st?.staffId ?? null,
     manager,
-    ownOnly: f.cashier_own_history && !manager,
-    // 0.6.37 (owner): "never reprints a receipt" — a cashier never reprints; a manager and the owner may.
-    canReprint: manager,
+    // A490: sales.history_all; a map from before the catalogue keeps the admin portal's 'cashier_own_history' switch.
+    ownOnly: !seesAllHistory(st, f.cashier_own_history),
+    // 0.6.37 (owner): "never reprints a receipt" — now the role's sales.reprint (A490).
+    canReprint: !!st && personCan(st, 'sales.reprint'),
+    canVoid: !!st && personCan(st, 'sales.void'),
+    canRefund: !!st && personCan(st, 'sales.refund'),
     methods: manager ? [] : getCashierHistoryMethods(),
     // A418: the total of what the filters show — a manager always; a cashier only while the owner's switches are on.
     showTotal: manager || getCashierHistoryTotals(),
@@ -703,13 +714,7 @@ export function blindReport(z: ZReport, seesSales: boolean = getCashierSeesShift
   };
 }
 
-/** A manager for shift purposes (close someone else's shift, confirm a shift) — the cloud's mayConfirm rule. */
-export function isShiftManager(roleName: string | null | undefined, permissionsJson: string | Record<string, unknown> | null | undefined): boolean {
-  if (['owner', 'admin', 'manager', 'supervisor', 'branch_manager'].includes(String(roleName ?? '').toLowerCase())) return true;
-  let p: Record<string, unknown> = {};
-  try { p = typeof permissionsJson === 'string' ? JSON.parse(permissionsJson || '{}') : (permissionsJson ?? {}); } catch { p = {}; }
-  return p['*'] === true || p['orders.void'] === true || p['shifts.manage'] === true || p['settings.manage'] === true;
-}
+// A490: isShiftManager (a role-name list and broad keys) is gone — shifts.confirm through tillAccess.ts is the rule.
 
 export function closeShift(closing_float: number, notes?: string, foreign: ForeignCash | null = null,
                            declared: Record<string, number> | null = null): ZReport {

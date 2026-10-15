@@ -16,6 +16,7 @@
  * LOGIN_OTP=off on the cloud turns every code off — for an emergency only (email down and an admin locked out).
  * Tills never come here: a till signs in by enrolment and PIN, offline too.
  */
+import { isBackOffice } from './permissions';   // A490
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import qrcode from 'qrcode-generator';
@@ -153,11 +154,10 @@ export function readSetup(token: unknown, kind: OtpKind, id: string): string | n
   } catch { return null; }
 }
 
-/** Who must enter a code on the web: owners and the manager tier (A391). Cashiers do not. */
-export function roleNeedsOtp(roleName: string | null | undefined, isOwner = false): boolean {
-  if (isOwner) return true;
-  const nm = String(roleName ?? '').toLowerCase().replace(/ /g, '_');
-  return ['owner', 'admin', 'manager', 'supervisor', 'branch_manager'].includes(nm);
+/** Who must enter a code on the web: the owner and anyone "back office" — holding anything beyond the shop floor's keys
+ *  (A391; A490: by permission — shared permissions.ts isBackOffice — not by role name). Cashiers do not. */
+export function needsOtp(held: ReadonlySet<string> | readonly string[], isOwner = false): boolean {
+  return isOwner || isBackOffice(held);
 }
 
 export interface OtpSubject {

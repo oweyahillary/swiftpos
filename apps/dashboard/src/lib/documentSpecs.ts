@@ -48,19 +48,24 @@ export interface GrnDocInput {
   note?: string | null;
   // Some callers show a different 2nd meta (e.g. History has the branch, not supplier).
   secondMeta?: Meta;
+  /** A490: the person may not see cost prices (menu.costs / reports.costs) — the note lists quantities only. */
+  hideCosts?: boolean;
 }
 export function grnDocSpec(i: GrnDocInput): PrintDocSpec {
   let total = 0;
   const rows = i.lines.map(l => {
     const line = l.received * l.unitCost; total += line;
-    return [`${l.name}${l.unit ? ` (${l.unit})` : ''}`, String(l.received), docMoney(i.currency, l.unitCost), docMoney(i.currency, line)];
+    const name = `${l.name}${l.unit ? ` (${l.unit})` : ''}`;
+    return i.hideCosts ? [name, String(l.received)] : [name, String(l.received), docMoney(i.currency, l.unitCost), docMoney(i.currency, line)];
   });
   return {
     docType: 'GOODS RECEIVED NOTE', number: i.grnNumber, dateLabel: i.date,
     accent: DOC_ACCENT.grn, statusLabel: 'Received', business: i.business,
     meta: [{ label: 'Against PO', value: i.poNumber ?? '—' }, i.secondMeta ?? { label: 'Supplier', value: i.supplier ?? '—' }],
-    columns: [{ label: 'Ingredient' }, { label: 'Received', align: 'right' }, { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' }],
-    rows, totals: [{ label: 'Total received value', value: docMoney(i.currency, total) }],
+    columns: i.hideCosts
+      ? [{ label: 'Ingredient' }, { label: 'Received', align: 'right' }]
+      : [{ label: 'Ingredient' }, { label: 'Received', align: 'right' }, { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' }],
+    rows, totals: i.hideCosts ? [] : [{ label: 'Total received value', value: docMoney(i.currency, total) }],
     note: i.note ?? undefined, signatures: ['Received by', 'Checked by'],
   };
 }

@@ -109,9 +109,25 @@ ok('past the owner\'s window: refused, nothing changed (and it says refund inste
 go('void', b, owner);
 ok('the owner voids at any age', status(b).status === 'voided');
 const c = sale([{ method: 'cash', amount: 1000 }]);
+// A490: sales.void / sales.refund (an older map's orders.void expands to both), never the role's name.
 ok('a cashier cannot (signed in or as approver)',
-  /Only a manager or the owner/.test(threw(() => go('void', c, manager, cashier))?.message ?? '')
+  /does not void sales/.test(threw(() => go('void', c, manager, cashier))?.message ?? '')
   && /PIN was not recognised/.test(threw(() => go('void', c, cashier, manager))?.message ?? '') && status(c).status === 'completed');
+{
+  // A490: void and refund are separate keys — someone who may only void cannot refund (nor approve a refund), and a
+  // "Manager" by name with no permissions is nobody's approver.
+  const voidOnly = { id: 'u-vic', name: 'Vic', roleName: 'cashier', permissions: { 'sales.void': true, 'catalogue.v2': true } };
+  const nameOnly = { id: 'u-nan', name: 'Nan', roleName: 'manager', permissions: {} };
+  const e1 = sale([{ method: 'cash', amount: 300 }], { age: 60 });
+  ok('A490: sales.void alone does not refund, nor approve a refund; a role named manager with no keys approves nothing',
+    /does not refund sales/.test(threw(() => go('refund', e1, manager, voidOnly))?.message ?? '')
+    && /PIN was not recognised/.test(threw(() => go('refund', e1, voidOnly, manager))?.message ?? '')
+    && /PIN was not recognised/.test(threw(() => go('refund', e1, nameOnly, manager))?.message ?? '')
+    && !status(e1).refunded_at);
+  const e2 = sale([{ method: 'cash', amount: 300 }]);
+  go('void', e2, voidOnly, voidOnly);
+  ok('…and voids (within the window) as themselves', status(e2).status === 'voided');
+}
 const dd = sale([{ method: 'cash', amount: 600 }, { method: 'mpesa', amount: 400 }], { age: 120 });
 const eD = threw(() => go('refund', dd));
 ok('an M-Pesa sale is not refunded offline (cash only allowed) — and the message says which',
@@ -176,13 +192,15 @@ ok('only when the cloud cannot be reached (no network, a gateway error, an offli
   && /const cloudUnreachable = \(status: number\) => status === 502 \|\| status === 503 \|\| status === 504;/.test(ipc)
   && /if \(offlineSessionNow\(\)\) return reverseWhileOffline\('void'/.test(ipc));
 ok('the approver\'s PIN: the branch node, else this till\'s saved sign-ins; a manager or the owner only',
-  /async function identifyApproverOffline\(pin: string\)/.test(ipc) && /verifyPinOffline\(pin, branchId\)/.test(ipc)
-  && /if \(!mayReverseLocal\(p\)\) throw new Error\(NOT_AN_APPROVER\);/.test(ipc));
+  /async function identifyApproverOffline\(pin: string, kind: 'void' \| 'refund'\)/.test(ipc) && /verifyPinOffline\(pin, branchId\)/.test(ipc)
+  && /if \(!mayReverseLocal\(p, kind\)\) throw new Error\(NOT_AN_APPROVER\);/.test(ipc));
 ok('the owner\'s rules go to the cloud from Manager → Settings and apply here at once',
   /manageFetch\('\/api\/business\/settings', 'POST', \{ key, value: JSON\.parse\(clean\) \}\)/.test(ipc) && /setReversalRules\(\{/.test(ipc));
-ok('History and the void window follow the owner\'s window', /reverseAction\(o, Date\.now\(\), voidWindowMin\)/.test(src('renderer/pages/POSPage.tsx'))
-  && /windowMin=\{voidWindowMin\}/.test(src('renderer/pages/POSPage.tsx')) && /const isExpired = ageMin > windowMin;/.test(src('renderer/components/VoidModal.tsx')));
-ok('Manager → Settings: the owner edits, everyone else reads', /isOwner=\{String\(staff\?\.role \?\? ''\)\.toLowerCase\(\) === 'owner'\}/.test(src('renderer/pages/ManagerPage.tsx'))
+ok('History and the void window follow the owner\'s window', /reverseActionFor\(o, reverseRights, Date\.now\(\), voidWindowMin\)/.test(src('renderer/pages/POSPage.tsx'))
+  && /windowMin=\{voidWindowMin\}/.test(src('renderer/pages/POSPage.tsx')) && /const isExpired = ageMin > windowMin \|\| !rights\.void;/.test(src('renderer/components/VoidModal.tsx')));
+// A490: the owner is lib/access isOwner (the owner's role, or '*'); main refuses anyone else too (manage:setReversalRule).
+ok('Manager → Settings: the owner edits, everyone else reads', /isOwner=\{isOwnerSession\(staff\)\}/.test(src('renderer/pages/ManagerPage.tsx'))
+  && /Only the owner sets these rules/.test(ipc)
   && /const locked = !isOwner \|\| busy;/.test(src('renderer/components/ReversalRulesPanel.tsx')));
 
 console.log(`\n${pass} passed, ${fail} failed`);

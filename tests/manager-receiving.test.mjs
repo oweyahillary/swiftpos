@@ -17,17 +17,20 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tab = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx'), 'utf8');
 const mgr = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerDashboard.tsx'), 'utf8');
-const perms = fs.readFileSync(path.join(root, 'apps/server/src/lib/defaultRolePermissions.ts'), 'utf8');
+// A490: a new business's manager defaults are the shared catalogue's (`manager: true` per key; defaultKeysFor('manager')),
+// seeded by apps/server/src/lib/defaultRolePermissions.ts — MANAGER_DENY is gone.
+const catalogue = fs.readFileSync(path.join(root, 'shared/permissions.ts'), 'utf8');
+const seeder = fs.readFileSync(path.join(root, 'apps/server/src/lib/defaultRolePermissions.ts'), 'utf8');
+const managerGets = (key) => new RegExp(`key: '${key.replace('.', '\.')}',[^\n]*manager: true`).test(catalogue);
 
 let pass = 0, fail = 0;
 const ok = (n, fn) => { try { fn(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n       ${e.message}`); } };
 
 ok('permission model: managers are denied adjust/edit, keep receive', () => {
-  assert.match(perms, /inventory\.adjust/, 'MANAGER_DENY must list inventory.adjust');
-  assert.match(perms, /ingredients\.manage/, 'MANAGER_DENY must list ingredients.manage');
-  // receive/transfer are NOT in the deny set (granted to managers) — assert they aren't added to MANAGER_DENY
-  const denyBlock = perms.slice(perms.indexOf('MANAGER_DENY'), perms.indexOf('MANAGER_DENY') + 400);
-  assert.doesNotMatch(denyBlock, /inventory\.receive|inventory\.transfer/, 'receive/transfer must remain granted to managers');
+  assert.match(seeder, /defaultKeysFor\(defaultKindFor\(r\.name\)\)/, 'the seeder grants the catalogue defaults');
+  assert.ok(!managerGets('inventory.adjust'), 'a new manager must not get inventory.adjust');
+  assert.ok(!managerGets('ingredients.manage'), 'a new manager must not get ingredients.manage');
+  assert.ok(managerGets('inventory.receive') && managerGets('inventory.transfer'), 'receive/transfer must remain granted to managers');
 });
 
 ok('tab: receives transfers + deliveries, creates POs/transfers, but never adjusts stock', () => {

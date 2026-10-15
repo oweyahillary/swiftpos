@@ -107,6 +107,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'install:joinStatus':     NO_PAYLOAD,                                                          // A427
   'node:joinRequests':      NO_PAYLOAD,                                                          // A427
   'node:answerJoin':        { id: { t: 'string', min: 1 }, allow: { t: 'boolean' } },             // A427
+  'node:tlsStatus':         NO_PAYLOAD,                                                          // A489
+  'node:tlsRetrust':        NO_PAYLOAD,                                                          // A489
   'branding:get':           NO_PAYLOAD,
   // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so
@@ -119,6 +121,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // handled invoke, so it isn't a schema/parity channel.
   'update:getStatus':       NO_PAYLOAD,
   'update:installNow':      NO_PAYLOAD,
+  'update:installWithPin':  { pin: { t: 'string', min: 1 } },   // A490: the PIN's holder is identified, never signed in
   'auth:verifyPin':         { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } },
   'auth:unlock':            { pin: { t: 'string', min: 1 } },   // A446
   'auth:getStaffSession':   NO_PAYLOAD,
@@ -298,6 +301,9 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:setReversalRule':        { key: { t: 'string', min: 1 }, value: { t: 'any' } },   // 0.6.30
   'pos:paymentMethodsEnabled':       NO_PAYLOAD,                                            // A429
   'manage:setPaymentMethodsEnabled': { kind: 'stringArray' },                                // A429
+  'manage:getMpesa':                 NO_PAYLOAD,                                            // A492
+  'manage:setMpesa':                 { kind: { t: 'string', optional: true }, number: { t: 'string', optional: true },
+                                       account: { t: 'string', optional: true }, clear: { t: 'boolean', optional: true } },   // A492
   'manage:getCashierHistoryMethods': NO_PAYLOAD,                                            // 0.6.37 (A387)
   'manage:setCashierHistoryMethods': { kind: 'stringArray' },
 

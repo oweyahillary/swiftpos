@@ -85,7 +85,8 @@ console.log('\n4. The promotion lever');
   ok('promote is session-gated', /tech:promoteToNode[\s\S]{0,200}getActiveSession\(\)\) return \{ ok: false/.test(IH));
   ok('promote is audited with from/to', /logTechAction\('role\.promote', \{ from: before, to: 'node' \}\)/.test(IH));
   ok('promotion clears node_url and starts serving immediately',
-     /saveDeviceConfig\(\{ device_role: 'node', node_url: null \}\);\s*startNodeServer\(\)/.test(IH));
+     // A489: the pin of the old server is forgotten in between (a server pins no server).
+     /saveDeviceConfig\(\{ device_role: 'node', node_url: null \}\);\s*(setTillPin\(null\);[^\n]*\s*)?startNodeServer\(\)/.test(IH));
   ok('the branch access code is returned for the tech to read', /const secret = ensureNodeSecret\(\)/.test(IH));
   ok('repoint is session-gated and audited',
      /tech:setNodeUrl[\s\S]{0,200}getActiveSession\(\)[\s\S]{0,300}logTechAction\('role\.repoint'/.test(IH));

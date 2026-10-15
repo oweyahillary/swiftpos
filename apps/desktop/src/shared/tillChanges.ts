@@ -61,17 +61,17 @@ export interface EntitySpec {
 
 export const ENTITY_SPECS: Record<ChangeEntity, EntitySpec> = {
   station: {
-    table: 'print_stations', permissions: ['stations.manage', 'products.manage'],
+    table: 'print_stations', permissions: ['stations.manage'],
     fields: { name: text(60, true), kind: oneOf(['kitchen', 'dispatch', 'receipt']), sort_order: int, active: bool },
     required: ['name', 'kind'], sameBy: ['name'], defaults: { active: true, sort_order: 0 },
   },
   category: {
-    table: 'categories', permissions: ['products.manage'],
+    table: 'categories', permissions: ['menu.edit'],
     fields: { name: text(80, true), color: text(20), icon: text(40), sort_order: int, status: oneOf(['active', 'inactive']), is_kitchen: bool },
     required: ['name'], sameBy: ['name'], defaults: { status: 'active', sort_order: 0, is_kitchen: false },
   },
   product: {
-    table: 'products', permissions: ['products.manage'],
+    table: 'products', permissions: ['menu.edit'],
     fields: {
       name: text(120, true), description: text(500), base_price: money, category_id: uuidOrNull,
       status: oneOf(['active', 'inactive']), show_days: days, barcode: text(64), plu_code: text(16), is_kitchen: triBool,
@@ -85,17 +85,33 @@ export const ENTITY_SPECS: Record<ChangeEntity, EntitySpec> = {
   // A459 (owner, 2026-10-13: rename, role and deactivate offline — "yes, all three"): a staff member is also UPDATED from a
   // till — name, role, active / inactive. A PIN is never part of an update (staff_pin is).
   staff: {
-    table: 'users', permissions: ['staff.manage'],
+    table: 'users', permissions: ['staff.edit'],
     fields: { name: text(80, true), role_id: uuidOrNull, status: oneOf(['active', 'inactive']),
       pin: (v) => (/^\d{4,6}$/.test(String(v ?? '')) ? ok(String(v)) : no('must be 4–6 digits')) },
     required: ['name', 'role_id', 'pin'], sameBy: [], defaults: { status: 'active' },
   },
   staff_pin: {
-    table: 'users', permissions: ['staff.manage'],
+    table: 'users', permissions: ['staff.edit'],
     fields: { pin: (v) => (/^\d{4,6}$/.test(String(v ?? '')) ? ok(String(v)) : no('must be 4–6 digits')) },
     required: ['pin'], sameBy: [], defaults: {},
   },
 };
+
+/**
+ * A490: the FINE keys a change needs — ALL of them (the till checks the person who makes it, the cloud the maker again).
+ * A new product is a menu change (its first price with it); changing an existing product's price needs menu.prices, its
+ * cost menu.costs, anything else on it menu.edit. Never expanded from broad keys: expanding staff.manage would include
+ * staff.view, which every person holds — anyone could have changed staff.
+ */
+export function changeKeys(entity: ChangeEntity, op: string, data?: Record<string, unknown> | null): string[] {
+  if (entity !== 'product' || op !== 'update' || !data) return [...ENTITY_SPECS[entity].permissions];
+  const set = (k: string) => data[k] !== undefined;
+  const keys = new Set<string>();
+  if (set('base_price')) keys.add('menu.prices');
+  if (set('cost_price')) keys.add('menu.costs');
+  if (Object.keys(data).some((k) => set(k) && k !== 'base_price' && k !== 'cost_price') || !keys.size) keys.add('menu.edit');
+  return [...keys];
+}
 
 export interface TillChange {
   id: string;               // the till's own id for this change (a replay is recognised by it)

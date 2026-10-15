@@ -40,7 +40,8 @@ import ExcelJS        from 'exceljs';
 const router = safeRouter();
 router.use(requireAuth);
 router.use(requireWebSurface);
-router.use(requirePermission('reports.financial'));
+// A490: downloading is reports.export, AND each export needs the report it is a copy of (below).
+router.use(requirePermission('reports.export'));
 
 // ── Helpers (mirrors reports-export.ts) ──────────────────────────────────────
 
@@ -128,7 +129,7 @@ async function fetchOrders(businessId: string, branchId: string | null, start: s
 // line, a grand-total block, tender breakdown, then tax breakdown. They already
 // know how to read it, and a report that gets read is worth more than a better
 // one that does not.
-router.get('/daily', async (req: any, res) => {
+router.get('/daily', requirePermission('reports.sales'), async (req: any, res) => {
   try {
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);
@@ -235,7 +236,7 @@ router.get('/daily', async (req: any, res) => {
 //
 // Where the peaks are. For a counter operation this is the report that changes
 // a rota, and it is the one thing the old system's daily report did not answer.
-router.get('/hourly', async (req: any, res) => {
+router.get('/hourly', requirePermission('reports.sales'), async (req: any, res) => {
   try {
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);
@@ -301,7 +302,7 @@ router.get('/hourly', async (req: any, res) => {
 // anywhere. A discount is not suspicious; a pattern of discounts on one PIN at
 // one hour is. The report exists so that pattern can be seen without anyone
 // having to go looking for it.
-router.get('/audit', async (req: any, res) => {
+router.get('/audit', requirePermission('reports.voids'), async (req: any, res) => {
   try {
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);

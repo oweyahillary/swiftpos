@@ -64,8 +64,10 @@ const rec = (id, items, over = {}) => ({ client_id: id, branch_id: 'br-1', reaso
 const milk = { kind: 'product', id: 'p-milk', name: 'Milk 500ml', quantity: 2 };
 
 console.log('\nThe rules (pure)\n');
-ok('who may: inventory.waste or inventory.adjust, or the owner; a cashier may not',
-  W.mayWaste('manager', '{"inventory.waste":true}') && W.mayWaste('x', '{"inventory.adjust":true}') && W.mayWaste('owner', '{}')
+// A490: the fine key inventory.waste ("Record wastage"); inventory.adjust is its own key (stock figures by hand) now.
+ok('who may: inventory.waste, or the owner; a cashier may not — nor a role named manager without the key',
+  W.mayWaste('manager', '{"inventory.waste":true}') && W.mayWaste('owner', '{}') && W.mayWaste('x', '{"*":true}')
+  && !W.mayWaste('x', '{"inventory.adjust":true,"catalogue.v2":true}') && !W.mayWaste('manager', '{}')
   && !W.mayWaste('cashier', '{"orders.create":true}') && !W.mayWaste('cashier', 'nonsense'));
 ok('what must be there: a known reason, a note for "Other", 1 to 100 items, each with an amount',
   W.recordingProblem(rec('a', [milk])) === null && /Choose why/.test(W.recordingProblem(rec('a', [milk], { reason: 'stolen' })))

@@ -19,6 +19,9 @@ import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { isUnreachableStatus } from './authTransport';
 import { noteNodeRefused, noteNodeAccepted } from './cloudGateway';   // A448
 import { getLocalDb } from './localDb';
+// A489: every call to the branch server goes through lanFetch — TLS, pinned to the server's certificate, once this till
+// holds it; plain HTTP only before (a server on an older build). Never a plain fetch to the server from here.
+import { lanFetch, readServerCert, pinnedFetch, securityCode } from './lanTls';
 
 export function nodeUrl(): string | null {
   const cfg = getDeviceConfig();
@@ -86,7 +89,7 @@ export async function refreshViaNode(refreshToken: string, headers: Record<strin
   const base = nodeUrl();
   if (!base || !refreshToken) return null;
   try {
-    const res = await fetch(`${base}/node/refresh`, {
+    const res = await lanFetch(`${base}/node/refresh`, {
       method: 'POST',
       // A477: the branch server passes the till's X-Device-* headers on, so the cloud checks THIS till's machine.
       headers: nodeHeaders({ 'Content-Type': 'application/json', 'X-Device-Id': getDeviceConfig()?.device_id ?? '', ...forwardable(headers) }),
@@ -113,7 +116,7 @@ export async function ackViaNode(refreshToken: string, headers: Record<string, s
   const base = nodeUrl();
   if (!base || !refreshToken) return false;
   try {
-    const res = await fetch(`${base}/node/refresh/ack`, {
+    const res = await lanFetch(`${base}/node/refresh/ack`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json', ...forwardable(headers) }),
       body: JSON.stringify({ refreshToken }),
@@ -135,7 +138,7 @@ export async function isNodeReachable(timeoutMs = 2500): Promise<boolean> {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(`${base}/node/health`, { signal: ctrl.signal, headers: nodeHeaders() });
+    const res = await lanFetch(`${base}/node/health`, { signal: ctrl.signal, headers: nodeHeaders() });
     clearTimeout(t);
     if (res.status === 401) {
       console.error('[node] branch server rejected our access code — this till will not aggregate. Re-run install with the correct code.');
@@ -182,7 +185,7 @@ export async function pushRowsToNode(
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   let res: Response;
   try {
-    res = await fetch(`${base}/node/sync`, {
+    res = await lanFetch(`${base}/node/sync`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -218,7 +221,7 @@ export async function fetchNodeCursors(timeoutMs = 5000): Promise<Array<{ table_
   const device = getDeviceConfig()?.device_id;
   if (!base || !device) return null;
   try {
-    const res = await fetch(`${base}/node/cursors?device=${encodeURIComponent(device)}`, { headers: nodeHeaders(), signal: AbortSignal.timeout(timeoutMs) });
+    const res = await lanFetch(`${base}/node/cursors?device=${encodeURIComponent(device)}`, { headers: nodeHeaders(), signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     const data = await res.json().catch(() => null as any);
     return Array.isArray(data?.cursors) ? data.cursors.filter((c: any) => c?.device_id === undefined || c.device_id === device) : null;
@@ -252,7 +255,7 @@ export async function measureNodeClock(timeoutMs = 4000):
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     const sent = Date.now();
-    const res = await fetch(`${base}/node/time`, { signal: ctrl.signal, headers: nodeHeaders() });
+    const res = await lanFetch(`${base}/node/time`, { signal: ctrl.signal, headers: nodeHeaders() });
     const received = Date.now();
     clearTimeout(t);
     if (!res.ok) return null;
@@ -273,7 +276,7 @@ export async function fetchNodeReport(timeoutMs = 4000): Promise<any | null> {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(`${base}/node/report`, { signal: ctrl.signal, headers: nodeHeaders() });
+    const res = await lanFetch(`${base}/node/report`, { signal: ctrl.signal, headers: nodeHeaders() });
     clearTimeout(t);
     if (!res.ok) return null;
     return await res.json();
@@ -285,7 +288,7 @@ export async function broadcastTechToken(token: string): Promise<void> {
   const base = nodeUrl();
   if (!base) return;
   try {
-    await fetch(`${base}/node/tech-session`, {
+    await lanFetch(`${base}/node/tech-session`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ token }),
@@ -300,7 +303,7 @@ export async function fetchNodeTechToken(timeoutMs = 2500): Promise<string | nul
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(`${base}/node/tech-session`, { signal: ctrl.signal, headers: nodeHeaders() });
+    const res = await lanFetch(`${base}/node/tech-session`, { signal: ctrl.signal, headers: nodeHeaders() });
     clearTimeout(t);
     if (!res.ok) return null;
     return (await res.json())?.token ?? null;
@@ -323,7 +326,7 @@ export async function pollNodeInstructions(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/node/instructions/poll`, {
+    const res = await lanFetch(`${base}/node/instructions/poll`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -359,7 +362,7 @@ export async function ackNodeInstruction(
   try {
     // F12 (2026-10-14): the ack names this till and the instruction's uid. Ids alone restart at 1 on a reinstalled
     // server, so an ack held across that matched SOMEONE ELSE's instruction with the same number.
-    const res = await fetch(`${base}/node/instructions/ack`, {
+    const res = await lanFetch(`${base}/node/instructions/ack`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ instruction_id: instructionId, instruction_uid: uid ?? undefined,
@@ -389,7 +392,7 @@ export async function pullNodeDistribution(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/node/since`, {
+    const res = await lanFetch(`${base}/node/since`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -424,7 +427,7 @@ export async function fetchReferenceFromNode(timeoutMs = 8000): Promise<any | nu
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/node/reference`, {
+    const res = await lanFetch(`${base}/node/reference`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -459,7 +462,7 @@ export async function fetchRosterFromNode(timeoutMs = 6000): Promise<any | null>
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/node/roster`, {
+    const res = await lanFetch(`${base}/node/roster`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -482,16 +485,21 @@ export async function fetchRosterFromNode(timeoutMs = 6000): Promise<any | null>
 /** Probe a CANDIDATE node address (not the configured one) with this till's
  *  branch secret. Used by the repoint flow: test before save, because writing
  *  a wrong address is a till that silently stops replicating. */
-export async function probeNode(url: string, timeoutMs = 4000): Promise<{ ok: boolean; error?: string }> {
+export async function probeNode(url: string, timeoutMs = 4000): Promise<{ ok: boolean; error?: string; cert?: string | null; code?: string | null }> {
   const base = String(url ?? '').replace(/\/+$/, '');
   if (!/^https?:\/\//.test(base)) return { ok: false, error: 'Address must start with http://' };
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/node/health`, { signal: ctrl.signal, headers: nodeHeaders() });
+    // A489: a server that hands out a certificate is probed over TLS with it (the access code never crosses the network
+    // in the clear), and the certificate comes back for the caller to pin with the new address. An older server: plain.
+    const { cert } = await readServerCert(base, timeoutMs);
+    const res = cert
+      ? await pinnedFetch(`${base}/node/health`, { signal: ctrl.signal, headers: nodeHeaders() }, cert)
+      : await globalThis.fetch(`${base}/node/health`, { signal: ctrl.signal, headers: nodeHeaders() });
     if (res.status === 401) return { ok: false, error: 'That machine refused this till\'s branch access code' };
     if (!res.ok) return { ok: false, error: `The machine answered ${res.status} — is it the branch server?` };
-    return { ok: true };
+    return { ok: true, cert, code: securityCode(cert) };
   } catch {
     return { ok: false, error: 'No branch server answered at that address' };
   } finally {
@@ -515,7 +523,7 @@ export async function verifyPinAtNodeClient(pin: string, branchId: string, timeo
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/node/verify-pin`, {
+    const res = await lanFetch(`${base}/node/verify-pin`, {
       method:  'POST',
       signal:  ctrl.signal,
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
@@ -542,7 +550,7 @@ export async function nodeChangeVersion(timeoutMs = 3000): Promise<string | null
   const base = nodeUrl();
   if (!base) return null;
   try {
-    const res = await fetch(`${base}/node/changes/version`, { headers: nodeHeaders(), signal: AbortSignal.timeout(timeoutMs) });
+    const res = await lanFetch(`${base}/node/changes/version`, { headers: nodeHeaders(), signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     const b = await res.json().catch(() => null) as { version?: string } | null;
     return b?.version ?? null;
@@ -558,7 +566,7 @@ export async function relayBrandingToNode(b: { accentHex: string | null; logoPng
   const base = nodeUrl();
   if (!base) return false;
   try {
-    const res = await fetch(`${base}/node/branding`, { method: 'POST', headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+    const res = await lanFetch(`${base}/node/branding`, { method: 'POST', headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(b), signal: AbortSignal.timeout(timeoutMs) });
     return res.ok;
   } catch { return false; }
@@ -568,7 +576,7 @@ export async function relayChangesToNode(changes: Record<string, unknown>[], tim
   const base = nodeUrl();
   if (!base || !changes.length) return false;
   try {
-    const res = await fetch(`${base}/node/changes`, { method: 'POST', headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+    const res = await lanFetch(`${base}/node/changes`, { method: 'POST', headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ changes }), signal: AbortSignal.timeout(timeoutMs) });
     return res.ok;
   } catch { return false; }

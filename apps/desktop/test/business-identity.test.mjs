@@ -149,11 +149,15 @@ console.log('\nThe wiring\n');
 {
   const pos = read('apps/server/src/routes/pos.ts');
   ok('the cloud\'s 20-s check counts the business itself (a rename)', /latest\('businesses',\s*'id',\s*biz\)/.test(pos));
-  ok('the cloud sends the M-Pesa line, the branch\'s own winning', /receiptPayNumber: receiptText\.receipt_pay_number/.test(pos)
-    && /'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number'\]/.test(pos));
+  // A492: the line is ONE thing — the branch's own set-up when it has one, else the business's — and a Paybill prints its
+  // account with the number (tests/mpesa-branch.test.mjs runs it).
+  ok('the cloud sends the M-Pesa line, the branch\'s own winning', /receiptPayNumber: mpesaReceiptNumber\(mpesa\)/.test(pos)
+    && /const mpesa = branchMpesa \?\? businessMpesa;/.test(pos)
+    && /'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'\]/.test(pos));
   const br = read('apps/server/src/routes/branches.ts'), bz = read('apps/server/src/routes/business.ts');
-  ok('…set on the web for the business (receipt.manage may) or for one branch', /'receipt_pay_label', 'receipt_pay_number'\]/.test(br)
-    && /RECEIPT_SETTING_KEYS = new Set\(\[[^\]]*'receipt_pay_number'/.test(bz));
+  // A492 (owner, 2026-10-15): set on the TILL by the branch's manager — the web's routes refuse it, the branch keeps it.
+  ok('…set on the till for its branch (PUT /branches/:id/mpesa); the web\'s settings routes refuse it', /router\.put\('\/:id\/mpesa'/.test(br)
+    && /code: 'MPESA_ON_TILL'/.test(br) && /code: 'MPESA_ON_TILL'/.test(bz));
   const ipc = read('apps/desktop/src/main/ipcHandlers.ts'), ns = read('apps/desktop/src/main/nodeServer.ts');
   ok('a logo set on a till goes to its branch server at once', /if \(b\) void relayBrandingToNode\(/.test(ipc)
     && /url === '\/node\/branding'[\s\S]{0,1200}applyPulledBranding\(/.test(ns) && /applyPulledBranding\([\s\S]{0,300}bumpChangeVersion\(getLocalDb\(\)\)/.test(ns));

@@ -21,7 +21,7 @@
 
 import { useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { ageMinutes, VOID_WINDOW_MIN, reverseErrorMessage, isWindowClosed } from '../lib/voidRefund';
+import { ageMinutes, VOID_WINDOW_MIN, reverseErrorMessage, isWindowClosed, type ReverseRights } from '../lib/voidRefund';
 import { windowLabel } from '../../shared/reversalRules';
 
 interface Order {
@@ -37,6 +37,8 @@ interface Props {
   currency: string;
   /** 0.6.30: the owner's void window in minutes (default 30). */
   windowMin?: number;
+  /** A490: what this person may do (sales.void / sales.refund). Absent: both, as before. */
+  rights?: ReverseRights;
   onSuccess: () => void;
   onClose: () => void;
 }
@@ -62,10 +64,11 @@ const REFUND_REASONS = [
   'Other',
 ];
 
-export default function VoidModal({ order, currency, windowMin = VOID_WINDOW_MIN, onSuccess, onClose }: Props) {
+export default function VoidModal({ order, currency, windowMin = VOID_WINDOW_MIN, rights = { void: true, refund: true }, onSuccess, onClose }: Props) {
   const isPaid    = (order.payments ?? []).length > 0;
   const ageMin    = ageMinutes(order);
-  const isExpired = ageMin > windowMin;
+  // A490: without sales.void the void side is closed as if the window had (and without sales.refund, the refund side).
+  const isExpired = ageMin > windowMin || !rights.void;
   const windowText = windowLabel(windowMin);
 
   // Past the window, void is not an option the server will honour — open in the
@@ -107,7 +110,7 @@ export default function VoidModal({ order, currency, windowMin = VOID_WINDOW_MIN
       onSuccess();
     } catch (e: any) {
       const msg = e?.message ?? (isRefund ? 'Refund failed' : 'Void failed');
-      if (!isRefund && isWindowClosed(msg)) {
+      if (!isRefund && isWindowClosed(msg) && rights.refund) {
         // Don't leave them stuck — switch to the thing that will work.
         setMode('refund');
         setError(`This order is ${ageMin} minutes old, past the ${windowText} void window. Refund it instead.`);
@@ -173,7 +176,9 @@ export default function VoidModal({ order, currency, windowMin = VOID_WINDOW_MIN
               Void · cancels the sale
             </button>
             <button
-              onClick={() => setMode('refund')}
+              onClick={() => rights.refund && setMode('refund')}
+              disabled={!rights.refund}
+              title={!rights.refund ? 'Your role does not refund sales' : undefined}
               className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                 isRefund ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
                          : 'border-gray-700 text-gray-300 hover:bg-gray-800'

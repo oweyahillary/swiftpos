@@ -83,17 +83,30 @@ const kpiSheet = (name: string, rows: [string, unknown][]): ReportSheet => ({
 });
 const METHOD_NAMES: Record<string, string> = { cash: 'Cash', mpesa: 'M-Pesa', card: 'Card' };
 
-const ALL_TABS = [
-  { id: 'summary',    label: 'Summary' },
-  { id: 'hourly',     label: 'Hourly' },
-  { id: 'items',      label: 'Item Mix' },
-  { id: 'voids',      label: 'Voids' },
-  { id: 'staff',      label: 'Staff' },
-  { id: 'shifts',     label: 'Shifts' },
+/** A490: each report tab by its own catalogue key — a person sees only the reports they were given. */
+export const ALL_TABS: Array<{ id: string; label: string; permission: string }> = [
+  { id: 'summary',    label: 'Summary',  permission: 'reports.sales' },
+  { id: 'hourly',     label: 'Hourly',   permission: 'reports.sales' },
+  { id: 'items',      label: 'Item Mix', permission: 'reports.items' },
+  { id: 'voids',      label: 'Voids',    permission: 'reports.voids' },
+  { id: 'staff',      label: 'Staff',    permission: 'reports.staff' },
+  { id: 'shifts',     label: 'Shifts',   permission: 'reports.shifts' },
   // Petrol only
-  { id: 'fuel_sales', label: '⛽ Fuel Sales' },
-  { id: 'wet_stock',  label: '🛢 Wet Stock' },
+  { id: 'fuel_sales', label: '⛽ Fuel Sales', permission: 'reports.fuel' },
+  { id: 'wet_stock',  label: '🛢 Wet Stock',  permission: 'reports.fuel' },
 ];
+
+/** A490: the tabs this business type shows (before permissions). */
+export function tabsForBusiness(isPetrol: boolean) {
+  return ALL_TABS.filter(t => {
+    if (t.id === 'fuel_sales' || t.id === 'wet_stock') return isPetrol;
+    if (t.id === 'items') return !isPetrol;
+    return true;
+  });
+}
+
+/** A490: the keys that open the Reports page in the manager portal (any one of its tabs). */
+export const MANAGER_REPORT_KEYS: readonly string[] = [...new Set(ALL_TABS.map(t => t.permission))];
 
 // ── Shared loading / error states ─────────────────────────────────────────────
 
@@ -122,6 +135,9 @@ interface DateBarProps {
 }
 function DateBar({ from, to, setFrom, setTo, onApply, loading, report, sheets, branchName }: DateBarProps) {
   const { business } = useBusiness();
+  // A490: Download Excel is reports.export (on top of the report's own key, which opened the tab).
+  const { hasPermission } = usePOSAuth();
+  const mayDownload = hasPermission('reports.export');
   // A467: between a date change and the debounced reload the tab still shows the OLD period — no download then.
   const [pending, setPending] = useState(false);
   // A216: auto-apply. Presets and date edits both just set from/to; this debounced
@@ -168,7 +184,7 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading, report, sheets, b
         </div>
       ))}
       {loading && <span className="self-end pb-1.5 text-xs text-gray-500">Updating…</span>}
-      {report && (
+      {report && mayDownload && (
         <div className="ml-auto self-end">
           <DownloadExcelButton loading={loading || pending}
             input={{ report, from, to, businessName: business?.name ?? '', branchName: branchName ?? '', sheets: sheets ?? [] }} />
@@ -1049,16 +1065,13 @@ function WetStockTab({ posApi, session, currency }: { posApi: PosApi; session: a
 }
 
 export default function ManagerReportsPage() {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
   const currency = session?.currency ?? 'KES';
   const isPetrol = session?.businessType === 'petrol_station';
-  const [activeTab, setActiveTab] = useState(isPetrol ? 'fuel_sales' : 'summary');
-
-  const TABS = ALL_TABS.filter(t => {
-    if (t.id === 'fuel_sales' || t.id === 'wet_stock') return isPetrol;
-    if (t.id === 'items') return !isPetrol;
-    return true;
-  });
+  // A490: only the tabs whose report this person holds (each tab's own key) — nothing else is fetched.
+  const TABS = tabsForBusiness(isPetrol).filter(t => hasPermission(t.permission));
+  const [activeTab, setActiveTab] = useState(() => TABS[0]?.id ?? '');
+  const shown = TABS.some(t => t.id === activeTab) ? activeTab : (TABS[0]?.id ?? '');
 
   const tabProps = { posApi, session, currency };
 
@@ -1074,7 +1087,7 @@ export default function ManagerReportsPage() {
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              activeTab === t.id ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              shown === t.id ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'
             }`}>
             {t.label}
           </button>
@@ -1083,14 +1096,15 @@ export default function ManagerReportsPage() {
 
       {/* Tab content */}
       <div>
-        {activeTab === 'summary' && <SummaryTab {...tabProps} />}
-        {activeTab === 'hourly'  && <HourlyTab  {...tabProps} />}
-        {activeTab === 'items'   && <ItemMixTab {...tabProps} />}
-        {activeTab === 'voids'   && <VoidsTab   {...tabProps} />}
-        {activeTab === 'staff'   && <StaffPerfTab {...tabProps} />}
-        {activeTab === 'shifts'     && <ShiftsTab      {...tabProps} />}
-        {activeTab === 'fuel_sales' && <FuelSalesTab  {...tabProps} />}
-        {activeTab === 'wet_stock'  && <WetStockTab   {...tabProps} />}
+        {TABS.length === 0 && <Empty label="No reports have been given to your role." />}
+        {shown === 'summary' && <SummaryTab {...tabProps} />}
+        {shown === 'hourly'  && <HourlyTab  {...tabProps} />}
+        {shown === 'items'   && <ItemMixTab {...tabProps} />}
+        {shown === 'voids'   && <VoidsTab   {...tabProps} />}
+        {shown === 'staff'   && <StaffPerfTab {...tabProps} />}
+        {shown === 'shifts'     && <ShiftsTab      {...tabProps} />}
+        {shown === 'fuel_sales' && <FuelSalesTab  {...tabProps} />}
+        {shown === 'wet_stock'  && <WetStockTab   {...tabProps} />}
       </div>
     </div>
   );

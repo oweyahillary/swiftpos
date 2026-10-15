@@ -16,7 +16,8 @@ import { startNodeServer, onServingChange } from './nodeServer';
 import { enterServerMode, leaveServerMode, keepServerWindowAlive, isServing, markQuitting, announceJoin, closeCleanlyOnSessionEnd } from './serverMode';   // A427, A436, A437
 import { onJoinAsked } from './serverJoin';   // A436
 import { WATCHDOG_ARG, watchdogStaysDown, quitByHand, clearQuitByHand } from './serverWatchdog';   // A435
-import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
+import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution, nodeHeaders } from './nodeClient';
+import { ensureNodeTls } from './lanTls';   // A489
 import { ownDayState, executeCloseDay, executeConfirmShift, executeShiftMoney } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
 import { nodeReplicationTick } from './syncEngine';   // F10: branch replication on its own beat
@@ -390,6 +391,12 @@ app.whenReady().then(() => {
   // tills receive them (syncEngine.nodeReplicationTick). Self-guards: nothing to do without a branch server.
   setInterval(() => { void nodeReplicationTick(); }, 15_000);
   setTimeout(() => { void nodeReplicationTick(); }, 5_000);
+
+  // A489: a till already joined to a branch server switches to an encrypted connection by itself — the first time the
+  // server answers TLS (it runs 1.0.15+), the till pins its certificate. Cheap once pinned; nothing on a server.
+  const tlsTick = () => { ensureNodeTls(() => nodeHeaders()).catch((e) => console.warn('[node] tls:', e?.message ?? e)); };
+  setInterval(tlsTick, 60_000);
+  setTimeout(tlsTick, 8_000);
 
   // Phase 2a — distribution pull. Every 30s a peer asks the node for every
   // OTHER device's new rows and runs them through applyPeerRows under each

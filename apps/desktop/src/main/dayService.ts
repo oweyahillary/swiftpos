@@ -34,9 +34,8 @@ import { getOpenShift } from './syncEngine';
 import { getDeviceConfig, getBusinessDayCutoff } from './deviceConfig';   // 0.6.34 + the day's end
 import { v4 as uuid } from 'uuid';
 import { businessDateLocal, businessDayEndLocal } from './businessDay';   // 0.6.34
+import { signedInCan } from './tillAccess';   // A490
 
-/** Same rule as the renderer's hasManagerRights (App.tsx) so the two agree. */
-const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 
 // 24-hour operation grace (A104): hours after midnight a continuous business may
 // keep trading with an unclosed prior day, behind a reminder, before the till
@@ -97,25 +96,16 @@ function staffSession() {
 }
 
 /**
- * Does the signed-in user carry manager rights?
+ * May the signed-in person close the trading day (and the branch, and restart a till for an update)?
  *
- * Read from the CACHED staff_session, which is written at PIN login. That makes
- * it work offline — unlike auth:verifyPin, which is a network call and also
- * replaces the session, so it cannot be used to authorise an action mid-shift.
+ * A490: the permission shifts.close_day (tillAccess.ts — the owner's role holds everything), not a role's name. Read
+ * from the CACHED staff_session, written at PIN sign-in, so it works offline — unlike auth:verifyPin, which is a network
+ * call and also replaces the session, so it cannot be used to authorise an action mid-shift.
  *
- * Enforced here in the main process, not by hiding a button: a control that only
- * exists in the UI is a suggestion.
+ * Enforced here in the main process, not by hiding a button: a control that only exists in the UI is a suggestion.
  */
-export function isManager(): boolean {
-  const s = staffSession();
-  if (!s) return false;
-  if (MANAGER_ROLES.includes((s.role_name ?? '').toLowerCase())) return true;
-  try {
-    const perms = JSON.parse(s.permissions || '{}') as Record<string, unknown>;
-    return perms['*'] === true || perms['settings.manage'] === true;
-  } catch {
-    return false;   // malformed permissions must not grant rights
-  }
+export function mayCloseDay(): boolean {
+  return signedInCan('shifts.close_day');
 }
 
 /** The till's currently open trading day, whatever date it belongs to. */
@@ -472,15 +462,15 @@ export function getDayCloseSummary(): DayCloseSummary | null {
  * drawer would leave takings attributed to a day already signed off.
  */
 export function closeDay(countedCash: number, notes?: string): DayCloseSummary {
-  if (!isManager()) {
-    throw new Error('Only a manager can close the trading day. Ask a manager to sign in.');
+  if (!mayCloseDay()) {
+    throw new Error('Only someone who may close the day can close the trading day. Ask them to sign in.');
   }
   return closeDayCore(countedCash, notes, staffSession()?.staff_id ?? null);
 }
 
 /**
  * The central-close variant (Phase 4). Identical body EXCEPT the local
- * isManager() check: a peer executing this at 22:00 may have a cashier signed
+ * mayCloseDay() check: a peer executing this at 22:00 may have a cashier signed
  * in or be locked, and the authority is the INSTRUCTION — created by a manager
  * on the branch server, carried over the node-secret channel. closed_by records
  * that manager, and the notes say the close was central, so the audit reads the

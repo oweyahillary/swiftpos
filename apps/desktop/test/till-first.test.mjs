@@ -113,8 +113,9 @@ const db = L.getLocalDb();
 db.prepare(`INSERT INTO session (id, token, user_id, business_id, business_name, logged_in_at) VALUES (1, 'till-tok', 'device:dev-T1', 'biz-1', 'Krunch', '2026-10-12T00:00:00Z')`).run();
 const C = require(path.join(dist, 'deviceConfig.js'));
 C.saveDeviceConfig({ deploy_mode: 'cloud', server_url: CLOUD, branch_id: BR, device_id: 'dev-T1', device_role: 'till', terminal_code: 'T1', device_name: 'Front' });
+// A490: Abdi sells too (orders.create) — the till's ceiling lets him give only a role that does no more than he does.
 const asManager = () => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
-  VALUES (1, 'u-abdi', 'Abdi', 'manager', '{"products.manage":true,"stations.manage":true,"staff.manage":true}', ?, 'mgr-tok', '2026-10-12T06:00:00Z')`).run(BR);
+  VALUES (1, 'u-abdi', 'Abdi', 'manager', '{"products.manage":true,"stations.manage":true,"staff.manage":true,"orders.create":true}', ?, 'mgr-tok', '2026-10-12T06:00:00Z')`).run(BR);
 const asCashier = () => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
   VALUES (1, 'u-tom', 'Tom', 'cashier', '{"orders.create":true}', ?, '', '2026-10-12T06:00:00Z')`).run(BR);
 asManager();

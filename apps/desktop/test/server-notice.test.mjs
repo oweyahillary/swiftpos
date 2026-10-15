@@ -76,7 +76,8 @@ ok('the till\'s 10 minutes are the server\'s 10 minutes', () => {
 });
 ok('both setup screens show it while waiting', () => {
   for (const p of ['src/renderer/pages/InstallPage.tsx', 'src/renderer/pages/EnrolPage.tsx']) {
-    assert.ok(read(p).includes('<JoinWaitPanel tillName={joinWait.tillName} srv={joinTarget} askedAt={joinWait.at} />'), p);
+    // A489: with the security code to compare with the server's.
+    assert.ok(read(p).includes('<JoinWaitPanel tillName={joinWait.tillName} srv={joinTarget} askedAt={joinWait.at} securityCode={joinWait.code} />'), p);
   }
 });
 

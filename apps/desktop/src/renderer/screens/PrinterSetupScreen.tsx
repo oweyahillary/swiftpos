@@ -116,14 +116,11 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
 
   async function save(target: string, paperWidthMm: PaperWidth) {
     if (!station) return;
-    if (!target.trim()) {
-      await window.swiftpos.escpos.unassign(station.id);
-    } else {
-      await window.swiftpos.escpos.assign({
-        stationId: station.id, target: target.trim(), paperWidthMm,
-      });
-    }
-    setResult(null);
+    // A490: main refuses anyone without stations.manage (or a technician) — say so rather than silently not saving.
+    const r = (!target.trim()
+      ? await window.swiftpos.escpos.unassign(station.id)
+      : await window.swiftpos.escpos.assign({ stationId: station.id, target: target.trim(), paperWidthMm })) as { ok?: boolean; error?: string } | undefined;
+    setResult(r && r.ok === false ? { ok: false, error: r.error ?? 'Not saved.' } : null);
     await refresh();
   }
 
@@ -164,6 +161,7 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
               onChange={async e => {
                 const r = await window.swiftpos.escpos.setEnabled(e.target.checked);
                 setThermalOn(r.enabled);
+                if ((r as { ok?: boolean; error?: string }).ok === false) setResult({ ok: false, error: (r as { error?: string }).error ?? 'Not saved.' });   // A490
               }}
               className="mt-0.5 accent-action-500"
             />

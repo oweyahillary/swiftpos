@@ -149,15 +149,14 @@ export default function CashierScreen() {
   const navigate = useNavigate();
   const { session, clearCashierSession, posApi, hasPermission } = usePOSAuth();
 
-  // Owner (wildcard) or explicitly granted settings.manage
-  const isManager = hasPermission('settings.manage');
+  // A490: the printer settings button is for whoever sets up printers (stations.manage) — was settings.manage.
+  const canSetPrinters = hasPermission('stations.manage');
   const { business } = useBusiness();
 
   // A manager reached the cashier screen via "Open POS" from their portal, so give
   // them a way back (parity with the desktop app). Cashiers have no portal, so this
   // is hidden for them. resolveRoute is the same signal that sends them to /manager
-  // (role-based — note managers are denied settings.manage, so the isManager flag
-  // above, which is really "owner/settings.manage", would miss a role-based manager).
+  // (A490: by permission — isBackOffice of their keys — never by the role's name).
   const hasManagerPortal = !!session && resolveRoute(session.permissions, session.role) === '/manager';
 
   // Guard — only the OWNER is redirected off the cashier screen (they use the full
@@ -206,6 +205,12 @@ export default function CashierScreen() {
     error:         posDataError,
     reload:        reloadPOSData,
   } = usePOSData();
+
+  // A490: cash in / out and drawer expenses are shifts.cash_movements. A map from before the catalogue (no MAP_MARKER)
+  // holds it for everyone (expandMap's open keys), so the 'cashier_no_money_out' switch still applies there to anyone
+  // who cannot confirm drawers — exactly as before; migration 134 switches it off and the role decides from then on.
+  const mayMoveMoney = hasPermission('shifts.cash_movements')
+    && mayRecordMoneyMovement(posFeatures, maySignedInConfirm(session as any));
 
   // ── Business mode (from usePOSData) ──────────────────────────────────────
   // posDataMode comes from usePOSData — initialised to 'retail' then updated
@@ -1254,8 +1259,8 @@ export default function CashierScreen() {
             title={posTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
             style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
           >{posTheme === 'light' ? '🌙' : '☀️'}</button>
-          {/* Printer settings — managers only */}
-          {isManager && (
+          {/* Printer settings — A490: stations.manage */}
+          {canSetPrinters && (
             <button
               style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
               onClick={() => setShowPrinterSettings(true)}
@@ -1281,8 +1286,8 @@ export default function CashierScreen() {
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
               >⏱ Clock</button>
-              {/* A453: with 'cashier_no_money_out' only a manager signed in records cash in / out and expenses. */}
-              {mayRecordMoneyMovement(posFeatures, maySignedInConfirm(session as any)) && (<>
+              {/* A453 / A490: shifts.cash_movements (and, on a map from before the catalogue, the old switch). */}
+              {mayMoveMoney && (<>
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
                 onClick={() => setShiftModal('float')}

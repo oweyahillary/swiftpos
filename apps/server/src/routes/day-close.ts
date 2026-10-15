@@ -14,7 +14,7 @@
 //       GET  /pending    — collect this till's pending instructions (marks delivered)
 //       POST /ack        — record this till's verdict, retiring the instruction
 
-import { requireAnyPermission } from '../middleware/rbac';
+import { requirePermission } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -23,7 +23,7 @@ import { supabase } from '../lib/supabase';
 const router = safeRouter();
 router.use(requireAuth);
 
-const MANAGER = requireAnyPermission('shifts.force_close', 'settings.manage');
+const MANAGER = requirePermission('shifts.close_day');
 
 // Same normalisation as sync.ts / terminalKey.ts — a duplicated header arrives
 // comma-joined, and device_id is the hard key.

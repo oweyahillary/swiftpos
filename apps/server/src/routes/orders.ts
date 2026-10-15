@@ -12,14 +12,17 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { fireWebhook } from '../lib/webhooks';
 import { requireAuth } from '../middleware/auth';
-import { branchScope, requirePermission, assertBranchAccess } from '../middleware/rbac';
+import { branchScope, requirePermission, assertBranchAccess, can } from '../middleware/rbac';
+
+/** A490: the answer when someone without sales.discount gives a manual discount on a live web sale. */
+const DISCOUNT_REFUSED = { error: 'You may not give a discount — ask a manager.', code: 'DISCOUNT_NOT_ALLOWED', detail: 'Missing permission: sales.discount' };
 import { supabase } from '../lib/supabase';
 import { resolveOrderId } from '../lib/resolveOrder';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
 import { verifyPin } from './auth';
-import { findApprover, mayApprove, type ApproverRow } from '../lib/approver';
+import { findApprover, mayApprove, type ApproverRow, type ApproveAction } from '../lib/approver';
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
 import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
@@ -27,6 +30,7 @@ import { sendReceiptWhatsApp } from '../lib/whatsapp';
 import { cleanNote, ORDER_NOTE_MAX } from '../lib/orderNotes';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { callerMayConfirm, replayTime } from '../lib/shiftConfirm';
+import { ownHistoryOnly, holds } from '../lib/historyScope';   // A490
 import { cleanDeliveryFee, customerDeliveryFee, isFreeDelivery } from '../lib/delivery';
 import { payRider, returnRiderPayout } from '../lib/riderPayout';
 import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
@@ -73,7 +77,7 @@ function checkPaymentIntegrity(
 }
 
 // ── Discount ceiling (pilot stopgap for finding M4) ──────────────────────────
-// Manual discounts are ungated: no permission check, no reason code, no
+// Manual discounts were ungated (A490: a live web sale's manual discount is now sales.discount): no reason code, no
 // supervisor authorisation, and the only limit was the order subtotal — so a
 // cashier could zero out any sale. That is the most common POS fraud vector.
 //
@@ -116,13 +120,14 @@ async function verifySupervisorPin(
 }
 
 // Who approves a void or refund (A355, lib/approver.ts): an override PIN, or the approver's OWN sign-in PIN when their
-// role may approve (owner, owner/admin role, '*', or orders.void — managers by default, never cashiers). If
+// role may approve (owner, the owner's role, '*', or A490 sales.void / sales.refund — managers by default). If
 // `authorizerId` is supplied (a supervisor picked from a list), only that person is checked. 'no_authorizers' = nobody
 // in the business can approve with a PIN, so the caller tries the legacy business-wide supervisor PIN.
 async function verifyOverrideAuthorizer(
   businessId:   string,
   authorizerId: string | undefined,
   pin:          string | undefined,
+  action:       ApproveAction,   // A490: a void's approver holds sales.void, a refund's sales.refund
 ): Promise<{ result: 'ok' | 'invalid' | 'no_authorizers'; userId?: string }> {
   const [{ data: rows }, { data: biz }] = await Promise.all([
     supabase
@@ -132,7 +137,8 @@ async function verifyOverrideAuthorizer(
       .eq('status', 'active'),
     supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle(),
   ]);
-  const found = await findApprover((rows ?? []) as ApproverRow[], { pin, authorizerId, ownerId: (biz as any)?.owner_id ?? null }, {
+  const found = await findApprover((rows ?? []) as ApproverRow[], { pin, authorizerId, ownerId: (biz as any)?.owner_id ?? null,
+    may: (row, ownerId) => mayApprove(row, ownerId, action) }, {
     loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
     overridePin: (p, h) => bcrypt.compare(p, h),
   });
@@ -672,6 +678,11 @@ router.post('/', async (req, res) => {
     }
     const recomputed = await recomputeOrderTotals(req.businessId, branch_id, saleItems, discount_amount, offerClaimFrom(req.body), { tillSale });   // A445
     if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
+    // A490: a manual discount on a LIVE web sale is sales.discount (offers are not a manual discount). A till's sale was
+    // made already — never refused for it (the till checks its own person).
+    if (req.surface !== 'desktop' && round2(recomputed.discount - recomputed.offerDiscount) > 0 && !can(req, 'sales.discount')) {
+      res.status(403).json(DISCOUNT_REFUSED); return;
+    }
     let {
       lines: authLines,
       subtotal: authSubtotal,
@@ -1165,6 +1176,7 @@ router.get('/', async (req, res) => {
   // 0.6.37 (A387): a cashier sees only the payment methods the manager chose ([] = every; a manager always every). The
   // filter is in the query, so the count and the pages are right; the split sales are trimmed below.
   const manager = callerMayConfirm(req);
+  // A490: History's methods narrowing is the cashier's view — anyone who sees every cashier's sales sees every method.
   const historyMethods = manager ? [] : await getHistoryMethods(req.businessId, scopedBranch ?? (req as any).branchId ?? null);
   const joinPm = !!method || historyMethods.length > 0;
 
@@ -1180,9 +1192,10 @@ router.get('/', async (req, res) => {
     .order('created_at', { ascending: false })
     .range(parseInt(offset as string), parseInt(offset as string) + parseInt(limit as string) - 1);
 
-  // 0.6.27: 'cashier_own_history' (admin portal) — a cashier sees only the sales they rang; a manager sees all.
+  // A490: sales.history_all — without it, only the sales they rang (lib/historyScope.ts; before migration 134 the admin
+  // portal's 'cashier_own_history' switch still narrows anyone who cannot confirm a drawer, as in 0.6.27).
   const features = await businessPosFeatures(req.businessId);
-  const ownOnly = !manager && features.cashier_own_history;
+  const ownOnly = ownHistoryOnly(req, features);
   // The filters, once — the page below and A418's total of every page use the same ones.
   const filtered = (q: any) => {
     if (scopedBranch) q = q.eq('branch_id', scopedBranch);
@@ -1221,9 +1234,9 @@ router.get('/', async (req, res) => {
     }
     totals = historyTotal(historyMethods.length ? cashierHistoryView(rows, historyMethods) : rows);
   }
-  // can_reprint: 0.6.37 (owner) — a cashier never reprints a receipt; a manager and the owner may.
+  // can_reprint: 0.6.37 (owner) — a cashier never reprints a receipt; a manager and the owner may. A490: sales.reprint.
   res.json({ orders, total: count ?? 0, own_only: ownOnly,
-             history_methods: historyMethods, can_reprint: manager, ...(totals ? { totals } : {}) });
+             history_methods: historyMethods, can_reprint: holds(req, 'sales.reprint'), ...(totals ? { totals } : {}) });
 });
 
 // GET /api/orders/:id
@@ -1294,13 +1307,16 @@ function isTillReplay(req: any): boolean {
 }
 
 // The signed-in person at push time may be a cashier (the till sends with whoever is signed in) — the replay carries
-// its own approver, so it does not need orders.void on the token. Everything else still does.
-const reversalGate = (req: any, res: any, next: any) =>
-  isTillReplay(req) ? next() : requirePermission('orders.void')(req, res, next);
+// its own approver, so it does not need the key on the token. Everything else still does.
+// A490: a void is sales.void, a refund sales.refund (orders.void covered both).
+const voidKey = requirePermission('sales.void');
+const refundKey = requirePermission('sales.refund');
+const reversalGate = (action: ApproveAction) => (req: any, res: any, next: any) =>
+  isTillReplay(req) ? next() : (action === 'void' ? voidKey : refundKey)(req, res, next);
 
 type TillReplay = { approverId: string; actorId: string | null; at: string };
 
-async function checkTillReplay(req: any, order: any): Promise<TillReplay | { status: number; body: Record<string, string> }> {
+async function checkTillReplay(req: any, order: any, action: ApproveAction): Promise<TillReplay | { status: number; body: Record<string, string> }> {
   const dev = deviceIdFromRequest(req);
   let holds = !!dev && order.device_id === dev;
   if (!holds && dev && order.shift_id) {
@@ -1313,7 +1329,7 @@ async function checkTillReplay(req: any, order: any): Promise<TillReplay | { sta
   }
   const { rows, ownerId } = await confirmerRows(req.businessId);
   const approver = rows.find((r) => r.id === req.body.offline_approved_by);
-  if (!approver || !mayApprove(approver, ownerId)) {
+  if (!approver || !mayApprove(approver, ownerId, action)) {
     return { status: 403, body: { error: 'The person who approved this may not approve voids or refunds.', code: 'NOT_AN_APPROVER' } };
   }
   const actor = typeof req.body?.offline_by === 'string' ? rows.find((r) => r.id === req.body.offline_by) : undefined;
@@ -1345,7 +1361,7 @@ const cloudOrderId = (ref: string, businessId: string) => resolveOrderId(ref, as
 // Full refunds only. A partial needs line-level selection to restore the right
 // stock and to recompute the tax split, and half-right money handling is worse
 // than none — staff can refund in full and re-ring what the customer keeps.
-router.post('/:id/refund', reversalGate, async (req, res) => {
+router.post('/:id/refund', reversalGate('refund'), async (req, res) => {
   const { reason, override_pin, supervisor_pin, authorizer_id } = req.body;
   const orderId = await cloudOrderId(req.params.id, req.businessId!);
 
@@ -1382,7 +1398,7 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
 
   let replay: TillReplay | null = null;
   if (isTillReplay(req)) {
-    const r = await checkTillReplay(req, order);
+    const r = await checkTillReplay(req, order, 'refund');
     if ('status' in r) { res.status(r.status).json(r.body); return; }
     replay = r;
   }
@@ -1417,7 +1433,7 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
     authorizedBy = me;
   } else {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
-    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
+    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin, 'refund');
     if (ov.result === 'ok') {
       authorizedBy = ov.userId ?? null;
     } else {
@@ -1566,7 +1582,7 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
   }
 });
 
-router.post('/:id/void', reversalGate, async (req, res) => {
+router.post('/:id/void', reversalGate('void'), async (req, res) => {
   const { reason, supervisor_pin, override_pin, authorizer_id } = req.body;
   const orderId = await cloudOrderId(req.params.id, req.businessId!);
 
@@ -1591,7 +1607,7 @@ router.post('/:id/void', reversalGate, async (req, res) => {
 
   let replay: TillReplay | null = null;
   if (isTillReplay(req)) {
-    const r = await checkTillReplay(req, order);
+    const r = await checkTillReplay(req, order, 'void');
     if ('status' in r) { res.status(r.status).json(r.body); return; }
     replay = r;
   }
@@ -1634,7 +1650,7 @@ router.post('/:id/void', reversalGate, async (req, res) => {
     authorizedBy = me;
   } else if (isPaid) {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
-    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
+    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin, 'void');
 
     if (ov.result === 'ok') {
       authorizedBy = ov.userId ?? null;
@@ -2206,6 +2222,10 @@ router.post('/:id/pay', async (req, res) => {
     const payManualAsked = payClaim.ids.length ? Math.max(0, (Number(discount_amount) || 0) - payClaim.amount) : discount_amount;
     const payDiscount = round2(payOffers.offerDiscount + capDiscount(payManualAsked, round2(paySubtotal - payOffers.offerDiscount)));
     const payTotal    = round2(paySubtotal - payDiscount);
+    // A490: a manual discount on a LIVE web sale is sales.discount (as POST /orders).
+    if (req.surface !== 'desktop' && round2(payDiscount - payOffers.offerDiscount) > 0 && !can(req, 'sales.discount')) {
+      res.status(403).json(DISCOUNT_REFUSED); return;
+    }
     const { vat: payVat, ctl: payCtl } = await taxSplit(req.businessId, payTotal);
 
     // Validate the legs reconcile to the recomputed total BEFORE writing them.
@@ -2579,7 +2599,7 @@ router.post('/:id/fire-course', async (req, res) => {
 // GET /api/orders/turnover?branch_id=  — live dwell time for open dine-in orders.
 // Returns each open dine-in order with minutes seated and an `over` flag against
 // the business's turnover_alert_minutes setting.
-router.get('/turnover', async (req, res) => {
+router.get('/turnover', requirePermission('orders.view_all'), async (req, res) => {   // A490
   const branchId = (req.query.branch_id as string) || branchScope(req);
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
@@ -2613,7 +2633,7 @@ router.get('/turnover', async (req, res) => {
 });
 
 // GET /api/orders/turnover/report?branch_id=&from=&to=  — avg dwell per table.
-router.get('/turnover/report', requirePermission('reports.view'), async (req, res) => {
+router.get('/turnover/report', requirePermission('reports.sales'), async (req, res) => {
   const branchId = (req.query.branch_id as string) || branchScope(req);
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }

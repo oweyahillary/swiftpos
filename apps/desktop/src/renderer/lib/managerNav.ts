@@ -9,7 +9,7 @@
  *   · Menu · Settings [General · Printing · Staff] · Stock
  *
  * Rules:
- *   - every tab keeps the permission it had as its own sidebar item; a group shows only the tabs its role may open,
+ *   - A490: every tab is gated by its own FINE key (NavAccess); a group shows only the tabs the person may open,
  *     drops its tab bar when one is left, and leaves the sidebar when none is;
  *   - a group opens on the tab last used in it (while the manager screen is open), else its first — Close opens on
  *     Close Day, the everyday one; Close Branch is a deliberate second tap;
@@ -27,25 +27,44 @@ export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 's
 export interface NavTab { key: TabKey; label: string }
 export interface NavGroup { key: GroupKey; label: string; tabs: NavTab[] }
 
+/**
+ * A490: what the person may open — each a FINE key of the catalogue (lib/access.ts `can`), never a role's name. A person
+ * with no key for a page simply does not see it; a group with no page leaves the sidebar.
+ */
 export interface NavAccess {
   isRestaurant: boolean;
-  /** Close Day / Close Branch: role or settings.manage (dayService.isManager's rule). */
-  isManagerRole: boolean;
-  canManageProducts: boolean;
-  canManageStaff: boolean;
-  canManageSettings: boolean;
-  /** stations.manage or the receipt text (A90). */
+  /** reports.overview — the Overview page. */
+  canOverview: boolean;
+  /** orders.view_all — Orders. */
+  canOrders: boolean;
+  /** reports.items — Item Mix (restaurant). */
+  canItems: boolean;
+  /** reports.shifts or shifts.confirm — Current shift and Shift report. */
+  canShifts: boolean;
+  /** A466 / A481: reports.monthly_pack or expenses.manage — the monthly pack (A455), from the cloud. */
+  canMonthly?: boolean;
+  /** expenses.view or expenses.manage — Expenses. */
+  canExpenses: boolean;
+  /** shifts.close_day — Close Day / Close Branch (dayService mayCloseDay's rule). */
+  canCloseDay: boolean;
+  /** menu.edit or menu.prices — the Menu page. */
+  canMenu: boolean;
+  /** menu.offers — Offers (with the online licence). */
+  canOffers: boolean;
+  /** settings.business or settings.payments — Settings › General (each panel by its own key). */
+  canSettings: boolean;
+  /** stations.manage or the receipt text (receipt.manage) (A90). */
   canPrinting: boolean;
-  /** Web POS on and something stock-tracked (A346). */
+  /** staff.view — Staff (adding and changing them is staff.edit, on the page). */
+  canStaff: boolean;
+  /** Web POS on, something stock-tracked (A346) and inventory.view. */
   showStock: boolean;
-  /** A414: inventory.waste or inventory.adjust — record wastage on the till. */
+  /** A414: inventory.waste — record wastage on the till. */
   canWaste?: boolean;
   /** A460: the client has the online licence — offers, wastage and transfers are shown only then. */
   online?: boolean;
   /** A197: inventory.transfer — send and receive stock between branches (online licence). */
   canTransfer?: boolean;
-  /** A466: reports.financial — the monthly pack (A455), from the cloud. */
-  canMonthly?: boolean;
 }
 
 /** Pages opened from inside a group's page, not tabs of their own. */
@@ -53,26 +72,26 @@ const HIDDEN_MEMBERS: Partial<Record<TabKey, GroupKey>> = { import: 'menu', pric
 
 export function buildManagerNav(a: NavAccess): NavGroup[] {
   const groups: NavGroup[] = [
-    { key: 'overview', label: 'Overview', tabs: [{ key: 'overview', label: 'Overview' }] },
+    { key: 'overview', label: 'Overview', tabs: a.canOverview ? [{ key: 'overview', label: 'Overview' }] : [] },
     { key: 'sales', label: 'Sales', tabs: [
-      { key: 'orders', label: 'Orders' },
-      ...(a.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix' }] : []),   // restaurant only (A105)
-      { key: 'shift', label: 'Current shift' },
-      { key: 'zreport', label: 'Shift report' },
+      ...(a.canOrders ? [{ key: 'orders' as TabKey, label: 'Orders' }] : []),
+      ...(a.isRestaurant && a.canItems ? [{ key: 'items' as TabKey, label: 'Item Mix' }] : []),   // restaurant only (A105)
+      ...(a.canShifts ? [{ key: 'shift' as TabKey, label: 'Current shift' }, { key: 'zreport' as TabKey, label: 'Shift report' }] : []),
       ...(a.canMonthly ? [{ key: 'monthly' as TabKey, label: 'Monthly pack' }] : []),   // A466: the web's Monthly pack (A455)
     ] },
-    { key: 'expenses', label: 'Expenses', tabs: [{ key: 'expenses', label: 'Expenses' }] },   // 0.6.11
-    // Manager-only: Close Day is the escape route for the trading-day gate.
-    { key: 'close', label: 'Close', tabs: a.isManagerRole
+    { key: 'expenses', label: 'Expenses', tabs: a.canExpenses ? [{ key: 'expenses', label: 'Expenses' }] : [] },   // 0.6.11
+    // Close Day is the escape route for the trading-day gate — shifts.close_day.
+    { key: 'close', label: 'Close', tabs: a.canCloseDay
       ? [{ key: 'dayclose', label: 'Close Day' }, { key: 'branchclose', label: 'Close Branch' }] : [] },
-    // A445: Offers beside the menu, for the same people (products.manage).
-    // A460: Offers only with the online licence (a premium feature — never shown without it).
-    { key: 'menu', label: 'Menu', tabs: a.canManageProducts
-      ? [{ key: 'menu', label: 'Menu' }, ...(a.online ? [{ key: 'offers' as TabKey, label: 'Offers' }] : [])] : [] },
+    // A445: Offers beside the menu. A460: only with the online licence (a premium feature — never shown without it).
+    { key: 'menu', label: 'Menu', tabs: [
+      ...(a.canMenu ? [{ key: 'menu' as TabKey, label: 'Menu' }] : []),
+      ...(a.online && a.canOffers ? [{ key: 'offers' as TabKey, label: 'Offers' }] : []),
+    ] },
     { key: 'settings', label: 'Settings', tabs: [
-      ...((a.canManageSettings || a.canManageProducts) ? [{ key: 'settings' as TabKey, label: 'General' }] : []),
+      ...(a.canSettings ? [{ key: 'settings' as TabKey, label: 'General' }] : []),
       ...(a.canPrinting ? [{ key: 'printers' as TabKey, label: 'Printing' }] : []),
-      ...(a.canManageStaff ? [{ key: 'staff' as TabKey, label: 'Staff' }] : []),
+      ...(a.canStaff ? [{ key: 'staff' as TabKey, label: 'Staff' }] : []),
     ] },
     { key: 'stock', label: 'Stock', tabs: [
       ...(a.showStock ? [{ key: 'stock' as TabKey, label: 'Stock' }] : []),
@@ -94,4 +113,10 @@ export function groupOf(nav: NavGroup[], tab: TabKey): NavGroup | null {
 export function openGroup(group: NavGroup, last: Partial<Record<GroupKey, TabKey>>): TabKey {
   const remembered = last[group.key];
   return remembered && group.tabs.some((t) => t.key === remembered) ? remembered : group.tabs[0].key;
+}
+
+/** A490: the page to open first — the one asked for when the person has it, else the first page they have (null: none). */
+export function firstTab(nav: NavGroup[], wanted?: TabKey | null): TabKey | null {
+  if (wanted && groupOf(nav, wanted)) return wanted;
+  return nav[0]?.tabs[0]?.key ?? null;
 }

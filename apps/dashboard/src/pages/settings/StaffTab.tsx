@@ -4,42 +4,71 @@ import { useBranch } from '../../context/BranchContext';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
+import { expandKeys, isBackOffice, OPEN_BEFORE_A490 } from '../../lib/permissions';   // A490
+import PermissionPicker, { usePermissionCatalogue, keyDifferences, type CatalogueKey, type CatalogueGroup } from '../../components/PermissionPicker';
 
 interface Branch { id: string; name: string; }
-interface Permission { id: string; key: string; label: string; module: string; }
+/** A490: a role as GET /api/staff/roles answers it — its FINE keys, whether it is the owner's, whether this user may give it. */
 interface Role {
   id: string; name: string;
-  role_permissions: { permission_id: string }[];
+  keys?: string[];
+  is_owner_role?: boolean;
+  assignable?: boolean;
 }
 interface StaffMember {
   id: string; name: string; email: string | null; phone: string | null; status: string;
   hourly_rate: number | null;
   roles: { id: string; name: string } | null;
   user_branches: { branch_id: string; branches: { id: string; name: string } }[];
-  user_permissions: { permission_id: string; granted: boolean }[];
+  user_permissions?: { permission_id: string; granted: boolean }[];
+  /** A490: the person's own rights — a key given (true) or taken away (false) on top of their role's. */
+  override_keys?: Record<string, boolean> | null;
 }
 
 interface Props {
   branches: Branch[];
-  /** Role names to hide from the role selector — used by manager dashboard to prevent assigning manager/owner roles */
-  excludeRoles?: string[];
-  /** A391: the owner may reset a manager's sign-in code (lost phone → emailed codes). */
+  /** A391: the owner may reset a back-office person's sign-in code (lost phone → emailed codes). */
   canResetSignIn?: boolean;
+  /** A490: add, edit, deactivate — staff.edit (the manager portal passes it; the owner always may). */
+  canEdit?: boolean;
 }
 
-const OTP_ROLES = ['owner', 'admin', 'manager', 'supervisor', 'branch_manager'];
+/** A490: a role's keys as a set ('*' for the owner's role). */
+export function roleKeySet(role: Role | undefined): Set<string> {
+  if (!role) return new Set();
+  if (role.is_owner_role) return new Set(['*']);
+  return expandKeys(role.keys ?? []);
+}
+
+/** A490: the keys a person holds — their role's, with their own overrides applied. */
+export function personKeys(role: Role | undefined, overrides: Record<string, boolean> | null | undefined): Set<string> {
+  const held = roleKeySet(role);
+  if (held.has('*')) return held;
+  for (const [k, on] of Object.entries(overrides ?? {})) { if (on === true) held.add(k); else if (on === false) held.delete(k); }
+  return held;
+}
+
+/** A490: back office (sign-in codes apply, the reset is offered) — by the keys they hold, never by the role's name.
+ *  The keys every role was given by migration 134 (OPEN_BEFORE_A490: staff.view, sales.history_all, …) do not count,
+ *  as in lib/posRouting.ts — they would make every cashier "back office". */
+export function needsSignInCode(role: Role | undefined, overrides: Record<string, boolean> | null | undefined): boolean {
+  const held = personKeys(role, overrides);
+  for (const k of OPEN_BEFORE_A490) held.delete(k);
+  return isBackOffice(held);
+}
 
 const STATUS_COLORS: Record<string, string> = {
   active:   'bg-green-500/15 text-green-400',
   inactive: 'bg-gray-700 text-gray-500',
 };
 
-export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Props) {
+export default function StaffTab({ branches, canResetSignIn, canEdit = true }: Props) {
   const { activeBranchId } = useBranch();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);        // the roles this user may give (assignable)
+  const [allRoles, setAllRoles] = useState<Role[]>([]);  // every role — to read a person's keys
+  const catalogue = usePermissionCatalogue(api);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
@@ -49,20 +78,15 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
 
   const fetchAll = async () => {
     try {
-      const [staffData, rolesData, permsData] = await Promise.all([
+      const [staffData, rolesData] = await Promise.all([
         api.get<StaffMember[]>(activeBranchId ? `/api/staff?branch_id=${activeBranchId}` : '/api/staff'),
         api.get<Role[]>('/api/staff/roles'),
-        api.get<Permission[]>('/api/staff/permissions'),
       ]);
       setStaff(staffData ?? []);
-      // Filter out roles the current context shouldn't be able to assign
-      // A340: the cloud marks the roles THIS user may hand out (a manager is never offered Owner/Admin/Manager/…);
-      // excludeRoles stays for the manager dashboard's own narrower list.
-      const filteredRoles = (rolesData ?? [])
-        .filter(r => (r as { assignable?: boolean }).assignable !== false)
-        .filter(r => !excludeRoles?.length || !excludeRoles.includes(r.name.toLowerCase()));
-      setRoles(filteredRoles);
-      setPermissions(permsData ?? []);
+      // A340 / A490: the cloud marks the roles THIS user may hand out (`assignable` — never a role with more than they
+      // hold, never the owner's). No role names are listed here any more.
+      setAllRoles(rolesData ?? []);
+      setRoles((rolesData ?? []).filter(r => r.assignable !== false && !r.is_owner_role));
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -110,10 +134,12 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
           <h2 className="text-white font-semibold text-lg">Staff Members</h2>
           <p className="text-gray-500 text-sm">{staff.filter(s => s.status === 'active').length} active</p>
         </div>
+        {canEdit && (
         <button onClick={() => { setEditing(null); setShowModal(true); }}
           className="px-4 py-2 bg-swift hover:bg-swift-light text-gray-950 text-sm font-semibold rounded-xl transition-colors">
           + Add Staff
         </button>
+        )}
       </div>
 
       {loading ? (
@@ -124,7 +150,8 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
         <div className="space-y-2">
           {paged.items.map(s => {
             const branchNames = s.user_branches?.map(b => b.branches?.name).filter(Boolean) ?? [];
-            const overrideCount = s.user_permissions?.length ?? 0;
+            const overrideCount = s.override_keys ? Object.keys(s.override_keys).length : (s.user_permissions?.length ?? 0);
+            const role = allRoles.find(r => r.id === s.roles?.id);
             return (
               <div key={s.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -154,17 +181,17 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {canResetSignIn && s.status === 'active' && OTP_ROLES.includes((s.roles?.name ?? '').toLowerCase().replace(/ /g, '_')) && (
+                  {canResetSignIn && s.status === 'active' && needsSignInCode(role, s.override_keys) && (
                     <button onClick={() => resetSignIn(s)} data-testid="reset-signin"
                       className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
                       Reset sign-in code
                     </button>
                   )}
-                  <button onClick={() => { setEditing(s); setShowModal(true); }}
+                  {canEdit && <button onClick={() => { setEditing(s); setShowModal(true); }}
                     className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
                     Edit
-                  </button>
-                  {s.status === 'active' ? (
+                  </button>}
+                  {!canEdit ? null : s.status === 'active' ? (
                     <button onClick={() => deactivate(s.id)}
                       className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
                       Deactivate
@@ -187,7 +214,8 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
         <StaffModal
           editing={editing}
           roles={roles}
-          permissions={permissions}
+          allRoles={allRoles}
+          catalogue={catalogue}
           branches={branches}
           mode={mode}
           setMode={setMode}
@@ -204,7 +232,8 @@ export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Pro
 interface ModalProps {
   editing: StaffMember | null;
   roles: Role[];
-  permissions: Permission[];
+  allRoles: Role[];
+  catalogue: { keys: CatalogueKey[]; groups: CatalogueGroup[] };
   branches: Branch[];
   mode: 'pin' | 'invite';
   setMode: (m: 'pin' | 'invite') => void;
@@ -214,7 +243,7 @@ interface ModalProps {
 
 // A423: an email followed by password-type PINs reads to the browser as a sign-in form, and it filled in the OWNER's
 // saved email and password. Every email here is autoComplete="off" and every PIN "new-password" — the form starts empty.
-function StaffModal({ editing, roles, permissions, branches, mode, setMode, onClose, onSaved }: ModalProps) {
+function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMode, onClose, onSaved }: ModalProps) {
   const [hourlyRate, setHourlyRate] = useState(editing?.hourly_rate != null ? String(editing.hourly_rate) : '');
   const [name, setName] = useState(editing?.name ?? '');
   const [email, setEmail] = useState(editing?.email ?? '');
@@ -239,46 +268,19 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
     return () => document.removeEventListener('mousedown', handler);
   }, [showBranchDropdown]);
 
-  // effectivePerms: the set of permission IDs currently checked
-  // Starts from role defaults, modified by existing user overrides
-  const getRolePerms = (rid: string) =>
-    new Set(roles.find(r => r.id === rid)?.role_permissions.map(rp => rp.permission_id) ?? []);
+  // A490: the person's rights by KEY — pre-filled from the role's keys, with their own overrides applied. What differs
+  // from the role is saved as override_keys ({ key: true } given, { key: false } taken away).
+  const roleById = (rid: string) => allRoles.find(r => r.id === rid) ?? roles.find(r => r.id === rid);
+  const [effectiveKeys, setEffectiveKeys] = useState<Set<string>>(() => personKeys(roleById(roleId), editing?.override_keys));
+  const roleBaseline = roleKeySet(roleById(roleId));
+  const allKeys = catalogue.keys.map(k => k.key);
+  const diff = keyDifferences(effectiveKeys, roleBaseline, allKeys);
+  const diffCount = diff.added.length + diff.removed.length;
 
-  const computeInitial = () => {
-    const base = getRolePerms(roleId);
-    if (editing?.user_permissions) {
-      editing.user_permissions.forEach(up => {
-        if (up.granted) base.add(up.permission_id);
-        else base.delete(up.permission_id);
-      });
-    }
-    return base;
-  };
-
-  const [effectivePerms, setEffectivePerms] = useState<Set<string>>(computeInitial);
-
-  // When role changes, reset effective perms to new role's defaults
+  // When the role changes, start again from the new role's keys.
   const handleRoleChange = (newRoleId: string) => {
     setRoleId(newRoleId);
-    setEffectivePerms(getRolePerms(newRoleId));
-  };
-
-  const togglePerm = (permId: string) => {
-    setEffectivePerms(prev => {
-      const next = new Set(prev);
-      next.has(permId) ? next.delete(permId) : next.add(permId);
-      return next;
-    });
-  };
-
-  const toggleModuleAll = (permIds: string[]) => {
-    setEffectivePerms(prev => {
-      const next = new Set(prev);
-      const allOn = permIds.every(id => next.has(id));
-      if (allOn) permIds.forEach(id => next.delete(id));
-      else permIds.forEach(id => next.add(id));
-      return next;
-    });
+    setEffectiveKeys(roleKeySet(roleById(newRoleId)));
   };
 
   const toggleBranch = (id: string) =>
@@ -290,16 +292,12 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
     if (!editing && mode === 'pin' && !pin) { setError('PIN is required'); return; }
     if (!editing && mode === 'invite' && !email) { setError('Email is required'); return; }
 
-    // Compute overrides vs role defaults
-    const rolePerms = getRolePerms(roleId);
-    const overrides: { permission_id: string; granted: boolean }[] = [];
-    permissions.forEach(p => {
-      const inRole = rolePerms.has(p.id);
-      const inEffective = effectivePerms.has(p.id);
-      if (inRole !== inEffective) {
-        overrides.push({ permission_id: p.id, granted: inEffective });
-      }
-    });
+    // A490: what differs from the role, by key.
+    const override_keys: Record<string, boolean> = {};
+    if (!roleBaseline.has('*')) {
+      for (const k of diff.added) override_keys[k] = true;
+      for (const k of diff.removed) override_keys[k] = false;
+    }
 
     // Override PIN payload: '' clears (revoke), a value sets/replaces, omit = keep.
     const overrideField: { override_pin?: string } =
@@ -318,20 +316,18 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
           ...(pin ? { pin } : {}),
           ...overrideField,
           branch_ids: selectedBranches,
-          overrides,
+          override_keys,
         });
       } else if (mode === 'pin') {
-        await api.post('/api/staff', { name, email: email || undefined, phone: phone || undefined, role_id: roleId, pin, branch_ids: selectedBranches, overrides, ...overrideField });
+        await api.post('/api/staff', { name, email: email || undefined, phone: phone || undefined, role_id: roleId, pin, branch_ids: selectedBranches, override_keys, ...overrideField });
       } else {
-        await api.post('/api/staff/invite', { name, email, role_id: roleId, branch_ids: selectedBranches, overrides, ...overrideField });
+        await api.post('/api/staff/invite', { name, email, role_id: roleId, branch_ids: selectedBranches, override_keys, ...overrideField });
       }
       onSaved();
     } catch (err: any) {
       setError(err.message ?? 'Failed to save');
     } finally { setLoading(false); }
   };
-
-  const modules = [...new Set(permissions.map(p => p.module))];
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -506,58 +502,21 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
           </div>
         )}
 
-        {/* Permissions — inline, pre-filled from role */}
+        {/* A490: this person's rights, key by key — pre-filled from the role; what differs from it is marked. */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-white text-sm font-medium">User Rights</p>
-              <p className="text-gray-500 text-xs">Pre-filled from the selected role. Check or uncheck to customise for this user.</p>
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="min-w-0">
+              <p className="text-white text-sm font-medium">This person's permissions</p>
+              <p className="text-gray-500 text-xs">Pre-filled from their role. Tick or untick to give or take away a single permission for this person only.</p>
             </div>
-            <span className="text-xs text-gray-500">{effectivePerms.size} active</span>
+            <span className="text-xs text-gray-500 flex-shrink-0 text-right" data-testid="staff-diff">
+              {diffCount === 0 ? 'Same as the role' : `${diffCount} differ${diffCount === 1 ? 's' : ''} from the role`}
+              {diffCount > 0 && <button type="button" onClick={() => setEffectiveKeys(new Set(roleBaseline))}
+                className="block ml-auto mt-0.5 underline text-gray-400 hover:text-white">Reset to the role</button>}
+            </span>
           </div>
-
-          <div className="space-y-4 bg-gray-800/30 rounded-xl p-4 border border-gray-700/50">
-            {modules.map(mod => {
-              const modPerms = permissions.filter(p => p.module === mod);
-              const modIds = modPerms.map(p => p.id);
-              const allOn = modIds.every(id => effectivePerms.has(id));
-              const someOn = modIds.some(id => effectivePerms.has(id));
-
-              return (
-                <div key={mod}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <button onClick={() => toggleModuleAll(modIds)}
-                      className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                        allOn ? 'bg-swift-strong border-swift-strong'
-                        : someOn ? 'bg-swift/30 border-swift/50'
-                        : 'border-gray-600 hover:border-gray-400'
-                      }`}>
-                      {(allOn || someOn) && <span className="text-white text-xs font-bold">{allOn ? '✓' : '−'}</span>}
-                    </button>
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{mod}</span>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5 pl-6">
-                    {modPerms.map(perm => {
-                      const on = effectivePerms.has(perm.id);
-                      return (
-                        <label key={perm.id} onClick={() => togglePerm(perm.id)}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                            on ? 'border-swift/40 bg-swift/8 text-white' : 'border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-400'
-                          }`}>
-                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                            on ? 'bg-swift-strong border-swift-strong' : 'border-gray-600'
-                          }`}>
-                            {on && <span className="text-white text-xs font-bold">✓</span>}
-                          </div>
-                          <span className="text-xs">{perm.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <PermissionPicker keys={catalogue.keys} groups={catalogue.groups} checked={effectiveKeys}
+            onChange={setEffectiveKeys} baseline={roleBaseline} idPrefix="staff" />
         </div>
 
         {error && <p className="text-red-400 text-sm">{error}</p>}

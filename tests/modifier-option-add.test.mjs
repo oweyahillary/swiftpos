@@ -15,7 +15,7 @@ let pass = 0, fail = 0;
 const ok = (n, fn) => { try { fn(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n       ${e.message}`); } };
 
 ok('server: POST /options exists, guarded + business-scoped', () => {
-  assert.match(srv, /router\.post\('\/options', requirePermission\('products\.manage'\)/, 'endpoint must be permission-gated');
+  assert.match(srv, /router\.post\('\/options', requirePermission\('menu\.edit'\)/  /* A490: what products.manage stood for here */, 'endpoint must be permission-gated');
   assert.match(srv, /modifierGroupOwned\(modifier_group_id, req\.businessId\)/, 'must verify the group belongs to the business');
 });
 ok('client: a saved group can add an option via the endpoint', () => {

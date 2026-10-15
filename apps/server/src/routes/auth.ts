@@ -51,11 +51,15 @@ import { checkTillIdentity, resetTillIdentity } from '../lib/tillIdentity';   //
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A398
 import { sessionKind, revokeBrowserSessions, markTillSessionLost, clearTillSessionLost, markTillSecurityAlert } from '../lib/tillSessions';   // A407, A477
 import { cleanEmail, passwordProblem, ownerAccountForEmail, sendResetCode, checkResetCode, setOwnerPassword } from '../lib/passwordReset';   // A402
-import { otpGate, roleNeedsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
+import { otpGate, needsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
 import { worksAtBranch } from '../lib/branchAccess';   // A426
+import { effectiveKeysForRow, loadEffectiveKeys, tokenKeys, clientPermissionMap } from '../lib/effectivePermissions';   // A490
+import { isOwnerRoleName } from '../lib/ownerRole';   // A490
+import { isBackOffice, expandKeys } from '../lib/permissions';   // A490
+import { permissionsOpenBefore } from '../lib/permissionsState';   // A490
 
 const router = safeRouter();
 
@@ -426,29 +430,6 @@ async function getPermissionsVersion(userId: string): Promise<number> {
   return (data as any)?.permissions_version ?? 1;
 }
 
-/**
- * Build effective permissionKeys for a staff user (non-owner).
- * Role permissions + user-level overrides.
- */
-async function buildPermissionKeys(roleId: string, userId: string): Promise<string[]> {
-  const [{ data: rp }, { data: up }] = await Promise.all([
-    supabase
-      .from('role_permissions')
-      .select('permissions ( key )')
-      .eq('role_id', roleId),
-    supabase
-      .from('user_permissions')
-      .select('granted, permissions ( key )')
-      .eq('user_id', userId),
-  ]);
-
-  const effective: Record<string, boolean> = {};
-  (rp ?? []).forEach((r: any) => { if (r.permissions?.key) effective[r.permissions.key] = true; });
-  (up ?? []).forEach((u: any) => { if (u.permissions?.key) effective[u.permissions.key] = u.granted; });
-
-  return Object.entries(effective).filter(([, g]) => g).map(([k]) => k);
-}
-
 // ── Legacy helpers (PIN hashing) ──────────────────────────────────────────────
 
 function legacyPinHash(pin: string, businessId: string): string {
@@ -520,12 +501,10 @@ function buildDeviceLabel(ua: string): string {
  * whether the device is approved. Returns 'allowed', 'pending', or 'rejected'.
  * If registration is not required, always returns 'allowed'.
  */
-// Roles that are always exempt from device registration.
+// Who is always exempt from device registration: the owner and anyone "back office" (A490: isBackOffice — holding
+// anything beyond the shop floor's keys; it used to be the role names owner/admin/manager/supervisor/branch_manager).
 // These users manage the system — blocking them from new devices is counterproductive
 // (a manager could approve their own device anyway, making the check pointless).
-const DEVICE_CHECK_EXEMPT_ROLES = new Set([
-  'owner', 'admin', 'manager', 'supervisor', 'branch_manager',
-]);
 
 async function checkDeviceRegistration(
   businessId: string,
@@ -533,14 +512,12 @@ async function checkDeviceRegistration(
   req:        any,
   clientHint?: string,
   isOwner?:    boolean,
-  roleName?:   string | null,
+  held?:       ReadonlySet<string>,
 ): Promise<{ result: 'allowed' | 'pending' | 'rejected'; deviceId?: string }> {
-  // Owners and elevated staff (managers, supervisors) are never device-gated.
+  // Owners and back-office staff are never device-gated.
   // Owners manage the system; managers can approve their own devices anyway.
   if (isOwner) return { result: 'allowed' };
-  if (roleName && DEVICE_CHECK_EXEMPT_ROLES.has(roleName.toLowerCase())) {
-    return { result: 'allowed' };
-  }
+  if (held && isBackOffice(held)) return { result: 'allowed' };
 
   // 1. Check if the business has device registration enabled
   const { data: setting } = await supabase
@@ -1061,6 +1038,7 @@ router.post('/refresh', async (req, res) => {
   // nothing half-done.
   const tillSession = isTillPayload(cleanPayload) || isOwnerEraTillPayload(cleanPayload);
   let newPayload: TokenPayload;
+  let personPermissions: Record<string, true> | null = null;   // A490: the renewed person's permission map
   let tillDevice: { device_id: string; device_secret_hash: string | null; identityMatched: boolean } | null = null;
   if (tillSession) {
     const header = String(req.header('x-device-id') ?? '').split(',')[0].trim();
@@ -1111,8 +1089,16 @@ router.post('/refresh', async (req, res) => {
       }
     }
     // A person: re-fetch permissions — catches role changes since last login.
+    // A490: and answer them (`permissions`, the map the clients hold — clientPermissionMap), so a till or web POS that
+    // renews sees a role change without signing in again. The owner: {'*': true}.
     if (cleanPayload.roleId && !cleanPayload.isOwner) {
-      cleanPayload.permissionKeys = await buildPermissionKeys(cleanPayload.roleId, cleanPayload.userId);
+      const held = await loadEffectiveKeys(cleanPayload.roleId, cleanPayload.userId);
+      cleanPayload.permissionKeys = tokenKeys(held);
+      personPermissions = clientPermissionMap(held);
+    } else if (cleanPayload.isOwner) {
+      personPermissions = { '*': true };
+    } else {
+      personPermissions = clientPermissionMap(expandKeys(cleanPayload.permissionKeys ?? [], permissionsOpenBefore()));
     }
     // Re-fetch permissions_version — embed fresh value. Keep the existing sessionId so device-level logout still works.
     cleanPayload.permissionsVersion = await getPermissionsVersion(cleanPayload.userId);
@@ -1198,7 +1184,8 @@ router.post('/refresh', async (req, res) => {
   }
 
   // A477: `ack: true` — confirm the new token (POST /refresh/ack) once it is kept.
-  res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken, ...(deviceSecret ? { deviceSecret } : {}), ...(handshake ? { ack: true } : {}) });
+  res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken, ...(deviceSecret ? { deviceSecret } : {}), ...(handshake ? { ack: true } : {}),
+    ...(personPermissions ? { permissions: personPermissions } : {}) });   // A490: a person's token only (never the till's own)
 });
 
 /** A477: retire the token a confirmed successor replaced (one row, by id). */
@@ -1394,7 +1381,7 @@ router.post('/pos-login', async (req, res) => {
   if (!valid) { res.status(401).json(authError); return; }
 
   const role    = (user as any).roles;
-  const isOwner = ['owner', 'admin'].includes((role?.name ?? '').toLowerCase());
+  const isOwner = isOwnerRoleName(role?.name);   // A490: the one place a role name decides (lib/ownerRole)
 
   // A37 — the surface that EXEMPTS a caller from the per-branch desktop licence
   // must be earned, not asserted. /pos-login serves the web POS AND, from a
@@ -1447,23 +1434,15 @@ router.post('/pos-login', async (req, res) => {
     await supabase.from('users').update({ pin_hash: newHash }).eq('id', (user as any).id);
   }
 
-  const effectivePerms: Record<string, boolean> = {};
-  if (isOwner) {
-    effectivePerms['*'] = true;
-  } else {
-    ((user as any).roles?.role_permissions ?? []).forEach((rp: any) => {
-      if (rp.permissions?.key) effectivePerms[rp.permissions.key] = true;
-    });
-    ((user as any).user_permissions ?? []).forEach((up: any) => {
-      if (up.permissions?.key) effectivePerms[up.permissions.key] = up.granted;
-    });
-  }
+  // A490: one rule (lib/effectivePermissions): fine keys, broad grants expanded, '*' for the owner.
+  const heldKeys = effectiveKeysForRow(user as any);
+  const effectivePerms = clientPermissionMap(heldKeys);
 
   // ── Device registration check ───────────────────────────────────────────────
   const clientHint = req.body.device_hint as string | undefined;
   const devCheck   = await checkDeviceRegistration(
     (user as any).business_id, (user as any).id, req, clientHint,
-    isOwner, role?.name ?? null,
+    isOwner, heldKeys,
   );
 
   if (devCheck.result === 'pending') {
@@ -1486,9 +1465,9 @@ router.post('/pos-login', async (req, res) => {
   // A391: on the web, owners and managers enter a one-time code too (mandatory); cashiers do not. A till never does —
   // it signs in by enrolment and PIN, offline as well.
   let posGate: { trust?: string; pass?: string } = {};
-  // Same people the web sends to the manager screens (posRouting.ts): a manager-tier role, or settings.manage.
+  // Same people the web sends to the manager screens (posRouting.ts): A490 — anyone back office (isBackOffice).
   // A398: only when the admin portal has turned 'Sign-in codes' on for this client.
-  if (effectiveSurface === 'web' && (roleNeedsOtp(role?.name, isOwner) || effectivePerms['settings.manage'] === true)
+  if (effectiveSurface === 'web' && needsOtp(heldKeys, isOwner)
       && (await businessPosFeatures((user as any).business_id)).login_codes) {
     const g = await otpGate(await otpSubjectFor((user as any).id, (user as any).email, (user as any).name), req.body);
     if (g.ok === false) { res.status(g.status).json(g.body); return; }
@@ -1524,7 +1503,7 @@ router.post('/pos-login', async (req, res) => {
     roleId:             role?.id ?? null,
     roleName:           role?.name ?? null,
     isOwner,
-    permissionKeys:     Object.entries(effectivePerms).filter(([, g]) => g).map(([k]) => k),
+    permissionKeys:     tokenKeys(heldKeys),   // A490: fine keys (or '*') — the cloud checks these
     permissionsVersion: pv,
     sessionId,
     surface:            effectiveSurface,
@@ -1657,22 +1636,18 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     await supabase.from('users').update({ pin_hash: newHash }).eq('id', matchedUser.id);
   }
 
-  const effectivePerms: Record<string, boolean> = {};
-  (matchedUser.roles?.role_permissions ?? []).forEach((rp: any) => {
-    if (rp.permissions?.key) effectivePerms[rp.permissions.key] = true;
-  });
-  (matchedUser.user_permissions ?? []).forEach((up: any) => {
-    if (up.permissions?.key) effectivePerms[up.permissions.key] = up.granted;
-  });
+  // A490: one rule (lib/effectivePermissions). The owner holds '*' here too — the till decided that by role name.
+  const heldKeys = effectiveKeysForRow(matchedUser as any);
+  const effectivePerms = clientPermissionMap(heldKeys);
 
   const role    = matchedUser.roles;
-  const isOwner = ['owner', 'admin'].includes((role?.name ?? '').toLowerCase());
+  const isOwner = isOwnerRoleName(role?.name);
 
   // ── Device registration check ───────────────────────────────────────────────
   const clientHintV = req.body.device_hint as string | undefined;
   const devCheckV   = await checkDeviceRegistration(
     req.businessId, matchedUser.id, req, clientHintV,
-    isOwner, role?.name ?? null,
+    isOwner, heldKeys,
   );
 
   if (devCheckV.result === 'pending') {
@@ -1734,7 +1709,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     roleId:             role?.id ?? null,
     roleName:           role?.name ?? null,
     isOwner,
-    permissionKeys:     Object.entries(effectivePerms).filter(([, g]) => g).map(([k]) => k),
+    permissionKeys:     tokenKeys(heldKeys),   // A490: fine keys (or '*') — the cloud checks these
     permissionsVersion: pv,
     sessionId,
     surface:            req.surface ?? 'web',
@@ -1895,7 +1870,7 @@ async function otpSelf(req: any, res: any): Promise<{ id: string; email: string 
   const { data: u } = await supabase
     .from('users').select('id, email, roles ( name )').eq('id', req.userId).eq('business_id', req.businessId).maybeSingle();
   if (!u) { res.status(404).json({ error: 'Account not found' }); return null; }
-  if (!roleNeedsOtp((u as any).roles?.name, req.isOwner) && !(req.permissionKeys ?? []).includes('settings.manage')) {
+  if (!needsOtp(req.permissionKeys ?? [], req.isOwner)) {   // A490: back office (isBackOffice), not a role name
     res.status(403).json({ error: 'Sign-in codes are for owners and managers.' }); return null;
   }
   return { id: (u as any).id, email: (u as any).email };

@@ -226,7 +226,7 @@ router.get('/settings', requireAuth, async (req, res) => {
 });
 
 // Audit 2026-10-14: was requireAuth only — any signed-in user could switch public ordering on or take over the menu link.
-router.patch('/settings', requireAuth, requirePermission('settings.manage'), async (req, res) => {
+router.patch('/settings', requireAuth, requirePermission('settings.integrations'), async (req, res) => {
   const { menu_slug, qr_ordering } = req.body;
   const updates: Record<string, unknown> = {};
   if (menu_slug   !== undefined) updates.menu_slug   = menu_slug?.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-') || null;

@@ -42,7 +42,9 @@ const db = L.getLocalDb();
 db.prepare(`INSERT INTO session (id, token, user_id, business_id, business_name, logged_in_at) VALUES (1, 't', 'device:dev-T1', 'biz-1', 'Biz', '2026-10-11T00:00:00Z')`).run();
 require(path.join(dist, 'deviceConfig.js')).saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1', device_id: 'dev-T1', device_role: 'till', terminal_code: 'T1', device_name: 'Front' });
 db.prepare(`INSERT INTO users (id, name) VALUES ('u-mary', 'Mary'), ('u-tom', 'Tom')`).run();
-const signIn = (id, name, role, perms = '{}') => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
+// A490: a role's NAME decides nothing on the till — a manager is the permissions an older cloud sent a manager.
+const A490_MANAGER = '{"orders.void":true,"settings.manage":true,"expenses.manage":true}';   // a manager role held expenses.manage
+const signIn = (id, name, role, perms = ['manager', 'supervisor'].includes(role) ? A490_MANAGER : '{}') => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
   VALUES (1, ?, ?, ?, ?, 'br-1', 'tok', '2026-10-11T06:00:00Z')`).run(id, name, role, perms);
 globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
 require(path.join(dist, 'ipcHandlers.js')).registerIpcHandlers();

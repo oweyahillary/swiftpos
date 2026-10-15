@@ -12,7 +12,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 let PGlite;
@@ -20,9 +20,10 @@ try { ({ PGlite } = require('@electric-sql/pglite')); }
 catch { console.error('\n@electric-sql/pglite not installed — cannot run.\n'); process.exit(1); }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const catSrc = fs.readFileSync(path.join(ROOT, 'apps/server/src/lib/permissionCatalogue.ts'), 'utf8');
-const catBlock = /PERMISSION_CATALOGUE[\s\S]*?\n\];/.exec(catSrc)[0];
-const CAT_KEYS = [...catBlock.matchAll(/key:\s*'([a-z_]+\.[a-z_]+)'/g)].map(m => m[1]);
+// A490: the catalogue is shared/permissions.ts (permissionCatalogue.ts builds its rows from it): the fine keys plus the
+// broad keys it replaced, which stay registered. Loaded as it is — Node 24 runs the TypeScript.
+const CAT = await import(pathToFileURL(path.join(ROOT, 'shared/permissions.ts')).href);
+const CAT_KEYS = [...CAT.PERMISSION_KEYS, ...Object.keys(CAT.LEGACY)];
 
 let pass = 0, fail = 0;
 const ok = (n, fn) => { try { fn(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n         ${e.message}`); } };

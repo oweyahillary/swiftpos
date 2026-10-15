@@ -7,7 +7,7 @@
  * signed-in person saw the button (`canVoid = true`), cashiers included, to be refused by the cloud afterwards.
  *
  * Now: a completed, not-yet-refunded sale gets "Void / Refund" inside the 30-minute void window and "Refund" after it;
- * only people whose permissions allow voids and refunds (`orders.void`, or '*') see it — the owner's rule (A336):
+ * only people whose permissions allow it see it (A490: `sales.void` / `sales.refund` — reverseActionFor) — the owner's rule (A336):
  * voids and refunds by owner / manager, cashiers neither. Web POS sales on this till's drawer (origin 'web') are treated
  * the same (A336 stage 2): their local id IS the cloud id, which the cloud's void/refund resolve directly.
  *
@@ -44,10 +44,21 @@ export function reverseAction(order: HistoryOrder, nowMs: number = Date.now(), w
     : { label: 'Refund', mode: 'refund' };
 }
 
-/** May this signed-in person void or refund? Owner '*' or the `orders.void` permission (managers by default). */
-export function mayVoidRefund(staff: { permissions?: Record<string, unknown> | null } | null | undefined): boolean {
-  const p = (staff?.permissions ?? {}) as Record<string, unknown>;
-  return p['*'] === true || p['orders.void'] === true;
+/** A490: what this person may do — sales.void and sales.refund are separate keys now (lib/access.ts `can`). */
+export interface ReverseRights { void: boolean; refund: boolean }
+
+/**
+ * A490: the History button for a sale, for someone who may void and / or refund. Both — as reverseAction. Only void —
+ * "Void" inside the window, nothing after it. Only refund — "Refund" at any age. Neither — none.
+ */
+export function reverseActionFor(order: HistoryOrder, rights: ReverseRights, nowMs: number = Date.now(), windowMin: number = VOID_WINDOW_MIN):
+  { label: 'Void / Refund' | 'Void' | 'Refund'; mode: 'void' | 'refund' } | null {
+  const base = reverseAction(order, nowMs, windowMin);
+  if (!base) return null;
+  if (rights.void && rights.refund) return base;
+  if (rights.refund) return { label: 'Refund', mode: 'refund' };
+  if (rights.void && base.mode === 'void') return { label: 'Void', mode: 'void' };
+  return null;
 }
 
 /**

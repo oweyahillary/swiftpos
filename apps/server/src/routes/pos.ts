@@ -1,4 +1,6 @@
+import { mpesaFromSettings, mpesaLabel, mpesaReceiptNumber } from '../lib/mpesaReceive';   // A492
 import { Router } from 'express';
+import { effectiveKeysForRow, clientPermissionMap } from '../lib/effectivePermissions';   // A490
 import { offersForBranch } from './offers';   // A445
 import { enabledFromSetting } from '../lib/paymentCatalogue';   // A429
 import { sendError } from '../lib/sendError';
@@ -87,6 +89,9 @@ router.get('/catalogue-version', async (req, res) => {
       // A450: the business itself — a new business name (or currency) on the web reaches every till within 20 s; it
       // waited for the 10-minute pull, and the till then ignored it (the name was written only at sign-in).
       latest('businesses',       'id',          biz),
+      // A492: this branch's own settings — a manager's new M-Pesa number on one till reaches the branch's other tills
+      // within 20 s (it waited for the 10-minute pull).
+      latest('branch_settings',  'branch_id',   branchId),
     ]);
     // ISO-8601 UTC strings sort chronologically; newest is the version.
     const version = picks.filter(Boolean).sort().pop() ?? null;
@@ -182,15 +187,14 @@ router.get('/branch-staff', async (req, res) => {
     .eq('status', 'active');
   if (error) { sendError(res, error); return; }
 
-  // Effective permissions = role grants (all true) then per-user overrides
-  // (granted true/false) — identical resolution to /verify-pin and the JWT.
+  // Effective permissions = role grants then per-user overrides — A490: the one rule (lib/effectivePermissions), sent as
+  // the map the clients hold (clientPermissionMap: fine keys + the broad keys an older till checks + the marker; the
+  // owner's role {'*': true}) — identical to /verify-pin and the JWT.
   const roster = (staffList ?? [])
     // A426: the same rule as PIN sign-in — no branch assigned means every branch (lib/branchAccess.ts)
     .filter((u: any) => worksAtBranch(u.user_branches, branchId))
     .map((u: any) => {
-      const permissions: Record<string, boolean> = {};
-      (u.roles?.role_permissions ?? []).forEach((rp: any) => { if (rp.permissions?.key) permissions[rp.permissions.key] = true; });
-      (u.user_permissions ?? []).forEach((up: any) => { if (up.permissions?.key) permissions[up.permissions.key] = up.granted; });
+      const permissions = clientPermissionMap(effectiveKeysForRow(u));
       return {
         staff_id:          u.id,
         name:              u.name,
@@ -264,7 +268,7 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number',
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -299,7 +303,7 @@ router.get('/init', async (req, res) => {
           .select('key, value')
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
-          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number'])
+          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'])
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
@@ -448,9 +452,17 @@ router.get('/init', async (req, res) => {
   // A139: a branch override, when present, wins over the business default. The
   // till is branch-bound and sent ?branch_id, so it receives its own values with
   // no client change; a branch with no override row inherits the business default.
+  // A492: the M-Pesa line is ONE thing (Buy Goods, or Paybill with its account): the branch's own when it has a number,
+  // else the business's — never a branch's label with the business's account.
+  const businessMpesa = mpesaFromSettings(receiptText.receipt_pay_label, receiptText.receipt_pay_number, receiptText.receipt_pay_account);
+  const branchText: Record<string, string> = {};
   for (const r of (branchTextRows ?? []) as any[]) {
-    receiptText[r.key] = typeof r.value === 'string' ? r.value : String(r.value ?? '');
+    const v = typeof r.value === 'string' ? r.value : String(r.value ?? '');
+    branchText[r.key] = v;
+    receiptText[r.key] = v;
   }
+  const branchMpesa = mpesaFromSettings(branchText.receipt_pay_label, branchText.receipt_pay_number, branchText.receipt_pay_account);
+  const mpesa = branchMpesa ?? businessMpesa;
 
   res.json({
     products: productsOut,
@@ -488,8 +500,11 @@ router.get('/init', async (req, res) => {
     receiptFooter: receiptText.receipt_footer ?? '',
     // A450: how a customer pays the business by M-Pesa, printed under the payments ("Buy Goods: 123456", "Paybill: …").
     // '' = not set (the receipt prints no such line). The branch's own value wins, as for the header and footer.
-    receiptPayLabel: receiptText.receipt_pay_label ?? '',
-    receiptPayNumber: receiptText.receipt_pay_number ?? '',
+    // A492: a Paybill's account is printed with its number ("4098201, Account 1234") — so a till on an older build prints
+    // it too; `mpesa` is the set-up itself (the till's Manager › Settings shows and edits it).
+    receiptPayLabel: mpesa ? mpesaLabel(mpesa.kind) : '',
+    receiptPayNumber: mpesaReceiptNumber(mpesa),
+    mpesa,
     // Things that must never reach a kitchen ticket — drinks, sauces, packaged
     // sides. Stated by the owner rather than inferred: a keyword guess is wrong
     // occasionally and silently, and the cook is the one who finds out.

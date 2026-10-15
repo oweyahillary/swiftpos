@@ -47,7 +47,12 @@ const fmt = (n: number, currency: string) =>
   `${currency} ${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function ZReportModal({ onClose }: Props) {
-  const { session } = usePOSAuth();
+  const { session, hasPermission } = usePOSAuth();
+  // A490: the Z-report itself stays (a cashier reconciles their own drawer), but the drawer's expected cash and the
+  // difference are reports.shifts or shifts.confirm — without either the count is blind, as at the till.
+  const seesExpected = hasPermission('reports.shifts') || hasPermission('shifts.confirm');
+  // A490: net profit is a cost figure (reports.costs).
+  const seesProfit = hasPermission('reports.costs');
   const { business } = useBusiness();
   const currency = (business as any)?.currency ?? "KES";
   const printRef = useRef<HTMLDivElement>(null);
@@ -405,12 +410,14 @@ export default function ZReportModal({ onClose }: Props) {
                     <span>Total Expenses</span>
                     <span>- {fmt(s!.totalExpenses, currency)}</span>
                   </div>
+                  {seesProfit && (
                   <div className="total-row" style={{ borderTop: "1px solid #444", marginTop: 4, paddingTop: 4 }}>
                     <span>NET PROFIT</span>
                     <span style={{ color: s!.netProfit >= 0 ? "#4ade80" : "#f87171" }}>
                       {fmt(s!.netProfit, currency)}
                     </span>
                   </div>
+                  )}
                 </>
               )}
 
@@ -430,8 +437,8 @@ export default function ZReportModal({ onClose }: Props) {
                 ))
               )}
 
-              {/* Cash Reconciliation */}
-              {data.shifts && data.shifts.length > 0 && (() => {
+              {/* Cash Reconciliation — A490: expected cash and the difference only with reports.shifts or shifts.confirm */}
+              {seesExpected && data.shifts && data.shifts.length > 0 && (() => {
                 const shift = data.shifts![0];
                 const cashSales = shift.cash_sales;
                 const expected = shift.expected_cash;

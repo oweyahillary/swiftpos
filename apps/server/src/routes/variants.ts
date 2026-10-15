@@ -36,7 +36,7 @@ function stockFields(o: any): {
 // Body: { rows: [{ product, group, type(free|upgrade), option, price_added }] }
 // Name-keyed by product; an uploaded (product, group) REPLACES that group's
 // options wholesale and sets its kind from `type`. option=DELETE removes the group.
-router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
+router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
   const { rows } = req.body ?? {};
   if (!Array.isArray(rows) || rows.length === 0) { res.status(400).json({ error: 'rows array is required' }); return; }
   if (rows.length > 2000) { res.status(400).json({ error: 'Maximum 2000 rows per import' }); return; }
@@ -146,7 +146,7 @@ router.get('/groups', async (req, res) => {
 
 // POST /api/variants/groups
 // Body: { product_id, name, required, options: [{ name, price_adjustment }] }
-router.post('/groups', requirePermission('products.manage'), async (req, res) => {
+router.post('/groups', requirePermission('menu.edit'), async (req, res) => {
   const { product_id, name, required = false, options = [] } = req.body;
   if (!product_id || !name) { res.status(400).json({ error: 'product_id and name required' }); return; }
 
@@ -195,7 +195,7 @@ router.post('/groups', requirePermission('products.manage'), async (req, res) =>
 });
 
 // PATCH /api/variants/groups/:id
-router.patch('/groups/:id', requirePermission('products.manage'), async (req, res) => {
+router.patch('/groups/:id', requirePermission('menu.edit'), async (req, res) => {
   const { id } = req.params;
 
   // Build the patch from the keys ACTUALLY sent.
@@ -258,7 +258,7 @@ router.patch('/groups/:id', requirePermission('products.manage'), async (req, re
 });
 
 // DELETE /api/variants/groups/:id  (cascades to variant_options)
-router.delete('/groups/:id', requirePermission('products.manage'), async (req, res) => {
+router.delete('/groups/:id', requirePermission('menu.edit'), async (req, res) => {
   const { id } = req.params;
 
   const { data: group } = await supabase
@@ -318,7 +318,7 @@ async function variantOptionOwned(optionId: string, businessId: string): Promise
 }
 
 // POST /api/variants/options
-router.post('/options', requirePermission('products.manage'), async (req, res) => {
+router.post('/options', requirePermission('menu.edit'), async (req, res) => {
   const { variant_group_id, name, price_adjustment = 0 } = req.body;
   if (!variant_group_id || !name) { res.status(400).json({ error: 'variant_group_id and name required' }); return; }
 
@@ -337,7 +337,7 @@ router.post('/options', requirePermission('products.manage'), async (req, res) =
 });
 
 // PATCH /api/variants/options/:id
-router.patch('/options/:id', requirePermission('products.manage'), async (req, res) => {
+router.patch('/options/:id', requirePermission('menu.edit'), async (req, res) => {
   const { id } = req.params;
   const { name, price_adjustment } = req.body;
 
@@ -362,7 +362,7 @@ router.patch('/options/:id', requirePermission('products.manage'), async (req, r
 });
 
 // DELETE /api/variants/options/:id
-router.delete('/options/:id', requirePermission('products.manage'), async (req, res) => {
+router.delete('/options/:id', requirePermission('menu.edit'), async (req, res) => {
   const { id } = req.params;
 
   if (!(await variantOptionOwned(id, req.businessId))) {

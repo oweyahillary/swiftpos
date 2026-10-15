@@ -23,6 +23,7 @@ import { mirrorTillRefund, reverseRiderPayout } from './webSales';
 import {
   voidWindowOpen, minutesBetween, offlineRefundBlockedMethods, offlineScopeAllows, windowLabel, type ReversalRules,
 } from './reversalRules';
+import { isOwnerRole, personCan } from './personAccess';   // A490
 
 export interface LocalPerson {
   id: string;
@@ -31,23 +32,15 @@ export interface LocalPerson {
   permissions?: unknown;
 }
 
-const perms = (p: LocalPerson | null | undefined): Record<string, unknown> => {
-  const raw = p?.permissions;
-  if (typeof raw === 'string') { try { return JSON.parse(raw || '{}'); } catch { return {}; } }
-  return (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-};
-
-/** The owner (by role) — voids at any age. */
+/** The owner (their role — the cloud's own rule, tillAccess isOwnerRole) — voids at any age. */
 export function isOwnerLocal(p: LocalPerson | null | undefined): boolean {
-  return String(p?.roleName ?? '').toLowerCase() === 'owner';
+  return !!p?.id && isOwnerRole(p.roleName);
 }
 
-/** May this person void, refund, or approve one? Owner/admin, '*', or orders.void (managers) — never a cashier. */
-export function mayReverseLocal(p: LocalPerson | null | undefined): boolean {
+/** A490: may this person void (sales.void) or refund (sales.refund) — do it, or approve it? The owner always may. */
+export function mayReverseLocal(p: LocalPerson | null | undefined, kind: 'void' | 'refund'): boolean {
   if (!p?.id) return false;
-  if (['owner', 'admin'].includes(String(p.roleName ?? '').toLowerCase())) return true;
-  const k = perms(p);
-  return k['*'] === true || k['orders.void'] === true;
+  return personCan(p, kind === 'void' ? 'sales.void' : 'sales.refund');
 }
 
 const METHOD_NAMES: Record<string, string> = { cash: 'cash', mpesa: 'M-Pesa', card: 'card', credit: 'credit' };
@@ -85,8 +78,8 @@ export function reverseOffline(input: OfflineReversalInput, db: Database.Databas
   const { kind, orderId, rules } = input;
   const reason = String(input.reason ?? '').trim();
   if (!reason) throw new Error(kind === 'refund' ? 'A reason is required to refund an order' : 'A reason is required to void an order');
-  if (!mayReverseLocal(input.actor)) throw new Error('Only a manager or the owner can void or refund a sale.');
-  if (!mayReverseLocal(input.approver)) throw new Error('That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.');
+  if (!mayReverseLocal(input.actor, kind)) throw new Error(kind === 'void' ? 'Your role does not void sales.' : 'Your role does not refund sales.');
+  if (!mayReverseLocal(input.approver, kind)) throw new Error(`That PIN was not recognised. Enter the PIN of someone who may ${kind} sales (or the owner) on duty.`);
 
   const order = db.prepare(`SELECT id, status, created_at, origin, refunded_at FROM orders WHERE id = ?`).get(orderId) as
     { id: string; status: string; created_at: string; origin: string | null; refunded_at: string | null } | undefined;

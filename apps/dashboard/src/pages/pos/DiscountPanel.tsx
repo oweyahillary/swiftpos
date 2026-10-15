@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
+import { usePOSAuth } from '../../context/POSAuthContext';   // A490
 
 interface Discount {
   id: string;
@@ -26,6 +27,9 @@ export default function DiscountPanel({ orderTotal, currency, discountState, onD
   const [code, setCode] = useState('');
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
+  // A490: entering a discount is sales.discount — the input is not offered without it (the cloud refuses it too).
+  const { hasPermission } = usePOSAuth();
+  const mayDiscount = hasPermission('sales.discount');
 
   async function applyCode() {
     if (!code.trim()) return;
@@ -51,6 +55,8 @@ export default function DiscountPanel({ orderTotal, currency, discountState, onD
     setCode('');
     setError('');
   }
+
+  if (!mayDiscount) return null;
 
   // Applied state
   if (discountState) {

@@ -125,10 +125,11 @@ const reset = () => {
     businesses: [{ ...biz }],
     branches: [{ id: BR1, business_id: BZ, name: 'Mama Ngina' }, { id: BR2, business_id: BZ, name: 'Kilimani' }],
     users: [
+      // A490: report e-mails go to staff whose role holds reports.overview (the role names decide nothing).
       { id: 'u-own', business_id: BZ, name: 'Owner', email: 'owner@biz.test', status: 'active', roles: { name: 'Owner' }, user_branches: [] },
-      { id: 'u-m1', business_id: BZ, name: 'Joshua', email: 'joshua@biz.test', status: 'active', roles: { name: 'Manager' }, user_branches: [{ branch_id: BR1 }] },
-      { id: 'u-m2', business_id: BZ, name: 'Wanjiru', email: 'wanjiru@biz.test', status: 'active', roles: { name: 'Branch Manager' }, user_branches: [{ branch_id: BR2 }] },
-      { id: 'u-m3', business_id: BZ, name: 'Gone', email: 'gone@biz.test', status: 'inactive', roles: { name: 'Manager' }, user_branches: [{ branch_id: BR1 }] },
+      { id: 'u-m1', business_id: BZ, name: 'Joshua', email: 'joshua@biz.test', status: 'active', roles: { name: 'Manager', role_permissions: [{ permissions: { key: 'reports.overview' } }] }, user_branches: [{ branch_id: BR1 }] },
+      { id: 'u-m2', business_id: BZ, name: 'Wanjiru', email: 'wanjiru@biz.test', status: 'active', roles: { name: 'Branch Manager', role_permissions: [{ permissions: { key: 'reports.overview' } }] }, user_branches: [{ branch_id: BR2 }] },
+      { id: 'u-m3', business_id: BZ, name: 'Gone', email: 'gone@biz.test', status: 'inactive', roles: { name: 'Manager', role_permissions: [{ permissions: { key: 'reports.overview' } }] }, user_branches: [{ branch_id: BR1 }] },
       { id: 'u-c1', business_id: BZ, name: 'Amina <b>', email: 'amina@biz.test', status: 'active', roles: { name: 'Cashier' }, user_branches: [{ branch_id: BR1 }] },
     ],
     business_settings: [], branch_settings: [],
@@ -488,7 +489,7 @@ await ok('the tick: business A\'s reads fail, business B still gets its email', 
   reset();
   db.businesses = [{ ...biz }, { id: BZ2, name: 'Second', owner_id: OWNER2, currency: 'KES' }];
   db.branches.push({ id: 'br-x', business_id: BZ2, name: 'Second Main' });
-  db.users.push({ id: 'u-x', business_id: BZ2, name: 'Xavier', email: 'x@second.test', status: 'active', roles: { name: 'manager' }, user_branches: [] });
+  db.users.push({ id: 'u-x', business_id: BZ2, name: 'Xavier', email: 'x@second.test', status: 'active', roles: { name: 'manager', role_permissions: [{ permissions: { key: 'reports.overview' } }] }, user_branches: [] });
   db.shifts.push(openShift({}), openShift({ business_id: BZ2, branch_id: 'br-x' }));
   FAIL = (t, eqs) => (eqs.business_id === BZ && (t === 'branches' || t === 'shifts') ? 'boom' : null);
   await J.runOwnerAlertsTick(EVENING);

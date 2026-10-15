@@ -7,7 +7,7 @@
  * the owner's own auth: GET /api/orders already scopes by owner-vs-staff
  * (branchScope), so an owner sees every branch's orders with no server change.
  *
- * Gated on `orders.view_all`. Void and Refund (orders.void) are here: the owner approves their own; a manager types
+ * Gated on `orders.view_all`. Void (sales.void) and Refund (sales.refund — A490, was orders.void for both) are here: the owner approves their own; a manager types
  * their own PIN (A444). A444 also: an opened row lists the order's items, and Reprint is offered as the cloud allows.
  */
 import { useState, useEffect, useCallback, Fragment } from 'react';
@@ -71,7 +71,10 @@ const METHOD_ICON: Record<string, string> = { cash: '💵', mpesa: '📱', card:
 export default function OrdersPage({ currency = 'KES' }: { currency?: string }) {
   const { can } = usePermissions();
   const allowed = can('orders.view_all');
-  const canAct = can('orders.void');
+  // A490: void and refund are separate keys (the owner, who uses this page, holds both: '*').
+  const canVoid = can('sales.void');
+  const canRefund = can('sales.refund');
+  const canAct = canVoid || canRefund;
   const isOwner = currentUserIsOwner();
   const cols = canAct ? 7 : 6;
   const more = useRowMore();   // A464: a phone shows Order, Status, Total; the rest under View more
@@ -219,21 +222,21 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
               )}
               {!loading && orders.map((o) => {
                 const actionBtns = canAct ? (<>
-                        {actionsFor(o, isOwner, windowMin).includes('void') && (
+                        {canVoid && actionsFor(o, isOwner, windowMin).includes('void') && (
                           <button
                             onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setPin(''); setActionError(''); }}
                             className="px-3 py-1 text-xs font-medium rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
                           >Void</button>
                         )}
-                        {actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments) && (
+                        {canRefund && actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments) && (
                           <button
                             onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setPin(''); setActionError(''); }}
                             className="ml-1 px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
                           >Refund</button>
                         )}
                 </>) : null;
-                const hasActions = canAct && (actionsFor(o, isOwner, windowMin).includes('void')
-                  || (actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments)));
+                const hasActions = (canVoid && actionsFor(o, isOwner, windowMin).includes('void'))
+                  || (canRefund && actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments));
                 return (
                 <Fragment key={o.id}>
                   <tr

@@ -98,8 +98,8 @@ ok('a close with no declaration (before A365) is just closed', () => {
 
 console.log('\nThe route\n');
 const route = read('apps/server/src/routes/shifts.ts');
-ok('a manager only — never a cashier (blind close) nor the till itself (A415)', () => {
-  assert.match(route, /router\.get\('\/branch-report', async \(req, res\) => \{\s*if \(!callerMayConfirm\(req\)\) \{ res\.status\(403\)/);
+ok('a manager only — never a cashier (blind close) nor the till itself (A415); A490: reports.shifts or shifts.confirm', () => {
+  assert.match(route, /router\.get\('\/branch-report', async \(req, res\) => \{\s*(\/\/[^\n]*\n\s*)?if \(req\.isTill \|\| !can\(req, 'reports\.shifts', 'shifts\.confirm'\)\) \{ res\.status\(403\)/);
 });
 ok('it comes before /:id (else "branch-report" is read as a shift id)', () => {
   assert.ok(route.indexOf("router.get('/branch-report'") < route.indexOf("router.get('/:id'"));

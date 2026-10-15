@@ -142,10 +142,11 @@ try {
     assert.equal(O.readSetup(s.setup_token, 'admin', ADMIN), s.secret);
     assert.equal(O.readSetup(s.setup_token, 'user', ADMIN), null);
   });
+  // A490: by permission, not role name — the owner and anyone "back office" (isBackOffice: a key beyond the shop floor).
   await ok('owners and the manager tier need a code; cashiers do not', () => {
-    assert.ok(O.roleNeedsOtp('Cashier', true));
-    for (const r of ['owner', 'Admin', 'manager', 'Supervisor', 'Branch Manager']) assert.ok(O.roleNeedsOtp(r), r);
-    for (const r of ['cashier', 'waiter', '', null]) assert.ok(!O.roleNeedsOtp(r), String(r));
+    assert.ok(O.needsOtp([], true));
+    for (const k of [['*'], ['reports.sales'], ['shifts.confirm'], ['orders.create', 'settings.business']]) assert.ok(O.needsOtp(k), k.join());
+    for (const k of [[], ['orders.create', 'products.view', 'customers.view'], ['orders.create', 'sales.discount']]) assert.ok(!O.needsOtp(k), k.join());
   });
 
   console.log('\nThe admin portal sign-in (compiled router, over HTTP)\n');
@@ -245,13 +246,13 @@ try {
     const a = read('apps/server/src/routes/auth.ts');
     assert.match(a, /const ownerGate = !\(await businessPosFeatures\(business\.id\)\)\.login_codes \? \{ ok: true as const \} : await otpGate\(\s*await otpSubjectFor\(/);
     assert.match(a, /if \(ownerGate\.ok === false\) \{ res\.status\(ownerGate\.status\)\.json\(ownerGate\.body\); return; \}/);
-    assert.match(a, /if \(effectiveSurface === 'web' && \(roleNeedsOtp\(role\?\.name, isOwner\) \|\| effectivePerms\['settings\.manage'\] === true\)\n\s+&& \(await businessPosFeatures\(\(user as any\)\.business_id\)\)\.login_codes\) \{/);
+    assert.match(a, /if \(effectiveSurface === 'web' && needsOtp\(heldKeys, isOwner\)\r?\n\s+&& \(await businessPosFeatures\(\(user as any\)\.business_id\)\)\.login_codes\) \{/);
     assert.match(a, /const enabled = \(await businessPosFeatures\(req\.businessId\)\)\.login_codes;/);
     const F = read('shared/posFeatures.ts');
     assert.match(F, /key: 'login_codes',\n\s+label: 'Sign-in codes \(OTP\)',/);
     // the admin portal's own sign-in is not behind the switch
     assert.doesNotMatch(read('apps/server/src/routes/admin.ts'), /login_codes|businessPosFeatures/);
-    assert.ok(a.indexOf("roleNeedsOtp(role?.name, isOwner)") < a.indexOf('issueTokenPair(tokenPayload)'), 'asked before any token is issued');
+    assert.ok(a.indexOf("needsOtp(heldKeys, isOwner)") < a.indexOf('issueTokenPair(tokenPayload)'), 'asked before any token is issued');
   });
   await ok('a bare Supabase session (password only) is refused while codes are on', () => {
     const m = read('apps/server/src/middleware/auth.ts');

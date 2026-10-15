@@ -10,15 +10,15 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import type { OrderDetail } from '../../shared/orderDetail';
-import { reverseAction, VOID_WINDOW_MIN } from '../lib/voidRefund';
+import { reverseActionFor, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';   // A490
 import VoidModal from './VoidModal';
 import MethodDot from './MethodDot';
 
 interface Props {
   orderId: string;
   currency: string;
-  /** May this person void or refund (orders.void)? */
-  canVoidRefund: boolean;
+  /** A490: may this person void (sales.void) / refund (sales.refund)? */
+  rights: ReverseRights;
   windowMin?: number;
   onClose: () => void;
   /** A void or refund went through — the list behind reloads. */
@@ -28,7 +28,7 @@ interface Props {
 const money = (currency: string, v: number) =>
   `${currency} ${Number(v).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function OrderDetailPanel({ orderId, currency, canVoidRefund, windowMin = VOID_WINDOW_MIN, onClose, onChanged }: Props) {
+export default function OrderDetailPanel({ orderId, currency, rights, windowMin = VOID_WINDOW_MIN, onClose, onChanged }: Props) {
   const [detail, setDetail] = useState<OrderDetail | null>(null);
   const [canReprint, setCanReprint] = useState(false);
   const [error, setError] = useState('');
@@ -56,7 +56,7 @@ export default function OrderDetailPanel({ orderId, currency, canVoidRefund, win
     } finally { setPrinting(false); }
   };
 
-  const reverse = detail && canVoidRefund ? reverseAction(detail, Date.now(), windowMin) : null;
+  const reverse = detail ? reverseActionFor(detail, rights, Date.now(), windowMin) : null;
   const paid = detail ? detail.total + detail.tip_amount + (detail.delivery_free ? 0 : detail.delivery_fee) : 0;
 
   return (
@@ -172,6 +172,7 @@ export default function OrderDetailPanel({ orderId, currency, canVoidRefund, win
                    payments: detail.payments.map((p) => ({ method: p.method, amount: p.amount })) }}
           currency={currency}
           windowMin={windowMin}
+          rights={rights}
           onSuccess={() => { setReversing(false); load(); onChanged?.(); }}
           onClose={() => setReversing(false)}
         />

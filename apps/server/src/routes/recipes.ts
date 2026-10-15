@@ -8,6 +8,7 @@
  * auto-deducts the appropriate ingredient quantities from stock.
  */
 
+import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -40,11 +41,13 @@ function flattenRecipeStock(rows: any[], scopedBranch: string | null): any[] {
 
 const router = safeRouter();
 router.use(requireAuth);
+// A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
+router.use(stripCostsUnlessAllowed());
 
 // Audit 2026-10-14: saving / clearing a recipe and its packaging were open to any signed-in user — and a recipe drives
 // stock deduction on every sale. They need products.manage, as POST /bulk (the import of the same table) always has; the
 // owner and '*' pass in rbac. Every ingredient a line names must be this business's.
-const canManage = requirePermission('products.manage');
+const canManage = requirePermission('menu.recipes');
 
 /** True when every id is one of this business's ingredients. */
 async function ingredientsAreOurs(businessId: string, ids: string[]): Promise<boolean> {
@@ -97,7 +100,7 @@ router.get('/:productId', async (req, res) => {
 // A product that appears has its recipe REPLACED by the listed lines; a product
 // not in the file is left alone. Products matched by name/plu, ingredients by name
 // (import the Ingredients tab first so they exist).
-router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
+router.post('/bulk', requirePermission('menu.recipes'), async (req, res) => {
   const { rows } = req.body ?? {};
   if (!Array.isArray(rows) || rows.length === 0) { res.status(400).json({ error: 'rows array is required' }); return; }
   if (rows.length > 2000) { res.status(400).json({ error: 'Maximum 2000 rows per import' }); return; }

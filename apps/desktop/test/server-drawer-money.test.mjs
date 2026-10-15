@@ -48,7 +48,9 @@ const DC = require(path.join(dist, 'deviceConfig.js'));
 DC.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1',
   device_id: 'dev-S', device_role: 'node', terminal_code: 'S1', device_name: 'Server' });
 db.prepare(`INSERT INTO users (id, name) VALUES ('u-amira', 'Amira'), ('u-mary', 'Mary')`).run();
-const signIn = (id, name, role, perms = '{}') => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
+// A490: a role's NAME decides nothing on the till — a manager is the permissions an older cloud sent a manager.
+const A490_MANAGER = '{"orders.void":true,"settings.manage":true}';
+const signIn = (id, name, role, perms = ['manager', 'supervisor'].includes(role) ? A490_MANAGER : '{}') => db.prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, permissions, branch_id, token, logged_in_at)
   VALUES (1, ?, ?, ?, ?, 'br-1', 'tok', '2026-10-13T06:00:00Z')`).run(id, name, role, perms);
 const sale = (() => { let n = 0; return (shiftId, method, amount) => {
   const id = `o${++n}`;

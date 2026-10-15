@@ -36,7 +36,7 @@ import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from '.
 import { getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { logLine, authLog } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
-import { getReceiptPay } from './receiptPay';   // A450
+import { getReceiptPay, setReceiptPay } from './receiptPay';   // A450 (+ A492: set from the till)
 import { isSessionRefusal } from './sessionRecovery';   // A407
 import { cloudFetch } from './cloudGateway';   // A410: a till on a branch reaches the cloud only through its branch server
 import { saveRoutingLocally, overlayPending, readPending as readPendingRouting, mayRoute } from './stationRouting';   // A411
@@ -47,12 +47,15 @@ import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { tillBranchId } from './deviceConfig';   // A446
-import { mayRecordMoneyMovement, MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
+import { MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
+import { signedIn as sessionPerson, signedInCan, personCan, personKeys, mayMoveMoney, roleCeilingRefusal, roleMap, mayActOn, hasMarker, isOwnerRole, type PersonLike } from './tillAccess';   // A490: the till's one rule
+import { maySetMpesa } from './permissions';   // A492
+import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from './mpesaReceive';   // A492
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { openShift, addFloat, recordExpense, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
+import { openShift, addFloat, recordExpense, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { branchDay } from './branchDay';   // A431 / A432
 import { cloudBranchOrders, mirrorTillRefund, reverseRiderPayout } from './webSales';
@@ -65,7 +68,7 @@ import { exportDailySalesReport } from './dailySalesReport';
 
 /** Range selection sent from the manager report screens. */
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
-import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
+import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, mayCloseDay, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from './branchClose';
 import { executeShiftMoney, createShiftMoneyInstruction, cancelShiftMoneyInstruction, SHIFT_MONEY_CLOSED, type ShiftMoneyPayload } from './branchClose';   // A465
 import { forgetTill } from './branchClose';   // F4
@@ -73,19 +76,20 @@ import { ownOpenShift } from './shiftService';   // A465
 import { takeSnapshot, setBackupDir, maintenanceStatus } from './maintenance';
 import { emitEvent, resetOutboxCursors, rearmNodeOutbox } from './nodeIngest';
 import { setNodeDeviceToken } from './nodeClient';   // F7
+import { readServerCert, pinnedFetch, securityCode, setTillPin, tillPin, nodeTlsStatus, serverSecurityCode } from './lanTls';   // A489
 import { localOrderDetail } from './managerReports';   // A444
 import { detailFromCloud, receiptPayloadFromDetail, type OrderDetail } from './orderDetail';   // A444
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
-import { personHolds, FORCE_CLOSE_KEYS, BRANCH_PRICE_KEYS, configSaveRefusal } from './tillGates';   // audit 2026-10-14
+import { configSaveRefusal } from './tillGates';   // audit 2026-10-14
 import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient, fetchRosterFromNode, relayBrandingToNode } from './nodeClient';
 import { isUnreachableStatus } from './authTransport';
 import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession, OFFLINE_SESSION_MESSAGE, NO_CONNECTION_MESSAGE, type ManageOfflineReason } from './offlineSession';
 import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
 import { refreshStaffRosterNow, staffChangedHere } from './staffRoster';   // A446
 import { overlayLocalChanges } from './localChanges';   // A448
-import { recordTillChange, sendTillChangesNow, tillChangeStates } from './changeQueue';   // A448
+import { recordTillChange, sendTillChangesNow, tillChangeStates, changeKeys } from './changeQueue';   // A448 (A490: changeKeys)
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 import { listenForServers } from './serverBeacon';   // A427
@@ -120,13 +124,14 @@ export function registerIpcHandlers() {
   // need per-channel payload boilerplate.
   const handle = installValidatedHandle(ipcMain);
 
-  // Audit 2026-10-14: does the person signed in on this till hold any of these keys (staff_session, cached at PIN sign-in
-  // so it works offline)? No one signed in → no. The rule itself is tillGates.ts personHolds.
-  const signedInHolds = (keys: string[]): boolean => {
-    const st = getLocalDb().prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get() as
-      { staff_id?: string | null; role_name?: string | null; permissions?: string | null } | undefined;
-    return !!st?.staff_id && personHolds(st.role_name, st.permissions, keys);
+  // A490: does the person signed in on this till hold ANY of these fine keys (staff_session, cached at PIN sign-in so it
+  // works offline)? No one signed in → no. The rule itself is tillAccess.ts — the till's ONE rule (the owner's role holds
+  // everything; an older cloud's broad keys are expanded). Back-office actions only: selling never asks.
+  const requireKey = (keys: string[], refusal: string): void => {
+    if (!sessionPerson()) throw new Error('Not signed in');
+    if (!signedInCan(...keys)) throw new Error(refusal);
   };
+  const NOT_ALLOWED = 'Your role does not allow this.';
 
   // ── Auth ────────────────────────────────────────────────
 
@@ -220,6 +225,10 @@ export function registerIpcHandlers() {
   handle('auth:enrolDevice', async (_event, payload) => {
     const { business_id, code } = assertPayload<{ business_id: string; code: string }>(
       { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } }, payload);
+    // A490: a till already set up AND joined to its business joins again only from the technician console (as
+    // auth:rejoin) — a first join clears the catalogue and replaces the till's session, so it is not anyone's button.
+    const joined = !!(getLocalDb().prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined)?.business_id;
+    if (isConfigured() && joined && !getActiveSession()) throw new Error('This till is already joined to its business. A technician rejoins it from the technician console.');
     return joinBusiness(String(business_id).trim(), String(code).trim(), false);
   });
 
@@ -242,22 +251,27 @@ export function registerIpcHandlers() {
 
   // A436: `rejoin` — a till already set up but signed out (the sign-in-code screen, EnrolPage) asks the same way and,
   // once allowed, joins its business again KEEPING everything on it (joinBusiness rejoin), its setup untouched.
-  let joinAsk: { url: string; id: string; token: string; rejoin: boolean } | null = null;
+  // A489: `cert` — the server's certificate, read before the join; the join and its answer (which carries the branch
+  // access code and this till's device key) then go over TLS pinned to it, and it is pinned when the join succeeds.
+  let joinAsk: { url: string; id: string; token: string; rejoin: boolean; cert: string | null } | null = null;
+  const joinFetch = (url: string, init: any, cert: string | null) => (cert ? pinnedFetch(url, init, cert) : fetch(url, init));
   handle('install:requestJoin', async (_event, payload) => {
     const { url, rejoin } = assertPayload<{ url: string; rejoin?: boolean }>({ url: { t: 'string', min: 1 }, rejoin: { t: 'boolean', optional: true } }, payload);
     if (!/^http:\/\/(\d{1,3}\.){3}\d{1,3}:\d{1,5}$/.test(url)) throw new Error('That is not a branch server address.');
     if (rejoin && isNodeRole(getDeviceConfig()?.device_role)) throw new Error('This computer is the branch server — it rejoins from the technician console, not through itself.');
     const deviceId = getDeviceConfig()?.device_id ?? saveDeviceConfig({ configured: false } as any).device_id;
+    const { cert } = await readServerCert(url, 4000);   // null: a server on an older build — the join stays plain
     let res: Response;
     try {
-      res = await fetch(`${url}/node/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_id: deviceId, name: os.hostname() }), signal: AbortSignal.timeout(5000) });
+      res = await joinFetch(`${url}/node/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: deviceId, name: os.hostname() }), signal: AbortSignal.timeout(5000) }, cert);
     } catch { throw new Error('Could not reach that branch server. Check this till is on the same network.'); }
     const body: any = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body?.error ?? `The branch server refused (HTTP ${res.status}).`);
-    joinAsk = { url, id: String(body.id), token: String(body.token), rejoin: !!rejoin };
-    logLine('join', `asked the branch server at ${url} to join`);
-    return { ok: true, name: os.hostname() };
+    joinAsk = { url, id: String(body.id), token: String(body.token), rejoin: !!rejoin, cert };
+    const code = securityCode(cert);
+    logLine('join', `asked the branch server at ${url} to join — ${code ? `encrypted, security code ${code}` : 'unencrypted (the server is on an older build)'}`);
+    return { ok: true, name: os.hostname(), securityCode: code };
   });
 
   handle('install:joinStatus', async () => {
@@ -265,7 +279,7 @@ export function registerIpcHandlers() {
     const ask = joinAsk;
     let r: any;
     try {
-      const res = await fetch(`${ask.url}/node/join/status?id=${encodeURIComponent(ask.id)}&token=${encodeURIComponent(ask.token)}`, { signal: AbortSignal.timeout(5000) });
+      const res = await joinFetch(`${ask.url}/node/join/status?id=${encodeURIComponent(ask.id)}&token=${encodeURIComponent(ask.token)}`, { signal: AbortSignal.timeout(5000) }, ask.cert);
       r = await res.json();
     } catch { return { status: 'pending' as const }; }   // a blip — keep waiting
     if (r?.status === 'pending') return { status: 'pending' as const };
@@ -279,7 +293,9 @@ export function registerIpcHandlers() {
       // Already set up: only the way to the server changes (saved first, so the rejoin goes through it — A410); put
       // back as it was if the cloud refuses (another branch's server, say).
       const before = getDeviceConfig();
+      const pinBefore = tillPin();
       saveDeviceConfig({ node_url: ask.url, node_secret: String(g.node_secret) } as any);
+      setTillPin(ask.cert);   // A489: the server's certificate goes with its address (null: an older server — plain)
       if (g.device_token) setNodeDeviceToken(String(g.device_token));   // F7: this till's own key at the server
       // F2: a rejoin is a (possibly new) server — everything this till holds is offered to it again.
       if ((before?.node_url ?? null) !== ask.url || (before?.node_secret ?? null) !== String(g.node_secret)) {
@@ -293,6 +309,7 @@ export function registerIpcHandlers() {
           cloudUrl: String(g.cloud_url), nodeIp: new URL(ask.url).hostname, nodePort: port, nodeSecret: String(g.node_secret) };
       } catch (e) {
         saveDeviceConfig({ node_url: before?.node_url ?? null, node_secret: before?.node_secret ?? null } as any);
+        setTillPin(pinBefore);
         throw e;
       }
     }
@@ -300,6 +317,7 @@ export function registerIpcHandlers() {
     // (A410) and works even when this till has no internet of its own. Not marked configured: setup finishes on screen.
     saveDeviceConfig({ deploy_mode: 'cloud', server_url: String(g.cloud_url), branch_id: String(g.branch_id),
       device_role: 'till', node_url: ask.url, node_secret: String(g.node_secret), configured: false } as any);
+    setTillPin(ask.cert);   // A489: from here every request to the server is TLS, pinned to this certificate
     if (g.device_token) setNodeDeviceToken(String(g.device_token));   // F7: this till's own key at the server
     const joined = await joinBusiness(String(g.business_id), String(g.code), false);
     logLine('join', `joined ${joined.business?.name ?? 'the business'} through the branch server at ${ask.url}`);
@@ -310,10 +328,27 @@ export function registerIpcHandlers() {
   });
 
   // The server: who is waiting, and the answer. Allow fetches a one-time code from the cloud for this branch.
-  handle('node:joinRequests', async () => (isNodeRole(getDeviceConfig()?.device_role) ? pendingJoins() : []));
+  handle('node:joinRequests', async () => (isNodeRole(getDeviceConfig()?.device_role)
+    ? pendingJoins().map((r) => ({ ...r, securityCode: serverSecurityCode() })) : []));   // A489: compared with the till's screen
+
+  // A489: this till's connection to its branch server (Tech page), or — on the server — its own security code.
+  handle('node:tlsStatus', async () => (isNodeRole(getDeviceConfig()?.device_role)
+    ? { state: 'server' as const, code: serverSecurityCode(), error: null }
+    : nodeTlsStatus()));
+  // A489: the server's certificate changed (it was reinstalled) — a person trusts it again. A technician, or a manager
+  // who may change settings; the next 60 s tick pins whatever certificate the server now hands out.
+  handle('node:tlsRetrust', async () => {
+    if (!getActiveSession() && !signedInCan('settings.business')) throw new Error('Only a technician or someone who manages the business settings can do that.');
+    const was = securityCode(tillPin());
+    setTillPin(null);
+    logLine('node', `A489: the branch server's certificate (security code ${was ?? 'none'}) was forgotten by a person — the next one it hands out is trusted`);
+    return { ok: true };
+  });
   handle('node:answerJoin', async (_event, payload) => {
     const { id, allow } = assertPayload<{ id: string; allow: boolean }>({ id: { t: 'string', min: 1 }, allow: { t: 'boolean' } }, payload);
     if (!isNodeRole(getDeviceConfig()?.device_role)) throw new Error('Only the branch server answers join requests.');
+    // A490: adding a till to the branch is devices.approve (the cloud's Tills and devices), or a technician.
+    if (!getActiveSession() && !signedInCan('devices.approve')) throw new Error('Only someone who approves tills (or a technician) can answer a till asking to join.');
     const out = await answerJoin(id, allow, async () => {
       let res: Response;
       try { res = await tillFetch('/api/pos/join-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); }
@@ -1351,7 +1386,10 @@ export function registerIpcHandlers() {
    * still override the business default for its own printer, and the override
    * survives every catalogue pull. See escposBridge.setKitchenExclusions.
    */
+  // A490: what the kitchen leaves off is the print set-up's — stations.manage (it was open to anyone at the till).
+  const STATIONS_REFUSED = 'Only someone who sets up printers and print stations can change that.';
   handle('escpos:setKitchenExclusions', (_e, terms: unknown) => {
+    if (!signedInCan('stations.manage')) return { ok: false, error: STATIONS_REFUSED, terms: kitchenExclusions() };
     // D7 reference adoption: validate at the boundary. A malformed payload is a
     // clean rejection, not a silent coerce-to-empty that would wipe the list.
     const v = expectStringArray(terms, 'terms');
@@ -1369,6 +1407,7 @@ export function registerIpcHandlers() {
    * baseline that is now in force so the screen can repaint without a round trip.
    */
   handle('escpos:clearKitchenExclusions', () => {
+    if (!signedInCan('stations.manage')) return { ok: false, error: STATIONS_REFUSED, terms: kitchenExclusions() };
     try { return { ok: true, terms: clearKitchenExclusionsOverride() }; }
     catch { return { ok: false, error: 'write failed', terms: kitchenExclusions() }; }
   });
@@ -1391,9 +1430,14 @@ export function registerIpcHandlers() {
    */
   let lastOrderPayload: any = null;
   let reprintCount = 0;
+  /** A490: who rang it — "print my receipt now" stays the cashier's own; anyone else's last sale is a reprint. */
+  let lastOrderBy: string | null = null;
 
   handle('escpos:reprintReceipt', () => {
     if (!lastOrderPayload) return { ok: false, error: 'nothing to reprint' };
+    // A490: sales.reprint — unless it is the sale the person signed in just completed.
+    const me = sessionPerson();
+    if (!me || (me.staffId !== lastOrderBy && !personCan(me, 'sales.reprint'))) return { ok: false, error: 'Reprinting a receipt needs the reprint permission.' };
     reprintCount += 1;
     // Marked as a duplicate on the paper itself. An unmarked second copy of a
     // receipt is the thing an auditor cannot tell from a second sale.
@@ -1459,6 +1503,10 @@ export function registerIpcHandlers() {
   });
 
   handle('order:create', async (_event, orderPayload: any) => {
+    // A490: a discount given by hand needs sales.discount — the till is the authority here (offline too; the cloud never
+    // refuses a till's sale for it). What offers took off is not the person's discount. Nothing else about selling asks.
+    const manual = (Number(orderPayload?.discount_amount) || 0) - Math.max(0, Number(orderPayload?.offer_discount) || 0);
+    if (manual > 0.004 && !signedInCan('sales.discount')) throw new Error('Your role does not give discounts. Remove the discount, or ask someone who may.');
     const orderId = createLocalOrder(orderPayload);
     markKitchenPaid(orderPayload?.order_number);   // 0.6.28: its sent lines are paid for
     // A299: event summary — id, total, method, item count. No line-item detail
@@ -1467,6 +1515,7 @@ export function registerIpcHandlers() {
       + `${orderPayload?.payments?.[0]?.method ?? orderPayload?.payment_method ?? ''} `
       + `x${orderPayload?.items?.length ?? 0}`.replace(/\s+/g, ' ').trim());
     lastOrderPayload = orderPayload;
+    lastOrderBy = sessionPerson()?.staffId ?? null;   // A490
     reprintCount = 0;
     // Push-only flush — the old syncAll here re-pulled the entire catalogue
     // (N+1 variant/modifier fetches) on every single sale.
@@ -1569,8 +1618,12 @@ export function registerIpcHandlers() {
 
   // ── Device config (first-run install + runtime server URL) ──
 
+  // A490: the branch access code (node_secret) only to a technician (or the install flow, before the till is set up) —
+  // the screens never need it, and it opens the branch server to anyone holding it.
   handle('config:get', async () => {
-    return getDeviceConfig();
+    const cfg = getDeviceConfig();
+    if (!cfg || !isConfigured() || getActiveSession()) return cfg;
+    return { ...cfg, node_secret: null };
   });
 
   // A295: client branding (accent + logo) for the lock screen. Null until the
@@ -1588,6 +1641,9 @@ export function registerIpcHandlers() {
         logoRgba?: { width: number; height: number; data: ArrayLike<number> } | null;
         receiptLogoEnabled?: boolean },
   ) => {
+    // A490: the logo and colours are the receipt's and the business's look — receipt.manage or settings.business, or a
+    // technician (who sets a till up before anyone signs in).
+    if (!getActiveSession() && !signedInCan('receipt.manage', 'settings.business')) throw new Error('Only someone who manages the receipt or the business settings can change the branding.');
     const saved = setBranding(businessId, { accentHex, logoPng, logoRgba, receiptLogoEnabled });
     // A381: and to the branch server at once — the branch's other tills take it from there, with no internet too.
     if (hasNode() && !isNodeRole(getDeviceConfig()?.device_role ?? null)) {
@@ -1605,12 +1661,25 @@ export function registerIpcHandlers() {
   // Apply a downloaded update now, NSIS progress visible + relaunch. Gated to a manager/tech
   // PIN at the call site (the banner verifies before invoking); a no-op unless an update is
   // actually downloaded, so it can never half-restart a trading till.
+  // A490: restarting a till for an update stops its selling — the same people who close the day (shifts.close_day; the
+  // owner's role always). settings.updates is the owner's web choice of WHICH version tills take, not who restarts one.
   handle('update:installNow', async () => {
-    // A306 (hardened 2026-09-22): the banner verifies a manager PIN before invoking this, but a
-    // renderer-only gate is bypassable by any code that can reach the bridge. Refuse in MAIN
-    // unless the CURRENT staff session is a manager — the same isManager() gate closeDay uses.
-    // The banner's verifyPin signs the manager in first, so the honest path still passes.
-    if (!isManager()) return { ok: false, reason: 'manager_required' };
+    // A306 (hardened 2026-09-22): a renderer-only gate is bypassable by any code that can reach the bridge — refused in
+    // MAIN unless the person signed in may close the day.
+    if (!mayCloseDay()) return { ok: false, reason: 'manager_required' };
+    return installUpdateNow();
+  });
+  // A490: the update bar's "Restart & update now" with someone's PIN — that person is IDENTIFIED (this till's staff list,
+  // its saved sign-ins, the branch server, the cloud), never signed in: the person at the till stays signed in (the bar
+  // used to sign the PIN's holder in through auth:verifyPin, replacing the session). They must hold shifts.close_day.
+  handle('update:installWithPin', async (_e, payload) => {
+    const { pin } = assertPayload<{ pin: string }>({ pin: { t: 'string', min: 1 } }, payload);
+    let who: { id: string; name: string | null; roleName: string | null; permissions: unknown } | null;
+    try { who = await identifyPerson(String(pin).trim()); }
+    catch (e: any) { return { ok: false, reason: 'check_failed', message: e?.message ?? 'Could not check that PIN.' }; }
+    if (!who) return { ok: false, reason: 'wrong_pin', message: 'PIN not recognised.' };
+    if (!personCan(who, 'shifts.close_day')) return { ok: false, reason: 'not_allowed', message: 'That PIN cannot restart the till (it needs Close the day).' };
+    logLine('update', `restart for the update approved by ${who.name ?? who.id}`);
     return installUpdateNow();
   });
 
@@ -1620,11 +1689,11 @@ export function registerIpcHandlers() {
 
   handle('config:save', async (_event, patch: any) => {
     // Audit 2026-10-14: the install flow writes the till's identity before anyone can sign in; once configured, that is
-    // the technician console's, and the money settings are a settings.manage holder's (tillGates.ts).
+    // the technician console's, and each setting its own key's holder's (A490, tillGates.ts CONFIG_SETTING_KEY).
     const refusal = configSaveRefusal(patch ?? {}, {
       configured: isConfigured(),
       techSession: !!getActiveSession(),
-      settingsManager: signedInHolds(['settings.manage']),
+      holds: (key) => signedInCan(key),   // A490: each setting by its own fine key
     });
     if (refusal) {
       logLine('config', `refused ${Object.keys(patch ?? {}).join(',') || '(empty)'}`);
@@ -1845,7 +1914,11 @@ export function registerIpcHandlers() {
 
   // A shift left open past ~18h. Reported, never auto-closed — see
   // forceCloseShift() for why a fabricated cash count is worse than none.
-  handle('shift:stale', async () => getStaleShift());
+  // A490: the drawer's expected cash only to someone who may confirm drawers (shifts.confirm) — the banner still shows.
+  handle('shift:stale', async () => {
+    const s = getStaleShift();
+    return s && !signedInCan('shifts.confirm') ? { ...s, expectedCash: null } : s;
+  });
 
   // ── Trading day (per till) ────────────────────────────────────────────────
   // checkDayGate is what the POS screen reads to decide whether it may sell at
@@ -1881,14 +1954,17 @@ export function registerIpcHandlers() {
   handle('day:current', async () => getOpenDay());
 
   // ── Central day close (Phase 4) — node-side manager screen ────────────────
+  // A490: Close Branch is shifts.close_day — its overview (every till's figures) too.
+  const CLOSE_REFUSED = 'Only someone who may close the day can close the branch.';
   handle('branchClose:overview', async () => {
+    if (!mayCloseDay()) return { error: CLOSE_REFUSED };
     try { return branchCloseOverview(); }
     catch (err: any) { return { error: err?.message ?? 'Could not read the branch state' }; }
   });
   handle('branchClose:closeTill', async (_e, { device_id, counted_cash, notes }:
     { device_id: string; counted_cash: number; notes?: string }) => {
     try {
-      if (!isManager()) return { ok: false, error: 'Only a manager can close the branch.' };
+      if (!mayCloseDay()) return { ok: false, error: CLOSE_REFUSED };
       const cfg = getDeviceConfig();
       const staff = getLocalDb().prepare(`SELECT staff_id, staff_name FROM staff_session WHERE id=1`).get() as any;
       const payload = {
@@ -1946,8 +2022,9 @@ export function registerIpcHandlers() {
       const cfg = getDeviceConfig();
       if (!isNodeRole(cfg?.device_role)) return { ok: false, error: 'Only the branch server records money on another till\'s shift.' };
       // A manager signed in here approves it as themselves (A388); A453's manager-only switch always lets a manager through.
+      // A490: approving is shifts.confirm; recording money is shifts.cash_movements (before migration 134, the switch rule).
       const me = signedInConfirmer();
-      if (!me || !mayRecordMoneyMovement(getPosFeatures(), true)) return { ok: false, error: 'Only a manager (or the owner) signed in here can do this.' };
+      if (!me || !mayMoveMoney(sessionPerson(), getPosFeatures().cashier_no_money_out)) return { ok: false, error: 'Only a manager who may approve and record cash movements, signed in here, can do this.' };
       const amount = Math.round(Number(p.amount) * 100) / 100;
       if (!(amount > 0)) return { ok: false, error: 'Enter an amount greater than zero.' };
       if (p.kind === 'expense' && !String(p.description ?? '').trim()) return { ok: false, error: 'Description is required.' };
@@ -1995,7 +2072,7 @@ export function registerIpcHandlers() {
   handle('branchClose:forgetTill', async (_e, payload) => {
     const { device_id } = assertPayload<{ device_id: string }>({ device_id: { t: 'string', min: 1 } }, payload);
     if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server forgets a till.' };
-    if (!isManager()) return { ok: false, error: 'Only a manager can forget a till.' };
+    if (!mayCloseDay()) return { ok: false, error: 'Only someone who may close the day can forget a till.' };
     if (!forgetTill(device_id)) return { ok: false, error: 'That till cannot be forgotten here.' };
     logLine('branchClose', `F4 till ${device_id} forgotten by a manager`);
     return { ok: true };
@@ -2015,7 +2092,7 @@ export function registerIpcHandlers() {
     const { notes, totals_confirmed } = assertPayload<{ notes?: string; totals_confirmed?: boolean }>(
       { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true } }, payload ?? {});
     try {
-      if (!isManager()) return { ok: false, error: 'Only a manager can close the branch.' };
+      if (!mayCloseDay()) return { ok: false, error: CLOSE_REFUSED };
       const ov = branchCloseOverview();
       const blockers: string[] = [];
       const label = (t: { is_self: boolean; device_id: string }) => (t.is_self ? 'This terminal' : `Terminal ${t.device_id.slice(0, 8)}`);
@@ -2055,10 +2132,16 @@ export function registerIpcHandlers() {
       return { ok: false, error: err?.message ?? 'Could not close the branch' };
     }
   });
-  handle('day:summary', async () => getDayCloseSummary());
-  handle('day:isManager', async () => isManager());
+  // A490: the day's figures — reports.sales, or someone who closes the day.
+  handle('day:summary', async () => {
+    requireKey(['reports.sales', 'shifts.close_day'], 'Your role does not see the day’s figures.');
+    return getDayCloseSummary();
+  });
+  // The channel keeps its name (older screens ask it); it answers "may close the day" (shifts.close_day) — A490.
+  handle('day:isManager', async () => mayCloseDay());
   handle('day:conflicts', async () => getConflictedShifts());
   handle('day:retryConflict', async (_e, { shiftId }: { shiftId: string }) => {
+    if (!mayCloseDay()) return { ok: false, error: 'Only someone who may close the day can retry this.' };   // A490
     try {
       const r = retryConflictedShift(String(shiftId));
       // Offer it now rather than on the next timer tick: the manager is standing
@@ -2080,8 +2163,8 @@ export function registerIpcHandlers() {
   const pushNow = () => { syncPush().catch(() => { /* the timer retries */ }); };
 
   handle('shift:forceClose', async (_e, { reason }: { reason: string }) => {
-    // Audit 2026-10-14: enforced HERE, not only by hiding the button — shifts.force_close or settings.manage (or '*').
-    if (!signedInHolds(FORCE_CLOSE_KEYS)) throw new Error('Only a manager who may force-close a drawer can do that.');
+    // Audit 2026-10-14: enforced HERE, not only by hiding the button. A490: shifts.force_close (the owner always).
+    requireKey(['shifts.force_close'], 'Only someone who may force-close a drawer can do that.');
     const z = forceCloseShift(String(reason ?? ''));
     pushNow();
     return z;
@@ -2095,8 +2178,8 @@ export function registerIpcHandlers() {
   });
 
   handle('shift:float', async (_event, { type, amount, reason, pin }: { type: 'float_in' | 'float_out'; amount: number; reason?: string; pin?: string }) => {
-    // A453: with 'cashier_no_money_out' only a manager signed in here records cash in / out (no PIN route for a cashier).
-    if (!mayRecordMoneyMovement(getPosFeatures(), signedInConfirmer() !== null)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
+    // A490: shifts.cash_movements (before migration 134: A453's 'cashier_no_money_out' switch, unless they may confirm).
+    if (!mayMoveMoney(sessionPerson(), getPosFeatures().cashier_no_money_out)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
     // 0.6.37 (A388): a cash-out needs a manager — signed in, or their PIN on the spot. A pay-in needs nobody.
     const approver = type === 'float_out' ? await payoutApprover(pin) : null;
     addFloat(type, Number(amount), reason, approver);
@@ -2121,11 +2204,10 @@ export function registerIpcHandlers() {
   });
 
   // ── A365: a manager confirms a closed shift (blind recount of every payment method) ──────────────────────────
-  // Who may confirm: owner/admin/manager/supervisor roles, '*', orders.void, shifts.manage, settings.manage — the
-  // cloud's mayConfirm. The PIN goes to an AUTHORITY first (the branch node, then the cloud); only when none can be
+  // Who may confirm: A490 — shifts.confirm (tillAccess; the owner's role always; an older map's orders.void / shifts.manage /
+  // settings.manage expand to it) — the cloud's mayConfirm. The PIN goes to an AUTHORITY first (the branch node, then the cloud); only when none can be
   // reached does the till's own saved sign-in answer. A "no" from an authority is final (same chain as sign-in, A17).
-  const mayConfirmLocal = (staff: { roleName?: string | null; permissions?: unknown }) =>
-    isShiftManager(staff.roleName, (staff.permissions ?? {}) as Record<string, unknown>);
+  const mayConfirmLocal = (staff: PersonLike) => personCan(staff, 'shifts.confirm');
   const NOT_A_CONFIRMER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
   // 0.6.37 (A388): a cash-out or an expense with no manager signed in and no PIN.
   const PAYOUT_APPROVAL_NEEDED = 'A manager must approve this — enter a manager’s PIN.';
@@ -2163,6 +2245,37 @@ export function registerIpcHandlers() {
     const v = verifyPinOffline(pin, branchId);
     if (!v.ok) throw new Error(v.reason === 'no_match' ? NOT_A_CONFIRMER : v.message);
     return local(v.staff);
+  }
+
+  /**
+   * A490: WHO holds this PIN, with their role and permissions — never signing them in (the update bar's restart). This
+   * till's staff list and saved sign-ins first (no network), then the branch server, then the cloud (its answer is read,
+   * not kept). null: nobody has that PIN. Throws when it cannot be checked at all.
+   */
+  async function identifyPerson(pin: string): Promise<{ id: string; name: string | null; roleName: string | null; permissions: unknown } | null> {
+    const cfg = getDeviceConfig();
+    const branchId = sessionPerson()?.branchId || cfg?.branch_id || '';
+    const as = (s: { staffId: string; name: string; roleName: string | null; permissions: unknown }) =>
+      ({ id: s.staffId, name: s.name ?? null, roleName: s.roleName ?? null, permissions: s.permissions });
+    const listed = verifyPinAtNode(pin, branchId);
+    if (listed.ok) return as(listed.staff);
+    if (listed.reason === 'ambiguous') throw new Error(listed.message);
+    const saved = verifyPinOffline(pin, branchId);
+    if (saved.ok) return as(saved.staff);
+    if (cfg?.node_url && !isNodeRole(cfg.device_role)) {
+      const r = await verifyPinAtNodeClient(pin, branchId);
+      if (r.status === 'ok') return as(r.staff);
+    }
+    let res: Awaited<ReturnType<typeof tillFetch>>;
+    try {
+      res = await withinMs(tillFetch('/api/auth/verify-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: verifyPinBody(pin, branchId) }), 8_000);
+    } catch { throw new Error('This till does not know that PIN and cannot reach the cloud to check it.'); }
+    if (isUnreachableStatus(res.status)) throw new Error('This till does not know that PIN and the cloud is not answering.');
+    if (!res.ok) return null;
+    const d: any = await res.json().catch(() => ({}));
+    if (!d?.staff?.id) return null;
+    return { id: String(d.staff.id), name: d.staff.name ?? null, roleName: d.staff.role ?? null, permissions: d.permissions ?? {} };
   }
 
   handle('shift:awaiting', async () => awaitingConfirmation());
@@ -2218,7 +2331,10 @@ export function registerIpcHandlers() {
   // ── A433 (owner, 2026-10-10: "yes if they have logged in as the manager, and under sales report it should cover all
   // tills"): another till's shifts, from the cloud, with the manager's own sign-in (manageFetch — never the till's
   // session, A415). This till's own shifts keep the local calls above (they work offline and push as before).
+  // A490: the branch's shifts and their reports — reports.shifts, or someone who confirms drawers.
+  const SHIFTS_REFUSED = 'Your role does not see shift reports.';
   handle('manager:branchShifts', async () => {
+    requireKey(['reports.shifts', 'shifts.confirm'], SHIFTS_REFUSED);
     const own = getDeviceConfig()?.device_id ?? null;
     const rows = await manageFetch('/api/shifts?limit=60', 'GET') as any[];
     return (rows ?? []).map((s) => ({
@@ -2230,12 +2346,15 @@ export function registerIpcHandlers() {
     }));
   });
   handle('manager:remoteZReport', async (_e, shiftId: string) => {
+    requireKey(['reports.shifts', 'shifts.confirm'], SHIFTS_REFUSED);
     const z = await manageFetch(`/api/shifts/${encodeURIComponent(String(shiftId))}/zreport`, 'GET');
     const session = getLocalDb().prepare(`SELECT business_name, currency FROM session WHERE id=1`).get() as any;
     return { ...z, businessName: session?.business_name ?? '', currency: session?.currency ?? 'KES' };
   });
-  handle('shift:remoteConfirmView', async (_e, shiftId: string) =>
-    manageFetch(`/api/shifts/${encodeURIComponent(String(shiftId))}/confirm-view`, 'GET'));
+  handle('shift:remoteConfirmView', async (_e, shiftId: string) => {
+    requireKey(['shifts.confirm'], 'Only someone who confirms drawers sees that.');   // A490: it carries the expected figures
+    return manageFetch(`/api/shifts/${encodeURIComponent(String(shiftId))}/confirm-view`, 'GET');
+  });
   handle('shift:remoteConfirm', async (_event, payload) => {
     const { shiftId, pin, counts, reasons } = assertPayload<{ shiftId: string; pin?: string; counts: Record<string, number>; reasons?: Record<string, string> }>(
       { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } }, payload);
@@ -2305,13 +2424,27 @@ export function registerIpcHandlers() {
     return { all: openKitchenOrders(), shift: shiftId ? openKitchenOrders(shiftId) : [] };
   });
 
+  // A490: any shift's report — reports.shifts or shifts.confirm. A cashier gets their OWN shift's report, blind when
+  // their close is (the same report shift:close hands them).
   handle('shift:zreport', async (_event, shiftId: string) => {
-    return computeZReport(shiftId, await fetchForeignCash(shiftId));   // A334
+    const me = sessionPerson();
+    if (!me) throw new Error('Sign in to see a shift report.');
+    const seesAny = personCan(me, 'reports.shifts', 'shifts.confirm');
+    if (!seesAny) {
+      const row = getLocalDb().prepare(`SELECT cashier_id, opened_by FROM shifts WHERE id = ?`).get(String(shiftId)) as { cashier_id?: string | null; opened_by?: string | null } | undefined;
+      if (!row || (row.cashier_id !== me.staffId && row.opened_by !== me.staffId)) throw new Error(SHIFTS_REFUSED);
+    }
+    const z = computeZReport(shiftId, await fetchForeignCash(shiftId));   // A334
+    return !seesAny && blindClose() ? blindReport(z) : z;
   });
 
   // 0.6.11 (owner: "I should be able to print previous shift reports") — this till's shifts, newest first.
-  // Each opens through shift:zreport above, which already rebuilds any shift's report from local data.
-  handle('shift:history', async () => listShifts(60));
+  // Each opens through shift:zreport above, which already rebuilds any shift's report from local data. A490: the list of
+  // every shift is reports.shifts / shifts.confirm.
+  handle('shift:history', async () => {
+    requireKey(['reports.shifts', 'shifts.confirm'], SHIFTS_REFUSED);
+    return listShifts(60);
+  });
 
   // ── Catalogue & staff management ─────────────────────────────────────────
   //
@@ -2551,11 +2684,27 @@ export function registerIpcHandlers() {
   // A448: the menu is saved on this till first (it sells the new way at once, offline too) and reaches the cloud after
   // (changeQueue.ts). What the till cannot hold yet — a picture, sizes, extras, fuel, sold by the piece — still goes to
   // the cloud first, as before.
+  // A490: the menu's screens — reading it is products.view (or any menu key); cost prices only to menu.costs / reports.costs
+  // (taken out, not merely hidden). Each write asks its own key (changeQueue changeKeys) — here first, so a cashier gets
+  // a clear refusal without a cloud round trip, and on the till-first path inside recordTillChange.
+  const MENU_READ = ['products.view', 'menu.edit', 'menu.prices', 'menu.offers', 'menu.costs'];
+  const MENU_REFUSED = 'Your role does not allow this menu change.';
+  const COST_FIELDS = ['cost_price', 'cost', 'unit_cost', 'margin', 'margin_pct', 'food_cost', 'food_cost_pct'];
+  const withoutCosts = (rows: any): any => {
+    if (signedInCan('menu.costs', 'reports.costs') || !Array.isArray(rows)) return rows;
+    return rows.map((r) => { if (!r || typeof r !== 'object') return r; const o = { ...r }; for (const k of COST_FIELDS) delete o[k]; return o; });
+  };
+  const requireMenuChange = (op: 'create' | 'update', data: any) => {
+    const keys = changeKeys('product', op, data && typeof data === 'object' ? data : null);
+    if (!keys.every((k) => signedInCan(k))) throw new Error(MENU_REFUSED);
+  };
   handle('manage:listProducts', async () => {
-    try { return overlayOnList('product', await manageFetch('/api/products', 'GET')); }
-    catch { return overlayOnList('product', localProductsForScreen()); }
+    requireKey(MENU_READ, NOT_ALLOWED);
+    try { return withoutCosts(overlayOnList('product', await manageFetch('/api/products', 'GET'))); }
+    catch { return withoutCosts(overlayOnList('product', localProductsForScreen())); }
   });
   handle('manage:createProduct', async (_e, payload: any) => {
+    requireMenuChange('create', payload);
     if (!tillCanHoldProduct(payload)) {
       const out = await manageFetch('/api/products', 'POST', payload);
       await refreshCatalogue();
@@ -2565,6 +2714,7 @@ export function registerIpcHandlers() {
     return { id: ch.entity_id, ...ch.data, change_state: 'pending' };
   });
   handle('manage:updateProduct', async (_e, { id, patch }: { id: string; patch: any }) => {
+    requireMenuChange('update', patch);
     if (!tillCanHoldProduct(patch)) {
       const out = await manageFetch(`/api/products/${id}`, 'PATCH', patch);
       await refreshCatalogue();
@@ -2575,6 +2725,7 @@ export function registerIpcHandlers() {
   });
 
   handle('manage:listCategories', async () => {
+    requireKey(MENU_READ, NOT_ALLOWED);
     try { return overlayOnList('category', await manageFetch('/api/categories', 'GET')); }
     catch {
       const db = getLocalDb();
@@ -2656,17 +2807,22 @@ export function registerIpcHandlers() {
     } catch { /* the next catalogue pull will reconcile */ }
   }
   handle('manage:listPaymentMethods', async () => manageFetch('/api/payment-methods', 'GET'));
+  // A490: the business's own payment methods — settings.payments.
+  const PAYMENTS_REFUSED = 'Only someone who manages payment methods can change them.';
   handle('manage:createPaymentMethod', async (_e, payload: any) => {
+    requireKey(['settings.payments'], PAYMENTS_REFUSED);
     const out = await manageFetch('/api/payment-methods', 'POST', payload);
     await refreshPaymentMethodsLocal();
     return out;
   });
   handle('manage:updatePaymentMethod', async (_e, { id, patch }: { id: string; patch: any }) => {
+    requireKey(['settings.payments'], PAYMENTS_REFUSED);
     const out = await manageFetch(`/api/payment-methods/${id}`, 'PATCH', patch);
     await refreshPaymentMethodsLocal();
     return out;
   });
   handle('manage:deletePaymentMethod', async (_e, id: string) => {
+    requireKey(['settings.payments'], PAYMENTS_REFUSED);
     const out = await manageFetch(`/api/payment-methods/${id}`, 'DELETE');
     await refreshPaymentMethodsLocal();
     return out;
@@ -2698,6 +2854,7 @@ export function registerIpcHandlers() {
   // is_kitchen server-side (A92). Refresh the local station cache so routing
   // works on this terminal immediately.
   handle('manage:seedDefaultStations', async () => {
+    requireKey(['stations.manage'], STATIONS_REFUSED);   // A490
     const out = await manageFetch('/api/stations/seed-defaults', 'POST', {});
     await refreshStationsLocal();
     return out;
@@ -2717,7 +2874,7 @@ export function registerIpcHandlers() {
     const staff = db.prepare(`SELECT staff_name, role_name, permissions FROM staff_session WHERE id = 1`).get() as
       { staff_name: string; role_name: string | null; permissions: string } | undefined;
     if (!staff) throw new Error('Not signed in');
-    if (!mayRoute(staff.role_name, staff.permissions)) throw new Error('Your role does not allow this change.');
+    if (!mayRoute(staff.role_name, staff.permissions)) throw new Error('Your role does not allow this change.');   // A490: stations.manage
     if (!db.prepare(`SELECT 1 FROM print_stations WHERE id = ?`).get(id)) throw new Error('That station is not on this till — leave this screen and open it again.');
     const saved = saveRoutingLocally(db, id, categoryIds, staff.staff_name);
     const outcome = (await pushStationRoutingNow())[id];
@@ -2736,7 +2893,9 @@ export function registerIpcHandlers() {
   // ── A414: wastage recorded on the till — saved here first, sent to the cloud now or at the next sync ──────────────
   // Items: the cloud's list (with what the branch holds) when it can be reached, kept for offline use; else the last one
   // kept; else this till's own products. Ingredients come only from the cloud's list.
+  const WASTE_REFUSED = 'Your role does not allow recording wastage.';
   handle('wastage:items', async () => {
+    requireKey(['inventory.waste'], WASTE_REFUSED);   // A490: the list carries what the branch holds and its cost
     const db = getLocalDb();
     const branch = (db.prepare(`SELECT branch_id FROM staff_session WHERE id = 1`).get() as { branch_id?: string } | undefined)?.branch_id
       ?? getDeviceConfig()?.branch_id ?? '';
@@ -2744,10 +2903,10 @@ export function registerIpcHandlers() {
       const items = await manageFetch(`/api/wastage/items?branch_id=${encodeURIComponent(branch)}`, 'GET') as any[];
       db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
         .run(WASTE_ITEMS_KEY, JSON.stringify(items ?? []), new Date().toISOString());
-      return { source: 'cloud', items: items ?? [] };
+      return { source: 'cloud', items: withoutCosts(items ?? []) };
     } catch {
       const kept = db.prepare(`SELECT value, updated_at FROM maintenance_state WHERE key = ?`).get(WASTE_ITEMS_KEY) as { value: string; updated_at: string } | undefined;
-      if (kept?.value) { try { return { source: 'saved', saved_at: kept.updated_at, items: JSON.parse(kept.value) }; } catch { /* fall through */ } }
+      if (kept?.value) { try { return { source: 'saved', saved_at: kept.updated_at, items: withoutCosts(JSON.parse(kept.value)) }; } catch { /* fall through */ } }
       // branch-wide: this till's own product list (the catalogue is the business's)
       const rows = db.prepare(`SELECT id, name, track_stock FROM products WHERE status = 'active' ORDER BY name`).all() as Array<{ id: string; name: string; track_stock: number }>;
       return { source: 'till', items: rows.map((p) => ({ kind: 'product', id: p.id, name: p.name, unit: null, by_piece: false, stocked: p.track_stock === 1, held: null, cost: null })) };
@@ -2775,9 +2934,10 @@ export function registerIpcHandlers() {
     const db = getLocalDb();
     return { pending: readPendingWaste(db), refused: readRefusedWaste(db) };
   });
-  handle('wastage:dismiss', async (_e, clientId: string) => { dismissRefused(getLocalDb(), String(clientId)); return { ok: true }; });
+  handle('wastage:dismiss', async (_e, clientId: string) => { requireKey(['inventory.waste'], WASTE_REFUSED); dismissRefused(getLocalDb(), String(clientId)); return { ok: true }; });
   // A413: expired / expiring batches at this branch — the cloud's list; offline it says so.
   handle('batches:expiring', async () => {
+    if (!signedInCan('inventory.view')) return { online: false, message: 'Your role does not see stock.' };   // A490
     try { return { online: true, ...(await manageFetch('/api/batches?soon_days=7', 'GET') as object) }; }
     catch (e: any) { return { online: false, message: e?.message ?? 'Could not reach the cloud.' }; }
   });
@@ -2801,57 +2961,67 @@ export function registerIpcHandlers() {
   // and silently writes null when there is no match, so the UI creates any
   // missing categories first and only then calls this.
   handle('manage:bulkProducts', async (_e, rows: any[]) => {
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch('/api/products/bulk', 'POST', { rows });
     await refreshCatalogue();
     return out;
   });
 
-  handle('manage:listCombos', async () => manageFetch('/api/combos', 'GET'));
+  handle('manage:listCombos', async () => { requireKey(MENU_READ, NOT_ALLOWED); return manageFetch('/api/combos', 'GET'); });
   handle('manage:createCombo', async (_e, payload: any) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch('/api/combos', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
   handle('manage:updateCombo', async (_e, { id, patch }: { id: string; patch: any }) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch(`/api/combos/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
   handle('manage:setComboItems', async (_e, { id, items }: { id: string; items: any[] }) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch(`/api/combos/${id}/items`, 'PUT', { items });
     await refreshCatalogue();
     return out;
   });
 
   // Variants — the Spice group and anything else a product needs choosing.
-  handle('manage:listVariantGroups', async (_e, productId: string) =>
-    manageFetch(`/api/variants/groups?product_id=${encodeURIComponent(productId)}`, 'GET'));
+  handle('manage:listVariantGroups', async (_e, productId: string) => {
+    requireKey(MENU_READ, NOT_ALLOWED);
+    return manageFetch(`/api/variants/groups?product_id=${encodeURIComponent(productId)}`, 'GET');
+  });
   // Editing a group's kind, and its options. Without these the manager screen can
   // display what migration 45 classified but cannot resolve anything it left as
   // 'review' — which is exactly where a human is needed.
   handle('manage:updateVariantGroup', async (_e, { id, patch }: { id: string; patch: any }) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch(`/api/variants/groups/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
   handle('manage:createVariantOption', async (_e, payload: any) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch('/api/variants/options', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
   handle('manage:updateVariantOption', async (_e, { id, patch }: { id: string; patch: any }) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch(`/api/variants/options/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
   handle('manage:deleteVariantOption', async (_e, id: string) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch(`/api/variants/options/${id}`, 'DELETE');
     await refreshCatalogue();
     return out;
@@ -2859,12 +3029,14 @@ export function registerIpcHandlers() {
 
   handle('manage:createVariantGroup', async (_e, payload: any) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch('/api/variants/groups', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
   handle('manage:deleteVariantGroup', async (_e, id: string) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.edit'], MENU_REFUSED);   // A490
     const out = await manageFetch(`/api/variants/groups/${id}`, 'DELETE');
     await refreshCatalogue();
     return out;
@@ -2876,14 +3048,38 @@ export function registerIpcHandlers() {
   // needs modifiers — as one variant group the two upgrades are mutually
   // exclusive, so a customer could have a large chips or a bigger soda but never
   // both. The POS has always rendered these; nothing could create them.
-  handle('manage:listModifierGroups', async (_e, productId: string) =>
-    manageFetch(`/api/modifiers/groups?product_id=${encodeURIComponent(productId)}`, 'GET'));
-  handle('manage:createModifierGroup', async (_e, payload: any) => { requireOnlineLicence(); return manageFetch('/api/modifiers/groups', 'POST', payload); });
-  handle('manage:deleteModifierGroup', async (_e, id: string) => { requireOnlineLicence(); return manageFetch(`/api/modifiers/groups/${id}`, 'DELETE'); });
+  handle('manage:listModifierGroups', async (_e, productId: string) => {
+    requireKey(MENU_READ, NOT_ALLOWED);
+    return manageFetch(`/api/modifiers/groups?product_id=${encodeURIComponent(productId)}`, 'GET');
+  });
+  handle('manage:createModifierGroup', async (_e, payload: any) => { requireOnlineLicence(); requireKey(['menu.edit'], MENU_REFUSED); return manageFetch('/api/modifiers/groups', 'POST', payload); });
+  handle('manage:deleteModifierGroup', async (_e, id: string) => { requireOnlineLicence(); requireKey(['menu.edit'], MENU_REFUSED); return manageFetch(`/api/modifiers/groups/${id}`, 'DELETE'); });
 
-  handle('manage:listStaff', async () => overlayOnList('staff', await manageFetch('/api/staff', 'GET')));
+  // A490: the staff list is staff.view; adding and changing staff staff.edit — never with more rights than the person
+  // making the change holds (the A340 ceiling, by permission: keysBeyond), never the owner's role.
+  const STAFF_REFUSED = 'Your role does not add or change staff.';
+  const savedRoles = (): any[] => { try { const v = JSON.parse((getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as any)?.value ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+  /** The person this till holds under that id (its staff list, else its saved sign-ins), for "never someone more powerful". */
+  const heldPerson = (id: string): PersonLike | null => {
+    const db = getLocalDb();
+    const r = (db.prepare(`SELECT role_name, permissions FROM branch_staff WHERE staff_id = ?`).get(id)
+      ?? db.prepare(`SELECT role_name, permissions FROM staff_pin_cache WHERE staff_id = ?`).get(id)) as { role_name?: string | null; permissions?: string | null } | undefined;
+    return r ? { roleName: r.role_name ?? null, permissions: r.permissions ?? '{}' } : null;
+  };
+  const requireStaffChange = (opts: { roleId?: unknown; targetId?: string | null }) => {
+    const me = sessionPerson();
+    if (!me || !personCan(me, 'staff.edit')) throw new Error(STAFF_REFUSED);
+    if (opts.roleId !== undefined && opts.roleId !== null && opts.roleId !== '') {
+      const role = savedRoles().find((r) => r?.id === opts.roleId);
+      if (role) { const why = roleCeilingRefusal(me, role); if (why) throw new Error(why); }
+      // A role this till has not saved: the cloud decides (it checks the same ceiling).
+    }
+    if (opts.targetId && !mayActOn(me, heldPerson(String(opts.targetId)))) throw new Error('That person holds more rights than you — only the owner (or someone who holds as much) can change them.');
+  };
+  handle('manage:listStaff', async () => { requireKey(['staff.view', 'staff.edit'], 'Your role does not see the staff list.'); return overlayOnList('staff', await manageFetch('/api/staff', 'GET')); });
   // A448: the roles are kept on this till too, so a cashier can be added offline with their role's name and permissions.
   handle('manage:listRoles', async () => {
+    requireKey(['staff.view', 'staff.edit'], 'Your role does not see the staff list.');   // A490
     try {
       const roles = await manageFetch('/api/staff/roles', 'GET');
       getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('roles_cache', ?, ?)`)
@@ -2899,6 +3095,7 @@ export function registerIpcHandlers() {
   // till works here at once (and on the branch's other tills through the branch server), and wins on the cloud — unless
   // another person has that PIN, when the owner is told.
   handle('manage:setStaffPin', async (_e, { id, pin }: { id: string; pin: string }) => {
+    requireStaffChange({ targetId: String(id) });   // A490
     recordTillChange({ entity: 'staff_pin', op: 'update', entity_id: String(id), data: { pin: String(pin) } });
     return { ok: true };
   });
@@ -2908,11 +3105,13 @@ export function registerIpcHandlers() {
     // A448: a cashier (name, PIN, role) is added on this till first — they sign in here at once, offline too. An override
     // PIN or an email still needs the cloud first.
     // Only for a role this till has saved (it gives the new cashier their permissions here); otherwise the cloud, as before.
-    const roles = (() => { try { return JSON.parse((getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as any)?.value ?? '[]'); } catch { return []; } })() as any[];
+    // A490: staff.edit, and never a role that can do more than the person adding (nor the owner's role) — this closes the
+    // hole where anyone who could manage staff created an owner on this till, signed in here at once, offline.
+    requireStaffChange({ roleId: payload?.role_id });
+    const roles = savedRoles();
     const role = payload?.role_id ? roles.find((r) => r?.id === payload.role_id) : null;
     if (role && !payload?.override_pin && !payload?.email) {
-      const perms: Record<string, boolean> = {};
-      for (const p of (role?.permissions ?? role?.role_permissions ?? [])) { const k = p?.key ?? p?.permissions?.key; if (k) perms[k] = true; }
+      const perms = roleMap(role);   // A490: the role's map as the cloud sends it (fine keys and the marker, or the older list)
       const ch = recordTillChange({ entity: 'staff', op: 'create', data: { name: payload?.name, role_id: payload?.role_id, pin: payload?.pin } },
         { roleName: role?.name ?? null, permissions: perms });
       return { id: ch.entity_id, name: ch.data.name, role_id: ch.data.role_id, change_state: 'pending' };
@@ -2932,8 +3131,11 @@ export function registerIpcHandlers() {
     try { return { ok: true, data: await fn() }; }
     catch (e: any) { return { ok: false, error: e?.message ?? 'Could not reach the cloud', code: e?.code ?? null }; }
   };
+  // A490: stock transfers — inventory.transfer.
+  const TRANSFER_REFUSED = 'Your role does not transfer stock.';
   handle('transfers:list', async () => {
     requireOnlineLicence();
+    requireKey(['inventory.transfer'], TRANSFER_REFUSED);
     const branch = transferBranch();
     if (!branch) return { ok: false, error: 'This till is not bound to a branch.' };
     const r = await transferAnswer(() => manageFetch(`/api/stock/transfers?branch_id=${encodeURIComponent(branch)}&limit=100`, 'GET'));
@@ -2941,6 +3143,7 @@ export function registerIpcHandlers() {
   });
   handle('transfers:branches', async () => {
     requireOnlineLicence();
+    requireKey(['inventory.transfer'], TRANSFER_REFUSED);
     const branch = transferBranch();
     return transferAnswer(async () => ((await manageFetch('/api/branches', 'GET')) ?? []).filter((b: any) => b.id !== branch)
       .map((b: any) => ({ id: b.id, name: b.name })));
@@ -2949,6 +3152,7 @@ export function registerIpcHandlers() {
     const { to_branch_id, notes, items } = assertPayload<{ to_branch_id: string; notes?: string; items: Array<{ product_id: string; quantity: number }> }>(
       { to_branch_id: { t: 'string', min: 1 }, notes: { t: 'string', optional: true }, items: { t: 'any' } }, payload);
     requireOnlineLicence();
+    requireKey(['inventory.transfer'], TRANSFER_REFUSED);
     const from = transferBranch();
     if (!from) return { ok: false, error: 'This till is not bound to a branch.' };
     const clean = (Array.isArray(items) ? items : []).map((i) => ({ product_id: String(i?.product_id ?? ''), quantity: Number(i?.quantity) }))
@@ -2961,6 +3165,7 @@ export function registerIpcHandlers() {
       { id: { t: 'string', min: 1 }, status: { t: 'string', min: 1 }, reason: { t: 'string', optional: true }, received_items: { t: 'any', optional: true },
         receipt_note: { t: 'string', optional: true }, allow_same_user: { t: 'boolean', optional: true } }, payload);
     requireOnlineLicence();
+    requireKey(['inventory.transfer'], TRANSFER_REFUSED);
     if (!['in_transit', 'received', 'cancelled'].includes(p.status)) return { ok: false, error: 'Unknown step.' };
     const { id, ...body } = p;
     const r = await transferAnswer(() => manageFetch(`/api/stock/transfers/${encodeURIComponent(id)}/status`, 'PATCH', body));
@@ -2990,8 +3195,11 @@ export function registerIpcHandlers() {
     if (!branch) return { error: 'This till is not bound to a branch.' };
     return { q: `month=${month}&branch_id=${encodeURIComponent(branch)}`, branch };
   };
+  // A490: reading the pack is reports.monthly_pack or expenses.manage (A481); recording for the books expenses.manage.
+  const MONTHLY_READ = ['reports.monthly_pack', 'expenses.manage'];
   handle('monthly:get', async (_e, payload) => {
     const p = assertPayload<{ month: string; branch_id?: string }>({ month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } }, payload);
+    if (!signedInCan(...MONTHLY_READ)) return { ok: false, error: 'Your role does not open the monthly pack.' };
     const mq = monthlyQuery(p.month, p.branch_id);
     if ('error' in mq) return { ok: false, error: mq.error };
     const r = await monthlyAnswer(() => manageFetch(`/api/reports/monthly?${mq.q}`, 'GET'));
@@ -2999,6 +3207,7 @@ export function registerIpcHandlers() {
   });
   handle('monthly:export', async (_e, payload) => {
     const p = assertPayload<{ month: string; branch_id?: string }>({ month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } }, payload);
+    if (!signedInCan(...MONTHLY_READ)) return { ok: false, error: 'Your role does not open the monthly pack.' };
     const mq = monthlyQuery(p.month, p.branch_id);
     if ('error' in mq) return { ok: false, error: mq.error };
     const got = await monthlyAnswer(() => manageFetch(`/api/reports/monthly/export?${mq.q}`, 'GET', undefined, { binary: true }));
@@ -3019,6 +3228,7 @@ export function registerIpcHandlers() {
   });
   handle('monthly:movements', async (_e, payload) => {
     const p = assertPayload<{ month: string; branch_id?: string }>({ month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } }, payload);
+    if (!signedInCan(...MONTHLY_READ)) return { ok: false, error: 'Your role does not open the monthly pack.' };
     const mq = monthlyQuery(p.month, p.branch_id);
     if ('error' in mq) return { ok: false, error: mq.error };
     return monthlyAnswer(async () => (await manageFetch(`/api/reports/monthly/movements?${mq.q}`, 'GET')) ?? []);
@@ -3027,6 +3237,7 @@ export function registerIpcHandlers() {
     const p = assertPayload<{ movement_date: string; method: string; kind: string; amount: number; note?: string; branch_id?: string }>(
       { movement_date: { t: 'string', min: 10 }, method: { t: 'string', min: 1 }, kind: { t: 'string', min: 1 }, amount: { t: 'number' },
         note: { t: 'string', optional: true }, branch_id: { t: 'string', optional: true } }, payload);
+    if (!signedInCan('expenses.manage')) return { ok: false, error: MONTHLY_RECORD_REFUSED };   // A490
     const branch = (p.branch_id && p.branch_id.trim()) || transferBranch();
     if (!branch) return { ok: false, error: 'This till is not bound to a branch.' };
     // The cloud checks the rest (kind, amount, a note for other income / personal) and the person's expenses.manage.
@@ -3035,6 +3246,7 @@ export function registerIpcHandlers() {
   });
   handle('monthly:removeMovement', async (_e, payload) => {
     const p = assertPayload<{ id: string }>({ id: { t: 'string', min: 1 } }, payload);
+    if (!signedInCan('expenses.manage')) return { ok: false, error: MONTHLY_RECORD_REFUSED };   // A490
     return monthlyAnswer(() => manageFetch(`/api/reports/monthly/movements/${encodeURIComponent(p.id)}`, 'DELETE'), MONTHLY_RECORD_REFUSED);
   });
 
@@ -3044,6 +3256,7 @@ export function registerIpcHandlers() {
     if (getDeviceConfig()?.web_pos_enabled !== true) throw new Error('This is part of the online licence — ask ZapTill to turn it on for your business.');
   };
   handle('manage:updateStaff', async (_e, { id, patch }: { id: string; patch: any }) => {
+    requireStaffChange({ roleId: patch?.role_id, targetId: String(id) });   // A490
     // A459: the screen's Deactivate sent { is_active } — a field the cloud does not know (it never deactivated anyone).
     const p: Record<string, unknown> = { ...(patch ?? {}) };
     if (typeof p.is_active === 'boolean') { p.status = p.is_active ? 'active' : 'inactive'; delete p.is_active; }
@@ -3070,6 +3283,7 @@ export function registerIpcHandlers() {
     return { header: cfg?.receipt_header ?? '', footer: cfg?.receipt_footer ?? '' };
   });
   handle('manage:setReceiptText', async (_e, { header, footer }: { header: string; footer: string }) => {
+    requireKey(['receipt.manage'], 'Your role does not change the receipt text.');   // A490
     // The endpoint upserts ONE key/value pair per call — posting an object of
     // keys returns "key and value are required". Two sequential calls.
     await manageFetch('/api/business/settings', 'POST', { key: 'receipt_header', value: header });
@@ -3087,6 +3301,7 @@ export function registerIpcHandlers() {
     return { enabled: getDeviceConfig()?.continuous_operation === true };
   });
   handle('manage:setContinuousOperation', async (_e, enabled: boolean) => {
+    requireKey(['settings.business'], 'Only someone who manages the business settings can change that.');   // A490
     const out = await manageFetch('/api/business/settings', 'POST', {
       key: 'continuous_operation', value: enabled ? 'true' : 'false',
     });
@@ -3099,6 +3314,8 @@ export function registerIpcHandlers() {
   handle('manage:setReversalRule', async (_e, payload) => {
     const { key, value } = assertPayload<{ key: string; value: unknown }>({ key: { t: 'string', min: 1 }, value: { t: 'any' } }, payload);
     if (!isReversalSettingKey(key)) throw new Error('Not one of the owner\'s rules.');
+    // The owner's own rules (void window, offline refunds, free delivery) — the owner only, as the cloud (A490: '*').
+    if (!personKeys(sessionPerson()?.roleName, sessionPerson()?.permissions).has('*')) throw new Error('Only the owner sets these rules.');
     const clean = reversalSettingValue(key, value);
     if (clean === null) throw new Error('That value is not allowed.');
     const out = await manageFetch('/api/business/settings', 'POST', { key, value: JSON.parse(clean) });
@@ -3132,9 +3349,12 @@ export function registerIpcHandlers() {
   });
   // A445: Manager › Offers — read and change the cloud's (online only; the till learns of a change on its next pull,
   // which is asked for at once).
-  handle('manage:offers', async () => manageFetch('/api/offers', 'GET'));
+  // A490: discounts, promotions and offers — menu.offers.
+  const OFFERS_REFUSED = 'Your role does not set up offers.';
+  handle('manage:offers', async () => { requireKey(['menu.offers'], OFFERS_REFUSED); return manageFetch('/api/offers', 'GET'); });
   handle('manage:saveOffer', async (_e, raw) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.offers'], OFFERS_REFUSED);   // A490
     const c = cleanOffer(raw);
     if (!c.ok) throw new Error((c as { error: string }).error);
     const id = String((raw as any)?.id ?? '');
@@ -3144,11 +3364,13 @@ export function registerIpcHandlers() {
   });
   handle('manage:deleteOffer', async (_e, id: string) => {
     requireOnlineLicence();   // A460
+    requireKey(['menu.offers'], OFFERS_REFUSED);   // A490
     const out = await manageFetch(`/api/offers/${encodeURIComponent(String(id))}`, 'DELETE');
     syncAll().catch(console.error);
     return out;
   });
   handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {
+    requireKey(['settings.payments'], PAYMENTS_REFUSED);   // A490
     const list = (Array.isArray(codes) ? codes : []).map((c) => String(c).trim().toLowerCase());
     const branchId = tillBranchId();   // A446: the signed-in person's branch when the till never recorded one
     if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
@@ -3156,8 +3378,41 @@ export function registerIpcHandlers() {
     setPaymentMethodsEnabled(list);
     return out;
   });
+  // A492: the branch's M-Pesa number (Buy Goods till number, or Paybill + account) — set HERE, on the till, by its manager
+  // (owner, 2026-10-15). settings.mpesa (or, on a map from before the catalogue, receipt.manage — who set the receipt's
+  // payment line before). The cloud checks again, keeps it per branch and tells the owner of every change.
+  const MPESA_REFUSED = 'Your role may not change the branch\'s M-Pesa number.';
+  const mayMpesa = (): boolean => {
+    const me = sessionPerson();
+    if (!me) return false;
+    return isOwnerRole(me.roleName) || maySetMpesa(personKeys(me.roleName, me.permissions), !hasMarker(me.permissions));
+  };
+  handle('manage:getMpesa', async () => {
+    if (!sessionPerson()) throw new Error('Not signed in');
+    const branchId = tillBranchId();
+    if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
+    const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/mpesa`, 'GET') as
+      { own: MpesaReceive | null; inherited: MpesaReceive | null; canEdit?: boolean };
+    return { own: out?.own ?? null, inherited: out?.inherited ?? null, canEdit: mayMpesa() && out?.canEdit !== false };
+  });
+  handle('manage:setMpesa', async (_e, raw) => {
+    if (!sessionPerson()) throw new Error('Not signed in');
+    if (!mayMpesa()) throw new Error(MPESA_REFUSED);
+    const branchId = tillBranchId();
+    if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
+    const clear = (raw as any)?.clear === true;
+    const c = clear ? null : cleanMpesaReceive(raw as any);
+    if (c && 'error' in c) throw new Error(c.error);
+    const value = c && 'value' in c ? c.value : null;
+    const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/mpesa`, 'PUT', value ?? { clear: true });
+    // This till prints the new line at once (the branch's other tills take it within 20 s — the cloud's version moves).
+    setReceiptPay(value ? { label: mpesaLabel(value.kind), number: mpesaReceiptNumber(value) } : null);
+    syncAll().catch(console.error);
+    return out;
+  });
   handle('manage:getCashierHistoryMethods', async () => ({ methods: getCashierHistoryMethods() }));
   handle('manage:setCashierHistoryMethods', async (_e, methods) => {
+    requireKey(['settings.business'], 'Only someone who manages the business settings can change that.');   // A490
     const clean = historyMethodsSettingValue(methods);
     if (clean === null) throw new Error('Choose payment methods from the list.');
     const out = await manageFetch('/api/business/settings', 'POST', { key: CASHIER_HISTORY_METHODS_KEY, value: JSON.parse(clean) });
@@ -3167,11 +3422,18 @@ export function registerIpcHandlers() {
 
   // ── Manager dashboard reports (local SQLite — D9 tiered depth) ────────────
 
+  // A490: every report read names its key (the Overview reads several — reports.overview opens those too). A refusal
+  // throws: the screen shows its own "not available" line, and the figures are never sent.
+  const REPORT_REFUSED = 'Your role does not see this report.';
   // Range is optional so existing callers keep today's behaviour untouched.
-  handle('manager:salesSummary',  async (_e, r?: RangeArg) =>
-    getSalesSummary(r ? resolveRange(r.preset, r.from, r.to) : undefined));
-  handle('manager:topProducts',   async (_e, r?: RangeArg) =>
-    getTopProducts(r?.limit ?? 8, r ? resolveRange(r.preset, r.from, r.to) : undefined));
+  handle('manager:salesSummary',  async (_e, r?: RangeArg) => {
+    requireKey(['reports.sales', 'reports.overview'], REPORT_REFUSED);
+    return getSalesSummary(r ? resolveRange(r.preset, r.from, r.to) : undefined);
+  });
+  handle('manager:topProducts',   async (_e, r?: RangeArg) => {
+    requireKey(['reports.items', 'reports.overview'], REPORT_REFUSED);
+    return getTopProducts(r?.limit ?? 8, r ? resolveRange(r.preset, r.from, r.to) : undefined);
+  });
   // 0.6.27: the POS History — the last 30 sales, narrowed to the signed-in cashier's own when the client has
   // 'cashier_own_history' on (a manager sees all); says whether Reprint is offered ('cashier_no_reprint').
   handle('pos:history', async () => {
@@ -3199,12 +3461,15 @@ export function registerIpcHandlers() {
     }
     return { ok: true, detail: found.detail, canReprint: scope.canReprint };
   });
-  handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
-    getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined));
+  handle('manager:recentOrders',  async (_e, r?: RangeArg) => {
+    requireKey(['orders.view_all', 'reports.overview'], REPORT_REFUSED);
+    return getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined);
+  });
 
   // Cross-sync stage 1 (2026-09-27): every till's sales at this branch, read from the cloud (owner: "Branch
   // view, read from cloud"). Online only — the caller falls back to this till's own list and says so.
   handle('manager:branchOrders', async (_e, r?: RangeArg) => {
+    requireKey(['orders.view_all'], REPORT_REFUSED);   // A490
     const cfg = getDeviceConfig();
     const token = readStaffTokens().token ?? readSessionTokens().token;
     if (!token) throw new Error('Not signed in');
@@ -3221,25 +3486,37 @@ export function registerIpcHandlers() {
 
   // A431 / A432: the Overview — every till's sales and every shift at the branch, from the cloud (a manager's sign-in);
   // this till's own rows when the cloud cannot be reached, saying so. Read-only.
-  handle('manager:branchDay', async (_e, r?: RangeArg) => branchDay(resolveRange(r?.preset ?? 'today', r?.from, r?.to)));
+  handle('manager:branchDay', async (_e, r?: RangeArg) => {
+    requireKey(['reports.overview', 'orders.view_all'], REPORT_REFUSED);   // A490: the Overview's own read
+    return branchDay(resolveRange(r?.preset ?? 'today', r?.from, r?.to));
+  });
 
   // What the figures cover. Paired with every range query so a till's partial
   // view can never be read as the branch's takings.
   handle('manager:reportScope', async () => getReportScope());
   handle('manager:resolveRange', async (_e, r: RangeArg) =>
     resolveRange(r?.preset, r?.from, r?.to));
-  handle('manager:exportCsv', async (_e, req: any) => exportReportCsv(req));
-  handle('manager:dailyReport', async (_e, req: any) => exportDailySalesReport(req ?? {}));
-  handle('manager:stockLevels',   async () => getStockLevels());
-  handle('manager:fuelSales',     async () => getFuelSalesToday());
-  handle('manager:pumpStatus',    async () => getPumpStatus());
-  handle('manager:tableOccupancy',async () => getTableOccupancy());
+  // A490: a download is reports.export AND the report's own key (orders → orders.view_all, products → reports.items,
+  // sales → reports.sales), as the cloud's exports.
+  handle('manager:exportCsv', async (_e, req: any) => {
+    const own = req?.kind === 'orders' ? 'orders.view_all' : req?.kind === 'products' ? 'reports.items' : 'reports.sales';
+    if (!signedInCan('reports.export') || !signedInCan(own)) return { ok: false, error: 'Your role does not download this report.' };
+    return exportReportCsv(req);
+  });
+  handle('manager:dailyReport', async (_e, req: any) => {
+    if (!signedInCan('reports.export') || !signedInCan('reports.sales')) return { ok: false, error: 'Your role does not download this report.' };
+    return exportDailySalesReport(req ?? {});
+  });
+  handle('manager:stockLevels',   async () => { requireKey(['inventory.view'], REPORT_REFUSED); return withoutCosts(getStockLevels()); });
+  handle('manager:fuelSales',     async () => { requireKey(['reports.fuel', 'reports.overview'], REPORT_REFUSED); return getFuelSalesToday(); });
+  handle('manager:pumpStatus',    async () => { requireKey(['reports.fuel', 'reports.overview', 'fuel.manage'], REPORT_REFUSED); return getPumpStatus(); });
+  handle('manager:tableOccupancy',async () => { requireKey(['orders.view_all', 'reports.overview'], REPORT_REFUSED); return getTableOccupancy(); });
 
   // ── Branch price management (manager = branch authority, local-first) ──────
-  handle('manager:priceList',      async () => getPriceList());
-  // Audit 2026-10-14: a branch price is products.manage (the cloud's rule) or a manager by the till's rule — checked here.
-  const mayPrice = () => signedInHolds(BRANCH_PRICE_KEYS) || isManager();
-  const PRICE_REFUSED = 'Only a manager who manages the menu can change a price.';
+  handle('manager:priceList',      async () => { requireKey(MENU_READ, NOT_ALLOWED); return withoutCosts(getPriceList()); });
+  // Audit 2026-10-14: checked here, not only on the screen. A490: menu.prices (the cloud's /branch-prices rule).
+  const mayPrice = () => signedInCan('menu.prices');
+  const PRICE_REFUSED = 'Only someone who may change prices can change a price.';
   handle('manager:setBranchPrice', async (_e, { product_id, price }) => {
     if (!mayPrice()) throw new Error(PRICE_REFUSED);
     return setBranchPrice(product_id, price);
@@ -3270,16 +3547,18 @@ export function registerIpcHandlers() {
 
   // A341: a manager adds an expense type from the till — saved on the cloud (the dashboard's own route and
   // permission, expenses.manage); manageFetch gives the offline / role messages.
-  handle('expense:addCategory', async (_e, { name }: { name: string }) =>
-    manageFetch('/api/expenses/categories', 'POST', { name: String(name ?? '').trim() }));
+  handle('expense:addCategory', async (_e, { name }: { name: string }) => {
+    requireKey(['expenses.manage'], 'Your role does not add expense types.');   // A490
+    return manageFetch('/api/expenses/categories', 'POST', { name: String(name ?? '').trim() });
+  });
 
   // Save expense locally (syncs up on next push pass)
   handle('expense:create', async (_event, {
     description, amount, expense_category_id, paid_by, payment_method, category_name, pin, no_drawer,
   }: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
        payment_method?: string; category_name?: string; pin?: string; no_drawer?: boolean }) => {
-    // A453: with 'cashier_no_money_out' only a manager signed in here records an expense.
-    if (!mayRecordMoneyMovement(getPosFeatures(), signedInConfirmer() !== null)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
+    // A490: shifts.cash_movements (before migration 134: A453's 'cashier_no_money_out' switch, unless they may confirm).
+    if (!mayMoveMoney(sessionPerson(), getPosFeatures().cashier_no_money_out)) throw new Error(MONEY_MOVEMENT_MANAGER_ONLY);
     const approver = await payoutApprover(pin);   // 0.6.37 (A388): every expense needs a manager
     // the till's own open drawer (none: paid outside any drawer). A466: on the branch server a manager may record it
     // "Not from a drawer" even while this terminal has a shift open (owner: "the manager can fail to choose a drawer").
@@ -3296,12 +3575,16 @@ export function registerIpcHandlers() {
 
   // 0.6.11 (owner: "I should be able to see expenses") — the manager's Expenses screen, by date range.
   handle('expense:range', async (_e, r?: RangeArg) => {
+    requireKey(['expenses.view', 'expenses.manage'], 'Your role does not see expenses.');   // A490
     const range = resolveRange(r?.preset ?? 'today', r?.from, r?.to);
     return { ...listExpenses(range.from, range.to), label: range.label };
   });
 
   // Recent expenses for the current shift (for display in ShiftPanel)
   handle('expense:list', async () => {
+    // A490: expenses.view — or the person recording money on this drawer (they see what they recorded on it).
+    const me = sessionPerson();
+    if (!me || !(personCan(me, 'expenses.view', 'expenses.manage') || mayMoveMoney(me, getPosFeatures().cashier_no_money_out))) return [];
     const db = getLocalDb();
     const shift = db.prepare(`SELECT id FROM shifts WHERE status='open'
        AND COALESCE(device_id,'') = COALESCE(?,'')
@@ -3319,17 +3602,16 @@ export function registerIpcHandlers() {
   // sign-in that cannot become a cloud one) falls through to here. The approver's PIN goes to the branch node first,
   // else this till's saved sign-ins (the A365 chain); the owner's rules decide the rest (offlineReversal.ts).
   const signedInPerson = (): LocalPerson | null => {
-    const st = getLocalDb().prepare(`SELECT staff_id, staff_name, role_name, permissions FROM staff_session WHERE id=1`).get() as
-      { staff_id: string; staff_name: string; role_name: string | null; permissions: string | null } | undefined;
-    return st?.staff_id ? { id: st.staff_id, name: st.staff_name ?? null, roleName: st.role_name, permissions: st.permissions ?? '{}' } : null;
+    const st = sessionPerson();
+    return st ? { id: st.staffId, name: st.name, roleName: st.roleName, permissions: st.permissions } : null;
   };
   const NOT_AN_APPROVER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
-  async function identifyApproverOffline(pin: string): Promise<LocalPerson> {
+  async function identifyApproverOffline(pin: string, kind: 'void' | 'refund'): Promise<LocalPerson> {
     const cfg = getDeviceConfig();
     const branchId = cfg?.branch_id ?? '';
     const asPerson = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }): LocalPerson => {
       const p = { id: staff.staffId, name: staff.name ?? null, roleName: staff.roleName, permissions: staff.permissions };
-      if (!mayReverseLocal(p)) throw new Error(NOT_AN_APPROVER);
+      if (!mayReverseLocal(p, kind)) throw new Error(NOT_AN_APPROVER);   // A490: sales.void / sales.refund, or the owner
       return p;
     };
     if (cfg?.node_url && !isNodeRole(cfg?.device_role)) {
@@ -3349,8 +3631,8 @@ export function registerIpcHandlers() {
   async function reverseWhileOffline(kind: 'void' | 'refund', orderId: string, reason: string, pin: string | undefined) {
     const actor = signedInPerson();
     const approver = String(pin ?? '').trim()
-      ? await identifyApproverOffline(String(pin).trim())
-      : (mayReverseLocal(actor) ? actor : null);
+      ? await identifyApproverOffline(String(pin).trim(), kind)
+      : (mayReverseLocal(actor, kind) ? actor : null);
     if (!approver) throw new Error('Enter the PIN of a manager (or the owner) on duty.');
     const r = reverseOffline({
       kind, orderId: String(orderId), reason: String(reason ?? ''), actor, approver,
@@ -3394,6 +3676,8 @@ export function registerIpcHandlers() {
           authorizer_id:  { t: 'string', optional: true },
         }, payload);
     const db = getLocalDb();
+    // A490: sales.void — checked here first (the cloud checks again online; offline this till is the authority).
+    requireKey(['sales.void'], 'Your role does not void sales.');
     // Get server URL + best available auth token
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
@@ -3437,7 +3721,7 @@ export function registerIpcHandlers() {
       const detail = typeof data?.detail === 'string' ? data.detail : '';
       if (res.status === 403 && /missing permission/i.test(detail)) {
         throw new Error(
-          'This role cannot void orders. A manager needs to grant the "orders.void" permission to it.',
+          'This role cannot void sales. The owner needs to give it "Void sales" (Roles and permissions).',
         );
       }
       throw new Error(detail ? `${data.error ?? 'Void failed'} — ${detail}` : (data.error ?? 'Void failed'));
@@ -3460,6 +3744,7 @@ export function registerIpcHandlers() {
   // (reverseWhileOffline above); online, the cloud decides as before.
   handle('order:refund', async (_event, { orderId, reason, override_pin, authorizer_id }:
     { orderId: string; reason: string; override_pin?: string; authorizer_id?: string }) => {
+    requireKey(['sales.refund'], 'Your role does not refund sales.');   // A490
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
     // A345: an offline sign-in has no cloud token yet — make it a cloud sign-in first if the network is back.
@@ -3493,7 +3778,7 @@ export function registerIpcHandlers() {
     if (!res.ok) {
       const detail = typeof data?.detail === 'string' ? data.detail : '';
       if (res.status === 403 && /missing permission/i.test(detail)) {
-        throw new Error('This role cannot refund. A manager needs to grant the "orders.void" permission to it.');
+        throw new Error('This role cannot refund sales. The owner needs to give it "Refund sales" (Roles and permissions).');
       }
       throw new Error(detail ? `${data.error ?? 'Refund failed'} — ${detail}` : (data.error ?? 'Refund failed'));
     }
@@ -3547,7 +3832,11 @@ export function registerIpcHandlers() {
   handle('tech:closeSession', async () => { closeTechSession(); return { ok: true }; });
 
   handle('tech:logAction', async (_event, { action, detail }: { action: string; detail?: any }) => {
-    logTechAction(action, detail);
+    // A490: kept for the screens' audit lines, but bounded — the audit is a queue the cloud receives.
+    const act = String(action ?? '').slice(0, 80);
+    let d: any = detail;
+    try { const t = JSON.stringify(detail ?? null); if (t && t.length > 2000) d = { truncated: t.slice(0, 2000) }; } catch { d = null; }
+    logTechAction(act, d);
     return { ok: true };
   });
 
@@ -3599,6 +3888,7 @@ export function registerIpcHandlers() {
     } catch { /* promotion proceeds; the node refreshes the roster on its own cloud sync */ }
     logTechAction('role.promote', { from: before, to: 'node' });
     saveDeviceConfig({ device_role: 'node', node_url: null });
+    setTillPin(null);   // A489: a server pins no server
     startNodeServer();
     const secret = ensureNodeSecret();
     return { ok: true, role: 'node', secret,
@@ -3638,6 +3928,10 @@ export function registerIpcHandlers() {
     const nodeChanged = previousUrl !== nextUrl;
     if (was === 'node') stopNodeServer();   // stepping down: stop serving first
     saveDeviceConfig({ node_url: nextUrl, device_role: was === 'node' ? 'till' : was });
+    // A489: the certificate the probe just proved (over TLS, with this till's access code) goes with the address;
+    // a server on an older build has none — plain until it updates, then the 60 s tick pins it.
+    setTillPin(probe.cert ?? null);
+    if (probe.code) logLine('node', `repointed to ${nextUrl} — encrypted, security code ${probe.code}`);
     if (nodeChanged) {
       // A21 — see the note above. Audited as its own action rather than folded
       // into role.repoint: re-offering the whole outbox is a distinct, visible
@@ -3726,6 +4020,7 @@ export function registerIpcHandlers() {
   // node. If the node is unreachable (or this device has none) it falls back to
   // this machine's own local data, flagged so the UI can say so.
   handle('manager:branchReport', async () => {
+    requireKey(['reports.sales', 'reports.overview'], REPORT_REFUSED);   // A490
     if (hasNode()) {
       const report = await fetchNodeReport().catch(() => null);
       if (report) return { ...report, source: 'node' as const };

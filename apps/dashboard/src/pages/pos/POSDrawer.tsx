@@ -1,30 +1,25 @@
 /**
- * POSDrawer — Dynamic Permission-Driven Navigation
+ * POSDrawer — the web POS's "Menu": the back-office screens a person may open from the till.
  *
- * Nav is built entirely from session.permissions (Record<string, boolean>),
- * which is the effective permission map stored in the cashier JWT at login.
+ * A490: built from the permission catalogue's FINE keys (lib/permissions.ts) — one rule with the rest of the web
+ * (hasPermission on the session's expanded map). Only screens that exist are listed; a key without a screen here
+ * (e.g. menu.edit, staff.roles) is used where it applies, never as a "not built yet" placeholder. Each screen's words
+ * come from the catalogue (PERMISSIONS label / description), not a private list.
  *
- * Algorithm:
- *   1. Take all keys where value === true
- *   2. Derive module from key prefix  (e.g. "reports.view" → "reports")
- *   3. Group by module — skip modules with zero granted keys
- *   4. Each module becomes a left-rail tab; each key within it becomes a sub-tab
- *   5. Active key renders its rich component if one is registered,
- *      otherwise falls back to GenericPermissionView
- *
- * Adding a new permission to the DB and granting it to a role automatically
- * produces a working tab with the generic fallback — zero code changes here.
- *
- * To promote a key to a rich view: add one entry to RICH_COMPONENTS below.
+ *   Reports    → POSReportsTab       (the reports it shows: POS_REPORT_KEYS — each report by its own key)
+ *   Orders     → POSOrderHistoryTab  (orders.view_all)
+ *   Stock      → POSInventoryTab     (inventory.view)
+ *   Customers  → POSCustomersTab     (customers.view)
  */
 
 import { useEffect, useState, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import ReleaseBadge from '../../components/ReleaseBadge';
-import POSReportsTab       from './POSReportsTab';
+import POSReportsTab, { POS_REPORT_KEYS } from './POSReportsTab';
 import POSOrderHistoryTab  from './POSOrderHistoryTab';
 import POSInventoryTab     from './POSInventoryTab';
 import POSCustomersTab     from './POSCustomersTab';
+import { PERMISSIONS, PERMISSION_GROUPS, hasAnyPermission } from '../../lib/permissions';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -34,210 +29,54 @@ interface Props {
   currency: string;
 }
 
-// ── Module metadata ───────────────────────────────────────────────────────────
-// Display name + icon for known module prefixes.
-// Unknown prefixes auto-capitalise and get a generic key icon.
+// ── The screens ───────────────────────────────────────────────────────────────
 
-const MODULE_META: Record<string, { label: string; icon: string }> = {
-  reports:   { label: 'Reports',   icon: '📊' },
-  orders:    { label: 'Orders',    icon: '🧾' },
-  inventory: { label: 'Inventory', icon: '📦' },
-  customers: { label: 'Customers', icon: '👥' },
-  products:  { label: 'Products',  icon: '🛒' },
-  payments:  { label: 'Payments',  icon: '💳' },
-  discounts: { label: 'Discounts', icon: '🏷️' },
-  staff:     { label: 'Staff',     icon: '👤' },
-  settings:  { label: 'Settings',  icon: '⚙️' },
-  expenses:  { label: 'Expenses',  icon: '💸' },
-  kitchen:   { label: 'Kitchen',   icon: '🍳' },
-};
+type ScreenProps = { currency: string };
 
-// ── Permission key labels ─────────────────────────────────────────────────────
-// Human-readable sub-tab labels for known keys.
-// Unknown keys auto-format from the key itself.
-
-const KEY_LABELS: Record<string, string> = {
-  'orders.create':    'Create Orders',
-  'orders.view_all':  'Order History',
-  'orders.void':      'Void Orders',
-  'orders.refund':    'Process Refunds',
-  'orders.hold':      'Hold Orders',
-  'products.view':    'View Products',
-  'products.manage':  'Manage Products',
-  'inventory.view':   'Stock Levels',
-  'inventory.adjust': 'Adjust Stock',
-  'reports.view':     'Sales Report',
-  'reports.export':   'Export Reports',
-  'staff.manage':     'Manage Staff',
-  'settings.manage':  'Settings',
-  'discounts.apply':  'Apply Discounts',
-  'discounts.manage': 'Manage Discounts',
-  'customers.view':   'View Customers',
-  'customers.manage': 'Manage Customers',
-  'payments.cash':    'Cash Payments',
-  'payments.mpesa':   'M-Pesa Payments',
-  'payments.card':    'Card Payments',
-  'expenses.view':    'View Expenses',
-  'expenses.manage':  'Manage Expenses',
-  'kitchen.view':     'Kitchen Display',
-  'kitchen.manage':   'Manage Kitchen',
-};
-
-// ── Rich component registry ───────────────────────────────────────────────────
-// Maps specific permission keys → purpose-built components.
-// Any key NOT listed here gets GenericPermissionView automatically.
-// To promote a key: add one line here. No other changes required.
-
-type RichProps = { currency: string; permissionKey: string };
-
-const RICH_COMPONENTS: Record<string, React.ComponentType<RichProps>> = {
-  'reports.view':    ({ currency }) => <POSReportsTab currency={currency} />,
+/** Each screen, keyed by the permission that opens it ('reports' = any of the reports it shows). */
+const SCREENS: Record<string, React.ComponentType<ScreenProps>> = {
+  'reports':         ({ currency }) => <POSReportsTab currency={currency} />,
   'orders.view_all': ({ currency }) => <POSOrderHistoryTab currency={currency} />,
   'inventory.view':  ()             => <POSInventoryTab />,
   'customers.view':  ({ currency }) => <POSCustomersTab currency={currency} />,
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function deriveModule(key: string): string {
-  return key.split('.')[0] ?? key;
-}
-
-function getModuleMeta(prefix: string) {
-  return MODULE_META[prefix] ?? {
-    label: prefix.charAt(0).toUpperCase() + prefix.slice(1),
-    icon: '🔑',
-  };
-}
-
-function getKeyLabel(key: string): string {
-  return (
-    KEY_LABELS[key] ??
-    key.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' › ')
-  );
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface ModuleGroup {
-  prefix: string;
-  label:  string;
-  icon:   string;
-  keys:   string[];
-}
-
-// ── All known permission keys (source of truth for wildcard expansion) ────────
-// Must stay in sync with the permissions table in the DB.
-// Order within each module controls sub-tab order.
-
-const ALL_KNOWN_KEYS: string[] = [
-  'reports.view', 'reports.export',
-  'orders.view_all', 'orders.void', 'orders.refund', 'orders.hold', 'orders.create',
-  'inventory.view', 'inventory.adjust',
-  'customers.view', 'customers.manage',
-  'products.view', 'products.manage',
-  'payments.cash', 'payments.mpesa', 'payments.card',
-  'discounts.apply', 'discounts.manage',
-  'expenses.view', 'expenses.manage',
-  'kitchen.view', 'kitchen.manage',
-  'staff.manage',
-  'settings.manage',
+/** Rail order, icon and the short rail word; the heading and its line come from the catalogue. */
+const SCREEN_ORDER: Array<{ id: keyof typeof SCREENS & string; icon: string; rail: string; keys: readonly string[] }> = [
+  { id: 'reports',         icon: '📊', rail: 'Reports',   keys: POS_REPORT_KEYS },
+  { id: 'orders.view_all', icon: '🧾', rail: 'Orders',    keys: ['orders.view_all'] },
+  { id: 'inventory.view',  icon: '📦', rail: 'Stock',     keys: ['inventory.view'] },
+  { id: 'customers.view',  icon: '👥', rail: 'Customers', keys: ['customers.view'] },
 ];
 
-// ── Build nav ─────────────────────────────────────────────────────────────────
+const catalogueLabel = (key: string) => PERMISSIONS.find((p) => p.key === key);
+const reportsGroup = PERMISSION_GROUPS.find((g) => g.id === 'reports');
 
-function buildGroups(permissions: Record<string, boolean>): ModuleGroup[] {
-  const isWildcard = permissions['*'] === true;
-
-  // Resolve effective granted keys
-  let grantedKeys: string[];
-
-  if (isWildcard) {
-    // Owner / wildcard — expand to all known keys
-    grantedKeys = ALL_KNOWN_KEYS;
-  } else {
-    // Explicit grants only — strictly filter to granted === true
-    grantedKeys = Object.entries(permissions)
-      .filter(([key, granted]) => granted === true && key !== '*')
-      .map(([key]) => key);
-  }
-
-  if (grantedKeys.length === 0) return [];
-
-  // Group by module prefix
-  const map: Record<string, string[]> = {};
-  grantedKeys.forEach(key => {
-    const prefix = deriveModule(key);
-    if (!map[prefix]) map[prefix] = [];
-    // Avoid duplicates (safety guard)
-    if (!map[prefix].includes(key)) map[prefix].push(key);
-  });
-
-  // Sort modules: known order first, then alpha for unknowns
-  const knownOrder = Object.keys(MODULE_META);
-  return Object.entries(map)
-    .sort(([a], [b]) => {
-      const ai = knownOrder.indexOf(a);
-      const bi = knownOrder.indexOf(b);
-      if (ai === -1 && bi === -1) return a.localeCompare(b);
-      if (ai === -1) return 1;
-      if (bi === -1) return -1;
-      return ai - bi;
-    })
-    .map(([prefix, keys]) => ({ prefix, keys, ...getModuleMeta(prefix) }));
+/** The heading and line shown above a screen — the catalogue's own words. */
+function screenWords(id: string): { title: string; line: string } {
+  if (id === 'reports') return { title: reportsGroup?.label ?? 'Reports', line: reportsGroup?.description ?? '' };
+  const p = catalogueLabel(id);
+  return { title: p?.label ?? id, line: p?.description ?? '' };
 }
 
-// ── Generic fallback ──────────────────────────────────────────────────────────
-
-function GenericPermissionView({ permissionKey }: RichProps) {
-  const { icon } = getModuleMeta(deriveModule(permissionKey));
-  return (
-    <div style={gv.root}>
-      <div style={gv.iconWrap}><span style={gv.icon}>{icon}</span></div>
-      <code style={gv.key}>{permissionKey}</code>
-      <p style={gv.title}>{getKeyLabel(permissionKey)}</p>
-      <p style={gv.body}>
-        You have the <strong style={{ color: '#93c5fd' }}>{getKeyLabel(permissionKey)}</strong> permission.
-        A dedicated screen for this section hasn't been built yet and will be available in a future update.
-      </p>
-      <div style={gv.hint}>
-        <span>💡</span>
-        <span>
-          This permission allows <code style={gv.inlineCode}>{permissionKey}</code> actions in ZapTill.
-          Contact your administrator for more information.
-        </span>
-      </div>
-    </div>
-  );
+/** The screens this person may open, in rail order. */
+export function drawerScreens(held: ReadonlySet<string>): string[] {
+  return SCREEN_ORDER.filter((sc) => hasAnyPermission(held, sc.keys)).map((sc) => sc.id);
 }
-
-const gv: Record<string, React.CSSProperties> = {
-  root:       { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 20px', textAlign: 'center' },
-  iconWrap:   { width: 72, height: 72, background: '#0f172a', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, border: '1px solid #334155' },
-  icon:       { fontSize: 34 },
-  key:        { margin: '0 0 10px', fontSize: 11, color: '#475569', background: '#0f172a', padding: '3px 10px', borderRadius: 6, border: '1px solid #334155' },
-  title:      { margin: '0 0 10px', fontSize: 18, fontWeight: 700, color: '#f1f5f9' },
-  body:       { margin: '0 0 20px', fontSize: 13, color: '#64748b', lineHeight: 1.7, maxWidth: 300 },
-  hint:       { display: 'flex', gap: 10, alignItems: 'flex-start', background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '12px 14px', maxWidth: 300, textAlign: 'left', fontSize: 12, color: '#64748b', lineHeight: 1.6 },
-  inlineCode: { background: '#1e293b', padding: '1px 5px', borderRadius: 4, fontSize: 11 },
-};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function POSDrawer({ isOpen, onClose, currency }: Props) {
-  const { session, posApi } = usePOSAuth();
+  const { session, posApi, held } = usePOSAuth();
 
-  const groups = buildGroups(session?.permissions ?? {});
+  const screens = drawerScreens(held);
+  const [active, setActive] = useState<string | null>(screens[0] ?? null);
 
-  const [activeModule, setActiveModule] = useState<string | null>(groups[0]?.prefix ?? null);
-  const [activeKey,    setActiveKey]    = useState<string | null>(groups[0]?.keys[0] ?? null);
-
-  // Re-sync on session change (role switches, re-login)
+  // Re-sync on session change (a refreshed permission map, re-login)
   useEffect(() => {
-    const g = buildGroups(session?.permissions ?? {});
-    setActiveModule(g[0]?.prefix ?? null);
-    setActiveKey(g[0]?.keys[0] ?? null);
-  }, [session]);
+    const list = drawerScreens(held);
+    setActive((cur) => (cur && list.includes(cur) ? cur : list[0] ?? null));
+  }, [held]);
 
   // Keyboard close
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -254,14 +93,6 @@ export default function POSDrawer({ isOpen, onClose, currency }: Props) {
     document.body.style.overflow = isOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
-
-  const activeGroup = groups.find(g => g.prefix === activeModule) ?? null;
-
-  const switchModule = (prefix: string) => {
-    const grp = groups.find(g => g.prefix === prefix);
-    setActiveModule(prefix);
-    setActiveKey(grp?.keys[0] ?? null);
-  };
 
   return (
     <>
@@ -287,56 +118,45 @@ export default function POSDrawer({ isOpen, onClose, currency }: Props) {
         </div>
 
         {/* Empty state */}
-        {groups.length === 0 && (
+        {screens.length === 0 && (
           <div style={s.empty}>
             <p style={{ fontSize: 36, margin: '0 0 12px' }}>🔒</p>
-            <p style={s.emptyText}>No additional sections have been granted to your role.</p>
+            <p style={s.emptyText}>Nothing else has been given to your role.</p>
           </div>
         )}
 
         {/* Two-column layout */}
-        {groups.length > 0 && (
+        {screens.length > 0 && (
           <div style={s.body}>
 
-            {/* Left rail — module tabs */}
+            {/* Left rail — one tab per screen */}
             <nav style={s.rail}>
-              {groups.map(grp => (
+              {SCREEN_ORDER.filter(sc => screens.includes(sc.id)).map(sc => (
                 <button
-                  key={grp.prefix}
-                  style={{ ...s.railTab, ...(activeModule === grp.prefix ? s.railTabActive : {}) }}
-                  onClick={() => switchModule(grp.prefix)}
-                  title={grp.label}
+                  key={sc.id}
+                  data-testid={`drawer-${sc.id}`}
+                  style={{ ...s.railTab, ...(active === sc.id ? s.railTabActive : {}) }}
+                  onClick={() => setActive(sc.id)}
+                  title={screenWords(sc.id).title}
                 >
-                  <span style={s.railIcon}>{grp.icon}</span>
-                  <span style={s.railLabel}>{grp.label}</span>
+                  <span style={s.railIcon}>{sc.icon}</span>
+                  <span style={s.railLabel}>{sc.rail}</span>
                 </button>
               ))}
             </nav>
 
             {/* Right area */}
             <div style={s.main}>
-
-              {/* Sub-tabs — only rendered when module has >1 key */}
-              {activeGroup && activeGroup.keys.length > 1 && (
-                <div style={s.subTabs}>
-                  {activeGroup.keys.map(key => (
-                    <button
-                      key={key}
-                      style={{ ...s.subTab, ...(activeKey === key ? s.subTabActive : {}) }}
-                      onClick={() => setActiveKey(key)}
-                    >
-                      {getKeyLabel(key)}
-                    </button>
-                  ))}
+              {active && (
+                <div style={s.subHead}>
+                  <p style={s.subTitle}>{screenWords(active).title}</p>
+                  {screenWords(active).line && <p style={s.subLine}>{screenWords(active).line}</p>}
                 </div>
               )}
-
-              {/* Content */}
               <div style={s.content}>
-                {activeKey && (() => {
-                  const Rich = RICH_COMPONENTS[activeKey];
-                  if (Rich) return <Rich currency={currency} permissionKey={activeKey} />;
-                  return <GenericPermissionView currency={currency} permissionKey={activeKey} />;
+                {active && (() => {
+                  const Screen = SCREENS[active];
+                  return Screen ? <Screen currency={currency} /> : null;
                 })()}
               </div>
             </div>
@@ -409,20 +229,10 @@ const s: Record<string, React.CSSProperties> = {
   // Right main
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
 
-  // Sub-tabs
-  subTabs: {
-    display: 'flex', borderBottom: '1px solid #334155',
-    overflowX: 'auto' as const, flexShrink: 0,
-  },
-  subTab: {
-    padding: '9px 14px', background: 'transparent', border: 'none',
-    borderBottom: '2px solid transparent', color: '#64748b',
-    cursor: 'pointer', fontSize: 12, fontWeight: 600,
-    whiteSpace: 'nowrap' as const, transition: 'all 0.15s ease',
-  },
-  subTabActive: {
-    color: 'rgb(var(--act-text, 59 130 246))', borderBottomColor: 'rgb(var(--act-fill, 59 130 246))', background: 'rgb(var(--act-fill, 59 130 246) / 0.06)',
-  },
+  // The screen's heading (the catalogue's words)
+  subHead:  { padding: '10px 16px 8px', borderBottom: '1px solid #334155', flexShrink: 0 },
+  subTitle: { margin: 0, fontSize: 13, fontWeight: 700, color: '#f1f5f9' },
+  subLine:  { margin: '2px 0 0', fontSize: 11, color: '#64748b', lineHeight: 1.5 },
 
   // Content
   content: { flex: 1, overflowY: 'auto' as const, padding: '14px 16px 24px' },
