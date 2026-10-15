@@ -186,6 +186,8 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Branches', description: 'Branch details and each branch\'s own settings' },
   { key: 'settings.payments',    group: 'settings', surface: 'both',
     label: 'Payment methods', description: 'Which payment methods each branch takes, and the business\'s own methods' },
+  { key: 'settings.mpesa',       group: 'settings', surface: 'till', manager: true,
+    label: 'M-Pesa number', description: 'Set the branch M-Pesa number customers pay to (Buy Goods till number, or Paybill and account number), set on the till, and the owner is told of every change' },
   { key: 'settings.integrations', group: 'settings', surface: 'web',
     label: 'Integrations', description: 'Webhooks, QR ordering and scheduled report emails' },
   { key: 'settings.pos',         group: 'settings', surface: 'web',
@@ -229,7 +231,8 @@ export const LEGACY: Readonly<Record<string, readonly string[]>> = {
   'staff.manage':      ['staff.view', 'staff.edit', 'staff.roles'],
   'settings.manage':   ['settings.business', 'settings.branches', 'settings.payments', 'settings.integrations',
                         'receipt.manage', 'stations.manage', 'tables.manage', 'devices.approve', 'etims.manage',
-                        'changes.approve', 'shifts.force_close', 'shifts.close_day', 'shifts.confirm', 'sales.reprint'],
+                        'changes.approve', 'shifts.force_close', 'shifts.close_day', 'shifts.confirm', 'sales.reprint',
+                        'settings.mpesa'],
 };
 
 /** Keys that, before A490, EVERY signed-in person could use (no check existed). Migration 134 grants them to the
@@ -307,6 +310,14 @@ export function defaultKeysFor(kind: 'owner' | 'manager' | 'cashier' | 'none'): 
   if (kind === 'owner') return [...PERMISSION_KEYS];
   if (kind === 'none') return [];
   return PERMISSIONS.filter((p) => (kind === 'manager' ? p.manager : p.cashier)).map((p) => p.key);
+}
+
+/**
+ * A492: may this person set the branch's M-Pesa number? settings.mpesa — and, until migration 134 has run (`openBefore`,
+ * or a map that predates A490), receipt.manage as well: that is who could set the receipt's payment line before.
+ */
+export function maySetMpesa(held: ReadonlySet<string> | readonly string[], openBefore = false): boolean {
+  return hasPermission(held, 'settings.mpesa') || (openBefore && hasPermission(held, 'receipt.manage'));
 }
 
 /**

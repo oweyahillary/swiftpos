@@ -320,6 +320,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
     setReversalRule: (key: string, value: unknown)       => ipcRenderer.invoke('manage:setReversalRule', { key, value }),   // 0.6.30
     setPaymentMethodsEnabled: (codes: string[])          => ipcRenderer.invoke('manage:setPaymentMethodsEnabled', codes),   // A429
+    getMpesa:                 ()                         => ipcRenderer.invoke('manage:getMpesa'),                          // A492
+    setMpesa:                 (v: { kind?: string; number?: string; account?: string; clear?: boolean }) => ipcRenderer.invoke('manage:setMpesa', v),   // A492
     offers: ()                                           => ipcRenderer.invoke('manage:offers'),   // A445
     saveOffer: (offer: unknown)                          => ipcRenderer.invoke('manage:saveOffer', offer),
     deleteOffer: (id: string)                            => ipcRenderer.invoke('manage:deleteOffer', id),

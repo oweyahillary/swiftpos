@@ -41,8 +41,12 @@ export function installMemDb(supabase) {
       }
       if (op === 'upsert') {
         const out = [];
+        // As Postgres: the conflict target when one is named (A492: branch_settings on branch_id,key), else the id.
+        const target = String(opts?.onConflict ?? '').split(',').map((s) => s.trim()).filter(Boolean);
         for (const x of [].concat(payload)) {
-          const have = list().find((e) => e.id === x.id);
+          const have = target.length
+            ? list().find((e) => target.every((k) => e[k] === x[k]))
+            : list().find((e) => e.id === x.id);
           if (have) { if (!opts?.ignoreDuplicates) { Object.assign(have, x); out.push({ ...have }); } }
           else { const r = { ...x }; list().push(r); out.push({ ...r }); }
         }

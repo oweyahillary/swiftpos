@@ -89,6 +89,7 @@ const ROLES = {
   aBooks:   { id: id(0xa4), biz: A, name: 'Bookkeeper', keys: ['reports.financial', 'expenses.manage'] },   // cannot sell
   bCashier: { id: id(0xb3), biz: B, name: 'Cashier', keys: ['orders.create', 'products.view'] },
   bSuper:   { id: id(0xb2), biz: B, name: 'Supervisor', keys: ['orders.create', 'settings.manage', 'shifts.manage'] },
+  bFront:   { id: id(0xb4), biz: B, name: 'Front desk', keys: ['orders.create', 'receipt.manage'] },   // A492: set the receipt's M-Pesa line
 };
 for (const r of Object.values(ROLES)) { await put('roles', { id: r.id, business_id: r.biz, name: r.name }); await grant(r.id, r.keys); }
 const MARY = id(0xe1), JOE = id(0xe2);
@@ -109,6 +110,7 @@ const expected = (r, switchesOn) => {
   if (sells) out.add('sales.discount');
   for (const k of ['sales.history_all', 'shifts.cash_movements']) if (sells && (!switchesOn || confirms(r.keys))) out.add(k);
   for (const k of ['staff.view', 'reservations.manage', 'parking.manage', 'fuel.manage']) out.add(k);
+  if (out.has('receipt.manage')) out.add('settings.mpesa');   // A492: who could set the receipt's payment line keeps it
   if (/^(owner|admin)$/i.test(r.name)) for (const k of CAT.PERMISSION_KEYS) out.add(k);
   out.delete('*');
   return out;
@@ -153,6 +155,10 @@ await ok('a business that limited its cashiers keeps them limited — now by rol
   assert.equal(f.cashier_own_history.enabled, false); assert.equal(f.cashier_no_money_out.enabled, false);
   assert.match(f.cashier_own_history.notes, /A490/);
   assert.equal(f.delivery_fee.enabled, true, 'other switches untouched');
+});
+await ok('A492: who could set the receipt M-Pesa line (receipt.manage) may set the branch M-Pesa number', async () => {
+  assert.ok((await roleKeys(ROLES.bFront.id)).has('settings.mpesa'));
+  assert.ok(!(await roleKeys(ROLES.bCashier.id)).has('settings.mpesa'), 'a cashier never could');
 });
 await ok('a role that cannot sell gets no selling keys, but what every role had (staff list, reservations, parking, fuel)', async () => {
   const k = await roleKeys(ROLES.aBooks.id);

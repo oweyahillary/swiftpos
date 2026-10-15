@@ -4,6 +4,27 @@ import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '../../lib/business
 import { cleanHistoryMethods } from '../../lib/cashierHistory';   // 0.6.37 (A387)
 import HistoryMethodsPicker from './HistoryMethodsPicker';
 import BranchPaymentMethods from './BranchPaymentMethods';   // A429
+import { mpesaDescribe, type MpesaReceive } from '../../lib/mpesaReceive';   // A492
+
+/** A492: what this branch's customers pay to by M-Pesa — read-only on the web; set on the branch's till by its manager. */
+function BranchMpesaLine({ branchId }: { branchId: string }) {
+  const [v, setV] = useState<{ own: MpesaReceive | null; inherited: MpesaReceive | null } | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.get<{ own: MpesaReceive | null; inherited: MpesaReceive | null }>(`/api/branches/${branchId}/mpesa`)
+      .then((r) => { if (live) setV(r); }).catch(() => { if (live) setV(null); });
+    return () => { live = false; };
+  }, [branchId]);
+  return (
+    <div data-testid="branch-mpesa">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Pay by M-Pesa</p>
+      <p className="text-sm text-gray-300">
+        {v?.own ? mpesaDescribe(v.own) : v?.inherited ? `Not set for this branch — receipts print the business-wide ${mpesaDescribe(v.inherited)}` : 'Not set for this branch'}
+      </p>
+      <p className="text-gray-500 text-xs mt-1">Set on the branch's till by its manager: Manager › Settings › M-Pesa. You are notified whenever it changes.</p>
+    </div>
+  );
+}
 
 // A139: per-branch receipt text + hours that override the business default for a
 // franchise branch. A branch either INHERITS the business default (no row) or
@@ -12,10 +33,9 @@ import BranchPaymentMethods from './BranchPaymentMethods';   // A429
 const TEXT_FIELDS = [
   { key: 'receipt_header', label: 'Receipt header' },
   { key: 'receipt_footer', label: 'Receipt footer' },
-  // A450: this branch's own M-Pesa number (each branch often has its own till).
-  { key: 'receipt_pay_label', label: 'Pay by M-Pesa — label (Buy Goods, Paybill, Till No.)' },
-  { key: 'receipt_pay_number', label: 'Pay by M-Pesa — number' },
 ] as const;
+// A492: the branch's M-Pesa number is no longer edited here — its manager sets it on the branch's till (Manager ›
+// Settings › M-Pesa); this page shows it (BranchMpesaLine).
 
 export default function BranchReceiptOverrides({ branchId }: { branchId: string }) {
   const [overrides, setOverrides] = useState<Record<string, string>>({});
@@ -254,6 +274,8 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
         {/* A429: the payment methods this branch takes — each a switch. */}
         <BranchPaymentMethods override={overrides.payment_methods_enabled} businessDefault={defaults.payment_methods_enabled}
           onSave={(v) => save('payment_methods_enabled', v)} />
+        {/* A492: the branch's M-Pesa number — shown; set on the branch's till by its manager. */}
+        <div className="mt-4"><BranchMpesaLine branchId={branchId} /></div>
       </div>
     </div>
   );

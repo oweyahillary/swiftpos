@@ -84,6 +84,7 @@ INSERT INTO public.permissions (key, label, module, description) VALUES
   ('settings.business', 'Business settings', 'settings', 'Business profile, receipt and history rules, opening hours and tax rates'),
   ('settings.branches', 'Branches', 'settings', 'Branch details and each branch''s own settings'),
   ('settings.payments', 'Payment methods', 'settings', 'Which payment methods each branch takes, and the business''s own methods'),
+  ('settings.mpesa', 'M-Pesa number', 'settings', 'Set the branch M-Pesa number customers pay to (Buy Goods till number, or Paybill and account number), set on the till, and the owner is told of every change'),
   ('settings.integrations', 'Integrations', 'settings', 'Webhooks, QR ordering and scheduled report emails'),
   ('settings.pos', 'POS options', 'settings', 'How the tills work: delivery fee and rider, pay later, pay before kitchen, sign-in codes and loyalty'),
   ('settings.updates', 'Till updates', 'settings', 'Approve or hold the version of ZapTill the tills install'),
@@ -152,7 +153,8 @@ SELECT DISTINCT rp.role_id, pf.id
   ('settings.manage', 'shifts.force_close'),
   ('settings.manage', 'shifts.close_day'),
   ('settings.manage', 'shifts.confirm'),
-  ('settings.manage', 'sales.reprint')
+  ('settings.manage', 'sales.reprint'),
+  ('settings.manage', 'settings.mpesa')
   ) AS m(legacy, fine)       ON m.legacy = pl.key
   JOIN public.permissions pf ON pf.key = m.fine
 ON CONFLICT (role_id, permission_id) DO NOTHING;
@@ -208,7 +210,8 @@ SELECT DISTINCT ON (up.user_id, pf.id) up.user_id, pf.id, up.granted
   ('settings.manage', 'shifts.force_close'),
   ('settings.manage', 'shifts.close_day'),
   ('settings.manage', 'shifts.confirm'),
-  ('settings.manage', 'sales.reprint')
+  ('settings.manage', 'sales.reprint'),
+  ('settings.manage', 'settings.mpesa')
   ) AS m(legacy, fine)       ON m.legacy = pl.key
   JOIN public.permissions pf ON pf.key = m.fine
  ORDER BY up.user_id, pf.id, up.granted ASC          -- a key taken away by any broad override stays taken away
@@ -254,6 +257,14 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 END IF;
 END $a490$;
+
+-- A492: the branch's M-Pesa number — who could set the receipt's payment line before (receipt.manage) keeps it.
+INSERT INTO public.role_permissions (role_id, permission_id)
+SELECT DISTINCT x.role_id, p.id
+  FROM public.role_permissions x
+  JOIN public.permissions k ON k.id = x.permission_id AND k.key = 'receipt.manage'
+  JOIN public.permissions p ON p.key = 'settings.mpesa'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- The owner's role holds every fine key (the cloud treats it as everything anyway; the rows keep the screen honest).
 INSERT INTO public.role_permissions (role_id, permission_id)

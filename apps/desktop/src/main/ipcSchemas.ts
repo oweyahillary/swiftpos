@@ -301,6 +301,9 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:setReversalRule':        { key: { t: 'string', min: 1 }, value: { t: 'any' } },   // 0.6.30
   'pos:paymentMethodsEnabled':       NO_PAYLOAD,                                            // A429
   'manage:setPaymentMethodsEnabled': { kind: 'stringArray' },                                // A429
+  'manage:getMpesa':                 NO_PAYLOAD,                                            // A492
+  'manage:setMpesa':                 { kind: { t: 'string', optional: true }, number: { t: 'string', optional: true },
+                                       account: { t: 'string', optional: true }, clear: { t: 'boolean', optional: true } },   // A492
   'manage:getCashierHistoryMethods': NO_PAYLOAD,                                            // 0.6.37 (A387)
   'manage:setCashierHistoryMethods': { kind: 'stringArray' },
 

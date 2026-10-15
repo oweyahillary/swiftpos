@@ -62,6 +62,7 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/expenses\/categories$/,                         // 0.6.18: a manager adds an expense type
   /^\/api\/shifts\/[^/]+\/manager-confirm$/,              // A433: a manager confirms another till's shift, as themselves
   /^\/api\/branches\/[^/]+\/settings$/,                    // A429: a manager switches the branch's payment methods (settings.manage)
+  /^\/api\/branches\/[^/]+\/mpesa$/,                       // A492: Manager › Settings › M-Pesa — the branch's number (settings.mpesa)
   /^\/api\/offers(\/[^/]+)?$/,                             // A445: Manager › Offers on the till (products.manage; own branch)
   /^\/api\/stock\/transfers$/,                              // A197: Manager › Stock › Transfers — a new transfer (inventory.transfer)
   /^\/api\/stock\/transfers\/[^/]+\/status$/,               // A197: despatch, receive, cancel (inventory.transfer; branch access)

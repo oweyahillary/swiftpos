@@ -16,7 +16,7 @@
  * Pure (no React, no posApi), so the tests run it.
  */
 import {
-  expandMap, hasPermission, hasAnyPermission, isBackOffice, MAP_MARKER, OPEN_BEFORE_A490,
+  expandMap, hasPermission, hasAnyPermission, isBackOffice, maySetMpesa, MAP_MARKER, OPEN_BEFORE_A490,
 } from '../../shared/permissions';
 
 export interface SessionLike {
@@ -64,6 +64,14 @@ export function backOffice(s: SessionLike | null | undefined): boolean {
 /** Cost prices and margins: menu.costs or reports.costs. */
 export function seesCosts(s: SessionLike | null | undefined): boolean {
   return canAny(s, 'menu.costs', 'reports.costs');
+}
+
+/** A492: may this person set the branch's M-Pesa number? The owner; settings.mpesa; or, on a map from before the
+ *  catalogue, receipt.manage (who set the receipt's payment line before) — the main process's rule. */
+export function mayMpesa(s: SessionLike | null | undefined): boolean {
+  if (!s) return false;
+  if (isOwner(s)) return true;
+  return maySetMpesa(heldKeys(s), !hasMarker(s));
 }
 
 /** Was this map made by a cloud that knows the catalogue (A490)? */

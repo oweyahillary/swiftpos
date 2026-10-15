@@ -36,7 +36,7 @@ import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from '.
 import { getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { logLine, authLog } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
-import { getReceiptPay } from './receiptPay';   // A450
+import { getReceiptPay, setReceiptPay } from './receiptPay';   // A450 (+ A492: set from the till)
 import { isSessionRefusal } from './sessionRecovery';   // A407
 import { cloudFetch } from './cloudGateway';   // A410: a till on a branch reaches the cloud only through its branch server
 import { saveRoutingLocally, overlayPending, readPending as readPendingRouting, mayRoute } from './stationRouting';   // A411
@@ -48,7 +48,9 @@ import fs from 'fs';
 import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { tillBranchId } from './deviceConfig';   // A446
 import { MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
-import { signedIn as sessionPerson, signedInCan, personCan, personKeys, mayMoveMoney, roleCeilingRefusal, roleMap, mayActOn, type PersonLike } from './tillAccess';   // A490: the till's one rule
+import { signedIn as sessionPerson, signedInCan, personCan, personKeys, mayMoveMoney, roleCeilingRefusal, roleMap, mayActOn, hasMarker, isOwnerRole, type PersonLike } from './tillAccess';   // A490: the till's one rule
+import { maySetMpesa } from './permissions';   // A492
+import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from './mpesaReceive';   // A492
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
@@ -3374,6 +3376,38 @@ export function registerIpcHandlers() {
     if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
     const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });
     setPaymentMethodsEnabled(list);
+    return out;
+  });
+  // A492: the branch's M-Pesa number (Buy Goods till number, or Paybill + account) — set HERE, on the till, by its manager
+  // (owner, 2026-10-15). settings.mpesa (or, on a map from before the catalogue, receipt.manage — who set the receipt's
+  // payment line before). The cloud checks again, keeps it per branch and tells the owner of every change.
+  const MPESA_REFUSED = 'Your role may not change the branch\'s M-Pesa number.';
+  const mayMpesa = (): boolean => {
+    const me = sessionPerson();
+    if (!me) return false;
+    return isOwnerRole(me.roleName) || maySetMpesa(personKeys(me.roleName, me.permissions), !hasMarker(me.permissions));
+  };
+  handle('manage:getMpesa', async () => {
+    if (!sessionPerson()) throw new Error('Not signed in');
+    const branchId = tillBranchId();
+    if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
+    const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/mpesa`, 'GET') as
+      { own: MpesaReceive | null; inherited: MpesaReceive | null; canEdit?: boolean };
+    return { own: out?.own ?? null, inherited: out?.inherited ?? null, canEdit: mayMpesa() && out?.canEdit !== false };
+  });
+  handle('manage:setMpesa', async (_e, raw) => {
+    if (!sessionPerson()) throw new Error('Not signed in');
+    if (!mayMpesa()) throw new Error(MPESA_REFUSED);
+    const branchId = tillBranchId();
+    if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
+    const clear = (raw as any)?.clear === true;
+    const c = clear ? null : cleanMpesaReceive(raw as any);
+    if (c && 'error' in c) throw new Error(c.error);
+    const value = c && 'value' in c ? c.value : null;
+    const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/mpesa`, 'PUT', value ?? { clear: true });
+    // This till prints the new line at once (the branch's other tills take it within 20 s — the cloud's version moves).
+    setReceiptPay(value ? { label: mpesaLabel(value.kind), number: mpesaReceiptNumber(value) } : null);
+    syncAll().catch(console.error);
     return out;
   });
   handle('manage:getCashierHistoryMethods', async () => ({ methods: getCashierHistoryMethods() }));

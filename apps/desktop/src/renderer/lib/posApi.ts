@@ -4,6 +4,9 @@ import type { StockCountFreeze } from '../../shared/stockCountFreeze';
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
 /** A345: why the back office's cloud-owned lists cannot be read right now (main/offlineSession.ts has the words). */
+/** A492: a branch's M-Pesa set-up (shared/mpesaReceive.ts MpesaReceive). */
+export interface MpesaReceiveLite { kind: 'buy_goods' | 'paybill'; number: string; account: string | null }
+
 export interface OfflineManage { reason: 'offline_session' | 'no_connection'; message: string }
 
 export interface StaffSession {
@@ -746,6 +749,9 @@ declare global {
         /** 0.6.37 (A387): the payment methods a cashier's History shows ([] = every method). Manager (settings.manage). */
         /** A429: switch the branch's payment methods (catalogue codes). */
         setPaymentMethodsEnabled: (codes: string[]) => Promise<any>;
+        /** A492: the branch's M-Pesa number — its own, the business-wide one an older set-up left, and whether this person may change it. */
+        getMpesa: () => Promise<{ own: MpesaReceiveLite | null; inherited: MpesaReceiveLite | null; canEdit: boolean }>;
+        setMpesa: (v: { kind?: 'buy_goods' | 'paybill'; number?: string; account?: string; clear?: boolean }) => Promise<any>;
         /** A445: Manager › Offers — the cloud's offers (each with `editable`), save (new or changed), delete. */
         offers: () => Promise<Array<import('../../shared/offers').Offer & { editable?: boolean; created_by_name?: string | null }>>;
         saveOffer: (offer: unknown) => Promise<any>;

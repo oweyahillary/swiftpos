@@ -25,7 +25,7 @@ import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
 import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
-import { can, canAny, isOwner as isOwnerSession, mayMoveMoney } from '../lib/access';   // A490: the one rule
+import { can, canAny, isOwner as isOwnerSession, mayMoveMoney, mayMpesa } from '../lib/access';   // A490: the one rule (+ A492)
 import { buildManagerNav, groupOf, openGroup, firstTab, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
 import TillWastage from '../components/TillWastage';   // A414
@@ -2033,7 +2033,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canCloseDay: has('shifts.close_day'),
     canMenu: hasAny('menu.edit', 'menu.prices'),
     canOffers: has('menu.offers'),
-    canSettings: hasAny('settings.business', 'settings.payments'),
+    canSettings: hasAny('settings.business', 'settings.payments') || mayMpesa(staff),   // A492: the branch's M-Pesa number
     canPrinting: has('stations.manage') || canManageReceipt,
     canStaff: hasAny('staff.view', 'staff.edit'),
     showStock,
@@ -2094,7 +2094,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} canEdit={has('staff.edit')} />;   // A490
       case 'settings': return <SettingsPanel canBusiness={has('settings.business')} canPayments={has('settings.payments')}
-                                             isOwner={isOwnerSession(staff)} />;   // 0.6.30; A490: each panel by its key
+                                             canMpesa={mayMpesa(staff)} isOwner={isOwnerSession(staff)} />;   // 0.6.30; A490: each panel by its key
       // PrintersScreen (A83/A90): sub-tabs under one "Printing" nav item —
       // Stations, Printers, Exclusions (all stations.manage) and Receipt
       // (receipt.manage/settings.manage). Per-tab gating passed in below.

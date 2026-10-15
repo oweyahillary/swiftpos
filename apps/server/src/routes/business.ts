@@ -89,7 +89,7 @@ const READABLE_SETTING_KEYS = new Set([
   // newlines are preserved and rendered as separate lines.
   'receipt_header', 'receipt_footer',
   // A450: how a customer pays by M-Pesa, printed under the payments: a label ("Buy Goods", "Paybill", "Till No.") and the number.
-  'receipt_pay_label', 'receipt_pay_number',
+  'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
   // 24-hour operation: a business that never closes overnight (A104).
   'continuous_operation',
   // 0.6.34: when the business day ends ("HH:MM", 00:00–06:00) — a bar trading past midnight (lib/businessDay.ts).
@@ -363,6 +363,11 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
 
   if (!key || value === undefined) {
     res.status(400).json({ error: 'key and value are required' });
+    return;
+  }
+  // A492: the M-Pesa number is per branch, set on the branch's till by its manager — not business-wide.
+  if (['receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'].includes(String(key))) {
+    res.status(400).json({ error: 'Each branch sets its own M-Pesa number on its till: Manager › Settings › M-Pesa.', code: 'MPESA_ON_TILL' });
     return;
   }
 

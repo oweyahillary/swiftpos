@@ -11,6 +11,9 @@ import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/paymentCatalogue';   // A429
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { invalidateDayCutoff } from '../lib/dayCutoff';
+import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '../lib/mpesaReceive';   // A492
+import { maySetMpesa } from '../lib/permissions';                 // A492
+import { permissionsOpenBefore } from '../lib/permissionsState'; // A492
 
 const router = safeRouter();
 
@@ -241,12 +244,12 @@ const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operat
   'cashier_sees_shift_sales',   // A416: a cashier closing a shift sees their sales
   'cashier_history_totals',    // A418: a cashier's History shows the total of what is filtered
   'payment_methods_enabled',   // A429: the payment methods this branch takes
-  'receipt_pay_label', 'receipt_pay_number'];   // A450: each branch its own Buy Goods / Paybill number
+  'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'];   // A450 / A492: each branch its own M-Pesa number
 
 /** A490: the keys that may set one branch override (any one of them). */
 export function branchSettingKeys(key: string): string[] {
   if (key === 'payment_methods_enabled') return ['settings.payments'];
-  if (['receipt_header', 'receipt_footer', 'receipt_pay_label', 'receipt_pay_number'].includes(key)) return ['settings.branches', 'receipt.manage'];
+  if (['receipt_header', 'receipt_footer'].includes(key)) return ['settings.branches', 'receipt.manage'];
   return ['settings.branches'];
 }
 
@@ -282,6 +285,12 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branche
   const { key, value } = req.body ?? {};
   if (!OVERRIDABLE_KEYS.includes(key)) {
     res.status(400).json({ error: 'That setting cannot be overridden per branch' });
+    return;
+  }
+  // A492: the branch's M-Pesa number is set as one thing (Buy Goods, or Paybill with its account) on the till by its
+  // manager — PUT /:id/mpesa — never piece by piece here.
+  if (MPESA_KEYS.includes(key)) {
+    res.status(400).json({ error: 'The branch\'s M-Pesa number is set on its till: Manager › Settings › M-Pesa.', code: 'MPESA_ON_TILL' });
     return;
   }
   // A490: the branch's payment methods are settings.payments; its receipt lines settings.branches or receipt.manage;
@@ -337,6 +346,109 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branche
     );
   if (error) { sendError(res, error); return; }
   res.json({ key, value: stored });
+});
+
+// ── A492: the branch's M-Pesa number ─────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-15: "each branch has a till number or paybill number … that should be set on the desktop app not web,
+// the manager should be the one doing it not the owner, if its paybill they have to set an account number if its buy
+// goods they dont have to". It is where customers' money goes, so: its own permission (settings.mpesa — a manager's by
+// default, the owner can take it away), a person's own sign-in only (never a till's own session), the manager's own
+// branch only, and the owner is told of every change (notifications: from what, to what, who).
+const MPESA_KEYS = ['receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'];
+
+async function readBranchMpesa(businessId: string, branchId: string): Promise<{ own: MpesaReceive | null; inherited: MpesaReceive | null }> {
+  const [{ data: b, error: bErr }, { data: d, error: dErr }] = await Promise.all([
+    supabase.from('branch_settings').select('key, value').eq('business_id', businessId).eq('branch_id', branchId).in('key', MPESA_KEYS),
+    supabase.from('business_settings').select('key, value').eq('business_id', businessId).in('key', MPESA_KEYS),
+  ]);
+  if (bErr || dErr) throw new Error((bErr ?? dErr)!.message);
+  const pick = (rows: any[] | null) => {
+    const m: Record<string, unknown> = {};
+    for (const r of rows ?? []) m[r.key] = typeof r.value === 'string' ? r.value : r.value ?? '';
+    return mpesaFromSettings(m.receipt_pay_label, m.receipt_pay_number, m.receipt_pay_account);
+  };
+  return { own: pick(b as any[]), inherited: pick(d as any[]) };
+}
+
+function mpesaAllowed(req: Request): boolean {
+  if (req.isTill) return false;   // a person decides where money goes, never a till by itself
+  if (req.isOwner) return true;
+  return maySetMpesa(req.permissionKeys ?? [], permissionsOpenBefore());
+}
+
+// GET /api/branches/:id/mpesa — what the branch's customers pay to: its own, and (read-only) the business-wide value an
+// older set-up left, which applies until the branch has its own.
+router.get('/:id/mpesa', requireAuth, async (req, res) => {
+  if (!(await assertOwnBranch(req.businessId, req.params.id))) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!assertBranchAccess(req, req.params.id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  try {
+    const r = await readBranchMpesa(req.businessId, req.params.id);
+    res.json({ ...r, canEdit: mpesaAllowed(req) });
+  } catch (e: any) { res.status(503).json({ error: `Could not read the M-Pesa number right now (${e?.message ?? e}).` }); }
+});
+
+// PUT /api/branches/:id/mpesa  { kind: 'buy_goods' | 'paybill', number, account? }  — or { clear: true }.
+router.put('/:id/mpesa', requireAuth, async (req, res) => {
+  if (!mpesaAllowed(req)) {
+    res.status(403).json({ error: 'Your role may not change the branch\'s M-Pesa number.', detail: 'Missing permission: settings.mpesa' });
+    return;
+  }
+  if (!(await assertOwnBranch(req.businessId, req.params.id))) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!assertBranchAccess(req, req.params.id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  const clear = req.body?.clear === true;
+  const cleaned = clear ? null : cleanMpesaReceive(req.body);
+  if (cleaned && 'error' in cleaned) { res.status(400).json({ error: cleaned.error, code: 'MPESA_INVALID' }); return; }
+  const next = cleaned && cleaned.ok ? cleaned.value : null;
+
+  let before: MpesaReceive | null = null;
+  try { before = (await readBranchMpesa(req.businessId, req.params.id)).own; }
+  catch (e: any) { res.status(503).json({ error: `Could not read the M-Pesa number right now (${e?.message ?? e}).` }); return; }
+
+  const now = new Date().toISOString();
+  const base = { business_id: req.businessId, branch_id: req.params.id, updated_at: now };
+  if (!next) {
+    const { error } = await supabase.from('branch_settings').delete()
+      .eq('business_id', req.businessId).eq('branch_id', req.params.id).in('key', MPESA_KEYS);
+    if (error) { sendError(res, error); return; }
+  } else {
+    const rows = [
+      { ...base, key: 'receipt_pay_label', value: mpesaLabel(next.kind) },
+      { ...base, key: 'receipt_pay_number', value: next.number },
+      ...(next.account ? [{ ...base, key: 'receipt_pay_account', value: next.account }] : []),
+    ];
+    // business_id: every row is built from `base`, which carries req.businessId (the branch is checked as this business's above).
+    const { error } = await supabase.from('branch_settings').upsert(rows, { onConflict: 'branch_id,key' });
+    if (error) { sendError(res, error); return; }
+    if (!next.account) {
+      const { error: dErr } = await supabase.from('branch_settings').delete()
+        .eq('business_id', req.businessId).eq('branch_id', req.params.id).eq('key', 'receipt_pay_account');
+      if (dErr) { sendError(res, dErr); return; }
+    }
+  }
+
+  // The owner is told — this is where the branch's money goes. Never fails the change (it is saved).
+  const changed = mpesaDescribe(before) !== mpesaDescribe(next);
+  if (changed) {
+    try {
+      const [{ data: biz }, { data: br }, { data: who }] = await Promise.all([
+        supabase.from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle(),
+        supabase.from('branches').select('name').eq('id', req.params.id).maybeSingle(),
+        req.userId ? supabase.from('users').select('name').eq('id', req.userId).maybeSingle() : Promise.resolve({ data: null }),
+      ]);
+      const by = (who as any)?.name ?? (req.isOwner ? 'the owner' : 'a manager');
+      const branchName = (br as any)?.name ?? 'a branch';
+      const { error: nErr } = await supabase.from('notifications').insert({
+        business_id: req.businessId, branch_id: req.params.id, user_id: (biz as any)?.owner_id ?? null,
+        type: 'mpesa_changed',
+        title: `${branchName}: M-Pesa number changed`,
+        message: `${by} changed it from ${mpesaDescribe(before)} to ${mpesaDescribe(next)}. If you did not expect this, check it now — customers pay to this number.`,
+        link: `/dashboard/branches/${req.params.id}`,
+      });
+      if (nErr) console.warn('[mpesa] A492: the owner could not be notified:', nErr.message);
+      console.log(`[mpesa] A492: ${req.businessId} branch ${req.params.id}: ${mpesaDescribe(before)} -> ${mpesaDescribe(next)} by ${req.userId ?? '?'}`);
+    } catch (e: any) { console.warn('[mpesa] A492: notification failed:', e?.message ?? e); }
+  }
+  res.json({ own: next, changed });
 });
 
 export default router;

@@ -4,14 +4,15 @@ import PaymentMethodsPanel from './PaymentMethodsPanel';
 import BranchPaymentMethodsPanel from './BranchPaymentMethodsPanel';   // A429
 import ReversalRulesPanel from './ReversalRulesPanel';
 import CashierHistoryPanel from './CashierHistoryPanel';
+import MpesaPanel from './MpesaPanel';   // A492
 
 // The till's Settings screen (A104) — business-wide options plus the payment
 // methods manager moved in here. 24-hour operation controls whether an unclosed
 // prior day hard-locks the till at rollover or gets a short grace window first.
 // A490: each panel by its own key — 24-hour operation and what a cashier's History shows are the business's settings
 // (settings.business); the payment methods settings.payments; the void / refund rules stay the owner's.
-export default function SettingsPanel({ canBusiness = false, canPayments = false, isOwner = false }:
-  { canBusiness?: boolean; canPayments?: boolean; isOwner?: boolean }) {
+export default function SettingsPanel({ canBusiness = false, canPayments = false, canMpesa = false, isOwner = false }:
+  { canBusiness?: boolean; canPayments?: boolean; canMpesa?: boolean; isOwner?: boolean }) {
   const canEdit = canBusiness;
   const [continuous, setContinuous] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -86,6 +87,11 @@ export default function SettingsPanel({ canBusiness = false, canPayments = false
       {/* 0.6.37 (A387): the payment methods a cashier's History shows. */}
       {canBusiness && <section className="border-t border-gray-800 pt-6">
         <CashierHistoryPanel canEdit={canBusiness} />
+      </section>}
+
+      {/* A492: the number this branch's customers pay to by M-Pesa — set here by its manager. */}
+      {canMpesa && <section className="border-t border-gray-800 pt-6">
+        <MpesaPanel />
       </section>}
 
       {/* A429: the payment methods this branch takes — Kenya's common ones and the delivery apps, each a switch. */}

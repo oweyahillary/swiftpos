@@ -264,6 +264,18 @@ const SHARED = [
     ],
   },
   {
+    // A492: a branch's M-Pesa number (Buy Goods till number, or Paybill + account) — set on the till, validated on the
+    // cloud, printed on every receipt, shown on the web.
+    name: 'mpesaReceive.ts',
+    copies: [
+      'shared/mpesaReceive.ts',
+      'apps/server/src/lib/mpesaReceive.ts',
+      'apps/dashboard/src/lib/mpesaReceive.ts',
+      'apps/desktop/src/main/mpesaReceive.ts',
+      'apps/desktop/src/shared/mpesaReceive.ts',
+    ],
+  },
+  {
     // A490: the ONE permission catalogue — every fine key, the broad keys it replaces, expansion and the ceiling.
     name: 'permissions.ts',
     copies: [
