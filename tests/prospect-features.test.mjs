@@ -170,7 +170,9 @@ await ok('the cloud narrows a cashier to their own sales and says whether Reprin
 // ── 1 + 8: the blind close, the manager's reasons ────────────────────────────
 await ok('a blind close: the cloud hands a cashier no figures and asks no variance note', () => {
   const sh = read('apps/server/src/routes/shifts.ts');
-  assert.match(sh, /if \(!callerMayConfirm\(req\) && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{[\s\S]{0,600}?res\.json\(\{\s*id: shift\.id,[^}]*blind: true, declare_methods: declareMethods,/);
+  // A494: blind as before for the drawer's own cashier with the switch on — and for anyone without the drawer-figure keys
+  // looking at someone else's drawer.
+  assert.match(sh, /const blind = !seesDrawerFigures\(req\) && !callerMayConfirm\(req\)\s*&& \(!ownDrawer\(req, shift\) \|\| \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\);\s*if \(blind\) \{[\s\S]{0,600}?res\.json\(\{\s*id: shift\.id,[^}]*blind: true, declare_methods: declareMethods,/);
   assert.match(sh, /if \(!isManager && !req\.isTill && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{\s*res\.json\(\{ \.\.\.closed, expected_cash: null, cash_variance: null, blind: true,/);
   assert.match(sh, /&& !\(!callerMayConfirm\(req\) && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\)\) \{/);
 });

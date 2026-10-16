@@ -23,7 +23,7 @@ import bcrypt from 'bcryptjs';
 import { cleanChange, ENTITY_SPECS, describeChange, type TillChange, type ChangeEntity } from './tillChanges';
 import { roleMap } from './personAccess';   // A490
 
-export type LocalState = 'pending' | 'awaiting' | 'done' | 'refused' | 'rejected';
+export type LocalState = 'pending' | 'awaiting' | 'done' | 'refused' | 'rejected' | 'relayed';   // A496: relayed = applied on a branch server for a till, never sent from here
 export interface LocalChangeRow {
   id: string; entity: ChangeEntity; op: string; entity_id: string; base: string | null; data: string;
   made_by: string | null; made_by_name: string | null; made_at: string; state: LocalState; message: string | null;
@@ -367,7 +367,7 @@ export async function pushLocalChanges(db: Database.Database, d: PushDeps): Prom
     } catch { /* asked again on the next beat */ }
   }
   // Old settled rows go after a week.
-  db.prepare(`DELETE FROM local_changes WHERE state IN ('done', 'rejected', 'refused') AND updated_at < ?`).run(new Date(Date.now() - 7 * 86400_000).toISOString());
+  db.prepare(`DELETE FROM local_changes WHERE state IN ('done', 'rejected', 'refused', 'relayed') AND updated_at < ?`).run(new Date(Date.now() - 7 * 86400_000).toISOString());
   return { sent: pending.length, settled };
 }
 
@@ -380,7 +380,12 @@ export function changeStates(db: Database.Database, entity?: ChangeEntity): Arra
     summary: describeChange({ entity: r.entity, op: r.op as any, data: JSON.parse(r.data) }) }));
 }
 
-/** Changes a till behind this branch server handed it: applied here and queued here too (the cloud dedupes by id). */
+/**
+ * Changes a till behind this branch server handed it: applied here (the branch's other tills take them from here with no
+ * internet). A496: recorded as 'relayed' — NOT queued for the cloud: the server used to send each again under its OWN
+ * session, so a change any holder of the branch code made looked like the server's own to the cloud. The till that made
+ * the change sends it itself, under its own session (through this server's gateway on a till with no internet).
+ */
 export function acceptRelayedChanges(db: Database.Database, raws: unknown[], secrets: Secrets): number {
   ensureTable(db);
   let n = 0;
@@ -401,7 +406,7 @@ export function acceptRelayedChanges(db: Database.Database, raws: unknown[], sec
     const now = new Date().toISOString();
     db.transaction(() => {
       db.prepare(`INSERT INTO local_changes (id, entity, op, entity_id, base, data, made_by, made_by_name, made_at, state, tries, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)`).run(ch.id, ch.entity, ch.op, ch.entity_id,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'relayed', 0, ?)`).run(ch.id, ch.entity, ch.op, ch.entity_id,
         ch.base ? JSON.stringify(ch.base) : null, JSON.stringify(stored), ch.made_by, ch.made_by_name, ch.made_at, now);
       applyLocal(db, ch, { pinHashEnc, roleName: extra.role_name ?? null, permissions: extra.permissions, branchId: extra.branch_id ?? null });
       bumpChangeVersion(db, now);

@@ -59,6 +59,15 @@ const production = z.object({
 
 export type ServerEnv = z.infer<typeof base> & Partial<z.infer<typeof production>>;
 
+/** A495: 'refuse' | 'warn' | null for M-Pesa sandbox under NODE_ENV=production. */
+export function mpesaSandboxInProductionProblem(
+  env: Record<string, string | undefined>,
+): 'refuse' | 'warn' | null {
+  if (env.NODE_ENV !== 'production') return null;
+  if ((env.MPESA_ENVIRONMENT ?? '').trim() !== 'sandbox') return null;
+  return env.MPESA_ALLOW_SANDBOX_IN_PRODUCTION === '1' ? 'warn' : 'refuse';
+}
+
 /**
  * Validates and returns the environment, or exits.
  *
@@ -85,6 +94,27 @@ export function validateEnv(): ServerEnv {
       'and redeploy.\n',
     );
     process.exit(1);
+  }
+
+  // A495: a production server pointed at the Daraja SANDBOX skips the callback IP
+  // allowlist (mpesa.ts isAllowedCallbackIp), so anyone who knows the callback URL
+  // could mark orders paid. render.yaml pins MPESA_ENVIRONMENT=production, so
+  // refusing cannot break the live deploy; a deliberate production-mode staging
+  // box that really wants sandbox must say so with MPESA_ALLOW_SANDBOX_IN_PRODUCTION=1
+  // (and is then warned loudly on every boot).
+  const sandboxRefusal = mpesaSandboxInProductionProblem(process.env);
+  if (sandboxRefusal === 'refuse') {
+    console.error(
+      '\n[env] Refusing to start — MPESA_ENVIRONMENT=sandbox with NODE_ENV=production. ' +
+      'The sandbox disables the M-Pesa callback IP allowlist, so a forged callback could mark orders paid. ' +
+      'Set MPESA_ENVIRONMENT=production (or, for a staging box only, MPESA_ALLOW_SANDBOX_IN_PRODUCTION=1).\n',
+    );
+    process.exit(1);
+  } else if (sandboxRefusal === 'warn') {
+    console.error(
+      '[env] WARNING — M-Pesa SANDBOX in production (MPESA_ALLOW_SANDBOX_IN_PRODUCTION=1): ' +
+      'the callback IP allowlist is OFF. Never run a live business on this server.',
+    );
   }
 
   // Advisory, not fatal: these degrade a feature rather than break the server,

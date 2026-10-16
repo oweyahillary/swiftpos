@@ -14,7 +14,7 @@
  * A manager sees their own branch only.
  */
 import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
-import { holds } from '../lib/historyScope';
+import { may, hiddenWhileCounting } from '../lib/stockTakeAccess';   // A494: can(), not holds() — and the blind count
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -29,7 +29,8 @@ import { recordReceivedBatch } from '../lib/batchStore';
 const router = safeRouter();
 router.use(requireAuth);
 // A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
-router.use(stripCostsUnlessAllowed(['value']));
+// A494: + the summary's expiredValue / soonValue (what the expired and soon-to-expire stock cost).
+router.use(stripCostsUnlessAllowed(['value', 'expiredValue', 'soonValue']));
 
 type BatchRow = BatchLike & { branch_id: string; item_kind: 'product' | 'ingredient'; product_id: string | null; ingredient_id: string | null;
   batch_no: string | null; source: string; source_ref: string | null; created_by_name: string | null };
@@ -79,9 +80,13 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust', 'inv
   }
   const rows: any[] = [];
   const unbatched: any[] = [];
+  // A494: blind count — what is left in each batch is worked out from the stock level, so for an item being counted it
+  // gives the level away: not sent (null) to someone who may not change stock, and no "unbatched" line either.
+  const hide = scoped ? await hiddenWhileCounting(req, scoped) : new Set<string>();
   for (const [key, group] of groups) {
     const { batches: alloc, unbatched: extra } = allocateBatches(held.get(key) ?? 0, group);
     const first = group[0];
+    const blind = hide.has(`${first.item_kind === 'product' ? 'p' : 'i'}:${first.product_id ?? first.ingredient_id}`);
     const item = first.item_kind === 'product' ? P.get(first.product_id as string) : I.get(first.ingredient_id as string);
     if (!item) continue;   // deleted from the catalogue
     const name = item.name;
@@ -91,24 +96,26 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust', 'inv
       : ((item as any).unit_cost === null ? null : Number((item as any).unit_cost));
     for (const a of alloc) {
       const b = a.batch as BatchRow;
-      if (!showAll && !(a.remaining > 0)) continue;
+      if (!blind && !showAll && !(a.remaining > 0)) continue;
       const status = expiryStatus(b.expiry_date, today, soonDays);
       rows.push({
         id: b.id, branch_id: b.branch_id, branch_name: BR.get(b.branch_id) ?? null, kind: b.item_kind,
         item_id: b.product_id ?? b.ingredient_id, name, unit, batch_no: b.batch_no, expiry_date: b.expiry_date,
-        received_at: b.received_at, quantity_received: Number(b.quantity_received), remaining: a.remaining,
+        received_at: b.received_at, quantity_received: Number(b.quantity_received), remaining: blind ? null : a.remaining,
         status, days_left: daysLeft(b.expiry_date, today), unit_cost: cost,
-        value: cost === null ? null : Math.round(a.remaining * cost * 100) / 100,
+        value: cost === null || blind ? null : Math.round(a.remaining * cost * 100) / 100,
+        ...(blind ? { counting: true } : {}),
         source: b.source, source_ref: b.source_ref, created_by_name: b.created_by_name,
       });
     }
-    if (extra > 0) unbatched.push({ kind: first.item_kind, item_id: first.product_id ?? first.ingredient_id, name, unit, branch_id: first.branch_id, quantity: extra });
+    if (extra > 0 && !blind) unbatched.push({ kind: first.item_kind, item_id: first.product_id ?? first.ingredient_id, name, unit, branch_id: first.branch_id, quantity: extra });
   }
   const rank: Record<string, number> = { expired: 0, soon: 1, ok: 2, none: 3 };
   rows.sort((x, y) => rank[x.status] - rank[y.status] || String(x.expiry_date ?? '9999').localeCompare(String(y.expiry_date ?? '9999')) || x.name.localeCompare(y.name));
-  res.json({ today, soon_days: soonDays, batches: rows, unbatched, summary: expirySummary(rows),
-    can_write_off: holds(req, 'inventory.waste') || holds(req, 'inventory.adjust'),
-    can_close: holds(req, 'inventory.adjust') });
+  res.json({ today, soon_days: soonDays, batches: rows, unbatched,
+    summary: expirySummary(rows.map((r) => (r.remaining === null ? { ...r, remaining: 0 } : r))),
+    can_write_off: may(req, 'inventory.waste') || may(req, 'inventory.adjust'),
+    can_close: may(req, 'inventory.adjust') });
 });
 
 router.post('/', requireAnyPermission('inventory.receive', 'inventory.adjust'), async (req, res) => {

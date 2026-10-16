@@ -50,6 +50,23 @@ export interface TechSession {
   startedAt: number; expiresAt: number; tokenHash: string;
 }
 
+/** A501: one of a till's conversations with its branch server (main/nodeHealth.ts). */
+export interface NodeChannelHealth {
+  channel: 'health' | 'sync' | 'since' | 'poll' | 'roster' | 'reference' | 'gateway' | 'tls';
+  lastOkAt: string | null; lastErrorAt: string | null; lastError: string | null; lastStatus: number | null; failures: number;
+}
+/** A501: what node:syncHealth answers — on a server or a till without one, only `role`. */
+export type NodeSyncHealth =
+  | { role: 'server' | 'none' }
+  | { role: 'till'; url: string; channels: NodeChannelHealth[];
+      backlog: { pending: number; failed: number; oldestPendingAt?: string | null; failedReason?: string | null };
+      quarantine: { waiting: number; givenUp: number; reason: string | null };
+      server: { device_id: string | null; branch_id: string | null; protocol: number; capabilities: string[]; min_till_protocol: number; seenAt: string } | null;
+      tillProtocol: number; serverOlder: boolean; tillOlder: boolean;
+      branch: { till: string | null; server: string | null; mismatch: boolean };
+      refusal: { status: number; since: string; reason: 'access_code' | 'device_key' | 'branch' | 'tls' } | null;
+      heard: { url: string; at: string; proven: boolean } | null };
+
 export interface TechStatus {
   device: {
     device_id: string | null; device_name: string | null; device_role: DeviceRole;
@@ -401,7 +418,7 @@ declare global {
         listBranches: () => Promise<{ id: string; name: string; desktop_licensed: boolean }[]>;
         verifyPin: (pin: string, branch_id: string) => Promise<StaffSession>;
         /** A446: the lock screen — is this the signed-in person's PIN? The session is kept (not re-signed in). */
-        unlock: (pin: string) => Promise<{ ok: boolean; reason?: 'other' | 'wrong' }>;
+        unlock: (pin: string) => Promise<{ ok: boolean; reason?: 'wrong' }>;   // A494: one answer — never 'other'
         getStaffSession: () => Promise<StaffSession | null>;
         clearStaffSession: () => Promise<boolean>;
         /** A490: main stored a fresher permission map for the person signed in; returns its unsubscribe. */
@@ -420,11 +437,18 @@ declare global {
         requests: () => Promise<Array<{ id: string; name: string; ip: string; at: string; securityCode?: string | null }>>;
         answer: (id: string, allow: boolean) => Promise<{ ok: true }>;
         /** A443: on the branch server — the version it holds for its tills, and what each till runs. */
-        tillVersions: () => Promise<{ serverVersion: string; ready: string | null; tills: Array<{ deviceId: string; name: string | null; version: string; seenAt: string; current: boolean }> }>;
+        tillVersions: () => Promise<{ serverVersion: string; ready: string | null;
+          /** A496: the server's own fetch of the approved version for its tills. */
+          share?: { version: string; state: 'fetching' | 'failed' | string; failures: number; error: string | null; bytes: number | null; size: number | null } | null;
+          tills: Array<{ deviceId: string; name: string | null; version: string; seenAt: string; current: boolean }> }>;
         /** A489: this till's connection to its branch server — or, on the server, its own security code. */
-        tlsStatus: () => Promise<{ state: 'none' | 'plain' | 'encrypted' | 'old_server' | 'mismatch' | 'server'; code: string | null; error: string | null }>;
+        tlsStatus: () => Promise<{ state: 'none' | 'plain' | 'encrypted' | 'old_server' | 'mismatch' | 'tls_failed' | 'server'; code: string | null; error: string | null }>;
         /** A489: forget the server's certificate (it was reinstalled); the next one it hands out is trusted. */
         tlsRetrust: () => Promise<{ ok: true }>;
+        /** A501: this till's conversation with its branch server, channel by channel (Tech page › Branch sync). */
+        syncHealth: () => Promise<NodeSyncHealth>;
+        /** A501: the records the server refused go to it again; the rows held back from other tills are tried again. */
+        retryFailed: () => Promise<{ requeued: number; released: number; applied: number }>;
       };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
@@ -469,7 +493,7 @@ declare global {
       };
       order: {
         /** A349: printFailed names tickets that could not be produced (shown to the cashier); [] when all went out. */
-        create: (payload: any) => Promise<{ orderId: string; printFailed?: string[] }>;
+        create: (payload: any) => Promise<{ orderId: string; orderNumber?: string | null; printFailed?: string[] }>;
         void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; offline?: boolean; approvedBy?: string | null }>;
         /** A444: an order's items, sizes, extras, notes and payments; `canReprint` = this person may reprint it. */
         detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('../../shared/orderDetail').OrderDetail; canReprint?: boolean }>;
@@ -604,6 +628,9 @@ declare global {
       // A306: auto-update status + manager-gated install-now.
       update: {
         getStatus: () => Promise<{ state: string; version: string | null; percent: number | null }>;
+        /** A496: the status with its reason (note), when it last checked, the approved version, and the last log lines. */
+        getDiagnostics: () => Promise<{ status: { state: string; version: string | null; percent: number | null; note?: string | null; checkedAt?: string | null; approved?: string | null };
+                                        running: string | null; log: Array<{ at: string; line: string }> }>;
         installNow: () => Promise<{ ok: boolean; reason?: string }>;
         /** A490: identify the PIN's holder (never sign them in); they must hold shifts.close_day. */
         installWithPin: (pin: string) => Promise<{ ok: boolean; reason?: string; message?: string }>;
@@ -628,7 +655,6 @@ declare global {
         status:       () => Promise<TechStatus>;
         adoptFromNode:() => Promise<{ ok: true; session: TechSession } | { ok: false }>;
         promoteToNode: () => Promise<{ ok: boolean; role?: string; secret?: string; note?: string; error?: string }>;
-        setNodeUrl: (url: string) => Promise<{ ok: boolean; role?: string; error?: string }>;
         backupNow: () => Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
         maintenance: () => Promise<{ last_backup_at: string | null; last_backup_status: string | null;
                                      backup_dir: string; last_prune_at: string | null; retention_days: number;

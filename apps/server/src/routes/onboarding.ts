@@ -2,9 +2,27 @@ import { Router } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { seedDefaultRolePermissions } from '../lib/defaultRolePermissions';
-import bcrypt from 'bcrypt';
+import { isOwnerRoleName } from '../lib/ownerRole';
+import { adminInputProblems } from '../lib/adminRules';
 
 const router = safeRouter();
+
+/** A495: what is wrong with an onboarding request's fields, or null. */
+export function onboardingProblem(b: any): string | null {
+  const text = (v: unknown, max: number, required = false) =>
+    v === undefined || v === null || v === '' ? !required : typeof v === 'string' && v.trim().length > 0 && v.trim().length <= max;
+  const checks: Array<[unknown, number, boolean, string]> = [
+    [b?.businessName, 120, true, 'Business name'], [b?.businessType, 40, true, 'Business type'],
+    [b?.branchName, 100, true, 'Branch name'], [b?.ownerEmail, 254, true, 'Owner email'],
+    [b?.ownerName, 120, false, 'Owner name'], [b?.phone, 30, false, 'Phone'], [b?.email, 254, false, 'Email'],
+    [b?.taxPin, 20, false, 'KRA PIN'], [b?.logoUrl, 500, false, 'Logo address'], [b?.branchAddress, 300, false, 'Branch address'],
+    [b?.branchCity, 100, false, 'Branch city'], [b?.branchPhone, 30, false, 'Branch phone'],
+  ];
+  for (const [v, max, req, label] of checks) if (!text(v, max, req)) return `${label} is missing or too long (up to ${max} characters).`;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(b.ownerEmail).trim())) return 'Owner email is not a valid email.';
+  if (b?.mustChangePassword !== undefined && typeof b.mustChangePassword !== 'boolean') return 'mustChangePassword must be true or false.';
+  return adminInputProblems({ currency: b?.currency, ...(b?.vatRate === undefined || b?.vatRate === null || b?.vatRate === '' ? {} : { vat_rate: b.vatRate }) });
+}
 
 const VALID_TYPES = [
   'restaurant', 'cafe', 'retail',
@@ -50,13 +68,28 @@ router.post('/', async (req, res) => {
     branchCity,
     branchPhone,
     ownerEmail,
-    ownerPinHash,
     mustChangePassword,
   } = req.body;
 
   // ── Validation ──────────────────────────────────────────────────────────────
   if (!businessName || !businessType || !branchName || !currency || !ownerEmail) {
     res.status(400).json({ error: 'Missing required fields' });
+    return;
+  }
+  // A495: every field checked — kinds and lengths, VAT 0–100, a three-letter currency.
+  const problem = onboardingProblem(req.body);
+  if (problem) { res.status(400).json({ error: problem }); return; }
+  // A495: the owner row is the signed-up account's — never another person's email under this sign-up.
+  if (String(ownerEmail).trim().toLowerCase() !== String(user.email ?? '').trim().toLowerCase()) {
+    res.status(400).json({ error: 'The owner email must be the email you signed up with' });
+    return;
+  }
+  // A495: one sign-up, one business — the same account calling again made a second tenant it owned.
+  const { data: owned, error: ownedErr } = await supabase
+    .from('businesses').select('id').eq('owner_id', user.id).limit(1);
+  if (ownedErr) { res.status(503).json({ error: 'Could not check your account right now — try again' }); return; }
+  if ((owned ?? []).length) {
+    res.status(409).json({ error: 'This account already owns a business. Sign in instead.', code: 'ALREADY_ONBOARDED' });
     return;
   }
 
@@ -85,8 +118,8 @@ router.post('/', async (req, res) => {
         phone:      phone?.trim() || null,
         email:      email?.trim() || ownerEmail,
         tax_pin:    taxPin?.trim() || null,
-        vat_rate:   parseFloat(vatRate) || 16,
-        currency,
+        vat_rate:   vatRate === undefined || vatRate === null || vatRate === '' ? 16 : Number(vatRate),
+        currency:   String(currency).trim().toUpperCase(),
         logo_url:   logoUrl || null,
         owner_id:   user.id,
       })
@@ -132,7 +165,8 @@ router.post('/', async (req, res) => {
     await seedDefaultRolePermissions(roles);
 
     // ── 4. Create owner user row ────────────────────────────────────────────
-    const adminRole = roles.find(r => r.name === 'Admin');
+    // A495: the owner's role is found by lib/ownerRole.ts (owner / admin), the one rule every check reads.
+    const adminRole = roles.find(r => isOwnerRoleName(r.name));
 
     const { data: ownerUser, error: uErr } = await supabase
       .from('users')
@@ -141,9 +175,11 @@ router.post('/', async (req, res) => {
         name:                 ownerName?.trim() || ownerEmail.split('@')[0],
         email:                ownerEmail,
         role_id:              adminRole?.id ?? null,
-        pin_hash:             ownerPinHash ?? null,
+        // A495: a PIN hash is never taken from the caller (the page stopped sending one; any value here would be a
+        // hash the server never made). The owner sets a PIN after signing in.
+        pin_hash:             null,
         status:               'active',
-        must_change_password: mustChangePassword ?? true,
+        must_change_password: mustChangePassword !== false,
       })
       .select()
       .single();
@@ -164,7 +200,7 @@ router.post('/', async (req, res) => {
         business_id:           business.id,
         business_profile_done: true,
         staff_added_done:      true,
-        owner_pin_set:         !!ownerPinHash,
+        owner_pin_set:         false,
       });
 
     if (opErr) throw opErr;

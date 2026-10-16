@@ -31,7 +31,7 @@ export interface RosterDeps {
   /** The branch server's copy (a till behind one), or null. */
   nodeSnapshot: () => Promise<any | null>;
   store: (branchId: string, roster: BranchStaffRow[]) => void;
-  /** After a CLOUD list only: drop saved sign-ins no longer on it (removed, or PIN changed). */
+  /** After a list (the cloud's, or A496: the server's): drop saved sign-ins no longer on it (removed, inactive, or PIN changed). */
   prune?: (branchId: string, roster: BranchStaffRow[]) => void;
   log?: (line: string) => void;
 }
@@ -89,6 +89,9 @@ async function doPull(d: RosterDeps, why: string): Promise<RosterPull> {
       const dec = unpackRosterSnapshot(snap);
       if (dec.apply) {
         d.store(dec.branchId, dec.roster as unknown as BranchStaffRow[]);
+        // A496: saved sign-ins follow the server's list too (a person removed, deactivated or with a new PIN there) —
+        // only the cloud's list pruned them, so a till that never reached the cloud kept them for ever.
+        d.prune?.(dec.branchId, dec.roster as unknown as BranchStaffRow[]);
         const changed = dec.roster.length !== lastCount;
         lastCount = dec.roster.length; lastAt = new Date().toISOString();
         if (changed) d.log?.(`staff list from the branch server: ${dec.roster.length} (${why}; cloud: ${cloudError})`);

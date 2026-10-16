@@ -12,10 +12,9 @@
  *      branch-wide reports, Close Branch — and does NOT poll itself.
  *   3. An office machine CANNOT SELL, refused in MAIN (shift open + order
  *      create), not merely hidden in the renderer.
- *   4. The promotion lever: session-gated, audited, and repointing PROBES
- *      before saving — a wrong address written blind is a till that silently
- *      stops replicating. A repointed former node steps down and stops
- *      serving.
+ *   4. The promotion lever: session-gated and audited. A former node steps down
+ *      (A502: through Find my server, from the technician console — never a
+ *      typed address) and stops serving.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -88,11 +87,13 @@ console.log('\n4. The promotion lever');
      // A489: the pin of the old server is forgotten in between (a server pins no server).
      /saveDeviceConfig\(\{ device_role: 'node', node_url: null \}\);\s*(setTillPin\(null\);[^\n]*\s*)?startNodeServer\(\)/.test(IH));
   ok('the branch access code is returned for the tech to read', /const secret = ensureNodeSecret\(\)/.test(IH));
-  ok('repoint is session-gated and audited',
-     /tech:setNodeUrl[\s\S]{0,200}getActiveSession\(\)[\s\S]{0,300}logTechAction\('role\.repoint'/.test(IH));
-  ok('repoint PROBES before saving', /const probe = await probeNode[\s\S]{0,120}if \(!probe\.ok\) return/.test(IH));
-  ok('a repointed former node steps down AND stops serving',
-     /was === 'node'\) stopNodeServer\(\)/.test(IH) && /device_role: was === 'node' \? 'till' : was/.test(IH));
+  // A502: no typed address any more (tech:setNodeUrl removed) — a former node steps down by joining another server through
+  // Find my server, from the technician console only, and stops serving before it does.
+  ok('no typed repoint left', !/handle\('tech:setNodeUrl'/.test(IH));
+  ok('a former node joins another server only from the technician console',
+     /rejoin && isNodeRole\(getDeviceConfig\(\)\?\.device_role\) && !getActiveSession\(\)\) throw/.test(IH));
+  ok('a former node steps down AND stops serving, audited',
+     /if \(wasServer\) \{ stopNodeServer\(\); logTechAction\('role\.stepdown'/.test(IH) && /\.\.\.\(wasServer \? \{ device_role: 'till' \} : \{\}\)/.test(IH));
   ok('probeNode distinguishes refused-code from no-answer',
      NC.includes('refused this till') && NC.includes('No branch server answered'));
 }

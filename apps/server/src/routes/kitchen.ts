@@ -20,7 +20,27 @@ const router = safeRouter();
 //   • Owner tokens: may target any branch THEY own via ?branch_id=...
 //
 // Every branch is additionally verified to belong to the caller's business.
-router.use((req: any, res, next) => {
+// A495: a KDS token is checked against its branch on every request — the token's version must be the branch's current
+// kds_version (a newer token revokes it; migration 137), the branch must be active and the business not suspended.
+// Returns the refusal, or null. Before migration 137 there is no column: every token reads as version 0.
+async function kdsRefusal(p: { businessId?: string; branchId?: string; kdsVersion?: unknown }): Promise<{ status: number; error: string; code: string } | null> {
+  if (!p.businessId || !p.branchId) return { status: 401, error: 'This kitchen display token names no branch', code: 'KDS_TOKEN_INVALID' };
+  const read = (cols: string) => supabase.from('branches').select(cols).eq('id', p.branchId!).eq('business_id', p.businessId!).maybeSingle();
+  let { data: branch, error } = await read('id, status, kds_version');
+  if (error && /kds_version/.test(error.message ?? '')) ({ data: branch, error } = await read('id, status'));
+  if (error) return { status: 503, error: 'Could not check this display right now — it retries', code: 'AUTH_BACKEND_UNAVAILABLE' };
+  if (!branch) return { status: 401, error: 'This kitchen display\'s branch no longer exists', code: 'KDS_TOKEN_REVOKED' };
+  const want = Number((branch as any).kds_version ?? 0);
+  const have = Number.isInteger(p.kdsVersion) ? Number(p.kdsVersion) : 0;
+  if (have !== want) return { status: 401, error: 'This kitchen display token was replaced — set the display up again', code: 'KDS_TOKEN_REVOKED' };
+  if ((branch as any).status && (branch as any).status !== 'active') return { status: 403, error: 'This branch is closed', code: 'BRANCH_INACTIVE' };
+  const { data: biz, error: bErr } = await supabase.from('businesses').select('status').eq('id', p.businessId).maybeSingle();
+  if (bErr) return { status: 503, error: 'Could not check this display right now — it retries', code: 'AUTH_BACKEND_UNAVAILABLE' };
+  if (!biz || (biz as any).status === 'suspended') return { status: 403, error: 'This business is suspended', code: 'BUSINESS_SUSPENDED' };
+  return null;
+}
+
+router.use(async (req: any, res, next) => {
   // KDS displays present a long-lived, branch-scoped 'kds' SwiftPOS JWT; every other
   // caller uses a normal token. Accept a kds token HERE (kitchen routes only) and
   // derive its branch; delegate everyone else to requireAuth (which rejects kds
@@ -30,6 +50,8 @@ router.use((req: any, res, next) => {
     try {
       const p = jwt.verify(authHeader.slice(7), JWT_SECRET, { algorithms: ['HS256'] }) as any;
       if (p.surface === 'kds') {
+        const refusal = await kdsRefusal(p);
+        if (refusal) { res.status(refusal.status).json({ error: refusal.error, code: refusal.code }); return; }
         req.userId         = null;
         req.businessId     = p.businessId;
         req.branchId       = p.branchId ?? null;
@@ -56,8 +78,19 @@ router.post('/kds-token', async (req: any, res) => {
     .from('branches').select('id, name')
     .eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
   if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  // A495: a new token revokes every older one for this branch (migration 137). Before 137 the bump is not there: the
+  // token is minted at version 0, as before, and nothing is revoked.
+  const { data: bumped, error: bumpErr } = await supabase.rpc('bump_kds_version', { p_branch: branchId, p_business: req.businessId });
+  let kdsVersion = 0;
+  if (bumpErr) {
+    if (!/bump_kds_version|kds_version/.test(bumpErr.message ?? '')) { sendError(res, bumpErr); return; }
+    console.error('[kitchen] kds-token minted without revocation — apply migration 137:', bumpErr.message);
+  } else {
+    kdsVersion = Number(Array.isArray(bumped) ? (bumped[0] as any)?.bump_kds_version ?? bumped[0] : bumped);
+    if (!Number.isInteger(kdsVersion)) { res.status(500).json({ error: 'Could not mint the display token' }); return; }
+  }
   const token = jwt.sign(
-    { businessId: req.businessId, branchId, isOwner: false, surface: 'kds', permissionKeys: [] },
+    { businessId: req.businessId, branchId, isOwner: false, surface: 'kds', permissionKeys: [], kdsVersion },
     JWT_SECRET,
     { expiresIn: '365d' },
   );

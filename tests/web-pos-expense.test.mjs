@@ -51,7 +51,8 @@ const db = {
   businesses: [{ id: BZ, name: 'B Foods', status: 'active' }],
   users: [{ id: CASHIER, business_id: BZ, name: 'Jane', status: 'active' },
           { id: MARY, business_id: BZ, name: 'Mary', status: 'active', pin_hash: bcrypt.hashSync('4321', 4),
-            roles: { name: 'manager', role_permissions: [{ permissions: { key: 'shifts.manage' } }] }, user_permissions: [] }],
+            roles: { name: 'manager', role_permissions: [{ permissions: { key: 'shifts.manage' } }] }, user_permissions: [],
+            user_branches: [] }],   // A495: works at every branch (lib/approver.ts refuses a PIN row without the field)
   shifts: [
     { id: OPEN, business_id: BZ, branch_id: BR, status: 'open' },
     { id: CLOSED, business_id: BZ, branch_id: BR, status: 'closed' },

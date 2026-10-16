@@ -29,7 +29,7 @@
  *   POST /api/auth/refresh         — refresh token → new token pair (rotation)
  *   POST /api/auth/logout          — revoke refresh token (server-side)
  *   POST /api/auth/pos-login       — email + PIN → branch-scoped token pair
- *   POST /api/auth/verify-pin      — a person's PIN on a till (the till's session) or the web POS; branch licence check
+ *   POST /api/auth/verify-pin      — a person's PIN on a till (the till's session, or a PIN sign-in on a till — A494: not the web); branch licence check
  *   POST /api/auth/set-pin         — bcrypt PIN update
  *   PATCH /api/auth/me             — clears must_change_password
  */
@@ -56,10 +56,13 @@ import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
 import { worksAtBranch } from '../lib/branchAccess';   // A426
-import { effectiveKeysForRow, loadEffectiveKeys, tokenKeys, clientPermissionMap } from '../lib/effectivePermissions';   // A490
+import { effectiveKeysForRow, tokenKeys, clientPermissionMap } from '../lib/effectivePermissions';   // A490
 import { isOwnerRoleName } from '../lib/ownerRole';   // A490
-import { isBackOffice, expandKeys } from '../lib/permissions';   // A490
+import { isBackOffice } from '../lib/permissions';   // A490
 import { permissionsOpenBefore } from '../lib/permissionsState';   // A490
+import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY, accountLocked, noteAccountFailure, noteAccountSuccess, ACCOUNT_LOCKED_BODY } from '../lib/pinAttempts';   // A494
+import { keysFromGrants } from '../lib/effectiveKeys';   // A494
+import { notifyAccountLocked } from '../lib/accountLockNotice';   // A507
 
 const router = safeRouter();
 
@@ -98,6 +101,8 @@ interface TokenPayload {
   permissionsVersion: number;
   sessionId:          string;
   surface?:           string;
+  /** A494: the owner's password sign-in (/login) — the real owner (middleware isOwnerPasswordSession). */
+  ownerLogin?:        true;
   /** A159: a person's PIN sign-in on a till — may use the manager screens' writes (lib/terminalWrites.ts). Carried
    *  through refresh with the rest of the payload. The till's device token (enrolment) never has it. */
   pinSignIn?:         boolean;
@@ -641,6 +646,8 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
     res.status(400).json({ error: 'email and password are required' });
     return;
   }
+  // A494: failed sign-ins per ACCOUNT (lib/pinAttempts.ts) — the address-keyed limit alone lets many addresses guess on.
+  if (accountLocked(email)) { res.status(429).json(ACCOUNT_LOCKED_BODY); return; }
 
   // A378: signed in on a client's own address (africanfries.<root>) — only that business may be opened. Looked up
   // BEFORE the password is checked, so an unknown address never says whether a password was right.
@@ -653,9 +660,11 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
 
   const { data, error } = await authClient.auth.signInWithPassword({ email, password });
   if (error || !data.user) {
+    if (noteAccountFailure(email)) notifyAccountLocked(email, req.ip, 'the web dashboard');   // A494; A507: the account is told
     res.status(401).json({ error: 'Invalid email or password' });
     return;
   }
+  noteAccountSuccess(email);
 
   // BUG-18: was .single(), which raises PGRST116 on more than one row. An owner
   // with two businesses got "No business found for this account" — the opposite
@@ -768,6 +777,7 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
     businessId:         business.id,
     branchId:           null,
     isOwner:            true,
+    ownerLogin:         true,   // A494: the real owner (requireAuth skips the users-row checks for this session only)
     permissionKeys:     ['*'],
     permissionsVersion: pv,
     sessionId,
@@ -1088,20 +1098,52 @@ router.post('/refresh', async (req, res) => {
         }
       }
     }
-    // A person: re-fetch permissions — catches role changes since last login.
-    // A490: and answer them (`permissions`, the map the clients hold — clientPermissionMap), so a till or web POS that
-    // renews sees a role change without signing in again. The owner: {'*': true}.
-    if (cleanPayload.roleId && !cleanPayload.isOwner) {
-      const held = await loadEffectiveKeys(cleanPayload.roleId, cleanPayload.userId);
-      cleanPayload.permissionKeys = tokenKeys(held);
-      personPermissions = clientPermissionMap(held);
-    } else if (cleanPayload.isOwner) {
+    // A494: a person's renewal re-reads WHO they are, every time — role, the role's keys, their overrides, status,
+    // business and branches. It used to copy the old token forward (a deactivated person, or one whose role was taken
+    // away, renewed for 30 days; an "Admin" PIN sign-in stayed the owner after their role changed). Missing / not active
+    // / another business → 401 SIGN_IN_AGAIN; the token's branch no longer theirs → 401 SIGN_IN_AGAIN (BRANCH_REMOVED).
+    // The owner's password session (ownerLogin, or the real owner with no users row — A451's fallback) keeps '*'.
+    const ownerPassword = cleanPayload.isOwner === true
+      && (cleanPayload.ownerLogin === true || (!cleanPayload.surface && !cleanPayload.roleId && cleanPayload.pinSignIn !== true));
+    const { data: me, error: meErr } = await supabase.from('users')
+      .select('id, status, business_id, role_id, permissions_version, roles ( id, name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) ), user_branches ( branch_id )')
+      .eq('id', cleanPayload.userId).maybeSingle();
+    if (meErr) { res.status(503).json({ error: 'Could not check the sign-in just now — try again', code: 'DB_UNAVAILABLE' }); return; }
+    const refuse = (reason: string) => {
+      console.warn(`[refresh] A494: ${reason} — renewal refused`, { userId: cleanPayload.userId, businessId: cleanPayload.businessId });
+      res.status(401).json({ error: 'Please sign in again.', code: 'SIGN_IN_AGAIN', reason });
+    };
+    if (!me) {
+      if (!ownerPassword) { refuse('ACCOUNT_GONE'); return; }
+      // The owner with no users row (A451 could not make one): as before — the owner's '*'.
       personPermissions = { '*': true };
+      cleanPayload.permissionKeys = ['*'];
+      cleanPayload.permissionsVersion = 1;
     } else {
-      personPermissions = clientPermissionMap(expandKeys(cleanPayload.permissionKeys ?? [], permissionsOpenBefore()));
+      const row = me as any;
+      if (row.business_id !== cleanPayload.businessId) { refuse('OTHER_BUSINESS'); return; }
+      if (row.status !== 'active') { refuse('ACCOUNT_INACTIVE'); return; }
+      const roleOwner = isOwnerRoleName(row.roles?.name);
+      const isOwnerNow = ownerPassword || roleOwner;
+      if (!isOwnerNow && cleanPayload.branchId && !worksAtBranch(row.user_branches, cleanPayload.branchId)) {
+        refuse('BRANCH_REMOVED'); return;
+      }
+      if (!isOwnerNow && !cleanPayload.branchId) { refuse('NO_BRANCH'); return; }   // never a non-owner without a branch
+      cleanPayload.roleId = row.role_id ?? null;
+      cleanPayload.roleName = row.roles?.name ?? null;
+      cleanPayload.isOwner = isOwnerNow;
+      if (isOwnerNow) {
+        cleanPayload.permissionKeys = ['*'];
+        personPermissions = { '*': true };
+        if (!ownerPassword) cleanPayload.branchId = null;   // the owner's role works at every branch (as at sign-in)
+      } else {
+        const held = keysFromGrants(row.roles?.role_permissions, row.user_permissions, permissionsOpenBefore());
+        cleanPayload.permissionKeys = tokenKeys(held);
+        personPermissions = clientPermissionMap(held);
+      }
+      // Embed the fresh permissions_version. Keep the existing sessionId so device-level logout still works.
+      cleanPayload.permissionsVersion = row.permissions_version ?? 1;
     }
-    // Re-fetch permissions_version — embed fresh value. Keep the existing sessionId so device-level logout still works.
-    cleanPayload.permissionsVersion = await getPermissionsVersion(cleanPayload.userId);
     newPayload = { ...cleanPayload };
   }
 
@@ -1241,7 +1283,8 @@ router.post('/logout', async (req, res) => {
     // Revoke all sessions for this user — used for "log out everywhere"
     try {
       const token = req.headers.authorization.slice(7);
-      const payload = jwt.decode(token) as { userId?: string; businessId?: string } | null;
+      // A494: VERIFIED, never decoded — a made-up token naming someone else signed that person out everywhere.
+      const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { userId?: string; businessId?: string } | null;
       // A407: every browser of this user. A till's own session names no person, so it is never among them (A415).
       if (payload?.userId) await revokeBrowserSessions([payload.userId], payload.businessId ? [payload.businessId] : []);
     } catch { /* best effort */ }
@@ -1261,6 +1304,12 @@ router.post('/pos-login', async (req, res) => {
     res.status(400).json({ error: 'email and pin are required' });
     return;
   }
+  // A494: failed sign-ins per ACCOUNT (lib/pinAttempts.ts): 10 in 15 minutes and this e-mail is paused, from anywhere.
+  if (accountLocked(email)) { res.status(429).json(ACCOUNT_LOCKED_BODY); return; }
+  const fail401 = (body: object) => {
+    if (noteAccountFailure(email)) notifyAccountLocked(email, req.ip, 'the web POS');   // A507: the account is told
+    res.status(401).json(body);
+  };
 
   // A378: on a client's own address only that business's people may sign in (see the filter below).
   const tenant = await findTenant(subdomain);
@@ -1271,7 +1320,7 @@ router.post('/pos-login', async (req, res) => {
   }
 
   if (!/^\d{4,6}$/.test(String(pin))) {
-    res.status(401).json({ error: 'Invalid email or PIN' });
+    fail401({ error: 'Invalid email or PIN' });
     return;
   }
 
@@ -1370,15 +1419,16 @@ router.post('/pos-login', async (req, res) => {
   }
 
   const user = matches[0];
-  if (!user) { res.status(401).json(authError); return; }
-  if (!(user as any).pin_hash) { res.status(401).json(authError); return; }
+  if (!user) { fail401(authError); return; }
+  if (!(user as any).pin_hash) { fail401(authError); return; }
 
   const { valid, needsUpgrade } = await verifyPin(
     String(pin),
     (user as any).pin_hash,
     (user as any).business_id,
   );
-  if (!valid) { res.status(401).json(authError); return; }
+  if (!valid) { fail401(authError); return; }
+  noteAccountSuccess(email);
 
   const role    = (user as any).roles;
   const isOwner = isOwnerRoleName(role?.name);   // A490: the one place a role name decides (lib/ownerRole)
@@ -1409,24 +1459,29 @@ router.post('/pos-login', async (req, res) => {
 
   let resolvedBranchId: string | null = branch_id ?? null;
   if (branch_id) {
-    const allowed = accessibleBranches.find((b: any) => b.id === branch_id);
-    if (!allowed) {
+    if (!accessibleBranches.find((b: any) => b.id === branch_id)) {
       res.status(403).json({ error: 'You are not assigned to this branch' });
-      return;
-    }
-    // Desktop-licence gate applies to desktop tills only. A web POS login is
-    // gated by web access, not by the branch's desktop licence. effectiveSurface
-    // (A37) is 'web' only if the business truly holds web access, so a till
-    // claiming 'web' without web entitlement lands here and is licence-checked.
-    if (effectiveSurface !== 'web' && !allowed.desktop_licensed) {
-      res.status(403).json({
-        error: `${allowed.name} does not have a desktop licence. Contact ZapTill to activate.`,
-        code:  'BRANCH_NOT_LICENSED',
-      });
       return;
     }
   } else if (accessibleBranches.length === 1) {
     resolvedBranchId = accessibleBranches[0].id;
+  }
+  // A494: never a non-owner token without a branch (a branchless token used to read every branch — rbac.branchScope).
+  if (!isOwner && !resolvedBranchId && accessibleBranches.length === 0) {
+    res.status(403).json({ error: 'You are not assigned to an open branch. Ask the owner to add you to one.', code: 'NO_BRANCH' });
+    return;
+  }
+  // Desktop-licence gate applies to desktop tills only. A web POS login is gated by web access, not by the branch's
+  // desktop licence. effectiveSurface (A37) is 'web' only if the business truly holds web access, so a till claiming
+  // 'web' without web entitlement is licence-checked. A494: on the RESOLVED branch — the one branch picked for the caller
+  // was never checked.
+  const resolvedBranch = resolvedBranchId ? accessibleBranches.find((b: any) => b.id === resolvedBranchId) : null;
+  if (resolvedBranch && effectiveSurface !== 'web' && !resolvedBranch.desktop_licensed) {
+    res.status(403).json({
+      error: `${resolvedBranch.name} does not have a desktop licence. Contact ZapTill to activate.`,
+      code:  'BRANCH_NOT_LICENSED',
+    });
+    return;
   }
 
   if (needsUpgrade) {
@@ -1462,16 +1517,31 @@ router.post('/pos-login', async (req, res) => {
     return;
   }
 
-  // A391: on the web, owners and managers enter a one-time code too (mandatory); cashiers do not. A till never does —
-  // it signs in by enrolment and PIN, offline as well.
+  // A391: owners and managers enter a one-time code too (mandatory); cashiers do not. A till never comes here — it signs
+  // in by enrolment and PIN (/verify-pin), offline as well. A494: whatever surface the caller CLAIMS — claiming
+  // 'desktop' used to skip the code.
   let posGate: { trust?: string; pass?: string } = {};
   // Same people the web sends to the manager screens (posRouting.ts): A490 — anyone back office (isBackOffice).
   // A398: only when the admin portal has turned 'Sign-in codes' on for this client.
-  if (effectiveSurface === 'web' && needsOtp(heldKeys, isOwner)
+  if (needsOtp(heldKeys, isOwner)
       && (await businessPosFeatures((user as any).business_id)).login_codes) {
     const g = await otpGate(await otpSubjectFor((user as any).id, (user as any).email, (user as any).name), req.body);
     if (g.ok === false) { res.status(g.status).json(g.body); return; }
     posGate = g;
+  }
+
+  // A494: more than one branch and none chosen — the branch list only, no session. The caller asks again with branch_id
+  // (the web POS's branch picker does), and only then is a token issued — for that branch.
+  if (!resolvedBranchId && accessibleBranches.length > 1) {
+    res.json({
+      needsBranchSelection: true,
+      staff:    { id: (user as any).id, name: (user as any).name, role: role?.name },
+      branchId: null,
+      branches: accessibleBranches.map((b: any) => ({ id: b.id, name: b.name, licensed: b.desktop_licensed })),
+      ...(posGate.trust ? { otp_trust: posGate.trust } : {}),
+      ...(posGate.pass ? { otp_pass: posGate.pass } : {}),
+    });
+    return;
   }
 
   // Revoke any prior active session for this user ON THIS DEVICE before issuing
@@ -1525,7 +1595,7 @@ router.post('/pos-login', async (req, res) => {
     permissions: effectivePerms,
     branchId:    resolvedBranchId,
     branches:    accessibleBranches.map((b: any) => ({ id: b.id, name: b.name, licensed: b.desktop_licensed })),
-    needsBranchSelection: !resolvedBranchId && accessibleBranches.length > 1,
+    needsBranchSelection: false,
     ...(posGate.trust ? { otp_trust: posGate.trust } : {}),
     ...(posGate.pass ? { otp_pass: posGate.pass } : {}),
   });
@@ -1535,6 +1605,18 @@ router.post('/pos-login', async (req, res) => {
 
 router.post('/verify-pin', requireAuth, async (req, res) => {
   const { pin, branch_id } = req.body;
+
+  // A494: a PIN sign-in on a TILL — asked by the till's own session (the desktop's PIN pad) or by a person's PIN sign-in
+  // on a till. Any other session (a web browser, a web POS cashier, the owner's dashboard) could otherwise try every
+  // PIN of the business and walk away with the session of whoever it matched. Nothing on the web calls it.
+  if (!(req.isTill || req.pinSignIn)) {
+    res.status(403).json({ error: 'PIN sign-in is for tills.', code: 'TILL_ONLY' });
+    return;
+  }
+  // A494: one PIN limiter (lib/pinAttempts.ts) — per till (or person), the right PIN refused too while paused. The
+  // desktop reads a 429 as "cannot ask the cloud now" and checks the PIN on its own staff list meanwhile.
+  const pk = pinKey(req);
+  if (pinLocked(pk)) { res.status(429).json(PIN_LOCKED_BODY); return; }
 
   if (!pin || !branch_id) {
     res.status(400).json({ error: 'pin and branch_id are required' });
@@ -1610,6 +1692,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   }
 
   if (matches.length > 1) {
+    notePinFailure(pk);   // A494: a shared PIN still says something about other people's PINs — counted
     // Ambiguous — two staff share this PIN. Refuse rather than attribute a shift
     // and every subsequent sale to the wrong person.
     res.status(409).json({
@@ -1622,9 +1705,11 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   const matchedUser: any = matches[0] ?? null;
 
   if (!matchedUser) {
+    notePinFailure(pk);   // A494
     res.status(401).json({ error: 'Invalid PIN' });
     return;
   }
+  notePinSuccess(pk);
 
   if (!worksAtBranch(matchedUser.user_branches, branch_id)) {   // A426: one rule with the branch server's roster
     res.status(403).json({ error: 'You do not have access to this branch' });
@@ -1766,6 +1851,11 @@ router.post('/set-pin', requireAuth, async (req, res) => {
     res.status(403).json({ error: 'You can only change your own PIN' });
     return;
   }
+  // A494: the PIN limiter (lib/pinAttempts.ts). The uniqueness check below is an answer about OTHER people's PINs
+  // ("that PIN is taken" = someone signs in with it), so each refusal counts as a failed PIN and the caller is paused
+  // after 10 — the same budget as guessing at a till.
+  const pk = pinKey(req);
+  if (pinLocked(pk)) { res.status(429).json(PIN_LOCKED_BODY); return; }
 
   const { data: target, error: tErr } = await supabase
     .from('users').select('id').eq('id', targetId).eq('business_id', req.businessId).single();
@@ -1791,9 +1881,12 @@ router.post('/set-pin', requireAuth, async (req, res) => {
 
   for (const other of others ?? []) {
     if (!(other as any).pin_hash) continue;
-    if (await bcrypt.compare(String(pin), String((other as any).pin_hash))) {
+    if ((await verifyPin(String(pin), String((other as any).pin_hash), req.businessId)).valid) {
+      // A494: KEPT (two people on one PIN cannot be told apart at a till — verify-pin refuses that PIN for both) but
+      // rate-limited, and the words no longer say another person holds it.
+      notePinFailure(pk);
       res.status(409).json({
-        error: 'That PIN is already in use by another staff member. Please choose a different one.',
+        error: 'That PIN cannot be used. Please choose a different one.',
         code: 'PIN_NOT_UNIQUE',
       });
       return;
@@ -1907,20 +2000,14 @@ router.patch('/me', requireAuth, async (req, res) => {
   const { must_change_password } = req.body;
   if (must_change_password !== false) { res.json({ success: true }); return; }
 
+  // A494: the caller's OWN row only. It cleared the flag on every owner/admin-role row of the business (or, with no
+  // such role, on everybody's) for ANY signed-in person — a cashier could switch off the owner's forced password change.
+  if (!req.userId) { res.status(403).json({ error: 'No person is signed in on this session.' }); return; }
   try {
-    const { data: ownerRole } = await supabase
-      .from('roles').select('id').eq('business_id', req.businessId)
-      .or('name.ilike.owner,name.ilike.admin').limit(1).maybeSingle();
-
-    if (ownerRole) {
-      await supabase.from('users')
-        .update({ must_change_password: false, updated_at: new Date().toISOString() })
-        .eq('business_id', req.businessId).eq('role_id', (ownerRole as any).id);
-    } else {
-      await supabase.from('users')
-        .update({ must_change_password: false, updated_at: new Date().toISOString() })
-        .eq('business_id', req.businessId).eq('must_change_password', true);
-    }
+    const { error } = await supabase.from('users')
+      .update({ must_change_password: false, updated_at: new Date().toISOString() })
+      .eq('id', req.userId).eq('business_id', req.businessId);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err: any) {
     sendError(res, err, { message: 'Failed to update profile' });

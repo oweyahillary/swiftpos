@@ -17,8 +17,60 @@ const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { showsOnDay } from '../lib/productDays';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 const router = safeRouter();
+
+// ── A495: limits on the public order endpoint ─────────────────────────────────
+// Anyone with the link can post an order (and a kitchen ticket). Per IP: 10 orders in 10 minutes is far more than a
+// table orders, and stops a script filling a kitchen screen.
+export const QR_LIMITS = { GUEST_NAME: 60, NOTES: 300, ITEM_NOTES: 200, ORDERS_PER_WINDOW: 10, WINDOW_MS: 10 * 60_000 } as const;
+const qrOrderLimiter = rateLimit({
+  windowMs: QR_LIMITS.WINDOW_MS,
+  max: QR_LIMITS.ORDERS_PER_WINDOW,
+  message: { error: 'Too many orders from this phone — please ask a member of staff.', code: 'QR_RATE_LIMIT' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''),
+});
+
+/** Optional text, trimmed, at most `max` characters; undefined when it is not text (refused by the caller). */
+function cleanText(v: unknown, max: number): string | null | undefined {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v !== 'string') return undefined;
+  const t = v.trim();
+  if (t.length > max) return undefined;
+  return t || null;
+}
+
+/**
+ * A495: the branch a QR order goes to — derived by the cloud, never trusted from the page. The table's own branch when
+ * the QR names a table of this business; else the branch the link names (`branch`), when it is this business's and
+ * open; else the business's main branch. null when the business has no open branch.
+ */
+async function qrBranch(businessId: string, tableId: unknown, branchId: unknown): Promise<{ branchId: string | null; tableName: string | null }> {
+  let tableName: string | null = null;
+  if (typeof tableId === 'string' && tableId) {
+    const { data: table } = await supabase
+      .from('tables').select('name, branch_id').eq('id', tableId).eq('business_id', businessId).maybeSingle();
+    if (table) {
+      tableName = (table as any).name ?? null;
+      const { data: b } = await supabase.from('branches').select('id, status')
+        .eq('id', (table as any).branch_id).eq('business_id', businessId).maybeSingle();
+      if (b && (b as any).status === 'active') return { branchId: (b as any).id, tableName };
+    }
+  }
+  if (typeof branchId === 'string' && branchId) {
+    const { data: b } = await supabase.from('branches').select('id, status')
+      .eq('id', branchId).eq('business_id', businessId).maybeSingle();
+    if (b && (b as any).status === 'active') return { branchId: (b as any).id, tableName };
+  }
+  const { data: branches } = await supabase.from('branches').select('id, is_main, status')
+    .eq('business_id', businessId).eq('status', 'active');
+  const list = (branches ?? []) as Array<{ id: string; is_main: boolean | null }>;
+  const main = list.find((b) => b.is_main) ?? (list.length === 1 ? list[0] : null);
+  return { branchId: main?.id ?? null, tableName };
+}
 
 // ── Public menu endpoint (no auth) ────────────────────────────────────────────
 
@@ -61,20 +113,13 @@ router.get('/:slug/menu', async (req, res) => {
     .filter((p: any) => showsOnDay(p.show_days, bizDay))
     .map(({ show_days: _days, ...p }: any) => p);
 
-  // Get table name if provided
-  let tableName: string | null = null;
-  if (table_id) {
-    const { data: table } = await supabase
-      .from('tables')
-      .select('name')
-      .eq('id', table_id as string)
-      .eq('business_id', biz.id)   // audit 2026-10-14: never another business's table name
-      .maybeSingle();
-    tableName = table?.name ?? null;
-  }
+  // A495: the branch this QR orders for (the page sends it back with the order; the cloud derives it again there). The
+  // table name is only ever this business's (audit 2026-10-14). The business's own id is not needed by the page.
+  const { branchId, tableName } = await qrBranch(biz.id, table_id, req.query.branch);
 
   res.json({
-    business: { id: biz.id, name: biz.name, currency: biz.currency },
+    business: { name: biz.name, currency: biz.currency },
+    branch_id: branchId,
     table_id:  table_id ?? null,
     table_name: tableName,
     categories: categories ?? [],
@@ -84,13 +129,21 @@ router.get('/:slug/menu', async (req, res) => {
 
 // ── Place QR order (no auth) ──────────────────────────────────────────────────
 
-router.post('/:slug/order', async (req, res) => {
+router.post('/:slug/order', qrOrderLimiter, async (req, res) => {
   const { slug } = req.params;
-  const { table_id, branch_id, items, guest_name, notes } = req.body;
+  const { table_id, branch_id, items } = req.body ?? {};
 
-  if (!items?.length) { res.status(400).json({ error: 'items are required' }); return; }
-  if (!branch_id)     { res.status(400).json({ error: 'branch_id is required' }); return; }
-  if (!Array.isArray(items) || items.length > 100) { res.status(400).json({ error: 'items must be a list of up to 100' }); return; }
+  // A495: an empty order is refused; texts are capped (they land on the kitchen ticket and the bill).
+  if (!Array.isArray(items) || items.length === 0) { res.status(400).json({ error: 'Add something to your order first' }); return; }
+  if (items.length > 100) { res.status(400).json({ error: 'items must be a list of up to 100' }); return; }
+  const guestName = cleanText(req.body?.guest_name, QR_LIMITS.GUEST_NAME);
+  const notes = cleanText(req.body?.notes, QR_LIMITS.NOTES);
+  if (guestName === undefined) { res.status(400).json({ error: `Your name can be up to ${QR_LIMITS.GUEST_NAME} characters` }); return; }
+  if (notes === undefined) { res.status(400).json({ error: `Notes can be up to ${QR_LIMITS.NOTES} characters` }); return; }
+  if (items.some((i: any) => !i || typeof i.product_id !== 'string' || !i.product_id
+      || cleanText(i.notes, QR_LIMITS.ITEM_NOTES) === undefined || cleanText(i.modifier_summary, QR_LIMITS.ITEM_NOTES) === undefined)) {
+    res.status(400).json({ error: `Each item needs a product, and its notes can be up to ${QR_LIMITS.ITEM_NOTES} characters` }); return;
+  }
   // A quantity is a whole number from 1 to 99 — a negative one took money off the bill.
   if (items.some((i: any) => !Number.isInteger(i?.quantity) || i.quantity < 1 || i.quantity > 99)) {
     res.status(400).json({ error: 'Each item needs a quantity from 1 to 99' }); return;
@@ -107,38 +160,33 @@ router.post('/:slug/order', async (req, res) => {
     return;
   }
 
-  // Audit 2026-10-14: the branch must be this business's — an anonymous caller could drop an order (and a kitchen ticket)
-  // into any business's branch by its id.
-  const { data: ownBranch } = await supabase
-    .from('branches').select('id').eq('id', branch_id).eq('business_id', biz.id).maybeSingle();
-  if (!ownBranch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  // Audit 2026-10-14 / A495: the branch is this business's and open — derived by the cloud (the table's branch, the
+  // branch named, or the main branch), so an anonymous caller can never drop an order into another business's branch.
+  // orders has no table_id column — it stores the table's display name in table_number (an unknown table leaves the
+  // order unassigned rather than failing it).
+  const { branchId: orderBranch, tableName: tableNumber } = await qrBranch(biz.id, table_id, branch_id);
+  if (!orderBranch) { res.status(404).json({ error: 'Branch not found' }); return; }
 
-  // orders has no table_id column — it stores the table's display name in
-  // table_number. Resolve it here; an unknown id leaves the order unassigned
-  // rather than failing the whole insert.
-  let tableNumber: string | null = null;
-  if (table_id) {
-    const { data: tbl } = await supabase
-      .from('tables')
-      .select('name')
-      .eq('id', table_id)
-      .eq('business_id', biz.id)
-      .single();
-    tableNumber = tbl?.name ?? null;
+  // A495: every product must be this business's, on sale — an unknown one refuses the order (it used to be dropped
+  // silently, so the guest was told "ordered" for food the kitchen never saw).
+  const ids = [...new Set(items.map((i: any) => String(i.product_id)))];
+  const { data: found } = await supabase
+    .from('products')
+    .select('id, name, base_price')
+    .eq('business_id', biz.id)
+    .eq('status', 'active')
+    .in('id', ids);
+  const byId = new Map(((found ?? []) as Array<{ id: string; name: string; base_price: number }>).map((p) => [p.id, p]));
+  if (ids.some((id) => !byId.has(id))) {
+    res.status(400).json({ error: 'Something on your order is no longer on the menu — please reload the menu', code: 'UNKNOWN_PRODUCT' });
+    return;
   }
 
   // Calculate totals
   let subtotal = 0;
   const orderItems: any[] = [];
   for (const item of items) {
-    const { data: product } = await supabase
-      .from('products')
-      .select('id, name, base_price')
-      .eq('id', item.product_id)
-      .eq('business_id', biz.id)
-      .single();
-
-    if (!product) continue;
+    const product = byId.get(String(item.product_id))!;
     const unitPrice = Number(product.base_price);
     const lineTotal = round2(unitPrice * item.quantity);
     subtotal = round2(subtotal + lineTotal);
@@ -149,7 +197,7 @@ router.post('/:slug/order', async (req, res) => {
       quantity:     item.quantity,
       unit_price:   unitPrice,
       subtotal:     lineTotal,
-      notes: [item.modifier_summary, item.notes].filter(Boolean).join(' · ') || null,
+      notes: [cleanText(item.modifier_summary, QR_LIMITS.ITEM_NOTES), cleanText(item.notes, QR_LIMITS.ITEM_NOTES)].filter(Boolean).join(' · ') || null,
     });
   }
 
@@ -172,7 +220,7 @@ router.post('/:slug/order', async (req, res) => {
     .from('orders')
     .insert({
       business_id:  biz.id,
-      branch_id,
+      branch_id:    orderBranch,
       order_number: orderNumber,
       order_type:   'dine_in',
       status:       'open',
@@ -182,7 +230,7 @@ router.post('/:slug/order', async (req, res) => {
       ctl_amount:   ctlAmount,
       total,
       table_number: tableNumber,
-      notes:        [guest_name ? `Guest: ${guest_name}` : '', notes].filter(Boolean).join(' · ') || null,
+      notes:        [guestName ? `Guest: ${guestName}` : '', notes].filter(Boolean).join(' · ') || null,
     })
     .select('id, order_number')
     .single();
@@ -202,7 +250,7 @@ router.post('/:slug/order', async (req, res) => {
   // was phantom, and status:'pending' violated kitchen_tickets_status_check.
   const { error: ticketErr } = await supabase.from('kitchen_tickets').insert({
     order_id:  order.id,
-    branch_id,
+    branch_id: orderBranch,
     status:    'new',
   });
   // Non-blocking for the customer, but never silent: a lost ticket means the

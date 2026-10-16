@@ -23,7 +23,7 @@ const ok = (name, cond, extra='') => {
 
 // Re-implementation of runTechQuery's rules over a supplied path; section 0
 // pins the module to the same constants and shapes.
-const MASK_COLUMN = /pin|token|secret|password|hash|key/i;
+const MASK_COLUMN = /pin|token|secret|password|hash|key|reveal/i;   // A494: the tech reveal code too
 const MAX_ROWS = 500;
 function runQuery(dbPath, sql) {
   const trimmed = String(sql ?? '').trim().replace(/;\s*$/, '');
@@ -69,7 +69,7 @@ const tmp = path.join(os.tmpdir(), `swiftpos-techq-${process.pid}.db`);
 console.log('\n0. Harness matches techService.ts');
 {
   const src = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/techService.ts'), 'utf8');
-  ok('same mask pattern', src.includes('/pin|token|secret|password|hash|key/i'));
+  ok('same mask pattern', src.includes('/pin|token|secret|password|hash|key|reveal/i'));
   ok('module masks on SOURCE column, not alias', src.includes('c.column ?? c.name'));
   ok('same row cap', src.includes('MAX_ROWS = 500'));
   ok('connection opened READONLY', src.includes('{ readonly: true, fileMustExist: true }'));

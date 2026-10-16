@@ -2,14 +2,22 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, branchScope } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
 router.use(requireAuth);
 
+// A494: the credit accounts (who owes what) and each account's ledger were open to every signed-in user. Reading them
+// is customers.view — the key the manager's Credit tab and the web POS's "pay on account" check already hold (a
+// cashier's role has it by default; the POS reads GET /customer/:id at payment for the available credit) — or
+// customers.credit (who changes limits and takes repayments reads what they change). The ledger goes with the
+// account: it is the history of the balance the same screen shows, and splitting it would hide nothing the balance
+// does not already tell.
+const canReadCredit = requireAnyPermission('customers.view', 'customers.credit');
+
 // GET /api/credit/customers — list customers with a limit or an outstanding balance (debtors first)
-router.get('/customers', async (req, res) => {
+router.get('/customers', canReadCredit, async (req, res) => {
   const { search } = req.query;
   let q = supabase
     .from('customers')
@@ -31,7 +39,7 @@ router.get('/customers', async (req, res) => {
 });
 
 // GET /api/credit/customer/:id — one account + recent ledger
-router.get('/customer/:id', async (req, res) => {
+router.get('/customer/:id', canReadCredit, async (req, res) => {
   const { data: customer, error } = await supabase
     .from('customers')
     .select('id, name, phone, email, credit_limit, credit_balance, status')

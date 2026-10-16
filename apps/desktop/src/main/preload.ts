@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     tillVersions: ()                        => ipcRenderer.invoke('node:tillVersions'),   // A443
     tlsStatus:    ()                        => ipcRenderer.invoke('node:tlsStatus'),      // A489
     tlsRetrust:   ()                        => ipcRenderer.invoke('node:tlsRetrust'),     // A489
+    syncHealth:   ()                        => ipcRenderer.invoke('node:syncHealth'),     // A501
+    retryFailed:  ()                        => ipcRenderer.invoke('node:retryFailed'),    // A501
   },
 
   pos: {
@@ -180,7 +182,6 @@ contextBridge.exposeInMainWorld('swiftpos', {
     chooseBackupDir: ()           => ipcRenderer.invoke('tech:chooseBackupDir'),          // A380
     setBackupDir: (dir: string | null) => ipcRenderer.invoke('tech:setBackupDir', { dir }), // A380
     promoteToNode:()              => ipcRenderer.invoke('tech:promoteToNode'),
-    setNodeUrl:   (url: string)   => ipcRenderer.invoke('tech:setNodeUrl', { url }),
   },
 
   // Held orders (restaurant tabs). Backed by SQLite in the main process since
@@ -197,6 +198,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
   // subscribes to; installNow applies a downloaded update (manager/tech-gated at the call site).
   update: {
     getStatus:  () => ipcRenderer.invoke('update:getStatus'),
+    // A496: the status with its reason, and the last update log lines (Tech page).
+    getDiagnostics: () => ipcRenderer.invoke('update:getDiagnostics'),
     installNow: () => ipcRenderer.invoke('update:installNow'),
     // A490: restart for the update with someone's PIN — they are identified (shifts.close_day), the session stays.
     installWithPin: (pin: string) => ipcRenderer.invoke('update:installWithPin', { pin }),

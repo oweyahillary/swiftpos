@@ -35,7 +35,8 @@ import { openTake, may, frozenAtBranch, MAX_LINES, type TakeRow } from '../lib/s
 const router = safeRouter();
 router.use(requireAuth);
 // A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
-router.use(stripCostsUnlessAllowed(['variance_value']));
+// A494: + the summary's shortValue / overValue / netValue (the count's difference at cost).
+router.use(stripCostsUnlessAllowed(['variance_value', 'shortValue', 'overValue', 'netValue']));
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

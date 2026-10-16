@@ -145,7 +145,11 @@ console.log('\nWired in\n');
   ok('Allow asks the cloud for the code with the server\'s own sign-in', /tillFetch\('\/api\/pos\/join-code'/.test(ipc));
   const inst = src('src/renderer/pages/InstallPage.tsx');
   ok('setup searches the network first', /useState<Step>\('search'\)/.test(inst) && /posApi\.install\.findServers\(\)/.test(inst));
-  ok('heard nothing → the usual setup screen', /if \(list\.length === 0\) setStep\('connection'\);/.test(inst));
+  // A507: heard nothing → stays on the search step: ask a server by its address (the network may hide it), or set up
+  // without one (the usual setup screen, one button away).
+  ok('heard nothing → ask by address, or set up without a server',
+    /servers\.length === 0 && !joinTarget[\s\S]{0,400}<ServerAddressAsk onAsk=\{askToJoin\} \/>/.test(inst)
+    && /setStep\('connection'\); \}\}[\s\S]{0,120}Set up without a server/.test(inst));
   ok('joined → the last step with the branch locked and the server filled in; the till code is still typed',
     /setBranchLocked\(true\);/.test(inst) && /setNodeSecret\(st\.nodeSecret\);/.test(inst) && /value=\{terminalCode\}/.test(inst));
   ok('the server shows "a till wants to join" over every screen', /<AppScreens \/><JoinPrompt \/>/.test(src('src/renderer/App.tsx')));

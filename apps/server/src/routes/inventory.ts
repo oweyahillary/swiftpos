@@ -9,6 +9,7 @@ import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A394
 import { recordReceivedBatch, wantsBatch } from '../lib/batchStore';   // A413
 import { heldUnits } from '../lib/batches';
 import { actor } from '../lib/actor';
+import { guardBranch, idsOfBusiness } from '../lib/branchGuard';   // A494
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -19,6 +20,9 @@ router.use(stripCostsUnlessAllowed());
 // Returns stock levels for all products in the business, joined with product info.
 // Owner: pass ?branch_id= to filter, or omit for all branches.
 // Staff: always locked to their JWT branch.
+// A494: deliberately NO permission gate — the POS (web and till) reads it for what is in stock at the counter, and a
+// cashier's role need not hold inventory.view. It is branch-locked (branchScope; a branchless non-owner reads nothing),
+// sends no cost (router strip) and is blind for the items a count at the branch is counting (hiddenWhileCounting).
 router.get('/', async (req, res) => {
   const scopedBranch = branchScope(req);
 
@@ -183,16 +187,25 @@ router.post('/adjust', requirePermission('inventory.adjust'), async (req, res) =
 
 // PATCH /api/inventory/:product_id/threshold
 // Update low stock threshold for a product+branch
+// A494: the product and the branch were never checked — any id, any branch, any business (and an upsert made a stock
+// row for a branch that has none). Now: the product is this business's, the branch is this business's and the caller's,
+// the threshold a number — and only then is the (product, branch) row written.
 router.patch('/:product_id/threshold', requireAnyPermission('inventory.adjust', 'inventory.receive'), async (req, res) => {
   const { product_id } = req.params;
-  const { branch_id, low_stock_threshold } = req.body;
+  const { branch_id, low_stock_threshold } = req.body ?? {};
+  const t = Number(low_stock_threshold);
+  if (low_stock_threshold === null || low_stock_threshold === undefined || low_stock_threshold === '' || !Number.isFinite(t) || t < 0) {
+    res.status(400).json({ error: 'low_stock_threshold must be a number >= 0' }); return;
+  }
+  if (!(await guardBranch(req, res, branch_id, 'You can only change your own branch'))) return;
+  if (!(await idsOfBusiness('products', req.businessId, [product_id]))) { res.status(404).json({ error: 'Product not found' }); return; }
 
   const { data, error } = await supabase
     .from('stock_levels')
     .upsert({
       product_id,
       branch_id,
-      low_stock_threshold,
+      low_stock_threshold: t,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'product_id,branch_id' })
     .select()
@@ -203,7 +216,8 @@ router.patch('/:product_id/threshold', requireAnyPermission('inventory.adjust', 
 });
 
 // GET /api/inventory/movements
-router.get('/movements', async (req, res) => {
+// A494: was open to every signed-in user — inventory.view; branch-locked; blind for counted items.
+router.get('/movements', requirePermission('inventory.view'), async (req, res) => {
   const { product_id, limit = '50' } = req.query;
   const scopedBranch = branchScope(req);
 
@@ -215,14 +229,17 @@ router.get('/movements', async (req, res) => {
     `)
     .eq('products.business_id', req.businessId)
     .order('created_at', { ascending: false })
-    .limit(parseInt(limit as string));
+    .limit(Math.min(parseInt(limit as string) || 50, 500));
 
   if (product_id)   query = query.eq('product_id', product_id as string);
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
 
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  // A394 / A494: while the branch counts, the level after each movement of a counted item would give the count away.
+  const hide = await hiddenWhileCounting(req, scopedBranch);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  res.json(hide.size ? rows.map((m) => (hide.has(`p:${m.product_id}`) ? { ...m, quantity_after: null, counting: true } : m)) : rows);
 });
 
 export default router;

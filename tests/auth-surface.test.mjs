@@ -157,9 +157,10 @@ ok('pos-login honours surface:web only when the business holds web access (A37)'
 });
 
 ok('the licence gate keys off effectiveSurface, not the raw claim (A37)', () => {
-  assert.match(AUTH, /effectiveSurface !== 'web' && !allowed\.desktop_licensed/,
+  // A494: the gate runs on the RESOLVED branch (resolvedBranch) — the branch picked for a one-branch caller was never checked.
+  assert.match(AUTH, /effectiveSurface !== 'web' && !resolvedBranch\.desktop_licensed/,
     'a till claiming web without web access must still hit the desktop licence gate');
-  assert.doesNotMatch(AUTH, /callerSurface !== 'web' && !allowed\.desktop_licensed/,
+  assert.doesNotMatch(AUTH, /callerSurface !== 'web' && !(allowed|resolvedBranch)\.desktop_licensed/,
     'the old client-supplied gate must be gone');
 });
 

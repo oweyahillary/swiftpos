@@ -170,7 +170,8 @@ await ok('the notifier: Telegram and email together, plain text, never throws', 
 await ok('the admin portal: the watchdog card and a test alert (super admin only)', () => {
   const a = read('apps/server/src/routes/admin.ts');
   assert.match(a, /router\.get\('\/watchdog', requireAdmin/);
-  assert.match(a, /router\.post\('\/watchdog\/test', requireSuperAdmin/);
+  // A495: requireAdmin verifies the token (and the account) first; requireSuperAdmin alone read an unverified role.
+  assert.match(a, /router\.post\('\/watchdog\/test', requireAdmin, requireSuperAdmin/);
   const p = read('apps/admin/src/AdminPortal.tsx');
   // A392: the card became the Alerts page (and a summary on the dashboard).
   assert.match(p, /<AlertsSummary req=\{req\} onOpen=\{onOpenAlerts\} \/>/);

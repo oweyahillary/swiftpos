@@ -92,8 +92,10 @@ const sale = (legs, { age = 5, origin = null, synced = true } = {}) => {
 const manager = { id: 'u-mary', name: 'Mary', roleName: 'manager', permissions: { 'orders.void': true } };
 const owner = { id: 'u-owner', name: 'Owner', roleName: 'owner', permissions: { '*': true } };
 const cashier = { id: 'u-amy', name: 'Amy', roleName: 'cashier', permissions: {} };
+// A494: offline, the person doing it and the approver are two people (unless the owner) — Max does it, Mary approves.
+const max = { id: 'u-max', name: 'Max', roleName: 'manager', permissions: { 'orders.void': true } };
 const rules = { voidWindowMinutes: 20, offlineRefundMethods: ['cash'], offlineReverseWebSales: false };
-const go = (kind, orderId, approver = manager, actor = manager, r = rules) =>
+const go = (kind, orderId, approver = manager, actor = max, r = rules) =>
   O.reverseOffline({ kind, orderId, reason: 'Wrong items ordered', actor, approver, rules: r, deviceId: 'dev-T1', now: NOW }, db);
 const status = (id) => db.prepare(`SELECT status, refunded_at, refunded_amount FROM orders WHERE id=?`).get(id);
 const queued = (id) => db.prepare(`SELECT * FROM pending_reversals WHERE order_id=?`).all(id);
@@ -125,14 +127,25 @@ ok('a cashier cannot (signed in or as approver)',
     && /PIN was not recognised/.test(threw(() => go('refund', e1, nameOnly, manager))?.message ?? '')
     && !status(e1).refunded_at);
   const e2 = sale([{ method: 'cash', amount: 300 }]);
-  go('void', e2, voidOnly, voidOnly);
-  ok('…and voids (within the window) as themselves', status(e2).status === 'voided');
+  go('void', e2, manager, voidOnly);
+  ok('…and voids (within the window), approved by someone else', status(e2).status === 'voided');
+}
+{
+  // A494: offline nobody else checks it — a manager does not approve their own void or refund; the owner may.
+  const s1 = sale([{ method: 'cash', amount: 200 }]);
+  const self = threw(() => go('void', s1, manager, manager));
+  ok('A494: a manager cannot approve their own offline void (nothing changed)', /someone else must approve/.test(self?.message ?? '')
+    && status(s1).status === 'completed' && queued(s1).length === 0, self?.message);
+  const s2 = sale([{ method: 'cash', amount: 200 }], { age: 60 });
+  ok('…nor their own offline refund', /someone else must approve/.test(threw(() => go('refund', s2, manager, manager))?.message ?? '') && !status(s2).refunded_at);
+  go('void', s1, owner, owner);
+  ok('…the owner may approve their own', status(s1).status === 'voided');
 }
 const dd = sale([{ method: 'cash', amount: 600 }, { method: 'mpesa', amount: 400 }], { age: 120 });
 const eD = threw(() => go('refund', dd));
 ok('an M-Pesa sale is not refunded offline (cash only allowed) — and the message says which',
   /refund only cash\. This sale was paid by M-Pesa/.test(eD?.message ?? '') && !status(dd).refunded_at, eD?.message);
-go('refund', dd, manager, manager, { ...rules, offlineRefundMethods: ['cash', 'mpesa'] });
+go('refund', dd, manager, max, { ...rules, offlineRefundMethods: ['cash', 'mpesa'] });
 const pays = db.prepare(`SELECT method, amount FROM payments WHERE order_id=? AND status='refunded' ORDER BY method`).all(dd);
 ok('allowed by the owner: refunded here, each leg in its own method, queued',
   status(dd).refunded_amount === 1000 && pays.length === 2 && pays[0].amount === -600 && pays[1].amount === -400
@@ -141,7 +154,7 @@ ok('a second refund is refused', /already been refunded/.test(threw(() => go('re
 const w = sale([{ method: 'cash', amount: 500 }], { origin: 'web' });
 ok('a web sale: only with the owner\'s setting', /only void or refund the sales it rang itself/.test(threw(() => go('void', w))?.message ?? '')
   && status(w).status === 'completed');
-go('void', w, manager, manager, { ...rules, offlineReverseWebSales: true });
+go('void', w, manager, max, { ...rules, offlineReverseWebSales: true });
 ok('…and with it, voided', status(w).status === 'voided');
 const unsynced = sale([{ method: 'cash', amount: 300 }], { synced: false });
 go('void', unsynced);
@@ -172,7 +185,7 @@ await E.syncPush();
 const sentFor = (id) => seen.filter((s) => s.u.includes(`/api/orders/${id}/`));
 ok('the replay names the approver, the time and who did it', sentFor(a).length === 1
   && sentFor(a)[0].body.offline_approved_by === 'u-mary' && sentFor(a)[0].body.approved_at === NOW.toISOString()
-  && sentFor(a)[0].body.offline_by === 'u-mary' && sentFor(a)[0].body.reason === 'Wrong items ordered', JSON.stringify(sentFor(a)));
+  && sentFor(a)[0].body.offline_by === 'u-max' && sentFor(a)[0].body.reason === 'Wrong items ordered', JSON.stringify(sentFor(a)));
 ok('a refund goes to /refund', sentFor(dd).length === 1 && sentFor(dd)[0].u.endsWith('/refund'));
 ok('waits for the sale itself (an unsynced sale is not replayed yet)', sentFor(unsynced).length === 0
   && queued(unsynced)[0].sync_status === 'pending');

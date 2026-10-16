@@ -22,8 +22,24 @@ export interface SyncStatusLike {
   parkedReason?: string;
   /** The last moment this till had nothing waiting for the cloud (ISO), or null if never. */
   lastSyncedAt?: string | null;
-  /** A448: the branch server refused this till's access code — nothing reaches the cloud through it until it is fixed. */
-  nodeRefused?: { status: number; since: string } | null;
+  /** A448: the branch server refused this till — nothing reaches the cloud through it until it is fixed. A501: and why
+   *  (an older main process sends no reason: the access code, as before). */
+  nodeRefused?: { status: number; since: string; reason?: 'access_code' | 'device_key' | 'branch' | 'tls' } | null;
+  /** A501: what this till still owes its branch server (computed for years, shown nowhere). */
+  nodeBacklog?: { pending: number; failed: number; oldestPendingAt?: string | null; failedReason?: string | null };
+}
+
+/** A501: records waiting this long for the branch server are worth a manager's line (the beat sends every 15 s). */
+export const NODE_BACKLOG_QUIET_MS = 10 * 60_000;
+
+/** A501: what the branch server refused, in words that point at the right fix (it always said "access code"). */
+export function nodeRefusalText(reason: string | undefined): string {
+  switch (reason) {
+    case 'device_key': return 'The branch server does not recognise this till (its device key) — sales are kept on this till but reach nothing else. A technician rejoins it from the branch server (Find my server)';
+    case 'branch': return 'This till is set to another branch than its branch server — sales are kept on this till but do not reach the branch server. A technician checks it (Tech › Branch sync)';
+    case 'tls': return "The branch server refused this till's unencrypted connection — sales are kept on this till but reach nothing else. A technician checks it (Tech › Shop network)";
+    default: return "The branch server refused this till's access code — sales are kept on this till but reach nothing else. A technician re-enters the code (Install › Branch access code)";
+  }
 }
 
 // A490: WHO sees it is lib/access.ts backOffice(session) — anyone beyond the shop floor, or the owner; never a cashier.
@@ -56,8 +72,7 @@ export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotic
   const last = `last synced ${lastSyncedLabel(s.lastSyncedAt, now)}`;
   // A448: first — it stops everything reaching the cloud, and only a person can fix it (before: the log alone said so).
   if (s.nodeRefused) {
-    return { tone: 'alert', action: 'sync',
-      text: `The branch server refused this till's access code — sales are kept on this till but reach nothing else. A technician re-enters the code (Install › Branch access code) · ${last}` };
+    return { tone: 'alert', action: 'sync', text: `${nodeRefusalText(s.nodeRefused.reason)} · ${last}` };
   }
   if ((s.parkedCount ?? 0) > 0) {
     return { tone: 'alert', action: 'sync',
@@ -67,9 +82,20 @@ export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotic
     return { tone: 'alert', action: 'retry-failed',
       text: `${plural(s.failedCount, 'sale')} failed to sync${s.failedReason ? `: ${s.failedReason}` : ''} · ${last}` };
   }
+  // A501: records the branch server refused (after five tries) — the other tills and the branch report lack them.
+  if ((s.nodeBacklog?.failed ?? 0) > 0) {
+    return { tone: 'alert', action: 'sync',
+      text: `The branch server refused ${plural(s.nodeBacklog!.failed, 'record')}${s.nodeBacklog!.failedReason ? `: ${s.nodeBacklog!.failedReason}` : ''} — a technician retries them (Tech › Branch sync) · ${last}` };
+  }
+  const nodeWaiting = s.nodeBacklog && s.nodeBacklog.pending > 0 && s.nodeBacklog.oldestPendingAt
+    && now.getTime() - new Date(s.nodeBacklog.oldestPendingAt).getTime() > NODE_BACKLOG_QUIET_MS ? s.nodeBacklog.pending : 0;
   if (s.pendingCount > 0) {
     return { tone: 'quiet', action: 'sync',
-      text: `${plural(s.pendingCount, 'record')} waiting to sync${s.online ? '' : ' (offline)'} · ${last}` };
+      text: `${plural(s.pendingCount, 'record')} waiting to sync${s.online ? '' : ' (offline)'}${nodeWaiting ? ` · ${nodeWaiting} waiting for the branch server` : ''} · ${last}` };
+  }
+  // A501: the cloud has everything, but the branch server has not had some of it for a while (it is off, or refusing).
+  if (nodeWaiting) {
+    return { tone: 'quiet', action: 'sync', text: `${plural(nodeWaiting, 'record')} waiting for the branch server · ${last}` };
   }
   return null;
 }

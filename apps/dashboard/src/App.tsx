@@ -48,7 +48,6 @@ const VoidRefundRulesTab  = lazy(() => import('./pages/settings/VoidRefundRulesT
 const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
 const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
 const PosOptionsTab       = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.PosOptionsTab })));     // A491
-const TillUpdatesTab      = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.TillUpdatesTab })));    // A491
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
 const ShiftReportsPage        = lazy(() => import('./pages/ShiftReportsPage'));
 const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
@@ -186,7 +185,6 @@ export default function App() {
                         <Route path="payments"     element={<PaymentMethodsPage />} />
                         <Route path="voids-refunds" element={<VoidRefundRulesTab />} />
                         <Route path="pos-options"  element={<PosOptionsTab />} />
-                        <Route path="till-updates" element={<TillUpdatesTab />} />
                         <Route path="setup"        element={<VerticalSetupRoute />} />
                         <Route path="integrations" element={<IntegrationsRoute />} />
                       </Route>

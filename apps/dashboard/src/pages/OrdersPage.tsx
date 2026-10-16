@@ -11,6 +11,7 @@
  * their own PIN (A444). A444 also: an opened row lists the order's items, and Reprint is offered as the cloud allows.
  */
 import { useState, useEffect, useCallback, Fragment } from 'react';
+import { reportPresets } from '../lib/reportPeriods';   // A497: Today · Yesterday · This week … (local Kenya days)
 import { api } from '../lib/api';
 import { usePermissions } from '../context/PermissionsContext';
 import { isRefunded } from './orderRefund';
@@ -19,6 +20,10 @@ import OrderItems from '../components/OrderItems';   // A444
 import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../lib/reversalRules';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { money, dayTime } from '../lib/format';
+
+/** A497: the start and end of a local calendar day ('YYYY-MM-DD'), as instants for the cloud's created_at filter. */
+function localDayStart(day: string): Date { const [y, m, d] = day.split('-').map(Number); return new Date(y, m - 1, d, 0, 0, 0, 0); }
+function localDayEnd(day: string): Date { const [y, m, d] = day.split('-').map(Number); return new Date(y, m - 1, d, 23, 59, 59, 999); }
 
 interface Payment { method: string; amount: number; status: string; }
 interface Order {
@@ -91,6 +96,12 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const [page, setPage]       = useState(1);
   const [search, setSearch]   = useState('');
   const [status, setStatus]   = useState('');
+  // A497 (owner, 2026-10-15): "add a date filter … by default it should only show todays order unless a user select show
+  // orders or a date range". Local calendar days (reportPeriods, the Reports presets); null = every date.
+  const [range, setRange]     = useState<{ from: string; to: string } | null>(() => {
+    const t = reportPresets()[0];
+    return { from: t.from, to: t.to };
+  });
   const [loading, setLoading] = useState(false);
   const [reprintingId, setReprintingId] = useState<string | null>(null);
   const [reprintMsg, setReprintMsg] = useState('');
@@ -107,7 +118,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
 
-  const load = useCallback(async (p = 1, q = search, s = status) => {
+  const load = useCallback(async (p = 1, q = search, s = status, r = range) => {
     setLoading(true);
     setError('');
     try {
@@ -117,6 +128,12 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
       });
       if (q) params.set('search', q);
       if (s) params.set('status', s);
+      // A497: the chosen days, from the start of the first to the end of the last LOCAL day. A search by order number
+      // looks across every date (an old order is found without changing the dates first).
+      if (r && !q) {
+        params.set('date_from', localDayStart(r.from).toISOString());
+        params.set('date_to', localDayEnd(r.to).toISOString());
+      }
       const data = await api.get<OrdersResponse>(`/api/orders?${params}`);
       setOrders(data.orders);
       setTotal(data.total);
@@ -127,7 +144,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
     } finally {
       setLoading(false);
     }
-  }, [search, status]);
+  }, [search, status, range]);
 
   const submitAction = async () => {
     if (!action || !reason.trim()) return;
@@ -189,6 +206,30 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
           onClick={() => load(1, search, status)}
           className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >Search</button>
+      </div>
+
+      {/* A497: the dates — Today by default; a preset, a range of days, or every date. */}
+      <div className="flex flex-wrap items-center gap-2 mb-4" data-testid="orders-dates">
+        <div className="flex items-center gap-1 max-w-full overflow-x-auto bg-gray-800 border border-gray-700 rounded-lg p-1">
+          {[...reportPresets().map((pr) => ({ label: pr.label, r: { from: pr.from, to: pr.to } as { from: string; to: string } | null })),
+            { label: 'All dates', r: null as { from: string; to: string } | null }].map(({ label, r }) => {
+            const on = r === null ? range === null : !!range && range.from === r.from && range.to === r.to;
+            return (
+              <button key={label} type="button" onClick={() => setRange(r)} data-testid={`orders-preset-${label.toLowerCase().replace(/ /g, '-')}`}
+                className={`flex-shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-md transition-colors ${on ? 'bg-swift-strong text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <input type="date" value={range?.from ?? ''} max={range?.to || undefined} data-testid="orders-from"
+          onChange={(e) => { const v = e.target.value; if (v) setRange((r) => ({ from: v, to: r && r.to >= v ? r.to : v })); }}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:border-swift focus:outline-none" />
+        <span className="text-gray-500 text-sm">→</span>
+        <input type="date" value={range?.to ?? ''} min={range?.from || undefined} data-testid="orders-to"
+          onChange={(e) => { const v = e.target.value; if (v) setRange((r) => ({ from: r && r.from <= v ? r.from : v, to: v })); }}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:border-swift focus:outline-none" />
+        {search.trim() && <span className="text-xs text-gray-400">Searching every date</span>}
       </div>
 
       {error && <div className="mb-3 text-sm text-red-400">{error}</div>}

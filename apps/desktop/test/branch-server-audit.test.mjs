@@ -295,6 +295,9 @@ console.log('\nF7 / F5 / F14 / F15 / F16 — the real branch server over HTTP\n'
     _payments: [{ id: `pay-${id}`, order_id: id, method: 'cash', amount: 100, amount_tendered: 100, change_given: 0, status: 'completed', created_at: '2026-10-14T08:00:00Z' }],
     _relayPayload: { branch_id: 'br-1', order_number: `N-${id}`, items: [{ product_id: 'p', quantity: 1 }], payments: [{ method: 'cash', amount: 100 }], device_id: device } });
 
+  // A496: first-use recording is only for a till this server knew before device keys (node_enrol_allowed, noted once from
+  // peer_cursors / node_peer_state) — dev-K is such a till here. A device never seen before must join (branch-server-hardening).
+  db.prepare(`INSERT OR IGNORE INTO node_enrol_allowed (device_id, noted_at) VALUES ('dev-K', ?)`).run(new Date().toISOString());
   const s1 = await post('/node/sync', { device_id: 'dev-K', branch_id: 'br-1', tables: { orders: [relayRow('k-1', 'dev-K', 1)] } }, { 'X-Device-Id': 'dev-K', 'X-Device-Token': KEY });
   const b1 = await s1.json();
   ok('F7: a till\'s key is recorded the first time it is shown (older installs keep working)', s1.status === 200 && b1.results.orders.applied_ids?.[0] === 'k-1', JSON.stringify(b1));
@@ -321,12 +324,21 @@ console.log('\nF7 / F5 / F14 / F15 / F16 — the real branch server over HTTP\n'
     made_at: new Date().toISOString(), _local: { role_name: 'Owner', permissions: { '*': true }, branch_id: 'br-1' }, ...extra });
   const c0 = await post('/node/changes', { changes: [staff(1, '11111111-1111-1111-1111-111111111111')] });
   ok('F7: /node/changes needs a till that proves which it is', c0.status === 401);
-  const c1 = await post('/node/changes', { changes: [staff(2, '11111111-1111-1111-1111-111111111111'), staff(3, '22222222-2222-2222-2222-222222222222')] }, { 'X-Device-Id': 'dev-K', 'X-Device-Token': KEY });
+  // A496: a relayed NEW cashier (it carries a PIN) is no longer created here — it reaches the server from the cloud. The
+  // F7 rule (the role from the server's roles, never the change) is checked on a relayed role change of someone on the list.
+  db.prepare(`INSERT OR REPLACE INTO branch_staff (staff_id, name, role_name, branch_id, permissions, pin_hash_enc, status, updated_at)
+              VALUES (?, 'P2', 'Waiter', 'br-1', '{}', 'x', 'active', '2026-10-14')`).run(uuid(502));
+  const roleChange = (n, target, role) => ({ id: uuid(n), entity: 'staff', op: 'update', entity_id: target, data: { role_id: role },
+    made_at: new Date().toISOString(), _local: { role_name: 'Owner', permissions: { '*': true }, branch_id: 'br-1' } });
+  const c1 = await post('/node/changes', { changes: [roleChange(2, uuid(502), '11111111-1111-1111-1111-111111111111'), staff(3, '22222222-2222-2222-2222-222222222222')] }, { 'X-Device-Id': 'dev-K', 'X-Device-Token': KEY });
   const cb = await c1.json();
   const p2 = db.prepare(`SELECT role_name, permissions FROM branch_staff WHERE staff_id = ?`).get(uuid(502));
   ok('F7: a relayed cashier gets the role\'s permissions from the server\'s roles — never the "*" the change claimed',
     c1.status === 200 && p2?.role_name === 'Cashier' && JSON.parse(p2.permissions)['*'] === undefined && JSON.parse(p2.permissions)['orders.create'] === true, JSON.stringify({ cb, p2 }));
   ok('F7: a relayed change never creates a manager', !db.prepare(`SELECT 1 FROM branch_staff WHERE staff_id = ?`).get(uuid(503)) && cb.refused?.some((r) => r.id === uuid(3)));
+  const c2b = await (await post('/node/changes', { changes: [staff(4, '11111111-1111-1111-1111-111111111111')] }, { 'X-Device-Id': 'dev-K', 'X-Device-Token': KEY })).json();
+  ok('A496: …nor a cashier (a new person carries a PIN — it comes from the cloud)',
+    !db.prepare(`SELECT 1 FROM branch_staff WHERE staff_id = ?`).get(uuid(504)) && c2b.refused?.some((r) => r.id === uuid(4)), JSON.stringify(c2b));
   db.prepare(`INSERT OR REPLACE INTO branch_staff (staff_id, name, role_name, branch_id, permissions, pin_hash_enc, status, updated_at)
               VALUES ('mgr-1', 'Boss', 'Manager', 'br-1', '{"staff.manage":true}', 'x', 'active', '2026-10-14')`).run();
   const v = BS.vetRelayedStaffChanges([{ id: uuid(9), entity: 'staff_pin', op: 'update', entity_id: 'mgr-1', data: { pin: '9999' } }], 'br-1');

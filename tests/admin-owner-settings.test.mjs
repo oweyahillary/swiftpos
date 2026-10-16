@@ -48,7 +48,7 @@ ok('the owner\'s keys are not switched from the portal; the admin-only ones stil
   assert.match(O.PER_ROLE_SWITCHES.cashier_no_reprint, /sales\.reprint/);
   assert.equal(O.OWNER_POS_OPTIONS_WHERE, 'Set by the owner — Settings › Business › POS options');
   assert.equal(O.PER_ROLE_WHERE, 'Now set per role by the owner — Settings › Users and access › Roles and permissions');
-  assert.equal(O.OWNER_UPDATES_WHERE, 'The owner approves or holds updates — Settings › Business › Till updates');
+  assert.equal(O.OWNER_UPDATES_WHERE, undefined, 'A493: till updates are the portal\'s again');
 });
 
 ok('the cloud\'s OWNER_SETS refusal is shown with its own message', () => {
@@ -77,14 +77,16 @@ ok('Features: other flags switch only when the portal holds them (loyalty_enable
   assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/web-access`/);
 });
 
-ok('Updates: the approved version, the releases and the tills shown; no picker, Approve or Hold', () => {
+// A493 (owner, 2026-10-15): "update approval should live under admin some clients my not want to pay for updates" — the
+// portal approves and holds again (A491 had made it the owner's).
+ok('A493 Updates: the admin picks a version, approves or holds; the tills\' versions shown', () => {
   const u = tab('updates');
   assert.match(u, /detail\?\.desktop_approved_version/);
-  assert.match(u, /\{OWNER_UPDATES_WHERE\}/);
   assert.match(u, /visibleVersions\(desktopReleases, detail\?\.desktop_approved_version, showAllVersions\)\.map/);
+  assert.match(u, /onClick=\{\(\) => setDesktopVersion\(desktopPick\)\}/);
+  assert.match(u, /onClick=\{\(\) => setDesktopVersion\(null\)\}/);
   assert.match(u, />Tills now</);
-  assert.doesNotMatch(u, /<select|>Hold<|"Approve"|setDesktopVersion/);
-  assert.doesNotMatch(ap, /\/desktop-version`/, 'the portal no longer writes the approved version');
+  assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/desktop-version`, \{ version \}\)/);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -61,19 +61,25 @@ import crypto            from 'node:crypto'; // required by tech-token + mode-sw
 import { supabase }       from '../lib/supabase';
 import { isSeededAdminHash, SEEDED_ADMIN_MESSAGE } from '../lib/adminSeedGuard';
 import { seedDefaultRolePermissions } from '../lib/defaultRolePermissions';
-import { requireAdmin, requireSuperAdmin, signAdminToken } from '../middleware/adminAuth';
+import { requireAdmin, requireSuperAdmin, signAdminToken, forgetAdmin, ADMIN_ROLES } from '../middleware/adminAuth';
+import { notifySuperAdminsToVerify } from '../lib/adminVerifyNotice';   // A507
+import { setOwnerPassword } from '../lib/passwordReset';          // A495: the reset revokes the owner's sessions
+import { sendEmailChecked } from '../lib/mailer';                 // A495: the old address hears of an email change
+import { isOwnerRoleName } from '../lib/ownerRole';
+import { adminInputProblems, stripSecretColumns, renewYears, INVOICE_STATUSES, MODE_SWITCH_TARGETS } from '../lib/adminRules';   // A495
 import { signTechToken, generateRevealCode } from '../lib/techToken';
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
 import { resolveOwnerUserId } from '../lib/ownerBusiness';
 import { listDesktopReleasesOrStale } from '../lib/desktopReleases';
-import { ownerSetsFeature, OWNER_SETS_UPDATES } from './controls';        // A490
+import { ownerSetsFeature } from './controls';        // A490
+import { checkApprovableVersion } from '../lib/desktopVersionApproval';   // A493: the admin approves till updates
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
 import { alertChannels, notifyAdmin } from '../lib/alertNotify';   // A383: the watchdog's channels
 import { digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';   // A392
 import { syncRefusalHint } from '../lib/watchdogRules';   // A392
-import { otpGate, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes } from '../lib/loginOtp';   // A391
+import { otpGate, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, otpDisabled, trustValid } from '../lib/loginOtp';   // A391
 
 const router = safeRouter();
 
@@ -135,6 +141,9 @@ function computeHealthScore(data: {
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 
+// A495: an unknown email still pays for one bcrypt comparison (cost 12, like a real hash).
+const DUMMY_ADMIN_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 12);
+
 router.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -159,6 +168,8 @@ router.post('/auth/login', async (req, res) => {
   }
 
   if (!admin || !admin.is_active) {
+    // A495: the same bcrypt work as a real account, so the answer's timing does not tell which emails are admins.
+    await bcrypt.compare(String(password), DUMMY_ADMIN_HASH);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
@@ -188,6 +199,16 @@ router.post('/auth/login', async (req, res) => {
     method: (admin as any).otp_method, secret: (admin as any).otp_totp_secret, version: (admin as any).otp_version,
   }, req.body);
   if (gate.ok === false) { res.status(gate.status).json(gate.body); return; }
+  // A495: the gate lets a person in WITHOUT a code when the code table is missing (it must never lock a shop out). The
+  // admin portal is not a shop: an admin is let in only by a checked code, a remembered browser, or the operator's
+  // explicit LOGIN_OTP=off — anything else is refused, never waved through.
+  const codeChecked = !!gate.pass || otpDisabled()
+    || trustValid(req.body?.otp_trust, 'admin', admin.id, Number((admin as any).otp_version ?? 1));
+  if (!codeChecked) {
+    console.error(`[admin] refused sign-in for ${admin.email}: the sign-in code could not be checked (is migration 119 applied?)`);
+    res.status(503).json({ error: 'Sign-in codes are unavailable right now, so the admin portal cannot sign you in. Try again shortly.', code: 'ADMIN_OTP_UNAVAILABLE' });
+    return;
+  }
 
   await supabase
     .from('admin_users')
@@ -438,6 +459,8 @@ router.post('/clients', requireAdmin, async (req, res) => {
   if (!VALID_TYPES.includes(normalizedType as typeof VALID_TYPES[number])) {
     res.status(400).json({ error: `Invalid type. Must be one of: ${VALID_TYPES.join(', ')}` }); return;
   }
+  const inputProblem = adminInputProblems({ currency, vat_rate: vatRate });   // A495
+  if (inputProblem) { res.status(400).json({ error: inputProblem }); return; }
 
   try {
     // 1. Create Supabase auth user for the owner
@@ -458,8 +481,8 @@ router.post('/clients', requireAdmin, async (req, res) => {
         owner_name: ownerName?.trim() || ownerEmail.split('@')[0],
         phone:      phone?.trim() || null,
         email:      ownerEmail.trim(),
-        vat_rate:   parseFloat(String(vatRate)) || 16,
-        currency,
+        vat_rate:   Number(vatRate),
+        currency:   String(currency).toUpperCase(),
         owner_id:   supabaseUserId,
         status:     'active',
       })
@@ -499,7 +522,7 @@ router.post('/clients', requireAdmin, async (req, res) => {
     await seedDefaultRolePermissions(roles);
 
     // 5. Create owner user row in users table
-    const ownerRole = roles.find(r => r.name === 'owner') ?? roles[0];
+    const ownerRole = roles.find(r => isOwnerRoleName(r.name)) ?? roles[0];   // A495: lib/ownerRole.ts decides
     const { data: ownerUser, error: uErr } = await supabase
       .from('users')
       .insert({
@@ -547,6 +570,10 @@ router.post('/clients', requireAdmin, async (req, res) => {
       resource:   'business',
     });
 
+    // A507: an agent's new client — its tax and money settings go to the super admins to verify.
+    notifySuperAdminsToVerify({ who: (req as any).adminEmail, role: (req as any).adminRole, what: 'Created a client', client: business.name,
+      changes: [{ field: 'Business type', after: normalizedType }, { field: 'Currency', after: String(currency).toUpperCase() },
+        { field: 'VAT rate %', after: Number(vatRate) }] });
     res.status(201).json({ business, branch, ownerUserId: ownerUser.id });
 
   } catch (err: any) {
@@ -643,7 +670,8 @@ const PURGE_GRACE_MONTHS = 6;
  * retained separately and are NOT included here. Secrets (password/PIN hashes)
  * are stripped. Nothing is deleted.
  */
-router.get('/clients/:id/export', requireAdmin, async (req: any, res) => {
+// A495: super admin only — it is every customer's and staff member's personal data in one file.
+router.get('/clients/:id/export', requireAdmin, requireSuperAdmin, async (req: any, res) => {
   const { id } = req.params;
   const { data: business } = await supabase.from('businesses').select('*').eq('id', id).single();
   if (!business) { res.status(404).json({ error: 'Not found' }); return; }
@@ -656,10 +684,10 @@ router.get('/clients/:id/export', requireAdmin, async (req: any, res) => {
     supabase.from('users').select('*').eq('business_id', id),
   ]);
 
-  const staff = (staffRaw.data ?? []).map((u: any) => {
-    const { password_hash, pin_hash, pin, password, ...safe } = u;
-    return safe;
-  });
+  // A495: every secret column goes — password / PIN / override-PIN hashes, the authenticator secret, its version, tokens,
+  // reveal codes (lib/adminRules.ts stripSecretColumns), on every table exported, not only staff.
+  const strip = (rows: any[] | null | undefined) => (rows ?? []).map((r) => stripSecretColumns(r));
+  const staff = strip(staffRaw.data);
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -671,11 +699,11 @@ router.get('/clients/:id/export', requireAdmin, async (req: any, res) => {
   res.json({
     exported_at: new Date().toISOString(),
     note: 'Normal user data due for purge at the 6-month grace. Financial/tax records (orders, payments, invoices, eTIMS) are retained separately per retention policy and are not included here.',
-    business,
-    branches:   branches.data ?? [],
-    products:   products.data ?? [],
-    categories: categories.data ?? [],
-    customers:  customers.data ?? [],
+    business:   stripSecretColumns(business),
+    branches:   strip(branches.data),
+    products:   strip(products.data),
+    categories: strip(categories.data),
+    customers:  strip(customers.data),
     staff,
   });
 });
@@ -833,7 +861,18 @@ router.patch('/clients/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { name, type, phone, email, address, tax_pin, vat_rate, currency } = req.body;
 
-  const { data: before } = await supabase.from('businesses').select('name, status, type').eq('id', id).single();
+  // A495: the client's tax and money settings (VAT rate, currency, type, KRA PIN) change every receipt and report the
+  // owner files. A507 (owner, 2026-10-16: "an agent should be able to change but the admin should be notified of the change
+  // for verification"): any admin may change them; an agent's change is e-mailed to every super admin (below).
+  const taxFields = ['vat_rate', 'currency', 'type', 'tax_pin'].filter((k) => req.body?.[k] !== undefined);
+  const inputProblem = adminInputProblems({ vat_rate, currency, type });
+  if (inputProblem) { res.status(400).json({ error: inputProblem }); return; }
+  if (tax_pin !== undefined && tax_pin !== null && !(typeof tax_pin === 'string' && tax_pin.trim().length <= 20)) {
+    res.status(400).json({ error: 'KRA PIN must be text of up to 20 characters.' }); return;
+  }
+
+  const { data: before } = await supabase.from('businesses').select('name, status, type, vat_rate, currency, tax_pin').eq('id', id).single();
+  if (!before) { res.status(404).json({ error: 'Business not found' }); return; }
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (name      !== undefined) updates.name      = name;
@@ -842,8 +881,8 @@ router.patch('/clients/:id', requireAdmin, async (req, res) => {
   if (email     !== undefined) updates.email     = email;
   if (address   !== undefined) updates.address   = address;
   if (tax_pin   !== undefined) updates.tax_pin   = tax_pin;
-  if (vat_rate  !== undefined) updates.vat_rate  = vat_rate;
-  if (currency  !== undefined) updates.currency  = currency;
+  if (vat_rate  !== undefined) updates.vat_rate  = Number(vat_rate);
+  if (currency  !== undefined) updates.currency  = String(currency).trim().toUpperCase();
   // A378: the client's own sign-in address (africanfries.<root>). SwiftPOS sets it here, never the client.
   if (req.body.subdomain !== undefined) {
     const sub = cleanSubdomain(req.body.subdomain);
@@ -880,11 +919,19 @@ router.patch('/clients/:id', requireAdmin, async (req, res) => {
     businessId: id, businessName: before?.name,
     before: before ?? undefined, after: updates,
   });
+  // A507: an agent's change to the tax and money settings — the super admins verify it.
+  const LABEL: Record<string, string> = { vat_rate: 'VAT rate %', currency: 'Currency', type: 'Business type', tax_pin: 'KRA PIN' };
+  const changed = taxFields.filter((k) => String((before as any)?.[k] ?? '') !== String(updates[k] ?? ''));
+  if (changed.length) {
+    notifySuperAdminsToVerify({ who: req.adminEmail, role: req.adminRole, what: 'Changed tax / money settings', client: before?.name,
+      changes: changed.map((k) => ({ field: LABEL[k], before: (before as any)?.[k], after: updates[k] })) });
+  }
 
-  res.json(data);
+  res.json(stripSecretColumns(data ?? {}));   // A507: the edited row carried override_pin_hash back to the browser
 });
 
-router.post('/clients/:id/suspend', requireAdmin, async (req, res) => {
+// A495: suspending (and re-activating) a client stops (or restarts) their whole business — super admin only.
+router.post('/clients/:id/suspend', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { reason } = req.body;
   const { data: biz } = await supabase.from('businesses').select('name, status').eq('id', req.params.id).single();
   if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
@@ -904,7 +951,7 @@ router.post('/clients/:id/suspend', requireAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
-router.post('/clients/:id/activate', requireAdmin, async (req, res) => {
+router.post('/clients/:id/activate', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { data: biz } = await supabase.from('businesses').select('name, status').eq('id', req.params.id).single();
   if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -926,7 +973,9 @@ router.post('/clients/:id/activate', requireAdmin, async (req, res) => {
 // Resets the restaurant owner's login password. Owners authenticate via Supabase
 // Auth, so this sets a new password on their auth user via the admin API (the
 // service-role key). The new password is never logged.
-router.post('/clients/:id/reset-owner-password', requireAdmin, async (req, res) => {
+// A495: super admin only (one agent could otherwise take over an owner's account), and through setOwnerPassword, which
+// signs the owner out of every browser — whoever held the old password is out. The owner must change it at next sign-in.
+router.post('/clients/:id/reset-owner-password', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { new_password } = req.body;
   if (!new_password || String(new_password).length < 8) {
     res.status(400).json({ error: 'New password must be at least 8 characters' });
@@ -941,15 +990,16 @@ router.post('/clients/:id/reset-owner-password', requireAdmin, async (req, res) 
   if (!biz)           { res.status(404).json({ error: 'Not found' }); return; }
   if (!biz.owner_id)  { res.status(400).json({ error: 'This client has no owner login account to reset' }); return; }
 
-  const { error: authErr } = await supabase.auth.admin.updateUserById(biz.owner_id, {
-    password: String(new_password),
-  });
-  if (authErr) { sendError(res, authErr, { message: 'Failed to reset owner password' }); return; }
+  const setErr = await setOwnerPassword(biz.owner_id, String(new_password), null);
+  if (setErr) { res.status(500).json({ error: 'Failed to reset owner password' }); return; }
+  // The admin chose this password: the owner replaces it at the next sign-in.
+  const ownerUserId = await resolveOwnerUserId(req.params.id);
+  if (ownerUserId) await supabase.from('users').update({ must_change_password: true }).eq('id', ownerUserId);
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
     action: 'business.reset_owner_password', resource: 'business',
-    businessId: req.params.id, businessName: biz.name,
+    businessId: req.params.id, businessName: biz.name, ip: req.ip,
     // Deliberately does NOT record the new password.
   });
 
@@ -958,7 +1008,8 @@ router.post('/clients/:id/reset-owner-password', requireAdmin, async (req, res) 
 
 // POST /clients/:id/reset-owner-otp — A391: the owner lost the phone with their authenticator app → back to emailed
 // codes. Every browser they asked to be remembered must enter a code again.
-router.post('/clients/:id/reset-owner-otp', requireAdmin, async (req, res) => {
+// A495: super admin only — with a password reset it would hand one agent the whole owner account.
+router.post('/clients/:id/reset-owner-otp', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { data: biz } = await supabase.from('businesses').select('name').eq('id', req.params.id).maybeSingle();
   if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
   const ownerId = await resolveOwnerUserId(req.params.id);
@@ -976,7 +1027,8 @@ router.post('/clients/:id/reset-owner-otp', requireAdmin, async (req, res) => {
 // Only reset-owner-password existed; a wrong owner email was unfixable. Updates the
 // auth email (auto-confirmed so it's usable immediately) and the business contact
 // email, audited. Does not reassign ownership — that stays a separate operation.
-router.post('/clients/:id/change-owner-email', requireAdmin, async (req: any, res) => {
+// A495: super admin only, and the OLD address is told — a takeover by email change cannot happen silently.
+router.post('/clients/:id/change-owner-email', requireAdmin, requireSuperAdmin, async (req: any, res) => {
   const newEmail = String(req.body?.new_email ?? '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
     res.status(400).json({ error: 'A valid email is required' });
@@ -990,6 +1042,7 @@ router.post('/clients/:id/change-owner-email', requireAdmin, async (req: any, re
     .single();
   if (!biz)          { res.status(404).json({ error: 'Not found' }); return; }
   if (!biz.owner_id) { res.status(400).json({ error: 'This client has no owner login account' }); return; }
+  const oldEmail = String(biz.email ?? '').trim().toLowerCase();   // A495: read before anything changes it
 
   const { error: authErr } = await supabase.auth.admin.updateUserById(biz.owner_id, {
     email:         newEmail,
@@ -1004,10 +1057,26 @@ router.post('/clients/:id/change-owner-email', requireAdmin, async (req: any, re
     adminId: req.adminId, adminEmail: req.adminEmail,
     action: 'business.change_owner_email', resource: 'business',
     businessId: req.params.id, businessName: biz.name,
-    before: { email: biz.email }, after: { email: newEmail },
+    before: { email: oldEmail }, after: { email: newEmail }, ip: req.ip,
   });
 
-  res.json({ success: true, email: newEmail });
+  let oldNotified = false;
+  if (oldEmail && oldEmail !== newEmail && /@/.test(oldEmail)) {
+    const esc = (v: unknown) => String(v ?? '').replace(/[<>&"]/g, '');
+    const sent = await sendEmailChecked({
+      to: oldEmail,
+      subject: 'ZapTill: the sign-in email for your business was changed',
+      html: `<div style="font-family:system-ui,sans-serif;font-size:15px;color:#0f172a">
+  <p>Hi,</p>
+  <p>The sign-in email for <b>${esc(biz.name)}</b> on ZapTill was changed by ZapTill support from this address to
+  <b>${esc(newEmail)}</b>.</p>
+  <p>If you did not ask for this, call ZapTill support straight away.</p></div>`,
+    }).catch((e: any) => ({ ok: false as const, error: String(e?.message ?? e) }));
+    oldNotified = sent.ok === true;
+    if (!oldNotified) console.error(`[admin] change-owner-email: could not tell the old address of ${biz.name}:`, (sent as any).error);
+  }
+
+  res.json({ success: true, email: newEmail, old_email_notified: oldNotified });
 });
 
 // ─── FEATURES (feature_flags) ─────────────────────────────────────────────────
@@ -1022,6 +1091,8 @@ router.get('/clients/:id/features', requireAdmin, async (req, res) => {
   res.json(data ?? []);
 });
 
+const PAID_FEATURES = new Set(['web_hosting']);   // A495
+
 router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   const { id, key } = req.params;
   const { enabled, notes } = req.body as { enabled: boolean; notes?: string };
@@ -1029,6 +1100,12 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   // permissions per role. The portal shows them read-only.
   const refusal = ownerSetsFeature(key);
   if (refusal) { res.status(403).json({ error: refusal, code: 'OWNER_SETS' }); return; }
+  if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled must be true or false' }); return; }
+  // A495: web access is a paid licence (KES 10,000 a year) — switching it is a super admin's call.
+  if (PAID_FEATURES.has(key) && req.adminRole !== 'super_admin') {
+    res.status(403).json({ error: 'Only a super admin can switch web access (a paid licence).', code: 'SUPER_ADMIN_REQUIRED' });
+    return;
+  }
 
   const { data: biz } = await supabase.from('businesses').select('name').eq('id', id).single();
 
@@ -1060,7 +1137,8 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
 // against (active → grace → reports_only → locked). Pass null to clear (reverts
 // to the legacy feature_flags.web_hosting boolean). This is the writer the renewal
 // dashboard uses; enforcement lives in lib/webAccess.ts + the login gate.
-router.patch('/clients/:id/web-access', requireAdmin, async (req, res) => {
+// A495: the paid web-access clock — super admin only.
+router.patch('/clients/:id/web-access', requireAdmin, requireSuperAdmin, async (req, res) => {
   const id = String(req.params.id);
   const { expires_at } = req.body as { expires_at: string | null };
 
@@ -1108,11 +1186,34 @@ router.get('/desktop-releases', requireAdmin, async (req, res) => {
   }
 });
 
-router.patch('/clients/:id/desktop-version', requireAdmin, async (_req, res) => {
-  // A490: the owner approves or holds the tills' version now (Settings › Business › Till updates, PUT /api/controls/updates
-  // — `settings.updates`, validated by lib/desktopVersionApproval.ts, the check this route made). The portal shows it
-  // read-only; GET /desktop-releases above still lists what exists.
-  res.status(403).json({ error: OWNER_SETS_UPDATES, code: 'OWNER_SETS' });
+// A493 (owner, 2026-10-15): "update approval should live under admin some clients my not want to pay for updates so they
+// rather not have the ability to do the update them" — the admin approves or holds a client's till version (A348), never
+// the client. A490 had moved it to the owner; that is undone. Validated by lib/desktopVersionApproval.ts.
+// A495: stays the admin portal's (A493), and is a super admin's call — the approval is what a client pays for.
+router.patch('/clients/:id/desktop-version', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  const checked = await checkApprovableVersion((req.body as { version?: unknown })?.version);
+  if (checked.ok === false) { res.status((checked as { status: number }).status).json({ error: (checked as { error: string }).error }); return; }
+  const version = checked.version;
+
+  const { data: biz } = await supabase.from('businesses').select('name, desktop_approved_version').eq('id', id).single();
+  const { data, error } = await supabase
+    .from('businesses')
+    .update({ desktop_approved_version: version })
+    .eq('id', id)
+    .select('id, name, desktop_approved_version')
+    .single();
+  if (error) { sendError(res, error); return; }
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: version ? 'desktop_update.approve' : 'desktop_update.hold', resource: 'business',
+    businessId: id, businessName: biz?.name ?? undefined,
+    before: { desktop_approved_version: (biz as any)?.desktop_approved_version ?? null },
+    after:  { desktop_approved_version: version },
+  });
+
+  res.json(data);
 });
 
 // ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────
@@ -1128,14 +1229,20 @@ router.get('/clients/:id/subscription', requireAdmin, async (req, res) => {
   res.json(data ?? []);
 });
 
-router.post('/clients/:id/subscription/renew', requireAdmin, async (req, res) => {
-  const { plan_id, years = 1, payment_ref, notes } = req.body;
+// A495: super admin only; the plan and the years are checked BEFORE the current subscription is expired — a bad plan id
+// used to expire the client's subscription and then fail, leaving them with none.
+router.post('/clients/:id/subscription/renew', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const { plan_id, payment_ref, notes } = req.body;
   const { id } = req.params;
 
   if (!plan_id) { res.status(400).json({ error: 'plan_id is required' }); return; }
+  const years = renewYears(req.body?.years ?? 1);
+  if (years === null) { res.status(400).json({ error: 'years must be a whole number from 1 to 5' }); return; }
 
-  const { data: biz } = await supabase.from('businesses').select('name').eq('id', id).single();
-  const { data: plan } = await supabase.from('plans').select('name, price').eq('id', plan_id).single();
+  const { data: biz } = await supabase.from('businesses').select('name').eq('id', id).maybeSingle();
+  if (!biz) { res.status(404).json({ error: 'Business not found' }); return; }
+  const { data: plan } = await supabase.from('plans').select('name, price').eq('id', plan_id).maybeSingle();
+  if (!plan) { res.status(400).json({ error: 'That plan does not exist' }); return; }
 
   // Expire current subscription
   await supabase.from('subscriptions')
@@ -1161,7 +1268,7 @@ router.post('/clients/:id/subscription/renew', requireAdmin, async (req, res) =>
   if (error) { sendError(res, error); return; }
 
   // Auto-create invoice if plan has a price
-  if (plan && plan.price > 0) {
+  if (Number(plan.price) > 0) {
     const nextInvNum = await getNextInvoiceNumber();
     await supabase.from('invoices').insert({
       business_id:      id,
@@ -1182,7 +1289,7 @@ router.post('/clients/:id/subscription/renew', requireAdmin, async (req, res) =>
     adminId: req.adminId, adminEmail: req.adminEmail,
     action: 'subscription.renew', resource: 'subscription',
     businessId: id, businessName: biz?.name ?? undefined,
-    after: { plan: plan?.name, years, expires_at: expiresAt.toISOString() },
+    after: { plan: plan.name, years, expires_at: expiresAt.toISOString() },
     reason: notes,
   });
 
@@ -1246,9 +1353,20 @@ router.post('/clients/:id/billing', requireAdmin, async (req, res) => {
   res.status(201).json(data);
 });
 
-router.patch('/clients/:id/billing/:invoiceId', requireAdmin, async (req, res) => {
-  const { invoiceId } = req.params;
+// A495: marking an invoice paid is a money write — super admin only, scoped to the client in the path, the status
+// checked against invoices_status_check, and audited (it was not).
+router.patch('/clients/:id/billing/:invoiceId', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const { id, invoiceId } = req.params;
   const { status, payment_reference, payment_method, paid_at } = req.body;
+  if (status !== undefined && !(INVOICE_STATUSES as readonly string[]).includes(status)) {
+    res.status(400).json({ error: `status must be one of: ${INVOICE_STATUSES.join(', ')}` }); return;
+  }
+  if (paid_at !== undefined && paid_at !== null && !isTime(paid_at)) {
+    res.status(400).json({ error: 'paid_at must be a date' }); return;
+  }
+  const { data: before } = await supabase.from('invoices')
+    .select('id, invoice_number, status, payment_reference, paid_at').eq('id', invoiceId).eq('business_id', id).maybeSingle();
+  if (!before) { res.status(404).json({ error: 'Invoice not found' }); return; }
 
   const updates: Record<string, unknown> = {};
   if (status             !== undefined) updates.status             = status;
@@ -1258,8 +1376,16 @@ router.patch('/clients/:id/billing/:invoiceId', requireAdmin, async (req, res) =
   if (status === 'paid' && !paid_at)    updates.paid_at            = new Date().toISOString();
 
   const { data, error } = await supabase
-    .from('invoices').update(updates).eq('id', invoiceId).select().single();
+    .from('invoices').update(updates).eq('id', invoiceId).eq('business_id', id).select().single();
   if (error) { sendError(res, error); return; }
+
+  const { data: biz } = await supabase.from('businesses').select('name').eq('id', id).maybeSingle();
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: status === 'paid' ? 'invoice.mark_paid' : 'invoice.update', resource: 'invoice',
+    businessId: id, businessName: (biz as any)?.name ?? undefined,
+    before: before as object, after: updates, ip: req.ip,
+  });
   res.json(data);
 });
 
@@ -1369,6 +1495,10 @@ router.post('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
     res.status(400).json({ error: 'Password must be at least 8 characters' });
     return;
   }
+  // A495: a role is one of the two the portal knows — anything else was stored and then matched nothing.
+  if (!(ADMIN_ROLES as readonly string[]).includes(role)) {
+    res.status(400).json({ error: `role must be one of: ${ADMIN_ROLES.join(', ')}` }); return;
+  }
 
   const hash = await bcrypt.hash(password, 12);
   const { data, error } = await supabase
@@ -1382,7 +1512,7 @@ router.post('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
     action: 'team.create', resource: 'admin_user',
-    after: { email, name, role },
+    after: { email, name, role }, ip: req.ip,
   });
 
   res.status(201).json(data);
@@ -1394,6 +1524,19 @@ router.patch('/team/:id', requireAdmin, requireSuperAdmin, async (req, res) => {
     res.status(400).json({ error: 'You cannot deactivate your own account' });
     return;
   }
+  // A495: validated, and a super admin cannot demote themself (the portal would be left without one by accident).
+  if (role !== undefined && !(ADMIN_ROLES as readonly string[]).includes(role)) {
+    res.status(400).json({ error: `role must be one of: ${ADMIN_ROLES.join(', ')}` }); return;
+  }
+  if (is_active !== undefined && typeof is_active !== 'boolean') {
+    res.status(400).json({ error: 'is_active must be true or false' }); return;
+  }
+  if (req.params.id === req.adminId && role !== undefined && role !== 'super_admin') {
+    res.status(400).json({ error: 'You cannot remove your own super admin role' }); return;
+  }
+  const { data: beforeMember } = await supabase.from('admin_users')
+    .select('id, email, name, role, is_active, phone').eq('id', req.params.id).maybeSingle();
+  if (!beforeMember) { res.status(404).json({ error: 'Team member not found' }); return; }
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (name      !== undefined) updates.name      = name;
   if (role      !== undefined) updates.role      = role;
@@ -1408,6 +1551,12 @@ router.patch('/team/:id', requireAdmin, requireSuperAdmin, async (req, res) => {
     .from('admin_users').update(updates).eq('id', req.params.id)
     .select('id, email, name, role, is_active, phone').single();
   if (error) { sendError(res, error); return; }
+  forgetAdmin(req.params.id);   // A495: a deactivation or demotion bites on this process at once
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'team.update', resource: 'admin_user',
+    before: beforeMember as object, after: { id: req.params.id, ...updates }, ip: req.ip,
+  });
   res.json(data);
 });
 
@@ -1424,7 +1573,7 @@ export default router;
 router.get('/clients/:id/branches', requireAdmin, async (req, res) => {
   const { data, error } = await supabase
     .from('branches')
-    .select('id, name, is_main, status, city, desktop_licensed, desktop_licensed_at, desktop_licensed_by')
+    .select('id, name, is_main, status, city, desktop_licensed, desktop_licensed_at, desktop_licensed_by, deploy_mode')   // A505: deploy_mode — the mode-switch picker labelled every branch [cloud]
     .eq('business_id', req.params.id)
     .order('is_main', { ascending: false })
     .order('created_at');
@@ -1513,7 +1662,8 @@ router.patch('/clients/:id/branches/:branchId', requireAdmin, async (req: any, r
  * On enable  → sets desktop_licensed = true, auto-creates invoice if price provided.
  * On disable → sets desktop_licensed = false (desktop app blocked on next sync).
  */
-router.post('/clients/:id/branches/:branchId/licence', requireAdmin, async (req, res) => {
+// A495: switching a branch's paid desktop licence on or off (and raising its invoice) — super admin only.
+router.post('/clients/:id/branches/:branchId/licence', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { id, branchId } = req.params;
   const { licensed, invoice_amount, invoice_ref, notes } = req.body as {
     licensed:        boolean;
@@ -1521,6 +1671,7 @@ router.post('/clients/:id/branches/:branchId/licence', requireAdmin, async (req,
     invoice_ref?:    string;
     notes?:          string;
   };
+  if (typeof licensed !== 'boolean') { res.status(400).json({ error: 'licensed must be true or false' }); return; }
 
   // Verify branch belongs to this business
   const { data: branch, error: branchErr } = await supabase
@@ -1884,7 +2035,7 @@ router.get('/tech/tokens', requireAdmin, async (req, res) => {
 
   let query = supabase
     .from('tech_access_tokens')
-    .select('id, admin_name, branch_name, status, expires_at, used_at, confirmed_at, revoked_at, created_at, businesses(name)')
+    .select('id, admin_id, admin_name, branch_name, status, expires_at, used_at, confirmed_at, revoked_at, created_at, businesses(name)')
     .order('created_at', { ascending: false })
     .limit(parseInt(limit));
 
@@ -1902,10 +2053,16 @@ router.get('/tech/tokens', requireAdmin, async (req, res) => {
  * POST /api/admin/tech/tokens/:id/confirm
  * Confirm that tech access was authorized. Clears any manual-approval flag.
  */
-router.post('/tech/tokens/:id/confirm', requireAdmin, async (req, res) => {
+// A495: a confirmation is a second person's check — the admin who generated the token cannot confirm it, and every
+// confirmation is audited. Super admin only (an agent sees only their own tokens anyway).
+router.post('/tech/tokens/:id/confirm', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { data: token } = await supabase
-    .from('tech_access_tokens').select('*').eq('id', req.params.id).single();
+    .from('tech_access_tokens').select('*').eq('id', req.params.id).maybeSingle();
   if (!token) { res.status(404).json({ error: 'Token not found' }); return; }
+  if (token.admin_id === req.adminId) {
+    res.status(403).json({ error: 'Another admin must confirm access you generated yourself.', code: 'SELF_CONFIRM' });
+    return;
+  }
 
   await supabase.from('tech_access_tokens')
     .update({ confirmed_at: new Date().toISOString() })
@@ -1915,6 +2072,12 @@ router.post('/tech/tokens/:id/confirm', requireAdmin, async (req, res) => {
   await supabase.from('tech_approval_flags')
     .upsert({ admin_id: token.admin_id, requires_manual: false, last_unconfirmed_at: null, updated_at: new Date().toISOString() }, { onConflict: 'admin_id' });
 
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'tech.token.confirm', resource: 'tech_token',
+    businessId: token.business_id, businessName: token.branch_name,
+    after: { token_id: token.id, tech: token.admin_name }, ip: req.ip,
+  });
   res.json({ success: true });
 });
 
@@ -1961,10 +2124,15 @@ function generateSwitchToken(branchId: string, fromMode: string, toMode: string)
  * Admin generates a one-time mode switch token for a branch.
  * Token is valid for 7 days — gives the tech time to schedule the site visit.
  */
-router.post('/mode-switch/generate', requireAdmin, async (req, res) => {
+// A495: moving a branch between local and cloud moves its whole order history — super admin only, to a known mode.
+router.post('/mode-switch/generate', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { business_id, branch_id, to_mode, notes } = req.body;
   if (!business_id || !branch_id || !to_mode) {
     res.status(400).json({ error: 'business_id, branch_id, and to_mode are required' });
+    return;
+  }
+  if (!(MODE_SWITCH_TARGETS as readonly string[]).includes(to_mode)) {
+    res.status(400).json({ error: `to_mode must be one of: ${MODE_SWITCH_TARGETS.join(', ')}` });
     return;
   }
 
@@ -2043,10 +2211,24 @@ router.get('/mode-switch/requests', requireAdmin, async (req, res) => {
  * Cancel a pending switch request.
  */
 router.post('/mode-switch/:id/cancel', requireAdmin, async (req, res) => {
+  const { data: pending } = await supabase.from('mode_switch_requests')
+    .select('id, business_id, branch_id, from_mode, to_mode, status').eq('id', req.params.id).maybeSingle();
+  if (!pending) { res.status(404).json({ error: 'Switch request not found' }); return; }
+  if (pending.status !== 'pending') { res.status(409).json({ error: `This switch is already ${pending.status}` }); return; }
   await supabase.from('mode_switch_requests')
     .update({ status: 'cancelled' })
     .eq('id', req.params.id)
     .eq('status', 'pending');
+  // A495: audited — who called off a switch, and which.
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'mode_switch.cancel', resource: 'branch', businessId: pending.business_id,
+    before: { status: 'pending' }, after: { request_id: pending.id, from: pending.from_mode, to: pending.to_mode, status: 'cancelled' }, ip: req.ip,
+  });
+  // A507: an agent may call off a switch (a super admin started it); the super admins are told, to verify.
+  const { data: bizRow } = await supabase.from('businesses').select('name').eq('id', pending.business_id).maybeSingle();
+  notifySuperAdminsToVerify({ who: req.adminEmail, role: req.adminRole, what: 'Cancelled a mode switch', client: (bizRow as any)?.name ?? null,
+    changes: [{ field: 'Mode switch', before: `${pending.from_mode} → ${pending.to_mode} (pending)`, after: 'cancelled' }] });
   res.json({ success: true });
 });
 
@@ -2094,7 +2276,8 @@ router.post('/watchdog/:id/ack', requireAdmin, async (req: any, res) => {
   res.json({ muted: mute });
 });
 
-router.post('/watchdog/test', requireSuperAdmin, async (req: any, res) => {
+// A495: requireAdmin first — requireSuperAdmin alone read a role nothing had verified (no token, no role, refused only by luck).
+router.post('/watchdog/test', requireAdmin, requireSuperAdmin, async (req: any, res) => {
   const who = req.adminEmail ?? 'an admin';
   const sent = await notifyAdmin('ZapTill test alert',
     `🧪 ZapTill test alert\nSent by ${who} from the admin portal. If you can read this, the watchdog can reach you.`);

@@ -100,7 +100,9 @@ const app = express(); app.use(express.json());
 app.use('/api/orders', require(path.join(DIST, 'routes/orders.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
 const BASE = `http://127.0.0.1:${server.address().port}/api/orders`;
-const ownerToken = (userId) => jwt.sign({ userId, businessId: BZ, branchId: null, isOwner: true, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface: 'dashboard' }, process.env.JWT_SECRET);
+// A494: the shape /auth/login issues — the owner's password session (ownerLogin, no surface). requireAuth skips the
+// users-row check for this session only; the A451 case (no users row) is exactly this session.
+const ownerToken = (userId) => jwt.sign({ userId, businessId: BZ, branchId: null, isOwner: true, ownerLogin: true, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's' }, process.env.JWT_SECRET);
 const post = async (url, body, userId) => {
   const r = await fetch(`${BASE}${url}`, { method: 'POST', headers: { Authorization: `Bearer ${ownerToken(userId)}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
   return { status: r.status, body: await r.json().catch(() => null) };

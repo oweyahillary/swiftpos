@@ -8,6 +8,18 @@ import { otpDisabled } from '../lib/loginOtp';   // A391
 import { isTillPayload, isOwnerEraTillPayload, tillBlockReason } from '../lib/deviceGrant';   // A415
 import { expandKeys } from '../lib/permissions';                 // A490
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
+import { isOwnerRoleName } from '../lib/ownerRole';              // A494
+
+/**
+ * A494: a session from the owner's password sign-in (/auth/login — only the account that owns the business can make
+ * one). It says so (`ownerLogin`); one issued before A494 is recognised by its shape: the owner, no surface, no role and
+ * no PIN sign-in (every PIN sign-in carries a surface and its role).
+ */
+export function isOwnerPasswordSession(p: { isOwner?: unknown; ownerLogin?: unknown; surface?: unknown; roleId?: unknown; pinSignIn?: unknown } | null | undefined): boolean {
+  if (!p || p.isOwner !== true) return false;
+  if (p.ownerLogin === true) return true;
+  return !p.surface && !p.roleId && p.pinSignIn !== true;
+}
 
 declare global {
   namespace Express {
@@ -177,12 +189,29 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // things: (a) the account is still active — closes the window where a
     // deactivated/fired staff member's access token kept working until it
     // expired; and (b) the token's permissions haven't been superseded.
-    if (!req.isOwner) {
+    // A494: only the REAL business owner skips it — the owner's password sign-in (/auth/login: only the account that owns
+    // the business gets one), or the id businesses.owner_id names. A PIN sign-in of someone holding the owner's ROLE
+    // (isOwner because the role is named owner/admin) is a users row like any other: a deactivated "Admin" or one whose
+    // role was changed kept every door open for the life of the token.
+    let realOwner = false;
+    if (req.isOwner) {
+      if (isOwnerPasswordSession(payload)) realOwner = true;
+      else {
+        const { data: biz, error: bErr } = await supabase
+          .from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle();
+        if (bErr) {
+          res.status(503).json({ error: 'Could not verify your session right now — please try again', code: 'AUTH_BACKEND_UNAVAILABLE' });
+          return;
+        }
+        realOwner = !!req.userId && (biz as { owner_id?: string | null } | null)?.owner_id === req.userId;
+      }
+    }
+    if (!realOwner) {
       // Destructured, not ignored: a failure here must be a 5xx, not a silent
       // fall-through that presents to the cashier as a bad PIN.
       const { data: userRow, error: uErr } = await supabase
         .from('users')
-        .select('permissions_version, status')
+        .select('permissions_version, status, business_id')
         .eq('id', req.userId)
         .maybeSingle();
 
@@ -191,6 +220,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
           error: 'Could not verify your session right now — please try again',
           code:  'AUTH_BACKEND_UNAVAILABLE',
         });
+        return;
+      }
+
+      // A494: no users row (deleted), or a row of another business — the token names nobody here.
+      if (!userRow || ((userRow as any).business_id && (userRow as any).business_id !== req.businessId)) {
+        res.status(401).json({ error: 'Please sign in again.', code: 'SIGN_IN_AGAIN' });
         return;
       }
 
@@ -286,14 +321,15 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     if ((userRow as any)?.id) req.userId = (userRow as any).id;
   }
 
-  const { data: ownerRole } = await supabase
+  // A494: the owner's role by the ONE rule (lib/ownerRole.ts) — onboarding names it 'Admin', so a lookup by the name 'owner'
+  // found nothing for most businesses.
+  const { data: roleRows } = await supabase
     .from('roles')
-    .select('id')
-    .eq('business_id', (business as any).id)
-    .eq('name', 'owner')
-    .single();
+    .select('id, name')
+    .eq('business_id', (business as any).id);
+  const ownerRole = ((roleRows ?? []) as Array<{ id: string; name?: string | null }>).find((r) => isOwnerRoleName(r.name)) ?? null;
 
-  req.roleId         = (ownerRole as any)?.id ?? null;
+  req.roleId         = ownerRole?.id ?? null;
   req.permissionKeys = ['*'];
 
   next();

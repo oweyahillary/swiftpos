@@ -36,7 +36,8 @@ ok('it says what it shows', /source: 'cloud',\s*scopeLabel: 'All tills at this b
 
 ok('the IPC channel is handled, bridged and validated',
   // A490: the handler first asks the person's key (reports.overview / orders.view_all), then reads the branch.
-  /handle\('manager:branchDay', async \(_e, r\?: RangeArg\) => \{\s*requireKey\(\['reports\.overview', 'orders\.view_all'\][^\n]*\n\s*return branchDay\(resolveRange\(/.test(read('src/main/ipcHandlers.ts'))
+  // A494: the read is kept (const day = await branchDay(...)) so expected cash can be taken out for those without the key.
+  /handle\('manager:branchDay', async \(_e, r\?: RangeArg\) => \{\s*requireKey\(\['reports\.overview', 'orders\.view_all'\][^\n]*\n\s*const day = await branchDay\(resolveRange\(/.test(read('src/main/ipcHandlers.ts'))
   && /branchDay: +\(range\?: any\) => ipcRenderer\.invoke\('manager:branchDay', range\)/.test(read('src/main/preload.ts'))
   && /'manager:branchDay': +\{ \.\.\.rangeArg \}/.test(read('src/main/ipcSchemas.ts')));
 

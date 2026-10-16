@@ -18,6 +18,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { can } from '../middleware/rbac';
 import { verifyTechToken as verifyEd25519Token, PUBLIC_KEY_PEM, generateRevealCode } from '../lib/techToken';
 import crypto        from 'crypto';
 import os            from 'os';
@@ -138,6 +139,16 @@ router.get('/public-key', async (_req, res) => {
   res.json({ algorithm: 'ed25519', public_key: PUBLIC_KEY_PEM });
 });
 
+/** A495: who may read a branch's reveal code. Exported for the tests. */
+export function branchConfigAllowed(req: any, branchId: string): boolean {
+  // A till bound to a branch reads only that branch. A till enrolled before codes were branch-bound carries no branch
+  // (lib/deviceGrant TillClaims.branchId null): it keeps the business-wide read it had, or it could never cache a code.
+  if (req.isTill) return !req.branchId || req.branchId === branchId;
+  if (req.isOwner) return true;
+  if (!can(req, 'devices.approve')) return false;
+  return !req.branchId || req.branchId === branchId;
+}
+
 // ── GET /api/tech/branch-config/:branchId ──────────────────────────────────
 // Called by the desktop at ACTIVATION (owner-authenticated) to cache everything
 // it needs to gate tech access offline thereafter: the branch's reveal code
@@ -153,6 +164,13 @@ router.get('/branch-config/:branchId', requireAuth, async (req: any, res) => {
 
   if (!branch)                              { res.status(404).json({ error: 'Branch not found' }); return; }
   if (branch.business_id !== req.businessId) { res.status(403).json({ error: 'Branch not in your business' }); return; }
+  // A495: the reveal code opens the tech panel on this branch's tills — never for any signed-in cashier. Allowed: the
+  // till's own session for ITS branch (techService.refreshTechConfig sends exactly that, at join and on every sync), the
+  // owner, or a person who may approve devices (devices.approve) on a branch they work at.
+  if (!branchConfigAllowed(req, branchId)) {
+    res.status(403).json({ error: 'Only the owner, a manager who approves devices, or the branch\'s own till can read this', code: 'FORBIDDEN' });
+    return;
+  }
 
   // A114: a branch must always expose a reveal code so the till caches a real one
   // (a null cache is exactly why a since-enrolled/offline till can't be unlocked).
@@ -302,6 +320,19 @@ router.post('/mode-switch/apply', requireTechToken, async (req: any, res) => {
 
   if (!switch_token) { res.status(400).json({ error: 'switch_token is required' }); return; }
 
+  // A495: a tech token + a switch code are both bearer secrets; the switch must also come from a till ENROLLED on this
+  // branch (approved, not retired) — X-Device-Id, as every till call sends. A copied pair is useless off the premises'
+  // tills. (No desktop build calls this route yet; it is bound before one does.)
+  const deviceId = String(req.headers['x-device-id'] ?? req.body?.device_id ?? '').trim();
+  if (!deviceId) { res.status(400).json({ error: 'Run the switch from an enrolled till (device id missing)', code: 'DEVICE_REQUIRED' }); return; }
+  const { data: dev, error: devErr } = await supabase.from('user_devices')
+    .select('status, retired_at, branch_id').eq('business_id', businessId).eq('device_id', deviceId).maybeSingle();
+  if (devErr) { res.status(503).json({ error: 'Could not check this till right now — try again' }); return; }
+  if (!dev || (dev as any).status !== 'approved' || (dev as any).retired_at || ((dev as any).branch_id && (dev as any).branch_id !== branchId)) {
+    res.status(403).json({ error: 'This till is not enrolled on the branch being switched', code: 'DEVICE_NOT_ENROLLED' });
+    return;
+  }
+
   // Hash and look up the switch token
   const switchHash = crypto.createHash('sha256').update(switch_token).digest('hex');
 
@@ -310,6 +341,7 @@ router.post('/mode-switch/apply', requireTechToken, async (req: any, res) => {
     .select('*')
     .eq('token_hash', switchHash)
     .eq('branch_id', branchId)
+    .eq('business_id', businessId)
     .eq('status', 'pending')
     .single();
 
@@ -320,6 +352,15 @@ router.post('/mode-switch/apply', requireTechToken, async (req: any, res) => {
 
   if (new Date(switchReq.expires_at) < new Date()) {
     res.status(410).json({ error: 'Switch token has expired', code: 'SWITCH_TOKEN_EXPIRED' });
+    return;
+  }
+
+  // A495: claim (consume) the request before acting on it — two taps (or two tills) cannot both apply one switch.
+  const { data: claimed } = await supabase.from('mode_switch_requests')
+    .update({ status: 'applied', applied_at: new Date().toISOString(), applied_by_tech: tech_name ?? req.techPayload.techName })
+    .eq('id', switchReq.id).eq('status', 'pending').select('id');
+  if (!claimed || (claimed as any[]).length !== 1) {
+    res.status(409).json({ error: 'This switch is already being applied', code: 'SWITCH_IN_PROGRESS' });
     return;
   }
 

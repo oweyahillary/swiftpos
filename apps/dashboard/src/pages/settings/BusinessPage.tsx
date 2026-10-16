@@ -38,7 +38,6 @@ export function useBusinessTabs() {
     { to: 'payments',     label: 'Payments' },
     { to: 'voids-refunds', label: 'Voids, refunds & delivery' },   // 0.6.30 (A336 stage 3): the owner's rules; 0.6.33 + free delivery
     { to: 'pos-options',  label: 'POS options' },    // A491: the owner's now (was the admin portal's)
-    { to: 'till-updates', label: 'Till updates' },   // A491
     { to: 'setup',        label: setupLabel },
     { to: 'integrations', label: 'Integrations' },
   ];

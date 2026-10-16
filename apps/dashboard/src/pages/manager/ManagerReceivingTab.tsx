@@ -22,7 +22,7 @@ import { transferDocSpec, grnDocSpec } from '../../lib/documentSpecs';
 
 interface TransferItem { product_id: string; quantity: number; products?: { name: string } | null }
 // A218 stock picker: /api/inventory rows (per-branch stock joined with product).
-interface InvRow { product_id: string; quantity: number; products?: { name: string } | null }
+interface InvRow { product_id: string; quantity: number | null; products?: { name: string } | null }
 interface Transfer {
   id: string; transfer_number: string;
   from_branch_id: string; from_branch_name: string;
@@ -84,7 +84,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
 
   // A218: manager initiates a transfer FROM their own branch to another branch.
   const [branchList, setBranchList] = useState<{ id: string; name: string }[]>([]);
-  const [stockList, setStockList]   = useState<{ id: string; name: string; stock: number }[]>([]);
+  const [stockList, setStockList]   = useState<{ id: string; name: string; stock: number | null }[]>([]);   // A506: null = being counted
   const [showNew, setShowNew]       = useState(false);
   const [destId, setDestId]         = useState('');
   const [sendQty, setSendQty]       = useState<Record<string, string>>({});
@@ -151,7 +151,8 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
       setPos(Array.isArray(p) ? p : []);
       setBranchList(Array.isArray(br) ? br.filter(b => b.id !== branchId) : []);
       setStockList(Array.isArray(pr)
-        ? pr.map(r => ({ id: r.product_id, name: r.products?.name ?? 'Item', stock: Number(r.quantity) || 0 }))
+        // A506: a blind count answers quantity null (A494) — "being counted", never "in stock: 0" (it refused the send).
+        ? pr.map(r => ({ id: r.product_id, name: r.products?.name ?? 'Item', stock: r.quantity === null || r.quantity === undefined ? null : Number(r.quantity) || 0 }))
         : []);
     } catch (e: any) {
       setError(e?.message ?? 'Could not load receiving');
@@ -171,7 +172,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
       .map(p => ({ product_id: p.id, quantity: Number(sendQty[p.id] || 0), stock: p.stock, name: p.name }))
       .filter(i => i.quantity > 0);
     if (!items.length) { setSendError('Enter a quantity for at least one product.'); return; }
-    const over = items.find(i => i.quantity > i.stock);
+    const over = items.find(i => i.stock !== null && i.quantity > i.stock);
     if (over) { setSendError(`${over.name}: only ${over.stock} in stock at your branch.`); return; }
     setSendBusy(true); setSendError('');
     try {
@@ -336,11 +337,11 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                       <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
                         <span className="text-gray-300 truncate">
                           {p.name}
-                          <span className={`ml-2 text-xs ${p.stock <= 0 ? 'text-red-400' : 'text-gray-500'}`}>in stock: {p.stock}</span>
+                          <span className={`ml-2 text-xs ${p.stock !== null && p.stock <= 0 ? 'text-red-400' : 'text-gray-500'}`}>{p.stock === null ? 'being counted' : `in stock: ${p.stock}`}</span>
                         </span>
-                        <input type="number" min={0} max={p.stock} step="any" value={sendQty[p.id] ?? ''}
+                        <input type="number" min={0} max={p.stock ?? undefined} step="any" value={sendQty[p.id] ?? ''}
                           onChange={e => setSendQty(prev => ({ ...prev, [p.id]: e.target.value }))}
-                          placeholder="0" disabled={p.stock <= 0}
+                          placeholder="0" disabled={p.stock === null || p.stock <= 0}
                           className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right disabled:opacity-40 focus:outline-none focus:border-swift" />
                       </div>
                     ))}

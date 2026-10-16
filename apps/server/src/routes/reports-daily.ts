@@ -35,6 +35,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }   from '../lib/supabase';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
 import { branchScope, requirePermission } from '../middleware/rbac';
+import { csvCell } from '../lib/csvSafe';   // A494
 import ExcelJS        from 'exceljs';
 
 const router = safeRouter();
@@ -91,7 +92,8 @@ async function sendExcel(res: any, wb: ExcelJS.Workbook, filename: string) {
 }
 
 function sendCsv(res: any, rows: (string | number)[][], filename: string) {
-  const lines = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
+  // A494: csvCell neutralises a cell a spreadsheet would run as a formula (a product name typed as =HYPERLINK(...)).
+  const lines = rows.map(r => r.map(v => csvCell(v)).join(','));
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(lines.join('\n'));

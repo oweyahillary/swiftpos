@@ -51,14 +51,14 @@
 import http from 'http';
 import https from 'https';
 import net from 'net';
-import { serverIdentity, securityCode } from './lanTls';
+import { serverIdentity, securityCode, requireTlsForTills, noteTillTransport } from './lanTls';
 import { isNodeRole } from './deviceConfig';
 import crypto from 'crypto';
 import { getLocalDb, applyPulledBranding } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
-import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents,
-  checkDeviceKey, isKnownTill, issueDeviceKey, type DeviceKeyVerdict } from './nodeIngest';
+import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents, retryRefusedAfterEvents,
+  checkDeviceKey, isKnownTill, issueDeviceKey, joinVerdict, prepareDeviceEnrolment, type DeviceKeyVerdict } from './nodeIngest';
 import { verifyPinAtNodeAsync, readBranchStaffForServe, vetRelayedStaffChanges } from './branchStaff';
 import { logLine } from './logFile';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
@@ -68,10 +68,11 @@ import { forwardToCloud } from './nodeGateway';
 import { refreshStaffRosterNow } from './staffRoster';   // A446
 import { acceptRelayedChanges, changeVersion, bumpChangeVersion } from './localChanges';   // A448 (+ A381)
 import { tillSecrets as nodeSecrets } from './changeQueue';   // A448
-import { serveSharedUpdate, shareDir, shareWanted, latestReady, noteTillVersion, readyAnswer } from './updateShare';   // A443
+import { serveSharedUpdate, shareDir, shareWanted, offeredVersion, noteTillVersion, readyAnswer, shareProgress } from './updateShare';   // A443
 import { GATEWAY_PREFIX } from './cloudGateway';
 import { startBeacon, stopBeacon } from './serverBeacon';   // A427
-import { createJoinRequest, readJoin } from './serverJoin';   // A427
+import { createJoinRequest, readJoin, JOIN_PROOF_HEADER } from './serverJoin';   // A427, A503
+import { NODE_PROTOCOL, NODE_CAPABILITIES, MIN_TILL_PROTOCOL } from './nodeHealth';   // A501
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
 
@@ -83,6 +84,8 @@ let portAttempt = 0;
 let boundPort: number | null = null;
 
 let server: net.Server | null = null;
+/** A501: the connections the listening socket accepted (closed with the server). */
+const openSockets = new Set<net.Socket>();
 /** A489: the two protocol handlers the listening socket hands each connection to. */
 let plainServer: http.Server | null = null;
 let tlsServer: https.Server | null = null;
@@ -121,7 +124,11 @@ function beaconInfo() {
   const c = getDeviceConfig();
   let business: string | null = null;
   try { business = (getLocalDb().prepare(`SELECT business_name FROM session WHERE id=1`).get() as any)?.business_name ?? null; } catch { /* not joined yet */ }
-  return { port: boundPort, business, server: c?.device_name || (c?.terminal_code ? `Server ${c.terminal_code}` : null) };
+  // A501: and WHICH server — its certificate's security code (public: the certificate is handed to anyone on /node/tls).
+  // A till whose server moved to a new address (DHCP, the port fallback) finds it by this, and proves it over TLS
+  // against the certificate it pinned before it follows (nodeFollow.ts).
+  return { port: boundPort, business, server: c?.device_name || (c?.terminal_code ? `Server ${c.terminal_code}` : null),
+    fp: tlsCert ? securityCode(tlsCert) : null };
 }
 
 /** The most this server reads of one request. */
@@ -167,6 +174,48 @@ function whoIsAsking(req: http.IncomingMessage, bodyDevice?: unknown): { device:
 }
 const proven = (v: DeviceKeyVerdict | 'conflict') => v === 'ok' || v === 'enrolled';
 const KEY_REFUSED = 'This till\'s device key does not match the branch server\'s record — rejoin it from the branch server (or forget it there and let it reconnect).';
+/** A496: a device this server never knew, presenting a key of its own making — it must join (Find my server). */
+const NOT_JOINED = 'This till has not joined this branch server — join it from the till\'s setup (Find my server), and allow it at the server.';
+/** A496: a verdict that refuses the request outright, on any route. */
+const refusedVerdict = (v: DeviceKeyVerdict | 'conflict') => v === 'conflict' || v === 'mismatch' || v === 'missing' || v === 'unknown';
+const refusalText = (v: DeviceKeyVerdict | 'conflict') =>
+  v === 'conflict' ? 'the request names two different tills'
+  : v === 'unknown' ? NOT_JOINED
+  : v === 'absent' ? 'Update this till — the branch server answers this only to tills with a device key.'
+  : KEY_REFUSED;
+
+/**
+ * A496: the routes that hand out the branch's data (its staff list, sales, other tills' rows, catalogue, the tech
+ * session) or change it — only for a till that proves which it is. Answers the refusal itself and returns null; an older
+ * till (no key) is logged.
+ */
+function requireProven(req: http.IncomingMessage, res: http.ServerResponse, route: string, bodyDevice?: unknown):
+  { device: string } | null {
+  const who = whoIsAsking(req, bodyDevice);
+  if (proven(who.verdict) && who.device) return { device: who.device };
+  if (who.verdict === 'absent') warnOlderTill(who.device, route);
+  else logLine('node', `${route} refused for ${who.device ?? '?'} (${who.verdict}) from ${lanAddress(req)}`);
+  json(res, 401, { error: refusalText(who.verdict) });
+  return null;
+}
+
+/**
+ * A496: a tech token is stored for the branch only when it IS one — signed by the tech key this server holds, unexpired,
+ * for this branch (the same check techService.openTechSession makes, without opening a session here).
+ */
+export function isRealTechToken(token: unknown, branchId: string | null | undefined, now = Date.now()): boolean {
+  if (typeof token !== 'string' || token.length > 512_000) return false;
+  try {
+    const pub = (getLocalDb().prepare(`SELECT public_key FROM tech_state WHERE id = 1`).get() as { public_key?: string } | undefined)?.public_key;
+    if (!pub) return false;
+    const parts = token.split('.');
+    if (parts.length !== 3 || parts[0] !== 'st2') return false;
+    if (!crypto.verify(null, Buffer.from(parts[1]), pub, Buffer.from(parts[2], 'base64url'))) return false;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString()) as { exp?: number; branchId?: string };
+    if (!Number.isFinite(payload?.exp) || Math.floor(now / 1000) > Number(payload.exp)) return false;
+    return !branchId || payload.branchId === branchId;
+  } catch { return false; }
+}
 
 const warnedOld = new Map<string, number>();
 function warnOlderTill(device: string | null, route: string): void {
@@ -248,6 +297,8 @@ export function startNodeServer(): void {
   // slip is lost; see also the SQLite query in the deploy notes.
   const secret = ensureNodeSecret();
   console.log(`[node] branch access code: ${secret}`);
+  // A496: write down the tills known before device keys, before anything can ask to record a key.
+  try { prepareDeviceEnrolment(); } catch (e: any) { logLine('node', `could not note the known tills: ${e?.message ?? e}`); }
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse) => {
     try {
@@ -264,7 +315,19 @@ export function startNodeServer(): void {
       // queues a question for the person at this server (serverJoin.ts); nothing is handed out until they allow it,
       // and then only to the holder of that request's private token.
       if (req.method === 'POST' && url === '/node/join') {
-        const r = createJoinRequest(await readBody(req).catch(() => ({})), lanAddress(req));
+        // A496: a device that already holds a key here is not joined again until the person at the server forgets it —
+        // A503: unless its key was never used (the till never got its grant) or it proves it holds that key
+        // (X-Join-Proof, bound to this server's certificate). See serverJoin.ts.
+        const proofRaw = req.headers[JOIN_PROOF_HEADER];
+        const proof = Array.isArray(proofRaw) ? proofRaw[0] : proofRaw;
+        const code = tlsCert ? securityCode(tlsCert) : null;
+        const r = createJoinRequest(await readBody(req).catch(() => ({})), lanAddress(req), Date.now(), {
+          holdsKey: (id) => {
+            const v = joinVerdict(id, proof ?? null, code);
+            if (v === 'unused' || v === 'proven') logLine('node', `A503: ${id.slice(0, 8)} asks to join again (${v === 'unused' ? 'its key from the last join was never used' : 'it proved the key it holds here'}) — the person at the server is asked`);
+            return v === 'held';
+          },
+        });
         return r.ok ? json(res, 202, { id: r.id, token: r.token }) : json(res, r.status, { error: r.error });
       }
       if (req.method === 'GET' && url === '/node/join/status') {
@@ -285,6 +348,16 @@ export function startNodeServer(): void {
         return json(res, 401, { error: 'unauthorised — bad or missing X-Node-Secret' });
       }
       notePlainTill(req);
+      // A496: once the person at the server turns it on (every till encrypted — see lanTls.tillTransports), an
+      // authenticated request over plain HTTP from another machine is refused. Off by default.
+      {
+        const addr = lanAddress(req);
+        const loopback = addr === '127.0.0.1' || addr === '::1';
+        if (!loopback) noteTillTransport(headerDevice(req) ?? addr, encrypted(req));
+        if (!loopback && !encrypted(req) && requireTlsForTills()) {
+          return json(res, 426, { error: 'This branch server accepts only encrypted connections — update this till (1.0.15 or later), or trust the server again from its Tech page.' }, { Upgrade: 'TLS/1.2' });
+        }
+      }
 
       // A410: the branch's tills reach the cloud ONLY through this server. Raw pass-through of the till's own request
       // (its token, device and idempotency headers) to the cloud, and the answer straight back. See nodeGateway.ts.
@@ -301,16 +374,21 @@ export function startNodeServer(): void {
       if (req.method === 'GET' && url === '/node/update/ready') {
         const q = new URL(req.url ?? '', 'http://x').searchParams;
         const v = String(q.get('v') ?? '');
+        const want = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(q.get('want') ?? '')) ? String(q.get('want')) : null;
         noteTillVersion(String(q.get('device') ?? ''), q.get('name'), v);
-        const ready = latestReady(shareDir());
-        if (!ready) shareWanted(v);   // nothing held yet: the server checks what is approved (at most every 5 min)
-        return json(res, 200, readyAnswer(ready, v));
+        // A496: only the version the cloud approved (a copy left from before a roll-back or a hold is never offered), and
+        // a till that names the version it was approved for gets the server to fetch it now if it holds another.
+        const ready = offeredVersion(shareDir());
+        if (!ready || (want && want !== ready)) shareWanted(want ?? v);   // the server checks what is approved (at most every 5 min)
+        return json(res, 200, { ...readyAnswer(ready, v), share: shareProgress(want ?? ready) });
       }
 
       // Health — tills probe this to decide reachability.
       if (req.method === 'GET' && url === '/node/health') {
         const c = getDeviceConfig();
-        return json(res, 200, { ok: true, branch_id: c?.branch_id ?? null, device_id: c?.device_id ?? null, role: 'node' });
+        // A501: and what this server speaks — a till older than it expects, or newer than it, says so on its Tech page.
+        return json(res, 200, { ok: true, branch_id: c?.branch_id ?? null, device_id: c?.device_id ?? null, role: 'node',
+          protocol: NODE_PROTOCOL, min_till_protocol: MIN_TILL_PROTOCOL, capabilities: NODE_CAPABILITIES });
       }
 
       // Receive a peer till's cash records: shifts, floats, expenses, trading
@@ -346,10 +424,13 @@ export function startNodeServer(): void {
         if (!proven(who.verdict)) {
           if (who.verdict === 'absent') warnOlderTill(who.device, '/node/verify-pin');
           return json(res, 503, { ok: false, reason: 'unavailable',
-            error: who.verdict === 'absent' ? 'Update this till — the branch server checks PINs only for tills with a device key.' : KEY_REFUSED });
+            error: who.verdict === 'absent' ? 'Update this till — the branch server checks PINs only for tills with a device key.' : refusalText(who.verdict) });
         }
-        // F16: at most 10 PINs a minute from one till (or address) — a guessing loop is slowed to uselessness.
-        if (!pinAttemptAllowed(who.device ?? lanAddress(req))) {
+        // F16: at most 10 PINs a minute from one till — A496: and from one ADDRESS, whatever devices it names (a guessing
+        // loop that rotates device ids from one machine was not limited at all).
+        const byDevice = pinAttemptAllowed(`dev:${who.device ?? lanAddress(req)}`);
+        const byAddress = pinAttemptAllowed(`ip:${lanAddress(req)}`);
+        if (!byDevice || !byAddress) {
           logLine('node', `verify-pin: too many attempts from ${who.device ?? lanAddress(req)} — refused for a minute`);
           return json(res, 429, { ok: false, reason: 'rate_limited', error: 'Too many PIN attempts — wait a minute and try again.' });
         }
@@ -408,13 +489,14 @@ export function startNodeServer(): void {
         // F7: the device the rows claim must be the device asking. Older tills (no key at all) keep working here —
         // only here — with a warning in the log; see nodeIngest's device keys.
         const who = whoIsAsking(req, peerDeviceId || null);
-        if (who.verdict === 'conflict' || who.verdict === 'mismatch' || who.verdict === 'missing') {
+        if (refusedVerdict(who.verdict)) {
           logLine('node', `/node/sync refused for ${peerDeviceId || '?'} (${who.verdict}) from ${lanAddress(req)}`);
-          return json(res, 401, { error: who.verdict === 'conflict' ? 'the request names two different tills' : KEY_REFUSED });
+          return json(res, 401, { error: refusalText(who.verdict) });
         }
         if (who.verdict === 'absent') warnOlderTill(peerDeviceId || null, '/node/sync');
         // A19 relay to the cloud only for a till this server knows (joined: a device key here, or it reports to the
-        // Close Branch poll) — never for a device id first seen in this very request.
+        // Close Branch poll) — never for a device id first seen in this very request. A496: "knows" = a join, a key from
+        // a device known before device keys, or such a device itself (isKnownTill) — no longer one a poll made known.
         const relay = proven(who.verdict) || isKnownTill(peerDeviceId);
 
         const results: Record<string, any> = {};
@@ -437,6 +519,15 @@ export function startNodeServer(): void {
         // repetition after every ingest is the whole answer to cross-table
         // ordering. Idempotent, so a round with nothing to do costs one SELECT.
         applyPendingEvents();
+        // A501: and the other way round — a row refused only because the event it needed came later in the same batch (a
+        // till's new trading day ahead of the event closing its last one) is tried once more now, and the answer says so.
+        for (const [table, rows] of Object.entries(body?.tables ?? {})) {
+          if (!isReplicatedTable(table) || !Array.isArray(rows) || !results[table]?.rejected?.length) continue;
+          const before = results[table].rejected.length;
+          results[table] = retryRefusedAfterEvents(table, peerDeviceId, rows, results[table], { relay });
+          const now = results[table].rejected.length;
+          if (now < before) { logLine('node', `A501: ${before - now} ${table} row(s) from ${peerDeviceId.slice(0, 8)} taken after the event sweep (they came ahead of the event they needed)`); applyPendingEvents(); }
+        }
         return json(res, 200, { ok: true, results });
       }
 
@@ -445,6 +536,9 @@ export function startNodeServer(): void {
       // here instead of re-offering its whole history.
       if (req.method === 'GET' && url === '/node/cursors') {
         const device = new URL(req.url ?? '', 'http://node').searchParams.get('device');
+        // A496: only for a proven till, and only its own (an older till: none — it re-offers, which is idempotent).
+        const me = requireProven(req, res, '/node/cursors', device || null);
+        if (!me) return;
         const all = listPeers();
         return json(res, 200, {
           cursors: device ? all.filter(p => p.device_id === device) : all,
@@ -466,10 +560,12 @@ export function startNodeServer(): void {
         }
         // F7: a till's instructions (and the state the Close Branch screen trusts) only to that till.
         const who = whoIsAsking(req, deviceId);
-        if (who.verdict === 'conflict' || who.verdict === 'mismatch' || who.verdict === 'missing') {
-          return json(res, 401, { error: KEY_REFUSED });
+        if (refusedVerdict(who.verdict)) {
+          return json(res, 401, { error: refusalText(who.verdict) });
         }
-        if (body.state) recordPeerState(deviceId, body.state);
+        // A496: a device this server does not know is not recorded (that made it "known", and so relayed for, A19).
+        if (body.state && (proven(who.verdict) || isKnownTill(deviceId))) recordPeerState(deviceId, body.state);
+        else if (body.state) logLine('node', `/node/instructions/poll: ${deviceId.slice(0, 8)} is not a till this server knows — its state is not recorded`);
         return json(res, 200, { instructions: collectInstructions(deviceId) });
       }
 
@@ -481,11 +577,12 @@ export function startNodeServer(): void {
         const uid = typeof body?.instruction_uid === 'string' && body.instruction_uid ? body.instruction_uid : null;
         if (!Number.isInteger(id) && !uid) return json(res, 400, { error: 'instruction_id is required' });
         // F12: matched on the uid and the till that answers (an older till sends neither — the number, as before).
+        // A496: the till that answers must prove it. An older till (it names no device, or one with no key here) keeps the
+        // old path — logged; a device that holds a key must present it.
         const deviceId = typeof body?.device_id === 'string' && body.device_id ? body.device_id : null;
-        if (deviceId) {
-          const who = whoIsAsking(req, deviceId);
-          if (who.verdict === 'conflict' || who.verdict === 'mismatch' || who.verdict === 'missing') return json(res, 401, { error: KEY_REFUSED });
-        }
+        const who = whoIsAsking(req, deviceId);
+        if (refusedVerdict(who.verdict)) return json(res, 401, { error: refusalText(who.verdict) });
+        if (!proven(who.verdict)) warnOlderTill(who.device, '/node/instructions/ack');
         recordAck(Number.isInteger(id) ? id : null, {
           ok: body?.ok === true,
           error: body?.error ?? undefined,
@@ -505,6 +602,7 @@ export function startNodeServer(): void {
         if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
           return json(res, 403, { error: 'branch mismatch' });
         }
+        if (!requireProven(req, res, '/node/since', deviceId)) return;   // A496: the branch's rows only to a proven till
         const out = collectDistribution(deviceId, body?.cursors ?? {}, Number(body?.limit) || 500);
         return json(res, 200, out);
       }
@@ -527,6 +625,7 @@ export function startNodeServer(): void {
         if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
           return json(res, 403, { error: 'branch mismatch' });
         }
+        if (!requireProven(req, res, '/node/reference')) return;   // A496
         return json(res, 200, buildReferenceBundle(getLocalDb(), c));
       }
 
@@ -544,22 +643,28 @@ export function startNodeServer(): void {
         const who = whoIsAsking(req);
         if (!proven(who.verdict)) {
           if (who.verdict === 'absent') warnOlderTill(who.device, '/node/changes');
-          return json(res, 401, { error: who.verdict === 'absent' ? 'Update this till to hand changes to the branch server.' : KEY_REFUSED });
+          return json(res, 401, { error: who.verdict === 'absent' ? 'Update this till to hand changes to the branch server.' : refusalText(who.verdict) });
         }
         const body = await readBody(req);
         // F7: a staff change's role and permissions come from THIS server's roles, never from the change; no relayed
         // change makes anyone more than a cashier (A490: by permission) or changes such a person's PIN (branchStaff.vetRelayedStaffChanges).
         const vetted = vetRelayedStaffChanges(Array.isArray(body?.changes) ? body.changes.slice(0, 50) : [], getDeviceConfig()?.branch_id ?? null);
         for (const r of vetted.refused) logLine('node', `/node/changes from ${who.device}: refused ${r.id} — ${r.reason}`);
+        // A496: applied here only — never queued for the cloud under THIS server's session (the till that made the change
+        // sends it itself, under its own); see localChanges.acceptRelayedChanges.
         const n = acceptRelayedChanges(getLocalDb(), vetted.accepted, nodeSecrets);
         return json(res, 200, { accepted: n, refused: vetted.refused, version: changeVersion(getLocalDb()) });
       }
       // A381: a till set the business's logo / accent — applied here (the branch's other tills take it with their next pull
       // from this server; the change counter tells a till with no internet to pull now). The till sends it to the cloud.
       if (req.method === 'POST' && url === '/node/branding') {
+        if (!requireProven(req, res, '/node/branding')) return;   // A496
         const body = await readBody(req);
         const str = (v: unknown) => (typeof v === 'string' ? v : null);
         if (str(body?.logoPng) && !/^[A-Za-z0-9+/=]+$/.test(String(body.logoPng))) return json(res, 400, { error: 'logoPng must be base64' });
+        // A496: the receipt logo and the accent are checked too (they were written as given).
+        if (str(body?.logoReceipt) && !/^[A-Za-z0-9+/=]+$/.test(String(body.logoReceipt))) return json(res, 400, { error: 'logoReceipt must be base64' });
+        if (str(body?.accentHex) && !/^#[0-9A-Fa-f]{6}$/.test(String(body.accentHex))) return json(res, 400, { error: 'accentHex must be #RRGGBB' });
         applyPulledBranding({ accentHex: str(body?.accentHex), logoPng: str(body?.logoPng), logoReceipt: str(body?.logoReceipt),
           receiptLogoEnabled: body?.receiptLogoEnabled === true });
         return json(res, 200, { ok: true, version: bumpChangeVersion(getLocalDb()) });
@@ -583,6 +688,8 @@ export function startNodeServer(): void {
         }
         const branchId = String(body?.branch_id ?? c?.branch_id ?? '');
         if (!branchId) return json(res, 400, { error: 'branch_id is required' });
+        // A496: the branch's PIN hashes only to a till that proves which it is (the branch code alone was enough).
+        if (!requireProven(req, res, '/node/roster')) return;
         return json(res, 200, buildRosterSnapshot(branchId, readBranchStaffForServe(branchId)));
       }
 
@@ -604,6 +711,7 @@ export function startNodeServer(): void {
 
       // Combined branch report — any till's manager view reads this.
       if (req.method === 'GET' && url === '/node/report') {
+        if (!requireProven(req, res, '/node/report')) return;   // A496: the branch's sales only to a proven till
         return json(res, 200, {
           salesSummary: getSalesSummary(),
           topProducts:  getTopProducts(),
@@ -616,11 +724,19 @@ export function startNodeServer(): void {
       // Tech session broadcast: hold the latest tech token so peers can pick it
       // up and verify it themselves (self-validating, so no shared clock needed).
       if (req.method === 'POST' && url === '/node/tech-session') {
+        if (!requireProven(req, res, '/node/tech-session')) return;   // A496
         const body = await readBody(req);
-        setNodeTechToken(body.token ?? null);
+        // A496: only a real tech token is held for the branch (anything was stored and handed to every till before);
+        // null still clears it.
+        if (body?.token !== null && body?.token !== undefined && !isRealTechToken(body.token, getDeviceConfig()?.branch_id)) {
+          logLine('node', '/node/tech-session: refused a token that is not a valid tech token for this branch');
+          return json(res, 400, { error: 'not a valid tech token for this branch' });
+        }
+        setNodeTechToken(body?.token ?? null);
         return json(res, 200, { ok: true });
       }
       if (req.method === 'GET' && url === '/node/tech-session') {
+        if (!requireProven(req, res, '/node/tech-session')) return;   // A496
         return json(res, 200, { token: getNodeTechToken() });
       }
 
@@ -647,6 +763,11 @@ export function startNodeServer(): void {
   }
   server = net.createServer((sock) => {
     sock.on('error', () => { /* a till that went away mid-connection — never an uncaught error */ });
+    // A501: every connection is known, so stopping the server ends them too. A connection handed to the TLS handler
+    // outlived stopNodeServer (closeAllConnections does not reach it) and kept being answered by the stopped server —
+    // and tills now keep their connections open (lanTls, A501), so a stopped or stepped-down server must close them.
+    openSockets.add(sock);
+    sock.on('close', () => openSockets.delete(sock));
     // Nothing said within 15 s: dropped (the handlers' own timeouts start only once a protocol is chosen).
     sock.setTimeout(15_000, () => sock.destroy());
     sock.once('data', (first: Buffer) => {
@@ -712,6 +833,8 @@ export function stopNodeServer(): void {
   if (server) { server.close(); server = null; }
   // A489: the connections already handed to a protocol handler are closed too (the listening socket alone does not).
   for (const s of [plainServer, tlsServer]) { try { s?.closeAllConnections(); s?.close(); } catch { /* already closed */ } }
+  for (const sock of openSockets) { try { sock.destroy(); } catch { /* gone */ } }   // A501
+  openSockets.clear();
   plainServer = null; tlsServer = null;
   stopBeacon();
   boundPort = null;

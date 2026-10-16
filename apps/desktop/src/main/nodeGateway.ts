@@ -34,9 +34,22 @@ export function upstreamUrl(rawUrl: string, serverUrl: string): string | null {
   if (!/^https?:\/\//i.test(cloud)) return null;
   if (!rawUrl.startsWith(`${GATEWAY_PREFIX}/`)) return null;
   const rest = rawUrl.slice(GATEWAY_PREFIX.length);              // "/api/…?…"
-  const pathOnly = rest.split('?')[0];
+  const raw = rest.split('?')[0];
+  // A496: decoded first (to a fixed point — %252e%252e is "..", twice encoded). The checks used to look at the raw path,
+  // and fetch's URL parser reads %2e%2e as ".." — /node/cloud/api/%2e%2e/x reached <cloud>/x, outside the API.
+  let pathOnly = raw;
+  let settled = false;
+  for (let i = 0; i < 4; i++) {
+    let next: string;
+    try { next = decodeURIComponent(pathOnly); } catch { return null; }
+    if (next === pathOnly) { settled = true; break; }
+    pathOnly = next;
+  }
+  if (!settled) return null;   // still encoded after four rounds: no real request looks like that
   // Only the cloud's API, and no climbing out of it.
-  if (!pathOnly.startsWith('/api/') || pathOnly.includes('..') || pathOnly.includes('//')) return null;
+  if (!pathOnly.startsWith('/api/') || pathOnly.includes('..') || pathOnly.includes('//') || pathOnly.includes('\\')) return null;
+  // And the URL fetch will actually ask for is still inside the API (belt and braces: the URL parser's own reading).
+  try { if (!new URL(`${cloud}${rest}`).pathname.startsWith('/api/')) return null; } catch { return null; }
   return `${cloud}${rest}`;
 }
 

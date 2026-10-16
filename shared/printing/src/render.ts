@@ -350,20 +350,24 @@ function renderReceipt(ctx: PrintContext): Document {
   d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: 'tall', bold: true });
   d.line(rule(cols));
 
+  // A498 (owner, 2026-10-15, a printed receipt: "the payment method is printing on the wrong place … check where payment
+  // detail is printed and where buy good is printed"): ONE block — the heading straight above its payments (no rule
+  // between them), and the M-Pesa number customers pay to printed WITH the payments, inside the block, before its rule.
   d.line('Payment Detail:', { bold: true });
-  d.line(rule(cols));
   for (const leg of order.payments) {
     d.line(pair(cols, leg.label.toUpperCase(), formatCents(leg.amount)));
   }
   if (order.changeGiven > 0) {
     d.line(pair(cols, 'CHANGE', formatCents(order.changeGiven)));
   }
-  d.line(rule(cols));
-
   if (business.tillNumber) {
-    d.line(`${business.tillLabel ?? 'Buy Goods'}: ${business.tillNumber}`);
-    d.line(rule(cols));
+    const payLine = `${business.tillLabel ?? 'Buy Goods'}: ${business.tillNumber}`;
+    // A Paybill's account ("4098201, Account WEST1", A492) goes on its own line when the line is wider than the paper.
+    const cut = payLine.indexOf(', Account ');
+    if (payLine.length > cols && cut > 0) { d.line(payLine.slice(0, cut)); d.line(payLine.slice(cut + 2)); }
+    else d.line(payLine);
   }
+  d.line(rule(cols));
 
   // ── The footer stack ───────────────────────────────────────────────────────
   // Owner-approved arrangement, 04 Aug 2026, in this order:

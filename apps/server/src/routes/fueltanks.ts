@@ -24,12 +24,60 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess } from '../middleware/rbac';
+import { branchOfBusiness, idsOfBusiness } from '../lib/branchGuard';   // A494
+import type { Request, Response } from 'express';
 
 // A490: setting up pumps and tanks, deliveries and pump state are fuel.manage (everyone held it before migration 134 —
 // OPEN_BEFORE_A490). Reading the pumps and tanks also serves selling fuel and the fuel reports.
 const canManageFuel = requirePermission('fuel.manage');
 const canReadFuel = requireAnyPermission('fuel.manage', 'reports.fuel', 'orders.create');
+
+// ── A494: branches and ids ────────────────────────────────────────────────────
+// A tank or pump either belongs to one branch or (branch_id null) to the whole business — the POS lists the branch's
+// own and the business-wide ones. Reads were the whole business's for anyone; writes took any branch, product and tank
+// id. Now a manager reads and changes their branch's (and the business-wide) equipment only, the owner any of theirs,
+// and every id written must be this business's.
+
+/** The rows a caller sees: the owner all (or the chosen branch's and the business-wide), anyone else their branch's
+ *  and the business-wide. */
+function visible<T extends { branch_id?: string | null }>(req: Request, rows: T[] | null | undefined): T[] {
+  const scoped = branchScope(req);
+  return (rows ?? []).filter((r) => !scoped || !r.branch_id || r.branch_id === scoped);
+}
+
+/** May the caller change this tank / pump? Business-wide equipment (no branch) is every branch's. */
+function mayTouch(req: Request, row: { branch_id?: string | null }): boolean {
+  return !row.branch_id || assertBranchAccess(req, row.branch_id);
+}
+
+/** The ids a tank / pump write names are this business's (and its branch the caller's). Answers itself; false = stop. */
+async function idsOk(req: Request, res: Response, b: { branch_id?: unknown; fuel_product_id?: unknown; tank_id?: unknown }): Promise<boolean> {
+  if (b.branch_id !== undefined && b.branch_id !== null && b.branch_id !== '') {
+    const id = String(b.branch_id);
+    if (!assertBranchAccess(req, id)) { res.status(403).json({ error: 'No access to that branch' }); return false; }
+    if (!(await branchOfBusiness(req.businessId, id))) { res.status(404).json({ error: 'Branch not found in this business' }); return false; }
+  } else if (b.branch_id !== undefined && !req.isOwner) {
+    // Business-wide equipment serves every branch — only the owner sets one up or moves one there.
+    res.status(403).json({ error: 'Only the owner sets up a tank or pump for every branch.' }); return false;
+  }
+  if (b.fuel_product_id && !(await idsOfBusiness('products', req.businessId, [String(b.fuel_product_id)]))) {
+    res.status(400).json({ error: 'That fuel grade is not in this business\'s catalogue.' }); return false;
+  }
+  if (b.tank_id && !(await idsOfBusiness('fuel_tanks', req.businessId, [String(b.tank_id)]))) {
+    res.status(400).json({ error: 'That tank is not this business\'s.' }); return false;
+  }
+  return true;
+}
+
+/** The tank / pump by id, this business's and one the caller may change — else answered (404 / 403) and null. */
+async function ownRow(req: Request, res: Response, table: 'fuel_tanks' | 'pumps', what: string): Promise<{ id: string; branch_id: string | null } | null> {
+  const { data } = await supabase.from(table).select('id, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  const row = data as { id: string; branch_id: string | null } | null;
+  if (!row) { res.status(404).json({ error: `${what} not found` }); return null; }
+  if (!mayTouch(req, row)) { res.status(403).json({ error: `That ${what.toLowerCase()} is another branch's.` }); return null; }
+  return row;
+}
 
 // ── FUEL TANKS ────────────────────────────────────────────────────────────────
 
@@ -37,16 +85,14 @@ export const fuelTanksRouter = safeRouter();
 fuelTanksRouter.use(requireAuth);
 
 fuelTanksRouter.get('/', canReadFuel, async (req, res) => {
-  const { branch_id } = req.query;
-  let query = supabase
+  const query = supabase
     .from('fuel_tanks')
     .select('*, products(id, name, base_price, fuel_unit)')
     .eq('business_id', req.businessId)
     .order('name');
-  if (branch_id) query = query.eq('branch_id', branch_id as string);
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  res.json(visible(req, data as Array<{ branch_id: string | null }>));   // A494
 });
 
 fuelTanksRouter.post('/', canManageFuel, async (req, res) => {
@@ -55,11 +101,12 @@ fuelTanksRouter.post('/', canManageFuel, async (req, res) => {
     res.status(400).json({ error: 'name, fuel_product_id, capacity_litres are required' });
     return;
   }
+  if (!(await idsOk(req, res, { branch_id: branch_id ?? (req.isOwner ? null : req.branchId), fuel_product_id }))) return;   // A494
   const { data, error } = await supabase
     .from('fuel_tanks')
     .insert({
       business_id: req.businessId,
-      branch_id: branch_id ?? null,
+      branch_id: branch_id ?? (req.isOwner ? null : req.branchId),   // A494: a manager's tank is their branch's
       name: name.trim(),
       fuel_product_id,
       capacity_litres: Number(capacity_litres),
@@ -75,6 +122,8 @@ fuelTanksRouter.post('/', canManageFuel, async (req, res) => {
 fuelTanksRouter.patch('/:id', canManageFuel, async (req, res) => {
   const { id } = req.params;
   const { name, fuel_product_id, capacity_litres, current_level, reorder_level } = req.body;
+  if (!(await ownRow(req, res, 'fuel_tanks', 'Tank'))) return;   // A494
+  if (!(await idsOk(req, res, { fuel_product_id }))) return;
   const updates: Record<string, unknown> = {};
   if (name !== undefined)            updates.name = name.trim();
   if (fuel_product_id !== undefined) updates.fuel_product_id = fuel_product_id;
@@ -95,6 +144,7 @@ fuelTanksRouter.patch('/:id', canManageFuel, async (req, res) => {
 });
 
 fuelTanksRouter.delete('/:id', canManageFuel, async (req, res) => {
+  if (!(await ownRow(req, res, 'fuel_tanks', 'Tank'))) return;   // A494
   const { error } = await supabase
     .from('fuel_tanks')
     .delete()
@@ -108,22 +158,29 @@ fuelTanksRouter.delete('/:id', canManageFuel, async (req, res) => {
 // GET /api/fuel-tanks/movements — stock movement history (sales + deliveries)
 fuelTanksRouter.get('/movements', canReadFuel, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-  const { branch_id } = req.query;
+  const branch_id = branchScope(req);   // A494: the caller's branch (the owner: the chosen one, or all)
+
+  // A494: FUEL products only — this route is open to every seller (orders.create), and it listed every product's
+  // sales and restocks with the level after each: a shop's whole stock, and a blind count's figures, to a cashier.
+  const { data: fuel } = await supabase.from('products').select('id').eq('business_id', req.businessId).eq('is_fuel', true);
+  const fuelIds = ((fuel ?? []) as Array<{ id: string }>).map((p) => p.id);
+  if (!fuelIds.length) { res.json([]); return; }
 
   // Fetch stock movements for fuel products, joined to products for name
   let query = supabase
     .from('stock_movements')
     .select(`
-      id, movement_type, quantity_change, quantity_after,
+      id, product_id, branch_id, movement_type, quantity_change, quantity_after,
       notes, reference_type, created_at,
       products!inner ( name, business_id )
     `)
     .eq('products.business_id', req.businessId)
+    .in('product_id', fuelIds)
     .in('movement_type', ['sale', 'restock'])
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (branch_id) query = query.eq('branch_id', branch_id as string);
+  if (branch_id) query = query.eq('branch_id', branch_id);
 
   const { data: movements, error } = await query;
   if (error) { sendError(res, error); return; }
@@ -170,7 +227,7 @@ fuelTanksRouter.post('/:id/delivery', canManageFuel, async (req, res) => {
   // Fetch current tank state
   const { data: tank, error: fetchErr } = await supabase
     .from('fuel_tanks')
-    .select('current_level, capacity_litres, fuel_product_id, name')
+    .select('current_level, capacity_litres, fuel_product_id, name, branch_id')
     .eq('id', id)
     .eq('business_id', req.businessId)
     .single();
@@ -179,6 +236,7 @@ fuelTanksRouter.post('/:id/delivery', canManageFuel, async (req, res) => {
     res.status(404).json({ error: 'Tank not found' });
     return;
   }
+  if (!mayTouch(req, tank)) { res.status(403).json({ error: 'That tank is another branch\'s.' }); return; }   // A494
 
   const newLevel = Math.min(
     Number(tank.current_level) + Number(litres),
@@ -199,7 +257,9 @@ fuelTanksRouter.post('/:id/delivery', canManageFuel, async (req, res) => {
   // branches.business_id). Sending one made every fuel delivery movement fail.
   const { error: movementErr } = await supabase.from('stock_movements').insert({
     product_id:     tank.fuel_product_id,
-    branch_id:      req.query.branch_id ?? null,
+    // A494: the tank's branch — was ?branch_id=, whatever the caller named (another branch's, or another business's).
+    // A business-wide tank's delivery is booked at the caller's branch (the owner's: none).
+    branch_id:      tank.branch_id ?? (req.isOwner ? null : req.branchId),
     movement_type:  'restock',
     quantity_change: Number(litres),   // was incorrectly 'quantity' — silent DB fail
     quantity_after:  newLevel,
@@ -218,7 +278,8 @@ export const pumpsRouter = safeRouter();
 pumpsRouter.use(requireAuth);
 
 pumpsRouter.get('/', canReadFuel, async (req, res) => {
-  const { branch_id } = req.query;
+  // A494: a manager / cashier sees their branch's pumps and the business-wide ones; ?branch_id= is the owner's choice only.
+  const branch_id = branchScope(req);
   let query = supabase
     .from('pumps')
     .select('*, fuel_tanks(id, name, current_level, capacity_litres)')
@@ -233,17 +294,18 @@ pumpsRouter.get('/', canReadFuel, async (req, res) => {
   }
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  res.json(visible(req, data as Array<{ branch_id: string | null }>));   // A494: also when the branch is not a UUID
 });
 
 pumpsRouter.post('/', canManageFuel, async (req, res) => {
   const { name, fuel_product_id, tank_id, status, sort_order, branch_id } = req.body;
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+  if (!(await idsOk(req, res, { branch_id: branch_id ?? (req.isOwner ? null : req.branchId), fuel_product_id, tank_id }))) return;   // A494
   const { data, error } = await supabase
     .from('pumps')
     .insert({
       business_id:     req.businessId,
-      branch_id:       branch_id ?? null,
+      branch_id:       branch_id ?? (req.isOwner ? null : req.branchId),   // A494
       name:            name.trim(),
       fuel_product_id: fuel_product_id ?? null,
       tank_id:         tank_id ?? null,
@@ -258,6 +320,8 @@ pumpsRouter.post('/', canManageFuel, async (req, res) => {
 
 pumpsRouter.patch('/:id', canManageFuel, async (req, res) => {
   const { name, fuel_product_id, tank_id, status, sort_order } = req.body;
+  if (!(await ownRow(req, res, 'pumps', 'Pump'))) return;   // A494
+  if (!(await idsOk(req, res, { fuel_product_id, tank_id }))) return;
   const updates: Record<string, unknown> = {};
   if (name !== undefined)            updates.name            = name.trim();
   if (fuel_product_id !== undefined) updates.fuel_product_id = fuel_product_id ?? null;
@@ -278,6 +342,7 @@ pumpsRouter.patch('/:id', canManageFuel, async (req, res) => {
 });
 
 pumpsRouter.delete('/:id', canManageFuel, async (req, res) => {
+  if (!(await ownRow(req, res, 'pumps', 'Pump'))) return;   // A494
   const { error } = await supabase
     .from('pumps')
     .delete()
@@ -292,6 +357,7 @@ pumpsRouter.delete('/:id', canManageFuel, async (req, res) => {
 // Sets status to 'dispensing'. Records which order is using this pump.
 pumpsRouter.patch('/:id/activate', canManageFuel, async (req, res) => {
   const { order_id } = req.body;
+  if (!(await ownRow(req, res, 'pumps', 'Pump'))) return;   // A494
 
   const { data, error } = await supabase
     .from('pumps')
@@ -321,6 +387,7 @@ pumpsRouter.patch('/:id/activate', canManageFuel, async (req, res) => {
 // PATCH /api/pumps/:id/idle
 // Called when a fuel sale is completed or cancelled — releases the pump.
 pumpsRouter.patch('/:id/idle', canManageFuel, async (req, res) => {
+  if (!(await ownRow(req, res, 'pumps', 'Pump'))) return;   // A494
   const { data, error } = await supabase
     .from('pumps')
     .update({ status: 'idle', updated_at: new Date().toISOString() })

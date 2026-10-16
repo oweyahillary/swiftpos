@@ -52,8 +52,11 @@ const CHIP: Record<Row['status'], string> = {
   none:    'bg-gray-800 text-gray-400 border-gray-700',
 };
 
-export default function Expiry({ client, branchId, currency = 'KES', showCosts = true }: {
+export default function Expiry({ client, branchId, currency = 'KES', showCosts = true, canEditBatches = true }: {
   client: ExpiryClient;
+  /** A506: add a batch / correct its date — POST /api/batches, PATCH /api/batches/:id need inventory.receive or
+   *  inventory.adjust (the tab itself is inventory.waste); without them the buttons are not offered. */
+  canEditBatches?: boolean;
   /** A490: values are at cost — shown only to someone holding menu.costs or reports.costs (the owner always). */
   showCosts?: boolean;
   /** The branch to show. The owner picks it in the sidebar (none = every branch); a manager is locked to their own. */
@@ -128,10 +131,10 @@ export default function Expiry({ client, branchId, currency = 'KES', showCosts =
           <h1 className="text-2xl font-bold text-white">Expiry</h1>
           <p className="mt-0.5 text-sm text-gray-400">Batches and their expiry dates. What is left in each batch follows the stock level — oldest expiry goes first.</p>
         </div>
-        <button disabled={!branchId} onClick={() => setAdding(true)} data-testid="add-batch"
+        {canEditBatches && <button disabled={!branchId} onClick={() => setAdding(true)} data-testid="add-batch"
           className="rounded-xl bg-swift px-4 py-2 text-sm font-semibold text-gray-950 disabled:opacity-40">
           Add a batch
-        </button>
+        </button>}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -186,14 +189,14 @@ export default function Expiry({ client, branchId, currency = 'KES', showCosts =
                   <td className="px-3 py-2">
                     <span className={`inline-block rounded-full border px-2 py-0.5 text-xs ${CHIP[r.status]}`}>{expiryText(r)}</span>
                     <div className="mt-0.5 text-xs text-gray-500">{dateShort(r.expiry_date)}</div></td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right text-gray-200">{qty(r.remaining)}{r.unit ? ` ${r.unit}` : ''}
+                  <td className="whitespace-nowrap px-3 py-2 text-right text-gray-200">{r.remaining === null ? 'being counted' : <>{qty(r.remaining)}{r.unit ? ` ${r.unit}` : ''}</>}
                     <div className="text-xs text-gray-500">of {qty(r.quantity_received)}</div></td>
                   {showCosts && <td className="px-3 py-2 text-right text-gray-300">{r.value === null ? '—' : money(r.value, currency)}</td>}
                   <td className="whitespace-nowrap px-3 py-2 text-right">
                     {list.can_write_off && r.remaining > 0 && (r.status === 'expired' || r.status === 'soon') && (
                       <button disabled={busy === r.id} onClick={() => writeOff(r)} data-testid="write-off"
                         className="rounded-lg px-2 py-1 text-xs text-red-300 hover:bg-gray-800 disabled:opacity-40">Write off</button>)}
-                    {client.patch && <button disabled={busy === r.id} onClick={() => fixDate(r)}
+                    {client.patch && canEditBatches && <button disabled={busy === r.id} onClick={() => fixDate(r)}
                       className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-40">Date</button>}
                     {list.can_close && <button disabled={busy === r.id} onClick={() => close(r)}
                       className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-white disabled:opacity-40">Remove</button>}
@@ -264,7 +267,7 @@ function AddBatch({ client, branchId, onClose, onDone }: { client: ExpiryClient;
         <p className="mb-4 mt-0.5 text-xs text-gray-500">For stock already on the shelf — nothing is added to stock. Deliveries record their batch when received.</p>
         {item ? (
           <div className="flex items-center justify-between rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200">
-            <span>{item.name}<span className="text-xs text-gray-500"> · {item.held ?? 0}{item.unit ? ` ${item.unit}` : ''} here</span></span>
+            <span>{item.name}<span className="text-xs text-gray-500"> · {item.held === null ? 'being counted' : `${item.held ?? 0}${item.unit ? ` ${item.unit}` : ''} here`}</span></span>
             <button onClick={() => setItem(null)} className="text-xs text-gray-400 hover:text-white">Change</button>
           </div>
         ) : (

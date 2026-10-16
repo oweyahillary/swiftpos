@@ -55,7 +55,9 @@ await ok('recording is the manager tier\'s (inventory.waste); voiding — stock 
 });
 await ok('a stocked item: never more than the branch holds, and the stock leaves naming the entry; made to order: value only', () => {
   assert.match(r, /const moves = p\.track_stock === true;\n\s+if \(moves\) \{/);
-  assert.match(r, /if \(qty > held \+ 0\.004\) \{ res\.status\(409\)\.json\(\{ error: `\$\{p\.name\}: only \$\{held\} at this branch\.`, code: 'MORE_THAN_HELD' \}\)/);
+  // A494: the figure is left out while the item is being counted (blind count) — notEnough(name, held, hidden).
+  assert.match(r, /if \(qty > held \+ 0\.004\) \{ res\.status\(409\)\.json\(\{ error: notEnough\(p\.name, held, hidden\.has\(`p:\$\{p\.id\}`\)\), code: 'MORE_THAN_HELD' \}\)/);
+  assert.match(r, /return hidden \? `\$\{name\}: not enough stock at this branch\.` : `\$\{name\}: only \$\{held\} at this branch\.`;/);
   assert.match(r, /if \(!l\.moves\) continue;/);
   assert.equal((r.match(/reference_type: 'wastage', reference_id: entryId/g) ?? []).length, 2);
   assert.match(r, /movement_type: 'wastage',/);   // ingredient movements: the type the baseline already allows

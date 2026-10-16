@@ -267,3 +267,4 @@ inline styles) → *action*, not *brand*. The 154 changes were applied by script
 |---|---|---|
 | `pages/InstallPage.tsx:257` | `text-green-400` | reviewed: the SwiftPOS wordmark (the product, not the client) |
 | `pages/POSPage.tsx:890` | `text-green-400` | reviewed: the SwiftPOS wordmark (the product, not the client) |
+| `components/BranchSyncPanel.tsx:93` | `bg-green-500` | reviewed (A501): status — the dot of a branch-sync channel that works (red when failing, grey unused) |

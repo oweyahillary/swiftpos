@@ -559,11 +559,15 @@ router.get('/eod', async (req, res) => {
       id: s.id,
       status: s.status,
       opening_float: Number(s.opening_float),
-      cash_sales: cashSales,
-      float_in,
-      float_out,
-      closing_float: s.closing_float != null ? Number(s.closing_float) : null,
-      ...(seesCash ? { expected_cash, cash_variance: s.cash_variance != null ? Number(s.cash_variance) : null } : {}),
+      // A505: the cash figures too only to someone who may see the drawer's cash (seesCash) — opening float + cash sales +
+      // floats in − out IS the expected cash, so sending them defeated the blind close for a cashier's own Z-report.
+      ...(seesCash ? {
+        cash_sales: cashSales,
+        float_in,
+        float_out,
+        closing_float: s.closing_float != null ? Number(s.closing_float) : null,
+        expected_cash, cash_variance: s.cash_variance != null ? Number(s.cash_variance) : null,
+      } : {}),
     };
   });
 
@@ -1644,8 +1648,16 @@ router.get('/splh', requirePermission('reports.labour'), async (req, res) => {
 //   - Hourly dispensing pattern
 //   - Average price per litre per grade
 // ─────────────────────────────────────────────────────────────────────────────
+/** A494: the fuel reports read ?branch_id= directly — a manager saw every branch's fuel (or another's by naming it).
+ *  branchScope now: the manager's branch; the owner's choice, or all. Pumps and tanks: the branch's own and the
+ *  business-wide ones (no branch), as the POS lists them. */
+function atBranch<T extends { branch_id?: string | null }>(rows: T[] | null | undefined, branch: string | null): T[] {
+  return (rows ?? []).filter((r) => !branch || !r.branch_id || r.branch_id === branch);
+}
+
 router.get('/fuel-sales', requirePermission('reports.fuel'), async (req, res) => {
-  const { from, to, branch_id } = req.query;
+  const { from, to } = req.query;
+  const branch_id = branchScope(req);
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
 
   let orderQuery = supabase
@@ -1695,16 +1707,18 @@ router.get('/fuel-sales', requirePermission('reports.fuel'), async (req, res) =>
   const grades = Object.values(gradeMap).sort((a, b) => b.litres - a.litres);
 
   // Pump breakdown — join via orders.pump_id if available, else group by order
-  const { data: pumps } = await supabase
+  const { data: pumpRows } = await supabase
     .from('pumps')
-    .select('id, name, fuel_product_id')
+    .select('id, name, fuel_product_id, branch_id')
     .eq('business_id', req.businessId);
+  const pumps = atBranch(pumpRows as Array<{ id: string; name: string; fuel_product_id: string | null; branch_id: string | null }>, branch_id);
 
   // Current tank levels per fuel_product — for opening/remaining calc
-  const { data: tankRows } = await supabase
+  const { data: allTankRows } = await supabase
     .from('fuel_tanks')
-    .select('fuel_product_id, current_level, capacity_litres')
+    .select('fuel_product_id, current_level, capacity_litres, branch_id')
     .eq('business_id', req.businessId);
+  const tankRows = atBranch(allTankRows as Array<{ fuel_product_id: string; current_level: number; capacity_litres: number; branch_id: string | null }>, branch_id);
   const tankByProduct: Record<string, { current_level: number; capacity_litres: number }> = {};
   (tankRows ?? [] as Array<{ fuel_product_id: string; capacity: number | string; current_level: number | string; products?: { name: string; base_price: string } | null }>).forEach(t => {
     tankByProduct[t.fuel_product_id] = { current_level: Number(t.current_level), capacity_litres: Number(t.capacity_litres) };
@@ -1769,20 +1783,22 @@ router.get('/pump-monitor', requireAnyPermission('reports.fuel', 'reports.overvi
   // 0.6.34: today's BUSINESS date in East Africa Time (was the UTC date — off by a day from 21:00 to midnight EAT).
   const today = businessDateEAT(new Date(), (req as any).dayCutoff ?? 0);
   const { start, end } = getDateRange(today, today, (req as any).dayCutoff ?? 0);
-  const { branch_id } = req.query;
+  const branch_id = branchScope(req);   // A494
 
-  // All pumps for this business
-  const { data: pumps } = await supabase
+  // The branch's pumps (and the business-wide ones)
+  const { data: pumpRows } = await supabase
     .from('pumps')
-    .select('id, name, status, fuel_product_id')
+    .select('id, name, status, fuel_product_id, branch_id')
     .eq('business_id', req.businessId)
     .order('sort_order');
+  const pumps = atBranch(pumpRows as Array<{ id: string; name: string; status: string; fuel_product_id: string | null; branch_id: string | null }>, branch_id);
 
-  // All tanks (current live levels)
-  const { data: tanks } = await supabase
+  // The branch's tanks (current live levels)
+  const { data: tankRows } = await supabase
     .from('fuel_tanks')
-    .select('id, name, fuel_product_id, capacity_litres, current_level, reorder_level, products(name, base_price)')
+    .select('id, name, fuel_product_id, capacity_litres, current_level, reorder_level, branch_id, products(name, base_price)')
     .eq('business_id', req.businessId);
+  const tanks = atBranch(tankRows as Array<{ branch_id: string | null }>, branch_id);
 
   // fuel_tanks has capacity_litres / current_level / reorder_level (there is no
   // `capacity` column), and products is a to-one embed.
@@ -1870,19 +1886,17 @@ router.get('/pump-monitor', requireAnyPermission('reports.fuel', 'reports.overvi
 //   - Actual dip readings are manual — flag variance if recorded
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/wet-stock', requirePermission('reports.fuel'), async (req, res) => {
-  const { from, to, branch_id } = req.query;
+  const { from, to } = req.query;
+  const branch_id = branchScope(req);   // A494
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
 
   // Current tank levels — include null-branch (business-wide) tanks
-  let tanksQuery = supabase
+  const tanksQuery = supabase
     .from('fuel_tanks')
-    .select('id, name, fuel_product_id, capacity_litres, current_level, reorder_level, products(name, base_price)')
+    .select('id, name, fuel_product_id, capacity_litres, current_level, reorder_level, branch_id, products(name, base_price)')
     .eq('business_id', req.businessId);
-  if (branch_id && typeof branch_id === 'string' && /^[0-9a-fA-F-]{36}$/.test(branch_id)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tanksQuery = (tanksQuery as any).or(`branch_id.eq.${branch_id},branch_id.is.null`);
-  }
-  const { data: tanks } = await tanksQuery;
+  const { data: tankRows } = await tanksQuery;
+  const tanks = atBranch(tankRows as Array<{ branch_id: string | null }>, branch_id) as any[];
 
   // Deliveries in period (stock_movements with movement_type = restock, reference_type = delivery)
   let movQuery = supabase
@@ -1892,6 +1906,7 @@ router.get('/wet-stock', requirePermission('reports.fuel'), async (req, res) => 
     .eq('movement_type', 'restock')
     .gte('created_at', start)
     .lte('created_at', end);
+  if (branch_id) movQuery = movQuery.eq('branch_id', branch_id);   // A494: the branch's deliveries only
   const { data: movements } = await movQuery;
 
   // Group deliveries by product

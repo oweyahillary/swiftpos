@@ -43,6 +43,11 @@ router.get('/all', requireAuth, requirePermission('tables.manage'), async (req, 
     res.status(400).json({ error: 'branch_id is required' });
     return;
   }
+  // A494: a tables.manage holder read any branch's floor by naming it — their own branch only (the owner any).
+  if (!assertBranchAccess(req, queryBranchId)) {
+    res.status(403).json({ error: 'Access denied to this branch' });
+    return;
+  }
 
   const { data, error } = await supabase
     .from('tables')

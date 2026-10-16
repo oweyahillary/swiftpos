@@ -55,11 +55,12 @@ const reset = () => {
     businesses: [{ id: BZ, owner_id: OWNER }],
     user_devices: [{ business_id: BZ, device_id: T1, status: 'approved', retired_at: null },   // A415: the tills, on the business
                    { business_id: BZ, device_id: T2, status: 'approved', retired_at: null }],
+    // A495: user_branches [] = works at every branch; lib/approver.ts refuses a PIN row without the field (fail closed).
     users: [
-      { id: CASHIER, business_id: BZ, status: 'active', name: 'Test Cashier', pin_hash: pinHash('1111'), roles: role('Cashier', ['orders.create']), user_permissions: [] },
-      { id: MANAGER, business_id: BZ, status: 'active', name: 'Mary Manager', pin_hash: pinHash('2222'), roles: role('Manager', ['orders.void', 'shifts.manage']), user_permissions: [] },
-      { id: OWNER, business_id: BZ, status: 'active', name: 'Eugene', pin_hash: pinHash('3333'), roles: role('Owner', []), user_permissions: [] },
-      { id: OTHER, business_id: BZ, status: 'active', name: 'Other Cashier', pin_hash: pinHash('4444'), roles: role('Cashier', ['orders.create']), user_permissions: [] },
+      { id: CASHIER, business_id: BZ, status: 'active', name: 'Test Cashier', pin_hash: pinHash('1111'), roles: role('Cashier', ['orders.create']), user_permissions: [], user_branches: [] },
+      { id: MANAGER, business_id: BZ, status: 'active', name: 'Mary Manager', pin_hash: pinHash('2222'), roles: role('Manager', ['orders.void', 'shifts.manage']), user_permissions: [], user_branches: [] },
+      { id: OWNER, business_id: BZ, status: 'active', name: 'Eugene', pin_hash: pinHash('3333'), roles: role('Owner', []), user_permissions: [], user_branches: [] },
+      { id: OTHER, business_id: BZ, status: 'active', name: 'Other Cashier', pin_hash: pinHash('4444'), roles: role('Cashier', ['orders.create']), user_permissions: [], user_branches: [] },
     ],
     shifts: [{ id: S1, business_id: BZ, branch_id: BR, device_id: T1, terminal_code: 'T1', cashier_id: CASHIER, opened_by: CASHIER,
                status: 'open', opening_float: 2000, opened_at: '2026-09-29T10:41:00Z' }],

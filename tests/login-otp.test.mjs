@@ -235,9 +235,14 @@ try {
     process.env.LOGIN_OTP = 'off';
     try { assert.equal((await login()).status, 200); } finally { delete process.env.LOGIN_OTP; }
   });
-  await ok('before migration 119 (no code table) an admin is never locked out', async () => {
+  // A495: was "an admin is never locked out" — the gate waved an admin through with no code at all. A shop must never be
+  // locked out (the owner path keeps that); the admin portal is not a shop: it is refused, 503, until codes work again.
+  await ok('before migration 119 (no code table) an admin is refused, never let in without a code (A495)', async () => {
     missingTable = true; db.login_otp_codes = [];
-    try { assert.equal((await login()).status, 200); } finally { missingTable = false; }
+    try {
+      const r = await login();
+      assert.equal(r.status, 503, JSON.stringify(r.body)); assert.equal(r.body.code, 'ADMIN_OTP_UNAVAILABLE'); assert.ok(!r.body.token);
+    } finally { missingTable = false; }
   });
 
   console.log('\nThe owner and the web POS, the session check, the screens (source)\n');
@@ -246,7 +251,9 @@ try {
     const a = read('apps/server/src/routes/auth.ts');
     assert.match(a, /const ownerGate = !\(await businessPosFeatures\(business\.id\)\)\.login_codes \? \{ ok: true as const \} : await otpGate\(\s*await otpSubjectFor\(/);
     assert.match(a, /if \(ownerGate\.ok === false\) \{ res\.status\(ownerGate\.status\)\.json\(ownerGate\.body\); return; \}/);
-    assert.match(a, /if \(effectiveSurface === 'web' && needsOtp\(heldKeys, isOwner\)\r?\n\s+&& \(await businessPosFeatures\(\(user as any\)\.business_id\)\)\.login_codes\) \{/);
+    // A494: whatever surface pos-login is told — claiming 'desktop' skipped the code (a till signs in by /verify-pin).
+    assert.match(a, /if \(needsOtp\(heldKeys, isOwner\)\r?\n\s+&& \(await businessPosFeatures\(\(user as any\)\.business_id\)\)\.login_codes\) \{/);
+    assert.doesNotMatch(a, /effectiveSurface === 'web' && needsOtp\(/);
     assert.match(a, /const enabled = \(await businessPosFeatures\(req\.businessId\)\)\.login_codes;/);
     const F = read('shared/posFeatures.ts');
     assert.match(F, /key: 'login_codes',\n\s+label: 'Sign-in codes \(OTP\)',/);

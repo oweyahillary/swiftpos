@@ -4,7 +4,7 @@ import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
 import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
-import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, OWNER_UPDATES_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
+import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
 import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "./lib/tenantHost";   // A378: a client's own sign-in address
 import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
@@ -67,9 +67,11 @@ function useAdminApi() {
     // a message, instead of silently rendering empty data (e.g. "0 clients").
     if (res.status === 401 && token) {
       sessionStorage.removeItem(KEY.token);
-      sessionStorage.setItem(KEY.expired, "1");
+      // A506: an admin switched off (401 ADMIN_INACTIVE) is told so, not "your session expired".
+      const why = data?.code === "ADMIN_INACTIVE" ? (data.error || "This admin account is no longer active.") : "1";
+      sessionStorage.setItem(KEY.expired, why);
       setToken("");
-      throw fail("Your session expired. Please sign in again.");
+      throw fail(why === "1" ? "Your session expired. Please sign in again." : why);
     }
     if (!res.ok) throw fail(data.error || `Request failed: ${res.status}`);
     return data;
@@ -250,9 +252,10 @@ function LoginPage({ onLogin, req }) {
   const [remember, setRemember] = useState(true);
 
   useEffect(() => {
-    if (sessionStorage.getItem(KEY.expired)) {
+    const expired = sessionStorage.getItem(KEY.expired);
+    if (expired) {
       sessionStorage.removeItem(KEY.expired);
-      setError("Your session expired. Please sign in again.");
+      setError(expired === "1" ? "Your session expired. Please sign in again." : expired);   // A506
     }
   }, []);
 
@@ -753,8 +756,10 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
   const [error, setError] = useState("");
   const [expiryDraft, setExpiryDraft] = useState("");   // A147: web-access expiry setter
   const [savingExpiry, setSavingExpiry] = useState(false);
-  // A348: desktop updates per business — releases the cloud can serve (A491: shown only; the owner approves).
+  // A348: desktop updates per business — releases the cloud can serve, the version picked, saving (A493: the admin approves).
   const [desktopReleases, setDesktopReleases] = useState(null);   // null = loading; { error } on failure
+  const [desktopPick, setDesktopPick] = useState("");   // A493: the admin approves
+  const [savingDesktop, setSavingDesktop] = useState(false);
   // A356: GitHub's refusal, when the list shown is the last good one; and the short list's "show all" switch.
   const [desktopWarning, setDesktopWarning] = useState(null);
   const [showAllVersions, setShowAllVersions] = useState(false);
@@ -806,13 +811,18 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
   async function suspend() {
     const reason = await askPrompt("Reason for suspension:");
     if (!reason) return;
-    await req("POST", `/clients/${client.id}/suspend`, { reason });
-    setDetail(d => ({ ...d, status: "suspended" }));
+    // A506: a refusal (a super admin demoted mid-session — 403) is shown, not an unhandled rejection.
+    try {
+      await req("POST", `/clients/${client.id}/suspend`, { reason });
+      setDetail(d => ({ ...d, status: "suspended" }));
+    } catch (e) { setError(e?.message ?? "Could not suspend"); }
   }
 
   async function activate() {
-    await req("POST", `/clients/${client.id}/activate`, {});
-    setDetail(d => ({ ...d, status: "active" }));
+    try {
+      await req("POST", `/clients/${client.id}/activate`, {});
+      setDetail(d => ({ ...d, status: "active" }));
+    } catch (e) { setError(e?.message ?? "Could not activate"); }
   }
 
   async function resetOwnerPassword() {
@@ -821,7 +831,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     if ((pw as string).length < 8) { await askConfirm("Password must be at least 8 characters — not changed."); return; }
     try {
       const r = await req("POST", `/clients/${client.id}/reset-owner-password`, { new_password: pw });
-      await askConfirm(`Password reset for ${r?.email ?? "the owner"}. Share it securely — they can change it after signing in.`);
+      await askConfirm(`Password reset for ${r?.email ?? "the owner"}. They are signed out everywhere and must choose a new password at their next sign-in. Share it securely.`);
     } catch (e) {
       await askConfirm(`Could not reset password: ${e.message}`);
     }
@@ -829,15 +839,20 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
 
   async function addNote() {
     if (!newNote.trim()) return;
-    const n = await req("POST", `/clients/${client.id}/notes`, { body: newNote });
-    setNotes(prev => [n, ...prev]);
-    setNewNote("");
+    try {
+      const n = await req("POST", `/clients/${client.id}/notes`, { body: newNote });
+      setNotes(prev => [n, ...prev]);
+      setNewNote("");
+    } catch (e) { setError(e?.message ?? "Could not add the note"); }   // A506
   }
 
   async function markPaid(invoiceId) {
     const ref = await askPrompt("Payment reference (optional):");
-    await req("PATCH", `/clients/${client.id}/billing/${invoiceId}`, { status: "paid", payment_reference: ref || null });
-    setInvoices(prev => prev.map(i => i.id === invoiceId ? { ...i, status: "paid", payment_reference: ref } : i));
+    if (ref === null) return;   // A506: Cancel on the reference prompt marked the invoice paid anyway
+    try {
+      await req("PATCH", `/clients/${client.id}/billing/${invoiceId}`, { status: "paid", payment_reference: ref || null });
+      setInvoices(prev => prev.map(i => i.id === invoiceId ? { ...i, status: "paid", payment_reference: ref } : i));
+    } catch (e) { setError(e?.message ?? "Could not mark it paid"); }
   }
 
 
@@ -859,8 +874,20 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     finally { setSavingExpiry(false); }
   }
 
-  // A491: approving or holding a desktop version (A348) moved to the owner (Settings › Business › Till updates); the
-  // cloud refuses PATCH /clients/:id/desktop-version from here (OWNER_SETS). The Updates tab only shows it.
+  // A348: approve one desktop version for this business (its tills update to it within the hour), or hold (null).
+  async function setDesktopVersion(version) {
+    const msg = version
+      ? `Approve desktop ${version} for ${detail?.name ?? 'this client'}? Their tills download it within the hour and install it the next time each till is closed.`
+      : `Hold desktop updates for ${detail?.name ?? 'this client'}? Their tills stay on the version they run now.`;
+    if (!(await askConfirm(msg))) return;
+    setSavingDesktop(true);
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}/desktop-version`, { version });
+      setDetail(prev => prev ? { ...prev, desktop_approved_version: updated?.desktop_approved_version ?? null } : prev);
+      setDesktopPick("");
+    } catch (e) { setError(e.message); }
+    finally { setSavingDesktop(false); }
+  }
 
   async function toggleWebHosting(enable) {
     const confirmMsg = enable
@@ -871,7 +898,9 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     try {
       await req("PATCH", `/clients/${client.id}/features/web_hosting`, {
         enabled: enable,
-        notes:   enable ? `Web hosting enabled by ${req.adminEmail || 'admin'} — KES 10,000 paid` : 'Web hosting disabled',
+        // A495: the note read the admin email off the fetch helper (`req`) — a property it never had, always undefined, so every note read
+        // "by admin". The cloud records who switched it (feature_flags.set_by and the audit log); the note says what.
+        notes:   enable ? 'Web hosting enabled — KES 10,000 paid' : 'Web hosting disabled',
       });
 
       setFeatures(prev => {
@@ -1021,9 +1050,10 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     const email = String(em).trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { await askConfirm("That doesn't look like a valid email — not changed."); return; }
     try {
-      await req("POST", `/clients/${client.id}/change-owner-email`, { new_email: email });
+      const r = await req("POST", `/clients/${client.id}/change-owner-email`, { new_email: email });
       setDetail(prev => ({ ...prev, email }));
-      await askConfirm(`Owner login email changed to ${email}.`);
+      // A495: the previous address is emailed about the change.
+      await askConfirm(`Owner login email changed to ${email}.${r?.old_email_notified ? " The previous address was told." : " The previous address could not be emailed — tell the owner yourself."}`);
     } catch (e) { setError(e?.message ?? "Failed to change owner email"); }
   }
 
@@ -1047,9 +1077,9 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
   async function saveEdit() {
     if (!editForm.name.trim()) { await askConfirm("Business name can't be empty."); return; }
     try {
-      const updated = await req("PATCH", `/clients/${client.id}`, {
-        name: editForm.name.trim(), type: editForm.type, currency: editForm.currency.trim() || undefined,
-      });
+      // A507: any admin sends the type and currency; an agent's change is e-mailed to the super admins to verify.
+      const updated = await req("PATCH", `/clients/${client.id}`,
+        { name: editForm.name.trim(), type: editForm.type, currency: editForm.currency.trim() || undefined });
       setDetail(prev => ({ ...prev,
         name:     updated?.name     ?? editForm.name.trim(),
         type:     updated?.type     ?? editForm.type,
@@ -1095,6 +1125,9 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
       <div style={{ fontSize: 13, fontWeight: 600, color, marginTop: 3, lineHeight: 1.35 }}>{value}</div>
     </button>
   );
+
+  // A495: what only a super admin may do — an agent sees why the button is not there, never a button the cloud refuses.
+  const superOnly = (el) => isSuper ? el : <span style={{ fontSize: 11, color: C.muted }} data-testid="super-only">Super admin only</span>;
 
   const settingRow = (title, text, actions, testid = undefined) => (
     <div data-testid={testid} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap" }}>
@@ -1199,8 +1232,8 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                   : ` Normal user data purge-eligible in ${Math.max(0, PURGE_GRACE_DAYS - daysSince(d.suspended_at))} days. Financial/tax records are retained separately.`}</>
               : "Suspended (no timestamp recorded)."}
           </div>
-          <button onClick={activate} style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Activate</button>
-          <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Export data</button>
+          {isSuper && <button onClick={activate} style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Activate</button>}
+          {isSuper && <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Export data</button>}
           {isPurgeDue(d) && <button onClick={loadPurgePreview} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Preview purge</button>}
         </div>
       )}
@@ -1243,16 +1276,17 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             </div>
             <div style={{ flex: 1, minWidth: 160 }}>
               <label style={S.label}>Type</label>
-              <select style={S.input} value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
+              <select style={S.input} value={editForm.type} title={isSuper ? undefined : "A super admin is told, to verify"} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
                 {Object.entries(TYPE_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
             </div>
             <div style={{ width: 120 }}>
               <label style={S.label}>Currency</label>
-              <input style={S.input} value={editForm.currency} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))} placeholder="KES" />
+              <input style={S.input} value={editForm.currency} title={isSuper ? undefined : "A super admin is told, to verify"} maxLength={3} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))} placeholder="KES" />
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
+            {!isSuper && <span style={{ fontSize: 11, color: C.muted, alignSelf: "center" }}>A change of type or currency is sent to a super admin to verify.</span>}
             <button onClick={saveEdit} style={{ ...S.btn, ...S.btnPrimary }}>Save</button>
             <button onClick={() => setEditing(false)} style={{ ...S.btn, ...S.btnGhost }}>Cancel</button>
           </div>
@@ -1381,7 +1415,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                     <StatusBadge status={b.status} />
                     <button onClick={() => openTills(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Tills →</button>
                     {b.desktop_licensed && <button disabled={enrolBranch === b.id} onClick={() => generateEnrolCode(b)} title="Mint a single-use enrolment code for a till on this branch" style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}>{enrolBranch === b.id ? "…" : "Enrol till"}</button>}
-                    <button disabled={licencingBranch === b.id} onClick={() => toggleBranchLicence(b, !b.desktop_licensed)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>{licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke licence" : "Activate licence"}</button>
+                    {isSuper && <button disabled={licencingBranch === b.id} onClick={() => toggleBranchLicence(b, !b.desktop_licensed)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>{licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke licence" : "Activate licence"}</button>}
                     {!b.is_main && <button disabled={closingBranch === b.id} onClick={() => toggleBranchStatus(b)} title={b.status === "inactive" ? "Reactivate this branch" : "Deactivate this branch"} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>{closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}</button>}
                   </div>
                 );
@@ -1468,16 +1502,16 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
               hasWebHosting
                 ? "The client can use the cloud dashboard and the web POS."
                 : "Desktop-only licence. Enabling web access (KES 10,000 a year) raises an invoice.",
-              <button onClick={() => toggleWebHosting(!hasWebHosting)} style={{ ...S.btn, ...(hasWebHosting ? S.btnDanger : S.btnPrimary), fontSize: 12 }}>
+              superOnly(<button onClick={() => toggleWebHosting(!hasWebHosting)} style={{ ...S.btn, ...(hasWebHosting ? S.btnDanger : S.btnPrimary), fontSize: 12 }}>
                 {hasWebHosting ? "Disable web access" : "Enable web access"}
-              </button>,
+              </button>),
               "web-access")}
             {/* A147: the date the renewal ladder is measured against */}
             {settingRow("Web access expiry",
               detail?.web_access_expires_at
                 ? `Renewal is measured against ${fmtDate(detail.web_access_expires_at)}.`
                 : "No expiry set — the renewal reminders have no date to measure against.",
-              <>
+              superOnly(<>
                 <input type="date" value={expiryDraft} onChange={e => setExpiryDraft(e.target.value)} style={{ ...S.input, width: "auto" }} />
                 <button disabled={savingExpiry || !expiryDraft} onClick={() => setWebAccessExpiry(expiryDraft)}
                   style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingExpiry || !expiryDraft) ? 0.4 : 1 }}>
@@ -1486,7 +1520,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                 {detail?.web_access_expires_at && (
                   <button disabled={savingExpiry} onClick={() => setWebAccessExpiry(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingExpiry ? 0.4 : 1 }}>Clear</button>
                 )}
-              </>)}
+              </>))}
           </div>
 
           <div className="sp-two-col" style={{ alignItems: "start" }}>
@@ -1508,7 +1542,9 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             </div>
             <div style={S.card}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Renew or change plan</div>
-              <RenewForm plans={plans} clientId={client.id} req={req} onRenewed={() => req("GET", `/clients/${client.id}/subscription`).then(setSubs)} />
+              {isSuper
+                ? <RenewForm plans={plans} clientId={client.id} req={req} onRenewed={() => req("GET", `/clients/${client.id}/subscription`).then(setSubs)} />
+                : <div style={{ fontSize: 12, color: C.muted }}>Only a super admin can renew or change a plan.</div>}
             </div>
           </div>
 
@@ -1537,7 +1573,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                     <td style={S.td}><StatusBadge status={inv.status} /></td>
                     <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(inv.created_at)}</td>
                     <td style={S.td}>
-                      {inv.status !== "paid" && (
+                      {inv.status !== "paid" && isSuper && (
                         <button onClick={() => markPaid(inv.id)} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "4px 10px" }}>Mark paid</button>
                       )}
                     </td>
@@ -1635,29 +1671,30 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
           )}
           {desktopWarning && <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{desktopWarning}</div>}
-          {/* A491: the owner approves or holds (Settings › Business › Till updates); the portal shows the releases for support. */}
-          <div data-testid="updates-owner-note" style={{ fontSize: 12, color: "#f59e0b", marginTop: 8 }}>{OWNER_UPDATES_WHERE}.</div>
-          <div style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 6 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>Releases</div>
-              {Array.isArray(desktopReleases) && desktopReleases.length > RECENT_VERSIONS && (
-                <button type="button" onClick={() => setShowAllVersions(v => !v)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 8px" }}>
-                  {showAllVersions ? `Show the latest ${RECENT_VERSIONS} only` : `Show all ${desktopReleases.length} versions`}
-                </button>
-              )}
-            </div>
-            {desktopReleases === null && <div style={{ fontSize: 12, color: C.muted }}>Loading releases…</div>}
-            {Array.isArray(desktopReleases) && desktopReleases.length === 0 && <div style={{ fontSize: 12, color: C.muted }}>No releases listed.</div>}
-            {Array.isArray(desktopReleases) && visibleVersions(desktopReleases, detail?.desktop_approved_version, showAllVersions).map(r => (
-              <div key={r.version} data-testid={`desktop-release-${r.version}`} style={{ display: "flex", gap: 10, fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
-                <span style={{ flex: 1, fontWeight: r.version === detail?.desktop_approved_version ? 600 : 400 }}>
-                  {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}
-                </span>
-                <span style={{ color: r.version === detail?.desktop_approved_version ? "#22c55e" : r.complete ? C.muted : "#f59e0b" }}>
-                  {r.version === detail?.desktop_approved_version ? "Approved" : r.complete ? "" : `missing ${r.missing.join(", ")}`}
-                </span>
-              </div>
-            ))}
+          {/* A493 (owner, 2026-10-15): ZapTill approves or holds a client's till version here — never the client (some do not pay for updates). */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 14 }}>
+            <select value={desktopPick} disabled={savingDesktop || !Array.isArray(desktopReleases)} onChange={e => setDesktopPick(e.target.value)}
+              style={{ ...S.input, width: "auto" }}>
+              <option value="">{desktopReleases === null ? "Loading releases…" : "Choose a version…"}</option>
+              {Array.isArray(desktopReleases) && visibleVersions(desktopReleases, detail?.desktop_approved_version, showAllVersions).map(r => (
+                <option key={r.version} value={r.version} disabled={!r.complete}>
+                  {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}{r.complete ? "" : ` — missing ${r.missing.join(", ")}`}
+                </option>
+              ))}
+            </select>
+            {!isSuper && <span style={{ fontSize: 11, color: C.muted }}>Only a super admin approves or holds a version.</span>}
+            {isSuper && <button disabled={savingDesktop || !desktopPick} onClick={() => setDesktopVersion(desktopPick)}
+              style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingDesktop || !desktopPick) ? 0.4 : 1 }}>
+              {savingDesktop ? "Saving…" : "Approve"}
+            </button>}
+            {isSuper && detail?.desktop_approved_version && (
+              <button disabled={savingDesktop} onClick={() => setDesktopVersion(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingDesktop ? 0.4 : 1 }}>Hold</button>
+            )}
+            {Array.isArray(desktopReleases) && desktopReleases.length > RECENT_VERSIONS && (
+              <button type="button" onClick={() => setShowAllVersions(v => !v)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 8px" }}>
+                {showAllVersions ? `Show the latest ${RECENT_VERSIONS} only` : `Show all ${desktopReleases.length} versions`}
+              </button>
+            )}
           </div>
           {devices.length > 0 && (
             <div style={{ marginTop: 18 }}>
@@ -1679,23 +1716,23 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Owner sign-in</div>
             {settingRow("Login email", d.email || "—",
-              <button onClick={changeOwnerEmail} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Change email</button>)}
+              superOnly(<button onClick={changeOwnerEmail} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Change email</button>))}
             {settingRow("Password", "Set a new password and give it to the owner securely; they can change it after signing in.",
-              <button onClick={resetOwnerPassword} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Reset password</button>)}
+              superOnly(<button onClick={resetOwnerPassword} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Reset password</button>))}
             {/* A391 */}
             {settingRow("Sign-in code", "The owner enters a code at every sign-in — emailed, or from their authenticator app. Lost phone? Reset to emailed codes.",
-              <button onClick={resetOwnerOtp} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }} data-testid="reset-owner-otp">Reset to email code</button>,
+              superOnly(<button onClick={resetOwnerOtp} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }} data-testid="reset-owner-otp">Reset to email code</button>),
               "owner-otp")}
           </div>
           <div style={{ ...S.card, borderColor: "rgba(255,92,108,0.3)" }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.danger, marginBottom: 6 }}>Account status</div>
             {d.status === "active"
               ? settingRow("Suspend this client", "Their owner and staff are locked out of the dashboard and web POS until you activate them again.",
-                  <button onClick={suspend} style={{ ...S.btn, ...S.btnDanger, fontSize: 12 }}>Suspend</button>)
+                  superOnly(<button onClick={suspend} style={{ ...S.btn, ...S.btnDanger, fontSize: 12 }}>Suspend</button>))
               : settingRow("Activate this client", "Their owner and staff can sign in again.",
-                  <button onClick={activate} style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Activate</button>)}
+                  superOnly(<button onClick={activate} style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Activate</button>))}
             {settingRow("Export data", "Download the client's data as JSON (before a purge, or on request).",
-              <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Export</button>)}
+              superOnly(<button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Export</button>))}
           </div>
           {/* A396: clear test data between two times, before the client starts trading */}
           <TestDataCard clientId={client.id} req={req} isSuper={isSuper} />
@@ -1936,8 +1973,10 @@ function TeamPage({ req, admin }) {
   }
 
   async function toggleActive(id, is_active) {
-    await req("PATCH", `/team/${id}`, { is_active: !is_active });
-    setTeam(t => t.map(m => m.id === id ? { ...m, is_active: !is_active } : m));
+    try {
+      await req("PATCH", `/team/${id}`, { is_active: !is_active });
+      setTeam(t => t.map(m => m.id === id ? { ...m, is_active: !is_active } : m));
+    } catch (e) { setError(e?.message ?? "Could not change it"); }   // A506
   }
 
   return (
@@ -2112,7 +2151,9 @@ function TechPage({ req, admin }) {
     try {
       const t = await req("POST", "/tech/generate-token", { business_id: genForm.business_id, branch_id: genForm.branch_id });
       setGeneratedToken(t);
-      setTokens(prev => [{ ...t, id: t.token_id ?? t.id, admin_name: admin?.name, status: "active", created_at: new Date().toISOString() }, ...prev]);
+      // A506: the new row is the caller's own (admin_id — a super admin is not offered Confirm on it, the cloud refuses
+      // SELF_CONFIRM) and names its branch (the cloud answers `branch`).
+      setTokens(prev => [{ ...t, id: t.token_id ?? t.id, admin_id: admin?.id, admin_name: admin?.name, branch_name: t.branch_name ?? t.branch, status: "active", created_at: new Date().toISOString() }, ...prev]);
       // D18: the till asks for the branch reveal code first. Show it beside the
       // token so the tech has both halves of the flow.
       req("GET", `/branches/${genForm.branch_id}/reveal-code`)
@@ -2143,26 +2184,34 @@ function TechPage({ req, admin }) {
         to_mode:     switchForm.to_mode,
       });
       setGeneratedSwitch(s);
-      setSwitches(prev => [{ ...s, id: s.switch_id ?? s.token_id ?? s.id, status: "pending", created_at: new Date().toISOString() }, ...prev]);
+      // A506: the cloud answers request_id (the row's id) — the new row's Cancel called /mode-switch/undefined/cancel.
+      setSwitches(prev => [{ ...s, id: s.request_id ?? s.switch_id ?? s.id, branch_id: switchForm.branch_id, branches: { name: s.branch }, status: "pending", created_at: new Date().toISOString() }, ...prev]);
     } catch(e) { setError(e.message); }
     finally { setGenerating(false); }
   }
 
+  // A495: a second person confirms — the cloud refuses a super admin confirming their own token, and says so here.
   async function confirmToken(id) {
-    await req("POST", `/tech/tokens/${id}/confirm`, {});
-    setTokens(prev => prev.map(t => t.id === id ? { ...t, confirmed_at: new Date().toISOString() } : t));
+    try {
+      await req("POST", `/tech/tokens/${id}/confirm`, {});
+      setTokens(prev => prev.map(t => t.id === id ? { ...t, confirmed_at: new Date().toISOString() } : t));
+    } catch (e) { setError(e?.message ?? "Could not confirm"); }
   }
 
   async function revokeToken(id) {
     const reason = await askPrompt("Reason for revocation:");
     if (!reason) return;
-    await req("POST", `/tech/tokens/${id}/revoke`, { reason });
-    setTokens(prev => prev.map(t => t.id === id ? { ...t, status: "revoked" } : t));
+    try {
+      await req("POST", `/tech/tokens/${id}/revoke`, { reason });
+      setTokens(prev => prev.map(t => t.id === id ? { ...t, status: "revoked" } : t));
+    } catch (e) { setError(e?.message ?? "Could not revoke"); }   // A506
   }
 
   async function cancelSwitch(id) {
-    await req("POST", `/mode-switch/${id}/cancel`, {});
-    setSwitches(prev => prev.map(s => s.id === id ? { ...s, status: "cancelled" } : s));
+    try {
+      await req("POST", `/mode-switch/${id}/cancel`, {});
+      setSwitches(prev => prev.map(s => s.id === id ? { ...s, status: "cancelled" } : s));
+    } catch (e) { setError(e?.message ?? "Could not cancel"); }
   }
 
   const pendingConfirmations = tokens.filter(t => t.status === "active" && !t.confirmed_at && new Date(t.expires_at) > new Date());
@@ -2191,7 +2240,9 @@ function TechPage({ req, admin }) {
                 <span style={{ color: C.text, fontWeight: 500 }}>{t.branch_name}</span>
                 <span style={{ color: C.muted }}> — expires {timeAgo(t.expires_at)}</span>
               </div>
-              <button onClick={() => confirmToken(t.id)} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "4px 10px" }}>✓ Confirm</button>
+              {admin?.role === "super_admin" && t.admin_id !== admin?.id
+                ? <button onClick={() => confirmToken(t.id)} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "4px 10px" }}>✓ Confirm</button>
+                : <span style={{ fontSize: 11, color: C.muted }}>{t.admin_id === admin?.id ? "Another admin confirms" : "A super admin confirms"}</span>}
               <button onClick={() => revokeToken(t.id)} style={{ ...S.btn, ...S.btnDanger, fontSize: 11, padding: "4px 10px" }}>Revoke</button>
             </div>
           ))}
@@ -2250,7 +2301,9 @@ function TechPage({ req, admin }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Generate Mode Switch Token</div>
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>7-day token for switching a branch between local and cloud. All orders migrate automatically — zero duplicates.</p>
-          <form onSubmit={generateSwitch} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* A495: a mode switch moves a branch's whole order history — only a super admin generates one. */}
+          {admin?.role !== "super_admin" && <div style={{ fontSize: 12, color: C.muted }}>Only a super admin can generate a mode switch.</div>}
+          {admin?.role === "super_admin" && <form onSubmit={generateSwitch} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div>
               <label style={S.label}>Client</label>
               <select style={{ ...S.input }} value={switchForm.business_id} required
@@ -2284,7 +2337,7 @@ function TechPage({ req, admin }) {
             <button type="submit" disabled={generating || !switchForm.branch_id} style={{ ...S.btn, ...S.btnPrimary }}>
               {generating ? "Generating…" : "Generate Switch Token"}
             </button>
-          </form>
+          </form>}
           {generatedSwitch && (
             <div style={{ marginTop: 14, padding: "12px 14px", background: "#0a1628", border: `1px solid #22c55e`, borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>SWITCH TOKEN — give to tech verbally or via secure message.</div>
@@ -2320,7 +2373,10 @@ function TechPage({ req, admin }) {
                 <td style={S.td}>
                   {t.status === "active" && !t.confirmed_at && (
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => confirmToken(t.id)} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "4px 8px" }}>Confirm</button>
+                      {/* A506: as the queue above — a super admin, never on their own token (SUPER_ADMIN_REQUIRED / SELF_CONFIRM). */}
+                      {admin?.role === "super_admin" && t.admin_id !== admin?.id && (
+                        <button onClick={() => confirmToken(t.id)} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "4px 8px" }}>Confirm</button>
+                      )}
                       <button onClick={() => revokeToken(t.id)} style={{ ...S.btn, ...S.btnDanger, fontSize: 11, padding: "4px 8px" }}>Revoke</button>
                     </div>
                   )}
@@ -2578,6 +2634,19 @@ export default function AdminPortal() {
   // login). All hooks must run on every render.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const critical = useCriticalCount(req, Boolean(token && admin));   // A392: the number on Alerts
+  // A506: the role as the cloud holds it now (A495 re-reads admin_users on every request) — a super admin demoted, or an
+  // agent promoted, saw the old buttons until they signed in again. Read once per sign-in / reload.
+  useEffect(() => {
+    if (!token) return;
+    req("GET", "/auth/me", undefined).then(me => {
+      if (!me?.id) return;
+      setAdmin(prev => {
+        const next = { ...(prev ?? {}), ...me };
+        try { sessionStorage.setItem(KEY.user, JSON.stringify(next)); } catch { /* storage blocked */ }
+        return next;
+      });
+    }).catch(() => { /* a 401 already signs out in req */ });
+  }, [token]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleLogin(tok, adminData) {
     setToken(tok);

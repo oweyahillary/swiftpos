@@ -40,16 +40,53 @@ const BCRYPT_ROUNDS = 12;
 const RECEIPT_SETTING_KEYS = new Set(['receipt_header', 'receipt_footer', 'receipt_pay_label', 'receipt_pay_number']);   // A450: + how to pay
 
 /** A490: the keys that write business settings — the route admits any of them, then narrows per setting. */
-const SETTING_WRITE_KEYS = ['receipt.manage', 'settings.business', 'settings.payments', 'settings.pos', 'settings.integrations'];
+const SETTING_WRITE_KEYS = ['receipt.manage', 'settings.business', 'settings.payments', 'settings.pos', 'settings.integrations',
+  'settings.reversals', 'inventory.count_freeze'];   // A502
 const LOYALTY_SETTING_KEYS = new Set(['loyalty_enabled', 'loyalty_earn_rate']);
 
-/** A490: the one key that may write this business setting. */
-export function settingPermission(key: string): string {
+/**
+ * A494: the business settings a settings.business holder may write — each one a known option of a settings screen
+ * (restaurant, fuel, minimart, parking, kitchen, the business day, what a cashier's History shows, device
+ * registration). An ALLOW-LIST: a key nobody listed — a future setting, a typo, or a credential — is the owner's, not
+ * settings.business's (it was settings.business, so a manager given "business settings" could write any key at all).
+ */
+export const BUSINESS_SETTING_KEYS: ReadonlySet<string> = new Set([
+  'require_device_registration', 'restaurant_order_mode',
+  'enable_covers', 'enable_course_firing', 'auto_print_kot', 'enable_split_bill',
+  'service_charge_pct', 'table_turnover_alert_mins', 'turnover_alert_minutes',
+  'period_breakfast', 'period_lunch', 'period_dinner', 'period_allday',
+  'fuel_show_litres_dispensed', 'fuel_require_attendant_name', 'fuel_auto_print_receipt', 'fuel_unit_display',
+  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep', 'weight_unit',
+  'default_parking_rate', 'parking_min_hours', 'parking_billing_mode',
+  'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
+  'continuous_operation', BUSINESS_DAY_CUTOFF_KEY, CASHIER_HISTORY_METHODS_KEY,
+  'cashier_sees_shift_sales', 'cashier_history_totals', 'kitchen_exclusions', 'order_note_picks',
+]);
+/** Families of settings.business keys whose suffix is the tenant's own (a vehicle type, a delivery platform). */
+const BUSINESS_SETTING_PREFIXES = ['parking_rate_', 'aggregator_commission_'];
+
+/**
+ * A494: the owner's alone — the supervisor PIN (it approves voids and refunds) and every M-Pesa credential and setting
+ * (where the business's money goes and the keys that move it) — whatever else a person holds.
+ * A502 (owner, 2026-10-15: "yes owner but should be a right a user can be assigned"): the void / refund rules and the
+ * stock-count freeze are no longer owner-only — each is its own permission (settings.reversals, inventory.count_freeze)
+ * that no role starts with, so they stay the owner's until the owner gives them to someone.
+ */
+export function ownerOnlySetting(k: string): boolean {
+  return HASHED_SETTING_KEYS.has(k) || ENCRYPTED_SETTING_KEYS.has(k) || k.startsWith('mpesa_');
+}
+
+/** A490: the one key that may write this business setting — null when it is the OWNER's alone (A494). */
+export function settingPermission(key: string): string | null {
+  if (ownerOnlySetting(key)) return null;
+  if (isReversalSettingKey(key)) return 'settings.reversals';          // A502
+  if (key === STOCK_COUNT_FREEZE_KEY) return 'inventory.count_freeze';  // A502
   if (RECEIPT_SETTING_KEYS.has(key)) return 'receipt.manage';
   if (key === PAYMENT_METHODS_ENABLED_KEY) return 'settings.payments';
   if (LOYALTY_SETTING_KEYS.has(key)) return 'settings.pos';
   if (key === 'report_schedule') return 'settings.integrations';
-  return 'settings.business';
+  if (BUSINESS_SETTING_KEYS.has(key) || BUSINESS_SETTING_PREFIXES.some((p) => key.startsWith(p))) return 'settings.business';
+  return null;   // A494: unknown — the owner's (default-deny, as GET /settings is)
 }
 
 const HASHED_SETTING_KEYS = new Set(['supervisor_pin']);
@@ -113,6 +150,9 @@ const READABLE_SETTING_KEYS = new Set([
   'order_note_picks',
   // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules (lib/reversalRules.ts).
   'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales', 'delivery_free_allowed',
+  // A505: saved (a REVERSAL_SETTING_KEYS key) but never read back — the Voids, refunds & delivery screen showed the
+  // free-delivery amount empty after a reload, and saving the screen again could clear it.
+  'delivery_free_over',
 ]);
 // Dynamic-suffix key families with no secret ever under them — the suffix is
 // per-tenant data (a vehicle type, a delivery platform name), not something
@@ -385,7 +425,13 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // settings.payments, loyalty settings.pos, the report schedule settings.integrations, everything else
   // settings.business. The void/refund rules and the stock-count freeze stay the owner's (below).
   const needed = settingPermission(String(key));
-  if (!can(req, needed)) {
+  if (needed === null) {
+    // A494: the owner's own settings — the real owner, signed in as themselves (not a till's own sign-in).
+    if (!req.isOwner || req.isTill) {
+      res.status(403).json({ error: 'Only the owner can change that setting.', code: 'OWNER_ONLY', detail: `"${key}" is the owner's` });
+      return;
+    }
+  } else if (!can(req, needed)) {
     res.status(403).json({
       error: 'Forbidden',
       // Name the key they tried, not the permission they lack: the caller with
@@ -426,11 +472,8 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // "for offline we will let the owner decide" — a manager holding settings.manage may not widen their own void
   // window or the methods they may refund offline. Only a value lib/reversalRules.ts accepts is stored.
   // ── A394: freezing items during a stock count — "we leave that as a feature which the owner will decide" ──
+  // A502: who may is decided above — inventory.count_freeze (settingPermission), the owner's until given to someone.
   if (key === STOCK_COUNT_FREEZE_KEY) {
-    if (!req.isOwner) {
-      res.status(403).json({ error: 'Only the owner decides whether a stock count freezes sales.', code: 'OWNER_ONLY' });
-      return;
-    }
     const clean = freezeSetting(value) ? 'true' : 'false';
     const { data: existingFz } = await supabase
       .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
@@ -442,11 +485,8 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
     return;
   }
 
+  // A502: who may is decided above — settings.reversals (settingPermission), the owner's until given to someone.
   if (isReversalSettingKey(key)) {
-    if (!req.isOwner) {
-      res.status(403).json({ error: 'Only the owner can change the void and refund rules.', code: 'OWNER_ONLY' });
-      return;
-    }
     const clean = reversalSettingValue(key, value);
     if (clean === null) {
       res.status(400).json({ error: `That is not a valid value for ${key}.`, code: 'INVALID_VALUE' });

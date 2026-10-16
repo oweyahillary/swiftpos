@@ -11,7 +11,7 @@
 //   sync:trigger      → run syncAll()
 //   sync:status       → return { online, pendingCount }
 
-import { latestReady, shareDir, tillVersions } from './updateShare';   // A443
+import { offeredVersion, shareDir, shareProgress, tillVersions } from './updateShare';   // A443, A496
 import { cleanOffer, type Offer } from './offers';   // A445
 import { getMacAddressCached, identityHeaders } from './machineFingerprint';
 import { app, ipcMain, net, dialog, BrowserWindow } from 'electron';
@@ -33,19 +33,21 @@ function resolveReceiptLogo(): MonoRaster | undefined {
 }
 import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
-import { getUpdateStatus, installUpdateNow } from './autoUpdate';
+import { getUpdateDiagnostics, getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { logLine, authLog } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
 import { getReceiptPay, setReceiptPay } from './receiptPay';   // A450 (+ A492: set from the till)
 import { isSessionRefusal } from './sessionRecovery';   // A407
-import { cloudFetch } from './cloudGateway';   // A410: a till on a branch reaches the cloud only through its branch server
+import { cloudFetch, nodeRefusal } from './cloudGateway';   // A410: a till on a branch reaches the cloud only through its branch server
 import { saveRoutingLocally, overlayPending, readPending as readPendingRouting, mayRoute } from './stationRouting';   // A411
 import { mayWaste, recordingProblem, queueRecording, readPending as readPendingWaste, readRefused as readRefusedWaste, dismissRefused, ITEMS_KEY as WASTE_ITEMS_KEY, type WasteItem } from './tillWastage';   // A414
 import { cacheStaffCredential, verifyPinOffline } from './pinCache';
+import { assertPinAllowed, recordPinFailure, notePinSuccess, PIN_CLOUD_BUSY } from './pinAttempts';   // A494: one limiter for every local PIN check
+import { applyOffers } from './offers';   // A494: the offer discount a sale claims, re-checked on the till's own offers
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
+import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, replicateToNode, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { tillBranchId } from './deviceConfig';   // A446
 import { MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
 import { signedIn as sessionPerson, signedInCan, personCan, personKeys, mayMoveMoney, roleCeilingRefusal, roleMap, mayActOn, hasMarker, isOwnerRole, type PersonLike } from './tillAccess';   // A490: the till's one rule
@@ -74,9 +76,12 @@ import { executeShiftMoney, createShiftMoneyInstruction, cancelShiftMoneyInstruc
 import { forgetTill } from './branchClose';   // F4
 import { ownOpenShift } from './shiftService';   // A465
 import { takeSnapshot, setBackupDir, maintenanceStatus } from './maintenance';
-import { emitEvent, resetOutboxCursors, rearmNodeOutbox } from './nodeIngest';
-import { setNodeDeviceToken } from './nodeClient';   // F7
-import { readServerCert, pinnedFetch, securityCode, setTillPin, tillPin, nodeTlsStatus, serverSecurityCode } from './lanTls';   // A489
+import { emitEvent, resetOutboxCursors, rearmNodeOutbox, rearmFailedNodeRows, rearmPeerQuarantine, retryPeerQuarantine, peerQuarantineSummary, nodeQueueDepth } from './nodeIngest';
+import { channelHealth, serverInfo, protocolVerdict, NODE_PROTOCOL } from './nodeHealth';   // A501
+import { lastFollowLook } from './nodeFollow';   // A501
+import { setNodeDeviceToken, nodeDeviceToken, joinProofHeaders } from './nodeClient';   // F7, A503
+import { nextBillNumber } from './billNumber';   // A500
+import { readServerCert, pinnedFetch, securityCode, setTillPin, tillPin, nodeTlsStatus, serverSecurityCode, forgetPinForRetrust } from './lanTls';   // A489
 import { localOrderDetail } from './managerReports';   // A444
 import { detailFromCloud, receiptPayloadFromDetail, type OrderDetail } from './orderDetail';   // A444
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
@@ -255,15 +260,26 @@ export function registerIpcHandlers() {
   // access code and this till's device key) then go over TLS pinned to it, and it is pinned when the join succeeds.
   let joinAsk: { url: string; id: string; token: string; rejoin: boolean; cert: string | null } | null = null;
   const joinFetch = (url: string, init: any, cert: string | null) => (cert ? pinnedFetch(url, init, cert) : fetch(url, init));
+  // A494: a till already set up AND joined to its business is moved to another (a first join replaces its session and
+  // clears its menu) only by a technician — the same rule as auth:enrolDevice; its own rejoin (keeps everything) stays.
+  const joinedHere = (): boolean => isConfigured()
+    && !!(getLocalDb().prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined)?.business_id;
+  const ALREADY_JOINED = 'This till is already joined to its business. A technician moves it from the technician console.';
+  const sameCloud = (a: string, b: string) => String(a ?? '').trim().replace(/\/+$/, '').toLowerCase() === String(b ?? '').trim().replace(/\/+$/, '').toLowerCase();
   handle('install:requestJoin', async (_event, payload) => {
     const { url, rejoin } = assertPayload<{ url: string; rejoin?: boolean }>({ url: { t: 'string', min: 1 }, rejoin: { t: 'boolean', optional: true } }, payload);
     if (!/^http:\/\/(\d{1,3}\.){3}\d{1,3}:\d{1,5}$/.test(url)) throw new Error('That is not a branch server address.');
-    if (rejoin && isNodeRole(getDeviceConfig()?.device_role)) throw new Error('This computer is the branch server — it rejoins from the technician console, not through itself.');
+    // A494: this machine itself (or 0.0.0.0) is never a branch server for an installed till — only in development.
+    if (app.isPackaged && /^http:\/\/(127\.|0\.)/.test(url)) throw new Error('That is not a branch server address.');
+    if (!rejoin && joinedHere() && !getActiveSession()) throw new Error(ALREADY_JOINED);
+    // A502: a former branch server becomes a till of another server only from the technician console (a technician's
+    // session) — it stops serving once that server allows it. Never through itself.
+    if (rejoin && isNodeRole(getDeviceConfig()?.device_role) && !getActiveSession()) throw new Error('This computer is the branch server — it joins another server from the technician console.');
     const deviceId = getDeviceConfig()?.device_id ?? saveDeviceConfig({ configured: false } as any).device_id;
     const { cert } = await readServerCert(url, 4000);   // null: a server on an older build — the join stays plain
     let res: Response;
     try {
-      res = await joinFetch(`${url}/node/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      res = await joinFetch(`${url}/node/join`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...joinProofHeaders(deviceId, cert) },   // A503
         body: JSON.stringify({ device_id: deviceId, name: os.hostname() }), signal: AbortSignal.timeout(5000) }, cert);
     } catch { throw new Error('Could not reach that branch server. Check this till is on the same network.'); }
     const body: any = await res.json().catch(() => ({}));
@@ -288,13 +304,24 @@ export function registerIpcHandlers() {
       return { status: r?.status === 'denied' ? 'denied' as const : 'expired' as const };
     }
     const g = r.grant;
+    // A494: checked again at the answer (a technician's session may have ended meanwhile), and a till already set up
+    // takes a grant only for the cloud it is set up for — a server cannot point it at another cloud.
+    if (!ask.rejoin && joinedHere() && !getActiveSession()) throw new Error(ALREADY_JOINED);
+    if ((ask.rejoin || isConfigured()) && !sameCloud(String(g.cloud_url ?? ''), getCloudUrl())) {
+      logLine('join', `A494: refused a join answer from ${ask.url} for another cloud (${String(g.cloud_url ?? '')})`);
+      throw new Error('That branch server belongs to another cloud than this till. Ask your technician.');
+    }
     const port = Number(new URL(ask.url).port);
     if (ask.rejoin) {
       // Already set up: only the way to the server changes (saved first, so the rejoin goes through it — A410); put
       // back as it was if the cloud refuses (another branch's server, say).
       const before = getDeviceConfig();
       const pinBefore = tillPin();
-      saveDeviceConfig({ node_url: ask.url, node_secret: String(g.node_secret) } as any);
+      const keyBefore = nodeDeviceToken();   // A503: restored with the address if the rejoin fails
+      // A502: a former branch server stepping down (technician console) stops serving before it joins the other one.
+      const wasServer = isNodeRole(before?.device_role);
+      if (wasServer) { stopNodeServer(); logTechAction('role.stepdown', { from: before?.device_role, node_url: ask.url }); }
+      saveDeviceConfig({ node_url: ask.url, node_secret: String(g.node_secret), ...(wasServer ? { device_role: 'till' } : {}) } as any);
       setTillPin(ask.cert);   // A489: the server's certificate goes with its address (null: an older server — plain)
       if (g.device_token) setNodeDeviceToken(String(g.device_token));   // F7: this till's own key at the server
       // F2: a rejoin is a (possibly new) server — everything this till holds is offered to it again.
@@ -308,8 +335,10 @@ export function registerIpcHandlers() {
         return { status: 'joined' as const, business: joined.business, branchId: String(g.branch_id), branchName: g.branch_name ?? null,
           cloudUrl: String(g.cloud_url), nodeIp: new URL(ask.url).hostname, nodePort: port, nodeSecret: String(g.node_secret) };
       } catch (e) {
-        saveDeviceConfig({ node_url: before?.node_url ?? null, node_secret: before?.node_secret ?? null } as any);
+        saveDeviceConfig({ node_url: before?.node_url ?? null, node_secret: before?.node_secret ?? null,
+          ...(wasServer ? { device_role: before?.device_role } : {}) } as any);   // A502: serves again from its next start
         setTillPin(pinBefore);
+        if (keyBefore) setNodeDeviceToken(keyBefore);   // A503
         throw e;
       }
     }
@@ -340,9 +369,46 @@ export function registerIpcHandlers() {
   handle('node:tlsRetrust', async () => {
     if (!getActiveSession() && !signedInCan('settings.business')) throw new Error('Only a technician or someone who manages the business settings can do that.');
     const was = securityCode(tillPin());
-    setTillPin(null);
+    forgetPinForRetrust();   // A503: nothing goes plain until a certificate is pinned again
     logLine('node', `A489: the branch server's certificate (security code ${was ?? 'none'}) was forgotten by a person — the next one it hands out is trusted`);
     return { ok: true };
+  });
+  // A501: the till's conversation with its branch server, channel by channel (Tech page › Branch sync): when each last
+  // worked, its last error in the server's words, failures in a row; what this till still owes the server and what it
+  // holds back from other tills; the server's version and branch. Read-only. A technician, or a manager who may change
+  // settings — like the security row beside it.
+  handle('node:syncHealth', async () => {
+    if (!getActiveSession() && !signedInCan('settings.business')) throw new Error('Only a technician or someone who manages the business settings can see that.');
+    const cfg = getDeviceConfig();
+    if (!cfg?.node_url || isNodeRole(cfg.device_role)) return { role: isNodeRole(cfg?.device_role) ? 'server' as const : 'none' as const };
+    const info = serverInfo();
+    return {
+      role: 'till' as const,
+      url: cfg.node_url,
+      channels: channelHealth(),
+      backlog: nodeQueueDepth(),
+      quarantine: peerQuarantineSummary(),
+      server: info,
+      tillProtocol: NODE_PROTOCOL,
+      ...protocolVerdict(info),
+      branch: { till: cfg.branch_id ?? null, server: info?.branch_id ?? null,
+        mismatch: !!(info?.branch_id && cfg.branch_id && info.branch_id !== cfg.branch_id) },
+      refusal: nodeRefusal(),
+      heard: lastFollowLook(),
+    };
+  });
+  // A501: "Retry failed records" — the rows the server refused (after five tries) go to it again, and the rows held back
+  // from other tills are tried again now. Same gate as the row above.
+  handle('node:retryFailed', async () => {
+    const tech = getActiveSession();
+    if (!tech && !signedInCan('settings.business')) throw new Error('Only a technician or someone who manages the business settings can do that.');
+    const requeued = rearmFailedNodeRows();
+    const released = rearmPeerQuarantine();
+    const applied = retryPeerQuarantine().applied;
+    if (tech) logTechAction('node.retryFailed', { requeued, released, applied });
+    logLine('node', `A501: retry failed records — ${requeued} record(s) offered to the branch server again, ${released} held-back record(s) from other tills tried again (${applied} applied)`);
+    void replicateToNode();
+    return { requeued, released, applied };
   });
   handle('node:answerJoin', async (_event, payload) => {
     const { id, allow } = assertPayload<{ id: string; allow: boolean }>({ id: { t: 'string', min: 1 }, allow: { t: 'boolean' } }, payload);
@@ -731,6 +797,7 @@ export function registerIpcHandlers() {
     // renderer already catches, instead of destructuring undefined mid-handler.
     const { pin, branch_id } = assertPayload<{ pin: string; branch_id: string }>(
       { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } }, payload);
+    assertPinAllowed();   // A494: too many wrong PINs on this till — nothing is checked until the lockout ends
     const db = getLocalDb();
     const session = db.prepare(`SELECT business_name, currency FROM session WHERE id=1`).get() as any;
 
@@ -757,6 +824,7 @@ export function registerIpcHandlers() {
     // A477: where the sign-in was decided, for auth.log — the branch server, or this till itself.
     let signInSource: 'node' | 'local' = 'local';
     const signInLocal = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
+      notePinSuccess();   // A504: a right PIN clears the count of wrong ones
       authLog('sign-in', `source=${signInSource}`);
       const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
       // A167: token is TEXT NOT NULL (localDb.ts). An offline session has no
@@ -837,6 +905,8 @@ export function registerIpcHandlers() {
       const verdict = verifyPinOffline(String(pin), branch_id);
       if (verdict.ok) return signInLocal(verdict.staff);
       void refreshStaffRosterNow('a PIN this till did not know');
+      // A494: a PIN some authority said no to counts toward this till's lockout (one that could not be checked does not).
+      if (nodeSaidNo || v.reason === 'no_match' || verdict.reason === 'no_match') recordPinFailure();
       throw new Error(nodeSaidNo ?? (v.reason === 'no_match' ? 'Invalid PIN' : verdict.message));
     };
 
@@ -871,10 +941,15 @@ export function registerIpcHandlers() {
     // next two lines either threw an unhandled parse error on the gateway's HTML
     // body or read !res.ok as "Invalid PIN" — and the offline cache/node never
     // rescued a login it should have. A clean 4xx below stays FINAL.
-    // A446 (session audit): 429 too — the cloud limits failed PINs per till (30 in 15 min), and a burst of wrong PINs
-    // then refused EVERY cashier on that till, the right PINs included, for up to 13 minutes. Too many tries is "cannot
-    // ask the cloud now", not a "no": this till's own staff list decides meanwhile.
-    if (isUnreachableStatus(res.status) || res.status === 429) {
+    // A494: a 429 is the cloud's limit on wrong PINs from this till. A494 made the till wait it out (15 minutes) — which
+    // locked EVERY cashier out of selling at that till, right PINs included. A504: the till's own check answers instead,
+    // as A446 did — no longer an unlimited oracle, because the till's own limiter (assertPinAllowed above, 5 wrong →
+    // 1 min, doubling to 15) bounds it.
+    if (res.status === 429) {
+      logLine('pin', 'cloud answered 429 at sign-in - too many tries there; checking the PIN on the till (its own limit applies)');
+      return fallbackToLocalAuthority();
+    }
+    if (isUnreachableStatus(res.status)) {
       logLine('pin', `cloud answered ${res.status} at sign-in - treating as unreachable, trying the local authority`);
       return fallbackToLocalAuthority();
     }
@@ -888,10 +963,14 @@ export function registerIpcHandlers() {
       logLine('pin', `the cloud refused this till's session (${data.code ?? data.error ?? '401'}) - signing in on the till's own PIN check`);
       return fallbackToLocalAuthority();
     }
-    if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
+    if (!res.ok) {
+      if (res.status === 401) recordPinFailure();   // A494: a wrong PIN, whoever said so
+      throw new Error(data.error ?? 'Invalid PIN');
+    }
 
     // Online sign-in succeeded: an offline PIN held from an earlier sign-in is no longer needed (A345).
     authLog('sign-in', 'source=cloud');
+    notePinSuccess();   // A504
     clearOfflinePin();
     const branchRow = persistCloudSignIn(data, branch_id);
 
@@ -931,22 +1010,29 @@ export function registerIpcHandlers() {
     const { pin } = assertPayload<{ pin: string }>({ pin: { t: 'string', min: 1 } }, payload);
     const st = getLocalDb().prepare(`SELECT staff_id, branch_id FROM staff_session WHERE id=1`).get() as { staff_id?: string; branch_id?: string } | undefined;
     if (!st?.staff_id || !st.branch_id) throw new Error('Nobody is signed in on this till — sign in again.');
+    assertPinAllowed();   // A494
     // A480: a session signed in on this till's own check (no cloud token — offline, a slow line, a refused till, or after a
     // restart lost the held PIN) becomes a cloud one again from the unlock: the PIN is held and the upgrade tried at once,
     // as after the offline sign-in itself (A345). The manager's Overview then shows the cloud's branch, not the
     // "Sign in as a manager" fallback, without signing out.
+    // A494: ONE answer for "not a PIN" and "someone else's PIN" ('wrong') — 'other' confirmed that a guessed PIN was a
+    // real one. Both count toward the lockout.
+    const WRONG = { ok: false, reason: 'wrong' as const };
     const mine = (id: string | null | undefined) => {
-      const ok = id === st.staff_id;
-      if (ok && !readStaffTokens().token) {
+      if (id !== st.staff_id) { recordPinFailure(); return WRONG; }
+      notePinSuccess();   // A504: a right PIN clears the count of wrong ones
+      if (!readStaffTokens().token) {
         holdOfflinePin({ staffId: st.staff_id!, branchId: st.branch_id!, pin: String(pin) });
         void tryUpgradeOfflineSession();
       }
-      return { ok, reason: ok ? undefined : 'other' as const };
+      return { ok: true };
     };
     const local = verifyPinAtNode(String(pin), st.branch_id);
     if (local.ok) return mine(local.staff.staffId);
     const saved = verifyPinOffline(String(pin), st.branch_id);
     if (saved.ok) return mine(saved.staff.staffId);
+    // Neither copy on this till knows it: a wrong PIN as far as the till can tell (counted if the cloud cannot be asked).
+    const localNo = (!local.ok && local.reason === 'no_match') || (!saved.ok && saved.reason === 'no_match');
     const cfg = getDeviceConfig();
     if (cfg?.node_url && !isNodeRole(cfg.device_role)) {
       const r = await verifyPinAtNodeClient(String(pin), st.branch_id);
@@ -958,12 +1044,20 @@ export function registerIpcHandlers() {
         body: verifyPinBody(String(pin), st.branch_id) }), 8_000);
     } catch {
       void refreshStaffRosterNow('an unlock PIN this till did not know');
+      // A494: offline, the till's own "no" is the answer — the same 'wrong' as a colleague's PIN, and counted (a
+      // different message here told an unknown PIN from a real one). Only a till holding no list at all says it cannot check.
+      if (localNo) { recordPinFailure(); return WRONG; }
       throw new Error('This till does not know that PIN and cannot reach the cloud to check it. Try again, or sign out.');
     }
-    if (isUnreachableStatus(res.status)) throw new Error('This till does not know that PIN and the cloud is not answering. Try again, or sign out.');
+    if (res.status === 429) throw new Error(PIN_CLOUD_BUSY);   // A494
+    if (isUnreachableStatus(res.status)) {
+      if (localNo) { recordPinFailure(); return WRONG; }
+      throw new Error('This till does not know that PIN and the cloud is not answering. Try again, or sign out.');
+    }
     const data = await res.json().catch(() => ({} as any));
-    if (!res.ok) { void refreshStaffRosterNow('an unlock PIN this till did not know'); return { ok: false, reason: 'wrong' as const }; }
-    if (data.staff?.id !== st.staff_id) return { ok: false, reason: 'other' as const };
+    if (!res.ok) { void refreshStaffRosterNow('an unlock PIN this till did not know'); recordPinFailure(); return WRONG; }
+    if (data.staff?.id !== st.staff_id) { recordPinFailure(); return WRONG; }
+    notePinSuccess();   // A504
     persistCloudSignIn(data, st.branch_id);   // the same person, with a fresh cloud session — better than the one held
     void refreshStaffRosterNow('this till did not know a PIN the cloud did');
     return { ok: true };
@@ -1479,7 +1573,9 @@ export function registerIpcHandlers() {
   // a stored payload; anything else reports honestly rather than printing wrong.
   handle('escpos:reprintReceiptForOrder', async (_e, orderId: string) => {
     // 0.6.27: History's Reprint is for managers when the client has 'cashier_no_reprint' on — refused here too.
-    if (!historyScope().canReprint) return { ok: false, error: 'Reprinting is for managers on this till.' };
+    const scope = historyScope();
+    if (!scope.canReprint) return { ok: false, error: 'Reprinting is for managers on this till.' };
+    const NOT_YOURS = 'This sale is not yours.';
     const row = getLocalDb()
       .prepare('SELECT payload FROM receipt_payloads WHERE order_id = ?')
       .get(orderId) as { payload?: string } | undefined;
@@ -1487,10 +1583,16 @@ export function registerIpcHandlers() {
     // itself: this till's records, else the cloud's.
     let payload: any = null;
     if (row?.payload) {
+      // A494: a person who sees only their own sales in History (ownOnly) reprints only their own — as order:detail.
+      if (scope.ownOnly) {
+        const o = getLocalDb().prepare(`SELECT cashier_id FROM orders WHERE id = ?`).get(String(orderId)) as { cashier_id?: string | null } | undefined;
+        if (!scope.staffId || (o?.cashier_id ?? null) !== scope.staffId) return { ok: false, error: NOT_YOURS };
+      }
       try { payload = JSON.parse(row.payload); } catch { return { ok: false, error: 'Could not rebuild this receipt.' }; }
     } else {
       const found = await readOrderDetail(String(orderId)).catch((e: any) => ({ error: e?.message ?? String(e) }));
       if ('error' in found) return { ok: false, error: found.error };
+      if (scope.ownOnly && (!scope.staffId || found.cashierId !== scope.staffId)) return { ok: false, error: NOT_YOURS };   // A494
       payload = receiptPayloadFromDetail(found.detail);
     }
     try {
@@ -1502,13 +1604,48 @@ export function registerIpcHandlers() {
     }
   });
 
+  /** A494: what this till's offers (pulled with the menu) take off a sale's lines — timing not re-checked (the cart's clock
+   *  decided it, as the cloud's check of a sale does), so a sale rung on the minute an offer ended is never refused. */
+  function tillOfferDiscount(orderPayload: any): { total: number; applied: Array<{ offer_id: string; name: string; amount: number }> } {
+    const none = { total: 0, applied: [] };
+    try {
+      const rows = getLocalDb().prepare(`SELECT data FROM offers`).all() as Array<{ data: string }>;
+      const offers = rows.flatMap((r) => { try { const c = cleanOffer(JSON.parse(r.data)); return c.ok ? [(c as { offer: Offer }).offer] : []; } catch { return []; } });
+      if (!offers.length) return none;
+      const items: any[] = Array.isArray(orderPayload?.items) ? orderPayload.items : [];
+      const lines = items.map((i, n) => {
+        const q = Number(i?.quantity) || 0;
+        return { key: String(n), product_id: i?.product?.id ?? null, category_id: i?.product?.category_id ?? i?.product?.categories?.id ?? null,
+          unit_price: q > 0 ? (Number(i?.lineTotal) || 0) / q : 0, quantity: q };
+      });
+      const r = applyOffers(lines, offers, { ignoreTiming: true, branchId: tillBranchId() });
+      return { total: r.total, applied: r.applied };
+    } catch { return none; }
+  }
+
   handle('order:create', async (_event, orderPayload: any) => {
     // A490: a discount given by hand needs sales.discount — the till is the authority here (offline too; the cloud never
     // refuses a till's sale for it). What offers took off is not the person's discount. Nothing else about selling asks.
-    const manual = (Number(orderPayload?.discount_amount) || 0) - Math.max(0, Number(orderPayload?.offer_discount) || 0);
+    // A494: what the offers took is re-checked on THIS till's offers (the same engine the cart and the cloud use) — the
+    // screen's figure is not trusted: a claimed offer discount above what the till's offers give is a hand discount.
+    const claimed = Math.max(0, Number(orderPayload?.offer_discount) || 0);
+    let offerOff = claimed;
+    if (claimed > 0) {
+      const till = tillOfferDiscount(orderPayload);
+      if (claimed > till.total + 0.01) {
+        logLine('sale', `A494: the screen claimed ${claimed} off for offers; this till's offers give ${till.total}`);
+        offerOff = till.total;
+        // The sale records what the till's offers gave, and which (the excess is part of the hand discount).
+        if (till.total > 0) { orderPayload.offer_discount = till.total; orderPayload.offers = till.applied; }
+        else { delete orderPayload.offer_discount; delete orderPayload.offers; }
+      }
+    }
+    const manual = (Number(orderPayload?.discount_amount) || 0) - offerOff;
     if (manual > 0.004 && !signedInCan('sales.discount')) throw new Error('Your role does not give discounts. Remove the discount, or ask someone who may.');
+    const askedNumber = orderPayload?.order_number ?? null;   // A503 (E1): A500 may renumber the sale
     const orderId = createLocalOrder(orderPayload);
     markKitchenPaid(orderPayload?.order_number);   // 0.6.28: its sent lines are paid for
+    if (askedNumber && askedNumber !== orderPayload?.order_number) markKitchenPaid(askedNumber);
     // A299: event summary — id, total, method, item count. No line-item detail
     // or customer data (the DB + cloud are the record; this is the trail).
     logLine('sale', `created ${orderId} ${orderPayload?.total ?? '?'} `
@@ -1543,7 +1680,7 @@ export function registerIpcHandlers() {
 
     // A349: a ticket that could not be produced reaches the sale screen (a missing printer is not a failure — that is
     // "skipped", and a till with no receipt printer would otherwise be nagged on every sale).
-    return { orderId, printFailed: printed.failed };
+    return { orderId, orderNumber: orderPayload?.order_number ?? null, printFailed: printed.failed };
   });
 
   // ── Printing (native — replaces QZ Tray on the desktop) ──
@@ -1658,11 +1795,13 @@ export function registerIpcHandlers() {
   // A306: auto-update status for the renderer banner. Push is via update:status
   // (webContents.send from autoUpdate.ts); this is the poll the renderer runs on mount.
   handle('update:getStatus', async () => getUpdateStatus());
+  // A496: why this till has (or has not) got its update — the status with its reason and the last 40 update log lines.
+  handle('update:getDiagnostics', async () => getUpdateDiagnostics());
   // Apply a downloaded update now, NSIS progress visible + relaunch. Gated to a manager/tech
   // PIN at the call site (the banner verifies before invoking); a no-op unless an update is
   // actually downloaded, so it can never half-restart a trading till.
   // A490: restarting a till for an update stops its selling — the same people who close the day (shifts.close_day; the
-  // owner's role always). settings.updates is the owner's web choice of WHICH version tills take, not who restarts one.
+  // owner's role always). which version tills take is ZapTill's (admin portal, A493), not who restarts one.
   handle('update:installNow', async () => {
     // A306 (hardened 2026-09-22): a renderer-only gate is bypassable by any code that can reach the bridge — refused in
     // MAIN unless the person signed in may close the day.
@@ -1672,13 +1811,25 @@ export function registerIpcHandlers() {
   // A490: the update bar's "Restart & update now" with someone's PIN — that person is IDENTIFIED (this till's staff list,
   // its saved sign-ins, the branch server, the cloud), never signed in: the person at the till stays signed in (the bar
   // used to sign the PIN's holder in through auth:verifyPin, replacing the session). They must hold shifts.close_day.
+  const UPDATE_PIN_REFUSED = 'That PIN cannot restart the till for the update (it needs a PIN that may close the day).';
   handle('update:installWithPin', async (_e, payload) => {
     const { pin } = assertPayload<{ pin: string }>({ pin: { t: 'string', min: 1 } }, payload);
+    // A494: someone must be signed in at the till (the bar is not a PIN oracle for whoever walks up to a locked till).
+    if (!sessionPerson()) return { ok: false, reason: 'not_signed_in', message: 'Sign in first, then restart for the update.' };
     let who: { id: string; name: string | null; roleName: string | null; permissions: unknown } | null;
     try { who = await identifyPerson(String(pin).trim()); }
-    catch (e: any) { return { ok: false, reason: 'check_failed', message: e?.message ?? 'Could not check that PIN.' }; }
-    if (!who) return { ok: false, reason: 'wrong_pin', message: 'PIN not recognised.' };
-    if (!personCan(who, 'shifts.close_day')) return { ok: false, reason: 'not_allowed', message: 'That PIN cannot restart the till (it needs Close the day).' };
+    catch (e: any) {
+      // A494: only "locked" / "wait" are said as they are — "this till does not know that PIN" (offline) would tell an
+      // unknown PIN from a real one that may not restart, so it gets the one refusal below.
+      const m = String(e?.message ?? '');
+      if (/Too many/i.test(m)) return { ok: false, reason: 'check_failed', message: m };
+      who = null;
+    }
+    // A494: ONE answer for an unknown PIN and a real PIN that may not restart — telling them apart confirmed a guess.
+    if (!who || !personCan(who, 'shifts.close_day')) {
+      if (who) recordPinFailure();   // (an unknown PIN was counted by identifyPerson)
+      return { ok: false, reason: 'not_allowed', message: UPDATE_PIN_REFUSED };
+    }
     logLine('update', `restart for the update approved by ${who.name ?? who.id}`);
     return installUpdateNow();
   });
@@ -1699,7 +1850,16 @@ export function registerIpcHandlers() {
       logLine('config', `refused ${Object.keys(patch ?? {}).join(',') || '(empty)'}`);
       throw new Error(refusal);
     }
-    const saved = saveDeviceConfig(patch ?? {});
+    // A502: a till's branch server address and access code come only from Find my server (install:joinStatus saves
+    // them before this) — never typed. A different address in a patch is dropped and logged; clearing it (null) stays.
+    const cur = getDeviceConfig();
+    const p = { ...(patch ?? {}) } as Record<string, unknown>;
+    const roleAfter = String(p.device_role ?? cur?.device_role ?? 'till');
+    if (!isNodeRole(roleAfter) && p.node_url != null && p.node_url !== (cur?.node_url ?? null)) {
+      logLine('config', `A502: refused a typed branch server address (${String(p.node_url).slice(0, 60)}) — Find my server sets it`);
+      delete p.node_url; delete p.node_secret;
+    }
+    const saved = saveDeviceConfig(p as any);
     try {
       if (isNodeRole(saved.device_role)) startNodeServer();
       else stopNodeServer();
@@ -1726,24 +1886,10 @@ export function registerIpcHandlers() {
   // A wiped local database restarts the sequence — deliberate, since a wipe is
   // an explicit act, and the terminal prefix still separates the tills.
   handle('orders:nextBillNumber', async () => {
-    const db = getLocalDb();
-    const code = getDeviceConfig()?.terminal_code?.trim();
-
-    // better-sqlite3 transactions are synchronous and atomic, so no two callers
-    // can interleave. Deliberately avoids RETURNING, which needs SQLite 3.35+ —
-    // not worth a runtime failure on a till over one saved statement.
-    const bump = db.transaction(() => {
-      db.prepare(`INSERT INTO counters (name, value) VALUES ('bill_seq', 0) ON CONFLICT(name) DO NOTHING`).run();
-      db.prepare(`UPDATE counters SET value = value + 1 WHERE name = 'bill_seq'`).run();
-      return (db.prepare(`SELECT value FROM counters WHERE name = 'bill_seq'`).get() as any)?.value;
-    });
-    const seq = Number(bump() ?? 1);
-
-    // No terminal code yet (upgraded install that never re-ran setup) falls back
-    // to the old scheme rather than minting an unprefixed number that could
-    // collide with a sibling till.
-    if (!code) return `ORD-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
-    return `${code}--${seq}`;
+    // A500: never a number this machine already holds — a wiped / reinstalled till (its old code restored, its counter at
+    // 0) carries on past the branch's copies of its earlier sales instead of minting T3--1 again (billNumber.ts).
+    // No terminal code yet → the old unprefixed scheme, as before.
+    return nextBillNumber(getLocalDb(), getDeviceConfig()?.terminal_code);
   });
 
   ipcMain.on('app:version', (event) => { event.returnValue = app.getVersion(); });
@@ -2211,7 +2357,14 @@ export function registerIpcHandlers() {
   const NOT_A_CONFIRMER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
   // 0.6.37 (A388): a cash-out or an expense with no manager signed in and no PIN.
   const PAYOUT_APPROVAL_NEEDED = 'A manager must approve this — enter a manager’s PIN.';
+  // A494: every manager-PIN prompt (shift confirmation, cash out, expenses, kitchen voids) asks the till's PIN limiter
+  // first, and a PIN that does not approve counts toward its lockout — whoever said no (the server, the cloud, the till).
   async function identifyConfirmer(pin: string): Promise<{ id: string; name: string | null }> {
+    assertPinAllowed();
+    try { return await identifyConfirmerChecked(pin); }
+    catch (e: any) { if (e?.message === NOT_A_CONFIRMER) recordPinFailure(); throw e; }
+  }
+  async function identifyConfirmerChecked(pin: string): Promise<{ id: string; name: string | null }> {
     const cfg = getDeviceConfig();
     const branchId = cfg?.branch_id ?? '';
     const local = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
@@ -2253,6 +2406,7 @@ export function registerIpcHandlers() {
    * not kept). null: nobody has that PIN. Throws when it cannot be checked at all.
    */
   async function identifyPerson(pin: string): Promise<{ id: string; name: string | null; roleName: string | null; permissions: unknown } | null> {
+    assertPinAllowed();   // A494
     const cfg = getDeviceConfig();
     const branchId = sessionPerson()?.branchId || cfg?.branch_id || '';
     const as = (s: { staffId: string; name: string; roleName: string | null; permissions: unknown }) =>
@@ -2262,6 +2416,8 @@ export function registerIpcHandlers() {
     if (listed.reason === 'ambiguous') throw new Error(listed.message);
     const saved = verifyPinOffline(pin, branchId);
     if (saved.ok) return as(saved.staff);
+    const localNo = listed.reason === 'no_match' || (!saved.ok && saved.reason === 'no_match');
+    const nobody = () => { recordPinFailure(); return null; };   // A494: counted
     if (cfg?.node_url && !isNodeRole(cfg.device_role)) {
       const r = await verifyPinAtNodeClient(pin, branchId);
       if (r.status === 'ok') return as(r.staff);
@@ -2270,11 +2426,18 @@ export function registerIpcHandlers() {
     try {
       res = await withinMs(tillFetch('/api/auth/verify-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: verifyPinBody(pin, branchId) }), 8_000);
-    } catch { throw new Error('This till does not know that PIN and cannot reach the cloud to check it.'); }
-    if (isUnreachableStatus(res.status)) throw new Error('This till does not know that PIN and the cloud is not answering.');
-    if (!res.ok) return null;
+    } catch {
+      if (localNo) recordPinFailure();   // A494: offline, the till's own "no" counts
+      throw new Error('This till does not know that PIN and cannot reach the cloud to check it.');
+    }
+    if (res.status === 429) throw new Error(PIN_CLOUD_BUSY);   // A494: never "nobody" — the cloud said wait
+    if (isUnreachableStatus(res.status)) {
+      if (localNo) recordPinFailure();
+      throw new Error('This till does not know that PIN and the cloud is not answering.');
+    }
+    if (!res.ok) return nobody();
     const d: any = await res.json().catch(() => ({}));
-    if (!d?.staff?.id) return null;
+    if (!d?.staff?.id) return nobody();
     return { id: String(d.staff.id), name: d.staff.name ?? null, roleName: d.staff.role ?? null, permissions: d.permissions ?? {} };
   }
 
@@ -2703,8 +2866,11 @@ export function registerIpcHandlers() {
     try { return withoutCosts(overlayOnList('product', await manageFetch('/api/products', 'GET'))); }
     catch { return withoutCosts(overlayOnList('product', localProductsForScreen())); }
   });
+  // A494: a cost price set on a new product is menu.costs (tillChanges.changeKeys asks it of an update only).
+  const hasCost = (p: any) => !!p && typeof p === 'object' && p.cost_price !== undefined && p.cost_price !== null && p.cost_price !== '';
   handle('manage:createProduct', async (_e, payload: any) => {
     requireMenuChange('create', payload);
+    if (hasCost(payload) && !signedInCan('menu.costs')) throw new Error(MENU_REFUSED);
     if (!tillCanHoldProduct(payload)) {
       const out = await manageFetch('/api/products', 'POST', payload);
       await refreshCatalogue();
@@ -2962,6 +3128,7 @@ export function registerIpcHandlers() {
   // missing categories first and only then calls this.
   handle('manage:bulkProducts', async (_e, rows: any[]) => {
     requireKey(['menu.edit'], MENU_REFUSED);   // A490
+    if (Array.isArray(rows) && rows.some(hasCost) && !signedInCan('menu.costs')) throw new Error(MENU_REFUSED);   // A494
     const out = await manageFetch('/api/products/bulk', 'POST', { rows });
     await refreshCatalogue();
     return out;
@@ -3338,8 +3505,10 @@ export function registerIpcHandlers() {
   handle('pos:paymentMethodsEnabled', async () => ({ enabled: getPaymentMethodsEnabled() }));
   // A443: on the branch server — the version it holds for its tills, and which version each till said it runs.
   handle('node:tillVersions', async () => {
-    const ready = latestReady(shareDir());
-    return { serverVersion: app.getVersion(), ready, tills: tillVersions(ready ?? app.getVersion()) };
+    // A496: the version the server offers its tills is the approved one it holds (never a copy left from before a
+    // roll-back), with how its own fetch of that version is going (fetching / failed, why, bytes).
+    const ready = offeredVersion(shareDir());
+    return { serverVersion: app.getVersion(), ready, share: shareProgress(), tills: tillVersions(ready ?? app.getVersion()) };
   });
   // A445: the branch's offers, as the till holds them (pulled with the menu) — the cart applies them by this clock.
   handle('pos:offers', async () => {
@@ -3488,7 +3657,11 @@ export function registerIpcHandlers() {
   // this till's own rows when the cloud cannot be reached, saying so. Read-only.
   handle('manager:branchDay', async (_e, r?: RangeArg) => {
     requireKey(['reports.overview', 'orders.view_all'], REPORT_REFUSED);   // A490: the Overview's own read
-    return branchDay(resolveRange(r?.preset ?? 'today', r?.from, r?.to));
+    const day = await branchDay(resolveRange(r?.preset ?? 'today', r?.from, r?.to));
+    // A494: each drawer's expected cash and difference only to reports.shifts / shifts.confirm (as shift:stale) —
+    // taken out, not merely hidden on the screen.
+    if (signedInCan('reports.shifts', 'shifts.confirm')) return day;
+    return { ...day, shifts: (day.shifts ?? []).map((s) => ({ ...s, expected_cash: null, variance: null })) };
   });
 
   // What the figures cover. Paired with every range query so a till's partial
@@ -3607,6 +3780,11 @@ export function registerIpcHandlers() {
   };
   const NOT_AN_APPROVER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
   async function identifyApproverOffline(pin: string, kind: 'void' | 'refund'): Promise<LocalPerson> {
+    assertPinAllowed();   // A494: the till's PIN limiter, and a PIN that does not approve counts
+    try { return await identifyApproverOfflineChecked(pin, kind); }
+    catch (e: any) { if (e?.message === NOT_AN_APPROVER) recordPinFailure(); throw e; }
+  }
+  async function identifyApproverOfflineChecked(pin: string, kind: 'void' | 'refund'): Promise<LocalPerson> {
     const cfg = getDeviceConfig();
     const branchId = cfg?.branch_id ?? '';
     const asPerson = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }): LocalPerson => {
@@ -3800,8 +3978,12 @@ export function registerIpcHandlers() {
 
   // ── Tech access ────────────────────────────────────────────────────────────
   // Reveal code check (doorknock) — opens the token prompt. Grants nothing.
+  // A494: when the reveal code was last entered at THIS till — a peer adopts the branch's technician session only after it.
+  let revealPassedAt = 0;
+  const REVEAL_FRESH_MS = 5 * 60_000;
   handle('tech:checkReveal', async (_event, code: string) => {
     const ok = checkRevealCode(code);
+    if (ok) revealPassedAt = Date.now();
     return { ok };
   });
 
@@ -3821,6 +4003,8 @@ export function registerIpcHandlers() {
   handle('tech:adoptFromNode', async () => {
     const existing = getActiveSession();
     if (existing) return { ok: true, session: existing };
+    // A494: never a bare call — the technician's code is entered at this till first (tech:checkReveal).
+    if (!revealPassedAt || Date.now() - revealPassedAt > REVEAL_FRESH_MS) return { ok: false, error: 'Enter the technician code on this till first.' };
     const token = await fetchNodeTechToken().catch(() => null);
     if (!token) return { ok: false };
     const result = openTechSession(token);
@@ -3829,9 +4013,17 @@ export function registerIpcHandlers() {
 
   handle('tech:getSession', async () => getActiveSession());
 
-  handle('tech:closeSession', async () => { closeTechSession(); return { ok: true }; });
+  // A494: closing ends it at the branch too — the token the branch server holds for its tills to adopt is cleared (a till
+  // that already adopted it keeps its own session until it is closed there or it expires).
+  handle('tech:closeSession', async () => {
+    closeTechSession();
+    revealPassedAt = 0;
+    broadcastTechToken('').catch(() => {});
+    return { ok: true };
+  });
 
   handle('tech:logAction', async (_event, { action, detail }: { action: string; detail?: any }) => {
+    if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };   // A494
     // A490: kept for the screens' audit lines, but bounded — the audit is a queue the cloud receives.
     const act = String(action ?? '').slice(0, 80);
     let d: any = detail;
@@ -3917,31 +4109,9 @@ export function registerIpcHandlers() {
   //
   // Only on an ACTUAL change — re-entering the same address must not trigger a
   // full re-offer.
-  handle('tech:setNodeUrl', async (_e, { url }: { url: string }) => {
-    if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
-    const probe = await probeNode(String(url ?? ''));
-    if (!probe.ok) return { ok: false, error: probe.error };
-    const was = getDeviceConfig()?.device_role ?? 'till';
-    logTechAction('role.repoint', { from: was, node_url: url });
-    const previousUrl = getDeviceConfig()?.node_url ?? null;
-    const nextUrl     = String(url);
-    const nodeChanged = previousUrl !== nextUrl;
-    if (was === 'node') stopNodeServer();   // stepping down: stop serving first
-    saveDeviceConfig({ node_url: nextUrl, device_role: was === 'node' ? 'till' : was });
-    // A489: the certificate the probe just proved (over TLS, with this till's access code) goes with the address;
-    // a server on an older build has none — plain until it updates, then the 60 s tick pins it.
-    setTillPin(probe.cert ?? null);
-    if (probe.code) logLine('node', `repointed to ${nextUrl} — encrypted, security code ${probe.code}`);
-    if (nodeChanged) {
-      // A21 — see the note above. Audited as its own action rather than folded
-      // into role.repoint: re-offering the whole outbox is a distinct, visible
-      // event, and a tech reading the log should see it named.
-      resetOutboxCursors();
-      logTechAction('node.reoffer', { from: previousUrl, to: nextUrl });
-      logLine('node', `node changed ${previousUrl ?? '(none)'} -> ${nextUrl}; outbox cursors reset so every row is re-offered`);
-    }
-    return { ok: true, role: was === 'node' ? 'till' : was, reoffering: nodeChanged };
-  });
+  // A502: 'tech:setNodeUrl' (a branch server address typed on the Tech page) is gone — owner, 2026-10-15: "we remove the
+  // address totally and use find my server". A till is pointed at its server only by finding it and being allowed there
+  // (install:requestJoin with rejoin — TechFindServer), which keeps everything on the till, as the typed address did.
 
   handle('tech:backupNow', async () => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
@@ -3949,7 +4119,10 @@ export function registerIpcHandlers() {
     return await takeSnapshot();
   });
 
-  handle('tech:maintenance', async () => maintenanceStatus());
+  handle('tech:maintenance', async () => {
+    if (!getActiveSession()) throw new Error('Tech session required');   // A494
+    return maintenanceStatus();
+  });
   // A380: the technician chooses where the branch server's backups go — proven by writing one there at once.
   handle('tech:chooseBackupDir', async () => {
     if (!getActiveSession()) throw new Error('Tech session required');
@@ -3974,6 +4147,7 @@ export function registerIpcHandlers() {
 
   // Local, offline-safe diagnostics for the tech screen.
   handle('tech:status', async () => {
+    if (!getActiveSession()) throw new Error('Tech session required');   // A494: the till's addresses and build
     const db = getLocalDb();
     const cfg = getDeviceConfig();
     const sync = getSyncStatus();
@@ -4004,6 +4178,7 @@ export function registerIpcHandlers() {
   // hunting for %APPDATA%. Read-only; last N lines; never exposes tokens because
   // the log itself never records them.
   handle('tech:logTail', async (_event, arg?: { lines?: number }) => {
+    if (!getActiveSession()) return { path: null, text: 'Tech session required.' };   // A494: the log names staff and sales
     const lines = Math.min(Math.max(arg?.lines ?? 200, 1), 2000);
     try {
       const p = getSyncStatus().logPath;
@@ -4021,16 +4196,23 @@ export function registerIpcHandlers() {
   // this machine's own local data, flagged so the UI can say so.
   handle('manager:branchReport', async () => {
     requireKey(['reports.sales', 'reports.overview'], REPORT_REFUSED);   // A490
+    // A494: each part asks its own key — the orders list orders.view_all (or the Overview), stock inventory.view (costs
+    // only to menu.costs / reports.costs) — as their own handlers do. A part not allowed is null.
+    const seesOrders = signedInCan('orders.view_all', 'reports.overview');
+    const seesStock = signedInCan('inventory.view');
+    const parts = (rep: any) => ({ ...rep,
+      recentOrders: seesOrders ? rep?.recentOrders ?? null : null,
+      stockLevels: seesStock ? withoutCosts(rep?.stockLevels ?? null) : null });
     if (hasNode()) {
       const report = await fetchNodeReport().catch(() => null);
-      if (report) return { ...report, source: 'node' as const };
+      if (report) return { ...parts(report), source: 'node' as const };
     }
     // Fallback: local-only view of this device.
     return {
       salesSummary: getSalesSummary(),
       topProducts:  getTopProducts(),
-      recentOrders: getRecentOrders(),
-      stockLevels:  getStockLevels(),
+      recentOrders: seesOrders ? getRecentOrders() : null,
+      stockLevels:  seesStock ? withoutCosts(getStockLevels()) : null,
       source: hasNode() ? ('local_fallback' as const) : ('local' as const),
     };
   });

@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, can } from '../middleware/rbac';
+import { idsOfBusiness } from '../lib/branchGuard';   // A494
 import { supabase } from '../lib/supabase';
 import { buildChoiceImport, importKey } from '../lib/productImport';
 
@@ -12,6 +13,30 @@ router.use(requireAuth);
 // Normalise a variant option's stock-impact fields (Track C). An option carries
 // at most ONE stock target: a scale factor, a linked product, or a linked
 // ingredient. Empties coerce to safe defaults; product wins if both links given.
+/**
+ * A494: what an option's price change needs. A price is what the customer pays — changing one is menu.prices (as a
+ * product's price is), not menu.edit; a negative one is refused (it would be a discount nobody approved, as a negative
+ * product price is — routes/products.ts). `changes` are [old, new] pairs (old null for a new option).
+ * Returns the refusal, or null.
+ */
+function priceRefusal(req: any, changes: Array<[unknown, unknown]>): { status: number; body: Record<string, unknown> } | null {
+  for (const [, next] of changes) {
+    if (next === undefined) continue;
+    const n = Number(next);
+    if (next === null || next === '' || !Number.isFinite(n) || n < 0) return { status: 400, body: { error: 'A price cannot be negative.' } };
+  }
+  const changed = changes.some(([was, next]) => next !== undefined && Number(next) !== Number(was ?? 0));
+  if (changed && !can(req, 'menu.prices')) return { status: 403, body: { error: 'Forbidden', detail: 'Missing permission: menu.prices' } };
+  return null;
+}
+
+/** A494: the product / ingredient an option takes stock from must be this business's. */
+async function linksOk(businessId: string, opts: any[]): Promise<boolean> {
+  const prods = opts.map((o) => o?.linked_product_id).filter(Boolean);
+  const ings = opts.map((o) => o?.linked_ingredient_id).filter(Boolean);
+  return (await idsOfBusiness('products', businessId, prods)) && (await idsOfBusiness('ingredients', businessId, ings));
+}
+
 function stockFields(o: any): {
   stock_factor: number;
   linked_product_id: string | null;
@@ -42,6 +67,10 @@ router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
   if (rows.length > 2000) { res.status(400).json({ error: 'Maximum 2000 rows per import' }); return; }
 
   const { groups, errors } = buildChoiceImport(rows);
+  // A494: an imported option with a price sets a price — menu.prices (the parser already refuses a negative one).
+  if (groups.some((g) => g.options.some((o) => Number(o.price_adjustment) !== 0)) && !can(req, 'menu.prices')) {
+    res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.prices (the file sets option prices)' }); return;
+  }
   const results = { created: 0, updated: 0, deleted: 0, merged: 0, errors: [...errors] as { row: number; error: string }[] };
 
   // Resolve products (name or plu) within this business only — variant_groups
@@ -159,6 +188,10 @@ router.post('/groups', requirePermission('menu.edit'), async (req, res) => {
     .single();
 
   if (!product) { res.status(404).json({ error: 'Product not found' }); return; }
+  if (!Array.isArray(options)) { res.status(400).json({ error: 'options must be a list' }); return; }
+  const refusal = priceRefusal(req, options.map((o: any) => [null, o?.price_adjustment ?? 0] as [unknown, unknown]));   // A494
+  if (refusal) { res.status(refusal.status).json(refusal.body); return; }
+  if (!(await linksOk(req.businessId, options))) { res.status(400).json({ error: "An option takes stock from an item that is not this business's." }); return; }
 
   const { data: group, error: gErr } = await supabase
     .from('variant_groups')
@@ -241,6 +274,10 @@ router.patch('/groups/:id', requirePermission('menu.edit'), async (req, res) => 
   // distinction. Zeroing the options here rather than trusting the client keeps
   // the promise true no matter which screen made the call.
   if (patch.kind === 'choice') {
+    // A494: zeroing the options' prices is a price change — menu.prices when any option has one.
+    const { data: priced } = await supabase.from('variant_options').select('price_adjustment').eq('variant_group_id', id);
+    const refusal = priceRefusal(req, ((priced ?? []) as Array<{ price_adjustment: unknown }>).map((o) => [o.price_adjustment, 0] as [unknown, unknown]));
+    if (refusal) { res.status(refusal.status).json(refusal.body); return; }
     const { error: zeroErr } = await supabase
       .from('variant_options').update({ price_adjustment: 0 }).eq('variant_group_id', id);
     if (zeroErr) { sendError(res, zeroErr); return; }
@@ -325,6 +362,9 @@ router.post('/options', requirePermission('menu.edit'), async (req, res) => {
   if (!(await variantGroupOwned(variant_group_id, req.businessId))) {
     res.status(404).json({ error: 'Variant group not found' }); return;
   }
+  const refusal = priceRefusal(req, [[null, price_adjustment]]);   // A494
+  if (refusal) { res.status(refusal.status).json(refusal.body); return; }
+  if (!(await linksOk(req.businessId, [req.body]))) { res.status(400).json({ error: "The option takes stock from an item that is not this business's." }); return; }
 
   const { data, error } = await supabase
     .from('variant_options')
@@ -344,6 +384,13 @@ router.patch('/options/:id', requirePermission('menu.edit'), async (req, res) =>
   if (!(await variantOptionOwned(id, req.businessId))) {
     res.status(404).json({ error: 'Variant option not found' }); return;
   }
+  // A494: a changed price is menu.prices (never negative); a stock link must be this business's.
+  if (price_adjustment !== undefined) {
+    const { data: cur } = await supabase.from('variant_options').select('price_adjustment').eq('id', id).maybeSingle();
+    const refusal = priceRefusal(req, [[(cur as { price_adjustment?: unknown } | null)?.price_adjustment ?? 0, price_adjustment]]);
+    if (refusal) { res.status(refusal.status).json(refusal.body); return; }
+  }
+  if (!(await linksOk(req.businessId, [req.body ?? {}]))) { res.status(400).json({ error: "The option takes stock from an item that is not this business's." }); return; }
 
   // Only touch stock fields when the caller sends them, so a name/price edit
   // can't accidentally reset a factor or clear a link.

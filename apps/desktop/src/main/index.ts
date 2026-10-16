@@ -19,7 +19,7 @@ import { WATCHDOG_ARG, watchdogStaysDown, quitByHand, clearQuitByHand } from './
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution, nodeHeaders } from './nodeClient';
 import { ensureNodeTls } from './lanTls';   // A489
 import { ownDayState, executeCloseDay, executeConfirmShift, executeShiftMoney } from './branchClose';
-import { applyDistribution, distributionCursors } from './nodeIngest';
+import { applyDistribution, distributionCursors, retryPeerQuarantine } from './nodeIngest';   // A501: the quarantine
 import { nodeReplicationTick } from './syncEngine';   // F10: branch replication on its own beat
 import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
@@ -27,6 +27,7 @@ import { getBuildInfo } from './buildInfo';
 import { installConsoleCapture, logLine } from './logFile';
 import { loadMachineIdentity } from './machineFingerprint';   // A477
 import { moveTillData, oldFolderNames, type MoveResult } from './userDataMove';   // A386
+import { devToolsAllowed } from './techService';   // A494
 
 const isDev = !app.isPackaged;
 
@@ -81,7 +82,9 @@ migrateUserDataFolder();
  * and a node secret into. So the roles stay and the menu bar is hidden instead.
  *
  * DevTools remain reachable on Ctrl+Shift+I for support, but are no longer a
- * visible menu item a cashier can find by accident.
+ * visible menu item a cashier can find by accident. A494: on an installed till only
+ * while a technician's session is open (devToolsAllowed) — a console reads the
+ * database and the screens' memory, so it is not a key combination away.
  */
 function installMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -99,7 +102,10 @@ function installMenu() {
         {
           label: 'Developer tools',
           accelerator: 'CmdOrCtrl+Shift+I',
-          click: (_i, win) => (win as BrowserWindow)?.webContents.toggleDevTools(),
+          click: (_i, win) => {
+            if (!devToolsAllowed(app.isPackaged)) return;   // A494: a technician's session (or a dev build) only
+            (win as BrowserWindow)?.webContents.toggleDevTools();
+          },
         },
         { type: 'separator' },
         { label: `ZapTill ${app.getVersion()}`, enabled: false },
@@ -125,6 +131,10 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+  // A494: developer tools opened any other way on an installed till without a technician's session are closed at once.
+  win.webContents.on('devtools-opened', () => {
+    if (!devToolsAllowed(app.isPackaged)) win.webContents.closeDevTools();
   });
 
   win.setMenuBarVisibility(false);
@@ -412,13 +422,16 @@ app.whenReady().then(() => {
     try {
       for (let round = 0; round < 10; round++) {
         const res = await pullNodeDistribution(distributionCursors());
-        if (!res || !res.batches.length) return;
+        if (!res || !res.batches.length) break;
         applyDistribution(res.batches);
-        if (!res.has_more) return;
+        if (!res.has_more) break;
       }
     } catch (err) {
       console.error('[distribution] pull:', err);
     }
+    // A501: rows held back from an earlier pull (refused then, perhaps only for their order) are tried again when due —
+    // every pass, whether or not this pull brought anything new, and whether or not the server answered.
+    try { retryPeerQuarantine(); } catch (err) { console.error('[distribution] quarantine:', err); }
   }, 30_000);
 
   // Phase 2c — maintenance. Hourly check, at-most-daily execution (the

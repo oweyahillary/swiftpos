@@ -18,6 +18,7 @@
 import { safeStorage } from 'electron';
 import bcrypt from 'bcryptjs';
 import { getLocalDb } from './localDb';
+import { getDeviceConfig } from './deviceConfig';
 import { logLine } from './logFile';
 import { overlayLocalChanges } from './localChanges';   // P3: a change made here stays over a stored list
 import { isOwnerRole, isOwnerRoleEntry, backOffice, roleMap, refreshPermissionsFromRoster } from './tillAccess';   // A490
@@ -51,8 +52,12 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
     try { return safeStorage.encryptString(h).toString('base64'); } catch { return null; }
   };
 
+  // A496: a till holds ONE branch's list — the branch it is bound to. A till moved to another branch kept the old
+  // branch's people (and PINs) for ever: only the incoming branch's rows were replaced. Now every other branch's rows go.
+  const bound = (() => { try { return getDeviceConfig()?.branch_id ?? null; } catch { return null; } })();
+  if (bound && bound !== branchId) logLine('staff', `a staff list for branch ${branchId.slice(0, 8)} while this till is bound to ${bound.slice(0, 8)} — stored; the old branch's list is dropped`);
   const tx = db.transaction(() => {
-    db.prepare(`DELETE FROM branch_staff WHERE branch_id = ?`).run(branchId);
+    db.prepare(`DELETE FROM branch_staff WHERE branch_id = ? OR branch_id <> ?`).run(branchId, branchId);
     const ins = db.prepare(`
       INSERT INTO branch_staff
         (staff_id, name, role_name, branch_id, permissions, pin_hash_enc, override_pin_hash_enc, status, updated_at)
@@ -63,7 +68,9 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
       if (!pinEnc) continue;
       ins.run(
         s.staff_id, s.name, s.role_name ?? null, branchId,
-        JSON.stringify(s.permissions ?? {}), pinEnc, wrap(s.override_pin_hash),
+        // A496: the override (manager approval) PIN hash is no longer kept on a till or served by a branch server —
+        // nothing here reads it (approvals are checked by the cloud), and it was one more hash on every machine.
+        JSON.stringify(s.permissions ?? {}), pinEnc, null,
         s.status ?? 'active', new Date().toISOString(),
       );
     }
@@ -114,7 +121,7 @@ export function readBranchStaffForServe(branchId: string): Array<{
     try { permissions = JSON.parse(r.permissions ?? '{}'); } catch { /* default */ }
     out.push({
       staff_id: r.staff_id, name: r.name, role_name: r.role_name ?? null, permissions,
-      pin_hash: pin, override_pin_hash: unwrap(r.override_pin_hash_enc), status: r.status ?? 'active',
+      pin_hash: pin, override_pin_hash: null, status: r.status ?? 'active',   // A496: never served
     });
   }
   return out;
@@ -200,19 +207,26 @@ export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null)
     if (entity !== 'staff' && entity !== 'staff_pin') { accepted.push(raw); continue; }
     const data = (c?.data && typeof c.data === 'object') ? c.data : {};
     try {
-      if (entity === 'staff_pin' || (entity === 'staff' && c?.op !== 'create')) {
-        const target = db.prepare(`SELECT role_name, permissions FROM branch_staff WHERE staff_id = ?`).get(String(c?.entity_id ?? '')) as
-          { role_name: string | null; permissions: string | null } | undefined;
+      // A496: a change that carries a PIN (a new cashier, a PIN change) is never applied here from a relay — the till
+      // that made it sends it to the cloud itself, and once the cloud has applied it, it reaches this server (and every
+      // till) in the branch's staff list within seconds (staffRoster). Applied here first, anyone holding the branch code
+      // could plant a PIN of their choosing on every till of the branch.
+      if (entity === 'staff_pin' || (entity === 'staff' && c?.op === 'create')) {
+        refused.push({ id, reason: 'a PIN (or a new staff member) reaches the branch server from the cloud once the cloud has applied it' });
+        continue;
+      }
+      if (entity === 'staff' && c?.op !== 'create') {
+        const target = db.prepare(`SELECT role_name, permissions FROM branch_staff WHERE staff_id = ?${branchId ? ' AND branch_id = ?' : ''}`)
+          .get(...[String(c?.entity_id ?? ''), ...(branchId ? [branchId] : [])]) as { role_name: string | null; permissions: string | null } | undefined;
+        // A496: only someone on THIS server's staff list for its branch is changed from a relay.
+        if (!target) { refused.push({ id, reason: "that person is not on this branch server's staff list" }); continue; }
         let perms: unknown = null;
         try { perms = target?.permissions ? JSON.parse(target.permissions) : null; } catch { perms = null; }
-        if (target && isElevatedRole(target.role_name, perms)) {
-          refused.push({ id, reason: entity === 'staff_pin'
-            ? 'a PIN for an owner, admin or manager is not changed from another till'
-            : 'an owner, admin or manager is not changed from another till' });
+        if (isElevatedRole(target.role_name, perms)) {
+          refused.push({ id, reason: 'an owner, admin or manager is not changed from another till' });
           continue;
         }
       }
-      if (entity === 'staff_pin') { accepted.push({ ...c, _local: { role_name: null, permissions: null, branch_id: branchId } }); continue; }
       if (data.role_id !== undefined && data.role_id !== null) {
         const role = roles.find((r) => r?.id === data.role_id);
         if (!role) { refused.push({ id, reason: 'that role is not known on the branch server yet — it arrives from the cloud' }); continue; }
@@ -221,7 +235,6 @@ export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null)
         accepted.push({ ...c, _local: { role_name: role?.name ?? null, permissions: perms, branch_id: branchId } });
         continue;
       }
-      if (c?.op === 'create') { refused.push({ id, reason: 'a new staff member needs a role' }); continue; }
       accepted.push({ ...c, _local: { role_name: null, permissions: null, branch_id: branchId } });
     } catch (err: any) {
       refused.push({ id, reason: String(err?.message ?? 'could not check the change') });
@@ -273,7 +286,8 @@ export function verifyPinAtNode(pin: string, branchId: string): NodeVerdict {
 export function pruneSavedSignIns(branchId: string, roster: BranchStaffRow[]): number {
   if (!roster.length) return 0;
   const db = getLocalDb();
-  const current = new Map(roster.map((s) => [s.staff_id, s.pin_hash]));
+  // A496: an inactive person counts as absent (their saved sign-in goes too).
+  const current = new Map(roster.filter((s) => (s.status ?? 'active') === 'active').map((s) => [s.staff_id, s.pin_hash]));
   let rows: Array<{ staff_id: string; pin_hash_enc: string }> = [];
   try { rows = db.prepare(`SELECT staff_id, pin_hash_enc FROM staff_pin_cache WHERE branch_id = ?`).all(branchId) as any[]; }
   catch { return 0; }

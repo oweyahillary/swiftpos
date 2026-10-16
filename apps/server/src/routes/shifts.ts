@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import { branchScope, requirePermission, can } from '../middleware/rbac';
+import { branchScope, requirePermission, can, assertBranchAccess } from '../middleware/rbac';
+import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { mayMoveMoney } from '../lib/historyScope';   // A490
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -19,7 +20,7 @@ import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { MONEY_MOVEMENT_MANAGER_ONLY } from '../lib/posFeatures';   // A453
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
-import { confirmerRows, confirmerByPin } from '../lib/confirmerLookup';
+import { confirmerRows, confirmerByPin, SELF_APPROVAL_BODY } from '../lib/confirmerLookup';
 import { payoutApprover } from '../lib/payoutApproval';   // 0.6.37 (A388)
 import { buildBranchReport, type BranchOrder, type BranchShift, type TillName } from '../lib/branchReport';
 import { orderTax } from '../lib/orderTax';
@@ -36,6 +37,31 @@ router.use(requireAuth);
 // Returns the caller's open shift for their branch (if any).
 // Used by the POS on boot to resume a session.
 // ─────────────────────────────────────────────────────────────────────────────
+/** A494: a drawer of another branch is refused to a non-owner (the business was checked by the read). */
+function notThisBranch(req: Request, res: Response, shift: { branch_id?: string | null } | null | undefined): boolean {
+  if (assertBranchAccess(req, shift?.branch_id ?? null)) return false;
+  res.status(403).json({ error: 'You do not have access to this branch' });
+  return true;
+}
+
+/**
+ * A494: may this caller see a drawer's figures — expected cash, the difference, what was declared and confirmed? Someone
+ * holding reports.shifts or shifts.confirm (the owner always) — never a till's own session (no person). The drawer's own
+ * cashier keeps the blind rules of their own drawer (GET /:id below, 'blind_shift_close').
+ */
+function seesDrawerFigures(req: Request): boolean {
+  return !req.isTill && can(req, 'reports.shifts', 'shifts.confirm');
+}
+const DRAWER_FIGURES = ['expected_cash', 'expected_cash_live', 'expected_cash_computed', 'cash_variance', 'closing_float',
+  'declared_methods', 'expected_methods', 'confirmed_methods', 'denomination_breakdown', 'confirm_reasons'] as const;
+const withoutFigures = (row: Record<string, any>): Record<string, any> => {
+  const out = { ...row };
+  for (const k of DRAWER_FIGURES) delete out[k];
+  return out;
+};
+const ownDrawer = (req: Request, s: { cashier_id?: string | null; opened_by?: string | null }): boolean =>
+  !!req.userId && (s.cashier_id === req.userId || s.opened_by === req.userId);
+
 router.get('/current', async (req, res) => {
   // A shift is the terminal's open drawer session, NOT the logged-in cashier's.
   // Whoever is on this terminal shares its session. Resolving by cashier_id (the
@@ -203,6 +229,13 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
     res.status(400).json({ error: 'branch_id is required' });
     return;
   }
+  // A494: a branch of this business, and one the caller works at (the owner: any of theirs).
+  if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  {
+    const { data: br, error: bErr } = await supabase.from('branches').select('id').eq('id', branch_id).eq('business_id', req.businessId).maybeSingle();
+    if (bErr) { sendError(res, bErr); return; }
+    if (!br) { res.status(400).json({ error: 'That branch is not one of this business\u2019s', code: 'BRANCH_NOT_FOUND' }); return; }
+  }
 
   // Guard: no duplicate open shifts for this cashier.
   //
@@ -315,6 +348,7 @@ router.post('/:id/foreign-cash', async (req, res) => {
     .eq('id', id).eq('business_id', req.businessId).maybeSingle();
   if (shiftErr) { sendError(res, shiftErr); return; }   // P1-4: a failed read is not "no such shift"
   if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+  if (notThisBranch(req, res, shift)) return;   // A494
 
   const sameTerminal =
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
@@ -368,6 +402,7 @@ router.post('/:id/foreign-orders', async (req, res) => {
     .from('shifts').select('id, device_id, terminal_code, branch_id, opened_by, cashier_id')
     .eq('id', id).eq('business_id', req.businessId).maybeSingle();
   if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+  if (notThisBranch(req, res, shift)) return;   // A494
 
   const sameTerminal =
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
@@ -434,6 +469,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   const found = await openShiftOr409(req, res, id);
   if (!found) return;
   const shift = found;
+  if (notThisBranch(req, res, shift)) return;   // A494
 
   // ── Authorisation (finding #13) ──────────────────────────────────────────
   // Previously ANY authenticated user in the business could close ANY drawer,
@@ -645,11 +681,17 @@ async function expectedByMethod(shift: { id: string; expected_cash?: number | st
 router.post('/confirmer', async (req, res) => {
   const pin = String(req.body?.pin ?? '').trim();
   if (!pin) { res.status(400).json({ error: 'Enter the manager\'s PIN.' }); return; }
-  const who = await confirmerByPin(req.businessId!, pin, req.body?.authorizer_id || undefined);
+  const key = pinKey(req);   // A494: it names whose PIN it is — behind the one PIN limiter
+  if (pinLocked(key)) { res.status(429).json(PIN_LOCKED_BODY); return; }
+  // A494: someone at the caller's branch, never the caller themselves.
+  const who = await confirmerByPin(req.businessId!, pin, req.body?.authorizer_id || undefined, { branchId: req.branchId ?? null, actorId: req.userId ?? null });
+  if (who === 'self') { res.status(403).json(SELF_APPROVAL_BODY); return; }   // A505: their own PIN — no strike
   if (!who) {
+    notePinFailure(key);
     res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
     return;
   }
+  notePinSuccess(key);
   res.json(who);
 });
 
@@ -663,6 +705,7 @@ async function confirmShiftRoute(req: Request, res: Response): Promise<void> {
     .from('shifts').select('*').eq('id', id).eq('business_id', req.businessId).maybeSingle();
   if (error) { sendError(res, error); return; }
   if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+  if (notThisBranch(req, res, shift)) return;   // A494
   if (shift.status === 'open') { res.status(409).json({ error: 'The cashier has not closed this shift yet.', code: 'SHIFT_OPEN' }); return; }
   if (shift.confirmed_at) { res.status(409).json({ error: 'This shift is already confirmed.', code: 'ALREADY_CONFIRMED' }); return; }
 
@@ -685,11 +728,19 @@ async function confirmShiftRoute(req: Request, res: Response): Promise<void> {
     at = replayTime(req.body?.confirmed_at);
     expected = methodMap(req.body?.expected_methods);
   } else if (req.body?.pin) {
-    confirmer = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined);
+    const key = pinKey(req);   // A494: the one PIN limiter
+    if (pinLocked(key)) { res.status(429).json(PIN_LOCKED_BODY); return; }
+    const found = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined,
+      { branchId: shift.branch_id ?? null, actorId: req.userId ?? null });   // A494
+    // A505: the asker's own PIN — someone else must confirm; not a wrong guess (no strike towards the PIN lock).
+    if (found === 'self') { res.status(403).json(SELF_APPROVAL_BODY); return; }
+    confirmer = found;
     if (!confirmer) {
+      notePinFailure(key);
       res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
       return;
     }
+    notePinSuccess(key);
   } else if (callerMayConfirm(req)) {
     confirmer = { id: req.userId!, name: null };
   } else {
@@ -948,6 +999,7 @@ router.post('/:id/force-close', requirePermission('shifts.force_close'), async (
   // P1-3: 404 NOT_FOUND / 409 ALREADY_CLOSED / 5xx, as /:id/close.
   const shift = await openShiftOr409(req, res, id);
   if (!shift) return;
+  if (notThisBranch(req, res, shift)) return;   // A494
 
   // Same expected-cash formula as /:id/close, including refunds as negative
   // cash rows — see the comment there for why omitting them overstates expected.
@@ -1047,10 +1099,11 @@ router.post('/:id/float', async (req, res) => {
     res.status(404).json({ error: 'Open shift not found' });
     return;
   }
+  if (notThisBranch(req, res, shift)) return;   // A494
 
   let approver: { id: string; name: string | null } | null = null;
   if (type === 'float_out') {
-    const a = await payoutApprover(req);
+    const a = await payoutApprover(req, shift.branch_id ?? null);   // A494: an approver of the drawer's branch
     if (a.ok === false) { res.status(a.status).json({ error: a.error, code: a.code }); return; }
     approver = a.approver;
   }
@@ -1105,9 +1158,10 @@ router.post('/:id/expense', async (req, res) => {
     .maybeSingle();
   if (shiftErr) { sendError(res, shiftErr); return; }
   if (!shift) { res.status(404).json({ error: 'Open shift not found' }); return; }
+  if (notThisBranch(req, res, shift)) return;   // A494
 
   // 0.6.37 (A388): every expense from the POS needs a manager — signed in, or `pin` (a manager's).
-  const approval = await payoutApprover(req);
+  const approval = await payoutApprover(req, (shift as { branch_id?: string | null }).branch_id ?? null);   // A494
   if (approval.ok === false) { res.status(approval.status).json({ error: approval.error, code: approval.code }); return; }
 
   if (categoryId) {
@@ -1394,7 +1448,10 @@ router.get('/', async (req, res) => {
     }
   }));
 
-  const enriched = shifts.map(s => ({
+  // A494: a drawer's figures only to someone who may see them (seesDrawerFigures) — and their own drawer to its cashier,
+  // as before; everyone else gets the drawers without expected cash, the difference or the declared / counted amounts.
+  const figures = seesDrawerFigures(req);
+  const enriched = shifts.map(s => (figures || ownDrawer(req, s) ? (x: any) => x : withoutFigures)({
     ...s,
     cashier_name: nameMap[s.cashier_id] ?? 'Unknown',
     confirmer_name: s.confirmed_by ? (nameMap[s.confirmed_by] ?? null) : null,
@@ -1491,7 +1548,11 @@ router.get('/:id', async (req, res) => {
   const declareMethods = [...new Set((byMethod as Array<{ method: string; amount: number }>)
     .filter((m) => String(m.method).toLowerCase() !== 'cash' && Math.round(Number(m.amount) * 100) !== 0)
     .map((m) => String(m.method).toLowerCase()))].sort((a, b) => a.localeCompare(b));
-  if (!callerMayConfirm(req) && (await businessPosFeatures(req.businessId)).blind_shift_close) {
+  // A494: someone who may not see drawer figures sees ANOTHER person's drawer blind too (it was the full report for anyone
+  // at the branch); their own drawer keeps the owner's 'blind_shift_close' rule, as before.
+  const blind = !seesDrawerFigures(req) && !callerMayConfirm(req)
+    && (!ownDrawer(req, shift) || (await businessPosFeatures(req.businessId)).blind_shift_close);
+  if (blind) {
     // A416: the owner's switch (off by default) — the cashier sees their shift's sales (kept after refunds) and orders.
     // Never expected cash, the per-method figures or the difference: the count stays blind.
     const seesSales = await cashierSeesShiftSales(req.businessId!, shift.branch_id);

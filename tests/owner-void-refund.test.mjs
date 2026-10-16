@@ -59,7 +59,8 @@ ok('void: audit trail recorded (who + why)', () => {
 });
 ok('void: cashier/till path still requires the override PIN', () => {
   assert.match(voidBody, /else if \(isPaid\)/, 'non-owner paid path must remain');
-  assert.match(voidBody, /verifyOverrideAuthorizer/, 'non-owner path must still verify the override authoriser');
+  // A494: through approverByPin (the PIN limiter, never self-approval), which asks verifyOverrideAuthorizer.
+  assert.match(voidBody, /approverByPin\(req, authorizer_id, pin, 'void', order\.branch_id \?\? null\)/, 'non-owner path must still verify the override authoriser');
 });
 
 ok('void: owner voids at any age; staff stay window-limited', () => {
@@ -83,7 +84,7 @@ ok('refund: audit trail recorded (who + why)', () => {
   assert.match(refundBody, /A reason is required to refund/, 'reason must be required');
 });
 ok('refund: cashier/till path still requires the override PIN', () => {
-  assert.match(refundBody, /else\s*\{[\s\S]*?verifyOverrideAuthorizer/,
+  assert.match(refundBody, /else\s*\{[\s\S]*?approverByPin\(req, authorizer_id, pin, 'refund', order\.branch_id \?\? null\)/,   // A494 / A495: the sale's branch
     'non-owner path must still verify the override authoriser');
 });
 

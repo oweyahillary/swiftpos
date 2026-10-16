@@ -36,6 +36,17 @@ process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 process.env.RENDER_GIT_COMMIT = '47a86c9adbede633e6d99817be3b5daf8bde9fea';
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const R = require(path.join(DIST, 'lib/release.js'));
+// A495: requireAdmin re-reads the admin's account on every request — the test's admin exists and is active.
+{
+  const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
+  const realFrom = supabase.from.bind(supabase);
+  supabase.from = (table) => {
+    if (table !== 'admin_users') return realFrom(table);
+    const q = { select: () => q, eq: () => q,
+      maybeSingle: async () => ({ data: { is_active: true, role: 'super_admin', email: 'a@x' }, error: null }) };
+    return q;
+  };
+}
 
 try {
   await ok('the release is the till\'s version (one number for the till, the cloud and the websites)', () => {
@@ -63,8 +74,10 @@ try {
     return { status: res.status, body: await res.json().catch(() => null) };
   };
   try {
-    const user = jwt.sign({ userId: 'u', businessId: 'b', branchId: 'br', isOwner: true, permissionKeys: ['*'], permissionsVersion: 0,
-      sessionId: 's', surface: 'web' }, process.env.JWT_SECRET);
+    // A494: the owner's password session (ownerLogin) — an owner-ROLE PIN sign-in is now checked against its users row,
+    // which this test does not mock; any signed-in session is what this case is about.
+    const user = jwt.sign({ userId: 'u', businessId: 'b', branchId: null, isOwner: true, ownerLogin: true, permissionKeys: ['*'], permissionsVersion: 0,
+      sessionId: 's' }, process.env.JWT_SECRET);
     const admin = jwt.sign({ adminId: 'a', email: 'a@x', role: 'super_admin' }, process.env.ADMIN_JWT_SECRET, { algorithm: 'HS256' });
     await ok('anonymous callers are not told (as /health in production)', async () => {
       assert.equal((await get('/api/version')).status, 401);

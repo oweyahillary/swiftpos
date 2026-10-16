@@ -56,8 +56,8 @@ ok('A218+: picker sources live per-branch stock from /api/inventory', () => {
   assert.match(ui, /posApi\.get<InvRow\[\]>\(`\/api\/inventory/);
 });
 ok('A218+: each quantity input is capped at what is in stock', () => {
-  assert.match(ui, /max=\{p\.stock\}/);
-  assert.match(ui, /in stock: \{p\.stock\}/);
+  assert.match(ui, /max=\{p\.stock \?\? undefined\}/);   // A506: null while being counted
+  assert.match(ui, /in stock: \$\{p\.stock\}/);
 });
 ok('A218+: sending more than stock is rejected before POST', () => {
   assert.match(ui, /i\.quantity > i\.stock/);

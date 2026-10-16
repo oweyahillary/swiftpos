@@ -14,7 +14,7 @@
 //       GET  /pending    — collect this till's pending instructions (marks delivered)
 //       POST /ack        — record this till's verdict, retiring the instruction
 
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -31,6 +31,13 @@ function deviceIdOf(req: any): string {
   return String(req.header('X-Device-Id') ?? '').split(',')[0].trim().slice(0, 64);
 }
 
+/** A494: the till's own session, for itself — its id from its token; a header naming another device is refused. */
+function ownTill(req: any): string | null {
+  if (!req.isTill || !req.deviceId) return null;
+  const said = deviceIdOf(req);
+  return !said || said === req.deviceId ? String(req.deviceId) : null;
+}
+
 // ── Manager: queue a close for one till ──────────────────────────────────────
 // Body: { device_id, business_date, counted_cash, notes?, closed_by_name? }
 router.post('/instruct', MANAGER, async (req: any, res) => {
@@ -39,9 +46,16 @@ router.post('/instruct', MANAGER, async (req: any, res) => {
   const countedCash  = Number(req.body?.counted_cash);
   const notes        = typeof req.body?.notes === 'string' ? req.body.notes.trim() : undefined;
   const closedByName = typeof req.body?.closed_by_name === 'string' ? req.body.closed_by_name.trim() : null;
-  const branchId     = req.body?.branch_id ?? null;
 
   if (!deviceId)                 { res.status(400).json({ error: 'device_id is required' }); return; }
+  // A494: the till must be one of this business's, at a branch the caller works at — its branch is the device's own,
+  // never one named in the body (a manager could queue a close for another branch's till).
+  const { data: dev, error: devErr } = await supabase.from('user_devices').select('device_id, branch_id')
+    .eq('business_id', req.businessId).eq('device_id', deviceId).maybeSingle();
+  if (devErr) { sendError(res, devErr); return; }
+  if (!dev) { res.status(404).json({ error: 'That till is not one of this business’s' }); return; }
+  const branchId = (dev as { branch_id?: string | null }).branch_id ?? null;
+  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) { res.status(400).json({ error: 'business_date must be YYYY-MM-DD' }); return; }
   if (!Number.isFinite(countedCash) || countedCash < 0) { res.status(400).json({ error: 'counted_cash must be 0 or more' }); return; }
 
@@ -86,8 +100,9 @@ router.post('/instruct', MANAGER, async (req: any, res) => {
 
 // ── Till: collect this device's pending instructions ─────────────────────────
 router.get('/pending', async (req: any, res) => {
-  const deviceId = deviceIdOf(req);
-  if (!deviceId) { res.json([]); return; }
+  // A494: only a till's own session collects, and only its own (they carry the counted cash and who closes).
+  const deviceId = ownTill(req);
+  if (!deviceId) { res.status(403).json({ error: 'Only a till collects its own day-close instructions.', code: 'TILL_ONLY' }); return; }
 
   const { data, error } = await supabase
     .from('day_close_instructions')
@@ -114,10 +129,10 @@ router.get('/pending', async (req: any, res) => {
 // ── Till: record a verdict, retiring the instruction ─────────────────────────
 // Body: { instruction_id, ok, error?, summary? }
 router.post('/ack', async (req: any, res) => {
-  const deviceId      = deviceIdOf(req);
+  const deviceId      = ownTill(req);   // A494: the till's own session, for itself
   const instructionId = String(req.body?.instruction_id ?? '').trim();
   const ok            = req.body?.ok === true;
-  if (!deviceId)      { res.status(400).json({ error: 'device identity required' }); return; }
+  if (!deviceId)      { res.status(403).json({ error: 'Only a till acknowledges its own day-close instructions.', code: 'TILL_ONLY' }); return; }
   if (!instructionId) { res.status(400).json({ error: 'instruction_id is required' }); return; }
 
   const ack = { ok, error: req.body?.error ?? null, summary: req.body?.summary ?? null };
@@ -136,7 +151,8 @@ router.post('/ack', async (req: any, res) => {
 
 // ── Manager: the screen — open trading days + latest instruction per till ────
 router.get('/overview', MANAGER, async (req: any, res) => {
-  const branchId = String(req.query.branch_id ?? '').trim();
+  // A494: a non-owner sees their own branch only (branchScope); the owner any branch, or every branch.
+  const branchId = req.isOwner ? (String(req.query.branch_id ?? '').trim() || branchScope(req) || '') : String(branchScope(req) ?? '');
 
   let daysQ = supabase
     .from('business_days')

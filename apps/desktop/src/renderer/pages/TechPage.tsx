@@ -3,6 +3,9 @@ import { posApi } from '../lib/posApi';
 import ServerKeepRunning from '../components/ServerKeepRunning';   // A435
 import TillVersionsPanel from '../components/TillVersionsPanel';   // A443
 import LanSecurityRow from '../components/LanSecurityRow';   // A489
+import UpdateDiagnosticsPanel from '../components/UpdateDiagnosticsPanel';   // A496
+import TechFindServer from '../components/TechFindServer';   // A502
+import BranchSyncPanel from '../components/BranchSyncPanel';   // A501
 import type { TechSession, TechStatus } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
 
@@ -82,21 +85,12 @@ export default function TechPage({ onExit }: Props) {
     same_disk?: boolean; custom_dir?: boolean; keep?: number }>(null);
   const [backupMsg, setBackupMsg] = useState('');
   useEffect(() => { posApi.tech.maintenance().then(setMaint).catch(() => {}); }, []);
-  const [nodeAddr, setNodeAddr] = useState('');
   const [roleMsg, setRoleMsg] = useState('');
   const promote = async () => {
     setBusy('promote'); setRoleMsg('');
     try {
       const r = await posApi.tech.promoteToNode();
       setRoleMsg(r.ok ? `Promoted. Branch access code: ${r.secret} — ${r.note}` : (r.error ?? 'failed'));
-      load();
-    } finally { setBusy(''); }
-  };
-  const repoint = async () => {
-    setBusy('repoint'); setRoleMsg('');
-    try {
-      const r = await posApi.tech.setNodeUrl(nodeAddr.trim());
-      setRoleMsg(r.ok ? `Saved — this machine is now a ${r.role} pointing at ${nodeAddr.trim()}.` : (r.error ?? 'failed'));
       load();
     } finally { setBusy(''); }
   };
@@ -265,6 +259,8 @@ export default function TechPage({ onExit }: Props) {
             <button onClick={forceSync} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Force sync</button>
             <button onClick={retryFailed} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Retry failed</button>
           </div>
+          {/* A501: this till's conversation with its branch server, channel by channel, and its backlog */}
+          {dev?.node_url && dev.device_role === 'till' && <BranchSyncPanel />}
         </section>
 
         {/* A415: Rejoin this till */}
@@ -340,20 +336,15 @@ export default function TechPage({ onExit }: Props) {
           )}
           {dev?.device_role && dev.device_role !== 'till' && <div className="mt-3"><ServerKeepRunning /></div>}
           {dev?.device_role === 'node' && <div className="mt-3"><TillVersionsPanel /></div>}   {/* A443 */}
-          <div className="mt-3">
-            <label className="block text-[11px] text-gray-400 mb-1">Branch server address (this till points at)</label>
-            <div className="flex gap-2">
-              <input value={nodeAddr} onChange={e => setNodeAddr(e.target.value)}
-                placeholder="http://192.168.1.20:4100" spellCheck={false}
-                className="flex-1 bg-[#0a0f1c] border border-gray-700 rounded-lg px-2 py-1.5 text-xs font-mono text-gray-200" />
-              <button onClick={repoint} disabled={busy === 'repoint' || !nodeAddr.trim()}
-                className="bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg px-3 text-xs whitespace-nowrap">
-                {busy === 'repoint' ? 'Testing…' : 'Test & save'}
-              </button>
-            </div>
-            <p className="text-[11px] text-gray-500 mt-1">Tested before saving — a wrong address written blind is a till that silently stops replicating. On a former server this also steps it down to a till.</p>
-          </div>
+          {/* A502: no address typed in — a till joins its branch server by finding it and being allowed there. */}
+          <div className="mt-3"><TechFindServer isServer={!!dev?.device_role && dev.device_role !== 'till'} onJoined={load} /></div>
           {roleMsg && <p className={`text-xs mt-2 ${/fail|refused|No branch/i.test(roleMsg) ? 'text-red-400' : 'text-green-400'}`}>{roleMsg}</p>}
+        </section>
+
+        {/* A496: why this machine has (or has not) got its update */}
+        <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-2">Updates</h2>
+          <UpdateDiagnosticsPanel />
         </section>
 
         {/* Backups & retention (Phase 2c) */}

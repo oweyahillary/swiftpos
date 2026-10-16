@@ -5,7 +5,6 @@ import { requireAuth } from '../middleware/auth';
 import { verifyPin } from './auth';
 import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
-import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
@@ -14,12 +13,20 @@ import { isOwnerRoleName } from '../lib/ownerRole';
 import { PERMISSIONS, PERMISSION_GROUPS, expandKeys, isPermissionKey } from '../lib/permissions';
 import { permissionIds, roleKeyMap, loadRole, personKeys, fineKeysOf } from '../lib/roleKeys';
 import { useEmailCodes } from '../lib/loginOtp';   // A391
+import { keysBeyond } from '../lib/permissions';   // A494
+import { keysFromGrants } from '../lib/effectiveKeys';   // A494
+import { revokePersonSessions } from '../lib/tillSessions';   // A494
+import { worksAtBranch } from '../lib/branchAccess';   // A494
+import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 
 const router = safeRouter();
 router.use(requireAuth);
 
-function hashPin(pin: string, businessId: string): string {
-  return crypto.createHash('sha256').update(`${pin}:${businessId}`).digest('hex');
+// A494: a sign-in PIN is stored with bcrypt, as /auth/set-pin does — the unsalted sha256(pin:business) this used was
+// 10,000 guesses away from every PIN of the business for anyone holding one hash (a till's roster, a backup).
+const PIN_BCRYPT_ROUNDS = 12;
+function hashPin(pin: string): Promise<string> {
+  return bcrypt.hash(String(pin), PIN_BCRYPT_ROUNDS);
 }
 
 // Override PINs are auth secrets used to authorize privileged actions (e.g.
@@ -132,6 +139,64 @@ async function refuseIfBeyondCaller(req: any, targetUserId: string): Promise<str
   try { target = await personKeys(req.businessId, targetUserId); } catch { return 'Could not verify this staff member'; }
   if (!target) return null;
   return overridesBeyondCaller(held, target.keys).length ? 'You are not allowed to manage this staff member' : null;
+}
+
+/**
+ * A494: the keys a person WOULD hold after this change — the role they will have (the new one, else their current one)
+ * and the overrides they will have (the ones sent replace all of theirs; else their current ones). A non-owner's change
+ * must leave them within the caller's own keys: taking away a person's `granted: false` row for a key the caller lacks
+ * gives them that key back, and the old check (only GRANTS) let it through.
+ * `targetId` null = a new person. Returns the keys, or null when they cannot be worked out (refuse — fail closed).
+ */
+async function resultingKeys(req: any, targetId: string | null, roleId: string | null | undefined,
+  rows: Array<{ permission_id: string; granted: boolean }> | undefined): Promise<Set<string> | null> {
+  let currentRole: string | null = null;
+  let currentOverrides: Array<{ granted?: boolean | null; permissions?: { key?: string | null } | null }> = [];
+  if (targetId) {
+    const { data, error } = await supabase.from('users')
+      .select('id, role_id, user_permissions ( granted, permissions ( key ) )')
+      .eq('id', targetId).eq('business_id', req.businessId).maybeSingle();
+    if (error || !data) return null;
+    currentRole = (data as any).role_id ?? null;
+    currentOverrides = ((data as any).user_permissions ?? []) as typeof currentOverrides;
+  }
+  const rid = roleId || currentRole;
+  let roleName: string | null = null;
+  let grants: Array<{ permissions: { key: string } }> = [];
+  if (rid) {
+    const { data: role, error } = await supabase.from('roles').select('id, name').eq('id', rid).maybeSingle();
+    if (error || !role) return null;
+    roleName = (role as any).name ?? null;
+    if (isOwnerRoleName(roleName)) return new Set(['*']);
+    try { grants = [...((await roleKeyMap([rid])).get(rid) ?? [])].map((key) => ({ permissions: { key } })); } catch { return null; }
+  }
+  let overrides = currentOverrides;
+  if (rows !== undefined) {
+    const ids = rows.map((r) => r.permission_id);
+    let keyOf = new Map<string, string>();
+    if (ids.length) {
+      const { data, error } = await supabase.from('permissions').select('id, key').in('id', ids);
+      if (error) return null;
+      keyOf = new Map(((data ?? []) as Array<{ id: string; key: string }>).map((p) => [p.id, p.key]));
+    }
+    overrides = rows.map((r) => ({ granted: r.granted, permissions: { key: keyOf.get(r.permission_id) ?? null } }));
+  }
+  return keysFromGrants(grants, overrides, false);
+}
+
+/** A494: the keys of someone already on the staff (role + overrides; the owner's role '*'), or null. */
+async function currentKeys(req: any, targetId: string): Promise<Set<string> | null> {
+  try { return (await personKeys(req.businessId, targetId))?.keys ?? null; } catch { return null; }
+}
+
+/** A494: may approve a void or a refund — the keys an override PIN stands for. */
+const holdsApproval = (held: ReadonlySet<string>): boolean => held.has('*') || held.has('sales.void') || held.has('sales.refund');
+
+/** A494: why this caller may not SET an override PIN for someone who will hold `targetKeys`, or null. */
+function overridePinRefusal(req: any, targetKeys: ReadonlySet<string>): { error: string; code: string } | null {
+  if (!holdsApproval(callerHeld(req))) return { error: 'Only someone who may void or refund sets an override PIN.', code: 'OVERRIDE_PIN_NOT_YOURS' };
+  if (!holdsApproval(targetKeys)) return { error: 'An override PIN is for someone who may void or refund — give them that permission first.', code: 'OVERRIDE_PIN_NO_AUTHORITY' };
+  return null;
 }
 
 // GET /api/staff — list staff for business
@@ -247,12 +312,17 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
     return;
   }
 
-  // Non-owners can only assign staff to their own branch
+  // Non-owners can only assign staff to their own branch. A494: exactly their branch — a non-owner with no branch adds
+  // nobody (the person would have had no branch = every branch).
+  if (!req.isOwner && !req.branchId) {
+    res.status(403).json({ error: 'You are not signed in at a branch — you can only add staff to your own branch.', code: 'NO_BRANCH' });
+    return;
+  }
   const effectiveBranchIds: string[] = req.isOwner
     ? (branch_ids ?? [])
     : [req.branchId!];
 
-  if (!req.isOwner && branch_ids?.length && !branch_ids.every((bid: string) => bid === req.branchId)) {
+  if (!req.isOwner && branch_ids?.length && !(branch_ids.length === 1 && branch_ids[0] === req.branchId)) {
     res.status(403).json({ error: 'You can only assign staff to your own branch' });
     return;
   }
@@ -263,7 +333,17 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
   const overRefusal = await refuseOverridesBeyondCaller(req);   // A340
   if (overRefusal) { res.status(403).json(overRefusal); return; }
 
-  const pin_hash = hashPin(pin, req.businessId);
+  // A494: what the new person will hold (role + overrides) — within the caller's keys, and the base of the override-PIN rule.
+  let plannedRows: Array<{ permission_id: string; granted: boolean }> | undefined;
+  try { plannedRows = await overrideRows('new', req.body); } catch { res.status(503).json({ error: 'Could not check the permissions being granted' }); return; }
+  const willHold = (await resultingKeys(req, null, role_id, plannedRows)) ?? (req.isOwner ? new Set<string>() : null);
+  if (!willHold) { res.status(403).json({ error: 'Could not check this role — please try again' }); return; }
+  if (!req.isOwner) {
+    const missing = keysBeyond(callerHeld(req), willHold);
+    if (missing.length) { res.status(403).json({ error: 'You cannot give someone permissions you do not hold', missing }); return; }
+  }
+
+  const pin_hash = await hashPin(pin);
 
   // Optional per-user override PIN (manager authority for voids/overrides).
   const overridePin = req.body.override_pin;
@@ -273,6 +353,9 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
       res.status(400).json({ error: 'Override PIN must be 4–6 digits' });
       return;
     }
+    // A494: an override PIN approves voids and refunds — set only by someone who may, for someone who may.
+    const refusal = overridePinRefusal(req, willHold);
+    if (refusal) { res.status(403).json(refusal); return; }
     override_pin_hash = await hashOverridePin(overridePin);
   }
 
@@ -312,12 +395,19 @@ router.post('/invite', requirePermission('staff.edit'), async (req, res) => {
   // A340: the invite path had NO role or branch guard — a manager could invite anyone as the owner, the one gap in
   // an otherwise guarded set (POST /, PATCH, DELETE). Same rules as POST /.
   if (!req.isOwner) {
+    // A494: a non-owner with no branch invites nobody (the person would have had every branch).
+    if (!req.branchId) {
+      res.status(403).json({ error: 'You are not signed in at a branch — you can only invite staff to your own branch.', code: 'NO_BRANCH' });
+      return;
+    }
     const roleRefusal = await roleAssignRefusal(req, role_id);
     if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
-    if (branch_ids?.length && !branch_ids.every((bid: string) => bid === req.branchId)) {
+    if (branch_ids?.length && !(branch_ids.length === 1 && branch_ids[0] === req.branchId)) {
       res.status(403).json({ error: 'You can only assign staff to your own branch' });
       return;
     }
+    const overRefusal = await refuseOverridesBeyondCaller(req);   // A494: the invite stores no overrides, but never accepts a grant beyond
+    if (overRefusal) { res.status(403).json(overRefusal); return; }
   }
   const inviteBranchIds: string[] = req.isOwner ? (branch_ids ?? []) : (req.branchId ? [req.branchId] : []);
 
@@ -353,8 +443,12 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   const { name, email, role_id, pin, status, branch_ids, hourly_rate } = req.body;
 
   const { data: existing } = await supabase
-    .from('users').select('id').eq('id', req.params.id).eq('business_id', req.businessId).single();
+    .from('users').select('id, role_id, status').eq('id', req.params.id).eq('business_id', req.businessId).single();
   if (!existing) { res.status(404).json({ error: 'Staff member not found' }); return; }
+
+  const overridePin = req.body.override_pin;
+  const changesAccess = role_id !== undefined || branch_ids !== undefined
+    || Array.isArray(req.body?.overrides) || (req.body?.override_keys && typeof req.body.override_keys === 'object');
 
   // Non-owners: never touch a proprietor account, whatever branch it sits in.
   // This is the guard that matters — hiding the row in the list is presentation,
@@ -364,8 +458,16 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
     if (refusal) { res.status(403).json({ error: refusal }); return; }
   }
 
+  // A494: nobody but the owner changes their OWN role, permissions or branches — a manager could otherwise lift
+  // themselves out of every limit the owner set (taking away their own "not allowed" rows, a bigger role, every branch).
+  if (!req.isOwner && req.params.id === req.userId && changesAccess) {
+    res.status(403).json({ error: 'You cannot change your own role, permissions or branches — ask the owner.', code: 'OWN_ACCESS' });
+    return;
+  }
+
   // Non-owners: verify target staff belongs to their branch
   if (!req.isOwner) {
+    if (!req.branchId) { res.status(403).json({ error: 'You can only manage staff in your own branch', code: 'NO_BRANCH' }); return; }
     const { data: branchCheck } = await supabase
       .from('user_branches')
       .select('user_id')
@@ -376,8 +478,9 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
       res.status(403).json({ error: 'You can only manage staff in your own branch' });
       return;
     }
-    // Non-owners cannot assign staff to branches outside their own
-    if (branch_ids && !branch_ids.every((bid: string) => bid === req.branchId)) {
+    // Non-owners cannot assign staff to branches outside their own. A494: exactly [their branch] — [] meant "no branch"
+    // = every branch of the business.
+    if (branch_ids !== undefined && !(Array.isArray(branch_ids) && branch_ids.length === 1 && branch_ids[0] === req.branchId)) {
       res.status(403).json({ error: 'You can only assign staff to your own branch' });
       return;
     }
@@ -393,6 +496,29 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
     if (beyond) { res.status(403).json({ error: beyond }); return; }
     const overRefusal = await refuseOverridesBeyondCaller(req);   // A340
     if (overRefusal) { res.status(403).json(overRefusal); return; }
+
+    // A494: a peer — someone holding exactly what the caller holds — keeps their own credentials: another non-owner
+    // setting their PIN, e-mail or override PIN could then sign in as them.
+    if (req.params.id !== req.userId && (pin || email !== undefined || typeof overridePin === 'string')) {
+      const theirs = await currentKeys(req, req.params.id);
+      if (!theirs) { res.status(403).json({ error: 'Could not verify this staff member' }); return; }
+      if (keysBeyond(theirs, callerHeld(req)).length === 0) {
+        res.status(403).json({ error: 'Only the owner changes the PIN or e-mail of someone with the same permissions as you.', code: 'PEER_CREDENTIALS' });
+        return;
+      }
+    }
+  }
+
+  // (Their token renews on its own: the database bumps permissions_version on any override or role change, migration 13.)
+  const rows = await overrideRows(req.params.id, req.body);
+
+  // A494: what they WILL hold — the new role and the new overrides together (removed deny rows included) — must stay
+  // within a non-owner caller's keys; and it decides whether an override PIN may be set.
+  const willHold = (await resultingKeys(req, req.params.id, role_id, rows)) ?? (req.isOwner ? new Set<string>() : null);
+  if (!willHold) { res.status(403).json({ error: 'Could not check this staff member\'s permissions — please try again' }); return; }
+  if (!req.isOwner) {
+    const missing = keysBeyond(callerHeld(req), willHold);
+    if (missing.length) { res.status(403).json({ error: 'You cannot give someone permissions you do not hold', missing }); return; }
   }
 
   const updates: any = { updated_at: new Date().toISOString() };
@@ -403,16 +529,17 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   if (hourly_rate !== undefined) updates.hourly_rate = hourly_rate !== null ? Number(hourly_rate) : null;
   if (pin) {
     if (!/^\d{4,6}$/.test(pin)) { res.status(400).json({ error: 'PIN must be 4–6 digits' }); return; }
-    updates.pin_hash = hashPin(pin, req.businessId);
+    updates.pin_hash = await hashPin(pin);   // A494: bcrypt
   }
 
   // Override PIN: a 4–6 digit value sets/replaces it, '' clears it (revokes
   // override authority), and omitting the field leaves it unchanged.
-  const overridePin = req.body.override_pin;
   if (typeof overridePin === 'string') {
     if (overridePin.length === 0) {
       updates.override_pin_hash = null;
     } else if (OVERRIDE_PIN_RE.test(overridePin)) {
+      const refusal = overridePinRefusal(req, willHold);   // A494
+      if (refusal) { res.status(403).json(refusal); return; }
       updates.override_pin_hash = await hashOverridePin(overridePin);
     } else {
       res.status(400).json({ error: 'Override PIN must be 4–6 digits' });
@@ -420,14 +547,16 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
     }
   }
 
-  // (Their token renews on its own: the database bumps permissions_version on any override or role change, migration 13.)
-  const rows = await overrideRows(req.params.id, req.body);
-
   const { data, error } = await supabase
     .from('users').update(updates).eq('id', req.params.id).select().single();
   if (error) { sendError(res, error); return; }
 
+  let branchesChanged = false;
   if (branch_ids !== undefined) {
+    const { data: before } = await supabase.from('user_branches').select('branch_id').eq('user_id', req.params.id);
+    const was = new Set(((before ?? []) as Array<{ branch_id: string | null }>).map((b) => b.branch_id).filter(Boolean));
+    const now = new Set((branch_ids as string[]).filter(Boolean));
+    branchesChanged = was.size !== now.size || [...now].some((b) => !was.has(b));
     await supabase.from('user_branches').delete().eq('user_id', req.params.id);
     if (branch_ids.length) {
       await supabase.from('user_branches').insert(
@@ -441,6 +570,11 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
     await supabase.from('user_permissions').delete().eq('user_id', req.params.id);
     if (rows.length) await supabase.from('user_permissions').insert(rows);
   }
+
+  // A494: deactivated, another role or other branches — every session of theirs ends now (lib/tillSessions.ts).
+  const roleChanged = !!role_id && role_id !== (existing as any).role_id;
+  const deactivated = !!status && status !== 'active';
+  if (roleChanged || deactivated || branchesChanged) await revokePersonSessions(req.params.id, req.businessId);
 
   res.json(data);
 });
@@ -489,6 +623,7 @@ router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
     .eq('business_id', req.businessId);
 
   if (error) { sendError(res, error); return; }
+  await revokePersonSessions(req.params.id, req.businessId);   // A494: no session outlives the deactivation
   res.json({ success: true });
 });
 
@@ -664,10 +799,13 @@ router.delete('/roles/:roleId', requirePermission('staff.roles'), async (req, re
 });
 
 
-// POST /api/staff/clock — record a clock in or clock out event
-// Uses PIN to identify the staff member (same as POS login)
+// POST /api/staff/clock — record a clock in or clock out event.
+// A494: it clocks ONE named person after checking THEIR PIN — the signed-in person (no staff_id), or the person named by
+// staff_id. It used to look the PIN up across the whole business and clock (and NAME, with their id) whoever it matched:
+// any signed-in session could try every PIN and learn whose it was. Every failure is the same 401 'Invalid PIN', and every
+// failure counts towards the PIN limiter (lib/pinAttempts.ts).
 router.post('/clock', async (req, res) => {
-  const { pin, type, branch_id } = req.body;
+  const { pin, type, branch_id, staff_id } = req.body ?? {};
 
   if (!pin)    { res.status(400).json({ error: 'PIN is required' }); return; }
   if (!type || !['in', 'out'].includes(type)) {
@@ -675,31 +813,38 @@ router.post('/clock', async (req, res) => {
     return;
   }
 
+  const pk = pinKey(req);
+  if (pinLocked(pk)) { res.status(429).json(PIN_LOCKED_BODY); return; }
+  const invalid = () => { notePinFailure(pk); res.status(401).json({ error: 'Invalid PIN' }); };
+
+  const who = typeof staff_id === 'string' && staff_id ? staff_id : req.userId;
+  if (!who) { res.status(400).json({ error: 'staff_id is required on a till\'s own session' }); return; }
+  if (!/^\d{4,6}$/.test(String(pin))) { invalid(); return; }
+
+  // Where: a non-owner clocks at their own branch only.
+  const branch = req.isOwner ? (branch_id ?? null) : req.branchId;
+  if (!req.isOwner && branch_id && branch_id !== req.branchId) {
+    res.status(403).json({ error: 'You can only clock in at your own branch' });
+    return;
+  }
+
   try {
-    // Look up staff member by PIN. PINs are stored bcrypt-hashed in pin_hash (with
-    // a legacy SHA256 fallback), so we fetch active staff and verify each with the
-    // canonical verifier — the old `.eq('pin', pin)` hit a column that does not
-    // exist (there is no plaintext `pin`), so every clock-in returned Invalid PIN
-    // (A136). Same verification path as POS login.
-    const { data: candidates, error: staffErr } = await supabase
+    const { data: u, error: staffErr } = await supabase
       .from('users')
-      .select('id, name, role_id, pin_hash, roles ( name )')
+      .select('id, name, status, pin_hash, user_branches ( branch_id )')
+      .eq('id', who)
       .eq('business_id', req.businessId)
-      .eq('status', 'active');
+      .maybeSingle();
+    if (staffErr) { sendError(res, staffErr, { message: 'Clock event failed' }); return; }
 
-    let staff: { id: string; name: string; role_id: string | null } | null = null;
-    if (!staffErr && candidates) {
-      for (const u of candidates as Array<{ id: string; name: string; role_id: string | null; pin_hash: string | null }>) {
-        if (!u.pin_hash) continue;
-        const { valid } = await verifyPin(pin, u.pin_hash, req.businessId as string);
-        if (valid) { staff = { id: u.id, name: u.name, role_id: u.role_id }; break; }
-      }
+    const row = u as { id: string; name: string; status?: string; pin_hash: string | null; user_branches?: Array<{ branch_id: string | null }> } | null;
+    let valid = false;
+    if (row && row.status === 'active' && row.pin_hash && (!branch || worksAtBranch(row.user_branches, branch))) {
+      valid = (await verifyPin(String(pin), row.pin_hash, req.businessId as string)).valid;
     }
-
-    if (!staff) {
-      res.status(401).json({ error: 'Invalid PIN' });
-      return;
-    }
+    if (!valid || !row) { invalid(); return; }
+    notePinSuccess(pk);
+    const staff = { id: row.id, name: row.name };
 
     const now = new Date().toISOString();
 
@@ -709,7 +854,7 @@ router.post('/clock', async (req, res) => {
       .insert({
         business_id: req.businessId,
         staff_id:    staff.id,
-        branch_id:   branch_id ?? null,
+        branch_id:   branch ?? null,
         event_type:  type,
         recorded_at: now,
       });

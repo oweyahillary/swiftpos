@@ -17,11 +17,13 @@
 import crypto from 'crypto';
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { isUnreachableStatus } from './authTransport';
-import { noteNodeRefused, noteNodeAccepted } from './cloudGateway';   // A448
+import { noteNodeRefused, noteNodeAccepted, refusalReasonFor } from './cloudGateway';   // A448, A501
+import { noteChannelOk, noteChannelError, noteKeyedRefusal, noteServerInfo, type NodeChannel, type ServerInfo } from './nodeHealth';   // A501
 import { getLocalDb } from './localDb';
 // A489: every call to the branch server goes through lanFetch — TLS, pinned to the server's certificate, once this till
 // holds it; plain HTTP only before (a server on an older build). Never a plain fetch to the server from here.
 import { lanFetch, readServerCert, pinnedFetch, securityCode } from './lanTls';
+import { joinProofFor } from './serverJoin';   // A503
 
 export function nodeUrl(): string | null {
   const cfg = getDeviceConfig();
@@ -29,6 +31,33 @@ export function nodeUrl(): string | null {
   // itself (role 'node') pushes to the cloud directly, not to itself.
   if (!cfg || isNodeRole(cfg.device_role)) return null;
   return cfg.node_url ? cfg.node_url.replace(/\/+$/, '') : null;
+}
+
+// ── A501: every answer from the server is recorded for its channel (nodeHealth.ts) ─────────────────────────────────
+/** The server's own words from an error answer (its JSON `error`), or null. Never consumes the caller's body. */
+async function serverSaid(res: Response): Promise<string | null> {
+  try { const b: any = await res.clone().json(); return typeof b?.error === 'string' ? b.error.slice(0, 300) : null; }
+  catch { return null; }
+}
+/** A thrown fetch, in a few words for the Tech page. */
+export function describeFetchError(e: any): string {
+  if (e?.name === 'AbortError' || e?.name === 'TimeoutError') return 'no answer in time';
+  if (e?.name === 'NodeIdentityError') return String(e.message ?? e);
+  const cause = e?.cause?.code ?? e?.cause?.message;
+  return cause ? `the branch server did not answer (${cause})` : String(e?.message ?? e ?? 'failed');
+}
+/**
+ * A501: record an answer from a route that checks this till's access code, device key and branch. A refusal is noted
+ * by its reason (the manager's notice names the right one) and a 401 is logged once in a plain sentence.
+ */
+async function noteKeyedAnswer(ch: NodeChannel, route: string, res: Response): Promise<void> {
+  if (res.ok) { noteChannelOk(ch); noteNodeAccepted('keyed'); return; }
+  const said = await serverSaid(res);
+  noteChannelError(ch, res.status, said ?? `the branch server answered HTTP ${res.status}`);
+  if (res.status === 401 || res.status === 403 || res.status === 426) {
+    noteNodeRefused(res.status, Date.now(), refusalReasonFor(res.status, said));
+    if (res.status === 401) noteKeyedRefusal(route, res.status, said);
+  }
 }
 
 // Every /node/* call carries the branch secret. A till without one will be
@@ -61,6 +90,21 @@ export function nodeDeviceToken(): string | null {
     db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('node_device_token', ?, ?)`).run(made, new Date().toISOString());
     return made;
   } catch { return null; }
+}
+
+/**
+ * A503: the headers a join request carries so a server that already holds this till's key lets it ask again (a till
+ * signed out and rejoining through its own server — A436 — or one whose last join did not complete). A proof, never the
+ * key: an HMAC over this device and THAT server's security code (`cert` as read before the join; null for an older server),
+ * so what one server receives proves nothing to another. No key held yet → no header (a new till needs none).
+ */
+export function joinProofHeaders(deviceId: string | null | undefined, cert: string | null): Record<string, string> {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = 'node_device_token'`).get() as { value?: string } | undefined;
+    const token = row?.value && /^[0-9a-f]{64}$/.test(row.value) ? row.value : null;
+    if (!token || !deviceId) return {};
+    return { 'X-Join-Proof': joinProofFor(token, String(deviceId), securityCode(cert)) };
+  } catch { return {}; }
 }
 
 /** F7: keep the key the branch server issued when it allowed this till to join. */
@@ -142,12 +186,39 @@ export async function isNodeReachable(timeoutMs = 2500): Promise<boolean> {
     clearTimeout(t);
     if (res.status === 401) {
       console.error('[node] branch server rejected our access code — this till will not aggregate. Re-run install with the correct code.');
-      noteNodeRefused(401);   // A448: the manager is told (sync notice), not only the log
+      noteNodeRefused(401, Date.now(), refusalReasonFor(401, await serverSaid(res)));   // A448: the manager is told (sync notice), not only the log
       return false;
     }
-    if (res.ok) noteNodeAccepted();
+    if (res.ok) noteNodeAccepted('any');   // A501: /node/health checks only the access code
     return res.ok;
   } catch { return false; }
+}
+
+/**
+ * A501: ask the server about itself (GET /node/health) and record it — its device id and branch (the identity a failed
+ * row is re-armed on), its protocol and capabilities (the Tech page says "Update the branch server" when it is older
+ * than this till). Never throws; `info` is null when it did not answer 200.
+ */
+export async function checkNodeHealth(timeoutMs = 4000): Promise<{ ok: boolean; status: number | null; info: ServerInfo | null; error?: string }> {
+  const base = nodeUrl();
+  if (!base) return { ok: false, status: null, info: null, error: 'no branch server configured' };
+  try {
+    const res = await lanFetch(`${base}/node/health`, { headers: nodeHeaders(), signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) {
+      const said = await serverSaid(res);
+      noteChannelError('health', res.status, said ?? `the branch server answered HTTP ${res.status}`);
+      if (res.status === 401 || res.status === 426) noteNodeRefused(res.status, Date.now(), refusalReasonFor(res.status, said));
+      return { ok: false, status: res.status, info: null, error: said ?? `HTTP ${res.status}` };
+    }
+    const body = await res.json().catch(() => null);
+    noteChannelOk('health');
+    noteNodeAccepted('any');
+    return { ok: true, status: res.status, info: noteServerInfo(body) };
+  } catch (e: any) {
+    const error = describeFetchError(e);
+    noteChannelError('health', null, error);
+    return { ok: false, status: null, info: null, error };
+  }
 }
 
 /** Per-table outcome of a /node/sync push. */
@@ -162,9 +233,11 @@ export interface NodeSyncResult {
  * What a /node/sync came back with. F3 (2026-10-14): three kinds, and only one of them is about the rows.
  *   ok        — the server answered per row (`results`).
  *   transport — no answer, a 5xx, or a 401 (the access code / device key: a till-level problem the next code fixes,
- *               never a verdict on a row). Retried without counting an attempt.
+ *               never a verdict on a row). Retried without counting an attempt. A501: and a 400, 403 or 426 — the
+ *               server refusing the TILL (its branch, its connection), never a row: a cloud sign-in that rebinds the
+ *               till to another branch used to fail its whole outbox after five passes, for good.
  *   too_large — 413: the batch was over the server's body limit; send smaller.
- *   refused   — any other answer: the server refused the batch as such (400 branch mismatch, …). Counts.
+ *   refused   — any other answer the server gives the batch as such. Counts.
  */
 export type NodePushOutcome =
   | { kind: 'ok'; results: Record<string, NodeSyncResult> }
@@ -195,19 +268,28 @@ export async function pushRowsToNode(
       }),
       signal: ctrl.signal,
     });
-  } catch {
+  } catch (e: any) {
     clearTimeout(t);
+    noteChannelError('sync', null, describeFetchError(e));   // A501
     return { kind: 'transport', status: null, error: 'branch server unreachable' };
   }
   clearTimeout(t);
 
+  await noteKeyedAnswer('sync', '/node/sync', res);   // A501: the channel's record, a refusal by its reason
   const detail = await res.json().catch(() => null as any);
   if (res.status === 401) {
-    noteNodeRefused(401);   // A448: the manager is told (sync notice), not only the log
+    // A448: the manager is told (sync notice), not only the log — A501: by its reason (noteKeyedAnswer).
     return { kind: 'transport', status: 401, error: detail?.error ?? 'branch server rejected the access code — re-run install on this till with the code from the branch server' };
   }
   if (res.status === 413) return { kind: 'too_large', error: detail?.error ?? 'the batch was too large for the branch server' };
   if (isUnreachableStatus(res.status)) return { kind: 'transport', status: res.status, error: detail?.error ?? `branch server could not take the batch (HTTP ${res.status})` };
+  // A501: the server refusing the TILL, not the rows — retried, never counted (see NodePushOutcome).
+  if (res.status === 400 || res.status === 403 || res.status === 426) {
+    const what = res.status === 403
+      ? `the branch server serves another branch than this till's (${cfg?.branch_id ?? 'none'})`
+      : res.status === 426 ? 'the branch server accepts only encrypted connections' : 'the branch server could not read this till\'s request';
+    return { kind: 'transport', status: res.status, error: `${what}${detail?.error ? ` — it said: ${detail.error}` : ''}` };
+  }
   if (!res.ok) return { kind: 'refused', status: res.status, error: detail?.error ?? `branch server refused the batch (HTTP ${res.status})` };
   if (!detail || typeof detail.results !== 'object' || detail.results === null) {
     return { kind: 'transport', status: res.status, error: 'branch server sent an answer this till could not read' };
@@ -285,15 +367,33 @@ export async function fetchNodeReport(timeoutMs = 4000): Promise<any | null> {
 
 /** Share the current tech token with the node so peers can pick it up. */
 export async function broadcastTechToken(token: string): Promise<void> {
+  // A503 (E2): closing is "no token" — null. tech:closeSession sends '', which the A496 server refuses as "not a valid
+  // tech token" (only null clears), so a closed session stayed on offer to the branch's tills until it expired.
+  const t = typeof token === 'string' && token.trim() ? token : null;
+  const cfg = getDeviceConfig();
+  if (cfg && isNodeRole(cfg.device_role)) {
+    // A503 (E2): on the branch server itself there is no server to tell — nodeUrl() is null here, so a session opened or
+    // closed AT the server never reached (or never left) what it holds for its tills. Written locally, as /node/tech-session does.
+    try { holdTechTokenHere(t); } catch { /* best-effort */ }
+    return;
+  }
   const base = nodeUrl();
   if (!base) return;
   try {
     await lanFetch(`${base}/node/tech-session`, {
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token: t }),
     });
   } catch { /* best-effort */ }
+}
+
+/** A503 (E2): the branch server's own copy of the tech token it offers its tills (node_state, as nodeServer keeps it). */
+export function holdTechTokenHere(token: string | null): void {
+  const db = getLocalDb();
+  db.exec(`CREATE TABLE IF NOT EXISTS node_state (id INTEGER PRIMARY KEY CHECK (id = 1), tech_token TEXT, updated_at TEXT);
+           INSERT OR IGNORE INTO node_state (id, updated_at) VALUES (1, datetime('now'));`);
+  db.prepare(`UPDATE node_state SET tech_token=?, updated_at=datetime('now') WHERE id=1`).run(token);
 }
 
 /** Ask the node for the current broadcast tech token (peers adopt it locally). */
@@ -336,10 +436,12 @@ export async function pollNodeInstructions(
       }),
       signal: ctrl.signal,
     });
+    await noteKeyedAnswer('poll', '/node/instructions/poll', res);   // A501
     if (!res.ok) return null;
     const data = await res.json().catch(() => null as any);
     return Array.isArray(data?.instructions) ? data.instructions : [];
-  } catch {
+  } catch (e: any) {
+    noteChannelError('poll', null, describeFetchError(e));   // A501
     return null;
   } finally {
     clearTimeout(t);
@@ -402,10 +504,12 @@ export async function pullNodeDistribution(
       }),
       signal: ctrl.signal,
     });
+    await noteKeyedAnswer('since', '/node/since', res);   // A501
     if (!res.ok) return null;
     const data = await res.json().catch(() => null as any);
     return Array.isArray(data?.batches) ? { batches: data.batches, has_more: !!data.has_more } : null;
-  } catch {
+  } catch (e: any) {
+    noteChannelError('since', null, describeFetchError(e));   // A501
     return null;
   } finally {
     clearTimeout(t);
@@ -436,11 +540,13 @@ export async function fetchReferenceFromNode(timeoutMs = 8000): Promise<any | nu
       }),
       signal: ctrl.signal,
     });
+    await noteKeyedAnswer('reference', '/node/reference', res);   // A501
     if (!res.ok) return null;
     const data = await res.json().catch(() => null as any);
     // A well-formed bundle always carries source:'node' and a posInit object.
     return (data && data.source === 'node' && data.posInit) ? data : null;
-  } catch {
+  } catch (e: any) {
+    noteChannelError('reference', null, describeFetchError(e));   // A501
     return null;
   } finally {
     clearTimeout(t);
@@ -471,10 +577,12 @@ export async function fetchRosterFromNode(timeoutMs = 6000): Promise<any | null>
       }),
       signal: ctrl.signal,
     });
+    await noteKeyedAnswer('roster', '/node/roster', res);   // A501
     if (!res.ok) return null;
     const data = await res.json().catch(() => null as any);
     return (data && data.source === 'node' && Array.isArray(data.roster)) ? data : null;
-  } catch {
+  } catch (e: any) {
+    noteChannelError('roster', null, describeFetchError(e));   // A501
     return null;
   } finally {
     clearTimeout(t);

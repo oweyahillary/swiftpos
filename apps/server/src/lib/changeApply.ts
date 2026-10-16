@@ -35,7 +35,9 @@ export interface ChangeResult { id: string; status: ChangeStatus; message?: stri
   retry?: boolean }
 export interface ChangeContext { businessId: string; branchId: string | null; deviceId: string | null;
   /** The caller is a person with these keys (a manager's own sign-in) — else the maker's own permissions are checked. */
-  callerKeys?: string[] | null; callerIsOwner?: boolean; callerUserId?: string | null }
+  callerKeys?: string[] | null; callerIsOwner?: boolean; callerUserId?: string | null;
+  /** A494: sent by a till's own session (no person) — the maker named in the change must be proven (makerSignedInHere). */
+  tillSession?: boolean }
 
 type Row = Record<string, any>;
 
@@ -90,6 +92,37 @@ async function isOwnerOf(businessId: string, userId: string | null): Promise<boo
   const { data, error } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
   readOk(error, 'business');
   return (data as Row | null)?.owner_id === userId;
+}
+
+/** A494: what the till is told when a PIN is someone else's — never whose (the owner's notification names them). */
+export const PIN_IN_USE = 'that PIN is already in use — choose another';
+
+/** A494: how long a PIN sign-in on a branch's till counts as proof that its maker was there. */
+export const MAKER_PROOF_DAYS = 30;
+
+/**
+ * A494: a change sent by a till's OWN session names its maker (made_by) — anyone holding the till's token could name the
+ * owner. The maker is believed only when they really signed in (with their PIN, online) on this till or another till of
+ * its branch (a branch server relays its tills' changes) within MAKER_PROOF_DAYS: a refresh_tokens row of theirs whose
+ * device is one of them. A sign-in made offline leaves no such row — then the change waits for the owner (or, for staff
+ * and PINs, which the cloud cannot apply later without the PIN, is sent again until the maker has signed in online).
+ */
+async function makerSignedInHere(ctx: ChangeContext, userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  const devices = new Set<string>();
+  if (ctx.deviceId) devices.add(ctx.deviceId);
+  if (ctx.branchId) {
+    const { data: devs, error } = await supabase.from('user_devices').select('device_id')
+      .eq('business_id', ctx.businessId).eq('branch_id', ctx.branchId);
+    readOk(error, "the branch's tills");
+    for (const d of (devs ?? []) as Row[]) if (d.device_id) devices.add(String(d.device_id));
+  }
+  if (!devices.size) return false;
+  const since = new Date(Date.now() - MAKER_PROOF_DAYS * 86_400_000).toISOString();
+  const { data, error } = await supabase.from('refresh_tokens').select('id')
+    .eq('business_id', ctx.businessId).eq('user_id', userId).in('device_hint', [...devices]).gte('created_at', since).limit(1);
+  readOk(error, 'who signed in here');
+  return (data ?? []).length > 0;
 }
 
 const pick = (row: Row, keys: string[]) => Object.fromEntries(keys.map((k) => [k, row[k] ?? null]));
@@ -168,14 +201,45 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
   const spec = ENTITY_SPECS[c.entity];
   const done = async (r: ChangeResult, extra?: { cloud_value?: Row | null }) => { await record(ctx, c, r, extra); return r; };
 
-  // Who may: the person signed in (their own keys), or — sent later by the till's own session — the person who made it.
+  // Who may (A494):
+  //   - a person's session: THEIR keys (callerOk), and they are who made it — a made_by in the body naming someone else
+  //     is never believed (it decided the staff rules below: naming the owner skipped them);
+  //   - the till's own session: the maker's keys, and the maker proven to have signed in at this branch (else held).
   const needed = changeKeys(c.entity, c.op, c.data);   // A490: all of them (a price change needs menu.prices, …)
-  const callerOk = ctx.callerIsOwner || holdsAll(ctx.callerKeys ?? [], needed);
-  let maker: { ok: boolean };
-  try {
-    maker = callerOk && ctx.callerUserId === c.made_by ? { ok: true } : await makerMay(ctx.businessId, c.made_by, needed);
-  } catch (e) { return retryLater(c, e); }
-  if (!callerOk && !maker.ok) return done({ id: c.id, status: 'refused', message: `${c.made_by_name ?? 'Whoever made it'} may not make this change` });
+  let holdForOwner = false;
+  if (!ctx.tillSession) {
+    const callerOk = ctx.callerIsOwner || holdsAll(ctx.callerKeys ?? [], needed);
+    if (!callerOk) return done({ id: c.id, status: 'refused', message: 'You may not make this change' });
+    if (c.made_by !== (ctx.callerUserId ?? null)) c = { ...c, made_by: ctx.callerUserId ?? null, made_by_name: null };
+  } else {
+    let maker: { ok: boolean };
+    let proven = false;
+    try {
+      maker = await makerMay(ctx.businessId, c.made_by, needed);
+      if (maker.ok) proven = await makerSignedInHere(ctx, c.made_by);
+    } catch (e) { return retryLater(c, e); }
+    if (!maker.ok) return done({ id: c.id, status: 'refused', message: `${c.made_by_name ?? 'Whoever made it'} may not make this change` });
+    if (!proven) {
+      // Staff and PINs cannot wait for the owner (the PIN is never stored here): sent again until the maker has signed in
+      // online at this branch. Anything else waits for the owner's approval.
+      if (c.entity === 'staff' || c.entity === 'staff_pin') {
+        return { id: c.id, status: 'refused', retry: true,
+          message: `${c.made_by_name ?? 'Whoever made it'} has not signed in online at this branch yet — it is sent again` };
+      }
+      holdForOwner = true;
+    }
+  }
+
+  if (holdForOwner) {
+    try {
+      const { data: cur, error: curErr } = await supabase.from(spec.table).select('*').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
+      readOk(curErr, spec.table);
+      await notifyOwner(ctx, c, 'A change from a till — your approval',
+        `${describeChange(c, (cur as Row | null)?.name)} on a till, named as made by ${c.made_by_name ?? 'someone'} who has not signed in online at that branch. Approve to apply it.`);
+      return done({ id: c.id, status: 'awaiting', message: 'who made it could not be confirmed — waiting for the owner' },
+        { cloud_value: cur ? pick(cur as Row, Object.keys(c.data ?? {})) : null });
+    } catch (e) { return retryLater(c, e); }
+  }
 
   try {
     if (c.entity === 'staff' && c.op === 'create') {
@@ -195,7 +259,7 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       if (clash) {
         await notifyOwner(ctx, c, 'A PIN set on a till is already someone else\'s',
           `${c.data.name} (added on a till by ${c.made_by_name ?? 'a manager'}) was given ${clash}'s PIN — set a different one.`);
-        return done({ id: c.id, status: 'refused', message: `that PIN is already ${clash}'s — choose another` });
+        return done({ id: c.id, status: 'refused', message: PIN_IN_USE });
       }
       const err = await write(ctx, c, c.entity_id, true);
       return err ? { id: c.id, status: 'refused', message: err } : done({ id: c.id, status: 'applied' });
@@ -251,7 +315,7 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       if (clash) {
         await notifyOwner(ctx, c, 'A PIN set on a till is already someone else\'s',
           `${(cur as Row).name ?? 'A staff member'}'s new PIN (set on a till by ${c.made_by_name ?? 'a manager'}) is ${clash}'s too — set a different one.`);
-        return done({ id: c.id, status: 'refused', message: `that PIN is already ${clash}'s — choose another` });
+        return done({ id: c.id, status: 'refused', message: PIN_IN_USE });
       }
     }
     if (c.entity === 'staff') {
@@ -288,11 +352,26 @@ export async function decideChange(businessId: string, id: string, approve: bool
   if ((row as Row).status !== 'awaiting') return { ok: false, error: `already ${(row as Row).status}` };
   if (approve) {
     const r = row as Row;
+    const spec = ENTITY_SPECS[r.entity as keyof typeof ENTITY_SPECS];
     const target = r.canonical_id ?? r.entity_id;
     const values: Row = { ...(r.proposed ?? {}) };
     if (r.entity === 'station' || r.entity === 'product') values.updated_at = new Date().toISOString();
-    const { error } = await supabase.from(ENTITY_SPECS[r.entity as keyof typeof ENTITY_SPECS].table).update(values).eq('id', target).eq('business_id', businessId);
-    if (error) return { ok: false, error: error.message };
+    // A494: a change held because its maker was not proven may be a delete, or a create the cloud does not have yet.
+    if (r.op === 'delete') {
+      const { error } = r.entity === 'product'
+        ? await supabase.from('products').update({ status: 'inactive', updated_at: new Date().toISOString() }).eq('id', target).eq('business_id', businessId)
+        : await supabase.from(spec.table).delete().eq('id', target).eq('business_id', businessId);
+      if (error) return { ok: false, error: error.message };
+    } else {
+      const { data: there } = r.op === 'create'
+        ? await supabase.from(spec.table).select('id').eq('id', target).eq('business_id', businessId).maybeSingle()
+        : { data: { id: target } };
+      const { error } = there
+        ? await supabase.from(spec.table).update(values).eq('id', target).eq('business_id', businessId)
+        : await supabase.from(spec.table).insert({ ...spec.defaults, ...values, id: target, business_id: businessId,
+            ...(r.entity === 'station' ? { branch_id: r.branch_id ?? null } : {}) });
+      if (error) return { ok: false, error: error.message };
+    }
   }
   const status: ChangeStatus = approve ? 'approved' : 'rejected';
   await supabase.from('change_requests').update({ status, decided_by: by.id, decided_by_name: by.name, decided_at: new Date().toISOString() })

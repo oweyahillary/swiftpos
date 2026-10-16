@@ -123,8 +123,9 @@ export default function POSLoginScreen() {
       setOtpPass(data.otp_trust ?? data.otp_pass ?? '');
       setOtp(null);
 
-      // Store tokens for api.ts (business data fetch etc.)
-      localStorage.setItem('swiftpos_pos_token', data.accessToken ?? data.token);
+      // Store tokens for api.ts (business data fetch etc.). A494: a person with several branches gets the branch list
+      // first and no tokens — nothing is stored until a branch is picked (it stored the string "undefined").
+      if (data.accessToken ?? data.token) localStorage.setItem('swiftpos_pos_token', data.accessToken ?? data.token);
       if (data.refreshToken) localStorage.setItem('swiftpos_pos_refresh_token', data.refreshToken);
 
       setSuccessName(data.staff.name);
@@ -191,12 +192,20 @@ export default function POSLoginScreen() {
           pin,
           branch_id: branch.id,
           surface:   'web',
+          // A506: the same device as the first call — without it the cloud fingerprints another device, so with device
+          // registration on a cashier of several branches was told "This device is not yet approved" at the picker.
+          device_hint: await getDeviceHint(),
           ...tenantSignInFields(),
           ...(otpPass || readOtpTrust(email) ? { otp_trust: otpPass || readOtpTrust(email) } : {}),   // A391
         }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? 'Failed'); return; }
+      if (!res.ok) {
+        // A506: as the first step does (the picker renders before these screens, so leave it).
+        if (data.code === 'DEVICE_REJECTED')      { setStep('login'); setDeviceRejected(true); return; }
+        if (data.code === 'DEVICE_NOT_REGISTERED') { setStep('login'); setDevicePending(true);  return; }
+        setError(data.error ?? 'Failed'); return;
+      }
       localStorage.setItem('swiftpos_pos_token', data.accessToken ?? data.token);
       if (data.refreshToken) localStorage.setItem('swiftpos_pos_refresh_token', data.refreshToken);
       finishLogin(data, branch.id, branch.name);

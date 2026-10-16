@@ -98,7 +98,8 @@ await ok('the replay check failing → retry (never applied twice, never refused
 reset();
 await ok('the maker\'s permission read failing (sent by the till\'s own session) → retry, not "may not make this change"', async () => {
   mem.fail = (t, op) => (t === 'users' && op === 'select' ? { message: 'fetch failed' } : null);
-  const r = await applyChange({ ...ctx, callerIsOwner: false, callerKeys: [], callerUserId: null }, change({ made_by: CASHIER }));
+  // A494: "sent by the till's own session" is now said in the context (tillSession) — a person's session uses their own keys.
+  const r = await applyChange({ ...ctx, callerIsOwner: false, callerKeys: [], callerUserId: null, tillSession: true }, change({ made_by: CASHIER }));
   assert.equal(r.retry, true, JSON.stringify(r));
 });
 reset();
@@ -114,7 +115,7 @@ await ok('an unexpected throw → retry', async () => {
 reset();
 await ok('a DECISION stays a plain refusal: a cashier without products.manage may not (recorded, no retry)', async () => {
   const c = change({ made_by: CASHIER, made_by_name: 'Cashier' });
-  const r = await applyChange({ ...ctx, callerIsOwner: false, callerKeys: [], callerUserId: null }, c);
+  const r = await applyChange({ ...ctx, callerIsOwner: false, callerKeys: [], callerUserId: null, tillSession: true }, c);   // A494
   assert.equal(r.status, 'refused'); assert.ok(!r.retry, JSON.stringify(r)); assert.equal(recorded(c), true);
 });
 reset();

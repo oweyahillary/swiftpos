@@ -103,6 +103,46 @@ async function feedGet(d: ShareDeps, url: string, extra: Record<string, string>,
 
 const busy = new Set<string>();
 
+// ── A496: how the server's fetch of each version is going — told to its tills, shown on its screen ─────────────────
+export interface ShareProgress {
+  version: string; state: 'fetching' | 'failed' | 'ready'; failures: number; error: string | null;
+  bytes: number; size: number | null; since: string; at: string;
+}
+const progress = new Map<string, ShareProgress>();
+/** After this many failed fetches in a row of one version, the server passes its tills' requests for it on live. */
+export const SHARE_STUCK_FAILURES = 3;
+function track(version: string, patch: Partial<ShareProgress>): void {
+  const now = new Date().toISOString();
+  const p = progress.get(version) ?? { version, state: 'fetching' as const, failures: 0, error: null, bytes: 0, size: null, since: now, at: now };
+  progress.set(version, { ...p, ...patch, at: now });
+  if (progress.size > 5) progress.delete([...progress.keys()][0]);
+}
+/** The server's fetch of `version` (or the latest one tried), or null when it never tried. */
+export function shareProgress(version?: string | null): ShareProgress | null {
+  if (version) return progress.get(version) ?? null;
+  const all = [...progress.values()];
+  return all.length ? all[all.length - 1] : null;
+}
+/** The server could not fetch `version` (SHARE_STUCK_FAILURES in a row) and is not fetching it now. */
+export function shareStuck(version: string): boolean {
+  const p = progress.get(version);
+  return !!p && !busy.has(version) && p.state === 'failed' && p.failures >= SHARE_STUCK_FAILURES;
+}
+/** Is a fetch of `version` running now? */
+export function shareFetching(version: string): boolean { return busy.has(version); }
+
+// A496: the version the cloud last approved for this business, as the server's own check heard it (undefined: not asked
+// yet). A copy of any other version is never offered to the tills — after a roll-back, or once the business is on hold.
+let approvedNow: string | null | undefined;
+export function noteApprovedForShare(v: string | null): void { approvedNow = v && VERSION_RE.test(v) ? v : null; }
+/** The version the server offers its tills: the approved one when it holds it (before its first check: its newest copy). */
+export function offeredVersion(dir: string): string | null {
+  if (approvedNow === undefined) return latestReady(dir);
+  return approvedNow && readReady(dir, approvedNow) ? approvedNow : null;
+}
+/** Test seam. */
+export function _resetShareState(): void { progress.clear(); busy.clear(); approvedNow = undefined; }
+
 /**
  * Fetch `version` into the share folder: latest.yml, then the installer — resumed from the part already on disk — then
  * checked. 'ready' when it can be shared; 'busy' when a fetch for it is already running; 'failed' otherwise (tried again
@@ -110,11 +150,14 @@ const busy = new Set<string>();
  */
 export async function prepareShare(version: string, d: ShareDeps): Promise<'ready' | 'busy' | 'failed'> {
   if (!VERSION_RE.test(version)) return 'failed';
-  if (readReady(d.dir, version)) return 'ready';
+  if (readReady(d.dir, version)) { if (progress.get(version)?.state !== 'ready') track(version, { state: 'ready', failures: 0, error: null }); return 'ready'; }
   if (busy.has(version)) return 'busy';
   const cloud = String(d.cloudUrl() ?? '').replace(/\/+$/, '');
-  if (!cloud) return 'failed';
+  if (!cloud) { track(version, { state: 'failed', failures: (progress.get(version)?.failures ?? 0) + 1, error: 'no cloud address' }); return 'failed'; }
   busy.add(version);
+  track(version, { state: 'fetching' });
+  let outcome: 'ready' | 'failed' = 'failed';
+  let why: string | null = null;
   const vdir = path.join(d.dir, version);
   const feed = `${cloud}/api/desktop-update/v/${version}/`;
   const ac = new AbortController();
@@ -125,10 +168,11 @@ export async function prepareShare(version: string, d: ShareDeps): Promise<'read
     fs.mkdirSync(vdir, { recursive: true });
     poke();
     const ymlRes = await feedGet(d, `${feed}latest.yml`, {}, ac.signal);
-    if (!ymlRes.ok) { d.log?.(`update share: latest.yml for ${version} — HTTP ${ymlRes.status}`); return 'failed'; }
+    if (!ymlRes.ok) { why = `latest.yml: HTTP ${ymlRes.status}`; d.log?.(`update share: latest.yml for ${version} — HTTP ${ymlRes.status}`); return 'failed'; }
     const ymlText = await ymlRes.text();
     const info = parseLatestYml(ymlText);
-    if (!info || info.version !== version) { d.log?.(`update share: latest.yml for ${version} does not describe it`); return 'failed'; }
+    if (!info || info.version !== version) { why = 'latest.yml does not describe it'; d.log?.(`update share: latest.yml for ${version} does not describe it`); return 'failed'; }
+    track(version, { size: info.size });
     fs.writeFileSync(path.join(vdir, 'latest.yml'), ymlText);
 
     const part = path.join(vdir, `${info.file}.part`);
@@ -137,7 +181,7 @@ export async function prepareShare(version: string, d: ShareDeps): Promise<'read
     if (have < info.size) {
       poke();
       const res = await feedGet(d, `${feed}${encodeURIComponent(info.file)}`, have ? { Range: `bytes=${have}-` } : {}, ac.signal);
-      if (!(res.status === 206 || res.status === 200) || !res.body) { d.log?.(`update share: ${info.file} — HTTP ${res.status}`); return 'failed'; }
+      if (!(res.status === 206 || res.status === 200) || !res.body) { why = `${info.file}: HTTP ${res.status}`; d.log?.(`update share: ${info.file} — HTTP ${res.status}`); return 'failed'; }
       if (res.status === 200 && have) { have = 0; }                 // the far end ignored the Range: start the part again
       const out = fs.createWriteStream(part, { flags: have ? 'a' : 'w' });
       try {
@@ -146,6 +190,8 @@ export async function prepareShare(version: string, d: ShareDeps): Promise<'read
           const { done, value } = await reader.read();
           if (done) break;
           poke();
+          have += value.length;
+          track(version, { bytes: have });
           if (!out.write(Buffer.from(value))) await new Promise<void>((r) => out.once('drain', () => r()));
         }
       } finally {
@@ -153,9 +199,10 @@ export async function prepareShare(version: string, d: ShareDeps): Promise<'read
       }
     }
     const got = fs.statSync(part).size;
-    if (got !== info.size) { d.log?.(`update share: ${info.file} has ${got} of ${info.size} bytes — resumes next time`); return 'failed'; }
+    if (got !== info.size) { why = `${got} of ${info.size} bytes`; d.log?.(`update share: ${info.file} has ${got} of ${info.size} bytes — resumes next time`); return 'failed'; }
     if (await sha512Of(part) !== info.sha512) {
       fs.rmSync(part, { force: true });
+      why = 'the download did not match its sha512';
       d.log?.(`update share: ${info.file} did not match its sha512 — discarded`);
       return 'failed';
     }
@@ -165,13 +212,17 @@ export async function prepareShare(version: string, d: ShareDeps): Promise<'read
       if (other !== version) { try { fs.rmSync(path.join(d.dir, other), { recursive: true, force: true }); } catch { /* next time */ } }
     }
     d.log?.(`update share: ${version} ready for the branch's tills`);
+    outcome = 'ready';
     return 'ready';
   } catch (e: any) {
+    why = e?.name === 'AbortError' ? 'no data for a while' : String(e?.message ?? e);
     d.log?.(`update share: ${version} interrupted (${e?.name === 'AbortError' ? 'no data for a while' : e?.message ?? e}) — resumes next time`);
     return 'failed';
   } finally {
     if (idle) clearTimeout(idle);
     busy.delete(version);
+    track(version, outcome === 'ready' ? { state: 'ready', failures: 0, error: null }
+      : { state: 'failed', failures: (progress.get(version)?.failures ?? 0) + 1, error: why });
   }
 }
 
@@ -189,6 +240,14 @@ export function serveSharedUpdate(req: http.IncomingMessage, res: http.ServerRes
   if (ask.file.endsWith('.blockmap')) return false;                // small; the cloud answers it as before
   const info = readReady(dir, ask.version);
   if (!info || (ask.file !== 'latest.yml' && ask.file !== info.file)) {
+    // A496: the server could not fetch this version (SHARE_STUCK_FAILURES in a row), or a till that has waited long
+    // enough asks for it live (X-Update-Live) while no fetch is running — passed on to the cloud through the gateway
+    // (which cuts only on silence since A443) instead of "not ready" for ever.
+    const liveAsked = String(req.headers['x-update-live'] ?? '') === '1';
+    if (!info && !busy.has(ask.version) && (shareStuck(ask.version) || liveAsked)) {
+      wanted(ask.version);
+      return false;
+    }
     wanted(ask.version);
     const body = JSON.stringify({ error: 'The branch server is still fetching this update. The till will ask again shortly.' });
     res.writeHead(503, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Retry-After': '600', [GATEWAY_MARK]: '1' });

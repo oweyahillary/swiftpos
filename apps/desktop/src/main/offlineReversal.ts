@@ -80,6 +80,10 @@ export function reverseOffline(input: OfflineReversalInput, db: Database.Databas
   if (!reason) throw new Error(kind === 'refund' ? 'A reason is required to refund an order' : 'A reason is required to void an order');
   if (!mayReverseLocal(input.actor, kind)) throw new Error(kind === 'void' ? 'Your role does not void sales.' : 'Your role does not refund sales.');
   if (!mayReverseLocal(input.approver, kind)) throw new Error(`That PIN was not recognised. Enter the PIN of someone who may ${kind} sales (or the owner) on duty.`);
+  // A494: offline nobody else checks it — someone other than the person doing it approves, unless that person is the owner.
+  if (input.actor?.id && input.approver.id === input.actor.id && !isOwnerLocal(input.actor)) {
+    throw new Error(`Offline, someone else must approve this ${kind} — enter the PIN of another manager (or the owner) on duty.`);
+  }
 
   const order = db.prepare(`SELECT id, status, created_at, origin, refunded_at FROM orders WHERE id = ?`).get(orderId) as
     { id: string; status: string; created_at: string; origin: string | null; refunded_at: string | null } | undefined;

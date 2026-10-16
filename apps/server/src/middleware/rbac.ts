@@ -135,15 +135,23 @@ export function branchScope(req: Request): string | null {
     // Absent both = owner is viewing "All Branches" → no filter.
     return (req.headers['x-branch-id'] as string) || (req.query.branch_id as string) || null;
   }
-  // Staff are always locked to their JWT branch
-  return req.branchId;
+  // Staff are always locked to their JWT branch.
+  // A494: a non-owner WITHOUT a branch is not "every branch" (null meant no filter — the owner's view): they get a
+  // branch that matches nothing, so a read filtered by it is empty and a `branchScope(req) ?? asked` cannot fall back
+  // to a branch they asked for.
+  return req.branchId || NO_BRANCH;
 }
+
+/** A494: the branch a branchless non-owner is scoped to — a UUID no branch has. */
+export const NO_BRANCH = '00000000-0000-0000-0000-000000000000';
 
 // assertBranchAccess checks that a specific branch_id is accessible to the
 // requester. Use this when a branch_id comes from the request body (not query).
 // Returns true if access is allowed, false if it should be rejected with 403.
 
-export function assertBranchAccess(req: Request, branchId: string): boolean {
+export function assertBranchAccess(req: Request, branchId: string | null | undefined): boolean {
   if (req.isOwner) return true;
+  // A494: a non-owner without a branch has access to none (null === null used to pass), and no branch named is no access.
+  if (!req.branchId || !branchId || branchId === NO_BRANCH) return false;
   return req.branchId === branchId;
 }

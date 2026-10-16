@@ -183,7 +183,9 @@ await ok('owners\' own database sessions may only read feature_flags and busines
 });
 await ok('134 runs twice without error and records itself once; a second run changes nothing', async () => {
   const before = {}; for (const [n, r] of Object.entries(ROLES)) before[n] = sorted(await roleKeys(r.id));
+  // A rerun replays 134 and what came after it (135 retires settings.updates again), as the migration runner would.
   await db.exec(sanitize(fs.readFileSync(path.join(MIG, THIS), 'utf8')));
+  for (const f of files.filter((f) => num(f) > 134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
   for (const [n, r] of Object.entries(ROLES)) assert.deepEqual(sorted(await roleKeys(r.id)), before[n], n);
   const r = await one(`SELECT count(*)::int AS n FROM public.schema_migrations WHERE version = '134_permission_catalogue'`);
   assert.equal(r.n, 1);

@@ -20,7 +20,8 @@ const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`);
 
 await ok('the rule: a PIN is checked like a shift confirmation; a manager signed in approves as themselves; else refused', () => {
   const a = read('apps/server/src/lib/payoutApproval.ts');
-  assert.match(a, /if \(pin\) \{\s*const who = await confirmerByPin\(req\.businessId!, pin,/);
+  // A494: behind the one PIN limiter first.
+  assert.match(a, /if \(pin\) \{[\s\S]{0,400}?if \(pinLocked\(key\)\)[\s\S]{0,200}?const who = await confirmerByPin\(req\.businessId!, pin,/);
   assert.match(a, /: \{ ok: false, status: 403, error: PIN_NOT_RECOGNISED, code: 'INVALID_CONFIRMER_PIN' \}/);
   assert.match(a, /if \(callerMayConfirm\(req\) && req\.userId\) \{/);
   assert.match(a, /return \{ ok: false, status: 403, error: APPROVAL_REQUIRED, code: 'PAYOUT_APPROVAL_REQUIRED' \};/);
@@ -28,9 +29,10 @@ await ok('the rule: a PIN is checked like a shift confirmation; a manager signed
 
 await ok('web POS: a pay out needs a manager (a pay in does not); every expense does; the approver is stored', () => {
   const s = read('apps/server/src/routes/shifts.ts');
-  assert.match(s, /if \(type === 'float_out'\) \{\s*const a = await payoutApprover\(req\);\s*if \(a\.ok === false\) \{ res\.status\(a\.status\)/);
+  // A495: the approver is asked for the drawer's branch.
+  assert.match(s, /if \(type === 'float_out'\) \{\s*const a = await payoutApprover\(req, shift\.branch_id \?\? null\);[^\n]*\s*if \(a\.ok === false\) \{ res\.status\(a\.status\)/);
   assert.match(s, /approved_by: approver\?\.id \?\? null,/);
-  assert.match(s, /const approval = await payoutApprover\(req\);\s*if \(approval\.ok === false\)/);
+  assert.match(s, /const approval = await payoutApprover\(req, \(shift as \{ branch_id\?: string \| null \}\)\.branch_id \?\? null\);[^\n]*\s*if \(approval\.ok === false\)/);
   assert.match(s, /approved_by:\s+approval\.approver\.id,/);
 });
 

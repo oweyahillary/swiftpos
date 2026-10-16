@@ -10,13 +10,20 @@
 import type { Request } from 'express';
 import { supabase } from './supabase';
 import { frozenProductIds } from './stockTakeRules';
-import { holds } from './historyScope';
+import { can } from '../middleware/rbac';
+import { TILL_KEYS } from './tillScope';
 
 export const MAX_LINES = 5000;
 
-/** A490: the token's fine keys (requireAuth expanded them); the owner always. */
+/**
+ * A490: the token's fine keys (requireAuth expanded them); the owner always.
+ * A494: through can(), not historyScope.holds() — holds() read the till's own token ('*') as "may change stock", so a
+ * till's own sign-in saw a blind count unblinded. A wider VIEW is never granted to a till's own sign-in outside
+ * TILL_KEYS, even while the till scope is dry-run: being shown less never stops a sale.
+ */
 export function may(req: Request, key: string): boolean {
-  return holds(req, key);
+  if (req.isTill && !TILL_KEYS.has(key)) return false;
+  return can(req, key);
 }
 
 export interface TakeRow {

@@ -50,11 +50,14 @@ await ok('the cloud\'s void route uses the owner\'s window (the owner at any age
   assert.doesNotMatch(orders, /VOID_WINDOW_MINUTES/);
 });
 await ok('a till\'s replay: from a till, from THE till that holds the sale, with an approver who may approve', () => {
-  assert.match(orders, /return req\.surface === 'desktop' && typeof req\.body\?\.offline_approved_by === 'string'/);
+  // A494: only the till's OWN session (its token's device id) replays — never a person's desktop sign-in or a header.
+  assert.match(orders, /return req\.isTill === true && !!req\.deviceId && claimsReplay\(req\);/);
+  assert.match(orders, /const claimsReplay = \(req: any\): boolean => typeof req\.body\?\.offline_approved_by === 'string'/);
+  assert.match(orders, /const dev: string = req\.deviceId;/);
   assert.match(orders, /let holds = !!dev && order\.device_id === dev;/);
   assert.match(orders, /code: 'NOT_THIS_TILL'/);
   assert.match(orders, /if \(!approver \|\| !mayApprove\(approver, ownerId, action\)\) \{/  /* A490: sales.void / sales.refund per action */);
-  assert.match(orders, /isTillReplay\(req\) \? next\(\) : \(action === 'void' \? voidKey : refundKey\)\(req, res, next\)/  /* A490: sales.void / sales.refund */);
+  assert.match(orders, /if \(isTillReplay\(req\)\) \{ next\(\); return; \}[\s\S]{0,600}?\(action === 'void' \? voidKey : refundKey\)\(req, res, next\);/  /* A490: sales.void / sales.refund; A494: a person's replay → 409 retry */);
   assert.match(orders, /router\.post\('\/:id\/void', reversalGate\('void'\),/);
   assert.match(orders, /router\.post\('\/:id\/refund', reversalGate\('refund'\),/);
   assert.match(orders, /voided_at: replay\?\.at \?\? new Date\(\)\.toISOString\(\)/);
@@ -65,7 +68,8 @@ await ok('a till\'s replay: from a till, from THE till that holds the sale, with
 await ok('the rules are the owner\'s: readable, and written only by the owner and only when valid', () => {
   const b = read('apps/server/src/routes/business.ts');
   assert.match(b, /'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales',/);
-  assert.match(b, /if \(isReversalSettingKey\(key\)\) \{\s*if \(!req\.isOwner\) \{/);
+  // A502: the owner's by default, as a right the owner may give — settings.reversals, which no role starts with.
+  assert.match(b, /if \(isReversalSettingKey\(key\)\) return 'settings\.reversals';/);
   assert.match(b, /const clean = reversalSettingValue\(key, value\);/);
   // ahead of the generic write
   assert.ok(b.indexOf('if (isReversalSettingKey(key))') < b.indexOf('if (HASHED_SETTING_KEYS.has(key))'));

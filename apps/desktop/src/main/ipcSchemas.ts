@@ -109,6 +109,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'node:answerJoin':        { id: { t: 'string', min: 1 }, allow: { t: 'boolean' } },             // A427
   'node:tlsStatus':         NO_PAYLOAD,                                                          // A489
   'node:tlsRetrust':        NO_PAYLOAD,                                                          // A489
+  'node:syncHealth':        NO_PAYLOAD,                                                          // A501
+  'node:retryFailed':       NO_PAYLOAD,                                                          // A501
   'branding:get':           NO_PAYLOAD,
   // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so
@@ -120,6 +122,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // A306: auto-update UX. Both payload-less; the status push (update:status) is a send, not a
   // handled invoke, so it isn't a schema/parity channel.
   'update:getStatus':       NO_PAYLOAD,
+  'update:getDiagnostics':  NO_PAYLOAD,   // A496
   'update:installNow':      NO_PAYLOAD,
   'update:installWithPin':  { pin: { t: 'string', min: 1 } },   // A490: the PIN's holder is identified, never signed in
   'auth:verifyPin':         { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } },
@@ -346,7 +349,6 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'tech:closeSession':  NO_PAYLOAD,
   'tech:logAction':     { action: { t: 'string' }, detail: { t: 'any', optional: true } },
   'tech:promoteToNode': NO_PAYLOAD,
-  'tech:setNodeUrl':    { url: { t: 'string' } },
   'tech:backupNow':     NO_PAYLOAD,
   'tech:maintenance': NO_PAYLOAD,
   'tech:chooseBackupDir': NO_PAYLOAD,                 // A380

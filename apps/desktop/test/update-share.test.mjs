@@ -221,10 +221,14 @@ console.log('\nThe server tells its tills, and knows what each runs\n');
     await U.askBranchServer({ cfg: { ...till('S', 'dev-S'), device_role: 'node' }, running: '1.0.5', fetch: globalThis.fetch }) === null
     && await U.askBranchServer({ cfg: { ...till('Z', 'dev-Z'), node_url: '' }, running: '1.0.5', fetch: globalThis.fetch }) === null);
   const src = fs.readFileSync(path.join(here, '..', 'src', 'main', 'autoUpdate.ts'), 'utf8');
-  ok('a till asks every 2 minutes and at start, and checks at once when told', /void askServer\(\);\n\s+setInterval\(\(\) => \{ void askServer\(\); \}, 2 \* 60_000\);/.test(src)
-    && /if \(r\?\.newer\) \{.*void check\(\); \}/.test(src));
+  // A496: the loop moved into createUpdateLoop (testable; test/update-delivery.test.mjs drives it) — same meaning.
+  ok('a till asks every 2 minutes and at start, and checks at once when told', /void loop\.ask\(\);\n\s+setInterval\(\(\) => \{ void loop\.ask\(\); \}, 2 \* 60_000\);/.test(src)
+    && /await check\('the branch server holds a newer version'\);/.test(src));
+  // A496: "the server holds it → ready, an older server → ready, else wait" is tillShareVerdict now (and a wait ends).
   ok('…and downloads only once the server holds that version (an older server: as before)',
-    /return !r \? 'ready' : r\.version === v \? 'ready' : 'busy';/.test(src));
+    U.tillShareVerdict({ version: V, newer: true }, V, null, Date.now()).verdict === 'ready'
+    && U.tillShareVerdict(null, V, null, Date.now()).verdict === 'ready'
+    && U.tillShareVerdict({ version: '9.9.8', newer: false }, V, Date.now(), Date.now()).verdict === 'busy');
   ok('the server\'s screen lists the tills', /<TillVersionsPanel \/>/.test(fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'pages', 'TechPage.tsx'), 'utf8')));
 }
 

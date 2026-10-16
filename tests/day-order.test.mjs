@@ -48,6 +48,7 @@ const reset = () => {
   db = {
     business_days: [{ id: DAY_Y, business_id: BZ, branch_id: BR, device_id: DEV, status: 'open' }],   // yesterday, still open on the cloud
     shifts: [],
+    branches: [{ id: BR, business_id: BZ }],   // A494: a pushed row's branch must be the business's
     user_devices: [{ business_id: BZ, device_id: DEV, status: 'approved', retired_at: null }],   // A415: the till is on the business
   };
 };

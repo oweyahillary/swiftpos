@@ -155,7 +155,8 @@ ok('it does NOT send the user to the owner email login',
    'A shop with no internet and nothing cached would be locked out of its own '
    + 'till by its own screensaver — register A17 through a door we built.');
 ok('only the LOCKED staff member can dismiss it',
-   /const mine = \(id: string \| null \| undefined\) => \{\s*const ok = id === st\.staff_id;/.test(handlers)   /* A480: same rule, a block now */ && /if \(r\.ok\) \{/.test(curtain),
+   // A494: another person's PIN is refused as any wrong PIN ('wrong', counted) — never 'other'.
+   /const mine = \(id: string \| null \| undefined\) => \{\s*if \(id !== st\.staff_id\) \{ recordPinFailure\(\); return WRONG; \}/.test(handlers)   /* A480: same rule, a block now */ && /if \(r\.ok\) \{/.test(curtain),
    'Another cashier with a valid PIN would otherwise continue the first '
    + 'cashier\'s shift under their identity, with every order still attributed '
    + 'to the person who walked away.');
