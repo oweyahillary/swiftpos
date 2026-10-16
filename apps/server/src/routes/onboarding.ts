@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
-import { seedDefaultRolePermissions } from '../lib/defaultRolePermissions';
+import { seedDefaultRolePermissions, seededRoleRows } from '../lib/defaultRolePermissions';
 import { isOwnerRoleName } from '../lib/ownerRole';
 import { adminInputProblems } from '../lib/adminRules';
 
@@ -146,15 +146,12 @@ router.post('/', async (req, res) => {
     if (brErr) throw brErr;
 
     // ── 3. Seed default roles ───────────────────────────────────────────────
+    // A514: the owner's role (Admin) and every built-in role for this type (shared BUILT_IN_ROLES — Manager, Cashier,
+    // Supervisor, Waiter, Kitchen, Storekeeper, Accountant; Fuel attendant at a fuel business).
+    // business_id: seededRoleRows sets it on every row (lib/defaultRolePermissions.ts)
     const { data: roles, error: rErr } = await supabase
       .from('roles')
-      .insert(
-        ['Admin', 'Manager', 'Cashier'].map(name => ({
-          business_id: business.id,
-          name,
-          is_default:  true,
-        }))
-      )
+      .insert(seededRoleRows(business.id, 'Admin', normalizedType))
       .select();
 
     if (rErr) throw rErr;

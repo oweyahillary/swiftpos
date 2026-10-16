@@ -71,8 +71,10 @@ await ok('the rules are the owner\'s: readable, and written only by the owner an
   // A502: the owner's by default, as a right the owner may give — settings.reversals, which no role starts with.
   assert.match(b, /if \(isReversalSettingKey\(key\)\) return 'settings\.reversals';/);
   assert.match(b, /const clean = reversalSettingValue\(key, value\);/);
-  // ahead of the generic write
-  assert.ok(b.indexOf('if (isReversalSettingKey(key))') < b.indexOf('if (HASHED_SETTING_KEYS.has(key))'));
+  // ahead of the generic write (A514: the hashed supervisor-PIN branch that stood before it is gone — the generic write is
+  // the encrypted / plain one)
+  const rules = b.indexOf('if (isReversalSettingKey(key)) {');
+  assert.ok(rules !== -1 && rules < b.indexOf('const storedValue = ENCRYPTED_SETTING_KEYS.has(key)'));
 });
 await ok('the till hears them with pos/init (every rule, defaults where unset)', () => {
   const p = read('apps/server/src/routes/pos.ts');

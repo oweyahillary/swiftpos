@@ -141,13 +141,17 @@ console.log('\n3. the allow-list, and the order of the checks');
   // before anyone asks whether they may.
   // A490: the per-key guard is settingPermission(key) checked with can() (receipt text → receipt.manage, …).
   const guard  = src.indexOf('if (!can(req, needed))');
-  const hashed = src.indexOf('HASHED_SETTING_KEYS.has(key)');
   const encd   = src.indexOf('ENCRYPTED_SETTING_KEYS.has(key)');
+  // A514: the business supervisor PIN is retired — the bcrypt branch that wrote supervisor_pin_hash is gone, and its keys
+  // are refused for everyone FIRST, before the per-key guard and before anything is written.
+  const retired = src.indexOf('if (isRetiredSupervisorPinKey(String(key)))');
 
   ok('the per-key guard exists', guard !== -1);
-  ok('it runs BEFORE the bcrypt branch',
-     guard !== -1 && hashed !== -1 && guard < hashed,
-     'Below it, receipt.manage reaches the code that writes supervisor_pin_hash.');
+  ok('A514: no code writes the supervisor PIN any more (the bcrypt branch is gone)',
+     !/HASHED_SETTING_KEYS|supervisor_pin_hash'|bcrypt\.hash/.test(src),
+     'A write path for the retired business PIN is back.');
+  ok('A514: the supervisor PIN is refused before the per-key guard',
+     retired !== -1 && guard !== -1 && retired < guard);
   ok('it runs BEFORE the encrypted-credential branch',
      guard !== -1 && encd !== -1 && guard < encd,
      'Below it, receipt.manage reaches the code that writes M-Pesa secrets.');

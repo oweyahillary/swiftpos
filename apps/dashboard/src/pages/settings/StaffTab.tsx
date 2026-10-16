@@ -296,7 +296,10 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
   const diff = keyDifferences(effectiveKeys, roleBaseline, allKeys);
   const diffCount = diff.added.length + diff.removed.length;
   // A506: an override PIN approves voids and refunds — only for someone who will hold sales.void or sales.refund.
-  const mayApprove = effectiveKeys.has('*') || effectiveKeys.has('sales.void') || effectiveKeys.has('sales.refund');
+  // A514: the business supervisor PIN is retired — this per-person APPROVAL PIN is how the owner or a manager makes
+  // someone an approver: of voids, refunds, sales on account (customers.credit) or drawers / cash out (shifts.confirm).
+  // The cloud's rule is the same list (routes/staff.ts APPROVAL_PIN_KEYS).
+  const mayApprove = effectiveKeys.has('*') || ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm'].some(k => effectiveKeys.has(k));
 
   // When the role changes, start again from the new role's keys.
   const handleRoleChange = (newRoleId: string) => {
@@ -320,8 +323,8 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
       for (const k of diff.removed) override_keys[k] = false;
     }
 
-    // Override PIN payload: '' clears (revoke), a value sets/replaces, omit = keep. A506: only for someone who will
-    // be able to void or refund (the cloud refuses it otherwise — OVERRIDE_PIN_NO_AUTHORITY).
+    // Override (approval) PIN payload: '' clears (revoke), a value sets/replaces, omit = keep. A506/A514: only for someone
+    // who will be able to approve (the cloud refuses it otherwise — OVERRIDE_PIN_NO_AUTHORITY).
     const overrideField: { override_pin?: string } =
       clearOverride ? { override_pin: '' }
       : overridePin && mayApprove ? { override_pin: overridePin }
@@ -446,8 +449,8 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           )}
           <div className="sm:col-span-2">
             <label className="block text-sm text-gray-400 mb-1">
-              Override PIN
-              <span className="text-gray-600 text-xs ml-1">— lets this person authorize paid-order voids &amp; overrides</span>
+              Approval PIN
+              <span className="text-gray-600 text-xs ml-1">— lets this person approve voids, refunds, sales on account and drawers</span>
             </label>
             <input
               type="password"
@@ -458,16 +461,17 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
               onChange={e => { setOverridePin(e.target.value.replace(/\D/g, '')); setClearOverride(false); }}
               maxLength={6}
               disabled={clearOverride || !mayApprove}
-              placeholder={!mayApprove ? 'Give them Void or Refund first' : editing ? '•••• (leave blank to keep)' : '4–6 digits (optional)'}
+              placeholder={!mayApprove ? 'Give them an approving right first (Void, Refund, Customer credit or Approve with their PIN)' : editing ? '•••• (leave blank to keep)' : '4–6 digits (optional)'}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift disabled:opacity-40 tracking-widest"
             />
             <p className="text-xs text-gray-600 mt-1">
-              Separate from the login PIN. Entered by the supervisor to approve a paid void — the void is recorded against them.
+              Separate from the login PIN (their login PIN approves too). The business-wide supervisor PIN is retired: only a
+              person's own PIN approves, and what they approve is recorded against them.
               {editing && (
                 <button type="button"
                   onClick={() => { setClearOverride(c => !c); setOverridePin(''); }}
                   className={`ml-2 underline ${clearOverride ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}>
-                  {clearOverride ? 'Will remove override authority — undo' : 'Remove override authority'}
+                  {clearOverride ? 'Will remove the approval PIN — undo' : 'Remove the approval PIN'}
                 </button>
               )}
             </p>

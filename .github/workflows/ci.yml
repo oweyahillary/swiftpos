@@ -1015,6 +1015,12 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/low-impact-start-a513.test.mjs
 
+      # A515 — a kept connection the branch server already closed (it restarted) is asked once more on a fresh one,
+      # never read as "does not answer encrypted"; A516 — the low-memory graphics mode set from the Tech page.
+      - name: Desktop TLS reuse retry and graphics switch
+        working-directory: apps/desktop
+        run: node --no-warnings test/tls-reuse-gpu-a515.test.mjs
+
       # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
       # proven till, joins, the gateway's path check, the roster, TLS pins.
       - name: Desktop branch server hardening

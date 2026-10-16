@@ -27,7 +27,9 @@ let pass = 0, fail = 0;
 const ok = (n, fn) => { try { fn(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n       ${e.message}`); } };
 
 ok('permission model: managers are denied adjust/edit, keep receive', () => {
-  assert.match(seeder, /defaultKeysFor\(defaultKindFor\(r\.name\)\)/, 'the seeder grants the catalogue defaults');
+  // A514: the built-in roles' defaults (shared BUILT_IN_ROLES — the Manager's are the catalogue's manager flags).
+  assert.match(seeder, /defaultKeysForRoleName\(r\.name\)/, 'the seeder grants the catalogue defaults');
+  assert.match(catalogue, /\{ name: 'Manager', description: '[^']*', keys: MANAGER_DEFAULT_KEYS \}/, 'the Manager is the catalogue manager defaults');
   assert.ok(!managerGets('inventory.adjust'), 'a new manager must not get inventory.adjust');
   assert.ok(!managerGets('ingredients.manage'), 'a new manager must not get ingredients.manage');
   assert.ok(managerGets('inventory.receive') && managerGets('inventory.transfer'), 'receive/transfer must remain granted to managers');

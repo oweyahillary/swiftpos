@@ -189,13 +189,20 @@ async function currentKeys(req: any, targetId: string): Promise<Set<string> | nu
   try { return (await personKeys(req.businessId, targetId))?.keys ?? null; } catch { return null; }
 }
 
-/** A494: may approve a void or a refund — the keys an override PIN stands for. */
-const holdsApproval = (held: ReadonlySet<string>): boolean => held.has('*') || held.has('sales.void') || held.has('sales.refund');
+/**
+ * A494: may approve something with a PIN — the keys an override (approval) PIN stands for. A514: with the business
+ * supervisor PIN retired, a person's approval PIN is how an owner or a manager makes someone an approver — of voids
+ * (sales.void), refunds (sales.refund), sales on account (customers.credit, A511) or drawers, cash out, expenses and
+ * kitchen removals (shifts.confirm). What it approves is still decided per action (lib/approver.ts mayApprove,
+ * lib/shiftConfirm.ts mayConfirm): the PIN never approves more than its holder's keys.
+ */
+export const APPROVAL_PIN_KEYS: readonly string[] = ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm'];
+const holdsApproval = (held: ReadonlySet<string>): boolean => held.has('*') || APPROVAL_PIN_KEYS.some((k) => held.has(k));
 
 /** A494: why this caller may not SET an override PIN for someone who will hold `targetKeys`, or null. */
 function overridePinRefusal(req: any, targetKeys: ReadonlySet<string>): { error: string; code: string } | null {
-  if (!holdsApproval(callerHeld(req))) return { error: 'Only someone who may void or refund sets an override PIN.', code: 'OVERRIDE_PIN_NOT_YOURS' };
-  if (!holdsApproval(targetKeys)) return { error: 'An override PIN is for someone who may void or refund — give them that permission first.', code: 'OVERRIDE_PIN_NO_AUTHORITY' };
+  if (!holdsApproval(callerHeld(req))) return { error: 'Only the owner, or someone who may approve (void, refund, credit or drawers), sets an approval PIN.', code: 'OVERRIDE_PIN_NOT_YOURS' };
+  if (!holdsApproval(targetKeys)) return { error: 'An approval PIN is for someone who may approve voids, refunds, sales on account or drawers — give them that permission first.', code: 'OVERRIDE_PIN_NO_AUTHORITY' };
   return null;
 }
 

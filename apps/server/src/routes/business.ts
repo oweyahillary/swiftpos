@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
-import bcrypt from 'bcrypt';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission, can } from '../middleware/rbac';
 import { encryptSecret } from '../lib/crypto';
@@ -20,11 +19,6 @@ import { isOwnerAlertJobKey } from '../jobs/ownerAlerts';             // A476
 
 const router = safeRouter();
 
-const BCRYPT_ROUNDS = 12;
-
-// Settings whose values are secrets and must never be stored in clear text.
-// When one of these keys is written we bcrypt-hash the value and persist it
-// under "<key>_hash" instead. The plaintext key is never stored.
 // ── A45: the narrow slice of settings a manager may write ───────────────────
 // The free-text blocks printed above and below the receipt body — branch
 // address, phone, KRA PIN, thank-you line. ReceiptTextTab writes exactly these
@@ -32,8 +26,8 @@ const BCRYPT_ROUNDS = 12;
 // so this allow-list is the whole surface that tab needs.
 //
 // It is an ALLOW-LIST and it must stay one. POST /settings writes ANY key
-// through one handler, including supervisor_pin (bcrypt-hashed below) and the
-// ENCRYPTED_SETTING_KEYS M-Pesa credentials. A deny-list here would mean every
+// through one handler, including the ENCRYPTED_SETTING_KEYS M-Pesa credentials (and, until A514 retired it, the
+// bcrypt-hashed supervisor_pin). A deny-list here would mean every
 // setting added in future is writable by a manager until somebody remembers to
 // add it — and the thing they would forget is whichever one is newest, which is
 // also the one least likely to be noticed.
@@ -66,15 +60,29 @@ export const BUSINESS_SETTING_KEYS: ReadonlySet<string> = new Set([
 const BUSINESS_SETTING_PREFIXES = ['parking_rate_', 'aggregator_commission_'];
 
 /**
- * A494: the owner's alone — the supervisor PIN (it approves voids and refunds) and every M-Pesa credential and setting
+ * A494: the owner's alone — every M-Pesa credential and setting
  * (where the business's money goes and the keys that move it) — whatever else a person holds.
  * A502 (owner, 2026-10-15: "yes owner but should be a right a user can be assigned"): the void / refund rules and the
  * stock-count freeze are no longer owner-only — each is its own permission (settings.reversals, inventory.count_freeze)
  * that no role starts with, so they stay the owner's until the owner gives them to someone.
  */
 export function ownerOnlySetting(k: string): boolean {
-  return HASHED_SETTING_KEYS.has(k) || ENCRYPTED_SETTING_KEYS.has(k) || k.startsWith('mpesa_');
+  return ENCRYPTED_SETTING_KEYS.has(k) || k.startsWith('mpesa_');
 }
+
+/**
+ * A514 (owner, 2026-10-16, on the business-wide supervisor PIN: "Retire it completely"): only people's own PINs approve
+ * now — their sign-in PIN, or the approval PIN an owner or a manager gives them in Staff. The cloud never accepts a write
+ * of the business PIN again (supervisor_pin, its hash key, or any spelling of either), from anyone — the owner included.
+ * The hash already stored is left as it is; nothing reads it.
+ */
+export function isRetiredSupervisorPinKey(k: string): boolean {
+  return /^supervisor_pin/i.test(String(k ?? '').trim());
+}
+export const SUPERVISOR_PIN_RETIRED = {
+  error: 'The business supervisor PIN is retired. Each approver uses their own PIN - the owner or a manager gives someone an approval PIN in Staff.',
+  code:  'SUPERVISOR_PIN_RETIRED',
+} as const;
 
 /** A490: the one key that may write this business setting — null when it is the OWNER's alone (A494). */
 export function settingPermission(key: string): string | null {
@@ -89,11 +97,9 @@ export function settingPermission(key: string): string | null {
   return null;   // A494: unknown — the owner's (default-deny, as GET /settings is)
 }
 
-const HASHED_SETTING_KEYS = new Set(['supervisor_pin']);
-
 // ── H9: settings encrypted at rest, never a hash (need to be readable back) ─
 // consumer_secret and passkey are used directly as Daraja credentials — they
-// have to round-trip to plaintext, unlike supervisor_pin, so bcrypt (one-way)
+// have to round-trip to plaintext, unlike a PIN, so bcrypt (one-way)
 // doesn't apply. encryptSecret()/decryptSecret() (AES-256-GCM, lib/crypto.ts)
 // is the same utility already used for the eTIMS cmc_key. mpesa_consumer_key
 // and mpesa_shortcode are left plaintext deliberately — they're closer to a
@@ -405,6 +411,11 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
     res.status(400).json({ error: 'key and value are required' });
     return;
   }
+  // A514: the business-wide supervisor PIN is retired — refused for everyone, before any other check or write.
+  if (isRetiredSupervisorPinKey(String(key))) {
+    res.status(410).json({ ...SUPERVISOR_PIN_RETIRED });
+    return;
+  }
   // A492: the M-Pesa number is per branch, set on the branch's till by its manager — not business-wide.
   if (['receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'].includes(String(key))) {
     res.status(400).json({ error: 'Each branch sets its own M-Pesa number on its till: Manager › Settings › M-Pesa.', code: 'MPESA_ON_TILL' });
@@ -415,9 +426,8 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // The route gate above admits anyone holding EITHER key, because Express
   // middleware runs before the body is inspected and cannot know which setting
   // is being written. So the narrowing happens here, and it happens FIRST —
-  // ahead of the bcrypt branch and ahead of the encrypted branch, because
-  // otherwise a caller holding only receipt.manage would reach the code path
-  // that writes supervisor_pin_hash or an M-Pesa credential.
+  // ahead of the encrypted branch, because otherwise a caller holding only
+  // receipt.manage would reach the code path that writes an M-Pesa credential.
   //
   // Fails closed: settings.manage (or owner / wildcard) writes anything, and
   // everyone else writes only what is explicitly allowed.
@@ -555,50 +565,8 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
     return;
   }
 
-  // ── Secret settings: hash, never store plaintext ──────────────────────────
-  // e.g. "supervisor_pin" is written as "supervisor_pin_hash" (bcrypt). The
-  // void flow verifies against this hash. We also clear any legacy plaintext
-  // row left over from before this change.
-  if (HASHED_SETTING_KEYS.has(key)) {
-    const raw = String(typeof value === 'string' ? value : JSON.stringify(value)).trim();
-    if (!/^\d{4,6}$/.test(raw)) {
-      res.status(400).json({ error: 'PIN must be 4–6 digits' });
-      return;
-    }
-    const hash = await bcrypt.hash(raw, BCRYPT_ROUNDS);
-    const hashKey = `${key}_hash`;
-    const hashJson = JSON.stringify(hash);
-
-    const { data: existingHash } = await supabase
-      .from('business_settings')
-      .select('id')
-      .eq('business_id', req.businessId)
-      .eq('key', hashKey)
-      .maybeSingle();
-
-    if (existingHash) {
-      const { error } = await supabase
-        .from('business_settings')
-        .update({ value: hashJson, updated_at: new Date().toISOString() })
-        .eq('id', existingHash.id);
-      if (error) { sendError(res, error); return; }
-    } else {
-      const { error } = await supabase
-        .from('business_settings')
-        .insert({ business_id: req.businessId, key: hashKey, value: hashJson });
-      if (error) { sendError(res, error); return; }
-    }
-
-    // Remove any legacy plaintext row for this key.
-    await supabase
-      .from('business_settings')
-      .delete()
-      .eq('business_id', req.businessId)
-      .eq('key', key);
-
-    res.json({ key: hashKey, value: '****' });
-    return;
-  }
+  // A514: the hashed-setting branch (supervisor_pin → supervisor_pin_hash) is gone with the business supervisor PIN —
+  // refused above, before anything is written.
 
   const jsonValue = typeof value === 'string' ? value : JSON.stringify(value);
   const storedValue = ENCRYPTED_SETTING_KEYS.has(key) ? encryptSecret(jsonValue) : jsonValue;

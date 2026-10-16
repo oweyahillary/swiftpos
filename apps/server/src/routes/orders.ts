@@ -140,44 +140,15 @@ function checkPaymentIntegrity(
 // it to the till, which clamps to the same number before it prints anything.
 // Enforcement here is unchanged and remains authoritative.
 
-// Verifies a supervisor PIN against the bcrypt hash stored in business_settings
-// (key: supervisor_pin_hash). Falls back to a legacy plaintext supervisor_pin
-// row for installs predating hashing. Returns 'not_configured' if neither set.
-async function verifySupervisorPin(
-  businessId: string,
-  pin?: string,
-): Promise<boolean | 'not_configured'> {
-  const { data: hashRow } = await supabase
-    .from('business_settings').select('value')
-    .eq('business_id', businessId).eq('key', 'supervisor_pin_hash').maybeSingle();
-
-  let hash = hashRow?.value as string | undefined;
-  if (typeof hash === 'string') { try { hash = JSON.parse(hash); } catch { /* already raw */ } }
-
-  if (hash) {
-    if (!pin) return false;
-    return bcrypt.compare(String(pin), String(hash));
-  }
-
-  // Legacy plaintext fallback (re-saving the PIN will migrate it to a hash).
-  const { data: legacy } = await supabase
-    .from('business_settings').select('value')
-    .eq('business_id', businessId).eq('key', 'supervisor_pin').maybeSingle();
-
-  let expected = legacy?.value as string | undefined;
-  if (typeof expected === 'string') { try { expected = JSON.parse(expected); } catch { /* already raw */ } }
-  if (expected === undefined || expected === null || expected === '') return 'not_configured';
-  if (!pin) return false;
-
-  const a = Buffer.from(String(pin));
-  const b = Buffer.from(String(expected));
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
+// A514 (owner, 2026-10-16: "Retire it completely"): the business-wide supervisor PIN (business_settings
+// supervisor_pin_hash, or a plaintext supervisor_pin from before hashing) no longer approves anything — only a person's own
+// PIN does (their sign-in PIN, or the approval PIN an owner or manager gives them in Staff). The stored hash is left in
+// the database untouched; nothing reads it, and POST /api/business/settings refuses to write it (SUPERVISOR_PIN_RETIRED).
 
 // Who approves a void or refund (A355, lib/approver.ts): an override PIN, or the approver's OWN sign-in PIN when their
 // role may approve (owner, the owner's role, '*', or A490 sales.void / sales.refund — managers by default). If
 // `authorizerId` is supplied (a supervisor picked from a list), only that person is checked. 'no_authorizers' = nobody
-// in the business can approve with a PIN, so the caller tries the legacy business-wide supervisor PIN.
+// at the branch can approve with a PIN — A514: the answer is NO_OVERRIDE_CONFIGURED (there is no business PIN to fall back on).
 async function verifyOverrideAuthorizer(
   businessId:   string,
   authorizerId: string | undefined,
@@ -223,10 +194,11 @@ async function recordedPerson(businessId: string, userId: string | null | undefi
 }
 
 /**
- * A494: the approver of a void or refund by PIN — the person's own (or override) PIN, else the legacy business-wide
- * supervisor PIN (kept; authorizedBy null). Every PIN is behind the one PIN limiter (lib/pinAttempts.ts): a caller's
- * wrong PINs (the legacy one included) lock their PIN entry for a while, the right one too. The approver is never the
- * person asking (a non-owner; the owner self-authorises before this is reached).
+ * A494: the approver of a void or refund by PIN — the person's own (sign-in or approval/override) PIN. Every PIN is behind
+ * the one PIN limiter (lib/pinAttempts.ts): a caller's wrong PINs lock their PIN entry for a while, the right one too. The
+ * approver is never the person asking (a non-owner; the owner self-authorises before this is reached).
+ * A514: the business-wide supervisor PIN is retired — it is a wrong PIN like any other (INVALID_APPROVER_PIN, counted); a
+ * branch where nobody may approve with a PIN answers NO_OVERRIDE_CONFIGURED (give someone an approval PIN in Staff).
  */
 async function approverByPin(req: any, authorizerId: string | undefined, pin: string | undefined, action: ApproveAction, branchId: string | null):
   Promise<{ userId: string | null } | { status: number; body: Record<string, string> }> {
@@ -238,22 +210,19 @@ async function approverByPin(req: any, authorizerId: string | undefined, pin: st
     if (!req.isOwner && ov.userId && ov.userId === req.userId) return { status: 403, body: { ...SELF_APPROVAL } };
     return { userId: ov.userId ?? null };
   }
-  // A355: the legacy business-wide supervisor PIN is still accepted (authorizedBy stays null — no one person).
-  const legacy = await verifySupervisorPin(req.businessId, pin);
-  if (legacy === true) { notePinSuccess(key); return { userId: null }; }
   // A505: the asker's OWN PIN — not a wrong guess: told someone else must approve, never a strike towards the PIN lock.
   if (ov.result === 'self') return { status: 403, body: { ...SELF_APPROVAL } };
-  if (ov.result === 'no_authorizers' && legacy === 'not_configured') return { status: 400, body: { ...NO_APPROVER } };
+  if (ov.result === 'no_authorizers') return { status: 400, body: { ...NO_APPROVER } };
   if (String(pin ?? '').trim()) notePinFailure(key);
   return { status: 403, body: { ...APPROVER_PIN_REFUSED } };
 }
 
-// What the till/web is told when no approval matched (A355). The legacy business-wide supervisor PIN is still tried
-// first by the caller; this is the answer when it does not match either. One wording for void and refund.
+// What the till/web is told when no approval matched (A355). One wording for void, refund and credit. A514: no business
+// supervisor PIN is tried any more.
 // ── A511: a sale on account (credit) ─────────────────────────────────────────
 // Owner, 2026-10-16: "the manager has to approve credit gate that behind a managers pin its not a cashiers right". Who
 // holds customers.credit (or the owner) sells on account as before; anyone else's credit leg needs the PIN of someone at
-// the sale's branch who holds it (approverByPin 'credit': never their own, the PIN limiter, the legacy supervisor PIN).
+// the sale's branch who holds it (approverByPin 'credit': never their own, the PIN limiter; A514: no business supervisor PIN).
 // The approver is written on the customer's ledger line. The web POS asks for the PIN on CREDIT_APPROVAL_REQUIRED.
 const CREDIT_APPROVAL_REQUIRED = {
   error: "A sale on account needs a manager's approval — enter their PIN.",
@@ -266,10 +235,10 @@ async function creditApproval(req: any, body: any, branchId: string | null):
   if (!pin) return { status: 403, body: { ...CREDIT_APPROVAL_REQUIRED } };
   const a = await approverByPin(req, typeof body?.credit_authorizer_id === 'string' ? body.credit_authorizer_id : undefined, pin, 'credit', branchId);
   if ('status' in a) return a;
-  let who = 'the supervisor PIN';
+  let who = 'a manager';
   if (a.userId) {
     const { data: u } = await supabase.from('users').select('name').eq('id', a.userId).eq('business_id', req.businessId).maybeSingle();
-    who = (u as { name?: string | null } | null)?.name || 'a manager';
+    who = (u as { name?: string | null } | null)?.name || who;
   }
   return { approvedBy: a.userId, note: ` — approved by ${who}` };
 }
@@ -279,7 +248,7 @@ const APPROVER_PIN_REFUSED = {
   code:  'INVALID_APPROVER_PIN',
 } as const;
 const NO_APPROVER = {
-  error: 'Nobody can approve this yet. Give a staff member a manager role and a PIN in Staff.',
+  error: 'Nobody at this branch can approve this yet. The owner or a manager gives someone who may approve an approval PIN in Staff.',
   code:  'NO_OVERRIDE_CONFIGURED',
 } as const;
 
@@ -1578,6 +1547,8 @@ router.post('/:id/refund', reversalGate('refund'), async (req, res) => {
     // and refund_authorized_by = the same owner (set below).
     authorizedBy = me;
   } else {
+    // A514: `supervisor_pin` is only the body field older tills send the approver's PIN in — a person's own PIN, never the
+    // retired business PIN (approverByPin checks people only).
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
     const a = await approverByPin(req, authorizer_id, pin, 'refund', order.branch_id ?? null);
     if ('status' in a) { res.status(a.status).json(a.body); return; }
@@ -1787,6 +1758,8 @@ router.post('/:id/void', reversalGate('void'), async (req, res) => {
     // and authorized_by = the same owner (set below).
     authorizedBy = me;
   } else if (isPaid) {
+    // A514: `supervisor_pin` is only the body field older tills send the approver's PIN in — a person's own PIN, never the
+    // retired business PIN (approverByPin checks people only).
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
     const a = await approverByPin(req, authorizer_id, pin, 'void', order.branch_id ?? null);
     if ('status' in a) { res.status(a.status).json(a.body); return; }

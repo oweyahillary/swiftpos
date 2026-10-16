@@ -264,7 +264,7 @@ export async function pinnedFetch(url: string, init: any = {}, pin: string): Pro
   const signal: AbortSignal | undefined = init.signal ?? undefined;
   if (signal?.aborted) throw signal.reason ?? new DOMException('This operation was aborted', 'AbortError');
 
-  return await new Promise<Response>((resolve, reject) => {
+  const attempt = (retried: boolean): Promise<Response> => new Promise<Response>((resolve, reject) => {
     let settled = false;
     const fail = (e: unknown) => { if (!settled) { settled = true; reject(e); } };
     const req = https.request({
@@ -308,12 +308,24 @@ export async function pinnedFetch(url: string, init: any = {}, pin: string): Pro
         const err = new TypeError('fetch failed'); (err as any).cause = new Error(`the branch server's certificate is outside its dates by this till's clock (${e.code}) — check this till's date and time`);
         return fail(err);
       }
+      // A515: a kept connection the server already closed (it restarted — A508 installs updates by itself now — or its
+      // keep-alive ran out under this request) fails before any answer, often as EPROTO / a reset: that is not "the
+      // server does not answer encrypted". Drop that pool's idle connections and ask once more on a fresh one; only
+      // that second answer counts. Identity and certificate refusals above are never retried.
+      if (!retried && (req as any).reusedSocket && !signal?.aborted && !settled) {
+        const pool = agentFor(pin, isGatewayPath(u.pathname)) as any;
+        for (const list of Object.values(pool.freeSockets ?? {})) for (const s of (list as any[]) ?? []) { try { s.destroy(); } catch { /* gone */ } }
+        settled = true;
+        attempt(true).then(resolve, reject);
+        return;
+      }
       const err = new TypeError('fetch failed'); (err as any).cause = e;
       if (isTlsHandshakeError(e)) (err as any).tlsHandshake = true;   // A501: lanFetch records it (never "encrypted")
       fail(err);
     });
     if (body) req.end(body); else req.end();
   });
+  return await attempt(false);
 }
 
 // ── The till's transport ────────────────────────────────────────────────────────────────────────────────────────────

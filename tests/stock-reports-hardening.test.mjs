@@ -413,8 +413,15 @@ try {
 
   console.log('\n6. The owner\'s own settings\n');
   reset();
-  await ok('6. supervisor PIN, M-Pesa credentials and unknown keys: the owner only; a known option: settings.business', async () => {
-    for (const key of ['supervisor_pin', 'mpesa_consumer_key', 'mpesa_passkey', 'mpesa_shortcode', 'some_new_key']) {
+  await ok('6. M-Pesa credentials and unknown keys: the owner only; a known option: settings.business; the supervisor PIN: nobody (A514)', async () => {
+    // A514: the business supervisor PIN is retired — refused for everyone (410 SUPERVISOR_PIN_RETIRED), the owner included.
+    for (const [who, t] of [['manager', T.mgr], ['owner', T.owner]]) {
+      for (const key of ['supervisor_pin', 'supervisor_pin_hash', 'Supervisor_PIN']) {
+        const r = await call('POST', '/api/business/settings', t, { key, value: '1234' });
+        assert.equal(r.status, 410, `${who} ${key}`); assert.equal(r.body.code, 'SUPERVISOR_PIN_RETIRED', `${who} ${key}`);
+      }
+    }
+    for (const key of ['mpesa_consumer_key', 'mpesa_passkey', 'mpesa_shortcode', 'some_new_key']) {
       const r = await call('POST', '/api/business/settings', T.mgr, { key, value: '1234' });
       assert.equal(r.status, 403, key); assert.equal(r.body.code, 'OWNER_ONLY', key);
     }
@@ -432,7 +439,7 @@ try {
     mem.db.business_settings.length = 0;
     assert.equal((await call('POST', '/api/business/settings', T.mgr, { key: 'scanner_beep', value: 'true' })).status, 200);
     assert.equal((await call('POST', '/api/business/settings', T.mgr, { key: 'parking_rate_suv', value: '300' })).status, 200);
-    assert.equal((await call('POST', '/api/business/settings', T.owner, { key: 'supervisor_pin', value: '1234' })).status, 200);
+    assert.ok(!mem.db.business_settings.some((r) => /supervisor_pin/.test(r.key)), 'A514: no supervisor PIN row written');
     assert.equal((await call('POST', '/api/business/settings', T.owner, { key: 'mpesa_shortcode', value: '174379' })).status, 200);
   });
   await ok('6. sign-in codes: the real owner only (not settings.pos, not a till)', async () => {
