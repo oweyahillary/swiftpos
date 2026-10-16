@@ -3,8 +3,12 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 import { stopWheelOnNumberInputs } from '../shared/numberInputs';
+import { startActivityPings } from './lib/activity';   // A508
 
 stopWheelOnNumberInputs(document);
+// A508: the screen in use (a key, a click, a touch; at most one ping every 30 s) — an update installs on its own only
+// when nobody is there. Once, here at the root.
+startActivityPings();
 
 // A299: forward renderer-side errors to the main-process log (swiftpos.log).
 // This is the piece that would have caught "[Overview] salesSummary failed" in

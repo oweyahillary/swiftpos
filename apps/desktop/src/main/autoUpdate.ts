@@ -10,6 +10,8 @@
  *   - On launch and every hour it asks the cloud (A348, below) and downloads an APPROVED newer version in the background.
  *   - It installs on the NEXT quit (autoInstallOnAppQuit) — a till is never interrupted
  *     mid-service and comes up updated when it is next closed (typically overnight).
+ *   - A508: or on its own, silently, when nobody is using the machine (idle in one of its quiet hours, learned from its
+ *     own sales) — createIdleInstaller below; a till left open and a branch server no longer wait for somebody to close them.
  *   - Nothing forced, nothing blocks trading: a failed check is logged and the till keeps
  *     selling on the current version.
  *
@@ -44,6 +46,14 @@ import { getNodePort } from './nodeServer';
 import { prepareShare, shareDir, onShareWanted, noteApprovedForShare } from './updateShare';   // A443
 import { lanFetch, lanUrl, trustPinnedNodeIn } from './lanTls';   // A489
 import { logLine } from './logFile';
+import { getLocalDb, closeLocalDb } from './localDb';
+import { activitySnapshot, installVerdict, loadUsageProfile, hourOfWeek, downloadedSince, type ActivitySnapshot, type InstallState } from './activityTracker';   // A508
+import { flushBeforeInstall, syncPushSince } from './syncEngine';   // A508
+import { stopNodeServer } from './nodeServer';   // A508
+import { readyVersion } from './updateShare';   // A508
+import { markQuitting } from './serverMode';   // A508
+import { execFile } from 'child_process';
+import { defaultTaskDeps, hasUpdaterTask, requestTaskInstall, updaterLogTail, type TaskInstallResult } from './updaterTask';   // A509
 
 const ONE_HOUR = 60 * 60 * 1000;   // A348: the approval check is one small JSON call
 
@@ -62,8 +72,13 @@ export interface UpdateStatus {
 
 let current: UpdateStatus = { state: 'idle', version: null, percent: null, note: null, checkedAt: null, approved: null };
 
-/** The renderer polls this on mount (in case it missed the push while loading). */
-export function getUpdateStatus(): UpdateStatus { return current; }
+/**
+ * The renderer polls this on mount (in case it missed the push while loading). A508: with the last idle install, for the
+ * Tech page only — the update bar (UpdateBanner) reads state/version and shows nothing for it.
+ */
+export function getUpdateStatus(): UpdateStatus & { idleInstall: (IdleInstallRecord & { ok: boolean }) | null } {
+  return { ...current, idleInstall: lastIdleInstall };
+}
 
 // ── A496: diagnostics — why a till did (not) update, in words a support person can read ─────────────────────────────
 const diag: Array<{ at: string; line: string }> = [];
@@ -74,13 +89,64 @@ export function noteUpdate(line: string, now = new Date()): void {
   try { logLine('update', line); } catch { /* logging never stops an update */ }
 }
 /** What the Tech page shows: the status, and the last decisions with their times (newest last). */
-export function getUpdateDiagnostics(): { status: UpdateStatus; running: string | null; log: Array<{ at: string; line: string }> } {
+export function getUpdateDiagnostics(): {
+  status: UpdateStatus; running: string | null; log: Array<{ at: string; line: string }>;
+  /** A508: the last idle install (from → to, when, whether this machine now runs it) and why the next has not happened. */
+  idleInstall: (IdleInstallRecord & { ok: boolean }) | null; idleNote: string | null;
+  /** A509: whether the updater task is installed (null: not known yet), and the last lines of its own log. */
+  updaterTask: { installed: boolean | null; log: string[] };
+} {
   let running: string | null = null;
   try { running = app.getVersion(); } catch { /* tests */ }
-  return { status: current, running, log: diag.slice() };
+  let log: string[] = [];
+  try { log = process.platform === 'win32' ? updaterLogTail(defaultTaskDeps()) : []; } catch { /* never */ }
+  return { status: getUpdateStatus(), running, log: diag.slice(), idleInstall: lastIdleInstall, idleNote,
+    updaterTask: { installed: taskKnown, log } };
 }
 /** Tests only. */
-export function _resetUpdateDiagnostics(): void { diag.length = 0; current = { state: 'idle', version: null, percent: null, note: null, checkedAt: null, approved: null }; }
+export function _resetUpdateDiagnostics(): void {
+  diag.length = 0; current = { state: 'idle', version: null, percent: null, note: null, checkedAt: null, approved: null };
+  lastIdleInstall = null; idleNote = null; taskKnown = null; taskCheckedAt = 0; taskInstallStarted = false; closeTaskDone = false;
+}
+
+// ── A509: the updater task (updaterTask.ts) — an install with no Windows prompt ─────────────────────────────────────
+/** Whether the "ZapTill Updater" task is there (null: not asked yet). Read synchronously at quit — kept fresh below. */
+let taskKnown: boolean | null = null;
+let taskCheckedAt = 0;
+/** An install through the task has been handed over: nothing else may install (electron-updater's quit handler). */
+let taskInstallStarted = false;
+/** Install-on-close has had its turn (the task, or the old way): the next quit goes through. */
+let closeTaskDone = false;
+
+/** Asked at most every 10 minutes (a technician may reinstall meanwhile). Never throws. */
+export async function updaterTaskAvailable(force = false): Promise<boolean> {
+  if (process.platform !== 'win32') { taskKnown = false; return false; }
+  if (!force && taskKnown !== null && Date.now() - taskCheckedAt < 10 * 60_000) return taskKnown;
+  const was = taskKnown;
+  taskKnown = await hasUpdaterTask(defaultTaskDeps()).catch(() => false);
+  taskCheckedAt = Date.now();
+  if (was !== taskKnown) {
+    noteUpdate(taskKnown ? 'the ZapTill updater task is installed — updates install without a Windows prompt'
+      : `no ZapTill updater task on this machine (installed before 1.0.16, or blocked) — updates install when ZapTill is closed, with Windows' prompt`);
+  }
+  return taskKnown;
+}
+
+/** The file electron-updater downloaded (BaseUpdater.installerPath — downloadedUpdateHelper.file), or null. */
+function downloadedInstaller(): string | null {
+  try { const p = (autoUpdater as any).installerPath; return typeof p === 'string' && p ? p : null; } catch { return null; }
+}
+
+/** Hand `version` to the updater task; on ok the caller quits (nothing else installs it). */
+async function installThroughTask(version: string, relaunch: boolean, timeoutMs?: number): Promise<TaskInstallResult> {
+  const r = await requestTaskInstall(defaultTaskDeps(), { version, installerPath: downloadedInstaller() ?? '', relaunch, timeoutMs });
+  if (r.ok) {
+    taskInstallStarted = true;
+    autoUpdater.autoInstallOnAppQuit = false;   // no second install by electron-updater as ZapTill quits
+    noteUpdate(`the updater task checked ${version} against the official release — ZapTill closes now and ${relaunch ? 'starts again' : 'stays closed'} after the install`);
+  }
+  return r;
+}
 
 function broadcast(): void {
   for (const w of BrowserWindow.getAllWindows()) {
@@ -99,9 +165,17 @@ function set(patch: Partial<UpdateStatus>): void {
  * half-restart a trading till. The manager gate is enforced in the IPC handler (isManager())
  * AND at the call site (banner PIN) — see ipcHandlers 'update:installNow'.
  */
-export function installUpdateNow(): { ok: boolean; reason?: string } {
+export async function installUpdateNow(): Promise<{ ok: boolean; reason?: string }> {
   if (!app.isPackaged) return { ok: false, reason: 'not packaged' };
   if (current.state !== 'downloaded') return { ok: false, reason: 'no update downloaded' };
+  if (taskInstallStarted) return { ok: true };
+  // A509: through the updater task — no Windows prompt; it starts ZapTill again after. Refused or no answer → as before.
+  if (current.version && await updaterTaskAvailable()) {
+    const r = await installThroughTask(current.version, true, 90_000);   // somebody is waiting at the till
+    if (r.ok) { markQuitting(); app.quit(); return { ok: true }; }
+    noteUpdate(`${r.reason} — installing ${current.version} the old way (Windows asks for permission)`);
+  }
+  closeTaskDone = true;   // A509: the quit below installs through electron-updater, not the close path
   // isSilent=false → show the installer progress window (no silent vanish);
   // isForceRunAfter=true → relaunch the till once the swap is done.
   autoUpdater.quitAndInstall(false, true);
@@ -354,6 +428,8 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
   // a download withdrawn below (shown as idle) is still known to be on disk and is never installed by a later check
   // that no longer sees 'downloaded'.
   let staged: string | null = null;
+  // A508: false once the cloud withdrew the version downloaded (a roll-back, a hold) — true again when it approves it.
+  let installable = true;
   const heldNewer = (s: UpdateStatus) => {
     if (s.state === 'downloaded' && s.version && VERSION_RE.test(s.version)) staged = s.version;
     return staged && VERSION_RE.test(d.running) && compareVersions(staged, d.running) > 0 ? staged : null;
@@ -396,6 +472,7 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
       // changes nothing; approval given back → it installs again.
       if (r.decision === 'hold' || r.decision === 'current' || r.decision === 'update') {
         const withdrawn = !!held && (r.decision === 'hold' || (!!r.approved && compareVersions(r.approved, held) < 0));
+        installable = !withdrawn;   // A508: the idle install obeys the same answer
         try { d.installOnQuit?.(!withdrawn); } catch { /* never stops a check */ }
         if (withdrawn) {
           const why = r.decision === 'hold' ? 'the business is on hold' : `the approved version is now ${r.approved}`;
@@ -432,7 +509,243 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
     await check('the branch server holds a newer version');
   }
 
-  return { check, ask, touch, stalled };
+  /**
+   * A508: the version that may be installed now, or null — downloaded (on disk and shown 'downloaded'), newer than what
+   * runs, and not withdrawn by the cloud's last answer (A503). The idle install asks this and nothing else.
+   */
+  const installableVersion = (): string | null => {
+    const s = d.status();
+    if (s.state !== 'downloaded' || !installable) return null;
+    const v = heldNewer(s);
+    return v && s.version === v ? v : null;
+  };
+
+  return { check, ask, touch, stalled, installableVersion };
+}
+
+// ── A508: the idle install — a downloaded, still-approved update installs on its own when nobody is using the machine ──
+//
+// Owner, 2026-10-16: "some clients take forever to update unless am there". A till left open and a branch server (never
+// closed) used to hold a downloaded update for ever: it installed only when ZapTill was closed. Now, checked every
+// minute: installVerdict (activityTracker.ts) says when — not busy, idle long enough, in one of THIS machine's quiet
+// hours (learned from its own sales) — and then: one sync push (at most 60 s), the record of what is being done, a
+// branch server stops serving (its tills see a clean disconnect and retry), the database is closed, and electron-updater
+// installs silently and starts ZapTill again (quitAndInstall(true, true)). It comes back to the normal start (the PIN
+// screen), the open drawer and day untouched (they live in the local database), a server serving again (index.ts).
+// The install-on-close and "Restart & update now" paths are unchanged.
+
+/** What the idle install recorded before it restarted (maintenance_state), read back after the restart. */
+export interface IdleInstallRecord { from: string; to: string; at: string; reason: 'idle'; why?: string; reported?: boolean }
+const IDLE_INSTALL_KEY = 'update_idle_install';
+let lastIdleInstall: (IdleInstallRecord & { ok: boolean }) | null = null;
+let idleNote: string | null = null;
+
+/** Written just before the install (the database is still open). Never throws. */
+export function recordIdleInstall(r: IdleInstallRecord): void {
+  try {
+    getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+      .run(IDLE_INSTALL_KEY, JSON.stringify(r), r.at);
+  } catch (e: any) { try { logLine('update', `could not record the idle install: ${e?.message ?? e}`); } catch { /* never */ } }
+}
+
+/**
+ * After a restart: what the last idle install did, as one plain sentence in the update log (once), and kept for the Tech
+ * page (getUpdateStatus / getUpdateDiagnostics). Never a banner for the cashier — the owner does not want one.
+ */
+export function reportIdleInstall(running: string): (IdleInstallRecord & { ok: boolean }) | null {
+  let r: IdleInstallRecord | null = null;
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(IDLE_INSTALL_KEY) as { value?: string } | undefined;
+    r = row?.value ? JSON.parse(row.value) as IdleInstallRecord : null;
+  } catch { r = null; }
+  if (!r || typeof r.to !== 'string' || typeof r.from !== 'string') return null;
+  const ok = running === r.to;
+  const when = (() => { const d = new Date(r!.at); return isNaN(d.getTime()) ? r!.at : d.toLocaleString(); })();
+  if (!r.reported) {
+    noteUpdate(ok ? `updated from ${r.from} to ${r.to} while idle (${when}${r.why ? `, ${r.why}` : ''})`
+      : `an install of ${r.to} while idle was started at ${when}, but this machine still runs ${running} — it installs when ZapTill is next closed`);
+    try {
+      getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+        .run(IDLE_INSTALL_KEY, JSON.stringify({ ...r, reported: true }), new Date().toISOString());
+    } catch { /* logged twice at worst */ }
+  }
+  lastIdleInstall = { ...r, ok };
+  return lastIdleInstall;
+}
+
+/** How the machine finds out whether Windows would stop an install nobody is there for. */
+export interface ElevationProbe {
+  platform: string;
+  /** latest.yml's isAdminRightsRequired for the download (a per-machine install: true). Null: not known (taken as true). */
+  adminRequired: boolean | null;
+  /** Runs a Windows command; resolves with its exit code and output (never rejects). */
+  run: (cmd: string, args: string[]) => Promise<{ code: number; out: string }>;
+  /** A509: the "ZapTill Updater" task is installed — it installs with administrator rights, no prompt. */
+  task?: () => Promise<boolean>;
+}
+
+/**
+ * A508: why Windows would stop a SILENT install here (one phrase), or null when it would not. ZapTill installs per
+ * machine (electron-builder.config.js nsis.perMachine — needed for the firewall rules in build/installer.nsh), so its
+ * installer needs administrator rights and electron-updater starts it through elevate.exe. With nobody at the machine:
+ *   - already elevated (net session succeeds), or an administrator account whose Windows elevates without asking
+ *     (ConsentPromptBehaviorAdmin = 0) → no prompt: installs;
+ *   - an administrator account with the usual UAC prompt, or a standard account (Windows asks for an administrator's
+ *     password) → the prompt would wait on an empty shop with ZapTill already closed. Never done: it installs when
+ *     ZapTill is next closed, as before, and the Tech page says why.
+ */
+export async function silentInstallBlocker(p: ElevationProbe): Promise<string | null> {
+  if (p.platform !== 'win32') return null;
+  if (p.adminRequired === false) return null;
+  try {
+    if (p.task && await p.task().catch(() => false)) return null;   // A509: the updater task installs with no prompt
+    if ((await p.run('net', ['session'])).code === 0) return null;   // this process is already elevated
+    const groups = await p.run('whoami', ['/groups']);
+    if (groups.code !== 0) return 'Windows could not say whether it would ask for an administrator\'s permission';
+    if (!/S-1-5-32-544/i.test(groups.out)) return 'this Windows account is not an administrator, so Windows would ask for an administrator\'s password';
+    const q = await p.run('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System', '/v', 'ConsentPromptBehaviorAdmin']);
+    const m = /ConsentPromptBehaviorAdmin\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(q.out);
+    if (q.code === 0 && m && parseInt(m[1], 16) === 0) return null;   // administrators elevate without a prompt
+    return 'Windows asks for permission (UAC) before an install, and nobody is there to give it';
+  } catch (e: any) {
+    return `Windows could not say whether it would ask for permission (${e?.message ?? e})`;
+  }
+}
+
+export interface IdleInstallDeps {
+  running: string;
+  /** The update downloaded and ready (null: none), and whether the cloud still approves it (A503). */
+  candidate: () => { version: string | null; approved: boolean };
+  isServer: () => boolean;
+  /** A496: a branch server holds the branch's copy of `version` ready for its tills. */
+  shareReady: (version: string) => boolean;
+  /** silentInstallBlocker for this download. */
+  blocker: () => Promise<string | null>;
+  activity: () => ActivitySnapshot;
+  quiet: (now: number) => boolean;
+  downloadedAt: (version: string) => number | null;
+  syncSince: () => number | null;
+  flush: (timeoutMs: number) => Promise<{ pushed: number; errors: string[]; timedOut: boolean }>;
+  /** Lets the window close and keeps server mode's start-with-Windows (serverMode.markQuitting). */
+  markQuitting: () => void;
+  stopNodeServer: () => void;
+  record: (r: IdleInstallRecord) => void;
+  closeDb: () => void;
+  quitAndInstall: (isSilent: boolean, isForceRunAfter: boolean) => void;
+  log: (line: string) => void;
+  /** Told the current "why not yet" (the Tech page). */
+  note?: (line: string | null) => void;
+  /** An idle install of `version` was started before and this machine came back on the old version. */
+  failedBefore?: (version: string) => boolean;
+  now?: () => number;
+  flushMs?: number;
+  /**
+   * A509: install through the updater task — null: no task here (quitAndInstall, as before); ok: the script checked the
+   * installer and waits for ZapTill to close; refused: ZapTill keeps running and installs the update when closed.
+   */
+  viaTask?: (version: string) => Promise<TaskInstallResult | null>;
+  /** A509: electron-updater's autoInstallOnAppQuit — off once the task has the install (no double install). */
+  installOnQuit?: (on: boolean) => void;
+  /** A509: quit ZapTill (the task installs it once it has closed, and starts it again). */
+  quit?: () => void;
+}
+
+/** A509: after the updater task refused a version, the idle install does not ask again for this long. */
+export const TASK_REFUSED_RETRY_MS = 6 * 60 * 60_000;
+
+/** A508: the minute check. tick() → the verdict; when it says install, the install sequence runs (once). */
+export function createIdleInstaller(d: IdleInstallDeps) {
+  const now = d.now ?? Date.now;
+  let installing = false;
+  let lastSaid = '';
+  let refused: { version: string; at: number; reason: string } | null = null;   // A509
+  async function tick(): Promise<{ install: boolean; reason: string }> {
+    if (installing) return { install: false, reason: 'the install is already under way' };
+    const t = now();
+    const c = d.candidate();
+    const server = d.isServer();
+    const a = d.activity();
+    const v = c.version;
+    const state: InstallState = {
+      running: d.running, downloaded: v, approved: c.approved,
+      downloadedAt: v ? d.downloadedAt(v) : null,
+      shareReady: !v || !server || d.shareReady(v),
+      blocker: null, busy: a.busy,
+      lastActivity: server ? Math.max(a.lastUse, a.lastTill) : a.lastUse,
+      lastTill: server ? a.lastTill : 0,
+      quietNow: d.quiet(t), syncSince: d.syncSince(),
+    };
+    // The Windows question only once there is something to install (it runs three small commands, cached by the caller).
+    if (v && c.approved) state.blocker = await d.blocker().catch((e: any) => `Windows could not be asked (${e?.message ?? e})`);
+    // An idle install of this very version that did not take (the machine came back on the old one) is not tried again
+    // and again — once is enough; it installs when ZapTill is closed.
+    if (v && !state.blocker && d.failedBefore?.(v)) state.blocker = 'an earlier install of it while idle did not take';
+    if (v && !state.blocker && refused && refused.version === v && t - refused.at < TASK_REFUSED_RETRY_MS) state.blocker = `the updater task refused it (${refused.reason})`;
+    const verdict = installVerdict(state, t);
+    if (!verdict.install) {
+      d.note?.(v ? verdict.reason : null);
+      // One line when the reason changes (not one a minute: "in use 3 min ago" → "4 min ago" is the same reason).
+      const gist = verdict.reason.replace(/\d+/g, '#');
+      if (v && gist !== lastSaid) { lastSaid = gist; d.log(`idle install of ${v}: ${verdict.reason}`); }
+      return verdict;
+    }
+    installing = true;
+    const r = await runIdleInstall(d, server, d.running, v!, verdict.reason, now);
+    if (!r.started) {   // A509: the task refused — ZapTill kept running; not asked again for a while
+      installing = false;
+      refused = { version: v!, at: t, reason: r.reason };
+      return { install: false, reason: r.reason };
+    }
+    return verdict;
+  }
+  return { tick, installing: () => installing };
+}
+
+/** The install itself: say it, push, record, stop serving, close the database, install silently and restart. */
+export async function runIdleInstall(d: IdleInstallDeps, server: boolean, from: string, to: string, why: string,
+                                     now: () => number = Date.now): Promise<{ started: boolean; reason: string }> {
+  const step = (what: string, f: () => void) => { try { f(); } catch (e: any) { d.log(`idle install: ${what} failed (${e?.message ?? e}) — going on`); } };
+  d.log(`installing ${to} now while nobody is using this ${server ? 'branch server' : 'till'} (${why}) — ZapTill restarts on its own in a minute or two`);
+  d.note?.(`installing ${to} (${why})`);
+  try {
+    const f = await d.flush(d.flushMs ?? 60_000);
+    if (f.timedOut || f.errors.length) d.log(`the sync before the install did not finish (${f.errors.slice(0, 2).join('; ') || 'no answer'}) — what is left is kept on this machine and goes up after the restart`);
+  } catch (e: any) { d.log(`the sync before the install failed (${e?.message ?? e}) — what is left goes up after the restart`); }
+  // A509: the updater task checks the download BEFORE anything is stopped — a refusal (offline, a policy, antivirus)
+  // leaves ZapTill exactly as it was, still serving, and the update installs when it is next closed.
+  let task: TaskInstallResult | null = null;
+  if (d.viaTask) task = await d.viaTask(to).catch((e: any) => ({ ok: false as const, reason: `the updater task could not be asked (${e?.message ?? e})` }));
+  if (task && !task.ok) {
+    d.log(`idle install of ${to}: ${task.reason} — ZapTill keeps running; it installs when it is next closed`);
+    d.note?.(`${task.reason} — it installs when ZapTill is closed`);
+    return { started: false, reason: task.reason };
+  }
+  step('recording it', () => d.record({ from, to, at: new Date(now()).toISOString(), reason: 'idle', why }));
+  step('leaving server mode open', () => d.markQuitting());
+  if (server) step('stopping the branch server', () => d.stopNodeServer());   // its tills see a clean disconnect and retry
+  step('closing the database', () => d.closeDb());
+  if (task?.ok) {
+    // The script holds the checked copy and waits for ZapTill to close; it installs and starts ZapTill again (the
+    // "ZapTill Relaunch" task, in the user's session). electron-updater must not install it a second time at quit.
+    step('turning off install-on-quit', () => d.installOnQuit?.(false));
+    d.quit?.();
+    return { started: true, reason: 'the updater task' };
+  }
+  d.quitAndInstall(true /* silent */, true /* start ZapTill again after */);
+  return { started: true, reason: 'electron-updater' };
+}
+
+/**
+ * A509: at quit — the version to hand to the updater task, or null (the quit goes on: nothing downloaded, already
+ * handed over, electron-updater already installing, install-on-quit off (A503), no task, or this close had its turn).
+ */
+export function closeInstallPlan(s: {
+  platform: string; taskKnown: boolean | null; taskInstallStarted: boolean; closeTaskDone: boolean; quitAndInstallCalled: boolean;
+  installOnQuit: boolean; state: UpdateState; version: string | null; installerPath: string | null;
+}): string | null {
+  if (s.platform !== 'win32' || s.taskKnown !== true || s.taskInstallStarted || s.closeTaskDone || s.quitAndInstallCalled) return null;
+  if (!s.installOnQuit || s.state !== 'downloaded' || !s.version || !VERSION_RE.test(s.version) || !s.installerPath) return null;
+  return s.version;
 }
 
 export function initAutoUpdate(): void {
@@ -542,6 +855,91 @@ export function initAutoUpdate(): void {
 
   // A348: each download request goes through the cloud's approval check — no range-by-range differential download.
   autoUpdater.disableDifferentialDownload = true;
+
+  // A508: what the last idle install did (logged once after its restart; the Tech page shows it).
+  try { reportIdleInstall(running); } catch { /* never stops the updater */ }
+  // A508: every minute — may the downloaded update install now, with nobody there? (installVerdict)
+  let elevation: { version: string; at: number; answer: Promise<string | null> } | null = null;
+  const idle = createIdleInstaller({
+    running,
+    candidate: () => {
+      const v = current.state === 'downloaded' ? current.version : null;
+      return { version: v, approved: !!v && loop.installableVersion() === v };
+    },
+    isServer: () => isNodeRole(getDeviceConfig()?.device_role ?? null),
+    shareReady: (v) => !!readyVersion(shareDir(), v),
+    // Asked once per download and again every 6 hours (a technician may change the account or UAC meanwhile).
+    blocker: () => {
+      const v = current.version ?? '';
+      if (!elevation || elevation.version !== v || Date.now() - elevation.at > 6 * ONE_HOUR) {
+        const info = (autoUpdater as any).downloadedUpdateHelper?.downloadedFileInfo;
+        elevation = { version: v, at: Date.now(), answer: silentInstallBlocker({
+          platform: process.platform,
+          task: () => updaterTaskAvailable(),   // A509
+          adminRequired: typeof info?.isAdminRightsRequired === 'boolean' ? info.isAdminRightsRequired : null,
+          run: (cmd, args) => new Promise((resolve) => {
+            execFile(cmd, args, { windowsHide: true, timeout: 15_000 }, (err, out) => resolve({ code: err ? (typeof (err as any).code === 'number' ? (err as any).code : 1) : 0, out: String(out ?? '') }));
+          }),
+        }) };
+      }
+      return elevation.answer;
+    },
+    activity: () => activitySnapshot(),
+    quiet: (t) => {
+      const cfg = getDeviceConfig();
+      return loadUsageProfile({ server: isNodeRole(cfg?.device_role ?? null), deviceId: cfg?.device_id ?? null }, t).quiet[hourOfWeek(t)];
+    },
+    downloadedAt: (v) => downloadedSince(v),
+    syncSince: () => syncPushSince(),
+    flush: (ms) => flushBeforeInstall(ms),
+    markQuitting: () => markQuitting(),
+    stopNodeServer: () => stopNodeServer(),
+    record: (r) => recordIdleInstall(r),
+    closeDb: () => closeLocalDb(),
+    // A509: through the updater task when this machine has it (no Windows prompt), else quitAndInstall below.
+    viaTask: async (v) => (await updaterTaskAvailable()) ? installThroughTask(v, true) : null,
+    installOnQuit: (on) => { autoUpdater.autoInstallOnAppQuit = on; },
+    quit: () => {
+      app.quit();
+      // A quit held up (a window refusing to close) must not leave the script waiting: ZapTill is ended after a minute.
+      setTimeout(() => app.exit(0), 60_000);
+    },
+    quitAndInstall: (silent, runAfter) => {
+      closeTaskDone = true;   // A509: this install goes through electron-updater, not the close path
+      autoUpdater.quitAndInstall(silent, runAfter);
+      // The installer did not start (electron-updater found no file, or refused): ZapTill is not left half-shut — the
+      // database closed and the server stopped — it starts again as it was, and the update waits for the next chance.
+      setTimeout(() => {
+        noteUpdate('the idle install did not start — ZapTill restarts as it was; the update installs when it is next closed');
+        app.relaunch(); app.exit(0);
+      }, 2 * 60_000);
+    },
+    log: noteUpdate,
+    note: (line) => { idleNote = line; },
+    failedBefore: (v) => !!lastIdleInstall && !lastIdleInstall.ok && lastIdleInstall.to === v,
+  });
+  setInterval(() => { void idle.tick().catch((e: any) => noteUpdate(`idle install check failed: ${e?.message ?? e}`)); }, 60_000);
+
+  // A509: install-on-close through the updater task too (no Windows prompt when the till is shut at night). ZapTill is
+  // held open (its windows already gone) while the script checks the download — at most 90 s; refused or no answer →
+  // electron-updater installs it as before (elevate.exe: Windows asks — somebody is closing it).
+  void updaterTaskAvailable();
+  setInterval(() => { void updaterTaskAvailable(); }, ONE_HOUR);
+  app.on('will-quit', (e) => {
+    const plan = closeInstallPlan({
+      platform: process.platform, taskKnown, taskInstallStarted, closeTaskDone,
+      quitAndInstallCalled: !!(autoUpdater as any).quitAndInstallCalled,
+      installOnQuit: autoUpdater.autoInstallOnAppQuit, state: current.state, version: current.version,
+      installerPath: downloadedInstaller(),
+    });
+    if (!plan) return;
+    e.preventDefault();
+    closeTaskDone = true;
+    noteUpdate(`ZapTill is closing with ${plan} downloaded — installing it through the updater task`);
+    void installThroughTask(plan, false, 90_000).then((r) => {
+      if (!r.ok) noteUpdate(`${r.reason} — installing ${plan} the old way as ZapTill closes (Windows asks for permission)`);
+    }).catch(() => { /* the old way */ }).finally(() => app.quit());
+  });
 
   void loop.check('start');
   setInterval(() => { void loop.check('hourly'); }, ONE_HOUR);

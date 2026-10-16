@@ -58,6 +58,11 @@ module.exports = {
     '!node_modules/better-sqlite3/{src,deps,build/Release/obj,build/Release/obj.target}/**',
     '!node_modules/better-sqlite3/build/**/*.{o,a,lib,exp,pdb,ilk}',
   ],
+  // A509: the updater task's script, shipped as resources\updater\zaptill-update.ps1 (a reference copy a technician can
+  // read). The task never runs this copy: build/installer.nsh writes the script straight from the installer's own
+  // payload into "%ProgramFiles%\ZapTill Updater" (administrators only) — the install folder can be chosen, and may not
+  // be locked down.
+  extraResources: [{ from: 'updater', to: 'updater', filter: ['zaptill-update.ps1'] }],
   linux: { target: ['AppImage', 'deb'] },
   win: {
     // A288: NSIS only. The portable target published a second, updater-invisible

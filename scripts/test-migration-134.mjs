@@ -100,7 +100,10 @@ await override(MARY, 'reports.sales', true);          // …but the sales report
 await override(JOE, 'settings.manage', true);         // Joe was given the settings
 
 await db.exec(sanitize(fs.readFileSync(path.join(MIG, THIS), 'utf8')));
-for (const f of files.filter((f) => num(f) > 134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
+// A510: up to 138 — 139 deliberately corrects 134's "a role without orders.create cannot sell" (selling was never
+// checked before A490); test-migration-139.mjs proves that. This test keeps proving 134 as written.
+const AFTER_134 = (f) => num(f) > 134 && num(f) < 139;
+for (const f of files.filter(AFTER_134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
 
 // What the roles must hold: the catalogue's own expansion, plus what had no check before (per the switches).
 const confirms = (keys) => CAT.expandKeys(keys).has('shifts.confirm');
@@ -185,7 +188,7 @@ await ok('134 runs twice without error and records itself once; a second run cha
   const before = {}; for (const [n, r] of Object.entries(ROLES)) before[n] = sorted(await roleKeys(r.id));
   // A rerun replays 134 and what came after it (135 retires settings.updates again), as the migration runner would.
   await db.exec(sanitize(fs.readFileSync(path.join(MIG, THIS), 'utf8')));
-  for (const f of files.filter((f) => num(f) > 134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
+  for (const f of files.filter(AFTER_134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
   for (const [n, r] of Object.entries(ROLES)) assert.deepEqual(sorted(await roleKeys(r.id)), before[n], n);
   const r = await one(`SELECT count(*)::int AS n FROM public.schema_migrations WHERE version = '134_permission_catalogue'`);
   assert.equal(r.n, 1);

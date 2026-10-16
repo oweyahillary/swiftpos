@@ -30,6 +30,7 @@ import { escposEnabled, setEscposEnabled } from '../escposBridge';
 import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@swiftpos/printing';
 import { printHtmlSilent } from '../printService';   // A454: the Z-report on the Windows receipt printer
 import { getBranding } from '../localDb';
+import { noteActivity, setPrintPendingProbe } from '../activityTracker';   // A508
 import { signedInCan } from '../tillAccess';   // A490
 import { getActiveSession } from '../techService';   // A490: a technician sets printers up before anyone signs in
 import { sampleOrder, sampleBusiness, SAMPLE_KITCHEN, SAMPLE_DISPATCH,
@@ -76,6 +77,11 @@ export function initPrinting(database: Database.Database, win: () => BrowserWind
     // Pushed to the renderer so the queue badge updates without polling.
     onChange: () => win()?.webContents.send('escpos:changed'),
   });
+
+  // A508: tickets still to go out (queued or printing, from the last 15 min — a job retrying for hours against a printer
+  // that is off does not hold an update back for ever) keep the till "busy" for the idle install.
+  setPrintPendingProbe(() => Number((database.prepare(
+    `SELECT COUNT(*) n FROM print_jobs WHERE status IN ('queued','printing') AND created_at > ?`).get(Date.now() - 15 * 60_000) as { n?: number } | undefined)?.n ?? 0));
 
   const recovered = spool.recoverStuck();
   if (recovered > 0) {
@@ -154,6 +160,7 @@ export function queueTickets(
   // stations' tickets down with it, and the cashier is told (order:create → the sale screen), not just the log.
   const failed: string[] = [];
 
+  if (contexts.length) noteActivity('print');   // A508: a ticket queued — the till is in use
   for (const station of stations) {
     const assignment = assignmentFor(station.id);
     if (!assignment) { skipped.push(station.name); continue; }

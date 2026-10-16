@@ -20,6 +20,7 @@ import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
 import { nonCashExpenses, expenseLabel, cleanExpenseMethod } from './expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from './confirmReasons';
 import { kitchenVoidsForShift, type KitchenVoidLine } from './kitchenService';
+import { noteActivity } from './activityTracker';   // A508
 import type { KitchenVoidSummary } from './kitchenLines';
 import { riderSummary, type RiderLine } from './delivery';   // 0.6.33: the riders summary
 import { signedIn as sessionPerson, personCan, seesAllHistory } from './tillAccess';   // A490: the till's one rule
@@ -209,6 +210,7 @@ export function getStaleShift(): StaleShift | null {
 }
 
 export function openShift(opening_float = 0, drawerLabel?: string | null): any {
+  noteActivity('shift');   // A508: a drawer opened — the till is in use
   // Phase 3: an office machine has no drawer to open. Refused in MAIN, not
   // just hidden in the renderer — a hidden button is a suggestion, this is
   // the rule.
@@ -718,6 +720,7 @@ export function blindReport(z: ZReport, seesSales: boolean = getCashierSeesShift
 
 export function closeShift(closing_float: number, notes?: string, foreign: ForeignCash | null = null,
                            declared: Record<string, number> | null = null): ZReport {
+  noteActivity('shift');   // A508: a drawer closed — the till is in use
   const db = getLocalDb();
   const shift = getOpenShift();
   if (!shift) throw new Error('No open shift to close');

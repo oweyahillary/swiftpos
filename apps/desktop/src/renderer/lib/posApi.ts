@@ -630,7 +630,13 @@ declare global {
         getStatus: () => Promise<{ state: string; version: string | null; percent: number | null }>;
         /** A496: the status with its reason (note), when it last checked, the approved version, and the last log lines. */
         getDiagnostics: () => Promise<{ status: { state: string; version: string | null; percent: number | null; note?: string | null; checkedAt?: string | null; approved?: string | null };
-                                        running: string | null; log: Array<{ at: string; line: string }> }>;
+                                        running: string | null; log: Array<{ at: string; line: string }>;
+                                        /** A508: the last idle install (shown on the Tech page only — never a cashier banner). */
+                                        idleInstall?: { from: string; to: string; at: string; reason: 'idle'; why?: string; ok: boolean } | null;
+                                        /** A508: why the downloaded update has not installed on its own yet. */
+                                        idleNote?: string | null;
+                                        /** A509: the updater task (installs with no Windows prompt) and its own log's last lines. */
+                                        updaterTask?: { installed: boolean | null; log: string[] } }>;
         installNow: () => Promise<{ ok: boolean; reason?: string }>;
         /** A490: identify the PIN's holder (never sign them in); they must hold shifts.close_day. */
         installWithPin: (pin: string) => Promise<{ ok: boolean; reason?: string; message?: string }>;

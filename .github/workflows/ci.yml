@@ -981,6 +981,23 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/update-delivery-electron.test.mjs
 
+      # A508 — usage-aware silent updates: a till left open and a branch server install their downloaded, still-approved
+      # update on their own when nobody is using them (quiet hours learned from their own sales; never busy, never a
+      # withdrawn version, never where Windows would ask for permission).
+      - name: Desktop silent updates when idle
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/silent-update-a508.test.mjs
+
+      # A509 — a safe elevated updater task: the installer registers "ZapTill Updater" (SYSTEM, no trigger, a fixed
+      # script, users may run not change) and "ZapTill Relaunch" (the user's session); the app writes an untrusted
+      # request; the script refuses downgrades and checks the COPY's SHA-512/size against latest.yml over HTTPS.
+      # The PowerShell cases run on Windows only (SKIPPED here); the app side and the installer checks run everywhere.
+      - name: Desktop updater task (no Windows prompt, safely)
+        working-directory: apps/desktop
+        run: node --no-warnings test/updater-task-a509.test.mjs
+
       # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
       # proven till, joins, the gateway's path check, the roster, TLS pins.
       - name: Desktop branch server hardening
