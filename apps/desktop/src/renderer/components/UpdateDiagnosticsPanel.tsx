@@ -49,6 +49,9 @@ export default function UpdateDiagnosticsPanel() {
             : 'Updater task: not installed — updates install when ZapTill is closed, and Windows asks for permission. Reinstalling ZapTill adds it.'}
         </p>
       )}
+      {/* A513: how the last start went (Tech page only — never a cashier banner), and the low-memory graphics mode. */}
+      {diag.startup && <p data-testid="startup-line" className="text-gray-500">Last start — {diag.startup}.</p>}
+      {diag.graphics && <p data-testid="graphics-line" className="text-gray-500">{diag.graphics.replace(/^graphics: /, 'Graphics: ')}.</p>}
       {(diag.log.length > 0 || (diag.updaterTask?.log.length ?? 0) > 0) && (
         <>
           <button onClick={() => setOpen((o) => !o)} className="text-gray-400 hover:text-gray-200 underline">

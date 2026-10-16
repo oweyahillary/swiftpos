@@ -238,7 +238,9 @@ console.log('\nThe branch, the lock screen, the timer\n');
   ok('…and has its way out: Sign out — another person signs in', /data-testid="lock-sign-out" onClick=\{onSignOut\}/.test(curtain)
     && /onSignOut=\{\(\) => \{ void handleEndShift\(\); \}\}/.test(fs.readFileSync(path.join(srcRoot, 'renderer/App.tsx'), 'utf8')));
   const idx = fs.readFileSync(path.join(srcRoot, 'main/index.ts'), 'utf8');
-  ok('every till refreshes its copy on a timer (10 s on a server, 20 s on a till) from start-up', /configureStaffRoster\(\(path\) => rosterCloudGet\(path\)\);\n\s+startStaffRosterTimer\(\);/.test(idx));
+  // A513: from start-up — the sequence's 'staff' step pulls it (second, after the catalogue), then the timer runs.
+  ok('every till refreshes its copy on a timer (10 s on a server, 20 s on a till) from start-up', /configureStaffRoster\(\(path\) => rosterCloudGet\(path\)\);/.test(idx)
+    && /startStaffRosterTimer\(false\);/.test(idx) && /\{ name: 'staff', what: 'staff list, PINs and permissions', run: \(\) => refreshStaffRosterNow\('start'\) \}/.test(idx));
 }
 
 console.log('\nThe lock screen keeps the session (session audit)\n');

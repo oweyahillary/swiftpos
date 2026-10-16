@@ -143,10 +143,10 @@ export async function staffChangedHere(): Promise<void> {
 }
 
 let timer: NodeJS.Timeout | null = null;
-/** Every 10 s on a branch server, 20 s on any other till; once now. */
-export function startStaffRosterTimer(): void {
+/** Every 10 s on a branch server, 20 s on any other till; once now (A513: not when the start-up sequence just pulled it). */
+export function startStaffRosterTimer(pullNow = true): void {
   if (timer) return;
   const every = isNodeRole(getDeviceConfig()?.device_role ?? null) ? 10_000 : 20_000;
-  void refreshStaffRosterNow('start');
+  if (pullNow) void refreshStaffRosterNow('start');
   timer = setInterval(() => { void refreshStaffRosterNow('timer'); }, every);
 }

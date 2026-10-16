@@ -636,7 +636,9 @@ declare global {
                                         /** A508: why the downloaded update has not installed on its own yet. */
                                         idleNote?: string | null;
                                         /** A509: the updater task (installs with no Windows prompt) and its own log's last lines. */
-                                        updaterTask?: { installed: boolean | null; log: string[] } }>;
+                                        updaterTask?: { installed: boolean | null; log: string[] };
+                                        /** A513: the last start's timing line (ready / window / sync sequence / memory), and the graphics mode. */
+                                        startup?: string | null; graphics?: string | null }>;
         installNow: () => Promise<{ ok: boolean; reason?: string }>;
         /** A490: identify the PIN's holder (never sign them in); they must hold shifts.close_day. */
         installWithPin: (pin: string) => Promise<{ ok: boolean; reason?: string; message?: string }>;

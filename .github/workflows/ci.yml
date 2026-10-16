@@ -998,6 +998,23 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/updater-task-a509.test.mjs
 
+      # A512 — one "start with Windows" entry under one fixed name (the pre-1.0.5 electron.app.* entries removed, so
+      # ZapTill is not started twice at sign-in); the machine identity read once and kept (no PowerShell at every start).
+      - name: Desktop startup — one entry, no PowerShell at every start
+        working-directory: apps/desktop
+        run: node --no-warnings test/startup-impact-a512.test.mjs
+
+      # A513 — a low-impact start: a sign-in task 45 s after sign-in (no Run-key Startup app); a till's launch ends before
+      # anything loads; a branch server starts in the tray with no window; start-up sync one capped step at a time
+      # (catalogue -> staff -> settings -> push -> pulls); the first update check after start-up and >= 4 min; no spell
+      # checker; low-memory mode; the restart task IgnoreNew (no taskbar "peeping"); printer paper sizes kept; one timing
+      # line per start.
+      - name: Desktop low-impact start
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/low-impact-start-a513.test.mjs
+
       # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
       # proven till, joins, the gateway's path check, the roster, TLS pins.
       - name: Desktop branch server hardening

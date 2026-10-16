@@ -982,6 +982,54 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
   return { pulled, pushed, errors };
 }
 
+/**
+ * A513: the start-up sequence's first step — syncAll's pull and nothing else: this till's own logo / routing go up
+ * first (so the pull does not put the old ones back), then the catalogue (menu, prices, offers, payment methods,
+ * M-Pesa, business settings — one /api/pos/init), renewed once on a 401, and the screens told. The pushes and the
+ * other pulls are later steps of their own (index.ts).
+ */
+export async function pullCatalogueNow(): Promise<{ pulled: boolean; errors: string[] }> {
+  if (!_accessToken || !_serverUrl) return { pulled: false, errors: ['Not configured'] };
+  if (!isOnline()) return { pulled: false, errors: ['Offline'] };
+  const me = takeSyncFlag();
+  if (!me) return { pulled: false, errors: ['Sync already in progress'] };
+  const errors: string[] = [];
+  let pulled = false;
+  try {
+    await refreshDeviceTokenIfExpiring();
+    if (brandingPushPending()) { try { await pushBrandingNow(); } catch { /* stays pending */ } }
+    if (stationRoutingPending()) { try { await pushStationRoutingNow(); } catch { /* stays pending */ } }
+    const pullSafely = () => pullCatalogueOnce().catch((e: any) => {
+      errors.push(`Catalogue pull: ${e?.message ?? e}`);
+      logLine('sync', `catalogue pull threw: ${e?.message ?? e}`);
+      return false;
+    });
+    pulled = await pullSafely();
+    if (!pulled && _lastPullStatus === 401 && (_refreshToken || persistedRefresh())) {
+      if (await refreshAccessToken()) pulled = await pullSafely();
+    }
+    if (pulled) notifyCataloguePulled();
+  } catch (err: any) {
+    errors.push(err.message ?? 'Unknown sync error');
+  } finally {
+    releaseSyncFlag(me);
+  }
+  return { pulled, errors };
+}
+
+/** A513: the branch's technician settings (reveal code, verification key) — syncAll's, as a start-up step of its own. */
+export async function refreshTechConfigNow(): Promise<void> {
+  if (!_accessToken || !_serverUrl || !isOnline()) return;
+  try { await refreshTechConfig(_accessToken); } catch { /* non-fatal */ }
+}
+
+/** A513: syncAll's remote instructions (a day close from the web, test data cleared) — a start-up step of their own. */
+export async function runRemoteInstructionsNow(): Promise<void> {
+  if (!_accessToken || !_serverUrl || !isOnline()) return;
+  try { await runDayCloseInstructions([]); } catch { /* non-fatal */ }
+  try { await runTestDataClears(); } catch { /* non-fatal */ }
+}
+
 // A275 — pull any remote day-close instruction and execute it LOCALLY, then ack.
 // The till is the cash authority: executeCloseDay computes this till's own expected
 // cash + variance. Idempotent — a day already closed acks success (already_closed),
@@ -1235,7 +1283,9 @@ function notifyCataloguePulled(): void {
   }
 }
 
-export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pulled: boolean }> {
+export async function pullIfCatalogueChanged(o: { pullOnly?: boolean } = {}): Promise<{ changed: boolean; pulled: boolean }> {
+  // A513: at start-up the pull alone (pullCatalogueNow) — the pushes and the other pulls are the sequence's later steps.
+  const run = o.pullOnly ? pullCatalogueNow : syncAll;
   if (!_accessToken || !_serverUrl) return { changed: false, pulled: false };
   if (!isOnline()) return { changed: false, pulled: false };
 
@@ -1265,7 +1315,7 @@ export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pull
     // A448: no cloud — a change made on another till of this branch reached the branch server: pull it from there.
     const nodeVersion = await nodeChangeVersion().catch(() => null);
     if (nodeVersion && nodeVersion !== _lastNodeChangeVersion) {
-      const r = await syncAll();
+      const r = await run();
       if (r.pulled) _lastNodeChangeVersion = nodeVersion;
       return { changed: true, pulled: r.pulled };
     }
@@ -1282,8 +1332,8 @@ export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pull
   // adopted the new version, and kept the old menu (a station added on the web: "No station …" on Test print) until the
   // 10-minute sync. If the cloud cannot be reached the version is not adopted, so the next tick tries again.
   _preferCloudPull = true;
-  let r: Awaited<ReturnType<typeof syncAll>>;
-  try { r = await syncAll(); } finally { _preferCloudPull = false; }
+  let r: { pulled: boolean };
+  try { r = await run(); } finally { _preferCloudPull = false; }
   if (r.pulled) _lastCatalogueVersion = version;
   return { changed: true, pulled: r.pulled };
 }

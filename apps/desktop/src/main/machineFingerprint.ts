@@ -14,6 +14,7 @@
 import os from 'os';
 import { execFile } from 'child_process';
 import crypto from 'crypto';
+import fs from 'fs';   // A512: the guid and serial are read once and kept
 
 export interface Nic { mac: string; internal: boolean; family: string }
 
@@ -117,19 +118,40 @@ function run(cmd: string, args: string[]): Promise<string | null> {
 let _identity: MachineIdentity | null = null;
 let _identityLoading: Promise<MachineIdentity> | null = null;
 
+/**
+ * A512: the machine guid and BIOS serial never change, but reading them meant a `reg` and a PowerShell at every start —
+ * PowerShell alone is what put ZapTill at "High" startup impact in Task Manager. Read once, kept in `cacheFile` (the
+ * till's data folder); later starts read the file. A file that cannot be read or holds neither is simply read again.
+ */
+function readIdentityCache(cacheFile: string | undefined): { machine_guid: string | null; serial: string | null } | null {
+  if (!cacheFile) return null;
+  try {
+    const v = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+    const g = typeof v?.machine_guid === 'string' ? v.machine_guid : null;
+    const s = typeof v?.serial === 'string' ? v.serial : null;
+    return g || s ? { machine_guid: g, serial: s } : null;
+  } catch { return null; }
+}
+
 /** Read the machine's identity (once per run; later calls get the same answer). Never throws, never waits > ~5 s. */
-export function loadMachineIdentity(platform: string = process.platform): Promise<MachineIdentity> {
+export function loadMachineIdentity(platform: string = process.platform, cacheFile?: string): Promise<MachineIdentity> {
   if (_identity) return Promise.resolve(_identity);
   if (_identityLoading) return _identityLoading;
   _identityLoading = (async () => {
     const mac = getMacAddressCached();
     if (platform !== 'win32') return (_identity = { mac, machine_guid: null, serial: null });
+    const kept = readIdentityCache(cacheFile);   // A512
+    if (kept) return (_identity = { mac, ...kept });
     const [reg, bios] = await Promise.all([
       // /reg:64 — a 32-bit process would otherwise be shown the WOW6432Node view, which has no MachineGuid.
       run('reg', ['query', 'HKLM\SOFTWARE\Microsoft\Cryptography', '/v', 'MachineGuid', '/reg:64']),
       run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '(Get-CimInstance Win32_BIOS).SerialNumber']),
     ]);
-    return (_identity = { mac, machine_guid: parseMachineGuid(reg), serial: cleanSerial(bios) });
+    _identity = { mac, machine_guid: parseMachineGuid(reg), serial: cleanSerial(bios) };
+    if (cacheFile && (_identity.machine_guid || _identity.serial)) {   // A512: kept for the next start
+      try { fs.writeFileSync(cacheFile, JSON.stringify({ machine_guid: _identity.machine_guid, serial: _identity.serial })); } catch { /* read again next time */ }
+    }
+    return _identity;
   })().catch(() => (_identity = { mac: getMacAddressCached(), machine_guid: null, serial: null }));
   return _identityLoading;
 }

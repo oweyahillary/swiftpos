@@ -226,7 +226,8 @@ console.log('\n5. The installer registers the tasks right (static: build/install
     && /StrCpy \$2 "\$PROGRAMFILES64\\ZapTill Updater"/.test(inst));
   const sd = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;AU)';
   ok('…security descriptor: SYSTEM and Administrators full, signed-in users read + run only (not write)',
-    inst.split(`<SecurityDescriptor>${sd}</SecurityDescriptor>`).length === 3 && !/\(A;;(GA|GW|FA|FW)[^)]*;;;(AU|BU|WD|IU)\)/.test(inst));
+    // A513: three tasks now carry it — the updater, the relaunch, and the sign-in start task.
+    inst.split(`<SecurityDescriptor>${sd}</SecurityDescriptor>`).length === 4 && !/\(A;;(GA|GW|FA|FW)[^)]*;;;(AU|BU|WD|IU)\)/.test(inst));
   ok('"ZapTill Relaunch": the INTERACTIVE group (S-1-5-4), least privilege — the user\'s session, never SYSTEM',
     /schtasks \/Create \/TN "ZapTill Relaunch" \/XML/.test(inst) && /<GroupId>S-1-5-4<\/GroupId><RunLevel>LeastPrivilege<\/RunLevel>/.test(inst)
     && /<Command>"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}"<\/Command>/.test(inst));

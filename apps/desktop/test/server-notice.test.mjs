@@ -104,9 +104,10 @@ const mode = read('src/main/serverMode.ts');
 const index = read('src/main/index.ts');
 ok('a request shows the window, flashes it, and raises a notification that opens it', () => {
   const fn = mode.slice(mode.indexOf('export function announceJoin'), mode.indexOf('export function closeCleanlyOnSessionEnd'));
-  assert.ok(fn.includes('showWindow();'));
-  assert.ok(fn.includes('win?.flashFrame(true)'));
-  assert.ok(fn.includes('new Notification(') && fn.includes("n.on('click', showWindow);") && fn.includes('n.show();'));
+  // A513: the window that is OPEN comes forward and flashes; none is made for it (a server started at sign-in has none) —
+  // the notification says it, and clicking it makes the window (showWindow makes one). Kept referenced (no GC).
+  assert.ok(/if \(open\) \{\s*const win = showWindow\(\);\s*try \{ win\?\.flashFrame\(true\); \}/.test(fn));
+  assert.ok(fn.includes('new Notification(') && fn.includes("n.on('click', () => { showWindow(); });") && fn.includes('joinNotice = n;') && fn.includes('n.show();'));
   assert.ok(index.includes('onJoinAsked(({ name, ip }) => announceJoin(name, ip));'));
 });
 
