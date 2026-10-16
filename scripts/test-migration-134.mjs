@@ -122,9 +122,14 @@ const expected = (r, switchesOn) => {
 await ok('134 registers exactly the catalogue: every fine key with the catalogue\'s words (generated from shared/permissions.ts)', async () => {
   const rows = await q(`SELECT key, label, module, description FROM public.permissions WHERE module <> 'legacy'`);
   const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
+  // A511: a later migration (beyond what this test replays) may reword a key — 140 sets customers.credit's description
+  // to the catalogue's new words. Accepted only when that migration sets EXACTLY the catalogue's words for that key.
+  const later = files.filter((f) => num(f) >= 139).map((f) => fs.readFileSync(path.join(MIG, f), 'utf8')).join('\n');
+  const rewordedLater = (p) => new RegExp(`SET description = '${p.description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s+WHERE key = '${p.key.replace('.', '\\.')}'`).test(later);
   for (const p of CAT.PERMISSIONS) {
     assert.ok(byKey[p.key], `missing ${p.key}`);
-    assert.equal(byKey[p.key].label, p.label, p.key); assert.equal(byKey[p.key].module, p.group, p.key); assert.equal(byKey[p.key].description, p.description, p.key);
+    assert.equal(byKey[p.key].label, p.label, p.key); assert.equal(byKey[p.key].module, p.group, p.key);
+    if (!rewordedLater(p)) assert.equal(byKey[p.key].description, p.description, p.key);
   }
   const sql = fs.readFileSync(path.join(MIG, THIS), 'utf8');
   for (const [legacy, fine] of Object.entries(CAT.LEGACY)) for (const f of fine) assert.ok(sql.includes(`('${legacy}', '${f}')`), `mapping ${legacy} → ${f} missing from 134 — regenerate it`);

@@ -161,7 +161,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'customers.edit',       group: 'customers', surface: 'both', cashier: true, manager: true,
     label: 'Add and edit customers', description: 'Add customers and change their details' },
   { key: 'customers.credit',     group: 'customers', surface: 'both', manager: true,
-    label: 'Customer credit', description: 'Set credit limits, record repayments and adjust balances' },
+    label: 'Customer credit', description: 'Approve sales on account with their PIN, set credit limits, record repayments and adjust balances' },   // A511
 
   // ── Expenses ─────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'expenses.view',        group: 'expenses', surface: 'both', manager: true,

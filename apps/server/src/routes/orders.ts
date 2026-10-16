@@ -250,6 +250,30 @@ async function approverByPin(req: any, authorizerId: string | undefined, pin: st
 
 // What the till/web is told when no approval matched (A355). The legacy business-wide supervisor PIN is still tried
 // first by the caller; this is the answer when it does not match either. One wording for void and refund.
+// ── A511: a sale on account (credit) ─────────────────────────────────────────
+// Owner, 2026-10-16: "the manager has to approve credit gate that behind a managers pin its not a cashiers right". Who
+// holds customers.credit (or the owner) sells on account as before; anyone else's credit leg needs the PIN of someone at
+// the sale's branch who holds it (approverByPin 'credit': never their own, the PIN limiter, the legacy supervisor PIN).
+// The approver is written on the customer's ledger line. The web POS asks for the PIN on CREDIT_APPROVAL_REQUIRED.
+const CREDIT_APPROVAL_REQUIRED = {
+  error: "A sale on account needs a manager's approval — enter their PIN.",
+  code:  'CREDIT_APPROVAL_REQUIRED',
+} as const;
+async function creditApproval(req: any, body: any, branchId: string | null):
+  Promise<{ approvedBy: string | null; note: string } | { status: number; body: Record<string, string> }> {
+  if (req.isOwner || can(req, 'customers.credit')) return { approvedBy: req.userId ?? null, note: '' };
+  const pin = typeof body?.credit_pin === 'string' ? body.credit_pin.trim() : '';
+  if (!pin) return { status: 403, body: { ...CREDIT_APPROVAL_REQUIRED } };
+  const a = await approverByPin(req, typeof body?.credit_authorizer_id === 'string' ? body.credit_authorizer_id : undefined, pin, 'credit', branchId);
+  if ('status' in a) return a;
+  let who = 'the supervisor PIN';
+  if (a.userId) {
+    const { data: u } = await supabase.from('users').select('name').eq('id', a.userId).eq('business_id', req.businessId).maybeSingle();
+    who = (u as { name?: string | null } | null)?.name || 'a manager';
+  }
+  return { approvedBy: a.userId, note: ` — approved by ${who}` };
+}
+
 const APPROVER_PIN_REFUSED = {
   error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.',
   code:  'INVALID_APPROVER_PIN',
@@ -834,11 +858,15 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     // available credit must cover the credit portion. Checked BEFORE the order
     // is created so we never commit a sale that breaches the limit.
     const creditLeg = paymentLegs.find(l => l.method === 'credit');
+    let creditNote = '';   // A511: who approved it, on the ledger line
     if (creditLeg) {
       if (!customer_id) {
         res.status(400).json({ error: 'A customer is required for a credit sale' });
         return;
       }
+      const ca = await creditApproval(req, req.body, branch_id ?? null);   // A511
+      if ('status' in ca) { res.status(ca.status).json(ca.body); return; }
+      creditNote = ca.note;
       const creditAmount = Number(creditLeg.amount) || 0;
       const { data: cust } = await supabase
         .from('customers')
@@ -1240,7 +1268,7 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         p_amount:        Math.abs(Number(creditLeg.amount) || 0),
         p_method:        null,
         p_reference:     null,
-        p_notes:         null,
+        p_notes:         creditNote ? `Credit sale${creditNote}` : null,   // A511
         p_created_by:    req.userId,
         p_enforce_limit: true,
       });
@@ -2303,12 +2331,16 @@ router.post('/:id/pay', sells, async (req, res) => {
     // POST /orders already had (partially — see below). Mirrors that check.
     const creditLeg = paymentLegs.find(l => l.method === 'credit');
     let creditCustomerId: string | null = null;
+    let payCreditNote = '';   // A511
     if (creditLeg) {
       creditCustomerId = customer_id ?? order.customer_id ?? null;
       if (!creditCustomerId) {
         res.status(400).json({ error: 'A customer is required for a credit sale' });
         return;
       }
+      const ca = await creditApproval(req, req.body, order.branch_id ?? null);   // A511
+      if ('status' in ca) { res.status(ca.status).json(ca.body); return; }
+      payCreditNote = ca.note;
       const creditAmount = Number(creditLeg.amount) || 0;
       const { data: cust } = await supabase
         .from('customers')
@@ -2534,7 +2566,7 @@ router.post('/:id/pay', sells, async (req, res) => {
         p_amount:        Math.abs(Number(creditLeg.amount) || 0),
         p_method:        null,
         p_reference:     null,
-        p_notes:         `Credit sale ${order.order_number}`,
+        p_notes:         `Credit sale ${order.order_number}${payCreditNote}`,   // A511: and who approved it
         p_created_by:    req.userId ?? null,
         p_enforce_limit: true,
       });
