@@ -42,6 +42,7 @@ import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '.
 import { onGrid } from '../../shared/productDays';
 import { exactFirst } from '../../shared/paginate';   // A472
 import { useGridWindow } from '../hooks/useGridWindow';   // A472
+import { reportBusy } from '../lib/activity';   // A508
 
 interface Props {
   business: { id: string; name: string; currency: string };
@@ -274,6 +275,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
+  // A508: a sale under way (items in the cart, the payment screen open) — an update never installs on its own meanwhile.
+  useEffect(() => { reportBusy({ cart: cart.length > 0, payment: showPayment }); }, [cart.length, showPayment]);
+  useEffect(() => () => reportBusy({ cart: false, payment: false }), []);
   const [placing, setPlacing] = useState(false);
   // Synchronous double-charge guard. setPlacing(true) only disables the Pay
   // button on the NEXT render, leaving a one-frame window where a fast double-tap

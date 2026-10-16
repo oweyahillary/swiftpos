@@ -213,6 +213,19 @@ export default function PaymentModal({
   // this sale sent in the order body; the server dedupes on it, so even if two
   // requests slip through, only one order is created.
   const chargingRef = useRef(false);
+  // A511: a sale on account by someone without customers.credit needs a manager's PIN (the cloud answers
+  // CREDIT_APPROVAL_REQUIRED); asked for here, then the same sale is sent again with it.
+  const [creditPin, setCreditPin]       = useState('');
+  const [needCreditPin, setNeedCreditPin] = useState(false);
+  const creditPinField = () => (creditPin.trim() ? { credit_pin: creditPin.trim() } : {});
+  const onCreditRefusal = (err: any): boolean => {
+    const code = err?.code;
+    if (code === 'CREDIT_APPROVAL_REQUIRED') { setNeedCreditPin(true); setError(''); return true; }
+    if (needCreditPin && (code === 'INVALID_APPROVER_PIN' || code === 'SELF_APPROVAL' || code === 'PIN_LOCKED' || code === 'NO_OVERRIDE_CONFIGURED')) {
+      setCreditPin(''); setError(err.message ?? 'That PIN cannot approve this sale.'); return true;
+    }
+    return false;
+  };
   const idempotencyKeyRef = useRef<string>('');
   if (!idempotencyKeyRef.current) {
     idempotencyKeyRef.current = (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -311,6 +324,7 @@ export default function PaymentModal({
   // ── Build order payload ───────────────────────────────────────────────────
   function buildOrderPayload(payments: object[]) {
     return {
+      ...creditPinField(),   // A511
       idempotency_key: idempotencyKeyRef.current,
       branch_id:       branchId,
       order_number:    generateOrderNumber(),
@@ -357,6 +371,7 @@ export default function PaymentModal({
   // that produced it must travel too — the same money fields buildOrderPayload sends.
   function buildPayPayload(payments: object[]) {
     return {
+      ...creditPinField(),   // A511
       payments,
       discount_amount: allDiscount,
       ...offerFields,   // A445
@@ -415,7 +430,7 @@ export default function PaymentModal({
         orderId ?? existingOrderId,
       ));
     } catch (err: any) {
-      setError(err.message ?? 'Failed to process payment');
+      if (!onCreditRefusal(err)) setError(err.message ?? 'Failed to process payment');   // A511
       setPlacing(false);
       chargingRef.current = false;   // allow retry after a failed charge
     }
@@ -481,7 +496,7 @@ export default function PaymentModal({
         orderId ?? existingOrderId,
       ));
     } catch (err: any) {
-      setError(err.message ?? 'Failed to process split payment');
+      if (!onCreditRefusal(err)) setError(err.message ?? 'Failed to process split payment');   // A511
       setPlacing(false);
       chargingRef.current = false;   // allow retry after a failed charge
     }
@@ -964,6 +979,16 @@ export default function PaymentModal({
                 </div>
               )}
             </>
+          )}
+
+          {/* A511: a manager approves a sale on account. */}
+          {needCreditPin && (
+            <div className="bg-gray-800 rounded-xl p-4 space-y-2" data-testid="credit-approval">
+              <p className="text-sm text-gray-200">A manager approves this sale on account — enter their PIN, then charge again.</p>
+              <input type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={creditPin}
+                onChange={(e) => setCreditPin(e.target.value.replace(/\D/g, ''))} placeholder="Manager PIN"
+                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white tracking-widest text-center" />
+            </div>
           )}
 
           {error && (

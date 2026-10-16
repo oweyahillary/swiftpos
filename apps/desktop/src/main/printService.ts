@@ -13,6 +13,7 @@
 
 import { BrowserWindow } from 'electron';
 import { execFile } from 'node:child_process';
+import { noteActivity, setPrintPendingProbe } from './activityTracker';   // A508
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Printer geometry — asking Windows instead of guessing.
@@ -343,8 +344,15 @@ export async function probePrinter(deviceName: string): Promise<{ ok: boolean; s
 /** Serial print queue. One job at a time, in submission order. */
 let _chain: Promise<unknown> = Promise.resolve();
 
+// A508: jobs waiting or printing — an update never installs on its own while a ticket is still going out.
+let _pending = 0;
+setPrintPendingProbe(() => _pending);
+
 function enqueue<T>(job: () => Promise<T>): Promise<T> {
-  const run = _chain.then(job, job);
+  noteActivity('print');
+  _pending++;
+  const counted = () => Promise.resolve().then(job).finally(() => { _pending = Math.max(0, _pending - 1); });
+  const run = _chain.then(counted, counted);
   // Keep the chain alive regardless of outcome; a failed job must not wedge
   // every later ticket, which would take the till out of service silently.
   _chain = run.then(() => undefined, () => undefined);

@@ -100,7 +100,10 @@ await override(MARY, 'reports.sales', true);          // …but the sales report
 await override(JOE, 'settings.manage', true);         // Joe was given the settings
 
 await db.exec(sanitize(fs.readFileSync(path.join(MIG, THIS), 'utf8')));
-for (const f of files.filter((f) => num(f) > 134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
+// A510: up to 138 — 139 deliberately corrects 134's "a role without orders.create cannot sell" (selling was never
+// checked before A490); test-migration-139.mjs proves that. This test keeps proving 134 as written.
+const AFTER_134 = (f) => num(f) > 134 && num(f) < 139;
+for (const f of files.filter(AFTER_134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
 
 // What the roles must hold: the catalogue's own expansion, plus what had no check before (per the switches).
 const confirms = (keys) => CAT.expandKeys(keys).has('shifts.confirm');
@@ -119,9 +122,14 @@ const expected = (r, switchesOn) => {
 await ok('134 registers exactly the catalogue: every fine key with the catalogue\'s words (generated from shared/permissions.ts)', async () => {
   const rows = await q(`SELECT key, label, module, description FROM public.permissions WHERE module <> 'legacy'`);
   const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
+  // A511: a later migration (beyond what this test replays) may reword a key — 140 sets customers.credit's description
+  // to the catalogue's new words. Accepted only when that migration sets EXACTLY the catalogue's words for that key.
+  const later = files.filter((f) => num(f) >= 139).map((f) => fs.readFileSync(path.join(MIG, f), 'utf8')).join('\n');
+  const rewordedLater = (p) => new RegExp(`SET description = '${p.description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s+WHERE key = '${p.key.replace('.', '\\.')}'`).test(later);
   for (const p of CAT.PERMISSIONS) {
     assert.ok(byKey[p.key], `missing ${p.key}`);
-    assert.equal(byKey[p.key].label, p.label, p.key); assert.equal(byKey[p.key].module, p.group, p.key); assert.equal(byKey[p.key].description, p.description, p.key);
+    assert.equal(byKey[p.key].label, p.label, p.key); assert.equal(byKey[p.key].module, p.group, p.key);
+    if (!rewordedLater(p)) assert.equal(byKey[p.key].description, p.description, p.key);
   }
   const sql = fs.readFileSync(path.join(MIG, THIS), 'utf8');
   for (const [legacy, fine] of Object.entries(CAT.LEGACY)) for (const f of fine) assert.ok(sql.includes(`('${legacy}', '${f}')`), `mapping ${legacy} → ${f} missing from 134 — regenerate it`);
@@ -185,7 +193,7 @@ await ok('134 runs twice without error and records itself once; a second run cha
   const before = {}; for (const [n, r] of Object.entries(ROLES)) before[n] = sorted(await roleKeys(r.id));
   // A rerun replays 134 and what came after it (135 retires settings.updates again), as the migration runner would.
   await db.exec(sanitize(fs.readFileSync(path.join(MIG, THIS), 'utf8')));
-  for (const f of files.filter((f) => num(f) > 134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
+  for (const f of files.filter(AFTER_134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
   for (const [n, r] of Object.entries(ROLES)) assert.deepEqual(sorted(await roleKeys(r.id)), before[n], n);
   const r = await one(`SELECT count(*)::int AS n FROM public.schema_migrations WHERE version = '134_permission_catalogue'`);
   assert.equal(r.n, 1);

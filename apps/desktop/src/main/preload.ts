@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld('swiftpos', {
   // A299: forward a renderer-side error string to main so it lands in
   // swiftpos.log. Fire-and-forget; never let logging break the bridge.
   logError: (msg: string) => { try { ipcRenderer.send('log:renderer', msg); } catch { /* ignore */ } },
+  // A508: "somebody is using this machine" ({ input: true }, throttled in the renderer to one every 30 s) and the sale
+  // screen's busy state ({ busy: { cart, payment } }) — so an update installs on its own only when nobody is there.
+  // Fire-and-forget, like logError.
+  activity: (p: { input?: boolean; busy?: { cart?: boolean; payment?: boolean } }) => {
+    try { ipcRenderer.send('activity:ping', p); } catch { /* ignore */ }
+  },
 
   auth: {
     redeemEnrolment: (business_id: string, code: string) => ipcRenderer.invoke('auth:enrolDevice', { business_id, code }),

@@ -34,6 +34,7 @@ function resolveReceiptLogo(): MonoRaster | undefined {
 import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
 import { getUpdateDiagnostics, getUpdateStatus, installUpdateNow } from './autoUpdate';
+import { noteActivity, noteRendererPing } from './activityTracker';   // A508
 import { logLine, authLog } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
 import { getReceiptPay, setReceiptPay } from './receiptPay';   // A450 (+ A492: set from the till)
@@ -514,6 +515,7 @@ export function registerIpcHandlers() {
   handle('held:list', async () => listHeld());
 
   handle('held:hold', async (_event, order: any) => {
+    noteActivity('held');   // A508: a bill held — the till is in use
     const db = getLocalDb();
     const held = {
       id: `held_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
@@ -1902,6 +1904,10 @@ export function registerIpcHandlers() {
   ipcMain.on('log:renderer', (_event, msg: unknown) => {
     logLine('renderer', String(msg ?? '').replace(/\s+/g, ' ').slice(0, 2000));
   });
+  // A508: the screen is in use (a key, a click, a touch — the renderer sends at most one every 30 s, main takes at most
+  // one every 30 s) and the sale screen's busy state (a cart, the payment screen). Fire-and-forget send/on like
+  // log:renderer: no invoke, so no schema/parity entry; anything that is not that shape is ignored (activityTracker.ts).
+  ipcMain.on('activity:ping', (_event, payload: unknown) => { try { noteRendererPing(payload); } catch { /* never */ } });
 
   // Gated + audited (audit: clearDeviceConfig was ungated). Clearing config is
   // how a till sheds its branch binding and re-registers as a new device —

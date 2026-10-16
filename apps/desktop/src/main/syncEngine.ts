@@ -54,6 +54,7 @@ import { cleanShowDays } from './productDays';
 import { pruneChoices, VARIANT_TABLES, MODIFIER_TABLES } from './choicePrune';   // A425
 import { storeSessionPermissions } from './tillAccess';   // A490
 import { claimOrderNumberForOwnSale } from './billNumber';   // A500
+import { noteActivity } from './activityTracker';   // A508
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
 // table would overwrite unsynced till data with stale/empty server rows). So
@@ -689,15 +690,43 @@ async function doRefreshStaffToken(): Promise<boolean> {
 // Till sync audit (F13): single-flight. Two passes (a stale one overtaken, the post-sale flush beside the timer) must
 // never push the same rows side by side — a second caller waits for the pass running and takes its result.
 let _pushStagesInFlight: Promise<{ orders: number; errors: string[] }> | null = null;
+let _pushStagesStartedAt = 0;   // A508: the idle install waits for a push that has just started
 async function runPushStages(errors: string[]): Promise<number> {
   if (!_pushStagesInFlight) {
     const mine: string[] = [];
+    _pushStagesStartedAt = Date.now();
     _pushStagesInFlight = runPushStagesOnce(mine).then((orders) => ({ orders, errors: mine }))
       .finally(() => { _pushStagesInFlight = null; });
   }
   const r = await _pushStagesInFlight;
   errors.push(...r.errors);
   return r.orders;
+}
+
+/** A508: since when a sync push has been in flight (ms), or null — the idle install never cuts one that has just begun. */
+export function syncPushSince(): number | null {
+  if (_pushStagesInFlight) return _pushStagesStartedAt;
+  if (_isSyncing && Date.now() - _syncStartedAt < SYNC_STALE_MS) return _syncStartedAt;
+  return null;
+}
+
+/**
+ * A508: before an idle install — one push pass (the outbox: sales, drawers, days, expenses, closes), at most `timeoutMs`
+ * (a pass already running is waited for, then one more). Never throws and never holds the install longer than the cap:
+ * whatever is still queued stays queued in the local database and goes up after the restart.
+ */
+export async function flushBeforeInstall(timeoutMs = 60_000): Promise<{ pushed: number; errors: string[]; timedOut: boolean }> {
+  let timer: NodeJS.Timeout | null = null;
+  const pass = (async () => {
+    if (_pushStagesInFlight) await _pushStagesInFlight.catch(() => undefined);
+    const r = await syncPush();
+    return { ...r, timedOut: false };
+  })().catch((e: any) => ({ pushed: 0, errors: [String(e?.message ?? e)], timedOut: false }));
+  const cap = new Promise<{ pushed: number; errors: string[]; timedOut: boolean }>((resolve) => {
+    timer = setTimeout(() => resolve({ pushed: 0, errors: [`no answer in ${Math.round(timeoutMs / 1000)} s`], timedOut: true }), timeoutMs);
+  });
+  try { return await Promise.race([pass, cap]); }
+  finally { if (timer) clearTimeout(timer); }
 }
 async function runPushStagesOnce(errors: string[]): Promise<number> {
   let orders = 0;
@@ -3628,5 +3657,6 @@ export function createLocalOrder(orderPayload: any): string {
       )`).run();
   })();
 
+  noteActivity('sale');   // A508: a sale (and its payment) — the till is in use
   return orderId;
 }

@@ -48,8 +48,10 @@ export type ApproverResult =
   | { result: 'self' };
 
 /** A490: what is being approved — a void needs `sales.void`, a refund `sales.refund` (orders.void covered both). */
-export type ApproveAction = 'void' | 'refund';
-const APPROVE_KEY: Record<ApproveAction, string> = { void: 'sales.void', refund: 'sales.refund' };
+// A511: 'credit' — a sale on a customer's account is approved by someone holding customers.credit (owner, 2026-10-16:
+// "the manager has to approve credit gate that behind a managers pin its not a cashiers right").
+export type ApproveAction = 'void' | 'refund' | 'credit';
+const APPROVE_KEY: Record<ApproveAction, string> = { void: 'sales.void', refund: 'sales.refund', credit: 'customers.credit' };
 
 /**
  * May this person approve this void or refund? The business owner, the owner's role (lib/ownerRole.ts), '*', or the

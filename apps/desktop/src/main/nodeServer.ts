@@ -73,6 +73,7 @@ import { GATEWAY_PREFIX } from './cloudGateway';
 import { startBeacon, stopBeacon } from './serverBeacon';   // A427
 import { createJoinRequest, readJoin, JOIN_PROOF_HEADER } from './serverJoin';   // A427, A503
 import { NODE_PROTOCOL, NODE_CAPABILITIES, MIN_TILL_PROTOCOL } from './nodeHealth';   // A501
+import { noteGatewayCall, noteTillSync } from './activityTracker';   // A508
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
 
@@ -364,6 +365,7 @@ export function startNodeServer(): void {
       if (url.startsWith(`${GATEWAY_PREFIX}/`)) {
         // A443: a till's update files come from this server's own copy (fetched once for the branch), not live.
         if (serveSharedUpdate(req, res, shareDir(), shareWanted)) return;
+        noteGatewayCall(req.method, url);   // A508: a till trading through the server keeps the server from installing
         const serverUrl = getDeviceConfig()?.server_url ?? '';
         return await forwardToCloud(req, res, serverUrl);
       }
@@ -498,6 +500,7 @@ export function startNodeServer(): void {
         // Close Branch poll) — never for a device id first seen in this very request. A496: "knows" = a join, a key from
         // a device known before device keys, or such a device itself (isKnownTill) — no longer one a poll made known.
         const relay = proven(who.verdict) || isKnownTill(peerDeviceId);
+        noteTillSync(body?.tables);   // A508: a till pushing its sales — the branch is in use
 
         const results: Record<string, any> = {};
         for (const [table, rows] of Object.entries(body?.tables ?? {})) {
