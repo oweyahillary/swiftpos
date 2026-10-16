@@ -158,7 +158,7 @@ Stays admin-only: licence and plan, branch licences, billing, web hosting / web 
   (`inventory.view`, the caller's branch), credit customers (`customers.view` or `customers.credit`), loyalty lists
   (`customers.view`; the exact-phone lookup stays open for the POS), webhooks (`settings.integrations`), devices
   (`devices.approve`, devices in reach).
-- **Owner only:** the supervisor PIN, M-Pesa credentials, reversal rules, the stock-count freeze, any business setting
+- **Owner only:** M-Pesa credentials, reversal rules, the stock-count freeze, any business setting
   not on the `settings.business` list; sign-in codes (`PUT /api/controls/pos/login_codes`); changing promotions (they run
   at every branch — a branch's own deal is an Offer).
 - **Costs and prices:** cost writes need `menu.costs` (a typed cost is replaced by the stored one); price changes on
@@ -166,3 +166,16 @@ Stays admin-only: licence and plan, branch licences, billing, web hosting / web 
 - **Approvers** (void, refund, payouts, drawer confirms): must work at the branch; only the owner approves their own action.
 - **A till's own session** never holds a person's key for reads (History, reprint, stock counts, write-offs); it pushes
   what the till did (sales, drawers, offline voids and refunds) and that is all.
+
+## Built-in roles and approval PINs (A514 — 2026-10-16)
+
+- **Built-in roles:** `BUILT_IN_ROLES` in shared/permissions.ts is the one place their defaults live — Manager and Cashier
+  (the catalogue's manager / cashier flags), Supervisor, Waiter, Kitchen, Storekeeper, Accountant, and Fuel attendant at a
+  fuel business (`FUEL_BUSINESS_TYPES`: petrol_station). New businesses are seeded from it (lib/defaultRolePermissions.ts
+  `seededRoleRows`, `defaultKeysForRoleName`); migration 142 adds the missing ones to every existing business (nobody
+  assigned; a role of the same name is never touched). They are ordinary roles — the owner edits, renames or deletes them.
+- **Migration 141:** roles named waiter or teller lose staff.view and customers.credit once (140 did cashier).
+- **The business supervisor PIN is retired:** only people's own PINs approve — their sign-in PIN or the approval
+  (override) PIN an owner or manager gives them in Staff. Who may be given one: someone holding sales.void, sales.refund,
+  customers.credit or shifts.confirm (`APPROVAL_PIN_KEYS`, routes/staff.ts). POST /api/business/settings answers 410
+  `SUPERVISOR_PIN_RETIRED` for any supervisor_pin key; the stored hash is left untouched and never read.

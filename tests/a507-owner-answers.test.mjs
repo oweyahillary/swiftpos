@@ -6,6 +6,8 @@
 //      is e-mailed; a super admin's own change sends nothing.
 //   3. "keep it but send an email after the failed attempt": the per-account sign-in pause stays; the account is e-mailed
 //      when it starts — only an address that belongs to a ZapTill account.
+//   A514 (owner, 2026-10-16: "can it read the region"): the e-mail's time is the business's local time — its currency
+//      names the zone (zoneForCurrency); "East Africa time" only for the EAT zones, otherwise the zone's city.
 //
 //   cd apps/server && npm run build && cd ../.. && node --no-warnings tests/a507-owner-answers.test.mjs
 import assert from 'node:assert';
@@ -28,7 +30,7 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
 // The database and the mailer, faked under the compiled libs.
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const mailer = require(path.join(DIST, 'lib/mailer.js'));
-let rows = { users: [], admin_users: [] };
+let rows = { users: [], admin_users: [], businesses: [] };
 const sent = [];
 supabase.from = (table) => {
   const filters = [];
@@ -41,7 +43,7 @@ supabase.from = (table) => {
   return q;
 };
 mailer.sendEmailChecked = async (m) => { sent.push(m); return { ok: true, provider: 'none' }; };
-const { notifyAccountLocked } = require(path.join(DIST, 'lib/accountLockNotice.js'));
+const { notifyAccountLocked, zoneForCurrency, zoneLabel, localTime } = require(path.join(DIST, 'lib/accountLockNotice.js'));
 const { notifySuperAdminsToVerify } = require(path.join(DIST, 'lib/adminVerifyNotice.js'));
 const { noteAccountFailure, ACCOUNT_MAX_FAILS } = require(path.join(DIST, 'lib/pinAttempts.js'));
 
@@ -59,8 +61,47 @@ await ok('3. a ZapTill account is e-mailed when its sign-in is paused (when, fro
   assert.equal(sent[0].to, 'owner@shop.test');
   assert.match(sent[0].html, /paused for\s+15 minutes/); assert.match(sent[0].html, /41\.90\.1\.2/); assert.match(sent[0].html, /If it was not you/);
 });
+await ok('A514: zoneForCurrency — each currency its zone, CDF Kinshasa, EUR / USD UTC, unknown or none Nairobi', () => {
+  const want = { KES: 'Africa/Nairobi', UGX: 'Africa/Kampala', TZS: 'Africa/Dar_es_Salaam', RWF: 'Africa/Kigali', BIF: 'Africa/Bujumbura',
+    ETB: 'Africa/Addis_Ababa', SSP: 'Africa/Juba', SOS: 'Africa/Mogadishu', CDF: 'Africa/Kinshasa', NGN: 'Africa/Lagos', GHS: 'Africa/Accra',
+    ZAR: 'Africa/Johannesburg', ZMW: 'Africa/Lusaka', MWK: 'Africa/Blantyre', MZN: 'Africa/Maputo', ZWL: 'Africa/Harare', ZWG: 'Africa/Harare',
+    EGP: 'Africa/Cairo', MAD: 'Africa/Casablanca', XOF: 'Africa/Dakar', XAF: 'Africa/Douala', AED: 'Asia/Dubai', INR: 'Asia/Kolkata',
+    GBP: 'Europe/London', EUR: 'UTC', USD: 'UTC' };
+  for (const [c, z] of Object.entries(want)) {
+    assert.equal(zoneForCurrency(c), z, c);
+    assert.equal(zoneForCurrency(` ${c.toLowerCase()} `), z, `${c} (case and spaces)`);
+    assert.doesNotThrow(() => localTime(new Date(), z), z);   // a zone this Node knows
+  }
+  for (const c of [null, undefined, '', 'XYZ', 42]) assert.equal(zoneForCurrency(c), 'Africa/Nairobi', String(c));
+});
+await ok('A514: the zone is named — East Africa time for the EAT zones, otherwise its city', () => {
+  for (const z of ['Africa/Nairobi', 'Africa/Kampala', 'Africa/Dar_es_Salaam', 'Africa/Addis_Ababa', 'Africa/Mogadishu']) assert.equal(zoneLabel(z), 'East Africa time', z);
+  assert.equal(zoneLabel('Africa/Kigali'), 'Kigali time');
+  assert.equal(zoneLabel('Africa/Dar_es_Salaam'), 'East Africa time');
+  assert.equal(zoneLabel('Africa/Addis_Ababa'), 'East Africa time');
+  assert.equal(zoneLabel('Europe/London'), 'London time');
+  assert.equal(zoneLabel('UTC'), 'UTC');
+  // The clock is the zone's: 12:00 UTC is 14:00 in Kigali (UTC+2) and 15:00 in Nairobi (UTC+3).
+  const noon = new Date('2026-10-16T12:00:00Z');
+  assert.match(localTime(noon, 'Africa/Kigali'), /14:00/);
+  assert.match(localTime(noon, 'Africa/Nairobi'), /15:00/);
+});
+await ok('A514: the e-mail reads the account\'s business — a Rwandan business is told the time in Kigali time', async () => {
+  rows = { users: [{ id: 'u2', name: 'Aline', email: 'aline@shop.test', business_id: 'b-rw' }], admin_users: [],
+    businesses: [{ id: 'b-rw', currency: 'RWF' }, { id: 'b-ke', currency: 'KES' }] }; sent.length = 0;
+  notifyAccountLocked('aline@shop.test', null, 'the web POS'); await tick();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].html, /, Kigali time\)/);
+  assert.doesNotMatch(sent[0].html, /East Africa time/);
+  rows.users[0].business_id = 'b-ke'; sent.length = 0;
+  notifyAccountLocked('aline@shop.test', null, 'the web POS'); await tick();
+  assert.match(sent[0].html, /, East Africa time\)/);
+  rows.users[0].business_id = null; sent.length = 0;   // no business found: Nairobi, as before
+  notifyAccountLocked('aline@shop.test', null, 'the web POS'); await tick();
+  assert.match(sent[0].html, /, East Africa time\)/);
+});
 await ok('3. …never a stranger: an address with no ZapTill account gets nothing', async () => {
-  rows = { users: [], admin_users: [] }; sent.length = 0;
+  rows = { users: [], admin_users: [], businesses: [] }; sent.length = 0;
   notifyAccountLocked('victim@elsewhere.test', '1.2.3.4', 'the web dashboard'); await tick();
   assert.equal(sent.length, 0);
 });

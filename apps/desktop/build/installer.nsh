@@ -76,6 +76,41 @@
     DetailPrint "Could not add the discovery rule (exit $0). Tills can still be set up by typing the server address."
   ${EndIf}
 
+  ; ── A513: start after sign-in, not at it ───────────────────────────────────────────────────────────────────────────
+  ; A branch server used to start with Windows from the Run key — Task Manager counts that as a Startup app ("High"
+  ; impact on a slow PC, at the moment Windows itself is loading). Instead, one logon task, registered here (a logon
+  ; trigger needs administrator rights; the installer has them): 45 s after ANY user signs in it starts
+  ;   ZapTill.exe --at-login
+  ; which ends at once — before the rest of ZapTill loads, no window — unless that user's ZapTill is a branch server
+  ; (a marker file the app writes in its data folder: src/main/lowImpactStart.ts, startGate.ts). A server hands over
+  ; to its restart task (serverWatchdog.ts) and runs in the tray with no window.
+  ;   - the signed-in user (BUILTIN\Users, least privilege) — never SYSTEM, never elevated;
+  ;   - no time limit (PT0S): Task Scheduler never ends a server it started; normal priority (5), not below-normal;
+  ;   - users may read and run it, never change it (the same security descriptor as the A509 tasks).
+  ; Both flavours, each its own task. The app removes its Run entry once it sees this task (serverMode.syncLoginEntry).
+  InitPluginsDir
+  Push $1
+  FileOpen $1 "$PLUGINSDIR\start-task.xml" w
+  FileWriteUTF16LE /BOM $1 `<?xml version="1.0" encoding="UTF-16"?>$\r$\n`
+  FileWriteUTF16LE $1 `<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">$\r$\n`
+  FileWriteUTF16LE $1 `  <RegistrationInfo><Description>Starts the ZapTill branch server 45 seconds after Windows sign-in, in the tray; on a till it ends at once (A513).</Description><SecurityDescriptor>D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;AU)</SecurityDescriptor></RegistrationInfo>$\r$\n`
+  FileWriteUTF16LE $1 `  <Triggers><LogonTrigger><Enabled>true</Enabled><Delay>PT45S</Delay></LogonTrigger></Triggers>$\r$\n`
+  FileWriteUTF16LE $1 `  <Principals><Principal id="Author"><GroupId>S-1-5-32-545</GroupId><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>$\r$\n`
+  FileWriteUTF16LE $1 `  <Settings><MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>false</AllowHardTerminate><StartWhenAvailable>false</StartWhenAvailable><RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden><RunOnlyIfIdle>false</RunOnlyIfIdle><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>5</Priority></Settings>$\r$\n`
+  FileWriteUTF16LE $1 `  <Actions Context="Author"><Exec><Command>"$INSTDIR\${APP_EXECUTABLE_FILENAME}"</Command><Arguments>--at-login</Arguments><WorkingDirectory>$INSTDIR</WorkingDirectory></Exec></Actions>$\r$\n`
+  FileWriteUTF16LE $1 `</Task>$\r$\n`
+  FileClose $1
+  nsExec::ExecToLog 'schtasks /Create /TN "${PRODUCT_NAME} start at sign-in" /XML "$PLUGINSDIR\start-task.xml" /F'
+  Pop $0
+  ${If} $0 == 0
+    DetailPrint "Sign-in task registered: a branch server starts 45 s after sign-in, in the tray."
+  ${Else}
+    ; Not fatal: a branch server then keeps its "start with Windows" entry, and waits before it starts.
+    DetailPrint "Could not register the sign-in task (exit $0). A branch server starts with Windows as before."
+  ${EndIf}
+  Delete "$PLUGINSDIR\start-task.xml"
+  Pop $1
+
   ; ── A509: the updater task — updates install with nobody there to answer Windows ──
   ; The installer is per machine and unsigned, so electron-updater starts it through elevate.exe and Windows asks for
   ; permission (UAC) at every update; on a till nobody is at, nobody answers. The installer already runs elevated, so
@@ -140,7 +175,8 @@
   FileWriteUTF16LE $1 `  <RegistrationInfo><Description>Starts ZapTill again for the signed-in user after the updater installed an update (A509).</Description><SecurityDescriptor>D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;AU)</SecurityDescriptor></RegistrationInfo>$\r$\n`
   FileWriteUTF16LE $1 `  <Triggers />$\r$\n`
   FileWriteUTF16LE $1 `  <Principals><Principal id="Author"><GroupId>S-1-5-4</GroupId><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>$\r$\n`
-  FileWriteUTF16LE $1 `  <Settings><MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>false</AllowHardTerminate><StartWhenAvailable>false</StartWhenAvailable><RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden><RunOnlyIfIdle>false</RunOnlyIfIdle><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>7</Priority></Settings>$\r$\n`
+  ; A513: normal priority (5) — the default 7 ran a relaunched ZapTill below normal, slower on a slow PC.
+  FileWriteUTF16LE $1 `  <Settings><MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>false</AllowHardTerminate><StartWhenAvailable>false</StartWhenAvailable><RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden><RunOnlyIfIdle>false</RunOnlyIfIdle><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>5</Priority></Settings>$\r$\n`
   FileWriteUTF16LE $1 `  <Actions Context="Author"><Exec><Command>"$INSTDIR\${APP_EXECUTABLE_FILENAME}"</Command><Arguments>--updated</Arguments><WorkingDirectory>$INSTDIR</WorkingDirectory></Exec></Actions>$\r$\n`
   FileWriteUTF16LE $1 `</Task>$\r$\n`
   FileClose $1
@@ -165,6 +201,12 @@
   Pop $0
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ZapTill Server Discovery"'
   Pop $0
+
+  ; A513: the sign-in task — on a real uninstall only (an update's customInstall registers it again anyway).
+  ${ifNot} ${isUpdated}
+    nsExec::ExecToLog 'schtasks /Delete /TN "${PRODUCT_NAME} start at sign-in" /F'
+    Pop $0
+  ${endIf}
 
   ; A509: the updater and relaunch tasks and their folder — on a real uninstall only. An update runs this uninstaller
   ; too (with --updated), from inside the updater task: deleting the task there would pull it out from under the

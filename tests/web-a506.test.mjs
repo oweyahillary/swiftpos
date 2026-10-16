@@ -79,7 +79,9 @@ ok('the helpers compare as sets', () => {
 });
 ok('an override PIN is offered only to someone who will void or refund (OVERRIDE_PIN_NO_AUTHORITY)', () => {
   assert.match(staffRoute, /OVERRIDE_PIN_NO_AUTHORITY/);
-  assert.match(staff, /const mayApprove = effectiveKeys\.has\('\*'\) \|\| effectiveKeys\.has\('sales\.void'\) \|\| effectiveKeys\.has\('sales\.refund'\);/);
+  // A514: the approval PIN is for anyone who may approve — void, refund, sales on account or drawers (the cloud's
+  // APPROVAL_PIN_KEYS), now that the business supervisor PIN is retired.
+  assert.match(staff, /const mayApprove = effectiveKeys\.has\('\*'\) \|\| \['sales\.void', 'sales\.refund', 'customers\.credit', 'shifts\.confirm'\]\.some\(k => effectiveKeys\.has\(k\)\);/);
   assert.match(staff, /overridePin && mayApprove \? \{ override_pin: overridePin \}/);
   assert.match(staff, /disabled=\{clearOverride \|\| !mayApprove\}/);
 });

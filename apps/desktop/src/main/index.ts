@@ -1,7 +1,11 @@
-import { app, BrowserWindow, Menu, net, shell } from 'electron';
+// A513: FIRST — an automatic launch with nothing to do (a till's sign-in start, a restart-task check while ZapTill runs,
+// a launch after a quit by hand) ends inside this import, before anything below loads. See startGate.ts.
+import './startGate';
+import { gpuLine, gateNote } from './startGate';
+import { app, BrowserWindow, Menu, shell } from 'electron';
 import { sendTillChangesNow } from './changeQueue';   // A448
 import { tillBranchId } from './deviceConfig';   // A446
-import { configureStaffRoster, startStaffRosterTimer } from './staffRoster';   // A446
+import { configureStaffRoster, startStaffRosterTimer, refreshStaffRosterNow } from './staffRoster';   // A446
 import { isNodeRole } from './deviceConfig';
 import path from 'path';
 import fs from 'fs';
@@ -9,11 +13,12 @@ import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb, closeLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
-import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet } from './syncEngine';
+import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet, pullCatalogueNow, refreshTechConfigNow, runRemoteInstructionsNow } from './syncEngine';
+import { AT_LOGIN_ARG, LOGIN_WAIT_ARG, LOGIN_WAIT_MS, isAutoLaunch, startsAtSignIn, startsWindowless, runStartupSequence, markStartup, markStartupSettled, startupLine, noteStartupLine, type StartupStep } from './lowImpactStart';   // A513
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer, onServingChange } from './nodeServer';
-import { enterServerMode, leaveServerMode, keepServerWindowAlive, isServing, markQuitting, announceJoin, closeCleanlyOnSessionEnd } from './serverMode';   // A427, A436, A437
+import { enterServerMode, leaveServerMode, keepServerWindowAlive, isServing, markQuitting, announceJoin, closeCleanlyOnSessionEnd, clearOldLoginItems, setMainWindow, showWindow, openMainWindow } from './serverMode';   // A427, A436, A437, A513
 import { onJoinAsked } from './serverJoin';   // A436
 import { WATCHDOG_ARG, watchdogStaysDown, quitByHand, clearQuitByHand } from './serverWatchdog';   // A435
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution, nodeHeaders } from './nodeClient';
@@ -115,7 +120,13 @@ function installMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function createWindow() {
+/** A513: the main window — made at start on a till (and anything opened by hand), on demand on a branch server. */
+let mainWin: BrowserWindow | null = null;
+let windowShown: () => void = () => {};
+const firstWindowShown = new Promise<void>((r) => { windowShown = r; });
+
+function createWindow(): BrowserWindow {
+  if (mainWin && !mainWin.isDestroyed()) return mainWin;
   const badgeTitle = cloudBadgeTitle(); // D17
   const win = new BrowserWindow({
     width: 1280,
@@ -130,8 +141,14 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // A513: no spell checker — nothing on a till is spell-checked, and it loads (and downloads) dictionaries.
+      // backgroundThrottling stays Electron's default (on): a server's window hidden in the tray costs less.
+      spellcheck: false,
     },
   });
+  mainWin = win;
+  win.on('closed', () => { if (mainWin === win) mainWin = null; });
+  win.once('ready-to-show', () => { markStartup('window'); windowShown(); });   // A513: measured once per start
   // A494: developer tools opened any other way on an installed till without a technician's session are closed at once.
   win.webContents.on('devtools-opened', () => {
     if (!devToolsAllowed(app.isPackaged)) win.webContents.closeDevTools();
@@ -162,6 +179,7 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+  return win;
 }
 
 /**
@@ -187,16 +205,18 @@ if (!gotTheLock) {
 } else {
   app.on('second-instance', (_e, argv) => {
     if (argv.includes(WATCHDOG_ARG)) return;   // A435: the watchdog's check — ZapTill is running; leave the window be
-    const [win] = BrowserWindow.getAllWindows();
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.show();   // A427: a branch server's window may be hidden in the tray
-      win.focus();
-    }
+    if (isAutoLaunch(argv)) return;   // A513: the sign-in task or the updater's relaunch — never a window from them
+    // A427: a branch server's window may be hidden in the tray. A513: or not made yet (a server started at sign-in) —
+    // made now; asked for while ZapTill is still starting, it is made once the start-up has registered its handlers.
+    if (!startupReady) { windowAsked = true; return; }
+    showWindow();
   });
 }
+/** A513: a window asked for (a second launch) before the IPC handlers were registered. */
+let startupReady = false;
+let windowAsked = false;
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // A435: a watchdog launch after someone quit from the tray stays down; opening ZapTill by hand clears that.
   if (watchdogStaysDown(process.argv, quitByHand())) { app.exit(0); return; }
   if (!process.argv.includes(WATCHDOG_ARG)) clearQuitByHand();
@@ -207,8 +227,23 @@ app.whenReady().then(() => {
   // A298: stamp the log with the build this till is actually running, so "is the
   // fix on this machine?" is answerable from the log, not just the Tech screen.
   { const b = getBuildInfo(); logLine('startup', `ZapTill ${app.getVersion()} build ${b.sha} @ ${b.time}`); }
+  markStartup('ready');   // A513
+  if (gateNote) logLine('startup', gateNote);   // A513 (startGate.ts could not log: the log lives in userData)
+  if (gpuLine) logLine('startup', gpuLine);     // A513: low-memory mode, and how a technician changes it
+  // A513: a branch server started by Windows, the restart task or the updater runs in the tray — no window until
+  // someone opens it. A till, and anything started by hand, opens its window as before (straight to the PIN screen).
+  const server = startsAtSignIn(app.getPath('userData'));
+  const windowless = startsWindowless(process.argv, server);
+  const how = process.argv.includes(AT_LOGIN_ARG) ? 'after sign-in' : process.argv.includes(WATCHDOG_ARG) ? 'by the restart task'
+    : process.argv.includes('--updated') ? 'after an update' : 'by hand';
+  // A513: the "start with Windows" fallback (no sign-in task on this machine): wait before doing anything.
+  if (process.argv.includes(AT_LOGIN_ARG) && process.argv.includes(LOGIN_WAIT_ARG)) {
+    logLine('startup', `started at sign-in without the sign-in task — waiting ${LOGIN_WAIT_MS / 1000} s before starting`);
+    await new Promise((r) => setTimeout(r, LOGIN_WAIT_MS));
+  }
   // A477: read the machine's identity (MachineGuid, BIOS serial) in the background — never waited for here.
-  void loadMachineIdentity();
+  void loadMachineIdentity(process.platform, path.join(app.getPath('userData'), 'machine-identity.json'));   // A512: read once, kept
+  clearOldLoginItems();   // A512: a startup entry from before 1.0.5 (Windows started ZapTill twice) is removed on every machine
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {
@@ -229,7 +264,9 @@ app.whenReady().then(() => {
     // silently shadowing a legacy handler. Wrapped because a till with no
     // thermal printer configured must still open and sell.
     try {
-      initPrinting(getLocalDb(), () => BrowserWindow.getAllWindows()[0] ?? null);
+      // A513: the main window, when there is one — not "the first window" (a hidden print window, or none at all on a
+      // server started at sign-in). Printing itself needs no window: an HTML print makes its own hidden one.
+      initPrinting(getLocalDb(), () => openMainWindow());
     } catch (e) { console.error('[startup] print subsystem init failed:', e); }
 
     // A427: whenever this machine starts or stops serving its branch — at start-up, at setup, on promotion — it
@@ -254,16 +291,16 @@ app.whenReady().then(() => {
     const session = readSessionTokens();
     if (session.token) {
       configureSyncEngine(getCloudUrl(), session.token, session.refreshToken);
-      // Sync on startup if online
-      if (net.isOnline()) {
-        syncAll().catch(console.error);
-      }
+      // A513: the start-up sync is the sequence below — one step at a time, the business's essentials first.
     }
   } catch (err) {
     console.error('[startup] initialization error (continuing to window):', err);
   }
 
-  createWindow();
+  setMainWindow(() => mainWin, createWindow);   // A513: the tray, a notice, a second launch make it on demand
+  startupReady = true;
+  if (!windowless || windowAsked) createWindow();
+  else logLine('startup', `started ${how} as the branch server — in the tray, no window until someone opens it`);
 
   // D3 / A348: on launch and every hour, ask the cloud which version this business is approved for (null = hold) and
   // download only an approved newer one; install on next quit.
@@ -286,6 +323,9 @@ app.whenReady().then(() => {
   // mid-sale.
   startIdleMonitor();
 
+  // A513: the regular beats below begin only once the start-up sequence (further down) has run — in three groups a few
+  // seconds apart, never all in the first seconds. Sales and shift changes still push at once (order:create, shift:*).
+  const startSyncTimers = () => {
   // Backstop for anything still pending (a retry after a network blip). Sales and shift changes push at once
   // (order:create, shift:* in ipcHandlers); 30 s, not 60, per the owner (2026-09-27).
   setInterval(() => {
@@ -309,13 +349,17 @@ app.whenReady().then(() => {
     if (wastagePending()) pushWastageNow().catch(console.error);
     void sendTillChangesNow();   // A448: changes made on this till
   }, 20_000);
+  };
   // A446: this till's own copy of its branch's staff list — every 10 s on a branch server, 20 s on any till, and at once
   // when staff change here (staffRoster.ts). A new cashier signs in on every till within seconds, offline too.
   tillBranchId();   // A446: a till that never recorded its branch takes its signed-in person's
   configureStaffRoster((path) => rosterCloudGet(path));
-  startStaffRosterTimer();
+  const startStaffTimers = () => {
+  // A513: the sequence's 'staff' step has just pulled it — the timer's first pull is its next beat.
+  startStaffRosterTimer(false);
   // A433: a shift this till holds, confirmed on the web or another till, is confirmed here too — on its own 20 s beat.
   setInterval(() => { pullShiftConfirmations().catch(console.error); }, 20_000);
+  };
   // A401: tell every window, so the cashier sees why selling stopped (POSPage shows the notice and re-reads the shift).
   onShiftClosedElsewhere((c) => {
     for (const w of BrowserWindow.getAllWindows()) {
@@ -350,7 +394,7 @@ app.whenReady().then(() => {
   const sendAck = async (ins: { id: number; uid?: string | null }, ack: { ok: boolean; error?: string; summary?: unknown }) => {
     if (!(await ackNodeInstruction(ins.id, ack, undefined, ins.uid ?? null))) pendingAcks.set(ackKey(ins), { id: ins.id, uid: ins.uid ?? null, ack });
   };
-  setInterval(async () => {
+  const peerInstructionTick = async () => {   // A513: named — the sequence's 'pulls' step runs it once first
     const cfg = getDeviceConfig();
     if (!cfg?.node_url || isNodeRole(cfg.device_role)) return;
     try {
@@ -394,19 +438,21 @@ app.whenReady().then(() => {
     } catch (err) {
       console.error('[branchClose] peer loop:', err);
     }
-  }, 15_000);
-
-  // F10 (2026-10-14): branch replication on its own 15 s beat, whatever the cloud is doing — a till with no cloud
-  // session (or no internet) still sends its rows to the branch server, and the server numbers its own rows so its
-  // tills receive them (syncEngine.nodeReplicationTick). Self-guards: nothing to do without a branch server.
-  setInterval(() => { void nodeReplicationTick(); }, 15_000);
-  setTimeout(() => { void nodeReplicationTick(); }, 5_000);
+  };
 
   // A489: a till already joined to a branch server switches to an encrypted connection by itself — the first time the
   // server answers TLS (it runs 1.0.15+), the till pins its certificate. Cheap once pinned; nothing on a server.
   const tlsTick = () => { ensureNodeTls(() => nodeHeaders()).catch((e) => console.warn('[node] tls:', e?.message ?? e)); };
+
+  const startBranchTimers = () => {
+  setInterval(() => { void peerInstructionTick(); }, 15_000);
+  // F10 (2026-10-14): branch replication on its own 15 s beat, whatever the cloud is doing — a till with no cloud
+  // session (or no internet) still sends its rows to the branch server, and the server numbers its own rows so its
+  // tills receive them (syncEngine.nodeReplicationTick). Self-guards: nothing to do without a branch server.
+  // A513: its first run is the sequence's 'push' step (it was 5 s after launch).
+  setInterval(() => { void nodeReplicationTick(); }, 15_000);
+  // A513: the first TLS check is the sequence's last step (it was 8 s after launch).
   setInterval(tlsTick, 60_000);
-  setTimeout(tlsTick, 8_000);
 
   // Phase 2a — distribution pull. Every 30s a peer asks the node for every
   // OTHER device's new rows and runs them through applyPeerRows under each
@@ -433,6 +479,7 @@ app.whenReady().then(() => {
     // every pass, whether or not this pull brought anything new, and whether or not the server answered.
     try { retryPeerQuarantine(); } catch (err) { console.error('[distribution] quarantine:', err); }
   }, 30_000);
+  };
 
   // Phase 2c — maintenance. Hourly check, at-most-daily execution (the
   // functions gate themselves): peers prune expired replicas, the node takes
@@ -443,12 +490,69 @@ app.whenReady().then(() => {
     try { pruneIfDue(); } catch (err) { console.error('[maintenance] prune:', err); }
     snapshotIfDue().catch(err => console.error('[maintenance] snapshot:', err));
   }, 3_600_000);
-  // And once shortly after boot, for the till that is only on during service.
-  setTimeout(() => {
+  // And once shortly after boot, for the till that is only on during service. A513: 90 s after the start-up sequence
+  // (not after launch — on a slow PC a server's snapshot then ran while the sequence was still going).
+  const startMaintenanceSoon = () => setTimeout(() => {
     try { pruneIfDue(); } catch (err) { console.error('[maintenance] prune:', err); }
     snapshotIfDue().catch(err => console.error('[maintenance] snapshot:', err));
   }, 90_000);
+
+  // ── A513: the start-up sequence ─────────────────────────────────────────────────────────────────────────────────
+  // One step at a time, the business's essentials first; each step waits at most STEP_CAP_MS for the one before (a
+  // hung step goes on in the background). The branch server's LAN listener is already up (above) — tills depend on it.
+  const steps: StartupStep[] = [
+    { name: 'catalogue', what: 'menu, prices, offers, payment methods, M-Pesa and business settings',
+      // The version first (the 20 s check then knows it and does not pull again); no version answer → pulled anyway.
+      run: async () => { const r = await pullIfCatalogueChanged({ pullOnly: true }); if (!r.changed) await pullCatalogueNow(); } },
+    { name: 'staff', what: 'staff list, PINs and permissions', run: () => refreshStaffRosterNow('start') },
+    { name: 'settings', what: 'the branch\'s technician settings', run: () => refreshTechConfigNow() },
+    { name: 'push', what: 'sales, drawers and changes waiting on this till',
+      run: async () => {
+        await nodeReplicationTick();   // to the branch server (the shop network) first
+        await syncPush();
+        await sendTillChangesNow();
+        if (wastagePending()) await pushWastageNow();
+      } },
+    { name: 'pulls', what: 'web sales, shift closes, confirmations and instructions',
+      run: async () => {
+        await pullWebSales();
+        await pullShiftCloses();
+        await pullShiftConfirmations();
+        await peerInstructionTick();
+        await runRemoteInstructionsNow();
+      } },
+    { name: 'rest', what: 'the branch server\'s encrypted connection', run: () => ensureNodeTls(() => nodeHeaders()) },
+  ];
+  void runStartupSequence(steps, { log: (l) => logLine('startup', l) }).then(() => {
+    markStartup('sequence');
+    markStartupSettled();   // the update check, the scheduled tasks and the Run entry may begin (whenStartupSettled)
+    // A server that is not serving after all (its port taken, the role changed) is never left running unseen.
+    // 30 s of grace: the listener may still be finding a free port.
+    if (windowless) setTimeout(() => {
+      if (!isServing() && !openMainWindow()) { logLine('startup', 'not serving after the start — opening the window'); showWindow(); }
+    }, 30_000);
+    void logStartupLine(how, windowless);
+    startSyncTimers();
+    setTimeout(startStaffTimers, 3_000);
+    setTimeout(startBranchTimers, 6_000);
+    startMaintenanceSoon();
+  }).catch((e) => { console.error('[startup] sequence:', e); markStartupSettled(); startSyncTimers(); startStaffTimers(); startBranchTimers(); });
 });
+
+/** A513: one line per start — how long to ready, to the first window, to the end of the sequence; the memory then. */
+async function logStartupLine(how: string, windowless: boolean): Promise<void> {
+  let kb: number | null = null, n: number | null = null;
+  // A window made at start that has not painted yet: the line waits for it (at most a minute), so it is in the line.
+  if (!windowless && mainWin) await Promise.race([firstWindowShown, new Promise((r) => setTimeout(r, 60_000))]);
+  try {
+    const m = app.getAppMetrics();
+    kb = m.reduce((s, p) => s + (p.memory?.workingSetSize ?? 0), 0);
+    n = m.length;
+  } catch { /* not known */ }
+  const line = startupLine({ how: `${how}${windowless ? ', no window' : ''}`, memoryKb: kb, processes: n });
+  noteStartupLine(line);
+  logLine('startup', line);
+}
 
 app.on('before-quit', () => { markQuitting(); });   // A427: a real quit (tray, update, shutdown) is let through
 
@@ -458,5 +562,5 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (!openMainWindow()) showWindow();   // A513: the main window, made if none (not "no window of any kind")
 });

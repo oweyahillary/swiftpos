@@ -351,6 +351,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'tech:promoteToNode': NO_PAYLOAD,
   'tech:backupNow':     NO_PAYLOAD,
   'tech:maintenance': NO_PAYLOAD,
+  'tech:getGpuMode': NO_PAYLOAD,                     // A516
+  'tech:setGpuMode': { mode: { t: 'string' } },      // A516
   'tech:chooseBackupDir': NO_PAYLOAD,                 // A380
   'transfers:list':     NO_PAYLOAD,                                                                       // A197
   'transfers:branches': NO_PAYLOAD,                                                                       // A197

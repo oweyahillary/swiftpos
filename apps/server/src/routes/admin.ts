@@ -60,7 +60,7 @@ import bcrypt             from 'bcrypt';
 import crypto            from 'node:crypto'; // required by tech-token + mode-switch generators (crypto.createHmac/createHash/randomBytes)
 import { supabase }       from '../lib/supabase';
 import { isSeededAdminHash, SEEDED_ADMIN_MESSAGE } from '../lib/adminSeedGuard';
-import { seedDefaultRolePermissions } from '../lib/defaultRolePermissions';
+import { seedDefaultRolePermissions, seededRoleRows } from '../lib/defaultRolePermissions';
 import { requireAdmin, requireSuperAdmin, signAdminToken, forgetAdmin, ADMIN_ROLES } from '../middleware/adminAuth';
 import { notifySuperAdminsToVerify } from '../lib/adminVerifyNotice';   // A507
 import { setOwnerPassword } from '../lib/passwordReset';          // A495: the reset revokes the owner's sessions
@@ -504,16 +504,11 @@ router.post('/clients', requireAdmin, async (req, res) => {
       .single();
     if (brErr) throw brErr;
 
-    // 4. Seed default roles
+    // 4. Seed default roles — A514: the owner's role and every built-in role for this type (shared BUILT_IN_ROLES).
+    // business_id: seededRoleRows sets it on every row (lib/defaultRolePermissions.ts)
     const { data: roles, error: rErr } = await supabase
       .from('roles')
-      .insert(
-        ['owner', 'manager', 'cashier'].map(name => ({
-          business_id: business.id,
-          name,
-          is_default:  true,
-        }))
-      )
+      .insert(seededRoleRows(business.id, 'owner', normalizedType))
       .select();
     if (rErr) throw rErr;
 

@@ -320,6 +320,89 @@ export function defaultKeysFor(kind: 'owner' | 'manager' | 'cashier' | 'none'): 
 }
 
 /**
+ * A514: the business types that sell fuel (businesses.type — the admin portal's and onboarding's VALID_TYPES). Only these
+ * get the built-in Fuel attendant role.
+ */
+export const FUEL_BUSINESS_TYPES: readonly string[] = ['petrol_station'];
+
+export interface BuiltInRole {
+  /** The role's name as a new business sees it. Matched case- and space-insensitively (lower(trim(name))). */
+  name: string;
+  /** Shown on Settings › Roles and permissions under the name. */
+  description: string;
+  /** Its default fine keys — least privilege; the owner may tick more or fewer per role. */
+  keys: readonly string[];
+  /** Only for these business types (none = every business). */
+  types?: readonly string[];
+}
+
+/**
+ * A514 — the built-in roles every business gets besides the owner's role (owner, 2026-10-16: "Supervisor, Waiter, Kitchen,
+ * Storekeeper and any other that a good system should have" — with Accountant and, at a fuel business, Fuel attendant).
+ * The ONE place their defaults live: new businesses are seeded from it (lib/defaultRolePermissions.ts) and migration 142
+ * adds whichever is missing to every existing business with exactly these keys (scripts/test-migration-142.mjs compares).
+ * They are ordinary roles: the owner renames, edits or deletes them on Settings › Roles and permissions.
+ *   Manager / Cashier — the catalogue's own manager / cashier defaults (each key's `manager` / `cashier` flag), as before.
+ *   Supervisor — sells like a cashier, and approves voids, refunds and sales on account with their PIN, confirms drawers,
+ *     sees every cashier's sales and the branch's sales and shift reports. No settings, staff, roles, costs or stock.
+ *   Waiter — takes orders, sends them to the kitchen and takes payment, discounts within the limit. Not the staff list,
+ *     not customer credit, no refunds, no reports, no drawer money (the cashier's back-office-free subset).
+ *   Kitchen — reads the menu. The kitchen display signs in with its own display token (Settings › Kitchen display), not a
+ *     person's keys, so a kitchen role needs nothing more; it never sells, never touches money or customers.
+ *   Storekeeper — stock levels, deliveries (suppliers, purchase orders, receiving), transfers, counts, wastage, the stock
+ *     report, and cost prices (deliveries carry them). Not inventory.adjust: changing a figure by hand and reviewing
+ *     counts is the check ON the storekeeper's counts, so it stays with the owner / manager. No selling.
+ *   Accountant — every report (read-only, costs and tax included, and downloads), the orders / shifts pages and the
+ *     expenses list. No selling, no edits, no settings, no staff. (Supplier bills have no read-only key yet: payables.manage
+ *     also pays them, so it is left out.)
+ *   Fuel attendant — pump sales and the pumps (fuel.manage: active / idle, tank deliveries) and the menu. No discounts,
+ *     refunds, reports or drawer money.
+ */
+const CASHIER_DEFAULT_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.cashier).map((p) => p.key);
+const MANAGER_DEFAULT_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.manager).map((p) => p.key);
+export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
+  { name: 'Manager', description: 'Runs a branch', keys: MANAGER_DEFAULT_KEYS },
+  { name: 'Cashier', description: 'Sells at the till', keys: CASHIER_DEFAULT_KEYS },
+  { name: 'Supervisor', description: 'Sells, and approves voids, refunds, sales on account and drawers with their PIN',
+    keys: [...CASHIER_DEFAULT_KEYS, 'sales.void', 'sales.refund', 'sales.reprint', 'sales.history_all', 'customers.credit',
+      'shifts.confirm', 'reports.sales', 'reports.shifts'] },
+  { name: 'Waiter', description: 'Takes orders, sends them to the kitchen and takes payment',
+    keys: ['orders.create', 'sales.discount', 'products.view', 'inventory.view', 'customers.view', 'customers.edit',
+      'reservations.manage'] },
+  { name: 'Kitchen', description: 'Kitchen staff - reads the menu (the kitchen display has its own sign-in)',
+    keys: ['products.view'] },
+  { name: 'Storekeeper', description: 'Receives deliveries, transfers, counts and writes off stock',
+    keys: ['products.view', 'inventory.view', 'inventory.receive', 'inventory.transfer', 'inventory.count',
+      'inventory.waste', 'reports.inventory', 'menu.costs'] },
+  { name: 'Accountant', description: 'Reads the books - every report, the orders and the expenses, changes nothing',
+    keys: ['reports.overview', 'reports.sales', 'reports.items', 'reports.staff', 'reports.shifts', 'reports.voids',
+      'reports.inventory', 'reports.fuel', 'reports.tax', 'reports.costs', 'reports.labour', 'reports.monthly_pack',
+      'reports.payments', 'reports.export', 'orders.view_all', 'expenses.view'] },
+  { name: 'Fuel attendant', description: 'Sells fuel at the pumps', keys: ['orders.create', 'products.view', 'fuel.manage'],
+    types: FUEL_BUSINESS_TYPES },
+];
+
+const roleNameKey = (name: string | null | undefined): string => String(name ?? '').trim().toLowerCase().replace(/[\s_]+/g, ' ');
+
+/** A514: the built-in roles a business of this type gets (besides the owner's role), in the order they are listed. */
+export function builtInRolesFor(businessType: string | null | undefined): BuiltInRole[] {
+  const t = String(businessType ?? '').trim().toLowerCase();
+  return BUILT_IN_ROLES.filter((r) => !r.types || r.types.includes(t));
+}
+
+/**
+ * A514: the default keys of a role being SEEDED by this name — the owner's role (owner / admin) everything, a built-in role
+ * its own keys (Branch manager is the Manager), anything else nothing (a role the owner sets up). Seeding only: from then
+ * on the owner decides per role.
+ */
+export function defaultKeysForRoleName(name: string | null | undefined): string[] {
+  const n = roleNameKey(name);
+  if (n === 'owner' || n === 'admin') return [...PERMISSION_KEYS];
+  const r = BUILT_IN_ROLES.find((b) => roleNameKey(b.name) === n) ?? (n === 'branch manager' ? BUILT_IN_ROLES[0] : undefined);
+  return r ? [...new Set(r.keys)] : [];
+}
+
+/**
  * A492: may this person set the branch's M-Pesa number? settings.mpesa — and, until migration 134 has run (`openBefore`,
  * or a map that predates A490), receipt.manage as well: that is who could set the receipt's payment line before.
  */

@@ -11,8 +11,10 @@
 // a page height literally fed roughly 30cm of blank paper after every receipt,
 // which on a busy till is most of a roll an hour.
 
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { noteActivity, setPrintPendingProbe } from './activityTracker';   // A508
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,6 +50,63 @@ export interface PrinterGeometry {
 
 const _geometryCache = new Map<string, PrinterGeometry | null>();
 
+// ── A513: the geometry kept across restarts ───────────────────────────────────────────────────────────────────────
+// Each probe is a PowerShell loading System.Drawing — on a slow PC a second or two of CPU. A printer's paper does not
+// change between starts, so a measured answer is kept (printer-geometry.json in the data folder) and measured again
+// only when a print to that printer fails, when the printer list changes, or after GEOMETRY_KEEP_MS. "Could not tell"
+// (null) is never kept: the printer may only have been off.
+export const GEOMETRY_KEEP_MS = 30 * 24 * 60 * 60_000;
+interface GeometryFile { printers?: string[]; entries: Record<string, { g: PrinterGeometry; at: number }> }
+let _geometryFile: string | null = null;
+function geometryFile(): string | null {
+  if (_geometryFile) return _geometryFile;
+  try { _geometryFile = path.join(app.getPath('userData'), 'printer-geometry.json'); } catch { return null; }
+  return _geometryFile;
+}
+/** Tests only. */
+export function _setGeometryFile(file: string | null): void { _geometryFile = file; _geometryCache.clear(); }
+function readGeometryFile(): GeometryFile {
+  const f = geometryFile();
+  try {
+    const v = f ? JSON.parse(fs.readFileSync(f, 'utf8')) : null;
+    return v && typeof v.entries === 'object' && v.entries ? v : { entries: {} };
+  } catch { return { entries: {} }; }
+}
+function writeGeometryFile(v: GeometryFile): void {
+  const f = geometryFile();
+  if (!f) return;
+  try { fs.writeFileSync(f, JSON.stringify(v)); } catch { /* measured again next time */ }
+}
+/** A kept, still-fresh measurement for this printer, or undefined. */
+export function keptGeometry(deviceName: string, now = Date.now()): PrinterGeometry | undefined {
+  const e = readGeometryFile().entries[deviceName];
+  return e && e.g && now - e.at < GEOMETRY_KEEP_MS ? e.g : undefined;
+}
+function keepGeometry(deviceName: string, g: PrinterGeometry, now = Date.now()): void {
+  const v = readGeometryFile();
+  v.entries[deviceName] = { g, at: now };
+  writeGeometryFile(v);
+}
+/** A print to this printer failed: its paper is measured again next time. */
+export function forgetGeometry(deviceName: string): void {
+  _geometryCache.delete(deviceName);
+  const v = readGeometryFile();
+  if (!v.entries[deviceName]) return;
+  delete v.entries[deviceName];
+  writeGeometryFile(v);
+  console.log(`[print] the kept paper size of ${deviceName} is measured again after a failed print`);
+}
+/** The printer list Windows gave — a change (a printer added, removed, renamed) measures every printer again. */
+export function notePrinterList(names: string[]): boolean {
+  const list = [...new Set(names)].sort();
+  const v = readGeometryFile();
+  if (v.printers && JSON.stringify(v.printers) === JSON.stringify(list)) return false;
+  const had = Object.keys(v.entries).length > 0;
+  writeGeometryFile({ printers: list, entries: v.printers ? {} : v.entries });   // first list seen: keep what is kept
+  if (v.printers) { _geometryCache.clear(); if (had) console.log('[print] the printer list changed — paper sizes are measured again'); }
+  return !!v.printers;
+}
+
 const HUNDREDTHS_INCH_TO_MM = 25.4 / 100;
 
 export function probeGeometry(deviceName: string): Promise<PrinterGeometry | null> {
@@ -67,6 +126,8 @@ export function probeGeometry(deviceName: string): Promise<PrinterGeometry | nul
 function probeGeometryInner(deviceName: string): Promise<PrinterGeometry | null> {
   if (process.platform !== 'win32' || !deviceName) return Promise.resolve(null);
   if (_geometryCache.has(deviceName)) return Promise.resolve(_geometryCache.get(deviceName)!);
+  const kept = keptGeometry(deviceName);   // A513: measured on an earlier start — no PowerShell
+  if (kept) { _geometryCache.set(deviceName, kept); return Promise.resolve(kept); }
 
   // Windows PowerShell (5.1) specifically, not pwsh: System.Drawing.Printing is
   // a Windows-only assembly and is not present in PowerShell Core on all hosts.
@@ -81,7 +142,11 @@ $pg = $ps.DefaultPageSettings
 `.trim();
 
   return new Promise(resolve => {
-    const finish = (g: PrinterGeometry | null) => { _geometryCache.set(deviceName, g); resolve(g); };
+    const finish = (g: PrinterGeometry | null) => {
+      _geometryCache.set(deviceName, g);
+      if (g) keepGeometry(deviceName, g);   // A513
+      resolve(g);
+    };
 
     const child = execFile(
       'powershell.exe',
@@ -214,6 +279,8 @@ export async function listPrinters(): Promise<PrinterInfo[]> {
       win.webContents.getPrintersAsync(),
       new Promise<never[]>(res => setTimeout(() => res([]), 6_000)),
     ]);
+    // A513: a changed list measures the paper again (an empty answer — a wedged spooler — changes nothing).
+    if (printers.length) { try { notePrinterList(printers.map(p => p.name)); } catch { /* never */ } }
     return printers.map(p => ({
       name: p.name,
       displayName: p.displayName || p.name,
@@ -457,5 +524,8 @@ function printOnce(opts: SilentPrintOptions): Promise<{ ok: boolean; error?: str
 }
 
 export function printHtmlSilent(opts: SilentPrintOptions): Promise<{ ok: boolean; error?: string }> {
-  return enqueue(() => printOnce(opts));
+  return enqueue(() => printOnce(opts)).then((r) => {
+    if (!r.ok && opts.deviceName) { try { forgetGeometry(opts.deviceName); } catch { /* never stops a print */ } }   // A513
+    return r;
+  });
 }

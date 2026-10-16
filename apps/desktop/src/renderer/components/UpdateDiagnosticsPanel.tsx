@@ -15,6 +15,14 @@ const clock = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime
 export default function UpdateDiagnosticsPanel() {
   const [diag, setDiag] = useState<Diag | null>(null);
   const [open, setOpen] = useState(false);
+  // A516: the graphics mode a technician may set (A513 low-memory mode) — read only with a tech session.
+  const [gpu, setGpu] = useState<'auto' | 'on' | 'off' | null>(null);
+  const [gpuNote, setGpuNote] = useState('');
+  useEffect(() => { posApi.tech.getGpuMode().then((r) => setGpu(r.mode)).catch(() => setGpu(null)); }, []);
+  const chooseGpu = async (mode: 'auto' | 'on' | 'off') => {
+    try { await posApi.tech.setGpuMode(mode); setGpu(mode); setGpuNote('Saved — takes effect when ZapTill next starts.'); }
+    catch (e: any) { setGpuNote(e?.message ?? 'Could not save the graphics mode.'); }
+  };
   useEffect(() => {
     const load = () => { posApi.update.getDiagnostics().then(setDiag).catch(() => {}); };
     load();
@@ -48,6 +56,21 @@ export default function UpdateDiagnosticsPanel() {
             ? 'Updater task: installed — updates install without a Windows prompt.'
             : 'Updater task: not installed — updates install when ZapTill is closed, and Windows asks for permission. Reinstalling ZapTill adds it.'}
         </p>
+      )}
+      {/* A513: how the last start went (Tech page only — never a cashier banner), and the low-memory graphics mode. */}
+      {diag.startup && <p data-testid="startup-line" className="text-gray-500">Last start — {diag.startup}.</p>}
+      {diag.graphics && <p data-testid="graphics-line" className="text-gray-500">{diag.graphics.replace(/^graphics: /, 'Graphics: ').replace(/ — to change it,.*$/, '')}.</p>}
+      {gpu && (
+        <div data-testid="gpu-mode" className="flex items-center gap-2 text-gray-400">
+          <span>Graphics acceleration:</span>
+          {(['auto', 'on', 'off'] as const).map((m) => (
+            <button key={m} onClick={() => chooseGpu(m)}
+              className={`px-2 py-0.5 rounded border ${gpu === m ? 'border-action-500 text-action-300' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>
+              {m === 'auto' ? 'Auto (off at 4 GB)' : m === 'on' ? 'On' : 'Off'}
+            </button>
+          ))}
+          {gpuNote && <span className="text-gray-500">{gpuNote}</span>}
+        </div>
       )}
       {(diag.log.length > 0 || (diag.updaterTask?.log.length ?? 0) > 0) && (
         <>

@@ -48,6 +48,7 @@ import { applyOffers } from './offers';   // A494: the offer discount a sale cla
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
+import path from 'path';   // A516
 import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, replicateToNode, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { tillBranchId } from './deviceConfig';   // A446
 import { MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
@@ -4123,6 +4124,24 @@ export function registerIpcHandlers() {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     logTechAction('backup.manual', {});
     return await takeSnapshot();
+  });
+
+  // A516: the graphics mode a technician sets on the Tech page (low-memory mode, A513) — the same gpu-mode.json the
+  // start gate reads before ZapTill loads (startGate.ts readGpuMode); it takes effect at the next start.
+  const GPU_FILE = () => path.join(app.getPath('userData'), 'gpu-mode.json');
+  handle('tech:getGpuMode', async () => {
+    if (!getActiveSession()) throw new Error('Tech session required');
+    try { const m = JSON.parse(fs.readFileSync(GPU_FILE(), 'utf8'))?.mode; return { mode: m === 'on' || m === 'off' ? m : 'auto' }; }
+    catch { return { mode: 'auto' }; }
+  });
+  handle('tech:setGpuMode', async (_e, payload) => {
+    const { mode } = assertPayload<{ mode: string }>({ mode: { t: 'string', min: 2 } }, payload);
+    if (!getActiveSession()) throw new Error('Tech session required');
+    if (mode !== 'auto' && mode !== 'on' && mode !== 'off') throw new Error('Graphics mode is auto, on or off.');
+    fs.writeFileSync(GPU_FILE(), JSON.stringify({ mode }));
+    logTechAction('graphics.mode', { mode });
+    logLine('startup', `graphics mode set to "${mode}" by a technician — takes effect when ZapTill next starts`);
+    return { ok: true, mode };
   });
 
   handle('tech:maintenance', async () => {

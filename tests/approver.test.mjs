@@ -3,12 +3,13 @@
  *
  * Owner, on v0.6.17 (M4): the till's refund refused the manager's PIN ("Invalid supervisor PIN") — it wanted a second,
  * separate override PIN. → "manager can replace that role", "3 is okay": approve with the manager's own PIN; override
- * PINs and the legacy business supervisor PIN keep working.
+ * PINs and the legacy business supervisor PIN keep working. A514 (2026-10-16, "Retire it completely"): the business
+ * supervisor PIN no longer approves — only people's own PINs (sign-in or approval/override PIN).
  *
  *   node tests/approver.test.mjs          (build apps/server first — this runs its dist/)
  *
  * RUNS the COMPILED apps/server/dist/lib/approver.js with real bcrypt hashes (apps/server's bcrypt), then pins that
- * routes/orders.ts wires it into BOTH the void and the refund handler with the legacy fallback and one clear refusal.
+ * routes/orders.ts wires it into BOTH the void and the refund handler with one clear refusal (A514: no legacy fallback).
  *
  * MUTATIONS TO CONFIRM BITE: drop the `mayApprove` filter on sign-in PINs → "a cashier's PIN never approves" fails; let
  * user_permissions not override the role → "a revoked orders.void" fails; skip the override loop → "override PINs still
@@ -81,7 +82,7 @@ await ok('a picked approver (authorizer_id) is the only one checked', async () =
   assert.deepEqual(await find('2222', { authorizerId: 'u-mgr' }), { result: 'ok', userId: 'u-mgr', via: 'pin' });
   assert.deepEqual(await find('2222', { authorizerId: 'u-sup' }), { result: 'invalid' });
 });
-await ok('"none" only when nobody can approve with a PIN (the caller then tries the legacy business PIN)', async () => {
+await ok('"none" only when nobody can approve with a PIN (A514: the caller answers NO_OVERRIDE_CONFIGURED — no business PIN)', async () => {
   assert.deepEqual(await A.findApprover([rows[2]], { pin: '3333', ownerId: OWNER }, checks), { result: 'none' });
   assert.deepEqual(await A.findApprover([{ id: 'u-mgr', pin_hash: null, roles: role('Manager', ['orders.void']) }],
     { pin: '2222', ownerId: OWNER }, checks), { result: 'none' }, 'a manager with no PIN cannot approve by PIN');
@@ -104,16 +105,18 @@ await ok('orders.ts: verifyOverrideAuthorizer asks findApprover with the real si
   assert.match(src, /user_permissions \( granted, permissions \( key \) \), user_branches \( branch_id \)'\)/);
   assert.match(src, /loginPin:\s+async \(p, h\) => \(await verifyPin\(p, h, businessId\)\)\.valid/);
 });
-await ok('void AND refund: legacy business PIN still accepted; otherwise one clear refusal (no "Invalid supervisor PIN")', async () => {
-  // A494: both routes ask ONE helper (approverByPin — behind the PIN limiter, never the requester themselves); the legacy
-  // business PIN and the one refusal live there now.
+await ok('void AND refund: only people\'s own PINs (A514: the business supervisor PIN retired); one clear refusal', async () => {
+  // A494: both routes ask ONE helper (approverByPin — behind the PIN limiter, never the requester themselves); the one
+  // refusal lives there. A514 (owner, 2026-10-16: "Retire it completely"): the legacy business-wide supervisor PIN (A355
+  // kept it) is no longer tried anywhere — a branch where nobody may approve answers NO_OVERRIDE_CONFIGURED.
   for (const m of ["router.post('/:id/void'", "router.post('/:id/refund'"]) {
     const b = body(m);
     assert.match(b, /const a = await approverByPin\(req, authorizer_id, pin, '(void|refund)', order\.branch_id \?\? null\);/, m);   // A495: the sale's branch
     assert.ok(!/Invalid supervisor PIN/.test(b), m);
   }
   const helper = src.slice(src.indexOf('async function approverByPin('), src.indexOf('// What the till/web is told when no approval matched'));
-  assert.match(helper, /const legacy = await verifySupervisorPin\(req\.businessId, pin\);\s+if \(legacy === true\)/);
+  assert.doesNotMatch(src, /verifySupervisorPin|supervisor_pin_hash'/, 'A514: nothing reads the business supervisor PIN');
+  assert.match(helper, /if \(ov\.result === 'no_authorizers'\) return \{ status: 400, body: \{ \.\.\.NO_APPROVER \} \};/);
   assert.match(helper, /return \{ status: 403, body: \{ \.\.\.APPROVER_PIN_REFUSED \} \};/);
   assert.match(src, /error: 'That PIN was not recognised\. Enter the PIN of a manager \(or the owner\) on duty\.'/);
 });

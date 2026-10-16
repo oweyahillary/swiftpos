@@ -185,6 +185,9 @@ contextBridge.exposeInMainWorld('swiftpos', {
     logTail:      (lines?: number)=> ipcRenderer.invoke('tech:logTail', { lines }),
     backupNow:    ()              => ipcRenderer.invoke('tech:backupNow'),
     maintenance:  ()              => ipcRenderer.invoke('tech:maintenance'),
+    // A516: the graphics mode (low-memory mode) — auto / on / off, at the next start.
+    getGpuMode:   ()              => ipcRenderer.invoke('tech:getGpuMode'),
+    setGpuMode:   (mode: string)  => ipcRenderer.invoke('tech:setGpuMode', { mode }),
     chooseBackupDir: ()           => ipcRenderer.invoke('tech:chooseBackupDir'),          // A380
     setBackupDir: (dir: string | null) => ipcRenderer.invoke('tech:setBackupDir', { dir }), // A380
     promoteToNode:()              => ipcRenderer.invoke('tech:promoteToNode'),

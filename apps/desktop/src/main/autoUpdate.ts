@@ -54,6 +54,8 @@ import { readyVersion } from './updateShare';   // A508
 import { markQuitting } from './serverMode';   // A508
 import { execFile } from 'child_process';
 import { defaultTaskDeps, hasUpdaterTask, requestTaskInstall, updaterLogTail, type TaskInstallResult } from './updaterTask';   // A509
+import { whenStartupSettled, lastStartupLine, UPDATE_AFTER_LAUNCH_MS, UPDATE_AFTER_SETTLED_MS } from './lowImpactStart';   // A513
+import { graphicsLine } from './lowImpactStart';   // A513
 
 const ONE_HOUR = 60 * 60 * 1000;   // A348: the approval check is one small JSON call
 
@@ -95,13 +97,15 @@ export function getUpdateDiagnostics(): {
   idleInstall: (IdleInstallRecord & { ok: boolean }) | null; idleNote: string | null;
   /** A509: whether the updater task is installed (null: not known yet), and the last lines of its own log. */
   updaterTask: { installed: boolean | null; log: string[] };
+  /** A513: the last start's timing line, and the graphics (low-memory) mode. */
+  startup: string | null; graphics: string | null;
 } {
   let running: string | null = null;
   try { running = app.getVersion(); } catch { /* tests */ }
   let log: string[] = [];
   try { log = process.platform === 'win32' ? updaterLogTail(defaultTaskDeps()) : []; } catch { /* never */ }
   return { status: getUpdateStatus(), running, log: diag.slice(), idleInstall: lastIdleInstall, idleNote,
-    updaterTask: { installed: taskKnown, log } };
+    updaterTask: { installed: taskKnown, log }, startup: lastStartupLine(), graphics: graphicsLine() };
 }
 /** Tests only. */
 export function _resetUpdateDiagnostics(): void {
@@ -918,13 +922,15 @@ export function initAutoUpdate(): void {
     note: (line) => { idleNote = line; },
     failedBefore: (v) => !!lastIdleInstall && !lastIdleInstall.ok && lastIdleInstall.to === v,
   });
-  setInterval(() => { void idle.tick().catch((e: any) => noteUpdate(`idle install check failed: ${e?.message ?? e}`)); }, 60_000);
+  const startIdleTicks = () => setInterval(() => { void idle.tick().catch((e: any) => noteUpdate(`idle install check failed: ${e?.message ?? e}`)); }, 60_000);
 
   // A509: install-on-close through the updater task too (no Windows prompt when the till is shut at night). ZapTill is
   // held open (its windows already gone) while the script checks the download — at most 90 s; refused or no answer →
   // electron-updater installs it as before (elevate.exe: Windows asks — somebody is closing it).
-  void updaterTaskAvailable();
-  setInterval(() => { void updaterTaskAvailable(); }, ONE_HOUR);
+  // A513: asked only once there is something to install (a schtasks at every start, and every hour, for nothing
+  // before) — when the download lands, and hourly while it waits; the idle install's own check asks it too.
+  autoUpdater.on('update-downloaded', () => { void updaterTaskAvailable(); });
+  setInterval(() => { if (current.state === 'downloaded') void updaterTaskAvailable(); }, ONE_HOUR);
   app.on('will-quit', (e) => {
     const plan = closeInstallPlan({
       platform: process.platform, taskKnown, taskInstallStarted, closeTaskDone,
@@ -941,12 +947,20 @@ export function initAutoUpdate(): void {
     }).catch(() => { /* the old way */ }).finally(() => app.quit());
   });
 
-  void loop.check('start');
-  setInterval(() => { void loop.check('hourly'); }, ONE_HOUR);
-  // A443: a till behind a branch server asks it every 2 minutes (and now, at start — a till that was off asks as soon as
-  // it is back): told of a newer version the server holds, it checks with the cloud at once and takes it from the server.
-  void loop.ask();
-  setInterval(() => { void loop.ask(); }, 2 * 60_000);
+  // A513: nothing at launch. The first check (and the server question, the hourly beat, the idle install's minute)
+  // begins once the start-up sequence is over AND at least UPDATE_AFTER_LAUNCH_MS after launch — Windows and the
+  // till's own start come first. The idle install never sees the start-up as idle (activityTracker counts a launch
+  // as use, and nothing is downloaded before this first check).
+  whenStartupSettled(() => {
+    noteUpdate('the first update check, now that ZapTill has started');
+    void loop.check('start');
+    setInterval(() => { void loop.check('hourly'); }, ONE_HOUR);
+    // A443: a till behind a branch server asks it every 2 minutes (and now, at start — a till that was off asks as soon as
+    // it is back): told of a newer version the server holds, it checks with the cloud at once and takes it from the server.
+    void loop.ask();
+    setInterval(() => { void loop.ask(); }, 2 * 60_000);
+    startIdleTicks();
+  }, { minSinceLaunchMs: UPDATE_AFTER_LAUNCH_MS, afterMs: UPDATE_AFTER_SETTLED_MS });
   // A443: a till asked this server for a version it does not hold yet — check now (at most every 5 minutes).
   let lastAsked = 0;
   onShareWanted(() => {
