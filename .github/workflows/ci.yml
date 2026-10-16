@@ -935,6 +935,34 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/branch-server-audit.test.mjs
 
+      # A500 — a bill number never refuses a sale or keeps one off the branch: a clashing replica is kept as <n>~<device>,
+      # a wiped / reinstalled till carries on past the numbers it holds, a sale keeps its number; sales refused or skipped
+      # before this build are offered again once. Mutation-checked.
+      - name: Desktop bill numbers — no clash refuses a sale
+        working-directory: apps/desktop
+        run: node --no-warnings test/bill-number-clash.test.mjs
+
+      # A501 — a till and its branch server heal themselves: a 403/400/426 never fails a row; a changed server identity
+      # (certificate, device id, this till's branch) re-arms refused rows; a refused peer row is quarantined and retried
+      # (a new trading day with the event closing the last lands in one pass); a pinned server answering plain is a
+      # problem, re-checked by itself; separate TLS pools; a till follows its own server to a new address (proven over
+      # TLS); per-channel health on the Tech page; the (device_id, seq) index is used; /node/health names its protocol.
+      # Real servers, real TLS, real SQLite; mutation-checked.
+      - name: Desktop branch sync — self-heal and health
+        working-directory: apps/desktop
+        run: node --no-warnings test/sync-self-heal.test.mjs
+
+      # A503 — till/server setup audit: rejoin when the key was never used or is proven (bound to the server's certificate),
+      # a server never lists itself, a download no longer approved is not installed, nothing goes plain while a re-trust
+      # waits, closing a tech session clears the server's token. Real server, real TLS; mutation-checked.
+      - name: Desktop branch server — setup audit (A503)
+        working-directory: apps/desktop
+        run: node --no-warnings test/server-setup-a503.test.mjs
+      # A503 (E1) — a renumbered sale: its kitchen lines are paid and the sale screen shows the final number.
+      - name: Desktop — renumbered sale (A503)
+        working-directory: apps/desktop
+        run: node --no-warnings test/sale-renumber-a503.test.mjs
+
       # A489 — the branch server and its tills over TLS: one port for both protocols, the till pins the server's own
       # certificate (at join, or by itself once the server answers TLS), never falls back to plain once pinned; the join,
       # the gateway and update downloads ride it. Real server, real TLS; mutation-checked.
@@ -942,11 +970,40 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/lan-tls.test.mjs
 
+      # A496 — tills behind a branch server always get their update: a server holding its own downloaded update still
+      # fetches the next one, a stalled download is cancelled and restarted, a till never waits for ever on the server's
+      # copy, a copy from before a roll-back is not offered. The Electron half proves the stall and the pinned TLS feed
+      # under real Electron (it says SKIPPED where Electron cannot start).
+      - name: Desktop update delivery through the branch server
+        working-directory: apps/desktop
+        run: node --no-warnings test/update-delivery.test.mjs
+      - name: Desktop update delivery under Electron (pinned TLS, stalled download)
+        working-directory: apps/desktop
+        run: node --no-warnings test/update-delivery-electron.test.mjs
+
+      # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
+      # proven till, joins, the gateway's path check, the roster, TLS pins.
+      - name: Desktop branch server hardening
+        working-directory: apps/desktop
+        run: node --no-warnings test/branch-server-hardening.test.mjs
+
       # A490 — the till's one permission rule (fine keys, the owner's role, older maps), every gated IPC handler, no
       # role-name checks left, the update bar never switching the session, fresher permissions reaching the screens.
       - name: Desktop A490 permissions (one rule, every gate, no role names)
         working-directory: apps/desktop
         run: node --no-warnings test/a490-permissions.test.mjs
+
+      # A494 — till hardening (2026-10-15 audit): local PIN attempts limited per person and per till, a cloud 429 never
+      # falls back to the local PIN check, DevTools closed on a packaged till, the gated handlers re-checked.
+      - name: Desktop till hardening (PIN limits, DevTools, gates)
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-hardening.test.mjs
+
+      # A504 — a person's session the cloud refused for good (deactivated, re-roled, moved) never holds the till's drawers,
+      # days and expenses: they go under the till's own session, as orders already did.
+      - name: Desktop refused staff session pushes under the till's own
+        working-directory: apps/desktop
+        run: node --no-warnings test/staff-token-refused-push.test.mjs
 
       # Till sync audit (2026-10-14) — the till's cloud push and pull: a close made while its push was in flight, offline
       # voids before the close, the close contract (404 re-armed, 409 ALREADY_CLOSED done), one drawer never starving the

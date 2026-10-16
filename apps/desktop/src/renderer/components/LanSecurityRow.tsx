@@ -42,9 +42,22 @@ export default function LanSecurityRow() {
         {st.state === 'encrypted' && <>Encrypted · security code {code}</>}
         {st.state === 'plain' && <>Not encrypted yet — it switches by itself once the branch server answers encrypted</>}
         {st.state === 'old_server' && <>Not encrypted — the branch server runs an older build; update it</>}
+        {st.state === 'tls_failed' && (
+          <span className="text-red-400" data-testid="lan-tls-failed">
+            The branch server does not answer encrypted any more — nothing is sent to it; this till checks again every minute.
+            If it was reinstalled with an older build, update it, or trust it again.
+            {st.error && <span className="block text-gray-400">{st.error}</span>}{/* A503: e.g. a re-trust waiting for a certificate */}{' '}
+            <button onClick={retrust} disabled={busy}
+              className="ml-1 rounded bg-[#1e293b] px-2 py-0.5 text-gray-200 hover:bg-[#26344b] disabled:opacity-40">
+              {busy ? 'Working…' : 'Trust it again'}
+            </button>
+          </span>
+        )}
         {st.state === 'mismatch' && (
           <span className="text-red-400">
-            The branch server's identity changed — nothing is sent to it. If it was reinstalled, trust it again.{' '}
+            {/* A503: a reinstalled server has a new access code too — trusting its certificate alone cannot reconnect. */}
+            The branch server's identity changed — nothing is sent to it. If it was reinstalled, join it again (Find my
+            server) and press Allow there; trust it again only if you know its certificate alone changed.{' '}
             <button onClick={retrust} disabled={busy} data-testid="lan-retrust"
               className="ml-1 rounded bg-[#1e293b] px-2 py-0.5 text-gray-200 hover:bg-[#26344b] disabled:opacity-40">
               {busy ? 'Working…' : 'Trust it again'}

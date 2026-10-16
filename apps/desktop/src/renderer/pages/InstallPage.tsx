@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
+import ServerAddressAsk from '../components/ServerAddressAsk';   // A507
 import JoinWaitPanel from '../components/JoinWaitPanel';   // A436
 import ServerKeepRunning from '../components/ServerKeepRunning';   // A435
 import type { DeployMode, DeviceRole, FoundServer } from '../lib/posApi';
@@ -135,7 +136,8 @@ export default function InstallPage({ onComplete }: Props) {
     let list: FoundServer[] = [];
     try { list = await posApi.install.findServers(); } catch { list = []; }
     setServers(list); setSearching(false);
-    if (list.length === 0) setStep('connection');   // no server on this network — the technician sets it up by hand
+    // A507: nothing found stays on this step — the technician may ask a server by its address (the network may hide it),
+    // or set up without one.
   };
   useEffect(() => { void search(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -273,8 +275,9 @@ export default function InstallPage({ onComplete }: Props) {
         server_url: cleanUrl,
         branch_id: branchId,
         device_role: role,
-        node_url: role === 'till' ? composedNodeUrl : null,
-        node_secret: nodeSecret.trim().toUpperCase() || null,
+        // A502: a till's server comes only from Find my server (the join saved it already); never typed.
+        node_url: role === 'till' && joinedViaServer ? composedNodeUrl : null,
+        node_secret: role === 'till' && !joinedViaServer ? null : (nodeSecret.trim().toUpperCase() || null),
         terminal_code: terminalCode.trim().toUpperCase(),
         // Only send it if activation somehow did not — never blank an
         // existing value.
@@ -336,6 +339,13 @@ export default function InstallPage({ onComplete }: Props) {
                     </button>
                   ))}
                   <p className="text-xs text-gray-400">Choose the server to join. Someone at that server is asked to allow it.</p>
+                </div>
+              )}
+              {!searching && servers.length === 0 && !joinTarget && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm text-gray-300">No branch server answered on this network.</p>
+                  <p className="text-xs text-gray-400">Check the server is on and ZapTill is running there, and that both computers&apos; Windows network is set to Private.</p>
+                  <ServerAddressAsk onAsk={askToJoin} />
                 </div>
               )}
               {joinTarget && joinWait && <JoinWaitPanel tillName={joinWait.tillName} srv={joinTarget} askedAt={joinWait.at} securityCode={joinWait.code} />}
@@ -488,80 +498,35 @@ export default function InstallPage({ onComplete }: Props) {
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
                   <label className="block text-sm text-amber-300 mb-1.5">Branch access code</label>
                   <div className="font-mono text-lg tracking-widest text-white select-all break-all">{nodeSecret}</div>
+                  {/* A503 (A502): tills no longer type this code — they find this server and someone here presses Allow;
+                      the code goes to them with the answer. */}
                   <p className="text-xs text-amber-200/70 mt-2">
-                    Write this down now. Every other till at this branch must be given the same code
-                    during its setup, or it will not be able to sync to this machine.
+                    Keep a note of it for support. The tills do not type it: each one finds this server (Find my server)
+                    and someone here presses Allow — the code goes to the till with that answer.
                   </p>
                 </div>
               )}
               {(role === 'node' || role === 'office') && <ServerKeepRunning />}
+              {/* A502 (owner, 2026-10-15: "we remove the address totally and use find my server"): no branch server address
+                  or access code typed in. A till joins its server by finding it and being allowed there (step 1) — the
+                  server then hands over its address and access code. A till set up without one works on its own and can
+                  join later from the Tech page (Find my server). */}
               {role === 'till' && (
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1.5">
-                    Branch server address <span className="text-gray-400">(optional)</span>
-                  </label>
-                  <div className="flex gap-2 items-start">
-                    <input type="text" value={nodeIp} inputMode="decimal"
-                      onChange={e => setNodeIp(e.target.value)}
-                      placeholder="192.168.1.100"
-                      className={`${inputCls} font-mono text-sm flex-1`} />
-                    <div className="flex items-center gap-1.5 pt-2.5 text-gray-400 font-mono text-sm">
-                      <span>:</span>
-                      {customPort ? (
-                        <input type="text" value={nodePort} inputMode="numeric" maxLength={5}
-                          onChange={e => setNodePort(e.target.value.replace(/\D/g, ''))}
-                          className={`${inputCls} font-mono text-sm w-20 py-2`} />
-                      ) : (
-                        <span className="px-2 py-2 rounded-lg bg-gray-800 text-gray-500 select-none">
-                          {NODE_DEFAULT_PORT}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2 mt-2 text-xs text-gray-400 cursor-pointer">
-                    <input type="checkbox" checked={customPort}
-                      onChange={e => {
-                        setCustomPort(e.target.checked);
-                        if (!e.target.checked) setNodePort(String(NODE_DEFAULT_PORT));
-                      }}
-                      className="accent-action-500" />
-                    The branch server is on a different port
-                  </label>
+                <div data-testid="install-branch-server">
+                  <label className="block text-sm text-gray-400 mb-1.5">Branch server</label>
+                  {joinedViaServer && composedNodeUrl ? (
+                    <div className="bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-gray-200 text-sm font-mono">{composedNodeUrl}</div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-gray-400">
+                        None — this till works on its own. To join the branch server, find it on this network and press Allow there.
+                      </p>
+                      <button type="button" onClick={() => { setStep('search'); void search(); }}
+                        className="mt-2 text-xs text-action-400 hover:text-action-300">Find my server</button>
+                    </>
+                  )}
                   <p className="text-xs text-gray-400 mt-1.5">
-                    The branch server till this one pushes to for combined manager reports. Enter its
-                    IP address only &mdash; the port is fixed. Leave blank for a single-till branch.
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
                     Network: put the branch server and its tills on a wired or separate network &mdash; not the customer Wi-Fi.
-                  </p>
-                  {nodeIpTrim !== '' && !nodeIpValid && (
-                    <p className="text-xs text-amber-300 mt-1.5">
-                      That is not a valid IP address. It should look like 192.168.1.100.
-                    </p>
-                  )}
-                  {nodeIpSuspect && (
-                    <p className="text-xs text-amber-300 mt-1.5">
-                      {nodeIpTrim.startsWith('127.') || nodeIpTrim === '0.0.0.0'
-                        ? 'That address points at this machine, not another till.'
-                        : 'That does not look like a local network address. The branch server is on the shop LAN — usually 192.168.x.x or 10.x.x.x.'}
-                    </p>
-                  )}
-                  {composedNodeUrl && !nodeIpSuspect && (
-                    <p className="text-xs text-gray-500 mt-1.5 font-mono">
-                      Will connect to {composedNodeUrl}
-                    </p>
-                  )}
-                </div>
-              )}
-              {role === 'till' && nodeIpTrim !== '' && (
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1.5">Branch access code</label>
-                  <input type="text" value={nodeSecret}
-                    onChange={e => setNodeSecret(e.target.value.toUpperCase())}
-                    placeholder="XXXX-XXXX-XXXX-XXXX"
-                    className={`${inputCls} font-mono text-sm tracking-widest`} />
-                  <p className="text-xs text-gray-400 mt-1.5">
-                    Shown on the branch server during its setup. Without it this till cannot push to that machine.
                   </p>
                 </div>
               )}

@@ -14,7 +14,8 @@ import { API_URL } from '../lib/config';
 import { money } from '../lib/format';
 const API = API_URL;
 
-interface Business { id: string; name: string; currency: string; }
+// A495: the cloud no longer sends the business's id — the page never needed it.
+interface Business { name: string; currency: string; }
 interface Category  { id: string; name: string; sort_order: number; }
 interface Product   { id: string; name: string; description: string | null; price: number; image_url: string | null; category_id: string | null; }
 interface CartItem  { product: Product; quantity: number; notes: string; }
@@ -24,8 +25,10 @@ export default function QRMenuPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
   const tableId   = searchParams.get('table') ?? '';
+  const branchQ   = searchParams.get('branch') ?? '';   // A495: a printed QR may name its branch
 
   const [business,    setBusiness]   = useState<Business | null>(null);
+  const [orderError,  setOrderError] = useState('');   // A506
   const [categories,  setCats]       = useState<Category[]>([]);
   const [products,    setProducts]   = useState<Product[]>([]);
   const [tableName,   setTableName]  = useState<string | null>(null);
@@ -43,6 +46,7 @@ export default function QRMenuPage() {
     if (!slug) return;
     const params = new URLSearchParams();
     if (tableId) params.set('table_id', tableId);
+    if (branchQ) params.set('branch', branchQ);
 
     fetch(`${API}/api/qr/${slug}/menu?${params}`)
       .then(r => r.json())
@@ -52,12 +56,13 @@ export default function QRMenuPage() {
         setCats(data.categories);
         setProducts(data.products);
         setTableName(data.table_name);
+        // A495: the branch this QR orders for — the cloud derives it (the table's branch, else the main branch).
         setBranchId(data.branch_id ?? '');
         if (data.categories.length) setActiveCat(data.categories[0].id);
       })
       .catch(() => setError('Could not load menu. Please try again.'))
       .finally(() => setLoading(false));
-  }, [slug, tableId]); // eslint-disable-line
+  }, [slug, tableId, branchQ]); // eslint-disable-line
 
   function addToCart(product: Product) {
     setCart(c => {
@@ -79,25 +84,27 @@ export default function QRMenuPage() {
 
   async function submitOrder() {
     if (cart.length === 0) return;
-    setSubmitting(true);
+    setSubmitting(true); setOrderError('');
     try {
       const res = await fetch(`${API}/api/qr/${slug}/order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           table_id: tableId || null,
-          branch_id: branchId,
+          branch_id: branchId || null,
           guest_name: guestName.trim() || null,
           items: cart.map(i => ({ product_id: i.product.id, quantity: i.quantity, notes: i.notes || null })),
         }),
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Failed to place order. Please ask staff for help.');
       setOrderDone(data.order_number);
       setCart([]);
       setShowCart(false);
     } catch (e: any) {
-      setError(e.message ?? 'Failed to place order. Please ask staff for help.');
+      // A506: shown in the cart — the menu-load error replaced the whole page ("Menu unavailable") and the cart with it,
+      // for a refusal the guest can act on (A495: 10 orders / 10 min, an item no longer on the menu, a name too long).
+      setOrderError(e.message ?? 'Failed to place order. Please ask staff for help.');
     } finally { setSubmitting(false); }
   }
 
@@ -256,11 +263,12 @@ export default function QRMenuPage() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Your name (optional)</label>
-                <input value={guestName} onChange={e => setGuestName(e.target.value)} placeholder="e.g. Kizzy"
+                <input value={guestName} maxLength={60} onChange={e => setGuestName(e.target.value)} placeholder="e.g. Kizzy"
                   className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
               </div>
             </div>
             <div className="px-6 py-5 border-t border-gray-800">
+              {orderError && <p className="mb-3 text-sm text-red-400" data-testid="qr-order-error">{orderError}</p>}
               <button onClick={submitOrder} disabled={submitting || cart.length === 0}
                 className="w-full bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white font-bold py-4 rounded-2xl text-base transition-colors">
                 {submitting ? 'Sending to kitchen…' : `Place order · ${money(cartTotal, business?.currency ?? 'KES')}`}

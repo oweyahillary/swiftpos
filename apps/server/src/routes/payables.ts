@@ -18,7 +18,10 @@
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope, can } from '../middleware/rbac';
+import { seesCosts, stripFields } from '../lib/costAccess';   // A494
+import { branchOfBusiness, guardBranch, idsOfBusiness } from '../lib/branchGuard';   // A494
+import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A494
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { actor } from '../lib/actor';
@@ -30,7 +33,15 @@ import {
 const router = safeRouter();
 router.use(requireAuth);
 
-const today = () => new Date().toISOString().slice(0, 10);   // the business's day boundary is not needed for dates of bills
+const today = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * A494: a return's unit costs and its credit are the goods' COST. A manager who sends goods back (inventory.receive)
+ * without menu.costs / reports.costs does not see them; whoever keeps the supplier accounts (payables.manage) does —
+ * the credit is a line of the account they keep.
+ */
+const RETURN_COST_FIELDS = new Set(['unit_cost', 'credit_amount', 'cost_price']);
+const seesReturnCosts = (req: Parameters<typeof seesCosts>[0]): boolean => seesCosts(req) || can(req, 'payables.manage');   // the business's day boundary is not needed for dates of bills
 
 type Bill = BillLike & { ref: string; supplier_id: string; invoice_number: string | null; grn_id: string | null; note: string | null;
   branch_id: string | null; created_at: string; created_by_name: string | null; voided_at: string | null; void_reason: string | null };
@@ -129,6 +140,7 @@ router.post('/bills', requirePermission('payables.manage'), async (req, res) => 
   if (dueDate && dueDate < billDate) { res.status(400).json({ error: 'The due date is before the bill date.', code: 'BAD_DUE' }); return; }
   const branchId = typeof b.branch_id === 'string' && b.branch_id ? b.branch_id : grn?.branch_id ?? null;
   if (branchId && !assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'No access to that branch' }); return; }
+  if (branchId && !(await branchOfBusiness(req.businessId, branchId))) { res.status(404).json({ error: 'Branch not found in this business' }); return; }   // A494
   const who = await actor(req);
   const { data, error } = await supabase.from('supplier_bills').insert({
     business_id: req.businessId, supplier_id: supplier.id, branch_id: branchId, ref: await nextRef('supplier_bills', 'BILL', req.businessId),
@@ -217,7 +229,7 @@ router.get('/returns', requireAnyPermission('inventory.receive', 'payables.manag
   if (typeof req.query.supplier_id === 'string') q = q.eq('supplier_id', req.query.supplier_id);
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  res.json(seesReturnCosts(req) ? data ?? [] : stripFields(data ?? [], RETURN_COST_FIELDS));
 });
 
 router.post('/returns', requireAnyPermission('inventory.receive', 'payables.manage'), async (req, res) => {
@@ -227,7 +239,10 @@ router.post('/returns', requireAnyPermission('inventory.receive', 'payables.mana
   if (!supplier) { res.status(400).json({ error: 'Choose the supplier.' }); return; }
   const branchId = b.branch_id || req.branchId;
   if (!branchId) { res.status(400).json({ error: 'Choose the branch the goods leave from.' }); return; }
-  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You can only send goods back from your own branch.' }); return; }
+  if (!(await guardBranch(req, res, branchId, 'You can only send goods back from your own branch.'))) return;   // A494: the owner's too
+  if (typeof b.grn_id === 'string' && b.grn_id && !(await idsOfBusiness('goods_received_notes', req.businessId, [b.grn_id]))) {
+    res.status(400).json({ error: "That delivery is not this business's." }); return;
+  }
   const raw = Array.isArray(b.items) ? b.items : [];
   if (!raw.length || raw.length > 200) { res.status(400).json({ error: 'Add the items going back (1 to 200).' }); return; }
   const reason = typeof b.reason === 'string' ? b.reason.trim().slice(0, 300) : '';
@@ -246,12 +261,18 @@ router.post('/returns', requireAnyPermission('inventory.receive', 'payables.mana
     'ingredient_stock_levels', 'ingredient_id', iIds, (q) => q.select('ingredient_id, current_stock').eq('branch_id', branchId));
   const P = new Map(prods.map((p) => [p.id, p])), I = new Map(ings.map((i) => [i.id, i]));
   const pHeld = new Map(pLevels.map((l) => [l.product_id, l])), iHeld = new Map(iLevels.map((l) => [l.ingredient_id, Number(l.current_stock) || 0]));
+  // A494: while the branch counts an item, "only N at this branch" would give the count away.
+  const hidden = await hiddenWhileCounting(req, branchId);
+  const notEnough = (name: string, held: number, key: string) =>
+    (hidden.has(key) ? `${name}: not enough stock at this branch.` : `${name}: only ${held} at this branch.`);
+  // A494: a cost typed by someone who may not see costs is dropped — the line takes the catalogue's cost.
+  const mayCost = seesReturnCosts(req);
 
   type Line = { item_kind: 'product' | 'ingredient'; product_id: string | null; ingredient_id: string | null; name: string; quantity: number; unit_cost: number | null; byPiece: boolean };
   const lines: Line[] = [];
   for (const it of raw) {
     const qty = parseAmount(it.quantity);
-    const cost = it.unit_cost === undefined || it.unit_cost === null || it.unit_cost === '' ? null : Number(it.unit_cost);
+    const cost = !mayCost || it.unit_cost === undefined || it.unit_cost === null || it.unit_cost === '' ? null : Number(it.unit_cost);
     if (it.kind === 'product') {
       const p = P.get(String(it.id));
       if (!p) { res.status(400).json({ error: 'An item is not in this business\'s catalogue.' }); return; }
@@ -259,7 +280,7 @@ router.post('/returns', requireAnyPermission('inventory.receive', 'payables.mana
       if (qty === null || (byPiece && !Number.isInteger(qty))) { res.status(400).json({ error: `${p.name}: enter how many go back${byPiece ? ' (whole pieces)' : ''}.` }); return; }
       const lvl = pHeld.get(p.id);
       const held = Number(byPiece ? lvl?.qty_pieces : lvl?.quantity) || 0;
-      if (qty > held + 0.004) { res.status(409).json({ error: `${p.name}: only ${held} at this branch.`, code: 'MORE_THAN_HELD' }); return; }
+      if (qty > held + 0.004) { res.status(409).json({ error: notEnough(p.name, held, `p:${p.id}`), code: 'MORE_THAN_HELD' }); return; }
       lines.push({ item_kind: 'product', product_id: p.id, ingredient_id: null, name: p.name, quantity: qty, byPiece,
         unit_cost: cost !== null && Number.isFinite(cost) && cost >= 0 ? round2(cost) : p.cost_price === null ? null : Number(p.cost_price) });
     } else if (it.kind === 'ingredient') {
@@ -267,7 +288,7 @@ router.post('/returns', requireAnyPermission('inventory.receive', 'payables.mana
       if (!g) { res.status(400).json({ error: 'An item is not in this business\'s catalogue.' }); return; }
       if (qty === null) { res.status(400).json({ error: `${g.name}: enter how much goes back.` }); return; }
       const held = iHeld.get(g.id) ?? 0;
-      if (qty > held + 0.004) { res.status(409).json({ error: `${g.name}: only ${held} at this branch.`, code: 'MORE_THAN_HELD' }); return; }
+      if (qty > held + 0.004) { res.status(409).json({ error: notEnough(g.name, held, `i:${g.id}`), code: 'MORE_THAN_HELD' }); return; }
       lines.push({ item_kind: 'ingredient', product_id: null, ingredient_id: g.id, name: g.name, quantity: qty, byPiece: false,
         unit_cost: cost !== null && Number.isFinite(cost) && cost >= 0 ? round2(cost) : g.unit_cost === null ? null : Number(g.unit_cost) });
     } else {
@@ -323,7 +344,8 @@ router.post('/returns', requireAnyPermission('inventory.receive', 'payables.mana
     res.status(500).json({ error: `${ref} was recorded, but stock could not be taken off for ${failed.join(', ')} — correct it on the stock screen.`, code: 'STOCK_NOT_MOVED', id: r.id });
     return;
   }
-  res.status(201).json({ ...r, items: lines.length });
+  const out = { ...r, items: lines.length };
+  res.status(201).json(seesReturnCosts(req) ? out : stripFields(out, RETURN_COST_FIELDS));
 });
 
 export default router;

@@ -33,11 +33,11 @@ ok('A275: /instruct requires a real count and replaces any pending close for tha
 ok('A275: /pending and /ack are scoped to the calling device (X-Device-Id)', () => {
   const s = r(DC);
   assert.match(s, /function deviceIdOf\(req: any\)/);
-  const pending = /router\.get\('\/pending'[\s\S]{0,900}?res\.json\(rows/.exec(s)[0];
+  const pending = /router\.get\('\/pending'[\s\S]{0,1400}?res\.json\(rows/.exec(s)[0];   // A494: the own-till check made the handlers longer
   assert.match(pending, /\.eq\('device_id', deviceId\)/);
   assert.match(pending, /\.eq\('status', 'pending'\)/);
   assert.match(pending, /delivered_at/); // marks delivered
-  const ack = /router\.post\('\/ack'[\s\S]{0,900}?maybeSingle\(\)/.exec(s)[0];
+  const ack = /router\.post\('\/ack'[\s\S]{0,1400}?maybeSingle\(\)/.exec(s)[0];
   assert.match(ack, /\.eq\('device_id', deviceId\)/);   // a till can only ack its own
   assert.match(ack, /\.eq\('status', 'pending'\)/);     // and only a live one
 });

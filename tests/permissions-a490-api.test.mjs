@@ -270,11 +270,10 @@ try {
   await ok('GET /api/controls: each section only with its key', async () => {
     reset();
     const all = await call('GET', '/api/controls', T.owner);
-    assert.deepEqual(Object.keys(all.body).sort(), ['loyalty', 'payments', 'pos', 'updates']);
+    // A493: no `updates` section — ZapTill approves till updates (admin portal), never the client.
+    assert.deepEqual(Object.keys(all.body).sort(), ['loyalty', 'payments', 'pos']);
     assert.deepEqual(Object.keys(all.body.pos).sort(), ['delivery_fee', 'login_codes', 'pay_before_kitchen', 'pay_later_tabs']);
-    assert.deepEqual(all.body.updates.tills.map((t) => t.terminal_code), ['T1']);
     assert.deepEqual(Object.keys((await call('GET', '/api/controls', as(['settings.pos']))).body).sort(), ['loyalty', 'pos']);
-    assert.deepEqual(Object.keys((await call('GET', '/api/controls', as(['settings.updates']))).body), ['updates']);
     assert.deepEqual(Object.keys((await call('GET', '/api/controls', as(['settings.payments']))).body), ['payments']);
     assert.deepEqual((await call('GET', '/api/controls', T.cash)).body, {});
   });
@@ -297,11 +296,14 @@ try {
     assert.equal(db.business_settings.find((s) => s.key === 'loyalty_earn_rate').value, '2.5');
     assert.deepEqual((await call('GET', '/api/controls', T.owner)).body.loyalty, { enabled: true, earn_rate: 2.5 });
   });
-  await ok('PUT /updates: a malformed version refused (the admin portal\'s check)', async () => {
+  await ok('A493: PUT /updates is refused for everyone, the owner included (ADMIN_SETS) — nothing written', async () => {
     reset();
-    assert.equal((await call('PUT', '/api/controls/updates', T.owner, { version: 'latest' })).status, 400);
-    const held = await call('PUT', '/api/controls/updates', as(['settings.updates']), { version: null });
-    assert.equal(held.status, 200); assert.equal(held.body.approved_version, null);
+    const before = JSON.stringify(db.businesses);
+    for (const t of [T.owner, T.mgr, T.cash]) {
+      const r = await call('PUT', '/api/controls/updates', t, { version: null });
+      assert.equal(r.status, 403); assert.equal(r.body.code, 'ADMIN_SETS');
+    }
+    assert.equal(JSON.stringify(db.businesses), before);
   });
 
   console.log('\n4. Cost figures are not SENT to someone who may not see them\n');

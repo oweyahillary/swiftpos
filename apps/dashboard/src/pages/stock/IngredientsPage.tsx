@@ -31,7 +31,7 @@ interface Movement {
   id: string;
   movement_type: string;
   quantity_change: number;
-  quantity_after: number;
+  quantity_after: number | null;   // A494: null while the item is being counted (blind count)
   notes: string | null;
   created_at: string;
   users: { name: string } | null;
@@ -613,7 +613,7 @@ export default function IngredientsPage() {
                       <p className={`text-sm font-semibold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                         {isPositive ? '+' : ''}{m.quantity_change} {movementsFor.unit}
                       </p>
-                      <p className="text-gray-600 text-xs">→ {m.quantity_after} {movementsFor.unit}</p>
+                      {m.quantity_after !== null && <p className="text-gray-600 text-xs">→ {m.quantity_after} {movementsFor.unit}</p>}
                     </div>
                   </div>
                 );

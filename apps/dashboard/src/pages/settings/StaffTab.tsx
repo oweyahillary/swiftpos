@@ -70,6 +70,7 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
   const [allRoles, setAllRoles] = useState<Role[]>([]);  // every role — to read a person's keys
   const catalogue = usePermissionCatalogue(api);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState('');   // A506: a refused load / deactivate / activate is said
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [mode, setMode] = useState<'pin' | 'invite'>('pin');
@@ -87,7 +88,8 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
       // hold, never the owner's). No role names are listed here any more.
       setAllRoles(rolesData ?? []);
       setRoles((rolesData ?? []).filter(r => r.assignable !== false && !r.is_owner_role));
-    } catch (err) { console.error(err); }
+      setListError('');
+    } catch (err: any) { console.error(err); setListError(err?.message ?? 'Could not load the staff'); }   // A506
     finally { setLoading(false); }
   };
 
@@ -100,8 +102,9 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
       intent: 'warning',
       confirmLabel: 'Deactivate',
       onConfirm: async () => {
-        await api.delete(`/api/staff/${id}`);
-        fetchAll();
+        // A506: the cloud refuses some (A494: a peer, someone holding more, another branch) — say so.
+        try { await api.delete(`/api/staff/${id}`); fetchAll(); }
+        catch (e: any) { setListError(e?.message ?? 'Could not deactivate'); }
       },
     });
   };
@@ -112,13 +115,16 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
       message: 'They will get their sign-in code by email next time, instead of from an authenticator app (use this for a lost phone).',
       intent: 'warning',
       confirmLabel: 'Reset',
-      onConfirm: async () => { await api.post(`/api/staff/${s.id}/reset-otp`, {}); },
+      onConfirm: async () => {
+        try { await api.post(`/api/staff/${s.id}/reset-otp`, {}); }
+        catch (e: any) { setListError(e?.message ?? 'Could not reset the sign-in code'); }   // A506
+      },
     });
   };
 
   const activate = async (id: string) => {
-    await api.patch(`/api/staff/${id}`, { status: 'active' });
-    fetchAll();
+    try { await api.patch(`/api/staff/${id}`, { status: 'active' }); fetchAll(); }
+    catch (e: any) { setListError(e?.message ?? 'Could not activate'); }   // A506
   };
 
   // A475: the staff in pages (25 / 50 / 100, remembered in this browser); the active count is over everyone. Another
@@ -142,6 +148,7 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
         )}
       </div>
 
+      {listError && <p className="text-sm text-red-400" data-testid="staff-error">{listError}</p>}
       {loading ? (
         <div className="text-gray-500 text-sm py-10 text-center">Loading…</div>
       ) : staff.length === 0 ? (
@@ -228,6 +235,18 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
   );
 }
 
+/** A506: the same branches, in any order. */
+export function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  const A = new Set(a.filter(Boolean)), B = new Set(b.filter(Boolean));
+  return A.size === B.size && [...A].every((x) => B.has(x));
+}
+
+/** A506: the same own rights (a key given or taken away) — nothing set and {} are the same. */
+export function sameOverrides(a: Record<string, boolean> | null | undefined, b: Record<string, boolean> | null | undefined): boolean {
+  const ea = Object.entries(a ?? {}), eb = b ?? {};
+  return ea.length === Object.keys(eb).length && ea.every(([k, v]) => eb[k] === v);
+}
+
 // ── Staff Modal ───────────────────────────────────────────────────────────────
 interface ModalProps {
   editing: StaffMember | null;
@@ -276,6 +295,8 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
   const allKeys = catalogue.keys.map(k => k.key);
   const diff = keyDifferences(effectiveKeys, roleBaseline, allKeys);
   const diffCount = diff.added.length + diff.removed.length;
+  // A506: an override PIN approves voids and refunds — only for someone who will hold sales.void or sales.refund.
+  const mayApprove = effectiveKeys.has('*') || effectiveKeys.has('sales.void') || effectiveKeys.has('sales.refund');
 
   // When the role changes, start again from the new role's keys.
   const handleRoleChange = (newRoleId: string) => {
@@ -299,11 +320,26 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
       for (const k of diff.removed) override_keys[k] = false;
     }
 
-    // Override PIN payload: '' clears (revoke), a value sets/replaces, omit = keep.
+    // Override PIN payload: '' clears (revoke), a value sets/replaces, omit = keep. A506: only for someone who will
+    // be able to void or refund (the cloud refuses it otherwise — OVERRIDE_PIN_NO_AUTHORITY).
     const overrideField: { override_pin?: string } =
       clearOverride ? { override_pin: '' }
-      : overridePin ? { override_pin: overridePin }
+      : overridePin && mayApprove ? { override_pin: overridePin }
       : {};
+
+    // A494: an empty branch list is left out, never sent as [] — the cloud refuses [] from a manager (it used to mean
+    // "every branch"); left out, an edit keeps the person's branches and a new person gets the manager's own branch.
+    // A506: an EDIT sends what changed and nothing else. The cloud reads a field sent as a change: role_id or
+    // override_keys sent unchanged made a manager's edit of their own name "You cannot change your own role, permissions
+    // or branches" (OWN_ACCESS); an unchanged e-mail made an edit of a peer's name PEER_CREDENTIALS; an unchanged branch
+    // list naming a second branch was "You can only assign staff to your own branch". The owner clearing every branch
+    // ("All branches") still sends [] — it is a change.
+    const branchField: { branch_ids?: string[] } = editing
+      ? (sameSet(selectedBranches, editing.user_branches?.map(b => b.branch_id) ?? []) ? {} : { branch_ids: selectedBranches })
+      : selectedBranches.length ? { branch_ids: selectedBranches } : {};
+    const keysChanged = !editing || !sameOverrides(override_keys, editing.override_keys);
+    const roleChanged = !editing || roleId !== (editing.roles?.id ?? '');
+    const emailChanged = !editing || email.trim() !== (editing.email ?? '');
 
     setLoading(true); setError('');
     try {
@@ -311,17 +347,17 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
         await api.patch(`/api/staff/${editing.id}`, {
         hourly_rate: hourlyRate ? Number(hourlyRate) : null,
           name,
-          email: email || undefined,
-          role_id: roleId,
+          ...(emailChanged ? { email: email.trim() } : {}),   // A506: '' clears it (the cloud stores null)
+          ...(roleChanged ? { role_id: roleId } : {}),
           ...(pin ? { pin } : {}),
           ...overrideField,
-          branch_ids: selectedBranches,
-          override_keys,
+          ...branchField,
+          ...(keysChanged ? { override_keys } : {}),
         });
       } else if (mode === 'pin') {
-        await api.post('/api/staff', { name, email: email || undefined, phone: phone || undefined, role_id: roleId, pin, branch_ids: selectedBranches, override_keys, ...overrideField });
+        await api.post('/api/staff', { name, email: email || undefined, phone: phone || undefined, role_id: roleId, pin, ...branchField, override_keys, ...overrideField });
       } else {
-        await api.post('/api/staff/invite', { name, email, role_id: roleId, branch_ids: selectedBranches, override_keys, ...overrideField });
+        await api.post('/api/staff/invite', { name, email, role_id: roleId, ...branchField, override_keys, ...overrideField });
       }
       onSaved();
     } catch (err: any) {
@@ -421,8 +457,8 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
               value={overridePin}
               onChange={e => { setOverridePin(e.target.value.replace(/\D/g, '')); setClearOverride(false); }}
               maxLength={6}
-              disabled={clearOverride}
-              placeholder={editing ? '•••• (leave blank to keep)' : '4–6 digits (optional)'}
+              disabled={clearOverride || !mayApprove}
+              placeholder={!mayApprove ? 'Give them Void or Refund first' : editing ? '•••• (leave blank to keep)' : '4–6 digits (optional)'}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift disabled:opacity-40 tracking-widest"
             />
             <p className="text-xs text-gray-600 mt-1">

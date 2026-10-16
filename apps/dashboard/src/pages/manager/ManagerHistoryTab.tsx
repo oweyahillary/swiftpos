@@ -48,15 +48,16 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // A506: transfers need inventory.transfer — asked only of someone who holds it (the 403 blanked the deliveries too).
       const [g, t] = await Promise.all([
         posApi.get<GRNRow[]>(`/api/stock/grn${branchId ? `?branch_id=${branchId}` : ''}`),
-        posApi.get<TRow[]>('/api/stock/transfers'),
+        hasPermission('inventory.transfer') ? posApi.get<TRow[]>('/api/stock/transfers') : Promise.resolve([] as TRow[]),
       ]);
       setGrns(Array.isArray(g) ? g : []);
       setTransfers((Array.isArray(t) ? t : []).filter(x => x.from_branch_id === branchId || x.to_branch_id === branchId));
     } catch { /* surfaced as empty */ }
     finally { setLoading(false); }
-  }, [posApi, branchId]);
+  }, [posApi, branchId, hasPermission]);
   useEffect(() => { void load(); }, [load]);
   // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
   const [grnPage, setGrnPage] = useState(1);

@@ -88,7 +88,8 @@ const app = express(); app.use(express.json());
 app.use('/api/products', require(path.join(DIST, 'routes/products.js')).default);
 app.use('/api/variants', require(path.join(DIST, 'routes/variants.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
-const token = jwt.sign({ userId: U, businessId: BZ, isOwner: true, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface: 'web' },
+// A494: the owner's PASSWORD session (ownerLogin) — an owner-role PIN token now needs its users row, like anyone's.
+const token = jwt.sign({ userId: U, businessId: BZ, isOwner: true, ownerLogin: true, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface: 'web' },
   process.env.JWT_SECRET);
 const post = async (url, rows) => {
   const res = await fetch(`http://127.0.0.1:${server.address().port}${url}`, {

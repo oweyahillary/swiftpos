@@ -17,7 +17,18 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, can } from '../middleware/rbac';
+import { idsOfBusiness } from '../lib/branchGuard';   // A494
+
+/** A494: every product a combo contains (and its category) must be this business's. null when they are. */
+async function foreignComboIds(businessId: string, items: unknown, categoryId?: unknown): Promise<string | null> {
+  if (!Array.isArray(items)) return 'items must be a list';
+  const ids = items.map((i: any) => i?.product_id);
+  if (ids.some((x) => typeof x !== 'string' || !x)) return 'Every item needs a product';
+  if (!(await idsOfBusiness('products', businessId, ids))) return "An item is not in this business's catalogue";
+  if (categoryId && !(await idsOfBusiness('categories', businessId, [String(categoryId)]))) return "That category is not this business's";
+  return null;
+}
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -72,6 +83,8 @@ router.post('/', requirePermission('menu.edit'), async (req, res) => {
   if (!combo_price || Number(combo_price) <= 0) {
     res.status(400).json({ error: 'combo_price is required' }); return;
   }
+  const foreign = await foreignComboIds(req.businessId, items, category_id);   // A494
+  if (foreign) { res.status(400).json({ error: foreign }); return; }
 
   // Create the product record with is_combo=true
   const { data: product, error: pErr } = await supabase
@@ -124,6 +137,17 @@ router.post('/', requirePermission('menu.edit'), async (req, res) => {
 
 router.patch('/:id', requirePermission('menu.edit'), async (req, res) => {
   const { name, description, combo_price, status } = req.body;
+  // A494: the combo's price is a selling price — menu.prices, as a product's (a combo is a product). Sent unchanged
+  // (the form sends the whole combo) it needs nothing; it may never be zero or negative.
+  if (combo_price !== undefined) {
+    const p = Number(combo_price);
+    if (combo_price === null || combo_price === '' || !Number.isFinite(p) || p <= 0) { res.status(400).json({ error: 'combo_price must be more than 0' }); return; }
+    const { data: cur } = await supabase.from('products').select('combo_price, base_price')
+      .eq('id', req.params.id).eq('business_id', req.businessId).eq('is_combo', true).maybeSingle();
+    if (!cur) { res.status(404).json({ error: 'Combo not found' }); return; }
+    const was = Number((cur as any).combo_price ?? (cur as any).base_price);
+    if (was !== p && !can(req, 'menu.prices')) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.prices' }); return; }
+  }
   const updates: Record<string, unknown> = {};
   if (name        !== undefined) { updates.name = name.trim(); }
   if (description !== undefined) { updates.description = description; }
@@ -159,6 +183,8 @@ router.put('/:id/items', requirePermission('menu.edit'), async (req, res) => {
     .single();
 
   if (!product) { res.status(404).json({ error: 'Combo not found' }); return; }
+  const foreign = await foreignComboIds(req.businessId, items);   // A494: before anything is deleted
+  if (foreign) { res.status(400).json({ error: foreign }); return; }
 
   await supabase.from('combo_items').delete().eq('combo_id', req.params.id);
 

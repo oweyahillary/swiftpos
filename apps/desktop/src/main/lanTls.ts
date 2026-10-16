@@ -26,6 +26,7 @@ import https from 'https';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { logLine } from './logFile';
+import { noteChannelOk, noteChannelError } from './nodeHealth';   // A501
 
 // ── A tiny DER writer — only what one self-signed certificate needs ─────────────────────────────────────────────────
 const derLen = (n: number): Buffer => {
@@ -134,22 +135,68 @@ export function tillPin(): string | null {
   const pem = readState('node_tls_pin');
   return pem && certDer(pem) ? pem : null;
 }
-/** Pin (or forget) the branch server's certificate. Forgetting clears a recorded identity mismatch too. */
-export function setTillPin(pem: string | null): void {
+/**
+ * Pin (or forget) the branch server's certificate. Forgetting clears a recorded identity mismatch too.
+ * A496: `confirmed` — a person compared the security code (the join screens, or "the codes match" on the Tech page).
+ * A pin taken by trust on first use (ensureNodeTls) is NOT confirmed until someone does; the Tech page asks them to.
+ */
+export function setTillPin(pem: string | null, opts: { confirmed?: boolean } = {}): void {
   if (pem !== null && !certDer(pem)) throw new Error('That is not a certificate.');
+  writeState('node_tls_repin', null);   // A503: any explicit pin (or a join to an older server) ends a re-trust wait
   writeState('node_tls_pin', pem);
+  writeState('node_tls_pin_confirmed', pem && opts.confirmed !== false ? '1' : pem ? '0' : null);
   agents.clear();
   mismatchAt = 0; mismatchError = null;
+  tlsFailedAt = 0; tlsFailedError = null;   // A501
   if (pem) logLine('node', `A489: the branch server's certificate is pinned — security code ${securityCode(pem)}; its connection is encrypted`);
   else logLine('node', 'A489: the branch server\'s certificate is no longer pinned');
 }
 
+/**
+ * A503 (scenario audit, TLS downgrade): "Trust it again" forgot the pin with setTillPin(null) — and until the next
+ * minute's trust-on-first-use pinned a certificate again (never, when the server was reinstalled with a new access code),
+ * every request to the server went in PLAIN HTTP: the access code, this till's device key, its cloud sign-in token
+ * through the gateway, the sales. Exactly what a person in the middle wanting the till re-trusted would want. Now a
+ * re-trust forgets the pin AND holds everything back from the server's address until a certificate is pinned again
+ * (ensureNodeTls proves it over TLS with this till's access code; a join pins one too). Nothing is sent plain meanwhile.
+ */
+export function forgetPinForRetrust(): void {
+  const had = !!tillPin();
+  setTillPin(null);
+  if (had) writeState('node_tls_repin', '1');
+}
+/** A503: a re-trust is waiting for a certificate to pin — nothing goes to the server's address until then. */
+export function awaitingRepin(): boolean { return readState('node_tls_repin') === '1' && !tillPin(); }
+const REPIN_WAIT = 'waiting to trust the branch server\'s certificate again — nothing is sent to it until it answers encrypted and accepts this till\'s access code; if it was reinstalled, join it again (Find my server)';
+
 // ── The pinned client ───────────────────────────────────────────────────────────────────────────────────────────────
 const agents = new Map<string, https.Agent>();
-function agentFor(pin: string): https.Agent {
-  const k = crypto.createHash('sha256').update(certDer(pin)!).digest('hex');
+/**
+ * A501: two pools per pinned server — one for the cloud calls the server forwards (/node/cloud/…, slow: they wait on the
+ * internet, update downloads stream for minutes) and one for the branch's own LAN routes (/node/sync, /node/since, the
+ * PIN check, the instruction poll). One pool of 8 let eight slow gateway calls hold every connection while a cashier's
+ * PIN check and the branch's replication queued behind them.
+ */
+export const LAN_SOCKETS = 8;
+export const GATEWAY_SOCKETS = 16;
+const isGatewayPath = (pathname: string) => pathname === '/node/cloud' || pathname.startsWith('/node/cloud/');
+function agentFor(pin: string, gateway = false): https.Agent {
+  const pinDer = certDer(pin)!;
+  const k = `${crypto.createHash('sha256').update(pinDer).digest('hex')}|${gateway ? 'gateway' : 'lan'}`;
   let a = agents.get(k);
-  if (!a) { a = new https.Agent({ keepAlive: true, maxSockets: 8, ca: pin }); agents.set(k, a); }
+  if (!a) {
+    // timeout: an idle kept connection is dropped after 4 s — before the server's own 5 s keep-alive closes it under a
+    // request about to use it (a request's own time limit replaces this while it runs).
+    a = new https.Agent({ keepAlive: true, maxSockets: gateway ? GATEWAY_SOCKETS : LAN_SOCKETS, timeout: 4_000, ca: pin,
+      // The chain is checked against the pin (ca); this checks it IS the pin, byte for byte, and skips the host name —
+      // a shop's server is reached by its LAN address, which no certificate could name in advance.
+      checkServerIdentity: (_host: string, cert: { raw?: Buffer }) => {
+        const raw = cert?.raw ? Buffer.from(cert.raw) : null;
+        return raw && raw.length === pinDer.length && crypto.timingSafeEqual(raw, pinDer) ? undefined : new NodeIdentityError('a different certificate');
+      },
+    } as https.AgentOptions);
+    agents.set(k, a);
+  }
   return a;
 }
 
@@ -162,6 +209,15 @@ const CERT_ERRORS = new Set(['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN
   'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'CERT_SIGNATURE_FAILURE']);
 /** The pinned certificate itself, refused for its dates — this till's clock is wrong, not the server's identity. */
 const DATE_ERRORS = new Set(['CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID']);
+/**
+ * A501: the handshake itself failed — the address answers, but not with TLS (a server reinstalled on an older build, a
+ * different program on the port, or someone in the middle stripping encryption). Never "encrypted" on the Tech page.
+ */
+export function isTlsHandshakeError(e: any): boolean {
+  const code = String(e?.code ?? '');
+  const msg = String(e?.message ?? '');
+  return code === 'EPROTO' || /^ERR_SSL_|^ERR_TLS_/.test(code) || /wrong version number|unknown protocol|packet length too long|handshake/i.test(msg);
+}
 
 /** A request body as bytes (and the type it implies) — strings and buffers as they are, anything else (FormData, a
  *  Blob, URLSearchParams) serialised exactly as fetch would. */
@@ -213,13 +269,11 @@ export async function pinnedFetch(url: string, init: any = {}, pin: string): Pro
     const fail = (e: unknown) => { if (!settled) { settled = true; reject(e); } };
     const req = https.request({
       protocol: 'https:', host: u.hostname, port: u.port || 443, method, path: `${u.pathname}${u.search}`, headers,
-      agent: agentFor(pin), ca: pin,
-      // The chain is checked against the pin (ca); this checks it IS the pin, byte for byte, and skips the host name —
-      // a shop's server is reached by its LAN address, which no certificate could name in advance.
-      checkServerIdentity: (_host: string, cert: { raw?: Buffer }) => {
-        const raw = cert?.raw ? Buffer.from(cert.raw) : null;
-        return raw && raw.length === pinDer.length && crypto.timingSafeEqual(raw, pinDer) ? undefined : new NodeIdentityError('a different certificate');
-      },
+      // A501: the trust (ca = the pin, and the byte-for-byte check) lives on the agent, ONE per pin and kind. A
+      // checkServerIdentity made afresh for every request gave every request its own pool name on newer Node — no
+      // connection was ever reused (a TLS handshake per call) and the agent's cap meant nothing; on older Node the cap
+      // held and eight slow gateway calls starved the LAN routes. Now both are what they say: reuse, and two pools.
+      agent: agentFor(pin, isGatewayPath(u.pathname)),
     }, (res) => {
       const h = new Headers();
       for (let i = 0; i + 1 < res.rawHeaders.length; i += 2) h.append(res.rawHeaders[i], res.rawHeaders[i + 1]);
@@ -254,7 +308,9 @@ export async function pinnedFetch(url: string, init: any = {}, pin: string): Pro
         const err = new TypeError('fetch failed'); (err as any).cause = new Error(`the branch server's certificate is outside its dates by this till's clock (${e.code}) — check this till's date and time`);
         return fail(err);
       }
-      const err = new TypeError('fetch failed'); (err as any).cause = e; fail(err);
+      const err = new TypeError('fetch failed'); (err as any).cause = e;
+      if (isTlsHandshakeError(e)) (err as any).tlsHandshake = true;   // A501: lanFetch records it (never "encrypted")
+      fail(err);
     });
     if (body) req.end(body); else req.end();
   });
@@ -263,6 +319,9 @@ export async function pinnedFetch(url: string, init: any = {}, pin: string): Pro
 // ── The till's transport ────────────────────────────────────────────────────────────────────────────────────────────
 let mismatchAt = 0;
 let mismatchError: string | null = null;
+/** A501: the pinned server's address answered, but not with TLS. Cleared by the next encrypted answer. */
+let tlsFailedAt = 0;
+let tlsFailedError: string | null = null;
 
 /** host:port of the configured branch server for a till that has one; null on a server / office / standalone till. */
 function nodeOrigin(): { host: string; port: string } | null {
@@ -282,16 +341,30 @@ const isNodeUrl = (url: string, o: { host: string; port: string }) => {
  */
 export async function lanFetch(url: string, init: any = {}): Promise<Response> {
   const origin = nodeOrigin();
-  const pin = origin && isNodeUrl(url, origin) ? tillPin() : null;
-  if (!pin) return globalThis.fetch(url, init);
+  const toNode = !!origin && isNodeUrl(url, origin);
+  const pin = toNode ? tillPin() : null;
+  if (!pin) {
+    // A503: never plain to the server while a re-trust waits (see forgetPinForRetrust).
+    if (toNode && awaitingRepin()) { const err = new TypeError('fetch failed'); (err as any).cause = new Error(REPIN_WAIT); throw err; }
+    return globalThis.fetch(url, init);
+  }
   try {
     const res = await pinnedFetch(url, init, pin);
     if (mismatchAt) { mismatchAt = 0; mismatchError = null; }
+    if (tlsFailedAt) { tlsFailedAt = 0; tlsFailedError = null; logLine('node', 'A501: the branch server answers encrypted again'); }
     return res;
   } catch (e: any) {
     if (e instanceof NodeIdentityError) {
       if (!mismatchAt) logLine('node', `A489: ${e.message} — nothing is sent to it; if the branch server was reinstalled, trust it again from the Tech page`);
       mismatchAt = mismatchAt || Date.now(); mismatchError = e.message;
+      noteChannelError('tls', null, e.message);   // A501
+    } else if (e?.tlsHandshake) {
+      // A501: the address answers without TLS. Nothing is sent to it in the clear (the pin stands); the Tech page says so
+      // and ensureNodeTls looks at what the server hands out now, every minute, by itself.
+      const why = `the branch server at ${new URL(url).host} does not answer encrypted (${e?.cause?.code ?? e?.cause?.message ?? 'handshake failed'})`;
+      if (!tlsFailedAt) logLine('node', `A501: ${why} — nothing is sent to it unencrypted; this till checks it again every minute`);
+      tlsFailedAt = tlsFailedAt || Date.now(); tlsFailedError = why;
+      noteChannelError('tls', null, why);
     }
     throw e;
   }
@@ -300,8 +373,45 @@ export async function lanFetch(url: string, init: any = {}): Promise<Response> {
 /** The same address as https:// when this till pins its branch server (for clients that are not lanFetch). */
 export function lanUrl(url: string): string {
   const origin = nodeOrigin();
-  if (!origin || !isNodeUrl(url, origin) || !tillPin()) return url;
+  // A503: while a re-trust waits, https:// too — with no pin the updater's session refuses it rather than going plain.
+  if (!origin || !isNodeUrl(url, origin) || (!tillPin() && !awaitingRepin())) return url;
   return url.replace(/^http:\/\//i, 'https://');
+}
+
+/** A496: has a person compared this till's pinned security code with the server's? (A join pin: yes.) */
+export function tillPinConfirmed(): boolean {
+  if (!tillPin()) return false;
+  return readState('node_tls_pin_confirmed') !== '0';
+}
+/** A496: the person at this till compared the code on its Tech page with the server's and they match. */
+export function confirmTillPin(): boolean {
+  if (!tillPin()) return false;
+  writeState('node_tls_pin_confirmed', '1');
+  logLine('node', `A496: the branch server's security code ${securityCode(tillPin())} was compared and confirmed on this till`);
+  return true;
+}
+
+// ── A496: the server side — which tills still talk plain HTTP, and refusing them once none should ──────────────────
+const transports = new Map<string, { lastTls: number; lastPlain: number }>();
+/** Each authenticated request from another machine: which till (or address), and whether it came encrypted. */
+export function noteTillTransport(who: string, tls: boolean, now = Date.now()): void {
+  const t = transports.get(who) ?? { lastTls: 0, lastPlain: 0 };
+  if (tls) t.lastTls = now; else t.lastPlain = now;
+  transports.set(who, t);
+  if (transports.size > 300) for (const [k, v] of transports) if (Math.max(v.lastTls, v.lastPlain) < now - 7 * 86_400_000) transports.delete(k);
+}
+/** For the server's Tech page: every till seen since start, and whether it still used plain HTTP in the last day. */
+export function tillTransports(now = Date.now()): Array<{ till: string; lastTls: string | null; lastPlain: string | null; plainRecently: boolean }> {
+  return [...transports.entries()].map(([till, t]) => ({
+    till, lastTls: t.lastTls ? new Date(t.lastTls).toISOString() : null, lastPlain: t.lastPlain ? new Date(t.lastPlain).toISOString() : null,
+    plainRecently: t.lastPlain > now - 86_400_000,
+  }));
+}
+/** The server setting (off by default): refuse plain HTTP on every authenticated route from another machine. */
+export function requireTlsForTills(): boolean { return readState('node_require_tls') === '1'; }
+export function setRequireTlsForTills(on: boolean): void {
+  writeState('node_require_tls', on ? '1' : null);
+  logLine('node', `A496: plain HTTP from tills is ${on ? 'now REFUSED — encrypted connections only' : 'accepted again (logged)'}`);
 }
 
 /** A Chromium session (electron-updater's) trusts the pinned certificate for the branch server's address — only that
@@ -317,16 +427,20 @@ export function trustPinnedNodeIn(session: { setCertificateVerifyProc: (proc: (r
   });
 }
 
-export type NodeTlsState = 'none' | 'plain' | 'encrypted' | 'old_server' | 'mismatch';
+export type NodeTlsState = 'none' | 'plain' | 'encrypted' | 'old_server' | 'mismatch' | 'tls_failed';
 let lastOutcome: { state: NodeTlsState; at: number } = { state: 'none', at: 0 };
 
 /** What the Tech page shows about this till's connection to its branch server. */
-export function nodeTlsStatus(): { state: NodeTlsState; code: string | null; error: string | null } {
-  if (!nodeOrigin()) return { state: 'none', code: null, error: null };
+export function nodeTlsStatus(): { state: NodeTlsState; code: string | null; error: string | null; confirmed: boolean } {
+  if (!nodeOrigin()) return { state: 'none', code: null, error: null, confirmed: false };
   const pin = tillPin();
-  if (pin && mismatchAt) return { state: 'mismatch', code: securityCode(pin), error: mismatchError };
-  if (pin) return { state: 'encrypted', code: securityCode(pin), error: null };
-  return { state: lastOutcome.state === 'old_server' ? 'old_server' : 'plain', code: null, error: null };
+  // A496: `confirmed` false → the Tech page shows the code and asks the person to compare it with the server's.
+  if (pin && mismatchAt) return { state: 'mismatch', code: securityCode(pin), error: mismatchError, confirmed: tillPinConfirmed() };
+  // A501: pinned, but the server's address answers without TLS — a problem, never "encrypted".
+  if (pin && tlsFailedAt) return { state: 'tls_failed', code: securityCode(pin), error: tlsFailedError, confirmed: tillPinConfirmed() };
+  if (pin) return { state: 'encrypted', code: securityCode(pin), error: null, confirmed: tillPinConfirmed() };
+  if (awaitingRepin()) return { state: 'tls_failed', code: null, error: REPIN_WAIT, confirmed: false };   // A503
+  return { state: lastOutcome.state === 'old_server' ? 'old_server' : 'plain', code: null, error: null, confirmed: false };
 }
 
 /** The branch server's certificate as it hands it out (plain HTTP — it is public), or null (an older server / no answer). */
@@ -349,7 +463,12 @@ const OLD_SERVER_RETRY_MS = 10 * 60_000;
 export async function ensureNodeTls(headers: () => Record<string, string>, now = Date.now()): Promise<NodeTlsState> {
   const cfg = getDeviceConfig();
   if (!cfg?.node_url || isNodeRole(cfg.device_role)) return 'none';
-  if (tillPin()) return mismatchAt ? 'mismatch' : 'encrypted';
+  if (tillPin()) {
+    // A501: a pinned server in trouble is looked at again by itself, every tick — not only when a sale happens to go.
+    if (mismatchAt || tlsFailedAt) return await recheckPinnedServer(cfg.node_url.replace(/\/+$/, ''), headers);
+    noteChannelOk('tls');
+    return 'encrypted';
+  }
   if (lastOutcome.state === 'old_server' && now - lastOutcome.at < OLD_SERVER_RETRY_MS) return 'old_server';
   const base = cfg.node_url.replace(/\/+$/, '');
   const got = await readServerCert(base);
@@ -359,10 +478,50 @@ export async function ensureNodeTls(headers: () => Record<string, string>, now =
     if (!res.ok) { await res.body?.cancel().catch(() => {}); lastOutcome = { state: 'plain', at: now }; return 'plain'; }
     await res.body?.cancel().catch(() => {});
   } catch { lastOutcome = { state: 'plain', at: now }; return 'plain'; }
-  setTillPin(got.cert);
+  setTillPin(got.cert, { confirmed: false });   // A496: trust on first use — shown for comparison until confirmed
+  logLine('node', `A496: pinned the branch server's certificate on first use — security code ${securityCode(got.cert)}; compare it with the server's Tech page`);
   lastOutcome = { state: 'encrypted', at: now };
   return 'encrypted';
 }
 
+/**
+ * A501: what the pinned server hands out now (GET /node/tls is public, plain) and whether it answers encrypted with the
+ * pinned certificate. Clears the problem when it does; says which problem it is when it does not. Never sends this
+ * till's code anywhere but over TLS to the pinned certificate.
+ */
+async function recheckPinnedServer(base: string, headers: () => Record<string, string>): Promise<NodeTlsState> {
+  const pin = tillPin()!;
+  const got = await readServerCert(base);
+  if (got.cert && !samePem(got.cert, pin)) {
+    const why = `the branch server now hands out another certificate (security code ${securityCode(got.cert)}, this till trusts ${securityCode(pin)})`;
+    if (!mismatchAt) logLine('node', `A501: ${why} — nothing is sent to it; if it was reinstalled, trust it again from the Tech page`);
+    mismatchAt = mismatchAt || Date.now(); mismatchError = why;
+    noteChannelError('tls', null, why);
+    return 'mismatch';
+  }
+  if (got.old) {
+    const why = 'the branch server answers without encryption (it hands out no certificate — an older build?) — update it, or trust it again from the Tech page';
+    if (tlsFailedError !== why) logLine('node', `A501: ${why}`);
+    tlsFailedAt = tlsFailedAt || Date.now(); tlsFailedError = why;
+    noteChannelError('tls', null, why);
+    return 'tls_failed';
+  }
+  try {
+    const res = await pinnedFetch(`${base}/node/health`, { headers: headers(), signal: AbortSignal.timeout(5000) }, pin);
+    await res.body?.cancel().catch(() => {});
+    if (mismatchAt || tlsFailedAt) logLine('node', 'A501: the branch server answers encrypted with the trusted certificate again');
+    mismatchAt = 0; mismatchError = null; tlsFailedAt = 0; tlsFailedError = null;
+    noteChannelOk('tls');
+    return 'encrypted';
+  } catch (e: any) {
+    if (e instanceof NodeIdentityError) { mismatchAt = mismatchAt || Date.now(); mismatchError = e.message; noteChannelError('tls', null, e.message); return 'mismatch'; }
+    if (e?.tlsHandshake) { tlsFailedAt = tlsFailedAt || Date.now(); tlsFailedError = tlsFailedError ?? 'the branch server does not answer encrypted'; noteChannelError('tls', null, tlsFailedError); return 'tls_failed'; }
+    // No answer at all: the server is off — not a TLS verdict; the state stays as it was.
+    return mismatchAt ? 'mismatch' : tlsFailedAt ? 'tls_failed' : 'encrypted';
+  }
+}
+
 /** Tests only. */
-export function _resetLanTls(): void { agents.clear(); mismatchAt = 0; mismatchError = null; lastOutcome = { state: 'none', at: 0 }; }
+export function _resetLanTls(): void { agents.clear(); mismatchAt = 0; mismatchError = null; tlsFailedAt = 0; tlsFailedError = null; lastOutcome = { state: 'none', at: 0 }; transports.clear(); }
+/** Tests only: the pools this process holds, by kind (A501). */
+export function _agentKinds(): string[] { return [...agents.keys()].map((k) => k.split('|')[1]); }

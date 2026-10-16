@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTerm } from '../lib/terminology';
 import { api } from '../lib/api';
+import type { PosApi } from '../context/POSAuthContext';   // A502
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
 import { money } from '../lib/format';
 import { useBusiness } from '../context/BusinessContext';
@@ -80,7 +81,9 @@ function fmtDays(days: number[]): string {
   return days.map(d => DAY_LABELS[d]).join(', ');
 }
 
-export default function PromotionsPage() {
+/** A502: the owner's dashboard uses its own session; the manager portal passes the signed-in person's (posApi) — for
+ *  someone the owner gave menu.promotions. */
+export default function PromotionsPage({ client = api }: { client?: PosApi } = {}) {
   const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const { term } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
@@ -91,15 +94,18 @@ export default function PromotionsPage() {
   const [form, setForm]         = useState<FormState>(BLANK_FORM);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
+  // A506: a refused load / switch / delete is said (it read as "No promotions yet", or nothing happened).
+  const [listError, setListError] = useState('');
 
   useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await api.get<Promotion[]>('/api/promotions');
+      const data = await client.get<Promotion[]>('/api/promotions');
       setPromos(data ?? []);
-    } catch { /* silent */ }
+      setListError('');
+    } catch (e: any) { setListError(e?.message ?? 'Could not load the promotions'); }
     finally { setLoading(false); }
   }
 
@@ -153,9 +159,9 @@ export default function PromotionsPage() {
         free_quantity:  form.promo_type === 'bogo' ? Number(form.free_quantity) || 1 : null,
       };
       if (editing) {
-        await api.patch(`/api/promotions/${editing.id}`, payload);
+        await client.patch(`/api/promotions/${editing.id}`, payload);
       } else {
-        await api.post('/api/promotions', payload);
+        await client.post('/api/promotions', payload);
       }
       setShowForm(false);
       await load();
@@ -166,13 +172,13 @@ export default function PromotionsPage() {
 
   async function toggle(p: Promotion) {
     try {
-      await api.patch(`/api/promotions/${p.id}`, {
+      await client.patch(`/api/promotions/${p.id}`, {
         status: p.status === 'active' ? 'inactive' : 'active',
       });
       setPromos(prev => prev.map(x =>
         x.id === p.id ? { ...x, status: x.status === 'active' ? 'inactive' : 'active' } : x
       ));
-    } catch { /* silent */ }
+    } catch (e: any) { setListError(e?.message ?? 'Could not change the promotion'); }
   }
 
   async function remove(id: string) {
@@ -182,8 +188,10 @@ export default function PromotionsPage() {
       intent: 'destructive',
       confirmLabel: 'Delete',
       onConfirm: async () => {
-        await api.delete(`/api/promotions/${id}`);
-        setPromos(prev => prev.filter(p => p.id !== id));
+        try {
+          await client.delete(`/api/promotions/${id}`);
+          setPromos(prev => prev.filter(p => p.id !== id));
+        } catch (e: any) { setListError(e?.message ?? 'Could not delete the promotion'); }
       },
     });
   }
@@ -220,6 +228,7 @@ export default function PromotionsPage() {
 
       {/* List */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {listError && <p className="mb-3 text-sm text-red-400" data-testid="promotions-error">{listError}</p>}
         {loading ? (
           <div className="text-center py-16 text-gray-500 text-sm">Loading…</div>
         ) : promos.length === 0 ? (

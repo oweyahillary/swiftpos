@@ -18,7 +18,8 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, requireAnyPermission, can } from '../middleware/rbac';
-import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
+import { stripCostsUnlessAllowed } from '../lib/costAccess';
+import { idsOfBusiness } from '../lib/branchGuard';   // A494   // A490
 import { supabase }  from '../lib/supabase';
 import { buildProductPatch, rowMatchKeys, importKey } from '../lib/productImport';
 import { applyPriceOp, parsePriceOp } from '../lib/priceOps';
@@ -135,6 +136,12 @@ router.post('/', requirePermission('menu.edit'), validateLoose(CreateProductSche
     return;
   }
 
+  // A494: the category must be this business's (another tenant's category id was accepted as it came).
+  if (category_id && !(await idsOfBusiness('categories', req.businessId, [category_id]))) {
+    res.status(400).json({ error: "That category is not this business's" });
+    return;
+  }
+
   // Validate sold_by
   const validSoldBy = ['each', 'weight', 'volume', 'piece'];
   if (sold_by && !validSoldBy.includes(sold_by)) {
@@ -233,6 +240,12 @@ router.patch('/:id', PRODUCT_WRITE, validateLoose(UpdateProductSchema), async (r
   const updateDays = show_days === undefined ? undefined : cleanShowDays(show_days);
   if (show_days !== undefined && updateDays === undefined) {
     res.status(400).json({ error: 'show_days must be a list of days (0 = Sunday … 6 = Saturday)' }); return;
+  }
+
+  // A494: the category must be this business's.
+  if (category_id && !(await idsOfBusiness('categories', req.businessId, [category_id]))) {
+    res.status(400).json({ error: "That category is not this business's" });
+    return;
   }
 
   // If barcode is being changed, check uniqueness

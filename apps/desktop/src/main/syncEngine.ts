@@ -23,7 +23,9 @@ import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, se
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
-import { hasNode, pushRowsToNode, measureNodeClock, refreshViaNode, ackViaNode, fetchReferenceFromNode, fetchRosterFromNode, fetchNodeCursors } from './nodeClient';
+import { hasNode, pushRowsToNode, measureNodeClock, refreshViaNode, ackViaNode, fetchReferenceFromNode, fetchNodeCursors, checkNodeHealth } from './nodeClient';
+import { tillPin, securityCode } from './lanTls';   // A501
+import { followMovedServer } from './nodeFollow';   // A501
 import { nodeRefusal, cloudFetch } from './cloudGateway';
 import { setReceiptPay } from './receiptPay';   // A450   // A410
 import { readPending as readPendingWaste, pushPendingWastage, type WasteOutcome } from './tillWastage';   // A414
@@ -32,7 +34,6 @@ import { readPending as readPendingRouting, overlayPending as overlayPendingRout
 // and on-prem closes run identical cash arithmetic. Called only at runtime (during
 // sync), so the branchClose ↔ syncEngine import cycle resolves safely.
 import { executeCloseDay } from './branchClose';
-import { unpackRosterSnapshot } from './rosterSnapshot';
 import { unpackNodeBundle, numOrNull, type AcquiredReference, identityFromWire } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
@@ -44,12 +45,15 @@ import {
   nodeQueueDepth, emitEvent,
   settleNodeBatch, noteNodeTarget, nodeTargetKey, nodeRearmSkipOwed, skipHeldByNode, NODE_BATCH_BYTES,   // F1/F2/F14
   numberOwnRows, backfillOwnSeq, emitRefundEvents, applyPendingEvents, pruneNodeQueue,                  // F8/F9/F10/P3
+  repairBillNumberRefusals,                                                                              // A500
+  noteNodeIdentity, nodeIdentityKey,                                                                     // A501
 } from './nodeIngest';
 import { pruneNodeInstructions } from './branchClose';   // P3
 import { v4 as uuid } from 'uuid';
 import { cleanShowDays } from './productDays';
 import { pruneChoices, VARIANT_TABLES, MODIFIER_TABLES } from './choicePrune';   // A425
 import { storeSessionPermissions } from './tillAccess';   // A490
+import { claimOrderNumberForOwnSale } from './billNumber';   // A500
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
 // table would overwrite unsynced till data with stale/empty server rows). So
@@ -153,7 +157,6 @@ async function syncFetch(url: string, opts: any = {}): Promise<Response> {
 }
 // A20: last roster version this peer applied, in-memory. Skips re-wrapping an
 // unchanged roster every pull; on restart it re-applies once, which is harmless.
-let _lastRosterVersion = '';
 
 export function configureSyncEngine(serverUrl: string, accessToken: string, refreshToken = '') {
   _serverUrl    = serverUrl;
@@ -511,10 +514,23 @@ function isOnline(): boolean {
   return net.isOnline();
 }
 
+/**
+ * A504: the signed-in person's token, or '' once the cloud has refused its renewal for good (401 — the person was
+ * deactivated, re-roled or moved, or the session revoked; A494 ends sessions on each). Before, the dead token was sent on
+ * every push until the person signed out: drawers, trading days, expenses, closes, confirmations and price edits waited
+ * all shift (orders alone fell back to the till's session). Every one of those carries who did it in its body, and the
+ * cloud takes the till's own session for each (/api/sync/push: req.isTill).
+ */
+function liveStaffToken(): string {
+  if (!_staffToken) return '';
+  if (_staffRefusedToken && (persistedStaffRefresh() || _staffRefresh) === _staffRefusedToken) return '';
+  return _staffToken;
+}
+
 // Auth header for order push — uses the staff token if a shift is active,
 // otherwise falls back to the till's own token (no one signed in online).
 function pushAuthHeaders() {
-  const token = _staffToken || _accessToken;
+  const token = liveStaffToken() || _accessToken;   // A504: never a staff token whose renewal was refused
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
@@ -2192,24 +2208,10 @@ async function pullCatalogue(): Promise<boolean> {
         if (rBranch && Array.isArray(staff)) storeBranchStaff(rBranch, staff);
       }
     } catch { /* the node keeps its existing roster; next pull retries */ }
-  } else if (hasNode()) {
-    // A20: a PEER pulls the roster from its NODE so a promotion can open the shop.
-    // Best-effort, after the catalogue, and guarded twice: fetchRosterFromNode
-    // returns null on any node problem (keep the local roster), and
-    // unpackRosterSnapshot refuses an empty/pinless snapshot (never wipe → never
-    // lock the shop out). Version-skip avoids re-wrapping the roster every pull.
-    try {
-      const snapshot = await fetchRosterFromNode();
-      if (snapshot) {
-        const decision = unpackRosterSnapshot(snapshot);
-        if (decision.apply && decision.version !== _lastRosterVersion) {
-          storeBranchStaff(decision.branchId, decision.roster);
-          _lastRosterVersion = decision.version;
-          logLine('sync', `roster pulled from node — ${decision.roster.length} staff`);
-        }
-      }
-    } catch { /* keep the current roster; next pull retries */ }
   }
+  // A496: a PEER no longer pulls the server's roster here (A20). staffRoster.ts does it every 20 s on every till — the
+  // cloud's list first, the server's copy only when the cloud cannot be reached — and this second pull, after every
+  // catalogue pull, could lay the server's older copy over the fresher list the cloud had just given.
 
   return true;
 }
@@ -2686,13 +2688,25 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
       // safe there and would NOT be safe here.
       if (res.status === 401 && !triedAuthRefresh) {
         triedAuthRefresh = true;
-        const staffPath = !asTill && selectPushRefresh(_staffToken) === 'staff';
+        const staffPath = !asTill && selectPushRefresh(liveStaffToken()) === 'staff';   // A504: the token actually sent
         const refreshed = staffPath ? await refreshStaffToken() : await refreshAccessToken();
         if (refreshed) res = await doPost();
         else if (staffPath && _accessToken && rungBy) {
           // F6: the staff session cannot be renewed right now — the sale goes under the till's own session, naming its
           // cashier, rather than the whole batch stopping on the 401.
           staffRenewalFailed = true;
+          asTill = true;
+          res = await doPost();
+        }
+      }
+      // A495: the cloud now refuses a manual discount under a person's session that lacks sales.discount. A sale the
+      // till already took (its discount allowed or approved at the counter, or the key removed since) goes up under the
+      // till's own session, naming its cashier — never held for ever over a permission checked when it was rung.
+      if (res.status === 403 && !asTill && _accessToken && rungBy) {
+        const body403 = await res.clone().json().catch(() => null) as { code?: string; detail?: string } | null;
+        // A505: also a refusal for orders.create — a sale already rung at this counter, never held over a key.
+        if (body403?.code === 'DISCOUNT_NOT_ALLOWED' || /Missing permission: orders\.create/.test(String(body403?.detail ?? ''))) {
+          logLine('sync', `order ${row.order_id}: refused under the cashier's session (discount or sell permission) - sent under the till's own`);
           asTill = true;
           res = await doPost();
         }
@@ -2853,6 +2867,30 @@ async function pushToNode(errors: string[]): Promise<number> {
 let _nodePushInFlight: Promise<{ count: number; errors: string[] }> | null = null;
 let _nodeBatchBytes = NODE_BATCH_BYTES;
 let _clockCheckedAt = 0;
+let _healthCheckedAt = 0;
+
+/**
+ * A501: once a minute, ask the server about itself (/node/health) and re-arm what an old identity refused when the
+ * identity changed — the server's certificate, its device id, or THIS till's branch (a cloud sign-in can rebind a till
+ * to another branch, every route then answers 403; changing back used to leave the outbox failed for good, since only a
+ * new address or access code re-armed it). Exported for the test. Never throws.
+ */
+export async function checkNodeIdentity(force = false): Promise<void> {
+  if (!force && Date.now() - _healthCheckedAt < 60_000) return;
+  _healthCheckedAt = Date.now();
+  try {
+    const h = await checkNodeHealth();
+    if (!h.ok || !h.info) return;   // no answer: nothing is known about who it is — nothing changes
+    const cfg = getDeviceConfig();
+    if (h.info.branch_id && cfg?.branch_id && h.info.branch_id !== cfg.branch_id) {
+      logLine('node', `A501: this till is set to branch ${cfg.branch_id} but its branch server serves ${h.info.branch_id} — the server refuses its records until they match (Tech page › Branch sync)`);
+    }
+    const id = noteNodeIdentity(nodeIdentityKey({ certCode: securityCode(tillPin()), serverDevice: h.info.device_id, branch: cfg?.branch_id ?? null }));
+    if (id.verdict !== 'same' && (id.rearmed || id.released)) {
+      logLine('node', `A501: the branch server's identity ${id.verdict === 'first' ? 'was recorded' : 'changed'} (certificate, server or this till's branch) — ${id.rearmed} record(s) it refused before are offered again, ${id.released} held-back record(s) from other tills tried again`);
+    }
+  } catch (err: any) { logLine('node', `A501: branch server identity check failed: ${err?.message ?? err}`); }
+}
 let _clockWarnings: string[] = [];
 
 /** Send this till's own rows to its branch server now (no cloud needed). Never throws. */
@@ -2878,6 +2916,7 @@ async function pushToNodeOnce(errors: string[]): Promise<number> {
     if (t === 'changed') logLine('node', 'the branch server (or its access code) changed — every row is offered to it again');
     if (t === 'first') logLine('node', 'branch replication: the last 14 days are offered to the server once more (F1 repair)');
   } catch (err: any) { logLine('node', `could not check the branch server identity: ${err?.message ?? err}`); }
+  await checkNodeIdentity();   // A501: certificate, server device id, this till's branch
 
   try {
     fillNodeOutbox();
@@ -2912,7 +2951,9 @@ async function pushToNodeOnce(errors: string[]): Promise<number> {
       // F3: no answer, a 5xx, or a 401 — none of it is about the rows. Retried without counting an attempt: a branch
       // server off for the weekend, or waiting for its new access code, must not mark a day's cash records 'failed'.
       markNodeQueueFailed(ids, out.error, false);
-      if (out.status === 401) errors.push(`Branch replication: ${out.error}`);
+      // A501: a refusal of the TILL (its code or key 401, its branch 403, its connection 426, an unreadable request 400)
+      // is said — it does not fix itself the way a server switched off does — but never counted against the rows.
+      if (out.status === 401 || out.status === 400 || out.status === 403 || out.status === 426) errors.push(`Branch replication: ${out.error}`);
       break;
     }
     if (out.kind === 'too_large') {
@@ -3001,10 +3042,14 @@ export async function nodeReplicationTick(): Promise<void> {
       return;
     }
     if (!hasNode()) return;
+    repairBillNumberRefusals();   // A500: once — sales refused / skipped for their bill number before this build
     const r = await replicateToNode();
     const msg = r.errors.join(' | ');
     if (msg && msg !== _lastNodeError) logLine('node', `branch replication: ${msg}`);
     _lastNodeError = msg;
+    // A501: the server stopped answering — it may have moved (DHCP, the port fallback). Its own beacon, proven over TLS.
+    const f = await followMovedServer();
+    if (f.outcome === 'followed') { _healthCheckedAt = 0; void replicateToNode(); }
     if (pruneDue) { _nodePrunedAt = Date.now(); pruneNodeQueue(7); }
   } catch (err: any) {
     logLine('node', `branch replication beat failed: ${err?.message ?? err}`);
@@ -3328,8 +3373,11 @@ async function pushOfflineReversals(errors: string[]): Promise<number> {
   } catch { return 0; }   // a database before schema 61
   let sent = 0;
   for (const r of rows) {
+    // A495: an offline replay is the TILL's record of what was done at its counter (who did it and who approved it are
+    // in the body), so it goes under the till's own session — the cloud now refuses a replay under a person's token
+    // (409 REPLAY_NEEDS_TILL_SESSION), which would hold every offline void/refund while someone is signed in.
     const post = () => syncFetch(`${_serverUrl}/api/orders/${encodeURIComponent(r.order_id)}/${r.kind}`, {
-      method: 'POST', headers: pushAuthHeaders(),
+      method: 'POST', headers: authHeaders(),
       body: JSON.stringify({
         reason: r.reason, offline_approved_by: r.approved_by, approved_at: r.approved_at,
         ...(r.done_by ? { offline_by: r.done_by } : {}),
@@ -3337,7 +3385,7 @@ async function pushOfflineReversals(errors: string[]): Promise<number> {
     });
     try {
       let res = await post();
-      if (res.status === 401 && await refreshStaffToken()) res = await post();
+      if (res.status === 401 && await refreshAccessToken()) res = await post();
       const body = await res.json().catch(() => ({} as any));
       const outcome = replayOutcome(r.kind, res.status, body);
       if (outcome === 'done') {
@@ -3429,6 +3477,14 @@ export function createLocalOrder(orderPayload: any): string {
   if (deliveryFree) orderPayload.delivery_free = true; else delete orderPayload.delivery_free;
 
   db.transaction(() => {
+    // A500: a sale is never refused over its bill number. A branch replica holding it is renamed (its copy here only);
+    // a row of this till holding it (a stale reservation) gives this sale the next number. billNumber.ts.
+    if (orderPayload.order_number) {
+      const claim = claimOrderNumberForOwnSale(db, String(orderPayload.order_number), deviceId, getDeviceConfig()?.terminal_code);
+      if (claim.renamedReplica) logLine('sale', `A500: bill ${orderPayload.order_number} was held by a branch copy of another till's sale (${claim.renamedReplica.id}) — that copy is now ${claim.renamedReplica.to} on this till`);
+      if (claim.renumbered) logLine('sale', `A500: bill ${orderPayload.order_number} was already used on this till — this sale is ${claim.number}`);
+      orderPayload.order_number = claim.number;
+    }
     db.prepare(`
       INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, delivery_free, sync_status)
       VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')

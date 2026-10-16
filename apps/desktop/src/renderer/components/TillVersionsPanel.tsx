@@ -37,6 +37,19 @@ export default function TillVersionsPanel() {
           ? `Holding v${data.ready} for the tills — each takes it from here and installs it when it is next closed.`
           : 'No update is waiting. When one is approved, this server fetches it once and the tills take it from here.'}
       </p>
+      {/* A496: the server's own fetch of the update for its tills — so a stuck fetch says why instead of looking idle. */}
+      {data.share && data.share.state === 'fetching' && (
+        <p className="text-xs text-gray-400">
+          Fetching v{data.share.version} for the tills
+          {data.share.size ? ` — ${Math.round((100 * (data.share.bytes ?? 0)) / data.share.size)}%` : ''}.
+        </p>
+      )}
+      {data.share && data.share.state === 'failed' && (
+        <p className="text-xs text-amber-300">
+          Could not fetch v{data.share.version} for the tills ({data.share.failures} tr{data.share.failures === 1 ? 'y' : 'ies'})
+          {data.share.error ? `: ${data.share.error}` : ''}. It tries again on its next check; after 3 failures the tills download it through this server directly.
+        </p>
+      )}
       {data.tills.length === 0
         ? <p className="text-xs text-gray-500">No till has checked in yet (each asks every 2 minutes).</p>
         : (

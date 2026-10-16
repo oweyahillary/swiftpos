@@ -61,6 +61,9 @@ const db = {
   products: [{ id: BURGER, business_id: BZ, name: 'Burger', base_price: 700, category_id: FOOD, status: 'active', barcode: '600100' }],
   print_stations: [{ id: GRILL, business_id: BZ, branch_id: BR, name: 'Grill', kind: 'kitchen', sort_order: 0, active: true }],
   change_requests: [], notifications: [], user_branches: [],
+  // A494: a change sent by the till's own session is applied only when its maker really signed in (with their PIN, online)
+  // on a till of the branch — these managers did, on this till.
+  refresh_tokens: [ABDI, TOM, OWNER].map((user_id, i) => ({ id: `rt-${i}`, business_id: BZ, user_id, device_hint: 'dev-T1', session_kind: 'pin', created_at: new Date().toISOString() })),
 };
 
 // A small in-memory PostgREST: select / eq / neq / in / is / ilike / order / limit / maybeSingle / single / insert / update / delete.
@@ -235,9 +238,10 @@ await ok('a PIN set on a till wins over the one the web set meanwhile', async ()
   assert(r.status === 'applied' && bcrypt.compareSync('2580', db.users.find((u) => u.id === AMY).pin_hash)
     && !JSON.stringify(cr).includes('2580'), JSON.stringify({ r, cr }));
 });
+// A494: the till is told only that the PIN is in use — never whose (the owner's notification names them).
 await ok('a PIN another person has is refused, with the reason, and the owner is told', async () => {
   const [r] = await send('till', change('staff_pin', 'update', AMY, { pin: '9999' }));
-  assert(r.status === 'refused' && /Mary/.test(r.message) && bcrypt.compareSync('2580', db.users.find((u) => u.id === AMY).pin_hash)
+  assert(r.status === 'refused' && /already in use/.test(r.message) && !/Mary/.test(r.message) && bcrypt.compareSync('2580', db.users.find((u) => u.id === AMY).pin_hash)
     && db.notifications.some((n) => /Mary/.test(n.message)), JSON.stringify(r));
 });
 await ok('a cashier added on a till is on the cloud with a bcrypt PIN and the till\'s branch; the PIN is not kept', async () => {

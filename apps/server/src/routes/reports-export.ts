@@ -27,6 +27,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
 import { branchScope, requirePermission } from '../middleware/rbac';
+import { csvCell } from '../lib/csvSafe';   // A494
 import ExcelJS       from 'exceljs';
 
 const router = safeRouter();
@@ -95,9 +96,10 @@ async function sendExcel(res: any, wb: ExcelJS.Workbook, filename: string) {
 
 /** Respond with CSV */
 function sendCsv(res: any, headers: string[], rows: (string | number)[][], filename: string) {
+  // A494: every cell through csvCell — a cell a spreadsheet would run as a formula is neutralised.
   const lines = [
-    headers.join(','),
-    ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')),
+    headers.map(h => csvCell(h)).join(','),
+    ...rows.map(r => r.map(v => csvCell(v)).join(',')),
   ];
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -303,7 +305,8 @@ router.get('/pnl', requirePermission('reports.costs'), async (req, res) => {
   const scopedBranch = branchScope(req);
 
   // Revenue
-  let ordersQ = supabase.from('orders').select('total, subtotal, vat_amount')
+  // A494: `id` — without it every order's id was undefined, no order items were read and COGS was always 0.
+  let ordersQ = supabase.from('orders').select('id, total, subtotal, vat_amount')
     .eq('business_id', req.businessId).eq('status', 'completed')
     .gte('created_at', start).lte('created_at', end);
   if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
@@ -419,8 +422,9 @@ router.get('/pnl', requirePermission('reports.costs'), async (req, res) => {
 router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
+  const scopedBranch = branchScope(req);   // A494: was every branch's drawers for anyone with reports.shifts
 
-  const { data: shifts, error } = await supabase
+  let shiftsQ = supabase
     .from('shifts')
     .select(`
       id, opened_at, closed_at, opening_float, closing_float, cash_variance,
@@ -431,6 +435,8 @@ router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
     .gte('opened_at', start)
     .lte('opened_at', end)
     .order('opened_at', { ascending: false });
+  if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
+  const { data: shifts, error } = await shiftsQ;
 
   if (error) { sendError(res, error); return; }
 

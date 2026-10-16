@@ -16,11 +16,18 @@ export const BEACON_PORT = 4199;
 export const BEACON_MAGIC = 'ZAPTILL-SERVER/1';
 export const BEACON_EVERY_MS = 3000;
 
-export interface BeaconInfo { port: number; business: string | null; server: string | null }
-export interface FoundServer { url: string; ip: string; port: number; business: string | null; server: string | null }
+/**
+ * A501: `fp` — the server's certificate fingerprint, as its security code (public: the certificate is handed to anyone
+ * on /node/tls and the code is shown on screens) — says WHICH server this is, and the beacon still carries nothing
+ * secret and no ids. A till uses it only to find its own server at a new address, and follows only after proving it
+ * over TLS against the certificate it already pinned (nodeFollow.ts). An older server sends none; an older till ignores it.
+ */
+export interface BeaconInfo { port: number; business: string | null; server: string | null; fp?: string | null }
+export interface FoundServer { url: string; ip: string; port: number; business: string | null; server: string | null; fp?: string | null }
 
 export function buildBeacon(info: BeaconInfo): Buffer {
-  return Buffer.from(JSON.stringify({ magic: BEACON_MAGIC, port: info.port, business: info.business, server: info.server }), 'utf8');
+  return Buffer.from(JSON.stringify({ magic: BEACON_MAGIC, port: info.port, business: info.business, server: info.server,
+    ...(info.fp ? { fp: info.fp } : {}) }), 'utf8');
 }
 
 /** A beacon heard from `ip`, or null for anything that is not one of ours. Never trusts a port outside 1-65535. */
@@ -33,7 +40,9 @@ export function parseBeacon(buf: Buffer, ip: string): FoundServer | null {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
   if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return null;
   const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 80) : null);
-  return { url: `http://${ip}:${port}`, ip, port, business: text(b.business), server: text(b.server) };
+  // A501: only a well-formed fingerprint is kept — anything else is as if the server sent none.
+  const fp = typeof b.fp === 'string' && /^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/.test(b.fp) ? b.fp : null;
+  return { url: `http://${ip}:${port}`, ip, port, business: text(b.business), server: text(b.server), fp };
 }
 
 /** Where to send: every IPv4 network's own broadcast address, plus the all-networks one. */
@@ -80,6 +89,22 @@ export function stopBeacon(): void {
   if (sender) { try { sender.close(); } catch { /* already closed */ } sender = null; }
 }
 
+/** This machine's own IPv4 addresses (loopback included). Pure over `ifaces`. */
+export function ownAddresses(ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): Set<string> {
+  const out = new Set<string>(['127.0.0.1']);
+  for (const list of Object.values(ifaces)) for (const i of list ?? []) if (i.family === 'IPv4') out.add(i.address);
+  return out;
+}
+
+/**
+ * A503: a beacon to list — never this machine's own while it is announcing. A branch server stepping down (Tech › Find
+ * my server, A502) heard ITSELF among the servers; choosing it asked itself to join, stopped serving at the answer and
+ * then could not reach the "server" it had joined. Pure.
+ */
+export function keepHeard(ip: string, announcing: boolean, own: Set<string>): boolean {
+  return !(announcing && own.has(ip));
+}
+
 /** Listen for `ms` and return every server heard, one entry per address. Never throws — none heard is []. */
 export function listenForServers(ms = 6000): Promise<FoundServer[]> {
   return new Promise((resolve) => {
@@ -87,7 +112,12 @@ export function listenForServers(ms = 6000): Promise<FoundServer[]> {
     let s: dgram.Socket;
     try { s = dgram.createSocket({ type: 'udp4', reuseAddr: true }); } catch { resolve([]); return; }
     const done = () => { try { s.close(); } catch { /* closed */ } resolve([...found.values()]); };
-    s.on('message', (buf, rinfo) => { const f = parseBeacon(buf, rinfo.address); if (f) found.set(f.url, f); });
+    let own: Set<string> = new Set();
+    try { own = ownAddresses(); } catch { /* none known: nothing filtered */ }
+    s.on('message', (buf, rinfo) => {
+      if (!keepHeard(rinfo.address, !!sender, own)) return;   // A503: not this machine's own beacon
+      const f = parseBeacon(buf, rinfo.address); if (f) found.set(f.url, f);
+    });
     s.on('error', () => done());
     try { s.bind(BEACON_PORT, () => { setTimeout(done, ms); }); } catch { done(); }
   });

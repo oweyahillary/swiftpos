@@ -16,7 +16,8 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess, branchScope, can } from '../middleware/rbac';
+import { guardBranch, idsOfBusiness } from '../lib/branchGuard';   // A494
 import { supabase } from '../lib/supabase';
 import { importKey } from '../lib/productImport';   // 2026-10-04
 import { chunkIn } from '../lib/pgQuery';
@@ -151,6 +152,9 @@ async function applyProductStockOut(
 // INGREDIENTS
 // =============================================================================
 
+// A494: deliberately NO permission gate — the POS reads the ingredient list (packaging, what an option takes stock
+// from) and a cashier's role need not hold inventory.view. It is branch-locked (branchScope; a branchless non-owner
+// gets the branch that matches nothing), sends no cost (router strip: unit_cost) and is blind for counted items.
 router.get('/ingredients', async (req, res) => {
   const { status, category, packaging } = req.query as Record<string, string>;
   const scopedBranch = branchScope(req); // staff -> their branch; owner -> ?branch_id or null (all)
@@ -182,15 +186,21 @@ router.get('/ingredients', async (req, res) => {
       current_stock = levels.reduce((sum: number, l: any) => sum + Number(l.current_stock ?? 0), 0);
     }
     const { ingredient_stock_levels, ...rest } = ing;
-    return { ...rest, current_stock, reorder_level, branch_stock: levels };
+    // A494: a branch-scoped caller gets their own branch's row only — every branch's levels went to everyone.
+    return { ...rest, current_stock, reorder_level, branch_stock: scopedBranch ? levels.filter((l: any) => l.branch_id === scopedBranch) : levels };
   });
   // A394: blind count — the counted ingredients' figures are hidden from someone who may not change stock.
   const hide = await hiddenWhileCounting(req, scopedBranch);
   res.json(hide.size ? shaped.map((i: any) => hide.has(`i:${i.id}`) ? { ...i, current_stock: null, branch_stock: [], counting: true } : i) : shaped);
 });
 
+/** A494: a cost value was actually sent (an empty field from a form that never showed the cost is not one). */
+const costSent = (v: unknown): boolean => v !== undefined && v !== null && v !== '';
+
 router.post('/ingredients', requirePermission('ingredients.manage'), async (req, res) => {
   const { name, category, unit, unit_cost, notes, is_packaging } = req.body;
+  // A494: an ingredient's cost is menu.costs, as a product's cost price is (routes/products.ts).
+  if (costSent(unit_cost) && !can(req, 'menu.costs')) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs' }); return; }
   if (!name?.trim()) { res.status(400).json({ error: 'name is required' }); return; }
   if (!unit?.trim()) { res.status(400).json({ error: 'unit is required' }); return; }
 
@@ -239,7 +249,10 @@ router.post('/ingredients/bulk', requirePermission('ingredients.manage'), async 
     if (key && !(key in byName)) byName[key] = ing.id;   // first wins
   }
 
+  if (!(await guardBranch(req, res, branch_id))) return;   // A494: the owner's branch must be this business's too
   const createdBy = req.isOwner ? null : req.userId ?? null;
+  // A494: the cost column is applied only for menu.costs (as the product import) — otherwise left as it is.
+  const mayCost = can(req, 'menu.costs');
   const results = { created: 0, updated: 0, stocked: 0, errors: [] as { row: number; error: string }[] };
 
   for (let i = 0; i < rows.length; i++) {
@@ -256,12 +269,12 @@ router.post('/ingredients/bulk', requirePermission('ingredients.manage'), async 
       if (reorder != null && (isNaN(reorder) || reorder < 0)) { results.errors.push({ row: i + 1, error: `Invalid reorder_level: ${row.reorder_level}` }); continue; }
 
       const key = importKey(row.name);
-      const fields = {
+      const fields: Record<string, unknown> = {
         business_id:  req.businessId,
         name:         row.name.trim(),
         category:     row.category?.trim() || null,
         unit:         row.unit.trim(),
-        unit_cost:    unitCost,
+        ...(mayCost ? { unit_cost: unitCost } : {}),
         notes:        row.notes?.trim() || null,
         is_packaging: row.is_packaging === 'true' || row.is_packaging === true,
       };
@@ -286,7 +299,7 @@ router.post('/ingredients/bulk', requirePermission('ingredients.manage'), async 
       // as a manual adjustment (movement_type 'opening').
       if (isNew && opening > 0) {
         await applyIngredientStockIn(
-          [{ ingredient_id: ingredientId, quantity: opening, unit_cost: unitCost }],
+          [{ ingredient_id: ingredientId, quantity: opening, unit_cost: mayCost ? unitCost : null }],
           req.businessId, branch_id, createdBy, 'opening', 'Bulk import opening stock',
         );
         results.stocked++;
@@ -319,6 +332,19 @@ router.patch('/ingredients/:id', requirePermission('ingredients.manage'), async 
   if (status !== undefined)        updates.status        = status;
   if (is_packaging !== undefined)  updates.is_packaging  = !!is_packaging;
 
+  // A494: changing the cost is menu.costs. A form that never showed the cost sends it empty — ignored, not a change.
+  if (updates.unit_cost !== undefined && !can(req, 'menu.costs')) {
+    if (costSent(unit_cost)) {
+      const { data: cur } = await supabase.from('ingredients').select('unit_cost').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+      if (!cur) { res.status(404).json({ error: 'Ingredient not found' }); return; }
+      const was = (cur as { unit_cost: unknown }).unit_cost;
+      if (was === null || was === undefined || Number(was) !== Number(unit_cost)) {
+        res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs' }); return;
+      }
+    }
+    delete updates.unit_cost;   // empty, or the same value: nothing changes
+  }
+
   // Read the current cost first (only when it's actually changing) so the
   // audit row captures a real before/after, not just the new value.
   const costChanging = updates.unit_cost !== undefined;
@@ -350,6 +376,9 @@ router.post('/ingredients/:id/adjust', requirePermission('inventory.adjust'), as
   if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
   if (!['add', 'remove', 'set'].includes(type)) { res.status(400).json({ error: 'type must be add, remove, or set' }); return; }
   if (quantity == null || quantity < 0) { res.status(400).json({ error: 'quantity must be >= 0' }); return; }
+  // A494: the ingredient and the branch must both be this business's (the owner passes assertBranchAccess for any id).
+  if (!(await guardBranch(req, res, branch_id))) return;
+  if (!(await idsOfBusiness('ingredients', req.businessId, [req.params.id]))) { res.status(404).json({ error: 'Ingredient not found' }); return; }
 
   // Read the branch level once (manual, low-frequency op) to compute the delta;
   // the RPC still performs the write atomically.
@@ -392,6 +421,8 @@ router.patch('/ingredients/:id/reorder', requirePermission('inventory.adjust'), 
   if (!branch_id) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
   if (reorder_level == null || Number(reorder_level) < 0) { res.status(400).json({ error: 'reorder_level must be >= 0' }); return; }
+  if (!(await guardBranch(req, res, branch_id))) return;   // A494
+  if (!(await idsOfBusiness('ingredients', req.businessId, [req.params.id]))) { res.status(404).json({ error: 'Ingredient not found' }); return; }
 
   const { data, error } = await supabase
     .from('ingredient_stock_levels')
@@ -405,14 +436,21 @@ router.patch('/ingredients/:id/reorder', requirePermission('inventory.adjust'), 
   res.json({ ingredient_id: req.params.id, branch_id, ...data });
 });
 
-router.get('/ingredients/:id/movements', async (req, res) => {
+// A494: was open to any signed-in user and every branch — inventory.view, the caller's branch (the owner's choice),
+// and while that branch counts the item the level after each movement is not sent to someone counting blind.
+router.get('/ingredients/:id/movements', requirePermission('inventory.view'), async (req, res) => {
   const { limit = '50' } = req.query as Record<string, string>;
-  const { data, error } = await supabase.from('ingredient_stock_movements')
+  const scoped = branchScope(req);
+  let q = supabase.from('ingredient_stock_movements')
     .select('*, users ( name )')
     .eq('ingredient_id', req.params.id).eq('business_id', req.businessId)
-    .order('created_at', { ascending: false }).limit(Math.min(Number(limit), 200));
+    .order('created_at', { ascending: false }).limit(Math.min(Number(limit) || 50, 200));
+  if (scoped) q = q.eq('branch_id', scoped);
+  const { data, error } = await q;
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  const hide = await hiddenWhileCounting(req, scoped);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  res.json(hide.has(`i:${req.params.id}`) ? rows.map((m) => ({ ...m, quantity_after: null, counting: true })) : rows);
 });
 
 // =============================================================================
@@ -464,7 +502,8 @@ router.delete('/suppliers/:id', requirePermission('inventory.receive'), async (r
 // =============================================================================
 
 router.get('/purchase-orders', requirePermission('inventory.receive'), async (req, res) => {
-  const { status, supplier_id, branch_id, limit = '50' } = req.query as Record<string, string>;
+  const { status, supplier_id, limit = '50' } = req.query as Record<string, string>;
+  const scoped = branchScope(req);   // A494: a manager sees their branch's orders; the owner the chosen branch, or all
   let query = supabase.from('purchase_orders')
     .select(`*, suppliers ( id, name ),
       purchase_order_items ( id, ingredient_id, quantity_ordered, unit_cost, quantity_received, ingredients ( id, name, unit ) )`)
@@ -474,7 +513,7 @@ router.get('/purchase-orders', requirePermission('inventory.receive'), async (re
     .limit(Math.min(Number(limit), 200));
   if (status)      query = query.eq('status', status);
   if (supplier_id) query = query.eq('supplier_id', supplier_id);
-  if (branch_id)   query = query.eq('branch_id', branch_id);
+  if (scoped)      query = query.eq('branch_id', scoped);
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
   // Derive total from the actual line items so a stale stored total_amount can never
@@ -493,6 +532,7 @@ router.get('/purchase-orders/:id', requirePermission('inventory.receive'), async
       purchase_order_items ( id, ingredient_id, quantity_ordered, unit_cost, quantity_received, ingredients ( id, name, unit ) )`)
     .eq('id', req.params.id).eq('business_id', req.businessId).is('deleted_at', null).single();
   if (error || !data) { res.status(404).json({ error: 'Purchase order not found' }); return; }
+  if (!assertBranchAccess(req, (data as any).branch_id)) { res.status(404).json({ error: 'Purchase order not found' }); return; }   // A494
   const total_amount = ((data as any).purchase_order_items ?? []).reduce(
     (s: number, it: any) => s + Number(it.unit_cost ?? 0) * Number(it.quantity_ordered ?? 0), 0);
   res.json({ ...data, total_amount });
@@ -502,7 +542,20 @@ router.post('/purchase-orders', requirePermission('inventory.receive'), async (r
   const { branch_id, supplier_id, order_date, expected_date, notes, items = [] } = req.body;
   if (!branch_id)    { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
-  if (!items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
+  if (!Array.isArray(items) || !items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
+  // A494: the branch (the owner's too), the supplier and every ingredient must be this business's.
+  if (!(await guardBranch(req, res, branch_id))) return;
+  if (supplier_id && !(await idsOfBusiness('suppliers', req.businessId, [supplier_id]))) { res.status(400).json({ error: 'That supplier is not this business\'s.' }); return; }
+  if (items.some((i: any) => !i?.ingredient_id) || !(await idsOfBusiness('ingredients', req.businessId, items.map((i: any) => i.ingredient_id)))) {
+    res.status(400).json({ error: 'An item is not in this business\'s ingredients.' }); return;
+  }
+  // A494: a cost typed by someone without menu.costs is dropped — the line takes the ingredient's stored cost.
+  if (!can(req, 'menu.costs')) {
+    const { data: ings } = await supabase.from('ingredients').select('id, unit_cost').eq('business_id', req.businessId)
+      .in('id', [...new Set(items.map((i: any) => String(i.ingredient_id)))]);
+    const cost = new Map(((ings ?? []) as Array<{ id: string; unit_cost: number | null }>).map((g) => [g.id, g.unit_cost]));
+    for (const i of items as any[]) i.unit_cost = cost.get(String(i.ingredient_id)) ?? 0;
+  }
 
   const po_number   = await nextRef('purchase_orders', 'PO', req.businessId);
   const totalAmount = items.reduce((s: number, i: any) => s + Number(i.unit_cost ?? 0) * Number(i.quantity_ordered ?? 0), 0);
@@ -529,8 +582,10 @@ router.post('/purchase-orders', requirePermission('inventory.receive'), async (r
 router.patch('/purchase-orders/:id', requirePermission('inventory.receive'), async (req, res) => {
   const { status, notes, expected_date, supplier_id } = req.body;
   const { data: current } = await supabase.from('purchase_orders')
-    .select('status').eq('id', req.params.id).eq('business_id', req.businessId).single();
+    .select('status, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).single();
   if (!current)                        { res.status(404).json({ error: 'Purchase order not found' }); return; }
+  if (!assertBranchAccess(req, current.branch_id)) { res.status(403).json({ error: 'That purchase order is another branch\'s.' }); return; }   // A494
+  if (supplier_id && !(await idsOfBusiness('suppliers', req.businessId, [supplier_id]))) { res.status(400).json({ error: 'That supplier is not this business\'s.' }); return; }
   if (current.status === 'cancelled')  { res.status(409).json({ error: 'Cannot modify a cancelled purchase order' }); return; }
   if (current.status === 'received' && status && status !== 'received') { res.status(409).json({ error: 'Cannot change status of a fully-received purchase order' }); return; }
   if (status === 'cancelled')          { res.status(409).json({ error: 'Use POST /purchase-orders/:id/cancel to cancel a PO' }); return; }
@@ -544,8 +599,9 @@ router.patch('/purchase-orders/:id', requirePermission('inventory.receive'), asy
 router.post('/purchase-orders/:id/cancel', requirePermission('inventory.receive'), async (req, res) => {
   const { reason } = req.body as { reason?: string };
   const { data: po } = await supabase.from('purchase_orders')
-    .select('status, notes, po_number').eq('id', req.params.id).eq('business_id', req.businessId).single();
+    .select('status, notes, po_number, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).single();
   if (!po)                        { res.status(404).json({ error: 'Purchase order not found' }); return; }
+  if (!assertBranchAccess(req, po.branch_id)) { res.status(403).json({ error: 'That purchase order is another branch\'s.' }); return; }   // A494
   if (po.status === 'cancelled')  { res.status(409).json({ error: 'Already cancelled' }); return; }
   if (po.status === 'received')   { res.status(409).json({ error: 'Cannot cancel a fully-received PO' }); return; }
   if (po.status === 'draft')      { res.status(409).json({ error: 'Delete draft POs instead of cancelling' }); return; }
@@ -562,8 +618,9 @@ router.post('/purchase-orders/:id/cancel', requirePermission('inventory.receive'
 // record). Still draft-only, same as before; just preserved instead of purged.
 router.delete('/purchase-orders/:id', requirePermission('inventory.receive'), async (req, res) => {
   const { data: po } = await supabase.from('purchase_orders')
-    .select('status').eq('id', req.params.id).eq('business_id', req.businessId).single();
+    .select('status, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).single();
   if (!po)                   { res.status(404).json({ error: 'Purchase order not found' }); return; }
+  if (!assertBranchAccess(req, po.branch_id)) { res.status(403).json({ error: 'That purchase order is another branch\'s.' }); return; }   // A494
   if (po.status !== 'draft') { res.status(409).json({ error: 'Only draft purchase orders can be deleted' }); return; }
   const { error } = await supabase.from('purchase_orders')
     .update({ deleted_at: new Date().toISOString() })
@@ -576,15 +633,17 @@ router.delete('/purchase-orders/:id', requirePermission('inventory.receive'), as
 // GOODS RECEIVED NOTES  (receiving INGREDIENTS)
 // =============================================================================
 
-router.get('/grn', async (req, res) => {
-  const { purchase_order_id, branch_id, limit = '50' } = req.query as Record<string, string>;
+// A494: was open to any signed-in user, every branch — inventory.receive (as recording one), the caller's branch.
+router.get('/grn', requirePermission('inventory.receive'), async (req, res) => {
+  const { purchase_order_id, limit = '50' } = req.query as Record<string, string>;
+  const scoped = branchScope(req);
   let query = supabase.from('goods_received_notes')
     .select(`*, purchase_orders ( po_number ),
       grn_items ( id, ingredient_id, quantity_received, unit_cost, ingredients ( name, unit ) )`)
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(Math.min(Number(limit), 200));
   if (purchase_order_id) query = query.eq('purchase_order_id', purchase_order_id);
-  if (branch_id)         query = query.eq('branch_id', branch_id);
+  if (scoped)            query = query.eq('branch_id', scoped);
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
   res.json(data ?? []);
@@ -600,11 +659,24 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
   const { data: grnBranch } = await supabase.from('branches')
     .select('id').eq('id', branch_id).eq('business_id', req.businessId).maybeSingle();
   if (!grnBranch) { res.status(404).json({ error: 'Branch not found in this business' }); return; }
+  let poCost = new Map<string, number | null>();
   if (purchase_order_id) {
     const { data: grnPo } = await supabase.from('purchase_orders')
-      .select('id').eq('id', purchase_order_id).eq('business_id', req.businessId).maybeSingle();
+      .select('id, branch_id').eq('id', purchase_order_id).eq('business_id', req.businessId).maybeSingle();
     if (!grnPo) { res.status(404).json({ error: 'Purchase order not found' }); return; }
+    // A494: receiving against a PO is that PO's branch's business — a manager cannot book another branch's order.
+    if (!assertBranchAccess(req, (grnPo as { branch_id: string }).branch_id)) { res.status(403).json({ error: 'That purchase order is another branch\'s.' }); return; }
+    const { data: poLines } = await supabase.from('purchase_order_items').select('ingredient_id, unit_cost').eq('purchase_order_id', purchase_order_id);
+    poCost = new Map(((poLines ?? []) as Array<{ ingredient_id: string; unit_cost: number | null }>).map((l) => [l.ingredient_id, l.unit_cost]));
   }
+  if (!Array.isArray(items) || items.some((i: any) => !i?.ingredient_id)
+    || !(await idsOfBusiness('ingredients', req.businessId, items.map((i: any) => i.ingredient_id)))) {
+    res.status(400).json({ error: 'An item is not in this business\'s ingredients.' }); return;
+  }
+  // A494: a cost typed by someone without menu.costs is dropped — the line keeps the PO's cost (else none), and the
+  // catalogue's cost is not changed by it.
+  const mayCost = can(req, 'menu.costs');
+  if (!mayCost) for (const i of items as any[]) i.unit_cost = poCost.get(String(i.ingredient_id)) ?? null;
 
   const grn_number = await nextRef('goods_received_notes', 'GRN', req.businessId);
 
@@ -626,7 +698,7 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
   if (itemErr) { sendError(res, itemErr); return; }
 
   await applyIngredientStockIn(
-    items.map((i: any) => ({ ingredient_id: i.ingredient_id, quantity: Number(i.quantity_received), unit_cost: i.unit_cost })),
+    items.map((i: any) => ({ ingredient_id: i.ingredient_id, quantity: Number(i.quantity_received), unit_cost: mayCost ? i.unit_cost : null })),
     req.businessId, branch_id, req.userId, 'restock', `GRN ${grn_number}`,
   );
 
@@ -672,17 +744,21 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
 // STOCK TRANSFERS  (menu products — for minimart / retail branches)
 // =============================================================================
 
-router.get('/transfers', async (req, res) => {
-  const { status, branch_id, limit = '50' } = req.query as Record<string, string>;
+// A494: was open to any signed-in user and every branch — inventory.transfer, and only transfers from or to the
+// caller's branch (the owner: the chosen branch, or all).
+router.get('/transfers', requirePermission('inventory.transfer'), async (req, res) => {
+  const { status, limit = '50' } = req.query as Record<string, string>;
+  const branch_id = branchScope(req);
   let query = supabase.from('stock_transfers')
     .select(`*, stock_transfer_items ( id, product_id, quantity, quantity_received, products ( name ) )`)
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(Math.min(Number(limit), 200));
   if (status)    query = query.eq('status', status);
   if (branch_id) query = query.or(`from_branch_id.eq.${branch_id},to_branch_id.eq.${branch_id}`);
-  const { data: transfers, error } = await query;
+  const { data: found, error } = await query;
   if (error) { sendError(res, error); return; }
-  if (transfers?.length) {
+  const transfers = (found ?? []).filter((t: any) => !branch_id || t.from_branch_id === branch_id || t.to_branch_id === branch_id);
+  if (transfers.length) {
     const branchIds = [...new Set(transfers.flatMap(t => [t.from_branch_id, t.to_branch_id]))];
     const branches = await chunkIn<any>('branches', 'id', branchIds, q => q.select('id, name'));
     const bmap: Record<string, string> = {};
@@ -740,11 +816,15 @@ router.post('/transfers', requirePermission('inventory.transfer'), async (req, r
   const { data: destBranch } = await supabase.from('branches')
     .select('id').eq('id', to_branch_id).eq('business_id', req.businessId).maybeSingle();
   if (!destBranch) { res.status(404).json({ error: 'Destination branch not found in this business' }); return; }
+  if (!(await guardBranch(req, res, from_branch_id, 'No access to the source branch'))) return;   // A494: the owner's source too
 
   const clean = items
     .map((i: any) => ({ product_id: i.product_id, quantity: Number(i.quantity) }))
     .filter((i: any) => i.product_id && Number.isFinite(i.quantity) && i.quantity > 0);
   if (!clean.length) { res.status(400).json({ error: 'Every item needs a product and a quantity greater than zero' }); return; }
+  if (!(await idsOfBusiness('products', req.businessId, clean.map((i: any) => i.product_id)))) {   // A494
+    res.status(400).json({ error: 'An item is not in this business\'s catalogue.' }); return;
+  }
 
   const transfer_number = await nextRef('stock_transfers', 'TRF', req.businessId);
   const { data: transfer, error: tErr } = await supabase.from('stock_transfers').insert({
@@ -784,6 +864,15 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
   }
 
   const from = String(transfer.status ?? 'pending');
+  // A494: each edge is the branch it happens at. Despatch, and cancelling (before it left, or putting the goods back at
+  // the source while in transit), are the SENDING branch's (or the owner's); receiving is the RECEIVING branch's. Either
+  // branch could do any of them before.
+  if ((status === 'in_transit' || status === 'cancelled') && !assertBranchAccess(req, transfer.from_branch_id)) {
+    res.status(403).json({ error: 'Only the sending branch can despatch or cancel this transfer.', code: 'NOT_SOURCE' }); return;
+  }
+  if (status === 'received' && !assertBranchAccess(req, transfer.to_branch_id)) {
+    res.status(403).json({ error: 'Only the receiving branch can confirm this transfer arrived.', code: 'NOT_DESTINATION' }); return;
+  }
   const allowed = TRANSFER_TRANSITIONS[from] ?? [];
   if (!allowed.includes(status)) {
     // 409, not 400: the request is well formed, the transfer is simply not in a

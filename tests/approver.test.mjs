@@ -99,16 +99,22 @@ const src = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/orders.ts'),
 const body = (marker) => { const i = src.indexOf(marker); const rest = src.slice(i + marker.length); return rest.slice(0, rest.indexOf('router.post(')); };
 await ok('orders.ts: verifyOverrideAuthorizer asks findApprover with the real sign-in PIN check and the business owner', async () => {
   assert.match(src, /import \{ verifyPin \} from '\.\/auth';/);
-  assert.match(src, /findApprover\(\(rows \?\? \[\]\) as ApproverRow\[\], \{ pin, authorizerId, ownerId: \(biz as any\)\?\.owner_id \?\? null,\s*may: \(row, ownerId\) => mayApprove\(row, ownerId, action\) \}/);
+  // A495: the approver works at the sale's branch and is never the asker (branchId / actorId; user_branches selected).
+  assert.match(src, /findApprover\(\(rows \?\? \[\]\) as ApproverRow\[\], \{ pin, authorizerId, ownerId: \(biz as any\)\?\.owner_id \?\? null,\s*may: \(row, ownerId\) => mayApprove\(row, ownerId, action\), branchId: scope\.branchId \?\? null, actorId: scope\.actorId \?\? null \}/);
+  assert.match(src, /user_permissions \( granted, permissions \( key \) \), user_branches \( branch_id \)'\)/);
   assert.match(src, /loginPin:\s+async \(p, h\) => \(await verifyPin\(p, h, businessId\)\)\.valid/);
 });
 await ok('void AND refund: legacy business PIN still accepted; otherwise one clear refusal (no "Invalid supervisor PIN")', async () => {
+  // A494: both routes ask ONE helper (approverByPin — behind the PIN limiter, never the requester themselves); the legacy
+  // business PIN and the one refusal live there now.
   for (const m of ["router.post('/:id/void'", "router.post('/:id/refund'"]) {
     const b = body(m);
-    assert.match(b, /const legacy = await verifySupervisorPin\(req\.businessId, pin\);\s+if \(legacy !== true\) \{/, m);
-    assert.match(b, /res\.status\(403\)\.json\(APPROVER_PIN_REFUSED\)/, m);
+    assert.match(b, /const a = await approverByPin\(req, authorizer_id, pin, '(void|refund)', order\.branch_id \?\? null\);/, m);   // A495: the sale's branch
     assert.ok(!/Invalid supervisor PIN/.test(b), m);
   }
+  const helper = src.slice(src.indexOf('async function approverByPin('), src.indexOf('// What the till/web is told when no approval matched'));
+  assert.match(helper, /const legacy = await verifySupervisorPin\(req\.businessId, pin\);\s+if \(legacy === true\)/);
+  assert.match(helper, /return \{ status: 403, body: \{ \.\.\.APPROVER_PIN_REFUSED \} \};/);
   assert.match(src, /error: 'That PIN was not recognised\. Enter the PIN of a manager \(or the owner\) on duty\.'/);
 });
 

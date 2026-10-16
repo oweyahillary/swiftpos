@@ -27,6 +27,8 @@ import ManagerShiftTab from './ManagerShiftTab';
 import ManagerMenuTab from './ManagerMenuTab';
 import SignInSecurity from '../../components/SignInSecurity';   // A391
 import StockCounts from '../../components/StockCounts';   // A394
+import PromotionsPage from '../PromotionsPage';   // A502
+import VoidRefundRulesTab from '../settings/VoidRefundRulesTab';   // A502
 import Wastage from '../../components/Wastage';           // A399
 import Expiry from '../../components/Expiry';             // A413
 import { localDateStr } from '../../lib/localDate';
@@ -86,6 +88,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'menu',      label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Menu</span></>,      title: 'Menu', permission: 'products.view', group: null },
   // A445: offers for this branch (the people who edit the menu).
   { key: 'offers',    label: <><Icon d={I.tag}       className="flex-shrink-0" /><span className="truncate">Offers</span></>,    title: 'Offers', permission: 'menu.offers', group: null },
+  // A502: the owner's by default — shown to someone the owner gave the right (no role starts with it).
+  { key: 'promotions', label: <><Icon d={I.tag}       className="flex-shrink-0" /><span className="truncate">Promotions</span></>, title: 'Promotions', permission: 'menu.promotions', group: null },
   { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: 'Inventory' },
   { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: ['inventory.receive', 'inventory.transfer'], group: 'Inventory' },
   // A394: stock take — the manager counts (blind); the owner reviews and posts.
@@ -104,6 +108,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'credit',    label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Credit</span></>,    title: 'Credit', permission: 'customers.view', group: 'Customers' },
   { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.view', group: 'Settings' },
   { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'stations.manage', group: 'Settings' },
+  { key: 'reversals', label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Void &amp; refund rules</span></>, title: 'Void and refund rules', permission: 'settings.reversals', group: 'Settings' },   // A502
   // A391: the manager's own sign-in code (email or authenticator app).
   { key: 'security',  label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">My sign-in</span></>, title: 'My sign-in', permission: null, group: 'Settings' },
 ];
@@ -1315,7 +1320,7 @@ export function navAllowed(item: NavItem, held: ReadonlySet<string>, isPetrol: b
 
 export default function ManagerDashboard() {
   const navigate  = useNavigate();
-  const { session, clearCashierSession, held, posApi } = usePOSAuth();
+  const { session, clearCashierSession, held, posApi, hasPermission } = usePOSAuth();
   const { business }                = useBusiness();
   const { branches, setActiveBranch } = useBranch();
   const [active, setActive]           = useState<string | null>(null);
@@ -1414,13 +1419,20 @@ export default function ManagerDashboard() {
         return <SignInSecurity />;
       case 'counts':
         return <StockCounts client={posApi} branchId={session.branchId} currency={currency} business={business}
-          branches={managerBranch} />;
+          branches={managerBranch} canFreeze={hasPermission('inventory.count_freeze')} />;   {/* A502 */}
       case 'wastage':
         return <Wastage client={posApi} branchId={session.branchId} currency={currency} branches={managerBranch} showCosts={seesCosts} />;
       case 'expiry':
-        return <Expiry client={posApi} branchId={session.branchId} currency={currency} showCosts={seesCosts} />;
+        return <Expiry client={posApi} branchId={session.branchId} currency={currency} showCosts={seesCosts}
+          canEditBatches={hasPermission('inventory.receive') || hasPermission('inventory.adjust')} />;   {/* A506 */}
       case 'offers':   // A445: this branch's offers (the cloud keeps a manager to their own branch)
         return <OffersManager client={posApi} isOwner={false} branchId={session.branchId ?? null} currency={currency} />;
+      // A502: rights the owner keeps by default and may give to someone — the same screens as the owner's, under the
+      // signed-in person's own session (the cloud checks menu.promotions / settings.reversals).
+      case 'promotions':
+        return <PromotionsPage client={posApi} />;
+      case 'reversals':
+        return <VoidRefundRulesTab client={posApi} />;
       default: return <SignInSecurity />;
     }
   }

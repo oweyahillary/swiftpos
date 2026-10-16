@@ -71,6 +71,7 @@ export default function KDSPage() {
   // A192: the display's real connection state, set from the LAST fetch outcome —
   // not from "the poll ran". A 401 becomes 'auth' (re-pair), never a silent empty board.
   const [conn, setConn] = useState<KdsConn>('ok');
+  const [authWhy, setAuthWhy] = useState<{ msg: string; code: string } | null>(null);   // A506: why the cloud refused
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
   const [branchId, setBranchId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>('all');
@@ -116,6 +117,9 @@ export default function KDSPage() {
       // is an auth failure (re-pair needed), NOT an empty queue.
       const state = classifyKdsFetch(res.ok, res.status, isArr);
       setConn(state);
+      // A506: the cloud's own reason (KDS_TOKEN_REVOKED "token was replaced — set the display up again", a branch
+      // closed, a suspended account) — re-pairing helps only for a token problem.
+      setAuthWhy(state === 'auth' ? { msg: typeof body?.error === 'string' ? body.error : '', code: typeof body?.code === 'string' ? body.code : '' } : null);
 
       if (state !== 'ok') {
         // Do NOT overwrite the board with [] — that is exactly what made a 401
@@ -173,11 +177,12 @@ export default function KDSPage() {
     }
 
     try {
-      await fetch(`${API_BASE}/api/kitchen/tickets/${ticket.id}/status`, {
+      const r = await fetch(`${API_BASE}/api/kitchen/tickets/${ticket.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...kdsAuthHeaders() },
         body: JSON.stringify({ status: cfg.next }),
       });
+      if (!r.ok) fetchTickets(branchId!);   // A506: a refusal (401 revoked token, 409) undoes the optimistic move now
     } catch (err) {
       console.error('Failed to advance ticket:', err);
       // Revert on failure
@@ -310,13 +315,14 @@ export default function KDSPage() {
             <span className="text-5xl">🔒</span>
             <span className="text-lg text-red-400 font-semibold">This display isn’t paired</span>
             <span className="text-sm text-gray-400 max-w-sm">
-              The KDS token is missing or has expired, so orders can’t load. Generate a new token in
-              the dashboard (Settings → Devices and printers → Kitchen display) and re-pair.
+              {authWhy?.msg ? <>{authWhy.msg}. </> : null}
+              {!authWhy?.code || authWhy.code.startsWith('KDS_TOKEN') ? <>The KDS token is missing, expired or replaced, so orders can’t load. Generate a new token in
+              the dashboard (Settings → Devices and printers → Kitchen display) and re-pair.</> : null}
             </span>
-            <button
+            {(!authWhy?.code || authWhy.code.startsWith('KDS_TOKEN')) && <button
               onClick={() => { localStorage.removeItem(KDS_TOKEN_KEY); setKdsToken(null); }}
               className="mt-1 bg-red-500 hover:bg-red-400 text-gray-950 font-semibold px-4 py-2 rounded-lg transition-colors"
-            >Re-pair display</button>
+            >Re-pair display</button>}
           </div>
         ) : loading ? (
           <div className="flex items-center justify-center h-64 text-gray-500">Loading tickets…</div>

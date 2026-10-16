@@ -18,6 +18,7 @@
 import { supabase } from './supabase';
 
 import { API_URL } from './config';
+import { posError } from './posError';   // A506
 const BASE_URL = API_URL;
 
 // ── Storage keys (single source of truth) ────────────────────────────────────
@@ -118,15 +119,33 @@ export function signalSessionExpired() {
 
 // ── Token refresh (single in-flight guard) ────────────────────────────────────
 
-let refreshInFlight: Promise<string> | null = null;
+/** The cloud's renewal answer — the new pair, and (A490) the person's current permission map. */
+export interface RefreshAnswer { accessToken: string; refreshToken?: string; permissions?: Record<string, boolean>; [k: string]: unknown }
 
-async function refreshAccessToken(): Promise<string> {
-  if (refreshInFlight) return refreshInFlight;
+/** In flight, by the refresh token presented — one renewal per token at a time. */
+const refreshInFlight = new Map<string, Promise<RefreshAnswer>>();
+/** This page's renewals: a refresh token → the one it was renewed into. */
+const renewedInto = new Map<string, string>();
+const newestOf = (t: string): string => { let x = t; for (let i = 0; i < 50 && renewedInto.has(x); i++) x = renewedInto.get(x)!; return x; };
 
-  refreshInFlight = (async () => {
-    const refreshToken = getStoredRefreshToken();
-    if (!refreshToken) throw new Error('No refresh token');
+/**
+ * A506: ONE renewal chain per sign-in. The web POS held its refresh token twice — the cashier session (posApi,
+ * POSAuthContext) and localStorage (this client: payments, discounts, M-Pesa, the Z report) — and each renewed its own
+ * copy. Under the A477 handshake the second renewal of the same token re-asked (revoking the first one's successor),
+ * and the first client's next renewal presented that revoked token: TOKEN_REPLAYED, the whole session revoked — the
+ * cashier thrown to the PIN lock mid-shift. Now both renew here: a token this page already renewed is never presented
+ * again (its newest successor is), one renewal per token at a time, and the cashier session hears the new pair
+ * ('swiftpos:pos-token'). `fromToken` is the cashier session's own copy — another tab's sign-in in the shared store is
+ * never used for it, nor overwritten by it.
+ */
+export function refreshSession(fromToken?: string | null): Promise<RefreshAnswer> {
+  const stored = getStoredRefreshToken();
+  const refreshToken = fromToken ? newestOf(fromToken) : stored;
+  if (!refreshToken) return Promise.reject(new Error('No refresh token'));
+  const running = refreshInFlight.get(refreshToken);
+  if (running) return running;
 
+  const p = (async () => {
     const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -135,13 +154,23 @@ async function refreshAccessToken(): Promise<string> {
 
     if (!res.ok) throw new Error('Refresh failed');
 
-    const data = await res.json();
-    storeSwiftPOSToken(data.accessToken);
-    if (data.refreshToken) storeRefreshToken(data.refreshToken);
-    return data.accessToken as string;
-  })().finally(() => { refreshInFlight = null; });
+    const data = await res.json() as RefreshAnswer;
+    if (data.refreshToken) renewedInto.set(refreshToken, data.refreshToken);
+    // The store keeps this chain only when it held it (or held nothing) — never another tab's person.
+    const current = getStoredRefreshToken();
+    if (!current || current === refreshToken) {
+      storeSwiftPOSToken(data.accessToken);
+      if (data.refreshToken) storeRefreshToken(data.refreshToken);
+    }
+    window.dispatchEvent(new CustomEvent('swiftpos:pos-token', { detail: { ...data, renewedFrom: refreshToken } }));   // a cashier session of this chain takes it
+    return data;
+  })().finally(() => { refreshInFlight.delete(refreshToken); });
+  refreshInFlight.set(refreshToken, p);
+  return p;
+}
 
-  return refreshInFlight;
+async function refreshAccessToken(): Promise<string> {
+  return (await refreshSession()).accessToken;
 }
 
 // ── Auth header ───────────────────────────────────────────────────────────────
@@ -204,6 +233,9 @@ async function request<T>(
         return new Promise(() => {}); // halt — sign-out is in flight
       }
     }
+    // A506: a browser holding only a Supabase session (no ZapTill token) is answered 401 SIGN_IN_AGAIN by every route
+    // since the sign-in code (A391/A494) — the dashboard stayed open with every page empty. Sign out to the login page.
+    if (errBody.code === 'SIGN_IN_AGAIN') signalSessionExpired();
     // No stored token — let 401 propagate (login page, unauthenticated call)
     const err = new Error(errBody.error ?? `Request failed: 401`) as Error & { code?: string; status?: number };
     err.code   = errBody.code;
@@ -230,6 +262,8 @@ async function request<T>(
     };
     err.code   = json.code;
     err.status = res.status;
+    // A506: a permission refusal ('Forbidden' + detail 'Missing permission: …') reads as such, not the bare word.
+    if (!fieldErrors && json.error === 'Forbidden') err.message = posError(json, res.status).message;
     // Carry the rest of the error body across too. Only `code` and `status`
     // survived before, so a 409 that NAMES the choices the caller has to make
     // (MULTIPLE_BUSINESSES lists the businesses) arrived at the UI stripped of

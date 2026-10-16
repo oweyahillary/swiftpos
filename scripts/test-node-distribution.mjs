@@ -55,8 +55,8 @@ function collect(db, origins, requester, cursors, limit) {
       const after = Number(cursors?.[origin]?.[table] ?? 0);
       const rows = db.prepare(
         `SELECT id, total, device_id, seq FROM orders
-          WHERE COALESCE(device_id,'') = COALESCE(?,'') AND seq > ?
-          ORDER BY seq LIMIT ?`).all(origin, after, budget + 1);
+          WHERE device_id = ? AND seq > ?
+          ORDER BY seq LIMIT ?`).all(origin, after, budget + 1);   // A501: device_id = ? — the (device_id, seq) index
       if (!rows.length) continue;
       if (rows.length > budget) { has_more = true; rows.length = budget; }
       budget -= rows.length;
@@ -71,7 +71,7 @@ console.log('\n0. Harness matches nodeIngest.ts');
 {
   ok('collection excludes the requester at the source', SRC_NI.includes('origins.delete(requesterDeviceId)'));
   ok('per-origin per-table query matches (origin scope + seq cursor)',
-     SRC_NI.includes(`COALESCE(device_id,'') = COALESCE(?,'') AND seq > ?`));
+     SRC_NI.includes(`WHERE device_id = ? AND seq > ?`));   // A501: index-friendly (distributionSql)
   ok('budget over-fetches by one to detect has_more', SRC_NI.includes('budget + 1'));
   ok('orders carry _items and _payments in distribution',
      /collectDistribution[\s\S]{0,2500}r\._items = readItems\.all[\s\S]{0,200}r\._payments = readPays\.all/.test(SRC_NI));

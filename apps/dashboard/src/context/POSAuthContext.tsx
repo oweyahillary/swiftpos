@@ -2,6 +2,8 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, R
 import { API_URL } from '../lib/config';
 import { expandMap, hasPermission as holds } from '../lib/permissions';   // A490
 import { getCoveredTerminal } from '../lib/posTerminal';
+import { posError } from '../lib/posError';   // A506
+import { refreshSession, type RefreshAnswer } from '../lib/api';   // A506: one renewal
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -133,6 +135,28 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('swiftpos:session-expired', onExpired);
   }, [clearCashierSession]);
 
+  // A506: a renewal made anywhere on the page (api.ts refreshSession) is this session's new pair and permission map.
+  useEffect(() => {
+    function onToken(e: Event) {
+      const d = (e as CustomEvent<RefreshAnswer & { renewedFrom?: string }>).detail;
+      if (!d?.accessToken) return;
+      setSession((cur) => {
+        // Only this session's own chain (another person's renewal in this tab's store is not theirs).
+        if (!cur || (d.renewedFrom && d.renewedFrom !== cur.refreshToken)) return cur;
+        const next: CashierSession = {
+          ...cur,
+          token: d.accessToken,
+          refreshToken: d.refreshToken ?? cur.refreshToken,
+          ...(d.permissions && typeof d.permissions === 'object' ? { permissions: d.permissions } : {}),
+        };
+        try { sessionStorage.setItem(sessionKey(cur.staffId), JSON.stringify(next)); } catch { /* storage blocked */ }
+        return next;
+      });
+    }
+    window.addEventListener('swiftpos:pos-token', onToken);
+    return () => window.removeEventListener('swiftpos:pos-token', onToken);
+  }, []);
+
   // A490: ONE rule for every PIN-session screen — the session's permission map expanded into fine keys (an older map's
   // broad keys become what they stood for; a map without the catalogue marker keeps what nobody was refused before).
   const held = useMemo<ReadonlySet<string>>(
@@ -164,24 +188,15 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
       // if that fails, end the session cleanly so the terminal returns to the PIN
       // lock with a message (instead of silently 401'ing every call).
       if (res.status === 401) {
+        let retryError: Error | null = null;
         if (session?.refreshToken) {
           try {
-            const refreshRes = await fetch(`${BASE_URL}/api/auth/refresh`, {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify({ refreshToken: session.refreshToken }),
-            });
-            if (refreshRes.ok) {
-              const refreshData = await refreshRes.json();
-              const newToken = refreshData.accessToken ?? refreshData.token;
-              setCashierSession({
-                ...session,
-                token:        newToken,
-                refreshToken: refreshData.refreshToken ?? session.refreshToken,
-                // A490: the refresh answers the person's CURRENT permission map (PERMISSIONS_CHANGED) — take it.
-                ...(refreshData.permissions && typeof refreshData.permissions === 'object'
-                  ? { permissions: refreshData.permissions as Record<string, boolean> } : {}),
-              });
+            // A506: the page's ONE renewal (api.ts refreshSession) — the store and this session hold one token chain;
+            // two copies renewed separately ended the session (A477 replay). The 'swiftpos:pos-token' listener below
+            // takes the new pair and the current permission map (A490) into the session.
+            const refreshData = await refreshSession(session.refreshToken);
+            const newToken = refreshData.accessToken;
+            if (newToken) {
               const retryRes = await fetch(`${BASE_URL}${path}`, {
                 method,
                 headers: {
@@ -196,11 +211,15 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
               if (retryRes.status === 204) return undefined as T;
               const retryJson = await retryRes.json().catch(() => ({}));
               if (retryRes.ok) return retryJson as T;
-              throw new Error(retryJson.error ?? `Request failed: ${retryRes.status}`);
+              // A506: the session renewed, so this refusal is the request's own (POST /api/staff/clock answers 401
+              // "Invalid PIN" for a mistyped PIN) — say it and keep the person signed in. This throw sat inside the
+              // try below, so a wrong clock-in PIN fell through to "Session expired" and signed the cashier out.
+              retryError = posError(retryJson, retryRes.status);
             }
           } catch {
             // fall through to clean expiry
           }
+          if (retryError) throw retryError;
         }
         // Couldn't refresh — return to the PIN lock with an explanation.
         sessionStorage.setItem('swiftpos_pos_expired', '1');
@@ -209,8 +228,8 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (res.status === 204) return undefined as T;
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? `Request failed: ${res.status}`);
+      const json = await res.json().catch(() => ({}));   // A506: a 502 page / plain-text limiter is not JSON
+      if (!res.ok) throw posError(json, res.status);
       return json as T;
     },
     [session, setCashierSession, clearCashierSession],

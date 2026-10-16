@@ -25,12 +25,37 @@ const mayDecide = (req: any) => !req.isTill && can(req, 'changes.approve');
 router.post('/', async (req, res) => {
   const list = Array.isArray(req.body?.changes) ? req.body.changes.slice(0, 50) : [];
   if (!list.length) { res.status(400).json({ error: 'changes is required' }); return; }
+  // A494: the branch is the session's own — a till's (its token), a manager's (their token) — never a header they send.
+  // Only the owner names one (X-Branch-Id, the dashboard's selector), and it must be a branch of the business.
+  let branchId: string | null = null;
+  if (req.isTill) {
+    branchId = req.branchId ?? null;
+    if (!branchId && req.deviceId) {
+      const { data: dev, error: dErr } = await supabase.from('user_devices').select('branch_id')
+        .eq('business_id', req.businessId).eq('device_id', req.deviceId).maybeSingle();
+      if (dErr) { sendError(res, dErr); return; }
+      branchId = (dev as { branch_id?: string | null } | null)?.branch_id ?? null;
+    }
+  } else if (req.isOwner) {
+    const asked = String(req.headers['x-branch-id'] ?? '').trim() || null;
+    if (asked) {
+      const { data: br, error: bErr } = await supabase.from('branches').select('id').eq('id', asked).eq('business_id', req.businessId).maybeSingle();
+      if (bErr) { sendError(res, bErr); return; }
+      if (!br) { res.status(400).json({ error: "That branch is not one of this business's", code: 'BRANCH_NOT_FOUND' }); return; }
+    }
+    branchId = asked;
+  } else {
+    branchId = req.branchId ?? null;
+  }
   const ctx = {
-    businessId: req.businessId!, branchId: (req.headers['x-branch-id'] as string) || req.branchId || null,
-    deviceId: String(req.headers['x-device-id'] ?? '') || req.deviceId || null,
-    // A person signed in sends with their own keys; the till's own session (A415) carries none of a person's.
+    businessId: req.businessId!, branchId,
+    // A494: the till's own id from its token; a person's header is only recorded (it proves nothing).
+    deviceId: req.isTill ? req.deviceId : (String(req.headers['x-device-id'] ?? '').split(',')[0].trim() || null),
+    // A person signed in sends with their own keys — and is who made it (a made_by in the body is never believed for a
+    // person); the till's own session (A415) carries none of a person's: the maker must be proven (lib/changeApply.ts).
     callerKeys: req.isTill ? [] : (req.permissionKeys ?? []), callerIsOwner: !req.isTill && req.isOwner === true,
     callerUserId: req.isTill ? null : (req.userId ?? null),
+    tillSession: req.isTill === true,
   };
   const results: ChangeResult[] = [];
   for (const raw of list) {   // in order: a product's new category is created before the product names it

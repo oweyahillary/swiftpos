@@ -13,6 +13,10 @@ router.use(requireAuth);
 // customer up and adds them: customers.view) or a customers.manage holder's.
 // Reads stay scoped to the business. (There is no loyalty-settings write route here.)
 const canManageCustomers = requirePermission('customers.edit');
+// A494: the customer list, a customer's points history and their purchase analytics were open to every signed-in
+// user — customers.view. GET /customer?phone= (one exact phone number, the POS's Loyalty panel) stays open: it answers
+// only for a number the cashier already has, and a till must find the customer at the counter.
+const canViewCustomers = requirePermission('customers.view');
 
 // ── Loyalty feature flag guard ────────────────────────────────
 // All routes in this file are blocked if loyalty_enabled = false for the business.
@@ -99,7 +103,7 @@ router.get('/settings', requireLoyalty, async (req, res) => {
 });
 
 // GET /api/loyalty/customer/:id/transactions
-router.get('/customer/:id/transactions', async (req, res) => {
+router.get('/customer/:id/transactions', canViewCustomers, async (req, res) => {
   const { data, error } = await supabase
     .from('loyalty_transactions')
     .select('id, type, points, notes, created_at, order_id')
@@ -116,7 +120,7 @@ router.get('/customer/:id/transactions', async (req, res) => {
 // Per-customer purchase analytics: spend summary, most-bought items, and a
 // monthly spend trend. Business-wide (a customer's whole relationship, across
 // branches) — customer analytics is about the person, not one till.
-router.get('/customer/:id/insights', async (req, res) => {
+router.get('/customer/:id/insights', canViewCustomers, async (req, res) => {
   const { data, error } = await supabase
     .from('orders')
     .select('id, total, created_at, order_items ( product_name, quantity, subtotal )')
@@ -179,7 +183,7 @@ router.get('/customer/:id/insights', async (req, res) => {
 
 // GET /api/loyalty/customers?search=&page=1&limit=20
 // Paginated list of all customers for the CRM tab.
-router.get('/customers', async (req, res) => {
+router.get('/customers', canViewCustomers, async (req, res) => {
   const search = (req.query.search as string ?? '').trim();
   const page   = Math.max(1, parseInt(req.query.page  as string) || 1);
   const limit  = Math.min(50, parseInt(req.query.limit as string) || 20);

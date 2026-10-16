@@ -22,12 +22,21 @@ import { safeRouter }        from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth }       from '../middleware/auth';
 import { branchScope, assertBranchAccess, requirePermission } from '../middleware/rbac';
+import { guardBranch } from '../lib/branchGuard';   // A494
 import { supabase }          from '../lib/supabase';
 
 const router = safeRouter();
 router.use(requireAuth);
 // A490: parking is parking.manage (everyone held it before migration 134 — OPEN_BEFORE_A490).
 router.use(requirePermission('parking.manage'));
+
+/** A494: a session by id is the caller's only at their branch (the owner any of the business's). */
+async function ownSession(req: any, res: any, cols = '*'): Promise<any | null> {
+  const { data } = await supabase.from('parking_sessions').select(cols).eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  const row = data as any;
+  if (!row || !assertBranchAccess(req, row.branch_id)) { res.status(404).json({ error: 'Session not found' }); return null; }
+  return row;
+}
 
 // ── POST /api/parking-sessions ────────────────────────────────────────────────
 
@@ -43,21 +52,24 @@ router.post('/', async (req, res) => {
   if (!bay_id)    { res.status(400).json({ error: 'bay_id is required' });    return; }
   if (!branch_id) { res.status(400).json({ error: 'branch_id is required' }); return; }
 
-  if (!assertBranchAccess(req, branch_id)) {
-    res.status(403).json({ error: 'Access denied to this branch' });
-    return;
-  }
+  if (!(await guardBranch(req, res, branch_id, 'Access denied to this branch'))) return;   // A494: the owner's too
 
   // Verify bay belongs to this business (cross-tenant guard)
   const { data: bay } = await supabase
     .from('tables')
-    .select('id, name, slot_type, status')
+    .select('id, name, slot_type, status, branch_id')
     .eq('id', bay_id)
     .eq('business_id', req.businessId)
     .single();
 
   if (!bay) {
     res.status(404).json({ error: 'Bay not found' });
+    return;
+  }
+
+  // A494: the bay must be at the session's branch (another branch's bay could be opened from here).
+  if (bay.branch_id && bay.branch_id !== branch_id) {
+    res.status(400).json({ error: 'That bay is at another branch' });
     return;
   }
 
@@ -112,8 +124,10 @@ router.post('/', async (req, res) => {
 router.get('/', async (req, res) => {
   const { status, branch_id, from, to } = req.query;
   const limit        = Math.min(parseInt(req.query.limit as string) || 100, 500);
-  const scopedBranch = branchScope(req);
-  const queryBranch  = (branch_id as string) || scopedBranch;
+  // A494: was `?branch_id || branchScope` — a staff member read any branch by naming it. branchScope already takes
+  // the owner's ?branch_id / X-Branch-Id and locks everyone else to their own.
+  void branch_id;
+  const queryBranch  = branchScope(req);
 
   let q = supabase
     .from('parking_sessions')
@@ -135,14 +149,8 @@ router.get('/', async (req, res) => {
 // ── GET /api/parking-sessions/:id ────────────────────────────────────────────
 
 router.get('/:id', async (req, res) => {
-  const { data, error } = await supabase
-    .from('parking_sessions')
-    .select('*, tables(id, name, capacity)')
-    .eq('id', req.params.id)
-    .eq('business_id', req.businessId)
-    .single();
-
-  if (error || !data) { res.status(404).json({ error: 'Session not found' }); return; }
+  const data = await ownSession(req, res, '*, tables(id, name, capacity)');   // A494: the caller's branch
+  if (!data) return;
   res.json(data);
 });
 
@@ -159,6 +167,7 @@ router.patch('/:id', async (req, res) => {
     res.status(400).json({ error: 'No updatable fields provided' });
     return;
   }
+  if (!(await ownSession(req, res, 'id, branch_id'))) return;   // A494
 
   const { data, error } = await supabase
     .from('parking_sessions')
@@ -178,17 +187,8 @@ router.patch('/:id', async (req, res) => {
 router.post('/:id/close', async (req, res) => {
   const { order_id } = req.body;
 
-  const { data: session, error: fetchErr } = await supabase
-    .from('parking_sessions')
-    .select('*')
-    .eq('id', req.params.id)
-    .eq('business_id', req.businessId)
-    .single();
-
-  if (fetchErr || !session) {
-    res.status(404).json({ error: 'Session not found' });
-    return;
-  }
+  const session = await ownSession(req, res);   // A494: the caller's branch
+  if (!session) return;
 
   if (session.status !== 'open') {
     res.status(400).json({ error: `Session is already ${session.status}` });
@@ -226,14 +226,8 @@ router.post('/:id/close', async (req, res) => {
 // Vehicle left without paying, or session created in error.
 
 router.post('/:id/void', async (req, res) => {
-  const { data: session } = await supabase
-    .from('parking_sessions')
-    .select('id, status')
-    .eq('id', req.params.id)
-    .eq('business_id', req.businessId)
-    .single();
-
-  if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
+  const session = await ownSession(req, res, 'id, status, branch_id');   // A494
+  if (!session) return;
 
   if (session.status !== 'open') {
     res.status(400).json({ error: `Can only void an open session (current: ${session.status})` });

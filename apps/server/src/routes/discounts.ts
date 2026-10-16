@@ -5,7 +5,19 @@ import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { CreateDiscountSchema } from '../lib/schemas';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, can } from '../middleware/rbac';
+import { createFailureCounter, pinKey } from '../lib/pinAttempts';   // A505
+
+/**
+ * A505: promo-code guessing. A code is a short secret meant for one customer; /apply answered "not found" as fast as it
+ * was asked. 20 wrong codes in 15 minutes from one caller (their person, or the till) pauses THAT caller's code look-ups
+ * for 15 minutes — far above a cashier mistyping a code or two. A right code clears the count.
+ */
+export const PROMO_MAX_FAILS = 20;
+const promoFails = createFailureCounter({ max: PROMO_MAX_FAILS, windowMs: 15 * 60_000, lockMs: 15 * 60_000 });
+export function _resetPromoAttempts(): void { promoFails.reset(); }
+/** A505: a promo code matched literally — ilike treats % and _ as wildcards (a code of "%" matched any code). */
+export const likeLiteral = (v: string): string => v.replace(/[\\%_]/g, (c) => '\\' + c);
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -16,6 +28,9 @@ router.use(requireAuth);
 const canManage = requirePermission('menu.offers');
 
 // GET /api/discounts — list all discounts for business
+// A494: the list carried every promo code — a cashier could read a code meant for one customer and use it. Someone
+// without menu.offers gets only the discounts that need no code (what a POS offers on its own), active, and never a
+// code; the Discounts page (menu.offers) gets everything.
 router.get('/', async (req, res) => {
   const { data, error } = await supabase
     .from('discounts')
@@ -24,7 +39,10 @@ router.get('/', async (req, res) => {
     .order('created_at', { ascending: false });
 
   if (error) { sendError(res, error); return; }
-  res.json(data);
+  if (can(req, 'menu.offers')) { res.json(data); return; }
+  res.json(((data ?? []) as Array<Record<string, unknown>>)
+    .filter((d) => !d.promo_code && d.status === 'active')
+    .map(({ promo_code: _code, ...d }) => d));
 });
 
 // POST /api/discounts — create discount
@@ -76,7 +94,8 @@ router.post('/', canManage, validate(CreateDiscountSchema), async (req, res) => 
 
 // PUT /api/discounts/:id — update discount
 router.put('/:id', canManage, async (req, res) => {
-  const { name, type, value, applies_to, promo_code, min_order_value, max_uses, expires_at, status } = req.body;
+  const body = (req.body ?? {}) as Record<string, any>;
+  const { name, type, value, applies_to, promo_code, min_order_value, max_uses, expires_at, status } = body;
   // The create rules hold for an edit too (an edit could turn a 10% code into 1000%).
   if (type !== undefined && !['percentage', 'fixed'].includes(type)) {
     res.status(400).json({ error: 'type must be percentage or fixed' });
@@ -86,21 +105,36 @@ router.put('/:id', canManage, async (req, res) => {
     res.status(400).json({ error: 'value must be a number greater than 0' });
     return;
   }
-  if (type === 'percentage' && value !== undefined && value > 100) {
+  // A494: the value is checked against the type it will HAVE — the new one, else the stored one. Sending only
+  // { value: 500 } to a percentage discount made it 500%; sending only { type: 'percentage' } to a fixed 500 did too.
+  const { data: cur } = await supabase.from('discounts').select('type, value')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!cur) { res.status(404).json({ error: 'Discount not found' }); return; }
+  const effType = type ?? (cur as { type: string }).type;
+  const effValue = value ?? Number((cur as { value: unknown }).value);
+  if (effType === 'percentage' && !(effValue > 0 && effValue <= 100)) {
     res.status(400).json({ error: 'Percentage discount must be between 1 and 100' });
     return;
   }
 
+  // A494: only what was SENT changes. Absent fields used to be written as blank — an edit of the name alone cleared
+  // the promo code (turning a code-only discount into one anyone could apply), the minimum order, the usage cap and
+  // the expiry. A field sent as null / '' still clears it.
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates.name = name;
+  if (type !== undefined) updates.type = type;
+  if (value !== undefined) updates.value = value;
+  if (applies_to !== undefined) updates.applies_to = applies_to;
+  if ('promo_code' in body) updates.promo_code = promo_code || null;
+  if ('min_order_value' in body) updates.min_order_value = min_order_value ?? 0;
+  if ('max_uses' in body) updates.max_uses = max_uses || null;
+  if ('expires_at' in body) updates.expires_at = expires_at || null;
+  if (status !== undefined) updates.status = status;
+  if (!Object.keys(updates).length) { res.status(400).json({ error: 'Nothing to change' }); return; }
+
   const { data, error } = await supabase
     .from('discounts')
-    .update({
-      name, type, value, applies_to,
-      promo_code: promo_code || null,
-      min_order_value: min_order_value ?? 0,
-      max_uses: max_uses || null,
-      expires_at: expires_at || null,
-      status,
-    })
+    .update(updates)
     .eq('id', req.params.id)
     .eq('business_id', req.businessId)
     .select()
@@ -172,8 +206,13 @@ router.post('/apply', requirePermission('sales.discount'), async (req, res) => {
     .eq('business_id', req.businessId)
     .eq('status', 'active');
 
+  const promoKey = code ? `${pinKey(req as any)}|promo` : '';
+  if (code && promoFails.locked(promoKey)) {
+    res.status(429).json({ error: 'Too many wrong promo codes — try again in 15 minutes.', code: 'PROMO_LOCKED' });
+    return;
+  }
   if (code) {
-    query = query.ilike('promo_code', code.trim());
+    query = query.ilike('promo_code', likeLiteral(String(code).trim()));   // A505: literal, no wildcards
   } else if (discount_id) {
     query = query.eq('id', discount_id);
   } else {
@@ -183,7 +222,17 @@ router.post('/apply', requirePermission('sales.discount'), async (req, res) => {
 
   const { data: discount, error } = await query.single();
 
-  if (error || !discount) {
+  // A505: and the code must BE the discount's code (case aside) — PostgREST reads * in a filter value as a wildcard too.
+  const exact = !code || (!!discount && String(discount.promo_code ?? '').trim().toLowerCase() === String(code).trim().toLowerCase());
+  if (error || !discount || !exact) {
+    if (code) promoFails.fail(promoKey);   // A505
+    res.status(404).json({ error: 'Discount not found or inactive' });
+    return;
+  }
+  if (code) promoFails.succeed(promoKey);
+  // A494: a code-only discount is applied with its CODE — by its id alone, anyone who learnt the id (or guessed it
+  // from an old list) skipped the code.
+  if (!code && discount.promo_code) {
     res.status(404).json({ error: 'Discount not found or inactive' });
     return;
   }

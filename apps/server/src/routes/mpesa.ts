@@ -452,7 +452,8 @@ router.post('/callback', async (req, res) => {
             mpesa_phone:       phone,
             mpesa_result_desc: mismatchMsg,
           })
-          .eq('id', (payment as any).id);
+          .eq('id', (payment as any).id)
+          .neq('status', 'completed'); // A495
         await supabase.from('payment_exceptions').insert({
           business_id:      (payment as any).business_id,
           payment_id:       (payment as any).id,
@@ -510,14 +511,18 @@ router.post('/callback', async (req, res) => {
       await supabase
         .from('payments')
         .update({ status: 'failed', mpesa_result_desc: 'Customer cancelled the payment request' })
-        .eq('mpesa_checkout_id', checkoutId);
+        .eq('mpesa_checkout_id', checkoutId)
+        // A495: a late or replayed failure callback must never undo a payment
+        // that already completed (the till would show it unpaid, the order paid).
+        .neq('status', 'completed');
 
     } else {
       // Other failure
       await supabase
         .from('payments')
         .update({ status: 'failed', mpesa_result_desc: resultDesc })
-        .eq('mpesa_checkout_id', checkoutId);
+        .eq('mpesa_checkout_id', checkoutId)
+        .neq('status', 'completed'); // A495: never overwrite a completed payment
 
       console.warn(`[mpesa] Payment failed: ${resultDesc}`);
     }

@@ -57,6 +57,21 @@ export async function revokeBrowserSessions(userIds: string[], businessIds: stri
   return ids.length;
 }
 
+/**
+ * A494: a person was deactivated, deleted, given another role or moved to other branches — EVERY session of theirs ends
+ * (browser, web POS and their PIN sign-ins on tills): their refresh tokens can no longer renew, so no session outlives the
+ * change by more than one 15-minute access token (and requireAuth refuses that too: status / permissions_version).
+ * Never a till's own session — it names no person (user_id is null on its rows, A415). Returns how many were revoked.
+ */
+export async function revokePersonSessions(userId: string, businessId: string): Promise<number> {
+  if (!userId) return 0;
+  // till-safe: by this person's id only — a till's own session has no person (user_id null, A415)
+  const { data, error } = await supabase.from('refresh_tokens').update({ revoked_at: new Date().toISOString() })
+    .eq('user_id', userId).is('revoked_at', null).select('id');
+  if (error) { console.error('[sessions] A494: could not end the sessions of', userId, `(business ${businessId})`, error.message); return 0; }
+  return (data ?? []).length;
+}
+
 /** A till could not sign itself back in — the watchdog emails it (critical) until it is back. */
 export async function markTillSessionLost(businessId: string, deviceId: string, reason: string): Promise<void> {
   try {

@@ -243,6 +243,7 @@ console.log('\nThe branch, the lock screen, the timer\n');
 
 console.log('\nThe lock screen keeps the session (session audit)\n');
 {
+  require(path.join(dist, 'pinAttempts.js')).resetPinAttempts();   // A494: the wrong PINs above count toward the lockout
   // Brian is signed in online (a cloud session); the till locks.
   await verify('1357');
   db.prepare(`UPDATE staff_session SET token = 'tok-u-brian' WHERE id = 1`).run();
@@ -254,7 +255,8 @@ console.log('\nThe lock screen keeps the session (session audit)\n');
     mine.ok === true && require(path.join(dist, 'tokenStore.js')).readStaffTokens().token === tokBefore, JSON.stringify(mine));
   const other = await H['auth:unlock'](null, { pin: '9999' });   // Mary's correct PIN
   ok('a colleague\'s correct PIN does not unlock — and does NOT change who is signed in (before: Mary silently became the cashier)',
-    other.ok === false && other.reason === 'other' && db.prepare(`SELECT staff_id FROM staff_session WHERE id = 1`).get().staff_id === before.staff_id
+    // A494: the same answer as any wrong PIN ('wrong') — 'other' confirmed that a guessed PIN was a real one.
+    other.ok === false && other.reason === 'wrong' && db.prepare(`SELECT staff_id FROM staff_session WHERE id = 1`).get().staff_id === before.staff_id
     && require(path.join(dist, 'tokenStore.js')).readStaffTokens().token === tokBefore, JSON.stringify(other));
   const wrong = await H['auth:unlock'](null, { pin: '0000' });
   ok('a wrong PIN: not unlocked, nothing changed', wrong.ok === false && db.prepare(`SELECT staff_id FROM staff_session WHERE id = 1`).get().staff_id === before.staff_id);
@@ -262,10 +264,18 @@ console.log('\nThe lock screen keeps the session (session audit)\n');
 
 console.log('\nToo many wrong PINs on the cloud (session audit)\n');
 {
+  require(path.join(dist, 'pinAttempts.js')).resetPinAttempts();
   cloud.tooMany = true;
+  // A494: the branch server would sign Cora in itself — here its list is behind (no Cora), so the cloud is asked.
+  const nodeStaff = node.staff;
+  node.staff = nodeStaff.filter((s) => s.staff_id !== 'u-cora');
   const r = await verify('8642');
-  ok('the cloud says "too many tries" (429): Cora still signs in from this till\'s list (before: every cashier refused for up to 13 min)',
-    r.ok && r.s.staff?.name === 'Cora', JSON.stringify(r));
+  node.staff = nodeStaff;
+  // A504 (back to A446, now bounded): a 429 is the cloud's limit on wrong PINs from this till. Waiting it out locked every
+  // cashier at the till out of selling; the till checks the PIN on its own saved sign-in instead, and its own limiter
+  // (pinAttempts) keeps guessing bounded (till-hardening.test.mjs §2).
+  ok('the cloud says "too many tries" (429): the till checks the PIN itself — Cora signs in (offline)',
+    r.ok && r.s?.staff?.id === 'u-cora' && r.s?.offline === true, JSON.stringify(r));
   cloud.tooMany = false;
 }
 

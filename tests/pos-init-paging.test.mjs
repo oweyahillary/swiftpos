@@ -53,7 +53,9 @@ mem.db = {
     ...Array.from({ length: 1100 }, (_, i) => ({ id: `vx-${String(i).padStart(5, '0')}`, product_id: pid(0), name: `Extra ${i}`, sort_order: 1, variant_options: [] })),
   ],
   branch_prices: Array.from({ length: N }, (_, i) => ({ id: `bp-${String(i).padStart(5, '0')}`, branch_id: BR, product_id: pid(i), price: 150 })),
-  business_settings: [], branch_settings: [], feature_flags: [], business_branding: [], payment_methods: [], offers: [], stock_takes: [], users: [],
+  business_settings: [], branch_settings: [], feature_flags: [], business_branding: [], payment_methods: [], offers: [], stock_takes: [],
+  // A494: requireAuth refuses a token whose person has no users row — the signed-in person is a row of this business.
+  users: [{ id: 'aaaaaaaa-0000-4000-8000-0000000000a1', business_id: B, status: 'active', permissions_version: 1 }],
 };
 mem.rowCap = 1000;
 mem.fail = (_t, _op, filters) => {
@@ -68,7 +70,7 @@ app.use(express.json());
 app.use('/api/pos', require(path.join(DIST, 'routes/pos.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
 try {
-  const t = jwt.sign({ userId: null, businessId: B, branchId: BR, isOwner: false, permissionKeys: [], permissionsVersion: 0, sessionId: 's', surface: 'web' },
+  const t = jwt.sign({ userId: 'aaaaaaaa-0000-4000-8000-0000000000a1', businessId: B, branchId: BR, isOwner: false, permissionKeys: [], permissionsVersion: 0, sessionId: 's', surface: 'web' },
     process.env.JWT_SECRET, { expiresIn: '5m' });
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/pos/init?branch_id=${BR}`, { headers: { Authorization: `Bearer ${t}` } });
   const body = await res.json().catch(() => null);

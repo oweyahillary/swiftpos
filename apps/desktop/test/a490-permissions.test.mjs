@@ -251,8 +251,9 @@ console.log('\nThe update bar\'s restart\n');
   const after = JSON.stringify(db.prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get());
   ok('a shifts.close_day PIN restarts (then: not a packaged build) — the cashier stays signed in', r1.reason === 'not packaged' && before === after, JSON.stringify({ r1, before, after }));
   ok('the owner\'s PIN restarts too (the role-name list used to refuse the owner)', r2.reason === 'not packaged', JSON.stringify(r2));
-  ok('a "supervisor" without the key is refused, saying why; an unknown PIN is refused', r3.reason === 'not_allowed' && /Close the day/.test(r3.message)
-    && r4.ok === false && r4.reason !== 'not packaged', JSON.stringify({ r3, r4 }));
+  // A494: ONE answer for "a real PIN that may not restart" and "no such PIN" — telling them apart confirmed a guess.
+  ok('a "supervisor" without the key and an unknown PIN get the same refusal', r3.ok === false && r4.ok === false
+    && r3.reason === 'not_allowed' && r4.reason === r3.reason && r4.message === r3.message && /close the day/.test(r3.message), JSON.stringify({ r3, r4 }));
   const banner = fs.readFileSync(path.join(desktop, 'src/renderer/pages/UpdateBanner.tsx'), 'utf8');
   ok('the bar calls update.installWithPin and never auth.verifyPin', /posApi\.update\.installWithPin\(pin\.trim\(\)\)/.test(banner)
     && !/posApi\.auth\.verifyPin/.test(banner));
@@ -315,6 +316,9 @@ console.log('\nThe branch code, the staff ceiling, discounts and reprints\n');
   signIn(fine('orders.create'), 'cashier', 'u-cash');
   const noDisc = { ...order, order_number: 'T1--2', discount_amount: 0, total: 100 };
   ok('a sale with no hand discount is never refused for it (selling is never asked)', !/discount/i.test(await said(() => call('order:create', noDisc))));
+  // A494: the offer must be one this till holds (the claimed offer discount is re-checked on the till's own offers).
+  db.prepare(`INSERT OR REPLACE INTO offers (id, data) VALUES ('of-1', ?)`).run(JSON.stringify({ id: 'of-1', name: 'Ten off', kind: 'amount_off',
+    value: 10, applies_to: 'all', product_ids: [], category_ids: [], active: true }));
   const offerOnly = { ...order, order_number: 'T1--3', discount_amount: 10, offer_discount: 10, offers: [] };
   ok('…nor one whose discount the offers took', !/give discounts/.test(await said(() => call('order:create', offerOnly))));
   const opened = await said(() => call('shift:open', { opening_float: 0 }));

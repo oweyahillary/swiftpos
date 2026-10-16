@@ -14,7 +14,8 @@
 import { safeRouter } from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess } from '../middleware/rbac';
+import { worksAtBranch } from '../lib/branchAccess';   // A494
 import { isNodeRole } from '../lib/deviceRegistry';
 import { ROLE_HANDOVER_WINDOW_MINUTES } from '../lib/deviceRole';
 import { supabase }    from '../lib/supabase';
@@ -23,11 +24,28 @@ import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 const router = safeRouter();
 router.use(requireAuth);
 
+/**
+ * A494: may this caller act on (or see) this device? The owner: any of the business's. Anyone else: a till bound to their
+ * branch (assertBranchAccess), or a browser with no branch whose person works at their branch (lib/branchAccess.ts —
+ * the cashier asking their manager to approve their browser). Anything else is another branch's.
+ */
+async function deviceInReach(req: any, device: { branch_id?: string | null; user_id?: string | null }): Promise<boolean> {
+  if (req.isOwner) return true;
+  if (device.branch_id) return assertBranchAccess(req, device.branch_id);
+  if (!device.user_id || !req.branchId) return false;
+  const { data: ub, error } = await supabase.from('user_branches').select('branch_id').eq('user_id', device.user_id);
+  if (error) throw new Error(`device's person: ${error.message}`);
+  return worksAtBranch((ub ?? []) as Array<{ branch_id: string | null }>, req.branchId);
+}
+const NOT_IN_REACH = { error: 'That device is at another branch.', code: 'OTHER_BRANCH' } as const;
+
 // ── GET /api/devices ──────────────────────────────────────────────────────────
 // Returns all devices for the business, with staff name resolved.
 // Query: ?status=pending|approved|rejected  (omit for all)
 
-router.get('/', async (req, res) => {
+// A494: devices.approve (it listed every device of the business, with names and e-mails, to anyone signed in); a
+// non-owner sees their branch's (deviceInReach).
+router.get('/', requirePermission('devices.approve'), async (req, res) => {
   const { status } = req.query;
 
   let q = supabase
@@ -55,7 +73,8 @@ router.get('/', async (req, res) => {
   // A71: resolve branch names in one round-trip so the owner sees WHERE a device
   // is bound. Not embedded via PostgREST because user_devices has two FKs to
   // branches (branch_id + previous_branch_id, migration 52) — that's ambiguous.
-  const rows = data ?? [];
+  const rows: any[] = [];
+  for (const d of (data ?? []) as any[]) if (await deviceInReach(req, d)) rows.push(d);
   const branchIds = [...new Set(rows.map((d: any) => d.branch_id).filter(Boolean))];
   let branchName: Record<string, string> = {};
   if (branchIds.length) {
@@ -209,12 +228,13 @@ router.patch('/:id/label', requirePermission('devices.approve'), async (req, res
   if (label.length > 60) { res.status(400).json({ error: 'Device name must be 60 characters or fewer.' }); return; }
 
   const { data: device } = await supabase
-    .from('user_devices').select('id, business_id')
+    .from('user_devices').select('id, business_id, branch_id, user_id')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
 
   const { error } = await supabase
-    .from('user_devices').update({ device_label: label }).eq('id', req.params.id);
+    .from('user_devices').update({ device_label: label }).eq('id', req.params.id).eq('business_id', req.businessId);
   if (error) { sendError(res, error); return; }
 
   res.json({ id: req.params.id, device_label: label });
@@ -225,9 +245,10 @@ router.patch('/:id/label', requirePermission('devices.approve'), async (req, res
 // but keeps all its history (orders/shifts). Reversible via /unretire. Owner-scoped.
 router.patch('/:id/retire', requirePermission('devices.approve'), async (req, res) => {
   const { data: device } = await supabase
-    .from('user_devices').select('id, business_id, retired_at')
+    .from('user_devices').select('id, business_id, retired_at, branch_id, user_id')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
   if ((device as any).retired_at) { res.status(409).json({ error: 'Terminal is already retired.' }); return; }
 
   const { error } = await supabase
@@ -242,9 +263,10 @@ router.patch('/:id/retire', requirePermission('devices.approve'), async (req, re
 // ── PATCH /api/devices/:id/unretire ── A184 Tier 3: bring a retired terminal back ──
 router.patch('/:id/unretire', requirePermission('devices.approve'), async (req, res) => {
   const { data: device } = await supabase
-    .from('user_devices').select('id, business_id')
+    .from('user_devices').select('id, business_id, branch_id, user_id')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
 
   const { error } = await supabase
     .from('user_devices')
@@ -262,7 +284,7 @@ router.patch('/:id/approve', requirePermission('devices.approve'), async (req, r
 
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
-    .select('id, user_id, business_id, status')
+    .select('id, user_id, business_id, status, branch_id')
     .eq('id', id)
     .eq('business_id', req.businessId)
     .maybeSingle();
@@ -271,6 +293,7 @@ router.patch('/:id/approve', requirePermission('devices.approve'), async (req, r
     res.status(404).json({ error: 'Device not found' });
     return;
   }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
 
   const { error } = await supabase
     .from('user_devices')
@@ -302,7 +325,7 @@ router.patch('/:id/reject', requirePermission('devices.approve'), async (req, re
 
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
-    .select('id, business_id')
+    .select('id, business_id, branch_id, user_id')
     .eq('id', id)
     .eq('business_id', req.businessId)
     .maybeSingle();
@@ -311,6 +334,7 @@ router.patch('/:id/reject', requirePermission('devices.approve'), async (req, re
     res.status(404).json({ error: 'Device not found' });
     return;
   }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
 
   const { error } = await supabase
     .from('user_devices')
@@ -331,7 +355,7 @@ router.patch('/:id/reject', requirePermission('devices.approve'), async (req, re
 router.delete('/:id', requirePermission('devices.approve'), async (req, res) => {  // M22: was requireAuth only
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
-    .select('id, business_id')
+    .select('id, business_id, branch_id, user_id')
     .eq('id', req.params.id)
     .eq('business_id', req.businessId)
     .maybeSingle();
@@ -340,6 +364,7 @@ router.delete('/:id', requirePermission('devices.approve'), async (req, res) => 
     res.status(404).json({ error: 'Device not found' });
     return;
   }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
 
   const { error } = await supabase
     .from('user_devices')
@@ -369,7 +394,7 @@ router.delete('/:id', requirePermission('devices.approve'), async (req, res) => 
 router.post('/:id/authorise-handover', requirePermission('devices.approve'), async (req, res) => {
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
-    .select('id, device_id, device_label, branch_id, device_role, role_confirmed_at')
+    .select('id, device_id, device_label, branch_id, device_role, role_confirmed_at, user_id')
     .eq('id', req.params.id)
     .eq('business_id', req.businessId)
     .maybeSingle();
@@ -378,6 +403,7 @@ router.post('/:id/authorise-handover', requirePermission('devices.approve'), asy
     res.status(404).json({ error: 'Device not found' });
     return;
   }
+  if (!(await deviceInReach(req, device as any))) { res.status(403).json(NOT_IN_REACH); return; }   // A494
 
   if (!isNodeRole((device as any).device_role)) {
     res.status(400).json({

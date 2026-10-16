@@ -34,15 +34,70 @@ import { ownHistoryOnly, holds } from '../lib/historyScope';   // A490
 import { cleanDeliveryFee, customerDeliveryFee, isFreeDelivery } from '../lib/delivery';
 import { payRider, returnRiderPayout } from '../lib/riderPayout';
 import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
-import { confirmerByPin, confirmerRows } from '../lib/confirmerLookup';
+import { confirmerByPin, confirmerRows, SELF_APPROVAL_BODY } from '../lib/confirmerLookup';
 import { businessReversalRules } from '../lib/reversalSettings';
 import { voidWindowOpen, windowLabel } from '../lib/reversalRules';
 import { frozenAtBranch } from '../lib/stockTakeAccess';
 import { applyOffers, cleanOffer, type AppliedOffer, type OfferLine } from '../lib/offers';   // A445
 import { chunkIn } from '../lib/pgQuery';
+import { withoutCosts } from '../lib/costAccess';   // A494
+import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 
 const router = safeRouter();
 router.use(requireAuth);
+
+/** A494: selling (a sale, an open bill, paying it, firing a course) is orders.create — the till's own session included. */
+const sells = requirePermission('orders.create');
+
+/** A494: an approver of a void or refund is never the person asking (the owner self-authorises, as before). */
+const SELF_APPROVAL = {
+  error: 'Someone else must approve this - enter the PIN of another manager (or the owner).',
+  code:  'SELF_APPROVAL',
+} as const;
+
+/**
+ * A505 (pre-deployment audit, 2026-10-15): a sale a TILL already made and took the money for — it carries the till's own
+ * time (created_at / client_created_at: the P0-2 till-sale shape) — sent by a person's PIN sign-in on that till. Every
+ * till pushes its outbox with whoever is signed in (syncEngine pushAuthHeaders); a till on 1.0.15 or older never re-sends
+ * a refused sale under its own session, it counts the 403 towards 'failed' and gives up after 5 tries: the sale — already
+ * paid, printed and in the drawer — never reaches the cloud. Scenarios: a role without orders.create (no till build
+ * checks that key before selling) rings a sale; a discount approved at the counter (or a key removed between the sale and
+ * its push) under the cashier's session. Such a sale is recorded as the till's (as its own session would be): the
+ * person's keys are not re-checked here. It opens nothing new: a desktop token's till sale is already stored at the
+ * TILL's prices (tillPricing, P0-2) with any difference flagged for the owner. Logged.
+ */
+function tillMadeSale(req: any): boolean {
+  return !req.isTill && req.surface === 'desktop' && req.pinSignIn === true
+    && req.method === 'POST' && req.path === '/'   // the sale push only — never /open, /:id/pay (live, at the counter)
+    && !!(req.body?.created_at || req.body?.client_created_at);
+}
+const a505Logged = new Map<string, number>();
+function logTillMadeSale(req: any, what: string): void {
+  const key = `${req.businessId}|${req.userId}|${what}`;
+  const now = Date.now();
+  if ((a505Logged.get(key) ?? 0) > now - 3_600_000) return;   // once an hour per person and reason
+  if (a505Logged.size > 10_000) a505Logged.clear();
+  a505Logged.set(key, now);
+  console.warn(`[orders] A505: a till's sale accepted without ${what} under a person's till sign-in (business ${req.businessId}, user ${req.userId}, X-Device-Id ${String(req.headers?.['x-device-id'] ?? '').slice(0, 64) || '-'}, order ${String(req.body?.order_number ?? '').slice(0, 40)})`);
+}
+
+/** A494 + A505: POST / — orders.create, except a till's own sale sent under a person's till sign-in (tillMadeSale). */
+const sellsOrTillSale = (req: any, res: any, next: any): void => {
+  if (tillMadeSale(req) && !can(req, 'orders.create')) { logTillMadeSale(req, 'orders.create'); next(); return; }
+  sells(req, res, next);
+};
+
+/**
+ * A494: a manual discount (not an offer) without sales.discount is accepted only from a TILL's own session sending a sale
+ * it made already (the till checked its person at the counter). Any person's session — the web POS, or a person's sign-in
+ * on a till (a desktop token can be used from anywhere) — needs the key.
+ * A505: except a sale the till already made (tillMadeSale) — refusing it lost the sale on a till before 1.0.16.
+ */
+function discountRefused(req: any, manual: number): boolean {
+  if (!(manual > 0) || req.isTill || can(req, 'sales.discount')) return false;
+  if (tillMadeSale(req)) { logTillMadeSale(req, 'sales.discount'); return false; }
+  return true;
+}
 
 // Round to 2 dp (money) avoiding binary-float drift.
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -128,21 +183,24 @@ async function verifyOverrideAuthorizer(
   authorizerId: string | undefined,
   pin:          string | undefined,
   action:       ApproveAction,   // A490: a void's approver holds sales.void, a refund's sales.refund
-): Promise<{ result: 'ok' | 'invalid' | 'no_authorizers'; userId?: string }> {
+  scope:        { branchId?: string | null; actorId?: string | null } = {},   // A494: the sale's branch; who asks
+): Promise<{ result: 'ok' | 'invalid' | 'no_authorizers' | 'self'; userId?: string }> {
   const [{ data: rows }, { data: biz }] = await Promise.all([
     supabase
       .from('users')
-      .select('id, pin_hash, override_pin_hash, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
+      .select('id, pin_hash, override_pin_hash, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) ), user_branches ( branch_id )')
       .eq('business_id', businessId)
       .eq('status', 'active'),
     supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle(),
   ]);
+  // A494: the approver works at the sale's branch, and is never the person asking (lib/approver.ts; the owner may).
   const found = await findApprover((rows ?? []) as ApproverRow[], { pin, authorizerId, ownerId: (biz as any)?.owner_id ?? null,
-    may: (row, ownerId) => mayApprove(row, ownerId, action) }, {
+    may: (row, ownerId) => mayApprove(row, ownerId, action), branchId: scope.branchId ?? null, actorId: scope.actorId ?? null }, {
     loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
     overridePin: (p, h) => bcrypt.compare(p, h),
   });
   if (found.result === 'ok') return { result: 'ok', userId: found.userId };
+  if (found.result === 'self') return { result: 'self' };   // A505: the asker's own PIN
   return { result: found.result === 'none' ? 'no_authorizers' : 'invalid' };
 }
 
@@ -162,6 +220,32 @@ async function recordedPerson(businessId: string, userId: string | null | undefi
   const { data: biz } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
   const ownerId = (biz as { owner_id?: string | null } | null)?.owner_id ?? null;
   return ownerId && await ofBusiness(ownerId) ? ownerId : null;
+}
+
+/**
+ * A494: the approver of a void or refund by PIN — the person's own (or override) PIN, else the legacy business-wide
+ * supervisor PIN (kept; authorizedBy null). Every PIN is behind the one PIN limiter (lib/pinAttempts.ts): a caller's
+ * wrong PINs (the legacy one included) lock their PIN entry for a while, the right one too. The approver is never the
+ * person asking (a non-owner; the owner self-authorises before this is reached).
+ */
+async function approverByPin(req: any, authorizerId: string | undefined, pin: string | undefined, action: ApproveAction, branchId: string | null):
+  Promise<{ userId: string | null } | { status: number; body: Record<string, string> }> {
+  const key = pinKey(req);
+  if (pinLocked(key)) return { status: 429, body: { ...PIN_LOCKED_BODY } };
+  const ov = await verifyOverrideAuthorizer(req.businessId, authorizerId, pin, action, { branchId, actorId: req.userId ?? null });
+  if (ov.result === 'ok') {
+    notePinSuccess(key);
+    if (!req.isOwner && ov.userId && ov.userId === req.userId) return { status: 403, body: { ...SELF_APPROVAL } };
+    return { userId: ov.userId ?? null };
+  }
+  // A355: the legacy business-wide supervisor PIN is still accepted (authorizedBy stays null — no one person).
+  const legacy = await verifySupervisorPin(req.businessId, pin);
+  if (legacy === true) { notePinSuccess(key); return { userId: null }; }
+  // A505: the asker's OWN PIN — not a wrong guess: told someone else must approve, never a strike towards the PIN lock.
+  if (ov.result === 'self') return { status: 403, body: { ...SELF_APPROVAL } };
+  if (ov.result === 'no_authorizers' && legacy === 'not_configured') return { status: 400, body: { ...NO_APPROVER } };
+  if (String(pin ?? '').trim()) notePinFailure(key);
+  return { status: 403, body: { ...APPROVER_PIN_REFUSED } };
 }
 
 // What the till/web is told when no approval matched (A355). The legacy business-wide supervisor PIN is still tried
@@ -529,7 +613,7 @@ async function awardLoyaltyPoints(
 // POST /api/orders
 // Creates order, order_items, order_item_variants, order_item_modifiers, payment,
 // deducts stock, creates kitchen ticket, and handles loyalty earn/redeem.
-router.post('/', async (req, res) => {
+router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own sale is never refused for its person's keys
   // Idempotency — the desktop sync engine (and any retrying client) sends
   // X-Idempotency-Key. If we've already created an order for this key, return
   // the existing one with 200 instead of creating a duplicate. This makes a
@@ -680,7 +764,7 @@ router.post('/', async (req, res) => {
     if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     // A490: a manual discount on a LIVE web sale is sales.discount (offers are not a manual discount). A till's sale was
     // made already — never refused for it (the till checks its own person).
-    if (req.surface !== 'desktop' && round2(recomputed.discount - recomputed.offerDiscount) > 0 && !can(req, 'sales.discount')) {
+    if (discountRefused(req, round2(recomputed.discount - recomputed.offerDiscount))) {   // A494
       res.status(403).json(DISCOUNT_REFUSED); return;
     }
     let {
@@ -784,9 +868,14 @@ router.post('/', async (req, res) => {
     // tries), rather than letting the orders.shift_id foreign key fail as a 500.
     if (resolvedShiftId) {
       const { data: drawer } = await supabase
-        .from('shifts').select('id, status').eq('id', resolvedShiftId).eq('business_id', req.businessId).maybeSingle();
+        .from('shifts').select('id, status, branch_id').eq('id', resolvedShiftId).eq('business_id', req.businessId).maybeSingle();
       if (!drawer) {
         res.status(424).json({ code: 'shift_not_synced', error: 'This sale\'s drawer has not reached the cloud yet — it will sync right after it.' });
+        return;
+      }
+      // A494: the drawer must be the sale's branch's — a sale (and its money) is never booked into another branch's drawer.
+      if ((drawer as { branch_id?: string | null }).branch_id && (drawer as { branch_id?: string | null }).branch_id !== branch_id) {
+        res.status(403).json({ code: 'SHIFT_OTHER_BRANCH', error: 'That drawer belongs to another branch.' });
         return;
       }
       // A462: a web sale into a drawer that was closed elsewhere (force-closed, or counted by a manager / the owner) is
@@ -1283,14 +1372,31 @@ router.get('/:id', async (req, res, next) => {
     }
   }
 
-  // A444: who sold it — the order panel on the till and the web names them.
-  if ((data as any).cashier_id) {
-    const { data: who } = await supabase.from('users').select('name')
-      .eq('id', (data as any).cashier_id).eq('business_id', req.businessId).maybeSingle();
-    (data as any).cashier_name = (who as any)?.name ?? null;
+  // A494: the History's rules for one sale too — without sales.history_all only their own sales (the list's own-only
+  // rule: lib/historyScope.ts), and a cashier's payment methods (A387) narrow it. It answered any sale of the branch by id.
+  const features = await businessPosFeatures(req.businessId);
+  if (ownHistoryOnly(req, features) && (data as any).cashier_id !== (req.userId ?? '__none__')) {
+    res.status(404).json({ error: 'Order not found' }); return;
+  }
+  let shown: any = data;
+  if (!callerMayConfirm(req)) {
+    const methods = await getHistoryMethods(req.businessId, (data as any).branch_id ?? scopedBranch ?? null);
+    if (methods.length) {
+      const view = cashierHistoryView([data as any], methods);
+      if (!view.length) { res.status(404).json({ error: 'Order not found' }); return; }
+      shown = view[0];
+    }
   }
 
-  res.json(data);
+  // A444: who sold it — the order panel on the till and the web names them.
+  if (shown.cashier_id) {
+    const { data: who } = await supabase.from('users').select('name')
+      .eq('id', shown.cashier_id).eq('business_id', req.businessId).maybeSingle();
+    shown.cashier_name = (who as any)?.name ?? null;
+  }
+
+  // A494: an order line's cost (unit_cost, …) only to someone who may see costs (lib/costAccess.ts).
+  res.json(withoutCosts(req, shown));
 });
 
 // POST /api/orders/:id/void
@@ -1303,21 +1409,32 @@ router.get('/:id', async (req, res, next) => {
 // person named as approver may approve voids and refunds. It does not refuse a replay on the window — the money has
 // already moved at the counter, and refusing would leave the till and the cloud disagreeing for good.
 function isTillReplay(req: any): boolean {
-  return req.surface === 'desktop' && typeof req.body?.offline_approved_by === 'string' && !!req.body.offline_approved_by;
+  // A494: only the till's OWN session, naming itself by its token — a person's desktop sign-in (usable from anywhere) and
+  // a device id in a header or the body prove nothing.
+  return req.isTill === true && !!req.deviceId && claimsReplay(req);
 }
+const claimsReplay = (req: any): boolean => typeof req.body?.offline_approved_by === 'string' && !!req.body.offline_approved_by;
 
 // The signed-in person at push time may be a cashier (the till sends with whoever is signed in) — the replay carries
 // its own approver, so it does not need the key on the token. Everything else still does.
 // A490: a void is sales.void, a refund sales.refund (orders.void covered both).
 const voidKey = requirePermission('sales.void');
 const refundKey = requirePermission('sales.refund');
-const reversalGate = (action: ApproveAction) => (req: any, res: any, next: any) =>
-  isTillReplay(req) ? next() : (action === 'void' ? voidKey : refundKey)(req, res, next);
+const reversalGate = (action: ApproveAction) => (req: any, res: any, next: any) => {
+  if (isTillReplay(req)) { next(); return; }
+  // A494: a replay sent with a person's sign-in on the till (the till pushes with whoever is signed in) is not refused for
+  // good — 409 tells the till to keep it and send it again; it goes through with the till's own session.
+  if (claimsReplay(req) && !req.isTill) {
+    res.status(409).json({ error: 'An offline void or refund is sent with the till\'s own session — it is sent again.', code: 'REPLAY_NEEDS_TILL_SESSION' });
+    return;
+  }
+  (action === 'void' ? voidKey : refundKey)(req, res, next);
+};
 
 type TillReplay = { approverId: string; actorId: string | null; at: string };
 
 async function checkTillReplay(req: any, order: any, action: ApproveAction): Promise<TillReplay | { status: number; body: Record<string, string> }> {
-  const dev = deviceIdFromRequest(req);
+  const dev: string = req.deviceId;   // A494: the till's token — never a header or the body
   let holds = !!dev && order.device_id === dev;
   if (!holds && dev && order.shift_id) {
     const { data: s } = await supabase.from('shifts').select('device_id')
@@ -1382,6 +1499,7 @@ router.post('/:id/refund', reversalGate('refund'), async (req, res) => {
     .single();
 
   if (oErr || !order) { res.status(404).json({ error: 'Order not found' }); return; }
+  if (!assertBranchAccess(req, order.branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }   // A494
   if (order.status === 'voided') {
     res.status(400).json({ error: 'That order was voided — there is nothing to refund' });
     return;
@@ -1433,18 +1551,9 @@ router.post('/:id/refund', reversalGate('refund'), async (req, res) => {
     authorizedBy = me;
   } else {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
-    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin, 'refund');
-    if (ov.result === 'ok') {
-      authorizedBy = ov.userId ?? null;
-    } else {
-      // A355: the legacy business-wide supervisor PIN is still accepted (authorizedBy stays null — no one person).
-      const legacy = await verifySupervisorPin(req.businessId, pin);
-      if (legacy !== true) {
-        if (ov.result === 'no_authorizers' && legacy === 'not_configured') { res.status(400).json(NO_APPROVER); return; }
-        res.status(403).json(APPROVER_PIN_REFUSED);
-        return;
-      }
-    }
+    const a = await approverByPin(req, authorizer_id, pin, 'refund', order.branch_id ?? null);
+    if ('status' in a) { res.status(a.status).json(a.body); return; }
+    authorizedBy = a.userId;
   }
 
   try {
@@ -1603,6 +1712,7 @@ router.post('/:id/void', reversalGate('void'), async (req, res) => {
     .single();
 
   if (oErr || !order) { res.status(404).json({ error: 'Order not found' }); return; }
+  if (!assertBranchAccess(req, order.branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }   // A494
   if (order.status === 'voided') { res.status(400).json({ error: 'Order is already voided', code: 'ALREADY_VOIDED' }); return; }
 
   let replay: TillReplay | null = null;
@@ -1650,20 +1760,9 @@ router.post('/:id/void', reversalGate('void'), async (req, res) => {
     authorizedBy = me;
   } else if (isPaid) {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
-    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin, 'void');
-
-    if (ov.result === 'ok') {
-      authorizedBy = ov.userId ?? null;
-    } else {
-      // A355: the legacy business-wide supervisor PIN is still accepted so existing installs keep working
-      // (authorizedBy stays null — no identifiable supervisor).
-      const legacy = await verifySupervisorPin(req.businessId, pin);
-      if (legacy !== true) {
-        if (ov.result === 'no_authorizers' && legacy === 'not_configured') { res.status(400).json(NO_APPROVER); return; }
-        res.status(403).json(APPROVER_PIN_REFUSED);
-        return;
-      }
-    }
+    const a = await approverByPin(req, authorizer_id, pin, 'void', order.branch_id ?? null);
+    if ('status' in a) { res.status(a.status).json(a.body); return; }
+    authorizedBy = a.userId;
   }
 
   try {
@@ -1870,7 +1969,7 @@ router.post('/:id/void', reversalGate('void'), async (req, res) => {
 // Order-first restaurant model: creates an open order + kitchen ticket with no
 // payment. The order stays open until POST /api/orders/:id/pay closes it.
 
-router.post('/open', async (req, res) => {
+router.post('/open', sells, async (req, res) => {
   const {
     branch_id,
     order_number,
@@ -1904,6 +2003,17 @@ router.post('/open', async (req, res) => {
       const { data: cust } = await supabase
         .from('customers').select('id').eq('id', customer_id).eq('business_id', req.businessId).maybeSingle();
       if (!cust) { res.status(400).json({ error: 'Invalid customer' }); return; }
+    }
+
+    // A494: a drawer named must be this business's and this branch's.
+    if (shift_id) {
+      const { data: drawer, error: dErr } = await supabase.from('shifts').select('id, branch_id')
+        .eq('id', shift_id).eq('business_id', req.businessId).maybeSingle();
+      if (dErr) { sendError(res, dErr); return; }
+      if (!drawer || ((drawer as { branch_id?: string | null }).branch_id && (drawer as { branch_id?: string | null }).branch_id !== branch_id)) {
+        res.status(400).json({ code: 'INVALID_SHIFT', error: "That drawer is not one of this branch's." });
+        return;
+      }
     }
 
     // Item 4: authoritative totals (no discount applied at open time)
@@ -2033,11 +2143,19 @@ router.post('/:id/kitchen-void', async (req, res) => {
     let approver: { id: string; name: string | null } | null = null;
     if ((await businessPosFeatures(req.businessId!)).kitchen_void_approval) {
       if (req.body?.pin) {
-        approver = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined);
+        const key = pinKey(req);   // A494: the one PIN limiter
+        if (pinLocked(key)) { res.status(429).json(PIN_LOCKED_BODY); return; }
+        const found = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined,
+          { branchId: order.branch_id ?? null, actorId: req.userId ?? null });   // A494
+        // A505: the asker's own PIN — someone else must approve; not a wrong guess (no strike towards the PIN lock).
+        if (found === 'self') { res.status(403).json(SELF_APPROVAL_BODY); return; }
+        approver = found;
         if (!approver) {
+          notePinFailure(key);
           res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
           return;
         }
+        notePinSuccess(key);
       } else if (callerMayConfirm(req)) {
         approver = { id: req.userId!, name: null };
       } else {
@@ -2106,7 +2224,7 @@ router.post('/:id/kitchen-void', async (req, res) => {
 // Order-first model: attaches payment to an existing open order, deducts stock,
 // awards loyalty, and marks the order completed.
 
-router.post('/:id/pay', async (req, res) => {
+router.post('/:id/pay', sells, async (req, res) => {
   const orderId = req.params.id;
   const {
     payments,
@@ -2144,9 +2262,28 @@ router.post('/:id/pay', async (req, res) => {
       .single();
 
     if (oErr || !order) { res.status(404).json({ error: 'Order not found' }); return; }
+    // A494: a person paying a bill of another branch is refused (the owner may).
+    if (!assertBranchAccess(req, order.branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
     if (order.status !== 'open') {
       res.status(400).json({ error: `Order is already ${order.status}` });
       return;
+    }
+
+    // A494: the customer named must be this business's (their points are deducted below by id), and a redemption is at
+    // most what they hold — this path checked neither, so any customer's points (another business's too) could be spent.
+    {
+      const redeem = Math.max(0, Number(points_redeemed) || 0);
+      if (customer_id) {
+        const { data: cust, error: cErr } = await supabase.from('customers').select('id, loyalty_points')
+          .eq('id', customer_id).eq('business_id', req.businessId).maybeSingle();
+        if (cErr) { sendError(res, cErr); return; }
+        if (!cust) { res.status(400).json({ error: 'Invalid customer' }); return; }
+        if (redeem > (Number((cust as { loyalty_points?: number }).loyalty_points) || 0)) {
+          res.status(400).json({ error: 'Insufficient loyalty points' }); return;
+        }
+      } else if (redeem > 0) {
+        res.status(400).json({ error: 'Points can be redeemed only for a customer' }); return;
+      }
     }
 
     // ── L5: a client-supplied discount_id must belong to this business ───────
@@ -2223,7 +2360,7 @@ router.post('/:id/pay', async (req, res) => {
     const payDiscount = round2(payOffers.offerDiscount + capDiscount(payManualAsked, round2(paySubtotal - payOffers.offerDiscount)));
     const payTotal    = round2(paySubtotal - payDiscount);
     // A490: a manual discount on a LIVE web sale is sales.discount (as POST /orders).
-    if (req.surface !== 'desktop' && round2(payDiscount - payOffers.offerDiscount) > 0 && !can(req, 'sales.discount')) {
+    if (discountRefused(req, round2(payDiscount - payOffers.offerDiscount))) {   // A494
       res.status(403).json(DISCOUNT_REFUSED); return;
     }
     const { vat: payVat, ctl: payCtl } = await taxSplit(req.businessId, payTotal);
@@ -2561,7 +2698,7 @@ router.post('/:id/pay', async (req, res) => {
 // POST /api/orders/:id/fire-course
 // Body: { course } — fires all 'held' items of that course to the kitchen.
 // Marks them fired and (re)issues a kitchen ticket so the line sees them.
-router.post('/:id/fire-course', async (req, res) => {
+router.post('/:id/fire-course', sells, async (req, res) => {
   const { id } = req.params;
   const { course } = req.body;
   if (!course) { res.status(400).json({ error: 'course is required' }); return; }
@@ -2570,6 +2707,7 @@ router.post('/:id/fire-course', async (req, res) => {
   const { data: order } = await supabase
     .from('orders').select('id, branch_id').eq('id', id).eq('business_id', req.businessId).single();
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+  if (!assertBranchAccess(req, order.branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }   // A494
 
   const { data: fired, error } = await supabase
     .from('order_items')
@@ -2673,15 +2811,29 @@ router.get('/turnover/report', requirePermission('reports.sales'), async (req, r
 // Body: { phone? } — sends the receipt to the customer's WhatsApp. Uses the
 // order's customer_phone if no phone is supplied. Non-blocking-safe (logs the
 // attempt; returns the delivery status).
+// A494: the receipt of a sale they rang themselves (as the till: "print my receipt now" is the cashier's own), else
+// sales.reprint; to the ORDER's phone — another number only for someone who may change customers' details
+// (customers.edit). It was open to anyone, to any number, for any branch's order.
 router.post('/:id/whatsapp-receipt', async (req, res) => {
   const { id } = req.params;
   const { data: order } = await supabase
     .from('orders')
-    .select('id, business_id, order_number, total, tip_amount, customer_phone, customer_name')
+    .select('id, business_id, branch_id, cashier_id, order_number, total, tip_amount, customer_phone, customer_name')
     .eq('id', id).eq('business_id', req.businessId).single();
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+  if (!assertBranchAccess(req, (order as any).branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  const ownSale = !req.isTill && !!req.userId && (order as any).cashier_id === req.userId;
+  if (!ownSale && !can(req, 'sales.reprint')) {
+    res.status(403).json({ error: 'Sending another person’s receipt again needs the reprint permission.', detail: 'Missing permission: sales.reprint' });
+    return;
+  }
 
-  const phone = (req.body?.phone as string) || order.customer_phone;
+  const asked = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+  if (asked && asked !== order.customer_phone && !can(req, 'customers.edit')) {
+    res.status(403).json({ error: 'Only someone who may edit customers sends a receipt to another number.', detail: 'Missing permission: customers.edit' });
+    return;
+  }
+  const phone = asked || order.customer_phone;
   if (!phone) { res.status(400).json({ error: 'No phone number for this customer' }); return; }
 
   const { data: biz } = await supabase

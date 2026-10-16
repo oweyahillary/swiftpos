@@ -26,6 +26,7 @@ import { cleanSeesSales, historyTotalsOn } from '../lib/cashierShiftSales';   //
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { frozenAtBranch } from '../lib/stockTakeAccess';   // A394
 import { pageAll, chunkPaged } from '../lib/pgQuery';
+import { seesCosts, stripFields, COST_FIELDS } from '../lib/costAccess';   // A494
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -147,9 +148,13 @@ router.post('/join-code', async (req, res) => {
 // registered as a node/office, and that device's own branch. bcrypt only.
 router.get('/branch-staff', async (req, res) => {
   if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
-
-  const deviceId = String(req.headers['x-device-id'] ?? '');
+  // A494: the PIN hashes go to a TILL's own session only, for itself — never a person's sign-in (a cashier's token is not
+  // a till), and never for another device named in a header. The till (staffRoster.ts, syncEngine.ts) asks with its own
+  // session and its own id in X-Device-Id.
+  if (!req.isTill || !req.deviceId) { res.status(403).json({ error: "Only a till's own session receives the staff list.", code: 'TILL_ONLY' }); return; }
+  const deviceId = String(req.headers['x-device-id'] ?? '').split(',')[0].trim();
   if (!deviceId) { res.status(400).json({ error: 'x-device-id required' }); return; }
+  if (deviceId !== req.deviceId) { res.status(403).json({ error: 'A till receives only its own staff list.', code: 'NOT_THIS_TILL' }); return; }
 
   const { data: device } = await supabase
     .from('user_devices')
@@ -178,7 +183,7 @@ router.get('/branch-staff', async (req, res) => {
   const { data: staffList, error } = await supabase
     .from('users')
     .select(`
-      id, name, status, pin_hash, override_pin_hash,
+      id, name, status, pin_hash,
       roles ( name, role_permissions ( permissions ( key ) ) ),
       user_branches ( branch_id ),
       user_permissions ( granted, permissions ( key ) )
@@ -202,7 +207,9 @@ router.get('/branch-staff', async (req, res) => {
         branch_id:         branchId,
         permissions,
         pin_hash:          u.pin_hash ?? null,
-        override_pin_hash: u.override_pin_hash ?? null,
+        // A494: never sent — no till checks an override PIN offline (pinCache / branchStaff never verify against it); an
+        // approval with one is checked by the cloud. The field stays (null) so an older till reads the same shape.
+        override_pin_hash: null,
         status:            u.status,
       };
     })
@@ -464,7 +471,12 @@ router.get('/init', async (req, res) => {
   const branchMpesa = mpesaFromSettings(branchText.receipt_pay_label, branchText.receipt_pay_number, branchText.receipt_pay_account);
   const mpesa = branchMpesa ?? businessMpesa;
 
-  res.json({
+  // A494: cost prices are not sent to someone who may not see them (rule 4). The till stores no cost from here (its
+  // products table has no cost column; its menu screens read costs from /api/products with the person's own session), so
+  // the till's own session gets none; a person gets them with menu.costs / reports.costs.
+  const sendInit = (body: Record<string, unknown>) =>
+    res.json(req.isTill || !seesCosts(req) ? stripFields(body, new Set(COST_FIELDS)) : body);
+  sendInit({
     products: productsOut,
     comboItems,
     // A304: client branding (accent + logo) → the till writes it to the local

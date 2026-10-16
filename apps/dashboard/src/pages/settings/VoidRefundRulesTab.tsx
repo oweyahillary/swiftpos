@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import type { PosApi } from '../../context/POSAuthContext';   // A502
 import {
   parseReversalRules, defaultReversalRules, windowLabel, type ReversalRules,
   MIN_VOID_WINDOW_MINUTES, MAX_VOID_WINDOW_MINUTES, MAX_FREE_DELIVERY_OVER,
@@ -22,7 +23,8 @@ const BUILT_IN: Array<{ code: string; name: string }> = [
   { code: 'credit', name: 'Credit (customer account)' },
 ];
 
-export default function VoidRefundRulesTab() {
+/** A502: the manager portal passes the signed-in person's session (posApi) — for someone given settings.reversals. */
+export default function VoidRefundRulesTab({ client = api }: { client?: PosApi } = {}) {
   const [rules, setRules]     = useState<ReversalRules>(defaultReversalRules());
   const [methods, setMethods] = useState(BUILT_IN);
   const [windowText, setWindowText] = useState(String(defaultReversalRules().voidWindowMinutes));
@@ -35,8 +37,8 @@ export default function VoidRefundRulesTab() {
   useEffect(() => {
     let live = true;
     Promise.all([
-      api.get<Array<{ key: string; value: unknown }>>('/api/business/settings'),
-      api.get<PaymentMethod[]>('/api/payment-methods').catch(() => [] as PaymentMethod[]),
+      client.get<Array<{ key: string; value: unknown }>>('/api/business/settings'),
+      client.get<PaymentMethod[]>('/api/payment-methods').catch(() => [] as PaymentMethod[]),
     ]).then(([kv, custom]) => {
       if (!live) return;
       const r = parseReversalRules(kv ?? []);
@@ -56,7 +58,7 @@ export default function VoidRefundRulesTab() {
     const before = rules;
     setRules(next);
     try {
-      await api.post('/api/business/settings', { key, value });
+      await client.post('/api/business/settings', { key, value });
       showToast('Saved');
     } catch (e) {
       setRules(before);
@@ -104,8 +106,8 @@ export default function VoidRefundRulesTab() {
       )}
 
       <p className="text-sm text-gray-400">
-        Voids and refunds are done by managers and by you — never by cashiers. These rules are yours: only the owner
-        can change them, here or on a till (Manager → Settings).
+        Voids and refunds are done by managers and by you — never by cashiers. These rules are the owner's: the owner, or
+        someone the owner gave "Void and refund rules", changes them here or on a till (Manager → Settings).
       </p>
 
       {/* ── Void window ── */}

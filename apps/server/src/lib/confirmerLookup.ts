@@ -15,7 +15,7 @@ export async function confirmerRows(businessId: string) {
   const [{ data: rows }, { data: biz }] = await Promise.all([
     supabase
       .from('users')
-      .select('id, name, pin_hash, override_pin_hash, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
+      .select('id, name, pin_hash, override_pin_hash, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) ), user_branches ( branch_id )')
       .eq('business_id', businessId)
       .eq('status', 'active'),
     supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle(),
@@ -23,12 +23,24 @@ export async function confirmerRows(businessId: string) {
   return { rows: (rows ?? []) as (ApproverRow & { name?: string | null })[], ownerId: ((biz as any)?.owner_id ?? null) as string | null };
 }
 
-export async function confirmerByPin(businessId: string, pin: string, authorizerId?: string) {
+/** A494: `scope` — the branch of what is confirmed (the confirmer must work there) and who is asking (not themselves,
+ *  unless the owner). Both optional: a caller that passes neither keeps the rule before A494, apart from the override-PIN
+ *  holders now also having to pass mayConfirm. */
+/** A505: 'self' = the PIN is the asker's own (lib/approver.ts) — the caller answers SELF_APPROVAL (403) and does not count
+ *  it towards the PIN limiter. Never for the owner. */
+export const SELF_APPROVAL_BODY = {
+  error: 'Someone else must approve this - enter the PIN of another manager (or the owner).',
+  code:  'SELF_APPROVAL',
+} as const;
+
+export async function confirmerByPin(businessId: string, pin: string, authorizerId?: string,
+  scope?: { branchId?: string | null; actorId?: string | null }): Promise<{ id: string; name: string | null } | null | 'self'> {
   const { rows, ownerId } = await confirmerRows(businessId);
-  const found = await findApprover(rows, { pin, authorizerId, ownerId, may: mayConfirm }, {
+  const found = await findApprover(rows, { pin, authorizerId, ownerId, may: mayConfirm, branchId: scope?.branchId ?? null, actorId: scope?.actorId ?? null }, {
     loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
     overridePin: (p, h) => bcrypt.compare(p, h),
   });
+  if (found.result === 'self') return 'self';   // A505
   if (found.result !== 'ok') return null;
   const row = rows.find((r) => r.id === found.userId);
   return { id: found.userId, name: row?.name ?? null };

@@ -213,7 +213,7 @@ function RecordSheet({ client, branchId, reasons, currency, showCosts, onClose, 
               <button key={`${m.kind}:${m.id}`} onClick={() => { setLines([...lines, { ...m, qty: '1' }]); setQ(''); }}
                 className="flex w-full justify-between px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-800">
                 <span>{m.name}{m.kind === 'ingredient' && <span className="text-gray-500"> · ingredient</span>}</span>
-                <span className="text-xs text-gray-500">{m.stocked ? `${m.held ?? 0}${m.unit ? ` ${m.unit}` : ''} here` : 'made to order'}</span>
+                <span className="text-xs text-gray-500">{m.stocked ? (m.held === null ? 'being counted' : `${m.held ?? 0}${m.unit ? ` ${m.unit}` : ''} here`) : 'made to order'}</span>
               </button>
             ))}
           </div>

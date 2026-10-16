@@ -127,9 +127,11 @@ const src = fs.readFileSync(path.join(here, '..', 'src', 'main', 'autoUpdate.ts'
   ok('A363: a dropped download is caught and logged, never an unhandled rejection',
     unhandled.length === 0 && lines.some((l) => /update download interrupted: net::ERR_NETWORK_IO_SUSPENDED/.test(l)), JSON.stringify({ unhandled: unhandled.map(String), lines }));
 }
+// A496: the check is raced against a timeout now (Promise.race([d.updater.checkForUpdates(), …])) and the loop lives in
+// createUpdateLoop — same meaning: one cloud-gated check, at launch and hourly.
 ok('no GitHub poll left: the only checkForUpdates is inside runUpdateCheck', (src.match(/\.checkForUpdates\(\)/g) || []).length === 1
-  && /await d\.updater\.checkForUpdates\(\)/.test(src) && !/autoUpdater\.checkForUpdates\(/.test(src));
-ok('initAutoUpdate runs the cloud check at launch and hourly; no differential download', /void check\(\);\s*setInterval\(\(\) => \{ void check\(\); \}, ONE_HOUR\);/.test(src)
+  && /Promise\.race\(\[\s*d\.updater\.checkForUpdates\(\),/.test(src) && !/autoUpdater\.checkForUpdates\(/.test(src));
+ok('initAutoUpdate runs the cloud check at launch and hourly; no differential download', /void loop\.check\('start'\);\s*setInterval\(\(\) => \{ void loop\.check\('hourly'\); \}, ONE_HOUR\);/.test(src)
   && /autoUpdater\.disableDifferentialDownload = true;/.test(src));
 ok('the dev flavour and unpackaged builds still never update', /if \(!app\.isPackaged\) return;/.test(src) && /includes\('dev'\)/.test(src));
 

@@ -16,6 +16,18 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, branchScope, assertBranchAccess } from '../middleware/rbac';
+import { guardBranch, idsOfBusiness } from '../lib/branchGuard';   // A494
+
+/** A494: the category and the payer an expense names must be this business's. Answers itself; false = stop. */
+async function expenseIdsOk(req: any, res: any, categoryId: unknown, paidBy: unknown): Promise<boolean> {
+  if (categoryId && !(await idsOfBusiness('expense_categories', req.businessId, [String(categoryId)]))) {
+    res.status(400).json({ error: "That expense category is not this business's." }); return false;
+  }
+  if (paidBy && !(await idsOfBusiness('users', req.businessId, [String(paidBy)]))) {
+    res.status(400).json({ error: "The person who paid is not on this business's staff." }); return false;
+  }
+  return true;
+}
 import { validate } from '../middleware/validate';
 import { CreateExpenseSchema } from '../lib/schemas';
 import { cleanExpenseMethod } from '../lib/expenseMethod';
@@ -226,9 +238,8 @@ router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSch
   if (!description?.trim()) { res.status(400).json({ error: 'description is required' }); return; }
   if (!amount || amount <= 0) { res.status(400).json({ error: 'amount must be positive' }); return; }
 
-  if (!assertBranchAccess(req, branch_id)) {
-    res.status(403).json({ error: 'Branch access denied' }); return;
-  }
+  if (!(await guardBranch(req, res, branch_id, 'Branch access denied'))) return;   // A494: the owner's too
+  if (!(await expenseIdsOk(req, res, expense_category_id, paid_by))) return;
 
   const recordedBy = await recorderId(req);
   const { data, error } = await supabase
@@ -274,6 +285,12 @@ router.patch('/:id', requirePermission('expenses.manage'), async (req, res) => {
   if (receipt_url !== undefined)       updates.receipt_url = receipt_url?.trim() || null;
   if (expense_date !== undefined)      updates.expense_date = expense_date;
 
+  // A494: another branch's expense was editable by id; and the category / payer must be this business's.
+  const { data: cur } = await supabase.from('expenses').select('id, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!cur) { res.status(404).json({ error: 'Expense not found' }); return; }
+  if (!assertBranchAccess(req, (cur as { branch_id: string }).branch_id)) { res.status(403).json({ error: 'Branch access denied' }); return; }
+  if (!(await expenseIdsOk(req, res, expense_category_id, paid_by))) return;
+
   const { data, error } = await supabase
     .from('expenses')
     .update(updates)
@@ -289,6 +306,10 @@ router.patch('/:id', requirePermission('expenses.manage'), async (req, res) => {
 
 // DELETE /api/expenses/:id
 router.delete('/:id', requirePermission('expenses.manage'), async (req, res) => {
+  // A494: another branch's expense was deletable by id.
+  const { data: cur } = await supabase.from('expenses').select('id, branch_id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!cur) { res.status(404).json({ error: 'Expense not found' }); return; }
+  if (!assertBranchAccess(req, (cur as { branch_id: string }).branch_id)) { res.status(403).json({ error: 'Branch access denied' }); return; }
   const { error } = await supabase
     .from('expenses')
     .delete()

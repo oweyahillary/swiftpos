@@ -19,8 +19,13 @@ import { callerMayConfirm } from './shiftConfirm';
 type Caller = { isOwner?: boolean; permissionKeys?: string[]; isTill?: boolean };
 
 /** Holds `key` (the token's fine keys; the owner always). No till-scope logging here: these shape an answer, they do
- *  not refuse a route (a till's own token carries what it always carried). */
+ *  not refuse a route.
+ *  A494: a till's own session (no person) holds NONE of them. Its token carries '*' (lib/deviceGrant.ts), so this
+ *  answered "yes" to every key: a till token saw every cashier's sales unnarrowed (sales.history_all), the reprint
+ *  switch, unblinded stock counts (inventory.adjust, lib/stockTakeAccess.may), and could record cash movements. A person
+ *  signed in on the till uses their own session for those. */
 export function holds(req: Caller, key: string): boolean {
+  if (req.isTill) return false;
   return !!req.isOwner || hasPermission(req.permissionKeys ?? [], key);
 }
 

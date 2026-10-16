@@ -3,13 +3,13 @@
  *
  *   POS options   (settings.pos)      — delivery fee and rider, eat now pay later, pay before kitchen, sign-in codes;
  *                                       loyalty on / off and its earn rate.
- *   Till updates  (settings.updates)  — the version the tills install: approve one, or hold.
+ *   (Till updates are NOT here — A493: ZapTill approves a client's till version in the admin portal, never the client.)
  *   Payments      (settings.payments) — the business-wide list of payment methods (BusinessPaymentMethods, shown on
  *                                       the Payments tab above the business's own methods; branches override it).
  *
- * API (cloud, routes/controls.ts): GET /api/controls → { pos?, loyalty?, updates?, payments? } — each section only with
- * its key; PUT /api/controls/pos/:key {enabled}; PUT /api/controls/loyalty {enabled?, earn_rate?};
- * PUT /api/controls/updates {version | null}. The business-wide payment methods save through POST /api/business/settings
+ * API (cloud, routes/controls.ts): GET /api/controls → { pos?, loyalty?, payments? } — each section only with
+ * its key; PUT /api/controls/pos/:key {enabled}; PUT /api/controls/loyalty {enabled?, earn_rate?}.
+ * The business-wide payment methods save through POST /api/business/settings
  * (payment_methods_enabled). The owner holds every key; a section the cloud does not send is not shown.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -27,11 +27,6 @@ export type PosOptionKey = (typeof POS_OPTION_KEYS)[number];
 export interface Controls {
   pos?: Record<PosOptionKey, boolean>;
   loyalty?: { enabled: boolean; earn_rate: number };
-  updates?: {
-    approved_version: string | null;
-    releases: Array<{ version: string; published_at: string | null }>;
-    tills: Array<{ name: string; terminal_code: string | null; app_version: string | null; last_seen_at: string | null }>;
-  };
   payments?: { enabled: string[] };
 }
 
@@ -145,81 +140,6 @@ export function PosOptionsTab() {
         </div>
       )}
       <p className="text-xs text-gray-500">Who may see every cashier's sales, move money in or out of a drawer, or reprint receipts is set per role — Settings › Users and access › Roles and permissions.</p>
-    </div>
-  );
-}
-
-// ── Till updates ──────────────────────────────────────────────────────────────
-
-export function TillUpdatesTab() {
-  const { data, error, setError, reload } = useControls();
-  const [pick, setPick] = useState('');
-  const [busy, setBusy] = useState(false);
-  const u = data?.updates;
-  useEffect(() => { if (u) setPick(u.approved_version ?? u.releases[0]?.version ?? ''); }, [u?.approved_version, u?.releases?.length]);   // eslint-disable-line react-hooks/exhaustive-deps
-
-  const set = async (version: string | null) => {
-    setBusy(true); setError('');
-    try { await api.put('/api/controls/updates', { version }); await reload(); }
-    catch (e: any) { setError(e?.message ?? 'Could not save'); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="p-4 sm:p-6 max-w-3xl space-y-4" data-testid="till-updates">
-      <div>
-        <h2 className="text-lg font-semibold text-white">Till updates</h2>
-        <p className="text-sm text-gray-400">The version of ZapTill your tills install. A till downloads it within the hour and installs it when it is next closed.</p>
-      </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      {!data && !error && <p className="text-sm text-gray-500">Loading…</p>}
-
-      {u && (<>
-        <div className={`${card} px-4 py-3 space-y-3`}>
-          <div className="text-sm text-white" data-testid="approved-version">
-            {u.approved_version ? <>Approved: <b>v{u.approved_version}</b></> : <>Held — the tills stay on the version they run.</>}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="block flex-1 text-xs text-gray-400">Version
-              <select value={pick} onChange={(e) => setPick(e.target.value)} disabled={!u.releases.length}
-                className="mt-1 block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-swift focus:outline-none">
-                {u.releases.length === 0 && <option value="">No releases listed</option>}
-                {u.releases.map((r) => (
-                  <option key={r.version} value={r.version}>
-                    v{r.version}{r.published_at ? ` — ${dateShort(r.published_at)}` : ''}{r.version === u.approved_version ? ' (approved)' : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex gap-2">
-              <button type="button" onClick={() => void set(pick)} disabled={busy || !pick || pick === u.approved_version} data-testid="approve-version"
-                className="flex-1 sm:flex-none rounded-lg bg-swift px-4 py-2 text-sm font-semibold text-gray-950 hover:bg-swift-light disabled:opacity-40">Approve</button>
-              <button type="button" onClick={() => void set(null)} disabled={busy || !u.approved_version} data-testid="hold-version"
-                className="flex-1 sm:flex-none rounded-lg bg-gray-700 px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-40">Hold</button>
-            </div>
-          </div>
-        </div>
-
-        <div className={card}>
-          <div className="border-b border-gray-800 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Tills now</div>
-          {u.tills.length === 0 ? <p className="px-4 py-4 text-sm text-gray-500">No tills yet.</p> : (
-            <ul className="divide-y divide-gray-800">
-              {u.tills.map((t, i) => {
-                const behind = !!(t.app_version && u.approved_version && t.app_version !== u.approved_version);
-                return (
-                  <li key={`${t.terminal_code ?? t.name}-${i}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                    <span className="min-w-0">
-                      <span className="block truncate text-gray-200">{t.name}{t.terminal_code ? <span className="text-gray-500"> · {t.terminal_code}</span> : null}</span>
-                      {t.last_seen_at && <span className="block text-xs text-gray-500">last seen {dateShort(t.last_seen_at)}</span>}
-                    </span>
-                    <span className={`flex-shrink-0 tabular-nums ${behind ? 'text-amber-300' : 'text-gray-400'}`}>{t.app_version ? `v${t.app_version}` : '—'}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </>)}
     </div>
   );
 }

@@ -116,12 +116,12 @@ other views and how to limit what users see"*.
 
 **Owner controls** (`routes/controls.ts`, `/api/controls`):
 - `GET /api/controls` → `{ pos?: { delivery_fee, pay_later_tabs, pay_before_kitchen, login_codes }, loyalty?: {
-  enabled, earn_rate }, updates?: { approved_version, releases: [{ version, published_at }], tills: [{ name,
-  terminal_code, app_version, last_seen_at }] }, payments?: { enabled: string[] } }` — each section only with its key
-  (`settings.pos`, `settings.pos`, `settings.updates`, `settings.payments`).
+  enabled, earn_rate }, payments?: { enabled: string[] } }` — each section only with its key (`settings.pos`,
+  `settings.pos`, `settings.payments`).
 - `PUT /api/controls/pos/:key` `{ enabled }` — `settings.pos`; key one of the four above.
 - `PUT /api/controls/loyalty` `{ enabled?, earn_rate? }` — `settings.pos`.
-- `PUT /api/controls/updates` `{ version: string | null }` — `settings.updates` (the admin portal's validation).
+- `PUT /api/controls/updates` — refused for everyone (403 `ADMIN_SETS`): A493, ZapTill approves a client's till version
+  in the admin portal (`PATCH /api/admin/clients/:id/desktop-version`).
 - Business-wide payment methods: `POST /api/business/settings` `payment_methods_enabled` (`settings.payments`).
 
 ## Moved from the admin portal to the owner
@@ -131,7 +131,7 @@ other views and how to limit what users see"*.
 | Delivery fee and rider, pay later, pay before kitchen, sign-in codes | Settings › Business › POS options (`settings.pos`) | shows it, read-only |
 | Cashiers see only their own sales; only managers move money; no reprint for cashiers | per role: `sales.history_all`, `shifts.cash_movements`, `sales.reprint` | shows "now set per role" |
 | Loyalty on/off and earn rate | Settings › Business › POS options (`settings.pos`) | read-only |
-| Till updates approve / hold | Settings › Business › Till updates (`settings.updates`) | read-only |
+| Till updates approve / hold | — **stays with ZapTill** (A493: some clients do not pay for updates) | approves and holds |
 | Payment methods | Settings › Business › Payments (`settings.payments`) — business-wide list added | — |
 
 Stays admin-only: licence and plan, branch licences, billing, web hosting / web access, themes, clear test data.
@@ -149,3 +149,20 @@ Stays admin-only: licence and plan, branch licences, billing, web hosting / web 
 5. Owners' database sessions may READ `feature_flags` and `businesses` but no longer write them directly (the cloud,
    which checks permissions and admin-only settings, writes them).
 6. Records `134_permission_catalogue` — from then on the cloud stops giving everybody the open keys.
+
+## Later gates (A494, A495, A499 — 2026-10-15 audit)
+
+- **A cashier is not back office** (A499): the POS actions a cashier may be given (`POS_ACTION_KEYS`: customers.credit,
+  sales.void, sales.refund, sales.reprint) never send them to the manager screens or ask them for a sign-in code.
+- **Reads now gated:** GRNs (`inventory.receive`), transfers (`inventory.transfer`, the caller's branch), stock movements
+  (`inventory.view`, the caller's branch), credit customers (`customers.view` or `customers.credit`), loyalty lists
+  (`customers.view`; the exact-phone lookup stays open for the POS), webhooks (`settings.integrations`), devices
+  (`devices.approve`, devices in reach).
+- **Owner only:** the supervisor PIN, M-Pesa credentials, reversal rules, the stock-count freeze, any business setting
+  not on the `settings.business` list; sign-in codes (`PUT /api/controls/pos/login_codes`); changing promotions (they run
+  at every branch — a branch's own deal is an Offer).
+- **Costs and prices:** cost writes need `menu.costs` (a typed cost is replaced by the stored one); price changes on
+  combos, variants and modifiers need `menu.prices`.
+- **Approvers** (void, refund, payouts, drawer confirms): must work at the branch; only the owner approves their own action.
+- **A till's own session** never holds a person's key for reads (History, reprint, stock counts, write-offs); it pushes
+  what the till did (sales, drawers, offline voids and refunds) and that is all.

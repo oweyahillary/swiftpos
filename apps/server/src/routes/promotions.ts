@@ -23,7 +23,12 @@ router.use(requireAuth);
 
 // Audit 2026-10-14: create / edit / delete were open to any signed-in user. They need products.manage (the Menu's key —
 // a promotion prices the menu); the owner and '*' pass in rbac. Reads stay open (the POS polls /active).
-const canManage = requirePermission('menu.offers');
+// A494: a promotion has no branch — it runs at EVERY branch (the table has no branch column), so menu.offers (a manager
+// has it by default, for their own branch's offers) is not enough to create, change or delete one.
+// A502 (owner, 2026-10-15: "yes leave to owner but should be a right a user can be assigned"): its own permission,
+// menu.promotions, which no role starts with — the owner's until the owner gives it to someone. A manager's own-branch
+// deal is an offer (/api/offers).
+const canManage = requirePermission('menu.promotions');
 
 /** Every product / category a promotion names must be this business's — null when they are, else the refusal. */
 async function foreignIds(businessId: string, body: Record<string, unknown>): Promise<string | null> {

@@ -21,6 +21,7 @@
  */
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { lanFetch } from './lanTls';   // A489: the hop to the branch server is TLS once its certificate is pinned
+import { noteChannelOk, noteChannelError } from './nodeHealth';   // A501
 
 export const GATEWAY_PREFIX = '/node/cloud';
 /** Set by the branch server on every forwarded answer, so a till can tell it from an old server's 404. */
@@ -82,14 +83,41 @@ export class NodeRefusedError extends Error {
 
 // A448: the branch server's own refusal of this till (a wrong branch access code) — kept so the manager is TOLD, not just
 // the log: sales were safe on the till, but nothing reached the cloud or the other tills, silently, until someone looked.
-let nodeRefusedAt = 0;
-let nodeRefusedStatus = 0;
+// A501: kept per REASON. A refusal of this till's device key is not an access-code problem (the notice told the manager
+// to re-enter the code — it fixed nothing), a branch mismatch is neither, and a route that checks only the code (the
+// gateway, /node/health) answering must not wipe a device-key or branch refusal that the keyed routes still give.
+export type NodeRefusalReason = 'access_code' | 'device_key' | 'branch' | 'tls';
+const refusals = new Map<NodeRefusalReason, { at: number; status: number }>();
 const NODE_REFUSAL_SHOWN_MS = 5 * 60_000;
-/** The branch server refused this till (status), or null — cleared by the next answer it does accept. */
-export function noteNodeRefused(status: number, now = Date.now()): void { nodeRefusedAt = now; nodeRefusedStatus = status; }
-export function noteNodeAccepted(): void { nodeRefusedAt = 0; nodeRefusedStatus = 0; }
-export function nodeRefusal(now = Date.now()): { status: number; since: string } | null {
-  return nodeRefusedAt && now - nodeRefusedAt < NODE_REFUSAL_SHOWN_MS ? { status: nodeRefusedStatus, since: new Date(nodeRefusedAt).toISOString() } : null;
+/** A501: what a refusal is about, from its status and the server's own words. */
+export function refusalReasonFor(status: number, error?: string | null): NodeRefusalReason {
+  if (status === 403) return 'branch';
+  if (status === 426) return 'tls';
+  const e = String(error ?? '');
+  if (/X-Node-Secret|access code/i.test(e)) return 'access_code';
+  if (/device key|not joined|Update this till|two different tills/i.test(e)) return 'device_key';
+  return 'access_code';
+}
+/** The branch server refused this till (status) — cleared by the next answer that proves the same thing is fixed. */
+export function noteNodeRefused(status: number, now = Date.now(), reason: NodeRefusalReason = refusalReasonFor(status)): void {
+  refusals.set(reason, { at: now, status });
+}
+/**
+ * The branch server accepted a request. `scope` — 'any': a route that checks only the access code (the gateway,
+ * /node/health) — clears the access-code and encryption refusals; 'keyed' (the default): a route that also checks this
+ * till's device key and branch — clears every refusal.
+ */
+export function noteNodeAccepted(scope: 'any' | 'keyed' = 'keyed'): void {
+  if (scope === 'keyed') { refusals.clear(); return; }
+  refusals.delete('access_code'); refusals.delete('tls');
+}
+export function nodeRefusal(now = Date.now()): { status: number; since: string; reason: NodeRefusalReason } | null {
+  let best: { status: number; since: string; reason: NodeRefusalReason } | null = null;
+  let bestAt = 0;
+  for (const [reason, r] of refusals) {
+    if (now - r.at < NODE_REFUSAL_SHOWN_MS && r.at > bestAt) { bestAt = r.at; best = { status: r.status, since: new Date(r.at).toISOString(), reason }; }
+  }
+  return best;
 }
 
 // A branch server on an older build has no gateway. Remembered for a while so every request does not pay a round trip.
@@ -117,8 +145,17 @@ export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: ty
   const route = routeCloudRequest(url, cfg);
   if (!route.viaNode || now < oldNodeUntil) return f(url, init);
 
-  const res = await f(route.url, { ...init, headers: mergeHeaders(init.headers, route.headers) });
-  if (res.headers.get(UPLINK_DOWN) === 'down') throw new UplinkDownError();
+  let res: Response;
+  try { res = await f(route.url, { ...init, headers: mergeHeaders(init.headers, route.headers) }); }
+  catch (e: any) {
+    // A501: the gateway channel's record for the Tech page (the caller still sees the thrown fetch, as before).
+    if (e?.name !== 'AbortError') noteChannelError('gateway', null, `the branch server did not answer (${e?.cause?.code ?? e?.cause?.message ?? e?.message ?? e})`, now);
+    throw e;
+  }
+  if (res.headers.get(UPLINK_DOWN) === 'down') {
+    noteChannelError('gateway', res.status, 'the branch server cannot reach the cloud right now', now);
+    throw new UplinkDownError();
+  }
   if (!res.headers.get(GATEWAY_MARK)) {
     if (res.status === 404) {
       oldNodeUntil = now + OLD_NODE_RETRY_MS;
@@ -127,11 +164,17 @@ export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: ty
     }
     // Not the cloud's answer — the branch server's own (a wrong branch access code is a 401). Passed on, a 401 would read
     // as the till's sign-in being refused and start the lost-session recovery (A407). It is a connection problem.
-    (deps.log ?? console.warn)(`[gateway] the branch server refused the request (HTTP ${res.status}) — check this till's branch access code`);
-    if (res.status === 401 || res.status === 403) noteNodeRefused(res.status, now);
+    // A501: by what the server said — the gateway checks the access code (401) and, when the server requires it,
+    // encryption (426); its words name which.
+    const said = await res.clone().json().then((b: any) => (typeof b?.error === 'string' ? b.error : null)).catch(() => null);
+    const reason = refusalReasonFor(res.status, said);
+    (deps.log ?? console.warn)(`[gateway] the branch server refused the request (HTTP ${res.status})${said ? `: ${said}` : " — check this till's branch access code"}`);
+    if (res.status === 401 || res.status === 403 || res.status === 426) noteNodeRefused(res.status, now, reason);
+    noteChannelError('gateway', res.status, said ?? `the branch server refused the request (HTTP ${res.status})`, now);
     throw new NodeRefusedError(res.status);
   }
-  noteNodeAccepted();
+  noteNodeAccepted('any');
+  noteChannelOk('gateway', now);
   return res;
 }
 

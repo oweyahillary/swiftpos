@@ -22,6 +22,8 @@ import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { refreshPermissionsState } from './lib/permissionsState';   // A490
 import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own sign-in addresses
 import { isRenewalPath, renewalKey, RENEWALS_PER_WINDOW } from './lib/authLimits';   // A415
+import { authLimiterKeyFor, apiLimiterKeyFor, BUCKET_VERIFY_OPTIONS } from './lib/limiterKeys';   // A494, A505
+import jwt from 'jsonwebtoken';
 
 const app  = express();
 const PORT = process.env.PORT ?? 4000;
@@ -96,24 +98,20 @@ app.use(express.json({ limit: '1mb' })); // explicit limit — prevents oversize
 // costly than editing a header, and IP-keyed limiting is the standard control.
 // (Finding #12: keying auth attempts on the client-supplied device header meant
 // the PIN brute-force limit never actually fired.)
-const limiterKey = (req: import('express').Request): string => {
-  const device = req.header('x-device-id');
-  if (device) return `d:${device}`;
-  const auth = req.header('authorization');
-  if (auth) return `t:${auth.slice(-24)}`;
-  return ipKeyGenerator(req.ip ?? '');
-};
-
-// Auth attempts are keyed on IP only. A logged-in session token is included when
-// present so a legitimately authenticated user (e.g. an owner calling verify-pin
-// repeatedly) is bucketed per-session rather than colliding with the shared IP —
-// but the ANONYMOUS login path, which is what brute force targets, always keys
-// on IP and cannot be widened by spoofing a header.
-const authLimiterKey = (req: import('express').Request): string => {
-  const auth = req.header('authorization');
-  if (auth) return `t:${auth.slice(-24)}`;
-  return ipKeyGenerator(req.ip ?? '');
-};
+// A494 (lib/limiterKeys.ts): a header the caller made up never picks a bucket. The anonymous sign-in paths are keyed on
+// the address ONLY; anywhere else a Bearer token picks the bucket only once it VERIFIES (the till's own session by its
+// device, a person's by their sign-in session); x-device-id is not read at all — any string a caller liked used to be a
+// fresh 600/minute (and, on the auth paths, a fresh 30 failures).
+// A505: the signature picks the bucket, not the expiry — a till's expired 15-minute token is still its own bucket, not the
+// shop's shared address (lib/limiterKeys.ts BUCKET_VERIFY_OPTIONS).
+const verifyOurs = (token: string) => jwt.verify(token, process.env.JWT_SECRET ?? '', BUCKET_VERIFY_OPTIONS);
+const limiterInput = (req: import('express').Request) => ({
+  url: req.originalUrl || req.url || '',
+  authorization: req.header('authorization') ?? null,
+  ipKey: ipKeyGenerator(req.ip ?? ''),
+});
+const limiterKey = (req: import('express').Request): string => apiLimiterKeyFor(limiterInput(req), verifyOurs);
+const authLimiterKey = (req: import('express').Request): string => authLimiterKeyFor(limiterInput(req), verifyOurs);
 
 // A415 (lib/authLimits.ts): only FAILED attempts count, and a till's renewals are not counted here at all — a till
 // retrying a refused renewal used to use up the shop's 30 and lock the owner out of the web sign-in on the first try.
@@ -186,6 +184,11 @@ app.use('/api/auth',       authLimiter);
 app.use('/api/auth',       renewLimiter);   // A415
 app.use('/api/admin/auth', authLimiter); // brute-force on admin login
 app.use('/api',            apiLimiter);
+
+// A500: the till's connection test asks /api/health through its branch server's gateway, which forwards /api/* only —
+// so it always got a 404 (counted as "ok", but logged as "connection test: HTTP 404" on every till). A plain answer, no
+// database round-trip: it says the cloud is reachable, nothing more.
+app.get('/api/health', (_req, res) => { res.json({ ok: true }); });
 
 // ── Health check ──────────────────────────────────────────────────────────────
 // Does a lightweight DB round-trip so an external uptime pinger hitting this

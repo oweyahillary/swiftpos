@@ -136,6 +136,11 @@ export function verifyPinOffline(pin: string, branchId: string): OfflineVerdict 
     return { ok: false, reason: 'no_cache',
       message: 'No connection, and this terminal has no saved sign-in. Sign in once while online.' };
   }
+  // A494: the branch's staff list on this till is the fresher word on who still works here. When it holds the branch,
+  // a saved sign-in of someone it does not list as active (deactivated, removed) is unknown — the saved PIN no longer
+  // opens the till, nor approves anything (the offline approvers use this check too).
+  rows = onlyListedActive(rows, branchId);
+  if (rows.length === 0) return { ok: false, reason: 'no_match', message: 'Invalid PIN' };
 
   const cutoff = Date.now() - PIN_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
   // A till with a branch node configured NEVER time-expires its cache (A17,
@@ -179,6 +184,21 @@ export function verifyPinOffline(pin: string, branchId: string): OfflineVerdict 
   let permissions: unknown = {};
   try { permissions = JSON.parse(m.permissions ?? '{}'); } catch { /* default */ }
   return { ok: true, staff: { staffId: m.staff_id, name: m.name, roleName: m.role_name, permissions } };
+}
+
+/**
+ * A494: the saved sign-ins whose person this till's branch_staff lists as active — when branch_staff holds the branch at
+ * all (no list yet: every saved sign-in stands, as before). Never throws.
+ */
+export function onlyListedActive<T extends { staff_id: string }>(rows: T[], branchId: string): T[] {
+  try {
+    const listed = getLocalDb().prepare(
+      `SELECT staff_id, COALESCE(status, 'active') AS status FROM branch_staff WHERE branch_id = ?`).all(branchId) as
+      Array<{ staff_id: string; status: string }>;
+    if (!listed.length) return rows;
+    const active = new Set(listed.filter((s) => s.status === 'active').map((s) => s.staff_id));
+    return rows.filter((r) => active.has(r.staff_id));
+  } catch { return rows; }
 }
 
 /** Cleared on logout and on wipe, so a decommissioned till keeps no way in. */

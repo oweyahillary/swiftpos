@@ -14,14 +14,23 @@ import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { cleanMpesaReceive, mpesaFromSettings, mpesaLabel, mpesaDescribe, type MpesaReceive } from '../lib/mpesaReceive';   // A492
 import { maySetMpesa } from '../lib/permissions';                 // A492
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A492
+import { hiddenWhileCounting } from '../lib/stockTakeAccess';     // A494
 
 const router = safeRouter();
+
+/**
+ * A494: the columns a branch is read with — EXPLICIT, never '*'. '*' sent tech_reveal_code (the code that surfaces the
+ * technician prompt on a till) to every signed-in user, and the admin e-mails behind desktop_licensed_by /
+ * mode_switched_by; a column added later would have gone out the same way. A new column a screen needs is added here.
+ */
+export const BRANCH_PUBLIC_COLUMNS = 'id, business_id, name, address, phone, city, country, is_main, status, created_at, updated_at, '
+  + 'desktop_licensed, deploy_mode, web_sync_enabled';
 
 // GET /api/branches — list all branches for this business
 router.get('/', requireAuth, async (req, res) => {
   const { data, error } = await supabase
     .from('branches')
-    .select('*')
+    .select(BRANCH_PUBLIC_COLUMNS)
     .eq('business_id', req.businessId)
     .order('is_main', { ascending: false })
     .order('created_at', { ascending: true });
@@ -34,7 +43,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/:id', requireAuth, async (req, res) => {
   const { data, error } = await supabase
     .from('branches')
-    .select('*')
+    .select(BRANCH_PUBLIC_COLUMNS)   // A494
     .eq('id', req.params.id)
     .eq('business_id', req.businessId)
     .single();
@@ -158,7 +167,10 @@ router.get('/:id/staff', requireAuth, requirePermission('staff.view'), async (re
 });
 
 // GET /api/branches/:id/stock
+// A494: any signed-in user read any branch's stock by naming it — the caller's own branch only (the owner any), and
+// blind for the items a count at that branch is counting.
 router.get('/:id/stock', requireAuth, async (req, res) => {
+  if (!assertBranchAccess(req, req.params.id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
   const { data, error } = await supabase
     .from('stock_levels')
     .select(`
@@ -172,7 +184,8 @@ router.get('/:id/stock', requireAuth, async (req, res) => {
     .order('quantity', { ascending: true });
 
   if (error) { sendError(res, error); return; }
-  res.json(data);
+  const hide = await hiddenWhileCounting(req, req.params.id);
+  res.json(hide.size ? ((data ?? []) as any[]).map((r) => (hide.has(`p:${r.product_id}`) ? { ...r, quantity: null, qty_pieces: null, counting: true } : r)) : data);
 });
 
 // PUT /api/branches/:id/stock/:productId — adjust stock

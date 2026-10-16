@@ -2,7 +2,23 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, can } from '../middleware/rbac';
+
+/**
+ * A494: a modifier option's price is what the customer pays for it — changing one is menu.prices (as a product's
+ * price is), not menu.edit; a negative one is refused (a discount nobody approved). `changes` are [old, new] pairs
+ * (old null for a new option). The refusal, or null.
+ */
+function priceRefusal(req: any, changes: Array<[unknown, unknown]>): { status: number; body: Record<string, unknown> } | null {
+  for (const [, next] of changes) {
+    if (next === undefined) continue;
+    const n = Number(next);
+    if (next === null || next === '' || !Number.isFinite(n) || n < 0) return { status: 400, body: { error: 'A price cannot be negative.' } };
+  }
+  const changed = changes.some(([was, next]) => next !== undefined && Number(next) !== Number(was ?? 0));
+  if (changed && !can(req, 'menu.prices')) return { status: 403, body: { error: 'Forbidden', detail: 'Missing permission: menu.prices' } };
+  return null;
+}
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -48,6 +64,9 @@ router.post('/groups', requirePermission('menu.edit'), async (req, res) => {
     .single();
 
   if (!product) { res.status(404).json({ error: 'Product not found' }); return; }
+  if (!Array.isArray(options)) { res.status(400).json({ error: 'options must be a list' }); return; }
+  const refusal = priceRefusal(req, options.map((o: any) => [null, o?.price ?? 0] as [unknown, unknown]));   // A494
+  if (refusal) { res.status(refusal.status).json(refusal.body); return; }
 
   const { data: group, error: gErr } = await supabase
     .from('modifier_groups')
@@ -178,6 +197,8 @@ router.post('/options', requirePermission('menu.edit'), async (req, res) => {
   if (!(await modifierGroupOwned(modifier_group_id, req.businessId))) {
     res.status(404).json({ error: 'Modifier group not found' }); return;
   }
+  const refusal = priceRefusal(req, [[null, price]]);   // A494
+  if (refusal) { res.status(refusal.status).json(refusal.body); return; }
 
   const { data, error } = await supabase
     .from('modifier_options')
@@ -196,6 +217,11 @@ router.patch('/options/:id', requirePermission('menu.edit'), async (req, res) =>
 
   if (!(await modifierOptionOwned(id, req.businessId))) {
     res.status(404).json({ error: 'Modifier option not found' }); return;
+  }
+  if (price !== undefined) {   // A494: a changed price is menu.prices; never negative
+    const { data: cur } = await supabase.from('modifier_options').select('price').eq('id', id).maybeSingle();
+    const refusal = priceRefusal(req, [[(cur as { price?: unknown } | null)?.price ?? 0, price]]);
+    if (refusal) { res.status(refusal.status).json(refusal.body); return; }
   }
 
   const { data, error } = await supabase

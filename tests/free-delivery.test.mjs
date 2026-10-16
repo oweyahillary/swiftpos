@@ -114,7 +114,10 @@ await ok('off by default; stored, read back and carried to the till', () => {
 await ok('owner only: one of the owner\'s rule keys (the cloud refuses anyone else) and readable in settings', () => {
   assert.ok(R.isReversalSettingKey('delivery_free_allowed'));
   assert.match(read('apps/server/src/routes/business.ts'), /'offline_reverse_web_sales', 'delivery_free_allowed',/);
-  assert.match(read('apps/server/src/routes/business.ts'), /if \(isReversalSettingKey\(key\)\) \{\s*if \(!req\.isOwner\) \{/);
+  // A505: re-pinned for A502 (owner, 2026-10-15) — the void / refund rules (this key among them) are no longer owner-only
+  // by code: they are settings.reversals, a right no role starts with (the owner's until given). Anyone else is refused.
+  assert.match(read('apps/server/src/routes/business.ts'), /if \(isReversalSettingKey\(key\)\) return 'settings\.reversals';/);
+  assert.match(read('apps/server/src/routes/business.ts'), /\} else if \(!can\(req, needed\)\) \{/);
   assert.match(read('apps/server/src/routes/pos.ts'), /\.\.\.REVERSAL_SETTING_KEYS\]\),/);
 });
 

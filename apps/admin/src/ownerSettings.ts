@@ -21,7 +21,6 @@ export const PER_ROLE_SWITCHES: Record<string, string> = {
 
 export const OWNER_POS_OPTIONS_WHERE = 'Set by the owner — Settings › Business › POS options';
 export const PER_ROLE_WHERE = 'Now set per role by the owner — Settings › Users and access › Roles and permissions';
-export const OWNER_UPDATES_WHERE = 'The owner approves or holds updates — Settings › Business › Till updates';
 
 /** May the admin portal still switch this feature flag? (The cloud is the real check — this only decides the UI.) */
 export function adminSwitches(key: string): boolean {

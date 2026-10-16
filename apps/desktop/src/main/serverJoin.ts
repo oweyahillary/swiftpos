@@ -25,6 +25,28 @@ interface JoinRequest {
   status: Status; grant?: JoinGrant;
 }
 
+// ── A503: a till already joined here may ask again — when it proves it is that till ───────────────────────────────────
+// A496 refused a join from any device holding a key here, "until the server forgets it". Scenario audit, 2026-10-15:
+// that broke (1) the A436 rejoin of a signed-out till through its OWN server (the sign-in-code screen's "Join through the
+// branch server" — it holds a key, it keeps polling, so "Forget this till" is never even offered: a dead end), and (2) a
+// new till whose grant answer was lost on the way (or whose enrolment failed after it): the key was recorded, the till
+// never got it, and every later ask was 409 — with the till on no list to forget it from. Now a keyed device may ask
+// again when either
+//   - its key here was issued by a join and has never been used (the till never received it), or
+//   - the request carries X-Join-Proof: an HMAC over (device id, THIS server's security code) keyed by the hash of the
+//     key it holds. The key itself never leaves the till, and a proof made for another server (a different certificate)
+//     is worthless here. The person at the server still presses Allow; the grant then replaces the key.
+// Anything else stays refused (409), as A496 meant: a stranger naming a working till's id cannot ask to replace its key.
+export const JOIN_PROOF_HEADER = 'x-join-proof';
+/** The proof, from the key's SHA-256 (hex) — the form the server keeps. Pure. */
+export function joinProofFromHash(keyHashHex: string, deviceId: string, serverCode: string | null): string {
+  return crypto.createHmac('sha256', String(keyHashHex)).update(`zaptill-join|${String(deviceId)}|${serverCode ?? ''}`).digest('hex');
+}
+/** The proof a till makes from the key it holds. Pure. */
+export function joinProofFor(token: string, deviceId: string, serverCode: string | null): string {
+  return joinProofFromHash(crypto.createHash('sha256').update(String(token), 'utf8').digest('hex'), deviceId, serverCode);
+}
+
 export const JOIN_TTL_MS = 10 * 60_000;
 export const MAX_PENDING = 5;
 export const MAX_NOTICES_PER_MINUTE = 3;
@@ -56,15 +78,23 @@ function sweep(now: number): void {
   for (const [id, r] of requests) if (now - r.at > JOIN_TTL_MS) requests.delete(id);
 }
 
-/** A till asks. Refused when the queue is full; a second ask from the same address replaces the first. */
-export function createJoinRequest(body: any, ip: string, now: number = Date.now()):
+/**
+ * A till asks. Refused when the queue is full; a second ask from the same address replaces the first.
+ * A496: one request per device too (a second ask for the same device, from anywhere, replaces the first); an allowed
+ * request not collected yet still counts toward the cap; and a device that already holds a key on this server is
+ * refused until the person at the server forgets it (a join would silently replace a working till's key).
+ */
+export function createJoinRequest(body: any, ip: string, now: number = Date.now(), opts: { holdsKey?: (deviceId: string) => boolean } = {}):
   { ok: true; id: string; token: string } | { ok: false; status: number; error: string } {
   sweep(now);
   const device_id = clean(body?.device_id, 64);
   const name = clean(body?.name, 60) || 'New till';
   if (!device_id) return { ok: false, status: 400, error: 'device_id required' };
-  for (const [id, r] of requests) if (r.ip === ip && r.status === 'pending') requests.delete(id);
-  if ([...requests.values()].filter((r) => r.status === 'pending').length >= MAX_PENDING) {
+  if (opts.holdsKey?.(device_id)) {
+    return { ok: false, status: 409, error: 'This till is already joined to this branch server. To join it again, forget it at the server first (Close Branch → Forget this till).' };
+  }
+  for (const [id, r] of requests) if ((r.ip === ip || r.device_id === device_id) && r.status === 'pending') requests.delete(id);
+  if ([...requests.values()].filter((r) => r.status !== 'denied').length >= MAX_PENDING) {
     return { ok: false, status: 429, error: 'Too many tills are waiting to join — answer them on the server first.' };
   }
   const id = crypto.randomBytes(8).toString('hex');

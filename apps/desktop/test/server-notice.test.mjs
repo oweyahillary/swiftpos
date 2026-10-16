@@ -91,10 +91,12 @@ ok('"Find the branch server" on the screen a signed-out till shows', () => {
 ok('it rejoins — keeps everything on it — and only the way to the server changes', () => {
   assert.ok(enrol.includes('posApi.install.requestJoin(srv.url, true)'));
   assert.ok(ipc.includes("const joined = await joinBusiness(String(g.business_id), String(g.code), true);"));
-  assert.ok(ipc.includes("saveDeviceConfig({ node_url: ask.url, node_secret: String(g.node_secret) } as any);"));
+  // A502: a former branch server stepping down becomes a till in the same write (A503: the assertion follows the code).
+  assert.ok(ipc.includes("saveDeviceConfig({ node_url: ask.url, node_secret: String(g.node_secret), ...(wasServer ? { device_role: 'till' } : {}) } as any);"));
 });
 ok('refused by the cloud: the old server address is put back', () => {
-  assert.ok(ipc.includes("saveDeviceConfig({ node_url: before?.node_url ?? null, node_secret: before?.node_secret ?? null } as any);"));
+  assert.ok(ipc.includes("saveDeviceConfig({ node_url: before?.node_url ?? null, node_secret: before?.node_secret ?? null,"));
+  assert.ok(ipc.includes('setTillPin(pinBefore);'));
 });
 
 console.log('\nThe server\'s window comes forward (A436)\n');

@@ -51,6 +51,7 @@ const S1 = u(1), S2 = u(2), S3 = u(3), DAY = u(10), DAY2 = u(11), F1 = u(20), F2
 const reset = () => {
   mem.fail = () => null; mem.calls = [];
   mem.db = { users: [{ id: TOM, name: 'Tom', status: 'active', business_id: B }], user_devices: [], shifts: [], business_days: [],
+    branches: [{ id: BR, business_id: B }],   // A494: a pushed row's branch must be the business's (and, for a person, theirs)
     float_transactions: [], expenses: [], kitchen_voids: [] };
 };
 const shiftRow = (id, extra = {}) => ({ id, branch_id: BR, cashier_id: TOM, opened_at: '2026-10-14T05:00:00Z', opening_float: 100, device_id: 'dev-T1', terminal_code: 'T1', ...extra });

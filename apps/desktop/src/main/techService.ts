@@ -19,6 +19,14 @@ import { getDeviceConfig, getCloudUrl } from './deviceConfig';
 import { cloudFetch } from './cloudGateway';   // A410
 
 const ACTIVE_SESSION_MS = 4 * 60 * 60 * 1000; // 4h active session per unlock
+/** A494: the scope the admin portal signs technician tokens with (server lib/techToken signTechToken). */
+export const TECH_SCOPE = 'tech';
+
+/** The business this till is joined to (its session row), or null before it joins. */
+function tillBusinessId(): string | null {
+  try { return (getLocalDb().prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined)?.business_id || null; }
+  catch { return null; }
+}
 
 export interface TechSession {
   techId: string; techName: string; branchId: string;
@@ -169,6 +177,11 @@ export function openTechSession(token: string): { ok: true; session: TechSession
   if (cfg?.branch_id && payload.branchId !== cfg.branch_id) {
     return { ok: false, reason: 'This token is for a different branch' };
   }
+  // A494: a technician's token (the admin portal mints scope 'tech'), for THIS till's business — a token signed for
+  // another purpose or another business is refused even if its branch id happened to match.
+  if (payload.scope !== TECH_SCOPE) return { ok: false, reason: 'This is not a technician token' };
+  const biz = tillBusinessId();
+  if (biz && payload.businessId !== biz) return { ok: false, reason: 'This token is for a different business' };
 
   const now = trustedNow();
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -183,6 +196,16 @@ export function openTechSession(token: string): { ok: true; session: TechSession
   logTechAction('tech.session.open', { techName: payload.techName });
   _rawToken = token;
   return { ok: true, session };
+}
+
+/**
+ * A494: Chromium's developer tools on this till — a console that reads the database and the screens' memory. Only a
+ * development build, or while a technician's session is open (the Support menu's Ctrl+Shift+I; tools opened any other
+ * way are closed at once otherwise).
+ */
+export function devToolsAllowed(isPackaged: boolean): boolean {
+  if (!isPackaged) return true;
+  try { return !!getActiveSession(); } catch { return false; }
 }
 
 export function closeTechSession() {
@@ -249,7 +272,13 @@ export async function flushTechAudit(token: string): Promise<void> {
 import Database from 'better-sqlite3';
 import { getDbPath } from './localDb';
 
-const MASK_COLUMN = /pin|token|secret|password|hash|key/i;
+// A494: reveal_code too — the doorknock that opens the technician prompt on every till of the branch.
+const MASK_COLUMN = /pin|token|secret|password|hash|key|reveal/i;
+
+/** A494: does the query name anything sensitive (a column, or a table holding one)? Identifiers only, case-blind. */
+function mentionsSensitive(sql: string): boolean {
+  return (sql.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []).some((w) => MASK_COLUMN.test(w));
+}
 const MAX_ROWS = 500;
 
 let _roDb: Database.Database | null = null;
@@ -304,13 +333,16 @@ export function runTechQuery(sql: string):
     // Mask on the SOURCE column, not the result alias — better-sqlite3 exposes
     // it via columns().column. Without this, `SELECT token AS t` walks the
     // owner's bearer token straight past a name-based mask. Falls back to the
-    // result name for computed columns, so an expression WRAPPING a secret can
-    // still leak — the verbatim audit is the backstop for that, and it is a
-    // deliberate act with the tech's name on it.
+    // result name for computed columns; A494: and a computed column is masked
+    // whenever the query names anything sensitive (below).
     const meta = stmt.columns();
     const columns = meta.map(c => c.name);
+    // A494: a COMPUTED column (no source column — substr(token, 1, 8), hex(pin_hash_enc), a CASE over a secret) is
+    // masked whenever the query names anything sensitive: the expression cannot be traced to its inputs here, so it is
+    // treated as carrying them. A computed column of a query that names nothing sensitive is shown as it is.
+    const sensitiveQuery = mentionsSensitive(trimmed);
     const maskedColumns = meta
-      .filter(c => MASK_COLUMN.test(c.column ?? c.name))
+      .filter(c => MASK_COLUMN.test(c.column ?? c.name) || (!c.column && sensitiveQuery))
       .map(c => c.name);
     const rows = page.map(r => columns.map(c =>
       maskedColumns.includes(c) && r[c] != null ? '•••masked•••' : r[c] ?? null));

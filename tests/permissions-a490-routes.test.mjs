@@ -41,7 +41,7 @@ const P = require(path.join(DIST, 'lib/permissions.js'));
 const state = require(path.join(DIST, 'lib/permissionsState.js'));
 
 const id = () => randomUUID();
-const BZ = id(), BR = id(), USER = id(), OWNER = id(), X = id();
+const BZ = id(), BR = id(), USER = id(), OWNER = id(), X = id(), ADMIN = id();
 
 // ── an in-memory database (the route-permission-gates shape) ──────────────────
 let db;
@@ -52,6 +52,7 @@ const reset = () => {
     users: [{ id: USER, business_id: BZ, name: 'Pat', status: 'active', permissions_version: 1, role_id: null }],
     user_devices: [{ business_id: BZ, device_id: 'dev-T1', status: 'approved', retired_at: null, terminal_code: 'T1' }],
     business_settings: [], feature_flags: [], branch_settings: [],
+    admin_users: [{ id: ADMIN, email: 'a@zaptill.test', role: 'super_admin', is_active: true }],   // A495: requireAdmin re-reads it
   };
 };
 reset();
@@ -142,7 +143,7 @@ const ROUTES = [
   ['POST', `/api/recipes/${X}/packaging`, 'menu.recipes', {}],
   ['POST', '/api/offers', 'menu.offers', {}],
   ['POST', '/api/discounts', 'menu.offers', {}],
-  ['POST', '/api/promotions', 'menu.offers', {}],
+  ['POST', '/api/promotions', 'menu.promotions', {}],   // A502: its own key (a promotion runs at every branch)
   ['POST', '/api/discounts/apply', 'sales.discount', {}],
   ['POST', '/api/payment-methods', 'settings.payments', {}],
   ['POST', '/api/stations', 'stations.manage', {}],
@@ -212,7 +213,6 @@ const ROUTES = [
   ['POST', `/api/changes/${X}/decide`, 'changes.approve', { approve: true }],
   ['PUT', '/api/controls/pos/delivery_fee', 'settings.pos', { enabled: true }],
   ['PUT', '/api/controls/loyalty', 'settings.pos', { enabled: true }],
-  ['PUT', '/api/controls/updates', 'settings.updates', { version: 'nope' }],
   ['PUT', '/api/flags/anything', 'settings.business', { enabled: true }],
 ];
 
@@ -289,7 +289,7 @@ try {
   }
 
   console.log('\n5. Admin portal: the owner sets these now\n');
-  const adminT = jwt.sign({ adminId: id(), email: 'a@zaptill.test', role: 'super_admin' }, process.env.ADMIN_JWT_SECRET, { algorithm: 'HS256' });
+  const adminT = jwt.sign({ adminId: ADMIN, email: 'a@zaptill.test', role: 'super_admin' }, process.env.ADMIN_JWT_SECRET, { algorithm: 'HS256' });
   const adminApp = express(); adminApp.use(express.json());
   adminApp.use('/api/admin', require(path.join(DIST, 'routes/admin.js')).default);
   const adminServer = await new Promise((r) => { const s = adminApp.listen(0, () => r(s)); });
@@ -311,10 +311,15 @@ try {
     const r = await adminCall('PATCH', `/api/admin/clients/${BZ}/features/web_hosting`, { enabled: true });
     assert.equal(r.status, 200, JSON.stringify(r.body));
   });
-  await ok('PATCH /api/admin/clients/:id/desktop-version → 403 OWNER_SETS', async () => {
+  // A493 (owner, 2026-10-15): till update approval is the admin portal's — never the client's.
+  await ok('A493: PATCH /api/admin/clients/:id/desktop-version — the admin holds (and approves) a client\'s till version', async () => {
     reset();
     const r = await adminCall('PATCH', `/api/admin/clients/${BZ}/desktop-version`, { version: null });
-    assert.equal(r.status, 403); assert.equal(r.body.code, 'OWNER_SETS');
+    assert.notEqual(r.status, 403, JSON.stringify(r.body)); assert.notEqual(r.body?.code, 'OWNER_SETS');
+  });
+  await ok('A493: the owner may not approve a till version — PUT /api/controls/updates → 403 ADMIN_SETS', async () => {
+    const r = await call('PUT', '/api/controls/updates', OWNER_T, { version: null });
+    assert.equal(r.status, 403); assert.equal(r.body.code, 'ADMIN_SETS');
   });
   adminServer.close();
 } finally {

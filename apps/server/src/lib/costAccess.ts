@@ -23,6 +23,9 @@ export const COST_FIELDS: readonly string[] = [
 
 /** May this caller see cost prices and margins? The owner always may. */
 export function seesCosts(req: Request): boolean {
+  // A494: a till's own session is no person — it never sees costs (can() lets it through while the till scope is
+  // dry-run, which would have sent cost prices to any holder of a till token).
+  if (req.isTill) return false;
   return can(req, 'menu.costs', 'reports.costs');
 }
 

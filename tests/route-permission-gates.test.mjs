@@ -223,8 +223,11 @@ try {
   await ok('promotions: products.manage, and every product / category it names is ours', async () => {
     reset();
     assert.equal((await call('POST', '/api/promotions', T.cashier, { name: 'x', promo_type: 'discount' })).status, 403);
-    assert.equal((await call('POST', '/api/promotions', T.manager, { name: 'x', promo_type: 'discount', product_ids: [P_X] })).status, 400);
-    assert.equal((await call('POST', '/api/promotions', T.manager, { name: 'x', promo_type: 'discount', product_ids: [P1] })).status, 201);
+    // A494: a promotion runs at every branch — a manager's menu.offers no longer writes one (OWNER_ONLY); the owner's
+    // ids are still checked.
+    assert.equal((await call('POST', '/api/promotions', T.manager, { name: 'x', promo_type: 'discount', product_ids: [P1] })).status, 403);
+    assert.equal((await call('POST', '/api/promotions', T.owner, { name: 'x', promo_type: 'discount', product_ids: [P_X] })).status, 400);
+    assert.equal((await call('POST', '/api/promotions', T.owner, { name: 'x', promo_type: 'discount', product_ids: [P1] })).status, 201);
   });
   await ok('recipes: products.manage, and a line\'s ingredient must be ours', async () => {
     reset();
@@ -235,25 +238,31 @@ try {
     assert.equal((await call('POST', `/api/recipes/${P1}`, T.manager, line(ING_X))).status, 400);
     assert.equal((await call('POST', `/api/recipes/${P1}`, T.manager, line(ING))).status, 200);
   });
-  await ok('webhooks: settings.manage for every write; the list stays readable', async () => {
+  await ok('webhooks: settings.manage for every write and the list (A494)', async () => {
     reset();
     assert.equal((await call('POST', '/api/webhooks', T.cashier, { url: 'https://evil.example/x' })).status, 403);
     assert.equal(db.webhooks.length, 0);
-    assert.equal((await call('GET', '/api/webhooks', T.cashier)).status, 200);
+    // A494: the list (where the business's orders are sent) is settings.integrations too — not a cashier's.
+    assert.equal((await call('GET', '/api/webhooks', T.cashier)).status, 403);
+    assert.equal((await call('GET', '/api/webhooks', T.manager)).status, 200);
     assert.equal((await call('POST', '/api/webhooks', T.manager, { url: 'https://ok.example/x' })).status, 201);
     const wid = db.webhooks[0].id;
     assert.equal((await call('PATCH', `/api/webhooks/${wid}`, T.cashier, { url: 'https://evil.example' })).status, 403);
     assert.equal((await call('DELETE', `/api/webhooks/${wid}`, T.cashier)).status, 403);
     assert.equal((await call('POST', `/api/webhooks/${wid}/test`, T.cashier, {})).status, 403);
   });
-  await ok('QR: settings need settings.manage; a public order into another business\'s branch → 404, bad quantities → 400', async () => {
+  // A495: the cloud now derives the QR order's branch (the table's, else the business's main branch) — another business's
+  // branch_id sent by the page is never used: the order lands in this business's own branch instead of a 404.
+  await ok('QR: settings need settings.manage; a public order never lands in another business\'s branch, bad quantities → 400', async () => {
     reset();
     assert.equal((await call('PATCH', '/api/qr/settings', T.cashier, { qr_ordering: false })).status, 403);
     assert.equal((await call('PATCH', '/api/qr/settings', T.manager, { qr_ordering: false })).status, 200);
     db.businesses[0].qr_ordering = true;
-    assert.equal((await call('POST', '/api/qr/pollo/order', null, { branch_id: BR_X, items: [{ product_id: P1, quantity: 1 }] })).status, 404);
     assert.equal((await call('POST', '/api/qr/pollo/order', null, { branch_id: BR_A, items: [{ product_id: P1, quantity: -3 }] })).status, 400);
     assert.equal(db.orders.length, 0);
+    const foreign = await call('POST', '/api/qr/pollo/order', null, { branch_id: BR_X, items: [{ product_id: P1, quantity: 1 }] });
+    assert.equal(foreign.status, 201, JSON.stringify(foreign.body));
+    assert.ok(db.orders.every((o) => o.branch_id !== BR_X) && db.orders.at(-1).branch_id === BR_A, 'never the other business\'s branch');
     assert.equal((await call('POST', '/api/qr/pollo/order', null, { branch_id: BR_A, items: [{ product_id: P1, quantity: 2 }] })).status, 201);
   });
   await ok('printers: stations.manage or settings.manage; a new printer\'s branch must be ours', async () => {

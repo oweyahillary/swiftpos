@@ -126,6 +126,9 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Change prices', description: 'Change selling prices, branch prices and bulk prices' },
   { key: 'menu.offers',          group: 'menu', surface: 'both', manager: true,
     label: 'Discounts and offers', description: 'Set up discounts, promotions and offers' },
+  // A502: owner's by default (no role starts with it) — a promotion runs at every branch; the owner may give it to someone.
+  { key: 'menu.promotions',      group: 'menu', surface: 'web',
+    label: 'Promotions', description: 'Create, change and delete promotions, which run at every branch' },
   { key: 'menu.recipes',         group: 'menu', surface: 'web',
     label: 'Recipes and packaging', description: 'What each product uses from stock' },
   { key: 'menu.costs',           group: 'menu', surface: 'both',
@@ -142,6 +145,9 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Count stock', description: 'Take part in a stock count (they never see the expected figure)' },
   { key: 'inventory.waste',      group: 'stock', surface: 'both', manager: true,
     label: 'Record wastage', description: 'Write off spoiled, expired or damaged stock, with a reason' },
+  // A502: owner's by default — whether a count stops sales of what is being counted.
+  { key: 'inventory.count_freeze', group: 'stock', surface: 'web',
+    label: 'Stock count freeze', description: 'Choose whether a stock count stops sales of the items being counted' },
   { key: 'inventory.adjust',     group: 'stock', surface: 'web',
     label: 'Adjust stock', description: 'Change a stock figure by hand, review counts and close batches' },
   { key: 'ingredients.manage',   group: 'stock', surface: 'web',
@@ -188,12 +194,13 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Payment methods', description: 'Which payment methods each branch takes, and the business\'s own methods' },
   { key: 'settings.mpesa',       group: 'settings', surface: 'till', manager: true,
     label: 'M-Pesa number', description: 'Set the branch M-Pesa number customers pay to (Buy Goods till number, or Paybill and account number), set on the till, and the owner is told of every change' },
+  // A502: owner's by default — who may void and refund, the void window and the offline rules.
+  { key: 'settings.reversals',   group: 'settings', surface: 'web',
+    label: 'Void and refund rules', description: 'Who may void and refund, for how long after a sale, and what a till may do offline' },
   { key: 'settings.integrations', group: 'settings', surface: 'web',
     label: 'Integrations', description: 'Webhooks, QR ordering and scheduled report emails' },
   { key: 'settings.pos',         group: 'settings', surface: 'web',
     label: 'POS options', description: 'How the tills work: delivery fee and rider, pay later, pay before kitchen, sign-in codes and loyalty' },
-  { key: 'settings.updates',     group: 'settings', surface: 'web',
-    label: 'Till updates', description: 'Approve or hold the version of ZapTill the tills install' },
   { key: 'receipt.manage',       group: 'settings', surface: 'both', manager: true,
     label: 'Receipt text', description: 'The receipt\'s header and footer lines' },
   { key: 'stations.manage',      group: 'settings', surface: 'both', manager: true,
@@ -326,9 +333,17 @@ export function maySetMpesa(held: ReadonlySet<string> | readonly string[], openB
  * needs no device approval. This replaces the role-name lists (manager / supervisor / branch_manager) everywhere.
  */
 export const FLOOR_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.cashier).map((p) => p.key);
-/** What makes nobody back office: the floor, and what every person held before A490 (migration 134 keeps it on every
- *  role — the staff list, every cashier's sales — so it says nothing about who is a manager). */
-const FLOOR = new Set([...FLOOR_KEYS, ...OPEN_BEFORE_A490]);
+/**
+ * A499: what is used AT THE TILL by whoever sells — never a reason to send a person to the manager screens. Owner,
+ * 2026-10-15 (1.0.15, a cashier landing on Settings › Staff): every cashier role held the old customers.manage (migration
+ * 99), which stood for customers.edit AND customers.credit — credit is not a cashier default, so every cashier counted as
+ * "back office" and the till opened the manager screens on them. Voids, refunds and reprints are the same: a cashier
+ * trusted with them still sells.
+ */
+export const POS_ACTION_KEYS: readonly string[] = ['customers.credit', 'sales.void', 'sales.refund', 'sales.reprint'];
+/** What makes nobody back office: the floor, what every person held before A490 (migration 134 keeps it on every role —
+ *  the staff list, every cashier's sales — so it says nothing about who is a manager), and the POS actions. */
+const FLOOR = new Set([...FLOOR_KEYS, ...OPEN_BEFORE_A490, ...POS_ACTION_KEYS]);
 
 /** Holds anything beyond the shop floor (or is the owner). */
 export function isBackOffice(held: ReadonlySet<string> | readonly string[]): boolean {

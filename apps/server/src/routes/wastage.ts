@@ -14,11 +14,11 @@
  * The rules (reasons, value, summary) are lib/wastage.ts.
  */
 import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
-import { holds } from '../lib/historyScope';
+import { may, hiddenWhileCounting } from '../lib/stockTakeAccess';   // A494: can(), not holds() — and the blind count
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope, can } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { actor } from '../lib/actor';
@@ -35,7 +35,13 @@ function tillTime(v: unknown): string | null {
 }
 router.use(requireAuth);
 // A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
-router.use(stripCostsUnlessAllowed(['value', 'total']));
+// A494: + `cost` — the unit cost each line of GET /items carries.
+router.use(stripCostsUnlessAllowed(['value', 'total', 'cost']));
+
+/** A494: "only N at this branch" gives a blind count's figure away — while the item is counted, no figure. */
+function notEnough(name: string, held: number, hidden: boolean): string {
+  return hidden ? `${name}: not enough stock at this branch.` : `${name}: only ${held} at this branch.`;
+}
 
 type Entry = EntryLike & { id: string; branch_id: string; ref: string; unit_cost: number | string | null; stock_moved: boolean;
   note: string | null; recorded_by_name: string | null; voided_by_name: string | null; void_reason: string | null };
@@ -55,7 +61,7 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), asy
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
   const rows = (data ?? []) as Entry[];
-  res.json({ from, to, entries: rows, summary: wastageSummary(rows), reasons: WASTE_REASONS, can_void: holds(req, 'inventory.adjust') });
+  res.json({ from, to, entries: rows, summary: wastageSummary(rows), reasons: WASTE_REASONS, can_void: may(req, 'inventory.adjust') });
 });
 
 router.get('/items', requireAnyPermission('inventory.waste', 'inventory.adjust'), async (req, res) => {
@@ -76,12 +82,16 @@ router.get('/items', requireAnyPermission('inventory.waste', 'inventory.adjust')
   const iLevels = await chunkIn<{ ingredient_id: string; current_stock: number | string }>(
     'ingredient_stock_levels', 'ingredient_id', G.map((g) => g.id), (q) => q.select('ingredient_id, current_stock').eq('branch_id', branchId));
   const pl = new Map(pLevels.map((l) => [l.product_id, l])), il = new Map(iLevels.map((l) => [l.ingredient_id, Number(l.current_stock) || 0]));
+  // A494: blind count — what is held of an item being counted is not sent to someone who may not change stock.
+  const hide = await hiddenWhileCounting(req, branchId);
   res.json([
     ...P.map((p) => ({ kind: 'product', id: p.id, name: p.name, unit: p.unit_label, by_piece: p.sold_by === 'piece', stocked: p.track_stock === true,
-      held: p.track_stock ? Number(p.sold_by === 'piece' ? pl.get(p.id)?.qty_pieces : pl.get(p.id)?.quantity) || 0 : null,
+      held: !p.track_stock || hide.has(`p:${p.id}`) ? null : Number(p.sold_by === 'piece' ? pl.get(p.id)?.qty_pieces : pl.get(p.id)?.quantity) || 0,
+      ...(hide.has(`p:${p.id}`) ? { counting: true } : {}),
       cost: p.cost_price === null ? null : Number(p.cost_price) })),
     ...G.map((g) => ({ kind: 'ingredient', id: g.id, name: g.name, unit: g.unit, by_piece: false, stocked: true,
-      held: il.get(g.id) ?? 0, cost: g.unit_cost === null ? null : Number(g.unit_cost) })),
+      held: hide.has(`i:${g.id}`) ? null : il.get(g.id) ?? 0, ...(hide.has(`i:${g.id}`) ? { counting: true } : {}),
+      cost: g.unit_cost === null ? null : Number(g.unit_cost) })),
   ]);
 });
 
@@ -131,6 +141,7 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
     'ingredient_stock_levels', 'ingredient_id', iIds, (q) => q.select('ingredient_id, current_stock').eq('branch_id', branchId));
   const P = new Map(prods.map((p) => [p.id, p])), I = new Map(ings.map((i) => [i.id, i]));
   const pHeld = new Map(pLevels.map((l) => [l.product_id, l])), iHeld = new Map(iLevels.map((l) => [l.ingredient_id, Number(l.current_stock) || 0]));
+  const hidden = await hiddenWhileCounting(req, branchId);   // A494
 
   type Line = { item_kind: 'product' | 'ingredient'; product_id: string | null; ingredient_id: string | null; name: string;
     quantity: number; unit_cost: number | null; byPiece: boolean; moves: boolean; batch_id: string | null };
@@ -141,8 +152,10 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
     return bt.id;
   };
   const lines: Line[] = [];
+  // A494: a cost typed by someone without menu.costs is dropped — the line takes the catalogue's cost.
+  const mayCost = can(req, 'menu.costs');
   const typedCost = (v: unknown): number | null => {
-    if (v === undefined || v === null || v === '') return null;
+    if (!mayCost || v === undefined || v === null || v === '') return null;
     const n = Number(v); return Number.isFinite(n) && n >= 0 ? round2(n) : null;
   };
   for (const it of raw) {
@@ -157,7 +170,7 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
       if (moves) {
         const lvl = pHeld.get(p.id);
         const held = Number(byPiece ? lvl?.qty_pieces : lvl?.quantity) || 0;
-        if (qty > held + 0.004) { res.status(409).json({ error: `${p.name}: only ${held} at this branch.`, code: 'MORE_THAN_HELD' }); return; }
+        if (qty > held + 0.004) { res.status(409).json({ error: notEnough(p.name, held, hidden.has(`p:${p.id}`)), code: 'MORE_THAN_HELD' }); return; }
       }
       const pb = batchFor(it, 'product', p.id);
       if (pb === 'bad') { res.status(400).json({ error: `${p.name}: that batch is not this item's at this branch.` }); return; }
@@ -168,7 +181,7 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
       if (!g) { res.status(400).json({ error: 'An item is not in this business\'s catalogue.' }); return; }
       if (qty === null) { res.status(400).json({ error: `${g.name}: enter how much.` }); return; }
       const held = iHeld.get(g.id) ?? 0;
-      if (qty > held + 0.004) { res.status(409).json({ error: `${g.name}: only ${held} at this branch.`, code: 'MORE_THAN_HELD' }); return; }
+      if (qty > held + 0.004) { res.status(409).json({ error: notEnough(g.name, held, hidden.has(`i:${g.id}`)), code: 'MORE_THAN_HELD' }); return; }
       const gb = batchFor(it, 'ingredient', g.id);
       if (gb === 'bad') { res.status(400).json({ error: `${g.name}: that batch is not this item's at this branch.` }); return; }
       lines.push({ item_kind: 'ingredient', product_id: null, ingredient_id: g.id, name: g.name, quantity: qty, byPiece: false, moves: true, batch_id: gb,

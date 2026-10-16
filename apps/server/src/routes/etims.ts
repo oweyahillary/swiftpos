@@ -2,10 +2,18 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope } from '../middleware/rbac';
+import { requirePermission, branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { registerBranch } from '../lib/etims';
 import { processPending } from '../lib/etims/queue';
+import { guardBranch } from '../lib/branchGuard';   // A494
+
+/**
+ * A494: every branch this router touches — the owner's X-Branch-Id / ?branch_id=, the body's branch_id, the path's
+ * :branchId — must be this business's. etims_branch_config and etims_invoices are read and written by branch alone, and
+ * assertBranchAccess lets the owner name any id: an owner's token could read, overwrite or register ANOTHER business's
+ * fiscal device config and read its invoices. guardBranch checks the caller's access and the business together.
+ */
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -13,8 +21,7 @@ router.use(requireAuth);
 // GET /api/etims/config?branch_id=  — current eTIMS config + enabled flag
 router.get('/config', requirePermission('etims.manage'), async (req, res) => {
   const branchId = branchScope(req) || req.branchId;
-  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
-  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!(await guardBranch(req, res, branchId, 'Forbidden'))) return;
 
   const { data: config } = await supabase
     .from('etims_branch_config')
@@ -36,8 +43,7 @@ router.get('/config', requirePermission('etims.manage'), async (req, res) => {
 // Body: { branch_id, enabled?, environment?, mode?, bhf_id?, device_serial? }
 router.put('/config', requirePermission('etims.manage'), async (req, res) => {
   const { branch_id, enabled, environment, mode, bhf_id, device_serial } = req.body;
-  if (!branch_id) { res.status(400).json({ error: 'branch_id is required' }); return; }
-  if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!(await guardBranch(req, res, branch_id, 'Forbidden'))) return;
 
   if (environment && !['sandbox', 'production'].includes(environment)) {
     res.status(400).json({ error: "environment must be 'sandbox' or 'production'" }); return;
@@ -102,8 +108,7 @@ router.get('/order/:orderId', async (req, res) => {
 // Counts by status so the dashboard can surface pending/failed invoices.
 router.get('/status', async (req, res) => {
   const branchId = branchScope(req) || req.branchId;
-  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
-  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!(await guardBranch(req, res, branchId, 'Forbidden'))) return;
 
   const { data: config } = await supabase
     .from('etims_branch_config').select('status, environment, mode, registered_at')
@@ -122,8 +127,7 @@ router.get('/status', async (req, res) => {
 // GET /api/etims/invoices?branch_id=&status=  — list fiscalisation records
 router.get('/invoices', requirePermission('reports.tax'), async (req, res) => {
   const branchId = branchScope(req) || req.branchId;
-  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
-  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!(await guardBranch(req, res, branchId, 'Forbidden'))) return;
 
   let q = supabase
     .from('etims_invoices')
@@ -141,7 +145,7 @@ router.get('/invoices', requirePermission('reports.tax'), async (req, res) => {
 // POST /api/etims/branches/:branchId/register — one-time control unit registration
 router.post('/branches/:branchId/register', requirePermission('etims.manage'), async (req, res) => {
   const { branchId } = req.params;
-  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!(await guardBranch(req, res, branchId, 'Forbidden'))) return;
 
   // Ensure a config row exists (created with sandbox defaults if missing).
   const { data: existing } = await supabase

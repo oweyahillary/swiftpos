@@ -72,12 +72,18 @@ export function duplicateDayCode(err: PgErr & { details?: string }): { code: str
 
 router.post('/push', async (req, res) => {
   const businessId = req.businessId;
-  const shifts   = Array.isArray(req.body?.shifts)   ? req.body.shifts   : [];
-  const floats   = Array.isArray(req.body?.floats)   ? req.body.floats   : [];
-  const expenses = Array.isArray(req.body?.expenses) ? req.body.expenses : [];
-  const businessDays = Array.isArray(req.body?.business_days) ? req.body.business_days : [];
+  // A494: a till's push — its own session, or a person's PIN sign-in on it (the till pushes with whoever is signed in,
+  // syncEngine pushAuthHeaders). A browser session (the dashboard, the web POS) never writes drawers and days here.
+  if (!req.isTill && !(req.pinSignIn && req.surface === 'desktop')) {
+    res.status(403).json({ error: 'Only a till sends its drawers and days here.', code: 'TILL_ONLY' });
+    return;
+  }
+  let shifts   = Array.isArray(req.body?.shifts)   ? req.body.shifts   : [];
+  let floats   = Array.isArray(req.body?.floats)   ? req.body.floats   : [];
+  let expenses = Array.isArray(req.body?.expenses) ? req.body.expenses : [];
+  let businessDays = Array.isArray(req.body?.business_days) ? req.body.business_days : [];
   // 0.6.28: sent items taken back on a till (migration 112). A till before schema 60 sends none.
-  const kitchenVoids = Array.isArray(req.body?.kitchen_voids) ? req.body.kitchen_voids : [];
+  let kitchenVoids = Array.isArray(req.body?.kitchen_voids) ? req.body.kitchen_voids : [];
 
   // 0 = a build predating the header. Treated as ancient rather than trusted.
   const clientSchema = Number(req.header('X-Schema-Version') ?? 0) || 0;
@@ -116,6 +122,7 @@ router.post('/push', async (req, res) => {
         ...(clientSchema ? { schema_version: clientSchema } : {}),
       })
       .eq('device_id', deviceId)
+      .eq('business_id', businessId)   // A494: only this business's till — never another tenant's by its id
       .select('id')
       .then(({ data, error }) => {
         if (error) {
@@ -162,6 +169,7 @@ router.post('/push', async (req, res) => {
         .from('user_devices')
         .update({ device_role: reportedRole, role_reported_at: new Date().toISOString() })
         .eq('device_id', deviceId)
+        .eq('business_id', businessId)   // A494
         .then(({ error }) => {
           if (error) {
             console.warn(
@@ -218,6 +226,35 @@ router.post('/push', async (req, res) => {
   // a duplicate_open_day carries a business_days id, so that UPDATE matched
   // nothing and the day was never marked. Older builds simply ignore the field.
   const rejected: { id: string; code: string; table: string; error: string }[] = [];
+
+  // A494: each row's branch must be one of this business's — and, for a person's sign-in, their own branch (the till's
+  // own session may send any branch of its business: a branch server relays its tills). A row naming another is refused
+  // alone (rejected: 'branch_not_allowed'), never written.
+  {
+    const named = new Set<string>();
+    for (const list of [businessDays, shifts, floats, expenses, kitchenVoids]) {
+      for (const r of list as any[]) if (r && typeof r.branch_id === 'string' && r.branch_id) named.add(r.branch_id);
+    }
+    let allowed = new Set<string>();
+    if (named.size) {
+      try {
+        const ours = await chunkIn<{ id: string }>('branches', 'id', [...named], (q) => q.select('id').eq('business_id', businessId));
+        allowed = new Set(ours.map((b) => b.id));
+      } catch (e) { sendError(res, e as Error); return; }
+      if (!req.isTill && !req.isOwner) allowed = new Set([...allowed].filter((b) => b === req.branchId));
+    }
+    const keep = (list: any[], table: string) => list.filter((r) => {
+      const b = r?.branch_id;
+      if (b === undefined || b === null || b === '' || allowed.has(String(b))) return true;
+      rejected.push({ id: String(r?.id ?? ''), code: 'branch_not_allowed', table, error: 'its branch is not one this session may write to' });
+      return false;
+    });
+    businessDays = keep(businessDays, 'business_days');
+    shifts = keep(shifts, 'shifts');
+    floats = keep(floats, 'float_transactions');
+    expenses = keep(expenses, 'expenses');
+    kitchenVoids = keep(kitchenVoids, 'kitchen_voids');
+  }
 
   try {
     // ── Trading days (parent of shifts — upsert FIRST) ───────────────────────

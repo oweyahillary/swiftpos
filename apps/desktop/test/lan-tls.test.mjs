@@ -77,7 +77,17 @@ N.startNodeServer();
 await new Promise((r) => setTimeout(r, 300));
 const PORT = N.getNodePort();
 const NODE = `http://127.0.0.1:${PORT}`;
-const H = { 'X-Node-Secret': SECRET };
+// A496: /node/tech-session (this test's echo route) answers only a till that proves which it is, and holds only a real
+// tech token — so this test's requests carry a joined device's key, and its tokens are signed by the tech key the server
+// holds. Same meaning as before: the bytes go up and come back over TLS.
+const NI = require(path.join(dist, 'nodeIngest.js'));
+const H = { 'X-Node-Secret': SECRET, 'X-Device-Id': 'dev-LT', 'X-Device-Token': NI.issueDeviceKey('dev-LT') };
+const techKeys = crypto.generateKeyPairSync('ed25519');
+require(path.join(dist, 'techService.js')).cacheTechConfig(techKeys.publicKey.export({ type: 'spki', format: 'pem' }), null);
+const techToken = (extra = {}) => {
+  const payload = Buffer.from(JSON.stringify({ techId: 't1', techName: 'Tech', branchId: 'br-1', businessId: 'b1', scope: 'all', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, ...extra })).toString('base64url');
+  return `st2.${payload}.${crypto.sign(null, Buffer.from(payload), techKeys.privateKey).toString('base64url')}`;
+};
 
 console.log('\nOne port, both protocols\n');
 let CERT;
@@ -103,17 +113,18 @@ let CERT;
 console.log('\nThe pinned client\n');
 {
   const other = T.makeServerIdentity().cert;
-  const leak = 'LEAK-' + crypto.randomBytes(4).toString('hex');
+  const leak = techToken({ techName: 'LEAK-' + crypto.randomBytes(4).toString('hex') });
   const e = await rejects(T.pinnedFetch(`${NODE}/node/tech-session`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: leak }) }, other));
   ok('another certificate is refused before anything is sent (NodeIdentityError)', e?.name === 'NodeIdentityError', String(e));
   const held = await (await realFetch(`${NODE}/node/tech-session`, { headers: H })).json();
   ok('…the request never reached the server', held.token !== leak, JSON.stringify(held));
-  const big = 'x'.repeat(300_000);
+  const big = techToken({ pad: 'x'.repeat(300_000) });
   await T.pinnedFetch(`${NODE}/node/tech-session`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: big }) }, CERT);
   const back = await (await T.pinnedFetch(`${NODE}/node/tech-session`, { headers: H }, CERT)).json();
   ok('a 300 KB body goes up and comes back whole over TLS', back.token === big, String(back.token?.length));
-  const u8 = await (await T.pinnedFetch(`${NODE}/node/tech-session`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: new TextEncoder().encode(JSON.stringify({ token: 'bytes' })) }, CERT)).json();
-  ok('a body given as bytes is sent as is', u8.ok === true && (await (await T.pinnedFetch(`${NODE}/node/tech-session`, { headers: H }, CERT)).json()).token === 'bytes');
+  const BYTES = techToken({ techName: 'bytes' });
+  const u8 = await (await T.pinnedFetch(`${NODE}/node/tech-session`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: new TextEncoder().encode(JSON.stringify({ token: BYTES })) }, CERT)).json();
+  ok('a body given as bytes is sent as is', u8.ok === true && (await (await T.pinnedFetch(`${NODE}/node/tech-session`, { headers: H }, CERT)).json()).token === BYTES);
   const t0 = Date.now();
   for (let i = 0; i < 20; i++) await T.pinnedFetch(`${NODE}/node/health`, { headers: H, signal: AbortSignal.timeout(3000) }, CERT);
   ok('twenty answers nobody reads do not stall the connection pool', Date.now() - t0 < 15_000, `${Date.now() - t0} ms`);
@@ -128,6 +139,7 @@ console.log('\nThe pinned client\n');
 // ── The same process as a till of that server ──────────────────────────────────────────────────────────────────────
 C.saveDeviceConfig({ device_role: 'till', device_id: 'dev-TILL', node_url: NODE, node_secret: SECRET });
 T._resetLanTls(); T.setTillPin(null);
+NC.setNodeDeviceToken(NI.issueDeviceKey('dev-TILL'));   // A496: a till that joined (its /node/since needs its key)
 
 console.log('\nA till already joined switches by itself\n');
 {
@@ -233,7 +245,9 @@ console.log('\nWired in\n');
     && (ipc.match(/setTillPin\(ask\.cert\);/g) ?? []).length === 2 && /setTillPin\(pinBefore\);/.test(ipc));
   // A490: settings.manage is a broad key now — trusting again is a technician or settings.business (the fine key).
   ok('repoint pins what the probe proved; promotion forgets the pin; trusting again is a technician or settings.business',
-    /setTillPin\(probe\.cert \?\? null\);/.test(ipc) && /saveDeviceConfig\(\{ device_role: 'node', node_url: null \}\);\s*setTillPin\(null\);/.test(ipc)
+    // A502: the typed repoint (tech:setNodeUrl, which pinned what its probe proved) is gone — a till is pointed at a server
+    // only by a join (pinned above). A503: the assertion follows the code.
+    !/handle\('tech:setNodeUrl'/.test(ipc) && /saveDeviceConfig\(\{ device_role: 'node', node_url: null \}\);\s*setTillPin\(null\);/.test(ipc)
     && /handle\('node:tlsRetrust'[\s\S]{0,200}if \(!getActiveSession\(\) && !signedInCan\('settings\.business'\)\) throw/.test(ipc));
   ok('the till checks every minute (index.ts)', /setInterval\(tlsTick, 60_000\)/.test(src('src/main/index.ts')) && /ensureNodeTls\(\(\) => nodeHeaders\(\)\)/.test(src('src/main/index.ts')));
   ok('both screens show the security code to compare', /data-testid="join-prompt-code"/.test(src('src/renderer/components/JoinPrompt.tsx'))

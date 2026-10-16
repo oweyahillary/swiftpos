@@ -120,7 +120,8 @@ await ok('POSAuthContext: hasPermission is the expanded map (memoised); a refres
   const c = read('context/POSAuthContext.tsx');
   assert.match(c, /const held = useMemo<ReadonlySet<string>>\(\s*\(\) => \(session \? expandMap\(session\.permissions \?\? \{\}\) : new Set<string>\(\)\),/);
   assert.match(c, /\(key: string\) => !!session && holds\(held, key\)/);
-  assert.match(c, /refreshData\.permissions && typeof refreshData\.permissions === 'object'\s*\? \{ permissions: refreshData\.permissions/);
+  // A506: the renewal is api.ts refreshSession (one chain); its answer reaches the session through 'swiftpos:pos-token'.
+  assert.match(c, /d\.permissions && typeof d\.permissions === 'object' \? \{ permissions: d\.permissions \}/);
   assert.doesNotMatch(c, /session\.permissions\[key\] === true/);
 });
 
@@ -131,6 +132,8 @@ const EXPECTED_NAV = {
   expiry: "'inventory.waste'", history: "'inventory.receive'", orders: "'orders.view_all'", shift: "'orders.view_all'",
   reports: 'MANAGER_REPORT_KEYS', turnover: "'orders.view_all'", expenses: "'expenses.view'", customers: "'customers.view'",
   credit: "'customers.view'", staff: "'staff.view'", printers: "'stations.manage'", security: 'null',
+  // A502: the owner's by default, for someone the owner gives the right.
+  promotions: "'menu.promotions'", reversals: "'settings.reversals'",
 };
 await ok('every manager page has its fine key (and only "My sign-in" is open)', () => {
   const md = read('pages/manager/ManagerDashboard.tsx');
@@ -157,7 +160,7 @@ await ok('manager actions: credit edits, drawer confirm / count, day close, staf
   assert.match(md, /<StaffTab branches=\{managerBranch\} canEdit=\{hasAnyPermission\(held, \['staff\.edit'\]\)\} \/>/);
   assert.match(md, /const seesCosts\s+= hasAnyPermission\(held, \['menu\.costs', 'reports\.costs'\]\);/);
   assert.match(md, /<Wastage [^>]*showCosts=\{seesCosts\} \/>/);
-  assert.match(md, /<Expiry [^>]*showCosts=\{seesCosts\} \/>/);
+  assert.match(md, /<Expiry [^>]*showCosts=\{seesCosts\}\s+canEditBatches=/);   // A506: + batch edits by receive / adjust
   const sh = read('pages/manager/ManagerShiftTab.tsx');
   assert.match(sh, /const canCountClose = hasPermission\('shifts\.confirm'\);/);
   assert.match(sh, /const seesExpected = hasPermission\('reports\.shifts'\) \|\| canCountClose;/);
@@ -251,7 +254,7 @@ await ok('RolesTab: the new API — keys, copy_from, rename, delete with ROLE_IN
 });
 await ok('StaffTab: a person\'s rights by key (override_keys) on the same picker, against the role; no role names', () => {
   const s = read('pages/settings/StaffTab.tsx');
-  assert.match(s, /override_keys,\s*\}\);/);
+  assert.match(s, /\.\.\.\(keysChanged \? \{ override_keys \} : \{\}\),\s*\}\);/);   // A506: an edit sends them when they changed
   assert.match(s, /api\.post\('\/api\/staff', \{[^}]*override_keys/);
   assert.match(s, /<PermissionPicker keys=\{catalogue\.keys\} groups=\{catalogue\.groups\} checked=\{effectiveKeys\}\s+onChange=\{setEffectiveKeys\} baseline=\{roleBaseline\}/);
   assert.match(s, /canResetSignIn && s\.status === 'active' && needsSignInCode\(role, s\.override_keys\)/);
@@ -259,20 +262,20 @@ await ok('StaffTab: a person\'s rights by key (override_keys) on the same picker
 });
 
 // ── Moved from the admin portal: Settings › Business ───────────────────────────────────────────────────────────────
-await ok('Business: POS options, Till updates and the business-wide payment methods, on /api/controls', () => {
+await ok('Business: POS options and the business-wide payment methods, on /api/controls — no Till updates (A493: the admin approves)', () => {
   const c = read('pages/settings/OwnerControls.tsx');
   assert.match(c, /api\.get<Controls>\('\/api\/controls'\)/);
   assert.match(c, /api\.put\(`\/api\/controls\/pos\/\$\{key\}`, \{ enabled: next \}\)/);
   assert.match(c, /api\.put\('\/api\/controls\/loyalty', patch\)/);
-  assert.match(c, /api\.put\('\/api\/controls\/updates', \{ version \}\)/);
+  assert.doesNotMatch(c, /\/api\/controls\/updates/);
   assert.match(c, /api\.post\('\/api\/business\/settings', \{ key: PAYMENT_METHODS_ENABLED_KEY, value: v \}\)/);
   assert.match(c, /export const POS_OPTION_KEYS = \['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes'\] as const;/);
   const bp = read('pages/settings/BusinessPage.tsx');
   assert.match(bp, /\{ to: 'pos-options',\s+label: 'POS options' \}/);
-  assert.match(bp, /\{ to: 'till-updates', label: 'Till updates' \}/);
+  assert.doesNotMatch(bp, /till-updates/);
   const app = read('App.tsx');
   assert.match(app, /<Route path="pos-options"\s+element=\{<PosOptionsTab \/>\} \/>/);
-  assert.match(app, /<Route path="till-updates" element=\{<TillUpdatesTab \/>\} \/>/);
+  assert.doesNotMatch(app, /TillUpdatesTab|till-updates/);
   assert.match(read('pages/PaymentMethodsPage.tsx'), /<BusinessPaymentMethods \/>/);
   assert.match(read('components/SignInSecurity.tsx'), /The owner turns them on in Settings › Business › POS options/);
 });

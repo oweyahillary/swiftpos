@@ -149,7 +149,8 @@ await ok('the till hears about a freeze: pos/init sends it, the 20-second check 
 });
 await ok("the freeze is the owner's decision", () => {
   const b = read('apps/server/src/routes/business.ts');
-  assert.match(b, /if \(key === STOCK_COUNT_FREEZE_KEY\) \{\n\s+if \(!req\.isOwner\) \{/);
+  // A502: the owner's by default, as a right the owner may give — inventory.count_freeze, which no role starts with.
+  assert.match(b, /if \(key === STOCK_COUNT_FREEZE_KEY\) return 'inventory\.count_freeze';/);
   assert.match(b, /'stock_count_freeze',/);
   assert.match(st, /const freeze = freezeSetting\(\(fz as \{ value\?: unknown \} \| null\)\?\.value\);/);
 });
@@ -180,7 +181,7 @@ await ok('the screens: the difference only for a reviewer; a blind printed sheet
   const sc = read('apps/dashboard/src/components/StockCounts.tsx');
   assert.match(sc, /const showDiff = take\.can_review && \(take\.status === 'review' \|\| take\.status === 'posted'\);/);
   assert.match(sc, /: \[\{ label: 'Item' \}, \{ label: 'Category' \}, \{ label: 'Unit' \}, \{ label: 'Counted', align: 'right' \}\],/);
-  assert.match(sc, /\{isOwner && <FreezeSwitch client=\{client\} \/>\}/);
+  assert.match(sc, /\{\(isOwner \|\| canFreeze\) && <FreezeSwitch client=\{client\} \/>\}/);
   const md = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
   assert.match(md, /key: 'counts',[^\n]+permission: 'inventory\.count', group: 'Inventory' \}/);
   assert.match(read('apps/dashboard/src/App.tsx'), /<Route path="stock\/counts"\s+element=\{<StockCountsPage \/>\} \/>/);

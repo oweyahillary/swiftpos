@@ -88,6 +88,31 @@ ok('A448: the branch server refusing this till’s access code comes first — r
   assert.match(n.text, /Branch access code/);
   assert.equal(N.syncNotice({ online: true, pendingCount: 0, failedCount: 0, nodeRefused: null }, NOW), null);
 });
+// A501: the refusal is named by its reason — a device-key, branch or encryption refusal is not an access-code problem.
+ok('A501: the refusal names its reason (device key, branch, encryption) — never "access code" for those', () => {
+  const t = (reason) => N.syncNotice({ online: true, pendingCount: 0, failedCount: 0, nodeRefused: { status: 401, since: '2026-10-12T07:00:00Z', reason } }, NOW).text;
+  assert.match(t('device_key'), /does not recognise this till \(its device key\)/);
+  assert.doesNotMatch(t('device_key'), /access code/);
+  assert.match(t('branch'), /another branch/);
+  assert.doesNotMatch(t('branch'), /access code/);
+  assert.match(t('tls'), /unencrypted connection/);
+  assert.match(t('access_code'), /access code/);
+  assert.match(t(undefined), /access code/);   // an older main process sends no reason
+});
+ok('A501: the branch-server backlog reaches the manager — refused records red; long waits quiet; short waits nothing', () => {
+  const base = { online: true, pendingCount: 0, failedCount: 0, lastSyncedAt: null };
+  const red = N.syncNotice({ ...base, nodeBacklog: { pending: 0, failed: 2, failedReason: 'bad row' } }, NOW);
+  assert.equal(red.tone, 'alert');
+  assert.match(red.text, /The branch server refused 2 records: bad row/);
+  const old = new Date(NOW.getTime() - 30 * 60_000).toISOString();
+  const quiet = N.syncNotice({ ...base, nodeBacklog: { pending: 4, failed: 0, oldestPendingAt: old } }, NOW);
+  assert.equal(quiet.tone, 'quiet');
+  assert.match(quiet.text, /4 records waiting for the branch server/);
+  const fresh = new Date(NOW.getTime() - 20_000).toISOString();
+  assert.equal(N.syncNotice({ ...base, nodeBacklog: { pending: 4, failed: 0, oldestPendingAt: fresh } }, NOW), null);
+  // A cloud backlog keeps its own line first, with the branch server's appended.
+  assert.match(N.syncNotice({ ...base, pendingCount: 1, nodeBacklog: { pending: 4, failed: 0, oldestPendingAt: old } }, NOW).text, /1 record waiting to sync · 4 waiting for the branch server/);
+});
 ok('the Z-report note: refused drawer, sales not up yet, or nothing', () => {
   assert.equal(N.zBackupNote({ sales: 0, drawerRefused: true }), 'NOT BACKED UP: the cloud refused this shift — a manager must check the sync notice.');
   assert.equal(N.zBackupNote({ sales: 2, drawerRefused: false }), 'NOT BACKED UP YET: 2 sales of this shift are only on this till until it syncs.');

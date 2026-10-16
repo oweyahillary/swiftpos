@@ -1,10 +1,10 @@
 /**
  * desktopVersionApproval.ts — which ZapTill version a business's tills may install (A348), checked in ONE place.
  *
- * The admin portal set it (PATCH /api/admin/clients/:id/desktop-version); A490 moves it to the owner
- * (PUT /api/controls/updates, `settings.updates`). Both validate a version exactly the same way: x.y.z, a release the
- * cloud can serve, complete (latest.yml and the installer) — approving a version the tills cannot download would leave
- * them failing every check. null holds the tills where they are.
+ * The admin portal sets it (PATCH /api/admin/clients/:id/desktop-version) — A493: only the admin; the client never does
+ * (owner, 2026-10-15: clients who have not paid for updates must not be able to take one). A version is x.y.z, a release
+ * the cloud can serve, complete (latest.yml and the installer) — approving a version the tills cannot download would
+ * leave them failing every check. null holds the tills where they are.
  */
 import { isVersion, listDesktopReleasesOrStale } from './desktopReleases';
 

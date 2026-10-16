@@ -31,7 +31,9 @@ const canManage = requirePermission('settings.integrations');
 const VALID_EVENTS = ['order.completed', 'order.voided'];
 
 // GET /api/webhooks
-router.get('/', async (req, res) => {
+// A494: the webhook URLs (where the business's orders are sent) and the delivery log (each endpoint's answers) were
+// open to every signed-in user — settings.integrations, as changing them.
+router.get('/', canManage, async (req, res) => {
   const { data, error } = await supabase
     .from('webhooks')
     .select('id, url, events, status, created_at, updated_at')
@@ -121,7 +123,7 @@ router.delete('/:id', canManage, async (req, res) => {
 });
 
 // GET /api/webhooks/:id/deliveries
-router.get('/:id/deliveries', async (req, res) => {
+router.get('/:id/deliveries', canManage, async (req, res) => {
   // Confirm the webhook belongs to this business
   const { data: hook } = await supabase
     .from('webhooks')

@@ -44,9 +44,17 @@ const isBcrypt = (h: any): h is string => typeof h === 'string' && h.startsWith(
 
 /** Deterministic content version (FNV-1a). Changes iff the roster changes — incl.
  *  a PIN change — so a peer can skip re-applying an unchanged roster. */
+/** A496: a key-order-independent form of a permissions map (so the version moves on a permission change only). */
+function stablePerms(p: unknown): string {
+  const norm = (v: unknown): unknown => Array.isArray(v) ? v.map(norm)
+    : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, norm((v as any)[k])])) : v;
+  try { return JSON.stringify(norm(p ?? {})); } catch { return ''; }
+}
 export function rosterVersion(roster: RosterStaff[]): string {
+  // A496: permissions are part of it — a permission-only change (a role's keys edited) moved nothing, so a till that
+  // skips an unchanged version kept the old permissions.
   const key = [...roster]
-    .map(s => `${s.staff_id}|${s.pin_hash ?? ''}|${s.override_pin_hash ?? ''}|${s.status}|${s.role_name ?? ''}|${s.name}`)
+    .map(s => `${s.staff_id}|${s.pin_hash ?? ''}|${s.status}|${s.role_name ?? ''}|${s.name}|${stablePerms(s.permissions)}`)
     .sort()
     .join('\n');
   let h = 0x811c9dc5;
@@ -69,7 +77,7 @@ export function buildRosterSnapshot(branchId: string, rows: RosterStaff[]): Rost
       role_name: s.role_name ?? null,
       permissions: s.permissions ?? {},
       pin_hash: s.pin_hash as string,
-      override_pin_hash: isBcrypt(s.override_pin_hash) ? s.override_pin_hash : null,
+      override_pin_hash: null,   // A496: never served (see branchStaff.storeBranchStaff)
       status: s.status ?? 'active',
     }));
   return { source: 'node', branch_id: String(branchId), roster_version: rosterVersion(roster), roster };

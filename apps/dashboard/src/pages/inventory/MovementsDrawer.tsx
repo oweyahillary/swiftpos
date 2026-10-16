@@ -8,7 +8,7 @@ interface Movement {
   id: string;
   movement_type: 'sale' | 'restock' | 'write_off' | 'correction';
   quantity_change: number;
-  quantity_after: number;
+  quantity_after: number | null;   // A494: null while the item is being counted (blind count)
   notes: string | null;
   created_at: string;
 }
@@ -85,7 +85,7 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
                       <p className={`font-semibold text-sm ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                         {isPositive ? '+' : ''}{m.quantity_change}
                       </p>
-                      <p className="text-gray-500 text-xs mt-0.5">→ {m.quantity_after} left</p>
+                      {m.quantity_after !== null && <p className="text-gray-500 text-xs mt-0.5">→ {m.quantity_after} left</p>}
                     </div>
                   </div>
                 );

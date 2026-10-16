@@ -246,8 +246,8 @@ const SKIPPED = [
   ['apps/dashboard/src/pages/crm/CustomersPage.tsx', 'server-paged (page / limit 20); a customer\'s transactions are capped at 20 by the cloud', (s) => has(s, "page: String(p), limit: String(LIMIT)")],
   ['apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx', 'server-paged (the manager\'s order history)', (s) => has(s, 'offset: String((p - 1) * PAGE_SIZE)')],
   ['apps/dashboard/src/pages/pos/POSCustomersTab.tsx', 'server-paged (page / limit)', (s) => has(s, "page: String(p), limit: String(LIMIT)")],
-  ['apps/dashboard/src/pages/stock/PurchaseOrdersPage.tsx', 'the cloud returns at most 50 purchase orders (default limit)', () => has(read('apps/server/src/routes/stock.ts'), "const { status, supplier_id, branch_id, limit = '50' }")],
-  ['apps/dashboard/src/pages/stock/StockTransfersPage.tsx', 'the cloud returns at most 50 transfers (default limit)', () => has(read('apps/server/src/routes/stock.ts'), "const { status, branch_id, limit = '50' }")],
+  ['apps/dashboard/src/pages/stock/PurchaseOrdersPage.tsx', 'the cloud returns at most 50 purchase orders (default limit)', () => has(read('apps/server/src/routes/stock.ts'), "const { status, supplier_id, limit = '50' }")],   // A494: the branch is branchScope's
+  ['apps/dashboard/src/pages/stock/StockTransfersPage.tsx', 'the cloud returns at most 50 transfers (default limit)', () => has(read('apps/server/src/routes/stock.ts'), "const { status, limit = '50' }")],   // A494: the branch is branchScope's
   ['apps/dashboard/src/pages/settings/WebhooksTab.tsx', 'a webhook\'s deliveries are capped at 50 by the cloud; webhooks themselves are a handful', () => has(read('apps/server/src/routes/webhooks.ts'), '.limit(50);')],
   ['apps/dashboard/src/pages/settings/PetrolSettingsPage.tsx', 'tank movements are fetched with limit=50; pumps / tanks / grades are a station\'s few', (s) => has(s, "'/api/fuel-tanks/movements?limit=50'")],
   ['apps/dashboard/src/components/ShiftConfirmations.tsx', 'awaiting = a worklist emptied as shifts are confirmed; confirmed is the last 20', (s) => has(s, '.slice(0, 20)')],

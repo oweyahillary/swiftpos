@@ -109,7 +109,9 @@ await ok('a bill for a delivery: only this supplier\'s delivery, at most one ope
   assert.match(read('migrations/121_supplier_payables.sql'), /supplier_bills_one_per_grn\s+ON public\.supplier_bills \(grn_id\) WHERE grn_id IS NOT NULL AND status = 'open'/);
 });
 await ok('a return: never more than the branch holds; the stock leaves atomically, each change naming the return', () => {
-  assert.match(r, /if \(qty > held \+ 0\.004\) \{ res\.status\(409\)\.json\(\{ error: `\$\{p\.name\}: only \$\{held\} at this branch\.`, code: 'MORE_THAN_HELD' \}\)/);
+  // A494: the figure is left out while the item is being counted (blind count) — notEnough(name, held, key).
+  assert.match(r, /if \(qty > held \+ 0\.004\) \{ res\.status\(409\)\.json\(\{ error: notEnough\(p\.name, held, `p:\$\{p\.id\}`\), code: 'MORE_THAN_HELD' \}\)/);
+  assert.match(r, /hidden\.has\(key\) \? `\$\{name\}: not enough stock at this branch\.` : `\$\{name\}: only \$\{held\} at this branch\.`/);
   assert.match(r, /p_qty_delta: l\.byPiece \? 0 : -l\.quantity, p_piece_delta: l\.byPiece \? -Math\.round\(l\.quantity\) : 0,/);
   assert.match(r, /p_delta: -l\.quantity,/);
   assert.equal((r.match(/reference_type: 'supplier_return', reference_id: r\.id/g) ?? []).length, 2);

@@ -54,6 +54,8 @@ const db = {
     { id: B, name: 'Other Client', status: 'active', desktop_approved_version: null },
   ],
   admin_audit_log: [],
+  // A495: requireAdmin re-reads the admin's account on every request
+  admin_users: [{ id: 'adm-1', email: 'ops@swiftpos.test', role: 'super_admin', is_active: true }],
   // A415: each business's till, on the business (the cloud checks the till itself, never a person)
   user_devices: [{ business_id: A, device_id: 'dev-A', status: 'approved', retired_at: null },
                  { business_id: B, device_id: 'dev-B', status: 'approved', retired_at: null }],
@@ -97,7 +99,6 @@ const express = require('express'); const jwt = require('jsonwebtoken');
 const app = express(); app.use(express.json());
 app.use('/api/desktop-update', require(path.join(DIST, 'routes/desktopUpdate.js')).default);
 app.use('/api/admin', require(path.join(DIST, 'routes/admin.js')).default);
-app.use('/api/controls', require(path.join(DIST, 'routes/controls.js')).default);   // A490: the owner approves now
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
 const base = `http://127.0.0.1:${server.address().port}`;
 // A415: the till's own session — the till, the business; no person.
@@ -108,10 +109,6 @@ const till = async (biz, p) => { const r = await realFetch(`${base}/api/desktop-
 const admin = async (method, p, body) => { const r = await realFetch(`${base}/api/admin${p}`, { method, headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: r.status, body: await r.json().catch(() => null) }; };
 const fresh = () => L.clearReleaseCache();
-// A490: the owner of business B approves or holds (PUT /api/controls/updates, settings.updates) — the admin portal's check.
-const ownerToken = jwt.sign({ userId: 'owner-b', businessId: B, branchId: null, isOwner: true, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface: 'web' }, process.env.JWT_SECRET);
-const owner = async (version) => { const r = await realFetch(`${base}/api/controls/updates`, { method: 'PUT', headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ version }) });
-  return { status: r.status, body: await r.json().catch(() => null) }; };
 
 try {
   // ── 1. The rules ──
@@ -238,32 +235,27 @@ try {
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.map((x) => [x.version, x.complete, x.draft, x.copies]), [['0.6.18', false, true, 1], ['0.6.16', true, false, 1]]);
   });
-  // A490: the owner approves the tills' version now (Settings › Business › Till updates); the admin portal refuses.
-  await ok('the admin portal no longer sets it: 403 OWNER_SETS, nothing written', async () => {
+  await ok('approve 0.6.16 for the other client → saved, audited', async () => {
     const r = await admin('PATCH', `/clients/${B}/desktop-version`, { version: '0.6.16' });
-    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'OWNER_SETS');
-    assert.equal(db.businesses[1].desktop_approved_version, null);
-  });
-  await ok('the owner approves 0.6.16 for their business → saved', async () => {
-    const other = db.businesses[0].desktop_approved_version;
-    const r = await owner('0.6.16');
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.equal(db.businesses[1].desktop_approved_version, '0.6.16');
-    assert.equal(db.businesses[0].desktop_approved_version, other, 'only their own business');
+    const log = db.admin_audit_log.at(-1);
+    assert.equal(log.action, 'desktop_update.approve'); assert.equal(log.business_id, B);
   });
   await ok('approving an incomplete release is refused', async () => {
-    const r = await owner('0.6.18');
+    const r = await admin('PATCH', `/clients/${B}/desktop-version`, { version: '0.6.18' });
     assert.equal(r.status, 400); assert.match(r.body.error, /missing/);
     assert.equal(db.businesses[1].desktop_approved_version, '0.6.16');
   });
   await ok('a version with no release, or a malformed one, is refused', async () => {
-    assert.equal((await owner('0.9.0')).status, 400);
-    assert.equal((await owner('latest')).status, 400);
+    assert.equal((await admin('PATCH', `/clients/${B}/desktop-version`, { version: '0.9.0' })).status, 400);
+    assert.equal((await admin('PATCH', `/clients/${B}/desktop-version`, { version: 'latest' })).status, 400);
   });
-  await ok('Hold (null) → held again', async () => {
-    const r = await owner(null);
+  await ok('Hold (null) → held again, audited as a hold', async () => {
+    const r = await admin('PATCH', `/clients/${B}/desktop-version`, { version: null });
     assert.equal(r.status, 200);
     assert.equal(db.businesses[1].desktop_approved_version, null);
+    assert.equal(db.admin_audit_log.at(-1).action, 'desktop_update.hold');
     assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true });
   });
   await ok('a till token cannot use the admin routes', async () => {

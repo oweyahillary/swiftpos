@@ -27,7 +27,7 @@ import { reverseActionFor, isRefunded, ageMinutes, VOID_WINDOW_MIN, type Reverse
 import { can } from '../lib/access';   // A490: the one rule
 import { windowLabel } from '../../shared/reversalRules';
 import { filterSummary, emptyGridMessage } from '../lib/posFilter';
-import { syncNotice } from '../lib/syncNotice';
+import { syncNotice, type SyncStatusLike } from '../lib/syncNotice';
 import ShiftPanel from './ShiftPanel';
 import NoteModal from '../components/NoteModal';
 import { noteLines } from '../../shared/orderNotes';
@@ -307,6 +307,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     online: boolean; pendingCount: number; failedCount: number;
     failedReason?: string; failedSince?: string;
     parkedCount?: number; parkedReason?: string; lastSyncedAt?: string | null;
+    // A501: the branch server's refusal (by reason) and this till's backlog for it — the manager's notice names both.
+    nodeRefused?: SyncStatusLike['nodeRefused']; nodeBacklog?: SyncStatusLike['nodeBacklog'];
   }>({ online: true, pendingCount: 0, failedCount: 0 });
   // A363: the manager's bottom notice (null when nothing waits); `noticeBusy` while its button runs.
   const notice = canSeeSync ? syncNotice(syncStatus) : null;
@@ -1102,7 +1104,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         payments: payment.legs,
       });
 
-      setCompletedOrder({ orderNumber: num, payment, tableNumber, orderType, deliveryPerson: deliveryPerson.trim(), deliveryFree: freeNow });
+      setCompletedOrder({ orderNumber: created?.orderNumber || num, payment,   // A503 (E1): the final number (A500 may renumber)
+        tableNumber, orderType, deliveryPerson: deliveryPerson.trim(), deliveryFree: freeNow });
       setShowPayment(false);
       // A349: the sale is saved either way; a ticket that could not be produced is said, never left to the log.
       const failed = Array.isArray(created?.printFailed) ? created.printFailed : [];

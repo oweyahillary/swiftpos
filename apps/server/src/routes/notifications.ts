@@ -3,6 +3,21 @@ import { sendError } from '../lib/sendError';
 import { requireAuth } from "../middleware/auth";
 import { supabase } from "../lib/supabase";
 import { sendEmailChecked } from "../lib/mailer";
+import { branchScope } from "../middleware/rbac";
+
+/**
+ * A494: what a non-owner may see and mark — their branch's notifications that are addressed to nobody in particular or
+ * to them. A row addressed to the owner (a change to approve, an M-Pesa number changed, …) or to another person is never
+ * theirs, nor another branch's. The owner sees everything, as before (narrowed only by an explicit ?branch).
+ */
+function forCaller(req: any, q: any): any {
+  if (req.isOwner) return q;
+  const me = req.userId ? String(req.userId) : null;
+  q = q.eq("branch_id", branchScope(req));
+  return me ? q.or(`user_id.is.null,user_id.eq.${me}`) : q.is("user_id", null);
+}
+const mayRead = (req: any, row: { branch_id?: string | null; user_id?: string | null }): boolean =>
+  !!req.isOwner || (row.branch_id === branchScope(req) && (row.user_id == null || row.user_id === req.userId));
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -22,7 +37,7 @@ router.get("/", async (req, res) => {
 
   let query = supabase
     .from("notifications")
-    .select("id, type, title, message, link, read_at, created_at, branch_id", {
+    .select("id, type, title, message, link, read_at, created_at, branch_id, user_id", {
       count: "exact",
     })
     .eq("business_id", req.businessId)
@@ -30,8 +45,10 @@ router.get("/", async (req, res) => {
     .limit(limit);
 
   if (unreadOnly) query = query.is("read_at", null);
-  if (branch) query = query.eq("branch_id", branch);
+  // A494: a non-owner is held to their own branch whatever ?branch says (forCaller); the owner may narrow by it.
+  if (branch && req.isOwner) query = query.eq("branch_id", branch);
   if (types.length) query = query.in("type", types);
+  query = forCaller(req, query);
 
   const { data, error, count } = await query;
   if (error) {
@@ -39,12 +56,21 @@ router.get("/", async (req, res) => {
     return;
   }
 
-  res.json({ notifications: data ?? [], unreadCount: count ?? 0 });
+  // Belt and braces: the same rule over the rows (the query already holds it).
+  const rows = ((data ?? []) as any[]).filter((r) => mayRead(req, r)).map(({ user_id: _u, ...r }) => r);
+  res.json({ notifications: rows, unreadCount: count ?? 0 });
 });
 
 // PATCH /api/notifications/:id/read
 // Mark a single notification as read.
 router.patch("/:id/read", async (req, res) => {
+  // A494: a non-owner marks only a notification that is theirs to read (mayRead) — never the owner's or another's.
+  if (!req.isOwner) {
+    const { data: row, error: rErr } = await supabase.from("notifications").select("id, branch_id, user_id")
+      .eq("id", req.params.id).eq("business_id", req.businessId).maybeSingle();
+    if (rErr) { sendError(res, rErr); return; }
+    if (!row || !mayRead(req, row as any)) { res.status(404).json({ error: "Notification not found" }); return; }
+  }
   const { error } = await supabase
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
@@ -62,11 +88,12 @@ router.patch("/:id/read", async (req, res) => {
 // PATCH /api/notifications/read-all
 // Mark all unread notifications as read for this business.
 router.patch("/read-all", async (req, res) => {
-  const { error } = await supabase
+  // A494: a non-owner marks only their own (forCaller) — it marked the whole business's, the owner's included, as read.
+  const { error } = await forCaller(req, supabase
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
     .eq("business_id", req.businessId)
-    .is("read_at", null);
+    .is("read_at", null));
 
   if (error) {
     sendError(res, error);

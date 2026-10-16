@@ -59,12 +59,14 @@ let db;
 const reset = (payLater = false) => {
   db = {
     businesses: [{ id: BZ, owner_id: OWNER, vat_rate: 16, ctl_rate: 0 }],
+    branches: [{ id: BR, business_id: BZ }],   // A494: a pushed row's branch must be the business's
     user_devices: [{ business_id: BZ, device_id: T1, status: 'approved', retired_at: null }],   // A415: the till, on the business
     feature_flags: payLater ? [{ business_id: BZ, key: 'pay_later_tabs', enabled: true }] : [],
+    // A495: user_branches [] = works at every branch; lib/approver.ts refuses a PIN row without the field (fail closed).
     users: [
-      { id: CASHIER, business_id: BZ, status: 'active', name: 'Amy', pin_hash: pinHash('1111'), roles: role('Cashier', ['orders.create']), user_permissions: [] },
-      { id: MANAGER, business_id: BZ, status: 'active', name: 'Mary', pin_hash: pinHash('2222'), roles: role('Manager', ['orders.void', 'shifts.manage']), user_permissions: [] },
-      { id: OWNER, business_id: BZ, status: 'active', name: 'Eugene', pin_hash: pinHash('3333'), roles: role('Owner', []), user_permissions: [] },
+      { id: CASHIER, business_id: BZ, status: 'active', name: 'Amy', pin_hash: pinHash('1111'), roles: role('Cashier', ['orders.create']), user_permissions: [], user_branches: [] },
+      { id: MANAGER, business_id: BZ, status: 'active', name: 'Mary', pin_hash: pinHash('2222'), roles: role('Manager', ['orders.void', 'shifts.manage']), user_permissions: [], user_branches: [] },
+      { id: OWNER, business_id: BZ, status: 'active', name: 'Eugene', pin_hash: pinHash('3333'), roles: role('Owner', []), user_permissions: [], user_branches: [] },
     ],
     shifts: [{ id: S1, business_id: BZ, branch_id: BR, device_id: T1, terminal_code: 'T1', cashier_id: CASHIER, opened_by: CASHIER,
                status: 'open', opening_float: 0, opened_at: '2026-10-01T06:00:00Z' }],
