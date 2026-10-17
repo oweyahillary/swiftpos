@@ -61,6 +61,8 @@ import supportRoutes       from './support';        // A519: a till's log to sup
 import supportAdminRoutes  from './supportAdmin';   // A519: the admin portal reads them
 import tillsDaysRoutes     from './tills-days';      // A523: the owner's Tills & days page
 import tillsDaysAdminRoutes from './tillsDaysAdmin'; // A523: the same page in the admin portal
+import opsRoutes           from './ops';            // A525: the GitHub workflows post the deploy check and the scan
+import opsAdminRoutes      from './opsAdmin';       // A525: the admin portal's System page reads them
 
 const router = Router();
 
@@ -124,6 +126,7 @@ router.use('/reports',        reportsRoutes);
 router.use('/admin/version',  adminVersionRouter);   // before /admin, which takes the rest of /admin/*
 router.use('/admin/support-logs', supportAdminRoutes);   // A519: before /admin, which takes the rest of /admin/*
 router.use('/admin/tills-days', tillsDaysAdminRoutes);   // A523: before /admin, which takes the rest of /admin/*
+router.use('/admin/ops',      opsAdminRoutes);   // A525: before /admin, which takes the rest of /admin/*
 router.use('/admin',          adminRoutes);
 router.use('/tech',           techRoutes);
 router.use('/sync',           syncRoutes);
@@ -131,5 +134,6 @@ router.use('/devices',        devicesRoutes);
 router.use('/parking-sessions', parkingRoutes);
 router.use('/controls',       controlsRoutes);   // A490
 router.use('/support',        supportRoutes);    // A519
+router.use('/ops',            opsRoutes);        // A525: a token, not a user session
 
 export default router;

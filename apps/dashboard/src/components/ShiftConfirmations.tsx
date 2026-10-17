@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState, Fragment } from 'react';
 import { DESK, useRowMore, ViewMore, MoreRow } from './RowMore';   // A464
 import { api } from '../lib/api';
-import { methodName, methodsToCount, readAmounts, confirmationLabel } from '../lib/shiftConfirm';
+import { methodName, methodsToCount, readAmounts, confirmationLabel, cashLines, type CashBreakdown } from '../lib/shiftConfirm';
 import { reasonsNeeded, missingReasons, REASON_MAX } from '../lib/confirmReasons';
 import { money, dateTime } from '../lib/format';
 
@@ -51,12 +51,12 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   // 0.6.27 ('confirm_shows_cashier_figures'): the cashier's figures beside the boxes, and a reason where they differ.
-  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>({ showCashier: false, declared: null });
+  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: CashBreakdown | null }>({ showCashier: false, declared: null });
   const [reasons, setReasons] = useState<Record<string, string>>({});
   useEffect(() => {
     setView({ showCashier: false, declared: null }); setReasons({});
     if (!target) return;
-    client.get<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>(`/api/shifts/${target.id}/confirm-view`)
+    client.get<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: CashBreakdown | null }>(`/api/shifts/${target.id}/confirm-view`)
       .then(setView).catch(() => {});
   }, [target, client]);
   const showExpected = !!view.expected;   // A462: the cloud sends them to a manager / the owner only
@@ -173,6 +173,20 @@ export default function ShiftConfirmations({ client = api as unknown as Client, 
               <span className="text-gray-500">Cashier</span><span className="text-right">{target.cashier_name}</span>
               <span className="text-gray-500">Shift</span><span className="text-right">{dateTime(target.opened_at)} – {dateTime(target.closed_at)}</span>
             </div>
+            {/* A527 (owner, 2026-10-17): the cash in four lines — the float, cash sold, the two together and what the
+                cashier keyed in (with cash in/out and the drawer's expected when there was any). Managers only. */}
+            {view.cash && (
+              <div className="rounded-lg bg-gray-50 dark:bg-gray-800/60 px-3 py-2 text-sm" data-testid="confirm-cash">
+                {cashLines(view.cash).map((l) => (
+                  <div key={l.key} data-testid={`confirm-cash-${l.key}`}
+                    className={`flex justify-between gap-3 py-0.5 ${l.key === 'cashier' ? 'border-t border-gray-200 dark:border-gray-700 mt-1 pt-1.5' : ''}`}>
+                    <span className={l.strong ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300'}>{l.label}</span>
+                    <span className={`tabular-nums ${l.strong ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-800 dark:text-gray-100'}`}>
+                      {l.amount == null ? 'not keyed in' : money(l.amount, currency)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="confirm-table">
                 <thead>

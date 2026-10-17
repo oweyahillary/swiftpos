@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -91,7 +91,7 @@
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.1.2",
-    "electron": "43.4.0",
+    "electron": "43.7.7",
     "electron-builder": "^26.15.7",
     "postcss": "^8.5.3",
     "react": "^18.3.1",

@@ -10,6 +10,7 @@ import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "./lib/tenant
 import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
 import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and Account pages
 import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
+import SystemPage from "./SystemPage";   // A525: what production runs, the deploy check, the dependency scan
 import SignInCodeCard from "./SignInCodeCard";   // A391
 import TestDataCard from "./TestDataCard";   // A396
 import SupportLogsCard from "./SupportLogsCard";   // A519
@@ -387,6 +388,7 @@ const NAV_GROUPS = [
     { id: "team",       icon: "◎", label: "Team", superOnly: true },
     { id: "audit",      icon: "≡", label: "Audit log" },
     { id: "migrations", icon: "⛃", label: "Database" },
+    { id: "system",     icon: "◍", label: "System", superOnly: true },   // A525
     { id: "account",    icon: "⊙", label: "My account" },
   ] },
 ];
@@ -2690,6 +2692,8 @@ export default function AdminPortal() {
     if (page === "alerts")    return <AlertsPage req={req} isSuper={admin?.role === "super_admin"} />;
     if (page === "tech")      return <TechPage req={req} admin={admin} />;
     if (page === "migrations") return <MigrationsPage req={(p: string) => req("GET", p, undefined)} />;
+    // A525: super admins only — the menu hides it from agents and the cloud refuses them.
+    if (page === "system" && admin?.role === "super_admin") return <SystemPage req={req} />;
     return <DashboardPage req={req} onOpenAlerts={() => setPage("alerts")} onSelectClient={handleSelectClient} />;
   })();
 

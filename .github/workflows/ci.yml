@@ -85,6 +85,13 @@ jobs:
           test -f dist/index.js || { echo "::error::dist/index.js was not emitted — the build silently failed"; exit 1; }
           echo "dist/index.js present ($(wc -c < dist/index.js) bytes)"
 
+      # A525: the server's production dependencies may carry no high or critical vulnerability (0 after the nodemailer
+      # 10.0.16 upgrade). From the lockfile, so it needs no install. The other apps and the daily report:
+      # .github/workflows/security-scan.yml (the admin portal's System page).
+      - name: Server dependency audit
+        working-directory: apps/server
+        run: npm audit --omit=dev --audit-level=high --package-lock-only
+
       - name: Install dashboard deps
         working-directory: apps/dashboard
         run: npm ci
@@ -568,6 +575,11 @@ jobs:
         run: |
           node scripts/check-root-clean.mjs
           node scripts/check-root-clean.mjs --self-test
+
+      # A525: the daily dependency scan's summary (security-scan.yml) — counts per app, the fix per package, capped
+      # under the server's 64 KB limit; fail only for the server's high or critical ones.
+      - name: Ops audit summary self-test
+        run: node scripts/ops-audit-summary.mjs --self-test
 
       # ── Desktop suites that do NOT need Electron ────────────────────────────
       # 92 desktop tests were added on 2026-08-08 and none of them ran here, so

@@ -2550,7 +2550,7 @@ export function registerIpcHandlers() {
   // A452: the expected figures only to a manager signed in here — never to the cashier whose shift it is (blind close).
   handle('shift:confirmView', async (_event, shiftId: string) => {
     const v = confirmView(String(shiftId));
-    return signedInConfirmer() ? v : { ...v, expected: null };
+    return signedInConfirmer() ? v : { ...v, expected: null, cash: null };   // A527: the cash lines carry the expected figure
   });
 
   // ── A433 (owner, 2026-10-10: "yes if they have logged in as the manager, and under sales report it should cover all

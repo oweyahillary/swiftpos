@@ -93,6 +93,14 @@ services:
       - key: ADMIN_ALERT_EMAIL
         sync: false
 
+      # ── Ops events (A525) — optional; unset = POST /api/ops/events answers 503 OPS_INGEST_DISABLED ──
+      # The GitHub workflows (verify-prod-deploy.yml, security-scan.yml) post what they found with it: a deploy that
+      # did not reach production, the dependency scan. The admin portal's System page reads them. At least 32
+      # characters; the SAME value as the GitHub repository secret OPS_INGEST_TOKEN. Generate:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      - key: OPS_INGEST_TOKEN
+        sync: false
+
       # ── Mail — optional, degrades gracefully ────────────────────────────────
       # lib/mailer.ts:16 guards on presence; unset simply disables outbound mail.
       # Needed for owner notifications (e.g. device_pending) and daily summaries.

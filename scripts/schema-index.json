@@ -132,7 +132,8 @@
     "mode_switched_at": "\"timestamp with time zone\"",
     "mode_switched_by": "\"text\"",
     "web_sync_enabled": "\"boolean\" NOT NULL",
-    "tech_reveal_code": "\"text\""
+    "tech_reveal_code": "\"text\"",
+    "kds_version": "\"integer\" NOT NULL"
   },
   "business_branding": {
     "business_id": "\"uuid\" NOT NULL",
@@ -668,6 +669,16 @@
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "owner_pin_set": "\"boolean\" NOT NULL"
   },
+  "ops_events": {
+    "id": "\"uuid\" NOT NULL",
+    "kind": "\"text\" NOT NULL",
+    "status": "\"text\" NOT NULL",
+    "commit": "\"text\"",
+    "title": "\"text\" NOT NULL",
+    "details": "\"jsonb\" NOT NULL",
+    "source": "\"text\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "order_item_modifiers": {
     "id": "\"uuid\" NOT NULL",
     "order_item_id": "\"uuid\" NOT NULL",
@@ -984,7 +995,8 @@
     "free_quantity": "\"integer\"",
     "status": "\"text\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "updated_at": "\"timestamp with time zone\" NOT NULL"
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "applies_at_sale": "\"boolean\" NOT NULL"
   },
   "pumps": {
     "id": "\"uuid\" NOT NULL",

@@ -100,6 +100,14 @@ sale(sh.id, 'cash', 500); sale(sh.id, 'mpesa', 3250); sale(sh.id, 'card', 700);
 const z = S.closeShift(2500, undefined, null, { MPESA: 3250, card: 0, cash: 1 });
 ok('the cashier\'s declaration is stored — every method, cash = the counted drawer',
   JSON.stringify(JSON.parse(row(sh.id).declared_methods)) === JSON.stringify({ mpesa: 3250, card: 0, cash: 2500 }), row(sh.id).declared_methods);
+// A527 (owner, 2026-10-17): "a manager when closing should see 4 items — opening float, cash sold, cash sold + float,
+// what the cashier keyed in" — on the till's own confirm view (the IPC hands it to a signed-in manager only).
+{
+  const cv = S.confirmView(sh.id).cash;
+  ok('A527 — the manager\'s four cash lines: float 2000, cash sold 500, both 2500, the cashier keyed in 2500 (nothing moved)',
+    cv && cv.opening_float === 2000 && cv.cash_sales === 500 && cv.float_plus_sales === 2500 && cv.cashier === 2500
+      && cv.other === 0 && cv.expected === 2500, JSON.stringify(cv));
+}
 ok('the Z-report says it awaits a manager', z.confirmation?.status === 'awaiting', JSON.stringify(z.confirmation));
 ok('it is listed as awaiting a manager', S.awaitingConfirmation().map((a) => a.id).join() === sh.id
   && S.awaitingConfirmation()[0].cashier_name === 'Test Cashier');
@@ -276,9 +284,10 @@ ok('the closed shift offers "Manager: confirm now"', /data-testid="confirm-now"/
 ok('the confirm screen shows a signed-in manager the expected figures and the variance; anyone else none; the cashier\'s only with the switch',
   /const showExpected = !!view\.expected;/.test(src('renderer/components/ConfirmShiftModal.tsx'))
   && /data-testid=\{`variance-\$\{c\}`\}/.test(src('renderer/components/ConfirmShiftModal.tsx'))
-  && /return signedInConfirmer\(\) \? v : \{ \.\.\.v, expected: null \};/.test(src('main/ipcHandlers.ts'))
+  // A527: the cash lines carry the expected figure, so they go with it
+  && /return signedInConfirmer\(\) \? v : \{ \.\.\.v, expected: null, cash: null \};/.test(src('main/ipcHandlers.ts'))
   && /const cashierSaid = view\.showCashier && view\.declared \? \(view\.declared\[c\] \?\? 0\) : null;/.test(src('renderer/components/ConfirmShiftModal.tsx'))
-  && /if \(!showCashier\) return \{ showCashier: false, declared: null, expected \};/.test(src('main/shiftService.ts')));
+  && /if \(!showCashier\) return \{ showCashier: false, declared: null, expected, cash \};/.test(src('main/shiftService.ts')));
 ok('Close lists the shifts awaiting a manager and holds the close button',
   /data-testid="awaiting-shifts"/.test(src('renderer/pages/DayCloseTab.tsx'))
   && /disabled=\{!isManager \|\| busy \|\| counted === '' \|\| awaiting\.length > 0\}/.test(src('renderer/pages/DayCloseTab.tsx')));

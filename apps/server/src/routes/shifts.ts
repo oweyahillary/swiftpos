@@ -19,7 +19,7 @@ import { reasonsNeeded, cleanReasons, missingReasons } from '../lib/confirmReaso
 import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { MONEY_MOVEMENT_MANAGER_ONLY } from '../lib/posFeatures';   // A453
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
-import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
+import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, cashBreakdown, type MethodMap } from '../lib/shiftConfirm';
 import { confirmerRows, confirmerByPin, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from '../lib/confirmerLookup';
 import { payoutApprover } from '../lib/payoutApproval';   // 0.6.37 (A388)
 import { buildBranchReport, type BranchOrder, type BranchShift, type TillName } from '../lib/branchReport';
@@ -815,13 +815,18 @@ router.post('/:id/manager-confirm', async (req, res) => {
 // holds the screen for the confirming manager may read it.
 router.get('/:id/confirm-view', async (req, res) => {
   const showCashier = (await businessPosFeatures(req.businessId)).confirm_shows_cashier_figures;
-  const { data: shift } = await supabase.from('shifts').select('id, declared_methods, expected_cash, opening_float')
+  const { data: shift } = await supabase.from('shifts').select('id, declared_methods, expected_cash, opening_float, closing_float')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   // A452 (owner, 2026-10-12): "while confirming a shift let the manager see what the system holds … so that he can get
   // the variance before confirming". The expected figures go to a person who may confirm (a manager, the owner) only —
   // never to a cashier holding the screen.
   const expected = shift && callerMayConfirm(req) ? await expectedByMethod(shift as any) : null;
-  res.json({ showCashier, declared: showCashier ? methodMap(shift?.declared_methods) : null, expected });
+  // A527 (owner, 2026-10-17): "a manager when closing should see 4 items — opening float, cash sold, cash sold + float,
+  // what the cashier keyed in". With the expected figures only (the same gate); `other` = cash in/out and cash expenses,
+  // so the lines always add up to the expected cash.
+  const cash = shift && expected ? cashBreakdown(Number((shift as any).opening_float) || 0, await shiftCashSales(String((shift as any).id)),
+    Number(expected.cash ?? 0), methodMap((shift as any).declared_methods)?.cash ?? (shift as any).closing_float) : null;
+  res.json({ showCashier, declared: showCashier ? methodMap(shift?.declared_methods) : null, expected, cash });
 });
 
 /**
@@ -1023,7 +1028,9 @@ async function openSiblingCash(shift: { id: string; status: string; business_id?
   return out;
 }
 
-export async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {   // A476: the owner emails show it too
+/** The cash a shift's completed orders took (refunds are negative cash rows, so this is net). A527: shown on its own on
+ *  the manager's confirm screen, as well as inside expected cash. */
+async function shiftCashSales(shiftId: string): Promise<number> {
   // Paged: a plain .select('id') silently truncates at Supabase's row cap, and
   // expected cash computed from a TRUNCATED order list reports a large phantom
   // surplus at close with no error anywhere. See lib/pgQuery.ts.
@@ -1038,7 +1045,11 @@ export async function computeExpectedCash(shiftId: string, openingFloat: number)
     );
     cashSales = cashPayments.reduce((s, p: { amount: number }) => s + Number(p.amount), 0);
   }
+  return cashSales;
+}
 
+export async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {   // A476: the owner emails show it too
+  const cashSales = await shiftCashSales(shiftId);
   const { floatIn, floatOut } = await shiftFloats(shiftId);   // P1-4: throws on a failed read
   const expenses = await shiftExpenses(shiftId);
   return Number(openingFloat) + cashSales + floatIn - floatOut - expenses;

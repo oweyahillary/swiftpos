@@ -19,7 +19,7 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.2.1",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^10.0.16",
     "qrcode-generator": "2.0.4",
     "resend": "^6.12.2",
     "ws": "^8.18.0",

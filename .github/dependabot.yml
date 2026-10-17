@@ -1,0 +1,73 @@
+# A525: dependency updates as pull requests — so a fix for a vulnerability arrives without anyone having to look.
+#
+# Version updates (below) target dev: the owner's flow is dev → CI → a PR to main. Weekly, at most 5 open per
+# directory, minor and patch updates grouped into one PR per directory (majors one at a time, read before merging).
+#
+# NOTE: Dependabot SECURITY updates (repository Settings → Code security → Dependabot security updates) are separate
+# from this file and always target the DEFAULT branch (main), whatever target-branch says here. Merge them back into
+# dev afterwards.
+#
+# The daily scan of what is vulnerable now: .github/workflows/security-scan.yml (the admin portal's System page).
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /apps/server
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      server-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/dashboard
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dashboard-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/admin
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      admin-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/desktop
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      desktop-minor-patch:
+        update-types: [minor, patch]
+
+  # The root lockfile (the repository's own scripts and test tools).
+  - package-ecosystem: npm
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      root-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        update-types: [minor, patch]

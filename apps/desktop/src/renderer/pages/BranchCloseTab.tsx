@@ -25,7 +25,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { posApi, type BranchPeerShift, type ShiftMoneyView } from '../lib/posApi';
 import { methodLabel } from '../../shared/paymentCatalogue';   // A465
-import { methodName, type MethodOption } from '../../shared/shiftConfirm';
+import { methodName, cashLines, type MethodOption } from '../../shared/shiftConfirm';
 import MethodDot from '../components/MethodDot';
 import ShiftPanel from './ShiftPanel';   // A520: the server's own drawer closes here, with the shift close everyone knows
 
@@ -580,6 +580,27 @@ function ConfirmHere({ till, s, money, options, currency, onDone, onCancel }: {
     <div className="mt-2 bg-gray-900/80 border border-action-600/40 rounded-md p-3 space-y-2" data-testid={`confirm-form-${s.id}`}>
       <p className="text-xs text-gray-300">Count each method — the drawer, the M-Pesa statement, the card machine's total. What the system expects is beside it; the difference shows as you type.</p>
       {error && <p className="text-xs text-red-300">{error}</p>}
+      {/* A527 (owner, 2026-10-17): the cash in four lines — the float, cash sold, the two together and what the cashier
+          keyed in. A till before 1.0.19 does not send the cashier's figure (nor the declaration, unless the owner shows
+          it): that line is left out rather than read as "not keyed in". */}
+      {(() => {
+        const keyed = s.cash.cashier !== undefined ? s.cash.cashier : s.declared ? (s.declared.cash ?? null) : undefined;
+        const other = Math.round((s.cash.float_in - s.cash.float_out - s.cash.expenses) * 100) / 100;
+        const fl = s.cash.opening_float, sold = s.cash.cash_sales;
+        const lines = cashLines({ opening_float: fl, cash_sales: sold, float_plus_sales: Math.round((fl + sold) * 100) / 100, other,
+          expected: Number(s.expected.cash ?? 0), cashier: keyed ?? null }).filter((l) => l.key !== 'cashier' || keyed !== undefined);
+        return (
+          <div className="bg-gray-800/60 rounded-md px-3 py-2 text-sm" data-testid={`confirm-cash-${s.id}`}>
+            {lines.map((l) => (
+              <div key={l.key} data-testid={`confirm-cash-${l.key}`}
+                className={`flex justify-between gap-3 py-0.5 ${l.key === 'cashier' ? 'border-t border-gray-700 mt-1 pt-1.5' : ''}`}>
+                <span className={l.strong ? 'text-white font-medium' : 'text-gray-300'}>{l.label}</span>
+                <span className={`tabular-nums ${l.strong ? 'text-white font-semibold' : 'text-gray-100'}`}>{l.amount == null ? 'not keyed in' : money(l.amount)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <table className="w-full text-sm">
         <thead><tr className="text-xs text-gray-500 text-left">
           <th className="font-normal">Method</th><th className="font-normal text-right pr-2">Expected</th>
