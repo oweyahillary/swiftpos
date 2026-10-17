@@ -22,7 +22,8 @@ import { rulesFromWire, type ReversalRules } from './reversalRules';
 import { cleanCutoff } from './businessDay';   // 0.6.34
 import { supportContact, supportWire, type SupportContact } from './support';   // 0.6.35 (A384)
 import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
-import { parseStockCountFreeze, type StockCountFreeze } from './stockCountFreeze';   // A394
+import { parseStockCountFreeze, freezeExpired, NO_FREEZE, type StockCountFreeze } from './stockCountFreeze';   // A394, A521
+import { logLine } from './logFile';   // A521
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -464,15 +465,43 @@ export function setOrderNotePicks(picks: string[] | null | undefined): void {
  * A394: cache the items a stock count freezes (the cloud's `stockCount`). undefined = not said (older cloud / node) →
  * keep; null = nothing frozen. The ONLY writer.
  */
-export function setStockCountFreeze(raw: unknown): void {
+export function setStockCountFreeze(raw: unknown, nowMs: number = Date.now()): void {
   if (raw === undefined) return;
   const f = parseStockCountFreeze(raw);
+  // A521: when the cloud last confirmed the list — now, or (from a branch server's bundle) when the SERVER last heard it,
+  // never later than now. A server offline for a day passes its old time on, and its tills lift the freeze with it.
+  if (f.productIds.length) {
+    const passed = f.heard_at ? Date.parse(f.heard_at) : NaN;
+    f.heard_at = new Date(Number.isFinite(passed) ? Math.min(passed, nowMs) : nowMs).toISOString();
+  }
   getLocalDb().prepare(`UPDATE device_config SET stock_count_freeze = ? WHERE id = 1`).run(JSON.stringify(f));
 }
 
-/** A394: what this till must not sell right now (the last list heard — it stays in force offline). */
-export function getStockCountFreeze(): StockCountFreeze {
-  return parseStockCountFreeze(getDeviceConfig()?.stock_count_freeze ?? null);
+/** A521: the freeze ref already logged as lifted (one line per count, not one per tap). */
+let _freezeLiftLogged: string | null = null;
+
+/** A394: what this till must not sell right now (the last list heard — it stays in force offline).
+ *  A521 (#7): for at most FREEZE_MAX_AGE_MS (12 h) without the cloud confirming it — then it lifts by itself, with a log
+ *  line. A list cached before A521 (no heard_at) is stamped now: its 12 h start at this build's first read. */
+export function getStockCountFreeze(nowMs: number = Date.now()): StockCountFreeze {
+  const f = parseStockCountFreeze(getDeviceConfig()?.stock_count_freeze ?? null);
+  if (!f.productIds.length) return f;
+  if (!f.heard_at) {
+    f.heard_at = new Date(nowMs).toISOString();
+    try { getLocalDb().prepare(`UPDATE device_config SET stock_count_freeze = ? WHERE id = 1`).run(JSON.stringify(f)); } catch { /* read-only: judged next read */ }
+    return f;
+  }
+  if (freezeExpired(f, nowMs)) {
+    const key = `${f.ref ?? ''}|${f.heard_at}`;
+    if (_freezeLiftLogged !== key) {
+      _freezeLiftLogged = key;
+      try {
+        logLine('sale', `A521 stock-count freeze${f.ref ? ` ${f.ref}` : ''} (${f.productIds.length} item(s)) lifted on this till: not confirmed by the cloud since ${f.heard_at} (over 12 h) — they sell again until the cloud says otherwise`);
+      } catch { /* no log here */ }
+    }
+    return NO_FREEZE;
+  }
+  return f;
 }
 
 /**

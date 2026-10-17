@@ -6,7 +6,7 @@
 import { safeStorage } from 'electron';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
-import { recordChange, pushLocalChanges, changeStates, relayChange, type RecordInput, type Secrets, type LocalChangeRow } from './localChanges';
+import { recordChange, pushLocalChanges, changeStates, relayChange, dismissRefused, type RecordInput, type Secrets, type LocalChangeRow } from './localChanges';
 import { type ChangeEntity, type TillChange, changeKeys } from './tillChanges';
 import { tillChangesPost, tillChangesState, syncAll } from './syncEngine';
 import { relayChangesToNode, hasNode } from './nodeClient';
@@ -96,3 +96,8 @@ async function sendOnce(): Promise<void> {
 
 /** What waits on this till, for the screens. */
 export function tillChangeStates(entity?: ChangeEntity) { return changeStates(getLocalDb(), entity); }
+
+/** A520: clear the refused changes the signed-in person could have made (mayChange) from the list. */
+export function dismissRefusedChanges(may: (entity: ChangeEntity, op: string, data: Record<string, unknown> | null) => boolean = mayChange) {
+  return dismissRefused(getLocalDb(), may);
+}

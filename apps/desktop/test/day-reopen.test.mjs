@@ -114,7 +114,10 @@ ok('…and the running totals include both earlier cash-ups', D.reopenState(dayI
 
 // Still enforced: one shift per till at a time; the stale-yesterday lock.
 ok('a second shift on the same till while one is open is still refused', !!threw(() => S.openShift(500)));
-S.closeShift(1000);
+// A523: the last shift is closed with the cashier's count (as the till always does — `declared`), so the earlier day has
+// money a manager must still confirm. An earlier day with nothing left to count now closes itself (dayService
+// autoCloseEmptyDay); one with money still blocks, which is what this pins.
+S.closeShift(1000, undefined, null, { cash: 1000 });
 db.prepare(`UPDATE business_days SET business_date = '2026-01-01' WHERE id = ?`).run(dayId);
 ok('an unclosed earlier day still blocks a new shift (a manager must close it)', /never closed/.test(threw(() => S.openShift(500))?.message ?? ''));
 

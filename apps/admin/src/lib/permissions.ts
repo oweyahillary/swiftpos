@@ -80,8 +80,12 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Approve with their PIN', description: 'Approve cash out, expenses and removing items sent to the kitchen, confirm cashiers\' drawers and see the expected cash' },
   { key: 'shifts.force_close',   group: 'drawer', surface: 'both', manager: true,
     label: 'Force-close a drawer', description: 'Close another person\'s drawer without a cash count (it shows as unreconciled)' },
+  // A520 (owner, 2026-10-17: "break close day and close branch as two, supervisor can have close day but not branch, a
+  // manager can both"): Close Day is one till's own day (and the day lock's way out); Close Branch closes every till's.
   { key: 'shifts.close_day',     group: 'drawer', surface: 'both', manager: true,
-    label: 'Close the day and the branch', description: 'Close the trading day on a till, and Close Branch on the branch server' },
+    label: 'Close the day', description: 'Close the trading day on a till (Close Day) - the way out of the day lock' },
+  { key: 'shifts.close_branch',  group: 'drawer', surface: 'till', manager: true,
+    label: 'Close the branch', description: 'Close Branch on the branch server: confirm the day totals of every till and close every till day' },
 
   // ── Reports — one key per report ─────────────────────────────────────────────────────────────────────────────────
   { key: 'reports.overview',     group: 'reports', surface: 'both', manager: true,
@@ -154,6 +158,9 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Ingredient list', description: 'Add and change ingredients' },
   { key: 'payables.manage',      group: 'stock', surface: 'web',
     label: 'Supplier bills and payments', description: 'What is owed to suppliers, their bills and paying them' },
+  // A518: read-only supplier accounts (the Accountant's). Whoever holds payables.manage sees them already.
+  { key: 'payables.view',        group: 'stock', surface: 'web',
+    label: 'See supplier bills', description: 'See supplier bills, payments and returns, without recording or paying them' },
 
   // ── Customers ────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'customers.view',       group: 'customers', surface: 'both', cashier: true, manager: true,
@@ -239,7 +246,7 @@ export const LEGACY: Readonly<Record<string, readonly string[]>> = {
   'settings.manage':   ['settings.business', 'settings.branches', 'settings.payments', 'settings.integrations',
                         'receipt.manage', 'stations.manage', 'tables.manage', 'devices.approve', 'etims.manage',
                         'changes.approve', 'shifts.force_close', 'shifts.close_day', 'shifts.confirm', 'sales.reprint',
-                        'settings.mpesa'],
+                        'settings.mpesa', 'shifts.close_branch'],   // A520: settings.manage closed the branch before
 };
 
 /** Keys that, before A490, EVERY signed-in person could use (no check existed). Migration 134 grants them to the
@@ -344,6 +351,7 @@ export interface BuiltInRole {
  * They are ordinary roles: the owner renames, edits or deletes them on Settings › Roles and permissions.
  *   Manager / Cashier — the catalogue's own manager / cashier defaults (each key's `manager` / `cashier` flag), as before.
  *   Supervisor — sells like a cashier, and approves voids, refunds and sales on account with their PIN, confirms drawers,
+ *     closes a till's day (shifts.close_day, A520 — never the branch: shifts.close_branch is the Manager's),
  *     sees every cashier's sales and the branch's sales and shift reports. No settings, staff, roles, costs or stock.
  *   Waiter — takes orders, sends them to the kitchen and takes payment, discounts within the limit. Not the staff list,
  *     not customer credit, no refunds, no reports, no drawer money (the cashier's back-office-free subset).
@@ -353,8 +361,8 @@ export interface BuiltInRole {
  *     report, and cost prices (deliveries carry them). Not inventory.adjust: changing a figure by hand and reviewing
  *     counts is the check ON the storekeeper's counts, so it stays with the owner / manager. No selling.
  *   Accountant — every report (read-only, costs and tax included, and downloads), the orders / shifts pages and the
- *     expenses list. No selling, no edits, no settings, no staff. (Supplier bills have no read-only key yet: payables.manage
- *     also pays them, so it is left out.)
+ *     expenses list, and the supplier bills read-only (payables.view, A518 — migration 143 gives it to the Accountant
+ *     roles 142 made). No selling, no edits, no settings, no staff, no paying suppliers (payables.manage).
  *   Fuel attendant — pump sales and the pumps (fuel.manage: active / idle, tank deliveries) and the menu. No discounts,
  *     refunds, reports or drawer money.
  */
@@ -365,7 +373,7 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
   { name: 'Cashier', description: 'Sells at the till', keys: CASHIER_DEFAULT_KEYS },
   { name: 'Supervisor', description: 'Sells, and approves voids, refunds, sales on account and drawers with their PIN',
     keys: [...CASHIER_DEFAULT_KEYS, 'sales.void', 'sales.refund', 'sales.reprint', 'sales.history_all', 'customers.credit',
-      'shifts.confirm', 'reports.sales', 'reports.shifts'] },
+      'shifts.confirm', 'reports.sales', 'reports.shifts', 'shifts.close_day'] },   // A520: Close Day, not Close Branch
   { name: 'Waiter', description: 'Takes orders, sends them to the kitchen and takes payment',
     keys: ['orders.create', 'sales.discount', 'products.view', 'inventory.view', 'customers.view', 'customers.edit',
       'reservations.manage'] },
@@ -377,7 +385,7 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
   { name: 'Accountant', description: 'Reads the books - every report, the orders and the expenses, changes nothing',
     keys: ['reports.overview', 'reports.sales', 'reports.items', 'reports.staff', 'reports.shifts', 'reports.voids',
       'reports.inventory', 'reports.fuel', 'reports.tax', 'reports.costs', 'reports.labour', 'reports.monthly_pack',
-      'reports.payments', 'reports.export', 'orders.view_all', 'expenses.view'] },
+      'reports.payments', 'reports.export', 'orders.view_all', 'expenses.view', 'payables.view'] },
   { name: 'Fuel attendant', description: 'Sells fuel at the pumps', keys: ['orders.create', 'products.view', 'fuel.manage'],
     types: FUEL_BUSINESS_TYPES },
 ];

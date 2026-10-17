@@ -38,7 +38,8 @@ import { unpackNodeBundle, numOrNull, type AcquiredReference, identityFromWire }
 import { buildCloudOrderPayload } from './peerRelay';
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
-import { closesToAdopt, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401
+import { closesToAdopt, keepOwnExpected, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401, A521
+import { computeZReport } from './shiftService';   // A521: the till's own expected cash when it adopts a web close
 import { applyTestDataClear, applyMenuClear, dropPurgedMenu, type ClearPeriod } from './testDataClear';   // A404, A482
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
@@ -738,6 +739,9 @@ async function runPushStagesOnce(errors: string[]): Promise<number> {
       return 0;
     }
   };
+  // A521 (#15): the cloud's test-data clears come down BEFORE anything goes up (asked at most every 90 s; the first push
+  // after a start always asks). A till that was off during a clear pushed its unsent test sales and shifts back first.
+  await stage('test-data clears', () => testClearsBeforePush());
   // A338: first, give back to the queue what a sibling drawer's clash parked (0.6.10 and earlier), so it goes in this pass.
   // A363: then what a trading-day clash parked (an offline close-and-reopen), once.
   await stage('requeue', async () => { requeueAfterDayClash(); requeueTransientConflicts(); return requeueAfterDrawerClash(); });
@@ -965,14 +969,16 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     // lets a cashier-only till pick up a freshly-generated/backfilled reveal code.
     // Best-effort — a failure here must never affect the sync result.
     try { await refreshTechConfig(_accessToken); } catch { /* non-fatal */ }
+    // A404: test data ZapTill cleared on the cloud is cleared here too. Best-effort, like the above.
+    // A521 (#15): BEFORE the push — a till that was off during the clear pushed its unsent test sales and shifts back up
+    // first, and the cloud had them again. (runPushStages checks too, for the pushes that do not come through here.)
+    try { await runTestDataClears(); } catch { /* non-fatal */ }
     pushed = await runPushStages(errors);
     // A275: after pushing local state up, pull any remote day-close instruction
     // and execute it locally. Best-effort — must never affect the sync result.
     try { await runDayCloseInstructions(errors); } catch { /* non-fatal */ }
     // Cross-sync stage 1: the web's sales on this till's drawers. Best-effort, like the above.
     try { await pullWebSales(); } catch { /* non-fatal */ }
-    // A404: test data ZapTill cleared on the cloud is cleared here too. Best-effort, like the above.
-    try { await runTestDataClears(); } catch { /* non-fatal */ }
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -1026,8 +1032,62 @@ export async function refreshTechConfigNow(): Promise<void> {
 /** A513: syncAll's remote instructions (a day close from the web, test data cleared) — a start-up step of their own. */
 export async function runRemoteInstructionsNow(): Promise<void> {
   if (!_accessToken || !_serverUrl || !isOnline()) return;
-  try { await runDayCloseInstructions([]); } catch { /* non-fatal */ }
+  // A521 (#15): the clears first (they come before anything this till sends).
   try { await runTestDataClears(); } catch { /* non-fatal */ }
+  // A523: a drawer the web closed is closed here first, so a queued day close never waits on it.
+  try { await pullShiftCloses(); } catch { /* non-fatal */ }
+  try { await runDayCloseInstructions([]); } catch { /* non-fatal */ }
+}
+
+/**
+ * A523 — learn what the cloud closed BEFORE deciding this till is locked (A522 asked: "make sure a till that comes back
+ * learns of a web force-close, so a queued close does not wait on its own still-open drawer").
+ *
+ * In this order: the drawers the web closed or force-closed (adopted here — the till's own expected cash kept, A521), the
+ * shifts confirmed elsewhere, then the day closes waiting for this till (a web close, Close Day from the web, a day closed
+ * as abandoned). Each step is fail-soft; offline it does nothing. Run at start-up (before the push) and by the day gate
+ * when it would lock (ipcHandlers 'day:gate', learnBeforeLock). Returns whether the cloud was asked.
+ */
+export async function learnCloudCloses(): Promise<boolean> {
+  if (!_serverUrl || !(_staffToken || _accessToken) || !isOnline()) return false;
+  try { await pullShiftCloses(); } catch { /* the next beat */ }
+  try { await pullShiftConfirmations(); } catch { /* the next beat */ }
+  try { await runDayCloseInstructions([]); } catch { /* the next beat */ }
+  return true;
+}
+
+/** A523: the day gate asks the cloud at most once a minute, and waits for it at most LEARN_WAIT_MS — a lock screen never
+ *  hangs on a slow line (the 90 s beat carries on behind it). */
+export const LEARN_EVERY_MS = 60_000;
+export const LEARN_WAIT_MS = 8_000;
+let _learnedAt = 0;
+export async function learnBeforeLock(nowMs = Date.now()): Promise<boolean> {
+  if (_learnedAt && nowMs - _learnedAt < LEARN_EVERY_MS) return false;
+  _learnedAt = nowMs;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      learnCloudCloses(),
+      new Promise<boolean>((r) => { timer = setTimeout(() => r(false), LEARN_WAIT_MS); }),
+    ]);
+  } catch { return false; } finally { if (timer) clearTimeout(timer); }
+}
+
+/**
+ * A521 (#19): the cloud's remote day close (a manager closed this till's day on the web) on its own 90 s beat — it rode
+ * the 10-min full sync, so a till waited up to 10 minutes to close a day closed on the web. Single-flight; cheap (one GET).
+ */
+export const REMOTE_CLOSE_BEAT_MS = 90_000;
+let _remoteCloseRunning = false;
+export async function remoteCloseBeat(): Promise<void> {
+  if (_remoteCloseRunning || !_accessToken || !_serverUrl || !isOnline()) return;
+  _remoteCloseRunning = true;
+  try {
+    await testClearsBeforePush();
+    // A523: the web's drawer closes first — a day close queued with them closes on this beat, not the next.
+    try { await pullShiftCloses(); } catch { /* the 20 s beat */ }
+    await runDayCloseInstructions([]);
+  } catch { /* the next beat */ } finally { _remoteCloseRunning = false; }
 }
 
 // A275 — pull any remote day-close instruction and execute it LOCALLY, then ack.
@@ -1035,7 +1095,13 @@ export async function runRemoteInstructionsNow(): Promise<void> {
 // cash + variance. Idempotent — a day already closed acks success (already_closed),
 // and an instruction is re-offered until acked, so a crash between execute and ack
 // is safe (the re-run no-ops). Best-effort: never throws into the sync result.
+let _dayCloseInFlight = false;   // A521: the 90 s beat and the full sync never run it side by side
 async function runDayCloseInstructions(errors: string[]): Promise<void> {
+  if (_dayCloseInFlight) return;
+  _dayCloseInFlight = true;
+  try { await runDayCloseInstructionsOnce(errors); } finally { _dayCloseInFlight = false; }
+}
+async function runDayCloseInstructionsOnce(errors: string[]): Promise<void> {
   const deviceId = getDeviceConfig()?.device_id ?? '';
   if (!deviceId) return;
   let pending: Array<{ id: string; kind: string; payload: any }> = [];
@@ -1049,6 +1115,11 @@ async function runDayCloseInstructions(errors: string[]): Promise<void> {
   for (const ins of pending ?? []) {
     if (ins.kind !== 'close_day') continue;
     const ack = executeCloseDay(ins.payload);
+    if (ack.ok && !ack.already_closed) {
+      logLine('sync', `day close from the web carried out here (${ins.payload?.cloud_closed ? 'the web closed it — adopted' : 'remote close'})`);
+      // A523: the till's own figures for that day go up now (the cloud keeps one close — routes/sync.ts).
+      void syncPush().catch(() => { /* the 30 s backstop */ });
+    }
     try {
       await syncFetch(`${_serverUrl}/api/day-close/ack`, {
         method: 'POST',
@@ -1057,6 +1128,10 @@ async function runDayCloseInstructions(errors: string[]): Promise<void> {
           instruction_id: ins.id,
           ok:      ack.ok,
           error:   ack.error ?? null,
+          // A523 (A522 asked): why it cannot close yet, as a code (DRAWER_OPEN / SHIFTS_UNCONFIRMED) — the cloud keeps
+          // the close waiting on it, never on the wording of the text.
+          code:    ack.code ?? null,
+          wait:    ack.wait === true,
           summary: ack.summary ?? null,
         }),
       });
@@ -1162,7 +1237,12 @@ export async function pullShiftCloses(): Promise<number> {
       WHERE id = @id AND status = 'open' AND COALESCE(device_id,'') = COALESCE(@dev,'')`);
     let n = 0;
     const dev = getDeviceConfig()?.device_id ?? null;
-    for (const c of closes) {
+    for (const web of closes) {
+      // A521 (#9): the till's own expected cash, from its own rows (read while the shift is still open here) — never the
+      // cloud's stale figure over it; the web's is kept in the note as the web's.
+      let own: number | null = null;
+      try { own = computeZReport(web.id).totals.expectedCash; } catch { own = null; }
+      const c = keepOwnExpected(web, own);
       if (apply.run({ ...c, dev }).changes !== 1) continue;
       n++;
       logLine('sync', `shift ${c.id} closed on the cloud — closed here too (${c.status})`);
@@ -1232,11 +1312,20 @@ export async function pullShiftConfirmations(): Promise<number> {
 // A404 — the cloud's test-data clears (admin portal), applied here in order; each one once (the last applied is kept
 // in maintenance_state). The day gate is re-read by the screens on their next check.
 const TEST_CLEAR_KEY = 'test_data_clear_seen';
+/** A521: when this run last heard the cloud's clears (0 = not since start) — the push asks first when it is older. */
+let _testClearsHeardAt = 0;
+export const TEST_CLEAR_CHECK_MS = 90_000;
+/** A521 (#15): the clears, before a push — when not heard within TEST_CLEAR_CHECK_MS. Never throws. */
+export async function testClearsBeforePush(nowMs = Date.now()): Promise<number> {
+  if (_testClearsHeardAt && nowMs - _testClearsHeardAt < TEST_CLEAR_CHECK_MS) return 0;
+  try { return await runTestDataClears(); } catch { return 0; }
+}
 export async function runTestDataClears(): Promise<number> {
   if (!_serverUrl || !_accessToken || !isOnline()) return 0;
   const db = getLocalDb();
   const seen = (db.prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(TEST_CLEAR_KEY) as { value?: string } | undefined)?.value ?? '';
   const res = await syncFetch(`${_serverUrl}/api/pos/test-data-clears${seen ? `?after=${encodeURIComponent(seen)}` : ''}`, { headers: authHeaders() });
+  _testClearsHeardAt = Date.now();   // A521: the cloud answered (a refusal too — the push does not ask it on every sale)
   if (!res.ok) return 0;
   const clears = await res.json() as Array<ClearPeriod & { created_at: string }>;
   let n = 0, menuCleared = false;
@@ -3362,6 +3451,10 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
       // message says so instead of repeating an opaque HTTP code every pass.
       const answer = res.ok ? null : await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
       if (res.ok || (res.status === 409 && (answer as any)?.code === 'ALREADY_CLOSED')) {
+        // A521 (#10): a 409 carrying THIS till's own count means the drawer was closed elsewhere (the web, while this
+        // till was off) — not silently synced: the count stays on this till's row and is logged loudly (the cloud keeps
+        // it as the till's count — A522, shifts.till_counted_cash — and tells the owner).
+        if (!res.ok && !forced && shift.closing_float !== null && shift.closing_float !== undefined) noteCountKeptAfterClose(shift.id, 'close', { cash: Number(shift.closing_float) }, answer);
         db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=? AND sync_status='pending'`).run(shift.id);
         reconciled++;
       } else if (res.status === 404) {
@@ -3381,6 +3474,24 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
 }
 
 const safeJson = (t: string): unknown => { try { return JSON.parse(t); } catch { return undefined; } };
+
+/**
+ * A521 (#10): the cloud answered 409 (already closed / already confirmed) to a close or confirmation carrying this till's
+ * own count. Never silent: one loud log line, and a record (maintenance_state `count_kept_after_close:<shift>`) that the
+ * Tech page's logs and support packs carry. The count itself is never touched on this till's row. Never throws.
+ */
+export function noteCountKeptAfterClose(shiftId: string, what: 'close' | 'confirmation', counts: Record<string, number>, answer: unknown): void {
+  try {
+    const a = (answer ?? {}) as { status?: string; closed_at?: string };
+    const line = Object.entries(counts).map(([m, v]) => `${m} ${v}`).join(', ') || 'no figures';
+    logLine('sync', `A521 !!! shift ${shiftId}: the cloud already had this drawer's ${what === 'close' ? 'close' : 'confirmation'}`
+      + `${a.status ? ` (${a.status}${a.closed_at ? ` ${a.closed_at}` : ''})` : ''} — this till's own ${what === 'close' ? 'count' : 'confirmed counts'} (${line}) `
+      + 'is KEPT on this till and sent with it; the cloud keeps it as the till\'s count and tells the owner. Check the drawer.');
+    const now = new Date().toISOString();
+    getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+      .run(`count_kept_after_close:${shiftId}`, JSON.stringify({ what, counts, cloud: { status: a.status ?? null, closed_at: a.closed_at ?? null }, at: now }), now);
+  } catch { /* the log line is the record */ }
+}
 
 /**
  * A365: send a manager's confirmation of a shift to the cloud — after the shift's close is there (sync_status
@@ -3412,6 +3523,9 @@ async function pushShiftConfirmations(errors: string[]): Promise<number> {
       if (res.status === 401 && await refreshStaffToken()) res = await post();
       const body = await res.json().catch(() => ({} as any));
       if (res.ok || (res.status === 409 && body?.code === 'ALREADY_CONFIRMED')) {
+        // A521 (#10): confirmed elsewhere first — this till's counts are kept on its row and logged loudly (A522 keeps
+        // them on the cloud as till_confirmed_methods when they differ).
+        if (!res.ok) noteCountKeptAfterClose(r.id, 'confirmation', (safeJson(r.confirmed_methods) as Record<string, number> | undefined) ?? {}, body);
         db.prepare(`UPDATE shifts SET confirm_sync='synced' WHERE id=?`).run(r.id);
         sent++;
       } else if (res.status === 403) {

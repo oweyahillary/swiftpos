@@ -189,6 +189,29 @@ export default function TechPage({ onExit }: Props) {
     const r = await posApi.tech.logTail(200);
     setLog(r.text || '(log is empty)');
   });
+  // A519: "Send logs to support" — the last 24 h of the log (secrets removed) to the cloud; a reference for the phone.
+  // Offline (or refused), say so and offer "Save log to file".
+  const [support, setSupport] = useState<{ ok: boolean; text: string; offerSave: boolean } | null>(null);
+  const sendLogs = async () => {
+    setBusy('send-logs'); setSupport(null);
+    try {
+      const r: any = await posApi.tech.sendLogs();
+      await posApi.tech.logAction('tech.logs.send', { ok: r.ok, reference: r.ok ? r.reference : undefined }).catch(() => {});
+      setSupport(r.ok ? { ok: true, text: `Sent — reference ${r.reference}`, offerSave: false }
+        : { ok: false, text: r.offline ? `Offline — ${r.message}` : String(r.message ?? 'The log could not be sent.'), offerSave: true });
+    } catch (e: any) {
+      setSupport({ ok: false, text: e?.message ?? 'The log could not be sent.', offerSave: true });
+    } finally { setBusy(''); }
+  };
+  const saveLog = async () => {
+    setBusy('save-log');
+    try {
+      const r = await posApi.tech.saveLog();
+      if (r.ok) setSupport({ ok: true, text: `Saved to ${r.path}`, offerSave: false });
+    } catch (e: any) {
+      setSupport({ ok: false, text: e?.message ?? 'The log could not be saved.', offerSave: true });
+    } finally { setBusy(''); }
+  };
   const copyLog = async () => { try { await navigator.clipboard.writeText(log ?? ''); setMsg('Log copied'); } catch { setMsg('Copy failed'); } };
 
   const remaining = session ? session.expiresAt - now : 0;
@@ -292,6 +315,22 @@ export default function TechPage({ onExit }: Props) {
             <button onClick={testConn} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Test connection</button>
             <button onClick={viewLog} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">View log</button>
           </div>
+          {/* A519: the log to ZapTill support, a reference to read out on the phone; offline → a file. */}
+          <div className="flex gap-2 mt-2">
+            <button onClick={sendLogs} disabled={!!busy} data-testid="tech-send-logs"
+              className="flex-1 bg-action-700 hover:bg-action-600 disabled:opacity-40 text-white rounded-lg py-2 text-sm">
+              {busy === 'send-logs' ? 'Sending…' : 'Send logs to support'}
+            </button>
+            {support?.offerSave && (
+              <button onClick={saveLog} disabled={!!busy} data-testid="tech-save-log"
+                className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">
+                Save log to file
+              </button>
+            )}
+          </div>
+          {support && (
+            <p data-testid="tech-support-result" className={`mt-2 ${support.ok ? 'text-action-300 text-base font-semibold' : 'text-amber-400 text-xs'}`}>{support.text}</p>
+          )}
           {conn && (
             <p className={`text-[11px] mt-3 ${conn.ok ? 'text-green-400' : 'text-red-400'}`}>
               {conn.ok ? `Server reachable — HTTP ${conn.status ?? '—'} in ${conn.ms}ms` : `Server UNREACHABLE in ${conn.ms}ms — ${conn.error ?? 'no response'} (the "Online" badge only means this machine has a network, not that it can reach the server)`}

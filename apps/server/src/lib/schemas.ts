@@ -186,6 +186,9 @@ export const CloseShiftSchema = z.object({
   // a time not in the future nor before the shift opened; a person on this business's roster). Ignored from the web.
   closed_at: z.string().max(64).nullable().optional(),
   closed_by: z.string().max(64).nullable().optional(),
+  // A522: the owner (or a holder of shifts.close_day) closes on the web although orders sent to the kitchen on this
+  // shift are unpaid — a till that is off holds them; the close is noted with them, and they stay open on that till.
+  ack_unpaid: z.boolean().optional(),
 });
 
 // ── Discounts ─────────────────────────────────────────────────────────────────

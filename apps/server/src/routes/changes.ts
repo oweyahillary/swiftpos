@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { cleanChange, describeChange } from '../lib/tillChanges';
 import { applyChange, decideChange, type ChangeResult } from '../lib/changeApply';
+import { isNodeRole } from '../lib/deviceRegistry';   // A522
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -47,10 +48,24 @@ router.post('/', async (req, res) => {
   } else {
     branchId = req.branchId ?? null;
   }
+  // A522 (for A521 — a staff / PIN change made on a till that was offline, relayed by its branch server): `relayed_for`
+  // names the till it was made on, recorded as the change's device — ONLY when this session is a branch server's own
+  // (a till session whose device serves its branch, isNodeRole) and that till is a device of the same branch. Anything
+  // else keeps the session's own id. The maker's proof (any till of the branch, makerSignedInHere) and rights are unchanged.
+  let relayedFor: string | null = null;
+  const askedRelay = typeof req.body?.relayed_for === 'string' ? req.body.relayed_for.trim().slice(0, 64) : '';
+  if (req.isTill && req.deviceId && askedRelay && askedRelay !== req.deviceId) {
+    const { data: devs, error: rErr } = await supabase.from('user_devices').select('device_id, branch_id, device_role')
+      .eq('business_id', req.businessId).in('device_id', [req.deviceId, askedRelay]);
+    if (rErr) { sendError(res, rErr); return; }
+    const me = (devs ?? []).find((d: any) => d.device_id === req.deviceId) as { branch_id?: string | null; device_role?: string | null } | undefined;
+    const them = (devs ?? []).find((d: any) => d.device_id === askedRelay) as { branch_id?: string | null } | undefined;
+    if (me && them && isNodeRole(me.device_role ?? null) && me.branch_id && them.branch_id === me.branch_id) relayedFor = askedRelay;
+  }
   const ctx = {
     businessId: req.businessId!, branchId,
     // A494: the till's own id from its token; a person's header is only recorded (it proves nothing).
-    deviceId: req.isTill ? req.deviceId : (String(req.headers['x-device-id'] ?? '').split(',')[0].trim() || null),
+    deviceId: req.isTill ? (relayedFor ?? req.deviceId) : (String(req.headers['x-device-id'] ?? '').split(',')[0].trim() || null),
     // A person signed in sends with their own keys — and is who made it (a made_by in the body is never believed for a
     // person); the till's own session (A415) carries none of a person's: the maker must be proven (lib/changeApply.ts).
     callerKeys: req.isTill ? [] : (req.permissionKeys ?? []), callerIsOwner: !req.isTill && req.isOwner === true,

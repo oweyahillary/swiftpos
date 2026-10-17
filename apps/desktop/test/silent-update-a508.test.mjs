@@ -283,6 +283,9 @@ console.log('\n6. Activity — the IPC ping (throttled), the main-process events
     ok('…cleared', A.activitySnapshot().busy === null);
 
     fake += HOUR;
+    // A519: a hold needs someone signed in who may sell (sellGate) — a cashier on a map from before A490 here.
+    L.getLocalDb().prepare(`INSERT OR REPLACE INTO staff_session (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
+      VALUES (1, 'u-a508', 'Ann', 'cashier', 'br-1', 'Main', '{}', '', NULL, '2026-10-16T00:00:00Z')`).run();
     await global.__handlers['held:hold']({}, { orderNumber: 'H-1', label: 'T1', orderType: 'retail', cart: [] });
     ok('a held bill counts as use', A.activitySnapshot().lastUse === fake && A.activitySnapshot().lastUseWhat === 'held');
     fake += MIN;

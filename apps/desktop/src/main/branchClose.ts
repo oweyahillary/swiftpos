@@ -25,7 +25,7 @@ import { randomUUID } from 'crypto';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
 import {
-  closeDayInstructed, getOpenDay, getDayCloseSummary, businessDateNow,
+  closeDayInstructed, getOpenDay, getDayCloseSummary, businessDateNow, confirmedCashOfDay,
 } from './dayService';
 import { getOpenShift } from './syncEngine';
 import { listPeers, forgetDeviceKey } from './nodeIngest';
@@ -42,6 +42,16 @@ export interface CloseDayPayload {
   notes?: string;
   closed_by_staff_id?: string | null;
   closed_by_name?: string | null;
+  /** A520: left by Close Branch for a till it could not hear from (its last report needed nobody): kept until that till
+   *  collects and answers it, or a newer close replaces it — never withdrawn after 24 h (collectInstructions).
+   *  A521: also every close to a till that is not connected (createCloseInstruction, sweepInstructions), and the close a
+   *  manager left for a till the branch closed WITHOUT (its drawer open, a shift to confirm): the till answers "not yet"
+   *  (ack.wait) while its money waits, and closes its day once that drawer is closed and confirmed. */
+  wait_for_till?: boolean;
+  /** A523: the web closed this day on the cloud AT ONCE (Tills & days — the owner, a manager or ZapTill support); the till
+   *  adopts that close: it closes its own day (its own books: its expected cash, its offline sales) and the cloud keeps
+   *  one close (routes/sync.ts — the till's close for the same day refines the figures, never a second close). */
+  cloud_closed?: { at: string; by_name?: string | null; counted_cash?: number | null; expected_cash?: number | null; abandoned?: boolean } | null;
 }
 
 export interface PeerDayState {
@@ -124,13 +134,8 @@ export function ownShifts(): PeerShift[] {
 export function confirmedDayCash(): number {
   const day = getOpenDay();
   if (!day) return 0;
-  const r = getLocalDb().prepare(`
-    SELECT COALESCE(SUM(COALESCE(CAST(json_extract(confirmed_methods, '$.cash') AS REAL), closing_float, 0)), 0) AS n
-      FROM shifts
-     -- own: this till's drawers of its open day.
-     WHERE business_day_id = ? AND status = 'closed' AND COALESCE(device_id,'') = COALESCE(?,'')
-  `).get(day.id, getDeviceConfig()?.device_id ?? null) as { n: number };
-  return Math.round(Number(r?.n ?? 0) * 100) / 100;
+  // A523: one rule, in dayService — the day that closes itself (autoCloseEmptyDay) counts its cash the same way.
+  return confirmedCashOfDay(day.id);
 }
 
 /** A452: the instruction to confirm one of this till's shifts — a manager on the branch server counted it. */
@@ -179,6 +184,30 @@ export function ownDayState(): PeerDayState {
     clock: new Date().toISOString(),  // A452
     terminal: { code: getDeviceConfig()?.terminal_code ?? null, name: getDeviceConfig()?.device_name ?? null },   // A465
   };
+}
+
+/**
+ * A520: what the peer loop sends on every poll — ownDayState, and never nothing. The poll is the ONLY thing that tells the
+ * branch server a till is alive (node_peer_state.updated_at is Close Branch's "last seen"); if building the report threw,
+ * the loop skipped the poll and the till went quiet while it sat switched on. Whatever part cannot be read is left out
+ * (the day and the drawer are read on their own), so a till — a locked one included — always says it is there.
+ */
+export function reportDayState(): PeerDayState & { report_error?: string } {
+  try { return ownDayState(); } catch (err: any) {
+    let day: ReturnType<typeof getOpenDay> = null;
+    let shift: any = null;
+    try { day = getOpenDay(); } catch { /* unreadable */ }
+    try { shift = getOpenShift(); } catch { /* unreadable */ }
+    let shifts: PeerShift[] | undefined;
+    try { shifts = ownShifts(); } catch { shifts = undefined; }
+    return {
+      business_date: day?.business_date ?? null, day_open: !!day,
+      open_drawer: shift ? { cashier_name: null } : null, drawers_on_day: 0, cashiers_counted_total: 0,
+      ...(shifts ? { shifts } : {}), clock: new Date().toISOString(),
+      terminal: { code: getDeviceConfig()?.terminal_code ?? null, name: getDeviceConfig()?.device_name ?? null },
+      report_error: String(err?.message ?? err).slice(0, 200),
+    };
+  }
 }
 
 // ── A465: cash in / out and expenses on any running shift, from the branch server ─────────────────────────────────────
@@ -257,7 +286,7 @@ export function cancelShiftMoneyInstruction(id: number): boolean {
  * watching at 22:00.
  */
 export function executeCloseDay(payload: CloseDayPayload):
-  { ok: boolean; error?: string; summary?: unknown; already_closed?: boolean } {
+  { ok: boolean; error?: string; summary?: unknown; already_closed?: boolean; wait?: boolean; code?: string } {
   try {
     const day = getOpenDay();
 
@@ -288,10 +317,18 @@ export function executeCloseDay(payload: CloseDayPayload):
       notes,
       payload.closed_by_staff_id ?? null,
       payload.closed_by_name ?? null,
+      payload.cloud_closed ? 'web' : 'branch_server',   // A523
     );
     return { ok: true, summary: { ...summary, closedDate: day.business_date } };
   } catch (err: any) {
-    return { ok: false, error: err?.message ?? 'Could not close the day on this till' };
+    // A521: a close that waits for this till (wait_for_till) and is refused only because money still waits here (a drawer
+    // open, a shift to confirm) is "not yet", not "refused": the server keeps it (recordAck) and hands it out again, and
+    // the day closes on the first poll after that drawer is closed and confirmed.
+    // A523 (A522 asked): the reason as a code too — DRAWER_OPEN / SHIFTS_UNCONFIRMED — so the cloud never reads the text.
+    const code = err?.code === 'SHIFTS_UNCONFIRMED' ? 'SHIFTS_UNCONFIRMED'
+      : err?.code === 'DRAWER_OPEN' || /drawer is still open/i.test(String(err?.message ?? '')) ? 'DRAWER_OPEN' : undefined;
+    const notYet = payload?.wait_for_till === true && !!code;
+    return { ok: false, error: err?.message ?? 'Could not close the day on this till', ...(code ? { code } : {}), ...(notYet ? { wait: true } : {}) };
   }
 }
 
@@ -323,6 +360,9 @@ export function createCloseInstruction(
 ): { id: number } {
   ensureInstructionUid();
   const db = getLocalDb();
+  // A521 (#14): a close to a till that is not connected waits for it — a per-till close (closeTill) used to replace the
+  // waiting close Close Branch left with an ordinary one, withdrawn after 24 h while the till was still off.
+  if (payload.wait_for_till !== true && peerIsStale(deviceId)) payload = { ...payload, wait_for_till: true };
 
   // Replace any still-pending close for this peer rather than stacking them:
   // two pending instructions with two different counted amounts is a question
@@ -353,8 +393,59 @@ export function ensureInstructionUid(): void {
   uidReady.add(db);
 }
 
-/** F11: an instruction not answered within a day is withdrawn — a close or a count from yesterday is not today's. */
+/** F11: an instruction not answered within a day is withdrawn — a close or a count from yesterday is not today's.
+ *  A521: only an ordinary close to a till that IS connected, or a kind this build does not know; a close that waits for
+ *  its till, a shift confirmation and a cash in / out or expense (NO_TTL_KINDS) wait however long the till is off. */
 export const INSTRUCTION_TTL_MS = 24 * 3_600_000;
+
+/** A521 (#13): kinds that never expire. Each is safe late: idempotent by its row id (confirm_shift by the shift — a
+ *  confirmed shift answers "already"; shift_money by its row id — recorded once; a closed shift refuses it with its
+ *  reason). Their exits are a newer one replacing it (confirm) or the manager withdrawing it (cash in / out, expense). */
+export const NO_TTL_KINDS = ['confirm_shift', 'shift_money'] as const;
+
+/** A521: has this till gone quiet (it reported once, and not within PEER_STALE_MS)? A till never heard from is not. */
+export function peerIsStale(deviceId: string, nowMs: number = Date.now()): boolean {
+  try {
+    const row = getLocalDb().prepare(`SELECT updated_at FROM node_peer_state WHERE device_id = ?`).get(String(deviceId ?? '')) as { updated_at: string } | undefined;
+    if (!row) return false;
+    const seen = stampMs(row.updated_at);
+    return !Number.isFinite(seen) || nowMs - seen > PEER_STALE_MS;
+  } catch { return false; }
+}
+
+/**
+ * A521 (#2): the instruction sweep, for EVERY till — run on any till's poll and when Close Branch is read. It used to run
+ * only for the till polling, so a close sent to a till that switched off before it collected it stayed pending for ever
+ * (and held the Close branch button every night after). Now:
+ *   1. a pending close to a till that is not connected becomes a close that waits for it (wait_for_till) — it closes its
+ *      day when it next connects, and it never holds tonight's close;
+ *   2. what is older than a day and may expire (an ordinary close, an unknown kind) is withdrawn, as F11 meant.
+ */
+export function sweepInstructions(nowMs: number = Date.now()): { upgraded: number; expired: number } {
+  ensureInstructionUid();
+  const db = getLocalDb();
+  const now = new Date(nowMs).toISOString();
+  let upgraded = 0;
+  const closes = db.prepare(`SELECT i.id, i.device_id, p.updated_at FROM node_instructions i JOIN node_peer_state p ON p.device_id = i.device_id
+                              WHERE i.kind = 'close_day' AND i.status = 'pending' AND json_valid(i.payload)
+                                AND COALESCE(json_extract(i.payload, '$.wait_for_till'), 0) <> 1`).all() as Array<{ id: number; device_id: string; updated_at: string }>;
+  const up = db.prepare(`UPDATE node_instructions SET payload = json_set(payload, '$.wait_for_till', json('true')) WHERE id = ? AND status = 'pending'`);
+  for (const c of closes) {
+    const seen = stampMs(c.updated_at);
+    if (Number.isFinite(seen) && nowMs - seen <= PEER_STALE_MS) continue;
+    upgraded += up.run(c.id).changes;
+  }
+  // F11, A520, A521: what may still expire. Safe late, the rest: executeCloseDay never closes a day later than the
+  // branch's date (F11) and answers "not yet" over money that waits (ack.wait).
+  const expired = db.prepare(`UPDATE node_instructions SET status = 'expired', acked_at = ?, ack = ?
+               WHERE status = 'pending' AND created_at < ?
+                 AND kind NOT IN (${NO_TTL_KINDS.map(() => '?').join(', ')})
+                 AND (CASE WHEN kind = 'close_day' AND json_valid(payload)
+                           THEN COALESCE(json_extract(payload, '$.wait_for_till'), 0) ELSE 0 END) <> 1`)
+    .run(now, JSON.stringify({ ok: false, error: 'Not answered within 24 hours — withdrawn' }),
+      new Date(nowMs - INSTRUCTION_TTL_MS).toISOString(), ...NO_TTL_KINDS).changes;
+  return { upgraded, expired };
+}
 
 /**
  * Instructions a polling peer should act on. Marks delivered_at (visibility for
@@ -364,11 +455,8 @@ export function collectInstructions(deviceId: string, nowMs: number = Date.now()
   ensureInstructionUid();
   const db = getLocalDb();
   const now = new Date(nowMs).toISOString();
-  // F11: older than a day and still unanswered → expired, never handed out again (the screen shows it as such).
-  db.prepare(`UPDATE node_instructions SET status = 'expired', acked_at = ?, ack = ?
-               WHERE device_id = ? AND status = 'pending' AND created_at < ?`)
-    .run(now, JSON.stringify({ ok: false, error: 'Not answered within 24 hours — withdrawn' }), deviceId,
-      new Date(nowMs - INSTRUCTION_TTL_MS).toISOString());
+  // F11 / A520 / A521: the sweep — every till's, not only the one polling (sweepInstructions).
+  sweepInstructions(nowMs);
   const rows = db.prepare(`
     SELECT id, uid, kind, payload FROM node_instructions
      WHERE device_id = ? AND status = 'pending'
@@ -391,12 +479,22 @@ export function collectInstructions(deviceId: string, nowMs: number = Date.now()
  * no longer retire another till's instruction. A till on an older build sends only the number (matched as before).
  * Returns whether an instruction was retired.
  */
-export function recordAck(instructionId: number | null, ack: { ok: boolean; error?: string; summary?: unknown },
+export function recordAck(instructionId: number | null, ack: { ok: boolean; error?: string; summary?: unknown; wait?: boolean },
   match: { deviceId?: string | null; uid?: string | null } = {}): boolean {
   ensureInstructionUid();
   const db = getLocalDb();
-  const set = [ack.ok ? 'acked' : 'failed', JSON.stringify(ack), new Date().toISOString()];
   const dev = match.deviceId ? String(match.deviceId) : null;
+  // A521: "not yet" on a close that waits for its till (a drawer still open there, a shift to confirm): it stays pending —
+  // handed out again on the next poll — with the till's reason kept for the screen. Any other refusal retires it, as before.
+  if (!ack.ok && ack.wait === true) {
+    const keep = db.prepare(`UPDATE node_instructions SET ack = ?
+                              WHERE ${match.uid ? 'uid = ?' : 'id = ?'} AND status = 'pending' AND kind = 'close_day'
+                                AND json_valid(payload) AND COALESCE(json_extract(payload, '$.wait_for_till'), 0) = 1
+                                AND (? IS NULL OR device_id = ?)`)
+      .run(JSON.stringify(ack), match.uid ? String(match.uid) : instructionId, dev, dev).changes > 0;
+    if (keep) return true;
+  }
+  const set = [ack.ok ? 'acked' : 'failed', JSON.stringify(ack), new Date().toISOString()];
   if (match.uid) {
     return db.prepare(`UPDATE node_instructions SET status = ?, ack = ?, acked_at = ?
                         WHERE uid = ? AND status = 'pending' AND (? IS NULL OR device_id = ?)`)
@@ -432,7 +530,25 @@ function stampMs(s: string | null | undefined): number {
   return Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t) ? `${t.replace(' ', 'T')}Z` : t);
 }
 
-/** The manager's "Forget this till". Never the server itself. Returns whether there was anything to forget. */
+/**
+ * A521 (#3): "Hide from Close Branch" — a till that is off for a while (a spare, one in for repair) leaves the list now
+ * and keeps everything else: its device key, its right to reconnect, and any close or confirmation waiting for it. It is
+ * listed again the moment it reports (branchCloseOverview: heard from after it was hidden). Never the server itself.
+ */
+export function hideTill(deviceId: string): boolean {
+  const id = String(deviceId ?? '');
+  const own = getDeviceConfig()?.device_id ?? '';
+  if (!id || id === own) return false;
+  const now = new Date().toISOString();
+  getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`).run(`hidden_till:${id}`, now, now);
+  return true;
+}
+
+/**
+ * The manager's "Revoke this till" (F4's "Forget this till" — A521 named it for what it does). Never the server itself.
+ * Its device key goes, and its first-use right: it is refused on every route until it joins again (Find my server, and
+ * the person at the server allows it). Its pending instructions are withdrawn. Returns whether there was anything to do.
+ */
 export function forgetTill(deviceId: string): boolean {
   const id = String(deviceId ?? '');
   const own = getDeviceConfig()?.device_id ?? '';
@@ -443,7 +559,7 @@ export function forgetTill(deviceId: string): boolean {
     db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`).run(`forgotten_till:${id}`, now, now);
     db.prepare(`DELETE FROM node_peer_state WHERE device_id = ?`).run(id);
     db.prepare(`UPDATE node_instructions SET status = 'expired', acked_at = ?, ack = ? WHERE device_id = ? AND status = 'pending'`)
-      .run(now, JSON.stringify({ ok: false, error: 'The till was forgotten on the branch server' }), id);
+      .run(now, JSON.stringify({ ok: false, error: 'The till was revoked on the branch server' }), id);
   })();
   try { forgetDeviceKey(id); } catch { /* no key table yet */ }
   return true;
@@ -542,10 +658,135 @@ export interface BranchCloseTillView {
 
 export interface ShiftMoneyView {
   id: number; status: string; error: string | null; created_at: string;
+  /** A521: when the till picked it up (the screen offers Cancel only before) and answered. */
+  delivered_at: string | null; acked_at: string | null;
   shift_id: string; kind: ShiftMoneyPayload['kind']; amount: number; note: string | null;
 }
 
-export function branchCloseOverview(): { business_date: string; tills: BranchCloseTillView[]; totals: BranchTotals } {
+// ── A520: what holds the branch's close — one rule, for the screen and for closeBranch ──────────────────────────────
+// Owner, 2026-10-17 (KRUNCH & CO: "why does the server lock day closing yet there is no trading happening … it has not
+// heard from the till leading to a deadlock?"). A till not heard from used to block Close Branch whenever its day was
+// open — and a till whose day is open and locked is exactly the one that most needs the branch closed. Now a till that
+// went quiet holds the close only when its LAST REPORT shows money a person must deal with: a drawer open or a shift
+// waiting for a manager. Otherwise Close Branch closes the rest and leaves it a close it applies when it next connects.
+
+/** Not heard from for this long (its poll is every 15 s) = not connected. */
+export const PEER_STALE_MS = 120_000;
+
+/** A till as the screens name it: its name and code (A465), else "Till T2", else "Terminal xxxxxxxx" (an older till). */
+export function tillLabel(t: { is_self: boolean; device_id: string; state?: { terminal?: { code?: string | null; name?: string | null } } | null }): string {
+  if (t.is_self) return 'This terminal (branch server)';
+  const n = t.state?.terminal?.name?.trim(); const c = t.state?.terminal?.code?.trim();
+  return n && c ? `${n} (${c})` : n || (c ? `Till ${c}` : `Terminal ${t.device_id.slice(0, 8)}`);
+}
+
+export interface BranchCloseAssessment {
+  /** Everything that stands between the branch and its close, as lines. A521: those of another till (`without`) a
+   *  manager may go past — ticked, they no longer hold the close; this terminal's own never can. */
+  blockers: string[];
+  /** Tills not heard from whose last report needs nobody (no drawer, nothing to confirm): their day closes when they
+   *  next connect — Close Branch leaves them a close that waits for them. A521: also a till that never reported, or an
+   *  older build — `note` says so, and `close: false` (nothing is sent: an older build would close its day at a count
+   *  of 0; a till that never reported is not known to understand a close). */
+  held: Array<{ device_id: string; label: string; business_date: string | null; note?: string; close?: boolean }>;
+  /** A521 (#1): another till with money a person must deal with (a drawer open, a shift to confirm). It holds the close
+   *  until a manager ticks `warning` — then the branch closes without it, and it is left a close that waits for that
+   *  money (wait_for_till: the till answers "not yet" until the drawer is closed and confirmed). */
+  without: Array<{ device_id: string; label: string; connected: boolean; lines: string[]; warning: string }>;
+  /** This terminal's own open drawer (the branch server used as a till): its shift closes first. */
+  self_drawer: { shift_id: string | null; cashier_name: string | null } | null;
+}
+
+/** A521: "18:04" — local time (the branch server's clock is the branch's). */
+function hhmm(iso: string | null | undefined): string {
+  const t = stampMs(iso);
+  if (!Number.isFinite(t)) return '';
+  const d = new Date(t);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** A521: the blocker lines a manager's ticks go past — every line except those of the tills not ticked. */
+export function unresolvedBlockers(a: BranchCloseAssessment, without: Iterable<string> = []): string[] {
+  const ticked = new Set(without);
+  const skip = new Set(a.without.filter((w) => ticked.has(w.device_id)).flatMap((w) => w.lines));
+  return a.blockers.filter((b) => !skip.has(b));
+}
+
+export function assessBranchClose(tills: BranchCloseTillView[], nowMs: number = Date.now()): BranchCloseAssessment {
+  const out: BranchCloseAssessment = { blockers: [], held: [], without: [], self_drawer: null };
+  for (const t of tills) {
+    const st = t.state;
+    const label = tillLabel(t);
+    const seen = stampMs(t.last_seen);
+    const stale = !t.is_self && (!Number.isFinite(seen) || nowMs - seen > PEER_STALE_MS);
+    // A521 (#12): "stale and nothing to count → held" FIRST. A till that never reported, or an older build, used to block
+    // the branch ("has never reported in", "is on an older version") before the staleness rule was ever reached.
+    if (!st) {
+      if (!t.is_self) out.held.push({ device_id: t.device_id, label, business_date: null, close: false,
+        note: 'has never reported its day — nothing is sent to it; it shows here once it is on and reaches the server' });
+      continue;
+    }
+    // F4 (2026-10-14): a till whose last word was "my day is closed" (and no drawer open) has nothing to close.
+    if (stale && st.day_open === false && !st.open_drawer) continue;
+    if (!st.shifts) {
+      // An older build: its shifts cannot be shown here. Its drawer, if it reported one, is money a manager goes past;
+      // otherwise it is held. Nothing is sent to it either way (it would close its day at a count of 0) — its day closes
+      // at the till (Close Day), or here once it is updated.
+      if (!t.is_self && st.open_drawer) {
+        const line = `${label} is on an older version and last reported a drawer open — update it, or close that drawer on it`;
+        out.blockers.push(line);
+        out.without.push({ device_id: t.device_id, label, connected: !stale, lines: [line],
+          warning: `Close the branch without ${label} — it is on an older version and last reported a drawer open; its cash is not in tonight's totals; its day closes at the till (Close Day) or here once it is updated` });
+      } else if (!t.is_self && st.day_open) {
+        out.held.push({ device_id: t.device_id, label, business_date: st.business_date ?? null, close: false,
+          note: 'is on an older version — update it; until then its day closes at the till (Close Day)' });
+      } else if (t.is_self) out.blockers.push(`${label} is on an older version — update it to close the branch from here`);
+      continue;
+    }
+    const openShift = st.shifts.find((s) => s.state === 'open');
+    const who = st.open_drawer ? (st.open_drawer.cashier_name ?? openShift?.cashier_name ?? null) : null;
+    const awaiting = st.shifts.filter((s) => s.state === 'awaiting');
+    const waiting = awaiting.length;
+    const shiftsWord = `${waiting} shift${waiting === 1 ? '' : 's'}`;
+    if (t.is_self) {
+      // This terminal's own money: never gone past — and no other till's state stops it (A521: theirs are `without`).
+      if (st.open_drawer) {
+        out.self_drawer = { shift_id: openShift?.id ?? null, cashier_name: who };
+        out.blockers.push(`${label}: close its shift first${who ? ` (${who}'s drawer is open)` : ''}`);
+      }
+      if (waiting) out.blockers.push(`${label}: ${shiftsWord} not confirmed yet`);
+      continue;
+    }
+    const lines: string[] = [];
+    if (stale) {
+      // Money a person must count or confirm: it still holds the close — and the line says exactly what to do.
+      if (st.open_drawer) lines.push(`${label} last reported a drawer open${who ? ` (${who})` : ''} — switch it on so it can close, or close that drawer on it`);
+      if (waiting) lines.push(`${label} last reported ${shiftsWord} not confirmed yet — switch it on so ${waiting === 1 ? 'it' : 'they'} can be confirmed here, or confirm ${waiting === 1 ? 'it' : 'them'} on that till`);
+      if (!lines.length) {
+        if (st.day_open) out.held.push({ device_id: t.device_id, label, business_date: st.business_date ?? null });
+        continue;
+      }
+    } else {
+      if (st.open_drawer) lines.push(`${label} still has a drawer open${who ? ` (${who})` : ''}`);
+      if (waiting) lines.push(`${label}: ${shiftsWord} not confirmed yet`);
+      if (!lines.length) continue;
+    }
+    out.blockers.push(...lines);
+    // A521 (#1): the manager's way past — the warning names whose cash is not in tonight's totals.
+    const at = stale ? hhmm(t.last_seen) : '';
+    const what = [
+      st.open_drawer ? `${who ? `${who}'s` : 'a'} drawer open` : '',
+      waiting ? `${shiftsWord} not confirmed (${awaiting.map((s) => s.cashier_name).join(', ')})` : '',
+    ].filter(Boolean).join(' and ');
+    const until = [st.open_drawer ? 'that drawer is closed and confirmed' : '', waiting ? `${waiting === 1 ? 'that shift is' : 'those shifts are'} confirmed` : '']
+      .filter(Boolean).join(' and ');
+    out.without.push({ device_id: t.device_id, label, connected: !stale, lines,
+      warning: `Close the branch without ${label} — ${label} ${stale ? `last reported ${what}${at ? ` at ${at}` : ''}` : `has ${what}`}; its cash is not in tonight's totals; ${label}'s day closes when ${until}` });
+  }
+  return out;
+}
+
+export function branchCloseOverview(): { business_date: string; tills: BranchCloseTillView[]; totals: BranchTotals; close: BranchCloseAssessment } {
   const db = getLocalDb();
   const own = getDeviceConfig()?.device_id ?? '';
   const today = businessDateNow();
@@ -563,7 +804,14 @@ export function branchCloseOverview(): { business_date: string; tills: BranchClo
   for (const r of db.prepare(`SELECT key, value FROM maintenance_state WHERE key LIKE 'forgotten_till:%'`).all() as any[]) {
     forgotten.set(String(r.key).slice('forgotten_till:'.length), stampMs(r.value));
   }
+  // A521 (#3): hidden from Close Branch — off the list the same way, until it next reports (its key is kept).
+  for (const r of db.prepare(`SELECT key, value FROM maintenance_state WHERE key LIKE 'hidden_till:%'`).all() as any[]) {
+    const id = String(r.key).slice('hidden_till:'.length);
+    forgotten.set(id, Math.max(forgotten.get(id) ?? -Infinity, stampMs(r.value)));
+  }
   const nowMs = Date.now();
+  // A521 (#2): every till's instructions swept as the screen is read — a close to a till that went off waits for it.
+  try { sweepInstructions(nowMs); } catch { /* the next read sweeps */ }
   const deviceIds = new Set<string>();
   if (own) deviceIds.add(own);
   for (const [id, at] of heard) {
@@ -584,9 +832,10 @@ export function branchCloseOverview(): { business_date: string; tills: BranchClo
   const confirmRows = db.prepare(`
     SELECT json_extract(payload, '$.shift_id') AS shift_id, status, ack, created_at
       FROM node_instructions WHERE device_id = ? AND kind = 'confirm_shift' ORDER BY id`);
+  // A521: a cash in / out still waiting for its till is listed however old (no 24-h expiry now); answered ones, a day.
   const moneyRows = db.prepare(`
-    SELECT id, status, ack, payload, created_at FROM node_instructions
-     WHERE device_id = ? AND kind = 'shift_money' AND created_at >= ? ORDER BY id`);
+    SELECT id, status, ack, payload, created_at, delivered_at, acked_at FROM node_instructions
+     WHERE device_id = ? AND kind = 'shift_money' AND (created_at >= ? OR status = 'pending') ORDER BY id`);
   const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
 
   const tills: BranchCloseTillView[] = [];
@@ -613,7 +862,8 @@ export function branchCloseOverview(): { business_date: string; tills: BranchClo
       let p: Partial<ShiftMoneyPayload> = {};
       try { error = m.ack ? (JSON.parse(m.ack).error ?? null) : null; } catch { /* none */ }
       try { p = JSON.parse(m.payload); } catch { /* none */ }
-      money.push({ id: m.id, status: m.status, error, created_at: m.created_at, shift_id: String(p.shift_id ?? ''),
+      money.push({ id: m.id, status: m.status, error, created_at: m.created_at, delivered_at: m.delivered_at ?? null, acked_at: m.acked_at ?? null,
+        shift_id: String(p.shift_id ?? ''),
         kind: (p.kind ?? 'float_in') as ShiftMoneyPayload['kind'], amount: Number(p.amount ?? 0),
         note: (p.kind === 'expense' ? p.description : p.reason) ?? null });
     }
@@ -637,5 +887,5 @@ export function branchCloseOverview(): { business_date: string; tills: BranchClo
   tills.sort((a, b) => (a.is_self === b.is_self) ? a.device_id.localeCompare(b.device_id) : (a.is_self ? -1 : 1));
   // A458: the day's totals over every shift the tills reported.
   const totals = branchMethodTotals(tills.flatMap((t) => (t.state?.shifts ?? []) as PeerShift[]));
-  return { business_date: today, tills, totals };
+  return { business_date: today, tills, totals, close: assessBranchClose(tills, nowMs) };   // A520
 }

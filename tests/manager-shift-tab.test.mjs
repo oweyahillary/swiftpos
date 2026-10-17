@@ -40,7 +40,9 @@ ok('tab: does NOT do a silent normal close from the manager (that stays on the t
 });
 
 ok('dashboard: Shifts tab wired (nav + render)', () => {
-  assert.match(mgr, /key: 'shift',[\s\S]*?permission: 'orders\.view_all'[\s\S]*?group: 'Finance'/, 'Shifts nav item in Finance group');
+  // A523: the tab also opens for a holder of shifts.close_day / shifts.force_close (Tills & days lives in it). One line —
+  // a lazy match across lines found another tab's 'orders.view_all'.
+  assert.match(mgr, /key: 'shift',[^\n]*?permission: \['orders\.view_all', 'shifts\.close_day', 'shifts\.force_close'\], group: 'Finance'/, 'Shifts nav item in Finance group');
   assert.match(mgr, /case 'shift': return <ManagerShiftTab/, 'the switch must render the Shifts tab');
 });
 

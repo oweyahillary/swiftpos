@@ -12,6 +12,9 @@
 #                                               tests/staff-role-ceiling.test.mjs (commit 08d63f5, A340);
 #                                               the test now generates its keys at run time. Allowlisted
 #                                               so a scan over that commit (e.g. a merge to main) passes.
+#   • sOmEsIgNaTuRe_value-123, c2lnbmF0dXJlLXg — the signatures of two made-up JWTs in the A519 log-redaction
+#                                               tests (apps/desktop/test/a519-till-items, tests/support-a519),
+#                                               fed in to prove a support log is redacted before it is sent/stored.
 # Matched on the exact benign strings (regexTarget = match), so real secrets are
 # untouched and the suppression survives line/commit changes.
 
@@ -27,4 +30,6 @@ regexes = [
   '''refresh_token, logged_in_at=excluded''',
   '''eyJhbGciOiJub25lIi''',
   '''test-secret-for-a340-0123456789''',
+  '''sOmEsIgNaTuRe_value-123''',
+  '''c2lnbmF0dXJlLXg''',
 ]

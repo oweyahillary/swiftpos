@@ -1,8 +1,8 @@
 /**
  * /api/payables — A395: what the business owes its suppliers. The rules live in lib/payables.ts.
  *
- *   GET  /summary                 every supplier's balance, overdue and ageing        payables.manage
- *   GET  /suppliers/:id           one supplier's account: bills, payments, returns,   payables.manage
+ *   GET  /summary                 every supplier's balance, overdue and ageing        payables.view | payables.manage
+ *   GET  /suppliers/:id           one supplier's account: bills, payments, returns,   payables.view | payables.manage
  *                                 statement, unbilled deliveries
  *   POST /bills                   record a supplier's invoice (optionally for a GRN)   payables.manage
  *   POST /bills/:id/void          void a bill nothing has been paid against             payables.manage
@@ -14,6 +14,8 @@
  *
  * payables.manage is the owner's by default (migration 121, MANAGER_DENY): who is owed what, and paying it, is the
  * owner's. A manager who receives deliveries may send goods back (inventory.receive) — the credit is the goods' cost.
+ * A518: payables.view (the Accountant's) reads the same accounts — balances, bills, payments, returns — and records or
+ * pays nothing; every write stays payables.manage. GET /returns also answers a payables.view holder.
  */
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -41,7 +43,7 @@ const today = () => new Date().toISOString().slice(0, 10);
  * the credit is a line of the account they keep.
  */
 const RETURN_COST_FIELDS = new Set(['unit_cost', 'credit_amount', 'cost_price']);
-const seesReturnCosts = (req: Parameters<typeof seesCosts>[0]): boolean => seesCosts(req) || can(req, 'payables.manage');   // the business's day boundary is not needed for dates of bills
+const seesReturnCosts = (req: Parameters<typeof seesCosts>[0]): boolean => seesCosts(req) || can(req, 'payables.manage') || can(req, 'payables.view');   // the business's day boundary is not needed for dates of bills
 
 type Bill = BillLike & { ref: string; supplier_id: string; invoice_number: string | null; grn_id: string | null; note: string | null;
   branch_id: string | null; created_at: string; created_by_name: string | null; voided_at: string | null; void_reason: string | null };
@@ -79,7 +81,7 @@ async function nextRef(table: 'supplier_bills' | 'supplier_returns', prefix: 'BI
 
 // ─── Balances ─────────────────────────────────────────────────────────────────
 
-router.get('/summary', requirePermission('payables.manage'), async (req, res) => {
+router.get('/summary', requireAnyPermission('payables.view', 'payables.manage'), async (req, res) => {
   const [{ data: sup }, { data: bills, error: bErr }, { data: pays }, { data: rets }] = await Promise.all([
     supabase.from('suppliers').select('id, name, status').eq('business_id', req.businessId).order('name'),
     supabase.from('supplier_bills').select('id, supplier_id, amount, status, bill_date, due_date').eq('business_id', req.businessId).limit(20000),
@@ -97,7 +99,7 @@ router.get('/summary', requirePermission('payables.manage'), async (req, res) =>
   res.json({ today: t, owed: total('balance'), overdue: total('overdue'), dueSoon: total('dueSoon'), suppliers });
 });
 
-router.get('/suppliers/:id', requirePermission('payables.manage'), async (req, res) => {
+router.get('/suppliers/:id', requireAnyPermission('payables.view', 'payables.manage'), async (req, res) => {
   const supplier = await supplierOf(req.businessId, req.params.id);
   if (!supplier) { res.status(404).json({ error: 'Supplier not found' }); return; }
   const [{ data: bills, error }, { data: pays }, { data: rets }, deliveries] = await Promise.all([
@@ -220,7 +222,7 @@ router.post('/payments/:id/void', requirePermission('payables.manage'), async (r
 
 // ─── Returns to supplier ──────────────────────────────────────────────────────
 
-router.get('/returns', requireAnyPermission('inventory.receive', 'payables.manage'), async (req, res) => {
+router.get('/returns', requireAnyPermission('inventory.receive', 'payables.manage', 'payables.view'), async (req, res) => {
   const scoped = branchScope(req);
   let q = supabase.from('supplier_returns')
     .select('*, suppliers ( name ), supplier_return_items ( name, quantity, unit_cost, item_kind )')

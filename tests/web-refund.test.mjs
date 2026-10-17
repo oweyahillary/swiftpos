@@ -63,7 +63,8 @@ ok('the list offers Refund only when canRefundOrder says so (sales.refund); Void
 });
 ok('it posts to the cloud refund with a reason and the manager\'s PIN, and shows the cloud\'s own words', () => {
   // A444: the same form voids too (inside the window) — `revMode` is 'refund' or 'void'.
-  assert.match(tab, /await posApi\.post\(`\/api\/orders\/\$\{order\.id\}\/\$\{revMode\}`, \{ reason, override_pin: refundPin\.trim\(\) \}\);/);
+  // A518: the owner's own session sends no PIN (the cloud self-approves the owner); everyone else sends the manager's.
+  assert.match(tab, /await posApi\.post\(`\/api\/orders\/\$\{order\.id\}\/\$\{revMode\}`, \{ reason, \.\.\.\(ownerSelf \? \{\} : \{ override_pin: refundPin\.trim\(\) \}\) \}\);/);
   assert.match(tab, /setRefundMsg\(\{ id: order\.id, text: e\?\.message \?\? 'Refund failed', ok: false \}\);/);
   assert.match(tab, /placeholder="Manager or owner PIN"/);
 });

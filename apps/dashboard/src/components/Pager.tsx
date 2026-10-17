@@ -37,6 +37,8 @@ export default function Pager({ paged, onPage, onSize, noun = 'items' }: {
   noun?: string;
 }) {
   const { page, pages, size } = paged;
+  // Owner, 2026-10-17: the pager shows only when there is more than one page — not "Showing 1–4 of 4" under a short list.
+  if (pages <= 1) return null;
   const first = page <= 1, last = page >= pages;
   return (
     <nav data-testid="pager" aria-label="Pages"

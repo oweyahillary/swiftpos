@@ -346,7 +346,7 @@ export default function POSLoginScreen() {
     <div style={st.root}>
       <div style={st.header}>
         {tenant.status === 'found'
-          ? <TenantBrand tenant={tenant.tenant} />
+          ? <TenantBrand tenant={tenant.tenant} fit />
           : tenant.status === 'loading'
             ? <div style={{ height: 60 }} aria-hidden data-testid="tenant-loading" />   // 0.6.36: no flash of ZapTill
             : <div style={st.logo}><span>⚡</span><span style={st.logoText}>ZapTill</span></div>}
@@ -415,17 +415,19 @@ export default function POSLoginScreen() {
   );
 }
 
+// Owner, 2026-10-17: the sign-in fits every screen — on a laptop the keypad was cut off below the fold. Spacing, the
+// client's logo and the keys shrink with the screen's height (clamp on vh) down to sizes still easy to tap; 16 px gutter.
 const st: Record<string, React.CSSProperties> = {
-  root: { minHeight: '100vh', background: 'linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f172a 100%)', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans','Segoe UI',sans-serif", color: '#f1f5f9' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 40px', borderBottom: '1px solid rgba(255,255,255,0.06)' },
+  root: { minHeight: '100dvh', background: 'linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f172a 100%)', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans','Segoe UI',sans-serif", color: '#f1f5f9' },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(8px, 2.5vh, 24px) 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' },
   logo: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 18 },
   logoText: { fontWeight: 700, letterSpacing: '-0.5px' },
-  main: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' },
-  card: { background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: '36px 32px', width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.4)' },
-  bizPill: { background: 'rgb(var(--act-fill, 59 130 246) / 0.1)', border: '1px solid rgb(var(--act-fill, 59 130 246) / 0.2)', borderRadius: 20, padding: '4px 14px', fontSize: 12, color: '#93c5fd', fontWeight: 600, marginBottom: 20 },
+  main: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(8px, 3vh, 40px) 16px' },
+  card: { background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: 'clamp(14px, 3.5vh, 36px) clamp(16px, 5vw, 32px)', width: '100%', maxWidth: 380, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.4)' },
+  bizPill: { background: 'rgb(var(--act-fill, 59 130 246) / 0.1)', border: '1px solid rgb(var(--act-fill, 59 130 246) / 0.2)', borderRadius: 20, padding: '4px 14px', fontSize: 12, color: '#93c5fd', fontWeight: 600, marginBottom: 'clamp(8px, 2vh, 20px)' },
   title: { fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px', margin: '0 0 6px', color: '#f1f5f9', textAlign: 'center' },
-  subtitle: { fontSize: 13, color: '#64748b', margin: '0 0 22px', textAlign: 'center' },
-  emailWrap: { width: '100%', marginBottom: 20 },
+  subtitle: { fontSize: 13, color: '#64748b', margin: '0 0 clamp(10px, 2.5vh, 22px)', textAlign: 'center' },
+  emailWrap: { width: '100%', marginBottom: 'clamp(10px, 2vh, 20px)' },
   emailInput: { width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '11px 14px', color: '#f1f5f9', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: "'DM Sans','Segoe UI',sans-serif" } as React.CSSProperties,
   dotsRow: { display: 'flex', gap: 12, marginBottom: 10, transition: 'opacity 0.2s' },
   shake: { animation: 'shake 0.5s ease' },
@@ -435,8 +437,8 @@ const st: Record<string, React.CSSProperties> = {
   confirmBtn: { marginBottom: 8, padding: '8px 24px', background: 'rgb(var(--act-strong, 29 78 216))', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
   errorText: { fontSize: 12, color: '#f87171', marginBottom: 4, height: 16, transition: 'opacity 0.2s', textAlign: 'center' },
   successText: { fontSize: 14, color: '#4ade80', marginBottom: 8, fontWeight: 600, textAlign: 'center' },
-  keypad: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginTop: 12, width: '100%', transition: 'opacity 0.2s' },
-  key: { background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#f1f5f9', fontSize: 20, fontWeight: 600, height: 56, cursor: 'pointer', transition: 'background 0.12s ease', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  keypad: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'clamp(6px, 1vh, 8px)', marginTop: 'clamp(6px, 1.2vh, 12px)', width: '100%', transition: 'opacity 0.2s' },
+  key: { background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#f1f5f9', fontSize: 20, fontWeight: 600, height: 'clamp(42px, 6.5vh, 56px)', cursor: 'pointer', transition: 'background 0.12s ease', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   keyBack: { background: 'transparent', border: '1px solid transparent', color: '#94a3b8', fontSize: 18 },
   loadingRow: { display: 'flex', alignItems: 'center', gap: 10, marginTop: 16 },
   spinner: { width: 16, height: 16, border: '2px solid #334155', borderTopColor: 'rgb(var(--act-fill, 59 130 246))', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },

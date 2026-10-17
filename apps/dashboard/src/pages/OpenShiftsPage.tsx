@@ -46,6 +46,7 @@ import { money, dateTime } from '../lib/format';
 import { useBusiness } from '../context/BusinessContext';
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '../lib/paginate';
+import { agoLabel, syncRecent, tillBehindLine } from '../lib/tillSync';   // A522
 
 interface OpenShift {
   id: string;
@@ -57,6 +58,8 @@ interface OpenShift {
   status: string;
   terminal_code: string | null;
   device_id: string | null;
+  /** A522: when this drawer's till last synced (null: never, or not a till). */
+  till_last_sync_at?: string | null;
   /** Computed live by the server. Null when it could not be determined. */
   expected_cash_live: number | null;
 }
@@ -73,6 +76,7 @@ export default function OpenShiftsPage() {
   const [error, setError] = useState('');
   const [target, setTarget] = useState<OpenShift | null>(null);
   const [reason, setReason] = useState('');
+  const [behindOk, setBehindOk] = useState(false);   // A522: the till has not synced lately — ticked before a force-close
   const [busy, setBusy] = useState(false);
   const [counting, setCounting] = useState<OpenShift | null>(null);   // A462: close with a count
   const [confirmKey, setConfirmKey] = useState(0);
@@ -101,9 +105,13 @@ export default function OpenShiftsPage() {
   const paged = paginate(shifts, page, pageSize);
   useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
+  // A522: force-closing for a till that has not synced lately — its sales since are not in it (it adds them when back).
+  const forceBehind = target?.device_id ? tillBehindLine(target.terminal_code ?? 'The till', target.till_last_sync_at ?? null) : null;
+
   const forceClose = async () => {
     if (!target) return;
     if (!reason.trim()) return;   // button is disabled, but never trust only that
+    if (forceBehind && !behindOk) return;   // A522
     setBusy(true);
     try {
       await api.post(`/api/shifts/${target.id}/force-close`, { reason: reason.trim() });
@@ -170,6 +178,7 @@ export default function OpenShiftsPage() {
                       </td>
                       <td className={`px-4 py-3 text-gray-600 dark:text-gray-400 ${DESK}`}>
                         {s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>}
+                        {s.device_id && <div className={`text-xs ${syncRecent(s.till_last_sync_at) ? 'text-gray-400' : 'text-amber-600 dark:text-amber-400'}`} data-testid={`till-sync-${s.id}`}>synced {agoLabel(s.till_last_sync_at)}</div>}
                       </td>
                       <td className={`px-4 py-3 ${DESK}`}>
                         <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
@@ -189,7 +198,7 @@ export default function OpenShiftsPage() {
                           Close with count
                         </button>
                         <button
-                          onClick={() => { setTarget(s); setReason(''); }}
+                          onClick={() => { setTarget(s); setReason(''); setBehindOk(false); }}
                           className="text-xs px-3 py-1.5 rounded-md border border-red-300 text-red-700
                                      hover:bg-red-50 dark:border-red-800 dark:text-red-400
                                      dark:hover:bg-red-900/20 transition-colors"
@@ -273,6 +282,12 @@ export default function OpenShiftsPage() {
                              bg-white dark:bg-gray-950 px-3 py-2 text-sm
                              text-gray-900 dark:text-white"
                 />
+                {forceBehind && (
+                  <label className="flex gap-2 items-start mt-3 text-xs text-amber-700 dark:text-amber-300" data-testid="force-behind">
+                    <input type="checkbox" checked={behindOk} onChange={e => setBehindOk(e.target.checked)} className="mt-0.5" />
+                    <span>{forceBehind}</span>
+                  </label>
+                )}
                 <p className="text-xs text-gray-500 mt-1">
                   Recorded against the shift permanently. This is the only explanation
                   anyone auditing the day will have.
@@ -291,7 +306,7 @@ export default function OpenShiftsPage() {
               </button>
               <button
                 onClick={forceClose}
-                disabled={busy || !reason.trim()}
+                disabled={busy || !reason.trim() || (!!forceBehind && !behindOk)}
                 className="px-4 py-2 text-sm rounded-lg bg-red-600 hover:bg-red-500
                            disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:text-gray-500
                            text-white font-medium transition-colors"

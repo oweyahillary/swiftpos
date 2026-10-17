@@ -134,8 +134,12 @@ B.recordPeerState('dev-P', { business_date: '2026-10-12', day_open: true, open_d
 {
   B.recordPeerState('dev-P', { business_date: '2026-10-12', day_open: true, open_drawer: null, drawers_on_day: 1, cashiers_counted_total: 1100,
     clock: now() });   // an older till: no shifts in its report
+  // A521 (#12): still named — but held with its note ("update it"), never a blocker of the whole branch; nothing is sent
+  // to it (an older build would close its day at a count of 0).
   const r = await H['branchClose:closeBranch'](null, {});
-  ok('a till on an older version is named (it cannot report its shifts)', r.ok === false && r.blockers.some((b) => /older version/.test(b)), JSON.stringify(r));
+  const held = B.branchCloseOverview().close.held.find((h) => h.device_id === 'dev-P');
+  ok('a till on an older version is named (it cannot report its shifts) — held, not a blocker (A521)',
+    r.ok === false && !(r.blockers ?? []).some((b) => /older version/.test(b)) && held?.close === false && /older version/.test(held?.note ?? ''), JSON.stringify({ r, held }));
 }
 
 console.log('\nClose branch: every till, the server\'s date\n');
@@ -190,8 +194,9 @@ console.log('\nThe wiring\n');
   const cloudShifts = fs.readFileSync(path.join(here, '..', '..', 'server', 'src', 'routes', 'shifts.ts'), 'utf8');
   ok('the web\'s confirm (another till\'s shift, online) shows the expected figures too — to a manager or the owner only',
     /const expected = shift && callerMayConfirm\(req\) \? await expectedByMethod\(shift as any\) : null;/.test(cloudShifts));
-  ok('Close branch is one button, held until nothing stands in the way and the totals are ticked (A458)', /disabled=\{closing \|\| !totalsOk \|\| blockers\.length > 0 \|\| dayOpen\.length === 0 \|\| waitingClose\.length > 0\}/.test(tab)
-    && /posApi\.branchClose\.closeBranch\(undefined, totalsOk\)/.test(tab));
+  // A521 (#2): a till still to answer no longer holds the button (waitingClose dropped); the manager's ticks (#1) ride along.
+  ok('Close branch is one button, held until nothing stands in the way and the totals are ticked (A458)', /disabled=\{closing \|\| !totalsOk \|\| blockers\.length > 0 \|\| dayOpen\.length === 0\}/.test(tab)
+    && /posApi\.branchClose\.closeBranch\(undefined, totalsOk, ticked\.map\(w => w\.device_id\)\)/.test(tab));
   ok('A458: the screen leads with the day\'s totals and the shifts to confirm; the tills are behind "Show tills"',
     tab.indexOf('data-testid="branch-totals"') < tab.indexOf('data-testid="to-confirm"') && tab.indexOf('data-testid="to-confirm"') < tab.indexOf('data-testid="show-tills"')
     && /\{showTills && \(<>\s*\{ov\.tills\.map\(t => \{/.test(tab) && /useState\(false\);   \/\/ A458: the per-till detail, on request/.test(tab));

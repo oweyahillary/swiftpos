@@ -13,7 +13,7 @@ import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb, closeLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
-import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet, pullCatalogueNow, refreshTechConfigNow, runRemoteInstructionsNow } from './syncEngine';
+import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet, pullCatalogueNow, refreshTechConfigNow, runRemoteInstructionsNow, testClearsBeforePush, remoteCloseBeat, REMOTE_CLOSE_BEAT_MS, learnCloudCloses } from './syncEngine';   // A523: learnCloudCloses
 import { AT_LOGIN_ARG, LOGIN_WAIT_ARG, LOGIN_WAIT_MS, isAutoLaunch, startsAtSignIn, startsWindowless, runStartupSequence, markStartup, markStartupSettled, startupLine, noteStartupLine, type StartupStep } from './lowImpactStart';   // A513
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
@@ -23,7 +23,7 @@ import { onJoinAsked } from './serverJoin';   // A436
 import { WATCHDOG_ARG, watchdogStaysDown, quitByHand, clearQuitByHand } from './serverWatchdog';   // A435
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution, nodeHeaders } from './nodeClient';
 import { ensureNodeTls } from './lanTls';   // A489
-import { ownDayState, executeCloseDay, executeConfirmShift, executeShiftMoney } from './branchClose';
+import { reportDayState, executeCloseDay, executeConfirmShift, executeShiftMoney } from './branchClose';   // A520: reportDayState — never skips the poll
 import { applyDistribution, distributionCursors, retryPeerQuarantine } from './nodeIngest';   // A501: the quarantine
 import { nodeReplicationTick } from './syncEngine';   // F10: branch replication on its own beat
 import { pruneIfDue, snapshotIfDue } from './maintenance';
@@ -334,6 +334,9 @@ app.whenReady().then(async () => {
   setInterval(() => {
     syncAll().catch(console.error);
   }, 10 * 60_000);
+  // A521 (#19): a day closed on the web (the cloud's remote close) reaches this till on a 90 s beat, not the 10-min
+  // sync above; the cloud's test-data clears are asked on the same beat (before the next push).
+  setInterval(() => { remoteCloseBeat().catch(console.error); }, REMOTE_CLOSE_BEAT_MS);
   // A291: cheap freshness poll — a web edit reaches this till in ~20s instead of
   // waiting for the 10-min floor above. pullIfCatalogueChanged() only pulls when the
   // server's catalogue version actually moved, and self-guards on offline/in-flight.
@@ -401,7 +404,9 @@ app.whenReady().then(async () => {
       for (const [key, p] of [...pendingAcks]) {
         if (await ackNodeInstruction(p.id, p.ack, undefined, p.uid)) pendingAcks.delete(key);
       }
-      const instructions = await pollNodeInstructions(ownDayState());
+      // A520: the poll is the till's "I am here" (Close Branch's last seen) — sent whatever the day gate says, and with
+      // whatever of the report could be read (reportDayState never throws), so a locked till keeps reporting.
+      const instructions = await pollNodeInstructions(reportDayState());
       if (!instructions) return;
       for (const ins of instructions) {
         if (pendingAcks.has(ackKey(ins))) continue;          // executed, ack in flight
@@ -508,6 +513,12 @@ app.whenReady().then(async () => {
     { name: 'settings', what: 'the branch\'s technician settings', run: () => refreshTechConfigNow() },
     { name: 'push', what: 'sales, drawers and changes waiting on this till',
       run: async () => {
+        // A521 (#15): the cloud's test-data clears before anything this till holds goes up (a till that was off during an
+        // admin clear sent its unsent test sales back first — to the cloud, and to the branch server, which relays them).
+        await testClearsBeforePush();
+        // A523: what the cloud closed while this till was off (a drawer force-closed on the web, its day closed on the web
+        // or as abandoned) is learned and adopted BEFORE anything decides the till is locked — the day gate reads it next.
+        await learnCloudCloses();
         await nodeReplicationTick();   // to the branch server (the shop network) first
         await syncPush();
         await sendTillChangesNow();

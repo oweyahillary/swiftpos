@@ -259,6 +259,16 @@ export interface BranchTotals {
   shifts: { all: number; open: number; awaiting: number; confirmed: number; uncounted: number };
 }
 
+/** A520: the Close Branch rule's answer (main/branchClose.ts assessBranchClose). */
+export interface BranchCloseAssessment {
+  blockers: string[];
+  /** A521: `note` + `close: false` — a till that never reported, or an older build (nothing is sent to it). */
+  held: Array<{ device_id: string; label: string; business_date: string | null; note?: string; close?: boolean }>;
+  /** A521: another till with money (a drawer open, a shift to confirm) — the manager may tick `warning` and close without it. */
+  without?: Array<{ device_id: string; label: string; connected: boolean; lines: string[]; warning: string }>;
+  self_drawer: { shift_id: string | null; cashier_name: string | null } | null;
+}
+
 /** A465: a cash in / out or expense the branch server sent to a till (main/branchClose.ts ShiftMoneyView). */
 export interface ShiftMoneyView {
   id: number; status: string; error: string | null; created_at: string;
@@ -431,6 +441,8 @@ declare global {
         /** A489: `securityCode` — from the server's certificate (null: a server on an older build, joined unencrypted). */
         requestJoin: (url: string, rejoin?: boolean) => Promise<{ ok: true; name: string; securityCode?: string | null }>;
         joinStatus: () => Promise<JoinStatus>;
+        /** A519: is this terminal code free at the branch, and the next free one (T1 → T2 …). */
+        checkTerminalCode: (code: string, branch_id?: string) => Promise<{ ok: boolean; taken: boolean; inUse: string[]; suggestion: string; source: 'cloud' | 'server' | 'none'; message: string | null }>;
       };
       /** A427: on the branch server — tills waiting to join, and the answer. */
       serverJoin: {
@@ -456,6 +468,8 @@ declare global {
       idle: {
         setSurface: (surface: 'manager' | 'pos' | null) => Promise<boolean>;
         clear:      () => Promise<boolean>;
+        /** A517: may the manager screens be fetched in the background now (start-up over, memory to spare)? */
+        mayPreload?: () => Promise<{ ok: boolean; settled: boolean; why: string }>;
         suppress:   () => Promise<number>;
         release:    (token: number) => Promise<boolean>;
         onLock:     (cb: () => void) => () => void;
@@ -476,6 +490,8 @@ declare global {
         /** 0.6.27: the per-client POS switches (set in the admin portal; all off until the till is told). */
         features: () => Promise<PosFeatures>;
         stockCountFreeze: () => Promise<StockCountFreeze>;   // A394
+        /** A521: a manager's PIN releases a frozen item for sale on this till. */
+        approveFrozenSale: (pin: string, productId: string) => Promise<{ ok: boolean; error?: string; approvedBy?: string | null }>;
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
         history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean; canVoid?: boolean; canRefund?: boolean; methods: string[]; showTotal?: boolean }; orders: any[] }>;
         /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */
@@ -553,34 +569,47 @@ declare global {
             instruction: {
               id: number; status: string; created_at: string;
               delivered_at: string | null; acked_at: string | null;
-              payload: { business_date: string; counted_cash: number | null; notes?: string };
-              ack: { ok: boolean; error?: string; summary?: any; already_closed?: boolean } | null;
+              payload: { business_date: string; counted_cash: number | null; notes?: string; wait_for_till?: boolean };
+              ack: { ok: boolean; error?: string; summary?: any; already_closed?: boolean; wait?: boolean } | null;   // A521: wait = "not yet"
             } | null;
           }>;
           /** A458: the day's totals per payment method over every shift the tills reported. */
           totals: BranchTotals;
+          /** A520: what stands between the branch and its close — the same rule closeBranch applies (main/branchClose.ts
+           *  assessBranchClose). `held`: tills not heard from whose last report needs nobody — their day closes when they
+           *  next connect. `self_drawer`: this terminal's own open drawer (the server used as a till) — close it first. */
+          close?: BranchCloseAssessment;
         } | { error: string }>;
         closeTill: (deviceId: string, countedCash: number, notes?: string) => Promise<{
           ok: boolean; error?: string; instruction_id?: number;
           self?: boolean; summary?: unknown; already_closed?: boolean;
+          /** A521: the till is not connected — it applies when it reconnects (`message` says so). */
+          queued_offline?: boolean; message?: string;
         }>;
         confirmShift: (deviceId: string, shiftId: string, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<{
           ok: boolean; error?: string; instruction_id?: number; self?: boolean; summary?: Confirmation | null;
+          queued_offline?: boolean; message?: string;   // A521
         }>;
-        /** A458: totalsConfirmed — the manager ticked the day's totals by payment method (required to close). */
-        closeBranch: (notes?: string, totalsConfirmed?: boolean) => Promise<{
-          ok: boolean; error?: string; blockers?: string[];
-          results?: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }>;
+        /** A458: totalsConfirmed — the manager ticked the day's totals by payment method (required to close).
+         *  A521: withoutTills — the tills with money (BranchCloseAssessment.without) the manager ticked to close without. */
+        closeBranch: (notes?: string, totalsConfirmed?: boolean, withoutTills?: string[]) => Promise<{
+          ok: boolean; error?: string; blockers?: string[]; code?: string;
+          without?: BranchCloseAssessment['without'];
+          results?: Array<{ device_id: string; ok: boolean; sent?: boolean; held?: boolean; without?: boolean; skipped?: boolean; error?: string }>;
         }>;
         /** A465: a cash in / out or expense on any running shift of the branch — the till records it (server only). */
         shiftMoney: (req: ShiftMoneyRequest) => Promise<{
           ok: boolean; error?: string; instruction_id?: number; row_id?: string; direct?: boolean;
           summary?: { kind: string; amount: number; shift_id: string; expected_cash: number } | null;
+          queued_offline?: boolean; message?: string;   // A521
         }>;
         /** A465: withdraw one the till has not answered yet. */
         cancelShiftMoney: (instructionId: number) => Promise<{ ok: boolean; error?: string }>;
-        /** F4: "Forget this till" — off the Close Branch list (manager, branch server only). */
+        /** F4: "Forget this till" — off the Close Branch list (manager, branch server only). A521: "Revoke this till" —
+         *  its device key goes: refused everywhere until it joins again. */
         forgetTill: (deviceId: string) => Promise<{ ok: boolean; error?: string }>;
+        /** A521: "Hide from Close Branch" — off the list until it next reports; its key is kept. */
+        hideTill: (deviceId: string) => Promise<{ ok: boolean; error?: string }>;
       };
       /** A197: stock transfers between branches (online licence; inventory.transfer). */
       transfers: {
@@ -639,9 +668,8 @@ declare global {
                                         updaterTask?: { installed: boolean | null; log: string[] };
                                         /** A513: the last start's timing line (ready / window / sync sequence / memory), and the graphics mode. */
                                         startup?: string | null; graphics?: string | null }>;
+        /** A519: one tap — main allows the signed-in back-office person or a technician (no PIN — the PIN restart channel is gone). */
         installNow: () => Promise<{ ok: boolean; reason?: string }>;
-        /** A490: identify the PIN's holder (never sign them in); they must hold shifts.close_day. */
-        installWithPin: (pin: string) => Promise<{ ok: boolean; reason?: string; message?: string }>;
         onStatus: (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => () => void;
       };
       config: {
@@ -679,6 +707,10 @@ declare global {
           | { ok: false; error: string }>;
         testConnection: () => Promise<{ ok: boolean; status: number | null; ms: number; error?: string }>;
         logTail: (lines?: number) => Promise<{ path: string | null; text: string }>;
+        /** A519: send the last 24 h of the log to support — a reference to read out, or why not (offline → save it). */
+        sendLogs: () => Promise<{ ok: true; reference: string } | { ok: false; offline: boolean; message: string }>;
+        /** A519: the same text saved where the technician chooses. */
+        saveLog: () => Promise<{ ok: boolean; canceled?: boolean; path?: string }>;
       };
       /** 0.6.28: what went to the kitchen, and kitchen voids. */
       kitchen: {
@@ -776,6 +808,8 @@ declare global {
         setStaffPin:    (id: string, pin: string) => Promise<{ ok: true }>;
         /** A448: changes made on this till that wait (for the cloud, or the owner's approval) or were refused. */
         changeStates:   () => Promise<Array<{ entity_id: string; entity: string; state: 'pending' | 'awaiting' | 'refused' | 'done' | 'rejected'; message: string | null; summary: string }>>;
+        /** A520: clear the refused ones from the list (the cloud's value already stands on this till). */
+        dismissRefusedChanges: () => Promise<{ ok: boolean; cleared?: number; error?: string }>;
         updateStaff:    (id: string, patch: any) => Promise<any>;
         getReceiptText: () => Promise<{ header: string; footer: string }>;
         setReceiptText: (header: string, footer: string) => Promise<any>;

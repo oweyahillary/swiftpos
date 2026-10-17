@@ -162,11 +162,12 @@ try {
   console.log('\n2. Nobody at the branch may approve\n');
   reset({ approvers: false });
   // Mary asks; she may not approve her own; the owner has no PIN; Sue holds only customers.credit (not a void approver).
-  await ok('a void where nobody else may approve → 400 NO_OVERRIDE_CONFIGURED (approval PIN in Staff), even with the old PIN stored', async () => {
+  await ok('a void where nobody else may approve → 400 NO_OVERRIDE_CONFIGURED (a PIN in Staff), even with the old PIN stored', async () => {
     for (const pin of [OLD_PIN, '0000']) {
       const r = await call('POST', `/api/orders/${O1}/void`, T.mgr, { reason: 'x', supervisor_pin: pin });
       assert.equal(r.status, 400, `${pin}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, 'NO_OVERRIDE_CONFIGURED');
-      assert.match(r.body.error, /approval PIN in Staff/);
+      // A518: "gives someone who may approve a PIN in Staff" — their sign-in PIN already approves (no second PIN needed).
+      assert.match(r.body.error, /who may approve a PIN in Staff/);
       assert.match(r.body.error, /owner or a manager/);
     }
     assert.equal(mem.db.orders[0].status, 'completed');
@@ -195,7 +196,8 @@ try {
       for (const key of ['supervisor_pin', 'supervisor_pin_hash', ' SUPERVISOR_PIN ']) {
         const r = await call('POST', '/api/business/settings', t, { key, value: '4567' });
         assert.equal(r.status, 410, `${who} ${key}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, 'SUPERVISOR_PIN_RETIRED');
-        assert.match(r.body.error, /approval PIN in Staff/);
+        // A518: the sign-in PIN approves; a separate approval PIN in Staff is optional.
+        assert.match(r.body.error, /sign-in PIN approves; the owner or a manager can set a separate approval PIN in Staff/);
       }
     }
     assert.equal(mem.db.business_settings.length, 2);

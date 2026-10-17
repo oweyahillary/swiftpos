@@ -1021,6 +1021,52 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/tls-reuse-gpu-a515.test.mjs
 
+      # A517 — load less at start: the manager screens, Tech page, setup and help are their own chunks (the PIN screen and
+      # the POS do not parse them); the manager chunk is fetched in the background only once the start-up is over, on a
+      # machine with more than 4 GB; main no longer requires exceljs or electron-updater at start (first use only).
+      - name: Desktop lazy loading (screens and main)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/lazy-load-a517.test.mjs
+
+      # A519 — the till checks "Sell" (an open bill is always finished); no duplicate terminal codes; Send logs to support
+      # (redaction, cap, pack); a lazy screen that cannot load says so (Retry / Back); the update bar's one-tap restart for
+      # back office, no PIN box.
+      - name: Desktop A519 till items (sell gate, terminal codes, support logs, screen boundary, update bar)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/a519-till-items.test.mjs
+
+      # A520 — Close Branch never deadlocks on a till it cannot hear from (a close that waits for it, kept past 24 h,
+      # applied when it reconnects); money still blocks with what to do; a locked till still reports; the server's Close
+      # page is Close Branch alone and its own shift closes first; floats opened at 0 named; Close the day / Close the
+      # branch as two rights; refused till changes cleared.
+      - name: Desktop Close Branch without deadlock (A520)
+        working-directory: apps/desktop
+        run: node --no-warnings test/close-branch-a520.test.mjs
+
+      # A521 — nothing waits on a till that is switched off: Close Branch closes the rest (a manager's tick, naming whose
+      # cash is not in tonight's totals), closes / confirmations / cash in-out wait for an off till with no 24-h expiry,
+      # Hide vs Revoke, held older/never-reported tills, test-data clears before any push, the 90 s remote close, the
+      # stock-count freeze lifting after 12 h (manager PIN before), relayed staff changes kept and forwarded, 7-day
+      # quarantine, the till's own expected cash on a web close.
+      - name: Desktop offline tills (A521)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/offline-tills-a521.test.mjs
+
+      # A523 — an old day with nothing left to count closes itself (no manager; the confirmed shifts' cash, closed_by
+      # NULL); money still locks with A520's text; a till that comes back learns a web force-close / web day close before
+      # the gate decides (drawers first, then the day); the day-close ack carries DRAWER_OPEN / SHIFTS_UNCONFIRMED.
+      - name: Desktop self-closing days (A523)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/self-closing-days-a523.test.mjs
+
       # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
       # proven till, joins, the gateway's path check, the roster, TLS pins.
       - name: Desktop branch server hardening

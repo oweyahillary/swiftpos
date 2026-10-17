@@ -167,5 +167,19 @@ let gfx: string | null = null;
 export function noteGraphicsLine(line: string): void { gfx = line; }
 export function graphicsLine(): string | null { return gfx; }
 
+// ── A517: may the screens fetch the manager screens in the background? ──────────────────────────────────────────────
+/** A machine with this much memory or less loads the manager screens only when they are opened (= A513's GPU line). */
+export const PRELOAD_MIN_TOTAL_BYTES = 4.5 * 1024 ** 3;
+/** …and none is fetched while less than this is free. */
+export const PRELOAD_MIN_FREE_BYTES = 1024 ** 3;
+/** Pure: the answer to idle:mayPreload — never during the start-up sequence, never on a low-memory machine. */
+export function preloadAnswer(o: { settled: boolean; totalBytes: number; freeBytes: number }): { ok: boolean; settled: boolean; why: string } {
+  const gb = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GB`;
+  if (!o.settled) return { ok: false, settled: false, why: 'ZapTill is still starting' };
+  if (o.totalBytes <= PRELOAD_MIN_TOTAL_BYTES) return { ok: false, settled: true, why: `low-memory machine (${gb(o.totalBytes)})` };
+  if (o.freeBytes < PRELOAD_MIN_FREE_BYTES) return { ok: false, settled: true, why: `only ${gb(o.freeBytes)} memory free` };
+  return { ok: true, settled: true, why: 'ok' };
+}
+
 /** Tests only. */
 export function _resetLowImpactStart(): void { for (const k of Object.keys(marks)) delete (marks as any)[k]; lastLine = null; }

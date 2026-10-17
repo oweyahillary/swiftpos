@@ -13,6 +13,8 @@ import { cleanExpenseMethod } from '../lib/expenseMethod';
 import { closesFirst } from '../lib/dayOrder';
 import { chunkIn } from '../lib/pgQuery';
 import { isDataError } from '../lib/orderErrors';
+import { settleLateRows } from '../lib/lateRows';   // A522
+import { mergeCloudClosedDays } from '../lib/tillsDays';   // A523
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -293,13 +295,17 @@ router.post('/push', async (req, res) => {
     if (validDays.length) {
       const ids = validDays.map((d: any) => d.id);
       // chunkIn: the id list never overflows the URL, and a failed read throws (never "none of them exist").
-      const existing = await chunkIn<{ id: string; business_id: string }>('business_days', 'id', ids, q => q.select('id, business_id'));
+      // A523: with the close fields — a day the web closed at once is merged, never closed twice (mergeCloudClosedDays).
+      const existing = await chunkIn<{ id: string; business_id: string; status: string | null; closed_at: string | null; closed_by: string | null;
+        counted_cash: unknown; expected_cash: unknown; cash_variance: unknown; notes: string | null; device_id: string | null; business_date: string | null }>(
+        'business_days', 'id', ids,
+        q => q.select('id, business_id, status, closed_at, closed_by, counted_cash, expected_cash, cash_variance, notes, device_id, business_date'));
       if (existing.some((r) => r.business_id !== businessId)) {
         res.status(409).json({ error: 'business_day id belongs to another business' });
         return;
       }
 
-      const rows = validDays.map((d: any) => ({
+      const sent = validDays.map((d: any) => ({
         id:            d.id,
         business_id:   businessId,                 // forced from token
         branch_id:     d.branch_id,
@@ -319,6 +325,9 @@ router.post('/push', async (req, res) => {
         notes:         d.notes ?? null,
         updated_at:    new Date().toISOString(),
       }));
+      // A523: a day the web closed at once (Tills & days): the till's own row for it never reopens it before the till has
+      // adopted the close, and the till's close of it is the same close (the web's time and closer, the till's figures).
+      const rows = await mergeCloudClosedDays(businessId, sent, existing);
 
       // Per-row, for the same reason as shifts: business_days_one_open_per_till
       // can reject a row, and a batch call would take the whole push down with it.
@@ -506,9 +515,11 @@ router.post('/push', async (req, res) => {
     for (const r of badFloats) rejected.push(r);
     if (validFloats.length) {
       const incomingShiftIds = [...new Set(validFloats.map((f: any) => f.shift_id))].filter(isUuid) as string[];
-      const ownedShifts = await chunkIn<{ id: string }>('shifts', 'id', incomingShiftIds,
-        q => q.select('id').eq('business_id', businessId));
+      const ownedShifts = await chunkIn<{ id: string; status?: string }>('shifts', 'id', incomingShiftIds,
+        q => q.select('id, status').eq('business_id', businessId));
       const ownedShiftSet = new Set(ownedShifts.map(s => s.id));
+      // A522: drawers already closed (on the web, while this till was off) — their figures are put right below.
+      const closedShiftSet = new Set(ownedShifts.filter(s => s.status && s.status !== 'open').map(s => s.id));
       // Till sync audit (A484): the sale a pay-out was made for. float_transactions.order_id references orders, and a
       // till's float can arrive before its sale does — so the link is kept only when this business's sale is already
       // here; otherwise it is left empty rather than refusing the cash movement (a 23503 would park it for good).
@@ -555,13 +566,20 @@ router.post('/push', async (req, res) => {
         const { error } = await supabase.from('float_transactions').upsert(row, { onConflict: 'id' });
         return { id: f.id, code: (error as { code?: string })?.code, error: error ? (error.message || 'write failed') : undefined, own: false, pg: error as PgErr };
       }));
+      const lateFloatShifts = new Set<string>();
       for (const r of results) {
-        if (!r.error) { upserted.floats++; continue; }
+        if (!r.error) {
+          upserted.floats++;
+          const sid = String((validFloats.find((f: any) => f.id === r.id) as any)?.shift_id ?? '');
+          if (closedShiftSet.has(sid)) lateFloatShifts.add(sid);
+          continue;
+        }
         // The route's own refusal (missing_shift) is parked; a database error only when it is about the data (P1-5).
         rejected.push(r.own
           ? { id: r.id, code: r.code ?? 'error', table: 'float_transactions', error: r.error }
           : judgeRowError('float_transactions', r.id, (r as { pg?: PgErr }).pg));
       }
+      if (lateFloatShifts.size) await settleLateRows(businessId!, [...lateFloatShifts], 'cash in / out');
     }
 
     // ── Expenses (business-scoped) ───────────────────────────────────────────
@@ -604,9 +622,18 @@ router.post('/push', async (req, res) => {
           const { error } = await supabase.from('expenses').upsert(row, { onConflict: 'id' });
           return { id: e.id as string, pg: error as PgErr };
         }));
+        const landed = new Set<string>();
         for (const r of results) {
-          if (!r.pg) { upserted.expenses++; continue; }
+          if (!r.pg) { upserted.expenses++; landed.add(r.id); continue; }
           rejected.push(judgeRowError('expenses', r.id, r.pg));   // P1-5: parked only for a data error; else 503
+        }
+        // A522: an expense into a drawer already closed (on the web, while this till was off) — its figures are put right.
+        const expenseShiftIds = [...new Set(validExpenses.filter((e: any) => landed.has(e.id)).map((e: any) => e.shift_id).filter(isUuid))] as string[];
+        if (expenseShiftIds.length) {
+          const drawers = await chunkIn<{ id: string; status: string }>('shifts', 'id', expenseShiftIds,
+            q => q.select('id, status').eq('business_id', businessId));
+          const closed = drawers.filter((d) => d.status !== 'open').map((d) => d.id);
+          if (closed.length) await settleLateRows(businessId!, closed, 'an expense');
         }
       }
     }

@@ -209,7 +209,9 @@ export function daysNotClosed(days: OpenDayRow[], now: Date, names: Record<strin
       severity: 'critical',
       businessId: d.business_id,
       title: `${names[d.business_id] ?? 'A client'}: day ${d.business_date} not closed${d.terminal_code ? ` on ${d.terminal_code}` : ''}`,
-      detail: `The business day ended ${durationLabel(over)} ago. A manager needs to count the cash and close it.`,
+      // A522: a till that is off closes nothing — say where it can be closed without it.
+      detail: `The business day ended ${durationLabel(over)} ago. A manager needs to count the cash and close it — `
+        + 'from the till, or from Remote Day Close on the web (a till switched off for a day can be closed there as abandoned).',
     });
   }
   return out;

@@ -35,7 +35,8 @@ import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
 import { getUpdateDiagnostics, getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { noteActivity, noteRendererPing } from './activityTracker';   // A508
-import { logLine, authLog } from './logFile';
+import { logLine, authLog, getLogPath, getAuthLogPath, KEEP_FILES, AUTH_KEEP_FILES } from './logFile';
+import { buildSupportText, packSupportText, readLogFiles, rolledPaths, sendVerdict, syncSummary, type SupportHeader } from './supportLogs';   // A519
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
 import { getReceiptPay, setReceiptPay } from './receiptPay';   // A450 (+ A492: set from the till)
 import { isSessionRefusal } from './sessionRecovery';   // A407
@@ -46,13 +47,14 @@ import { cacheStaffCredential, verifyPinOffline } from './pinCache';
 import { assertPinAllowed, recordPinFailure, notePinSuccess, PIN_CLOUD_BUSY } from './pinAttempts';   // A494: one limiter for every local PIN check
 import { applyOffers } from './offers';   // A494: the offer discount a sale claims, re-checked on the till's own offers
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
+import { preloadAnswer, startupSettled, lastStartupLine } from './lowImpactStart';   // A517, A519
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import path from 'path';   // A516
-import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, replicateToNode, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
+import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, replicateToNode, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush, learnBeforeLock } from './syncEngine';   // A523: learnBeforeLock
 import { tillBranchId } from './deviceConfig';   // A446
 import { MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
-import { signedIn as sessionPerson, signedInCan, personCan, personKeys, mayMoveMoney, roleCeilingRefusal, roleMap, mayActOn, hasMarker, isOwnerRole, type PersonLike } from './tillAccess';   // A490: the till's one rule
+import { signedIn as sessionPerson, signedInCan, personCan, personKeys, backOffice as personBackOffice, mayMoveMoney, roleCeilingRefusal, roleMap, mayActOn, hasMarker, isOwnerRole, type PersonLike } from './tillAccess';   // A490: the till's one rule
 import { maySetMpesa } from './permissions';   // A492
 import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from './mpesaReceive';   // A492
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
@@ -72,10 +74,13 @@ import { exportDailySalesReport } from './dailySalesReport';
 
 /** Range selection sent from the manager report screens. */
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
-import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, mayCloseDay, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
+import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, mayCloseDay, mayCloseBranch, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from './branchClose';
 import { executeShiftMoney, createShiftMoneyInstruction, cancelShiftMoneyInstruction, SHIFT_MONEY_CLOSED, type ShiftMoneyPayload } from './branchClose';   // A465
 import { forgetTill } from './branchClose';   // F4
+import { hideTill, peerIsStale, unresolvedBlockers } from './branchClose';   // A521
+/** A521: what the manager is told when something is sent to a till that is off — it waits for it (no expiry). */
+const TILL_OFF_NOTE = 'The till is not connected — this applies when it reconnects.';
 import { ownOpenShift } from './shiftService';   // A465
 import { takeSnapshot, setBackupDir, maintenanceStatus } from './maintenance';
 import { emitEvent, resetOutboxCursors, rearmNodeOutbox, rearmFailedNodeRows, rearmPeerQuarantine, retryPeerQuarantine, peerQuarantineSummary, nodeQueueDepth } from './nodeIngest';
@@ -83,6 +88,8 @@ import { channelHealth, serverInfo, protocolVerdict, NODE_PROTOCOL } from './nod
 import { lastFollowLook } from './nodeFollow';   // A501
 import { setNodeDeviceToken, nodeDeviceToken, joinProofHeaders } from './nodeClient';   // F7, A503
 import { nextBillNumber } from './billNumber';   // A500
+import { sellRefusal, isOpenBill, createOpenBills } from './sellGate';   // A519: the till checks "Sell"
+import { terminalCodeVerdict, normaliseCode, type CodeVerdict } from './terminalCodes';   // A519: no duplicate terminal codes
 import { readServerCert, pinnedFetch, securityCode, setTillPin, tillPin, nodeTlsStatus, serverSecurityCode, forgetPinForRetrust } from './lanTls';   // A489
 import { localOrderDetail } from './managerReports';   // A444
 import { detailFromCloud, receiptPayloadFromDetail, type OrderDetail } from './orderDetail';   // A444
@@ -96,7 +103,7 @@ import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession,
 import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
 import { refreshStaffRosterNow, staffChangedHere } from './staffRoster';   // A446
 import { overlayLocalChanges } from './localChanges';   // A448
-import { recordTillChange, sendTillChangesNow, tillChangeStates, changeKeys } from './changeQueue';   // A448 (A490: changeKeys)
+import { recordTillChange, sendTillChangesNow, tillChangeStates, changeKeys, dismissRefusedChanges, mayChange } from './changeQueue';   // A448 (A490: changeKeys)
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 import { listenForServers } from './serverBeacon';   // A427
@@ -120,6 +127,16 @@ function clearCatalogue(db: ReturnType<typeof getLocalDb>) {
     DELETE FROM users;
     DELETE FROM tables;
   `);
+}
+
+// A519: the bills this run numbered while their person could sell, and those recalled from hold (sellGate.ts) — an
+// open bill can still be held, sent and paid when its person's permissions change mid-shift.
+const openBills = createOpenBills();
+// A519: the terminal codes the branch server said its tills use, from this run's join answer (terminalCodes.ts) — the
+// fallback when the cloud cannot be asked.
+let joinCodesInUse: string[] | null = null;
+function noteJoinCodes(grant: { terminal_codes?: unknown }): void {
+  if (Array.isArray(grant?.terminal_codes)) joinCodesInUse = grant.terminal_codes.map((c: unknown) => normaliseCode(c)).filter(Boolean);
 }
 
 export function registerIpcHandlers() {
@@ -306,6 +323,7 @@ export function registerIpcHandlers() {
       return { status: r?.status === 'denied' ? 'denied' as const : 'expired' as const };
     }
     const g = r.grant;
+    noteJoinCodes(g);   // A519: the branch's codes in use, for the bind step's check
     // A494: checked again at the answer (a technician's session may have ended meanwhile), and a till already set up
     // takes a grant only for the cloud it is set up for — a server cannot point it at another cloud.
     if (!ask.rejoin && joinedHere() && !getActiveSession()) throw new Error(ALREADY_JOINED);
@@ -518,6 +536,9 @@ export function registerIpcHandlers() {
   handle('held:hold', async (_event, order: any) => {
     noteActivity('held');   // A508: a bill held — the till is in use
     const db = getLocalDb();
+    // A519: holding a bill already open is never refused (the cart is never lost); a new one needs "Sell".
+    const refusedHold = sellRefusal('hold', sessionPerson(), isOpenBill(db, order?.orderNumber, openBills));
+    if (refusedHold) throw new Error(refusedHold);
     const held = {
       id: `held_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       heldAt: new Date().toISOString(),
@@ -548,7 +569,9 @@ export function registerIpcHandlers() {
       db.prepare(`DELETE FROM held_orders WHERE id = ?`).run(tabId);
       return toHeld(row);
     });
-    return take(id);
+    const recalled = take(id);
+    if (recalled) openBills.note(recalled.orderNumber);   // A519: a recalled bill stays open — it can be paid or held again
+    return recalled;
   });
 
   handle('held:delete', async (_event, { id }: { id: string }) => {
@@ -1092,6 +1115,9 @@ export function registerIpcHandlers() {
     return true;
   });
   handle('idle:clear', async () => { clearIdleLock(); return true; });
+  // A517: may the screens fetch the manager screens in the background now? Not while the start-up sequence runs (A513),
+  // not on a low-memory machine — there they load when opened. Two cheap reads, no PowerShell.
+  handle('idle:mayPreload', async () => preloadAnswer({ settled: startupSettled(), totalBytes: os.totalmem(), freeBytes: os.freemem() }));
   handle('idle:suppress', async () => {
     const token = ++_idleToken;
     _idleReleases.set(token, suppressIdleLock());
@@ -1627,6 +1653,9 @@ export function registerIpcHandlers() {
   }
 
   handle('order:create', async (_event, orderPayload: any) => {
+    // A519: paying a bill already open is never refused (finish what was started); a sale nobody opened needs "Sell".
+    const refusedSale = sellRefusal('pay', sessionPerson(), isOpenBill(getLocalDb(), orderPayload?.order_number, openBills));
+    if (refusedSale) { logLine('sale', `A519: refused a sale — ${sessionPerson()?.staffId ?? 'nobody'} has no Sell on this till`); throw new Error(refusedSale); }
     // A490: a discount given by hand needs sales.discount — the till is the authority here (offline too; the cloud never
     // refuses a till's sale for it). What offers took off is not the person's discount. Nothing else about selling asks.
     // A494: what the offers took is re-checked on THIS till's offers (the same engine the cart and the cloud use) — the
@@ -1800,41 +1829,49 @@ export function registerIpcHandlers() {
   handle('update:getStatus', async () => getUpdateStatus());
   // A496: why this till has (or has not) got its update — the status with its reason and the last 40 update log lines.
   handle('update:getDiagnostics', async () => getUpdateDiagnostics());
-  // Apply a downloaded update now, NSIS progress visible + relaunch. Gated to a manager/tech
-  // PIN at the call site (the banner verifies before invoking); a no-op unless an update is
-  // actually downloaded, so it can never half-restart a trading till.
-  // A490: restarting a till for an update stops its selling — the same people who close the day (shifts.close_day; the
-  // owner's role always). which version tills take is ZapTill's (admin portal, A493), not who restarts one.
+  // Apply a downloaded update now, NSIS progress visible + relaunch (A509's updater task where present); a no-op unless
+  // an update is actually downloaded, so it can never half-restart a trading till.
+  // A519 (owner, 2026-10-16, a manager asked for a PIN on the update bar: "its either we make it possible to restart
+  // without the pin or we remove the ability totally … not needed pin confirmation and you are the manager"): ONE tap for
+  // the person signed in when they are back office (manager, supervisor, owner — the A499 rule, isBackOffice of their
+  // keys), or with a technician console open. Nobody else, and nobody signed in: refused here — their bar has no button
+  // (it installs on close, and by itself when the till is idle, A508). The PIN path (the PIN restart channel and its
+  // shifts.close_day rule, A490) is gone; the session is never switched. A restart closes no shift and no day (the
+  // local database keeps them).
   handle('update:installNow', async () => {
-    // A306 (hardened 2026-09-22): a renderer-only gate is bypassable by any code that can reach the bridge — refused in
-    // MAIN unless the person signed in may close the day.
-    if (!mayCloseDay()) return { ok: false, reason: 'manager_required' };
+    const me = sessionPerson();
+    if (!getActiveSession() && !(me && personBackOffice(me.roleName, me.permissions))) {
+      logLine('update', `A519: refused "Restart & update now" — ${me ? `${me.staffId} is not back office` : 'nobody signed in'}`);
+      return { ok: false, reason: 'manager_required' };
+    }
+    logLine('update', `restart for the update by ${me ? (me.name ?? me.staffId) : 'the technician'}`);
     return installUpdateNow();
   });
-  // A490: the update bar's "Restart & update now" with someone's PIN — that person is IDENTIFIED (this till's staff list,
-  // its saved sign-ins, the branch server, the cloud), never signed in: the person at the till stays signed in (the bar
-  // used to sign the PIN's holder in through auth:verifyPin, replacing the session). They must hold shifts.close_day.
-  const UPDATE_PIN_REFUSED = 'That PIN cannot restart the till for the update (it needs a PIN that may close the day).';
-  handle('update:installWithPin', async (_e, payload) => {
-    const { pin } = assertPayload<{ pin: string }>({ pin: { t: 'string', min: 1 } }, payload);
-    // A494: someone must be signed in at the till (the bar is not a PIN oracle for whoever walks up to a locked till).
-    if (!sessionPerson()) return { ok: false, reason: 'not_signed_in', message: 'Sign in first, then restart for the update.' };
-    let who: { id: string; name: string | null; roleName: string | null; permissions: unknown } | null;
-    try { who = await identifyPerson(String(pin).trim()); }
-    catch (e: any) {
-      // A494: only "locked" / "wait" are said as they are — "this till does not know that PIN" (offline) would tell an
-      // unknown PIN from a real one that may not restart, so it gets the one refusal below.
-      const m = String(e?.message ?? '');
-      if (/Too many/i.test(m)) return { ok: false, reason: 'check_failed', message: m };
-      who = null;
+
+  /**
+   * A519: may this till take this terminal code at its branch? The cloud first (the branch's approved tills, this
+   * machine's own earlier installs left out); else what the branch server's join answer said; else nothing refuses it.
+   */
+  async function checkTerminalCode(code: string, branchId: string): Promise<CodeVerdict> {
+    let cloud: { in_use: string[]; suggestion?: string } | null = null;
+    if (branchId) {
+      try {
+        const res = await tillFetch(`/api/support/terminal-codes?branch_id=${encodeURIComponent(branchId)}&code=${encodeURIComponent(normaliseCode(code))}`, {}, 8_000);
+        if (res.ok) {
+          const d: any = await res.json().catch(() => null);
+          if (d && Array.isArray(d.in_use)) cloud = { in_use: d.in_use.map((c: unknown) => normaliseCode(c)), suggestion: typeof d.suggestion === 'string' ? d.suggestion : undefined };
+        }
+      } catch { /* offline / not signed in yet — the branch server's answer, or nothing */ }
     }
-    // A494: ONE answer for an unknown PIN and a real PIN that may not restart — telling them apart confirmed a guess.
-    if (!who || !personCan(who, 'shifts.close_day')) {
-      if (who) recordPinFailure();   // (an unknown PIN was counted by identifyPerson)
-      return { ok: false, reason: 'not_allowed', message: UPDATE_PIN_REFUSED };
-    }
-    logLine('update', `restart for the update approved by ${who.name ?? who.id}`);
-    return installUpdateNow();
+    return terminalCodeVerdict({ code, current: getDeviceConfig()?.terminal_code ?? null, cloud, server: joinCodesInUse });
+  }
+  // A519: the setup screen asks before it saves (and for the first free code to offer). Before the till is set up, or
+  // with a technician console open — the same people who may write the till's identity (tillGates).
+  handle('install:checkTerminalCode', async (_e, payload) => {
+    const { code, branch_id } = assertPayload<{ code: string; branch_id?: string }>(
+      { code: { t: 'string', min: 1 }, branch_id: { t: 'string', optional: true } }, payload);
+    if (isConfigured() && !getActiveSession()) throw new Error('This till’s set-up changes only from the technician console.');
+    return checkTerminalCode(code, branch_id || getDeviceConfig()?.branch_id || '');
   });
 
   handle('config:isConfigured', async () => {
@@ -1852,6 +1889,15 @@ export function registerIpcHandlers() {
     if (refusal) {
       logLine('config', `refused ${Object.keys(patch ?? {}).join(',') || '(empty)'}`);
       throw new Error(refusal);
+    }
+    // A519: a terminal code that CHANGES (setup's bind step, a technician) is checked against the branch's other tills;
+    // a code that stays as it is is never refused — a till already trading keeps its code whatever a sibling uses.
+    if (patch && patch.terminal_code !== undefined && patch.terminal_code !== null) {
+      const v = await checkTerminalCode(String(patch.terminal_code), String(patch.branch_id ?? getDeviceConfig()?.branch_id ?? ''));
+      if (!v.ok) {
+        logLine('config', `A519: refused terminal code ${normaliseCode(patch.terminal_code)} — ${v.message}`);
+        throw new Error(v.message ?? 'That terminal code cannot be used.');
+      }
     }
     // A502: a till's branch server address and access code come only from Find my server (install:joinStatus saves
     // them before this) — never typed. A different address in a patch is dropped and logged; clearing it (null) stays.
@@ -1892,7 +1938,12 @@ export function registerIpcHandlers() {
     // A500: never a number this machine already holds — a wiped / reinstalled till (its old code restored, its counter at
     // 0) carries on past the branch's copies of its earlier sales instead of minting T3--1 again (billNumber.ts).
     // No terminal code yet → the old unprefixed scheme, as before.
-    return nextBillNumber(getLocalDb(), getDeviceConfig()?.terminal_code);
+    // A519: a new bill number is a new sale — "Sell" (orders.create) on the person's own map; the number is then open.
+    const refused = sellRefusal('number', sessionPerson(), false);
+    if (refused) throw new Error(refused);
+    const n = nextBillNumber(getLocalDb(), getDeviceConfig()?.terminal_code);
+    openBills.note(n);
+    return n;
   });
 
   ipcMain.on('app:version', (event) => { event.returnValue = app.getVersion(); });
@@ -2094,7 +2145,15 @@ export function registerIpcHandlers() {
   // what a missing bind in getOpenShift did in production. A gate that cannot
   // run must block and say why, using the same hard-block UI as an unclosed day.
   handle('day:gate', async () => {
-    try { return checkDayGate(); }
+    try {
+      let gate = checkDayGate();
+      // A523: before telling the till it is locked, ask the cloud what it closed (a drawer force-closed on the web, a day
+      // closed on the web or as abandoned) — adopted here, then the gate is read again. At most once a minute, at most
+      // a few seconds' wait; offline the lock shows at once. An old day with nothing left to count already closed itself
+      // inside checkDayGate (autoCloseEmptyDay).
+      if (gate.needsManager && gate.staleDay && await learnBeforeLock()) gate = checkDayGate();
+      return gate;
+    }
     catch (err: any) {
       return {
         canTrade: false,
@@ -2108,16 +2167,19 @@ export function registerIpcHandlers() {
 
   // ── Central day close (Phase 4) — node-side manager screen ────────────────
   // A490: Close Branch is shifts.close_day — its overview (every till's figures) too.
-  const CLOSE_REFUSED = 'Only someone who may close the day can close the branch.';
+  // A520: Close Branch is its own right, shifts.close_branch (a supervisor closes a till's day, not the branch). The
+  // overview — every till's figures — is also read by the server's expense form (RecordExpenseForm), so close_day still
+  // reads it; closing anything from it is close_branch.
+  const CLOSE_REFUSED = 'Only someone who may close the branch can do this (Close the branch, in Roles and permissions).';
   handle('branchClose:overview', async () => {
-    if (!mayCloseDay()) return { error: CLOSE_REFUSED };
+    if (!mayCloseBranch() && !mayCloseDay()) return { error: CLOSE_REFUSED };
     try { return branchCloseOverview(); }
     catch (err: any) { return { error: err?.message ?? 'Could not read the branch state' }; }
   });
   handle('branchClose:closeTill', async (_e, { device_id, counted_cash, notes }:
     { device_id: string; counted_cash: number; notes?: string }) => {
     try {
-      if (!mayCloseDay()) return { ok: false, error: CLOSE_REFUSED };
+      if (!mayCloseBranch()) return { ok: false, error: CLOSE_REFUSED };   // A520
       const cfg = getDeviceConfig();
       const staff = getLocalDb().prepare(`SELECT staff_id, staff_name FROM staff_session WHERE id=1`).get() as any;
       const payload = {
@@ -2134,8 +2196,10 @@ export function registerIpcHandlers() {
         return r.ok ? { ok: true, self: true, summary: r.summary ?? null, already_closed: r.already_closed ?? false }
                     : { ok: false, error: r.error };
       }
+      // A521 (#14): to a till that is not connected it is a close that waits for it (createCloseInstruction) — said so.
+      const offline = peerIsStale(device_id);
       const { id } = createCloseInstruction(device_id, payload, staff?.staff_id ?? null);
-      return { ok: true, instruction_id: id };
+      return { ok: true, instruction_id: id, ...(offline ? { queued_offline: true, message: TILL_OFF_NOTE } : {}) };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? 'Could not start the close' };
     }
@@ -2154,9 +2218,10 @@ export function registerIpcHandlers() {
         if (r.ok) pushNow();
         return r.ok ? { ok: true, self: true, summary: r.summary ?? null } : { ok: false, error: r.error };
       }
+      const offline = peerIsStale(device_id);   // A521 (#13): kept for it however long it is off — and said so
       const { id } = createConfirmInstruction(device_id, instr, confirmer.id);
-      logLine('branchClose', `A452 confirm of shift ${shift_id} sent to ${device_id} by ${confirmer.name ?? confirmer.id}`);
-      return { ok: true, instruction_id: id };
+      logLine('branchClose', `A452 confirm of shift ${shift_id} sent to ${device_id} by ${confirmer.name ?? confirmer.id}${offline ? ' (not connected — applies when it reconnects)' : ''}`);
+      return { ok: true, instruction_id: id, ...(offline ? { queued_offline: true, message: TILL_OFF_NOTE } : {}) };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? 'Could not confirm the shift' };
     }
@@ -2185,9 +2250,12 @@ export function registerIpcHandlers() {
       if (isSelf) {
         if (!ownOpenShift(p.shift_id)) return { ok: false, error: SHIFT_MONEY_CLOSED };
       } else {
-        // Only to a till heard from in the last minute that reports this shift open — never queued into the dark.
+        // Only to a till whose last report shows this shift open. A521 (#13, owner 2026-10-17: "never wait on an absent
+        // till … queue the rest for when it reconnects"): a till that is off is no longer refused — the row waits for it
+        // (no 24-h expiry; Cancel withdraws it until the till picks it up) and the manager is told it applies on reconnect.
+        // A till that closed that shift meanwhile refuses it with its reason (SHIFT_MONEY_CLOSED), shown on the screen.
         const row = getLocalDb().prepare(`SELECT state, updated_at FROM node_peer_state WHERE device_id = ?`).get(p.device_id) as { state: string; updated_at: string } | undefined;
-        if (!row || Date.now() - new Date(row.updated_at).getTime() > 60_000) return { ok: false, error: 'That till has not been heard from — check it is on' };
+        if (!row) return { ok: false, error: 'That till has never reported to this server — check it is on' };
         let st: PeerDayState | null = null;
         try { st = JSON.parse(row.state); } catch { /* unreadable */ }
         if (!st?.shifts) return { ok: false, error: 'That till is on an older version — update it to record money on it from here.' };
@@ -2213,21 +2281,34 @@ export function registerIpcHandlers() {
         logLine('branchClose', `A465 ${what} on this server's shift ${p.shift_id} by ${me.name ?? me.id}`);
         return { ok: true, row_id: instr.row_id, direct: true, summary: r.summary ?? null };
       }
+      const offline = peerIsStale(p.device_id);   // A521
       const { id } = createShiftMoneyInstruction(p.device_id, instr, me.id);
-      logLine('branchClose', `A465 ${what} on shift ${p.shift_id} sent to ${p.device_id} by ${me.name ?? me.id}`);
-      return { ok: true, instruction_id: id, row_id: instr.row_id };
+      logLine('branchClose', `A465 ${what} on shift ${p.shift_id} sent to ${p.device_id} by ${me.name ?? me.id}${offline ? ' (not connected — applies when it reconnects)' : ''}`);
+      return { ok: true, instruction_id: id, row_id: instr.row_id, ...(offline ? { queued_offline: true, message: TILL_OFF_NOTE } : {}) };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? 'Could not record it' };
     }
   });
   // F4 (2026-10-14): "Forget this till" — a till gone for good (replaced, moved) leaves Close Branch at once. Its history
-  // stays (the branch's data); if it ever reports again it is listed again.
+  // stays (the branch's data). A521 (#3): named "Revoke this till" for what it does — its device key and its right to
+  // reconnect go with it, so it is refused on every route until it joins again (Find my server). The screen said "it
+  // comes back if it reports again"; it could not report. A till only off for a while is hidden instead (hideTill).
   handle('branchClose:forgetTill', async (_e, payload) => {
     const { device_id } = assertPayload<{ device_id: string }>({ device_id: { t: 'string', min: 1 } }, payload);
-    if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server forgets a till.' };
-    if (!mayCloseDay()) return { ok: false, error: 'Only someone who may close the day can forget a till.' };
-    if (!forgetTill(device_id)) return { ok: false, error: 'That till cannot be forgotten here.' };
-    logLine('branchClose', `F4 till ${device_id} forgotten by a manager`);
+    if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server revokes a till.' };
+    if (!mayCloseBranch()) return { ok: false, error: 'Only someone who may close the branch can revoke a till.' };   // A520
+    if (!forgetTill(device_id)) return { ok: false, error: 'That till cannot be revoked here.' };
+    logLine('branchClose', `F4/A521 till ${device_id} revoked by a manager (its device key removed — it joins again to reconnect)`);
+    return { ok: true };
+  });
+  // A521 (#3): "Hide from Close Branch" — off the list until it next reports; its key, its right to reconnect and what
+  // waits for it are kept.
+  handle('branchClose:hideTill', async (_e, payload) => {
+    const { device_id } = assertPayload<{ device_id: string }>({ device_id: { t: 'string', min: 1 } }, payload);
+    if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server hides a till.' };
+    if (!mayCloseBranch()) return { ok: false, error: 'Only someone who may close the branch can hide a till.' };
+    if (!hideTill(device_id)) return { ok: false, error: 'That till cannot be hidden here.' };
+    logLine('branchClose', `A521 till ${device_id} hidden from Close Branch by a manager (until it next reports)`);
     return { ok: true };
   });
   // A465: withdraw one the till has not answered yet.
@@ -2242,44 +2323,59 @@ export function registerIpcHandlers() {
   // shifts are closed and confirmed they get a close branch"). No second count: each till closes with its confirmed
   // shifts' cash. The server's date is final — a till still on yesterday closes that day too.
   handle('branchClose:closeBranch', async (_e, payload) => {
-    const { notes, totals_confirmed } = assertPayload<{ notes?: string; totals_confirmed?: boolean }>(
-      { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true } }, payload ?? {});
+    const { notes, totals_confirmed, without_tills } = assertPayload<{ notes?: string; totals_confirmed?: boolean; without_tills?: string[] }>(
+      { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true }, without_tills: { t: 'stringArray', optional: true } }, payload ?? {});
     try {
-      if (!mayCloseDay()) return { ok: false, error: CLOSE_REFUSED };
+      if (!mayCloseBranch()) return { ok: false, error: CLOSE_REFUSED };   // A520: shifts.close_branch
       const ov = branchCloseOverview();
-      const blockers: string[] = [];
-      const label = (t: { is_self: boolean; device_id: string }) => (t.is_self ? 'This terminal' : `Terminal ${t.device_id.slice(0, 8)}`);
-      for (const t of ov.tills) {
-        const st = t.state as PeerDayState | null;
-        if (!st) { blockers.push(`${label(t)} has never reported in`); continue; }
-        const stale = !t.is_self && (!t.last_seen || Date.now() - new Date(t.last_seen).getTime() > 120_000);
-        // F4 (2026-10-14): a till whose last word was "my day is closed" (and no drawer open) has nothing to close —
-        // switched off for the night, it no longer holds the branch's close. Forget it on the screen if it is gone.
-        if (stale && st.day_open === false && !st.open_drawer) continue;
-        if (stale) blockers.push(`${label(t)} has not been heard from in the last 2 minutes`);
-        if (!st.shifts) blockers.push(`${label(t)} is on an older version — update it to close the branch from here`);
-        if (st.open_drawer) blockers.push(`${label(t)} still has a drawer open${st.open_drawer.cashier_name ? ` (${st.open_drawer.cashier_name})` : ''}`);
-        const waiting = (st.shifts ?? []).filter((s) => s.state === 'awaiting').length;
-        if (waiting) blockers.push(`${label(t)}: ${waiting} shift${waiting === 1 ? '' : 's'} not confirmed yet`);
-      }
-      if (blockers.length) return { ok: false, error: `The branch cannot close yet: ${blockers.join('; ')}.`, blockers };
+      // A520: one rule with the screen (branchClose.assessBranchClose). A till not heard from no longer holds the close
+      // unless its last report shows money a person must deal with (a drawer open, a shift to confirm) — the KRUNCH
+      // deadlock: switched-on tills locked on an old day were "not heard from" and nothing could close.
+      // A521 (#1, owner 2026-10-17: "where money is involved a manager may go ahead with a clear warning naming whose cash
+      // is not in tonight's totals"): another till's money no longer stops everything — the manager ticks its warning
+      // (without_tills) and the branch closes without it: this terminal's own day and every other till close, and that
+      // till is left a close that waits for its money (it answers "not yet" until the drawer is closed and confirmed).
+      // This terminal's own money is never gone past. Nothing of another till's ever stops the server's own close.
+      const { held, without } = ov.close;
+      const ticked = new Set((without_tills ?? []).filter((id) => without.some((w) => w.device_id === id)));
+      const blockers = unresolvedBlockers(ov.close, ticked);
+      if (blockers.length) return { ok: false, error: `The branch cannot close yet: ${blockers.join('; ')}.`, blockers,
+        ...(without.some((w) => !ticked.has(w.device_id)) ? { code: 'TILLS_WITH_MONEY', without: without.filter((w) => !ticked.has(w.device_id)) } : {}) };
+      const heldBy = new Map(held.map((h) => [h.device_id, h]));
       // A458: then the manager confirms the day's totals per payment method (the confirmed shifts added up).
       if (totals_confirmed !== true) return { ok: false, error: 'Check the day\'s totals by payment method and tick that they are right before closing the branch.', code: 'TOTALS_NOT_CONFIRMED' };
       const staff = getLocalDb().prepare(`SELECT staff_id, staff_name FROM staff_session WHERE id=1`).get() as any;
       const base = { business_date: businessDateNow(), counted_cash: null, notes, closed_by_staff_id: staff?.staff_id ?? null, closed_by_name: staff?.staff_name ?? null };
-      const results: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }> = [];
-      for (const t of ov.tills) {
+      const results: Array<{ device_id: string; ok: boolean; sent?: boolean; held?: boolean; without?: boolean; skipped?: boolean; error?: string }> = [];
+      // This terminal's own day first — whatever any other till's close does after it.
+      for (const t of ov.tills.filter((x) => x.is_self)) {
         if (!(t.state as PeerDayState | null)?.day_open) continue;
-        if (t.is_self) {
-          const r = executeCloseDay(base);
-          results.push({ device_id: t.device_id, ok: r.ok, error: r.error });
+        const r = executeCloseDay(base);
+        results.push({ device_id: t.device_id, ok: r.ok, error: r.error });
+      }
+      for (const t of ov.tills.filter((x) => !x.is_self)) {
+        const st = t.state as PeerDayState | null;
+        const h = heldBy.get(t.device_id);
+        if (ticked.has(t.device_id)) {
+          // A521: closed WITHOUT it — a close that waits for its money (an older build is sent nothing: no `shifts`).
+          if (st?.shifts) createCloseInstruction(t.device_id, { ...base, wait_for_till: true }, staff?.staff_id ?? null);
+          results.push({ device_id: t.device_id, ok: true, without: true, sent: !!st?.shifts, held: true });
+          continue;
+        }
+        if (h && h.close === false) { results.push({ device_id: t.device_id, ok: true, held: true, skipped: true }); continue; }
+        if (!st?.day_open) continue;
+        if (h) {
+          // A520: not connected — a close that waits for it (no 24-h expiry); it closes its open day(s) when it next polls.
+          createCloseInstruction(t.device_id, { ...base, wait_for_till: true }, staff?.staff_id ?? null);
+          results.push({ device_id: t.device_id, ok: true, sent: true, held: true });
         } else {
           createCloseInstruction(t.device_id, base, staff?.staff_id ?? null);
           results.push({ device_id: t.device_id, ok: true, sent: true });
         }
       }
       const dayTotals = ov.totals.methods.map((l) => `${l.method} ${l.confirmed}`).join(', ');   // A458
-      logLine('branchClose', `A452 branch close by ${staff?.staff_name ?? 'a manager'} (totals confirmed: ${dayTotals || 'none'}): ${results.map((r) => `${r.device_id.slice(0, 8)}=${r.ok ? (r.sent ? 'sent' : 'closed') : 'refused'}`).join(', ') || 'nothing open'}`);
+      logLine('branchClose', `A452 branch close by ${staff?.staff_name ?? 'a manager'} (totals confirmed: ${dayTotals || 'none'}): ${results.map((r) => `${r.device_id.slice(0, 8)}=${r.ok ? (r.without ? 'closed WITHOUT it (money waits there)' : r.skipped ? 'not sent (older build / never reported)' : r.held ? 'held for when it connects' : r.sent ? 'sent' : 'closed') : 'refused'}`).join(', ') || 'nothing open'}`);
+      for (const w of without.filter((x) => ticked.has(x.device_id))) logLine('branchClose', `A521 manager ${staff?.staff_name ?? '?'} went past: ${w.warning}`);
       return { ok: results.every((r) => r.ok), results };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? 'Could not close the branch' };
@@ -2407,47 +2503,6 @@ export function registerIpcHandlers() {
     return local(v.staff);
   }
 
-  /**
-   * A490: WHO holds this PIN, with their role and permissions — never signing them in (the update bar's restart). This
-   * till's staff list and saved sign-ins first (no network), then the branch server, then the cloud (its answer is read,
-   * not kept). null: nobody has that PIN. Throws when it cannot be checked at all.
-   */
-  async function identifyPerson(pin: string): Promise<{ id: string; name: string | null; roleName: string | null; permissions: unknown } | null> {
-    assertPinAllowed();   // A494
-    const cfg = getDeviceConfig();
-    const branchId = sessionPerson()?.branchId || cfg?.branch_id || '';
-    const as = (s: { staffId: string; name: string; roleName: string | null; permissions: unknown }) =>
-      ({ id: s.staffId, name: s.name ?? null, roleName: s.roleName ?? null, permissions: s.permissions });
-    const listed = verifyPinAtNode(pin, branchId);
-    if (listed.ok) return as(listed.staff);
-    if (listed.reason === 'ambiguous') throw new Error(listed.message);
-    const saved = verifyPinOffline(pin, branchId);
-    if (saved.ok) return as(saved.staff);
-    const localNo = listed.reason === 'no_match' || (!saved.ok && saved.reason === 'no_match');
-    const nobody = () => { recordPinFailure(); return null; };   // A494: counted
-    if (cfg?.node_url && !isNodeRole(cfg.device_role)) {
-      const r = await verifyPinAtNodeClient(pin, branchId);
-      if (r.status === 'ok') return as(r.staff);
-    }
-    let res: Awaited<ReturnType<typeof tillFetch>>;
-    try {
-      res = await withinMs(tillFetch('/api/auth/verify-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: verifyPinBody(pin, branchId) }), 8_000);
-    } catch {
-      if (localNo) recordPinFailure();   // A494: offline, the till's own "no" counts
-      throw new Error('This till does not know that PIN and cannot reach the cloud to check it.');
-    }
-    if (res.status === 429) throw new Error(PIN_CLOUD_BUSY);   // A494: never "nobody" — the cloud said wait
-    if (isUnreachableStatus(res.status)) {
-      if (localNo) recordPinFailure();
-      throw new Error('This till does not know that PIN and the cloud is not answering.');
-    }
-    if (!res.ok) return nobody();
-    const d: any = await res.json().catch(() => ({}));
-    if (!d?.staff?.id) return nobody();
-    return { id: String(d.staff.id), name: d.staff.name ?? null, roleName: d.staff.role ?? null, permissions: d.permissions ?? {} };
-  }
-
   handle('shift:awaiting', async () => awaitingConfirmation());
 
   // A366: may the signed-in person close the open shift (its owner or a manager)? The screen asks first; closeShift
@@ -2550,6 +2605,8 @@ export function registerIpcHandlers() {
       order_number: string; lines: unknown; order_type?: string; table_number?: string;
     }>({ order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, order_type: { t: 'string', optional: true },
          table_number: { t: 'string', optional: true } }, payload);
+    const refusedSend = sellRefusal('kitchen', sessionPerson(), isOpenBill(getLocalDb(), order_number, openBills));   // A519
+    if (refusedSend) throw new Error(refusedSend);
     return { recorded: recordKitchenSend(order_number, lines, { order_type: order_type ?? null, table_number: table_number ?? null }) };
   });
 
@@ -2850,6 +2907,14 @@ export function registerIpcHandlers() {
   }
   // A448: what waits on this till (the screens' "not on the cloud yet" / "waiting for the owner" / "refused").
   handle('manage:changeStates', async () => tillChangeStates());
+  // A520 (KRUNCH: "Changes made on this till: 5 not taken by the cloud", with nothing to do about it): a refused change is
+  // already undone here (the cloud's value came back with the next pull); the manager clears them from the list once read.
+  // Only the changes this person could have made (changeKeys — the same rule as making them); each is logged.
+  handle('manage:dismissRefusedChanges', async () => {
+    const r = dismissRefusedChanges((entity, op, data) => mayChange(entity, op, data));
+    if (r.cleared) logLine('change', `A520 ${r.cleared} refused change(s) cleared from the list: ${r.summaries.join('; ').slice(0, 400)}`);
+    return { ok: true, cleared: r.cleared };
+  });
 
   // A448: the menu is saved on this till first (it sells the new way at once, offline too) and reaches the cloud after
   // (changeQueue.ts). What the till cannot hold yet — a picture, sizes, extras, fuel, sold by the piece — still goes to
@@ -3786,17 +3851,17 @@ export function registerIpcHandlers() {
     return st ? { id: st.staffId, name: st.name, roleName: st.roleName, permissions: st.permissions } : null;
   };
   const NOT_AN_APPROVER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
-  async function identifyApproverOffline(pin: string, kind: 'void' | 'refund'): Promise<LocalPerson> {
+  async function identifyApproverOffline(pin: string, kind: 'void' | 'refund' | 'frozen'): Promise<LocalPerson> {
     assertPinAllowed();   // A494: the till's PIN limiter, and a PIN that does not approve counts
     try { return await identifyApproverOfflineChecked(pin, kind); }
     catch (e: any) { if (e?.message === NOT_AN_APPROVER) recordPinFailure(); throw e; }
   }
-  async function identifyApproverOfflineChecked(pin: string, kind: 'void' | 'refund'): Promise<LocalPerson> {
+  async function identifyApproverOfflineChecked(pin: string, kind: 'void' | 'refund' | 'frozen'): Promise<LocalPerson> {
     const cfg = getDeviceConfig();
     const branchId = cfg?.branch_id ?? '';
     const asPerson = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }): LocalPerson => {
       const p = { id: staff.staffId, name: staff.name ?? null, roleName: staff.roleName, permissions: staff.permissions };
-      if (!mayReverseLocal(p, kind)) throw new Error(NOT_AN_APPROVER);   // A490: sales.void / sales.refund, or the owner
+      if (!(kind === 'frozen' ? mayReleaseFrozen(p) : mayReverseLocal(p, kind))) throw new Error(NOT_AN_APPROVER);   // A490: sales.void / sales.refund, or the owner
       return p;
     };
     if (cfg?.node_url && !isNodeRole(cfg?.device_role)) {
@@ -3832,6 +3897,25 @@ export function registerIpcHandlers() {
   /** A gateway answer is "the cloud is not there", not the cloud's answer (a 500 may have half-applied — not retried). */
   const cloudUnreachable = (status: number) => status === 502 || status === 503 || status === 504;
   const REVERSE_TIMEOUT_MS = 15_000;
+
+  // A521 (#7): a manager may sell an item a stock count freezes — the till's offline list can be hours behind the count
+  // (and the cloud accepts a till's sale of a frozen item, counting it into the count: orders.ts A394). Who: the owner, or
+  // a person who adjusts stock or confirms shifts (a manager). Checked on this till (its server, its saved sign-ins).
+  function mayReleaseFrozen(p: PersonLike | null | undefined): boolean {
+    return !!p && (isOwnerRole(p.roleName ?? null) || personCan(p, 'inventory.adjust', 'shifts.confirm'));
+  }
+  handle('pos:approveFrozenSale', async (_e, payload) => {
+    const { pin, product_id } = assertPayload<{ pin: string; product_id: string }>({ pin: { t: 'string', min: 1 }, product_id: { t: 'string', min: 1 } }, payload);
+    if (!getStockCountFreeze().productIds.includes(product_id)) return { ok: true, approvedBy: null };   // not frozen (any more)
+    try {
+      const me = signedInPerson();
+      const approver = await identifyApproverOffline(String(pin).trim(), 'frozen');
+      logLine('sale', `A521 frozen item ${product_id} (count ${getStockCountFreeze().ref ?? '?'}) released for sale by ${approver.name ?? approver.id}${me?.name ? ` for ${me.name}` : ''}`);
+      return { ok: true, approvedBy: approver.name ?? null };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? NOT_AN_APPROVER };
+    }
+  });
 
   // ── 0.6.30: the owner's rules, for History's labels and the void/refund window ──
   handle('pos:reversalRules', async () => getReversalRules());
@@ -4202,6 +4286,58 @@ export function registerIpcHandlers() {
   // A178: tail the durable log so a tech can read it on the device without
   // hunting for %APPDATA%. Read-only; last N lines; never exposes tokens because
   // the log itself never records them.
+  // A519: "Send logs to support" — the last 24 hours of this till's log, every secret removed (supportLogs.ts,
+  // logRedact.ts), with a short header, to the cloud (POST /api/support/logs, under this till's own session); the admin
+  // portal shows it on the client's page. A technician's session only (the log names staff and sales). Offline: the
+  // Tech page offers "Save log to file" (tech:saveLog) instead.
+  const supportText = (): string => {
+    const cfg = getDeviceConfig();
+    const db = getLocalDb();
+    const sess = db.prepare(`SELECT business_id, business_name FROM session WHERE id=1`).get() as any;
+    let branch: string | null = null;
+    try { branch = (db.prepare(`SELECT name FROM branches WHERE id = ?`).get(cfg?.branch_id ?? '') as any)?.name ?? null; } catch { /* no table */ }
+    const tech = getActiveSession();
+    const header: SupportHeader = {
+      business: sess?.business_name ?? null, businessId: sess?.business_id ?? null, branch, branchId: cfg?.branch_id ?? null,
+      terminal: cfg?.terminal_code ?? null, deviceId: cfg?.device_id ?? null, deviceName: cfg?.device_name ?? null,
+      role: cfg?.device_role ?? 'till', version: app.getVersion(),
+      os: `${os.platform()} ${typeof (os as any).version === 'function' ? (os as any).version() : ''} ${os.release()} ${os.arch()}`.replace(/\s+/g, ' ').trim(),
+      ramGb: Math.round(os.totalmem() / 1024 ** 3 * 10) / 10, freeGb: Math.round(os.freemem() / 1024 ** 3 * 10) / 10,
+      startup: lastStartupLine(),
+      sync: cfg?.node_url && !isNodeRole(cfg.device_role) ? syncSummary(channelHealth()) : [],
+      tech: tech ? `${tech.techName} (${tech.techId})` : null, at: new Date().toISOString(),
+    };
+    return buildSupportText(header, readLogFiles(rolledPaths(getLogPath(), KEEP_FILES)),
+      readLogFiles(rolledPaths(getAuthLogPath(), AUTH_KEEP_FILES)), Date.now()).text;
+  };
+  handle('tech:sendLogs', async () => {
+    if (!getActiveSession()) throw new Error('Tech session required');
+    const packed = packSupportText(supportText());
+    let status: number | null = null; let body: any = null;
+    try {
+      const raw = getRawTechToken();
+      const res = await tillFetch('/api/support/logs', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(raw ? { 'X-Tech-Token': raw } : {}) },
+        body: JSON.stringify({ log_gz_b64: packed.b64, bytes: packed.bytes, trimmed: packed.trimmed,
+          terminal_code: getDeviceConfig()?.terminal_code ?? null, app_version: app.getVersion() }) }, 30_000);
+      status = res.status; body = await res.json().catch(() => null);
+    } catch { status = null; }
+    const v = sendVerdict(status, body);
+    logLine('tech', v.ok ? `A519: log sent to support — reference ${v.reference}` : `A519: log not sent — ${v.message}`);
+    return v;
+  });
+  handle('tech:saveLog', async () => {
+    if (!getActiveSession()) throw new Error('Tech session required');
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const name = `zaptill-log-${getDeviceConfig()?.terminal_code ?? 'till'}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`;
+    const choice = await dialog.showSaveDialog(win!, { title: 'Save the log for support', defaultPath: name,
+      filters: [{ name: 'Text', extensions: ['txt'] }] });
+    if (choice.canceled || !choice.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(choice.filePath, supportText(), 'utf8');
+    logLine('tech', `A519: log saved to a file for support`);
+    return { ok: true, path: choice.filePath };
+  });
+
   handle('tech:logTail', async (_event, arg?: { lines?: number }) => {
     if (!getActiveSession()) return { path: null, text: 'Tech session required.' };   // A494: the log names staff and sales
     const lines = Math.min(Math.max(arg?.lines ?? 200, 1), 2000);

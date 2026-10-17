@@ -56,6 +56,7 @@ import { isNodeRole } from './deviceConfig';
 import crypto from 'crypto';
 import { getLocalDb, applyPulledBranding } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
+import { codesFromBranchDb, normaliseCode, CODE_RE } from './terminalCodes';   // A519
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
 import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents, retryRefusedAfterEvents,
   checkDeviceKey, isKnownTill, issueDeviceKey, joinVerdict, prepareDeviceEnrolment, type DeviceKeyVerdict } from './nodeIngest';
@@ -66,7 +67,7 @@ import { buildReferenceBundle } from './referenceBundle';
 import { buildRosterSnapshot } from './rosterSnapshot';
 import { forwardToCloud } from './nodeGateway';
 import { refreshStaffRosterNow } from './staffRoster';   // A446
-import { acceptRelayedChanges, changeVersion, bumpChangeVersion } from './localChanges';   // A448 (+ A381)
+import { acceptRelayedChanges, acceptForwardOnly, changeVersion, bumpChangeVersion } from './localChanges';   // A448 (+ A381)
 import { tillSecrets as nodeSecrets } from './changeQueue';   // A448
 import { serveSharedUpdate, shareDir, shareWanted, offeredVersion, noteTillVersion, readyAnswer, shareProgress } from './updateShare';   // A443
 import { GATEWAY_PREFIX } from './cloudGateway';
@@ -174,7 +175,9 @@ function whoIsAsking(req: http.IncomingMessage, bodyDevice?: unknown): { device:
   return { device, verdict: checkDeviceKey(device, presentedKey(req)) };
 }
 const proven = (v: DeviceKeyVerdict | 'conflict') => v === 'ok' || v === 'enrolled';
-const KEY_REFUSED = 'This till\'s device key does not match the branch server\'s record — rejoin it from the branch server (or forget it there and let it reconnect).';
+// A521 (#3): it told the person to forget the till and let it reconnect — a forgotten till could never reconnect on its own (its key
+// and its right to record one went with it). Re-joining is two steps, said in order.
+const KEY_REFUSED = 'This till\'s device key does not match the branch server\'s record. To re-join: on the branch server, Close Branch → Show tills → Revoke this till; then on this till, Find my server (Setup) and allow it at the server.';
 /** A496: a device this server never knew, presenting a key of its own making — it must join (Find my server). */
 const NOT_JOINED = 'This till has not joined this branch server — join it from the till\'s setup (Find my server), and allow it at the server.';
 /** A496: a verdict that refuses the request outright, on any route. */
@@ -338,7 +341,14 @@ export function startNodeServer(): void {
         if (r.status === 'approved' && r.grant && r.device_id) {
           let device_token: string | undefined;
           try { device_token = issueDeviceKey(r.device_id); } catch (e: any) { logLine('node', `could not issue a device key: ${e?.message ?? e}`); }
-          return json(res, 200, { status: r.status, grant: { ...r.grant, ...(device_token ? { device_token } : {}) } });
+          // A519: the terminal codes this branch's tills use (this server's own too; the joining device's left out), so
+          // the till being set up is not given one of them (terminalCodes.ts).
+          let terminal_codes: string[] | undefined;
+          try {
+            const own = normaliseCode(getDeviceConfig()?.terminal_code);
+            terminal_codes = [...new Set([...codesFromBranchDb(getLocalDb(), r.device_id), ...(CODE_RE.test(own) ? [own] : [])])].sort();
+          } catch { terminal_codes = undefined; }
+          return json(res, 200, { status: r.status, grant: { ...r.grant, ...(device_token ? { device_token } : {}), ...(terminal_codes ? { terminal_codes } : {}) } });
         }
         return json(res, 200, { status: r.status, ...(r.grant ? { grant: r.grant } : {}) });
       }
@@ -590,6 +600,7 @@ export function startNodeServer(): void {
           ok: body?.ok === true,
           error: body?.error ?? undefined,
           summary: body?.summary ?? undefined,
+          ...(body?.wait === true ? { wait: true } : {}),   // A521: "not yet" — a close that waits for money on the till
         }, { deviceId, uid });
         return json(res, 200, { ok: true });
       }
@@ -655,7 +666,12 @@ export function startNodeServer(): void {
         for (const r of vetted.refused) logLine('node', `/node/changes from ${who.device}: refused ${r.id} — ${r.reason}`);
         // A496: applied here only — never queued for the cloud under THIS server's session (the till that made the change
         // sends it itself, under its own); see localChanges.acceptRelayedChanges.
-        const n = acceptRelayedChanges(getLocalDb(), vetted.accepted, nodeSecrets);
+        // A521 (#6): and forwarded to the cloud from here as well (pushLocalChanges), named as the maker's (the cloud checks
+        // the maker's own proof — A494 — never this server's session) and as relayed for this till; a PIN or a new person
+        // is only forwarded, never applied here. The till that made it may be switched off before it reaches the cloud.
+        const n = acceptRelayedChanges(getLocalDb(), vetted.accepted, nodeSecrets, who.device);
+        const fwd = acceptForwardOnly(getLocalDb(), vetted.forward, nodeSecrets, who.device);
+        if (fwd) logLine('node', `/node/changes from ${who.device}: ${fwd} PIN / new-person change(s) kept to forward to the cloud (not applied here)`);
         return json(res, 200, { accepted: n, refused: vetted.refused, version: changeVersion(getLocalDb()) });
       }
       // A381: a till set the business's logo / accent — applied here (the branch's other tills take it with their next pull

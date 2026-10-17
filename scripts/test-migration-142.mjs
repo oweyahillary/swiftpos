@@ -83,7 +83,13 @@ const keysOf = async (rid) => (await q(`SELECT p.key FROM public.role_permission
   WHERE rp.role_id = $1 ORDER BY p.key`, [rid])).map((x) => x.key);
 const rolesOf = async (biz) => q(`SELECT id, name, description, is_default FROM public.roles WHERE business_id = $1 ORDER BY name`, [biz]);
 const roleNamed = async (biz, name) => (await rolesOf(biz)).find((r) => r.name === name);
-const want = (name) => [...new Set(P.BUILT_IN_ROLES.find((r) => r.name === name).keys)].sort();
+// A518: keys a LATER migration gives the built-in roles 142 made (142 is applied in production and is not changed) — 143
+// gives the Accountant payables.view. 142 itself carries the shared defaults without them.
+// A520: 147 gives the Manager shifts.close_branch (every role holding close_day, supervisors aside); 146 gives roles named
+// supervisor shifts.close_day — the built-in Supervisor's defaults carry it since A520.
+const LATER = { Accountant: ['payables.view'], Manager: ['shifts.close_branch'], Supervisor: ['shifts.close_day'] };
+const keys142 = (r) => [...new Set(r.keys)].filter((k) => !(LATER[r.name] ?? []).includes(k));
+const want = (name) => keys142(P.BUILT_IN_ROLES.find((r) => r.name === name)).sort();
 const before = { aSup: await keysOf(R.aSup), aCash: await keysOf(R.aCash), cStore: await keysOf(R.cStore), aMgr: await keysOf(R.aMgr) };
 
 const sql = fs.readFileSync(path.join(MIG, THIS), 'utf8');
@@ -92,7 +98,8 @@ await ok('the SQL carries exactly shared BUILT_IN_ROLES (names, descriptions, fu
   assert.deepEqual(built, P.BUILT_IN_ROLES.map((r) => ({ name: r.name, description: r.description, fuel: !!r.types })));
   for (const r of P.BUILT_IN_ROLES) if (r.types) assert.deepEqual([...r.types], ['petrol_station'], r.name);
   const pairs = [...sql.matchAll(/^\s+\('([^']+)', '([a-z_]+\.[a-z_]+)'\)/gm)].map((m) => `${m[1]}|${m[2]}`).sort();
-  assert.deepEqual(pairs, P.BUILT_IN_ROLES.flatMap((r) => [...new Set(r.keys)].map((k) => `${r.name}|${k}`)).sort());
+  assert.deepEqual(pairs, P.BUILT_IN_ROLES.flatMap((r) => keys142(r).map((k) => `${r.name}|${k}`)).sort());
+  for (const [name, ks] of Object.entries(LATER)) for (const k of ks) assert.ok(P.BUILT_IN_ROLES.find((r) => r.name === name).keys.includes(k), `${name}: ${k}`);
   for (const r of P.BUILT_IN_ROLES) for (const k of r.keys) assert.ok(P.isPermissionKey(k), `${r.name}: ${k}`);
 });
 await ok('142 runs', async () => { await db.exec(sanitize(sql)); });

@@ -60,7 +60,7 @@ import bcrypt             from 'bcrypt';
 import crypto            from 'node:crypto'; // required by tech-token + mode-switch generators (crypto.createHmac/createHash/randomBytes)
 import { supabase }       from '../lib/supabase';
 import { isSeededAdminHash, SEEDED_ADMIN_MESSAGE } from '../lib/adminSeedGuard';
-import { seedDefaultRolePermissions, seededRoleRows } from '../lib/defaultRolePermissions';
+import { seedDefaultRolePermissions, seededRoleRows, addTypeRoles } from '../lib/defaultRolePermissions';
 import { requireAdmin, requireSuperAdmin, signAdminToken, forgetAdmin, ADMIN_ROLES } from '../middleware/adminAuth';
 import { notifySuperAdminsToVerify } from '../lib/adminVerifyNotice';   // A507
 import { setOwnerPassword } from '../lib/passwordReset';          // A495: the reset revokes the owner's sessions
@@ -741,6 +741,16 @@ const TILL_SYNC_GRACE_MS = 10 * 60_000;
 
 const isTime = (v: unknown): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v));
 const STOCK_MODES = new Set(['undo', 'zero', 'keep']);
+/**
+ * A522 (owner, 2026-10-17 — Pollo: a clear refused over a shift and two days left open on a till that was off; ending
+ * the window later never helps, they have no close): p_close_open (migration 148) — shifts and trading days that began
+ * in the window, are still open and saw nothing after it are cleared with the rest instead of refusing. Ticked, the clear
+ * runs through purge_test_window / purge_test_menu_window (the old names keep their 8 arguments and call them unticked —
+ * no overload), so a cloud before migration 148 keeps working unticked.
+ */
+const closeOptions = (closeOpen: boolean): Record<string, boolean> => (closeOpen ? { p_close_open: true } : {});
+const purgeFn = (menu: boolean, closeOpen: boolean): string =>
+  closeOpen ? (menu ? 'purge_test_menu_window' : 'purge_test_window') : (menu ? 'purge_test_menu' : 'purge_test_data');
 
 router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
   const { data: biz } = await supabase.from('businesses').select('id, name, created_at').eq('id', req.params.id).maybeSingle();
@@ -750,12 +760,15 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
   const to = isTime(req.query.to) ? new Date(req.query.to).toISOString() : defaults.to;
   const stock = STOCK_MODES.has(String(req.query.stock)) ? String(req.query.stock) : 'undo';
   const menu = req.query.menu === 'true';   // A482: the preview counts the whole menu too
-  const { data: preview, error } = await supabase.rpc(menu ? 'purge_test_menu' : 'purge_test_data', {
+  const closeOpen = req.query.close_open === 'true';   // A522: also clear shifts / days still open on tills switched off
+  const { data: preview, error } = await supabase.rpc(purgeFn(menu, closeOpen), {
     p_business: biz.id, p_from: from, p_to: to, p_stock_mode: stock, p_delete_customers: req.query.customers === 'true', p_dry_run: true,
+    ...closeOptions(closeOpen),
   });
   if (error) {
     // Before migration 122 (132 for the menu) the function does not exist — say so rather than a raw database error.
-    const missing = /purge_test_menu/.test(error.message) ? 'Run migration 132 first (delete the whole menu).'
+    const missing = closeOpen && /purge_test_(menu_)?window|p_close_open/.test(error.message) ? 'Run migration 148 first (clear what is still open on tills that are off).'
+      : /purge_test_menu/.test(error.message) ? 'Run migration 132 first (delete the whole menu).'
       : /purge_test_data/.test(error.message) ? 'Run migration 122 first (clear test data).' : null;
     res.status(503).json({ error: missing ?? error.message, code: 'NOT_READY' });
     return;
@@ -787,7 +800,7 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
     .eq('business_id', biz.id).order('created_at', { ascending: false }).limit(10);
   let { data: history, error: hErr } = await historyOf('from_at, to_at, stock_mode, counts, done_by, created_at, menu');
   if (hErr) ({ data: history } = await historyOf('from_at, to_at, stock_mode, counts, done_by, created_at'));
-  res.json({ business: { id: biz.id, name: biz.name }, defaults, window: { from, to }, stock, menu, preview, tills_behind: behind, days_in_question: daysInQuestion, history: history ?? [] });
+  res.json({ business: { id: biz.id, name: biz.name }, defaults, window: { from, to }, stock, menu, close_open: closeOpen, preview, tills_behind: behind, days_in_question: daysInQuestion, history: history ?? [] });
 });
 
 router.post('/clients/:id/test-data/clear', requireAdmin, requireSuperAdmin, async (req: any, res) => {
@@ -800,14 +813,18 @@ router.post('/clients/:id/test-data/clear', requireAdmin, requireSuperAdmin, asy
   // A482: "Also delete the whole menu" — only an explicit true deletes it; anything else but false/absent is refused.
   if (b.menu !== undefined && typeof b.menu !== 'boolean') { res.status(400).json({ error: 'menu must be true or false.' }); return; }
   const menu = b.menu === true;
+  // A522: "Also clear shifts and trading days still open on tills that are switched off" — only an explicit true.
+  if (b.close_open !== undefined && typeof b.close_open !== 'boolean') { res.status(400).json({ error: 'close_open must be true or false.' }); return; }
+  const closeOpen = b.close_open === true;
   if (String(b.confirm_name ?? '').trim().toLowerCase() !== String(biz.name).trim().toLowerCase()) {
     res.status(400).json({ error: 'Type the client\'s name exactly to confirm.', code: 'CONFIRM_NAME' });
     return;
   }
   const reason = String(b.reason ?? '').trim().slice(0, 300) || 'Test data cleared before go-live';
-  const { data: result, error } = await supabase.rpc(menu ? 'purge_test_menu' : 'purge_test_data', {
+  const { data: result, error } = await supabase.rpc(purgeFn(menu, closeOpen), {
     p_business: biz.id, p_from: new Date(b.from).toISOString(), p_to: new Date(b.to).toISOString(), p_stock_mode: stock,
     p_delete_customers: b.delete_customers === true, p_dry_run: false, p_done_by: req.adminEmail ?? null, p_reason: reason,
+    ...closeOptions(closeOpen),
   });
   if (error) { sendError(res, error); return; }
   const r = result as { ok: boolean; problems: string[]; counts: Record<string, unknown> };
@@ -815,7 +832,7 @@ router.post('/clients/:id/test-data/clear', requireAdmin, requireSuperAdmin, asy
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail, action: 'test_data_cleared', resource: 'business',
     businessId: biz.id, businessName: biz.name, reason,
-    after: { from: b.from, to: b.to, stock_mode: stock, delete_customers: b.delete_customers === true, menu, counts: r.counts },
+    after: { from: b.from, to: b.to, stock_mode: stock, delete_customers: b.delete_customers === true, menu, close_open: closeOpen, counts: r.counts },
   });
   res.json(r);
 });
@@ -922,7 +939,12 @@ router.patch('/clients/:id', requireAdmin, async (req, res) => {
       changes: changed.map((k) => ({ field: LABEL[k], before: (before as any)?.[k], after: updates[k] })) });
   }
 
-  res.json(stripSecretColumns(data ?? {}));   // A507: the edited row carried override_pin_hash back to the browser
+  // A518 (A514 gap): a business that becomes a petrol station gets the built-in Fuel attendant role if it has none of that
+  // name (migration 142's rule) — nobody assigned. Nothing is removed on a change away.
+  const rolesAdded = updates.type !== undefined && String(before.type ?? '') !== String(updates.type)
+    ? await addTypeRoles(id, String(updates.type)) : [];
+
+  res.json({ ...stripSecretColumns(data ?? {}), ...(rolesAdded.length ? { roles_added: rolesAdded } : {}) });   // A507: the edited row carried override_pin_hash back to the browser
 });
 
 // A495: suspending (and re-activating) a client stops (or restarts) their whole business — super admin only.

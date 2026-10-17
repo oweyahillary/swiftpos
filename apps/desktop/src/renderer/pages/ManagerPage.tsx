@@ -25,7 +25,7 @@ import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
 import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
-import { can, canAny, isOwner as isOwnerSession, mayMoveMoney, mayMpesa } from '../lib/access';   // A490: the one rule (+ A492)
+import { can, canAny, isOwner as isOwnerSession, mayMoveMoney, mayMpesa, SELL_REFUSAL } from '../lib/access';   // A490: the one rule (+ A492)
 import { buildManagerNav, groupOf, openGroup, firstTab, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
 import TillWastage from '../components/TillWastage';   // A414
@@ -1763,7 +1763,7 @@ function TopItemsTab({ currency }: { currency: string }) {
 interface Props {
   business:  { name: string; currency?: string; type?: string };
   staff:     { role: string | null; branchId: string; branchName: string | null; staff: { name: string } | null };
-  onOpenPOS: () => void;   // switch back to till
+  onOpenPOS?: () => void;   // switch back to till — A519: absent for someone whose role cannot sell
   onLogout:  () => void;   // end shift → PIN screen
   /** 0.6.35 (A384): open "What to do when". */
   onHelp?: () => void;
@@ -1999,6 +1999,11 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
 
   // A460: the online licence — offers, variants / combos, wastage and transfers are shown only with it.
   const online = useOnlineLicence();
+  // A520: the branch server (node / office) shows Close Branch alone under Close.
+  const [isBranchServer, setIsBranchServer] = useState(false);
+  useEffect(() => {
+    posApi.config.get().then((c: any) => setIsBranchServer(c?.device_role === 'node' || c?.device_role === 'office')).catch(() => {});
+  }, []);
   // Stock only for a business with the web POS (A346), and only once something actually tracks stock.
   const [showStock, setShowStock] = useState(false);
   useEffect(() => {
@@ -2017,7 +2022,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
   // see it, a group with none leaves the sidebar:
   //  - Overview reports.overview · Orders orders.view_all · Item Mix reports.items · Current shift / Shift report
   //    reports.shifts or shifts.confirm · Monthly pack reports.monthly_pack or expenses.manage (A481) · Expenses
-  //    expenses.view or expenses.manage · Close Day / Close Branch shifts.close_day (the day gate's escape route).
+  //    expenses.view or expenses.manage · Close Day shifts.close_day (the day gate's escape route) · Close Branch shifts.close_branch (A520).
   //  - Menu menu.edit or menu.prices · Offers menu.offers (online licence) · Settings › General settings.business or
   //    settings.payments (each panel by its own) · Printing stations.manage or receipt.manage (A59/A90) · Staff staff.view.
   //  - Stock inventory.view (web POS on and something stock-tracked, A346) · Wastage inventory.waste · Transfers
@@ -2031,6 +2036,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canMonthly: has('reports.monthly_pack') || has('expenses.manage'),
     canExpenses: hasAny('expenses.view', 'expenses.manage'),
     canCloseDay: has('shifts.close_day'),
+    canCloseBranch: has('shifts.close_branch'),   // A520
+    isBranchServer,   // A520: Close Branch alone on the branch server
     canMenu: hasAny('menu.edit', 'menu.prices'),
     canOffers: has('menu.offers'),
     canSettings: hasAny('settings.business', 'settings.payments') || mayMpesa(staff),   // A492: the branch's M-Pesa number
@@ -2051,6 +2058,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
   // The person's keys can change while the screen is open (a fresher map, auth:permissionsChanged): a page they no
   // longer have is left for the first one they do.
   useEffect(() => {
+    // A520: on the branch server "Close day now" (the day-lock banner) lands on Close Branch — its day closes there.
+    if (isBranchServer && active === 'dayclose' && groupOf(nav, 'branchclose')) { setActive('branchclose'); return; }
     if (!groupOf(nav, active)) { const t = firstTab(nav); if (t) setActive(t); }
   });
   // The tab last used in each group, so Settings reopens on Printing if that is where the manager was.
@@ -2082,7 +2091,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'expenses': return <ExpensesTab currency={currency} canAddType={has('expenses.manage')}
                                            canRecord={mayMoveMoney(staff, noMoneyOut)} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
-      case 'branchclose': return <BranchCloseTab currency={currency} />;
+      case 'branchclose': return <BranchCloseTab currency={currency} businessName={businessName} />;
       // Tabs of Sales (A351): Shift report, Item Mix (restaurant).
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
@@ -2160,9 +2169,10 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
 
         {/* Bottom actions */}
         <div className="border-t border-gray-800 p-3 space-y-1 flex-shrink-0">
-          <button onClick={onOpenPOS}
-            title={!sidebarOpen ? 'Open POS' : undefined}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+          {/* A519: someone whose role cannot sell (a Storekeeper, an Accountant) sees the button disabled, with why. */}
+          <button onClick={onOpenPOS} disabled={!onOpenPOS} data-testid="manager-open-pos"
+            title={!onOpenPOS ? SELL_REFUSAL : !sidebarOpen ? 'Open POS' : undefined}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors ${onOpenPOS ? 'text-gray-400 hover:bg-gray-800 hover:text-white' : 'text-gray-600 cursor-not-allowed'}`}>
             <Icon d={I.pos} size={18} cls="flex-shrink-0" />
             {sidebarOpen && <span>Open POS</span>}
           </button>

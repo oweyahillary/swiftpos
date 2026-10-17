@@ -41,6 +41,7 @@ export default function SuppliersPage() {
   const [error, setError]         = useState('');
   const { can } = usePermissions();
   const canPay = can('payables.manage');
+  const seesBills = canPay || can('payables.view');   // A518: payables.view reads the accounts, records nothing
   const more = useRowMore();   // A464: a phone shows Supplier, Owed and the actions
   const { business } = useBusiness();
   const { branches } = useBranch();
@@ -54,13 +55,13 @@ export default function SuppliersPage() {
     try {
       const data = await api.get<Supplier[]>('/api/stock/suppliers');
       setSuppliers(data);
-      if (canPay) setSummary(await api.get<Summary>('/api/payables/summary').catch(() => null));
+      if (seesBills) setSummary(await api.get<Summary>('/api/payables/summary').catch(() => null));
     } catch { /* silent */ } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, [canPay]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [seesBills]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const openAdd = () => { setForm(EMPTY); setError(''); setModal('add'); };
   const openEdit = (s: Supplier) => {
@@ -119,7 +120,8 @@ export default function SuppliersPage() {
     return (
       <div className="flex-1 overflow-auto p-4 sm:p-6">
         <SupplierAccount supplierId={account} currency={currency} business={business}
-          branches={branches.map(b => ({ id: b.id, name: b.name }))} onClose={() => { setAccount(null); load(); }} />
+          branches={branches.map(b => ({ id: b.id, name: b.name }))} onClose={() => { setAccount(null); load(); }}
+          canPay={canPay} canReturn={canPay || can('inventory.receive')} />
       </div>
     );
   }
@@ -141,7 +143,7 @@ export default function SuppliersPage() {
       </div>
 
       {/* A395: what is owed, at a glance */}
-      {canPay && summary && (
+      {seesBills && summary && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5" data-testid="payables-summary">
           {[
             { label: 'You owe suppliers', value: money(summary.owed, currency), cls: 'text-white' },
@@ -187,7 +189,7 @@ export default function SuppliersPage() {
                   <th className={`text-left px-5 py-3 ${DESK}`}>Email</th>
                   <th className={`text-left px-5 py-3 ${DESK}`}>Phone</th>
                   <th className={`text-left px-5 py-3 ${DESK}`}>Status</th>
-                  {canPay && <th className="text-right px-5 py-3">Owed</th>}
+                  {seesBills && <th className="text-right px-5 py-3">Owed</th>}
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
@@ -210,7 +212,7 @@ export default function SuppliersPage() {
                         {s.status}
                       </span>
                     </td>
-                    {canPay && (() => {
+                    {seesBills && (() => {
                       const o = owedOf(s.id);
                       return (
                         <td className="px-5 py-3.5 text-right whitespace-nowrap">
@@ -221,7 +223,7 @@ export default function SuppliersPage() {
                     })()}
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2 justify-end">
-                        {canPay && (
+                        {seesBills && (
                           <button
                             onClick={() => setAccount(s.id)}
                             className="text-swift-text hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
@@ -246,7 +248,7 @@ export default function SuppliersPage() {
                       </div>
                     </td>
                   </tr>
-                  <MoreRow open={more.isOpen(String(s.id))} colSpan={canPay ? 3 : 2} items={[
+                  <MoreRow open={more.isOpen(String(s.id))} colSpan={seesBills ? 3 : 2} items={[
                     ['Contact', s.contact_name ?? '—'],
                     ['Email', s.email ?? '—'],
                     ['Phone', s.phone ?? '—'],

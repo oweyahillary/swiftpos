@@ -85,7 +85,8 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
   // P3 (2026-10-14): every path that stores a list lays the changes still waiting back over it — a cashier added or a PIN
   // set here (or relayed to this server) that the cloud has not taken yet. Only staffRoster's path used to; the
   // catalogue pull and promotion stored a list and quietly undid them until the next roster beat.
-  try { overlayLocalChanges(db); } catch { /* the next store lays them again */ }
+  // A521 (#6): freshStaff — a relayed staff change this list already shows is done (no longer laid over).
+  try { overlayLocalChanges(db, { freshStaff: true }); } catch { /* the next store lays them again */ }
 }
 
 /**
@@ -193,9 +194,10 @@ export function isElevatedRole(name: string | null | undefined, perms: unknown):
 
 /** The relayed changes this server may apply, each staff change made safe; the rest named with why. Never throws. */
 export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null):
-  { accepted: unknown[]; refused: Array<{ id: string; reason: string }> } {
+  { accepted: unknown[]; refused: Array<{ id: string; reason: string }>; forward: unknown[] } {
   const accepted: unknown[] = [];
   const refused: Array<{ id: string; reason: string }> = [];
+  const forward: unknown[] = [];   // A521: refused here, forwarded to the cloud (localChanges.acceptForwardOnly)
   const db = getLocalDb();
   let roles: any[] = [];
   try { roles = JSON.parse((db.prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as any)?.value ?? '[]'); } catch { roles = []; }
@@ -213,6 +215,7 @@ export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null)
       // could plant a PIN of their choosing on every till of the branch.
       if (entity === 'staff_pin' || (entity === 'staff' && c?.op === 'create')) {
         refused.push({ id, reason: 'a PIN (or a new staff member) reaches the branch server from the cloud once the cloud has applied it' });
+        forward.push(raw);   // A521 (#6): not applied here — forwarded to the cloud (it checks the maker), back in the staff list
         continue;
       }
       if (entity === 'staff' && c?.op !== 'create') {
@@ -240,7 +243,7 @@ export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null)
       refused.push({ id, reason: String(err?.message ?? 'could not check the change') });
     }
   }
-  return { accepted, refused };
+  return { accepted, refused, forward };
 }
 
 export function verifyPinAtNode(pin: string, branchId: string): NodeVerdict {

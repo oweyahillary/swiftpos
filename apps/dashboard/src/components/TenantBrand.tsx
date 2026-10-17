@@ -5,12 +5,14 @@
 import type { TenantInfo } from '../lib/tenant';
 import { cleanRootDomain } from '../lib/tenantHost';
 
-/** The client's logo (when they have one) and name, with a small "on SwiftPOS" under it. */
-export function TenantBrand({ tenant }: { tenant: TenantInfo }) {
+/** The client's logo (when they have one) and name, with a small "on SwiftPOS" under it. `fit` (the POS sign-in): the
+ *  logo shrinks with the screen's height so the keypad below stays on screen. */
+export function TenantBrand({ tenant, fit = false }: { tenant: TenantInfo; fit?: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-2" data-testid="tenant-brand">
+    <div className={`flex flex-col items-center ${fit ? 'gap-1' : 'gap-2'}`} data-testid="tenant-brand">
       {tenant.logo && (
         <img src={tenant.logo} alt={tenant.name}
+             style={fit ? { maxHeight: 'clamp(36px, 8vh, 80px)' } : undefined}
              className="max-h-20 max-w-[220px] object-contain rounded-lg bg-white/5 p-1" />
       )}
       <span className="text-xl font-bold text-white tracking-tight text-center"

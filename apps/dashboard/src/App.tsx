@@ -21,6 +21,7 @@ import FleetPage              from './pages/FleetPage';
 
 // ── Lazily-loaded pages (each becomes its own on-demand chunk) ───────────────
 const LoginPage               = lazy(() => import('./pages/LoginPage'));
+const TillsDaysPage           = lazy(() => import('./pages/TillsDaysPage'));   // A523
 const HelpPage                = lazy(() => import('./pages/HelpPage'));   // 0.6.35 (A384)
 const OnboardingPage          = lazy(() => import('./pages/OnboardingPage'));
 const ForcePasswordChangePage = lazy(() => import('./pages/ForcePasswordChangePage'));
@@ -143,6 +144,7 @@ export default function App() {
                       <Route path="shift-reports"             element={<ShiftReportsPage />} />
                       <Route path="orders"                    element={<OrdersPage />} />
                       <Route path="open-drawers"              element={<OpenShiftsPage />} />
+                      <Route path="tills-days"                element={<TillsDaysPage />} />
                       <Route path="terminals"                 element={<Navigate to="/dashboard/settings/devices/terminals" replace />} />
                       <Route path="customers"                 element={<CustomersPage currency="KES" />} />
                       <Route path="customers/credit"          element={<CreditAccountsPage />} />

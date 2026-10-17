@@ -9,6 +9,9 @@
  * DELETE /api/promotions/:id       — delete
  * GET  /api/promotions/active      — returns promos applicable RIGHT NOW
  *                                    given current time + cart contents
+ *
+ * A518: a promotion saved from the page (applies_at_sale) is CHARGED at the sale — sent to the tills and the web POS as an
+ * offer with pos/init and rechecked by the cloud (lib/promotionOffers.ts). The list says per promotion whether it is.
  */
 
 import { Router } from 'express';
@@ -17,6 +20,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
+import { promotionChargeable } from '../lib/promotionOffers';   // A518
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -44,6 +48,34 @@ async function foreignIds(businessId: string, body: Record<string, unknown>): Pr
     if ((data ?? []).length !== ids.length) return `${field} names something that is not this business's`;
   }
   return null;
+}
+
+/**
+ * A518: what a promotion is for. 'product' needs its products, 'category' its categories (the page's picker); the list the
+ * scope does not use is emptied, so a promotion never carries ids it does not apply to. null = fine, else the refusal.
+ * `current` is the stored row on an edit (a change of products alone keeps its scope).
+ */
+export function scopeProblem(body: Record<string, any>, current?: { applies_to?: string | null; product_ids?: string[] | null; category_ids?: string[] | null } | null): string | null {
+  const touches = body.applies_to !== undefined || body.product_ids !== undefined || body.category_ids !== undefined;
+  if (!touches) return null;
+  const to = body.applies_to ?? current?.applies_to ?? 'all';
+  if (!['all', 'product', 'category'].includes(to)) return 'applies_to must be all, product or category';
+  const products = (body.product_ids ?? current?.product_ids ?? []) as string[];
+  const categories = (body.category_ids ?? current?.category_ids ?? []) as string[];
+  if (to === 'product' && !(Array.isArray(products) && products.length)) return 'Choose the products this promotion is for.';
+  if (to === 'category' && !(Array.isArray(categories) && categories.length)) return 'Choose the categories this promotion is for.';
+  body.applies_to = to;
+  body.product_ids = to === 'product' ? [...new Set(products)] : [];
+  body.category_ids = to === 'category' ? [...new Set(categories)] : [];
+  return null;
+}
+
+/** A518: the promotion as the page lists it — with whether it is charged at the sale, and if not, why. */
+function withCharge(p: any) {
+  const why = p.applies_at_sale !== true
+    ? 'Saved before promotions were charged at the till - open it and save to start charging it.'
+    : promotionChargeable(p);
+  return { ...p, charged_at_sale: p.status === 'active' && !why, not_charged_reason: why };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,7 +121,7 @@ router.get('/', async (req, res) => {
       if (p.end_date && new Date(p.end_date) < now)        effective_status = 'expired';
       else if (p.start_date && new Date(p.start_date) > now) effective_status = 'scheduled';
     }
-    return { ...p, effective_status };
+    return withCharge({ ...p, effective_status });   // A518
   });
   res.json(withEffective);
 });
@@ -142,10 +174,14 @@ router.post('/', canManage, async (req, res) => {
   if (!promo_type)    { res.status(400).json({ error: 'promo_type is required' }); return; }
   const foreign = await foreignIds(req.businessId, req.body ?? {});
   if (foreign) { res.status(400).json({ error: foreign }); return; }
+  const body = { applies_to, product_ids, category_ids } as Record<string, any>;   // A518: the scope, checked and tidied
+  if (applies_to === undefined) body.applies_to = 'all';
+  const scope = scopeProblem(body);
+  if (scope) { res.status(400).json({ error: scope }); return; }
 
-  const { data, error } = await supabase
-    .from('promotions')
-    .insert({
+  // A518: until migration 144 is applied (the production migrate job runs as the cloud deploys — no order between them)
+  // a save without the new column still goes through; the promotion is simply not charged until it is saved again.
+  const row: Record<string, unknown> = {
       business_id:    req.businessId,
       name:           name.trim(),
       promo_type,
@@ -154,25 +190,34 @@ router.post('/', canManage, async (req, res) => {
       start_time:     start_time  || null,
       end_time:       end_time    || null,
       days_of_week:   days_of_week ?? [0,1,2,3,4,5,6],
-      applies_to:     applies_to  ?? 'all',
-      product_ids:    product_ids  ?? [],
-      category_ids:   category_ids ?? [],
+      applies_to:     body.applies_to,
+      product_ids:    body.product_ids,
+      category_ids:   body.category_ids,
+      applies_at_sale: true,   // A518: charged at the sale (migration 144)
       discount_type:  discount_type  || null,
       discount_value: discount_value ?? null,
       min_quantity:   min_quantity   ?? 1,
       free_quantity:  free_quantity  ?? null,
       status: 'active',
-    })
-    .select()
-    .single();
+  };
+  let { data, error } = await supabase.from('promotions').insert(row).select().single();
+  if (error && missingChargeColumn(error)) {
+    delete row.applies_at_sale;
+    ({ data, error } = await supabase.from('promotions').insert(row).select().single());
+  }
 
   if (error) { sendError(res, error); return; }
-  res.status(201).json(data);
+  res.status(201).json(withCharge(data));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/promotions/:id
 // ─────────────────────────────────────────────────────────────────────────────
+/** A518: the database does not have promotions.applies_at_sale yet (migration 144 not applied). */
+function missingChargeColumn(e: { code?: string; message?: string } | null): boolean {
+  return !!e && (e.code === 'PGRST204' || e.code === '42703') && /applies_at_sale/.test(String(e.message ?? ''));
+}
+
 router.patch('/:id', canManage, async (req, res) => {
   const allowed = [
     'name','promo_type','start_date','end_date','start_time','end_time',
@@ -185,18 +230,26 @@ router.patch('/:id', canManage, async (req, res) => {
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   }
+  // A518: the scope checked against the stored row; a save from the page (it sends applies_at_sale) starts charging it.
+  if (updates.applies_to !== undefined || updates.product_ids !== undefined || updates.category_ids !== undefined) {
+    const { data: current } = await supabase.from('promotions').select('applies_to, product_ids, category_ids')
+      .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+    if (!current) { res.status(404).json({ error: 'Promotion not found' }); return; }
+    const scope = scopeProblem(updates as Record<string, any>, current as any);
+    if (scope) { res.status(400).json({ error: scope }); return; }
+  }
+  if (req.body.applies_at_sale === true) updates.applies_at_sale = true;
 
-  const { data, error } = await supabase
-    .from('promotions')
-    .update(updates)
-    .eq('id', req.params.id)
-    .eq('business_id', req.businessId)
-    .select()
-    .single();
+  const save = () => supabase.from('promotions').update(updates).eq('id', req.params.id).eq('business_id', req.businessId).select().single();
+  let { data, error } = await save();
+  if (error && 'applies_at_sale' in updates && missingChargeColumn(error)) {   // A518: before migration 144 (as on create)
+    delete updates.applies_at_sale;
+    ({ data, error } = await save());
+  }
 
   if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Promotion not found' }); return; }
-  res.json(data);
+  res.json(withCharge(data));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

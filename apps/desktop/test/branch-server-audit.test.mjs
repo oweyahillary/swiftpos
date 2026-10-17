@@ -270,15 +270,23 @@ console.log('\nF4 — Close Branch lists the tills that matter\n');
               VALUES (1, 'u-m', 'Mary', 'manager', '{"*":true}', 'br-1', 'tok', '2026-10-14T06:00:00Z')`).run();
   const r1 = await H['branchClose:closeBranch'](null, {});
   ok('F4: a quiet till whose day is closed does not block Close Branch', !(r1.blockers ?? []).some((x) => /dev-NIGH/.test(x)), JSON.stringify(r1.blockers));
-  ok('…a quiet till with its day OPEN still does', (r1.blockers ?? []).some((x) => /dev-OLDB/.test(x)), JSON.stringify(r1.blockers));
+  // A520 (KRUNCH deadlock): a quiet till whose day is open but whose last report needs nobody (no drawer, nothing to
+  // confirm) no longer blocks — it is "not connected" and gets a close that waits for it. Money still blocks.
+  const ovq = B.branchCloseOverview();
+  ok('…a quiet till with its day OPEN and nothing to count is not connected — its close waits for it (A520)',
+    !(r1.blockers ?? []).some((x) => /dev-OLDB/.test(x)) && ovq.close.held.some((h) => h.device_id === 'dev-OLDBOX'), JSON.stringify({ b: r1.blockers, held: ovq.close.held }));
   const f = await H['branchClose:forgetTill'](null, { device_id: 'dev-OLDBOX' });
   ok('F4: "Forget this till" takes it off the list at once', f.ok && !ids().includes('dev-OLDBOX'), JSON.stringify(f));
   ok('…never the server itself', (await H['branchClose:forgetTill'](null, { device_id: 'dev-S' })).ok === false);
   B.recordPeerState('dev-OLDBOX', JSON.parse(day(true)));
   ok('…and it comes back if it reports again', ids().includes('dev-OLDBOX'));
   const tab = read('src/renderer/pages/BranchCloseTab.tsx');
-  ok('the screen: a small "Forget this till" on a stale till row; the same day-closed rule', /Forget this till/.test(tab) && /posApi\.branchClose\.forgetTill\(/.test(tab)
-    && /st\.day_open === false && !st\.open_drawer\) continue;/.test(tab));
+  // A521 (#3): "Forget this till" is "Revoke this till" (same channel, named for what it does — the key goes), beside
+  // "Hide from Close Branch" (keeps the key). Intent kept: a small way off the list on a stale till row.
+  ok('the screen: a small "Revoke this till" (was "Forget") and "Hide from Close Branch" on a stale till row; the same day-closed rule',
+    /Revoke this till/.test(tab) && /Hide from Close Branch/.test(tab) && /posApi\.branchClose\.forgetTill\(/.test(tab)
+    // A520: the day-closed rule moved to the server (branchClose.assessBranchClose) — the screen shows its blockers.
+    && /st\.day_open === false && !st\.open_drawer\) continue;/.test(read('src/main/branchClose.ts')) && /ov\.close\?\.blockers/.test(tab));
   ok('the bridge carries it', /'branchClose:forgetTill'/.test(read('src/main/preload.ts')) && /'branchClose:forgetTill'/.test(read('src/main/ipcSchemas.ts')));
 }
 
@@ -416,7 +424,8 @@ console.log('\nThe till side, and wiring\n');
   const ipc = read('src/main/ipcHandlers.ts');
   ok('F2: a rejoin re-arms the outbox; the join keeps the till\'s key', /rearmNodeOutbox\(\);/.test(ipc) && /setNodeDeviceToken\(String\(g\.device_token\)\)/.test(ipc));
   ok('Network note on the Tech page and the setup screen', /not the customer Wi-Fi/.test(read('src/renderer/pages/TechPage.tsx')) && /not the customer Wi-Fi/.test(read('src/renderer/pages/InstallPage.tsx')));
-  ok('P3: storeBranchStaff lays waiting changes over every stored list', /overlayLocalChanges\(db\)/.test(read('src/main/branchStaff.ts')));
+  // A521: with { freshStaff: true } — the list just stored is the cloud's (a relayed staff change it shows is done).
+  ok('P3: storeBranchStaff lays waiting changes over every stored list', /overlayLocalChanges\(db(, \{ freshStaff: true \})?\)/.test(read('src/main/branchStaff.ts')));
 
   // P3: join notices capped.
   J._resetJoins();

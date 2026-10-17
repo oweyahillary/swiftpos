@@ -453,7 +453,7 @@ export async function pollNodeInstructions(
  *  ack on the next poll tick if this returns false. */
 export async function ackNodeInstruction(
   instructionId: number,
-  ack: { ok: boolean; error?: string; summary?: unknown },
+  ack: { ok: boolean; error?: string; summary?: unknown; wait?: boolean },   // A521: wait = "not yet" (money waits here)
   timeoutMs = 5000,
   uid: string | null = null,
 ): Promise<boolean> {

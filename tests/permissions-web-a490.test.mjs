@@ -129,11 +129,14 @@ await ok('POSAuthContext: hasPermission is the expanded map (memoised); a refres
 const EXPECTED_NAV = {
   overview: "'reports.overview'", menu: "'products.view'", offers: "'menu.offers'", inventory: "'inventory.view'",
   receiving: "['inventory.receive', 'inventory.transfer']", counts: "'inventory.count'", wastage: "'inventory.waste'",
-  expiry: "'inventory.waste'", history: "'inventory.receive'", orders: "'orders.view_all'", shift: "'orders.view_all'",
+  // A523: Shifts also opens for whoever may close a day or force-close a drawer (Tills & days lives in it).
+  expiry: "'inventory.waste'", history: "'inventory.receive'", orders: "'orders.view_all'", shift: "['orders.view_all', 'shifts.close_day', 'shifts.force_close']",
   reports: 'MANAGER_REPORT_KEYS', turnover: "'orders.view_all'", expenses: "'expenses.view'", customers: "'customers.view'",
   credit: "'customers.view'", staff: "'staff.view'", printers: "'stations.manage'", security: 'null',
   // A502: the owner's by default, for someone the owner gives the right.
   promotions: "'menu.promotions'", reversals: "'settings.reversals'",
+  // A518: supplier bills — read with payables.view (the Accountant), recorded and paid with payables.manage.
+  bills: "['payables.view', 'payables.manage']",
 };
 await ok('every manager page has its fine key (and only "My sign-in" is open)', () => {
   const md = read('pages/manager/ManagerDashboard.tsx');
@@ -174,7 +177,10 @@ await ok('manager actions: credit edits, drawer confirm / count, day close, staf
 await ok('the Overview fetches a report only with its key', () => {
   const md = read('pages/manager/ManagerDashboard.tsx');
   const ov = md.slice(md.indexOf('function OverviewTab()'), md.indexOf('// ── Expenses Tab'));
-  assert.match(ov, /hasPermission\('reports\.sales'\) \? posApi\.get<SalesSummary>\(`\/api\/reports\/sales/);
+  // A518: the day's figures (/sales) and the top items (/products) also with reports.overview — the cloud admits it there
+  // (tests/web-tidy-a518.test.mjs); the hourly chart and products-v2 keep their own keys.
+  assert.match(ov, /const seesDay = hasPermission\('reports\.sales'\) \|\| hasPermission\('reports\.overview'\);/);
+  assert.match(ov, /seesDay \? posApi\.get<SalesSummary>\(`\/api\/reports\/sales/);
   assert.match(ov, /hasPermission\('reports\.sales'\) \? posApi\.get<\{ series: HourlyRow\[\] \}>\(`\/api\/reports\/hourly/);
   assert.match(ov, /hasPermission\('reports\.items'\) \? posApi\.get<\{ products: TopProduct\[\] \}>\(`\/api\/reports\/products-v2/);
   assert.doesNotMatch(ov, /\/api\/reports\/(?:voids|staff)/);

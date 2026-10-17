@@ -205,8 +205,9 @@ ok('only when the cloud cannot be reached (no network, a gateway error, an offli
   && /const cloudUnreachable = \(status: number\) => status === 502 \|\| status === 503 \|\| status === 504;/.test(ipc)
   && /if \(offlineSessionNow\(\)\) return reverseWhileOffline\('void'/.test(ipc));
 ok('the approver\'s PIN: the branch node, else this till\'s saved sign-ins; a manager or the owner only',
-  /async function identifyApproverOffline\(pin: string, kind: 'void' \| 'refund'\)/.test(ipc) && /verifyPinOffline\(pin, branchId\)/.test(ipc)
-  && /if \(!mayReverseLocal\(p, kind\)\) throw new Error\(NOT_AN_APPROVER\);/.test(ipc));
+  // A521: the same lookup also releases a frozen item for sale ('frozen' — mayReleaseFrozen); void / refund unchanged.
+  /async function identifyApproverOffline\(pin: string, kind: 'void' \| 'refund'( \| 'frozen')?\)/.test(ipc) && /verifyPinOffline\(pin, branchId\)/.test(ipc)
+  && /if \(!\(kind === 'frozen' \? mayReleaseFrozen\(p\) : mayReverseLocal\(p, kind\)\)\) throw new Error\(NOT_AN_APPROVER\);/.test(ipc));
 ok('the owner\'s rules go to the cloud from Manager → Settings and apply here at once',
   /manageFetch\('\/api\/business\/settings', 'POST', \{ key, value: JSON\.parse\(clean\) \}\)/.test(ipc) && /setReversalRules\(\{/.test(ipc));
 ok('History and the void window follow the owner\'s window', /reverseActionFor\(o, reverseRights, Date\.now\(\), voidWindowMin\)/.test(src('renderer/pages/POSPage.tsx'))

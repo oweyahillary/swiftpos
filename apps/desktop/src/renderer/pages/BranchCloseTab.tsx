@@ -27,21 +27,23 @@ import { posApi, type BranchPeerShift, type ShiftMoneyView } from '../lib/posApi
 import { methodLabel } from '../../shared/paymentCatalogue';   // A465
 import { methodName, type MethodOption } from '../../shared/shiftConfirm';
 import MethodDot from '../components/MethodDot';
+import ShiftPanel from './ShiftPanel';   // A520: the server's own drawer closes here, with the shift close everyone knows
 
-interface Props { currency: string }
+interface Props { currency: string; businessName?: string }
 
 type Overview = Extract<Awaited<ReturnType<typeof posApi.branchClose.overview>>, { tills: any }>;
 type TillView = Overview['tills'][number];
 
 const STALE_MS = 120_000;
-// A465: a till that reports its name / code is named by it; an older till keeps "Terminal xxxxxxxx".
+// A465: a till that reports its name / code is named by it; an older till keeps "Terminal xxxxxxxx" (the same names as
+// main/branchClose.ts tillLabel, which writes the blockers — A520).
 const tillLabel = (t: { is_self: boolean; device_id: string; state?: { terminal?: { code?: string | null; name?: string | null } } | null }) => {
   if (t.is_self) return 'This terminal (branch server)';
   const n = t.state?.terminal?.name?.trim(); const c = t.state?.terminal?.code?.trim();
   return n && c ? `${n} (${c})` : n || (c ? `Till ${c}` : `Terminal ${t.device_id.slice(0, 8)}`);
 };
 
-export default function BranchCloseTab({ currency }: Props) {
+export default function BranchCloseTab({ currency, businessName }: Props) {
   const [ov, setOv] = useState<Overview | null>(null);
   const [err, setErr] = useState('');
   const [role, setRole] = useState<string | null>(null);
@@ -54,6 +56,8 @@ export default function BranchCloseTab({ currency }: Props) {
   const [totalsOk, setTotalsOk] = useState(false);     // A458: the manager ticked the day's totals
   const [moneyFor, setMoneyFor] = useState<{ t: TillView; s: BranchPeerShift; mode: 'float' | 'expense' } | null>(null);   // A465
   const [moneyMsg, setMoneyMsg] = useState('');   // A465
+  const [ownShift, setOwnShift] = useState(false);   // A520: this terminal's own shift, closed here first
+  const [withoutOk, setWithoutOk] = useState<Set<string>>(new Set());   // A521: tills with money the manager closes without
   const alive = useRef(true);
 
   const load = useCallback(async () => {
@@ -96,22 +100,30 @@ export default function BranchCloseTab({ currency }: Props) {
   if (err) return <div className="p-6 text-sm text-red-300">{err}</div>;
   if (!ov) return <div className="p-6 text-sm text-gray-400">Loading…</div>;
 
-  // What stands between the branch and its close — the same checks the server makes when Close branch is pressed.
-  const blockers: string[] = [];
-  for (const t of ov.tills) {
-    const st = t.state;
-    if (!st) { blockers.push(`${tillLabel(t)} has never reported in`); continue; }
-    // F4: a till whose day is closed (and no drawer open) does not hold the close, however long it has been off.
-    if (!t.is_self && ageOf(t.last_seen).stale && st.day_open === false && !st.open_drawer) continue;
-    if (!t.is_self && ageOf(t.last_seen).stale) blockers.push(`${tillLabel(t)} has not been heard from in the last 2 minutes`);
-    if (!st.shifts) blockers.push(`${tillLabel(t)} needs the update to close from here`);
-    if (st.open_drawer) blockers.push(`${tillLabel(t)}: ${st.open_drawer.cashier_name ?? 'a cashier'}'s drawer is still open`);
-    const waiting = (st.shifts ?? []).filter(s => s.state === 'awaiting').length;
-    if (waiting) blockers.push(`${tillLabel(t)}: ${waiting} shift${waiting === 1 ? '' : 's'} to confirm`);
-  }
-  const dayOpen = ov.tills.filter(t => t.state?.day_open);
+  // What stands between the branch and its close. A520: computed by the branch server itself (branchClose.ts
+  // assessBranchClose), the very rule Close branch applies, so the screen and the button never disagree. A till not
+  // heard from holds the close only when its last report shows a drawer open or a shift to confirm; otherwise it is
+  // "not connected" and its day closes when it next connects.
+  const allBlockers: string[] = ov.close?.blockers ?? [];
+  const held = ov.close?.held ?? [];
+  const heldIds = new Set(held.map(h => h.device_id));
+  const selfDrawer = ov.close?.self_drawer ?? null;
+  // A521 (#1): another till's money no longer stops the whole branch — the manager ticks its warning and closes without
+  // it (the server applies the same rule: unresolvedBlockers). This terminal's own lines can never be ticked.
+  const without = ov.close?.without ?? [];
+  const ticked = without.filter(w => withoutOk.has(w.device_id));
+  const tickedLines = new Set(ticked.flatMap(w => w.lines));
+  const blockers = allBlockers.filter(b => !tickedLines.has(b));
+  // A close left for a till that is off waits for it (no 24-h expiry) — it never holds tonight's close either.
+  // A521: nor one left for a till the branch closed without (its money waits there): pending, wait_for_till.
+  const waitsForTill = (t: TillView) => t.instruction?.status === 'pending' && t.instruction.payload?.wait_for_till === true
+    && (ageOf(t.last_seen).stale || t.instruction.ack?.wait === true);
+  // Days still to close: a till that is off and already holds a close waiting for it is not one of them.
+  const dayOpen = ov.tills.filter(t => t.state?.day_open && !waitsForTill(t));
   const closedTills = ov.tills.filter(t => !t.state?.day_open || (t.instruction?.status === 'acked' && t.instruction.ack?.ok));
-  const waitingClose = ov.tills.filter(t => t.instruction?.status === 'pending');
+  // A521 (#2): shown, never a reason to hold the button — a till that answers late is asked again by the next close.
+  const waitingClose = ov.tills.filter(t => t.instruction?.status === 'pending' && !waitsForTill(t));
+  const waitingConnect = ov.tills.filter(t => waitsForTill(t) && !heldIds.has(t.device_id));
   const refusedClose = ov.tills.filter(t => t.instruction?.status === 'failed');
   const allShifts = ov.tills.flatMap(t => t.state?.shifts ?? []);
   const branchSales = allShifts.reduce((a, s) => a + s.sales, 0);
@@ -120,9 +132,17 @@ export default function BranchCloseTab({ currency }: Props) {
   const closeBranch = async () => {
     setClosing(true); setCloseMsg(null);
     try {
-      const r = await posApi.branchClose.closeBranch(undefined, totalsOk);   // A458
+      const r = await posApi.branchClose.closeBranch(undefined, totalsOk, ticked.map(w => w.device_id));   // A458, A521
       if (!r.ok) setCloseMsg({ ok: false, text: r.error ?? (r.results ?? []).filter(x => !x.ok).map(x => `${x.device_id.slice(0, 8)}: ${x.error}`).join('; ') ?? 'Could not close the branch.' });
-      else setCloseMsg({ ok: true, text: (r.results ?? []).some(x => x.sent) ? 'Closing — each till answers within ~15 seconds.' : 'The branch is closed.' });
+      else {
+        const later = (r.results ?? []).filter(x => x.held && !x.without).length;   // A520
+        const wo = (r.results ?? []).filter(x => x.without).length;                  // A521
+        const live = (r.results ?? []).some(x => x.sent && !x.held);
+        setCloseMsg({ ok: true, text: [live ? 'Closing — each till answers within ~15 seconds.' : 'The branch is closed.',
+          later ? `${later} till${later === 1 ? ' is' : 's are'} not connected — ${later === 1 ? 'its day closes when it next connects' : 'their days close when they next connect'}.` : '',
+          wo ? `Closed without ${ticked.map(w => w.label).join(', ')} — ${wo === 1 ? 'its day closes' : 'their days close'} when ${wo === 1 ? 'its' : 'their'} money is closed and confirmed.` : ''].filter(Boolean).join(' ') });
+        setWithoutOk(new Set());
+      }
       await load();
     } finally { setClosing(false); }
   };
@@ -130,11 +150,18 @@ export default function BranchCloseTab({ currency }: Props) {
   // A465: every drawer open at the branch — a manager here records cash in / out or an expense on it (server only).
   const isServer = role === 'node' || role === 'office';
   const openDrawers = ov.tills.flatMap(t => (t.state?.shifts ?? []).filter(s => s.state === 'open').map(s => ({ t, s })));
-  // F4: a till gone for good (replaced, moved) — off this list at once; it is listed again if it ever reports.
-  const forget = async (t: TillView) => {
-    if (!window.confirm(`Forget ${tillLabel(t)}? It leaves this list now. Its sales stay in the branch's records, and it comes back if it reports again.`)) return;
-    const r = await posApi.branchClose.forgetTill(t.device_id).catch(() => ({ ok: false, error: 'Could not forget it.' }));
-    setCloseMsg(r.ok ? { ok: true, text: `${tillLabel(t)} forgotten.` } : { ok: false, text: r.error ?? 'Could not forget it.' });
+  // A521 (#3): two ways off this list. "Hide from Close Branch" — a till only off for a while: it keeps its key and comes
+  // back the moment it reports. "Revoke this till" (F4's "Forget") — a till gone for good: its key goes, and it is
+  // refused until it joins this server again (Find my server on the till, allowed here).
+  const hide = async (t: TillView) => {
+    const r = await posApi.branchClose.hideTill(t.device_id).catch(() => ({ ok: false, error: 'Could not hide it.' }));
+    setCloseMsg(r.ok ? { ok: true, text: `${tillLabel(t)} hidden — it shows here again when it next reports.` } : { ok: false, text: r.error ?? 'Could not hide it.' });
+    await load();
+  };
+  const revoke = async (t: TillView) => {
+    if (!window.confirm(`Revoke ${tillLabel(t)}? Its device key is removed: it can no longer reach this branch server — no sales, no staff list, no instructions — until it joins again (on that till: Find my server, then allow it here). Its sales stay in the branch's records. If it is only switched off for a while, Cancel and use Hide instead.`)) return;
+    const r = await posApi.branchClose.forgetTill(t.device_id).catch(() => ({ ok: false, error: 'Could not revoke it.' }));
+    setCloseMsg(r.ok ? { ok: true, text: `${tillLabel(t)} revoked — it must join this server again to reconnect.` } : { ok: false, text: r.error ?? 'Could not revoke it.' });
     await load();
   };
   const cancelMoney = async (id: number) => {
@@ -145,6 +172,11 @@ export default function BranchCloseTab({ currency }: Props) {
 
   // A458: every shift waiting for a manager, across the tills — confirmed here one by one (the till records it).
   const toConfirm = ov.tills.flatMap(t => (t.state?.shifts ?? []).filter(s => s.state === 'awaiting').map(s => ({ t, s })));
+  // A520: confirmed shifts opened at a float of 0 whose cash counted over — the likeliest reason for an "over" equal to a float.
+  const floatOver = ov.tills.flatMap(t => (t.state?.shifts ?? [])
+    .filter(s => s.state === 'confirmed' && Number(s.cash?.opening_float ?? 0) === 0 && !!s.confirmed?.counted)
+    .map(s => ({ t, s, over: Math.round((Number(s.confirmed?.counted?.cash ?? 0) - Number(s.expected.cash ?? 0)) * 100) / 100 }))
+    .filter(x => x.over > 0));
   const T = ov.totals;
 
   return (
@@ -203,10 +235,39 @@ export default function BranchCloseTab({ currency }: Props) {
         {(T.shifts.open > 0 || T.shifts.awaiting > 0) && (
           <p className="text-xs text-amber-300">Not final yet: {[T.shifts.open ? `${T.shifts.open} shift${T.shifts.open === 1 ? '' : 's'} still open` : '', T.shifts.awaiting ? `${T.shifts.awaiting} to confirm` : ''].filter(Boolean).join(', ')}.</p>
         )}
+        {/* A520 (KRUNCH: cash "over" by exactly 3 x the 2,500 float): Expected adds each shift's OWN opening float, once;
+            Confirmed is what was counted. A shift opened at a float of 0 while the last shift's float stayed in the drawer
+            counts over by that float — named here so nobody hunts for a double count that is not there. */}
+        {floatOver.length > 0 && (
+          <p className="text-xs text-amber-300" data-testid="float-over">
+            {floatOver.map(({ t, s, over }) => `${s.cashier_name} on ${tillLabel(t)} opened with a float of 0 and counted ${money(over)} over`).join('; ')} —
+            was the last shift's float left in the drawer? Each shift's Details shows its float.
+          </p>
+        )}
         {T.shifts.uncounted > 0 && (
           <p className="text-xs text-gray-400">{T.shifts.uncounted} shift{T.shifts.uncounted === 1 ? ' was' : 's were'} closed without a manager's count (force-closed or older) — in Sales and Expected, not in Confirmed.</p>
         )}
       </div>
+
+      {/* A520: the branch server used as a till — its own drawer closes first (the shift close every cashier knows), then
+          its shift is confirmed like any till's, and Close branch closes the server's day with the branch. */}
+      {selfDrawer && (
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg p-4 space-y-2" data-testid="self-drawer">
+          <p className="text-gray-100 font-medium">This terminal: close its shift first</p>
+          <p className="text-xs text-gray-300">
+            {selfDrawer.cashier_name ? `${selfDrawer.cashier_name}'s drawer is open on this terminal.` : 'A drawer is open on this terminal.'} Close
+            the shift (count the drawer), confirm it below, then close the branch — this terminal's day closes with it.
+          </p>
+          <button data-testid="close-own-shift" onClick={() => setOwnShift(true)}
+            className="px-3 py-1.5 rounded-md bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold">
+            Close this terminal's shift
+          </button>
+        </div>
+      )}
+      {ownShift && (
+        <ShiftPanel business={{ name: businessName ?? '', currency }} onClose={() => { setOwnShift(false); void load(); }}
+          onShiftChange={() => { void load(); }} />
+      )}
 
       {/* A465: the drawers open now — cash in / out and expenses on any of them, recorded by the till that holds it */}
       {isServer && openDrawers.length > 0 && (
@@ -265,7 +326,7 @@ export default function BranchCloseTab({ currency }: Props) {
                     {c?.status !== 'pending' && (
                       confirming === s.id
                         ? <ConfirmHere till={t} s={s} money={money} options={options} currency={currency}
-                            onDone={() => { setConfirming(null); void load(); }} onCancel={() => setConfirming(null)} />
+                            onDone={(msg) => { setConfirming(null); if (msg) setCloseMsg({ ok: true, text: msg }); void load(); }} onCancel={() => setConfirming(null)} />
                         : <button data-testid={`confirm-${s.id}`} onClick={() => setConfirming(s.id)}
                             className="mt-2 px-3 py-1.5 rounded-md bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold">
                             Confirm this shift
@@ -300,13 +361,19 @@ export default function BranchCloseTab({ currency }: Props) {
                     last seen {age.label}{age.stale ? ' — figures may be stale' : ''}
                   </span>
                 )}
-                {!t.is_self && age.stale && isServer && (
-                  <button data-testid={`forget-${t.device_id}`} onClick={() => void forget(t)}
-                    className="text-xs px-2 py-0.5 rounded border border-gray-600 text-gray-300 hover:bg-gray-700/40">Forget this till</button>
-                )}
+                {!t.is_self && age.stale && isServer && (<>
+                  <button data-testid={`hide-${t.device_id}`} onClick={() => void hide(t)}
+                    className="text-xs px-2 py-0.5 rounded border border-gray-600 text-gray-300 hover:bg-gray-700/40">Hide from Close Branch</button>
+                  <button data-testid={`revoke-${t.device_id}`} onClick={() => void revoke(t)}
+                    className="text-xs px-2 py-0.5 rounded border border-red-700/60 text-red-300 hover:bg-red-900/30">Revoke this till</button>
+                </>)}
                 {st && !st.day_open && <span className="text-xs px-2 py-0.5 rounded bg-gray-600/30 text-gray-300 border border-gray-600/50">day closed</span>}
                 {closedNow && <span className="text-xs px-2 py-0.5 rounded bg-action-600/20 text-action-300 border border-action-600/40">closed with the branch</span>}
-                {ins?.status === 'pending' && <span className="text-xs px-2 py-0.5 rounded bg-amber-600/20 text-amber-300 border border-amber-600/40">closing — waiting for the till…</span>}
+                {ins?.status === 'pending' && (ins.ack?.wait === true
+                  ? <span className="text-xs px-2 py-0.5 rounded bg-gray-600/30 text-gray-200 border border-gray-500/50" data-testid="closes-after-money">closed without it — its day closes when its money is closed and confirmed</span>
+                  : waitsForTill(t)
+                  ? <span className="text-xs px-2 py-0.5 rounded bg-gray-600/30 text-gray-200 border border-gray-500/50" data-testid="closes-on-connect">not connected — its day closes when it next connects</span>
+                  : <span className="text-xs px-2 py-0.5 rounded bg-amber-600/20 text-amber-300 border border-amber-600/40">closing — waiting for the till…</span>)}
                 {ins?.status === 'failed' && <span className="text-xs px-2 py-0.5 rounded bg-red-600/20 text-red-300 border border-red-600/40">refused</span>}
               </div>
 
@@ -356,7 +423,7 @@ export default function BranchCloseTab({ currency }: Props) {
                               {s.state === 'awaiting' && c?.status !== 'pending' && (
                                 confirming === s.id
                                   ? <ConfirmHere till={t} s={s} money={money} options={options} currency={currency}
-                                      onDone={() => { setConfirming(null); void load(); }} onCancel={() => setConfirming(null)} />
+                                      onDone={(msg) => { setConfirming(null); if (msg) setCloseMsg({ ok: true, text: msg }); void load(); }} onCancel={() => setConfirming(null)} />
                                   : <button data-testid={`confirm-${s.id}`} onClick={() => setConfirming(s.id)}
                                       className="mt-2 px-3 py-1.5 rounded-md bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold">
                                       Confirm this shift
@@ -398,7 +465,27 @@ export default function BranchCloseTab({ currency }: Props) {
         ) : (
           <p className="text-xs text-gray-300">Every shift is closed and confirmed. Closing the branch closes each till's day with its confirmed counts — the totals above.</p>
         )}
-        {waitingClose.length > 0 && <p className="text-xs text-amber-300">Waiting on {waitingClose.length} till{waitingClose.length === 1 ? '' : 's'} to answer.</p>}
+        {/* A521 (#1): another till's money — the manager may close the branch without it, with the warning ticked */}
+        {without.length > 0 && (
+          <div className="text-xs space-y-1.5 pt-1" data-testid="close-without">
+            <p className="text-gray-300">Or close the branch without these tills — this terminal and every other till close tonight:</p>
+            {without.map(w => (
+              <label key={w.device_id} className="flex items-start gap-2 text-amber-200" data-testid={`without-${w.device_id}`}>
+                <input type="checkbox" className="mt-0.5" checked={withoutOk.has(w.device_id)}
+                  onChange={(e) => setWithoutOk(prev => { const n = new Set(prev); if (e.target.checked) n.add(w.device_id); else n.delete(w.device_id); return n; })} />
+                <span>{w.warning}.</span>
+              </label>
+            ))}
+          </div>
+        )}
+        {/* A520: tills that are off and need nobody — they no longer hold the close */}
+        {(held.length > 0 || waitingConnect.length > 0) && (
+          <div className="text-xs text-gray-300 space-y-0.5" data-testid="held-tills">
+            {held.map(h => <p key={h.device_id}>· {h.label} — {h.note ?? `not connected; its day${h.business_date ? ` (${h.business_date})` : ''} closes when it next connects`}</p>)}
+            {waitingConnect.map(t => <p key={t.device_id}>· {tillLabel(t)} — {t.instruction?.ack?.wait ? 'closed without it; its day closes when its money is closed and confirmed' : 'not connected; its day closes when it next connects'}</p>)}
+          </div>
+        )}
+        {waitingClose.length > 0 && <p className="text-xs text-amber-300">Waiting on {waitingClose.length} till{waitingClose.length === 1 ? '' : 's'} to answer (Close branch still closes the rest).</p>}
         {refusedClose.length > 0 && <p className="text-xs text-red-300">{refusedClose.length} till{refusedClose.length === 1 ? '' : 's'} refused — the reason is on its card.</p>}
         {/* A458: the manager confirms the day's totals (the confirmed shifts added up, per payment method) */}
         {blockers.length === 0 && dayOpen.length > 0 && (
@@ -409,7 +496,7 @@ export default function BranchCloseTab({ currency }: Props) {
         )}
         {closeMsg && <p className={`text-xs ${closeMsg.ok ? 'text-gray-200' : 'text-red-300'}`}>{closeMsg.text}</p>}
         <button data-testid="close-branch-btn" onClick={() => void closeBranch()}
-          disabled={closing || !totalsOk || blockers.length > 0 || dayOpen.length === 0 || waitingClose.length > 0}
+          disabled={closing || !totalsOk || blockers.length > 0 || dayOpen.length === 0}
           className="w-full mt-1 px-4 py-2.5 rounded-lg bg-action-500 hover:bg-action-400 text-gray-950 font-bold disabled:opacity-40">
           {closing ? 'Closing…' : 'Close branch'}
         </button>
@@ -459,7 +546,7 @@ function ShiftDetails({ s, money, options }: { s: BranchPeerShift; money: (n: nu
 /** Confirm a closed shift from the server: the till's expected figure beside each count, the variance as typed. */
 function ConfirmHere({ till, s, money, options, currency, onDone, onCancel }: {
   till: TillView; s: BranchPeerShift; money: (n: number) => string; options: MethodOption[]; currency: string;
-  onDone: () => void; onCancel: () => void;
+  onDone: (msg?: string) => void; onCancel: () => void;   // A521: msg — "the till is not connected — this applies when it reconnects"
 }) {
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
@@ -485,7 +572,7 @@ function ConfirmHere({ till, s, money, options, currency, onDone, onCancel }: {
       const clean = Object.fromEntries(Object.entries(reasons).filter(([, v]) => v.trim()));
       const r = await posApi.branchClose.confirmShift(till.device_id, s.id, counts, Object.keys(clean).length ? clean : undefined);
       if (!r.ok) { setError(r.error ?? 'Could not confirm the shift.'); return; }
-      onDone();
+      onDone(r.queued_offline ? `Confirmation saved. ${r.message ?? ""}`.trim() : undefined);
     } finally { setBusy(false); }
   };
 
@@ -586,7 +673,8 @@ function ShiftMoneyModal({ till, s, mode, label, money, currency, options, time,
         : { device_id: till.device_id, shift_id: s.id, kind: 'expense', amount: Number(amount), description: desc.trim(),
             expense_category_id: catId || undefined, category_name: categories.find(c => c.id === catId)?.name, payment_method: method });
       if (!r.ok) { setError(r.error ?? 'Could not record it.'); return; }
-      onDone(r.direct ? 'Recorded on this terminal\'s drawer.' : 'Sent — the till records it within about 15 seconds.');
+      // A521: to a till that is off it waits for it — said so (r.message: "the till is not connected — this applies when it reconnects").
+      onDone(r.direct ? 'Recorded on this terminal\'s drawer.' : r.queued_offline ? `Saved. ${r.message ?? ''}`.trim() : 'Sent — the till records it within about 15 seconds.');
     } catch (e: any) { setError(e?.message ?? 'Could not record it.'); }
     finally { setBusy(false); }
   };

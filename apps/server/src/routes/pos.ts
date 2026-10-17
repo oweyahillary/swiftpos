@@ -2,6 +2,7 @@ import { mpesaFromSettings, mpesaLabel, mpesaReceiptNumber } from '../lib/mpesaR
 import { Router } from 'express';
 import { effectiveKeysForRow, clientPermissionMap } from '../lib/effectivePermissions';   // A490
 import { offersForBranch } from './offers';   // A445
+import { promotionOffersFor } from '../lib/promotionOffers';   // A518
 import { enabledFromSetting } from '../lib/paymentCatalogue';   // A429
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
@@ -84,6 +85,8 @@ router.get('/catalogue-version', async (req, res) => {
       latest('stock_takes',      'business_id', biz),
       // A445: an offer created, changed, switched off or deleted (updated_at moves on each, deleted_at keeps the row).
       latest('offers',           'business_id', biz),
+      // A518: a promotion created, changed or switched off — charged at the sale as an offer, so the tills learn of it.
+      latest('promotions',       'business_id', biz),
       // A446: print stations — a station added or changed on the web or another till reaches this till within 20 s
       // (it waited for the 10-minute sync: "No station …" on Test print).
       latest('print_stations',   'business_id', biz),
@@ -550,7 +553,11 @@ router.get('/init', async (req, res) => {
     stockCount: await frozenAtBranch(req.businessId, (opBranch as { id?: string } | null)?.id ?? null),
     // A445: the offers this branch runs (on, not deleted, for every branch or this one) — the till applies them by its
     // own clock (shared/offers.ts), offline too. Always sent: [] = none. Older tills ignore it.
-    offers: await offersForBranch(req.businessId!, (opBranch as { id?: string } | null)?.id ?? null),
+    // A518: and the promotions charged at the sale, as offers (lib/promotionOffers.ts) — every till applies them already.
+    offers: [
+      ...(await offersForBranch(req.businessId!, (opBranch as { id?: string } | null)?.id ?? null)),
+      ...(await promotionOffersFor(req.businessId!)),
+    ],
     categories: categories ?? [],
     // Custom payment methods (A96) — the extras a business accepts beyond the
     // built-in Cash / M-Pesa / Card. Active only; the till caches these so they
@@ -592,12 +599,17 @@ router.get('/init', async (req, res) => {
 });
 
 // A404 — the test-data clears ZapTill made for this business (admin portal, A396) after `after`, oldest first; the
-// till removes the same periods from its own database (main/testDataClear.ts). Last 60 days only.
+// till removes the same periods from its own database (main/testDataClear.ts). After the last one it applied (A522).
 // A482: `menu` = that clear deleted the whole menu (migration 132) — the till empties its own menu too. Before 132 the
 // column is missing: the clears are listed without it (menu false).
+// A522 (owner, 2026-10-17: "not all tills will run 24/7"): keyed to the till's LAST APPLIED clear (`after`, whatever its
+// age) — a till switched off for more than 60 days used to have the floor jump past a clear it never applied, keeping
+// the test sales and the test day that then locked it. The 60-day floor stays only for a till that has applied none yet
+// (a new till must not replay an old clear — a whole-menu clear would empty the menu it has just pulled).
 router.get('/test-data-clears', async (req, res) => {
   const floor = new Date(Date.now() - 60 * 86_400_000).toISOString();
-  const after = typeof req.query.after === 'string' && !Number.isNaN(Date.parse(req.query.after)) && req.query.after > floor ? req.query.after : floor;
+  const asked = typeof req.query.after === 'string' && !Number.isNaN(Date.parse(req.query.after)) ? req.query.after : null;
+  const after = asked ?? floor;
   const clearsOf = (cols: string) => supabase.from('test_data_purges').select(cols)
     .eq('business_id', req.businessId).gt('created_at', after).order('created_at', { ascending: true }).limit(20);
   let { data, error } = await clearsOf('id, from_at, to_at, created_at, menu');

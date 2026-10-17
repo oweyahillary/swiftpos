@@ -68,12 +68,15 @@ const paidOf = (o: { total: number; tip_amount?: number | null; delivery_fee?: n
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function POSOrderHistoryTab({ currency }: { currency: string }) {
-  const { posApi, session, hasPermission } = usePOSAuth();
+  const { posApi, session, hasPermission, held } = usePOSAuth();
   // A359: refund from this list (web POS → Orders, manager dashboard → Orders); the cloud asks a manager's (or the
   // owner's) own PIN and records who approved (A355). A490: void is sales.void and refund is sales.refund — each on
   // its own (orders.void stood for both).
   const mayVoid   = hasPermission('sales.void');
   const mayRefund = hasPermission('sales.refund');
+  // A518 (A506 left as is): the owner's own void or refund is self-approved by the cloud (A187/A494 — it never reads a PIN
+  // for them), so the owner's session is not asked for one. Everyone else still enters a manager's PIN.
+  const ownerSelf = held.has('*');
   const [refunding, setRefunding]     = useState<string | null>(null);   // order id with the refund form open
   // A444: Void too (it was refund-only here) — inside the owner's void window, with the same reason + manager PIN.
   const [revMode, setRevMode]         = useState<'void' | 'refund'>('refund');
@@ -93,10 +96,10 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
   const submitRefund = async (order: Order) => {
     const reason = (refundReason === 'Other' ? refundOther : refundReason).trim();
     if (!reason) { setRefundMsg({ id: order.id, text: 'A reason is required.', ok: false }); return; }
-    if (!refundPin.trim()) { setRefundMsg({ id: order.id, text: `A manager PIN is required to ${revMode}.`, ok: false }); return; }
+    if (!ownerSelf && !refundPin.trim()) { setRefundMsg({ id: order.id, text: `A manager PIN is required to ${revMode}.`, ok: false }); return; }
     setRefundBusy(true); setRefundMsg(null);
     try {
-      await posApi.post(`/api/orders/${order.id}/${revMode}`, { reason, override_pin: refundPin.trim() });
+      await posApi.post(`/api/orders/${order.id}/${revMode}`, { reason, ...(ownerSelf ? {} : { override_pin: refundPin.trim() }) });
       setRefunding(null); setRefundReason(''); setRefundOther(''); setRefundPin('');
       setRefundMsg({ id: order.id, ok: true, text: revMode === 'void'
         ? `Voided — the sale is removed; hand back ${fmt(paidOf(order), currency)} in the tender it came in.`
@@ -332,9 +335,11 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                         <input style={{ ...s.searchInput, width: '100%', marginBottom: 6 }} placeholder="Reason"
                           value={refundOther} onChange={e => setRefundOther(e.target.value)} />
                       )}
+                      {!ownerSelf && (
                       <input type="password" inputMode="numeric" maxLength={6} placeholder="Manager or owner PIN"
                         style={{ ...s.searchInput, width: '100%', marginBottom: 6, letterSpacing: 4 }}
                         value={refundPin} onChange={e => setRefundPin(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+                      )}
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button type="button" disabled={refundBusy} onClick={() => void submitRefund(order)}
                           style={{ ...s.refundBtn, marginTop: 0, opacity: refundBusy ? 0.5 : 1 }}>

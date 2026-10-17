@@ -123,8 +123,12 @@ console.log('\n1. /node/changes\n');
   ok('a joined till\'s product is applied here (the branch has it with no internet)', r1.status === 200 && !!db.prepare(`SELECT 1 FROM products WHERE id = ?`).get(uuid(101)));
   const posted = [];
   await LC.pushLocalChanges(db, { post: async (c) => { posted.push(...c); return { ok: true, status: 200, json: async () => ({ results: [] }) }; }, state: async () => [], secrets: { wrap: (s) => s, unwrap: (s) => s, seal: (s) => s } });
-  ok('1: …but never queued for the cloud under the server\'s own session (the till sends it itself)',
-    row?.state === 'relayed' && !posted.some((c) => c.id === uuid(1)), JSON.stringify({ row, posted: posted.map((c) => c.id) }));
+  // A521 (#6): the till that made it may be switched off before it reaches the cloud — the server now FORWARDS it, still
+  // never as its own: never re-queued as one of the server's own changes ('pending'), the maker kept as the till named
+  // it (the cloud believes the maker only with their own proof — A494), and the till it came from named (relayed_for).
+  const fwd = posted.find((c) => c.id === uuid(1));
+  ok('1: …never queued as the server\'s own change; forwarded as relayed for the till that made it (A521)',
+    row?.state === 'relayed' && !!fwd && fwd.relayed_for && (fwd.made_by ?? null) === (product.made_by ?? null), JSON.stringify({ row, posted: posted.map((c) => [c.id, c.relayed_for]) }));
   db.prepare(`INSERT OR REPLACE INTO branch_staff (staff_id, name, role_name, branch_id, permissions, pin_hash_enc, status, updated_at)
               VALUES (?, 'Jo', 'Cashier', 'br-1', '{}', 'E:$2a$04$old', 'active', ?)`).run(uuid(201), now);
   const pin = { id: uuid(2), entity: 'staff_pin', op: 'update', entity_id: uuid(201), data: { pin: '7777' }, made_at: now };
@@ -210,7 +214,8 @@ console.log('\n6. Join requests\n');
   J._resetJoins();
   const r1 = await post('/node/join', { device_id: 'dev-A', name: 'Front' }, {});
   const b1 = await r1.json();
-  ok('6: a till that already holds a key is refused until the server forgets it', r1.status === 409 && /forget it at the server/.test(b1.error), JSON.stringify(b1));
+  // A521: the button is "Revoke this till" now — the refusal names it (intent kept: refused until the server lets it go).
+  ok('6: a till that already holds a key is refused until the server revokes it', r1.status === 409 && /revoke it at the server/.test(b1.error) && /Revoke this till/.test(b1.error), JSON.stringify(b1));
   B.forgetTill('dev-A');
   ok('…then it may ask again', (await post('/node/join', { device_id: 'dev-A', name: 'Front' }, {})).status === 202);
   J._resetJoins();

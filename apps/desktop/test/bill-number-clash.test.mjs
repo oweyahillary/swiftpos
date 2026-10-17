@@ -113,7 +113,8 @@ console.log('\nA sale rung here keeps its number\n');
   ok('createLocalOrder claims the number inside the sale\'s transaction',
     /db\.transaction\(\(\) => \{\s*\/\/ A500[\s\S]{0,400}claimOrderNumberForOwnSale\(/.test(fs.readFileSync(path.join(here, '..', 'src', 'main', 'syncEngine.ts'), 'utf8')));
   ok('the bill-number IPC uses the guarded allocator',
-    /orders:nextBillNumber[\s\S]{0,600}return nextBillNumber\(getLocalDb\(\)/.test(fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcHandlers.ts'), 'utf8')));
+    // A519: the number is handed out only to someone who may sell (sellGate), and noted as an open bill.
+    /orders:nextBillNumber[\s\S]{0,900}(return|const n =) nextBillNumber\(getLocalDb\(\)/.test(fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcHandlers.ts'), 'utf8')));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

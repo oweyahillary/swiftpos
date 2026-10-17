@@ -69,7 +69,8 @@ ok('unlocking a local session holds the PIN again, so it becomes a cloud sign-in
   u?.ok === true && held?.staffId === 'u-abdi' && held.branchId === 'br-1', JSON.stringify({ u, held }));
 
 const app = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'App.tsx'), 'utf8');
-ok('the update bar reads either shape of the branch', app.includes('<UpdateBanner branchId={staff?.branchId ?? (staff as any)?.branch?.id ?? null} />'));
+// A519: the bar also learns whether the person may restart in one tap (canRestart) — the branch shapes are unchanged.
+ok('the update bar reads either shape of the branch', app.includes('<UpdateBanner branchId={staff?.branchId ?? (staff as any)?.branch?.id ?? null} '));
 const mp = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'pages', 'ManagerPage.tsx'), 'utf8');
 ok('a branch server\'s own records are said quietly (gray), amber only for "this till only"',
   mp.includes('const calm = cloud || day.localCoversBranch;') && mp.includes("{cloud ? ' · from the cloud' : !day.localCoversBranch && day.fallbackReason"));

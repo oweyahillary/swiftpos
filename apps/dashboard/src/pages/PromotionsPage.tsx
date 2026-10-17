@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTerm } from '../lib/terminology';
 import { api } from '../lib/api';
 import type { PosApi } from '../context/POSAuthContext';   // A502
@@ -24,6 +24,9 @@ interface Promotion {
   free_quantity: number | null;
   status: 'active' | 'inactive';
   effective_status?: 'active' | 'inactive' | 'expired' | 'scheduled';
+  /** A518: charged at the sale now (the cloud's word), and if not, why. */
+  charged_at_sale?: boolean;
+  not_charged_reason?: string | null;
   created_at: string;
 }
 
@@ -53,6 +56,8 @@ interface FormState {
   discount_value: string;
   min_quantity: string;
   free_quantity: string;
+  product_ids: string[];    // A518: the picker
+  category_ids: string[];
 }
 
 const BLANK_FORM: FormState = {
@@ -65,7 +70,54 @@ const BLANK_FORM: FormState = {
   discount_value: '10',
   min_quantity: '2',
   free_quantity: '1',
+  product_ids: [], category_ids: [],
 };
+
+interface Named { id: string; name: string }
+
+/** A518: the names a promotion is for, for its card ("Chips, Soda +3"). Unknown ids (deleted since) are left out. */
+export function scopeLabel(ids: string[], items: Named[], max = 3): string {
+  const byId = new Map(items.map((i) => [i.id, i.name]));
+  const names = ids.map((id) => byId.get(id)).filter((n): n is string => !!n);
+  if (!names.length) return '';
+  return names.length > max ? `${names.slice(0, max).join(', ')} +${names.length - max}` : names.join(', ');
+}
+
+/**
+ * A518: the products or categories a promotion is for — the chosen ones as chips (✕ takes one off), a search over the
+ * business's own, and a click to add. The page's own look (gray-950 inputs, swift accents).
+ */
+function ScopePicker({ label, items, picked, onChange }: { label: string; items: Named[]; picked: string[]; onChange: (v: string[]) => void }) {
+  const [q, setQ] = useState('');
+  const byId = useMemo(() => new Map(items.map((i) => [i.id, i.name])), [items]);
+  const shown = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return items.filter((i) => !picked.includes(i.id) && (!s || i.name.toLowerCase().includes(s))).slice(0, 100);
+  }, [items, picked, q]);
+  return (
+    <div className="space-y-2" data-testid="promotion-scope-picker">
+      <div className="flex flex-wrap gap-1.5">
+        {picked.map((id) => (
+          <span key={id} className="inline-flex items-center gap-1 rounded-full border border-swift/40 bg-swift/10 px-2.5 py-1 text-xs text-swift-text">
+            {byId.get(id) ?? 'Removed item'}
+            <button type="button" aria-label={`Remove ${byId.get(id) ?? 'item'}`} onClick={() => onChange(picked.filter((x) => x !== id))}
+              className="text-gray-400 hover:text-white">✕</button>
+          </span>
+        ))}
+        {!picked.length && <span className="text-xs text-gray-600">No {label.toLowerCase()} chosen yet.</span>}
+      </div>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${label.toLowerCase()}`}
+        className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2 text-white text-sm focus:outline-none focus:border-swift" />
+      <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-800 divide-y divide-gray-800">
+        {shown.map((i) => (
+          <button key={i.id} type="button" onClick={() => { onChange([...picked, i.id]); setQ(''); }}
+            className="block w-full px-3.5 py-2 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-white">+ {i.name}</button>
+        ))}
+        {!shown.length && <p className="px-3.5 py-2 text-xs text-gray-600">{items.length ? 'Nothing else matches.' : `No ${label.toLowerCase()} yet.`}</p>}
+      </div>
+    </div>
+  );
+}
 
 function fmtTime(t: string | null): string {
   if (!t) return '—';
@@ -97,7 +149,20 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
   // A506: a refused load / switch / delete is said (it read as "No promotions yet", or nothing happened).
   const [listError, setListError] = useState('');
 
+  // A518: the business's own products and categories, for "Specific products / categories" (and their names on the list).
+  const [products, setProducts]     = useState<Named[]>([]);
+  const [categories, setCategories] = useState<Named[]>([]);
+  const [pickError, setPickError]   = useState('');
+
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const named = (rows: any[] | null | undefined): Named[] => (Array.isArray(rows) ? rows : [])
+      .filter((x) => x && x.id && x.name).map((x) => ({ id: String(x.id), name: String(x.name) }));
+    client.get<any[]>('/api/products').then((p) => setProducts(named(p)))
+      .catch((e: any) => setPickError(e?.message ?? 'Could not load the products'));
+    client.get<any[]>('/api/categories').then((c) => setCategories(named(c)))
+      .catch((e: any) => setPickError(e?.message ?? 'Could not load the categories'));
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps — posApi is a new object every render
 
   async function load() {
     setLoading(true);
@@ -131,6 +196,8 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
       discount_value: p.discount_value != null ? String(p.discount_value) : '',
       min_quantity:   String(p.min_quantity),
       free_quantity:  p.free_quantity != null ? String(p.free_quantity) : '1',
+      product_ids:    p.product_ids ?? [],
+      category_ids:   p.category_ids ?? [],
     });
     setError('');
     setShowForm(true);
@@ -141,6 +208,8 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
     if (form.promo_type !== 'bogo' && !form.discount_value) {
       setError('Discount value is required'); return;
     }
+    if (form.applies_to === 'product' && !form.product_ids.length) { setError('Choose the products this promotion is for.'); return; }
+    if (form.applies_to === 'category' && !form.category_ids.length) { setError('Choose the categories this promotion is for.'); return; }
     setSaving(true); setError('');
     try {
       const payload = {
@@ -152,7 +221,11 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
         end_time:       form.end_time     || null,
         days_of_week:   form.days_of_week,
         applies_to:     form.applies_to,
-        discount_type:  form.promo_type !== 'bogo' ? form.discount_type : null,
+        // A518: only the list the scope uses (the cloud empties the other too).
+        product_ids:    form.applies_to === 'product' ? form.product_ids : [],
+        category_ids:   form.applies_to === 'category' ? form.category_ids : [],
+        applies_at_sale: true,   // A518: a promotion saved here is charged at the sale
+        discount_type: form.promo_type !== 'bogo' ? form.discount_type : null,
         discount_value: form.promo_type !== 'bogo' && form.discount_value
           ? Number(form.discount_value) : null,
         min_quantity:   Number(form.min_quantity) || 1,
@@ -217,7 +290,7 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
         <div>
           <h1 className="text-white text-xl sm:text-2xl font-bold">{term('promotions')}</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Happy hour, BOGO, and quantity deals — applied automatically at the POS
+            Happy hour and BOGO deals — charged at every till and the web POS, at every branch
           </p>
         </div>
         <button onClick={openCreate}
@@ -283,7 +356,14 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
                             <span>📅 {fmtDays(p.days_of_week)}</span>
                           </>}
                           {p.applies_to !== 'all' && (
-                            <span className="text-violet-400">Specific {p.applies_to}s only</span>
+                            <span className="text-violet-400" data-testid="promotion-scope">
+                              {p.applies_to === 'product' ? 'Only ' : 'Only in '}
+                              {(p.applies_to === 'product' ? scopeLabel(p.product_ids ?? [], products) : scopeLabel(p.category_ids ?? [], categories))
+                                || (p.applies_to === 'product' ? 'no products chosen' : 'no categories chosen')}
+                            </span>
+                          )}
+                          {p.status === 'active' && p.charged_at_sale === false && p.not_charged_reason && (
+                            <span className="text-amber-400" data-testid="promotion-not-charged">Not charged at the till: {p.not_charged_reason}</span>
                           )}
                           {(p.start_date || p.end_date) && (
                             <span>📆 {p.start_date ?? '…'} → {p.end_date ?? '…'}</span>
@@ -474,7 +554,19 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
                     </button>
                   ))}
                 </div>
+                {/* A518: which products / categories — it is charged on those lines only */}
+                {form.applies_to !== 'all' && (
+                  <div className="mt-3">
+                    {pickError && <p className="mb-2 text-xs text-red-400" role="alert">{pickError}</p>}
+                    {form.applies_to === 'product'
+                      ? <ScopePicker label="Products" items={products} picked={form.product_ids} onChange={(v) => setF('product_ids', v)} />
+                      : <ScopePicker label="Categories" items={categories} picked={form.category_ids} onChange={(v) => setF('category_ids', v)} />}
+                  </div>
+                )}
               </div>
+              {type === 'quantity_discount' && (
+                <p className="text-xs text-amber-400">A quantity discount is not charged at the till yet - set it up as an Offer (Menu › Offers) to charge it.</p>
+              )}
 
               {error && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2.5 text-sm text-red-400">

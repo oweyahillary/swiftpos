@@ -1,20 +1,68 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { posApi, StaffSession } from './lib/posApi';
-import InstallPage from './pages/InstallPage';
-import EnrolPage from './pages/EnrolPage';
 import PinPage from './pages/PinPage';
 import LockCurtain from './components/LockCurtain';
 import POSPage from './pages/POSPage';
-import ManagerPage from './pages/ManagerPage';
-import { can, backOffice } from './lib/access';   // A490: the one rule — permissions, never a role's name
-import TechPage from './pages/TechPage';
+import { can, backOffice, maySell, SELL_REFUSAL } from './lib/access';   // A490: the one rule — permissions, never a role's name
+// A519: React.lazy that can import a failed chunk again (Retry), and the boundary that says a screen could not load.
+import { retryLazy as lazy } from './lib/retryLazy';
+import ScreenBoundary from './components/ScreenBoundary';
 import UpdateBanner from './pages/UpdateBanner';
-import HelpScreen from './components/HelpScreen';   // 0.6.35 (A384)
 import JoinPrompt from './components/JoinPrompt';   // A427
 import OnScreenKeyboard from './components/OnScreenKeyboard';   // A417
 import { computeThemeVars, applyThemeVars } from './lib/themeVars';
+import { schedulePreload, browserPreloadDeps } from './lib/preloadScreens';   // A517
 
-type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech';
+// A517: the screens a till opens now and then are their own chunks, loaded when first opened — the PIN screen and the
+// POS (and what a sale needs: cart, payment, receipt, held orders, the shift panel) are in the main chunk and come up
+// without parsing them, nor hold them in memory. The setup screens (install, enrolment) are needed once per machine;
+// the manager screens (every tab: Overview, reports, staff, stock, wastage, offers, close day, settings…) are fetched in
+// the background once the till is quiet on a machine with memory to spare (lib/preloadScreens.ts), else when opened.
+const loadManagerPage = () => import('./pages/ManagerPage');
+const ManagerPage = lazy(loadManagerPage);
+const TechPage = lazy(() => import('./pages/TechPage'));
+const InstallPage = lazy(() => import('./pages/InstallPage'));
+const EnrolPage = lazy(() => import('./pages/EnrolPage'));
+const HelpScreen = lazy(() => import('./components/HelpScreen'));   // 0.6.35 (A384)
+
+/** A517: while a screen's chunk loads — the same dark screen and spinner as the start, so nothing jumps. */
+function ScreenLoading({ overlay = false }: { overlay?: boolean }) {
+  return (
+    <div className={`${overlay ? 'fixed inset-0 z-50 bg-gray-950/80' : 'min-h-screen bg-gray-950'} flex items-center justify-center`}>
+      <div className="w-8 h-8 border-2 border-action-400 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
+// A519: a chunk that cannot load (missing, damaged) shows "This screen could not load — Retry / Back" instead of a blank
+// window (components/ScreenBoundary.tsx), logged through log:renderer.
+const Lazy = ({ children, overlay, name = 'screen', onBack, backLabel }: {
+  children: ReactNode; overlay?: boolean; name?: string; onBack?: () => void; backLabel?: string;
+}) =>
+  <ScreenBoundary name={name} onBack={onBack} backLabel={backLabel} overlay={overlay}>
+    <Suspense fallback={<ScreenLoading overlay={overlay} />}>{children}</Suspense>
+  </ScreenBoundary>;
+
+/**
+ * A519: someone whose role cannot sell and has nothing in the back office (a Kitchen person) — a plain screen, not an
+ * error and not the manager screens. The words are the same as main's refusal (main/sellGate.ts).
+ */
+function NoSellScreen({ name, onSignOut, onHelp }: { name: string | null; onSignOut: () => void; onHelp: () => void }) {
+  return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6" data-testid="no-sell-screen">
+      <div className="max-w-md w-full text-center space-y-5">
+        {name && <p className="text-gray-400 text-sm">Signed in as {name}</p>}
+        <p className="text-white text-lg leading-relaxed">{SELL_REFUSAL}</p>
+        <div className="flex gap-2 justify-center">
+          <button onClick={onSignOut} data-testid="no-sell-signout"
+            className="px-5 py-2.5 rounded-xl bg-action-500 text-gray-950 font-semibold">Sign out</button>
+          <button onClick={onHelp} className="px-4 py-2.5 rounded-xl bg-gray-800 text-gray-300 text-sm">Help</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech' | 'nosell';
 
 // A427: on the branch server, "a till wants to join" shows over every screen — PIN pad, till, manager, tech.
 // A417: the on-screen keyboard serves every screen too — it opens when a field is tapped with a finger or pen.
@@ -119,7 +167,11 @@ function AppScreens() {
     posApi.auth.getStaffSession().then((s) => {
       if (!s) return;
       setStaff((prev) => (prev && prev.staff?.id === s.staff?.id ? { ...prev, role: s.role, permissions: s.permissions } : prev));
-      if (!backOffice(s)) setState((st) => (st === 'manager' ? 'pos' : st));
+      // A519: …to the till only if they may sell; else the plain "your role can't sell" screen. Someone on the POS who
+      // loses "Sell" stays there — the open bill can still be paid (main/sellGate.ts); the next new sale is refused.
+      if (!backOffice(s)) setState((st) => (st === 'manager' ? (maySell(s) ? 'pos' : 'nosell') : st));
+      else if (!maySell(s)) setState((st) => (st === 'nosell' ? 'manager' : st));
+      else setState((st) => (st === 'nosell' ? 'pos' : st));
     }).catch(() => { /* the next change */ });
   }), []);
 
@@ -135,11 +187,23 @@ function AppScreens() {
 
   useEffect(() => posApi.idle.onLock(() => setLocked(true)), []);
 
+  // A517: the manager screens fetched in the background, once — a few seconds after the PIN screen or the POS settles,
+  // at an idle moment, never during the start-up sequence nor on a 4 GB machine (lib/preloadScreens.ts).
+  const preloaded = useRef({ done: false });
+  useEffect(() => {
+    if (state !== 'pin' && state !== 'pos') return;
+    const ask = posApi.idle.mayPreload;
+    if (!ask) return;
+    return schedulePreload(browserPreloadDeps(loadManagerPage, () => ask()), preloaded.current);
+  }, [state]);
+
   // Staff PIN verified → route by role.
   const handleStaffLogin = (s: StaffSession) => {
     setPinNotice(null);
     setStaff(s);
-    setState(hasManagerRights(s) ? 'manager' : 'pos');
+    // A519: someone who may not sell is never routed into the POS: back office → the manager screens (no POS button),
+    // anyone else (a Kitchen person) → a plain screen that says why, with Sign out.
+    setState(hasManagerRights(s) ? 'manager' : maySell(s) ? 'pos' : 'nosell');
   };
 
   // End the current staff shift -> back to PIN pad (the till stays joined).
@@ -164,15 +228,16 @@ function AppScreens() {
   }
 
   if (state === 'install') {
-    return <InstallPage onComplete={handleInstallComplete} />;
+    return <Lazy name="setup"><InstallPage onComplete={handleInstallComplete} /></Lazy>;
   }
 
   if (state === 'enrol') {
-    return <EnrolPage onComplete={handleEnrolComplete} />;
+    return <Lazy name="enrolment"><EnrolPage onComplete={handleEnrolComplete} /></Lazy>;
   }
 
+  // A517: over the screen in use — while its chunk loads, a dimmed spinner over it (the screen behind stays as it is).
   const help = helpOpen
-    ? <HelpScreen businessName={session?.business?.name ?? 'ZapTill'} onClose={() => setHelpOpen(false)} />
+    ? <Lazy overlay name="help" onBack={() => setHelpOpen(false)} backLabel="Close"><HelpScreen businessName={session?.business?.name ?? 'ZapTill'} onClose={() => setHelpOpen(false)} /></Lazy>
     : null;
 
   if (state === 'pin') {
@@ -191,7 +256,7 @@ function AppScreens() {
   }
 
   if (state === 'tech') {
-    return <TechPage onExit={() => setState('pin')} />;
+    return <Lazy name="Tech" onBack={() => setState('pin')} backLabel="Back to the PIN screen"><TechPage onExit={() => setState('pin')} /></Lazy>;
   }
 
   // The curtain renders ALONGSIDE the screen, not instead of it — see
@@ -210,19 +275,28 @@ function AppScreens() {
   // A306: the auto-update banner rides alongside the working surface (like the curtain), so a
   // pending update is communicated while staff are logged in — never on the lock/PIN screens.
   // A480: a local sign-in used to carry only `branch` — read either, so the Manager-PIN restart always has the branch.
-  const updateBanner = <UpdateBanner branchId={staff?.branchId ?? (staff as any)?.branch?.id ?? null} />;
+  if (state === 'nosell') {
+    return (<><NoSellScreen name={staff?.staff?.name ?? null} onSignOut={() => { void handleEndShift(); }} onHelp={() => setHelpOpen(true)} />{help}</>);
+  }
+
+  // A519: one-tap "Restart & update now" for a back-office person (no PIN); anyone else sees no button.
+  const updateBanner = <UpdateBanner branchId={staff?.branchId ?? (staff as any)?.branch?.id ?? null} canRestart={backOffice(staff)} />;
 
   if (state === 'manager' && staff) {
     return (
       <>
+      <Lazy name="manager" onBack={() => { if (maySell(staff)) setState('pos'); else void handleEndShift(); }}
+        backLabel={maySell(staff) ? 'Back to the till' : 'Sign out'}>
       <ManagerPage
         business={session!.business}
         staff={staff}
         initialTab={managerTab ?? undefined}
-        onOpenPOS={() => { setManagerTab(null); setState('pos'); }}
+        // A519: no POS for someone who may not sell (a Storekeeper, an Accountant) — the button shows the reason instead.
+        onOpenPOS={maySell(staff) ? () => { setManagerTab(null); setState('pos'); } : undefined}
         onLogout={handleEndShift}
         onHelp={openHelp}
       />
+      </Lazy>
       {help}
       {curtain}
       {updateBanner}
@@ -246,6 +320,7 @@ function AppScreens() {
       canDiscount={can(staff, 'sales.discount')}
       canSeeSync={backOffice(staff)}
       canAddExpenseType={can(staff, 'expenses.manage')}
+      canSell={maySell(staff)}
       onHelp={openHelp}
     />
     {help}

@@ -31,6 +31,7 @@ import PromotionsPage from '../PromotionsPage';   // A502
 import VoidRefundRulesTab from '../settings/VoidRefundRulesTab';   // A502
 import Wastage from '../../components/Wastage';           // A399
 import Expiry from '../../components/Expiry';             // A413
+import SupplierBills from '../../components/SupplierBills';   // A518
 import { localDateStr } from '../../lib/localDate';
 import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore';
 import { money, compactMoney, litres, dateShort } from '../../lib/format';
@@ -99,8 +100,10 @@ const NAV_ITEMS: NavItem[] = [
   // A413: batches and expiry dates.
   { key: 'expiry',    label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Expiry</span></>, title: 'Expiry', permission: 'inventory.waste', group: 'Inventory' },
   { key: 'history',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">History</span></>,   title: 'Stock history', permission: 'inventory.receive', group: 'Inventory' },
+  // A518: supplier bills — read with payables.view (the Accountant's), recorded and paid with payables.manage.
+  { key: 'bills',     label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Supplier bills</span></>, title: 'Supplier bills', permission: ['payables.view', 'payables.manage'], group: 'Finance' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
-  { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: 'orders.view_all', group: 'Finance' },
+  { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: ['orders.view_all', 'shifts.close_day', 'shifts.force_close'], group: 'Finance' },   // A523: Tills & days is in it
   { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: MANAGER_REPORT_KEYS, group: 'Finance' },
   { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  title: 'Turnover', permission: 'orders.view_all', group: 'Finance' },
   { key: 'expenses',  label: <><Icon d={I.expenses}  className="flex-shrink-0" /><span className="truncate">Expenses</span></>,  title: 'Expenses', permission: 'expenses.view', group: 'Finance' },
@@ -145,7 +148,8 @@ const METHOD_LABELS: Record<string, string> = { cash: 'Cash', mpesa: 'M-Pesa', c
 
 function ParkingOverviewTab() {
   const { posApi, session, hasPermission } = usePOSAuth();
-  const seesSales = hasPermission('reports.sales');   // A490: today's revenue is reports.sales
+  // A518: today's revenue — reports.sales, or reports.overview (the cloud's /reports/sales admits the Overview's key).
+  const seesSales = hasPermission('reports.sales') || hasPermission('reports.overview');
   const currency = session?.currency ?? 'KES';
   const today    = localDateStr();
 
@@ -340,7 +344,8 @@ function PetrolOverviewTab() {
           posApi.get<any[]>(`/api/pumps?branch_id=${session!.branchId}`),
         ]);
         // Pump monitor (best-effort)
-        if (seesFuel) { try { const pm = await posApi.get<any>(`/api/reports/pump-monitor?branch_id=${session!.branchId}`); if (!cancelled) setPumpMonitor(pm); } catch {} }
+        // A518: the pump monitor admits the Overview's key (reports.overview) too.
+        if (seesFuel || hasPermission('reports.overview')) { try { const pm = await posApi.get<any>(`/api/reports/pump-monitor?branch_id=${session!.branchId}`); if (!cancelled) setPumpMonitor(pm); } catch {} }
         if (cancelled) return;
         if (salesRes.status === 'fulfilled') setSales(salesRes.value);
         if (tanksRes.status === 'fulfilled') setTanks(tanksRes.value ?? []);
@@ -569,6 +574,9 @@ function PetrolOverviewTab() {
 function OverviewTab() {
   const { posApi, session, hasPermission } = usePOSAuth();
   const currency = session?.currency ?? 'KES';
+  // A518 (A506 left as is): a holder of reports.overview alone saw no sales on the Overview — the cloud's /reports/sales
+  // and /reports/products admit that key; only the hourly chart (/reports/hourly) needs reports.sales.
+  const seesDay = hasPermission('reports.sales') || hasPermission('reports.overview');
 
   const [sales,    setSales]    = useState<SalesSummary | null>(null);
   const [voidAlerts, setVoidAlerts] = useState<{ name: string; voids: number; rate: number }[]>([]);
@@ -596,9 +604,12 @@ function OverviewTab() {
         const skip = Promise.reject(new Error('not given'));
         skip.catch(() => {});
         const [salesRes, hourlyRes, productsRes, shiftRes] = await Promise.allSettled([
-          hasPermission('reports.sales') ? posApi.get<SalesSummary>(`/api/reports/sales?${params}`) : skip,
+          // A518: the day's figures (/sales) and the top items (/products) also answer the Overview's own key
+          // (reports.overview); only the hourly chart needs reports.sales.
+          seesDay ? posApi.get<SalesSummary>(`/api/reports/sales?${params}`) : skip,
           hasPermission('reports.sales') ? posApi.get<{ series: HourlyRow[] }>(`/api/reports/hourly?${params}`) : skip,
-          hasPermission('reports.items') ? posApi.get<{ products: TopProduct[] }>(`/api/reports/products-v2?${params}`) : skip,
+          hasPermission('reports.items') ? posApi.get<{ products: TopProduct[] }>(`/api/reports/products-v2?${params}`)
+            : hasPermission('reports.overview') ? posApi.get<{ products: TopProduct[] }>(`/api/reports/products?${params}`) : skip,
           posApi.get<Shift | null>('/api/shifts/current'),
         ]);
 
@@ -676,8 +687,8 @@ function OverviewTab() {
         <div className="text-gray-500 text-sm py-12 text-center">Loading today's data…</div>
       ) : (
         <>
-          {/* KPI cards — A490: the day's sales figures are reports.sales */}
-          {hasPermission('reports.sales') && (
+          {/* KPI cards — A490: the day's sales figures are reports.sales; A518: or the Overview's own key */}
+          {seesDay && (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             {kpis.map(k => (
               <div key={k.label} className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4">
@@ -1257,17 +1268,19 @@ function ManagerTurnoverTab() {
   const [report, setReport] = useState<MReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const hm = (mins: number) => { const h = Math.floor(mins / 60), m = mins % 60; return h > 0 ? `${h}h ${m}m` : `${m}m`; };
+  const [error, setError] = useState('');   // A518: the cloud's refusal is said (lib/posError), not an empty list
 
   const loadLive = useCallback(async () => {
     if (!branchId) { setLoading(false); return; }
     try {
       const data = await posApi.get<{ threshold_minutes: number; tables: MLiveRow[] }>(`/api/orders/turnover?branch_id=${branchId}`);
-      setThreshold(data.threshold_minutes); setLive(data.tables ?? []);
-    } catch { /* ignore */ } finally { setLoading(false); }
+      setThreshold(data.threshold_minutes); setLive(data.tables ?? []); setError('');
+    } catch (e) { setError((e as Error)?.message || 'Could not load the tables.'); } finally { setLoading(false); }
   }, [posApi, branchId]);
   const loadReport = useCallback(async () => {
     if (!branchId) return;
-    try { const data = await posApi.get<{ tables: MReportRow[] }>(`/api/orders/turnover/report?branch_id=${branchId}`); setReport(data.tables ?? []); } catch { /* ignore */ }
+    try { const data = await posApi.get<{ tables: MReportRow[] }>(`/api/orders/turnover/report?branch_id=${branchId}`); setReport(data.tables ?? []); setError(''); }
+    catch (e) { setError((e as Error)?.message || 'Could not load the turnover report.'); }
   }, [posApi, branchId]);
 
   useEffect(() => { if (tab !== 'live') return; loadLive(); const t = setInterval(loadLive, 30000); return () => clearInterval(t); }, [tab, loadLive]);
@@ -1276,6 +1289,7 @@ function ManagerTurnoverTab() {
   return (
     <div className="space-y-4">
       <div><h2 className="text-xl font-bold text-white">Table Turnover</h2><p className="text-gray-500 text-sm mt-0.5">Live dwell time and average turnover for {session?.branchName}</p></div>
+      {error && <p className="text-sm text-red-400" role="alert" data-testid="turnover-error">{error}</p>}
       <div className="flex gap-2">
         <button onClick={() => setTab('live')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'live' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>Live tables</button>
         {seesReport && <button onClick={() => setTab('report')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'report' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>Turnover report</button>}
@@ -1389,6 +1403,8 @@ export default function ManagerDashboard() {
       case 'shift': return <ManagerShiftTab currency={currency} />;
       case 'menu': return <ManagerMenuTab currency={currency} />;
       case 'expenses':  return <POSExpensesTab currency={currency} />;
+      case 'bills':     return <SupplierBills client={posApi} currency={currency} business={business} branches={managerBranch}
+        canPay={hasPermission('payables.manage')} canReturn={hasPermission('payables.manage') || hasPermission('inventory.receive')} />;   {/* A518 */}
       case 'customers': return <POSCustomersTab currency={currency} />;
       case 'credit':    return <ManagerCreditTab currency={currency} />;
       case 'turnover':  return <ManagerTurnoverTab />;

@@ -134,7 +134,8 @@ await ok('2. the routes: tax fields any admin\'s, notices on edit / create / mod
   assert.match(a, /what: 'Changed tax \/ money settings'/);
   assert.match(a, /what: 'Created a client'/);
   assert.match(a, /what: 'Cancelled a mode switch'/);
-  assert.match(a, /res\.json\(stripSecretColumns\(data \?\? \{\}\)\)/);
+  // A518: the answer may also name the built-in roles a type change added (roles_added — Fuel attendant at a petrol station).
+  assert.ok(a.includes('res.json({ ...stripSecretColumns(data ?? {}),'), 'the edit answer strips the secret columns');
   assert.match(a, /router\.post\('\/mode-switch\/:id\/cancel', requireAdmin, async/);
   const p = read('apps/admin/src/AdminPortal.tsx');
   assert.doesNotMatch(p, /value=\{editForm\.(type|currency)\} disabled=\{!isSuper\}/);

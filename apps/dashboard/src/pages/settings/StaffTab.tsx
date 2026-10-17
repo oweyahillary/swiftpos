@@ -298,7 +298,9 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
   // A506: an override PIN approves voids and refunds — only for someone who will hold sales.void or sales.refund.
   // A514: the business supervisor PIN is retired — this per-person APPROVAL PIN is how the owner or a manager makes
   // someone an approver: of voids, refunds, sales on account (customers.credit) or drawers / cash out (shifts.confirm).
-  // The cloud's rule is the same list (routes/staff.ts APPROVAL_PIN_KEYS).
+  // The cloud's rule is the same list (routes/staff.ts APPROVAL_PIN_KEYS). A518: an approver's SIGN-IN PIN approves as it
+  // is; this approval PIN is optional — a second PIN for someone who would rather not type their sign-in PIN in front of
+  // cashiers.
   const mayApprove = effectiveKeys.has('*') || ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm'].some(k => effectiveKeys.has(k));
 
   // When the role changes, start again from the new role's keys.
@@ -449,8 +451,9 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           )}
           <div className="sm:col-span-2">
             <label className="block text-sm text-gray-400 mb-1">
-              Approval PIN
-              <span className="text-gray-600 text-xs ml-1">— lets this person approve voids, refunds, sales on account and drawers</span>
+              {/* A518 (owner, 2026-10-16: "rather than them having to remember 2 pins"): the sign-in PIN already approves
+                  (lib/approver.ts findApprover); this one is optional. */}
+              Approval PIN (optional)
             </label>
             <input
               type="password"
@@ -465,8 +468,7 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift disabled:opacity-40 tracking-widest"
             />
             <p className="text-xs text-gray-600 mt-1">
-              Separate from the login PIN (their login PIN approves too). The business-wide supervisor PIN is retired: only a
-              person's own PIN approves, and what they approve is recorded against them.
+              Their sign-in PIN already approves voids, refunds and sales on account. Set a different one only if they would rather not type their sign-in PIN in front of cashiers.
               {editing && (
                 <button type="button"
                   onClick={() => { setClearOverride(c => !c); setOverridePin(''); }}

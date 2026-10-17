@@ -26,6 +26,8 @@ export default function TableTurnoverPage() {
   const [live, setLive] = useState<LiveRow[]>([]);
   const [report, setReport] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // A518: a refused or failed load is said (it read as "No occupied tables" or an empty report).
+  const [error, setError] = useState('');
 
   const loadLive = useCallback(async () => {
     if (!activeBranchId) { setLive([]); setLoading(false); return; }
@@ -33,7 +35,8 @@ export default function TableTurnoverPage() {
       const data = await api.get<{ threshold_minutes: number; tables: LiveRow[] }>(`/api/orders/turnover?branch_id=${activeBranchId}`);
       setThreshold(data.threshold_minutes);
       setLive(data.tables ?? []);
-    } catch { /* ignore */ } finally { setLoading(false); }
+      setError('');
+    } catch (e) { setError((e as Error)?.message || 'Could not load the tables.'); } finally { setLoading(false); }
   }, [activeBranchId]);
 
   const loadReport = useCallback(async () => {
@@ -41,7 +44,8 @@ export default function TableTurnoverPage() {
     try {
       const data = await api.get<{ tables: ReportRow[] }>(`/api/orders/turnover/report?branch_id=${activeBranchId}`);
       setReport(data.tables ?? []);
-    } catch { /* ignore */ }
+      setError('');
+    } catch (e) { setError((e as Error)?.message || 'Could not load the turnover report.'); }
   }, [activeBranchId]);
 
   // Live tab polls every 30s.
@@ -62,6 +66,7 @@ export default function TableTurnoverPage() {
     <div className="p-6">
       <h1 className="text-xl font-bold text-white mb-1">Table Turnover</h1>
       <p className="text-sm text-gray-400 mb-5">Live dwell time and average turnover per table.</p>
+      {error && <p className="mb-4 text-sm text-red-400" role="alert" data-testid="turnover-error">{error}</p>}
 
       <div className="flex gap-2 mb-5">
         <button onClick={() => setTab('live')}

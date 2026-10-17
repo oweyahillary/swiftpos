@@ -11,6 +11,11 @@
  * check box when deleting test data"): "Also delete the whole menu" — unticked by default; ticked, the preview counts the
  * menu too and the clear deletes it in the same transaction (migration 132, purge_test_menu). Refused while a real sale
  * outside the window uses the menu. The tills empty their menu on their next sync.
+ *
+ * A522 (owner, 2026-10-17 — Pollo: a clear refused over one shift and two days still open on a till that was off):
+ * "Also clear shifts and trading days still open on tills that are switched off" — shown when the preview finds such
+ * (began in the window, never closed, nothing after it). Ticked, a new preview is asked and the clear removes them with
+ * the rest (migration 148, p_close_open). The tills clear their own open test shifts when they see the clear.
  */
 import { useEffect, useState } from "react";
 import { C, S } from "./theme";
@@ -23,6 +28,7 @@ interface Preview {
   defaults: { from: string; to: string };
   window: { from: string; to: string };
   menu?: boolean;
+  close_open?: boolean;
   preview: { ok: boolean; problems: string[]; counts: Counts };
   tills_behind: Array<{ name: string; last_sync_at: string | null }>;
   days_in_question?: Array<{ business_date: string; till: string | null; branch: string | null; status: string; opened_at: string; closed_at: string | null }>;
@@ -57,6 +63,8 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
   const [stock, setStock] = useState<"undo" | "zero" | "keep">("undo");
   const [customers, setCustomers] = useState(true);
   const [menu, setMenu] = useState(false);   // A482: unticked by default
+  const [closeOpen, setCloseOpen] = useState(false);   // A522: unticked by default
+  const [openOnTills, setOpenOnTills] = useState(0);   // A522: what the last preview found still open on tills that are off
   const [data, setData] = useState<Preview | null>(null);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -69,8 +77,10 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
       const qs = new URLSearchParams({ stock, customers: String(customers), menu: String(menu) });
       if (f) qs.set("from", fromLocal(f));
       if (t) qs.set("to", fromLocal(t));
+      if (closeOpen) qs.set("close_open", "true");
       const d: Preview = await req("GET", `/clients/${clientId}/test-data?${qs}`);
       setData(d);
+      setOpenOnTills(Number(d.preview?.counts?.open_on_tills ?? 0));
       if (!f) setFrom(toLocal(d.window.from));
       if (!t) setTo(toLocal(d.window.to));
     } catch (e: any) { setError(e?.message || "Could not load the preview."); }
@@ -79,14 +89,14 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
   useEffect(() => { if (open && !data) void load(); }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const clear = async () => {
-    if (!data) return;
+    if (!data || staleOpen) return;
     setBusy(true); setError(""); setDone("");
     try {
       const r = await req("POST", `/clients/${clientId}/test-data/clear`, {
-        from: fromLocal(from), to: fromLocal(to), stock_mode: stock, delete_customers: customers, menu, confirm_name: confirm,
+        from: fromLocal(from), to: fromLocal(to), stock_mode: stock, delete_customers: customers, menu, confirm_name: confirm, close_open: closeOpen,
       });
       setDone(`Cleared: ${r.counts?.sales ?? 0} sales, ${r.counts?.shifts ?? 0} shifts, ${r.counts?.expenses ?? 0} expenses and the rest of the window${menu ? ` — and the whole menu (${r.counts?.menu_products ?? 0} products)` : ""}.`);
-      setMenu(false);
+      setMenu(false); setCloseOpen(false);
       setConfirm(""); setData(null); await load(from, to);
     } catch (e: any) { setError(e?.message || "Nothing was cleared."); }
     finally { setBusy(false); }
@@ -97,6 +107,7 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
   // A482: the preview on screen must be the one for the box as it is now (ticking it asks for a new preview)
   const menuShown = !!data?.menu;
   const stale = !!data && menuShown !== menu;
+  const staleOpen = !!data && !!data.close_open !== closeOpen;   // A522: the preview must be for the tick as it is now
   const nothing = data && Number(c.sales ?? 0) === 0 && LABELS.every(([k]) => Number(c[k] ?? 0) === 0)
     && (!menuShown || MENU_LABELS.every(([k]) => Number(c[k] ?? 0) === 0));
   const canClear = isSuper && data && !stale && problems.length === 0 && !nothing && confirm.trim().toLowerCase() === data.business.name.trim().toLowerCase();
@@ -131,6 +142,12 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
               <input type="checkbox" checked={menu} onChange={(e) => setMenu(e.target.checked)} data-testid="test-menu" /> Also delete the whole menu</label>
             <button disabled={busy || !from || !to} onClick={() => load(from, to)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>{busy ? "Checking…" : "Show what will be removed"}</button>
           </div>
+          {(openOnTills > 0 || closeOpen) && (
+            <label style={{ fontSize: 12, color: "#f59e0b", display: "flex", gap: 6, alignItems: "center" }} data-testid="test-close-open">
+              <input type="checkbox" checked={closeOpen} onChange={(e) => setCloseOpen(e.target.checked)} />
+              Also clear shifts and trading days still open on tills that are switched off ({openOnTills} found — began in the window, never closed, nothing after it). Then press "Show what will be removed" again.
+            </label>
+          )}
           {menu && (
             <div style={{ fontSize: 12, color: C.danger, lineHeight: 1.6, border: "1px solid rgba(255,92,108,0.4)", borderRadius: 10, padding: "8px 10px" }} data-testid="test-menu-warning">
               {MENU_WARNING} Ingredients and suppliers stay.
@@ -197,7 +214,7 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
           {data && problems.length === 0 && !nothing && (
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={`Type "${data.business.name}" to confirm`} style={{ ...S.input, maxWidth: 300 }} data-testid="test-confirm" />
-              <button disabled={!canClear || busy} onClick={clear} data-testid="test-clear"
+              <button disabled={!canClear || busy || staleOpen} onClick={clear} data-testid="test-clear"
                 style={{ ...S.btn, ...S.btnDanger, fontSize: 12, opacity: canClear && !busy ? 1 : 0.5 }}>{busy ? "Clearing…" : menuShown ? "Clear test data and the whole menu" : "Clear test data"}</button>
               {!isSuper && <span style={{ fontSize: 12, color: C.muted }}>Only a super admin can clear.</span>}
             </div>

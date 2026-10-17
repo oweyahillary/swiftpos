@@ -220,8 +220,12 @@ console.log('\n2 — a refused peer row is quarantined and tried again, never lo
   I.retryPeerQuarantine({ now: t0 + 1000 });
   ok('2: backoff — not tried again before it is due', qr().attempts === a1, JSON.stringify(qr()));
   let t = t0;
+  // A521 (#21): bounded by TIME now — 7 days from the first refusal (12 tries ≈ 6.5 h was shorter than a till's night off).
   for (let i = 0; i < 20; i++) { t += 3_700_000; I.retryPeerQuarantine({ now: t }); }
-  ok('2: bounded — given up after the last attempt, and KEPT (shown on the Tech page)', qr().status === 'given_up' && qr().attempts === I.QUARANTINE_MAX_ATTEMPTS, JSON.stringify(qr()));
+  ok('2 (A521): still tried after 20 hourly retries (≈ 20 h, past the 12 tries of A501) — a row waiting on a till that is off keeps waiting',
+    qr().status === 'waiting' && qr().attempts > I.QUARANTINE_MAX_ATTEMPTS, JSON.stringify(qr()));
+  for (let i = 0; i < 150; i++) { t += 3_700_000; I.retryPeerQuarantine({ now: t }); }   // ≈ 7.3 days in all
+  ok('2: bounded — given up after 7 days, and KEPT (shown on the Tech page)', qr().status === 'given_up' && t - t0 >= I.QUARANTINE_GIVE_UP_MS, JSON.stringify(qr()));
   ok('…the backoff doubles and is capped at an hour', I.quarantineBackoffMs(1) === 30_000 && I.quarantineBackoffMs(2) === 60_000 && I.quarantineBackoffMs(30) === 3_600_000);
   ok('…the summary counts it', I.peerQuarantineSummary().givenUp === 1);
   // A server change re-arms it; once it can be applied (the till's branch is now the row's), it lands.

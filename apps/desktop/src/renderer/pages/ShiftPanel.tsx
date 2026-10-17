@@ -155,9 +155,16 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const handleOpen = async () => {
+    // A520 (KRUNCH: cash over by exactly the floats): a blank float is not 0 — the same rule as OpenDrawerModal. A shift
+    // opened at 0 while the last float stayed in the drawer counts over by that float at every confirmation.
+    const amount = Number(openingFloat);
+    if (openingFloat.trim() === '' || !Number.isFinite(amount) || amount < 0) {
+      setError('Count the cash in the drawer and enter it as the opening float. Enter 0 if the drawer is empty.');
+      return;
+    }
     setBusy(true); setError('');
     try {
-      const r = await posApi.shift.open(Number(openingFloat) || 0);
+      const r = await posApi.shift.open(amount);
       setReport(r); onShiftChange(r); setOpeningFloat('');
     } catch (e: any) { setError(e?.message ?? 'Could not open shift'); }
     finally { setBusy(false); }

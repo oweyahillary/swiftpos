@@ -23,7 +23,12 @@ import bcrypt from 'bcryptjs';
 import { cleanChange, ENTITY_SPECS, describeChange, type TillChange, type ChangeEntity } from './tillChanges';
 import { roleMap } from './personAccess';   // A490
 
-export type LocalState = 'pending' | 'awaiting' | 'done' | 'refused' | 'rejected' | 'relayed';   // A496: relayed = applied on a branch server for a till, never sent from here
+// A496: relayed = applied on a branch server for a till. A521 (#6): and forwarded to the cloud from the server too (the
+// cloud checks the MAKER's proof — A494 — not the session's), laid over every pull until the cloud has it:
+//   relayed           applied here, forwarded until the cloud answers
+//   relayed_awaiting  the cloud holds it for the owner — still laid over every pull
+//   forward           a PIN / a new person from a till: NOT applied here (A496), only forwarded to the cloud
+export type LocalState = 'pending' | 'awaiting' | 'done' | 'refused' | 'rejected' | 'relayed' | 'relayed_awaiting' | 'forward';
 export interface LocalChangeRow {
   id: string; entity: ChangeEntity; op: string; entity_id: string; base: string | null; data: string;
   made_by: string | null; made_by_name: string | null; made_at: string; state: LocalState; message: string | null;
@@ -213,12 +218,36 @@ export function changeVersion(db: Database.Database): string | null {
   catch { return null; }
 }
 
-/** Lay every change still waiting (not yet answered, or with the owner) back over what a pull just wrote. */
-export function overlayLocalChanges(db: Database.Database): number {
+/** A521 (#6): a relayed staff change the cloud's list (just stored) already shows — it is done: no longer laid over. */
+function relayedStaffShown(db: Database.Database, r: LocalChangeRow, data: Record<string, unknown>): boolean {
+  if (r.entity !== 'staff' || r.op !== 'update') return false;
+  const cur = readLocal(db, 'staff', r.canonical_id ?? r.entity_id);
+  if (!cur) return false;
+  const keys = ['name', 'status', 'role_id'].filter((k) => data[k] !== undefined && data[k] !== null);
+  return keys.length > 0 && keys.every((k) => String(cur[k] ?? '') === String(data[k]));
+}
+
+/** Lay every change still waiting (not yet answered, or with the owner) back over what a pull just wrote.
+ *  A521 (#6): a branch server's relayed changes too (they were wiped by its next pull — and with the till that made the
+ *  change off, the branch's other tills lost it). `freshStaff`: the cloud's staff list was just stored — a relayed staff
+ *  change it already shows is done. A deactivation always wins: a relayed change never makes active again someone the
+ *  cloud's list has inactive (that waits for the cloud). */
+export function overlayLocalChanges(db: Database.Database, opts: { freshStaff?: boolean } = {}): number {
   ensureTable(db);
-  const rows = db.prepare(`SELECT * FROM local_changes WHERE state IN ('pending', 'awaiting') ORDER BY made_at`).all() as LocalChangeRow[];
+  const rows = db.prepare(`SELECT * FROM local_changes WHERE state IN ('pending', 'awaiting', 'relayed', 'relayed_awaiting') ORDER BY made_at`).all() as LocalChangeRow[];
   for (const r of rows) {
     const data = JSON.parse(r.data);
+    if (r.state === 'relayed' || r.state === 'relayed_awaiting') {
+      if (opts.freshStaff && relayedStaffShown(db, r, data)) {
+        db.prepare(`UPDATE local_changes SET state = 'done', message = ?, updated_at = ? WHERE id = ?`).run("on the cloud's staff list", new Date().toISOString(), r.id);
+        continue;
+      }
+      if (r.entity === 'staff' && data.status !== 'inactive') {
+        const cur = readLocal(db, 'staff', r.canonical_id ?? r.entity_id);
+        if (cur && cur.status === 'inactive') delete data.status;
+      }
+      if (r.entity === 'staff' && r.op === 'update' && !Object.keys(data).some((k) => ['name', 'status', 'role_id'].includes(k))) continue;
+    }
     try {
       applyLocal(db, { entity: r.entity, op: r.op as any, entity_id: r.canonical_id ?? r.entity_id, data },
         { pinHashEnc: data.pin_hash_enc ?? null, roleName: data.role_name, permissions: data.permissions, branchId: data.branch_id });
@@ -237,9 +266,12 @@ export function relayChange(r: LocalChangeRow, secrets: Secrets): Record<string,
 export function wireChange(r: LocalChangeRow, secrets: Secrets): Record<string, unknown> {
   const data = JSON.parse(r.data);
   if (data.pin) data.pin = secrets.unwrap(String(data.pin));
-  delete data.pin_hash_enc; delete data.role_name; delete data.permissions; delete data.branch_id;
+  // A521: a change a branch server forwards names the till it came from (the cloud ignores what it does not know today;
+  // A522 may record it as the change's device).
+  const relayedFor = typeof data._relayed_for === 'string' ? data._relayed_for : null;
+  delete data.pin_hash_enc; delete data.role_name; delete data.permissions; delete data.branch_id; delete data._relayed_for;
   return { id: r.id, entity: r.entity, op: r.op, entity_id: r.entity_id, base: r.base ? JSON.parse(r.base) : null, data,
-    made_by: r.made_by, made_by_name: r.made_by_name, made_at: r.made_at };
+    made_by: r.made_by, made_by_name: r.made_by_name, made_at: r.made_at, ...(relayedFor ? { relayed_for: relayedFor } : {}) };
 }
 
 /** A create the cloud already had under another id: this till takes the cloud's id everywhere it used its own. */
@@ -352,8 +384,40 @@ export async function pushLocalChanges(db: Database.Database, d: PushDeps): Prom
       }
     }
   }
+  // A521 (#6): a branch server forwards what its tills handed it (relayed, forward) — the till that made a change may be
+  // switched off before it reaches the cloud itself. Sent under this server's session; the cloud believes the MAKER only
+  // with their own proof (A494: they signed in online at this branch) and their own rights, exactly as from their till,
+  // and answers a change id it has seen with its first answer (the maker's till sending it too is no double).
+  const relayed = db.prepare(`SELECT * FROM local_changes WHERE state IN ('relayed', 'forward') ORDER BY made_at LIMIT 50`).all() as LocalChangeRow[];
+  if (relayed.length) {
+    let res: Awaited<ReturnType<PushDeps['post']>> | null = null;
+    try { res = await d.post(relayed.map((r) => wireChange(r, d.secrets))); } catch { res = null; }
+    if (res?.ok) {
+      const body = await res.json().catch(() => ({}));
+      const up = db.prepare(`UPDATE local_changes SET state = ?, message = ?, canonical_id = COALESCE(?, canonical_id), tries = tries + 1, updated_at = ? WHERE id = ? AND state IN ('relayed', 'forward')`);
+      for (const r of (body?.results ?? []) as Array<{ id: string; status: string; message?: string; canonical_id?: string; retry?: boolean }>) {
+        const row = relayed.find((p) => p.id === r.id);
+        if (!row) continue;
+        const what = describeChange({ entity: row.entity, op: row.op as any, data: JSON.parse(row.data) });
+        if (r.status === 'applied' || r.status === 'identical') {
+          if (r.canonical_id && row.state === 'relayed') adoptCanonical(db, row.entity, row.entity_id, r.canonical_id);
+          up.run('done', null, r.canonical_id ?? null, now(), r.id); settled++;
+          d.log?.(`${what} (from another till, forwarded by this server): on the cloud (${r.status})`);
+        } else if (r.status === 'awaiting') {
+          // A PIN / a new person is never held for the owner by the cloud (it is refused with retry) — only the rest.
+          up.run(row.state === 'forward' ? 'forward' : 'relayed_awaiting', r.message ?? 'waiting for the owner', r.canonical_id ?? null, now(), r.id);
+        } else if (r.status === 'refused' && r.retry) {
+          db.prepare(`UPDATE local_changes SET message = ?, tries = tries + 1, updated_at = ? WHERE id = ?`).run(r.message ?? null, now(), r.id);
+        } else {
+          if (row.state === 'relayed' && row.op === 'create') undoRefusedCreate(db, row.entity, row.entity_id);
+          up.run('rejected', r.message ?? 'refused', null, now(), r.id); settled++;
+          d.log?.(`${what} (from another till, forwarded by this server): refused — ${r.message ?? ''}; the cloud's stands`);
+        }
+      }
+    }
+  }
   // With the owner: approved → done; rejected → this till drops its own and takes the cloud's on the next pull.
-  const waiting = db.prepare(`SELECT id, entity, op, entity_id FROM local_changes WHERE state = 'awaiting' LIMIT 100`).all() as LocalChangeRow[];
+  const waiting = db.prepare(`SELECT id, entity, op, entity_id, state FROM local_changes WHERE state IN ('awaiting', 'relayed_awaiting') LIMIT 100`).all() as LocalChangeRow[];
   if (waiting.length) {
     try {
       for (const s of await d.state(waiting.map((w) => w.id))) {
@@ -366,8 +430,9 @@ export async function pushLocalChanges(db: Database.Database, d: PushDeps): Prom
       }
     } catch { /* asked again on the next beat */ }
   }
-  // Old settled rows go after a week.
-  db.prepare(`DELETE FROM local_changes WHERE state IN ('done', 'rejected', 'refused', 'relayed') AND updated_at < ?`).run(new Date(Date.now() - 7 * 86400_000).toISOString());
+  // Old settled rows go after a week. A521 (#6): a relayed change is not settled until the cloud has it — no longer
+  // dropped after 7 days while it still waits (relayed, relayed_awaiting, forward stay).
+  db.prepare(`DELETE FROM local_changes WHERE state IN ('done', 'rejected', 'refused') AND updated_at < ?`).run(new Date(Date.now() - 7 * 86400_000).toISOString());
   return { sent: pending.length, settled };
 }
 
@@ -380,13 +445,30 @@ export function changeStates(db: Database.Database, entity?: ChangeEntity): Arra
     summary: describeChange({ entity: r.entity, op: r.op as any, data: JSON.parse(r.data) }) }));
 }
 
+/** A520: a manager clears refused changes from the list once read — only those `may` allows (the person's own rights).
+ *  A refused change is not on this till any more (the cloud's value came back with the pull), so nothing else moves. */
+export function dismissRefused(db: Database.Database, may: (entity: ChangeEntity, op: string, data: Record<string, unknown> | null) => boolean):
+  { cleared: number; summaries: string[] } {
+  ensureTable(db);
+  const rows = db.prepare(`SELECT * FROM local_changes WHERE state = 'refused'`).all() as LocalChangeRow[];
+  const del = db.prepare(`DELETE FROM local_changes WHERE id = ? AND state = 'refused'`);
+  const summaries: string[] = [];
+  for (const r of rows) {
+    let data: Record<string, unknown> | null = null;
+    try { data = JSON.parse(r.data); } catch { data = null; }
+    if (!may(r.entity, r.op, data)) continue;
+    if (del.run(r.id).changes) summaries.push(`${describeChange({ entity: r.entity, op: r.op as any, data: data ?? {} })} (${r.message ?? 'refused'})`);
+  }
+  return { cleared: summaries.length, summaries };
+}
+
 /**
  * Changes a till behind this branch server handed it: applied here (the branch's other tills take them from here with no
  * internet). A496: recorded as 'relayed' — NOT queued for the cloud: the server used to send each again under its OWN
  * session, so a change any holder of the branch code made looked like the server's own to the cloud. The till that made
  * the change sends it itself, under its own session (through this server's gateway on a till with no internet).
  */
-export function acceptRelayedChanges(db: Database.Database, raws: unknown[], secrets: Secrets): number {
+export function acceptRelayedChanges(db: Database.Database, raws: unknown[], secrets: Secrets, from: string | null = null): number {
   ensureTable(db);
   let n = 0;
   for (const raw of raws) {
@@ -396,11 +478,14 @@ export function acceptRelayedChanges(db: Database.Database, raws: unknown[], sec
     if (db.prepare(`SELECT 1 FROM local_changes WHERE id = ?`).get(ch.id)) continue;
     let pinHashEnc: string | null = null;
     const stored: Record<string, unknown> = { ...ch.data };
+    if (from) stored._relayed_for = String(from).slice(0, 64);   // A521: the till it came from, sent with the forward
     // What only a till keeps (a new cashier's role and permissions, the branch), handed over with the change.
     const extra = (raw as any)?._local ?? {};
     if (ch.entity === 'staff' || ch.entity === 'staff_pin') {
-      pinHashEnc = secrets.seal(bcrypt.hashSync(String(ch.data.pin), 10));
-      stored.pin = secrets.wrap(String(ch.data.pin)); stored.pin_hash_enc = pinHashEnc;
+      if (ch.data.pin !== undefined && ch.data.pin !== null) {   // A521: a staff update carries no PIN — none is invented
+        pinHashEnc = secrets.seal(bcrypt.hashSync(String(ch.data.pin), 10));
+        stored.pin = secrets.wrap(String(ch.data.pin)); stored.pin_hash_enc = pinHashEnc;
+      }
       stored.role_name = extra.role_name ?? null; stored.permissions = extra.permissions ?? null; stored.branch_id = extra.branch_id ?? null;
     }
     const now = new Date().toISOString();
@@ -411,6 +496,33 @@ export function acceptRelayedChanges(db: Database.Database, raws: unknown[], sec
       applyLocal(db, ch, { pinHashEnc, roleName: extra.role_name ?? null, permissions: extra.permissions, branchId: extra.branch_id ?? null });
       bumpChangeVersion(db, now);
     })();
+    n++;
+  }
+  return n;
+}
+
+/**
+ * A521 (#6): a PIN change or a new person a till handed this server — NOT applied here (A496: a relayed PIN is never
+ * planted on the branch's tills from a relay), only kept (the PIN wrapped) and forwarded to the cloud, which applies it
+ * when its maker is proven (A494) and sends it back to every till in the branch's staff list. The till that made it may
+ * be switched off before it reaches the cloud itself. Returns how many were kept.
+ */
+export function acceptForwardOnly(db: Database.Database, raws: unknown[], secrets: Secrets, from: string | null = null): number {
+  ensureTable(db);
+  let n = 0;
+  for (const raw of raws) {
+    const c = cleanChange(raw);
+    if (!c.ok) continue;
+    const ch = (c as { change: TillChange }).change;
+    if (ch.entity !== 'staff' && ch.entity !== 'staff_pin') continue;
+    if (db.prepare(`SELECT 1 FROM local_changes WHERE id = ?`).get(ch.id)) continue;
+    const stored: Record<string, unknown> = { ...ch.data };
+    if (ch.data.pin !== undefined && ch.data.pin !== null) stored.pin = secrets.wrap(String(ch.data.pin));
+    if (from) stored._relayed_for = String(from).slice(0, 64);
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO local_changes (id, entity, op, entity_id, base, data, made_by, made_by_name, made_at, state, tries, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'forward', 0, ?)`).run(ch.id, ch.entity, ch.op, ch.entity_id,
+      ch.base ? JSON.stringify(ch.base) : null, JSON.stringify(stored), ch.made_by, ch.made_by_name, ch.made_at, now);
     n++;
   }
   return n;

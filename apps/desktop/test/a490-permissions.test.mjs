@@ -155,8 +155,10 @@ const GATES = [
   ['day:summary', undefined, ['reports.sales'], /day.s figures/],
   ['day:close', { countedCash: 0 }, ['shifts.close_day'], /may close the day/],
   ['day:retryConflict', { shiftId: 'x' }, ['shifts.close_day'], /may close the day/],
-  ['branchClose:overview', undefined, ['shifts.close_day'], /may close the day/],
-  ['branchClose:closeBranch', {}, ['shifts.close_day'], /may close the day/],
+  // A520: Close Branch is its own right (shifts.close_branch); the overview also answers close_day (the server's expense form).
+  ['branchClose:overview', undefined, ['shifts.close_branch'], /may close the branch/],
+  ['branchClose:overview', undefined, ['shifts.close_day'], /may close the branch/],
+  ['branchClose:closeBranch', {}, ['shifts.close_branch'], /may close the branch/],
   ['shift:forceClose', { reason: 'left' }, ['shifts.force_close'], /force-close a drawer/],
   ['shift:history', undefined, ['reports.shifts'], /shift reports/],
   ['manager:branchShifts', undefined, ['shifts.confirm'], /shift reports/],
@@ -184,7 +186,8 @@ const GATES = [
   ['order:refund', { orderId: 'o-1', reason: 'x' }, ['sales.refund'], /does not refund sales/],
   ['branding:set', { businessId: 'biz-1', accentHex: '#112233' }, ['receipt.manage'], /change the branding/],
   ['node:tlsRetrust', undefined, ['settings.business'], /technician or someone who manages/],
-  ['order:create', order, ['sales.discount'], /does not give discounts/],
+  // A519: selling itself needs orders.create on a catalogue map — the discount check is seen with both held.
+  ['order:create', order, ['orders.create', 'sales.discount'], /does not give discounts/],
 ];
 for (const [ch, payload, keys, refusedRe] of GATES) {
   signIn(fine('orders.create'), 'cashier');
@@ -198,11 +201,12 @@ for (const [ch, payload, keys, refusedRe] of GATES) {
   ok('nobody signed in: a back-office read says "Not signed in"', /Not signed in/.test(await said(() => call('manager:salesSummary'))));
   signIn({}, 'Owner');
   ok('the owner\'s role passes every gate (a sample)', !/does not|may close|force-close/.test(await said(() => call('manager:salesSummary')))
-    && !/may close the day/.test(await said(() => call('branchClose:overview'))));
+    && !/may close the (day|branch)/.test(await said(() => call('branchClose:overview'))));
   signIn(fine('orders.create'), 'cashier');
-  ok('update:installNow: shifts.close_day (a cashier is refused)', (await call('update:installNow')).reason === 'manager_required');
+  // A519 (owner, 2026-10-16: "not needed pin confirmation and you are the manager"): back office restarts in one tap.
+  ok('update:installNow: a cashier is refused (A519: not back office)', (await call('update:installNow')).reason === 'manager_required');
   signIn(fine('shifts.close_day'), 'cashier');
-  ok('…its holder passes the gate (then: not a packaged build)', (await call('update:installNow')).reason === 'not packaged');
+  ok('…a back-office person passes the gate (then: not a packaged build)', (await call('update:installNow')).reason === 'not packaged');
 }
 
 // ── 3. no role-name check left ──────────────────────────────────────────────────────────────────────────────────────
@@ -235,8 +239,12 @@ console.log('\nNo role-name checks in apps/desktop/src\n');
 }
 
 // ── 4. the update bar never replaces the session ───────────────────────────────────────────────────────────────────
+// A519: the PIN path (update:installWithPin, shifts.close_day) is gone — one tap for the signed-in back-office person, no
+// PIN box, so nothing can switch the session. Its intent kept: the session is untouched, the owner restarts, a cashier
+// does not, and nobody signed in does not.
 console.log('\nThe update bar\'s restart\n');
 {
+  // The saved sign-ins the next section reads (u-sup's map is refreshed by the staff list there).
   const bcrypt = require('bcryptjs');
   const P = require(path.join(dist, 'pinCache.js'));
   P.cacheStaffCredential({ staffId: 'u-own', name: 'Olive', roleName: 'owner', permissions: {} }, bcrypt.hashSync('9090', 4), 'br-1');
@@ -244,19 +252,20 @@ console.log('\nThe update bar\'s restart\n');
   P.cacheStaffCredential({ staffId: 'u-sup', name: 'Sam', roleName: 'supervisor', permissions: {} }, bcrypt.hashSync('6060', 4), 'br-1');
   signIn(fine('orders.create'), 'cashier', 'u-cash');
   const before = JSON.stringify(db.prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get());
-  const r1 = await call('update:installWithPin', { pin: '7070' });
-  const r2 = await call('update:installWithPin', { pin: '9090' });
-  const r3 = await call('update:installWithPin', { pin: '6060' });
-  const r4 = await call('update:installWithPin', { pin: '1212' });
-  const after = JSON.stringify(db.prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get());
-  ok('a shifts.close_day PIN restarts (then: not a packaged build) — the cashier stays signed in', r1.reason === 'not packaged' && before === after, JSON.stringify({ r1, before, after }));
-  ok('the owner\'s PIN restarts too (the role-name list used to refuse the owner)', r2.reason === 'not packaged', JSON.stringify(r2));
-  // A494: ONE answer for "a real PIN that may not restart" and "no such PIN" — telling them apart confirmed a guess.
-  ok('a "supervisor" without the key and an unknown PIN get the same refusal', r3.ok === false && r4.ok === false
-    && r3.reason === 'not_allowed' && r4.reason === r3.reason && r4.message === r3.message && /close the day/.test(r3.message), JSON.stringify({ r3, r4 }));
+  const r0 = await call('update:installNow');
+  ok('a cashier: refused in main, the session untouched', r0.reason === 'manager_required'
+    && before === JSON.stringify(db.prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get()), JSON.stringify(r0));
+  signIn({}, 'Owner', 'u-own');
+  ok('the owner restarts in one tap (then: not a packaged build)', (await call('update:installNow')).reason === 'not packaged');
+  signIn(fine('reports.sales'), 'manager', 'u-mgr');
+  ok('a manager (back office) restarts in one tap — no PIN', (await call('update:installNow')).reason === 'not packaged');
+  db.prepare(`DELETE FROM staff_session WHERE id=1`).run();
+  ok('nobody signed in: refused', (await call('update:installNow')).reason === 'manager_required');
+  let threw = false; try { await call('update:installWithPin', { pin: '7070' }); } catch { threw = true; }
+  ok('update:installWithPin no longer exists', threw);
   const banner = fs.readFileSync(path.join(desktop, 'src/renderer/pages/UpdateBanner.tsx'), 'utf8');
-  ok('the bar calls update.installWithPin and never auth.verifyPin', /posApi\.update\.installWithPin\(pin\.trim\(\)\)/.test(banner)
-    && !/posApi\.auth\.verifyPin/.test(banner));
+  ok('the bar: one installNow button for back office, no PIN box, never auth.verifyPin', /posApi\.update\.installNow\(\)/.test(banner)
+    && /\{canRestart && \(/.test(banner) && !/type="password"/.test(banner) && !/installWithPin/.test(banner) && !/posApi\.auth\.verifyPin/.test(banner));
 }
 
 // ── 5. a fresher map reaches the session ───────────────────────────────────────────────────────────────────────────

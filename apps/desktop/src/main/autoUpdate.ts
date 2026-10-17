@@ -36,7 +36,7 @@
  */
 
 import { app, BrowserWindow, session } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import type { AppUpdater } from 'electron-updater';   // A517: types only — the module itself loads at its first use (below)
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { cloudFetch, cloudBaseFor } from './cloudGateway';
 import { readSessionTokens } from './tokenStore';
@@ -58,6 +58,34 @@ import { whenStartupSettled, lastStartupLine, UPDATE_AFTER_LAUNCH_MS, UPDATE_AFT
 import { graphicsLine } from './lowImpactStart';   // A513
 
 const ONE_HOUR = 60 * 60 * 1000;   // A348: the approval check is one small JSON call
+
+// ── A517: electron-updater loads when it is first used, not at start ────────────────────────────────────────────────
+// electron-updater and what it brings (semver, fs-extra, js-yaml, builder-util-runtime — about a hundred files) were
+// required by index.ts's first lines, on every start, though A513 asks nothing of it for at least 4 minutes. Now the
+// module loads the first time the updater is touched — the first approved download (runUpdateCheck), an install — and
+// initAutoUpdate's settings and listeners are applied to it at that moment, before anything else uses it. A business on
+// hold, or a till offline, never loads it at all. The rest of this file still writes `autoUpdater.x`: the stand-in
+// below loads the real one on first touch.
+let loadedUpdater: AppUpdater | null = null;
+let onUpdaterLoaded: ((u: AppUpdater) => void) | null = null;
+function realUpdater(): AppUpdater {
+  if (!loadedUpdater) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    loadedUpdater = (require('electron-updater') as typeof import('electron-updater')).autoUpdater;
+    const wire = onUpdaterLoaded;
+    onUpdaterLoaded = null;
+    if (wire) wire(loadedUpdater);
+  }
+  return loadedUpdater;
+}
+/** A517: the updater if it has been loaded, else null — read at quit, where loading it would only slow the close. */
+export function updaterIfLoaded(): AppUpdater | null { return loadedUpdater; }
+/** Tests only: the first use, now (test/lazy-load-a517.test.mjs). */
+export function _updaterNow(): AppUpdater { return realUpdater(); }
+const autoUpdater: AppUpdater = new Proxy({} as AppUpdater, {
+  get: (_t, k) => { const u = realUpdater() as any; const v = u[k]; return typeof v === 'function' ? v.bind(u) : v; },
+  set: (_t, k, v) => { (realUpdater() as any)[k] = v; return true; },
+});
 
 let started = false;
 
@@ -166,8 +194,8 @@ function set(patch: Partial<UpdateStatus>): void {
 /**
  * Apply a downloaded update NOW, with the NSIS progress visible and a relaunch after. Only
  * meaningful once state === 'downloaded'; a no-op otherwise so a stray call can never
- * half-restart a trading till. The manager gate is enforced in the IPC handler (isManager())
- * AND at the call site (banner PIN) — see ipcHandlers 'update:installNow'.
+ * half-restart a trading till. A519: who may is decided in the IPC handler (a signed-in back-office person or a
+ * technician — no PIN) and the bar shows the button only to them — see ipcHandlers 'update:installNow'.
  */
 export async function installUpdateNow(): Promise<{ ok: boolean; reason?: string }> {
   if (!app.isPackaged) return { ok: false, reason: 'not packaged' };
@@ -768,10 +796,6 @@ export function initAutoUpdate(): void {
   try { trustPinnedNodeIn(session.fromPartition('electron-updater', { cache: false })); }
   catch (e: any) { console.warn('[autoUpdate] could not trust the branch server certificate for downloads:', e?.message ?? e); }
 
-  autoUpdater.autoDownload = true;             // fetch in the background
-  autoUpdater.autoInstallOnAppQuit = true;     // still swap on a normal quit — never mid-run
-  autoUpdater.allowPrerelease = false;
-
   const running = app.getVersion();
   // A496: per version, since when the branch server has said "not ready" (a till stops waiting after TILL_WAIT_LIMIT_MS).
   const waitingSince = new Map<string, number>();
@@ -784,7 +808,9 @@ export function initAutoUpdate(): void {
     isServer: () => isNodeRole(getDeviceConfig()?.device_role ?? null),
     log: noteUpdate,
     // A503: read by electron-updater when ZapTill quits — a download no longer approved is not installed.
-    installOnQuit: (on) => { autoUpdater.autoInstallOnAppQuit = on; },
+    // A517: not loaded yet → nothing downloaded in this run (withdrawn needs one), and it loads with install-on-quit on —
+    // an up-to-date or held till's check never loads electron-updater just to set it.
+    installOnQuit: (on) => { if (updaterIfLoaded()) autoUpdater.autoInstallOnAppQuit = on; },
     askServer: () => askBranchServer({ cfg: getDeviceConfig() as any, running, fetch: lanFetch as typeof fetch }),
     checkDeps: ({ running: next }) => {
       const cfg = getDeviceConfig();
@@ -833,6 +859,12 @@ export function initAutoUpdate(): void {
   });
 
   let lastPct = -1;
+  // A517: applied the moment electron-updater loads (realUpdater above) — before its first check or download. The
+  // parameter is the real updater, so these lines read as they did when it was imported at the top.
+  onUpdaterLoaded = (autoUpdater) => {
+  autoUpdater.autoDownload = true;             // fetch in the background
+  autoUpdater.autoInstallOnAppQuit = true;     // still swap on a normal quit — never mid-run
+  autoUpdater.allowPrerelease = false;
   autoUpdater.on('error', (err) => {
     // Never throw: an update failure must not stop a till trading.
     noteUpdate(`check/download failed: ${err?.message ?? err} — tried again on the next check`);
@@ -859,6 +891,9 @@ export function initAutoUpdate(): void {
 
   // A348: each download request goes through the cloud's approval check — no range-by-range differential download.
   autoUpdater.disableDifferentialDownload = true;
+  // A509 / A513: the updater task is asked once there is something to install (see below).
+  autoUpdater.on('update-downloaded', () => { void updaterTaskAvailable(); });
+  };
 
   // A508: what the last idle install did (logged once after its restart; the Tech page shows it).
   try { reportIdleInstall(running); } catch { /* never stops the updater */ }
@@ -928,14 +963,17 @@ export function initAutoUpdate(): void {
   // held open (its windows already gone) while the script checks the download — at most 90 s; refused or no answer →
   // electron-updater installs it as before (elevate.exe: Windows asks — somebody is closing it).
   // A513: asked only once there is something to install (a schtasks at every start, and every hour, for nothing
-  // before) — when the download lands, and hourly while it waits; the idle install's own check asks it too.
-  autoUpdater.on('update-downloaded', () => { void updaterTaskAvailable(); });
+  // before) — when the download lands (the 'update-downloaded' listener set when the updater loads, above), and hourly
+  // while it waits; the idle install's own check asks it too.
   setInterval(() => { if (current.state === 'downloaded') void updaterTaskAvailable(); }, ONE_HOUR);
   app.on('will-quit', (e) => {
+    // A517: electron-updater never loaded in this run → nothing was downloaded, nothing to install; not loaded to say so.
+    const loaded = updaterIfLoaded();
+    if (!loaded) return;
     const plan = closeInstallPlan({
       platform: process.platform, taskKnown, taskInstallStarted, closeTaskDone,
-      quitAndInstallCalled: !!(autoUpdater as any).quitAndInstallCalled,
-      installOnQuit: autoUpdater.autoInstallOnAppQuit, state: current.state, version: current.version,
+      quitAndInstallCalled: !!(loaded as any).quitAndInstallCalled,
+      installOnQuit: loaded.autoInstallOnAppQuit, state: current.state, version: current.version,
       installerPath: downloadedInstaller(),
     });
     if (!plan) return;
