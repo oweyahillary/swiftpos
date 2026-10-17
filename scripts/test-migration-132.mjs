@@ -160,7 +160,8 @@ await ok('a preview with the menu counts every menu row — and changes nothing'
 await ok('a real sale outside the window on a menu item refuses — nothing deleted (not the window\'s sales either)', async () => {
   const r = await run([B, FROM, TO, 'undo', false, false, true]);
   assert.equal(r.ok, false);
-  assert.match(r.problems.join(' '), /1 real sale\(s\) outside the window use the menu — clear those first or untick 'Also delete the whole menu'/);
+  // A522: since 148 the menu clear's body is purge_test_menu_window, its literals without apostrophes ("…" quotes).
+  assert.match(r.problems.join(' '), /1 real sale\(s\) outside the window use the menu — clear those first or untick ['"]Also delete the whole menu['"]/);
   const left = await menuLeft(MENU_TABLES);
   for (const [t, n] of Object.entries(left)) assert.ok(n > 0, `${t} was touched`);
   assert.equal(await count('orders', `business_id = '${B}'`), 2, 'the test sale is still there');

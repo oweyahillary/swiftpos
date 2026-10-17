@@ -45,8 +45,14 @@ export interface NavAccess {
   canMonthly?: boolean;
   /** expenses.view or expenses.manage — Expenses. */
   canExpenses: boolean;
-  /** shifts.close_day — Close Day / Close Branch (dayService mayCloseDay's rule). */
+  /** shifts.close_day — Close Day (dayService mayCloseDay's rule). */
   canCloseDay: boolean;
+  /** A520: shifts.close_branch — Close Branch (dayService mayCloseBranch). Absent = as close_day (an older caller). */
+  canCloseBranch?: boolean;
+  /** A520 (owner, 2026-10-17: "Server should not have close day, it should have close branch only, it's confusing to the
+   *  manager"): this machine is the branch server (device_role node / office) — Close shows Close Branch alone; its own
+   *  day (and an open drawer on it) is closed there. A plain till keeps Close Day. */
+  isBranchServer?: boolean;
   /** menu.edit or menu.prices — the Menu page. */
   canMenu: boolean;
   /** menu.offers — Offers (with the online licence). */
@@ -81,8 +87,11 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
     ] },
     { key: 'expenses', label: 'Expenses', tabs: a.canExpenses ? [{ key: 'expenses', label: 'Expenses' }] : [] },   // 0.6.11
     // Close Day is the escape route for the trading-day gate — shifts.close_day.
-    { key: 'close', label: 'Close', tabs: a.canCloseDay
-      ? [{ key: 'dayclose', label: 'Close Day' }, { key: 'branchclose', label: 'Close Branch' }] : [] },
+    // A520: Close Day is shifts.close_day, Close Branch shifts.close_branch; the branch server shows Close Branch alone.
+    { key: 'close', label: 'Close', tabs: [
+      ...(a.canCloseDay && !a.isBranchServer ? [{ key: 'dayclose' as TabKey, label: 'Close Day' }] : []),
+      ...((a.canCloseBranch ?? a.canCloseDay) ? [{ key: 'branchclose' as TabKey, label: 'Close Branch' }] : []),
+    ] },
     // A445: Offers beside the menu. A460: only with the online licence (a premium feature — never shown without it).
     { key: 'menu', label: 'Menu', tabs: [
       ...(a.canMenu ? [{ key: 'menu' as TabKey, label: 'Menu' }] : []),

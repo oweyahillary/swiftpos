@@ -179,3 +179,12 @@ Stays admin-only: licence and plan, branch licences, billing, web hosting / web 
   (override) PIN an owner or manager gives them in Staff. Who may be given one: someone holding sales.void, sales.refund,
   customers.credit or shifts.confirm (`APPROVAL_PIN_KEYS`, routes/staff.ts). POST /api/business/settings answers 410
   `SUPERVISOR_PIN_RETIRED` for any supervisor_pin key; the stored hash is left untouched and never read.
+- **A518 — one PIN is enough:** an approver's **sign-in PIN approves** voids, refunds, sales on account, pay-outs and drawer
+  confirmations as it is (lib/approver.ts `findApprover`, lib/confirmerLookup.ts; the till's offline approvals use
+  sign-in PINs too). The approval PIN in Staff is **optional** — a second PIN for someone who would rather not type their
+  sign-in PIN in front of cashiers. A branch where nobody who may approve has any PIN answers 400 `NO_OVERRIDE_CONFIGURED`
+  ("…gives someone who may approve a PIN in Staff"), never counted by the PIN limiter — voids / refunds / credit (A514) and,
+  since A518, pay-outs, expenses, drawer confirmations and kitchen voids.
+- **A518 — payables.view:** "See supplier bills" — the supplier balances, bills, payments and returns, read-only (the
+  Accountant's; migration 143 gives it to every role holding payables.manage, the built-in Accountant roles and the owner
+  roles). Writes stay payables.manage.

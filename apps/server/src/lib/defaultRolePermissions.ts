@@ -53,3 +53,40 @@ export async function seedDefaultRolePermissions(
     if (error) throw error;
   }
 }
+
+const roleNameKey = (name: string | null | undefined): string => String(name ?? '').trim().toLowerCase().replace(/[\s_]+/g, ' ');
+
+/**
+ * A518: the built-in roles that belong to a business TYPE (Fuel attendant at petrol_station) and that a business moving to
+ * that type does not have yet — by name, case and spaces aside (migration 142's rule). Roles of every type (Supervisor,
+ * Waiter …) are not this function's: 142 gave them to every business and sign-up seeds them. Pure.
+ */
+export function typeRolesMissing(businessType: string | null | undefined, existingNames: ReadonlyArray<string | null | undefined>) {
+  const have = new Set(existingNames.map(roleNameKey));
+  return builtInRolesFor(businessType).filter((r) => r.types && !have.has(roleNameKey(r.name)));
+}
+
+/**
+ * A518 (A514 gap): when a business's type changes (the admin portal's PATCH /api/admin/clients/:id), add the built-in roles
+ * of the new type it lacks — is_default, the BUILT_IN_ROLES defaults, nobody assigned. A role is never removed on a change
+ * away (the owner's people may be on it). Returns the names added. A failure is logged and answered as nothing added: the
+ * type change itself has already been saved and stands.
+ */
+export async function addTypeRoles(businessId: string, businessType: string | null | undefined): Promise<string[]> {
+  if (!builtInRolesFor(businessType).some((r) => r.types)) return [];
+  try {
+    const { data: existing, error } = await supabase.from('roles').select('id, name').eq('business_id', businessId);
+    if (error) throw error;
+    const missing = typeRolesMissing(businessType, ((existing ?? []) as Array<{ name: string | null }>).map((r) => r.name));
+    if (!missing.length) return [];
+    const { data: made, error: insErr } = await supabase.from('roles')
+      .insert(missing.map((r) => ({ business_id: businessId, name: r.name, description: r.description, is_default: true })))
+      .select('id, name');
+    if (insErr) throw insErr;
+    await seedDefaultRolePermissions((made ?? []) as Array<{ id: string; name: string }>);
+    return ((made ?? []) as Array<{ name: string }>).map((r) => r.name);
+  } catch (e) {
+    console.error('[addTypeRoles]', businessId, (e as { message?: string })?.message ?? e);
+    return [];
+  }
+}

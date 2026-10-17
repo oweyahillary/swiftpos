@@ -80,7 +80,7 @@ export function isRetiredSupervisorPinKey(k: string): boolean {
   return /^supervisor_pin/i.test(String(k ?? '').trim());
 }
 export const SUPERVISOR_PIN_RETIRED = {
-  error: 'The business supervisor PIN is retired. Each approver uses their own PIN - the owner or a manager gives someone an approval PIN in Staff.',
+  error: 'The business supervisor PIN is retired. Each approver uses their own PIN - their sign-in PIN approves; the owner or a manager can set a separate approval PIN in Staff.',
   code:  'SUPERVISOR_PIN_RETIRED',
 } as const;
 

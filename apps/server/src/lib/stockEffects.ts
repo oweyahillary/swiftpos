@@ -51,6 +51,38 @@ export interface StockEffectsParams {
   /** Petrol only: resolves which tank to draw litres from. */
   pumpId?:     string | null;
   lines:       StockLine[];
+  /** A522: when a till rang the sale (its own clock — an offline sale arrives later). Absent: a live sale. */
+  soldAt?:     string | null;
+}
+
+/**
+ * A522 (owner, 2026-10-17: "check if anything will break … because a till has not responded"): a stock count POSTED at
+ * this branch whose item was counted AFTER the till rang this sale already reflects it — the item was off the shelf when
+ * it was counted, and the post set the figure to the count. A till that was off brings the sale later; taking the item
+ * off again made a fake shortage at the next count. Those items are skipped here (logged), every other effect stands.
+ * Sales that arrive BEFORE the post are the count's own late sales (lib/stockTakeRules.lateSales) — unchanged.
+ * Keys: `p:<product id>` / `i:<ingredient id>`. Empty for a live sale or when the counts cannot be read.
+ */
+export async function countedSinceSale(branchId: string, soldAt: string | null | undefined): Promise<Set<string>> {
+  const out = new Set<string>();
+  const t = soldAt ? Date.parse(soldAt) : NaN;
+  if (!Number.isFinite(t)) return out;
+  const since = new Date(t).toISOString();
+  try {
+    const { data: takes, error } = await supabase.from('stock_takes').select('id')
+      .eq('branch_id', branchId).eq('status', 'posted').gt('posted_at', since).limit(50);
+    if (error || !takes?.length) return out;
+    for (const take of takes as Array<{ id: string }>) {
+      const { data: lines } = await supabase.from('stock_take_lines').select('product_id, ingredient_id, counted_at, posted_at')
+        .eq('stock_take_id', take.id).gt('counted_at', since);
+      for (const l of (lines ?? []) as Array<{ product_id: string | null; ingredient_id: string | null; posted_at: string | null }>) {
+        if (!l.posted_at) continue;
+        if (l.product_id) out.add(`p:${l.product_id}`);
+        if (l.ingredient_id) out.add(`i:${l.ingredient_id}`);
+      }
+    }
+  } catch (e) { console.error('[stock] A522 stock counts could not be read (the sale is taken off as usual):', e); }
+  return out;
 }
 
 /**
@@ -90,6 +122,13 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
   const order_id     = params.orderId;
   const order_type   = orderType;
   const pump_id      = pumpId ?? null;
+  // A522: items a stock count posted since the till rang this sale — not taken off again (countedSinceSale).
+  const counted = await countedSinceSale(branch_id, params.soldAt);
+  const skipCounted = (key: string, what: string): boolean => {
+    if (!counted.has(key)) return false;
+    console.info(`[stock] A522 order ${order_number}: ${what} ${key.slice(2)} not taken off again — a stock count posted since the sale was rung already counted it`);
+    return true;
+  };
 
   try {
       // 6. Stock deduction
@@ -191,6 +230,7 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
         // the tank deduction (see the end of 6a-bis), never by a second
         // subtraction of its own.
         if (prod.is_fuel) continue;
+        if (skipCounted(`p:${item.productId}`, 'product')) continue;   // A522
 
         // Scale mode: Large fries (factor 1.5) deducts 1.5× the finished-good units.
         const deductUnits = item.quantity * lineStockImpact(item).factor;
@@ -263,6 +303,7 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
         // bottled-drink SKU is exactly the kind of shared item two tills sell
         // at the same moment.
         for (const [linkedPid, qty] of Object.entries(linkedProductDeductions)) {
+          if (skipCounted(`p:${linkedPid}`, 'variant SKU')) continue;   // A522
           const { data: adjusted, error: linkErr } = await supabase.rpc('adjust_product_stock', {
             p_product_id:  linkedPid,
             p_branch_id:   branch_id,
@@ -291,6 +332,7 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
         // RPC recipes use, with movement audit + low-stock alert.
         const linkedIngredientIds = Object.keys(linkedIngredientDeductions);
         for (const [ingredientId, qty] of Object.entries(linkedIngredientDeductions)) {
+          if (skipCounted(`i:${ingredientId}`, 'variant ingredient')) continue;   // A522
           const { data: newStock, error: iErr } = await supabase.rpc('adjust_ingredient_stock', {
             p_ingredient_id: ingredientId,
             p_branch_id:     branch_id,
@@ -476,6 +518,7 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
           const ingredientIds = Object.keys(deductions);
           if (ingredientIds.length > 0) {
             for (const [ingredientId, deductQty] of Object.entries(deductions)) {
+              if (skipCounted(`i:${ingredientId}`, 'ingredient')) continue;   // A522
               const { data: newQty, error: decErr } = await supabase.rpc('adjust_ingredient_stock', {
                 p_ingredient_id: ingredientId,
                 p_branch_id:     branch_id,
@@ -533,6 +576,7 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
 
             const pkgIds = Object.keys(pkgDeductions);
             for (const [ingredientId, deductQty] of Object.entries(pkgDeductions)) {
+              if (skipCounted(`i:${ingredientId}`, 'packaging')) continue;   // A522
               const { data: newQty, error: pErr } = await supabase.rpc('adjust_ingredient_stock', {
                 p_ingredient_id: ingredientId,
                 p_branch_id:     branch_id,

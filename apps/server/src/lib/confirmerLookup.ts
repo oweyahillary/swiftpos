@@ -33,14 +33,26 @@ export const SELF_APPROVAL_BODY = {
   code:  'SELF_APPROVAL',
 } as const;
 
+/**
+ * A518 (A514 gap): 'none' = nobody at this branch who may confirm holds a PIN (sign-in or approval PIN) — no PIN could ever
+ * match, so it is not a wrong PIN: the caller answers 400 NO_OVERRIDE_CONFIGURED (routes/orders.ts's words) and never
+ * counts it towards the PIN limiter. Only when no particular person was picked (authorizer_id): a picked person who may
+ * not confirm stays a wrong PIN, as before.
+ */
+export const NO_CONFIRMER_BODY = {
+  error: 'Nobody at this branch can approve this yet. The owner or a manager gives someone who may approve a PIN in Staff.',
+  code:  'NO_OVERRIDE_CONFIGURED',
+} as const;
+
 export async function confirmerByPin(businessId: string, pin: string, authorizerId?: string,
-  scope?: { branchId?: string | null; actorId?: string | null }): Promise<{ id: string; name: string | null } | null | 'self'> {
+  scope?: { branchId?: string | null; actorId?: string | null }): Promise<{ id: string; name: string | null } | null | 'self' | 'none'> {
   const { rows, ownerId } = await confirmerRows(businessId);
   const found = await findApprover(rows, { pin, authorizerId, ownerId, may: mayConfirm, branchId: scope?.branchId ?? null, actorId: scope?.actorId ?? null }, {
     loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
     overridePin: (p, h) => bcrypt.compare(p, h),
   });
   if (found.result === 'self') return 'self';   // A505
+  if (found.result === 'none' && !authorizerId) return 'none';   // A518
   if (found.result !== 'ok') return null;
   const row = rows.find((r) => r.id === found.userId);
   return { id: found.userId, name: row?.name ?? null };

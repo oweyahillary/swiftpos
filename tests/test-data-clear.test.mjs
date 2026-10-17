@@ -58,7 +58,8 @@ ok('A488: the trading days that block the clear are named — the same rule as p
   assert.match(a, /days_in_question: daysInQuestion/);
   assert.match(card, /data-testid="days-in-question"/);
   assert.match(card, /not closed on the cloud \(\$\{d\.status\}\)/);
-  const mig = read('migrations/123_wastage.sql');   // the latest purge_test_data
+  // A522: the latest purge_test_data is 148's (p_close_open) — the same rule, the till's open ones apart.
+  const mig = read('migrations/148_offline_tills.sql');
   assert.match(mig, /opened_at >= p_from AND opened_at <= p_to/);
   assert.match(mig, /closed_at IS NULL OR closed_at > p_to/);
 });
@@ -83,10 +84,13 @@ ok('A482: the preview asks with menu, shows the menu counts, and a preview for t
   assert.match(card, /stock_mode: stock, delete_customers: customers, menu, confirm_name: confirm,/);
 });
 ok('A482: the route — menu=true previews and clears through purge_test_menu; super admin, the name typed; menu validated and audited', () => {
-  assert.match(a, /const menu = req\.query\.menu === 'true';[\s\S]*?supabase\.rpc\(menu \? 'purge_test_menu' : 'purge_test_data', \{[\s\S]*?p_dry_run: true,/);
+  // A522: the function is chosen by purgeFn(menu, closeOpen) — unticked "close open" it is still purge_test_menu / purge_test_data.
+  assert.match(a, /const purgeFn = \(menu: boolean, closeOpen: boolean\): string =>\s*closeOpen \? \(menu \? 'purge_test_menu_window' : 'purge_test_window'\) : \(menu \? 'purge_test_menu' : 'purge_test_data'\);/);
+  assert.match(a, /const menu = req\.query\.menu === 'true';[\s\S]*?supabase\.rpc\(purgeFn\(menu, closeOpen\), \{[\s\S]*?p_dry_run: true,/);
   assert.match(a, /if \(b\.menu !== undefined && typeof b\.menu !== 'boolean'\) \{ res\.status\(400\)/);
-  assert.match(a, /router\.post\('\/clients\/:id\/test-data\/clear', requireAdmin, requireSuperAdmin,[\s\S]*?const menu = b\.menu === true;[\s\S]*?String\(b\.confirm_name[\s\S]*?supabase\.rpc\(menu \? 'purge_test_menu' : 'purge_test_data'/);
-  assert.match(a, /delete_customers: b\.delete_customers === true, menu, counts: r\.counts/);
+  assert.match(a, /router\.post\('\/clients\/:id\/test-data\/clear', requireAdmin, requireSuperAdmin,[\s\S]*?const menu = b\.menu === true;[\s\S]*?String\(b\.confirm_name[\s\S]*?supabase\.rpc\(purgeFn\(menu, closeOpen\)/);
+  // A522: the audit also records close_open ("Also clear shifts and trading days still open on tills that are off").
+  assert.match(a, /delete_customers: b\.delete_customers === true, menu, close_open: closeOpen, counts: r\.counts/);
   assert.match(a, /historyOf\('from_at, to_at, stock_mode, counts, done_by, created_at, menu'\)/);
 });
 ok('A482: the function — one transaction with the window\'s clear, refused while a real sale outside the window uses the menu, recorded', () => {

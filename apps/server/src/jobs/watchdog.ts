@@ -27,6 +27,8 @@ import {
  */
 
 const DAY_MS = 24 * 60 * 60_000;
+/** A522: how far back an open trading day is still reported (it used to drop out after 3 days). */
+const DAYS_NOT_CLOSED_WINDOW = 30;
 
 async function names(): Promise<{ active: string[]; names: Record<string, string>; approved: Record<string, string | null> }> {
   const { data } = await supabase
@@ -114,13 +116,24 @@ export async function collectAlerts(now = new Date()): Promise<Alert[]> {
   await step('days', async () => {
     const { data, error } = await supabase
       .from('business_days')
-      .select('id, business_id, branch_id, terminal_code, business_date, status')
+      .select('id, business_id, branch_id, device_id, terminal_code, business_date, status')
       .eq('status', 'open')
-      .gte('business_date', new Date(now.getTime() - 3 * DAY_MS).toISOString().slice(0, 10))
+      // A522: 30 days, not 3 — a day left open on a till that was switched off used to drop out of the alerts silently
+      // after three days while it still blocked the till (and the test-data clear). It now stays until it is closed —
+      // by the till, from Remote Day Close, or as abandoned there for a dead till.
+      .gte('business_date', new Date(now.getTime() - DAYS_NOT_CLOSED_WINDOW * DAY_MS).toISOString().slice(0, 10))
       .limit(1000);
     if (error) throw error;
+    // A522: a RETIRED till's open day is not an alert (it is closed as abandoned on Remote Day Close, never by the till).
+    const devIds = [...new Set(((data ?? []) as any[]).map((d) => d.device_id).filter(Boolean))];
+    const retired = new Set<string>();
+    if (devIds.length) {
+      const { data: devs } = await supabase.from('user_devices').select('device_id, retired_at').in('device_id', devIds.slice(0, 1000));
+      for (const d of (devs ?? []) as any[]) if (d.retired_at) retired.add(d.device_id);
+    }
     const rows: any[] = [];
     for (const d of ((data ?? []) as any[]).filter(inActive)) {
+      if (d.device_id && retired.has(d.device_id)) continue;
       const cutoff = await getDayCutoff(d.business_id, d.branch_id);
       if (d.business_date >= businessDateEAT(now, cutoff)) continue;               // today's day: still trading
       const end = Date.parse(businessRangeEAT(d.business_date, d.business_date, cutoff).end) + 1;

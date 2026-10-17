@@ -44,6 +44,17 @@ export default function TillChangesNotice() {
           ))}
         </ul>
       )}
+      {/* A520: a refused change is already undone on this till (the cloud's value came back with the pull) — said, and
+          cleared from here once read. Make it again on the web if it is still wanted. */}
+      {open && refused > 0 && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs" data-testid="till-changes-refused">
+          <span className="text-gray-300">Refused changes are not on this till — the cloud's value stands. Make the change again on the web if it is still wanted.</span>
+          <button data-testid="till-changes-clear" onClick={() => {
+            posApi.manage.dismissRefusedChanges().then(() => posApi.manage.changeStates())
+              .then((r) => setRows(Array.isArray(r) ? r : [])).catch(() => {});
+          }} className="px-2 py-1 rounded border border-gray-600 text-gray-200 hover:bg-gray-700/40">Clear refused</button>
+        </div>
+      )}
     </div>
   );
 }

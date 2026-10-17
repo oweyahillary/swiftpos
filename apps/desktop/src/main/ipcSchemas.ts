@@ -124,7 +124,6 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'update:getStatus':       NO_PAYLOAD,
   'update:getDiagnostics':  NO_PAYLOAD,   // A496
   'update:installNow':      NO_PAYLOAD,
-  'update:installWithPin':  { pin: { t: 'string', min: 1 } },   // A490: the PIN's holder is identified, never signed in
   'auth:verifyPin':         { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } },
   'auth:unlock':            { pin: { t: 'string', min: 1 } },   // A446
   'auth:getStaffSession':   NO_PAYLOAD,
@@ -145,6 +144,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── idle ──────────────────────────────────────────────────────────────────
   'idle:setSurface': { kind: 'nullableEnum', values: ['manager','pos'] },
   'idle:clear':      NO_PAYLOAD,
+  'idle:mayPreload': NO_PAYLOAD,                     // A517
   'idle:suppress':   NO_PAYLOAD,
   'idle:release':    { kind: 'number', int: true },
 
@@ -158,6 +158,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:notePicks':      NO_PAYLOAD,
   'pos:features':       NO_PAYLOAD,
   'pos:stockCountFreeze': NO_PAYLOAD,   // A394
+  'pos:approveFrozenSale': { pin: { t: 'string', min: 1 }, product_id: { t: 'string', min: 1 } },   // A521
   'pos:history':        NO_PAYLOAD,
   'pos:reversalRules':  NO_PAYLOAD,   // 0.6.30
   'pos:help':           NO_PAYLOAD,   // 0.6.35 (A384)
@@ -227,10 +228,11 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'branchClose:overview':   NO_PAYLOAD,
   'branchClose:closeTill':  { device_id: { t: 'string' }, counted_cash: { t: 'number' }, notes: { t: 'string', optional: true } },
   'branchClose:confirmShift': { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } },   // A452
-  'branchClose:closeBranch':  { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true } },   // A452, A458
+  'branchClose:closeBranch':  { notes: { t: 'string', optional: true }, totals_confirmed: { t: 'boolean', optional: true }, without_tills: { t: 'stringArray', optional: true } },   // A452, A458, A521
   'branchClose:shiftMoney':   { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, kind: { t: 'enum', values: ['float_in', 'float_out', 'expense'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, description: { t: 'string', optional: true }, expense_category_id: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true } },   // A465
   'branchClose:cancelShiftMoney': { instruction_id: { t: 'number' } },   // A465
-  'branchClose:forgetTill':   { device_id: { t: 'string', min: 1 } },   // F4
+  'branchClose:forgetTill':   { device_id: { t: 'string', min: 1 } },   // F4 (A521: "Revoke this till")
+  'branchClose:hideTill':     { device_id: { t: 'string', min: 1 } },   // A521
   'day:summary':            NO_PAYLOAD,
   'day:isManager':          NO_PAYLOAD,
   'day:conflicts':          NO_PAYLOAD,
@@ -296,6 +298,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:createStaff':         { name: { t: 'string' } },
   'manage:setStaffPin':         { id: { t: 'string', min: 1 }, pin: { t: 'string', min: 4 } },   // A448
   'manage:changeStates':        NO_PAYLOAD,   // A448
+  'manage:dismissRefusedChanges': NO_PAYLOAD,   // A520
   'manage:updateStaff':         idPatch,
   'manage:getReceiptText':      NO_PAYLOAD,
   'manage:setReceiptText':      { header: { t: 'string' }, footer: { t: 'string' } },
@@ -372,4 +375,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'tech:status':        NO_PAYLOAD,
   'tech:testConnection':NO_PAYLOAD,
   'tech:logTail':       { lines: { t: 'number', optional: true, int: true } },
+  'tech:sendLogs':      NO_PAYLOAD,   // A519
+  'tech:saveLog':       NO_PAYLOAD,   // A519
+  'install:checkTerminalCode': { code: { t: 'string', min: 1 }, branch_id: { t: 'string', optional: true } },   // A519
 };

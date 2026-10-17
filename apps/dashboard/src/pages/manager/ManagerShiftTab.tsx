@@ -14,9 +14,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { printShiftReport } from '../../lib/printShiftReport';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import RemoteDayClose from './RemoteDayClose';
+import TillsAndDays from '../../components/TillsAndDays';   // A523
 import ShiftConfirmations from '../../components/ShiftConfirmations';   // A462: the manager confirms on the web too
 import CountedCloseModal from '../../components/CountedCloseModal';     // A462: close someone else's drawer WITH a count
 import { money } from '../../lib/format';
+import { agoLabel, syncRecent, tillBehindLine } from '../../lib/tillSync';   // A522
 
 interface OpenShift {
   id: string;
@@ -25,6 +27,9 @@ interface OpenShift {
   opening_float: number;
   terminal_code: string | null;
   expected_cash_live: number | null;
+  /** A522: the drawer's till and when it last synced (the web warns before closing for a silent till). */
+  device_id?: string | null;
+  till_last_sync_at?: string | null;
 }
 
 export default function ManagerShiftTab({ currency }: { currency: string }) {
@@ -43,6 +48,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
   const [error, setError]     = useState('');
   const [target, setTarget]   = useState<OpenShift | null>(null);
   const [reason, setReason]   = useState('');
+  const [behindOk, setBehindOk] = useState(false);   // A522
   const [busy, setBusy]       = useState(false);
   const [reportId, setReportId] = useState<string | null>(null);
   const [reportMsg, setReportMsg] = useState<{ id: string; text: string } | null>(null);
@@ -62,8 +68,11 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
   }, [posApi]);
   useEffect(() => { void load(); }, [load]);
 
+  // A522: force-closing for a till that has not synced lately — a tick first.
+  const forceBehind = target?.device_id ? tillBehindLine(target.terminal_code ?? 'The till', target.till_last_sync_at ?? null) : null;
   const forceClose = async () => {
     if (!target || !reason.trim()) return;
+    if (forceBehind && !behindOk) return;
     setBusy(true); setError('');
     try {
       await posApi.post(`/api/shifts/${target.id}/force-close`, { reason: reason.trim() });
@@ -95,6 +104,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium">{s.cashier_name}{s.terminal_code ? ` · ${s.terminal_code}` : ''}</p>
                   <p className="text-gray-500 text-xs">open {since(s.opened_at)} · float {money(s.opening_float, currency, { blank: 'unavailable' })}{seesExpected && <> · expected {money(s.expected_cash_live, currency, { blank: 'unavailable' })}</>}</p>
+                  {s.device_id && <p className={`text-xs ${syncRecent(s.till_last_sync_at) ? 'text-gray-500' : 'text-amber-400'}`}>till synced {agoLabel(s.till_last_sync_at)}</p>}
                 </div>
                 <div className="sm:flex-shrink-0 flex flex-wrap items-center gap-2">
                   {seesExpected && <button
@@ -114,7 +124,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
                     </button>
                   )}
                   {canForceClose && (
-                    <button onClick={() => { setTarget(s); setReason(''); }}
+                    <button onClick={() => { setTarget(s); setReason(''); setBehindOk(false); }}
                       className="text-xs font-medium px-3 py-1.5 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 transition-colors">
                       Force-close
                     </button>
@@ -141,6 +151,14 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
           onCancel={() => setCounting(null)} onDone={() => { setCounting(null); setConfirmKey((k) => k + 1); void load(); }} />
       )}
 
+      {/* A523 — every till of the branch, its open day and drawers: close a day (on the web at once, the till adopts it)
+          or a drawer from here. For holders of shifts.close_day / shifts.force_close; the cloud scopes it to their branch. */}
+      {(hasPermission('shifts.close_day') || canForceClose) && (
+        <div className="pt-4 border-t border-gray-800">
+          <TillsAndDays client={posApi as any} currency={currency} />
+        </div>
+      )}
+
       {/* A275 — remote day close for managers who aren't in the store. */}
       <div className="pt-4 border-t border-gray-800">
         <RemoteDayClose currency={currency} />
@@ -154,9 +172,15 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
             <textarea value={reason} onChange={e => setReason(e.target.value)}
               placeholder="e.g. till T2 crashed and won't restart"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500" rows={3} />
+            {forceBehind && (
+              <label className="flex gap-2 items-start mt-3 text-xs text-amber-300" data-testid="force-behind">
+                <input type="checkbox" checked={behindOk} onChange={e => setBehindOk(e.target.checked)} className="mt-0.5" />
+                <span>{forceBehind}</span>
+              </label>
+            )}
             <div className="flex gap-3 mt-4">
               <button onClick={() => setTarget(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2.5 rounded-lg transition-colors">Cancel</button>
-              <button onClick={() => void forceClose()} disabled={busy || !reason.trim()}
+              <button onClick={() => void forceClose()} disabled={busy || !reason.trim() || (!!forceBehind && !behindOk)}
                 className="flex-1 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-semibold text-sm py-2.5 rounded-lg transition-colors">
                 {busy ? 'Closing…' : 'Force-close (uncounted)'}
               </button>

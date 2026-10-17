@@ -23,12 +23,22 @@
 //   round.
 //
 // WHAT THIS DELIBERATELY WILL NOT DO
-//   It never closes a day or a drawer on its own, and never writes a zero
-//   variance. A count nobody made is a fabricated reconciliation, which is worse
-//   than none: an open day is visibly wrong, a fake close is invisibly wrong and
-//   its zero variance is the number somebody will later rely on.
+//   It never closes a drawer on its own, and never writes a count nobody made.
+//   A count nobody made is a fabricated reconciliation, which is worse than
+//   none: an open day is visibly wrong, a fake close is invisibly wrong and its
+//   zero variance is the number somebody will later rely on.
+//
+//   A523 (owner, 2026-10-17: "I don't want this back and forth, clients not being
+//   able to do simple tasks day to day"): the ONE close it makes by itself is an
+//   old day with nothing left to count — no drawer open, every shift of it
+//   confirmed (or none at all). Its cash is what the managers already confirmed
+//   shift by shift (A452's rule, as Close Branch does), closed_by NULL and a note
+//   saying it closed itself. No count is invented: every figure in it was counted
+//   and confirmed by a person. A day with money still to count (a drawer open, a
+//   shift to confirm) still needs a manager, exactly as before.
 
 import { emitEvent } from './nodeIngest';
+import { logLine } from './logFile';   // A523
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
 import { getDeviceConfig, getBusinessDayCutoff } from './deviceConfig';   // 0.6.34 + the day's end
@@ -108,6 +118,15 @@ export function mayCloseDay(): boolean {
   return signedInCan('shifts.close_day');
 }
 
+/**
+ * A520 (owner, 2026-10-17: "break close day and close branch as two, supervisor can have close day but not branch, a
+ * manager can both"): Close Branch on the branch server — every till's day — is shifts.close_branch (migration 147 gives
+ * it to every role that held close_day, supervisors aside). Close Day on a till and the day lock's way out stay close_day.
+ */
+export function mayCloseBranch(): boolean {
+  return signedInCan('shifts.close_branch');
+}
+
 /** The till's currently open trading day, whatever date it belongs to. */
 export function getOpenDay(): BusinessDay | null {
   const db = getLocalDb();
@@ -117,6 +136,68 @@ export function getOpenDay(): BusinessDay | null {
      WHERE status = 'open' AND COALESCE(device_id,'') = COALESCE(?,'')
      ORDER BY business_date ASC LIMIT 1
   `).get(device_id) as BusinessDay | undefined ?? null;
+}
+
+/** A452 / A523: the cash of a day's shifts as the managers confirmed them (the cashier's count where none was confirmed).
+ *  This till's own drawers only. branchClose.confirmedDayCash is this, for the open day. */
+export function confirmedCashOfDay(dayId: string): number {
+  const r = getLocalDb().prepare(`
+    SELECT COALESCE(SUM(COALESCE(CAST(json_extract(confirmed_methods, '$.cash') AS REAL), closing_float, 0)), 0) AS n
+      FROM shifts
+     -- own: this till's drawers of that day.
+     WHERE business_day_id = ? AND status = 'closed' AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).get(dayId, deviceIdentity().device_id ?? null) as { n: number };
+  return Math.round(Number(r?.n ?? 0) * 100) / 100;
+}
+
+/** A365: the shifts of a day a manager must still confirm (closed with the cashier's count, not confirmed). */
+function unconfirmedShiftsOf(dayId: string): { name: string; opened_at: string; closed_at: string | null }[] {
+  return getLocalDb().prepare(`
+    SELECT COALESCE(u.name, 'Cashier') AS name, s.opened_at, s.closed_at
+      FROM shifts s LEFT JOIN users u ON u.id = s.cashier_id
+     WHERE s.business_day_id = ? AND s.status = 'closed' AND s.declared_methods IS NOT NULL AND s.confirmed_at IS NULL
+     ORDER BY s.closed_at
+  `).all(dayId) as { name: string; opened_at: string; closed_at: string | null }[];
+}
+
+/** A523: the note an old day that closed itself carries (closed_by NULL). */
+export const AUTO_CLOSE_NOTE = 'Closed automatically — nothing left to count (no drawer open, every shift confirmed).';
+
+/**
+ * A523 — an OLD trading day with nothing left to count closes itself.
+ *
+ * Owner, 2026-10-17: "I don't want this back and forth, clients not being able to do simple tasks day to day
+ * operations". A till left on yesterday's day locked at the next morning's first sale and only a manager could open it —
+ * even when every drawer of that day had been closed and confirmed, so there was nothing for the manager to count. Now,
+ * when the day gate meets an old open day (its date before today's) and
+ *   • no drawer is open on this till (its own open shift, or any open shift of that day), and
+ *   • every shift of it is confirmed (or there are no shifts at all — a day opened and never traded),
+ * the till closes it by itself: counted cash = the confirmed shifts' cash (A452, as Close Branch does — never a count
+ * nobody made), expected = the shifts' own, closed_by NULL, the note says so, the log says so. It pushes like any close.
+ * A manager is needed only when there is money: an open drawer or a shift to confirm (the gate's lock stays, A520 text).
+ *
+ * A force-closed drawer (closed_unreconciled) has nothing to confirm — a manager already closed it, uncounted, on
+ * purpose — so it does not hold the day (closeDayCore's own rule). Returns the close, or null when the day still needs a
+ * manager (or anything failed — the lock then stands and says why). Never throws.
+ */
+export function autoCloseEmptyDay(day: BusinessDay, today: string = businessDateNow()): DayCloseSummary | null {
+  try {
+    if (!day || day.status !== 'open' || !(day.business_date < today)) return null;
+    if (getOpenDay()?.id !== day.id) return null;   // closeDayCore closes the till's open day — it must be this one
+    if (getOpenShift()) return null;   // this till's drawer is open — a manager counts it
+    const db = getLocalDb();
+    const liveOnDay = db.prepare(`SELECT 1 FROM shifts WHERE business_day_id = ? AND status = 'open' LIMIT 1`).get(day.id);
+    if (liveOnDay) return null;
+    if (unconfirmedShiftsOf(day.id).length) return null;   // a shift to confirm — a manager confirms it
+    const counted = confirmedCashOfDay(day.id);
+    const summary = closeDayCore(counted, AUTO_CLOSE_NOTE, null);
+    logLine('day', `trading day ${day.business_date} closed automatically — nothing left to count ` +
+      `(${summary.shifts} shift(s), confirmed cash ${counted}, expected ${summary.expectedCash})`);
+    return summary;
+  } catch (err: any) {
+    try { logLine('day', `trading day ${day?.business_date ?? '?'} could not close itself: ${err?.message ?? err}`); } catch { /* the log never stops the gate */ }
+    return null;
+  }
 }
 
 export interface DayGate {
@@ -158,7 +239,13 @@ export interface DayGate {
  */
 export function checkDayGate(): DayGate {
   const today = businessDateNow();
-  const open = getOpenDay();
+  let open = getOpenDay();
+  // A523: an old day with nothing left to count closes itself, and the new day starts with no manager. Bounded: one
+  // open day per till is the rule, a handful is the most a damaged database could hold.
+  for (let i = 0; open && open.business_date < today && i < 5; i++) {
+    if (!autoCloseEmptyDay(open, today)) break;
+    open = getOpenDay();
+  }
   let graceReason: string | undefined;
 
   if (open && open.business_date < today) {
@@ -174,13 +261,23 @@ export function checkDayGate(): DayGate {
     const inGrace = getDeviceConfig()?.continuous_operation === true && Date.now() < graceUntil;
 
     if (!inGrace) {
+      // A520: and say where. A plain till: Manager › Close › Close Day here (shifts.close_day), or the branch server's
+      // Close Branch when it has one (it closes this till's day too, now or when it next connects). The branch server
+      // itself has no Close Day tab — its own day closes with Close Branch.
+      const cfg = getDeviceConfig();
+      const server = cfg?.device_role === 'node' || cfg?.device_role === 'office';
+      const where = server
+        ? ' — a manager signs in here and closes it in Manager › Close › Close Branch.'
+        : cfg?.node_url
+          ? ' — a manager signs in here and closes it in Manager › Close › Close Day, or closes the branch on the branch server.'
+          : ' — a manager signs in here and closes it in Manager › Close › Close Day.';
       return {
         canTrade: false,
         needsManager: true,
         staleDay: open,
         reason:
           `Trading day ${open.business_date} was never closed on this till. ` +
-          `A manager must count the cash and close it before ${today} can start.`,
+          `A manager must count the cash and close it before ${today} can start${where}`,
       };
     }
     const g = new Date(graceUntil);
@@ -483,8 +580,11 @@ export function closeDay(countedCash: number, notes?: string): DayCloseSummary {
 export function closeDayInstructed(
   countedCash: number, notes: string | undefined,
   closedByStaffId: string | null, closedByName: string | null,
+  from: 'branch_server' | 'web' = 'branch_server',   // A523: a close the web made at once (the cloud's), adopted here
 ): DayCloseSummary {
-  const centralNote = `Closed centrally from the branch server${closedByName ? ` by ${closedByName}` : ''}.`;
+  const centralNote = from === 'web'
+    ? `Closed on the web${closedByName ? ` by ${closedByName}` : ''} — this till adopted the web's close.`
+    : `Closed centrally from the branch server${closedByName ? ` by ${closedByName}` : ''}.`;
   const combined = notes && notes.trim() ? `${notes.trim()}\n${centralNote}` : centralNote;
   return closeDayCore(countedCash, combined, closedByStaffId);
 }
@@ -500,18 +600,15 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
 
   const liveShift = getOpenShift();
   if (liveShift) {
-    throw new Error(
+    const err: any = new Error(
       'A drawer is still open on this till. Every shift must be closed before the day can be.',
     );
+    err.code = 'DRAWER_OPEN';   // A523: the cloud reads the code (A522 waitingCode), not the text
+    throw err;
   }
 
   // A365: every shift of the day must be confirmed by a manager first (owner: "it should block").
-  const unconfirmed = db.prepare(`
-    SELECT COALESCE(u.name, 'Cashier') AS name, s.opened_at, s.closed_at
-      FROM shifts s LEFT JOIN users u ON u.id = s.cashier_id
-     WHERE s.business_day_id = ? AND s.status = 'closed' AND s.declared_methods IS NOT NULL AND s.confirmed_at IS NULL
-     ORDER BY s.closed_at
-  `).all(day.id) as { name: string; opened_at: string; closed_at: string | null }[];
+  const unconfirmed = unconfirmedShiftsOf(day.id);
   if (unconfirmed.length) {
     const hm = (iso: string | null) => {
       if (!iso) return '?';

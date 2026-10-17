@@ -1146,7 +1146,10 @@
     "confirmed_at": "\"timestamp with time zone\"",
     "confirm_self": "\"boolean\" NOT NULL",
     "confirm_reasons": "\"jsonb\"",
-    "opened_via": "\"text\""
+    "opened_via": "\"text\"",
+    "till_counted_cash": "\"numeric\"",
+    "till_counted_at": "\"timestamp with time zone\"",
+    "till_confirmed_methods": "\"jsonb\""
   },
   "slot_options": {
     "id": "\"uuid\" NOT NULL",
@@ -1379,6 +1382,20 @@
     "status": "\"text\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "support_logs": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "device_id": "\"text\" NOT NULL",
+    "terminal_code": "\"text\"",
+    "app_version": "\"text\"",
+    "reference": "\"text\" NOT NULL",
+    "sent_by": "\"text\"",
+    "bytes": "\"integer\" NOT NULL",
+    "trimmed": "\"boolean\" NOT NULL",
+    "log_gz_b64": "\"text\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "sync_log": {
     "id": "\"uuid\" NOT NULL",

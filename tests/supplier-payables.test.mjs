@@ -90,8 +90,12 @@ await ok('a delivery\'s value is what was received at its cost', () => {
 console.log('\nThe cloud and the screens\n');
 const r = read('apps/server/src/routes/payables.ts');
 await ok("bills, payments and balances are the owner's by default; a manager who receives may send goods back", () => {
-  for (const route of ["'/summary'", "'/suppliers/:id'", "'/bills'", "'/bills/:id/void'", "'/payments'", "'/payments/:id/void'"]) {
+  for (const route of ["'/bills'", "'/bills/:id/void'", "'/payments'", "'/payments/:id/void'"]) {
     assert.match(r, new RegExp(`router\\.(get|post)\\(${route.replace(/[/:]/g, (c) => '\\' + c)}, requirePermission\\('payables\\.manage'\\)`), route);
+  }
+  // A518: the balances and an account are READ with payables.view (the Accountant's) or payables.manage.
+  for (const route of ["'/summary'", "'/suppliers/:id'"]) {
+    assert.ok(r.includes(`router.get(${route}, requireAnyPermission('payables.view', 'payables.manage')`), route);
   }
   assert.match(r, /router\.post\('\/returns', requireAnyPermission\('inventory\.receive', 'payables\.manage'\)/);
   // A490: the defaults are the shared catalogue's — payables.manage has no `manager: true` (the owner's by default).
@@ -120,9 +124,12 @@ await ok('a return: never more than the branch holds; the stock leaves atomicall
 await ok('the screens: balances only for payables.manage; the account with statement, bills, unbilled deliveries; a clear note', () => {
   const sp = read('apps/dashboard/src/pages/stock/SuppliersPage.tsx');
   assert.match(sp, /const canPay = can\('payables\.manage'\);/);
-  assert.match(sp, /if \(canPay\) setSummary\(await api\.get<Summary>\('\/api\/payables\/summary'\)/);
+  // A518: the balances for payables.view too (read-only); the account's client is the owner's api or the manager portal's.
+  assert.match(sp, /const seesBills = canPay \|\| can\('payables\.view'\);/);
+  assert.match(sp, /if \(seesBills\) setSummary\(await api\.get<Summary>\('\/api\/payables\/summary'\)/);
   const a = read('apps/dashboard/src/components/SupplierAccount.tsx');
-  assert.match(a, /api\.get<Account>\(`\/api\/payables\/suppliers\/\$\{supplierId\}`\)/);
+  assert.match(a, /client\.get<Account>\(`\/api\/payables\/suppliers\/\$\{supplierId\}`\)/);
+  assert.match(a, /client = api, canPay = true, canReturn = true/);
   assert.match(a, /docType: 'SUPPLIER STATEMENT'/);
   assert.match(a, /A payment recorded here is not an expense and does not come out of a till drawer\./);
 });

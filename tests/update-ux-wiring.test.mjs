@@ -8,12 +8,13 @@
  *   - autoUpdate broadcasts status AND still installs on quit (never mid-service)
  *   - installUpdateNow uses quitAndInstall(false, true) — visible progress + relaunch
  *   - the two invoke channels are handled, bridged, and have schemas
- *   - the banner shows on 'downloaded', gates restart behind a manager PIN, and re-surfaces
+ *   - the banner shows on 'downloaded', offers the one-tap restart only to back office (A519), and re-surfaces
  *   - App mounts the banner
  *
  * MUTATIONS TO CONFIRM BITE:
  *   - drop quitAndInstall(false,true) → "install-now shows visible progress" fails
- *   - remove the shifts.close_day check from update:installWithPin → "restart gated behind a PIN that may close the day" fails
+ *   - drop the back-office check from update:installNow → "main: update:installNow refuses unless back office" fails
+ *   - show the restart button to everyone → "restart offered only to back office" fails
  *   - unmount <UpdateBanner/> from App → "App mounts UpdateBanner" fails
  *   - stop broadcasting update:status → "autoUpdate broadcasts status" fails
  */
@@ -47,34 +48,28 @@ ok('schemas: both update channels present', /'update:getStatus'/.test(sch) && /'
 
 // 2026-09-22 hardening: the gate must exist in MAIN, not only in the banner. The handler body
 // must consult the gate BEFORE installUpdateNow() — a renderer-only gate is bypassable.
-// A490: "a manager" is the permission shifts.close_day (dayService mayCloseDay), not a role's name.
+// A519 (owner, 2026-10-16: "not needed pin confirmation and you are the manager"): the gate is "a signed-in back-office
+// person (isBackOffice of their keys — the A499 rule), or a technician console"; no PIN, and the PIN path is gone.
 {
   const m = /handle\('update:installNow',\s*async\s*\(\)\s*=>\s*\{([\s\S]*?)\n\s*\}\);/.exec(ih);
   // Strip comments first: the handler's own comment names the gate, and an index into prose
   // would pass with the call anywhere (or nowhere) — the A171 / rule-24 class.
   const body = (m ? m[1] : '').replace(/\/\/[^\n]*/g, '');
-  const gate = body.indexOf('mayCloseDay()'), install = body.indexOf('installUpdateNow()');
-  ok('main: update:installNow refuses unless mayCloseDay() (shifts.close_day)', gate >= 0 && /manager_required/.test(body)
-    && /export function mayCloseDay\(\): boolean \{\s*return signedInCan\('shifts\.close_day'\);/.test(r('apps/desktop/src/main/dayService.ts')));
+  const gate = body.indexOf('personBackOffice(me.roleName, me.permissions)'), install = body.indexOf('installUpdateNow()');
+  ok('main: update:installNow refuses unless back office (or a technician)', gate >= 0 && /manager_required/.test(body)
+    && /getActiveSession\(\)/.test(body));
   ok('main: the gate runs BEFORE installUpdateNow()', gate >= 0 && install > gate);
-  // A490: the banner's own path — the PIN's holder is identified (never signed in) and must hold shifts.close_day, in MAIN,
-  // before installUpdateNow().
-  const w = /handle\('update:installWithPin',\s*async\s*\(_e, payload\)\s*=>\s*\{([\s\S]*?)\n\s*\}\);/.exec(ih);
-  const wb = (w ? w[1] : '').replace(/\/\/[^\n]*/g, '');
-  const wgate = wb.indexOf("personCan(who, 'shifts.close_day')"), winstall = wb.indexOf('installUpdateNow()');
-  ok('main: update:installWithPin refuses a PIN that may not close the day, BEFORE installUpdateNow()',
-    wgate >= 0 && winstall > wgate && /reason: 'not_allowed'/.test(wb) && /identifyPerson\(/.test(wb) && !/persistCloudSignIn|signInLocal/.test(wb));
-  ok('banner surfaces a main-side refusal', /if \(!r\.ok\) \{ setMsg\(r\.message \?\? /.test(banner));
+  ok('main: no PIN path left (update:installWithPin gone from handlers, bridge and schemas)',
+    !/update:installWithPin/.test(ih) && !/installWithPin/.test(pre) && !/installWithPin/.test(sch));
+  ok('banner surfaces a main-side refusal', /if \(!r\.ok\) setMsg\(/.test(banner));
 }
 
 ok('banner shows on downloaded', /state\s*===\s*'downloaded'/.test(banner));
-// A490: gated behind a PIN checked in main (update:installWithPin) — never auth.verifyPin, which signed the PIN's holder
-// in over the person at the till, and never a role-name list (the owner was refused by it).
-ok('restart gated behind a PIN that may close the day', /posApi\.update\.installWithPin\(pin\.trim\(\)\)/.test(banner)
-  && !/verifyPin\(/.test(banner) && !/MANAGER_ROLES/.test(banner) && /disabled=\{busy \|\| !pin\.trim\(\)\}/.test(banner));
-ok('restart calls install', /posApi\.update\.installWithPin\(/.test(banner)
-  && /installWithPin:\s*\(pin: string\)\s*=>\s*ipcRenderer\.invoke\('update:installWithPin', \{ pin \}\)/.test(pre)
-  && /'update:installWithPin':\s*\{ pin: \{ t: 'string', min: 1 \} \}/.test(sch));
+// A519: one tap, never a PIN box, never auth.verifyPin (A490: it signed the PIN's holder in), never a role-name list.
+ok('restart offered only to back office (App passes backOffice(staff))', /\{canRestart && \(/.test(banner)
+  && /canRestart = false/.test(banner) && /<UpdateBanner\b[^>]*canRestart=\{backOffice\(staff\)\}/.test(app)
+  && !/type="password"/.test(banner) && !/verifyPin\(/.test(banner) && !/MANAGER_ROLES/.test(banner));
+ok('restart calls install', /posApi\.update\.installNow\(\)/.test(banner));
 ok('gentle reminder re-surfaces a dismissal', /REMIND_AFTER_MS/.test(banner) && /setDismissed\(false\)/.test(banner));
 
 ok('App imports and mounts UpdateBanner', /import\s+UpdateBanner\s+from\s+['"]\.\/pages\/UpdateBanner['"]/.test(app)

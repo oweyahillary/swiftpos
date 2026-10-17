@@ -47,10 +47,22 @@ const methodLabel = (m: string) => METHODS.find(([k]) => k === m)?.[1] ?? m;
 const errText = (e: unknown, f: string) => (e as { message?: string })?.message || f;
 const input = 'w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-swift focus:outline-none';
 
-export default function SupplierAccount({ supplierId, currency, business, branches, onClose }: {
+/** A518: the owner's `api` or the manager portal's posApi (the signed-in person's own session). */
+export interface SupplierClient {
+  get: <T>(path: string) => Promise<T>;
+  post: <T>(path: string, body: unknown) => Promise<T>;
+}
+
+/**
+ * A518: `canPay` — bills and payments may be recorded and voided (payables.manage); without it the account is read-only
+ * (payables.view: the Accountant's). `canReturn` — goods may be sent back (inventory.receive or payables.manage).
+ * Both default to true (the owner's Suppliers page before A518).
+ */
+export default function SupplierAccount({ supplierId, currency, business, branches, onClose, client = api, canPay = true, canReturn = true }: {
   supplierId: string; currency: string; onClose: () => void;
   business?: { name: string; address?: string | null; phone?: string | null } | null;
   branches: { id: string; name: string }[];
+  client?: SupplierClient; canPay?: boolean; canReturn?: boolean;
 }) {
   const [acc, setAcc] = useState<Account | null>(null);
   const [tab, setTab] = useState<'bills' | 'statement' | 'payments' | 'returns'>('bills');
@@ -58,9 +70,9 @@ export default function SupplierAccount({ supplierId, currency, business, branch
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    try { setAcc(await api.get<Account>(`/api/payables/suppliers/${supplierId}`)); setError(''); }
+    try { setAcc(await client.get<Account>(`/api/payables/suppliers/${supplierId}`)); setError(''); }
     catch (e) { setError(errText(e, 'Could not load the account.')); }
-  }, [supplierId]);
+  }, [supplierId]);   // eslint-disable-line react-hooks/exhaustive-deps — posApi is a new object every render
   useEffect(() => { void load(); }, [load]);
 
   // A475: the tab shown in pages (25 / 50 / 100, remembered in this browser) — bills and payments run to 2,000. The
@@ -79,7 +91,7 @@ export default function SupplierAccount({ supplierId, currency, business, branch
   const voidIt = async (what: 'bills' | 'payments', id: string, label: string) => {
     const reason = window.prompt(`Why is ${label} voided?`);
     if (!reason?.trim()) return;
-    try { await api.post(`/api/payables/${what}/${id}/void`, { reason }); await load(); }
+    try { await client.post(`/api/payables/${what}/${id}/void`, { reason }); await load(); }
     catch (e) { setError(errText(e, 'Could not void it.')); }
   };
 
@@ -110,10 +122,10 @@ export default function SupplierAccount({ supplierId, currency, business, branch
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={printStatement} className="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:text-white">Print statement</button>
-          <button onClick={() => setForm({ kind: 'return' })} className="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:text-white">Return goods</button>
-          <button onClick={() => setForm({ kind: 'bill' })} className="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:text-white">Add bill</button>
-          <button onClick={() => setForm({ kind: 'pay' })} data-testid="record-payment"
-            className="rounded-xl bg-swift px-4 py-2 text-sm font-semibold text-gray-950">Record payment</button>
+          {canReturn && <button onClick={() => setForm({ kind: 'return' })} className="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:text-white">Return goods</button>}
+          {canPay && <button onClick={() => setForm({ kind: 'bill' })} className="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:text-white">Add bill</button>}
+          {canPay && <button onClick={() => setForm({ kind: 'pay' })} data-testid="record-payment"
+            className="rounded-xl bg-swift px-4 py-2 text-sm font-semibold text-gray-950">Record payment</button>}
         </div>
       </div>
 
@@ -147,7 +159,7 @@ export default function SupplierAccount({ supplierId, currency, business, branch
                 <span className="text-gray-200">{d.grn_number}{d.po_number ? ` · ${d.po_number}` : ''} · {dateShort(d.received_date)}</span>
                 <span className="flex items-center gap-3">
                   <span className="text-gray-300">{money(d.value, currency)}</span>
-                  <button onClick={() => setForm({ kind: 'bill', grn: d })} className="rounded-lg border border-gray-700 px-3 py-1 text-xs text-gray-200 hover:text-white">Bill it</button>
+                  {canPay && <button onClick={() => setForm({ kind: 'bill', grn: d })} className="rounded-lg border border-gray-700 px-3 py-1 text-xs text-gray-200 hover:text-white">Bill it</button>}
                 </span>
               </div>
             ))}
@@ -181,8 +193,8 @@ export default function SupplierAccount({ supplierId, currency, business, branch
                   <td className="hidden px-3 py-2 text-right text-gray-400 md:table-cell">{money(b.paid, currency)}</td>
                   <td className="px-3 py-2 text-right"><span className={`rounded-full px-2 py-0.5 text-xs ${STATE[b.state].cls}`}>{b.state === 'paid' || b.state === 'void' ? STATE[b.state].label : money(b.due, currency)}</span></td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {b.due > 0 && <button onClick={() => setForm({ kind: 'pay', bill: b })} className="rounded-lg px-2 py-1 text-xs text-swift-text hover:bg-gray-800">Pay</button>}
-                    {b.status !== 'void' && b.paid === 0 && <button onClick={() => voidIt('bills', b.id, b.ref)} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-red-400">Void</button>}
+                    {canPay && b.due > 0 && <button onClick={() => setForm({ kind: 'pay', bill: b })} className="rounded-lg px-2 py-1 text-xs text-swift-text hover:bg-gray-800">Pay</button>}
+                    {canPay && b.status !== 'void' && b.paid === 0 && <button onClick={() => voidIt('bills', b.id, b.ref)} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-red-400">Void</button>}
                   </td>
                 </tr>
               ))}
@@ -218,7 +230,7 @@ export default function SupplierAccount({ supplierId, currency, business, branch
                   <td className="px-3 py-2 text-gray-400">{x.bill_id ? acc.bills.find((b) => b.id === x.bill_id)?.ref ?? 'A bill' : 'On account'}
                     {x.voided_at ? <div className="text-xs text-red-400">Voided{x.void_reason ? `: ${x.void_reason}` : ''}</div> : null}</td>
                   <td className="px-3 py-2 text-right text-gray-200">{money(x.amount, currency)}</td>
-                  <td className="px-3 py-2 text-right">{!x.voided_at && <button onClick={() => voidIt('payments', x.id, 'this payment')} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-red-400">Void</button>}</td>
+                  <td className="px-3 py-2 text-right">{canPay && !x.voided_at && <button onClick={() => voidIt('payments', x.id, 'this payment')} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-red-400">Void</button>}</td>
                 </tr>
               ))}
               {!acc.payments.length && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">No payments yet.</td></tr>}
@@ -245,10 +257,10 @@ export default function SupplierAccount({ supplierId, currency, business, branch
       </div>
       <p className="text-xs text-gray-500">A payment recorded here is not an expense and does not come out of a till drawer. Pay a supplier from a drawer as a pay-out, or record it here — not both.</p>
 
-      {form?.kind === 'bill' && <BillForm supplierId={supplierId} grn={form.grn} currency={currency} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
-      {form?.kind === 'pay' && <PayForm supplierId={supplierId} bills={acc.bills.filter((b) => b.due > 0)} bill={form.bill} currency={currency}
+      {form?.kind === 'bill' && <BillForm client={client} supplierId={supplierId} grn={form.grn} currency={currency} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
+      {form?.kind === 'pay' && <PayForm client={client} supplierId={supplierId} bills={acc.bills.filter((b) => b.due > 0)} bill={form.bill} currency={currency}
         onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
-      {form?.kind === 'return' && <ReturnForm supplierId={supplierId} branches={branches} currency={currency} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
+      {form?.kind === 'return' && <ReturnForm client={client} supplierId={supplierId} branches={branches} currency={currency} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
     </div>
   );
 }
@@ -280,12 +292,12 @@ const field = (label: string, el: React.ReactNode) => (
   <label className="block"><span className="mb-1 block text-xs font-medium text-gray-400">{label}</span>{el}</label>
 );
 
-function BillForm({ supplierId, grn, currency, onClose, onDone }: { supplierId: string; grn?: Delivery; currency: string; onClose: () => void; onDone: () => void }) {
+function BillForm({ client, supplierId, grn, currency, onClose, onDone }: { client: SupplierClient; supplierId: string; grn?: Delivery; currency: string; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({ invoice_number: '', amount: grn ? String(grn.value || '') : '', bill_date: new Date().toISOString().slice(0, 10), terms_days: '30', note: '' });
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const save = async () => {
     setBusy(true); setError('');
-    try { await api.post('/api/payables/bills', { supplier_id: supplierId, grn_id: grn?.id, ...f }); onDone(); }
+    try { await client.post('/api/payables/bills', { supplier_id: supplierId, grn_id: grn?.id, ...f }); onDone(); }
     catch (e) { setError(errText(e, 'Could not save the bill.')); } finally { setBusy(false); }
   };
   return (
@@ -305,7 +317,7 @@ function BillForm({ supplierId, grn, currency, onClose, onDone }: { supplierId: 
   );
 }
 
-function PayForm({ supplierId, bills, bill, currency, onClose, onDone }: { supplierId: string; bills: Bill[]; bill?: Bill; currency: string; onClose: () => void; onDone: () => void }) {
+function PayForm({ client, supplierId, bills, bill, currency, onClose, onDone }: { client: SupplierClient; supplierId: string; bills: Bill[]; bill?: Bill; currency: string; onClose: () => void; onDone: () => void }) {
   // Oldest bill first — the one a supplier expects paid first.
   const ordered = useMemo(() => [...bills].sort((a, b) => (a.due_date || a.bill_date).localeCompare(b.due_date || b.bill_date)), [bills]);
   const first = bill ?? ordered[0];
@@ -314,7 +326,7 @@ function PayForm({ supplierId, bills, bill, currency, onClose, onDone }: { suppl
   const chosen = bills.find((b) => b.id === f.bill_id);
   const save = async () => {
     setBusy(true); setError('');
-    try { await api.post('/api/payables/payments', { supplier_id: supplierId, ...f, bill_id: f.bill_id || null }); onDone(); }
+    try { await client.post('/api/payables/payments', { supplier_id: supplierId, ...f, bill_id: f.bill_id || null }); onDone(); }
     catch (e) { setError(errText(e, 'Could not record the payment.')); } finally { setBusy(false); }
   };
   return (
@@ -343,7 +355,7 @@ function PayForm({ supplierId, bills, bill, currency, onClose, onDone }: { suppl
 
 interface Pick { kind: 'product' | 'ingredient'; id: string; name: string; held: number | null; cost: number | null; unit: string | null }
 
-function ReturnForm({ supplierId, branches, currency, onClose, onDone }: { supplierId: string; branches: { id: string; name: string }[]; currency: string; onClose: () => void; onDone: () => void }) {
+function ReturnForm({ client, supplierId, branches, currency, onClose, onDone }: { client: SupplierClient; supplierId: string; branches: { id: string; name: string }[]; currency: string; onClose: () => void; onDone: () => void }) {
   const [branchId, setBranchId] = useState(branches[0]?.id ?? '');
   const [items, setItems] = useState<Pick[]>([]);
   const [lines, setLines] = useState<Array<Pick & { qty: string; costTyped: string }>>([]);
@@ -353,8 +365,8 @@ function ReturnForm({ supplierId, branches, currency, onClose, onDone }: { suppl
   useEffect(() => {
     if (!branchId) return;
     Promise.all([
-      api.get<any[]>(`/api/inventory?branch_id=${branchId}`).catch(() => []),
-      api.get<any[]>(`/api/stock/ingredients?status=active&branch_id=${branchId}`).catch(() => []),
+      client.get<any[]>(`/api/inventory?branch_id=${branchId}`).catch(() => []),
+      client.get<any[]>(`/api/stock/ingredients?status=active&branch_id=${branchId}`).catch(() => []),
     ]).then(([inv, ing]) => setItems([
       ...(inv ?? []).filter((r) => r.products?.track_stock).map((r) => ({ kind: 'product' as const, id: r.product_id, name: r.products?.name ?? 'Item',
         held: r.quantity === null ? null : Number(r.quantity), cost: null, unit: null })),
@@ -368,7 +380,7 @@ function ReturnForm({ supplierId, branches, currency, onClose, onDone }: { suppl
   const save = async () => {
     setBusy(true); setError('');
     try {
-      await api.post('/api/payables/returns', { supplier_id: supplierId, branch_id: branchId, reason,
+      await client.post('/api/payables/returns', { supplier_id: supplierId, branch_id: branchId, reason,
         items: lines.map((l) => ({ kind: l.kind, id: l.id, quantity: l.qty, unit_cost: l.costTyped === '' ? undefined : l.costTyped })) });
       onDone();
     } catch (e) { setError(errText(e, 'Could not record the return.')); } finally { setBusy(false); }

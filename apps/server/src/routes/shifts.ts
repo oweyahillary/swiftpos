@@ -20,7 +20,7 @@ import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { MONEY_MOVEMENT_MANAGER_ONLY } from '../lib/posFeatures';   // A453
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
-import { confirmerRows, confirmerByPin, SELF_APPROVAL_BODY } from '../lib/confirmerLookup';
+import { confirmerRows, confirmerByPin, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from '../lib/confirmerLookup';
 import { payoutApprover } from '../lib/payoutApproval';   // 0.6.37 (A388)
 import { buildBranchReport, type BranchOrder, type BranchShift, type TillName } from '../lib/branchReport';
 import { orderTax } from '../lib/orderTax';
@@ -28,6 +28,7 @@ import { buildShiftZReport, shiftByCashier } from '../lib/shiftZReport';
 import { cashierSeesShiftSales } from '../lib/cashierShiftSales';   // A416
 import { businessDateEAT } from '../lib/businessDay';
 import { getDayCutoff } from '../lib/dayCutoff';
+import { notifyOwner, kes } from '../lib/ownerNotice';   // A522
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -53,7 +54,8 @@ function seesDrawerFigures(req: Request): boolean {
   return !req.isTill && can(req, 'reports.shifts', 'shifts.confirm');
 }
 const DRAWER_FIGURES = ['expected_cash', 'expected_cash_live', 'expected_cash_computed', 'cash_variance', 'closing_float',
-  'declared_methods', 'expected_methods', 'confirmed_methods', 'denomination_breakdown', 'confirm_reasons'] as const;
+  'declared_methods', 'expected_methods', 'confirmed_methods', 'denomination_breakdown', 'confirm_reasons',
+  'till_counted_cash', 'till_confirmed_methods'] as const;   // A522: the till's own count after a web close is a figure too
 const withoutFigures = (row: Record<string, any>): Record<string, any> => {
   const out = { ...row };
   for (const k of DRAWER_FIGURES) delete out[k];
@@ -466,7 +468,8 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   // Fetch the shift (must belong to this business and be open).
   // P1-3: three different answers, never one 404 for all of them — the till marks its close synced on 2xx or 409
   // ALREADY_CLOSED only, so a database hiccup (5xx) is retried and a shift that is really gone (404) is flagged.
-  const found = await openShiftOr409(req, res, id);
+  // A522: the till's own count of a drawer the web closed first is kept (recordTillCount), never dropped with the 409.
+  const found = await openShiftOr409(req, res, id, (closedShift) => recordTillCount(req, closedShift));
   if (!found) return;
   const shift = found;
   if (notThisBranch(req, res, shift)) return;   // A494
@@ -502,17 +505,28 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   // manager voids its items (POST /api/orders/:id/kitchen-void). A till's own close is checked on the till (its ledger),
   // and its replay is never refused for it (refusing would make the till retry forever).
   // A461: unless the client has 'pay_later_tabs' (eat now, pay later — the order stays open until it is charged).
+  // A522 (owner, 2026-10-17: "nothing may wait on a till that is switched off"): the owner, or a holder of shifts.close_day,
+  // may go ahead from the web with `ack_unpaid` — the till holding those orders may be off. The close is noted with them;
+  // they stay open (charged or voided on the till when it is back). Everyone else is refused as before.
+  let unpaidNote: string | null = null;
   if (!tillReplay && !(await businessPosFeatures(req.businessId!)).pay_later_tabs) {
     const { data: unpaid } = await supabase.from('orders').select('order_number')
       .eq('business_id', req.businessId).eq('shift_id', id).eq('status', 'open').limit(20);
     if ((unpaid ?? []).length) {
       const list = (unpaid ?? []).slice(0, 4).map((o: { order_number: string }) => `#${o.order_number}`).join(', ');
-      res.status(409).json({
-        error: `${unpaid!.length} order${unpaid!.length === 1 ? ' was' : 's were'} sent to the kitchen and not paid (${list}). ` +
-               'Charge them, or have a manager void them, before ending the shift.',
-        code: 'UNPAID_KITCHEN_ORDERS',
-      });
-      return;
+      const mayOverride = !req.isTill && (req.isOwner === true || can(req, 'shifts.close_day'));
+      if (mayOverride && req.body?.ack_unpaid === true) {
+        unpaidNote = `Closed on the web with ${unpaid!.length} unpaid kitchen order${unpaid!.length === 1 ? '' : 's'} still open (${list}) — they stay open on the till.`;
+      } else {
+        res.status(409).json({
+          error: `${unpaid!.length} order${unpaid!.length === 1 ? ' was' : 's were'} sent to the kitchen and not paid (${list}). ` +
+                 'Charge them, or have a manager void them, before ending the shift.',
+          code: 'UNPAID_KITCHEN_ORDERS',
+          orders: (unpaid ?? []).map((o: { order_number: string }) => o.order_number),
+          may_override: mayOverride,
+        });
+        return;
+      }
     }
   }
 
@@ -591,6 +605,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     });
     return;
   }
+  if (unpaidNote) closeNotes = [closeNotes, unpaidNote].filter(Boolean).join('\n');   // A522
 
   const { data: closed, error: closeErr } = await supabase
     .from('shifts')
@@ -686,6 +701,7 @@ router.post('/confirmer', async (req, res) => {
   // A494: someone at the caller's branch, never the caller themselves.
   const who = await confirmerByPin(req.businessId!, pin, req.body?.authorizer_id || undefined, { branchId: req.branchId ?? null, actorId: req.userId ?? null });
   if (who === 'self') { res.status(403).json(SELF_APPROVAL_BODY); return; }   // A505: their own PIN — no strike
+  if (who === 'none') { res.status(400).json(NO_CONFIRMER_BODY); return; }   // A518: nobody here holds a PIN — no strike
   if (!who) {
     notePinFailure(key);
     res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
@@ -707,7 +723,13 @@ async function confirmShiftRoute(req: Request, res: Response): Promise<void> {
   if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
   if (notThisBranch(req, res, shift)) return;   // A494
   if (shift.status === 'open') { res.status(409).json({ error: 'The cashier has not closed this shift yet.', code: 'SHIFT_OPEN' }); return; }
-  if (shift.confirmed_at) { res.status(409).json({ error: 'This shift is already confirmed.', code: 'ALREADY_CONFIRMED' }); return; }
+  if (shift.confirmed_at) {
+    // A522: the till's own confirmation, made while it was off, is kept when it differs — never dropped with the 409.
+    let kept = false;
+    try { kept = await recordTillConfirmation(req, shift as Record<string, any>, counts); } catch (e) { console.error('[shifts] A522', (e as Error)?.message ?? e); }
+    res.status(409).json({ error: 'This shift is already confirmed.', code: 'ALREADY_CONFIRMED', ...(kept ? { till_count_recorded: true } : {}) });
+    return;
+  }
 
   let confirmer: { id: string; name: string | null } | null = null;
   let at = new Date().toISOString();
@@ -734,6 +756,7 @@ async function confirmShiftRoute(req: Request, res: Response): Promise<void> {
       { branchId: shift.branch_id ?? null, actorId: req.userId ?? null });   // A494
     // A505: the asker's own PIN — someone else must confirm; not a wrong guess (no strike towards the PIN lock).
     if (found === 'self') { res.status(403).json(SELF_APPROVAL_BODY); return; }
+    if (found === 'none') { res.status(400).json(NO_CONFIRMER_BODY); return; }   // A518: nobody at the branch holds a PIN — no strike
     confirmer = found;
     if (!confirmer) {
       notePinFailure(key);
@@ -840,15 +863,21 @@ async function shiftFloats(shiftId: string): Promise<{ floatIn: number; floatOut
  * P1-3: the shift to close, or the answer already sent — 404 NOT_FOUND only when there is no such shift in this business,
  * 409 ALREADY_CLOSED (with its status and closed_at) when it is there but not open, 5xx when the read itself failed.
  */
-async function openShiftOr409(req: Request, res: Response, id: string): Promise<Record<string, any> | null> {
+async function openShiftOr409(req: Request, res: Response, id: string,
+  onClosed?: (shift: Record<string, any>) => Promise<boolean>): Promise<Record<string, any> | null> {
   const { data: shift, error } = await supabase
     .from('shifts').select('*').eq('id', id).eq('business_id', req.businessId).maybeSingle();
   if (error) { sendError(res, error, { status: 503, message: 'Could not read the shift — try again' }); return null; }
   if (!shift) { res.status(404).json({ error: 'Shift not found', code: 'NOT_FOUND' }); return null; }
   if ((shift as { status?: string }).status !== 'open') {
+    // A522 (for A521): `till_count_recorded: true` when the till's own count is kept on the shift (now, or by an earlier
+    // send of the same count) — the till then knows its count was not dropped. Absent otherwise.
+    let kept = false;
+    if (onClosed) { try { kept = await onClosed(shift as Record<string, any>); } catch (e) { console.error('[shifts] A522 till count not kept:', (e as Error)?.message ?? e); } }
     res.status(409).json({
       error: 'This shift is already closed.', code: 'ALREADY_CLOSED',
       status: (shift as { status?: string }).status ?? null, closed_at: (shift as { closed_at?: string | null }).closed_at ?? null,
+      ...(kept ? { till_count_recorded: true } : {}),
     });
     return null;
   }
@@ -862,6 +891,65 @@ async function alreadyClosed(req: Request, res: Response, id: string): Promise<v
   if (!data) { res.status(404).json({ error: 'Shift not found', code: 'NOT_FOUND' }); return; }
   res.status(409).json({ error: 'This shift is already closed.', code: 'ALREADY_CLOSED',
     status: (data as { status?: string }).status ?? null, closed_at: (data as { closed_at?: string | null }).closed_at ?? null });
+}
+
+/**
+ * A522 (owner, 2026-10-17: "nothing may wait on a till that is switched off"): the web closed (or force-closed) a drawer
+ * while its till was off; the till, back, sends its own count of it — and was answered 409 ALREADY_CLOSED, its count
+ * dropped. It is kept now: shifts.till_counted_cash / till_counted_at (migration 148), a line in the notes, and the owner
+ * is told ("T2 counted KES X after the web closed the drawer"). Only the till's own replay (desktop, the same till), once
+ * per drawer, and only when it differs from what the close recorded (the till's own earlier close is not news). The 409
+ * still follows — the till marks its close synced on it. Before migration 148 the count goes into the notes only.
+ */
+async function recordTillCount(req: Request, shift: Record<string, any>): Promise<boolean> {
+  if (req.surface !== 'desktop') return false;
+  const count = Number(req.body?.closing_float);
+  if (!Number.isFinite(count) || count < 0) return false;
+  if (terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') !== terminalKeyFromRequest(req)) return false;
+  if (shift.till_counted_cash !== null && shift.till_counted_cash !== undefined) {   // kept already (once per drawer)
+    return Math.round(Number(shift.till_counted_cash) * 100) === Math.round(count * 100);
+  }
+  const recorded = shift.closing_float === null || shift.closing_float === undefined ? null : Number(shift.closing_float);
+  if (recorded !== null && Math.round(recorded * 100) === Math.round(count * 100)) return false;   // the same count — its own close
+  const at = cleanCloseTime(req.body?.closed_at, shift.opened_at ?? null);
+  const till = shift.terminal_code || 'The till';
+  const expected = shift.expected_cash === null || shift.expected_cash === undefined ? null : Number(shift.expected_cash);
+  const note = `${till} counted ${count} at ${at.slice(0, 16).replace('T', ' ')} UTC after the drawer was closed on the web` +
+    `${recorded === null ? ' (closed uncounted)' : ` (the web count was ${recorded})`}${expected === null ? '' : ` — expected ${expected}`}.`;
+  const notes = [shift.notes, note].filter(Boolean).join('\n');
+  let { error } = await supabase.from('shifts').update({ till_counted_cash: count, till_counted_at: at, notes })
+    .eq('id', shift.id).eq('business_id', req.businessId).is('till_counted_cash', null);
+  if (error && /till_counted/.test(error.message ?? '')) {   // before migration 148
+    ({ error } = await supabase.from('shifts').update({ notes }).eq('id', shift.id).eq('business_id', req.businessId));
+  }
+  if (error) { console.error('[shifts] A522 the till\'s count was not kept:', error.message); return false; }
+  await notifyOwner(req.businessId!, shift.branch_id ?? null, 'till_count_after_close',
+    `${till} counted ${kes(count)} after the web closed the drawer`,
+    `${till} counted ${kes(count)} for shift ${String(shift.id).slice(0, 8)}, which was ${recorded === null ? 'force-closed uncounted' : `closed on the web with ${kes(recorded)}`}` +
+    `${expected === null ? '' : `; it expected ${kes(expected)} (a difference of ${kes(count - expected)} by the till's count)`}. Check the drawer and confirm it.`);
+  return true;
+}
+
+/**
+ * A522: the same for a confirmation — a manager confirmed the shift on the till while it was off, and the web confirmed it
+ * first; the till's replay was answered 409 ALREADY_CONFIRMED and its counts dropped. They are kept in
+ * shifts.till_confirmed_methods (migration 148) when they differ, and the owner is told.
+ */
+async function recordTillConfirmation(req: Request, shift: Record<string, any>, counts: MethodMap): Promise<boolean> {
+  if (req.surface !== 'desktop' || typeof req.body?.confirmed_by !== 'string') return false;
+  if (terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') !== terminalKeyFromRequest(req)) return false;
+  const sameAs = (a: MethodMap) => Object.keys({ ...a, ...counts }).every((m) => Math.round(Number(a[m] ?? 0) * 100) === Math.round(Number(counts[m] ?? 0) * 100));
+  if (shift.till_confirmed_methods) return sameAs(methodMap(shift.till_confirmed_methods) ?? {});   // kept already
+  if (sameAs(methodMap(shift.confirmed_methods) ?? {})) return false;   // the same counts — nothing to keep
+  const { error } = await supabase.from('shifts').update({ till_confirmed_methods: counts })
+    .eq('id', shift.id).eq('business_id', req.businessId).is('till_confirmed_methods', null);
+  if (error) { console.error('[shifts] A522 the till\'s confirmation was not kept:', error.message); return false; }
+  const till = shift.terminal_code || 'The till';
+  const line = Object.entries(counts).map(([m, v]) => `${m} ${kes(v)}`).join(', ');
+  await notifyOwner(req.businessId!, shift.branch_id ?? null, 'till_confirm_after_close',
+    `${till}: a manager confirmed different counts after the web did`,
+    `For shift ${String(shift.id).slice(0, 8)}, a manager on ${till} counted ${line}; the web confirmation stands. Check which is right.`);
+  return true;
 }
 
 /** How far ahead of the cloud's clock a till's close time may be (its clock may run a little fast). */
@@ -1450,9 +1538,23 @@ router.get('/', async (req, res) => {
 
   // A494: a drawer's figures only to someone who may see them (seesDrawerFigures) — and their own drawer to its cashier,
   // as before; everyone else gets the drawers without expected cash, the difference or the declared / counted amounts.
+  // A522: when each drawer's till was last heard from — the web warns before it closes a drawer whose till has been
+  // silent (its sales since are not in the close; it applies the close when it next connects). Best-effort.
+  const tillSeen = new Map<string, { last_sync_at: string | null; retired_at: string | null }>();
+  const tillIds = [...new Set(shifts.map(s => s.device_id).filter((d): d is string => typeof d === 'string' && !!d))];
+  if (tillIds.length) {
+    const { data: devs } = await supabase.from('user_devices').select('device_id, last_sync_at, retired_at')
+      .eq('business_id', req.businessId).in('device_id', tillIds.slice(0, 200));
+    for (const d of (devs ?? []) as Array<{ device_id: string; last_sync_at: string | null; retired_at: string | null }>) {
+      tillSeen.set(d.device_id, { last_sync_at: d.last_sync_at ?? null, retired_at: d.retired_at ?? null });
+    }
+  }
+
   const figures = seesDrawerFigures(req);
   const enriched = shifts.map(s => (figures || ownDrawer(req, s) ? (x: any) => x : withoutFigures)({
     ...s,
+    till_last_sync_at: s.device_id ? (tillSeen.get(s.device_id)?.last_sync_at ?? null) : null,
+    till_retired: s.device_id ? !!tillSeen.get(s.device_id)?.retired_at : false,
     cashier_name: nameMap[s.cashier_id] ?? 'Unknown',
     confirmer_name: s.confirmed_by ? (nameMap[s.confirmed_by] ?? null) : null,
     // A365: closed under the new rule (declared every method) and not yet confirmed by a manager.

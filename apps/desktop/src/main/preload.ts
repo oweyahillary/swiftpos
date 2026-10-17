@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     findServers: ()            => ipcRenderer.invoke('install:findServers'),
     requestJoin: (url: string, rejoin?: boolean) => ipcRenderer.invoke('install:requestJoin', { url, rejoin: !!rejoin }),
     joinStatus:  ()            => ipcRenderer.invoke('install:joinStatus'),
+    // A519: is this terminal code free at the branch (the cloud, else the branch server's answer)? And the next free one.
+    checkTerminalCode: (code: string, branch_id?: string) => ipcRenderer.invoke('install:checkTerminalCode', { code, branch_id }),
   },
   serverJoin: {
     requests: ()                            => ipcRenderer.invoke('node:joinRequests'),
@@ -63,6 +65,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     notePicks: () => ipcRenderer.invoke('pos:notePicks'),   // A367
     features: () => ipcRenderer.invoke('pos:features'),     // 0.6.27
     stockCountFreeze: () => ipcRenderer.invoke('pos:stockCountFreeze'),   // A394
+    approveFrozenSale: (pin: string, product_id: string) => ipcRenderer.invoke('pos:approveFrozenSale', { pin, product_id }),   // A521
     history: () => ipcRenderer.invoke('pos:history'),       // 0.6.27
     reversalRules: () => ipcRenderer.invoke('pos:reversalRules'),   // 0.6.30
     help: () => ipcRenderer.invoke('pos:help'),                     // 0.6.35 (A384)
@@ -120,13 +123,17 @@ contextBridge.exposeInMainWorld('swiftpos', {
     // A452: confirm another till's shift from the branch server; close every till's day at once.
     confirmShift: (device_id: string, shift_id: string, counts: Record<string, number>, reasons?: Record<string, string>) =>
       ipcRenderer.invoke('branchClose:confirmShift', { device_id, shift_id, counts, reasons }),
-    closeBranch: (notes?: string, totalsConfirmed?: boolean) => ipcRenderer.invoke('branchClose:closeBranch', { notes, totals_confirmed: totalsConfirmed === true }),   // A458
+    // A458; A521: withoutTills — the tills with money the manager ticked to close the branch without.
+    closeBranch: (notes?: string, totalsConfirmed?: boolean, withoutTills?: string[]) =>
+      ipcRenderer.invoke('branchClose:closeBranch', { notes, totals_confirmed: totalsConfirmed === true, ...(withoutTills?.length ? { without_tills: withoutTills } : {}) }),
     // A465: a cash in / out or expense on any running shift of the branch (the till records it); withdraw one not yet taken.
     shiftMoney: (req: { device_id: string; shift_id: string; kind: 'float_in' | 'float_out' | 'expense'; amount: number; reason?: string;
       description?: string; expense_category_id?: string; category_name?: string; payment_method?: string }) => ipcRenderer.invoke('branchClose:shiftMoney', req),
     cancelShiftMoney: (instruction_id: number) => ipcRenderer.invoke('branchClose:cancelShiftMoney', { instruction_id }),
-    // F4: a till gone for good leaves the Close Branch list.
+    // F4: a till gone for good leaves the Close Branch list. A521: "Revoke this till" — its device key goes too.
     forgetTill: (device_id: string) => ipcRenderer.invoke('branchClose:forgetTill', { device_id }),
+    // A521: "Hide from Close Branch" — until it next reports; its key is kept.
+    hideTill: (device_id: string) => ipcRenderer.invoke('branchClose:hideTill', { device_id }),
   },
   // A197: stock transfers between branches (online licence).
   transfers: {
@@ -183,6 +190,9 @@ contextBridge.exposeInMainWorld('swiftpos', {
     query:        (sql: string)   => ipcRenderer.invoke('tech:query', { sql }),
     testConnection: ()            => ipcRenderer.invoke('tech:testConnection'),
     logTail:      (lines?: number)=> ipcRenderer.invoke('tech:logTail', { lines }),
+    // A519: the last 24 h of the log (secrets removed) to support, or to a file when the cloud cannot be reached.
+    sendLogs:     ()               => ipcRenderer.invoke('tech:sendLogs'),
+    saveLog:      ()               => ipcRenderer.invoke('tech:saveLog'),
     backupNow:    ()              => ipcRenderer.invoke('tech:backupNow'),
     maintenance:  ()              => ipcRenderer.invoke('tech:maintenance'),
     // A516: the graphics mode (low-memory mode) — auto / on / off, at the next start.
@@ -204,14 +214,12 @@ contextBridge.exposeInMainWorld('swiftpos', {
   },
 
   // A306: auto-update UX. getStatus for the initial read; onStatus is the push the banner
-  // subscribes to; installNow applies a downloaded update (manager/tech-gated at the call site).
+  // subscribes to; installNow applies a downloaded update (A519: main allows a back-office person or a technician).
   update: {
     getStatus:  () => ipcRenderer.invoke('update:getStatus'),
     // A496: the status with its reason, and the last update log lines (Tech page).
     getDiagnostics: () => ipcRenderer.invoke('update:getDiagnostics'),
     installNow: () => ipcRenderer.invoke('update:installNow'),
-    // A490: restart for the update with someone's PIN — they are identified (shifts.close_day), the session stays.
-    installWithPin: (pin: string) => ipcRenderer.invoke('update:installWithPin', { pin }),
     // Push, not poll: main tells the screen when the update state changes.
     // Returns its own unsubscribe so a React effect can clean up.
     onStatus:   (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => {
@@ -325,6 +333,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     createStaff:    (payload: any)                       => ipcRenderer.invoke('manage:createStaff', payload),
     setStaffPin:    (id: string, pin: string)            => ipcRenderer.invoke('manage:setStaffPin', { id, pin }),   // A448
     changeStates:   ()                                   => ipcRenderer.invoke('manage:changeStates'),   // A448
+    dismissRefusedChanges: ()                            => ipcRenderer.invoke('manage:dismissRefusedChanges'),   // A520
     updateStaff:    (id: string, patch: any)             => ipcRenderer.invoke('manage:updateStaff', { id, patch }),
     getReceiptText: ()                                   => ipcRenderer.invoke('manage:getReceiptText'),
     setReceiptText: (header: string, footer: string)     => ipcRenderer.invoke('manage:setReceiptText', { header, footer }),
@@ -420,6 +429,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     setSurface: (surface: 'manager' | 'pos' | null) => ipcRenderer.invoke('idle:setSurface', surface),
     // The user PINned back in.
     clear:      ()                                  => ipcRenderer.invoke('idle:clear'),
+    // A517: may the manager screens be fetched in the background now (start-up over, memory to spare)?
+    mayPreload: ()                                  => ipcRenderer.invoke('idle:mayPreload'),
     // Hold the lock off while work is in flight and nobody is at the screen —
     // an STK push awaiting its callback, a print job spooling. A curtain
     // dropping over a payment the customer is completing on their phone would

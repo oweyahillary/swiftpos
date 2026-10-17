@@ -91,7 +91,8 @@ export function createJoinRequest(body: any, ip: string, now: number = Date.now(
   const name = clean(body?.name, 60) || 'New till';
   if (!device_id) return { ok: false, status: 400, error: 'device_id required' };
   if (opts.holdsKey?.(device_id)) {
-    return { ok: false, status: 409, error: 'This till is already joined to this branch server. To join it again, forget it at the server first (Close Branch → Forget this till).' };
+    // A521: the button is "Revoke this till" now (it was "Forget this till"; "Hide from Close Branch" keeps the key).
+    return { ok: false, status: 409, error: 'This till is already joined to this branch server. To join it again, revoke it at the server first (Close Branch → Show tills → Revoke this till), then join it from here.' };
   }
   for (const [id, r] of requests) if ((r.ip === ip || r.device_id === device_id) && r.status === 'pending') requests.delete(id);
   if ([...requests.values()].filter((r) => r.status !== 'denied').length >= MAX_PENDING) {

@@ -34,12 +34,14 @@ import { ownHistoryOnly, holds } from '../lib/historyScope';   // A490
 import { cleanDeliveryFee, customerDeliveryFee, isFreeDelivery } from '../lib/delivery';
 import { payRider, returnRiderPayout } from '../lib/riderPayout';
 import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
-import { confirmerByPin, confirmerRows, SELF_APPROVAL_BODY } from '../lib/confirmerLookup';
+import { confirmerByPin, confirmerRows, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from '../lib/confirmerLookup';
 import { businessReversalRules } from '../lib/reversalSettings';
 import { voidWindowOpen, windowLabel } from '../lib/reversalRules';
 import { frozenAtBranch } from '../lib/stockTakeAccess';
 import { applyOffers, cleanOffer, type AppliedOffer, type OfferLine } from '../lib/offers';   // A445
+import { promotionOffersByIds } from '../lib/promotionOffers';   // A518
 import { chunkIn } from '../lib/pgQuery';
+import { settleLateRows } from '../lib/lateRows';   // A522
 import { withoutCosts } from '../lib/costAccess';   // A494
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 
@@ -198,7 +200,7 @@ async function recordedPerson(businessId: string, userId: string | null | undefi
  * the one PIN limiter (lib/pinAttempts.ts): a caller's wrong PINs lock their PIN entry for a while, the right one too. The
  * approver is never the person asking (a non-owner; the owner self-authorises before this is reached).
  * A514: the business-wide supervisor PIN is retired — it is a wrong PIN like any other (INVALID_APPROVER_PIN, counted); a
- * branch where nobody may approve with a PIN answers NO_OVERRIDE_CONFIGURED (give someone an approval PIN in Staff).
+ * branch where nobody may approve with a PIN answers NO_OVERRIDE_CONFIGURED (give someone who may approve a PIN in Staff - A518: their sign-in PIN already approves).
  */
 async function approverByPin(req: any, authorizerId: string | undefined, pin: string | undefined, action: ApproveAction, branchId: string | null):
   Promise<{ userId: string | null } | { status: number; body: Record<string, string> }> {
@@ -248,7 +250,7 @@ const APPROVER_PIN_REFUSED = {
   code:  'INVALID_APPROVER_PIN',
 } as const;
 const NO_APPROVER = {
-  error: 'Nobody at this branch can approve this yet. The owner or a manager gives someone who may approve an approval PIN in Staff.',
+  error: 'Nobody at this branch can approve this yet. The owner or a manager gives someone who may approve a PIN in Staff.',
   code:  'NO_OVERRIDE_CONFIGURED',
 } as const;
 
@@ -292,6 +294,9 @@ export async function checkOfferClaim(businessId: string, branchId: string | nul
   if (!(claim.amount > 0) || !claim.ids.length) return { offerDiscount: 0, offers: [] };
   const { data } = await supabase.from('offers').select(OFFER_COLS).eq('business_id', businessId).in('id', claim.ids);
   const offers = ((data ?? []) as any[]).map((r) => cleanOffer({ ...r, active: true })).flatMap((c) => (c.ok ? [c.offer] : []));
+  // A518: a promotion is charged as an offer (lib/promotionOffers.ts) — the ids not found among the offers may be promotions.
+  const found = new Set(offers.map((o) => o.id));
+  offers.push(...await promotionOffersByIds(businessId, claim.ids.filter((id) => !found.has(id))));
   const r = applyOffers(lines, offers, { ignoreTiming: true, branchId });
   const offerDiscount = round2(Math.min(claim.amount, r.total, subtotal));
   if (!(offerDiscount > 0)) return { offerDiscount: 0, offers: [] };
@@ -860,6 +865,9 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     // The client's supplied shift_id wins when present (it already reflects the
     // terminal's session from /shifts/current); otherwise resolve by terminal.
     let resolvedShiftId: string | null = shift_id ?? null;
+    // A522: a till's sale into a drawer already closed (on the web, while the till was off) — its figures are put right
+    // after the sale is written (lib/lateRows.ts), never left frozen without it.
+    let drawerClosedBeforeSale = false;
     // A338: a sale whose drawer has not reached the cloud yet is not a fault — the till pushes the drawer first and
     // will retry. Say so with a code the till understands (it keeps the sale pending instead of giving up after 5
     // tries), rather than letting the orders.shift_id foreign key fail as a 500.
@@ -882,6 +890,7 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         res.status(409).json({ code: 'SHIFT_CLOSED', error: 'This shift was closed — open a new shift to keep selling.' });
         return;
       }
+      drawerClosedBeforeSale = (drawer as { status?: string }).status !== 'open';
     }
     if (!resolvedShiftId) {
       const tkey = terminalKeyFromRequest(req);
@@ -1135,7 +1144,14 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         quantity:  Number(i.quantity) || 0,
         variants:  i.selectedVariants ?? [],
       })),
+      // A522: when the till rang it (an offline sale) — an item a stock count posted since then is not taken off again.
+      soldAt: req.surface === 'desktop' ? (req.body?.created_at || req.body?.client_created_at || null) : null,
     });
+
+    // A522: the sale landed in a drawer closed while the till was off — its expected cash and difference are recomputed.
+    if (drawerClosedBeforeSale && resolvedShiftId) {
+      await settleLateRows(req.businessId!, [resolvedShiftId], `sale #${order_number}`);
+    }
 
 
     // 7. Kitchen ticket
@@ -2150,6 +2166,7 @@ router.post('/:id/kitchen-void', async (req, res) => {
           { branchId: order.branch_id ?? null, actorId: req.userId ?? null });   // A494
         // A505: the asker's own PIN — someone else must approve; not a wrong guess (no strike towards the PIN lock).
         if (found === 'self') { res.status(403).json(SELF_APPROVAL_BODY); return; }
+        if (found === 'none') { res.status(400).json(NO_CONFIRMER_BODY); return; }   // A518: nobody at the branch holds a PIN — no strike
         approver = found;
         if (!approver) {
           notePinFailure(key);

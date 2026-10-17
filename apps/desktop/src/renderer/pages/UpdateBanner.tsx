@@ -6,11 +6,13 @@ import { posApi } from '../lib/posApi';
  * never silently vanishes-and-reappears mid-service. Shows "Downloading…" while it fetches and
  * "Update ready" once downloaded (the update installs automatically on the next normal close).
  *
- * "Restart & update now" is gated to a PIN (owner decision): a cashier can't close the till mid-day. A490: the PIN's
- * holder must hold shifts.close_day (the owner's role always — it used to be refused here: the role-name list had no
- * owner), and the PIN is only IDENTIFIED in the main process (update:installWithPin) — the person signed in stays signed
- * in. (It went through auth:verifyPin, which signed the PIN's holder in over the cashier's session.) On a good PIN the
- * update applies with the installer progress VISIBLE and relaunches — no broken-shortcut gap.
+ * A519 (owner, 2026-10-16, a manager on 1.0.15 asked for a PIN: "its either we make it possible to restart without the
+ * pin or we remove the ability totally … not needed pin confirmation and you are the manager"): no PIN box any more.
+ * The person signed in who is back office (manager, supervisor, owner — lib/access backOffice, the A499 rule) sees ONE
+ * button, "Restart & update now", which installs at once (update:installNow — main checks the same rule, and uses A509's
+ * updater task where present); the installer progress is VISIBLE and ZapTill relaunches. Anyone else (a cashier, a
+ * waiter) sees no button: the bar only says the update installs when ZapTill is closed, or by itself when the till is
+ * idle (A508). Nothing is switched: the person signed in stays signed in (A490). A restart closes no shift and no day.
  *
  * Gentle reminder (owner decision): "Later" only hides it for a while; it re-surfaces after
  * REMIND_AFTER_MS so a ready update isn't forgotten.
@@ -22,15 +24,17 @@ import { posApi } from '../lib/posApi';
 
 const REMIND_AFTER_MS = 2 * 60 * 60 * 1000; // re-surface a dismissed "ready" banner after 2h
 
-interface Props { branchId: string | null; }
+interface Props {
+  branchId: string | null;
+  /** A519: the signed-in person is back office (lib/access backOffice) — the one-tap restart. Default: no button. */
+  canRestart?: boolean;
+}
 
 type Status = { state: string; version: string | null; percent: number | null };
 
-export default function UpdateBanner({ branchId }: Props) {
+export default function UpdateBanner({ canRestart = false }: Props) {
   const [status, setStatus] = useState<Status>({ state: 'idle', version: null, percent: null });
   const [dismissed, setDismissed] = useState(false);
-  const [pinMode, setPinMode] = useState(false);
-  const [pin, setPin] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -66,17 +70,16 @@ export default function UpdateBanner({ branchId }: Props) {
 
   if (!shown) return null;
 
+  // A519: one tap, no PIN — main allows it only for a back-office person (or a technician).
   const restartNow = async () => {
     setMsg(''); setBusy(true);
     try {
-      if (!branchId) { setMsg('No branch bound to this till.'); return; }
-      // A490: identified, never signed in — the session at the till is untouched.
-      const r = await posApi.update.installWithPin(pin.trim());   // visible installer progress + relaunch
-      if (!r.ok) { setMsg(r.message ?? (r.reason === 'wrong_pin' ? 'PIN not recognised.' : `Cannot install: ${r.reason ?? 'unknown'}`)); return; }
+      const r = await posApi.update.installNow();   // visible installer progress + relaunch
+      if (!r.ok) setMsg(r.reason === 'manager_required' ? 'Only a manager can restart the till for the update.' : `Cannot install now: ${r.reason ?? 'unknown'}`);
     } catch (e: any) {
-      setMsg(e?.message ?? 'PIN not recognised.');
+      setMsg(e?.message ?? 'Cannot install now.');
     } finally {
-      setBusy(false); setPin('');
+      setBusy(false);
     }
   };
 
@@ -92,28 +95,14 @@ export default function UpdateBanner({ branchId }: Props) {
       ) : (
         <>
           <span className="font-semibold text-green-400">Update ready</span>
-          <span className="flex-1">ZapTill {status.version ?? ''} will install automatically when you close the app.</span>
-          {!pinMode ? (
-            <>
-              <button onClick={() => { setPinMode(true); setMsg(''); }}
-                      className="bg-[#1e293b] hover:bg-[#26344b] rounded-lg px-3 py-1.5">
-                Restart &amp; update now (manager)
-              </button>
-              <button onClick={() => setDismissed(true)} className="text-gray-400 hover:text-gray-200 px-2">Later</button>
-            </>
-          ) : (
-            <>
-              <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)}
-                     placeholder="PIN (may close the day)" autoFocus
-                     className="bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-1.5 w-32" />
-              <button onClick={restartNow} disabled={busy || !pin.trim()}
-                      className="bg-action-700 hover:bg-action-600 disabled:opacity-40 rounded-lg px-3 py-1.5">
-                Confirm restart
-              </button>
-              <button onClick={() => { setPinMode(false); setPin(''); setMsg(''); }}
-                      className="text-gray-400 hover:text-gray-200 px-2">Cancel</button>
-            </>
+          <span className="flex-1">ZapTill {status.version ?? ''} installs when ZapTill is closed, or by itself when the till is idle.</span>
+          {canRestart && (
+            <button onClick={restartNow} disabled={busy} data-testid="update-restart-now"
+                    className="bg-action-700 hover:bg-action-600 disabled:opacity-40 rounded-lg px-3 py-1.5">
+              Restart &amp; update now
+            </button>
           )}
+          <button onClick={() => setDismissed(true)} className="text-gray-400 hover:text-gray-200 px-2">Later</button>
           {msg && <span className="text-amber-400">{msg}</span>}
         </>
       )}

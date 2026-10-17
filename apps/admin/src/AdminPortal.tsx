@@ -12,6 +12,8 @@ import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and
 import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
 import SignInCodeCard from "./SignInCodeCard";   // A391
 import TestDataCard from "./TestDataCard";   // A396
+import SupportLogsCard from "./SupportLogsCard";   // A519
+import TillsDaysCard from "./TillsDaysCard";   // A523
 import AdminPager, { usePageSize } from "./AdminPager";   // A475
 import { paginate } from "./lib/paginate";
 
@@ -1113,6 +1115,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     ["branches", "Branches & tills"],
     ["billing",  "Plan & billing"],
     ["features", "Features"],
+    ["tills",    "Tills & days"],   // A523: support closes a till's day or drawer for the client
     ["updates",  "Desktop updates"],
     ["account",  "Owner & account"],
     ["notes",    `Notes${notes.length ? ` (${notes.length})` : ""}`],
@@ -1709,6 +1712,10 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           )}
         </div>
       )}
+      {/* A519: the logs this client's tills sent to support (Tech page › Send logs to support) */}
+      {tab === "updates" && <SupportLogsCard clientId={client.id} req={req} />}
+      {/* A523: every till's open day and drawers — close them for the client (any admin: super admin or agent) */}
+      {tab === "tills" && <TillsDaysCard clientId={client.id} req={req} />}
 
       {/* OWNER & ACCOUNT — the owner's sign-in, and the account's status */}
       {tab === "account" && (

@@ -40,12 +40,24 @@
  */
 
 import { isNodeRole } from './deviceConfig';
-import ExcelJS from 'exceljs';
+import type ExcelTypes from 'exceljs';   // A517: types only — exceljs loads at the first export (excel() below)
 import { dialog, BrowserWindow } from 'electron';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { refundedSql, vatKeptSql, ctlKeptSql } from './orderMoney';
+
+/**
+ * A517: exceljs (with jszip, unzipper, archiver, fast-csv, pako… — about 600 files, the biggest require of a start)
+ * was loaded on every start by ipcHandlers' import of this file, for a report a manager exports now and then. It is
+ * required here, the first time a workbook is built.
+ */
+let excelMod: typeof ExcelTypes | null = null;
+function excel(): typeof ExcelTypes {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  if (!excelMod) excelMod = require('exceljs') as typeof ExcelTypes;
+  return excelMod;
+}
 
 const FONT = 'Arial';
 const MONEY = '#,##0.00;(#,##0.00);-';
@@ -343,7 +355,7 @@ export async function exportDailySalesReport(
 /** The workbook itself — separated from the save dialog (0.6.11) so a test can read what it contains. */
 export async function buildDailySalesWorkbook(
   req: DailyReportRequest,
-): Promise<{ wb: ExcelJS.Workbook; suggested: string }> {
+): Promise<{ wb: ExcelTypes.Workbook; suggested: string }> {
   {
     const range = resolveRange(req.preset ?? 'today', req.from, req.to);
     const scope = getReportScope();
@@ -376,6 +388,7 @@ export async function buildDailySalesWorkbook(
       : `Terminal ${cfg?.terminal_code ?? 'unknown'}`;
     const { vatRate, ctlRate } = taxRates();
 
+    const ExcelJS = excel();   // A517: loaded here, at the first export
     const wb = new ExcelJS.Workbook();
     wb.creator = 'ZapTill';
     wb.created = new Date();

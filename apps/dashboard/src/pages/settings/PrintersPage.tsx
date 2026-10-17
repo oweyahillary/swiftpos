@@ -192,6 +192,8 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
 
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState('');
+  // A518: a refused or failed load is said (the page read as "no printers" and the rejection went nowhere).
+  const [loadError, setLoadError]   = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<BranchPrinter | null>(null);
 
   // ── Derived ──────────────────────────────────────────────────────────────────
@@ -211,6 +213,9 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
       ]);
       setPrinters(pd ?? []);
       setCategories(cd ?? []);
+      setLoadError('');
+    } catch (e) {
+      setLoadError((e as Error)?.message || 'Could not load the printers.');
     } finally { setLoading(false); }
   }, [branchId]);
 
@@ -448,6 +453,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
         </div>
       )}
 
+      {loadError && <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2" role="alert" data-testid="printers-load-error">{loadError}</p>}
       {loading ? (
         <div className="text-center text-gray-500 text-sm py-12">Loading printers…</div>
       ) : (

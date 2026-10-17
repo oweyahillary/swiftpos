@@ -61,6 +61,21 @@ export function backOffice(s: SessionLike | null | undefined): boolean {
   return isBackOffice([...heldKeys(s)].filter((k) => !OPEN_BEFORE_A490.includes(k)));
 }
 
+/** A519: the words a person without "Sell" reads — the same as main's (main/sellGate.ts SELL_REFUSAL). */
+export const SELL_REFUSAL = 'Your role can’t sell on this till — ask a manager to add ‘Sell’ to your role in Settings › Roles.';
+
+/**
+ * A519: may this person START a sale on this till — main's rule (main/sellGate.ts maySell): the owner; a map from
+ * before the catalogue (no marker — nobody was refused a sale before A490); else orders.create. Who may not is not
+ * routed into a POS they cannot use (App.tsx), and a bill already open when the rights change can still be finished.
+ */
+export function maySell(s: SessionLike | null | undefined): boolean {
+  if (!s) return false;
+  if (isOwner(s)) return true;
+  if (!hasMarker(s)) return true;
+  return can(s, 'orders.create');
+}
+
 /** Cost prices and margins: menu.costs or reports.costs. */
 export function seesCosts(s: SessionLike | null | undefined): boolean {
   return canAny(s, 'menu.costs', 'reports.costs');

@@ -8,13 +8,14 @@
  */
 import { supabase } from './supabase';
 import { callerMayConfirm } from './shiftConfirm';
-import { confirmerByPin, SELF_APPROVAL_BODY } from './confirmerLookup';
+import { confirmerByPin, SELF_APPROVAL_BODY, NO_CONFIRMER_BODY } from './confirmerLookup';
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from './pinAttempts';   // A494
 
 export type Approver = { id: string; name: string | null };
 export type ApprovalResult =
   | { ok: true; approver: Approver }
-  | { ok: false; status: 403 | 429; error: string; code: 'PAYOUT_APPROVAL_REQUIRED' | 'INVALID_CONFIRMER_PIN' | 'PIN_LOCKED' | 'SELF_APPROVAL' };
+  | { ok: false; status: 400 | 403 | 429; error: string;
+      code: 'PAYOUT_APPROVAL_REQUIRED' | 'INVALID_CONFIRMER_PIN' | 'PIN_LOCKED' | 'SELF_APPROVAL' | 'NO_OVERRIDE_CONFIGURED' };
 
 export const APPROVAL_REQUIRED = 'A manager must approve this — enter a manager’s PIN.';
 export const PIN_NOT_RECOGNISED = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
@@ -32,6 +33,8 @@ export async function payoutApprover(
     const who = await confirmerByPin(req.businessId!, pin, req.body?.authorizer_id || undefined, { branchId, actorId: req.userId ?? null });
     // A505: the asker's own PIN — not a wrong guess (no strike); someone else must approve.
     if (who === 'self') return { ok: false, status: 403, error: SELF_APPROVAL_BODY.error, code: 'SELF_APPROVAL' };
+    // A518: nobody at the branch who may approve has a PIN — not a wrong guess (no strike); say who can fix it.
+    if (who === 'none') return { ok: false, status: 400, error: NO_CONFIRMER_BODY.error, code: 'NO_OVERRIDE_CONFIGURED' };
     if (!who) notePinFailure(key); else notePinSuccess(key);
     return who ? { ok: true, approver: who }
       : { ok: false, status: 403, error: PIN_NOT_RECOGNISED, code: 'INVALID_CONFIRMER_PIN' };

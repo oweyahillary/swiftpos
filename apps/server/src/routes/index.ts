@@ -57,6 +57,10 @@ import devicesRoutes       from './devices';
 import parkingRoutes       from './parking';
 import controlsRoutes      from './controls';   // A490: the owner's business options
 import branchPricesRoutes  from './branch-prices';
+import supportRoutes       from './support';        // A519: a till's log to support; terminal codes in use
+import supportAdminRoutes  from './supportAdmin';   // A519: the admin portal reads them
+import tillsDaysRoutes     from './tills-days';      // A523: the owner's Tills & days page
+import tillsDaysAdminRoutes from './tillsDaysAdmin'; // A523: the same page in the admin portal
 
 const router = Router();
 
@@ -77,6 +81,7 @@ router.use('/version',        versionRoutes);
 router.use('/tables',         tablesRoutes);
 router.use('/shifts',         shiftsRoutes);
 router.use('/day-close',      dayCloseRoutes);
+router.use('/tills-days',     tillsDaysRoutes);   // A523
 router.use('/stock',          stockRoutes);
 router.use('/stock-takes',    stockTakeRoutes);
 router.use('/payables',       payablesRoutes);
@@ -117,11 +122,14 @@ router.use('/reports/export', reportsExportRoutes);
 router.use('/reports',        reportsRoutes);
 
 router.use('/admin/version',  adminVersionRouter);   // before /admin, which takes the rest of /admin/*
+router.use('/admin/support-logs', supportAdminRoutes);   // A519: before /admin, which takes the rest of /admin/*
+router.use('/admin/tills-days', tillsDaysAdminRoutes);   // A523: before /admin, which takes the rest of /admin/*
 router.use('/admin',          adminRoutes);
 router.use('/tech',           techRoutes);
 router.use('/sync',           syncRoutes);
 router.use('/devices',        devicesRoutes);
 router.use('/parking-sessions', parkingRoutes);
 router.use('/controls',       controlsRoutes);   // A490
+router.use('/support',        supportRoutes);    // A519
 
 export default router;

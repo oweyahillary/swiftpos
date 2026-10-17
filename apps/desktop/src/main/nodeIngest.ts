@@ -928,7 +928,12 @@ export function adoptNodeTarget(key: string): void {
 //
 // Node-local table, created on first use (like node_device_keys): nothing about it is sent anywhere.
 
+/** A501's bound (12 tries ≈ 6.5 h). A521 (#21): no longer the limit — a row waiting on another till's data waited 6.5 h,
+ *  and a till switched off overnight is off longer than that. Kept for what reads it; the limit is QUARANTINE_GIVE_UP_MS. */
 export const QUARANTINE_MAX_ATTEMPTS = 12;
+/** A521 (#21): a quarantined row is tried (backoff capped at an hour) for 7 days from when it was first refused, then given
+ *  up — kept, on the Tech page, with "Retry failed records". */
+export const QUARANTINE_GIVE_UP_MS = 7 * 86_400_000;
 const QUARANTINE_BASE_MS = 30_000;
 const QUARANTINE_MAX_BACKOFF_MS = 3_600_000;
 
@@ -981,10 +986,10 @@ export function retryPeerQuarantine(opts: { force?: boolean; now?: number } = {}
     const db = getLocalDb();
     const now = opts.now ?? Date.now();
     const due = db.prepare(
-      `SELECT origin, table_name, row_id, payload, attempts FROM peer_quarantine
+      `SELECT origin, table_name, row_id, payload, attempts, first_at FROM peer_quarantine
         WHERE status = 'waiting' ${opts.force ? '' : 'AND next_at <= ?'}
         ORDER BY table_name = 'events', seq LIMIT 500`,
-    ).all(...(opts.force ? [] : [new Date(now).toISOString()])) as Array<{ origin: string; table_name: string; row_id: string; payload: string; attempts: number }>;
+    ).all(...(opts.force ? [] : [new Date(now).toISOString()])) as Array<{ origin: string; table_name: string; row_id: string; payload: string; attempts: number; first_at: string }>;
     const drop = db.prepare(`DELETE FROM peer_quarantine WHERE origin = ? AND table_name = ? AND row_id = ?`);
     const again = db.prepare(`UPDATE peer_quarantine SET attempts = ?, reason = ?, next_at = ?, status = ?, last_at = ? WHERE origin = ? AND table_name = ? AND row_id = ?`);
     for (const q of due) {
@@ -1000,12 +1005,14 @@ export function retryPeerQuarantine(opts: { force?: boolean; now?: number } = {}
         continue;
       }
       const attempts = q.attempts + 1;
-      const gaveUp = attempts >= QUARANTINE_MAX_ATTEMPTS;
+      // A521 (#21): 7 days from when it was first refused (it was 12 tries ≈ 6.5 h) — a till off overnight is longer.
+      const since = Date.parse(q.first_at);
+      const gaveUp = Number.isFinite(since) ? now - since >= QUARANTINE_GIVE_UP_MS : attempts >= QUARANTINE_MAX_ATTEMPTS;
       again.run(attempts, String(r.rejected[0]?.reason ?? 'refused').slice(0, 300), new Date(now + quarantineBackoffMs(attempts)).toISOString(),
         gaveUp ? 'given_up' : 'waiting', new Date(now).toISOString(), q.origin, q.table_name, q.row_id);
       if (gaveUp) {
         out.givenUp++;
-        logLine('node', `A501: ${q.table_name} ${q.row_id} from ${q.origin.slice(0, 8)} still refused after ${attempts} tries (${String(r.rejected[0]?.reason ?? '').slice(0, 160)}) — kept; Tech › Retry failed records tries it again`);
+        logLine('node', `A501: ${q.table_name} ${q.row_id} from ${q.origin.slice(0, 8)} still refused after ${attempts} tries over 7 days (${String(r.rejected[0]?.reason ?? '').slice(0, 160)}) — kept; Tech › Retry failed records tries it again`);
       } else out.waiting++;
     }
     if (out.applied) applyPendingEvents();
@@ -1017,7 +1024,7 @@ export function retryPeerQuarantine(opts: { force?: boolean; now?: number } = {}
 export function rearmPeerQuarantine(): number {
   try {
     ensureQuarantine();
-    return getLocalDb().prepare(`UPDATE peer_quarantine SET status = 'waiting', attempts = 0, next_at = ?`).run(new Date(0).toISOString()).changes;
+    return getLocalDb().prepare(`UPDATE peer_quarantine SET status = 'waiting', attempts = 0, next_at = ?, first_at = ?`).run(new Date(0).toISOString(), new Date().toISOString()).changes;   // A521: a fresh 7 days
   } catch { return 0; }
 }
 

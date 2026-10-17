@@ -158,6 +158,8 @@ const NAV: NavEntry[] = [
       // Under Finance rather than Settings: it is a cash-custody action, and it is
       // the only route to a drawer stranded on a terminal that has died.
       { to: '/dashboard/open-drawers', label: 'Open Drawers', icon: 'drawers' },
+      // A523: every till's open day and drawers — close a day or a drawer from the web when nobody can at the till.
+      { to: '/dashboard/tills-days',   label: 'Tills & Days', icon: 'drawers' },
     ],
   },
   {

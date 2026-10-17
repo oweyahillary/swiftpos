@@ -24,7 +24,7 @@ import HeldOrdersModal from '../components/HeldOrdersModal';
 import VoidModal from '../components/VoidModal';
 import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
 import { reverseActionFor, isRefunded, ageMinutes, VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
-import { can } from '../lib/access';   // A490: the one rule
+import { can, SELL_REFUSAL } from '../lib/access';   // A490: the one rule
 import { windowLabel } from '../../shared/reversalRules';
 import { filterSummary, emptyGridMessage } from '../lib/posFilter';
 import { syncNotice, type SyncStatusLike } from '../lib/syncNotice';
@@ -74,6 +74,9 @@ interface Props {
   canAddExpenseType?: boolean;
   /** A363 → A490: may this person see the till's sync status (back office — lib/access backOffice)? A cashier sees none. */
   canSeeSync?: boolean;
+  /** A519: may this person START a sale (lib/access maySell — orders.create)? Lost mid-shift: the open bill can still be
+   *  held, sent and paid; a new one is refused (main checks the same — main/sellGate.ts). */
+  canSell?: boolean;
 }
 
 
@@ -129,7 +132,7 @@ const ProductTile = memo(function ProductTile({ product, cartCount, currency, on
   );
 });
 
-export default function POSPage({ business, onLogout, onShiftClosed, onOpenManager, canManagePrinters = false, reverseRights = { void: false, refund: false }, canCloseDay = false, canDiscount = false, canAddExpenseType = false, canSeeSync = false, onHelp }: Props) {
+export default function POSPage({ business, onLogout, onShiftClosed, onOpenManager, canManagePrinters = false, reverseRights = { void: false, refund: false }, canCloseDay = false, canDiscount = false, canAddExpenseType = false, canSeeSync = false, canSell = true, onHelp }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
@@ -209,15 +212,34 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     load();
     return posApi.pos.onCatalogueChanged(load);
   }, []);
+  // A521 (#7): a manager's PIN releases a frozen item on this till (until the freeze list changes); no new banner — the
+  // refusal says "or ask a manager" and offers the PIN box under it.
+  const [frozenFor, setFrozenFor] = useState<any | null>(null);
+  const [frozenPin, setFrozenPin] = useState('');
+  const [frozenErr, setFrozenErr] = useState('');
+  const frozenReleased = useRef<Set<string>>(new Set());   // a ref: the released tap goes through at once
+  useEffect(() => { frozenReleased.current = new Set(); }, [countFreeze]);
   useEffect(() => {
-    if (!frozenNote) return;
+    if (!frozenNote || frozenFor) return;
     const t = setTimeout(() => setFrozenNote(null), 5000);
     return () => clearTimeout(t);
-  }, [frozenNote]);
+  }, [frozenNote, frozenFor]);
   const refuseFrozen = (product: any): boolean => {
-    if (!isFrozen(countFreeze, product?.id)) return false;
+    if (!isFrozen(countFreeze, product?.id) || frozenReleased.current.has(product?.id)) return false;
     setFrozenNote(frozenMessage(countFreeze.ref, product?.name ?? 'This item'));
+    setFrozenFor(product); setFrozenPin(''); setFrozenErr('');
     return true;
+  };
+  const closeFrozen = () => { setFrozenFor(null); setFrozenNote(null); setFrozenPin(''); setFrozenErr(''); };
+  const releaseFrozen = async () => {
+    const p = frozenFor;
+    if (!p || !frozenPin.trim()) return;
+    const r = await posApi.pos.approveFrozenSale(frozenPin.trim(), p.id).catch((e: any) => ({ ok: false, error: e?.message ?? 'Could not check the PIN.' }));
+    if (!r.ok) { setFrozenErr(r.error ?? 'That PIN was not recognised.'); setFrozenPin(''); return; }
+    frozenReleased.current.add(p.id);
+    closeFrozen();
+    // Released: the tap goes through now (the next taps too, until the count's list changes).
+    setTimeout(() => handleTapRef.current(p), 0);
   };
   // 0.6.27: the delivery fee the customer pays on top (with the 'delivery_fee' switch), and why Pay is held back.
   const [deliveryFee, setDeliveryFee] = useState('');
@@ -534,8 +556,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     return () => { window.removeEventListener('keydown', onKey); clearTimeout(timer); };
   }, [products, flags.isRestaurant, flags.isPetrol]);
 
+  // A519: a NEW sale (an empty cart with no open bill) needs "Sell" — a bill already open is finished whatever changed.
+  const refuseNewSale = (): boolean => {
+    if (canSell || cart.length > 0 || orderNumber) return false;
+    setFrozenNote(SELL_REFUSAL);
+    return true;
+  };
+
   const addSimple = (product: any) => {
     if (refuseFrozen(product)) return;
+    if (refuseNewSale()) return;   // A519
     setCart(prev => {
       // A367: never into a line that carries a note — "2 spicy" plus a tap is not 3 spicy; the tap is a new line.
       const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.notes);
@@ -551,6 +581,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   };
 
   const addConfigured = (product: any, selectedVariants: any[], selectedModifiers: any[], unitPrice: number, lineTotal: number) => {
+    if (refuseNewSale()) { setVariantProduct(null); return; }
     setCart(prev => [...prev, { product, quantity: 1, selectedVariants, selectedModifiers, unitPrice, lineTotal, kotSent: false, sentQty: 0, lineId: newLineId() }]);
     setVariantProduct(null);
   };
@@ -561,6 +592,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // real catalogue product the pump points at, so product_id is valid.
   const addFuelLine = (pump: Pump, litres: number, amount: number) => {
     if (!pump.fuel_product_id) return;
+    if (refuseNewSale()) return;   // A519
     const product = {
       id: pump.fuel_product_id,
       name: pump.fuel_product_name ?? 'Fuel',
@@ -582,6 +614,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
   const handleTap = (product: any) => {
     if (refuseFrozen(product)) return;
+    if (refuseNewSale()) return;   // A519
     if (product.has_variants || product.has_modifiers) {
       setVariantProduct(product);
     } else {
@@ -1239,6 +1272,25 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         <div data-testid="frozen-note" role="alert"
           className="fixed left-1/2 top-4 z-50 -translate-x-1/2 max-w-md rounded-xl border border-amber-500/40 bg-amber-950/95 px-4 py-3 text-sm text-amber-200 shadow-xl animate-slide-in-right">
           {frozenNote}
+          {/* A521 (#7): a manager's PIN sells it anyway (under the refusal — no banner of its own) */}
+          {frozenFor && (
+            <form className="mt-2 flex items-center gap-2" data-testid="frozen-approve"
+              onSubmit={(e) => { e.preventDefault(); void releaseFrozen(); }}>
+              <input type="password" inputMode="numeric" autoFocus value={frozenPin} placeholder="Manager PIN"
+                onChange={(e) => setFrozenPin(e.target.value)}
+                className="w-32 rounded-md border border-amber-500/40 bg-gray-900 px-2 py-1 text-sm text-white" />
+              <button type="submit" className="rounded-md bg-amber-500 px-3 py-1 text-sm font-semibold text-gray-950">Sell it</button>
+              <button type="button" onClick={closeFrozen} className="text-xs text-amber-300 underline">Close</button>
+            </form>
+          )}
+          {frozenErr && <p className="mt-1 text-xs text-red-300">{frozenErr}</p>}
+        </div>
+      )}
+
+      {/* A519: this person's role lost "Sell" while signed in — the open bill can be finished, no new one started. */}
+      {!canSell && (
+        <div data-testid="no-sell-banner" className="bg-amber-950/80 border-b border-amber-500/40 px-4 py-2 text-sm text-amber-200">
+          {cart.length > 0 || orderNumber ? 'Finish this bill (pay or hold it). ' : ''}{SELL_REFUSAL}
         </div>
       )}
 

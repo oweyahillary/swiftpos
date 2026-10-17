@@ -55,6 +55,15 @@ const SHARED = [
     ],
   },
   {
+    // A519: what a till's log may not carry when it is sent to support — the till redacts, and the cloud again.
+    name: 'logRedact.ts',
+    copies: [
+      'shared/logRedact.ts',
+      'apps/desktop/src/main/logRedact.ts',
+      'apps/server/src/lib/logRedact.ts',
+    ],
+  },
+  {
     // A445: offers — the rules the till's cart, the web POS's cart and the cloud's check of a sale all run.
     name: 'offers.ts',
     copies: [

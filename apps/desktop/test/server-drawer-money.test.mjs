@@ -160,7 +160,11 @@ let sentId;
 {
   db.prepare(`UPDATE node_peer_state SET updated_at = ? WHERE device_id = 'dev-P'`).run(new Date(Date.now() - 5 * 60_000).toISOString());
   const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10 });
-  ok('a till not heard from in the last minute is refused, said plainly', r.ok === false && r.error === 'That till has not been heard from — check it is on', JSON.stringify(r));
+  // A521 (#13, owner 2026-10-17: "never wait on an absent till … queue the rest for when it reconnects"): a till that is
+  // off is no longer refused — the row waits for it (no 24-h expiry, Cancel until it is picked up), said plainly.
+  ok('a till not heard from is queued for when it reconnects, said plainly (A521)',
+    r.ok === true && r.queued_offline === true && r.message === 'The till is not connected — this applies when it reconnects.', JSON.stringify(r));
+  await H['branchClose:cancelShiftMoney'](null, { instruction_id: r.instruction_id });
   peerReport([peerShift('awaiting')]);
   const c = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10 });
   ok('a shift its till reports closed is refused', c.ok === false && /no longer open/.test(c.error ?? ''), JSON.stringify(c));

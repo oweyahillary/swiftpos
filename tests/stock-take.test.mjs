@@ -97,7 +97,8 @@ await ok("the till's copy of the frozen list: from the wire or the cache; anythi
   assert.deepEqual(F.parseStockCountFreeze('{"ref":"ST-0003","productIds":["p2"]}'), { ref: 'ST-0003', productIds: ['p2'] });
   for (const bad of [null, undefined, 'nonsense', 42, { productIds: [] }]) assert.deepEqual(F.parseStockCountFreeze(bad), F.NO_FREEZE);
   assert.ok(F.isFrozen({ ref: null, productIds: ['p1'] }, 'p1') && !F.isFrozen({ ref: null, productIds: ['p1'] }, 'p2'));
-  assert.match(F.frozenMessage('ST-0003', 'Coke'), /Coke is being counted \(ST-0003\) — it can be sold again once it has been counted\./);
+  // A521: the till's refusal adds "or ask a manager" (a manager's PIN may sell a frozen item on the till).
+  assert.match(F.frozenMessage('ST-0003', 'Coke'), /Coke is being counted \(ST-0003\) — it can be sold again once it has been counted, or ask a manager\./);
 });
 
 console.log('\nThe cloud\n');

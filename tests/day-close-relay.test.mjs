@@ -37,7 +37,9 @@ ok('A275: /pending and /ack are scoped to the calling device (X-Device-Id)', () 
   assert.match(pending, /\.eq\('device_id', deviceId\)/);
   assert.match(pending, /\.eq\('status', 'pending'\)/);
   assert.match(pending, /delivered_at/); // marks delivered
-  const ack = /router\.post\('\/ack'[\s\S]{0,1400}?maybeSingle\(\)/.exec(s)[0];
+  // A522: the ack first answers a till's "not yet" (a drawer open, a shift unconfirmed: kept pending) — a wider window;
+  // that first write is scoped the same way (own device, live instruction only).
+  const ack = /router\.post\('\/ack'[\s\S]{0,2600}?maybeSingle\(\)/.exec(s)[0];
   assert.match(ack, /\.eq\('device_id', deviceId\)/);   // a till can only ack its own
   assert.match(ack, /\.eq\('status', 'pending'\)/);     // and only a live one
 });

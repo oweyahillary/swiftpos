@@ -73,7 +73,9 @@ await ok('Accountant: every read-only report (costs, tax, exports), orders, expe
   const k = keysOf('Accountant');
   const reports = P.PERMISSIONS.filter((p) => p.group === 'reports').map((p) => p.key);
   for (const x of [...reports, 'expenses.view', 'orders.view_all']) assert.ok(k.includes(x), x);
-  for (const x of k) assert.ok(x.startsWith('reports.') || ['expenses.view', 'orders.view_all'].includes(x), `not read-only: ${x}`);
+  // A518: and the supplier bills read-only (payables.view) — never payables.manage (paying them).
+  for (const x of k) assert.ok(x.startsWith('reports.') || ['expenses.view', 'orders.view_all', 'payables.view'].includes(x), `not read-only: ${x}`);
+  assert.ok(k.includes('payables.view') && !k.includes('payables.manage'));
 });
 await ok('Fuel attendant: pump sales and the pumps — only at a fuel business; no refunds, no reports', () => {
   assert.deepEqual(sorted(keysOf('Fuel attendant')), ['fuel.manage', 'orders.create', 'products.view']);

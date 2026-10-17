@@ -105,6 +105,11 @@ await db.exec(sanitize(fs.readFileSync(path.join(MIG, THIS), 'utf8')));
 const AFTER_134 = (f) => num(f) > 134 && num(f) < 139;
 for (const f of files.filter(AFTER_134)) await db.exec(sanitize(fs.readFileSync(path.join(MIG, f), 'utf8')));
 
+// A518: keys a migration after the ones replayed here registers (143: payables.view) — with the catalogue's exact words.
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const LATER_SQL = files.filter((f) => num(f) >= 139).map((f) => fs.readFileSync(path.join(MIG, f), 'utf8')).join('\n');
+const registeredLater = (p) => new RegExp(`\\('${esc(p.key)}', '${esc(p.label)}', '${esc(p.group)}', '${esc(p.description)}'\\)`).test(LATER_SQL);
+const LATER_KEYS = new Set(CAT.PERMISSIONS.filter(registeredLater).map((p) => p.key));
 // What the roles must hold: the catalogue's own expansion, plus what had no check before (per the switches).
 const confirms = (keys) => CAT.expandKeys(keys).has('shifts.confirm');
 const expected = (r, switchesOn) => {
@@ -114,7 +119,10 @@ const expected = (r, switchesOn) => {
   for (const k of ['sales.history_all', 'shifts.cash_movements']) if (sells && (!switchesOn || confirms(r.keys))) out.add(k);
   for (const k of ['staff.view', 'reservations.manage', 'parking.manage', 'fuel.manage']) out.add(k);
   if (out.has('receipt.manage')) out.add('settings.mpesa');   // A492: who could set the receipt's payment line keeps it
-  if (/^(owner|admin)$/i.test(r.name)) for (const k of CAT.PERMISSION_KEYS) out.add(k);
+  if (/^(owner|admin)$/i.test(r.name)) for (const k of CAT.PERMISSION_KEYS) if (!LATER_KEYS.has(k)) out.add(k);
+  // A520: a key a later migration registers and grants (147 shifts.close_branch, which settings.manage now also stands
+  // for) is not 134's to give — test-migration-147 proves who gets it.
+  for (const k of LATER_KEYS) out.delete(k);
   out.delete('*');
   return out;
 };
@@ -126,13 +134,19 @@ await ok('134 registers exactly the catalogue: every fine key with the catalogue
   // to the catalogue's new words. Accepted only when that migration sets EXACTLY the catalogue's words for that key.
   const later = files.filter((f) => num(f) >= 139).map((f) => fs.readFileSync(path.join(MIG, f), 'utf8')).join('\n');
   const rewordedLater = (p) => new RegExp(`SET description = '${p.description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s+WHERE key = '${p.key.replace('.', '\\.')}'`).test(later);
+  // A520: 147 relabels shifts.close_day ("Close the day") — accepted only with EXACTLY the catalogue's label and words.
+  const relabeledLater = (p) => new RegExp(`SET label = '${esc(p.label)}', description = '${esc(p.description)}'\\s+WHERE key = '${esc(p.key)}'`).test(later);
   for (const p of CAT.PERMISSIONS) {
+    // A518: a key a later migration registers (143 payables.view) — accepted only when it registers it with EXACTLY the
+    // catalogue's label, group and description.
+    if (!byKey[p.key] && registeredLater(p)) continue;
+    if (byKey[p.key] && relabeledLater(p)) continue;
     assert.ok(byKey[p.key], `missing ${p.key}`);
     assert.equal(byKey[p.key].label, p.label, p.key); assert.equal(byKey[p.key].module, p.group, p.key);
     if (!rewordedLater(p)) assert.equal(byKey[p.key].description, p.description, p.key);
   }
   const sql = fs.readFileSync(path.join(MIG, THIS), 'utf8');
-  for (const [legacy, fine] of Object.entries(CAT.LEGACY)) for (const f of fine) assert.ok(sql.includes(`('${legacy}', '${f}')`), `mapping ${legacy} → ${f} missing from 134 — regenerate it`);
+  for (const [legacy, fine] of Object.entries(CAT.LEGACY)) for (const f of fine) if (!LATER_KEYS.has(f)) assert.ok(sql.includes(`('${legacy}', '${f}')`), `mapping ${legacy} → ${f} missing from 134 — regenerate it`);
 });
 await ok('the broad keys stay registered, marked replaced (old ids still resolve)', async () => {
   for (const k of Object.keys(CAT.LEGACY)) {
@@ -177,7 +191,7 @@ await ok('a person\'s override of a broad key becomes the same override of each 
   const m = await userOverrides(MARY);
   for (const k of CAT.LEGACY['reports.view']) assert.equal(m[k], k === 'reports.sales', k);
   const j = await userOverrides(JOE);
-  for (const k of CAT.LEGACY['settings.manage']) assert.equal(j[k], true, k);
+  for (const k of CAT.LEGACY['settings.manage']) if (!LATER_KEYS.has(k)) assert.equal(j[k], true, k);   // A520: 147's key aside
   // What Mary holds, worked out as the cloud does (role, then her overrides): the sales report, no other report.
   const held = CAT.expandMap({ ...Object.fromEntries([...await roleKeys(ROLES.aManager.id)].map((k) => [k, true])), ...m }, false);
   assert.ok(held.has('reports.sales') && !held.has('reports.items') && !held.has('reports.voids'));

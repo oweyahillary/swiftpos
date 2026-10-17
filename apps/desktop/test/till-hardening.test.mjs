@@ -190,7 +190,7 @@ console.log('\n2. One PIN limiter\n');
   ok('the 6th try is refused — Cal\'s right PIN too — until the lockout ends', /Too many wrong PINs/.test(sixth), sixth);
   signIn(fine('orders.create'), 'cashier', 'u-cash');
   ok('the lock screen is locked too', /Too many wrong PINs/.test(await said(() => call('auth:unlock', { pin: '1111' }))));
-  ok('…and the update bar', /Too many wrong PINs/.test(await said(() => call('update:installWithPin', { pin: '7070' }))));
+  // A519: the update bar asks no PIN any more (one tap for back office) — nothing there to lock.
   signIn(fine('orders.create', 'shifts.cash_movements'), 'cashier', 'u-cash');
   ok('…and a manager-PIN prompt (cash out)', /Too many wrong PINs/.test(await said(() => call('shift:float', { type: 'float_out', amount: 5, pin: '7070' }))));
   PA.resetPinAttempts();
@@ -237,14 +237,13 @@ console.log('\n3. No PIN oracles\n');
   ok('the owner\'s own PIN unlocks', (await call('auth:unlock', { pin: '1111' })).ok === true);
   PA.resetPinAttempts();
 
-  const notAllowed = await call('update:installWithPin', { pin: '6060' });
-  const nobody = await call('update:installWithPin', { pin: '9898' });
-  ok('the update bar: a real PIN that may not restart and an unknown PIN get ONE answer', notAllowed.ok === false && nobody.ok === false
-    && notAllowed.reason === nobody.reason && notAllowed.message === nobody.message, JSON.stringify({ notAllowed, nobody }));
-  ok('…a PIN that may restarts (then: not a packaged build)', (await call('update:installWithPin', { pin: '7070' })).reason === 'not packaged');
+  // A519: the update bar is no PIN oracle because it takes no PIN — one tap for the signed-in back-office person.
+  signIn(fine('orders.create'), 'cashier', 'u-cash');
+  ok('the update bar: a cashier is refused in main (no PIN to try)', (await call('update:installNow')).reason === 'manager_required');
+  ok('…update:installWithPin is gone', !H['update:installWithPin']);
   db.prepare(`DELETE FROM staff_session WHERE id=1`).run();
-  const alone = await call('update:installWithPin', { pin: '7070' });
-  ok('…and nobody signed in: refused before any PIN is checked', alone.ok === false && alone.reason === 'not_signed_in', JSON.stringify(alone));
+  const alone = await call('update:installNow');
+  ok('…and nobody signed in: refused', alone.ok === false && alone.reason === 'manager_required', JSON.stringify(alone));
   const curtain = fs.readFileSync(path.join(desktop, 'src/renderer/components/LockCurtain.tsx'), 'utf8');
   ok('the lock screen shows one message for any refusal', /if \(r\.ok\) \{[\s\S]{0,120}\}\s*setError\(`That is not \$\{staffName\}'s PIN\. Try again\.`\);/.test(curtain));
   PA.resetPinAttempts();

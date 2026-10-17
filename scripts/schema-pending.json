@@ -17,8 +17,8 @@
     "forget."
   ],
   "pending": {
-    "132_test_data_menu.sql": "A482: purge_test_menu (clear test data and the whole menu) - written 2026-10-14, not yet run in production.",
     "136_branch_status_bump_pv.sql": "A494: bump permissions_version on user_branches / status changes - written 2026-10-15, not yet run in production.",
-    "137_kds_token_version.sql": "A495: bump_kds_version (a new kitchen-display token revokes the older ones) - written 2026-10-15, not yet run in production."
+    "137_kds_token_version.sql": "A495: bump_kds_version (a new kitchen-display token revokes the older ones) - written 2026-10-15, not yet run in production.",
+    "148_offline_tills.sql": "A522: purge_test_window / purge_test_menu_window (p_close_open: clear shifts and days still open on tills that are off), purge_test_data / purge_test_menu call them (148 now holds the latest purge_test_menu, so it carries A482's 132 entry too) - written 2026-10-17, not yet run in production."
   }
 }

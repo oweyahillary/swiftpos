@@ -85,6 +85,17 @@ export default function InstallPage({ onComplete }: Props) {
   const [nodeSecret, setNodeSecret] = useState('');
   // Prefixes every bill number. Must differ on each till at a branch.
   const [terminalCode, setTerminalCode] = useState('T1');
+  // A519: the branch's other tills' codes — a code in use is refused (main checks again at save) and the next free one
+  // offered. On reaching the bind step the code this machine had before (the cloud's A182 restore) or the first free one
+  // is filled in.
+  const [codeHint, setCodeHint] = useState<{ message: string; suggestion: string } | null>(null);
+  const checkCode = async (code: string, branch: string): Promise<boolean> => {
+    try {
+      const v = await posApi.install.checkTerminalCode(code, branch || undefined);
+      setCodeHint(v.ok ? null : { message: v.message ?? 'That code cannot be used.', suggestion: v.suggestion });
+      return v.ok;
+    } catch { setCodeHint(null); return true; }   // could not be asked: main decides at save
+  };
 
   // ── Branch server address: IP typed, port implied ──────────────────────────
   // The port is a constant (nodeServer.ts NODE_PORT = 4100), so asking every
@@ -140,6 +151,22 @@ export default function InstallPage({ onComplete }: Props) {
     // or set up without one.
   };
   useEffect(() => { void search(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  // A519: on the bind step, start from this machine's own earlier code (restored at enrolment) or the first free one.
+  useEffect(() => {
+    if (step !== 'bind' || !branchId) return;
+    let cancelled = false;
+    (async () => {
+      const cfg = await posApi.config.get().catch(() => null);
+      const restored = String((cfg as any)?.terminal_code ?? '').trim().toUpperCase();
+      if (cancelled) return;
+      if (restored) { setTerminalCode(restored); setCodeHint(null); return; }
+      try {
+        const v = await posApi.install.checkTerminalCode(terminalCode || 'T1', branchId);
+        if (!cancelled && !v.ok && v.taken) setTerminalCode(v.suggestion);
+      } catch { /* the default stays; main checks at save */ }
+    })();
+    return () => { cancelled = true; };
+  }, [step, branchId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const askToJoin = async (srv: FoundServer) => {
     setJoinNote(''); setError('');
@@ -268,6 +295,8 @@ export default function InstallPage({ onComplete }: Props) {
     if (role === 'till' && nodeIpTrim && !nodeSecret.trim()) {
       setError('Enter the branch server access code — it is shown on that machine\u2019s setup screen'); return;
     }
+    // A519: never a code another till at this branch uses (main refuses it too) — the hint offers the next free one.
+    if (!(await checkCode(terminalCode.trim().toUpperCase(), branchId))) { setError(''); return; }
     setSaving(true); setError('');
     try {
       await posApi.config.save({
@@ -485,9 +514,16 @@ export default function InstallPage({ onComplete }: Props) {
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Terminal code</label>
                 <input type="text" value={terminalCode} maxLength={4}
-                  onChange={e => setTerminalCode(e.target.value.toUpperCase())}
+                  onChange={e => { setTerminalCode(e.target.value.toUpperCase()); setCodeHint(null); }}
                   placeholder="T1"
                   className={`${inputCls} font-mono text-sm tracking-widest`} />
+                {codeHint && (
+                  <div data-testid="terminal-code-taken" className="mt-1.5 flex items-center gap-2 text-xs text-amber-300">
+                    <span className="flex-1">{codeHint.message}</span>
+                    <button type="button" onClick={() => { setTerminalCode(codeHint.suggestion); setCodeHint(null); }}
+                      className="px-2 py-1 rounded bg-amber-500/20 text-amber-200 font-mono">Use {codeHint.suggestion}</button>
+                  </div>
+                )}
                 <p className="text-xs text-gray-400 mt-1.5">
                   Prefixes every bill number from this till, e.g. <span className="font-mono">T1--1042</span>.
                   <span className="text-amber-400/80"> Each till at this branch must have a different code</span> — T1, T2, T3 — or their bill numbers will collide.
