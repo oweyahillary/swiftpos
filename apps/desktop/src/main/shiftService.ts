@@ -951,15 +951,36 @@ function parseReasons(json: string | null | undefined): Record<string, string> |
  * 0.6.27: what the confirm screen may show. With 'confirm_shows_cashier_figures' the manager sees the cashier's figure
  * per method (and must give a reason where their count differs); without it the recount stays blind (A365).
  */
-export function confirmView(shiftId: string): { showCashier: boolean; declared: MethodMap | null; expected: MethodMap | null } {
+/**
+ * A527 (owner, 2026-10-17): "a manager when closing should see 4 items — opening float, cash sold, cash sold + float,
+ * what the cashier keyed in". `other` (cash in/out, cash expenses) is derived from the expected figure, so the lines
+ * always add up to what the variance is measured against. The cloud builds the same shape (lib/shiftConfirm.ts).
+ */
+export interface CashBreakdown {
+  opening_float: number; cash_sales: number; float_plus_sales: number; other: number; expected: number; cashier: number | null;
+}
+
+export function confirmView(shiftId: string): { showCashier: boolean; declared: MethodMap | null; expected: MethodMap | null; cash: CashBreakdown | null } {
   // A452 (owner, 2026-10-12): the confirming manager sees what the system holds per method — the variance before they
   // confirm. The IPC handler asks only for a manager signed in (or one confirming with their PIN on the same screen).
   let expected: MethodMap | null = null;
   try { expected = expectedMethods(shiftId); } catch { expected = null; }
+  const row = getLocalDb().prepare(`SELECT declared_methods, opening_float, closing_float FROM shifts WHERE id=?`).get(shiftId) as
+    { declared_methods: string | null; opening_float: number | null; closing_float: number | null } | undefined;
+  const declaredAll = parseMap(row?.declared_methods ?? null);
+  // A527: with the expected figures only (the IPC handler drops both for anyone who may not confirm).
+  let cash: CashBreakdown | null = null;
+  if (expected && row) {
+    let sold = 0;
+    try { sold = computeZReport(shiftId).totals.cashSales; } catch { sold = 0; }
+    const fl = money2(Number(row.opening_float) || 0), cs = money2(sold), exp = money2(Number(expected.cash ?? 0));
+    const keyed = declaredAll?.cash ?? (row.closing_float == null ? null : Number(row.closing_float));
+    cash = { opening_float: fl, cash_sales: cs, float_plus_sales: money2(fl + cs), other: money2(exp - fl - cs), expected: exp,
+             cashier: keyed == null || !Number.isFinite(keyed) ? null : money2(keyed) };
+  }
   const showCashier = getPosFeatures().confirm_shows_cashier_figures;
-  if (!showCashier) return { showCashier: false, declared: null, expected };
-  const row = getLocalDb().prepare(`SELECT declared_methods FROM shifts WHERE id=?`).get(shiftId) as { declared_methods: string | null } | undefined;
-  return { showCashier: true, declared: parseMap(row?.declared_methods ?? null), expected };
+  if (!showCashier) return { showCashier: false, declared: null, expected, cash };
+  return { showCashier: true, declared: declaredAll, expected, cash };
 }
 
 /**

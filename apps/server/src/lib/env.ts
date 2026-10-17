@@ -132,6 +132,8 @@ export function validateEnv(): ServerEnv {
     // A383: the watchdog tells the admin — Telegram and email together. Either alone works.
     ['TELEGRAM_BOT_TOKEN', 'the watchdog sends no Telegram alerts (set TELEGRAM_CHAT_ID too)'],
     ['ADMIN_ALERT_EMAIL',  'the watchdog sends no alert emails'],
+    // A525: the GitHub workflows post the deploy check and the dependency scan with it (POST /api/ops/events).
+    ['OPS_INGEST_TOKEN',   'the deploy check and the dependency scan from GitHub are not recorded (the admin portal\'s System page shows only the server\'s own starts)'],
   ];
   const absent = optional.filter(([k]) => !process.env[k]);
   if (absent.length) {

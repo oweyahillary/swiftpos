@@ -1,0 +1,111 @@
+# A525: did the newest server change actually reach production?
+#
+# Production silently failed EVERY deploy from 1.0.16 to 1.0.18: a startup guard refused MPESA_ENVIRONMENT=sandbox with
+# NODE_ENV=production, Render kept the old 1.0.15 instance running, and nobody noticed for two releases. Owner,
+# 2026-10-17: "how can I be logging such, like failed deployment".
+#
+# After every push to main this asks the production /health which commit it runs (apps/server/src/index.ts, the first
+# 12 characters of RENDER_GIT_COMMIT) until that commit CONTAINS the newest change to the server — every 30 s, for up to
+# 20 minutes. Render (rootDir apps/server) redeploys only when that directory changes, so production's commit is not
+# always github.sha: the check is "the newest server change is an ancestor of what runs", not "they are equal".
+#
+#   reached  → a deploy_check 'ok' event (the admin portal's System page)
+#   not      → a deploy_check 'fail' event with what to do (and the ZapTill admin is e-mailed by the server), and this job
+#              fails — so GitHub e-mails too, even when the event could not be recorded.
+#
+# ── ONE-TIME SETUP ───────────────────────────────────────────────────────────
+# Settings → Secrets and variables → Actions → New repository secret: OPS_INGEST_TOKEN = the same value as the
+# production service's OPS_INGEST_TOKEN on Render (at least 32 characters). Unset: the check still runs and still fails
+# the job, it is only not recorded. Optional repository variable PROD_URL (default https://api.zaptill.co.ke).
+
+name: Verify production deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# A newer push supersedes the wait for an older one.
+concurrency:
+  group: verify-prod-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Production runs the newest server change
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROD_URL: ${{ vars.PROD_URL }}
+      OPS_INGEST_TOKEN: ${{ secrets.OPS_INGEST_TOKEN }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the whole history: the commit production runs must be found and compared
+
+      - name: Wait for production to run the newest server change
+        shell: bash
+        run: |
+          set -uo pipefail
+          URL="${PROD_URL:-https://api.zaptill.co.ke}"
+          URL="${URL%/}"
+
+          # Record an event — never fails the job (the check's own exit code does that).
+          post_event() {
+            if [ -z "${OPS_INGEST_TOKEN:-}" ]; then
+              echo "::warning::OPS_INGEST_TOKEN is not set — the result is not recorded in the admin portal"
+              return 0
+            fi
+            code=$(curl -sS -o /tmp/post.out -w '%{http_code}' --max-time 30 -X POST "$URL/api/ops/events" \
+              -H "Authorization: Bearer $OPS_INGEST_TOKEN" -H 'Content-Type: application/json' --data "$1") || code=000
+            if [ "$code" != "201" ]; then
+              echo "::warning::the event was not recorded (HTTP $code): $(head -c 300 /tmp/post.out 2>/dev/null)"
+            fi
+            return 0
+          }
+
+          # The newest commit on main that touches what Render builds.
+          EXPECTED=$(git log -1 --format=%H -- apps/server render.yaml)
+          if [ -z "$EXPECTED" ]; then echo "::error::no commit touches apps/server or render.yaml"; exit 1; fi
+          EXPECTED_SHORT=${EXPECTED:0:12}
+          echo "Newest server change: $EXPECTED ($(git log -1 --format=%s "$EXPECTED"))"
+
+          RUNNING=""
+          deadline=$((SECONDS + 20 * 60))
+          while :; do
+            # No -f: a /health answering 503 (database down) still says what it runs.
+            BODY=$(curl -sS --max-time 20 "$URL/health" 2>/dev/null || true)
+            RUNNING=$(printf '%s' "$BODY" | jq -r '.commit // empty' 2>/dev/null || true)
+            if [ -n "$RUNNING" ]; then
+              FULL=$(git rev-parse --verify --quiet "${RUNNING}^{commit}" 2>/dev/null || true)
+              if [ -z "$FULL" ]; then
+                # Production may run a commit pushed after this checkout.
+                git fetch --quiet origin main 2>/dev/null || true
+                FULL=$(git rev-parse --verify --quiet "${RUNNING}^{commit}" 2>/dev/null || true)
+              fi
+              if [ -n "$FULL" ] && git merge-base --is-ancestor "$EXPECTED" "$FULL"; then
+                echo "Production runs $RUNNING — it contains $EXPECTED_SHORT."
+                post_event "$(jq -cn --arg c "$FULL" --arg e "$EXPECTED_SHORT" --arg r "$RUNNING" --arg u "$RUN_URL" \
+                  '{kind:"deploy_check",status:"ok",commit:$c,title:("Production runs " + $r),details:{expected:$e,running:$r,run_url:$u}}')"
+                exit 0
+              fi
+              echo "Production runs $RUNNING — not yet $EXPECTED_SHORT. Waiting…"
+            else
+              # No commit on /health: a server from before A525 (or no answer) — it runs the old code.
+              echo "Production /health has no commit (an older server, or no answer). Waiting…"
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then break; fi
+            sleep 30
+          done
+
+          SHOWN="${RUNNING:-unknown (no commit on /health)}"
+          WHAT="Open Render → the production service → Events/Logs; the newest deploy failed or did not start. Fix the error in the log, then Manual Deploy → Deploy latest commit."
+          echo "::error::Production still runs $SHOWN after 20 minutes — expected $EXPECTED_SHORT. $WHAT"
+          post_event "$(jq -cn --arg c "$EXPECTED" --arg e "$EXPECTED_SHORT" --arg r "$RUNNING" --arg u "$RUN_URL" --arg w "$WHAT" --arg s "$SHOWN" \
+            '{kind:"deploy_check",status:"fail",commit:$c,title:("Production did not get " + $e + " — it runs " + $s),
+              details:{expected:$e,running:(if $r == "" then null else $r end),run_url:$u,what_to_do:$w}}')"
+          exit 1

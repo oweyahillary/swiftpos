@@ -1,0 +1,104 @@
+# A525: what the dependencies carry — every day, recorded where the owner reads it.
+#
+# npm audit showed 7 vulnerabilities nobody was told about. Owner, 2026-10-17: "how can I be logging such … such
+# vulnerabilities and how to fix them". This runs npm audit on every app from its lockfile (no install), and posts one
+# vuln_scan event (scripts/ops-audit-summary.mjs): counts per severity per app, and per vulnerable package its
+# severity, versions, the fix (and whether it is a major upgrade) and the advisories. The admin portal's System page
+# shows it.
+#
+#   status fail  the SERVER has a high or critical one (the ZapTill admin is e-mailed by the server)
+#          warn  anything else has anything
+#          ok    nothing at all
+#
+# The job itself fails only when a scan could not run (no lockfile, npm audit broken) — a vulnerability is reported,
+# not a red build; ci.yml's "Server dependency audit" is the gate that stops a high or critical one in the server.
+#
+# Setup: the repository secret OPS_INGEST_TOKEN (see verify-prod-deploy.yml). Unset: the summary is in the run's
+# summary only.
+
+name: Security scan
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # 05:00 UTC, 08:00 in Nairobi — before the shops are busy
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: security-scan
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: npm audit, every app
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROD_URL: ${{ vars.PROD_URL }}
+      OPS_INGEST_TOKEN: ${{ secrets.OPS_INGEST_TOKEN }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # --package-lock-only: from the lockfile, nothing installed. The server: production dependencies only (--omit=dev)
+      # — it runs them. The others in full: the dashboard, the admin portal and the till ship BUILT bundles, so what
+      # builds them (vite, electron-builder …) is part of what reaches the client.
+      # npm audit exits 1 when it finds something; the summary reads the JSON either way.
+      - name: Audit every app
+        shell: bash
+        run: |
+          set -u
+          mkdir -p /tmp/audit
+          ARGS=()
+          for app in server dashboard admin desktop; do
+            dir="apps/$app"
+            [ -f "$dir/package-lock.json" ] || { echo "::warning::$dir has no package-lock.json"; echo '{"error":{"summary":"no package-lock.json"}}' > "/tmp/audit/$app.json"; ARGS+=("$app=/tmp/audit/$app.json"); continue; }
+            omit=""; [ "$app" = "server" ] && omit="--omit=dev"
+            (cd "$dir" && npm audit --package-lock-only $omit --json > "/tmp/audit/$app.json" 2>/tmp/audit/$app.err) || true
+            ARGS+=("$app=/tmp/audit/$app.json")
+          done
+          if [ -f package-lock.json ]; then
+            npm audit --package-lock-only --json > /tmp/audit/root.json 2>/tmp/audit/root.err || true
+            ARGS+=("root=/tmp/audit/root.json")
+          fi
+          printf '%s\n' "${ARGS[@]}" > /tmp/audit/args.txt
+
+      - name: Summarise and record
+        shell: bash
+        run: |
+          set -u
+          URL="${PROD_URL:-https://api.zaptill.co.ke}"
+          URL="${URL%/}"
+          mapfile -t ARGS < /tmp/audit/args.txt
+          node scripts/ops-audit-summary.mjs --commit "$GITHUB_SHA" --run-url "$RUN_URL" "${ARGS[@]}" > /tmp/audit/event.json
+          rc=$?
+          if [ ! -s /tmp/audit/event.json ]; then echo "::error::the summary could not be built"; exit 1; fi
+
+          # The run's own summary: the title and the counts per app.
+          node -e '
+            const e = JSON.parse(require("fs").readFileSync("/tmp/audit/event.json", "utf8"));
+            const rows = Object.entries(e.details.apps).map(([app, s]) => s.error
+              ? `| ${app} | not scanned: ${s.error} |||||`
+              : `| ${app} | ${s.counts.critical} | ${s.counts.high} | ${s.counts.moderate} | ${s.counts.low} | ${s.total} |`);
+            console.log([`### ${e.status.toUpperCase()} — ${e.title}`, "", "| app | critical | high | moderate | low | packages |", "|---|---|---|---|---|---|", ...rows].join("\n"));
+          ' >> "$GITHUB_STEP_SUMMARY"
+          echo "$(node -e 'const e=require("/tmp/audit/event.json");console.log(e.status + " — " + e.title)')"
+
+          if [ -z "${OPS_INGEST_TOKEN:-}" ]; then
+            echo "::warning::OPS_INGEST_TOKEN is not set — the scan is not recorded in the admin portal"
+          else
+            code=$(curl -sS -o /tmp/audit/post.out -w '%{http_code}' --max-time 30 -X POST "$URL/api/ops/events" \
+              -H "Authorization: Bearer $OPS_INGEST_TOKEN" -H 'Content-Type: application/json' --data @/tmp/audit/event.json) || code=000
+            if [ "$code" != "201" ]; then echo "::warning::the scan was not recorded (HTTP $code): $(head -c 300 /tmp/audit/post.out 2>/dev/null)"; fi
+          fi
+
+          # 2 = an app's audit could not be read: the scan did not run — fail. Vulnerabilities alone never fail this job.
+          if [ "$rc" -ne 0 ]; then echo "::error::a scan could not run — see the apps marked 'not scanned'"; exit 1; fi

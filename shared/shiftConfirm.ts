@@ -210,3 +210,28 @@ export function shiftDifference(s: ReportShift, fmt: (n: number) => string, opti
   if (v === null) return st === 'force_closed' ? 'Not counted' : '';
   return Math.round(v * 100) === 0 ? 'Balanced' : `Cash ${v > 0 ? '+' : '−'}${fmt(Math.abs(v))}`;
 }
+
+/**
+ * A527 (owner, 2026-10-17): "a manager when closing should see 4 items — 1. opening float, 2. cash sold, 3. cash sold +
+ * float, 4. what the cashier keyed in". The cloud and the till send `cash` with the expected figures (to someone who may
+ * confirm only). When cash was put in or taken out, or paid as an expense, that line and the drawer's expected cash are
+ * shown too — the manager's difference is measured against expected, so the lines must add up to it.
+ */
+export interface CashBreakdown {
+  opening_float: number; cash_sales: number; float_plus_sales: number; other: number; expected: number; cashier: number | null;
+}
+export interface CashLine { key: string; label: string; amount: number | null; strong?: boolean }
+export function cashLines(c: CashBreakdown | null | undefined): CashLine[] {
+  if (!c) return [];
+  const moved = Math.round((Number(c.other) || 0) * 100) !== 0;
+  return [
+    { key: 'float', label: 'Opening float', amount: c.opening_float },
+    { key: 'sold', label: 'Cash sold', amount: c.cash_sales },
+    { key: 'float_sold', label: 'Cash sold + float', amount: c.float_plus_sales, strong: !moved },
+    ...(moved ? [
+      { key: 'other', label: 'Cash in / out and cash expenses', amount: c.other },
+      { key: 'expected', label: 'Expected in the drawer', amount: c.expected, strong: true },
+    ] : []),
+    { key: 'cashier', label: 'Cashier keyed in', amount: c.cashier },
+  ];
+}

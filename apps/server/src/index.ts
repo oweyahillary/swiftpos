@@ -20,6 +20,7 @@ import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, rec
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { refreshPermissionsState } from './lib/permissionsState';   // A490
+import { buildInfo, recordBoot } from './lib/opsEvents';   // A525: what this server runs; its start recorded
 import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own sign-in addresses
 import { isRenewalPath, renewalKey, RENEWALS_PER_WINDOW } from './lib/authLimits';   // A415
 import { authLimiterKeyFor, apiLimiterKeyFor, BUCKET_VERIFY_OPTIONS } from './lib/limiterKeys';   // A494, A505
@@ -223,6 +224,9 @@ app.get('/health', async (_req, res) => {
       schema: schema.ok ? 'ok' : 'drift',
       latencyMs: Date.now() - started,
       ts: new Date().toISOString(),
+      // A525: what this server runs — the GitHub deploy check (verify-prod-deploy.yml) compares it with the newest server
+      // change on main. 1.0.16 to 1.0.18 never reached production and /health could not say so.
+      ...buildInfo(),
     };
     if (!schema.ok) {
       body.missing = schema.missing;
@@ -242,6 +246,7 @@ app.get('/health', async (_req, res) => {
       service: 'swiftpos-server',
       db: 'down',
       ts: new Date().toISOString(),
+      ...buildInfo(),   // A525: a server with its database down still says what it runs
     });
   }
 });
@@ -319,4 +324,8 @@ app.listen(PORT, () => {
   startWatchdogJob();
   startMonthlyPackJob();   // A455: the monthly pack by email on the 1st
   startOwnerAlertsJob();   // A476: branch managers' open tills (always), the owner's alerts, the weekly summary
+
+  // A525: the start, in the admin portal's System page (public.ops_events). Never awaited, never throws — a missing
+  // table (migration 149 not run) is a warning in the log.
+  void recordBoot();
 });

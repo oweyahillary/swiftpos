@@ -3,10 +3,11 @@
  * their own PIN. A452 (owner, 2026-10-12: "let the manager see what the system holds … so that he can get the variance
  * before confirming"): a manager signed in sees the expected figure per method and the variance as they type. The
  * cashier's own close stays blind; a manager confirming with a PIN on the cashier's screen sees no expected figures.
+ * A527: the signed-in manager also sees the cash in four lines (float, cash sold, both, what the cashier keyed in).
  */
 import { useEffect, useState } from 'react';
 import { posApi, type Confirmation } from '../lib/posApi';
-import { methodName, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
+import { methodName, readAmounts, confirmationLabel, cashLines, type MethodOption, type CashBreakdown } from '../../shared/shiftConfirm';
 import { reasonsNeeded, missingReasons, REASON_MAX } from '../../shared/confirmReasons';
 import MethodDot from './MethodDot';
 
@@ -35,7 +36,7 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
   // 0.6.23: a manager already signed in confirms as themselves — no PIN (owner: "do they need to key in their password?").
   const [signedInManager, setSignedInManager] = useState(false);
   // 0.6.27 ('confirm_shows_cashier_figures'): the cashier's figure beside each box, and a reason where they differ.
-  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>({ showCashier: false, declared: null });
+  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: CashBreakdown | null }>({ showCashier: false, declared: null });
   const showExpected = !!view.expected;   // A452
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const codes = [...new Set(['cash', ...methods.map((m) => m.toLowerCase())])];
@@ -95,6 +96,20 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
                 <span className="text-gray-500">Shift</span>
                 <span className="text-right">{when(openedAt)} – {closedAt ? when(closedAt) : 'open'}</span>
               </div>
+              {/* A527 (owner, 2026-10-17): the cash in four lines — the float, cash sold, the two together and what the
+                  cashier keyed in (with cash in/out and the drawer's expected when there was any). Managers only. */}
+              {view.cash && (
+                <div className="bg-gray-800/60 rounded-lg px-3 py-2 text-sm" data-testid="confirm-cash">
+                  {cashLines(view.cash).map((l) => (
+                    <div key={l.key} data-testid={`confirm-cash-${l.key}`}
+                      className={`flex justify-between gap-3 py-0.5 ${l.key === 'cashier' ? 'border-t border-gray-700 mt-1 pt-1.5' : ''}`}>
+                      <span className={l.strong ? 'text-white font-medium' : 'text-gray-300'}>{l.label}</span>
+                      <span className={`tabular-nums ${l.strong ? 'text-white font-semibold' : 'text-gray-100'}`}>
+                        {l.amount == null ? 'not keyed in' : money(l.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <table className="w-full text-sm" data-testid="confirm-table">
                 <thead>
                   <tr className="text-xs text-gray-500 text-left">

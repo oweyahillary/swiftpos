@@ -34,6 +34,23 @@ export function callerMayConfirm(req: { isOwner?: boolean; permissionKeys?: stri
 }
 
 /**
+ * A527 (owner, 2026-10-17): "a manager when closing should see 4 items — opening float, cash sold, cash sold + float,
+ * what the cashier keyed in". `other` is the rest of expected cash (cash put in or taken out, cash expenses) — derived
+ * from the expected figure itself, so float + sold + other is always exactly what the variance is measured against.
+ * The till's main process builds the same shape (shiftService.confirmView).
+ */
+export interface CashBreakdown {
+  opening_float: number; cash_sales: number; float_plus_sales: number; other: number; expected: number; cashier: number | null;
+}
+export function cashBreakdown(openingFloat: number, cashSales: number, expected: number, cashier: unknown): CashBreakdown {
+  const r = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+  const fl = r(openingFloat), sold = r(cashSales), exp = r(expected);
+  const c = cashier === null || cashier === undefined || cashier === '' ? NaN : Number(cashier);
+  return { opening_float: fl, cash_sales: sold, float_plus_sales: r(fl + sold), other: r(exp - fl - sold), expected: exp,
+           cashier: Number.isFinite(c) ? r(c) : null };
+}
+
+/**
  * A clean method map, or null when the input is not one. Codes are trimmed and lower-cased; amounts are finite,
  * non-negative and rounded to cents. At most 30 methods (a business has a handful).
  */

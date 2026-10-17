@@ -286,7 +286,7 @@ export interface BranchPeerShift {
   state: 'open' | 'awaiting' | 'confirmed' | 'closed';
   orders: number; sales: number; by_method: Record<string, number>; expected: Record<string, number>;
   methods: string[]; declared: Record<string, number> | null;
-  cash: { opening_float: number; cash_sales: number; float_in: number; float_out: number; expenses: number };
+  cash: { opening_float: number; cash_sales: number; float_in: number; float_out: number; expenses: number; cashier?: number | null };   // A527: cashier
   confirmed?: { by_name: string | null; at: string; counted: Record<string, number> | null } | null;
 }
 
@@ -745,9 +745,9 @@ declare global {
         /** A365: a manager's blind recount of every payment method, approved with their own PIN. */
         confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')? */
-        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>;
+        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('../../shared/shiftConfirm').CashBreakdown | null }>;   // A527: cash = the manager's four cash lines
         /** A433: another till's shift — confirmed on the cloud by the signed-in manager (or a manager's PIN). */
-        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>;
+        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null; cash?: import('../../shared/shiftConfirm').CashBreakdown | null }>;
         remoteConfirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
         canConfirm: () => Promise<boolean>;

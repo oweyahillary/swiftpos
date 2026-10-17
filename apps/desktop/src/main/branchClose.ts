@@ -88,7 +88,9 @@ export interface PeerShift {
   methods: string[];
   /** The cashier's own count — only when the owner shows it to managers ('confirm_shows_cashier_figures'). */
   declared: Record<string, number> | null;
-  cash: { opening_float: number; cash_sales: number; float_in: number; float_out: number; expenses: number };
+  /** A527: `cashier` — the cash the cashier keyed in at close (null: not keyed in), for the manager's four cash lines.
+   *  Absent from a till before 1.0.19. */
+  cash: { opening_float: number; cash_sales: number; float_in: number; float_out: number; expenses: number; cashier?: number | null };
   confirmed?: { by_name: string | null; at: string; counted: Record<string, number> | null } | null;
 }
 
@@ -122,7 +124,8 @@ export function ownShifts(): PeerShift[] {
         orders: z.totals.orderCount, sales: z.totals.grossSales, by_method: byMethod, expected,
         methods: methodsToCount(r.id, declared), declared: showCashier ? declared : null,
         cash: { opening_float: Number(z.shift.opening_float || 0), cash_sales: z.totals.cashSales, float_in: z.totals.floatIn,
-          float_out: z.totals.floatOut, expenses: Number((z.totals as any).expenses ?? 0) },
+          float_out: z.totals.floatOut, expenses: Number((z.totals as any).expenses ?? 0),
+          cashier: declared && Number.isFinite(Number(declared.cash)) ? Number(declared.cash) : null },
         confirmed: r.confirmed_at ? { by_name: r.confirmed_by_name ?? null, at: r.confirmed_at, counted: parse(r.confirmed_methods) } : null,
       });
     } catch { /* a shift the report cannot read is left out, never the whole state */ }
