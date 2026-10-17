@@ -99,7 +99,7 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
-    "wait-on": "^8.0.3"
+    "wait-on": "^9.5.1"
   },
   "description": "ZapTill offline-first point of sale terminal",
   "author": "ZapTill",
