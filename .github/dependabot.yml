@@ -1,7 +1,7 @@
 # A525: dependency updates as pull requests — so a fix for a vulnerability arrives without anyone having to look.
 #
 # Version updates (below) target dev: the owner's flow is dev → CI → a PR to main. Weekly, at most 5 open per
-# directory, minor and patch updates grouped into one PR per directory (majors one at a time, read before merging).
+# directory, minor and patch updates grouped into one PR per directory; majors are not offered (see ignore).
 #
 # NOTE: Dependabot SECURITY updates (repository Settings → Code security → Dependabot security updates) are separate
 # from this file and always target the DEFAULT branch (main), whatever target-branch says here. Merge them back into
@@ -17,6 +17,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # No major versions as automatic PRs (owner, 2026-10-17: the first run opened 19 majors — React 19, TypeScript 7,
+    # Vite 8, Tailwind 4, Express 5 — each a rewrite CI rightly failed). A major is planned as its own job; a security
+    # fix still arrives through Dependabot security updates, which this does not hold back.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       server-minor-patch:
         update-types: [minor, patch]
@@ -27,6 +33,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # No major versions as automatic PRs (owner, 2026-10-17: the first run opened 19 majors — React 19, TypeScript 7,
+    # Vite 8, Tailwind 4, Express 5 — each a rewrite CI rightly failed). A major is planned as its own job; a security
+    # fix still arrives through Dependabot security updates, which this does not hold back.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       dashboard-minor-patch:
         update-types: [minor, patch]
@@ -37,6 +49,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # No major versions as automatic PRs (owner, 2026-10-17: the first run opened 19 majors — React 19, TypeScript 7,
+    # Vite 8, Tailwind 4, Express 5 — each a rewrite CI rightly failed). A major is planned as its own job; a security
+    # fix still arrives through Dependabot security updates, which this does not hold back.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       admin-minor-patch:
         update-types: [minor, patch]
@@ -47,6 +65,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # No major versions as automatic PRs (owner, 2026-10-17: the first run opened 19 majors — React 19, TypeScript 7,
+    # Vite 8, Tailwind 4, Express 5 — each a rewrite CI rightly failed). A major is planned as its own job; a security
+    # fix still arrives through Dependabot security updates, which this does not hold back.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       desktop-minor-patch:
         update-types: [minor, patch]
@@ -58,6 +82,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # No major versions as automatic PRs (owner, 2026-10-17: the first run opened 19 majors — React 19, TypeScript 7,
+    # Vite 8, Tailwind 4, Express 5 — each a rewrite CI rightly failed). A major is planned as its own job; a security
+    # fix still arrives through Dependabot security updates, which this does not hold back.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       root-minor-patch:
         update-types: [minor, patch]
@@ -68,6 +98,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # No major versions as automatic PRs (owner, 2026-10-17: the first run opened 19 majors — React 19, TypeScript 7,
+    # Vite 8, Tailwind 4, Express 5 — each a rewrite CI rightly failed). A major is planned as its own job; a security
+    # fix still arrives through Dependabot security updates, which this does not hold back.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       actions:
         update-types: [minor, patch]
