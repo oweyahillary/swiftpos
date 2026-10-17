@@ -43,7 +43,7 @@ jobs:
       OPS_INGEST_TOKEN: ${{ secrets.OPS_INGEST_TOKEN }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # the whole history: the commit production runs must be found and compared
 

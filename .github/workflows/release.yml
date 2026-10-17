@@ -27,7 +27,7 @@ jobs:
     name: Build + publish (Windows, prod)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 2026-10-02: the tag must point at the commit that carries its version. v0.6.32 was first pushed on main's A376
       # merge (still 0.6.31): three runs built a 0.6.31 installer, uploaded it over the v0.6.31 release and failed only at
