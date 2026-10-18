@@ -125,10 +125,11 @@ brace-expansion); admin 0; desktop shipped deps 0 — **Electron 43.4.0 → 43.7
 same major, so better-sqlite3's ABI is unchanged), js-yaml 4.3.2, brace-expansion; the rest of desktop's dev tree by
 `npm audit fix` (no major). **Left, build tools only, never shipped:** tailwind 3 (braces, postcss-selector-parser — the
 fix is tailwind 4, a rewrite of the styles) and electron-builder (sprintf-js — 26.5 is a downgrade npm calls breaking).
-**OPEN — dashboard `xlsx` 0.18.5 (high: prototype pollution, ReDoS; shipped — Menu upload parses the owner's file):** the
-npm package is abandoned; SheetJS ships the fix (0.20.3) only from cdn.sheetjs.com. Needs the owner's choice: install
-the official tarball, or move Menu upload and report export to `exceljs` (already used by the server). Electron reaches
-the tills with 1.0.19.
+**Dashboard `xlsx` 0.18.5 → 0.20.3 (high: prototype pollution, ReDoS; shipped — Menu upload parses the owner's file):**
+the npm package is abandoned; the owner installed SheetJS's official 0.20.3 tarball from cdn.sheetjs.com (in 1.0.19,
+live 2026-10-18). Dependabot cannot follow a tarball — a newer SheetJS is installed by hand. Electron reaches the tills
+with 1.0.19 (43.7.11 after Dependabot #71). **Verified 2026-10-18** by the first scheduled A525 scan: every shipped
+dependency 0 in server, admin, dashboard and desktop; the 22 left are tailwind 3 and electron-builder build tools.
 
 ### A525 · P2 · FIX BUILT 2026-10-17 (cloud + admin + GitHub; migration 149) · A failed deploy and known vulnerabilities went unnoticed — now checked, recorded and shown in the admin portal
 Production (`api.zaptill.co.ke`) silently failed EVERY deploy from 1.0.16 to 1.0.18: a startup guard refused
