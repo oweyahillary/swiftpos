@@ -90,6 +90,63 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
 }
 
 /**
+ * A531: one person at a time — a change from GET /api/pos/changes (or the branch server's /node/live). Owner, 2026-10-19:
+ * "if Eugene's PIN changes only Eugene's change gets synced, not all 150 staff." `upserts` are roster rows exactly as the
+ * whole list carries them (bcrypt only — a row without one is removed: it could never be matched offline); `removeIds` are
+ * people no longer on this branch's list (inactive, moved, deleted). The rest of the list is left as it is. As after a
+ * whole list: the saved sign-ins of the people changed follow (a removed person's, or one whose PIN changed, go), the
+ * signed-in person's permissions follow, and changes still waiting here are laid back over. Returns how many rows changed.
+ */
+export function applyBranchStaffChanges(branchId: string, upserts: BranchStaffRow[], removeIds: string[]): number {
+  if (!canWrap()) { logLine('node', 'safeStorage unavailable — staff change not stored'); return 0; }
+  const db = getLocalDb();
+  const wrap = (h: string | null): string | null => {
+    if (!h || !h.startsWith('$2')) return null;   // bcrypt only
+    try { return safeStorage.encryptString(h).toString('base64'); } catch { return null; }
+  };
+  let n = 0;
+  const gone = new Set(removeIds);
+  const tx = db.transaction(() => {
+    // A496: a till holds ONE branch's list — a change for another branch is not this till's (rows of another branch go).
+    db.prepare(`DELETE FROM branch_staff WHERE branch_id <> ?`).run(branchId);
+    const del = db.prepare(`DELETE FROM branch_staff WHERE staff_id = ? AND branch_id = ?`);
+    const ins = db.prepare(`
+      INSERT INTO branch_staff
+        (staff_id, name, role_name, branch_id, permissions, pin_hash_enc, override_pin_hash_enc, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const id of removeIds) n += del.run(id, branchId).changes;
+    for (const s of upserts) {
+      del.run(s.staff_id, branchId);
+      const pinEnc = wrap(s.pin_hash);
+      if (!pinEnc || (s.status ?? 'active') !== 'active') { gone.add(s.staff_id); n++; continue; }
+      ins.run(s.staff_id, s.name, s.role_name ?? null, branchId, JSON.stringify(s.permissions ?? {}), pinEnc, null,
+        s.status ?? 'active', new Date().toISOString());
+      n++;
+    }
+  });
+  try { tx(); } catch (err: any) { logLine('node', `could not store a staff change: ${err?.message ?? err}`); return 0; }
+  // Saved sign-ins of exactly these people: gone → dropped; a new PIN → the old saved one dropped.
+  try {
+    const drop = db.prepare(`DELETE FROM staff_pin_cache WHERE staff_id = ? AND branch_id = ?`);
+    for (const id of gone) drop.run(id, branchId);
+    const rows = db.prepare(`SELECT staff_id, pin_hash_enc FROM staff_pin_cache WHERE branch_id = ?`).all(branchId) as Array<{ staff_id: string; pin_hash_enc: string }>;
+    const fresh = new Map(upserts.map((s) => [s.staff_id, s.pin_hash]));
+    for (const r of rows) {
+      if (!fresh.has(r.staff_id)) continue;
+      let saved = '';
+      try { saved = safeStorage.decryptString(Buffer.from(r.pin_hash_enc, 'base64')); } catch { saved = ''; }
+      if (saved && saved !== fresh.get(r.staff_id)) drop.run(r.staff_id, branchId);
+    }
+  } catch { /* the next whole list prunes */ }
+  if (refreshPermissionsFromRoster(upserts.map((r) => ({ staff_id: r.staff_id, role_name: r.role_name, permissions: r.permissions })))) {
+    logLine('staff', 'the signed-in person’s permissions changed — the screens follow');
+  }
+  try { overlayLocalChanges(db, { freshStaff: true }); } catch { /* the next store lays them again */ }
+  return n;
+}
+
+/**
  * A20: read this node's roster for SERVING to peers, unwrapping each PIN hash back
  * to raw bcrypt.
  *

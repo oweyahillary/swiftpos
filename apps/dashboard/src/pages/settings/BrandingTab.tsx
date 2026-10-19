@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveBranding, pickButtonText } from '../../lib/contrast';
 import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, type Theme } from '../../lib/themes';
 import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
-import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
+import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, RECEIPT_LOGO_PRINT_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
 import { money } from '../../lib/format';
 
@@ -76,7 +76,7 @@ async function prepareLogo(file: File): Promise<{ dataUri: string; warning?: str
 }
 
 /** A313: the receipt raster for a prepared logo — decode on a canvas (fitted to 384×288, alpha kept; 0.6.25: a small logo is
- *  scaled UP to fill the box so it does not print tiny),
+ *  scaled UP to fill the box so it does not print tiny; A530: stored at this size, printed at 120 unless 'receipt_full_logo'),
  *  then threshold with the SAME shared/printing rule the till uses. Returns the stored string. */
 async function receiptRasterFor(dataUri: string): Promise<string> {
   const bmp = await createImageBitmap(await (await fetch(dataUri)).blob());
@@ -88,6 +88,12 @@ async function receiptRasterFor(dataUri: string): Promise<string> {
     ctx.clearRect(0, 0, w, h); ctx.drawImage(bmp, 0, 0, w, h);
     return monoRasterToString(monoRasterFromRGBA(ctx.getImageData(0, 0, w, h).data, w, h));
   } finally { bmp.close(); }
+}
+
+/** A530: the stored logo (up to 288 dots) at the size the compact receipt prints it (120 dots). This page does not know
+ *  the client's 'receipt_full_logo' switch — the caption says what it does. */
+function fitStoredLogo(r: MonoRaster | null): MonoRaster | null {
+  return r ? fitMonoRaster(r, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_PRINT_MAX_HEIGHT) : null;
 }
 
 /** Paint a MonoRaster onto a canvas, 1 px per dot, for the receipt preview. */
@@ -274,9 +280,10 @@ export default function BrandingTab() {
 
           {/* A313: receipt preview — the exact 1-bit raster a till will print (SCOPE addendum §C) */}
           <label className="block text-sm font-medium text-gray-700 mb-2 mt-6">Receipt preview</label>
-          <ReceiptPreview raster={logoPng && receiptLogoEnabled ? monoRasterFromString(logoReceipt) : null} name={bizName} canvasRef={receiptRef} />
+          {/* A530: the logo is stored up to 36 mm and shown at the 15 mm the receipt prints it (full size with the switch). */}
+          <ReceiptPreview raster={logoPng && receiptLogoEnabled ? fitStoredLogo(monoRasterFromString(logoReceipt)) : null} name={bizName} canvasRef={receiptRef} />
           <p className="text-xs text-gray-500 mt-2">{logoPng && receiptLogoEnabled
-            ? 'Solid marks print crisply; gradients and colour wash out. If it looks wrong, upload a cleaner mark or leave the toggle off.'
+            ? 'Prints up to 15 mm tall (full size if ZapTill turns on Full-size logo). Solid marks print crisply; gradients and colour wash out. If it looks wrong, upload a cleaner mark or leave the toggle off.'
             : 'Turn on "Print logo on customer receipts" to see the logo here.'}</p>
         </div>
       </div>

@@ -13,6 +13,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { forgetTopic } from './syncVersions';
 import { forgetTillsOf, forgetPeopleOf, forgetAllAuth } from './authCache';
+import { nudge, recheckBusiness } from './liveHub';   // A531
 
 const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -37,9 +38,16 @@ export function forgetOnWrite(what: ForgetWhat) {
       if (!biz && !what.everyBusiness) return;   // never signed in: nothing of a business was written
       if (what.catalogue) forgetTopic(biz, 'catalogue');
       if (what.staff) forgetTopic(biz, 'staff');
-      if (what.everyBusiness) { if (what.tills || what.people) forgetAllAuth(); return; }
-      if (what.tills) forgetTillsOf(biz);
+      if (what.everyBusiness) {
+        if (what.tills || what.people) forgetAllAuth();
+        if (what.tills) recheckBusiness(null);   // A531: every till socket signs in again (a revoked till is refused)
+        return;
+      }
+      if (what.tills) { forgetTillsOf(biz); recheckBusiness(biz); }   // A531: likewise for this business's sockets
       if (what.people) forgetPeopleOf(biz);
+      // A531: the business's till sockets hear "changed" at once — a web edit reaches the tills in about a second (the
+      // database wrote which rows; liveHub reads the newest entry and pushes when it moved). Nothing when none is open.
+      nudge(biz);
     });
     next();
   };

@@ -27,6 +27,10 @@ export interface SyncStatusLike {
   nodeRefused?: { status: number; since: string; reason?: 'access_code' | 'device_key' | 'branch' | 'tls' } | null;
   /** A501: what this till still owes its branch server (computed for years, shown nowhere). */
   nodeBacklog?: { pending: number; failed: number; oldestPendingAt?: string | null; failedReason?: string | null };
+  /** A529: the cloud could not be reached on the last try — no answer, its 5xx, or another server's page (a suspended
+   *  Render service, a Cloudflare page, a captive portal). Sales left 'failed' by the line are counted as waiting
+   *  (syncEngine getSyncStatus), so an outage is never red. */
+  cloudUnreachable?: { since: string; why: string } | null;
 }
 
 /** A501: records waiting this long for the branch server are worth a manager's line (the beat sends every 15 s). */
@@ -90,8 +94,11 @@ export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotic
   const nodeWaiting = s.nodeBacklog && s.nodeBacklog.pending > 0 && s.nodeBacklog.oldestPendingAt
     && now.getTime() - new Date(s.nodeBacklog.oldestPendingAt).getTime() > NODE_BACKLOG_QUIET_MS ? s.nodeBacklog.pending : 0;
   if (s.pendingCount > 0) {
+    // A529 (owner, 2026-10-19: "the could not sync error some clients did not like it"): an outage is quiet — what waits,
+    // that the cloud cannot be reached, and when it last synced. Red is only for a refusal by our cloud (above).
+    const why = !s.online ? ' (offline)' : s.cloudUnreachable ? ' · the cloud cannot be reached' : '';
     return { tone: 'quiet', action: 'sync',
-      text: `${plural(s.pendingCount, 'record')} waiting to sync${s.online ? '' : ' (offline)'}${nodeWaiting ? ` · ${nodeWaiting} waiting for the branch server` : ''} · ${last}` };
+      text: `${plural(s.pendingCount, 'record')} waiting to sync${why}${nodeWaiting ? ` · ${nodeWaiting} waiting for the branch server` : ''} · ${last}` };
   }
   // A501: the cloud has everything, but the branch server has not had some of it for a while (it is off, or refusing).
   if (nodeWaiting) {

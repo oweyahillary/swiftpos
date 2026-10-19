@@ -49,8 +49,21 @@ var DocBuilder = class {
   get length() {
     return this.blocks.length;
   }
+  /** A530: normal-size lines at `dots` apart (see Document.lineSpacing). */
+  lineSpacing(dots) {
+    this.spacing = dots;
+    return this;
+  }
+  /** A530: feed only `lines` before a cut (see Document.cutFeed). */
+  cutFeed(lines) {
+    this.cutFeedLines = lines;
+    return this;
+  }
   build() {
-    return { columns: this.columns, blocks: this.blocks };
+    const doc = { columns: this.columns, blocks: this.blocks };
+    if (this.spacing !== void 0) doc.lineSpacing = this.spacing;
+    if (this.cutFeedLines !== void 0) doc.cutFeed = this.cutFeedLines;
+    return doc;
   }
 };
 
@@ -191,6 +204,142 @@ function wrap(text, width) {
   return out;
 }
 
+// shared/printing/src/raster.ts
+var RECEIPT_LOGO_MAX_WIDTH = 384;
+var PRINTER_MAX_DOTS = 576;
+var RECEIPT_LOGO_MAX_HEIGHT = 288;
+var RECEIPT_LOGO_PRINT_MAX_HEIGHT = 120;
+var DEFAULT_THRESHOLD = 128;
+var bytesPerRow = (width) => Math.ceil(width / 8);
+function monoRasterFromRGBA(rgba, width, height, opts = {}) {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    throw new Error(`raster: bad dimensions ${width}x${height}`);
+  }
+  if (rgba.length !== width * height * 4) {
+    throw new Error(`raster: expected ${width * height * 4} RGBA bytes for ${width}x${height}, got ${rgba.length}`);
+  }
+  const threshold = opts.threshold ?? DEFAULT_THRESHOLD;
+  const maxW = opts.maxWidth ?? RECEIPT_LOGO_MAX_WIDTH;
+  const maxH = opts.maxHeight ?? RECEIPT_LOGO_MAX_HEIGHT;
+  const lum = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < lum.length; i++, p += 4) {
+    const a = rgba[p + 3] / 255;
+    const r = rgba[p] * a + 255 * (1 - a);
+    const g = rgba[p + 1] * a + 255 * (1 - a);
+    const b = rgba[p + 2] * a + 255 * (1 - a);
+    lum[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+  const scale = Math.min(1, maxW / width, maxH / height);
+  const outW = Math.max(1, Math.floor(width * scale));
+  const outH = Math.max(1, Math.floor(height * scale));
+  const out = new Uint8Array(bytesPerRow(outW) * outH);
+  const stride = bytesPerRow(outW);
+  for (let y = 0; y < outH; y++) {
+    const y0 = Math.floor(y / scale), y1 = Math.max(y0 + 1, Math.floor((y + 1) / scale));
+    for (let x = 0; x < outW; x++) {
+      const x0 = Math.floor(x / scale), x1 = Math.max(x0 + 1, Math.floor((x + 1) / scale));
+      let sum = 0, n = 0;
+      for (let yy = y0; yy < y1 && yy < height; yy++) {
+        for (let xx = x0; xx < x1 && xx < width; xx++) {
+          sum += lum[yy * width + xx];
+          n++;
+        }
+      }
+      if ((n ? sum / n : 255) < threshold) out[y * stride + (x >> 3)] |= 128 >> (x & 7);
+    }
+  }
+  return { width: outW, height: outH, bytes: out };
+}
+var FIT_INK_SHARE = 0.4;
+function fitMonoRaster(r, maxWidth, maxHeight) {
+  const scale = Math.min(1, maxWidth / r.width, maxHeight / r.height);
+  if (scale >= 1) return r;
+  const outW = Math.max(1, Math.min(maxWidth, Math.round(r.width * scale)));
+  const outH = Math.max(1, Math.min(maxHeight, Math.round(r.height * scale)));
+  const sx = r.width / outW, sy = r.height / outH;
+  const inStride = bytesPerRow(r.width), outStride = bytesPerRow(outW);
+  const black = (x, y) => (r.bytes[y * inStride + (x >> 3)] & 128 >> (x & 7)) !== 0;
+  const spans = (n, s, limit) => Array.from({ length: n }, (_, i) => {
+    const a = i * s, b = Math.min(limit, (i + 1) * s), parts = [];
+    for (let k = Math.floor(a); k < b; k++) parts.push([k, Math.min(b, k + 1) - Math.max(a, k)]);
+    return parts;
+  });
+  const xs = spans(outW, sx, r.width), ys = spans(outH, sy, r.height);
+  const out = new Uint8Array(outStride * outH);
+  for (let y = 0; y < outH; y++) {
+    for (let x = 0; x < outW; x++) {
+      let ink = 0, area = 0;
+      for (const [yy, wy] of ys[y]) for (const [xx, wx] of xs[x]) {
+        const w = wx * wy;
+        area += w;
+        if (black(xx, yy)) ink += w;
+      }
+      if (area > 0 && ink / area >= FIT_INK_SHARE - 1e-9) out[y * outStride + (x >> 3)] |= 128 >> (x & 7);
+    }
+  }
+  return { width: outW, height: outH, bytes: out };
+}
+var PREFIX = "mono1:";
+var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+var B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+function base64Encode(bytes) {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i], b = bytes[i + 1], c = bytes[i + 2];
+    out += B64[a >> 2] + B64[(a & 3) << 4 | (b ?? 0) >> 4] + (i + 1 < bytes.length ? B64[(b & 15) << 2 | (c ?? 0) >> 6] : "=") + (i + 2 < bytes.length ? B64[c & 63] : "=");
+  }
+  return out;
+}
+function base64Decode(s) {
+  if (!B64_RE.test(s)) return null;
+  s = s.replace(/=+$/, "");
+  if (s.length % 4 === 1) return null;
+  s += "=".repeat((4 - s.length % 4) % 4);
+  const pad = s.endsWith("==") ? 2 : s.endsWith("=") ? 1 : 0;
+  const out = new Uint8Array(s.length / 4 * 3 - pad);
+  let o = 0;
+  for (let i = 0; i < s.length; i += 4) {
+    const n = B64.indexOf(s[i]) << 18 | B64.indexOf(s[i + 1]) << 12 | (s[i + 2] === "=" ? 0 : B64.indexOf(s[i + 2])) << 6 | (s[i + 3] === "=" ? 0 : B64.indexOf(s[i + 3]));
+    out[o++] = n >> 16;
+    if (o < out.length) out[o++] = n >> 8 & 255;
+    if (o < out.length) out[o++] = n & 255;
+  }
+  return out;
+}
+function monoRasterToString(r) {
+  assertRaster(r);
+  return `${PREFIX}${r.width}:${r.height}:${base64Encode(r.bytes)}`;
+}
+function monoRasterFromString(s) {
+  if (!s || !s.startsWith(PREFIX)) return null;
+  const parts = s.slice(PREFIX.length).split(":");
+  if (parts.length !== 3) return null;
+  const width = Number(parts[0]), height = Number(parts[1]);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
+  if (width > PRINTER_MAX_DOTS) return null;
+  const bytes = base64Decode(parts[2]);
+  if (!bytes || bytes.length !== bytesPerRow(width) * height) return null;
+  return { width, height, bytes };
+}
+function assertRaster(r) {
+  if (r.width <= 0 || r.width > PRINTER_MAX_DOTS || r.height <= 0) {
+    throw new Error(`raster: ${r.width}x${r.height} is outside what a printer accepts`);
+  }
+  if (r.bytes.length !== bytesPerRow(r.width) * r.height) {
+    throw new Error(`raster: ${r.bytes.length} bytes does not match ${r.width}x${r.height}`);
+  }
+}
+function monoRasterToAscii(r, black = "#", white = " ") {
+  const stride = bytesPerRow(r.width);
+  const rows = [];
+  for (let y = 0; y < r.height; y++) {
+    let row = "";
+    for (let x = 0; x < r.width; x++) row += r.bytes[y * stride + (x >> 3)] & 128 >> (x & 7) ? black : white;
+    rows.push(row);
+  }
+  return rows;
+}
+
 // shared/printing/src/render.ts
 var TYPE_CAPS = {
   takeaway: "TAKEAWAY",
@@ -213,6 +362,11 @@ function shortStamp(d) {
 function fullStamp(d) {
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
 }
+function compactStamp(d) {
+  return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${p2(d.getFullYear() % 100)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+var COMPACT_LINE_SPACING_DOTS = 26;
+var COMPACT_CUT_FEED = 1;
 function rate(n) {
   return String(Number(n.toFixed(2)));
 }
@@ -309,6 +463,13 @@ function renderReceipt(ctx) {
   const cols = columnsFor(station.paperWidthMm);
   const c = itemColumns(cols);
   const d = new DocBuilder(cols);
+  const classic = business.receiptClassic ?? {};
+  const full = classic.layout === true;
+  if (classic.spacing !== true) d.lineSpacing(COMPACT_LINE_SPACING_DOTS);
+  if (classic.extraFeed !== true) d.cutFeed(COMPACT_CUT_FEED);
+  const minorRule = () => {
+    if (full) d.line(rule(cols));
+  };
   if (ctx.voided) {
     d.line("VOID", { align: "center", size: "large", bold: true });
     d.line(rule(cols));
@@ -321,7 +482,9 @@ function renderReceipt(ctx) {
     d.line("BILL - NOT A RECEIPT", { align: "center", size: "tall", bold: true });
     d.line(rule(cols));
   }
-  if (business.logoRaster) d.image(business.logoRaster, "center");
+  if (business.logoRaster) {
+    d.image(classic.fullLogo === true ? business.logoRaster : fitMonoRaster(business.logoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_PRINT_MAX_HEIGHT), "center");
+  }
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
   if (business.header) {
@@ -332,18 +495,37 @@ function renderReceipt(ctx) {
   if (business.kraPin) d.line(center(cols, `PIN: ${business.kraPin}`));
   if (business.telephone) d.line(center(cols, `Tel: ${business.telephone}`));
   d.line(rule(cols));
-  d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
-  d.line(rule(cols));
-  if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);
+  if (full) {
+    d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
+    d.line(rule(cols));
+    if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);
+  } else if (ctx.proforma) {
+    d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
+  } else {
+    const bill = `Bill No.: ${order.billNumber}`;
+    const labelled = `Type: ${TYPE_TITLE[order.orderType]}`;
+    const type = labelled.length + 1 + sanitize(bill).length <= cols ? labelled : TYPE_TITLE[order.orderType];
+    d.lines(pairOrStack(cols, type, bill));
+  }
   if (order.orderType === "delivery") d.line(`Delivery Boy: ${order.deliveryPerson ?? ""}`);
   if (order.orderType === "dine_in" && order.tableNumber) d.line(`Table: ${order.tableNumber}`);
-  d.line(`Cashier: ${order.cashierName}`);
-  d.line(`Date: ${fullStamp(order.soldAt)}`);
+  if (full) {
+    d.line(`Cashier: ${order.cashierName}`);
+    d.line(`Date: ${fullStamp(order.soldAt)}`);
+  } else {
+    const who = `Cashier: ${order.cashierName}`;
+    const stamp2 = sanitize(who).length + 1 + 19 <= cols ? fullStamp(order.soldAt) : compactStamp(order.soldAt);
+    d.lines(pairOrStack(cols, who, stamp2));
+  }
   if (ctx.reprint) d.line(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
-  if (ctx.voided) d.line(`Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`);
-  d.line(`Kots: ${order.kotCount}`);
+  if (ctx.voided) {
+    const voided = `Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`;
+    if (full) d.line(voided);
+    else d.lines(wrap(voided, cols));
+  }
+  if (full) d.line(`Kots: ${order.kotCount}`);
   for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, void 0, 0));
-  d.line(rule(cols));
+  minorRule();
   d.line("Item".padEnd(c.name) + "Qty".padStart(c.qty) + "Amt".padStart(c.amt));
   d.line(rule(cols));
   const tax = splitTax(
@@ -400,19 +582,19 @@ function renderReceipt(ctx) {
   }
   if (manualNet > 0) d.line(pair(cols, "Discount:", `-${formatCents(manualNet)}`));
   d.line(pair(cols, "SubTotal:", formatCents(tax.subtotal)));
-  d.line(rule(cols));
+  minorRule();
   if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
   d.line(pair(cols, `VAT (${rate(business.vatRate)}%)`, formatCents(tax.vat)));
-  d.line(rule(cols));
-  d.line(pair(cols, "Round Off:", formatCents(tax.roundOff)));
-  d.line(pair(cols, "Total:", formatCents(tax.total)), { bold: true });
+  minorRule();
+  if (full || tax.roundOff !== 0) d.line(pair(cols, "Round Off:", formatCents(tax.roundOff)));
+  if (full || tip > 0 || deliveryFee > 0) d.line(pair(cols, "Total:", formatCents(tax.total)), { bold: true });
   if (tip > 0) d.line(pair(cols, "Tip:", formatCents(tip)));
   if (deliveryFee > 0) d.line(pair(cols, "Delivery fee:", formatCents(deliveryFee)));
   else if (order.deliveryFree && order.orderType === "delivery") d.line(pair(cols, "Delivery:", "FREE"));
   d.line(rule(cols));
   d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: "tall", bold: true });
-  d.line(rule(cols));
-  d.line("Payment Detail:", { bold: true });
+  minorRule();
+  if (full) d.line("Payment Detail:", { bold: true });
   for (const leg of order.payments) {
     d.line(pair(cols, leg.label.toUpperCase(), formatCents(leg.amount)));
   }
@@ -434,7 +616,7 @@ function renderReceipt(ctx) {
   if (business.deliveryMessage) {
     d.lines(wrapAuthored(business.deliveryMessage, cols).map((l) => center(cols, l)));
   }
-  if (business.thankYouMessage || business.deliveryMessage) d.line(rule(cols));
+  if (full && (business.thankYouMessage || business.deliveryMessage)) d.line(rule(cols));
   const closing = business.closingMessage ?? "Thank you for your business!";
   if (!ownerAlreadySays(closing, business.thankYouMessage, business.deliveryMessage)) {
     d.lines(wrap(closing, cols).map((l) => center(cols, l)));
@@ -678,118 +860,13 @@ function renderCashierCopy(r, copy, cols, d, money) {
   return d.build();
 }
 
-// shared/printing/src/raster.ts
-var RECEIPT_LOGO_MAX_WIDTH = 384;
-var PRINTER_MAX_DOTS = 576;
-var RECEIPT_LOGO_MAX_HEIGHT = 288;
-var DEFAULT_THRESHOLD = 128;
-var bytesPerRow = (width) => Math.ceil(width / 8);
-function monoRasterFromRGBA(rgba, width, height, opts = {}) {
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
-    throw new Error(`raster: bad dimensions ${width}x${height}`);
-  }
-  if (rgba.length !== width * height * 4) {
-    throw new Error(`raster: expected ${width * height * 4} RGBA bytes for ${width}x${height}, got ${rgba.length}`);
-  }
-  const threshold = opts.threshold ?? DEFAULT_THRESHOLD;
-  const maxW = opts.maxWidth ?? RECEIPT_LOGO_MAX_WIDTH;
-  const maxH = opts.maxHeight ?? RECEIPT_LOGO_MAX_HEIGHT;
-  const lum = new Float32Array(width * height);
-  for (let i = 0, p = 0; i < lum.length; i++, p += 4) {
-    const a = rgba[p + 3] / 255;
-    const r = rgba[p] * a + 255 * (1 - a);
-    const g = rgba[p + 1] * a + 255 * (1 - a);
-    const b = rgba[p + 2] * a + 255 * (1 - a);
-    lum[i] = 0.299 * r + 0.587 * g + 0.114 * b;
-  }
-  const scale = Math.min(1, maxW / width, maxH / height);
-  const outW = Math.max(1, Math.floor(width * scale));
-  const outH = Math.max(1, Math.floor(height * scale));
-  const out = new Uint8Array(bytesPerRow(outW) * outH);
-  const stride = bytesPerRow(outW);
-  for (let y = 0; y < outH; y++) {
-    const y0 = Math.floor(y / scale), y1 = Math.max(y0 + 1, Math.floor((y + 1) / scale));
-    for (let x = 0; x < outW; x++) {
-      const x0 = Math.floor(x / scale), x1 = Math.max(x0 + 1, Math.floor((x + 1) / scale));
-      let sum = 0, n = 0;
-      for (let yy = y0; yy < y1 && yy < height; yy++) {
-        for (let xx = x0; xx < x1 && xx < width; xx++) {
-          sum += lum[yy * width + xx];
-          n++;
-        }
-      }
-      if ((n ? sum / n : 255) < threshold) out[y * stride + (x >> 3)] |= 128 >> (x & 7);
-    }
-  }
-  return { width: outW, height: outH, bytes: out };
-}
-var PREFIX = "mono1:";
-var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-var B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
-function base64Encode(bytes) {
-  let out = "";
-  for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i], b = bytes[i + 1], c = bytes[i + 2];
-    out += B64[a >> 2] + B64[(a & 3) << 4 | (b ?? 0) >> 4] + (i + 1 < bytes.length ? B64[(b & 15) << 2 | (c ?? 0) >> 6] : "=") + (i + 2 < bytes.length ? B64[c & 63] : "=");
-  }
-  return out;
-}
-function base64Decode(s) {
-  if (!B64_RE.test(s)) return null;
-  s = s.replace(/=+$/, "");
-  if (s.length % 4 === 1) return null;
-  s += "=".repeat((4 - s.length % 4) % 4);
-  const pad = s.endsWith("==") ? 2 : s.endsWith("=") ? 1 : 0;
-  const out = new Uint8Array(s.length / 4 * 3 - pad);
-  let o = 0;
-  for (let i = 0; i < s.length; i += 4) {
-    const n = B64.indexOf(s[i]) << 18 | B64.indexOf(s[i + 1]) << 12 | (s[i + 2] === "=" ? 0 : B64.indexOf(s[i + 2])) << 6 | (s[i + 3] === "=" ? 0 : B64.indexOf(s[i + 3]));
-    out[o++] = n >> 16;
-    if (o < out.length) out[o++] = n >> 8 & 255;
-    if (o < out.length) out[o++] = n & 255;
-  }
-  return out;
-}
-function monoRasterToString(r) {
-  assertRaster(r);
-  return `${PREFIX}${r.width}:${r.height}:${base64Encode(r.bytes)}`;
-}
-function monoRasterFromString(s) {
-  if (!s || !s.startsWith(PREFIX)) return null;
-  const parts = s.slice(PREFIX.length).split(":");
-  if (parts.length !== 3) return null;
-  const width = Number(parts[0]), height = Number(parts[1]);
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
-  if (width > PRINTER_MAX_DOTS) return null;
-  const bytes = base64Decode(parts[2]);
-  if (!bytes || bytes.length !== bytesPerRow(width) * height) return null;
-  return { width, height, bytes };
-}
-function assertRaster(r) {
-  if (r.width <= 0 || r.width > PRINTER_MAX_DOTS || r.height <= 0) {
-    throw new Error(`raster: ${r.width}x${r.height} is outside what a printer accepts`);
-  }
-  if (r.bytes.length !== bytesPerRow(r.width) * r.height) {
-    throw new Error(`raster: ${r.bytes.length} bytes does not match ${r.width}x${r.height}`);
-  }
-}
-function monoRasterToAscii(r, black = "#", white = " ") {
-  const stride = bytesPerRow(r.width);
-  const rows = [];
-  for (let y = 0; y < r.height; y++) {
-    let row = "";
-    for (let x = 0; x < r.width; x++) row += r.bytes[y * stride + (x >> 3)] & 128 >> (x & 7) ? black : white;
-    rows.push(row);
-  }
-  return rows;
-}
-
 // shared/printing/src/escpos.ts
 var ESC = 27;
 var GS = 29;
 var INIT = [ESC, 64];
 var CODEPAGE_CP437 = [ESC, 116, 0];
 var LINE_SPACING_DEFAULT = [ESC, 50];
+var lineSpacingDots = (n) => [ESC, 51, Math.max(0, Math.min(255, Math.round(n)))];
 var ALIGN = { left: 0, center: 1, right: 2 };
 function sizeByte(size) {
   switch (size) {
@@ -812,7 +889,9 @@ function toEscPos(doc, opts = {}) {
       out.push(c > 126 || c < 32 ? 63 : c);
     }
   };
-  push(...INIT, ...CODEPAGE_CP437, ...LINE_SPACING_DEFAULT);
+  const compact = doc.lineSpacing;
+  push(...INIT, ...CODEPAGE_CP437, ...compact === void 0 ? LINE_SPACING_DEFAULT : lineSpacingDots(compact));
+  let curSpacing = compact === void 0 ? -1 : compact;
   let curAlign = -1;
   let curSize = -1;
   let curBold = -1;
@@ -834,6 +913,13 @@ function toEscPos(doc, opts = {}) {
         if (bold !== curBold) {
           push(ESC, 69, bold);
           curBold = bold;
+        }
+        if (compact !== void 0) {
+          const want = b.size === "tall" || b.size === "large" ? -1 : compact;
+          if (want !== curSpacing) {
+            push(...want === -1 ? LINE_SPACING_DEFAULT : lineSpacingDots(want));
+            curSpacing = want;
+          }
         }
         text(b.text);
         push(10);
@@ -865,8 +951,10 @@ function toEscPos(doc, opts = {}) {
     }
   }
   push(ESC, 97, 0, GS, 33, 0, ESC, 69, 0);
+  if (compact !== void 0) push(...LINE_SPACING_DEFAULT);
   if (opts.openDrawer) push(ESC, 112, 0, 25, 250);
-  if (opts.feedBeforeCut) push(ESC, 100, opts.feedBeforeCut);
+  const feed = opts.cut && doc.cutFeed !== void 0 ? doc.cutFeed : opts.feedBeforeCut;
+  if (feed) push(ESC, 100, Math.max(0, Math.min(255, feed)));
   if (opts.cut) push(GS, 86, 66, 0);
   return Buffer.from(out);
 }
@@ -1104,6 +1192,8 @@ function renderShiftReportEscPos(data, paperWidthMm) {
 export {
   RECEIPT_LOGO_MAX_HEIGHT,
   RECEIPT_LOGO_MAX_WIDTH,
+  RECEIPT_LOGO_PRINT_MAX_HEIGHT,
+  fitMonoRaster,
   idsByKind,
   isExcludedFromKitchen,
   kitchenExclusionTerms,

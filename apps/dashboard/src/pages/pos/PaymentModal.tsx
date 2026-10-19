@@ -53,6 +53,8 @@ interface Props {
   receiptLogo?: MonoRaster | null;   // A313
   receiptFooter?: string;
   receiptPay?: { label: string; number: string } | null;   // A450
+  /** A530: the client's POS switches (pos/init) — the receipt's classic parts. */
+  posFeatures?: Partial<Record<string, unknown>> | null;
   orderType?: OrderType;
   tableNumber?: string;
   loyaltyState: LoyaltyState | null;
@@ -105,6 +107,7 @@ function fmt(n: number) {
 
 export default function PaymentModal({
   cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptLogo, receiptFooter, receiptPay,
+  posFeatures,
   orderType = 'retail', tableNumber,
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
   maxDiscountPct = 10, existingOrderId, offers = [],
@@ -538,7 +541,7 @@ export default function PaymentModal({
         orderNote,   // A367
       });
       const biz = buildReceiptBusinessConfig(resolvedBusiness, printerSettings.footerMessage, 0,
-        { branchName, header: receiptHeader, footerText: receiptFooter, logoRaster: receiptLogo, pay: receiptPay });
+        { branchName, header: receiptHeader, footerText: receiptFooter, logoRaster: receiptLogo, pay: receiptPay, posFeatures });   // A530
       const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
       const copies = printerSettings.copies ?? 1;
       for (let i = 0; i < copies; i++) {

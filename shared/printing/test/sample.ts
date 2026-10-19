@@ -21,6 +21,7 @@ import {
   type PrintContext,
 } from '../src/index';
 import { order, business, KITCHEN, DISPATCH } from './fixture';
+import { bigLogo } from './a530-cases';   // A530
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -56,6 +57,57 @@ show('CUSTOMER RECEIPT — duplicate, optional fields off', {
 
 show('KITCHEN — 58mm', { order, business, station: kitchenPreset(KITCHEN, 'Kitchen', 58) });
 show('CUSTOMER RECEIPT — 58mm', { order, business, station: receiptPreset('st-till', 'Till', 58) });
+
+// ── A530: before / after, for the owner to approve on paper ─────────────────
+//
+// PAPER LENGTH ESTIMATE (the method; the printer's own figures will differ by a few mm):
+//   * a normal-size text line advances the line spacing — classic ESC 2 = 1/6" = 4.23 mm; compact ESC 3 26 = 26 dots
+//     at 203 dpi = 3.25 mm;
+//   * a double-height line (PAY, a Duplicate/VOID/BILL banner) advances its 48-dot glyph, 6.0 mm, either way (the
+//     compact receipt prints it at the default spacing, escpos.ts);
+//   * a logo advances its height in dots at 8 dots/mm (203 dpi): 288 dots = 36 mm classic, 120 dots = 15 mm compact;
+//   * the feed before the cut is that many lines at 1/6" (the spacing is back to the default by then): 3 classic,
+//     1 compact. The blade's own distance (GS V 66 0 feeds the last line past it) is the same both ways and left out.
+const DOT_MM = 25.4 / 203;
+function paperMm(doc: ReturnType<typeof renderTicket>, cut: boolean, feedBeforeCut: number): number {
+  let mm = 0;
+  const lineMm = (doc.lineSpacing ?? 34) * DOT_MM;   // ESC 2: 1/6" = 33.8 dots
+  for (const b of doc.blocks) {
+    if (b.kind === 'text') mm += b.size === 'tall' || b.size === 'large' ? 48 * DOT_MM : lineMm;
+    else if (b.kind === 'image') mm += b.raster.height * DOT_MM;
+    else if (b.kind === 'feed') mm += b.lines * 34 * DOT_MM;
+  }
+  const feed = cut && doc.cutFeed !== undefined ? doc.cutFeed : feedBeforeCut;
+  return mm + feed * (25.4 / 6);
+}
+const textLines = (doc: ReturnType<typeof renderTicket>) => doc.blocks.filter(b => b.kind === 'text').length;
+
+log(`\n${'='.repeat(60)}\nA530 — the receipt BEFORE (classic, 1.0.19) and AFTER (compact, the 1.0.20 standard)\n${'='.repeat(60)}`);
+log('Classic = all four admin-portal switches on (receipt_classic_spacing, receipt_full_logo, receipt_classic_layout,');
+log('receipt_extra_feed); compact = all off, the standard. Same sale; the AFTER is the CUSTOMER RECEIPT above.');
+const CLASSIC = { spacing: true, fullLogo: true, layout: true, extraFeed: true };
+for (const w of [80, 58] as const) {
+  const st = receiptPreset('st-till', 'Till', w);
+  const before = toPreview(renderTicket({ order, business: { ...business, receiptClassic: CLASSIC }, station: st }), { showMargins: true }).split('\n');
+  const after = toPreview(renderTicket({ order, business, station: st }), { showMargins: true }).split('\n');
+  const left = before[0].length + 4;
+  log(`\n${w} mm`);
+  log('BEFORE (classic)'.padEnd(left) + 'AFTER (compact)');
+  for (let i = 0; i < Math.max(before.length, after.length); i++) log(((before[i] ?? '').padEnd(left) + (after[i] ?? '')).trimEnd());
+}
+log('\nEstimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530):');
+log('                       text lines        classic    compact    saved');
+for (const w of [80, 58] as const) {
+  for (const withLogo of [false, true]) {
+    const st = receiptPreset('st-till', 'Till', w);
+    const b = { ...business, ...(withLogo ? { logoRaster: bigLogo() } : {}) };
+    const cd = renderTicket({ order, business: { ...b, receiptClassic: CLASSIC }, station: st });
+    const nd = renderTicket({ order, business: b, station: st });
+    const cm = paperMm(cd, st.cutPaper, st.feedBeforeCut), nm = paperMm(nd, st.cutPaper, st.feedBeforeCut);
+    log(`  ${`${w} mm${withLogo ? ', logo' : ''}`.padEnd(20)} ${`${textLines(cd)} -> ${textLines(nd)}`.padEnd(16)}`
+      + ` ${`${cm.toFixed(0)} mm`.padStart(9)}  ${`${nm.toFixed(0)} mm`.padStart(9)}   ${`${(cm - nm).toFixed(0)} mm (${Math.round((1 - nm / cm) * 100)}%)`}`);
+  }
+}
 
 // ── Verification against the two photographed receipts ──────────────────────
 let failures = 0;

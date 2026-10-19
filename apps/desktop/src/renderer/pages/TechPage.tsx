@@ -282,6 +282,30 @@ export default function TechPage({ onExit }: Props) {
             <button onClick={forceSync} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Force sync</button>
             <button onClick={retryFailed} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Retry failed</button>
           </div>
+          {/* A531: change-triggered sync — how this till takes changes, and each topic's last change applied */}
+          {sync?.live && (
+            <div className="mt-3 text-[11px] text-gray-300" data-testid="tech-live-sync">
+              <div className="mb-1">
+                Changes: {sync.live.mode === 'legacy' ? 'checked and pulled as before (the cloud keeps no change log)'
+                  : sync.live.mode === 'unknown' ? 'starting'
+                  : `as they happen (${sync.live.channel})`}
+                {sync.live.waiting > 0 ? ` · ${sync.live.waiting} look/setup change(s) wait for an idle moment` : ''}
+              </div>
+              <table className="w-full">
+                <tbody>
+                  {(sync.live.topics ?? []).map((t: { topic: string; seq: number | null; at: string | null; rows: number; bytes: number }) => (
+                    <tr key={t.topic}>
+                      <td className="pr-2 text-gray-400">{t.topic}</td>
+                      <td className="pr-2">{t.seq === null ? '—' : `change ${t.seq}`}</td>
+                      <td className="text-gray-400">{t.at ? new Date(t.at).toLocaleString() : 'nothing yet'}{t.rows ? ` · ${t.rows} row(s)` : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {sync.live.lastFullAt && <div className="text-gray-400 mt-1">Whole catalogue: {new Date(sync.live.lastFullAt).toLocaleString()}</div>}
+              {sync.live.error && <div className="text-amber-400 mt-1">{sync.live.error}</div>}
+            </div>
+          )}
           {/* A501: this till's conversation with its branch server, channel by channel, and its backlog */}
           {dev?.node_url && dev.device_role === 'till' && <BranchSyncPanel />}
         </section>

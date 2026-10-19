@@ -30,6 +30,8 @@ import { escposEnabled, setEscposEnabled } from '../escposBridge';
 import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@swiftpos/printing';
 import { printHtmlSilent } from '../printService';   // A454: the Z-report on the Windows receipt printer
 import { getBranding } from '../localDb';
+import { getPosFeatures } from '../deviceConfig';   // A530
+import { receiptClassicFrom } from '../posFeatures';   // A530
 import { noteActivity, setPrintPendingProbe } from '../activityTracker';   // A508
 import { signedInCan } from '../tillAccess';   // A490
 import { getActiveSession } from '../techService';   // A490: a technician sets printers up before anyone signs in
@@ -63,7 +65,10 @@ function sampleBusinessForThisTill(): typeof sampleBusiness {
     name = (db?.prepare(`SELECT business_name FROM session WHERE id = 1`).get() as { business_name?: string } | undefined)
       ?.business_name ?? null;
   } catch { /* not enrolled yet / no session row: fall back */ }
-  return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name };
+  // A530: and this client's classic-receipt switches, so the test print and the preview are the receipt the till prints.
+  let receiptClassic: ReturnType<typeof receiptClassicFrom> | undefined;
+  try { receiptClassic = receiptClassicFrom(getPosFeatures()); } catch { /* no device_config yet: the compact standard */ }
+  return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name, ...(receiptClassic ? { receiptClassic } : {}) };
 }
 
 export function initPrinting(database: Database.Database, win: () => BrowserWindow | null): void {

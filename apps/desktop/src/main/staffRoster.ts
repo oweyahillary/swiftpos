@@ -58,6 +58,12 @@ let again: Promise<RosterPull> | null = null;
 
 async function doPull(d: RosterDeps, why: string): Promise<RosterPull> {
   let cloudError = '';
+  // A531: a till behind a branch server whose changes come from it (liveSync 'peer') asks the SERVER's copy first — it
+  // never asks the cloud for the roster while the server answers (owner: "only the server does the communication to cloud").
+  if (live.preferNode()) {
+    const fromNode = await nodePull(d, why, 'change-triggered');
+    if (fromNode) return fromNode;
+  }
   try {
     const res = await d.cloudGet(`/api/pos/branch-staff${version ? `?v=${encodeURIComponent(version)}` : ''}`);
     if (res.ok) {
@@ -83,6 +89,11 @@ async function doPull(d: RosterDeps, why: string): Promise<RosterPull> {
     cloudError = e?.message ?? 'unreachable';
   }
   // The cloud could not say: the branch server's copy (a till behind one).
+  return (await nodePull(d, why, `cloud: ${cloudError}`)) ?? { source: 'none', changed: false, count: null, error: cloudError };
+}
+
+/** The branch server's copy, stored when it is a list (null: none, or not a list). */
+async function nodePull(d: RosterDeps, why: string, note: string): Promise<RosterPull | null> {
   try {
     const snap = await d.nodeSnapshot();
     if (snap) {
@@ -94,12 +105,31 @@ async function doPull(d: RosterDeps, why: string): Promise<RosterPull> {
         d.prune?.(dec.branchId, dec.roster as unknown as BranchStaffRow[]);
         const changed = dec.roster.length !== lastCount;
         lastCount = dec.roster.length; lastAt = new Date().toISOString();
-        if (changed) d.log?.(`staff list from the branch server: ${dec.roster.length} (${why}; cloud: ${cloudError})`);
+        if (changed) d.log?.(`staff list from the branch server: ${dec.roster.length} (${why}; ${note})`);
         return { source: 'node', changed, count: dec.roster.length };
       }
     }
   } catch { /* keep the list this till holds */ }
-  return { source: 'none', changed: false, count: null, error: cloudError };
+  return null;
+}
+
+// ── A531: change-triggered sync (liveSync.ts) ────────────────────────────────────────────────────────────────────────
+/** With a change log a staff change arrives as its own row — the timer re-reads the whole list only every 30 minutes. */
+export const ROSTER_SAFETY_MS = 30 * 60_000;
+const live = { quiet: () => false, preferNode: () => false };
+let lastTimerPull = 0;
+/** liveSync hands in: is change-triggered sync on (quiet), and does this till take its changes from a branch server. */
+export function setRosterLive(h: { quiet: () => boolean; preferNode: () => boolean } | null): void {
+  live.quiet = h?.quiet ?? (() => false);
+  live.preferNode = h?.preferNode ?? (() => false);
+}
+/** The timer's beat: every beat as before, or (change-triggered) every ROSTER_SAFETY_MS. Exported for the tests. */
+export function rosterBeatDue(now = Date.now()): boolean {
+  let quiet = false;
+  try { quiet = live.quiet(); } catch { quiet = false; }
+  if (quiet && lastTimerPull && now - lastTimerPull < ROSTER_SAFETY_MS) return false;
+  lastTimerPull = now;
+  return true;
 }
 
 /** When this till last refreshed its staff list, and how many it holds (for the Tech page and the log). */
@@ -108,7 +138,7 @@ export function rosterState(): { at: string | null; count: number | null; versio
 }
 
 /** Test seam. */
-export function _resetRoster(): void { version = ''; lastCount = -1; lastAt = null; inFlight = null; again = null; }
+export function _resetRoster(): void { version = ''; lastCount = -1; lastAt = null; inFlight = null; again = null; lastTimerPull = 0; }
 
 // ── The real wiring (main process) ───────────────────────────────────────────
 
@@ -148,5 +178,5 @@ export function startStaffRosterTimer(pullNow = true): void {
   if (timer) return;
   const every = isNodeRole(getDeviceConfig()?.device_role ?? null) ? 10_000 : 20_000;
   if (pullNow) void refreshStaffRosterNow('start');
-  timer = setInterval(() => { void refreshStaffRosterNow('timer'); }, every);
+  timer = setInterval(() => { if (rosterBeatDue()) void refreshStaffRosterNow('timer'); }, every);
 }

@@ -42,10 +42,18 @@ export interface Document {
    *  re-flow it; if the width is wrong the fix is to render again. */
   columns: number;
   blocks: Block[];
+  /** A530: line spacing for normal-size text, in dots (ESC 3 n). Absent = the printer's default (ESC 2, 1/6"), which is
+   *  what every document printed before A530 and what kitchen, dispatch and the Z-report still use. */
+  lineSpacing?: number;
+  /** A530: lines fed before the cut WHEN the job cuts — overrides the caller's feedBeforeCut (GS V 66 0 already feeds
+   *  the last line to the blade). Absent = the caller's. A tear-off job (no cut) always feeds the caller's. */
+  cutFeed?: number;
 }
 
 export class DocBuilder {
   private blocks: Block[] = [];
+  private spacing?: number;
+  private cutFeedLines?: number;
 
   constructor(readonly columns: number) {}
 
@@ -97,7 +105,22 @@ export class DocBuilder {
     return this.blocks.length;
   }
 
+  /** A530: normal-size lines at `dots` apart (see Document.lineSpacing). */
+  lineSpacing(dots: number): this {
+    this.spacing = dots;
+    return this;
+  }
+
+  /** A530: feed only `lines` before a cut (see Document.cutFeed). */
+  cutFeed(lines: number): this {
+    this.cutFeedLines = lines;
+    return this;
+  }
+
   build(): Document {
-    return { columns: this.columns, blocks: this.blocks };
+    const doc: Document = { columns: this.columns, blocks: this.blocks };
+    if (this.spacing !== undefined) doc.lineSpacing = this.spacing;
+    if (this.cutFeedLines !== undefined) doc.cutFeed = this.cutFeedLines;
+    return doc;
   }
 }

@@ -55,6 +55,16 @@ const SHARED = [
     ],
   },
   {
+    // A531: what a change is about (menu / staff / money / look / setup), which topics a till applies at once, and the
+    // settings' classification (migration 151's sync_setting_topic is its SQL mirror).
+    name: 'syncTopics.ts',
+    copies: [
+      'shared/syncTopics.ts',
+      'apps/server/src/lib/syncTopics.ts',      // GET /api/pos/changes builds each logical table's row
+      'apps/desktop/src/main/syncTopics.ts',    // the till applies critical topics at once, the rest when idle
+    ],
+  },
+  {
     // A519: what a till's log may not carry when it is sent to support — the till redacts, and the cloud again.
     name: 'logRedact.ts',
     copies: [

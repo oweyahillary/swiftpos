@@ -1,0 +1,219 @@
+/**
+ * receipt-compact.test — A530: the compact receipt is the standard, and four per-client switches put the old one back.
+ *
+ * Owner, 2026-10-19: "I feel the receipt is too long wasting paper." Four changes, each a switch in the admin portal
+ * (shared/posFeatures.ts), OFF = the compact standard:
+ *   receipt_classic_spacing  ESC 2 (1/6") instead of ESC 3 26 between normal-size lines
+ *   receipt_full_logo        the stored logo (up to 288 dots) instead of scaled to 120
+ *   receipt_classic_layout   every rule and line (Kots, Payment Detail, Round Off 0.00, Total = PAY, ...)
+ *   receipt_extra_feed       3 lines before the cut instead of 1
+ *
+ * Section 1 is the promise to a client who asks for the old receipt: with all four on, every receipt in a530-cases.ts
+ * is the 1.0.19 renderer's bytes (test/golden/a530-classic.json, written by that renderer before A530 changed it).
+ *
+ * MUTATION-CHECKED (rule 10/23), each red on its own: print Kots on the compact layout (2); drop the `tax.roundOff !== 0`
+ * guard (2); print Total without a tip or fee (2); keep the "Payment Detail:" heading (2); emit ESC 2 at the start of a
+ * compact receipt (3); drop the ESC 2 reset at the end (3); keep ESC 3 on a tall line (3); feed 1 on a tear-off printer
+ * (4); nearest-neighbour instead of area sampling in fitMonoRaster, or a 50% ink share instead of 40% (5, the 2-dot stroke case); drop the fullLogo check (6);
+ * ignore receipt_classic_layout (1, 6).
+ */
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import {
+  renderTicket, toEscPos, toPreview, receiptPreset, kitchenPreset, dispatchPreset, splitTax, fitMonoRaster,
+  monoRasterFromRGBA, monoRasterToAscii, bytesPerRow, RECEIPT_LOGO_MAX_HEIGHT, RECEIPT_LOGO_PRINT_MAX_HEIGHT,
+  type PrintContext, type Document, type MonoRaster, type ReceiptClassic,
+} from '../src/index';
+import { order, business, KITCHEN, DISPATCH } from './fixture';
+import { cases, optsFor, bigLogo } from './a530-cases';
+
+let pass = 0, fail = 0;
+const ok = (name: string, cond: boolean, detail = '') => {
+  if (cond) { pass++; console.log(`  ok   ${name}`); }
+  else { fail++; console.log(`  FAIL ${name}  ${detail}`); }
+};
+
+const CLASSIC: ReceiptClassic = { spacing: true, fullLogo: true, layout: true, extraFeed: true };
+const ESC = 0x1b, GS = 0x1d;
+const bytesOf = (ctx: PrintContext) => toEscPos(renderTicket(ctx), optsFor(ctx));
+const textOf = (doc: Document) => doc.blocks.flatMap(b => (b.kind === 'text' ? [b.text] : []));
+const paper = (ctx: PrintContext) => textOf(renderTicket(ctx)).map(t => t.trim());
+const find = (buf: Buffer, seq: number[], from = 0) => {
+  for (let i = from; i <= buf.length - seq.length; i++) if (seq.every((b, k) => buf[i + k] === b)) return i;
+  return -1;
+};
+const count = (buf: Buffer, seq: number[]) => { let n = 0, i = -1; while ((i = find(buf, seq, i + 1)) >= 0) n++; return n; };
+const st = (w: 58 | 80) => receiptPreset('st-till', 'Till', w);
+const caseByName = (name: string, classic?: ReceiptClassic) => cases(classic).find(c => c.name === name)!.ctx;
+
+console.log('\n1. All four switches on = the 1.0.19 receipt, byte for byte (golden written by the old renderer)');
+{
+  const golden = JSON.parse(readFileSync(join(__dirname, '..', '..', 'test', 'golden', 'a530-classic.json'), 'utf8')) as Record<string, string>;
+  const all = cases(CLASSIC);
+  ok('the golden covers every case', all.length === Object.keys(golden).length && all.length >= 26, `${all.length} vs ${Object.keys(golden).length}`);
+  for (const c of all) {
+    const got = bytesOf(c.ctx), want = Buffer.from(golden[c.name] ?? '', 'base64');
+    let at = 0; while (at < got.length && at < want.length && got[at] === want[at]) at++;
+    ok(`classic ${c.name}`, got.equals(want), `first difference at byte ${at} (${got.length} vs ${want.length})`);
+  }
+  // plain-80 / plain-58 are the 1.0.19 out/receipt-80.bin and receipt-58.bin exactly (checked when the golden was
+  // written: 1781 and 1317 bytes, as the 1.0.19 SAMPLE-OUTPUT.txt headers say).
+  ok('the golden\'s plain receipts are the 1.0.19 sample streams (1781 / 1317 bytes)',
+    Buffer.from(golden['plain-80'], 'base64').length === 1781 && Buffer.from(golden['plain-58'], 'base64').length === 1317);
+}
+
+console.log('\n2. The compact layout — what goes, what merges, what stays');
+for (const w of [80, 58] as const) {
+  const cols = w === 80 ? 48 : 32;
+  const p = paper({ order, business, station: st(w) });
+  const has = (re: RegExp) => p.some(l => re.test(l));
+  ok(`${w}: no Kots line (kitchen information)`, !has(/^Kots:/));
+  ok(`${w}: no "Payment Detail:" heading`, !has(/^Payment Detail:/));
+  ok(`${w}: no "Round Off: 0.00"`, !has(/^Round Off:/));
+  ok(`${w}: no Total line when no tip and no fee (PAY carries it)`, !has(/^Total:/) && has(/^PAY: KES 3,300\.00$/));
+  ok(`${w}: type and bill number on one line`, has(/^(Type: )?Takeaway\s+Bill No\.: T1--5718$/), p.slice(5, 8).join(' | '));
+  ok(`${w}: cashier and time on one line`, has(w === 80 ? /^Cashier: Amina\s+2026-08-05 19:42:11$/ : /^Cashier: Amina\s+05\/08\/26 19:42$/));
+  ok(`${w}: no separate "Date:" or "Bill No." line`, !has(/^Date:/) && !has(/^Bill No\./));
+  const rules = p.filter(l => /^-+$/.test(l)).length;
+  ok(`${w}: five rules (header, item heading, items, before PAY, before the closing block), was 11`, rules === 5, `${rules}`);
+  for (const legal of ['Your Business', 'Main Branch', 'PIN: P051234567X', 'Tel: 0700 000 000', 'Item', '3PC Chicken Combo',
+    'Wings Combo 8PC', 'Soda 500ml', 'Total Qty:', 'SubTotal:', 'CTL (2%)', 'VAT (16%)', 'PAY: KES', 'CASH', 'CHANGE',
+    'Buy Goods: 000000', 'Thank you for your business!', 'For delivery call', 'TAX RECEIPT UPON REQUEST', 'Powered by ZapTill']) {
+    ok(`${w}: keeps "${legal}"`, p.some(l => l.startsWith(legal)));
+  }
+  for (const c of cases().filter(x => x.name.endsWith(`-${w}`))) {
+    const wide = textOf(renderTicket(c.ctx)).filter(t => t.length > cols);
+    ok(`${w}: ${c.name} — no line wider than ${cols} columns`, wide.length === 0, JSON.stringify(wide));
+  }
+  const tip = paper(caseByName(`tip-${w}`));
+  ok(`${w}: with a tip — Total, Tip, then PAY`, tip.findIndex(l => l.startsWith('Total:')) >= 0
+    && tip.findIndex(l => l.startsWith('Total:')) < tip.findIndex(l => l.startsWith('Tip:'))
+    && tip.findIndex(l => l.startsWith('Tip:')) < tip.findIndex(l => l.startsWith('PAY:')));
+  const fee = paper(caseByName(`delivery-fee-${w}`));
+  ok(`${w}: with a delivery fee — Total, the fee, PAY; the rider kept`, fee.some(l => l.startsWith('Total:'))
+    && fee.some(l => l.startsWith('Delivery fee:')) && fee.some(l => l === 'Delivery Boy: Otieno'));
+  const free = paper(caseByName(`delivery-free-${w}`));
+  ok(`${w}: a free delivery — "Delivery: FREE", no Total (PAY is the bill)`, free.some(l => /^Delivery:\s+FREE$/.test(l)) && !free.some(l => l.startsWith('Total:')));
+  const ro = caseByName(`round-off-${w}`);
+  const roundOff = splitTax(ro.order.lines.map(l => l.lineTotal), ro.order.total, 16, 2).roundOff;
+  ok(`${w}: Round Off printed when it is not zero (${roundOff})`, roundOff !== 0 && paper(ro).some(l => l.startsWith('Round Off:')));
+  const offer = paper(caseByName(`offer-${w}`));
+  ok(`${w}: the offer and the discount kept`, offer.some(l => l.startsWith('Happy Hour:')) && offer.some(l => l.startsWith('Discount:')));
+  const dine = paper(caseByName(`dine-in-note-${w}`));
+  ok(`${w}: table and order note kept`, dine.includes('Table: 12') && dine.includes('Note: Birthday table'));
+  const pro = paper(caseByName(`proforma-${w}`));
+  ok(`${w}: a proforma bill — banner, type, no bill number`, pro.includes('BILL - NOT A RECEIPT') && pro.includes('Type: Takeaway') && !pro.some(l => /Bill No\./.test(l)));
+  const dup = paper(caseByName(`duplicate-${w}`));
+  ok(`${w}: a duplicate — banner and RePrint time kept`, dup.includes('Duplicate Print') && dup.some(l => l.startsWith('RePrint T.: 2026-08-05 21:06:09')));
+  const vd = paper(caseByName(`void-${w}`));
+  ok(`${w}: a void — banner and the Voided line kept`, vd.includes('VOID') && vd.join(' ').includes('Voided: 2026-08-05 20:01:00 by Manager Jane'));
+  const zero = paper(caseByName(`zero-rated-${w}`));
+  ok(`${w}: zero-rated — no TAX RECEIPT line, header lines kept`, !zero.includes('TAX RECEIPT UPON REQUEST') && zero.includes('Moi Avenue') && zero.includes('Nairobi'));
+  const longName = paper(caseByName(`long-cashier-${w}`));
+  ok(`${w}: a long cashier name — the name whole, the time still there`, longName.some(l => l.includes('Wanjiku Kamau-Njoroge')) && longName.some(l => /19:42/.test(l)));
+}
+
+console.log('\n3. Line spacing — ESC 3 26 on the compact receipt, back to ESC 2 after; tickets untouched');
+{
+  const b = bytesOf({ order, business, station: st(80) });
+  ok('starts ESC @, ESC t 0, ESC 3 26', find(b, [ESC, 0x40, ESC, 0x74, 0x00, ESC, 0x33, 26]) === 0);
+  const pay = find(b, Buffer.from('PAY:') as unknown as number[]);
+  const before = b.subarray(0, pay), after = b.subarray(pay);
+  ok('the tall PAY line goes at the default spacing (ESC 2 just before it)', before.lastIndexOf(Buffer.from([ESC, 0x32])) > before.lastIndexOf(Buffer.from([ESC, 0x33])));
+  ok('and the next normal line is back at 26', find(after, [ESC, 0x33, 26]) > 0);
+  const cut = b.lastIndexOf(Buffer.from([GS, 0x56, 0x42, 0x00]));
+  const reset = b.lastIndexOf(Buffer.from([ESC, 0x32]));
+  const feed = b.lastIndexOf(Buffer.from([ESC, 0x64]));
+  ok('ESC 2 resets the spacing at the end, before the feed and the cut', reset > b.lastIndexOf(Buffer.from([ESC, 0x33])) && reset < feed && feed < cut);
+  const spaced = bytesOf({ order, business: { ...business, receiptClassic: { spacing: true } }, station: st(80) });
+  ok('receipt_classic_spacing: ESC 2 at the start and no ESC 3 anywhere', find(spaced, [ESC, 0x40, ESC, 0x74, 0x00, ESC, 0x32]) === 0 && count(spaced, [ESC, 0x33]) === 0);
+  for (const [name, station] of [['kitchen', kitchenPreset(KITCHEN, 'Kitchen')], ['dispatch', dispatchPreset(DISPATCH, 'Dispatch')],
+    ['kitchen-58', kitchenPreset(KITCHEN, 'Kitchen', 58)]] as const) {
+    const ctx = { order, business, station };
+    const t = bytesOf(ctx);
+    ok(`${name}: no ESC 3, the same bytes with or without the switches, the committed ticket`,
+      count(t, [ESC, 0x33]) === 0 && t.equals(bytesOf({ ...ctx, business: { ...business, receiptClassic: CLASSIC } }))
+      && t.equals(readFileSync(join(__dirname, '..', '..', 'out', `${name === 'kitchen' ? 'kitchen-80' : name === 'dispatch' ? 'dispatch-80' : 'kitchen-58'}.bin`))));
+  }
+}
+
+console.log('\n4. The feed before the cut — 1 line when the printer cuts, 3 on a tear-off printer or with the switch');
+{
+  const tail = (b: Buffer) => b.subarray(b.lastIndexOf(Buffer.from([ESC, 0x64])));
+  const cutting = bytesOf({ order, business, station: st(80) });
+  ok('cutting: ESC d 1 then GS V 66 0', tail(cutting).equals(Buffer.from([ESC, 0x64, 1, GS, 0x56, 0x42, 0x00])));
+  const tear = bytesOf({ order, business, station: { ...st(80), cutPaper: false } });
+  ok('tear-off: ESC d 3 and no cut', tail(tear).equals(Buffer.from([ESC, 0x64, 3])) && count(tear, [GS, 0x56]) === 0);
+  const extra = bytesOf({ order, business: { ...business, receiptClassic: { extraFeed: true } }, station: st(80) });
+  ok('receipt_extra_feed: ESC d 3 then the cut', tail(extra).equals(Buffer.from([ESC, 0x64, 3, GS, 0x56, 0x42, 0x00])));
+}
+
+console.log('\n5. The logo — stored up to 288 dots, printed at 120, scaled down by area, not dropped to holes');
+{
+  // Owner, 2026-10-19 ("that's okay"): storage stays full size so 'receipt_full_logo' works for every logo, old or new.
+  ok('stored up to 288 dots (36 mm), printed at 120 (15 mm)', RECEIPT_LOGO_MAX_HEIGHT === 288 && RECEIPT_LOGO_PRINT_MAX_HEIGHT === 120);
+  const tallPx = new Uint8ClampedArray(100 * 960 * 4).fill(0);
+  ok('a new upload is stored at up to 288 tall', monoRasterFromRGBA(tallPx, 100, 960).height === 288);
+  const fresh = monoRasterFromRGBA(new Uint8ClampedArray(384 * 288 * 4).fill(0), 384, 288);
+  const freshCtx = { ...caseByName('logo-80'), business: { ...business, logoRaster: fresh } };
+  const printed = renderTicket(freshCtx).blocks.find(b => b.kind === 'image');
+  const kept = renderTicket({ ...freshCtx, business: { ...freshCtx.business, receiptClassic: { fullLogo: true } } }).blocks.find(b => b.kind === 'image');
+  ok('a NEW upload prints at 120, and at its full 288 with receipt_full_logo', printed?.kind === 'image' && printed.raster.height === 120
+    && kept?.kind === 'image' && kept.raster.height === 288);
+  const big = bigLogo();
+  const small = fitMonoRaster(big, 384, 120);
+  ok('288 tall becomes 120, aspect kept (300x288 -> 125x120)', small.height === 120 && small.width === 125, `${small.width}x${small.height}`);
+  ok('packed for GS v 0', small.bytes.length === bytesPerRow(small.width) * small.height);
+  const ink = (r: MonoRaster) => monoRasterToAscii(r).join('').split('').filter(ch => ch === '#').length / (r.width * r.height);
+  ok('neither all white nor all black', ink(small) > 0.05 && ink(small) < 0.95, `${ink(small)}`);
+  ok('the share of black is kept (within 15%)', Math.abs(ink(small) - ink(big)) / ink(big) < 0.15, `${ink(big).toFixed(3)} -> ${ink(small).toFixed(3)}`);
+  const rows = monoRasterToAscii(small);
+  ok('the ring is still a ring (black on its edge, white in its middle)', rows[46][62] === ' ' && rows[46].slice(0, 40).includes('#') && rows[46].slice(85).includes('#'));
+  ok('the bar under it is unbroken', rows.some(r => r.slice(14, 110) === '#'.repeat(96)));
+  // 2-dot black lines every 5 dots: 40% ink. Area sampling keeps them as grey-ish stripes or a tone; nearest neighbour
+  // samples one dot in 2.4 and turns the pattern into arbitrary solid lines with gaps (it keeps or loses whole lines).
+  const stripesPx = new Uint8ClampedArray(240 * 288 * 4);
+  for (let y = 0; y < 288; y++) for (let x = 0; x < 240; x++) { const p = (y * 240 + x) * 4; const k = x % 5 < 2 ? 0 : 255; stripesPx[p] = stripesPx[p + 1] = stripesPx[p + 2] = k; stripesPx[p + 3] = 255; }
+  const stripes = monoRasterFromRGBA(stripesPx, 240, 288, { maxHeight: 288 });
+  const shrunk = fitMonoRaster(stripes, 384, 120);
+  ok('fine detail is averaged, not sampled: every row of the stripes is the same', new Set(monoRasterToAscii(shrunk)).size === 1);
+  // A 2-dot stroke at every position across a 12-dot period (all the phases a 2.4 scale has): area sampling keeps it
+  // everywhere; nearest neighbour samples columns 0, 2, 4, 7, 9, 12, … and loses the stroke at 5-6, 10-11, 17-18, …
+  const lost: number[] = [];
+  for (let at = 0; at < 22; at++) {
+    const px = new Uint8ClampedArray(24 * 288 * 4).fill(255);
+    for (let y = 0; y < 288; y++) for (const x of [at, at + 1]) { const p = (y * 24 + x) * 4; px[p] = px[p + 1] = px[p + 2] = 0; }
+    const line = fitMonoRaster(monoRasterFromRGBA(px, 24, 288, { maxHeight: 288 }), 384, 120);
+    if (!monoRasterToAscii(line)[60].includes('#')) lost.push(at);
+  }
+  ok('a 2-dot stroke survives the shrink wherever it lies', lost.length === 0, `lost at ${lost.join(', ')}`);
+  ok('a logo already within 120 is printed as it is (same object)', fitMonoRaster(small, 384, 120) === small);
+  const wide = fitMonoRaster(big, 150, 288);
+  ok('the width cap applies too (300 -> 150 wide)', wide.width === 150 && wide.height === 144, `${wide.width}x${wide.height}`);
+  const img = (ctx: PrintContext) => renderTicket(ctx).blocks.find(b => b.kind === 'image');
+  const compactImg = img(caseByName('logo-80'));
+  ok('the compact receipt prints the stored 288-dot logo at 120', compactImg?.kind === 'image' && compactImg.raster.height === 120);
+  ok('the preview says so', toPreview(renderTicket(caseByName('logo-80'))).includes('[logo 125x120]'));
+}
+
+console.log('\n6. Each switch on its own puts back its own part, and only that');
+{
+  const ctx = caseByName('logo-80');
+  const withSw = (c: ReceiptClassic) => ({ ...ctx, business: { ...ctx.business, receiptClassic: c } });
+  const fullImg = renderTicket(withSw({ fullLogo: true })).blocks.find(b => b.kind === 'image');
+  ok('receipt_full_logo: the stored logo as it is (288 tall)', fullImg?.kind === 'image' && fullImg.raster.height === 288);
+  const layoutDoc = renderTicket(withSw({ layout: true }));
+  const classicDoc = renderTicket(withSw({ layout: true, fullLogo: true }));
+  ok('receipt_classic_layout: every line of the classic receipt', textOf(layoutDoc).join('\n') === textOf(classicDoc).join('\n'));
+  ok('receipt_classic_layout alone keeps the compact spacing, feed and logo', layoutDoc.lineSpacing === 26 && layoutDoc.cutFeed === 1
+    && layoutDoc.blocks.some(b => b.kind === 'image' && b.raster.height === 120));
+  const spacingDoc = renderTicket(withSw({ spacing: true }));
+  ok('receipt_classic_spacing alone: default spacing, compact layout', spacingDoc.lineSpacing === undefined && !textOf(spacingDoc).some(t => t.startsWith('Kots:')));
+  const feedDoc = renderTicket(withSw({ extraFeed: true }));
+  ok('receipt_extra_feed alone: the caller\'s feed, compact layout', feedDoc.cutFeed === undefined && feedDoc.lineSpacing === 26);
+  const none = renderTicket(ctx);
+  ok('no switches: compact everything', none.lineSpacing === 26 && none.cutFeed === 1 && !textOf(none).some(t => t.startsWith('Kots:')));
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

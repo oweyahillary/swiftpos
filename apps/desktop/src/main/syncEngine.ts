@@ -11,6 +11,7 @@
 import { overlayLocalChanges } from './localChanges';   // A448
 import { nodeChangeVersion } from './nodeClient';   // A448
 import { cleanOffer, type Offer } from './offers';   // A445
+import type { ChangeEntry } from './syncTopics';   // A531
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
 import { logLine, describeResponse, getLogPath, authLog } from './logFile';
@@ -20,8 +21,8 @@ import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
 import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
-import { selectPushRefresh } from './authTransport';
-import { storeBranchStaff } from './branchStaff';
+import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
+import { storeBranchStaff, applyBranchStaffChanges, type BranchStaffRow } from './branchStaff';   // A531: one person at a time
 import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeClock, refreshViaNode, ackViaNode, fetchReferenceFromNode, fetchNodeCursors, checkNodeHealth } from './nodeClient';
 import { tillPin, securityCode } from './lanTls';   // A501
@@ -951,10 +952,14 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
       logLine('sync', `catalogue pull threw: ${e?.message ?? e}`);
       return false;
     });
-    pulled = await pullSafely();
+    // A531 (owner, 2026-10-19: "this should only happen when there is a change"): with a change log (liveSync.ts) this
+    // pass takes only the rows that changed — nothing when nothing did. The whole catalogue every 10 minutes is gone.
+    if (liveCatalogueActive()) pulled = await _live!.catchUp('sync').catch(() => false);
+    else pulled = await pullSafely();
     // Till sync audit (F7): renew only when the pull was refused with a 401. Renewing after ANY failed pull (a 403, a
     // 5xx, the cloud out of reach) rotated the till's key about three times a minute while a catalogue version waited.
-    if (!pulled && _lastPullStatus === 401 && (_refreshToken || persistedRefresh())) {
+    // (A531: the change log renews on its own 401 — liveCloudGet.)
+    if (!liveCatalogueActive() && !pulled && _lastPullStatus === 401 && (_refreshToken || persistedRefresh())) {
       const refreshed = await refreshAccessToken();
       if (refreshed) pulled = await pullSafely();
     }
@@ -1427,6 +1432,55 @@ export async function pullIfCatalogueChanged(o: { pullOnly?: boolean } = {}): Pr
   return { changed: true, pulled: r.pulled };
 }
 
+// ── A531: what liveSync.ts (change-triggered sync) needs from the engine — it owns the tokens and the routes ─────────
+/** The hooks liveSync hands in (it imports the engine; the engine never imports it). */
+let _live: { active: () => boolean; catchUp: (why: string) => Promise<boolean> } | null = null;
+export function setLiveCatalogue(h: { active: () => boolean; catchUp: (why: string) => Promise<boolean> } | null): void { _live = h; }
+/** Change-triggered sync is on (the cloud or the branch server keeps a change log): no blind whole pulls. */
+export function liveCatalogueActive(): boolean { try { return !!_live?.active(); } catch { return false; } }
+
+/** GET a cloud path with this till's own session — renewed ahead of expiry and once on a 401, as every pull is. */
+export async function liveCloudGet(path: string): Promise<Response> {
+  await refreshDeviceTokenIfExpiring();
+  let res = await syncFetch(`${_serverUrl}${path}`, { headers: authHeaders() });
+  if (res.status === 401 && (_refreshToken || persistedRefresh()) && await refreshAccessToken()) {
+    res = await syncFetch(`${_serverUrl}${path}`, { headers: authHeaders() });
+  }
+  return res;
+}
+/** Where the push channel is and the session to sign in with (null: not configured or offline). */
+export function liveSocketTarget(): { url: string; token: string } | null {
+  if (!_serverUrl || !_accessToken || !isOnline()) return null;
+  const base = _serverUrl.replace(/\/+$/, '').replace(/^http/i, 'ws');
+  return { url: `${base}/api/pos/live`, token: _accessToken };
+}
+/** The whole catalogue, once (a first start, a till too far behind, the daily safety pull). `fromCloud`: not a branch
+ *  server's copy. Renewed once on a 401; the screens told. */
+export async function liveWholePull(fromCloud: boolean): Promise<boolean> {
+  if (!_accessToken || !_serverUrl) return false;
+  _preferCloudPull = fromCloud;
+  try {
+    let ok = await pullCatalogueOnce().catch(() => false);
+    if (!ok && _lastPullStatus === 401 && (_refreshToken || persistedRefresh()) && await refreshAccessToken()) ok = await pullCatalogueOnce().catch(() => false);
+    if (ok) notifyCataloguePulled();
+    return ok;
+  } finally { _preferCloudPull = false; }
+}
+/** This branch's stock levels only (the manager's stock report) — no menu. */
+export async function refreshStockLevels(): Promise<boolean> {
+  const branch = getDeviceConfig()?.branch_id ?? null;
+  if (!branch || !_serverUrl || !_accessToken) return false;
+  try {
+    const res = await liveCloudGet(`/api/inventory?branch_id=${encodeURIComponent(branch)}`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!Array.isArray(data)) return false;
+    const db = getLocalDb();
+    db.transaction(() => writeStockLevels(db, data.filter((x: any) => x.id !== null), branch, new Date().toISOString(), true))();
+    return true;
+  } catch { return false; }
+}
+
 export function getSyncStatus(): {
   online: boolean; pendingCount: number; failedCount: number;
   /** A178: the pending count split by table, so the tech screen shows what's stuck. */
@@ -1465,15 +1519,22 @@ export function getSyncStatus(): {
   lastSyncedAt?: string | null;
   /** A448: the branch server refused this till's access code (recently) — nothing reaches the cloud through it. */
   nodeRefused?: { status: number; since: string } | null;
+  /** A529: the cloud could not be reached on the last try (no answer, its 5xx, or another server's page), and since when. */
+  cloudUnreachable?: { since: string; why: string } | null;
 } {
   const db = getLocalDb();
   // Till sync audit (F5): a sale whose drawer the cloud refused (shift parked 'conflict') is not sent until the drawer is
   // resolved — it is parked with it, not "pending" (pushPendingOrders skips it the same way, PARKED_DRAWER_SQL).
-  const pending = db.prepare(`SELECT COUNT(*) as count FROM sync_queue q WHERE q.status = 'pending' AND NOT ${PARKED_DRAWER_SQL}`).get() as { count: number };
+  // A529: a sale left 'failed' by the line (no answer, a 5xx, another server's page — CONNECTION_FAILURE_SQL) is WAITING,
+  // not failed: it is queued again by itself the moment the cloud answers (pushPendingOrders), and a manager is never
+  // shown red for an outage (owner, 2026-10-19: "the could not sync error some clients did not like it").
+  const lineFailed = (db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'failed' AND ${CONNECTION_FAILURE_SQL}`).get() as { count: number }).count;
+  const pendingQ = db.prepare(`SELECT COUNT(*) as count FROM sync_queue q WHERE q.status = 'pending' AND NOT ${PARKED_DRAWER_SQL}`).get() as { count: number };
+  const pending = { count: pendingQ.count + lineFailed };
   let parkedSales = 0;
   try { parkedSales = (db.prepare(`SELECT COUNT(*) as count FROM sync_queue q WHERE q.status = 'pending' AND ${PARKED_DRAWER_SQL}`).get() as { count: number }).count; }
   catch { /* keep the zero */ }
-  const failed  = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'failed'`).get() as { count: number };
+  const failed  = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'failed' AND NOT ${CONNECTION_FAILURE_SQL}`).get() as { count: number };
 
   // The most common reason, and how long it has been stuck.
   //
@@ -1484,7 +1545,7 @@ export function getSyncStatus(): {
   const failureRow = failed.count > 0
     ? db.prepare(`
         SELECT last_error, MIN(created_at) AS since, COUNT(*) AS n
-          FROM sync_queue WHERE status = 'failed' AND last_error IS NOT NULL
+          FROM sync_queue WHERE status = 'failed' AND last_error IS NOT NULL AND NOT ${CONNECTION_FAILURE_SQL}
          GROUP BY last_error ORDER BY n DESC LIMIT 1
       `).get() as { last_error: string; since: string; n: number } | undefined
     : undefined;
@@ -1541,6 +1602,7 @@ export function getSyncStatus(): {
     parkedReason: parked.reason ?? undefined,
     lastSyncedAt: lastSyncedAt(),
     nodeRefused: hasNode() ? nodeRefusal() : null,
+    cloudUnreachable: cloudUnreachableNow(),   // A529
   };
 }
 
@@ -1789,6 +1851,53 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setReceiptPay(c.receiptPay);   // A450: undefined = not said → keep
 }
 
+/**
+ * The business-wide config of a /api/pos/init answer (or of a part of one: A531's `config` / `branding` changes carry only
+ * their topic's keys) — each key the answer does not carry is "not said", so applyReferenceConfig keeps the till's value.
+ */
+function configFromInit(_j: any, branchId: string | null): AcquiredReference['config'] {
+  return {
+    branchId,
+    vatRate: numOrNull(_j.vatRate),
+    ctlRate: numOrNull(_j.ctlRate),
+    maxDiscountPct: numOrNull(_j.maxDiscountPct),
+    businessType: typeof _j.businessType === 'string' && _j.businessType ? _j.businessType : null,
+    receiptHeader: typeof _j.receiptHeader === 'string' ? _j.receiptHeader : null,
+    receiptFooter: typeof _j.receiptFooter === 'string' ? _j.receiptFooter : null,
+    kitchenExclusions: Array.isArray(_j.kitchenExclusions) ? _j.kitchenExclusions : null,
+    continuousOperation: typeof _j.continuousOperation === 'boolean' ? _j.continuousOperation : null,
+    businessDayCutoff: typeof _j.businessDayCutoff === 'number' ? _j.businessDayCutoff : undefined,   // 0.6.34
+    support: 'support' in _j ? (_j.support ?? null) : undefined,   // 0.6.35: an older cloud sends no key → keep
+    cashierHistoryMethods: Array.isArray(_j.cashierHistoryMethods) ? _j.cashierHistoryMethods : undefined,   // 0.6.37
+    stockCount: 'stockCount' in _j ? (_j.stockCount ?? null) : undefined,   // A394: an older cloud sends no key → keep
+    cashierSeesShiftSales: typeof _j.cashierSeesShiftSales === 'boolean' ? _j.cashierSeesShiftSales : undefined,   // A416
+    cashierHistoryTotals: typeof _j.cashierHistoryTotals === 'boolean' ? _j.cashierHistoryTotals : undefined,   // A418
+    paymentMethodsEnabled: Array.isArray(_j.paymentMethodsEnabled) ? _j.paymentMethodsEnabled : undefined,   // A429
+    // A304: null when the business has no branding row → applyReferenceConfig skips it,
+    // keeping any local value. A row (even with null fields) is remote-wins.
+    branding: (_j.branding && typeof _j.branding === 'object')
+      ? {
+          accentHex: _j.branding.accentHex ?? null, logoPng: _j.branding.logoPng ?? null,
+          // A311: undefined (not null) when the cloud predates migration 105, so the
+          // local value is kept rather than cleared — see applyPulledBranding.
+          logoReceipt: 'logoReceipt' in _j.branding ? (_j.branding.logoReceipt ?? null) : undefined,
+          receiptLogoEnabled: 'receiptLogoEnabled' in _j.branding ? (_j.branding.receiptLogoEnabled === true) : undefined,
+        }
+      : null,
+    // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
+    themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
+    // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
+    webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
+    noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
+    posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
+    reversalRules: _j.reversalRules && typeof _j.reversalRules === 'object' ? _j.reversalRules : undefined,   // 0.6.30
+    // A450: the business's name and currency (a rename on the web), and the receipt's Buy Goods / Paybill line.
+    businessName: identityFromWire(_j).businessName,
+    currency: identityFromWire(_j).currency,
+    receiptPay: identityFromWire(_j).receiptPay,
+  };
+}
+
 /** A450: the business's name / currency as the last pull said; nothing when not said or unchanged. */
 export function applyBusinessIdentity(name: string | undefined, currency: string | undefined): void {
   try {
@@ -1840,6 +1949,7 @@ async function pullCatalogue(): Promise<boolean> {
   let stockLevels: any[] = [], users: any[] = [];
   let diningTables: any[] = [], pumps: any[] = [];
   let tablesFetched = false, pumpsFetched = false;
+  let stockFetched = false;   // A531: stock levels re-based this pass (the pending deductions are laid over only then)
   let branchId: string | null = null;
   let effectiveBranchId: string | null = null;
 
@@ -1856,6 +1966,7 @@ async function pullCatalogue(): Promise<boolean> {
     ({ products, categories, comboItems, paymentMethods, offers, stations,
        variantGroups, variantOptions, modifierGroups, modifierOptions,
        stockLevels, users, diningTables, tablesFetched, pumps, pumpsFetched } = r);
+    stockFetched = Array.isArray(stockLevels);
     // the branch server's snapshot is its whole catalogue — every product's choices are in it
     variantScope = products.map((p: any) => String(p.id));
     modifierScope = variantScope;
@@ -1900,46 +2011,7 @@ async function pullCatalogue(): Promise<boolean> {
     // here now live there (each leaves the last-known-good on a missing value).
     // The kitchen-exclusion baseline is business-wide and never touches
     // kitchen_exclusions_override, so "local is final" still holds under it.
-    applyReferenceConfig({
-      branchId,
-      vatRate: numOrNull(_j.vatRate),
-      ctlRate: numOrNull(_j.ctlRate),
-      maxDiscountPct: numOrNull(_j.maxDiscountPct),
-      businessType: typeof _j.businessType === 'string' && _j.businessType ? _j.businessType : null,
-      receiptHeader: typeof _j.receiptHeader === 'string' ? _j.receiptHeader : null,
-      receiptFooter: typeof _j.receiptFooter === 'string' ? _j.receiptFooter : null,
-      kitchenExclusions: Array.isArray(_j.kitchenExclusions) ? _j.kitchenExclusions : null,
-      continuousOperation: typeof _j.continuousOperation === 'boolean' ? _j.continuousOperation : null,
-      businessDayCutoff: typeof _j.businessDayCutoff === 'number' ? _j.businessDayCutoff : undefined,   // 0.6.34
-      support: 'support' in _j ? (_j.support ?? null) : undefined,   // 0.6.35: an older cloud sends no key → keep
-      cashierHistoryMethods: Array.isArray(_j.cashierHistoryMethods) ? _j.cashierHistoryMethods : undefined,   // 0.6.37
-      stockCount: 'stockCount' in _j ? (_j.stockCount ?? null) : undefined,   // A394: an older cloud sends no key → keep
-      cashierSeesShiftSales: typeof _j.cashierSeesShiftSales === 'boolean' ? _j.cashierSeesShiftSales : undefined,   // A416
-      cashierHistoryTotals: typeof _j.cashierHistoryTotals === 'boolean' ? _j.cashierHistoryTotals : undefined,   // A418
-      paymentMethodsEnabled: Array.isArray(_j.paymentMethodsEnabled) ? _j.paymentMethodsEnabled : undefined,   // A429
-      // A304: null when the business has no branding row → applyReferenceConfig skips it,
-      // keeping any local value. A row (even with null fields) is remote-wins.
-      branding: (_j.branding && typeof _j.branding === 'object')
-        ? {
-            accentHex: _j.branding.accentHex ?? null, logoPng: _j.branding.logoPng ?? null,
-            // A311: undefined (not null) when the cloud predates migration 105, so the
-            // local value is kept rather than cleared — see applyPulledBranding.
-            logoReceipt: 'logoReceipt' in _j.branding ? (_j.branding.logoReceipt ?? null) : undefined,
-            receiptLogoEnabled: 'receiptLogoEnabled' in _j.branding ? (_j.branding.receiptLogoEnabled === true) : undefined,
-          }
-        : null,
-      // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
-      themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
-      // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
-      webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
-      noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
-      posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
-      reversalRules: _j.reversalRules && typeof _j.reversalRules === 'object' ? _j.reversalRules : undefined,   // 0.6.30
-      // A450: the business's name and currency (a rename on the web), and the receipt's Buy Goods / Paybill line.
-      businessName: identityFromWire(_j).businessName,
-      currency: identityFromWire(_j).currency,
-      receiptPay: identityFromWire(_j).receiptPay,
-    });
+    applyReferenceConfig(configFromInit(_j, branchId));   // A531: the mapping is shared with a settings change
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
     // A425: a product with no variants has none to keep; one whose fetch failed is left out (keeps what it has).
@@ -1984,6 +2056,7 @@ async function pullCatalogue(): Promise<boolean> {
       if (sRes.ok) {
         const data = await sRes.json();
         stockLevels = data.filter((s: any) => s.id !== null); // exclude unstocked placeholder rows
+        stockFetched = true;
       }
     }
 
@@ -2062,305 +2135,23 @@ async function pullCatalogue(): Promise<boolean> {
     }
   }
 
-  // Write everything in a single transaction
+  // Write everything in a single transaction. A531: one helper per table (below), shared with a change taken from
+  // /api/pos/changes — a row is stored the same way whichever way it came.
   db.transaction(() => {
-    const upsertCat = db.prepare(`
-      INSERT INTO categories (id, name, color, icon, sort_order, status, is_kitchen, synced_at)
-      VALUES (@id, @name, @color, @icon, @sort_order, @status, @is_kitchen, @synced_at)
-      ON CONFLICT(id) DO UPDATE SET
-        name=excluded.name, color=excluded.color, icon=excluded.icon,
-        sort_order=excluded.sort_order, status=excluded.status,
-        is_kitchen=excluded.is_kitchen, synced_at=excluded.synced_at
-    `);
-    for (const c of categories) {
-      upsertCat.run({ ...c, is_kitchen: c.is_kitchen ? 1 : 0, synced_at: now });
-    }
-
-    // Custom payment methods (A96). Replaced wholesale like stations: a method
-    // deactivated or deleted upstream must stop appearing at the till. Guarded on
-    // a defined list so a partial response can't wipe the tenders. The built-in
-    // Cash / M-Pesa / Card are not stored here — they live in the POS.
-    if (Array.isArray(paymentMethods)) {
-      db.prepare(`DELETE FROM payment_methods`).run();
-      const insPm = db.prepare(`INSERT OR REPLACE INTO payment_methods (code, name, sort_order) VALUES (?, ?, ?)`);
-      paymentMethods.forEach((m: { code: string; name: string }, i: number) => insPm.run(m.code, m.name, i));
-    }
-
-    // Stations and their routing. Replaced wholesale, not upserted: a station
-    // deleted upstream, or a category unrouted from one, must disappear here too.
-    // An upsert would leave stale routing behind and keep sending tickets to a
-    // station that no longer exists — the failure being silent, as ever.
-    //
-    // Guarded on a successful fetch: `null` means we could not ask, and wiping
-    // routing because the network blinked would stop the kitchen printing.
-    if (stations !== null) {
-      db.prepare(`DELETE FROM category_stations`).run();
-      db.prepare(`DELETE FROM print_stations`).run();
-      const upsertStation = db.prepare(`
-        INSERT INTO print_stations (id, name, kind, sort_order, active, synced_at)
-        VALUES (@id, @name, @kind, @sort_order, @active, @synced_at)
-      `);
-      const linkStation = db.prepare(`
-        INSERT OR IGNORE INTO category_stations (category_id, station_id) VALUES (?, ?)
-      `);
-      for (const st of stations) {
-        upsertStation.run({
-          id: st.id,
-          name: st.name,
-          kind: st.kind ?? 'kitchen',
-          sort_order: Number(st.sort_order) || 0,
-          active: st.active === false ? 0 : 1,
-          synced_at: now,
-        });
-        for (const catId of (st.category_ids ?? [])) linkStation.run(catId, st.id);
-      }
-      // A411: routing saved on this till and not yet on the cloud stays as the till has it.
-      overlayPendingRouting(db);
-    }
-
-    // Combo components. Replaced wholesale rather than upserted — a component
-    // REMOVED from a combo upstream must disappear here too, and an upsert would
-    // leave it behind to be packed and cooked forever.
-    // A445: the branch's offers, replaced wholesale — only when the source sent them. Each kept as the cleaned offer.
-    if (offers !== null) {
-      db.prepare(`DELETE FROM offers`).run();
-      const putOffer = db.prepare(`INSERT OR REPLACE INTO offers (id, data) VALUES (?, ?)`);
-      for (const raw of offers) {
-        const c = cleanOffer(raw);
-        if (c.ok && (c as { offer: Offer }).offer.id) putOffer.run((c as { offer: Offer }).offer.id, JSON.stringify((c as { offer: Offer }).offer));
-      }
-    }
-    db.prepare(`DELETE FROM combo_items`).run();
-    const upsertCombo = db.prepare(`
-      INSERT INTO combo_items (combo_id, product_id, name, quantity, sort_order, is_kitchen, synced_at)
-      VALUES (@combo_id, @product_id, @name, @quantity, @sort_order, @is_kitchen, @synced_at)
-    `);
-    for (const [comboId, items] of Object.entries((comboItems ?? {}) as Record<string, any[]>)) {
-      items.forEach((it, idx) => upsertCombo.run({
-        combo_id:   comboId,
-        product_id: it.product_id,
-        name:       it.name,
-        quantity:   Number(it.quantity) || 1,
-        sort_order: idx,
-        is_kitchen: it.is_kitchen ? 1 : 0,
-        synced_at:  now,
-      }));
-    }
-
-    const upsertProd = db.prepare(`
-      INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, synced_at)
-      VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @synced_at)
-      ON CONFLICT(id) DO UPDATE SET
-        category_id=excluded.category_id, name=excluded.name, description=excluded.description,
-        base_price=excluded.base_price, branch_price=excluded.branch_price, image_url=excluded.image_url,
-        has_variants=excluded.has_variants, has_modifiers=excluded.has_modifiers,
-        track_stock=excluded.track_stock, status=excluded.status,
-        barcode=excluded.barcode, plu=excluded.plu, is_fuel=excluded.is_fuel,
-        is_kitchen=excluded.is_kitchen, show_days=excluded.show_days,
-        synced_at=excluded.synced_at
-    `);
-    for (const p of products) {
-      upsertProd.run({
-        ...p,
-        has_variants:  p.has_variants  ? 1 : 0,
-        has_modifiers: p.has_modifiers ? 1 : 0,
-        track_stock:   p.track_stock   ? 1 : 0,
-        is_fuel:       (p as any).is_fuel ? 1 : 0,
-        barcode:       (p as any).barcode ?? null,
-        plu:           (p as any).plu ?? null,
-        branch_price:  (p as any).branch_price ?? null,
-        // Preserve the tri-state: null must stay null, not become 0.
-        is_kitchen:    typeof (p as any).is_kitchen === 'boolean' ? ((p as any).is_kitchen ? 1 : 0) : null,
-        // 0.6.31: the days it is on the grid (JSON array); null = every day. An older cloud sends none → every day.
-        show_days:     (() => { const d = cleanShowDays((p as any).show_days); return d ? JSON.stringify(d) : null; })(),
-        synced_at:     now,
-      });
-    }
-
-    // Re-apply the manager's UNSYNCED local price overrides on top of the pulled
-    // catalogue. The pull just overwrote products.branch_price with whatever the
-    // server had; for products the manager edited locally but hasn't yet synced
-    // up, the LOCAL value is authoritative (branch owns its prices). Without this
-    // a routine catalogue sync would silently wipe an offline price change.
-    // price NULL = the manager cleared the override → force back to base_price.
-    db.prepare(`
-      UPDATE products
-         SET branch_price = (SELECT lpe.price FROM local_price_edits lpe
-                              WHERE lpe.product_id = products.id AND lpe.synced = 0)
-       WHERE id IN (SELECT product_id FROM local_price_edits WHERE synced = 0)
-    `).run();
-
-    const upsertVG = db.prepare(`
-      INSERT INTO variant_groups (id, product_id, name, required, sort_order)
-      VALUES (@id, @product_id, @name, @required, @sort_order)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name, required=excluded.required
-    `);
-    const upsertVO = db.prepare(`
-      INSERT INTO variant_options (id, variant_group_id, name, price_adjustment, sort_order)
-      VALUES (@id, @variant_group_id, @name, @price_adjustment, @sort_order)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name, price_adjustment=excluded.price_adjustment
-    `);
-    for (const g of variantGroups) upsertVG.run({ ...g, required: g.required ? 1 : 0 });
-    for (const o of variantOptions) upsertVO.run(o);
-
-    const upsertMG = db.prepare(`
-      INSERT INTO modifier_groups (id, product_id, name, min_select, max_select, sort_order)
-      VALUES (@id, @product_id, @name, @min_select, @max_select, @sort_order)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name, min_select=excluded.min_select, max_select=excluded.max_select
-    `);
-    const upsertMO = db.prepare(`
-      INSERT INTO modifier_options (id, modifier_group_id, name, price, sort_order)
-      VALUES (@id, @modifier_group_id, @name, @price, @sort_order)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name, price=excluded.price
-    `);
-    for (const g of modifierGroups) upsertMG.run(g);
-    for (const o of modifierOptions) upsertMO.run(o);
-
-    // A425: replaced, not only upserted — a group or option the cloud removed (every menu upload replaces a group's
-    // options) must leave the till, or each upload adds another "Size" that has to be picked before the item can be rung.
-    const vp = pruneChoices(db, VARIANT_TABLES, variantScope, variantGroups, variantOptions);
-    const mp = pruneChoices(db, MODIFIER_TABLES, modifierScope, modifierGroups, modifierOptions);
-    if (vp.groups + vp.options + mp.groups + mp.options > 0) {
-      logLine('sync', `menu choices removed upstream dropped — variants ${vp.groups} groups / ${vp.options} options, add-ons ${mp.groups} / ${mp.options}`);
-    }
-
-    if (effectiveBranchId) {
-      // The bound branch becomes the till's is_main row — the branch every
-      // order, stock deduction, and table belongs to.
-      db.prepare(`UPDATE branches SET is_main = 0 WHERE id != ?`).run(effectiveBranchId);
-      db.prepare(`
-        INSERT INTO branches (id, name, is_main) VALUES (?, 'Branch', 1)
-        ON CONFLICT(id) DO UPDATE SET is_main = 1
-      `).run(effectiveBranchId);
-    }
-
-    // Stock levels — remote wins (reference point for delta merges)
-    const upsertStock = db.prepare(`
-      INSERT INTO stock_levels (product_id, branch_id, quantity, low_stock_threshold, synced_at)
-      VALUES (@product_id, @branch_id, @quantity, @low_stock_threshold, @synced_at)
-      ON CONFLICT(product_id, branch_id) DO UPDATE SET
-        quantity=excluded.quantity,
-        low_stock_threshold=excluded.low_stock_threshold,
-        synced_at=excluded.synced_at
-    `);
-    for (const s of stockLevels) {
-      upsertStock.run({
-        product_id: s.product_id,
-        branch_id: s.branch_id ?? effectiveBranchId,
-        quantity: s.quantity,
-        low_stock_threshold: s.low_stock_threshold ?? 5,
-        synced_at: now,
-      });
-    }
-
-    // Delta merge (A80). The upsert above set every level to the SERVER baseline,
-    // which reflects only the orders the server has ingested — i.e. our SYNCED
-    // orders. Orders still 'pending' here deducted stock locally in
-    // createLocalOrder but that deduction is NOT yet in the server baseline, so
-    // the plain overwrite just erased it — the till would show stale-high stock
-    // from reconnect until the next pull, and worse while a push keeps failing.
-    // Re-apply the pending deductions now, which is the "delta merge" the header
-    // and this block always claimed but never actually did. 'pending' covers
-    // failed-to-push orders too: the push failure branch never flips
-    // orders.sync_status, so it stays 'pending' until a push finally succeeds.
-    //
-    // Scoped to THIS till's own device_id: on a till acting as the branch node,
-    // `orders` also holds peer terminals' rows (nodeIngest replicates them), but
-    // nodeIngest never touches stock_levels — only this till's own
-    // createLocalOrder deducted local stock, so only its own pending orders may
-    // be re-applied. Summing peers' rows would over-subtract phantom stock.
-    const deviceId = getDeviceConfig()?.device_id ?? null;
-    const pendingDeltas = db.prepare(`
-      SELECT oi.product_id AS product_id, o.branch_id AS branch_id,
-             SUM(oi.quantity) AS deducted
-      FROM order_items oi
-      JOIN orders   o ON o.id = oi.order_id
-      JOIN products p ON p.id = oi.product_id
-      WHERE o.sync_status = 'pending' AND p.track_stock = 1
-        AND COALESCE(o.device_id,'') = COALESCE(@device_id,'')
-      GROUP BY oi.product_id, o.branch_id
-    `).all({ device_id: deviceId }) as Array<{ product_id: string; branch_id: string | null; deducted: number }>;
-
-    // quantity may go negative — that is the A74 "sold beyond stock" state and
-    // must survive the merge, so no floor here.
-    const applyDelta = db.prepare(`
-      UPDATE stock_levels SET quantity = quantity - @deducted
-      WHERE product_id = @product_id AND branch_id = @branch_id
-    `);
-    for (const d of pendingDeltas) {
-      applyDelta.run({
-        product_id: d.product_id,
-        branch_id:  d.branch_id ?? effectiveBranchId,
-        deducted:   Number(d.deducted) || 0,
-      });
-    }
-
-    // Users — remote wins. roles is a to-one relation -> { name } from /api/staff.
-    const upsertUser = db.prepare(`
-      INSERT INTO users (id, name, role_name, status, synced_at)
-      VALUES (@id, @name, @role_name, @status, @synced_at)
-      ON CONFLICT(id) DO UPDATE SET
-        name=excluded.name, role_name=excluded.role_name,
-        status=excluded.status, synced_at=excluded.synced_at
-    `);
-    for (const u of users) {
-      upsertUser.run({
-        id: u.id,
-        name: u.name ?? 'Staff',
-        role_name: u.roles?.name ?? null,
-        status: u.status ?? 'active',
-        synced_at: now,
-      });
-    }
-
-    // Dining tables — remote wins, replace-all (only when the fetch SUCCEEDED:
-    // tables deleted on the server must disappear here too, but a failed fetch
-    // must not nuke a working offline table map).
-    if (tablesFetched) {
-      db.prepare(`DELETE FROM tables`).run();
-      const insertTable = db.prepare(`
-        INSERT INTO tables (id, name, capacity, sort_order, slot_type, pos_x, pos_y, zone, shape, synced_at)
-        VALUES (@id, @name, @capacity, @sort_order, @slot_type, @pos_x, @pos_y, @zone, @shape, @synced_at)
-      `);
-      for (const t of diningTables) {
-        insertTable.run({
-          id: t.id,
-          name: t.name,
-          capacity: t.capacity ?? 4,
-          sort_order: t.sort_order ?? 0,
-          slot_type: t.slot_type ?? 'dining',
-          pos_x: t.pos_x ?? null,
-          pos_y: t.pos_y ?? null,
-          zone: t.zone ?? null,
-          shape: t.shape ?? null,
-          synced_at: now,
-        });
-      }
-    }
-
-    // Fuel pumps — remote wins, replace-all (only on a successful fetch, same
-    // rationale as tables).
-    if (pumpsFetched) {
-      db.prepare(`DELETE FROM pumps`).run();
-      const insertPump = db.prepare(`
-        INSERT INTO pumps (id, branch_id, fuel_product_id, name, status, sort_order, synced_at)
-        VALUES (@id, @branch_id, @fuel_product_id, @name, @status, @sort_order, @synced_at)
-      `);
-      for (const pu of pumps) {
-        insertPump.run({
-          id: pu.id,
-          branch_id: pu.branch_id ?? null,
-          fuel_product_id: pu.fuel_product_id ?? null,
-          name: pu.name,
-          status: pu.status ?? 'idle',
-          sort_order: pu.sort_order ?? 0,
-          synced_at: now,
-        });
-      }
-    }
+    writeCategories(db, categories, now);
+    writePaymentMethods(db, paymentMethods);
+    writeStations(db, stations, now);
+    writeOffers(db, offers);
+    writeComboItems(db, comboItems, now);
+    writeProducts(db, products, now);
+    writeChoices(db, variantGroups, variantOptions, modifierGroups, modifierOptions, variantScope, modifierScope);
+    bindBranch(db, effectiveBranchId);
+    writeStockLevels(db, stockLevels, effectiveBranchId, now, stockFetched);
+    writeUsers(db, users, now);
+    writeTables(db, diningTables, now, tablesFetched);
+    writePumps(db, pumps, now, pumpsFetched);
     // A448: this till's own changes that still wait (not yet answered, or with the owner) go back over what the pull wrote
     // — a pull never undoes a change made here.
-    overlayLocalChanges(db);
   })();
 
   // PHASE5 §4b (A17): a NODE also pulls the branch staff roster so it can
@@ -2382,6 +2173,415 @@ async function pullCatalogue(): Promise<boolean> {
   // catalogue pull, could lay the server's older copy over the fresher list the cloud had just given.
 
   return true;
+}
+
+
+// ── A531: a pull's writes, one table at a time ───────────────────────────────────────────────────────────────────────
+// The whole pull (pullCatalogue, above) and a change from GET /api/pos/changes (applyChangeEntries, below) store a row
+// the same way — one copy of each mapping, moved here unchanged from pullCatalogue's transaction. Each runs inside the
+// caller's transaction.
+type LocalDbT = ReturnType<typeof getLocalDb>;
+function writeCategories(db: LocalDbT, categories: any[], now: string): void {
+  const upsertCat = db.prepare(`
+    INSERT INTO categories (id, name, color, icon, sort_order, status, is_kitchen, synced_at)
+    VALUES (@id, @name, @color, @icon, @sort_order, @status, @is_kitchen, @synced_at)
+    ON CONFLICT(id) DO UPDATE SET
+      name=excluded.name, color=excluded.color, icon=excluded.icon,
+      sort_order=excluded.sort_order, status=excluded.status,
+      is_kitchen=excluded.is_kitchen, synced_at=excluded.synced_at
+  `);
+  for (const c of categories) {
+    upsertCat.run({ ...c, is_kitchen: c.is_kitchen ? 1 : 0, synced_at: now });
+  }
+}
+function writePaymentMethods(db: LocalDbT, paymentMethods: Array<{ code: string; name: string }> | null): void {
+  // Custom payment methods (A96). Replaced wholesale like stations: a method
+  // deactivated or deleted upstream must stop appearing at the till. Guarded on
+  // a defined list so a partial response can't wipe the tenders. The built-in
+  // Cash / M-Pesa / Card are not stored here — they live in the POS.
+  if (Array.isArray(paymentMethods)) {
+    db.prepare(`DELETE FROM payment_methods`).run();
+    const insPm = db.prepare(`INSERT OR REPLACE INTO payment_methods (code, name, sort_order) VALUES (?, ?, ?)`);
+    paymentMethods.forEach((m: { code: string; name: string }, i: number) => insPm.run(m.code, m.name, i));
+  }
+}
+function writeStations(db: LocalDbT, stations: any[] | null, now: string): void {
+  // Stations and their routing. Replaced wholesale, not upserted: a station
+  // deleted upstream, or a category unrouted from one, must disappear here too.
+  // An upsert would leave stale routing behind and keep sending tickets to a
+  // station that no longer exists — the failure being silent, as ever.
+  //
+  // Guarded on a successful fetch: `null` means we could not ask, and wiping
+  // routing because the network blinked would stop the kitchen printing.
+  if (stations !== null) {
+    db.prepare(`DELETE FROM category_stations`).run();
+    db.prepare(`DELETE FROM print_stations`).run();
+    const upsertStation = db.prepare(`
+      INSERT INTO print_stations (id, name, kind, sort_order, active, synced_at)
+      VALUES (@id, @name, @kind, @sort_order, @active, @synced_at)
+    `);
+    const linkStation = db.prepare(`
+      INSERT OR IGNORE INTO category_stations (category_id, station_id) VALUES (?, ?)
+    `);
+    for (const st of stations) {
+      upsertStation.run({
+        id: st.id,
+        name: st.name,
+        kind: st.kind ?? 'kitchen',
+        sort_order: Number(st.sort_order) || 0,
+        active: st.active === false ? 0 : 1,
+        synced_at: now,
+      });
+      for (const catId of (st.category_ids ?? [])) linkStation.run(catId, st.id);
+    }
+    // A411: routing saved on this till and not yet on the cloud stays as the till has it.
+    overlayPendingRouting(db);
+  }
+}
+function writeOffers(db: LocalDbT, offers: any[] | null): void {
+  // A445: the branch's offers, replaced wholesale — only when the source sent them. Each kept as the cleaned offer.
+  if (offers !== null) {
+    db.prepare(`DELETE FROM offers`).run();
+    for (const raw of offers) putOffer(db, raw);
+  }
+}
+/** One offer, kept as the cleaned offer (A445); false when the till's engine would refuse it. */
+function putOffer(db: LocalDbT, raw: unknown): boolean {
+  const c = cleanOffer(raw);
+  if (!c.ok || !(c as { offer: Offer }).offer.id) return false;
+  db.prepare(`INSERT OR REPLACE INTO offers (id, data) VALUES (?, ?)`).run((c as { offer: Offer }).offer.id, JSON.stringify((c as { offer: Offer }).offer));
+  return true;
+}
+function writeComboItems(db: LocalDbT, comboItems: Record<string, any[]> | undefined, now: string, onlyCombos: string[] | null = null): void {
+  // Combo components. Replaced wholesale rather than upserted — a component
+  // REMOVED from a combo upstream must disappear here too, and an upsert would
+  // leave it behind to be packed and cooked forever.
+  // A531: a change names the combos it carries — only their lines are replaced; a whole pull replaces every line.
+  if (onlyCombos) { const del = db.prepare(`DELETE FROM combo_items WHERE combo_id = ?`); for (const id of onlyCombos) del.run(id); }
+  else db.prepare(`DELETE FROM combo_items`).run();
+  const upsertCombo = db.prepare(`
+    INSERT INTO combo_items (combo_id, product_id, name, quantity, sort_order, is_kitchen, synced_at)
+    VALUES (@combo_id, @product_id, @name, @quantity, @sort_order, @is_kitchen, @synced_at)
+  `);
+  for (const [comboId, items] of Object.entries((comboItems ?? {}) as Record<string, any[]>)) {
+    items.forEach((it, idx) => upsertCombo.run({
+      combo_id:   comboId,
+      product_id: it.product_id,
+      name:       it.name,
+      quantity:   Number(it.quantity) || 1,
+      sort_order: idx,
+      is_kitchen: it.is_kitchen ? 1 : 0,
+      synced_at:  now,
+    }));
+  }
+}
+function writeProducts(db: LocalDbT, products: any[], now: string): void {
+  const upsertProd = db.prepare(`
+    INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, synced_at)
+    VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @synced_at)
+    ON CONFLICT(id) DO UPDATE SET
+      category_id=excluded.category_id, name=excluded.name, description=excluded.description,
+      base_price=excluded.base_price, branch_price=excluded.branch_price, image_url=excluded.image_url,
+      has_variants=excluded.has_variants, has_modifiers=excluded.has_modifiers,
+      track_stock=excluded.track_stock, status=excluded.status,
+      barcode=excluded.barcode, plu=excluded.plu, is_fuel=excluded.is_fuel,
+      is_kitchen=excluded.is_kitchen, show_days=excluded.show_days,
+      synced_at=excluded.synced_at
+  `);
+  for (const p of products) {
+    upsertProd.run({
+      ...p,
+      has_variants:  p.has_variants  ? 1 : 0,
+      has_modifiers: p.has_modifiers ? 1 : 0,
+      track_stock:   p.track_stock   ? 1 : 0,
+      is_fuel:       (p as any).is_fuel ? 1 : 0,
+      barcode:       (p as any).barcode ?? null,
+      plu:           (p as any).plu ?? null,
+      branch_price:  (p as any).branch_price ?? null,
+      // Preserve the tri-state: null must stay null, not become 0.
+      is_kitchen:    typeof (p as any).is_kitchen === 'boolean' ? ((p as any).is_kitchen ? 1 : 0) : null,
+      // 0.6.31: the days it is on the grid (JSON array); null = every day. An older cloud sends none → every day.
+      show_days:     (() => { const d = cleanShowDays((p as any).show_days); return d ? JSON.stringify(d) : null; })(),
+      synced_at:     now,
+    });
+  }
+
+  // Re-apply the manager's UNSYNCED local price overrides on top of the pulled
+  // catalogue. The pull just overwrote products.branch_price with whatever the
+  // server had; for products the manager edited locally but hasn't yet synced
+  // up, the LOCAL value is authoritative (branch owns its prices). Without this
+  // a routine catalogue sync would silently wipe an offline price change.
+  // price NULL = the manager cleared the override → force back to base_price.
+  db.prepare(`
+    UPDATE products
+       SET branch_price = (SELECT lpe.price FROM local_price_edits lpe
+                            WHERE lpe.product_id = products.id AND lpe.synced = 0)
+     WHERE id IN (SELECT product_id FROM local_price_edits WHERE synced = 0)
+  `).run();
+}
+function writeChoices(db: LocalDbT, variantGroups: any[], variantOptions: any[], modifierGroups: any[], modifierOptions: any[],
+  variantScope: string[], modifierScope: string[]): void {
+  const upsertVG = db.prepare(`
+    INSERT INTO variant_groups (id, product_id, name, required, sort_order)
+    VALUES (@id, @product_id, @name, @required, @sort_order)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, required=excluded.required
+  `);
+  const upsertVO = db.prepare(`
+    INSERT INTO variant_options (id, variant_group_id, name, price_adjustment, sort_order)
+    VALUES (@id, @variant_group_id, @name, @price_adjustment, @sort_order)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, price_adjustment=excluded.price_adjustment
+  `);
+  for (const g of variantGroups) upsertVG.run({ ...g, required: g.required ? 1 : 0 });
+  for (const o of variantOptions) upsertVO.run(o);
+
+  const upsertMG = db.prepare(`
+    INSERT INTO modifier_groups (id, product_id, name, min_select, max_select, sort_order)
+    VALUES (@id, @product_id, @name, @min_select, @max_select, @sort_order)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, min_select=excluded.min_select, max_select=excluded.max_select
+  `);
+  const upsertMO = db.prepare(`
+    INSERT INTO modifier_options (id, modifier_group_id, name, price, sort_order)
+    VALUES (@id, @modifier_group_id, @name, @price, @sort_order)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, price=excluded.price
+  `);
+  for (const g of modifierGroups) upsertMG.run(g);
+  for (const o of modifierOptions) upsertMO.run(o);
+
+  // A425: replaced, not only upserted — a group or option the cloud removed (every menu upload replaces a group's
+  // options) must leave the till, or each upload adds another "Size" that has to be picked before the item can be rung.
+  const vp = pruneChoices(db, VARIANT_TABLES, variantScope, variantGroups, variantOptions);
+  const mp = pruneChoices(db, MODIFIER_TABLES, modifierScope, modifierGroups, modifierOptions);
+  if (vp.groups + vp.options + mp.groups + mp.options > 0) {
+    logLine('sync', `menu choices removed upstream dropped — variants ${vp.groups} groups / ${vp.options} options, add-ons ${mp.groups} / ${mp.options}`);
+  }
+}
+function bindBranch(db: LocalDbT, effectiveBranchId: string | null): void {
+  if (effectiveBranchId) {
+    // The bound branch becomes the till's is_main row — the branch every
+    // order, stock deduction, and table belongs to.
+    db.prepare(`UPDATE branches SET is_main = 0 WHERE id != ?`).run(effectiveBranchId);
+    db.prepare(`
+      INSERT INTO branches (id, name, is_main) VALUES (?, 'Branch', 1)
+      ON CONFLICT(id) DO UPDATE SET is_main = 1
+    `).run(effectiveBranchId);
+  }
+}
+function writeStockLevels(db: LocalDbT, stockLevels: any[], effectiveBranchId: string | null, now: string, stockFetched: boolean): void {
+  // A531: only over a baseline this pass really received — re-applying the pending deductions over levels that were not
+  // refreshed (the stock read failed, or a change that carried none) took them off twice.
+  if (!stockFetched) return;
+  // Stock levels — remote wins (reference point for delta merges)
+  const upsertStock = db.prepare(`
+    INSERT INTO stock_levels (product_id, branch_id, quantity, low_stock_threshold, synced_at)
+    VALUES (@product_id, @branch_id, @quantity, @low_stock_threshold, @synced_at)
+    ON CONFLICT(product_id, branch_id) DO UPDATE SET
+      quantity=excluded.quantity,
+      low_stock_threshold=excluded.low_stock_threshold,
+      synced_at=excluded.synced_at
+  `);
+  for (const s of stockLevels) {
+    upsertStock.run({
+      product_id: s.product_id,
+      branch_id: s.branch_id ?? effectiveBranchId,
+      quantity: s.quantity,
+      low_stock_threshold: s.low_stock_threshold ?? 5,
+      synced_at: now,
+    });
+  }
+
+  // Delta merge (A80). The upsert above set every level to the SERVER baseline,
+  // which reflects only the orders the server has ingested — i.e. our SYNCED
+  // orders. Orders still 'pending' here deducted stock locally in
+  // createLocalOrder but that deduction is NOT yet in the server baseline, so
+  // the plain overwrite just erased it — the till would show stale-high stock
+  // from reconnect until the next pull, and worse while a push keeps failing.
+  // Re-apply the pending deductions now, which is the "delta merge" the header
+  // and this block always claimed but never actually did. 'pending' covers
+  // failed-to-push orders too: the push failure branch never flips
+  // orders.sync_status, so it stays 'pending' until a push finally succeeds.
+  //
+  // Scoped to THIS till's own device_id: on a till acting as the branch node,
+  // `orders` also holds peer terminals' rows (nodeIngest replicates them), but
+  // nodeIngest never touches stock_levels — only this till's own
+  // createLocalOrder deducted local stock, so only its own pending orders may
+  // be re-applied. Summing peers' rows would over-subtract phantom stock.
+  const deviceId = getDeviceConfig()?.device_id ?? null;
+  const pendingDeltas = db.prepare(`
+    SELECT oi.product_id AS product_id, o.branch_id AS branch_id,
+           SUM(oi.quantity) AS deducted
+    FROM order_items oi
+    JOIN orders   o ON o.id = oi.order_id
+    JOIN products p ON p.id = oi.product_id
+    WHERE o.sync_status = 'pending' AND p.track_stock = 1
+      AND COALESCE(o.device_id,'') = COALESCE(@device_id,'')
+    GROUP BY oi.product_id, o.branch_id
+  `).all({ device_id: deviceId }) as Array<{ product_id: string; branch_id: string | null; deducted: number }>;
+
+  // quantity may go negative — that is the A74 "sold beyond stock" state and
+  // must survive the merge, so no floor here.
+  const applyDelta = db.prepare(`
+    UPDATE stock_levels SET quantity = quantity - @deducted
+    WHERE product_id = @product_id AND branch_id = @branch_id
+  `);
+  for (const d of pendingDeltas) {
+    applyDelta.run({
+      product_id: d.product_id,
+      branch_id:  d.branch_id ?? effectiveBranchId,
+      deducted:   Number(d.deducted) || 0,
+    });
+  }
+}
+function writeUsers(db: LocalDbT, users: any[], now: string): void {
+  // Users — remote wins. roles is a to-one relation -> { name } from /api/staff.
+  const upsertUser = db.prepare(`
+    INSERT INTO users (id, name, role_name, status, synced_at)
+    VALUES (@id, @name, @role_name, @status, @synced_at)
+    ON CONFLICT(id) DO UPDATE SET
+      name=excluded.name, role_name=excluded.role_name,
+      status=excluded.status, synced_at=excluded.synced_at
+  `);
+  for (const u of users) {
+    upsertUser.run({
+      id: u.id,
+      name: u.name ?? 'Staff',
+      role_name: u.roles?.name ?? null,
+      status: u.status ?? 'active',
+      synced_at: now,
+    });
+  }
+}
+function writeTables(db: LocalDbT, diningTables: any[], now: string, tablesFetched: boolean, onlyIds: string[] | null = null): void {
+  // Dining tables — remote wins, replace-all (only when the fetch SUCCEEDED:
+  // tables deleted on the server must disappear here too, but a failed fetch
+  // must not nuke a working offline table map).
+  if (tablesFetched) {
+    // A531: a change replaces only its own rows; a whole pull replaces every row.
+    if (onlyIds) { const del = db.prepare(`DELETE FROM tables WHERE id = ?`); for (const id of onlyIds) del.run(id); }
+    else db.prepare(`DELETE FROM tables`).run();
+    const insertTable = db.prepare(`
+      INSERT INTO tables (id, name, capacity, sort_order, slot_type, pos_x, pos_y, zone, shape, synced_at)
+      VALUES (@id, @name, @capacity, @sort_order, @slot_type, @pos_x, @pos_y, @zone, @shape, @synced_at)
+    `);
+    for (const t of diningTables) {
+      insertTable.run({
+        id: t.id,
+        name: t.name,
+        capacity: t.capacity ?? 4,
+        sort_order: t.sort_order ?? 0,
+        slot_type: t.slot_type ?? 'dining',
+        pos_x: t.pos_x ?? null,
+        pos_y: t.pos_y ?? null,
+        zone: t.zone ?? null,
+        shape: t.shape ?? null,
+        synced_at: now,
+      });
+    }
+  }
+}
+function writePumps(db: LocalDbT, pumps: any[], now: string, pumpsFetched: boolean, onlyIds: string[] | null = null): void {
+  // Fuel pumps — remote wins, replace-all (only on a successful fetch, same
+  // rationale as tables).
+  if (pumpsFetched) {
+    // A531: a change replaces only its own rows; a whole pull replaces every row.
+    if (onlyIds) { const del = db.prepare(`DELETE FROM pumps WHERE id = ?`); for (const id of onlyIds) del.run(id); }
+    else db.prepare(`DELETE FROM pumps`).run();
+    const insertPump = db.prepare(`
+      INSERT INTO pumps (id, branch_id, fuel_product_id, name, status, sort_order, synced_at)
+      VALUES (@id, @branch_id, @fuel_product_id, @name, @status, @sort_order, @synced_at)
+    `);
+    for (const pu of pumps) {
+      insertPump.run({
+        id: pu.id,
+        branch_id: pu.branch_id ?? null,
+        fuel_product_id: pu.fuel_product_id ?? null,
+        name: pu.name,
+        status: pu.status ?? 'idle',
+        sort_order: pu.sort_order ?? 0,
+        synced_at: now,
+      });
+    }
+  }
+}
+
+
+// ── A531: a change from GET /api/pos/changes (or the branch server's /node/live), row by row ─────────────────────────
+// Owner, 2026-10-19: "if I change fries from 100 to 150 the trigger should only send the affected product and price, not
+// the whole menu". Each entry is stored with the SAME helper the whole pull uses (above). A delete of a product or a
+// category leaves the row (an old sale still names it) and takes it off the grid (status 'inactive'); an offer, a table,
+// a pump goes. A person: their name for the reports (users) and their row on this branch's staff list (branchStaff).
+export interface AppliedChanges { rows: number; byTable: Record<string, number>; staff: number; config: number }
+export function applyChangeEntries(entries: ChangeEntry[]): AppliedChanges {
+  const db = getLocalDb();
+  const now = new Date().toISOString();
+  const out: AppliedChanges = { rows: 0, byTable: {}, staff: 0, config: 0 };
+  const configs: Array<Record<string, unknown>> = [];
+  const staffUp: BranchStaffRow[] = []; const staffOff: string[] = [];
+  const count = (t: string) => { out.rows++; out.byTable[t] = (out.byTable[t] ?? 0) + 1; };
+  db.transaction(() => {
+    for (const e of entries) {
+      const row = (e.row ?? null) as any;
+      const up = e.op === 'upsert' && row && typeof row === 'object';
+      switch (e.table) {
+        case 'products':
+          if (up && row.product?.id) {
+            writeProducts(db, [row.product], now);
+            writeComboItems(db, Array.isArray(row.comboItems) && row.comboItems.length ? { [e.id]: row.comboItems } : {}, now, [e.id]);
+          } else db.prepare(`UPDATE products SET status = 'inactive', synced_at = ? WHERE id = ?`).run(now, e.id);
+          count(e.table); break;
+        case 'product_choices': {
+          const vg = up && Array.isArray(row.variantGroups) ? row.variantGroups : [];
+          const mg = up && Array.isArray(row.modifierGroups) ? row.modifierGroups : [];
+          const vo = vg.flatMap((g: any) => g.variant_options ?? []);
+          const mo = mg.flatMap((g: any) => g.modifier_options ?? []);
+          writeChoices(db, vg, vo, mg, mo, [e.id], [e.id]);   // this product's choices: exactly these
+          count(e.table); break;
+        }
+        case 'categories':
+          if (up) writeCategories(db, [row], now);
+          else db.prepare(`UPDATE categories SET status = 'inactive', synced_at = ? WHERE id = ?`).run(now, e.id);
+          count(e.table); break;
+        case 'offers':
+          if (!(up && putOffer(db, row))) db.prepare(`DELETE FROM offers WHERE id = ?`).run(e.id);
+          count(e.table); break;
+        case 'stock_count':
+          if (up) configs.push({ stockCount: row.stockCount ?? null });
+          count(e.table); break;
+        case 'staff':
+          if (up && row.user?.id) writeUsers(db, [row.user], now);
+          else db.prepare(`UPDATE users SET status = 'inactive', synced_at = ? WHERE id = ?`).run(now, e.id);
+          if (!up) staffOff.push(e.id);
+          else if ('roster' in row) { if (row.roster) staffUp.push(row.roster as BranchStaffRow); else staffOff.push(e.id); }
+          count(e.table); break;
+        case 'config':
+          if (up) {
+            if (Array.isArray(row.paymentMethods)) writePaymentMethods(db, row.paymentMethods);
+            configs.push(row);
+          }
+          count(e.table); break;
+        case 'branding':
+          if (up) configs.push(row);
+          count(e.table); break;
+        case 'print_stations':
+          if (up && Array.isArray(row.stations)) writeStations(db, row.stations, now);
+          count(e.table); break;
+        case 'tables':
+          writeTables(db, up ? [row] : [], now, true, [e.id]);
+          count(e.table); break;
+        case 'pumps':
+          writePumps(db, up ? [row] : [], now, true, [e.id]);
+          count(e.table); break;
+        default:
+          break;   // a table a newer cloud sends and this till does not know: skipped (the daily whole pull has it)
+      }
+    }
+    // A448: this till's own changes that still wait go back over what was written.
+    overlayLocalChanges(db);
+  })();
+  for (const c of configs) { applyReferenceConfig(configFromInit(c, null)); out.config++; }
+  const branch = getDeviceConfig()?.branch_id ?? null;
+  if (branch && (staffUp.length || staffOff.length)) out.staff = applyBranchStaffChanges(branch, staffUp, staffOff);
+  if (out.rows) notifyCataloguePulled();
+  return out;
 }
 
 // ── Push pending orders to Express ──────────────────────────
@@ -2756,8 +2956,28 @@ export function pruneSyncedQueue(now = Date.now()): number {
     .run(cutoff.toISOString()).changes;
 }
 
+// A446: sales left 'failed' by a connection problem, not by the cloud. A529: and by a page that was not the cloud's — this
+// build's own words ("another server's page") and an earlier build's: a bare "HTTP 404" is what describeServerError makes
+// of an answer with no JSON error, and our cloud always words its refusals (a suspended Render service, a Cloudflare page
+// or a captive portal does not). COALESCE: a row with no error is never one of them (NOT NULL would drop it from both).
+const CONNECTION_FAILURE_SQL = `(COALESCE(last_error, '') LIKE '%fetch failed%' OR COALESCE(last_error, '') LIKE '%timed out%' OR COALESCE(last_error, '') LIKE '%cannot reach%'
+  OR COALESCE(last_error, '') LIKE '%ECONN%' OR COALESCE(last_error, '') LIKE '%ENOTFOUND%' OR COALESCE(last_error, '') LIKE '%EAI_AGAIN%' OR COALESCE(last_error, '') LIKE '%HTTP 5%'
+  OR COALESCE(last_error, '') LIKE '%refused this till%' OR COALESCE(last_error, '') LIKE '%network%' OR COALESCE(last_error, '') LIKE '%aborted%'
+  OR COALESCE(last_error, '') LIKE '%another server''s page%' OR COALESCE(last_error, '') GLOB 'HTTP [0-9][0-9][0-9]')`;
+function requeueConnectionFailures(): number {
+  const back = getLocalDb().prepare(`UPDATE sync_queue SET status='pending', attempts=0 WHERE status='failed' AND ${CONNECTION_FAILURE_SQL}`).run().changes;
+  if (back) logLine('sync', `${back} sale(s) left 'failed' by a connection problem are queued again`);
+  return back;
+}
+// A529: the cloud's answer the last re-queue followed — the cloud answering again (with its signature, once it signs)
+// re-queues them at the start of the next push, even when every waiting sale had gone 'failed' (nothing pending, so
+// nothing pushed to trigger the re-queue after the batch). Another server's page is not an answer (authTransport.ts).
+let _requeuedForAnswerAt = 0;
+
 async function pushPendingOrders(errors: string[]): Promise<number> {
   const db = getLocalDb();
+  const answeredAt = lastCloudAnswerAt();
+  if (answeredAt > _requeuedForAnswerAt) { _requeuedForAnswerAt = answeredAt; requeueConnectionFailures(); }
   // Till sync audit (F5): `ORDER BY created_at LIMIT 50` let 50 old sales waiting on a drawer not on the cloud (424, which
   // neither counts nor stops the batch) take every place of every pass — no newer sale ever went. Now a sale of a
   // drawer the cloud refused is left out (it goes with its drawer), and a 424 stamps drawer_wait_at: the sale then queues
@@ -2966,12 +3186,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   if (pushed) {
     logLine('sync', `pushed ${pushed} order(s) to the cloud`); // A178: confirms the queue is draining
     // A446: the line is back — sales left 'failed' by a connection problem (before this build, or a run of 5xx) go again.
-    const back = db.prepare(`
-      UPDATE sync_queue SET status='pending', attempts=0
-       WHERE status='failed' AND (last_error LIKE '%fetch failed%' OR last_error LIKE '%timed out%' OR last_error LIKE '%cannot reach%'
-          OR last_error LIKE '%ECONN%' OR last_error LIKE '%ENOTFOUND%' OR last_error LIKE '%EAI_AGAIN%' OR last_error LIKE '%HTTP 5%'
-          OR last_error LIKE '%refused this till%' OR last_error LIKE '%network%' OR last_error LIKE '%aborted%')`).run().changes;
-    if (back) logLine('sync', `${back} sale(s) left 'failed' by a connection problem are queued again`);
+    requeueConnectionFailures();
   }
   // F16: at most every 6 hours. Never fatal.
   if (Date.now() - _queuePrunedAt > 6 * 3600_000) {
@@ -2991,7 +3206,8 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
 /** A446: a thrown fetch that is the LINE (no internet, branch server off or without internet, a timeout), not the sale. */
 export function isTransportError(err: any): boolean {
   const name = String(err?.name ?? '');
-  if (['UplinkDownError', 'NodeRefusedError', 'AbortError', 'TimeoutError'].includes(name)) return true;
+  // A529: ForeignPageError — an answer that was not the cloud's (no X-ZapTill-Server) is the line too.
+  if (['UplinkDownError', 'NodeRefusedError', 'AbortError', 'TimeoutError', 'ForeignPageError'].includes(name)) return true;
   const text = `${err?.message ?? ''} ${err?.cause?.code ?? ''} ${err?.cause?.message ?? ''}`;
   return /fetch failed|timed out|timeout|ECONN|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket|network|aborted|cannot reach/i.test(text);
 }
