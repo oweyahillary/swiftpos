@@ -150,6 +150,24 @@ export interface BusinessConfig {
    *  identical to before. The caller resolves the client's toggle before setting
    *  this; the renderer never decides whether a logo is wanted. */
   logoRaster?: MonoRaster;
+  /** A530: the four "classic receipt" switches the admin portal sets per client (shared/posFeatures.ts). Absent, or a
+   *  switch false = the compact standard; all four true = the receipt as it printed before 1.0.20, byte for byte. */
+  receiptClassic?: ReceiptClassic;
+}
+
+/**
+ * A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper"): the compact receipt is the standard; each
+ * switch puts one part back the way it was, for a client who asks (admin portal, per client).
+ */
+export interface ReceiptClassic {
+  /** 'receipt_classic_spacing' — ESC 2 (1/6", ~4.23 mm) between lines, not ESC 3 26 (~3.25 mm). */
+  spacing?: boolean;
+  /** 'receipt_full_logo' — the stored logo as it is (up to 288 dots, 36 mm), not scaled to 120 dots (15 mm). */
+  fullLogo?: boolean;
+  /** 'receipt_classic_layout' — every rule and line of the old layout (Kots, Payment Detail, Round Off 0.00, ...). */
+  layout?: boolean;
+  /** 'receipt_extra_feed' — 3 lines fed before the cut, not 1 (a cutter that clips the last line). */
+  extraFeed?: boolean;
 }
 
 export type StationKind = 'kitchen' | 'dispatch' | 'receipt';

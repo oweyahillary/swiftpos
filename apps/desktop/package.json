@@ -61,6 +61,8 @@
     "test:a520": "node test/close-branch-a520.test.mjs",
     "test:a521": "node test/offline-tills-a521.test.mjs",
     "test:a523": "node test/self-closing-days-a523.test.mjs",
+    "test:a529": "node test/foreign-page-a529.test.mjs",
+    "test:a531": "node test/live-sync-a531.test.mjs",
     "test:pin:electron": "node test/run-under-electron.mjs test/pinCache.test.mjs",
     "test:token": "node test/tokenStore.test.mjs",
     "test:token:electron": "node test/run-under-electron.mjs test/tokenStore.test.mjs",

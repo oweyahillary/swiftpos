@@ -1024,6 +1024,20 @@ function initSchema(db: Database.Database) {
       updated_at TEXT NOT NULL
     );
 
+    -- A531: a branch server's log of the cloud's row changes it has applied, in the order applied (lseq) — its tills
+    -- take them from here (/node/live) instead of each asking the cloud. row = the row as the cloud sent it (a staff row
+    -- without its PIN hash: those are served from branch_staff, unwrapped, to a proven till only). Kept 7 days.
+    CREATE TABLE IF NOT EXISTS live_log (
+      lseq       INTEGER PRIMARY KEY AUTOINCREMENT,
+      cloud_seq  INTEGER NOT NULL,
+      topic      TEXT NOT NULL,
+      table_name TEXT NOT NULL,
+      row_id     TEXT NOT NULL,
+      op         TEXT NOT NULL,
+      row        TEXT,
+      at         TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS node_peer_state (
       device_id   TEXT PRIMARY KEY,
       state       TEXT NOT NULL,             -- JSON: business_date, day open?, open drawers…

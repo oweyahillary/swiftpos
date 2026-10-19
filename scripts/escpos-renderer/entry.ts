@@ -78,5 +78,6 @@ export { toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen, kitchen
 
 // A313: the receipt-logo raster helpers, so the web Branding page thresholds with the SAME
 // rule the till uses (shared/printing raster.ts) and previews the SAME bytes it will store.
-export { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, monoRasterToAscii,
-         RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT } from '../../shared/printing/src/raster';
+// A530: fitMonoRaster + the print cap — the Branding page previews the logo at the size the receipt prints (120 dots).
+export { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, monoRasterToAscii, fitMonoRaster,
+         RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, RECEIPT_LOGO_PRINT_MAX_HEIGHT } from '../../shared/printing/src/raster';

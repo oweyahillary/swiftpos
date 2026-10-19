@@ -62,15 +62,20 @@ ok('it prints (it used to throw) with the discount, the taxes, the total, the ti
   assert.equal(val(p, 'SubTotal:'), '953.39');
   assert.equal(val(p, 'CTL (2%)'), '19.07');
   assert.equal(val(p, 'VAT (16%)'), '152.54');
-  assert.equal(val(p, 'Round Off:'), '0.00');
+  assert.equal(val(p, 'Round Off:'), null);   // A530: a zero round-off is not printed on the compact receipt
   assert.equal(val(p, 'Total:'), '1,125.00');
   assert.equal(val(p, 'Tip:'), '50.00');
   assert.ok(p.some((l) => l === 'PAY: KES 1,175.00'), p.join('\n'));
 });
 ok('the printed figures foot: SubTotal + CTL + VAT + Round Off = Total', () => {
-  const p = paper({ total: 112500, discount: 12500 });
-  const c = (s: string | null) => Math.round(Number(String(s).replace(/,/g, '')) * 100);
-  assert.equal(c(val(p, 'SubTotal:')) + c(val(p, 'CTL (2%)')) + c(val(p, 'VAT (16%)')) + c(val(p, 'Round Off:')), c(val(p, 'Total:')));
+  // A530: the compact receipt prints no "Round Off: 0.00" and, with no tip or fee, no Total — PAY is the total. An absent
+  // round-off is 0; an absent figure anywhere else fails (c(null) is NaN, never a silent pass).
+  const c = (s: string | null) => { const n = Math.round(Number(String(s).replace(/,/g, '').replace(/^KES /, '')) * 100); assert.ok(Number.isFinite(n), `not a figure: ${s}`); return n; };
+  for (const b of [{}, { receiptClassic: { layout: true } }]) {
+    const p = paper({ total: 112500, discount: 12500 }, b);
+    const total = val(p, 'Total:') ?? val(p, 'PAY:');
+    assert.equal(c(val(p, 'SubTotal:')) + c(val(p, 'CTL (2%)')) + c(val(p, 'VAT (16%)')) + c(val(p, 'Round Off:') ?? '0'), c(total));
+  }
 });
 ok('no discount and no tip → no Discount or Tip line, PAY = total', () => {
   const p = paper({});

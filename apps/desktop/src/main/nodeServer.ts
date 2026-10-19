@@ -70,11 +70,12 @@ import { refreshStaffRosterNow } from './staffRoster';   // A446
 import { acceptRelayedChanges, acceptForwardOnly, changeVersion, bumpChangeVersion } from './localChanges';   // A448 (+ A381)
 import { tillSecrets as nodeSecrets } from './changeQueue';   // A448
 import { serveSharedUpdate, shareDir, shareWanted, offeredVersion, noteTillVersion, readyAnswer, shareProgress } from './updateShare';   // A443
-import { GATEWAY_PREFIX } from './cloudGateway';
+import { GATEWAY_PREFIX, cloudFetch } from './cloudGateway';   // A529: cloudFetch for the renewal it brokers
 import { startBeacon, stopBeacon } from './serverBeacon';   // A427
 import { createJoinRequest, readJoin, JOIN_PROOF_HEADER } from './serverJoin';   // A427, A503
 import { NODE_PROTOCOL, NODE_CAPABILITIES, MIN_TILL_PROTOCOL } from './nodeHealth';   // A501
 import { noteGatewayCall, noteTillSync } from './activityTracker';   // A508
+import { liveMode, liveActive, serveLiveLog } from './liveSync';   // A531
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
 
@@ -477,7 +478,10 @@ export function startNodeServer(): void {
           if (/^x-device-/i.test(k) && k.toLowerCase() !== 'x-device-token' && typeof v === 'string' && v) peerHeaders[k] = v;
         }
         try {
-          const up = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/auth/${url === '/node/refresh' ? 'refresh' : 'refresh/ack'}`, {
+          // A529: through cloudFetch — this server is the branch's server, so it goes to the cloud directly, and an answer
+          // that is not the cloud's (another server's page) throws: 503 below, so the till keeps its sign-in and retries,
+          // never reading a portal's 401/404 as the cloud refusing its renewal.
+          const up = await cloudFetch(`${serverUrl.replace(/\/+$/, '')}/api/auth/${url === '/node/refresh' ? 'refresh' : 'refresh/ack'}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...peerHeaders },
             body: JSON.stringify({ refreshToken: token }),
@@ -687,6 +691,18 @@ export function startNodeServer(): void {
         applyPulledBranding({ accentHex: str(body?.accentHex), logoPng: str(body?.logoPng), logoReceipt: str(body?.logoReceipt),
           receiptLogoEnabled: body?.receiptLogoEnabled === true });
         return json(res, 200, { ok: true, version: bumpChangeVersion(getLocalDb()) });
+      }
+      // A531: the cloud's row changes this server has applied, in the order it applied them — its tills take them from
+      // here (owner, 2026-10-19: "only the server does the communication to cloud, not all tills"). Same shape as the
+      // cloud's GET /api/pos/changes; a staff row carries its PIN hash from this server's list, so only to a proven till.
+      // 404 while this server itself takes changes the old way (its cloud keeps no change log): its tills do the same.
+      if (req.method === 'GET' && url === '/node/live') {
+        if (!requireProven(req, res, '/node/live')) return;
+        if (liveMode() === 'legacy') return json(res, 404, { error: 'This branch server takes changes the old way.', code: 'CHANGES_UNAVAILABLE' });
+        if (!liveActive()) return json(res, 503, { error: 'The branch server is starting - ask again shortly.' });
+        const raw = new URL(req.url ?? '', 'http://node').searchParams.get('since');
+        const since = raw === null || raw === '' ? null : Number(raw);
+        return json(res, 200, serveLiveLog(since, getDeviceConfig()?.branch_id ?? null, changeVersion(getLocalDb())));
       }
       if (req.method === 'GET' && url === '/node/changes/version') {
         return json(res, 200, { version: changeVersion(getLocalDb()) });

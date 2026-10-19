@@ -65,12 +65,14 @@ export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolea
   try { order = await api.get<any>(`/api/orders/${orderId}`); }
   catch (e: any) { return { ok: false, message: e?.message ?? 'Could not load the order.' }; }
 
-  const [business, branding, settings, printers] = await Promise.all([
+  const [business, branding, settings, printers, flags] = await Promise.all([
     api.get<any>('/api/business').catch(() => ({ name: 'Receipt' })),
     // A313: a duplicate must carry the same logo the original did — same gate as the live sale.
     api.get<{ logo_receipt: string | null; receipt_logo_enabled: boolean } | null>('/api/business/branding').catch(() => null),
     api.get<{ key: string; value: string }[]>('/api/business/settings').catch(() => [] as { key: string; value: string }[]),
     api.get<BranchPrinter[]>(`/api/printers?branch_id=${order.branch_id}`).catch(() => [] as BranchPrinter[]),
+    // A530: the client's switches ({ key: enabled }) — a duplicate keeps the classic receipt parts the admin portal set.
+    api.get<Record<string, boolean>>('/api/flags').catch(() => null),
   ]);
 
   const receipt = (printers ?? []).find(p => p.enabled && !!p.printer_name && (p.is_default_receipt || p.type === 'receipt'));
@@ -84,6 +86,7 @@ export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolea
     footerText: map['receipt_footer'] || undefined,
     pay: { label: map['receipt_pay_label'] ?? '', number: map['receipt_pay_number'] ?? '' },   // A450
     logoRaster: branding?.receipt_logo_enabled && branding.logo_receipt ? monoRasterFromString(branding.logo_receipt) : null,
+    posFeatures: flags,   // A530
   });
 
   try {

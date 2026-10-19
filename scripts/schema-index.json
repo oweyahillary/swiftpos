@@ -1409,6 +1409,21 @@
     "log_gz_b64": "\"text\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "sync_change_floor": {
+    "id": "\"integer\" NOT NULL",
+    "floor_seq": "\"bigint\" NOT NULL",
+    "pruned_at": "\"timestamp with time zone\""
+  },
+  "sync_changes": {
+    "seq": "\"bigint\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "topic": "\"text\" NOT NULL",
+    "table_name": "\"text\" NOT NULL",
+    "row_id": "\"text\" NOT NULL",
+    "op": "\"text\" NOT NULL",
+    "changed_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "sync_log": {
     "id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\" NOT NULL",

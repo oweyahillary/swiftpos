@@ -47,7 +47,8 @@ console.log('0.6.27 — the prospect\'s requests (cloud + web)\n');
 await ok('the switches, all off unless set; the standard ones always on (0.6.29; A461 kitchen voids); rows, objects and JSON read the same', () => {
   // 0.6.28 added the last two; 0.6.29 made blind_shift_close and confirm_shows_cashier_figures standard (not switches).
   // A461: kitchen_void_approval became standard (always on); pay_later_tabs (eat now, pay later) is a new switch, off.
-  assert.deepEqual(F.POS_FEATURE_KEYS, ['delivery_fee', 'cashier_own_history', 'cashier_no_reprint', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'cashier_no_money_out']);   // A398: login_codes; A453: cashier_no_money_out
+  assert.deepEqual(F.POS_FEATURE_KEYS, ['delivery_fee', 'cashier_own_history', 'cashier_no_reprint', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'cashier_no_money_out',
+    'receipt_classic_spacing', 'receipt_full_logo', 'receipt_classic_layout', 'receipt_extra_feed']);   // A398: login_codes; A453: cashier_no_money_out; A530: the receipt switches
   assert.deepEqual([...F.STANDARD_POS_FEATURES], ['blind_shift_close', 'confirm_shows_cashier_figures', 'kitchen_void_approval']);
   const none = F.parsePosFeatures(null);
   assert.ok(F.POS_FEATURE_KEYS.every((k) => none[k] === false) && none.blind_shift_close === true && none.confirm_shows_cashier_figures === true

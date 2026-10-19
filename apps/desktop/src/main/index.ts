@@ -12,6 +12,7 @@ import fs from 'fs';
 import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb, closeLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
+import { startLiveSync, liveActive, startupCatalogue } from './liveSync';   // A531
 import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet, pullCatalogueNow, refreshTechConfigNow, runRemoteInstructionsNow, testClearsBeforePush, remoteCloseBeat, REMOTE_CLOSE_BEAT_MS, learnCloudCloses } from './syncEngine';   // A523: learnCloudCloses
 import { AT_LOGIN_ARG, LOGIN_WAIT_ARG, LOGIN_WAIT_MS, isAutoLaunch, startsAtSignIn, startsWindowless, runStartupSequence, markStartup, markStartupSettled, startupLine, noteStartupLine, type StartupStep } from './lowImpactStart';   // A513
@@ -340,8 +341,10 @@ app.whenReady().then(async () => {
   // A291: cheap freshness poll — a web edit reaches this till in ~20s instead of
   // waiting for the 10-min floor above. pullIfCatalogueChanged() only pulls when the
   // server's catalogue version actually moved, and self-guards on offline/in-flight.
+  // A531: with a change log (liveSync.ts) the till is told of a change and takes only its rows — no version check.
+  startLiveSync();
   setInterval(() => {
-    pullIfCatalogueChanged().catch(console.error);
+    if (!liveActive()) pullIfCatalogueChanged().catch(console.error);
     // Cross-sync stage 1 (2026-09-27): a sale rung on the web as this till reaches it on the same ~20 s beat.
     pullWebSales().catch(console.error);
     // A401: a drawer force-closed (or closed) on the web closes here on the same beat.
@@ -508,7 +511,12 @@ app.whenReady().then(async () => {
   const steps: StartupStep[] = [
     { name: 'catalogue', what: 'menu, prices, offers, payment methods, M-Pesa and business settings',
       // The version first (the 20 s check then knows it and does not pull again); no version answer → pulled anyway.
-      run: async () => { const r = await pullIfCatalogueChanged({ pullOnly: true }); if (!r.changed) await pullCatalogueNow(); } },
+      // A531: the change log first (only what changed since this till last ran; the whole catalogue the first time);
+      // a cloud (or branch server) without one: as before.
+      run: async () => {
+        if (await startupCatalogue()) return;
+        const r = await pullIfCatalogueChanged({ pullOnly: true }); if (!r.changed) await pullCatalogueNow();
+      } },
     { name: 'staff', what: 'staff list, PINs and permissions', run: () => refreshStaffRosterNow('start') },
     { name: 'settings', what: 'the branch\'s technician settings', run: () => refreshTechConfigNow() },
     { name: 'push', what: 'sales, drawers and changes waiting on this till',

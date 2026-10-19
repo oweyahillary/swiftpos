@@ -31,6 +31,8 @@ const GS = 0x1d;
 const INIT = [ESC, 0x40];
 const CODEPAGE_CP437 = [ESC, 0x74, 0x00];
 const LINE_SPACING_DEFAULT = [ESC, 0x32];
+/** A530: ESC 3 n — line spacing n dots (the vertical motion unit; 1/203" on the 203 dpi heads this package targets). */
+const lineSpacingDots = (n: number) => [ESC, 0x33, Math.max(0, Math.min(255, Math.round(n)))];
 
 const ALIGN = { left: 0, center: 1, right: 2 } as const;
 
@@ -63,7 +65,12 @@ export function toEscPos(doc: Document, opts: EscPosOptions = {}): Buffer {
     }
   };
 
-  push(...INIT, ...CODEPAGE_CP437, ...LINE_SPACING_DEFAULT);
+  // A530: a document that asks for tighter spacing (the compact receipt) starts with ESC 3 n instead of ESC 2. Without
+  // lineSpacing the stream is byte-identical to before — kitchen, dispatch, the Z-report and a classic receipt.
+  const compact = doc.lineSpacing;
+  push(...INIT, ...CODEPAGE_CP437, ...(compact === undefined ? LINE_SPACING_DEFAULT : lineSpacingDots(compact)));
+  // -1 = the default (ESC 2); otherwise the dots last set.
+  let curSpacing = compact === undefined ? -1 : compact;
 
   // Tracked so the serialiser only emits a mode change when the mode actually
   // changes. A receipt is ~40 lines; re-sending four control sequences per line
@@ -82,6 +89,13 @@ export function toEscPos(doc: Document, opts: EscPosOptions = {}): Buffer {
         if (s !== curSize) { push(GS, 0x21, s); curSize = s; }
         const bold = b.bold ? 1 : 0;
         if (bold !== curBold) { push(ESC, 0x45, bold); curBold = bold; }
+        if (compact !== undefined) {
+          // A530: only single-height lines are packed tighter. A double-height line (PAY, the Duplicate banner) is 48
+          // dots tall, so it keeps the default spacing it always printed at — no printer is asked to feed less than
+          // its glyph, whatever it does when a line is shorter than the font.
+          const want = b.size === 'tall' || b.size === 'large' ? -1 : compact;
+          if (want !== curSpacing) { push(...(want === -1 ? LINE_SPACING_DEFAULT : lineSpacingDots(want))); curSpacing = want; }
+        }
         text(b.text);
         push(0x0a);
         break;
@@ -120,9 +134,14 @@ export function toEscPos(doc: Document, opts: EscPosOptions = {}): Buffer {
   // Reset before finishing so the next job on this printer starts from a known
   // state even if it came from someone else's software.
   push(ESC, 0x61, 0, GS, 0x21, 0x00, ESC, 0x45, 0);
+  // A530: and the default line spacing back, so the next job (ours or another program's) and the feed below are at 1/6".
+  if (compact !== undefined) push(...LINE_SPACING_DEFAULT);
 
   if (opts.openDrawer) push(ESC, 0x70, 0x00, 0x19, 0xfa);
-  if (opts.feedBeforeCut) push(ESC, 0x64, opts.feedBeforeCut);
+  // A530: GS V 66 0 feeds the last printed line past the blade on its own, so a cutting job needs only the document's
+  // cutFeed (1 on the compact receipt). A tear-off printer (no cut) keeps the caller's feed — the tear bar needs it.
+  const feed = opts.cut && doc.cutFeed !== undefined ? doc.cutFeed : opts.feedBeforeCut;
+  if (feed) push(ESC, 0x64, Math.max(0, Math.min(255, feed)));
   if (opts.cut) push(GS, 0x56, 0x42, 0x00);
 
   return Buffer.from(out);

@@ -53,7 +53,50 @@ export const POS_FEATURES = [
     label: 'Only managers record expenses and cash in / out',
     description: 'Cashiers no longer record an expense, a pay-in or a pay-out on the till or the web POS — not even with a manager’s PIN. A manager signed in records them (the till’s shift screen and Manager › Expenses, the web POS). The delivery rider’s automatic pay-out still happens.',
   },
+  // A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper … the switch settings … should be in the admin per
+  // client"). The compact receipt is the standard; each switch puts one part of the old receipt back for a client who asks.
+  // Set in the admin portal only (not an owner option). Thermal receipts on the till and the web POS; kitchen and dispatch
+  // tickets never change.
+  {
+    key: 'receipt_classic_spacing',
+    label: 'Classic line spacing (4.23 mm)',
+    description: 'Receipt lines at the printer’s standard spacing (4.23 mm a line) instead of the tighter 3.25 mm. Turn on if a printer runs the lines together.',
+  },
+  {
+    key: 'receipt_full_logo',
+    label: 'Full-size receipt logo (up to 36 mm)',
+    description: 'The receipt logo prints at its full height (up to 36 mm) instead of shrunk to 15 mm.',
+  },
+  {
+    key: 'receipt_classic_layout',
+    label: 'Classic receipt layout (all separators and lines)',
+    description: 'Every separator and line of the old receipt: type and bill number, cashier and date each on their own line, Kots, Round Off 0.00, Total above PAY, the Payment Detail heading.',
+  },
+  {
+    key: 'receipt_extra_feed',
+    label: 'Extra paper before the cut (3 lines) — for a cutter that clips the last line',
+    description: 'Three blank lines before the receipt is cut instead of one. A printer without a cutter always feeds three.',
+  },
 ] as const;
+
+/** A530: the receipt switches, in the order the admin portal lists them — set by ZapTill, never by the owner. */
+export const RECEIPT_CLASSIC_KEYS = ['receipt_classic_spacing', 'receipt_full_logo', 'receipt_classic_layout', 'receipt_extra_feed'] as const;
+
+/**
+ * A530: the switches as shared/printing's BusinessConfig.receiptClassic takes them. Only a real `true` restores a part;
+ * anything else (an older cloud that sends none, a till that never heard) is the compact standard.
+ */
+export function receiptClassicFrom(features: Partial<Record<string, unknown>> | null | undefined): {
+  spacing: boolean; fullLogo: boolean; layout: boolean; extraFeed: boolean;
+} {
+  const f = features ?? {};
+  return {
+    spacing: f.receipt_classic_spacing === true,
+    fullLogo: f.receipt_full_logo === true,
+    layout: f.receipt_classic_layout === true,
+    extraFeed: f.receipt_extra_feed === true,
+  };
+}
 
 /**
  * 0.6.29 — were switches in 0.6.27, now STANDARD for every client (owner, 2026-10-01: "cashiers should never see this only

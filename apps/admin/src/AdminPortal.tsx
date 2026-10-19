@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
-import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_CLASSIC_KEYS } from "./lib/posFeatures";
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
@@ -1625,6 +1625,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
           <div data-testid="pos-options-owner-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_WHERE}.</div>
           {POS_FEATURES.map(pf => {
+            if ((RECEIPT_CLASSIC_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
             const on = features.some(f => f.key === pf.key && f.enabled);
             const perRole = PER_ROLE_SWITCHES[pf.key];
             return (
@@ -1641,6 +1642,23 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                   )}
                 </div>
                 {statePill(on, pf.label)}
+              </div>
+            );
+          })}
+          {/* A530 (owner, 2026-10-19: "the switch settings … should be in the admin per client"): the compact receipt is the
+              standard; each switch puts one part of the old receipt back for this client. ZapTill sets them, here. */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Receipt (classic switches)</div>
+          <div data-testid="receipt-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Off = the compact receipt (the standard since 1.0.20). Thermal receipts on the tills and the web POS; kitchen tickets never change.</div>
+          {RECEIPT_CLASSIC_KEYS.map(key => {
+            const rf = POS_FEATURES.find(x => x.key === key);
+            const on = features.some(f => f.key === key && f.enabled);
+            return (
+              <div key={key} data-testid={`receipt-feature-${key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{rf?.label ?? key}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{rf?.description}</div>
+                </div>
+                {toggle(on, () => toggleFeature(key, !on), rf?.label ?? key)}
               </div>
             );
           })}

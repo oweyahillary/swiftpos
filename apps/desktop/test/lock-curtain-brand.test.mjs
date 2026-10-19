@@ -65,7 +65,7 @@ const prep = fs.readFileSync(path.join(DESKTOP, 'src/renderer/lib/prepareRasterL
 const webTab = fs.readFileSync(path.join(DESKTOP, '..', 'dashboard/src/pages/settings/BrandingTab.tsx'), 'utf8');
 test('0.6.25: a small logo is scaled UP to fill the receipt box, on the till and the web', () => {
   assert.match(prep, /const scale = Math\.min\(RECEIPT_MAX_W \/ bitmap\.width, RECEIPT_MAX_H \/ bitmap\.height\);/);
-  assert.match(prep, /export const RECEIPT_MAX_H = 288;/);
+  assert.match(prep, /export const RECEIPT_MAX_H = 288;/);   // A530: storage stays 288; the receipt prints at 120
   assert.match(webTab, /const scale = Math\.min\(RECEIPT_LOGO_MAX_WIDTH \/ bmp\.width, RECEIPT_LOGO_MAX_HEIGHT \/ bmp\.height\);/);
 });
 

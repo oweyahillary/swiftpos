@@ -200,7 +200,8 @@ ok('refused by the cloud: parked with its words, not retried forever', queued(un
 // ── The wiring (source) ──────────────────────────────────────────────────────
 const ipc = src('main/ipcHandlers.ts');
 ok('only when the cloud cannot be reached (no network, a gateway error, an offline sign-in)',
-  /\} catch \{\s*return reverseWhileOffline\('void', String\(orderId\), reason, approvalPin\);/.test(ipc)
+  // A529: the catch also names another server's page in the log (ForeignPageError — cloudFetch throws it: no connection).
+  /\} catch \(e: any\) \{\s*\/\/ A529[^\n]*\n\s*if \(e instanceof ForeignPageError\) logLine\('sale'[^\n]*\n\s*return reverseWhileOffline\('void', String\(orderId\), reason, approvalPin\);/.test(ipc)
   && /if \(cloudUnreachable\(res\.status\)\) return reverseWhileOffline\('refund'/.test(ipc)
   && /const cloudUnreachable = \(status: number\) => status === 502 \|\| status === 503 \|\| status === 504;/.test(ipc)
   && /if \(offlineSessionNow\(\)\) return reverseWhileOffline\('void'/.test(ipc));

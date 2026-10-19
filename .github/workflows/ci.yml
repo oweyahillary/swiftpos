@@ -1079,6 +1079,27 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/self-closing-days-a523.test.mjs
 
+      # A529 — a page that is not the cloud's (no X-ZapTill-Server: a suspended Render service, a Cloudflare page, a captive
+      # portal) is no connection: sign-in falls back to the till's own check (a signed "Invalid PIN" stays final), a sale
+      # stays pending (no attempt counted) and goes when the signed cloud returns, a renewal keeps the tokens, a void goes
+      # offline, a manager screen says "No connection", the outage notice is quiet; before the cloud signs, today's rules.
+      - name: Desktop foreign pages are no connection (A529)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/foreign-page-a529.test.mjs
+
+      # A531 — change-triggered sync on the till: the whole catalogue once at first start, then nothing while nothing
+      # changes (the 10-minute sync included); a change rings and only its rows are written (fries: one product; Eugene's
+      # PIN: one staff row); look / setup changes wait for an idle moment (never mid-sale, at most 30 min); the daily safety
+      # pull; the push channel down → every 5 min (20 s with a drawer open); a branch server logs for its tills; a peer never
+      # asks the cloud; an old cloud → the old way.
+      - name: Desktop change-triggered sync (A531)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/live-sync-a531.test.mjs
+
       # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
       # proven till, joins, the gateway's path check, the roster, TLS pins.
       - name: Desktop branch server hardening

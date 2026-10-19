@@ -25,7 +25,9 @@ const DROP_REQUEST = new Set([
   'content-length', 'accept-encoding', 'x-node-secret', 'origin', 'referer',
   'x-device-token',   // F7: a till's key for THIS server — never the cloud's business
 ]);
-/** Response headers never passed back: the body is re-sent decoded, so length/encoding would lie. */
+/** Response headers never passed back: the body is re-sent decoded, so length/encoding would lie. A529: never the cloud's
+ *  X-ZapTill-Server — a till behind this server judges whose page an answer is by it (authTransport.ts), so it passes
+ *  through unchanged; this server's own answers (the 502 X-Node-Uplink: down) carry none. */
 const DROP_RESPONSE = new Set(['connection', 'keep-alive', 'transfer-encoding', 'content-encoding', 'content-length']);
 
 /** The cloud URL for a gateway path, or null when the path is not one the gateway serves. Pure. */

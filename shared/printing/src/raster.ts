@@ -33,9 +33,13 @@ export interface MonoRaster {
 export const RECEIPT_LOGO_MAX_WIDTH = 384;
 /** Hard ceiling: an 80 mm head. Anything wider is a malformed job, never sent. */
 export const PRINTER_MAX_DOTS = 576;
-/** A logo taller than this eats the receipt. ~1/3 of a short receipt. 0.6.25: 240 → 288 dots (30 → 36 mm), the owner
- *  asked that the printed logo not be too small; a square logo now prints 36 mm. */
+/** The tallest logo STORED (an upload is fitted to it). 0.6.25: 240 → 288 dots (30 → 36 mm), the owner asked that the
+ *  printed logo not be too small. A530: storage stays at 288 (owner, 2026-10-19: "that's okay" — so 'receipt_full_logo'
+ *  can print any client's logo at its full size); the receipt PRINTS at RECEIPT_LOGO_PRINT_MAX_HEIGHT unless it is on. */
 export const RECEIPT_LOGO_MAX_HEIGHT = 288;
+/** A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper"): the compact receipt prints the logo at most
+ *  120 dots tall (15 mm), shrunk at print time by fitMonoRaster — unless the client has 'receipt_full_logo'. */
+export const RECEIPT_LOGO_PRINT_MAX_HEIGHT = 120;
 export const DEFAULT_THRESHOLD = 128;
 
 export const bytesPerRow = (width: number): number => Math.ceil(width / 8);
@@ -45,7 +49,7 @@ export interface MonoOptions {
   threshold?: number;
   /** Downsample (box average) to at most this many dots wide. Default 384. */
   maxWidth?: number;
-  /** Downsample to at most this many rows. Default 240. */
+  /** Downsample to at most this many rows. Default RECEIPT_LOGO_MAX_HEIGHT (288). */
   maxHeight?: number;
 }
 
@@ -94,6 +98,44 @@ export function monoRasterFromRGBA(
         for (let xx = x0; xx < x1 && xx < width; xx++) { sum += lum[yy * width + xx]; n++; }
       }
       if ((n ? sum / n : 255) < threshold) out[y * stride + (x >> 3)] |= 0x80 >> (x & 7);
+    }
+  }
+  return { width: outW, height: outH, bytes: out };
+}
+
+/**
+ * A530: a stored 1-bit logo shrunk to fit maxWidth x maxHeight, aspect kept; returned as it is when it already fits.
+ *
+ * AREA SAMPLING, not nearest neighbour. Each output dot covers a box of the source (2.4 x 2.4 dots when 288 rows become
+ * 120) and takes the share of that box that is black, partial source dots weighted by how much of them falls inside.
+ * Black when at least FIT_INK_SHARE (40%) of the box is black. Not 50%: a 2-dot stroke (the letters in a logo) can fall
+ * across two boxes 1 dot each — 42% of each — and at 50% it would vanish in both; at 40% it survives wherever it lies,
+ * a shade bolder. Nearest neighbour would keep one source dot in every 2.4 and drop the rest: a 2-dot stroke between
+ * two sampled columns disappears outright.
+ */
+export const FIT_INK_SHARE = 0.4;
+
+export function fitMonoRaster(r: MonoRaster, maxWidth: number, maxHeight: number): MonoRaster {
+  const scale = Math.min(1, maxWidth / r.width, maxHeight / r.height);
+  if (scale >= 1) return r;
+  const outW = Math.max(1, Math.min(maxWidth, Math.round(r.width * scale)));
+  const outH = Math.max(1, Math.min(maxHeight, Math.round(r.height * scale)));
+  const sx = r.width / outW, sy = r.height / outH;   // source dots per output dot, each axis
+  const inStride = bytesPerRow(r.width), outStride = bytesPerRow(outW);
+  const black = (x: number, y: number) => (r.bytes[y * inStride + (x >> 3)] & (0x80 >> (x & 7))) !== 0;
+  // The overlap of output dot i's box [i*s, (i+1)*s) with each source dot it touches — the same for every row/column.
+  const spans = (n: number, s: number, limit: number) => Array.from({ length: n }, (_, i) => {
+    const a = i * s, b = Math.min(limit, (i + 1) * s), parts: Array<[number, number]> = [];
+    for (let k = Math.floor(a); k < b; k++) parts.push([k, Math.min(b, k + 1) - Math.max(a, k)]);
+    return parts;
+  });
+  const xs = spans(outW, sx, r.width), ys = spans(outH, sy, r.height);
+  const out = new Uint8Array(outStride * outH);
+  for (let y = 0; y < outH; y++) {
+    for (let x = 0; x < outW; x++) {
+      let ink = 0, area = 0;
+      for (const [yy, wy] of ys[y]) for (const [xx, wx] of xs[x]) { const w = wx * wy; area += w; if (black(xx, yy)) ink += w; }
+      if (area > 0 && ink / area >= FIT_INK_SHARE - 1e-9) out[y * outStride + (x >> 3)] |= 0x80 >> (x & 7);
     }
   }
   return { width: outW, height: outH, bytes: out };

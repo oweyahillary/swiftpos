@@ -56,8 +56,12 @@ export function toUnits(line: any, ids: StationIds, lineStationIds: string[], ro
 export interface MonoRaster { width: number; height: number; bytes: Uint8Array }
 export const RECEIPT_LOGO_MAX_WIDTH: number;
 export const RECEIPT_LOGO_MAX_HEIGHT: number;
+/** A530: the height the compact receipt prints a logo at (120 dots, 15 mm); storage stays RECEIPT_LOGO_MAX_HEIGHT. */
+export const RECEIPT_LOGO_PRINT_MAX_HEIGHT: number;
 export function monoRasterFromRGBA(rgba: ArrayLike<number>, width: number, height: number,
   opts?: { threshold?: number; maxWidth?: number; maxHeight?: number }): MonoRaster;
 export function monoRasterToString(r: MonoRaster): string;
 export function monoRasterFromString(s: string | null | undefined): MonoRaster | null;
 export function monoRasterToAscii(r: MonoRaster, black?: string, white?: string): string[];
+/** A530: a stored logo shrunk (area sampling) to fit maxWidth x maxHeight; returned as it is when it already fits. */
+export function fitMonoRaster(r: MonoRaster, maxWidth: number, maxHeight: number): MonoRaster;

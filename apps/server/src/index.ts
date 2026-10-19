@@ -7,6 +7,9 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors        from 'cors';
 import { apiHelmet } from './lib/apiHeaders';     // A528
 import { countTraffic } from './lib/trafficStats'; // A528
+import { signAnswers } from './lib/serverSignature'; // A529
+import { compressJson } from './lib/compressJson';    // A531
+import { attachLiveHub, startSyncChangePruneJob } from './lib/liveHub'; // A531
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import apiRoutes   from './routes';
 import { supabase } from './lib/supabase';
@@ -40,6 +43,11 @@ export const log = {
   error: (msg: string, meta?: object) => console.error(JSON.stringify({ level: 'error', msg, ...meta, ts: new Date().toISOString() })),
 };
 
+// A529: FIRST — every answer says it is this server's (lib/serverSignature.ts), whatever answers it: a route, an unknown
+// route's 404, the error handler, the rate limiter's 429, /health. A till treats an answer without it as no connection
+// (a suspended Render service, a Cloudflare page, a captive portal), never as the cloud's verdict.
+app.use(signAnswers);
+
 // ── Trust proxy (required when behind nginx / Render / Railway) ───────────────
 // Without this, express-rate-limit sees the load-balancer IP for everyone
 // instead of the real client IP, making rate limiting per-IP useless.
@@ -56,6 +64,10 @@ app.use(apiHelmet());
 
 // A528: requests and bytes per route family since start — the admin portal's System page (lib/trafficStats.ts).
 app.use(countTraffic);
+
+// A531: a JSON answer over 1 KB is gzip-compressed for a client that accepts it (a till's fetch does), with its real
+// length — so the traffic counter above still counts the bytes actually sent (lib/compressJson.ts).
+app.use(compressJson);
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // Set CORS_ORIGINS as a comma-separated list in .env:
@@ -296,7 +308,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+const httpServer = app.listen(PORT, () => {
   log.info('Server started', { port: PORT, env: ENV, origins: allowedOrigins });
 
   // Audit C4 diagnostic. Deliberately not awaited and never throws — login
@@ -328,4 +340,11 @@ app.listen(PORT, () => {
   // A525: the start, in the admin portal's System page (public.ops_events). Never awaited, never throws — a missing
   // table (migration 149 not run) is a warning in the log.
   void recordBoot();
+
+  // A531: old change-log entries go once a day (30 days kept; a till further behind takes the whole menu once).
+  startSyncChangePruneJob();
 });
+
+// A531: the push channel — /api/pos/live (a WebSocket on the same port). A till (or a branch server) holds one; the cloud
+// says "changed" the moment a change it needs is written, and the till asks GET /api/pos/changes for just those rows.
+attachLiveHub(httpServer);

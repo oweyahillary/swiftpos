@@ -24,6 +24,7 @@ import type { PrintContext, OrderLine, OrderUnit, OrderType } from './types';
 import { DocBuilder, type Document } from './document';
 import { splitTax, netOf, formatCents } from './money';
 import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns, sanitize } from './layout';
+import { fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_PRINT_MAX_HEIGHT } from './raster';
 
 const TYPE_CAPS: Record<OrderType, string> = {
   takeaway: 'TAKEAWAY',
@@ -54,6 +55,19 @@ function fullStamp(d: Date): string {
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ` +
          `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
 }
+
+/** A530: "05/08/26 19:42" — the compact receipt's date, when the full stamp does not fit beside the cashier (58 mm). */
+function compactStamp(d: Date): string {
+  return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${p2(d.getFullYear() % 100)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+/**
+ * A530: the compact receipt's line spacing — ESC 3 26, 26 dots (~3.25 mm at 203 dpi) for a 24-dot Font A glyph, where
+ * ESC 2 gives ~34 (1/6", ~4.23 mm). Two dots of air above and below the glyph; still reads as separate lines.
+ */
+export const COMPACT_LINE_SPACING_DOTS = 26;
+/** A530: lines fed before the cut on the compact receipt (GS V 66 0 already carries the last line to the blade). */
+export const COMPACT_CUT_FEED = 1;
 
 /** 16 -> "16", 2 -> "2", 16.5 -> "16.5". Never "16.00%" on a receipt. */
 function rate(n: number): string {
@@ -212,6 +226,16 @@ function renderReceipt(ctx: PrintContext): Document {
   const c = itemColumns(cols);
   const d = new DocBuilder(cols);
 
+  // A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper"): the compact receipt is the standard; the
+  // admin portal puts each part back per client (shared/posFeatures.ts receipt_classic_spacing, receipt_full_logo,
+  // receipt_classic_layout, receipt_extra_feed). All four on = the 1.0.19 receipt byte for byte (receipt-compact.test).
+  const classic = business.receiptClassic ?? {};
+  const full = classic.layout === true;            // every rule and line, as before
+  if (classic.spacing !== true) d.lineSpacing(COMPACT_LINE_SPACING_DOTS);
+  if (classic.extraFeed !== true) d.cutFeed(COMPACT_CUT_FEED);
+  /** A rule the compact layout drops (the classic layout prints it). The five it keeps are plain d.line(rule(cols)). */
+  const minorRule = () => { if (full) d.line(rule(cols)); };
+
   if (ctx.voided) {
     d.line('VOID', { align: 'center', size: 'large', bold: true });
     d.line(rule(cols));
@@ -227,7 +251,11 @@ function renderReceipt(ctx: PrintContext): Document {
 
   // A310: client logo above the name, receipts only. Nothing else in this
   // document moves — with logoRaster absent the byte stream is unchanged.
-  if (business.logoRaster) d.image(business.logoRaster, 'center');
+  // A530: a logo is stored up to 288 dots tall (36 mm) and prints at most 120 (15 mm) unless the client keeps the full size.
+  if (business.logoRaster) {
+    d.image(classic.fullLogo === true ? business.logoRaster
+      : fitMonoRaster(business.logoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_PRINT_MAX_HEIGHT), 'center');
+  }
 
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
@@ -243,19 +271,42 @@ function renderReceipt(ctx: PrintContext): Document {
   if (business.telephone) d.line(center(cols, `Tel: ${business.telephone}`));
   d.line(rule(cols));
 
-  d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
-  d.line(rule(cols));
-
-  if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);   // a proforma bill carries no fiscal number
+  if (full) {
+    d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
+    d.line(rule(cols));
+    if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);   // a proforma bill carries no fiscal number
+  } else if (ctx.proforma) {
+    d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
+  } else {
+    // A530: the order type and the bill number share a line — "Type: " dropped where both do not fit with it (58 mm:
+    // "Takeaway      Bill No.: T1--5718"), stacked only when even that does not fit (a very long bill number).
+    const bill = `Bill No.: ${order.billNumber}`;
+    const labelled = `Type: ${TYPE_TITLE[order.orderType]}`;
+    const type = labelled.length + 1 + sanitize(bill).length <= cols ? labelled : TYPE_TITLE[order.orderType];
+    d.lines(pairOrStack(cols, type, bill));
+  }
   if (order.orderType === 'delivery') d.line(`Delivery Boy: ${order.deliveryPerson ?? ''}`);
   if (order.orderType === 'dine_in' && order.tableNumber) d.line(`Table: ${order.tableNumber}`);
-  d.line(`Cashier: ${order.cashierName}`);
-  d.line(`Date: ${fullStamp(order.soldAt)}`);
+  if (full) {
+    d.line(`Cashier: ${order.cashierName}`);
+    d.line(`Date: ${fullStamp(order.soldAt)}`);
+  } else {
+    // A530: the cashier and the time share a line — the full stamp where it fits (80 mm), "05/08/26 19:42" where it
+    // does not (58 mm), stacked under the name only when even that does not fit beside a long name.
+    const who = `Cashier: ${order.cashierName}`;
+    const stamp = sanitize(who).length + 1 + 19 <= cols ? fullStamp(order.soldAt) : compactStamp(order.soldAt);
+    d.lines(pairOrStack(cols, who, stamp));
+  }
   if (ctx.reprint) d.line(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
-  if (ctx.voided) d.line(`Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`);
-  d.line(`Kots: ${order.kotCount}`);
+  if (ctx.voided) {
+    const voided = `Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`;
+    // A530: wrapped on the compact layout — on 58 mm it ran past the paper and the printer broke it where it liked.
+    if (full) d.line(voided); else d.lines(wrap(voided, cols));
+  }
+  // A530: how many kitchen tickets the order made is the kitchen's business, not the customer's.
+  if (full) d.line(`Kots: ${order.kotCount}`);
   for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, undefined, 0));   // A367
-  d.line(rule(cols));
+  minorRule();
 
   d.line('Item'.padEnd(c.name) + 'Qty'.padStart(c.qty) + 'Amt'.padStart(c.amt));
   d.line(rule(cols));
@@ -333,13 +384,16 @@ function renderReceipt(ctx: PrintContext): Document {
   }
   if (manualNet > 0) d.line(pair(cols, 'Discount:', `-${formatCents(manualNet)}`));
   d.line(pair(cols, 'SubTotal:', formatCents(tax.subtotal)));
-  d.line(rule(cols));
+  minorRule();
   // A349: the levy only where it is levied — a business without CTL no longer prints "CTL (0%) 0.00".
   if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
   d.line(pair(cols, `VAT (${rate(business.vatRate)}%)`, formatCents(tax.vat)));
-  d.line(rule(cols));
-  d.line(pair(cols, 'Round Off:', formatCents(tax.roundOff)));
-  d.line(pair(cols, 'Total:', formatCents(tax.total)), { bold: true });
+  minorRule();
+  // A530: "Round Off: 0.00" says nothing — printed only when the cent is really there (or on the classic layout).
+  if (full || tax.roundOff !== 0) d.line(pair(cols, 'Round Off:', formatCents(tax.roundOff)));
+  // A530: with no tip and no delivery fee the Total IS what PAY says — the tall PAY line alone carries it. With either,
+  // Total (the bill, what the taxes are on), then the extras, then PAY (what the customer hands over).
+  if (full || tip > 0 || deliveryFee > 0) d.line(pair(cols, 'Total:', formatCents(tax.total)), { bold: true });
   // A349: a tip is not a sale and carries no tax — shown after the total, and the customer pays both.
   if (tip > 0) d.line(pair(cols, 'Tip:', formatCents(tip)));
   // 0.6.27: the delivery fee — like the tip, on top of the bill and outside its taxes.
@@ -348,12 +402,13 @@ function renderReceipt(ctx: PrintContext): Document {
   d.line(rule(cols));
 
   d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: 'tall', bold: true });
-  d.line(rule(cols));
+  minorRule();
 
   // A498 (owner, 2026-10-15, a printed receipt: "the payment method is printing on the wrong place … check where payment
   // detail is printed and where buy good is printed"): ONE block — the heading straight above its payments (no rule
   // between them), and the M-Pesa number customers pay to printed WITH the payments, inside the block, before its rule.
-  d.line('Payment Detail:', { bold: true });
+  // A530: no heading on the compact receipt — the payment lines straight under PAY say what they are.
+  if (full) d.line('Payment Detail:', { bold: true });
   for (const leg of order.payments) {
     d.line(pair(cols, leg.label.toUpperCase(), formatCents(leg.amount)));
   }
@@ -407,7 +462,8 @@ function renderReceipt(ctx: PrintContext): Document {
   if (business.deliveryMessage) {
     d.lines(wrapAuthored(business.deliveryMessage, cols).map(l => center(cols, l)));
   }
-  if (business.thankYouMessage || business.deliveryMessage) d.line(rule(cols));
+  // A530: on the compact receipt the owner's box runs straight into the closing block (one rule above both, not two).
+  if (full && (business.thankYouMessage || business.deliveryMessage)) d.line(rule(cols));
 
   // Closing block — fixed, always printed, EXCEPT its thank-you line when the
   // owner already wrote it (A315). The owner's box is printed verbatim above,

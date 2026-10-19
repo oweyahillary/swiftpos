@@ -898,6 +898,7 @@ export default function CashierScreen() {
         branchName: session?.branchName,
         receiptHeader, receiptFooter, receiptPay,
         receiptLogo,
+        posFeatures,                   // A530: the client's classic-receipt switches
         kinds: ['receipt'],            // A253: Print Bill is a customer proforma, not the kitchen fire
       });
       if (res.printed > 0) console.log(`[bill] printed to ${res.printed} station(s)`);
@@ -2431,6 +2432,7 @@ export default function CashierScreen() {
           receiptLogo={receiptLogo}
           receiptFooter={receiptFooter}
           receiptPay={receiptPay}
+          posFeatures={posFeatures}   // A530: the client's classic-receipt switches
           orderType={getOrderType()}
           tableNumber={activeKey && openOrders[activeKey]?.tableName ? openOrders[activeKey].tableName : undefined}
           loyaltyState={loyaltyState}

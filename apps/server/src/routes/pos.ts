@@ -31,6 +31,8 @@ import { seesCosts, stripFields, COST_FIELDS } from '../lib/costAccess';   // A4
 import { readTopicVersion, cachedFallback } from '../lib/syncVersions';   // A528
 import { readTill } from '../lib/authCache';                           // A528
 import { traffic } from '../lib/trafficStats';                         // A528
+import { initAnswer, setInitBuilder, type BuiltInit } from '../lib/posInit';   // A531
+import { changesAnswer, ChangesUnavailable } from '../lib/syncChanges';         // A531
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -123,6 +125,30 @@ router.get('/catalogue-version', async (req, res) => {
   }
 });
 
+
+// GET /api/pos/changes?since=<seq>&branch_id= — A531: the rows that changed since this till last applied (lib/syncChanges.ts).
+// Owner, 2026-10-19: "if I change fries from 100 to 150 the trigger should only send the affected product and price, not the
+// whole menu … if Eugene's PIN changes only Eugene's change gets synced, not all 150 staff." Without `since`: where the log
+// is now (a till notes it before it takes the whole menu). 404 CHANGES_UNAVAILABLE before migration 151 (the till keeps its
+// old way); 503 when the log could not be read (asked again later).
+router.get('/changes', async (req, res) => {
+  const raw = req.query.since;
+  const since = raw === undefined || raw === '' ? null : Number(raw);
+  if (since !== null && (!Number.isInteger(since) || since < 0)) { res.status(400).json({ error: 'since must be a whole number' }); return; }
+  const branchId = typeof req.query.branch_id === 'string' && req.query.branch_id ? req.query.branch_id : (req.branchId ?? null);
+  traffic.count('changes.answered');
+  try {
+    const answer = await changesAnswer({ businessId: req.businessId!, branchId, isTill: !!req.isTill, seesCosts: seesCosts(req) }, since);
+    res.set('Cache-Control', 'no-store');
+    res.json(answer);
+  } catch (e) {
+    if (e instanceof ChangesUnavailable) {
+      if (e.missing) { res.status(404).json({ error: 'This cloud does not keep a change log yet.', code: 'CHANGES_UNAVAILABLE' }); return; }
+      res.status(503).json({ error: 'The change log could not be read right now - try again shortly.', code: 'CHANGES_BUSY' }); return;
+    }
+    sendError(res, e as Error);
+  }
+});
 
 // POST /api/pos/join-code — A427: the branch server asks for one enrolment code for a till someone at the server has
 // just allowed to join (lib/tillJoin.ts). The same single-use, branch-bound, 15-minute code the admin portal issues;
@@ -282,6 +308,51 @@ router.get('/init', async (req, res) => {
   const requestedBranchId =
     typeof req.query.branch_id === 'string' ? req.query.branch_id : null;
 
+  // A531 (owner, 2026-10-19: "asking for the same 10 times an hour is not logical"): the answer is built once per
+  // catalogue version (buildInit below, kept by lib/posInit.ts) — the next till of the business, and the next ask while
+  // nothing changed, costs no database read. Nothing in it is per caller: the licence gate and the cost prices are applied
+  // here, per request, as before.
+  // Version 0 = the business has no row (sync_versions before migration 150 seeded it, or a test database): not kept.
+  const version = await readTopicVersion(req.businessId, 'catalogue');
+  const built = await initAnswer(req.businessId!, requestedBranchId, version && version > 0 ? version : null);
+  if (!built.ok) { sendError(res, (built as { error: any }).error); return; }
+  const { body: initBody, opBranch } = built as { body: Record<string, unknown>; opBranch: { desktop_licensed?: boolean } | null };
+
+  // ── Desktop branch licence check ──────────────────────────────────────────
+  // The branch the till OPERATES on must have a paid desktop licence. That is the
+  // bound branch it sent, falling back to the main branch only for legacy callers
+  // with no binding. D11: this used to read the main branch's flag regardless of
+  // where the till was bound, so a till at an unlicensed branch B rode branch A's
+  // licence — and a licensed till at B could be locked out by A being unlicensed.
+  // If it doesn't, the desktop app can't sync — blocks the POS at the data layer.
+  // (PIN entry is also blocked in verify-pin, so this is defence-in-depth.)
+  // Desktop-licence gate applies to the DESKTOP surface only. The web POS is
+  // gated by web access at login (businesses.web_access_expires_at), NOT by a
+  // per-branch desktop licence — so web tokens must not be blocked here.
+  if (req.surface === 'desktop' && !opBranch?.desktop_licensed) {
+    res.status(403).json({
+      error: 'This branch does not have a desktop licence. Please contact ZapTill to activate.',
+      code:  'BRANCH_NOT_LICENSED',
+    });
+    return;
+  }
+
+  // A494: cost prices are not sent to someone who may not see them (rule 4). The till stores no cost from here (its
+  // products table has no cost column; its menu screens read costs from /api/products with the person's own session), so
+  // the till's own session gets none; a person gets them with menu.costs / reports.costs.
+  const sendInit = (body: Record<string, unknown>) =>
+    res.json(req.isTill || !seesCosts(req) ? stripFields(body, new Set(COST_FIELDS)) : body);
+  sendInit(initBody);
+});
+
+/** A531: whose /init is built — only the business (nothing per caller is read). */
+export interface InitCaller { businessId?: string | null }
+
+/**
+ * A531: /init's whole answer for (business, requested branch) — the reads and rules as they always were, returned rather
+ * than sent, so lib/posInit.ts keeps it per catalogue version and GET /changes answers a settings change from it.
+ */
+export async function buildInit(req: InitCaller, requestedBranchId: string | null): Promise<BuiltInit> {
   const [
     { data: products, error: pErr },
     { data: categories, error: cErr },
@@ -384,29 +455,12 @@ router.get('/init', async (req, res) => {
   const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
 
   if (pErr || cErr || brErr) {
-    sendError(res, (pErr || cErr || brErr));
-    return;
+    return { ok: false, error: (pErr || cErr || brErr) as any };
   }
 
-  // ── Desktop branch licence check ──────────────────────────────────────────
-  // The branch the till OPERATES on must have a paid desktop licence. That is the
-  // bound branch it sent, falling back to the main branch only for legacy callers
-  // with no binding. D11: this used to read the main branch's flag regardless of
-  // where the till was bound, so a till at an unlicensed branch B rode branch A's
-  // licence — and a licensed till at B could be locked out by A being unlicensed.
-  // If it doesn't, the desktop app can't sync — blocks the POS at the data layer.
-  // (PIN entry is also blocked in verify-pin, so this is defence-in-depth.)
-  // Desktop-licence gate applies to the DESKTOP surface only. The web POS is
-  // gated by web access at login (businesses.web_access_expires_at), NOT by a
-  // per-branch desktop licence — so web tokens must not be blocked here.
+  // The branch the till OPERATES on (the licence gate, in the route, reads its desktop_licensed — D11): the bound branch it
+  // sent, falling back to the main branch only for legacy callers with no binding.
   const opBranch = boundBranch ?? mainBranch;
-  if (req.surface === 'desktop' && !opBranch?.desktop_licensed) {
-    res.status(403).json({
-      error: 'This branch does not have a desktop licence. Please contact ZapTill to activate.',
-      code:  'BRANCH_NOT_LICENSED',
-    });
-    return;
-  }
 
   // Fetch variant groups using the resolved product ID array (not a sub-query)
   const productIds = (products ?? []).map((p) => p.id);
@@ -430,8 +484,7 @@ router.get('/init', async (req, res) => {
   ]);
 
   if (vErr) {
-    sendError(res, vErr);
-    return;
+    return { ok: false, error: vErr as any };
   }
 
   // Group variant_groups by product_id for fast client-side lookup
@@ -462,7 +515,7 @@ router.get('/init', async (req, res) => {
         .select('id, product_id, price')
         .eq('branch_id', pricingBranchId)
         .in('product_id', chunk));
-    } catch (e) { sendError(res, e as Error); return; }
+    } catch (e) { return { ok: false, error: e as Error }; }
 
     const priceByProduct: Record<string, number> = {};
     (branchPrices ?? []).forEach((bp: any) => { priceByProduct[bp.product_id] = bp.price; });
@@ -520,12 +573,8 @@ router.get('/init', async (req, res) => {
   const branchMpesa = mpesaFromSettings(branchText.receipt_pay_label, branchText.receipt_pay_number, branchText.receipt_pay_account);
   const mpesa = branchMpesa ?? businessMpesa;
 
-  // A494: cost prices are not sent to someone who may not see them (rule 4). The till stores no cost from here (its
-  // products table has no cost column; its menu screens read costs from /api/products with the person's own session), so
-  // the till's own session gets none; a person gets them with menu.costs / reports.costs.
-  const sendInit = (body: Record<string, unknown>) =>
-    res.json(req.isTill || !seesCosts(req) ? stripFields(body, new Set(COST_FIELDS)) : body);
-  sendInit({
+  // A494: the cost prices are removed per caller by the route (after the cache), as before.
+  return { ok: true, opBranch: (opBranch as { id?: string; desktop_licensed?: boolean } | null) ?? null, body: {
     products: productsOut,
     comboItems,
     // A304: client branding (accent + logo) → the till writes it to the local
@@ -641,8 +690,9 @@ router.get('/init', async (req, res) => {
     // describe three different discounts and the difference surfaces as a cash
     // shortage nobody can trace.
     maxDiscountPct: MAX_DISCOUNT_PCT,
-  });
-});
+  } };
+}
+setInitBuilder(buildInit);   // A531: lib/posInit.ts keeps what this builds
 
 // A404 — the test-data clears ZapTill made for this business (admin portal, A396) after `after`, oldest first; the
 // till removes the same periods from its own database (main/testDataClear.ts). After the last one it applied (A522).

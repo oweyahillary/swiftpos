@@ -57,6 +57,7 @@ function decode(buf: Buffer): { commands: Decoded[]; text: string[] } {
         case 0x40: commands.push({ at: i, name: 'ESC @', detail: 'initialise' }); i += 2; break;
         case 0x74: need(3); commands.push({ at: i, name: 'ESC t', detail: `code page ${buf[i + 2]}` }); i += 3; break;
         case 0x32: commands.push({ at: i, name: 'ESC 2', detail: 'default line spacing' }); i += 2; break;
+        case 0x33: need(3); commands.push({ at: i, name: 'ESC 3', detail: `line spacing ${buf[i + 2]} dots` }); i += 3; break;   // A530
         case 0x61: need(3); commands.push({ at: i, name: 'ESC a', detail: ['left', 'center', 'right'][buf[i + 2]] ?? `?${buf[i + 2]}` }); i += 3; break;
         case 0x45: need(3); commands.push({ at: i, name: 'ESC E', detail: buf[i + 2] ? 'bold on' : 'bold off' }); i += 3; break;
         case 0x64: need(3); commands.push({ at: i, name: 'ESC d', detail: `feed ${buf[i + 2]} lines` }); i += 3; break;

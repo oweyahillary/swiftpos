@@ -22,6 +22,9 @@
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { lanFetch } from './lanTls';   // A489: the hop to the branch server is TLS once its certificate is pinned
 import { noteChannelOk, noteChannelError } from './nodeHealth';   // A501
+import { judgeCloudAnswer, noteCloudUnreachable, ForeignPageError, type SignatureStore } from './authTransport';   // A529
+import { getLocalDb } from './localDb';   // A529: where "this cloud signs its answers" is kept
+import { logLine } from './logFile';   // A529
 
 export const GATEWAY_PREFIX = '/node/cloud';
 /** Set by the branch server on every forwarded answer, so a till can tell it from an old server's 404. */
@@ -138,12 +141,25 @@ function mergeHeaders(h: any, extra: Record<string, string>): any {
  * fetch() for anything that may be a cloud call. On a peer the request goes through the branch server; see the header.
  * `deps` exists for tests.
  */
-export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: typeof fetch; cfg?: GatewayConfig | null; now?: () => number; log?: (l: string) => void } = {}): Promise<Response> {
+export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: typeof fetch; cfg?: GatewayConfig | null; now?: () => number; log?: (l: string) => void; signatures?: SignatureStore | null } = {}): Promise<Response> {
   const f = deps.fetch ?? lanFetch;
   const cfg = deps.cfg !== undefined ? deps.cfg : getDeviceConfig();
   const now = (deps.now ?? Date.now)();
   const route = routeCloudRequest(url, cfg);
-  if (!route.viaNode || now < oldNodeUntil) return f(url, init);
+  // A529: an answer to a request for the cloud's address must be the cloud's (its X-ZapTill-Server signature) — see
+  // authTransport.ts. A test passing its own config keeps "seen to sign" in memory only, unless it passes a store.
+  const cloudOrigin = originOf(String(cfg?.server_url ?? ''));
+  const forCloud = !!cloudOrigin && originOf(url) === cloudOrigin;
+  const store = deps.signatures !== undefined ? deps.signatures : (deps.cfg === undefined ? dbSignatureStore : null);
+  const judged = (res: Response): Response => forCloud ? judgeAnswer(res, url, cloudOrigin!, store, now) : res;
+  const direct = async (): Promise<Response> => {
+    try { return judged(await f(url, init)); }
+    catch (e: any) {
+      if (forCloud && e?.name !== 'ForeignPageError') noteCloudUnreachable(`no answer (${e?.cause?.code ?? e?.message ?? e})`, now);
+      throw e;
+    }
+  };
+  if (!route.viaNode || now < oldNodeUntil) return direct();
 
   let res: Response;
   try { res = await f(route.url, { ...init, headers: mergeHeaders(init.headers, route.headers) }); }
@@ -154,13 +170,14 @@ export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: ty
   }
   if (res.headers.get(UPLINK_DOWN) === 'down') {
     noteChannelError('gateway', res.status, 'the branch server cannot reach the cloud right now', now);
+    noteCloudUnreachable('the branch server cannot reach the cloud', now);   // A529: the manager's notice
     throw new UplinkDownError();
   }
   if (!res.headers.get(GATEWAY_MARK)) {
     if (res.status === 404) {
       oldNodeUntil = now + OLD_NODE_RETRY_MS;
       (deps.log ?? console.warn)('[gateway] the branch server is on an older build with no cloud gateway — this till calls the cloud itself until it updates');
-      return f(url, init);
+      return direct();
     }
     // Not the cloud's answer — the branch server's own (a wrong branch access code is a 401). Passed on, a 401 would read
     // as the till's sign-in being refused and start the lost-session recovery (A407). It is a connection problem.
@@ -175,7 +192,48 @@ export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: ty
   }
   noteNodeAccepted('any');
   noteChannelOk('gateway', now);
-  return res;
+  // A529: the branch server passed the answer on unchanged (nodeGateway.ts keeps X-ZapTill-Server) — whose page it is,
+  // is the cloud's signature, as for a till that calls the cloud itself.
+  return judged(res);
+}
+
+// ── A529: whose answer is it? ─────────────────────────────────────────────────────────────────────────────────────────
+/** "This cloud signs its answers", per cloud origin, kept in maintenance_state so a till restarted DURING an outage still
+ *  knows (authTransport.ts). A read or write that fails leaves the memory answer for this run. */
+const SIGNS_KEY = (origin: string) => `cloud_signs:${origin}`;
+export const dbSignatureStore: SignatureStore = {
+  load: (origin) => !!(getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(SIGNS_KEY(origin)) as { value?: string } | undefined)?.value,
+  save: (origin) => {
+    const at = new Date().toISOString();
+    getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`).run(SIGNS_KEY(origin), at, at);
+    logLine('sync', `A529: the cloud ${origin} signs its answers - from now on a page without its signature counts as no connection`);
+  },
+  forget: (origin) => {
+    getLocalDb().prepare(`DELETE FROM maintenance_state WHERE key = ?`).run(SIGNS_KEY(origin));
+    logLine('sync', `A529: the cloud ${origin} answered without its signature (a JSON answer: a build from before A529) - its answers are judged by their status again`);
+  },
+};
+
+/** The one route where our cloud hands a till over to another host (the update files are redirects to GitHub). */
+const REDIRECTING_PATH = /^\/api\/desktop-update\//;
+let _foreignLogged = { at: 0, status: 0 };
+
+function judgeAnswer(res: Response, url: string, cloudOrigin: string, store: SignatureStore | null, now: number): Response {
+  // The update files: the cloud redirects each to GitHub, so the file itself rightly comes from another host (followed
+  // here, or by the branch server's gateway before it reaches a till). A file taken there is passed on — the updater
+  // checks its sha512 against the cloud's own latest.yml. Any other redirect (a captive portal's) is judged where it landed.
+  let path = '';
+  try { path = new URL(url).pathname; } catch { path = ''; }
+  if (REDIRECTING_PATH.test(path) && res.status >= 200 && res.status < 300) return res;
+  const verdict = judgeCloudAnswer(res, cloudOrigin, store, now);
+  if (verdict !== 'foreign') return res;
+  // One line a minute per status: a pulled log explains an outage without a line per 15-s poll.
+  if (now - _foreignLogged.at > 60_000 || _foreignLogged.status !== res.status) {
+    _foreignLogged = { at: now, status: res.status };
+    logLine('sync', `A529: HTTP ${res.status} at ${cloudOrigin} was not the cloud's page (no X-ZapTill-Server) - treated as no connection`);
+  }
+  try { void (res as any)?.body?.cancel?.().catch?.(() => {}); } catch { /* nothing to release */ }
+  throw new ForeignPageError(res.status);
 }
 
 /** Tests only. */

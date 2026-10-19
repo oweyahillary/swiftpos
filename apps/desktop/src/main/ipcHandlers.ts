@@ -52,8 +52,9 @@ import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import path from 'path';   // A516
 import { tillSessionRefusedRecently, resetRenewalGate, configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, replicateToNode, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush, learnBeforeLock } from './syncEngine';   // A523: learnBeforeLock
+import { liveStatus } from './liveSync';   // A531
 import { tillBranchId } from './deviceConfig';   // A446
-import { MONEY_MOVEMENT_MANAGER_ONLY } from './posFeatures';   // A453
+import { MONEY_MOVEMENT_MANAGER_ONLY, receiptClassicFrom } from './posFeatures';   // A453; A530
 import { signedIn as sessionPerson, signedInCan, personCan, personKeys, backOffice as personBackOffice, mayMoveMoney, roleCeilingRefusal, roleMap, mayActOn, hasMarker, isOwnerRole, type PersonLike } from './tillAccess';   // A490: the till's one rule
 import { maySetMpesa } from './permissions';   // A492
 import { cleanMpesaReceive, mpesaLabel, mpesaReceiptNumber, type MpesaReceive } from './mpesaReceive';   // A492
@@ -98,7 +99,7 @@ import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeo
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
 import { configSaveRefusal } from './tillGates';   // audit 2026-10-14
 import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient, fetchRosterFromNode, relayBrandingToNode } from './nodeClient';
-import { isUnreachableStatus } from './authTransport';
+import { isUnreachableStatus, ForeignPageError } from './authTransport';   // A529: ForeignPageError
 import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession, OFFLINE_SESSION_MESSAGE, NO_CONNECTION_MESSAGE, type ManageOfflineReason } from './offlineSession';
 import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
 import { refreshStaffRosterNow, staffChangedHere } from './staffRoster';   // A446
@@ -958,7 +959,11 @@ export function registerIpcHandlers() {
       body: verifyPinBody(String(pin), branch_id),
       }, knownHere ? 4_000 : 8_000), knownHere ? 5_000 : 10_000);   // A446: 8 s, then this till's own staff list
     } catch (netErr: any) {
-      logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
+      // A529: an answer that was not the cloud's (no X-ZapTill-Server — a suspended Render service, a Cloudflare page, a
+      // captive portal) arrives here as ForeignPageError: no connection, whatever its status — never "Invalid PIN".
+      logLine('pin', netErr instanceof ForeignPageError
+        ? `HTTP ${netErr.status} at sign-in was not the cloud's page (no X-ZapTill-Server) - treating as unreachable, trying the local authority`
+        : `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
       return fallbackToLocalAuthority();
     }
 
@@ -1274,6 +1279,9 @@ export function registerIpcHandlers() {
     };
   });
 
+  /** A529: this till holds its catalogue (the products table is written only by a catalogue pull). */
+  const catalogueHeld = (): boolean => !!getLocalDb().prepare(`SELECT 1 FROM products LIMIT 1`).get();
+
   handle('pos:getVariants', async (_event, productId: string) => {
     const db = getLocalDb();
     const groups = db.prepare(`
@@ -1281,13 +1289,16 @@ export function registerIpcHandlers() {
     `).all(productId) as any[];
 
     if (groups.length === 0) {
-      // Not in SQLite — fetch directly from server as fallback. Goes through
-      // tillFetch so an expired token refreshes rather than silently dropping
-      // the option groups and letting the item be rung with no size chosen.
+      // A529 (the owner's System page, 2026-10-19: /api/variants 557 calls in 36 min across ~4 tills): an empty local list
+      // after a catalogue pull MEANS no options — the pull brings every product's choices. Before, every tap of a product
+      // without options (most of them) asked the cloud, and a slow or down cloud held the item up to 15 s before the cart.
+      // Only a till that has never pulled its catalogue asks, bounded to 2 s; another server's page is no connection
+      // (cloudFetch throws) — empty.
+      if (catalogueHeld()) return [];
       try {
-        const res = await tillFetch(`/api/variants/groups?product_id=${productId}`);
+        const res = await withinMs(tillFetch(`/api/variants/groups?product_id=${productId}`, {}, 2_000), 2_000);
         if (res.ok) return await res.json();
-      } catch { /* offline or signed out — return empty */ }
+      } catch { /* offline, slow, signed out or not the cloud — return empty */ }
       return [];
     }
 
@@ -1315,13 +1326,16 @@ export function registerIpcHandlers() {
     `).all(productId) as any[];
 
     if (groups.length === 0) {
-      // Not in SQLite — fetch directly from server as fallback. Goes through
-      // tillFetch so an expired token refreshes rather than silently dropping
-      // the option groups and letting the item be rung with no size chosen.
+      // A529 (the owner's System page, 2026-10-19: /api/variants 557 calls in 36 min across ~4 tills): an empty local list
+      // after a catalogue pull MEANS no options — the pull brings every product's choices. Before, every tap of a product
+      // without options (most of them) asked the cloud, and a slow or down cloud held the item up to 15 s before the cart.
+      // Only a till that has never pulled its catalogue asks, bounded to 2 s; another server's page is no connection
+      // (cloudFetch throws) — empty.
+      if (catalogueHeld()) return [];
       try {
-        const res = await tillFetch(`/api/modifiers/groups?product_id=${productId}`);
+        const res = await withinMs(tillFetch(`/api/modifiers/groups?product_id=${productId}`, {}, 2_000), 2_000);
         if (res.ok) return await res.json();
-      } catch { /* offline or signed out — return empty */ }
+      } catch { /* offline, slow, signed out or not the cloud — return empty */ }
       return [];
     }
 
@@ -1456,6 +1470,8 @@ export function registerIpcHandlers() {
           // and a raster exists. Decoded by shared/printing; a malformed stored value decodes
           // to null and prints no logo. The renderer prints it on receipts only (A310).
           logoRaster:      resolveReceiptLogo(),
+          // A530: the admin portal's classic-receipt switches for this client (pos/init, cached) — all off = compact.
+          receiptClassic:  receiptClassicFrom(getPosFeatures()),
         },
         // The presets shared/printing exports, NOT a hand-rolled config here.
         // They are what the verified sample output was rendered from, so a
@@ -2841,7 +2857,9 @@ export function registerIpcHandlers() {
           if (fresh) res = await call(fresh);
         }
       }
-    } catch {
+    } catch (e: any) {
+      // A529: including another server's page (no X-ZapTill-Server) — the no-connection message, not its status.
+      if (e instanceof ForeignPageError) logLine('manage', `${method} ${path}: HTTP ${e.status} was not the cloud's page - no connection`);
       lastManageFailure = 'no_connection';
       throw new Error(NO_CONNECTION_MESSAGE);
     }
@@ -3977,7 +3995,9 @@ export function registerIpcHandlers() {
         }),
         signal: AbortSignal.timeout(REVERSE_TIMEOUT_MS),
       });
-    } catch {
+    } catch (e: any) {
+      // A529: another server's page (no X-ZapTill-Server) is the cloud not being there too — never its refusal.
+      if (e instanceof ForeignPageError) logLine('sale', `void ${orderId}: HTTP ${e.status} was not the cloud's page - voiding on this till's offline rules`);
       return reverseWhileOffline('void', String(orderId), reason, approvalPin);   // 0.6.30: the cloud is not there
     }
     if (cloudUnreachable(res.status)) return reverseWhileOffline('void', String(orderId), reason, approvalPin);
@@ -4039,7 +4059,9 @@ export function registerIpcHandlers() {
         }),
         signal: AbortSignal.timeout(REVERSE_TIMEOUT_MS),
       });
-    } catch {
+    } catch (e: any) {
+      // A529: another server's page (no X-ZapTill-Server) is the cloud not being there too — never its refusal.
+      if (e instanceof ForeignPageError) logLine('sale', `refund ${orderId}: HTTP ${e.status} was not the cloud's page - refunding on this till's offline rules`);
       return reverseWhileOffline('refund', String(orderId), reason, override_pin);   // 0.6.30: the cloud is not there
     }
     if (cloudUnreachable(res.status)) return reverseWhileOffline('refund', String(orderId), reason, override_pin);
@@ -4272,7 +4294,8 @@ export function registerIpcHandlers() {
         deploy_mode: cfg?.deploy_mode ?? null, server_url: cfg?.server_url ?? null,
         node_url: cfg?.node_url ?? null,
       },
-      sync: { online: sync.online, pending: sync.pendingCount, failed: sync.failedCount, lastOrder, breakdown: sync.pendingBreakdown },
+      sync: { online: sync.online, pending: sync.pendingCount, failed: sync.failedCount, lastOrder, breakdown: sync.pendingBreakdown,
+        live: liveStatus() },   // A531: each topic's last change applied, what waits, the push channel
       build: getBuildInfo(),
     };
   });

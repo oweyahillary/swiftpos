@@ -335,6 +335,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     parkedCount?: number; parkedReason?: string; lastSyncedAt?: string | null;
     // A501: the branch server's refusal (by reason) and this till's backlog for it — the manager's notice names both.
     nodeRefused?: SyncStatusLike['nodeRefused']; nodeBacklog?: SyncStatusLike['nodeBacklog'];
+    cloudUnreachable?: SyncStatusLike['cloudUnreachable'];   // A529: "the cloud cannot be reached" in the quiet notice
   }>({ online: true, pendingCount: 0, failedCount: 0 });
   // A363: the manager's bottom notice (null when nothing waits); `noticeBusy` while its button runs.
   const notice = canSeeSync ? syncNotice(syncStatus) : null;
