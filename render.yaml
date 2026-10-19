@@ -64,8 +64,10 @@ services:
       # (logs "would block", never refuses). Flip to "true" only after the
       # [terminal-write-guard] log lines are clean for a trading period; a
       # premature flip 403s a till mid-service.
+      # A159 (owner, 2026-10-19): ENFORCED — every till write in 1.0.19/1.0.20 was checked against the allowlist and the
+      # dry-run logs were clean. To back out in an emergency set it to "false" in Render (no deploy needed).
       - key: TERMINAL_WRITE_ENFORCE
-        value: "false"
+        value: "true"
 
       # ── At-rest encryption (H9) ─────────────────────────────────────────────
       # AES-256-GCM key for eTIMS cmc_key and M-Pesa consumer_secret/passkey.

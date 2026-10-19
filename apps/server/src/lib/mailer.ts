@@ -43,6 +43,25 @@ export function splitRecipients(to: string): string[] {
   return [...new Set(String(to ?? '').split(/[,;]/).map((t) => t.trim()).filter(Boolean))];
 }
 
+/** A532: a plain address or `Name <address>` — what Resend accepts per entry. */
+const ADDRESS = /^(?:[^<>@\s][^<>]*<)?[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+>?$/;
+
+/**
+ * A532 (Render log, 2026-10-19: "Resend error … Invalid `to` field" every 15 min for Pollo's not-syncing alert): the
+ * alerts and summaries pass their recipients joined ("owner@x, manager@y"), which resend 6.33 (Dependabot #72) refuses
+ * — a single recipient (the test email) still went. Every send now hands Resend a list, one entry per address, and drops
+ * an entry that is not an address (a manager saved with a phone or a blank in the email field) with a log line, so one
+ * bad entry no longer stops the mail reaching everyone else. Throws when nothing is left to send to.
+ */
+export function mailRecipients(to: string): string[] {
+  const all = splitRecipients(to);
+  const good = all.filter((a) => ADDRESS.test(a));
+  const bad = all.filter((a) => !ADDRESS.test(a));
+  if (bad.length) console.warn(`[mailer] dropped ${bad.length} recipient(s) that are not email addresses: ${bad.map((b) => JSON.stringify(b.slice(0, 60))).join(', ')}`);
+  if (!good.length) throw new Error(`no valid recipient in ${JSON.stringify(String(to ?? '').slice(0, 120))}`);
+  return good;
+}
+
 /**
  * One send through SendGrid's v3 API. Resolves null on success (SendGrid answers 202 Accepted), else the
  * provider's own error text — SendGrid returns { errors: [{ message }] } — so the caller can log it or fall back.
@@ -421,7 +440,7 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
     try {
       const { error } = await resend.emails.send({
         from,
-        to: opts.to,
+        to: mailRecipients(opts.to),   // A532: a list, never the joined string
         subject: opts.subject,
         html: opts.html,
         ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => ({ filename: a.filename, content: a.content })) } : {}),   // A455
@@ -487,7 +506,7 @@ export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
   if (resend) {
     try {
       const { error } = await resend.emails.send({
-        from, to: opts.to, subject: opts.subject, html: opts.html,
+        from, to: mailRecipients(opts.to), subject: opts.subject, html: opts.html,   // A532: a list
       });
       if (!error) return { ok: true, provider: 'resend' };
       failures.push(`Resend: ${error.message}`);
