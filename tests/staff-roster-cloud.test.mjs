@@ -30,6 +30,7 @@ process.env.ADMIN_JWT_SECRET ??= randomBytes(24).toString('hex');
 process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
+const syncVersions = require(path.join(DIST, 'lib/syncVersions.js'));   // A528
 
 const BZ = '11111111-1111-4111-8111-111111111111';
 const W = '22222222-2222-4222-8222-222222222222', K = '33333333-3333-4333-8333-333333333333';
@@ -47,6 +48,8 @@ const reset = () => {
       { business_id: BZ, device_id: 'dev-old', device_role: 'till', branch_id: W, status: 'approved', retired_at: '2026-10-01T00:00:00Z' },
     ],
     users: [user('u-amy', 'Amy', [W]), user('u-kim', 'Kim', [K]), user('u-mary', 'Mary', []), user('u-gone', 'Gone', [W], { status: 'inactive' })],
+    // A528: the staff version (migration 150) — the triggers bump it when staff change; this test bumps it by hand.
+    sync_versions: [{ business_id: BZ, topic: 'staff', version: 1 }],
   };
 };
 reset();
@@ -97,6 +100,8 @@ await ok('a till asking again with the version it holds is told "unchanged" (not
 await ok('…a change (a new cashier) changes the version and sends the list', async () => {
   const first = await ask('dev-bar', W);
   db.users.push(user('u-abdi', 'Abdi', [W]));
+  db.sync_versions[0].version++;   // A528: what the users trigger does
+  syncVersions.forgetTopic(BZ);     // A528: …seen after 15 s, or at once when the cashier is added through this server
   const r = await ask('dev-bar', W, first.body.version);
   assert(!r.body.unchanged && r.body.staff.some((s) => s.name === 'Abdi') && r.body.version !== first.body.version, JSON.stringify(r.body).slice(0, 200));
 });

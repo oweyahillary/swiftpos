@@ -27,6 +27,7 @@
  * and nothing is lost.
  */
 
+import { forgetTill } from './authCache';   // A528
 import { supabase } from './supabase';
 
 export interface BindingCheck {
@@ -74,6 +75,7 @@ export async function checkDeviceBranch(
       await supabase.from('user_devices')
         .update({ branch_id: claimedBranchId, bound_at: new Date().toISOString() })
         .eq('id', device.id);
+      forgetTill(businessId, deviceId);   // A528: the sign-in check's remembered row names the branch
       return { ok: true, boundBranchId: claimedBranchId };
     }
 
@@ -96,6 +98,7 @@ export async function checkDeviceBranch(
         rebind_allowed_until: null,
         rebind_authorised_by: null,
       }).eq('id', device.id);
+      forgetTill(businessId, deviceId);   // A528: the sign-in check's remembered row names the branch
 
       // 23505 here is the terminal-code index, not the device index: the
       // destination branch already has a till using this code. Both machines

@@ -9,6 +9,8 @@
  * verify-prod-deploy.yml: expected against running, what to do when it failed, the run), Dependencies (the latest
  * security-scan.yml: counts per app) — and below them every event, newest first, a page at a time, filtered by kind;
  * a row opens to its details (for a scan: each vulnerable package, its fix and its advisories).
+ * A528: a fourth card, Traffic since start — requests per route family, and how often the tills' polled answers came from
+ * memory (Render suspended production over bandwidth, 2026-10-19).
  * Super admins only (the menu hides it from agents; the cloud refuses them). Cloud: routes/opsAdmin.ts.
  */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -25,9 +27,19 @@ interface OpsEvent {
   id: string; kind: Kind; status: Status; commit: string | null; title: string;
   details: Record<string, any>; source: string; created_at: string;
 }
+/** A528: what the server has answered since it started (routes/opsAdmin.ts summary, lib/trafficStats.ts). */
+interface Traffic {
+  started_at: string;
+  routes: Array<{ family: string; requests: number; bytes: number }>;
+  catalogue_version: { answered: number; from_memory: number; db_reads: number; fallback_computed: number; fallback_cached: number; hit_rate: number | null };
+  branch_staff: { full: number; unchanged_from_memory: number; unchanged_after_read: number };
+  auth_cache: { hits: number; misses: number; hit_rate: number | null };
+  db_queries_polled: number;
+}
 interface Summary {
   live: { commit: string | null; started_at: string };
   boot: OpsEvent | null; deploy_check: OpsEvent | null; vuln_scan: OpsEvent | null;
+  traffic?: Traffic;
 }
 interface Fix { name: string; version: string; isSemVerMajor: boolean }
 interface Pkg {
@@ -138,6 +150,31 @@ function ScanDetails({ ev }: { ev: OpsEvent }) {
   );
 }
 
+const kb = (n: number) => (n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+const pct = (r: number | null) => (r === null ? "—" : `${r}%`);
+
+/** A528: Render suspended production over bandwidth (2026-10-19) — the requests per route family and how often the polled
+ *  answers (catalogue version, staff list, the sign-in check) came from memory instead of the database. */
+function TrafficCard({ t }: { t?: Traffic }) {
+  return (
+    <div style={{ ...S.card, marginBottom: 0 }} data-testid="card-traffic">
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Traffic since start</div>
+      {!t ? <div style={{ fontSize: 12, color: C.muted }}>Not reported by this server yet.</div> : (
+        <>
+          <Line k="Since" v={`${when(t.started_at)} · ${ago(t.started_at)}`} />
+          {t.routes.slice(0, 6).map((r) => (
+            <Line key={r.family} k={r.family} v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{r.requests.toLocaleString()} · {kb(r.bytes)}</span>} />
+          ))}
+          <Line k="Catalogue check" v={`${pct(t.catalogue_version.hit_rate)} from memory · ${t.catalogue_version.answered.toLocaleString()} asked`} />
+          <Line k="Staff list" v={`${(t.branch_staff.unchanged_from_memory).toLocaleString()} unchanged from memory · ${t.branch_staff.full.toLocaleString()} sent`} />
+          <Line k="Sign-in check" v={`${pct(t.auth_cache.hit_rate)} from memory`} />
+          <Line k="DB queries" v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{t.db_queries_polled.toLocaleString()} (polled paths)</span>} />
+        </>
+      )}
+    </div>
+  );
+}
+
 function Details({ ev }: { ev: OpsEvent }) {
   if (ev.kind === "deploy_check") return <DeployDetails ev={ev} />;
   if (ev.kind === "vuln_scan") return <ScanDetails ev={ev} />;
@@ -165,7 +202,7 @@ export default function SystemPage({ req }: { req: Req }) {
   const loadSummary = useCallback(() => {
     setSummaryError("");
     req("GET", "/ops/summary").then(setSummary).catch((e: any) => {
-      if (e?.data?.live) setSummary({ live: e.data.live, boot: null, deploy_check: null, vuln_scan: null });
+      if (e?.data?.live) setSummary({ live: e.data.live, boot: null, deploy_check: null, vuln_scan: null, traffic: e.data.traffic });
       setSummaryError(e?.message || "Couldn't load the summary.");
     });
   }, [req]);
@@ -243,6 +280,8 @@ export default function SystemPage({ req }: { req: Req }) {
             </>
           )}
         </div>
+
+        <TrafficCard t={summary?.traffic} />
       </div>
 
       <div style={S.card}>

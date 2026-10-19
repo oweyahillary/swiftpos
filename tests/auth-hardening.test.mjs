@@ -75,8 +75,12 @@ const person = (id, name, roleId, branches, extra = {}) => ({
   roles: { id: roleId, name: roles[roleId].name, role_permissions: grantsOf(roles[roleId].keys) },
   user_branches: branches.map((b) => ({ branch_id: b, branches: BRANCH_ROWS().find((x) => x.id === b) })), user_permissions: extra.user_permissions ?? [],
 });
+// A528: requireAuth remembers the rows 30 s (lib/authCache.ts). The rows below are changed in the database directly (as
+// SQL would) — forgotten here by hand; through the API it is forgotten at once (tests/polling-cost-a528.test.mjs).
+const authCache = require(path.join(DIST, 'lib/authCache.js'));
 const reset = () => {
   attempts._resetAttempts();
+  authCache._resetAuthCache();
   mem.fail = () => null; mem.calls = [];
   mem.db = {
     businesses: [{ id: B, owner_id: 'auth-owner', name: 'Pollo', status: 'active', type: 'restaurant' }],
@@ -301,6 +305,7 @@ try {
     const t = T.adminPin();
     assert.equal((await call('GET', '/api/staff/roles', t)).status, 200);
     userRow(ADMINP).status = 'inactive';
+    authCache._resetAuthCache();   // A528: changed in the database directly
     const r = await call('GET', '/api/staff/roles', t);
     assert.equal(r.status, 401); assert.equal(r.body.code, 'ACCOUNT_INACTIVE');
   });
@@ -309,6 +314,7 @@ try {
     const t = tok({ userId: ADMINP, roleId: R_OWNER, isOwner: true, branchId: null, surface: 'desktop', pinSignIn: true, permissionKeys: ['*'], permissionsVersion: 1 });
     assert.equal((await call('GET', '/api/staff/roles', t)).status, 200);
     userRow(ADMINP).permissions_version = 2;
+    authCache._resetAuthCache();   // A528: changed in the database directly
     assert.equal((await call('GET', '/api/staff/roles', t)).body.code, 'PERMISSIONS_CHANGED');
   });
   await ok('a token naming nobody (no users row) → 401; the real owner (businesses.owner_id) and the password session skip', async () => {
@@ -316,6 +322,7 @@ try {
     const ghost = tok({ userId: u(999), roleId: R_MGR, permissionKeys: MGR_KEYS });
     assert.equal((await call('GET', '/api/staff/roles', ghost)).status, 401);
     mem.db.businesses[0].owner_id = u(998);
+    authCache._resetAuthCache();   // A528: changed in the database directly
     const realOwner = tok({ userId: u(998), isOwner: true, branchId: null, surface: 'desktop', pinSignIn: true, roleId: R_OWNER, permissionKeys: ['*'] });
     assert.equal((await call('GET', '/api/staff/roles', realOwner)).status, 200);
     userRow(OWNER).status = 'inactive';   // the password session does not read the row (as before)

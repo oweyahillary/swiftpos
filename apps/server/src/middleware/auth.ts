@@ -9,6 +9,7 @@ import { isTillPayload, isOwnerEraTillPayload, tillBlockReason } from '../lib/de
 import { expandKeys } from '../lib/permissions';                 // A490
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
 import { isOwnerRoleName } from '../lib/ownerRole';              // A494
+import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
 
 /**
  * A494: a session from the owner's password sign-in (/auth/login — only the account that owns the business can make
@@ -152,12 +153,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // business (one indexed read, as the users check below is for a person): retired, revoked or blocked → refused.
     if (req.isTill) {
       req.userId = null;
-      const { data: tillRow, error: tErr } = await supabase
-        .from('user_devices')
-        .select('status, retired_at')
-        .eq('business_id', req.businessId)
-        .eq('device_id', req.deviceId)
-        .maybeSingle();
+      // A528: remembered 30 s while the till is joined (lib/authCache.ts) — a till polls several routes every 20 s and
+      // each one read this row. A blocked or retired row is never kept; blocking a till through this server forgets it.
+      const { data: tillRow, error: tErr } = await readTill(req.businessId, String(req.deviceId));
       if (tErr) {
         res.status(503).json({
           error: 'Could not verify your session right now — please try again',
@@ -197,8 +195,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     if (req.isOwner) {
       if (isOwnerPasswordSession(payload)) realOwner = true;
       else {
-        const { data: biz, error: bErr } = await supabase
-          .from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle();
+        // A528: remembered 30 s (lib/authCache.ts); an owner change through this server forgets it.
+        const { data: biz, error: bErr } = await cachedOwner(req.businessId, async () => await supabase
+          .from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle());
         if (bErr) {
           res.status(503).json({ error: 'Could not verify your session right now — please try again', code: 'AUTH_BACKEND_UNAVAILABLE' });
           return;
@@ -209,11 +208,22 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     if (!realOwner) {
       // Destructured, not ignored: a failure here must be a 5xx, not a silent
       // fall-through that presents to the cashier as a bad PIN.
-      const { data: userRow, error: uErr } = await supabase
+      // A528: remembered 30 s while the person is active in this business (lib/authCache.ts) — never a refusal or a
+      // failed read. Deactivating someone, changing their role or grants through this server forgets it at once; the
+      // permissions_version check below still compares against the remembered row.
+      const readUser = () => cachedUser(String(req.userId), req.businessId, async () => await supabase
         .from('users')
         .select('permissions_version, status, business_id')
         .eq('id', req.userId)
-        .maybeSingle();
+        .maybeSingle(),
+        (row) => !!row && (!row.business_id || row.business_id === req.businessId) && (!row.status || row.status === 'active'));
+      let { data: userRow, error: uErr } = await readUser();
+      // A528: a token NEWER than the remembered row (the person renewed after a change made outside this server) — read
+      // again rather than refuse it: the renewed token would otherwise be refused for up to 30 s, renewing in a loop.
+      if (!uErr && req.permissionsVersion > 0 && userRow && (userRow.permissions_version ?? 1) < req.permissionsVersion) {
+        forgetUser(String(req.userId));
+        ({ data: userRow, error: uErr } = await readUser());
+      }
 
       if (uErr) {
         res.status(503).json({
@@ -323,13 +333,17 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   // A494: the owner's role by the ONE rule (lib/ownerRole.ts) — onboarding names it 'Admin', so a lookup by the name 'owner'
   // found nothing for most businesses.
-  const { data: roleRows } = await supabase
-    .from('roles')
-    .select('id, name')
-    .eq('business_id', (business as any).id);
-  const ownerRole = ((roleRows ?? []) as Array<{ id: string; name?: string | null }>).find((r) => isOwnerRoleName(r.name)) ?? null;
+  // A528: the owner role's id, remembered 30 s per business (lib/authCache.ts); a roles change through this server forgets it.
+  const { data: ownerRoleId } = await cachedOwnerRole((business as any).id, async () => {
+    const { data: roleRows, error } = await supabase
+      .from('roles')
+      .select('id, name')
+      .eq('business_id', (business as any).id);
+    const ownerRole = ((roleRows ?? []) as Array<{ id: string; name?: string | null }>).find((r) => isOwnerRoleName(r.name)) ?? null;
+    return { data: ownerRole?.id ?? null, error };
+  });
 
-  req.roleId         = ownerRole?.id ?? null;
+  req.roleId         = ownerRoleId ?? null;
   req.permissionKeys = ['*'];
 
   next();
