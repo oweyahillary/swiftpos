@@ -34,6 +34,9 @@ process.env.ADMIN_JWT_SECRET ??= randomBytes(24).toString('hex');
 process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
+// A528: requireAuth remembers a joined till's row 30 s (lib/authCache.ts); the rows here are changed in the database
+// directly (as SQL would), so each reset forgets it — through the API it is forgotten at once (polling-cost-a528).
+const authCache = require(path.join(DIST, 'lib/authCache.js'));
 const { buildDeviceTokenPayload } = require(path.join(DIST, 'lib/deviceGrant.js'));
 const { _resetJoinLimits, JOIN_CODES_PER_HOUR } = require(path.join(DIST, 'lib/tillJoin.js'));
 const { terminalWriteVerdict } = require(path.join(DIST, 'lib/terminalWrites.js'));
@@ -42,6 +45,7 @@ const jwt = require('jsonwebtoken');
 const BZ = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222';
 let db;
 const reset = (over = {}) => {
+  authCache._resetAuthCache();
   _resetJoinLimits();
   db = {
     businesses: [{ id: BZ, name: 'Albaik', currency: 'KES', type: 'restaurant', status: 'active' }],

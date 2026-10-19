@@ -3,7 +3,8 @@
  *
  *   GET /api/admin/ops/events?kind=&status=&page=&size=   newest first, a page at a time ({ events, total, page, size })
  *   GET /api/admin/ops/summary                            the latest start, deploy check and dependency scan, and what
- *                                                         this server runs now (live: commit, started_at)
+ *                                                         this server runs now (live: commit, started_at); A528: traffic
+ *                                                         since start (lib/trafficStats.ts)
  *
  * Super admins only (requireAdmin + requireSuperAdmin) — an agent and a business's own token are refused. Read only.
  * Owner, 2026-10-17: "these results are written to the db and I can read through".
@@ -12,6 +13,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAdmin, requireSuperAdmin } from '../middleware/adminAuth';
 import { supabase } from '../lib/supabase';
 import { buildInfo, OPS_KINDS, OPS_STATUSES } from '../lib/opsEvents';
+import { trafficSnapshot } from '../lib/trafficStats';   // A528
 
 const router = safeRouter();
 const COLS = 'id, kind, status, commit, title, details, source, created_at';
@@ -55,10 +57,11 @@ router.get('/summary', async (_req, res) => {
   };
   try {
     const [boot, deploy_check, vuln_scan] = await Promise.all([latest('boot'), latest('deploy_check'), latest('vuln_scan')]);
-    res.json({ live: buildInfo(), boot, deploy_check, vuln_scan });
+    // A528: what this server has answered since it started, and what the polled answers cost the database.
+    res.json({ live: buildInfo(), boot, deploy_check, vuln_scan, traffic: trafficSnapshot() });
   } catch {
     // The page still says what this server runs, even before migration 149.
-    res.status(503).json({ ...unavailable, live: buildInfo() });
+    res.status(503).json({ ...unavailable, live: buildInfo(), traffic: trafficSnapshot() });
   }
 });
 

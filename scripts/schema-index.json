@@ -1418,6 +1418,12 @@
     "status": "\"character varying\" NOT NULL",
     "notes": "\"text\""
   },
+  "sync_versions": {
+    "business_id": "\"uuid\" NOT NULL",
+    "topic": "\"text\" NOT NULL",
+    "version": "\"bigint\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "tables": {
     "id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\" NOT NULL",

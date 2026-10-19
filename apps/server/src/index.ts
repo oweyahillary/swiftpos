@@ -5,7 +5,8 @@ import 'dotenv/config';
 import './lib/envGuard';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors        from 'cors';
-import helmet      from 'helmet';
+import { apiHelmet } from './lib/apiHeaders';     // A528
+import { countTraffic } from './lib/trafficStats'; // A528
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import apiRoutes   from './routes';
 import { supabase } from './lib/supabase';
@@ -45,17 +46,16 @@ export const log = {
 if (isProd) app.set('trust proxy', 1);
 
 // ── Security headers (helmet) ─────────────────────────────────────────────────
-// Adds: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection,
-//       Strict-Transport-Security, Referrer-Policy, Permissions-Policy,
-//       and a restrictive Content-Security-Policy by default.
+// Adds: X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, Referrer-Policy.
 //
 // crossOriginResourcePolicy: 'cross-origin' lets the dashboard fetch assets
 // (product images) from the same server without CORP blocks.
-app.use(helmet({
-  crossOriginResourcePolicy:  { policy: 'cross-origin' },
-  crossOriginOpenerPolicy:    { policy: 'same-origin-allow-popups' }, // needed for Supabase OAuth if ever used
-  contentSecurityPolicy: isProd ? undefined : false, // disable CSP in dev (Vite HMR)
-}));
+// A528: only the headers that mean something on a JSON answer (lib/apiHeaders.ts) — this server serves no HTML page, and
+// helmet's document headers (CSP, COOP, …) added ~1.2 KB to every answer every till polls every 20 s.
+app.use(apiHelmet());
+
+// A528: requests and bytes per route family since start — the admin portal's System page (lib/trafficStats.ts).
+app.use(countTraffic);
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // Set CORS_ORIGINS as a comma-separated list in .env:

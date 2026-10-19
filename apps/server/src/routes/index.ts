@@ -63,8 +63,21 @@ import tillsDaysRoutes     from './tills-days';      // A523: the owner's Tills 
 import tillsDaysAdminRoutes from './tillsDaysAdmin'; // A523: the same page in the admin portal
 import opsRoutes           from './ops';            // A525: the GitHub workflows post the deploy check and the scan
 import opsAdminRoutes      from './opsAdmin';       // A525: the admin portal's System page reads them
+import { forgetOnWrite }   from '../lib/forgetOnWrite';   // A528
 
 const router = Router();
+
+// A528: a write here drops what the polled answers remember for the business (lib/forgetOnWrite.ts) — a web edit
+// reaches the tills' catalogue-version / branch-staff at once, and blocking a till or a person takes effect on the very
+// next request (the sign-in check remembers rows 30 s). Before the routers, so it sees every write they handle.
+router.use(['/products', '/categories', '/variants', '/modifiers', '/combos', '/business', '/controls', '/flags',
+  '/tables', '/branches', '/printers', '/stations', '/branch-prices', '/stock-takes', '/offers', '/promotions',
+  '/onboarding', '/payment-methods'], forgetOnWrite({ catalogue: true }));
+router.use(['/business', '/controls'], forgetOnWrite({ people: true }));   // the owner, the business's options
+router.use(['/staff', '/changes'], forgetOnWrite({ catalogue: true, staff: true, people: true }));
+router.use(['/auth/set-pin', '/auth/me'], forgetOnWrite({ staff: true }));   // a PIN changed: the branch's staff list
+router.use(['/devices', '/tills-days'], forgetOnWrite({ staff: true, tills: true }));
+router.use(['/admin'], forgetOnWrite({ catalogue: true, staff: true, tills: true, people: true, everyBusiness: true }));
 
 router.use('/auth',           authRoutes);
 router.use('/enrol',          enrolRoutes);

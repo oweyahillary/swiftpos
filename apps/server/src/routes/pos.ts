@@ -28,6 +28,9 @@ import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { frozenAtBranch } from '../lib/stockTakeAccess';   // A394
 import { pageAll, chunkPaged } from '../lib/pgQuery';
 import { seesCosts, stripFields, COST_FIELDS } from '../lib/costAccess';   // A494
+import { readTopicVersion, cachedFallback } from '../lib/syncVersions';   // A528
+import { readTill } from '../lib/authCache';                           // A528
+import { traffic } from '../lib/trafficStats';                         // A528
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -50,9 +53,21 @@ router.use(requireAuth);
 // carry no updated_at trigger, so composition/routing edits still ride the 10-min
 // floor until v2 adds their triggers. NEVER wedges the till: on any failure it returns
 // 200 with version:null and the till simply keeps its floor cadence.
+//
+// A528 (Render suspended production over bandwidth, 2026-10-19 — owner: "only a change can trigger data sync"): the 16
+// reads below ran for EVERY till EVERY 20 s. Now the database keeps the version (migration 150: sync_versions, bumped by
+// triggers on those 16 tables) and this answers from ONE row per business, remembered 15 s (lib/syncVersions.ts) — and
+// dropped at once when this server writes the business's catalogue (routes/index.ts). The answer is "cv:<version>". A till
+// only compares it for equality (syncEngine.ts pullIfCatalogueChanged): the first answer in the new format is a change,
+// so every till pulls ONCE after this deploys (and once more after migration 150, if the server ran before it). A branch
+// row bumps its business's version, so branch_id needs no second read (a change at one branch makes the others pull once).
+// Before migration 150 (or when the row cannot be read) the 16 reads run as before, remembered 60 s per business and branch.
 router.get('/catalogue-version', async (req, res) => {
   const branchId = typeof req.query.branch_id === 'string' ? req.query.branch_id : null;
   const biz = req.businessId;
+  traffic.count('catalogue.answered');
+  const v = await readTopicVersion(biz, 'catalogue');
+  if (v !== null) { res.json({ version: `cv:${v}` }); return; }
 
   // Latest updated_at from one table; null (not throw) if the column/scope is absent,
   // so one odd table can never fail the whole check.
@@ -68,37 +83,40 @@ router.get('/catalogue-version', async (req, res) => {
   };
 
   try {
-    const picks = await Promise.all([
-      latest('products',         'business_id', biz),
-      latest('categories',       'business_id', biz),
-      latest('business_settings','business_id', biz),
-      latest('business_branding', 'business_id', biz),
-      // A325: switching a business's 'themes' flag must reach its tills within the 20-s check, not the 10-min
-      // floor. feature_flags has business_id and an updated_at trigger, like the tables above.
-      latest('feature_flags', 'business_id', biz),
-      latest('users',            'business_id', biz),
-      latest('tables',           'business_id', biz),
-      latest('branches',         'business_id', biz),
-      latest('branch_printers',  'branch_id',   branchId),
-      latest('branch_prices',    'branch_id',   branchId),
-      // A394: a stock count started, an item counted (released from a freeze), a count closed.
-      latest('stock_takes',      'business_id', biz),
-      // A445: an offer created, changed, switched off or deleted (updated_at moves on each, deleted_at keeps the row).
-      latest('offers',           'business_id', biz),
-      // A518: a promotion created, changed or switched off — charged at the sale as an offer, so the tills learn of it.
-      latest('promotions',       'business_id', biz),
-      // A446: print stations — a station added or changed on the web or another till reaches this till within 20 s
-      // (it waited for the 10-minute sync: "No station …" on Test print).
-      latest('print_stations',   'business_id', biz),
-      // A450: the business itself — a new business name (or currency) on the web reaches every till within 20 s; it
-      // waited for the 10-minute pull, and the till then ignored it (the name was written only at sign-in).
-      latest('businesses',       'id',          biz),
-      // A492: this branch's own settings — a manager's new M-Pesa number on one till reaches the branch's other tills
-      // within 20 s (it waited for the 10-minute pull).
-      latest('branch_settings',  'branch_id',   branchId),
-    ]);
-    // ISO-8601 UTC strings sort chronologically; newest is the version.
-    const version = picks.filter(Boolean).sort().pop() ?? null;
+    const version = await cachedFallback(`${biz}|${branchId ?? ''}`, async () => {
+      traffic.queries(16);
+      const picks = await Promise.all([
+        latest('products',         'business_id', biz),
+        latest('categories',       'business_id', biz),
+        latest('business_settings','business_id', biz),
+        latest('business_branding', 'business_id', biz),
+        // A325: switching a business's 'themes' flag must reach its tills within the 20-s check, not the 10-min
+        // floor. feature_flags has business_id and an updated_at trigger, like the tables above.
+        latest('feature_flags', 'business_id', biz),
+        latest('users',            'business_id', biz),
+        latest('tables',           'business_id', biz),
+        latest('branches',         'business_id', biz),
+        latest('branch_printers',  'branch_id',   branchId),
+        latest('branch_prices',    'branch_id',   branchId),
+        // A394: a stock count started, an item counted (released from a freeze), a count closed.
+        latest('stock_takes',      'business_id', biz),
+        // A445: an offer created, changed, switched off or deleted (updated_at moves on each, deleted_at keeps the row).
+        latest('offers',           'business_id', biz),
+        // A518: a promotion created, changed or switched off — charged at the sale as an offer, so the tills learn of it.
+        latest('promotions',       'business_id', biz),
+        // A446: print stations — a station added or changed on the web or another till reaches this till within 20 s
+        // (it waited for the 10-minute sync: "No station …" on Test print).
+        latest('print_stations',   'business_id', biz),
+        // A450: the business itself — a new business name (or currency) on the web reaches every till within 20 s; it
+        // waited for the 10-minute pull, and the till then ignored it (the name was written only at sign-in).
+        latest('businesses',       'id',          biz),
+        // A492: this branch's own settings — a manager's new M-Pesa number on one till reaches the branch's other tills
+        // within 20 s (it waited for the 10-minute pull).
+        latest('branch_settings',  'branch_id',   branchId),
+      ]);
+      // ISO-8601 UTC strings sort chronologically; newest is the version.
+      return picks.filter(Boolean).sort().pop() ?? null;
+    });
     res.json({ version });
   } catch {
     res.json({ version: null }); // never wedge the till over a freshness check
@@ -143,6 +161,14 @@ router.post('/join-code', async (req, res) => {
   });
 });
 
+// A528: per business and branch, the staff version and the list's own version this server last answered.
+const ROSTER_MAX_AGE_MS = 10 * 60_000;
+const rosterAnswers = new Map<string, { staffVersion: number; version: string; at: number }>();
+function rememberRoster(key: string, v: { staffVersion: number; version: string; at: number }): void {
+  rosterAnswers.delete(key); rosterAnswers.set(key, v);
+  while (rosterAnswers.size > 5_000) { const k = rosterAnswers.keys().next().value; if (k === undefined) break; rosterAnswers.delete(k); }
+}
+
 // active products (with category colour), active categories, main branch id, and variant groups.
 // GET /api/pos/branch-staff — hands a branch NODE its staff roster with bcrypt
 // PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17). This is
@@ -159,12 +185,9 @@ router.get('/branch-staff', async (req, res) => {
   if (!deviceId) { res.status(400).json({ error: 'x-device-id required' }); return; }
   if (deviceId !== req.deviceId) { res.status(403).json({ error: 'A till receives only its own staff list.', code: 'NOT_THIS_TILL' }); return; }
 
-  const { data: device } = await supabase
-    .from('user_devices')
-    .select('device_role, branch_id, status, retired_at')
-    .eq('device_id', deviceId)
-    .eq('business_id', req.businessId)
-    .maybeSingle();
+  // A528: the till's row as the sign-in check just read it (lib/authCache.ts — remembered 30 s while joined; blocking,
+  // retiring or moving a till through this server forgets it), not a second read on every ask.
+  const { data: device } = await readTill(req.businessId, deviceId);
 
   // A446 (owner, 2026-10-11): "each till should keep a local copy of all staff pin related to that branch" — so a new
   // cashier signs in at once on every till, and a till signs its staff in with no server and no internet. Every till of
@@ -183,6 +206,24 @@ router.get('/branch-staff', async (req, res) => {
   }
   if (!branchId) { res.status(409).json({ error: 'this till has not been given a branch yet', code: 'no_branch' }); return; }
 
+  // A528: every till asks every 10-20 s and each ask read the whole staff list. The staff version (migration 150: bumped
+  // by users, roles, grants, people's branches, tills joining or leaving; remembered 15 s and dropped when this server
+  // changes staff) says whether anything changed since this branch's last answer: if not, and the till already holds
+  // that answer (?v=), it is told "unchanged" without the read — the same answer an unchanged list always got, so every
+  // till version (1.0.15 on) reads it as before. Read BEFORE the list, so a change during the read shows next time.
+  // Before migration 150 (no version) the list is read every time, as before. Re-read at least every 10 minutes anyway.
+  const staffVersion = await readTopicVersion(req.businessId, 'staff');
+  const held = String(req.query.v ?? '');
+  const rosterKey = `${req.businessId}|${branchId}`;
+  const last = rosterAnswers.get(rosterKey);
+  if (staffVersion !== null && held && last && last.staffVersion === staffVersion && last.version === held
+      && Date.now() - last.at < ROSTER_MAX_AGE_MS) {
+    traffic.count('staff.roster_unchanged_memory');
+    res.json({ branch_id: branchId, version: held, unchanged: true });
+    return;
+  }
+
+  traffic.queries(1);
   const { data: staffList, error } = await supabase
     .from('users')
     .select(`
@@ -223,7 +264,12 @@ router.get('/branch-staff', async (req, res) => {
 
   // A446: a version of exactly what is sent — a till that already holds it is told so (it asks every few seconds).
   const version = createHash('sha256').update(JSON.stringify(roster)).digest('hex').slice(0, 24);
-  if (String(req.query.v ?? '') === version) { res.json({ branch_id: branchId, version, unchanged: true }); return; }
+  if (staffVersion !== null) rememberRoster(rosterKey, { staffVersion, version, at: Date.now() });
+  if (String(req.query.v ?? '') === version) {
+    traffic.count('staff.roster_unchanged_read');
+    res.json({ branch_id: branchId, version, unchanged: true }); return;
+  }
+  traffic.count('staff.roster_full');
   res.json({ branch_id: branchId, version, staff: roster });
 });
 

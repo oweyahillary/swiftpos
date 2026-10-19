@@ -33,6 +33,7 @@
  *   POST /api/auth/set-pin         — bcrypt PIN update
  *   PATCH /api/auth/me             — clears must_change_password
  */
+import { forgetTill } from '../lib/authCache';   // A528
 import { validateLoose } from '../middleware/validate';
 import { LoginSchema } from '../lib/schemas';
 
@@ -908,6 +909,7 @@ router.post('/enrol/redeem', async (req, res) => {
     device_secret_hash: hashDeviceSecret(deviceSecret), device_secret_set_at: nowIso,
     ...(branchId && branchId !== (dev as any).branch_id ? { branch_id: branchId, bound_at: nowIso } : {}),
   }).eq('id', (dev as any).id);
+  forgetTill(businessId, deviceId);   // A528: joined again (perhaps at another branch) — the sign-in check reads it afresh
   if (joinErr) { sendError(res, joinErr); return; }
 
   const payload: TokenPayload = buildDeviceTokenPayload({ deviceId, businessId, branchId, sessionId: newSessionId() });
