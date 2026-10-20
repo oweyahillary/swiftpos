@@ -177,11 +177,19 @@ async function write(ctx: ChangeContext, c: TillChange, targetId: string, create
   return writeRefusal(error);
 }
 
+/** A537: a category's menu that is gone (deleted, or not this business's) — refused for good, never sent again. */
+export const MENU_GONE = 'its menu is not on the cloud any more (deleted, or not this business) — choose another menu';
+
 /** Things a value names must be this business's (a product's category) and stay unique (a barcode). */
 async function namesAreOurs(ctx: ChangeContext, c: TillChange): Promise<string | null> {
   if (c.entity === 'product' && c.data.category_id) {
     const { data } = await supabase.from('categories').select('id').eq('id', c.data.category_id).eq('business_id', ctx.businessId).maybeSingle();
     if (!data) return 'its category is not on the cloud (yet) — it goes again on the next sync';
+  }
+  // A537: a category put under a menu on a till — the menu must be this business's (and not deleted).
+  if (c.entity === 'category' && c.data.menu_id) {
+    const { data } = await supabase.from('menus').select('id').eq('id', c.data.menu_id).eq('business_id', ctx.businessId).is('deleted_at', null).maybeSingle();
+    if (!data) return MENU_GONE;
   }
   if (c.entity === 'product' && c.data.barcode) {
     const { data } = await supabase.from('products').select('id').eq('business_id', ctx.businessId).eq('barcode', c.data.barcode).neq('id', c.entity_id).maybeSingle();
@@ -287,6 +295,7 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
           { cloud_value: pick(same, Object.keys(c.data)) });
       }
       const bad = await namesAreOurs(ctx, c);
+      if (bad === MENU_GONE) return done({ id: c.id, status: 'refused', message: bad });   // A537: not fixable by waiting
       if (bad) return { id: c.id, status: 'refused', message: bad, retry: true };   // not recorded: it is sent again once fixable
       const err = await write(ctx, c, c.entity_id, true);
       return err ? { id: c.id, status: 'refused', message: err } : done({ id: c.id, status: 'applied' });
@@ -325,6 +334,7 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       if (refusal) return done({ id: c.id, status: 'refused', message: refusal });
     }
     const bad = await namesAreOurs(ctx, c);
+    if (bad === MENU_GONE) return done({ id: c.id, status: 'refused', message: bad });   // A537: not fixable by waiting
     if (bad) return { id: c.id, status: 'refused', message: bad, retry: true };
     const v = judgeUpdate(c.entity, cur as Row, c.base, c.data);
     if (v.verdict === 'identical') return done({ id: c.id, status: 'identical' });

@@ -120,6 +120,8 @@ const NAV: NavEntry[] = [
   {
     label: 'Menu', icon: 'menu',
     items: [
+      // A537: menus (Food, Soft drinks, Alcohol, Tea …) above the categories — next to them.
+      { to: '/dashboard/menus',      label: 'Menus',      icon: 'menu' },
       { to: '/dashboard/categories', label: 'Categories', icon: 'categories' },
       { to: '/dashboard/products',   label: 'Products',   icon: 'products' },
       { to: '/dashboard/discounts',  label: 'Discounts',  icon: 'discounts' },
@@ -265,6 +267,7 @@ export default function DashboardLayout() {
   const hintFor = (to: string): string | undefined => {
     switch (to) {
       case '/dashboard/products':          return 'The items you sell';
+      case '/dashboard/menus':             return 'Food, Soft drinks, Alcohol, Tea — each holds some of your categories';
       case '/dashboard/categories':        return isFood ? 'Groups menu items into sections' : 'Groups products into categories';
       case '/dashboard/stock/ingredients': return 'Raw materials that deplete automatically when a dish is sold';
       case '/dashboard/stock/counts':      return 'Count the shelf (blind); differences are reviewed before stock changes';

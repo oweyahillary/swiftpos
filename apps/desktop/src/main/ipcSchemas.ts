@@ -111,6 +111,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'node:tlsRetrust':        NO_PAYLOAD,                                                          // A489
   'node:syncHealth':        NO_PAYLOAD,                                                          // A501
   'node:retryFailed':       NO_PAYLOAD,                                                          // A501
+  'node:distribution':      NO_PAYLOAD,                                                          // A534 (A23)
   'branding:get':           NO_PAYLOAD,
   // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so

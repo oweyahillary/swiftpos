@@ -47,6 +47,9 @@ export const TILL_WRITES: RegExp[] = [
   // A519: "Send logs to support" — the till's own log, under its own session only (routes/support.ts refuses a person's
   // token, caps the size and the rate).
   /^\/api\/support\/logs$/,
+  // A534: the till's update state (downloading, downloaded, failed and why) for the admin portal — its own session only
+  // (routes/desktopUpdate.ts refuses a person's token), only its own user_devices row.
+  /^\/api\/desktop-update\/state$/,
   /^\/api\/auth\//,                      // enrol, verify-pin, set-pin, refresh, logout, device-token
   /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
 ];

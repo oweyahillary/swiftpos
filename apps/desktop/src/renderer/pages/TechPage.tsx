@@ -6,6 +6,7 @@ import LanSecurityRow from '../components/LanSecurityRow';   // A489
 import UpdateDiagnosticsPanel from '../components/UpdateDiagnosticsPanel';   // A496
 import TechFindServer from '../components/TechFindServer';   // A502
 import BranchSyncPanel from '../components/BranchSyncPanel';   // A501
+import ServerDistributionPanel from '../components/ServerDistributionPanel';   // A534 (A23)
 import type { TechSession, TechStatus } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
 
@@ -308,6 +309,8 @@ export default function TechPage({ onExit }: Props) {
           )}
           {/* A501: this till's conversation with its branch server, channel by channel, and its backlog */}
           {dev?.node_url && dev.device_role === 'till' && <BranchSyncPanel />}
+          {/* A534 (A23): on the branch server — how far its distribution to the cloud is behind, and the runbook line */}
+          {(dev?.device_role === 'node' || dev?.device_role === 'office') && <ServerDistributionPanel />}
         </section>
 
         {/* A415: Rejoin this till */}

@@ -2,20 +2,22 @@ import { useEffect, useState } from 'react';
 import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
-import type { Category } from '../../types';
+import type { Category, Menu } from '../../types';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
 
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
-const EMPTY = { name: '', color: COLORS[0] };
+const EMPTY = { name: '', color: COLORS[0], menu_id: '' };
 
 export default function CategoriesPage() {
   const { business } = useBusiness();
   const { term, lower } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
+  // A537: the business's menus (Food, Soft drinks …) — a category is under one of them, or none.
+  const [menus, setMenus] = useState<Menu[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
@@ -27,8 +29,12 @@ export default function CategoriesPage() {
 
   const fetchCategories = async () => {
     if (!business) return;
-    const data = await api.get<Category[]>('/api/categories');
+    const [data, m] = await Promise.all([
+      api.get<Category[]>('/api/categories'),
+      api.get<Menu[]>('/api/menus').catch(() => [] as Menu[]),   // A537 (an older cloud: no menus)
+    ]);
     setCategories(data ?? []);
+    setMenus((m ?? []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)));
     setLoading(false);
   };
 
@@ -43,7 +49,7 @@ export default function CategoriesPage() {
 
   const openEdit = (cat: Category) => {
     setEditing(cat);
-    setForm({ name: cat.name, color: cat.color ?? COLORS[0] });
+    setForm({ name: cat.name, color: cat.color ?? COLORS[0], menu_id: cat.menu_id ?? '' });
     setError('');
     setShowModal(true);
   };
@@ -61,12 +67,14 @@ export default function CategoriesPage() {
         await api.patch(`/api/categories/${editing.id}`, {
           name: form.name,
           color: form.color,
+          ...(menus.length || editing.menu_id ? { menu_id: form.menu_id || null } : {}),
         });
       } else {
         await api.post('/api/categories', {
           name: form.name,
           color: form.color,
           sort_order: categories.length,
+          ...(form.menu_id ? { menu_id: form.menu_id } : {}),
         });
       }
       await fetchCategories();
@@ -77,6 +85,15 @@ export default function CategoriesPage() {
       setSaving(false);
     }
   };
+
+  // A537: put a category under a menu straight from its card ("No menu" allowed).
+  const setMenu = async (cat: Category, menuId: string) => {
+    try {
+      await api.patch(`/api/categories/${cat.id}`, { menu_id: menuId || null });
+      await fetchCategories();
+    } catch (err: any) { setError(err.message); }
+  };
+  const menuName = (id?: string | null) => menus.find(m => m.id === id)?.name ?? null;
 
   const toggleStatus = async (cat: Category) => {
     await api.patch(`/api/categories/${cat.id}`, {
@@ -115,6 +132,7 @@ export default function CategoriesPage() {
         </button>
       </div>
 
+      {error && !showModal && <p className="text-red-400 text-sm mb-4">{error}</p>}
       {loading ? (
         <div className="flex justify-center py-20">
           <div className="w-6 h-6 border-2 border-swift border-t-transparent rounded-full animate-spin" />
@@ -139,6 +157,18 @@ export default function CategoriesPage() {
                   </p>
                 </div>
               </div>
+              {/* A537: the menu this category is under — shown once the business has a menu. */}
+              {(menus.length > 0 || cat.menu_id) && (
+                <label className="flex items-center gap-2 mt-3 text-xs text-gray-400">
+                  Menu
+                  <select data-testid="category-menu" value={cat.menu_id ?? ''} onChange={e => void setMenu(cat, e.target.value)}
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-swift">
+                    <option value="">No menu</option>
+                    {menus.map(m => <option key={m.id} value={m.id}>{m.name}{m.active ? '' : ' (off)'}</option>)}
+                    {cat.menu_id && !menuName(cat.menu_id) && <option value={cat.menu_id}>(a deleted menu)</option>}
+                  </select>
+                </label>
+              )}
               <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-800">
                 <button onClick={() => toggleStatus(cat)} className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-800 transition-colors">
                   {cat.status === 'active' ? 'Disable' : 'Enable'}
@@ -186,6 +216,17 @@ export default function CategoriesPage() {
                 ))}
               </div>
             </div>
+
+            {menus.length > 0 && (
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Menu</label>
+                <select value={form.menu_id} onChange={e => setForm(f => ({ ...f, menu_id: e.target.value }))}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-swift transition-colors">
+                  <option value="">No menu</option>
+                  {menus.map(m => <option key={m.id} value={m.id}>{m.name}{m.active ? '' : ' (off)'}</option>)}
+                </select>
+              </div>
+            )}
 
             {error && <p className="text-red-400 text-sm">{error}</p>}
 

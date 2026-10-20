@@ -67,6 +67,13 @@ export type NodeSyncHealth =
       refusal: { status: number; since: string; reason: 'access_code' | 'device_key' | 'branch' | 'tls' } | null;
       heard: { url: string; at: string; proven: boolean } | null };
 
+/** A534 (A23): what node:distribution answers — on a machine that is not a branch server, only `role`. */
+export type ServerDistribution =
+  | { role: 'not_server' }
+  | { role: 'server';
+      waiting: { orders: number; ordersFromTills: number; shifts: number; days: number; floats: number; expenses: number; kitchenVoids: number; reversals: number };
+      total: number; oldestAt: string | null; oldestAgeMs: number | null; lastPushOkAt: string | null; lastSyncedAt: string | null; runbook: string };
+
 export interface TechStatus {
   device: {
     device_id: string | null; device_name: string | null; device_role: DeviceRole;
@@ -461,6 +468,8 @@ declare global {
         syncHealth: () => Promise<NodeSyncHealth>;
         /** A501: the records the server refused go to it again; the rows held back from other tills are tried again. */
         retryFailed: () => Promise<{ requeued: number; released: number; applied: number }>;
+        /** A534 (A23): on a branch server, how far its distribution to the cloud is behind (Tech page). */
+        distribution: () => Promise<ServerDistribution>;
       };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
@@ -475,7 +484,7 @@ declare global {
         onLock:     (cb: () => void) => () => void;
       };
       pos: {
-        init: () => Promise<{ products: any[]; categories: any[]; branchId: string | null; vatRate: number | null; ctlRate: number | null; maxDiscountPct: number | null;
+        init: () => Promise<{ products: any[]; categories: any[]; menus?: any[]; branchId: string | null; vatRate: number | null; ctlRate: number | null; maxDiscountPct: number | null;
           comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>>;
           kitchenCategories: string[];
         stationRouting?: {

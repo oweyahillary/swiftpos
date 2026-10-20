@@ -1,8 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 import dotenv from 'dotenv';
+import { assertNotProduction, chromiumBlockProdArgs, targetsFromEnv } from './lib/prod-guard.mjs';
 
 // Load e2e/.env (never committed). Falls back to real env vars in CI.
 dotenv.config();
+
+// A536: E2E_WEB_URL / E2E_API_URL (the nightly workflow's names) win over the older PLAYWRIGHT_BASE_URL / API_BASE_URL
+// and are copied onto them, so the seed and the specs that read the old names see the same target.
+if (process.env.E2E_WEB_URL) process.env.PLAYWRIGHT_BASE_URL = process.env.E2E_WEB_URL;
+if (process.env.E2E_API_URL) process.env.API_BASE_URL = process.env.E2E_API_URL;
+// A536: never production — throws (Playwright stops) before a browser opens.
+assertNotProduction(targetsFromEnv());
 
 /**
  * Target under test.
@@ -30,6 +38,8 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // A536: production hosts do not resolve inside the test browser, whatever API address the dashboard was built with.
+    launchOptions: { args: chromiumBlockProdArgs([BASE_URL, process.env.API_BASE_URL ?? '']) },
   },
 
   projects: [

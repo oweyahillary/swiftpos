@@ -65,6 +65,8 @@ export interface ActivePromo {
 export interface POSInitResponse {
   products: Product[];
   categories: Category[];
+  /** A537: the business's menus (on, in order); absent from an older cloud. */
+  menus?: import('../../../types').Menu[];
   branchId: string | null;
   variantsByProduct: Record<string, VariantGroup[]>;
   comboItems?: Record<string, import('../../../types').ComboComponent[]>;

@@ -104,7 +104,8 @@ export default function BranchSyncPanel() {
         </tbody>
       </table>
       <p className="text-gray-400 mt-1" data-testid="branch-sync-backlog">
-        Owed to the branch server: {h.backlog.pending} waiting{h.backlog.oldestPendingAt ? ` (oldest ${ago(h.backlog.oldestPendingAt)})` : ''}
+        {/* A534 (A23): this till's own records the branch server has not yet confirmed (A501 nodeQueueDepth) */}
+        Not yet confirmed by the branch server: {h.backlog.pending} of this till&apos;s records{h.backlog.oldestPendingAt ? ` (oldest ${ago(h.backlog.oldestPendingAt)})` : ''}
         {' · '}<span className={h.backlog.failed ? 'text-red-400' : ''}>{h.backlog.failed} failed{h.backlog.failedReason ? `: ${h.backlog.failedReason}` : ''}</span>
         {' · '}held back from other tills: {h.quarantine.waiting} retrying, {h.quarantine.givenUp} given up{h.quarantine.reason ? ` (${h.quarantine.reason})` : ''}
       </p>

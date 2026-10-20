@@ -74,6 +74,15 @@ const SHARED = [
     ],
   },
   {
+    // A537: the POS's category side panel — menus as tabs, which categories and products a menu shows, the pin.
+    name: 'menuFilter.ts',
+    copies: [
+      'shared/menuFilter.ts',
+      'apps/desktop/src/shared/menuFilter.ts',  // the till's sale screen
+      'apps/dashboard/src/lib/menuFilter.ts',   // the web POS (CashierScreen, MinimartPOS)
+    ],
+  },
+  {
     // A445: offers — the rules the till's cart, the web POS's cart and the cloud's check of a sale all run.
     name: 'offers.ts',
     copies: [

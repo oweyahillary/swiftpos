@@ -822,7 +822,16 @@ function initSchema(db: Database.Database) {
   migrateColumns(db, 'categories', [
     // Drives kitchen ticket routing — see migrations/34_kitchen_categories.sql
     ['is_kitchen', 'INTEGER DEFAULT 0'],
+    // A537 (73): the menu it is under (Food, Soft drinks …; migration 155) — the sale screen's category panel. NULL = none.
+    ['menu_id', 'TEXT'],
   ]);
+  // A537 (73): menus — the business's menus (pos/init `menus`, GET /api/pos/changes table menus), the tabs at the top of
+  // the sale screen's category panel. Owner, 2026-10-20: "some restaurants have different menus — food menu,
+  // non-alcoholic drinks menu, alcoholic drinks menu, tea menu etc". Pulled, never pushed; replaced wholesale on a pull.
+  db.exec(`CREATE TABLE IF NOT EXISTS menus (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, sort_order INTEGER DEFAULT 0, active INTEGER DEFAULT 1,
+    color TEXT, icon TEXT, synced_at TEXT
+  )`);
 
   // ── Branch replication: which terminal created this row? ──────────────────
   // orders, shifts and business_days already carry device_id. expenses and
@@ -1307,7 +1316,8 @@ function initSchema(db: Database.Database) {
 // 71 adds A448: local_changes (local only — a manager's change made on this till, queued for the cloud). REQUIRED moves.
 // 72 adds the till sync audit's local columns: sync_queue.drawer_wait_at, sync_error on expenses / float_transactions /
 // kitchen_voids, and an index on sync_queue (status). Local only. REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 72;
+// 73 adds A537: menus (pulled — the business's menus) and categories.menu_id (pulled; migration 155). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 73;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

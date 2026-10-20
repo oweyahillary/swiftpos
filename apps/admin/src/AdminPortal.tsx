@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
-import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
+import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
 import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_CLASSIC_KEYS } from "./lib/posFeatures";
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
@@ -1722,12 +1722,20 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           {devices.length > 0 && (
             <div style={{ marginTop: 18 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Tills now</div>
-              {devices.map(dv => (
-                <div key={dv.id} style={{ display: "flex", gap: 10, fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
-                  <span style={{ flex: 1 }}>{dv.label} <span style={{ color: C.muted }}>· {dv.branch}</span></span>
-                  <span style={{ color: dv.appVersion && detail?.desktop_approved_version && dv.appVersion !== detail.desktop_approved_version ? "#f59e0b" : C.muted }}>{dv.appVersion ? `v${dv.appVersion}` : "—"}</span>
-                </div>
-              ))}
+              {devices.map(dv => {
+                // A534: why a till is (not) updating — its own report from 1.0.20, a hint from its version before that.
+                const u = tillUpdateLine(dv, detail?.desktop_approved_version);
+                const tone = { ok: "#22c55e", busy: "#38bdf8", warn: "#f59e0b", bad: C.danger, muted: C.muted }[u.tone];
+                return (
+                  <div key={dv.id} style={{ fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <span style={{ flex: 1 }}>{dv.label} <span style={{ color: C.muted }}>· {dv.branch}</span></span>
+                      <span style={{ color: dv.appVersion && detail?.desktop_approved_version && dv.appVersion !== detail.desktop_approved_version ? "#f59e0b" : C.muted }}>{dv.appVersion ? `v${dv.appVersion}` : "—"}</span>
+                    </div>
+                    <div data-testid="till-update-line" style={{ fontSize: 11, color: tone, marginTop: 2 }}>{u.text}</div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

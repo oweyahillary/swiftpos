@@ -101,7 +101,8 @@ const pos = read('src/renderer/pages/POSPage.tsx');
 const hook = read('src/renderer/hooks/useGridWindow.ts');
 ok('POS grid: draws gridTiles (GRID_STEP, then more), resets on category / search, sentinel in the scroll box', () => {
   assert(/const gridList = useMemo\(\(\) => exactFirst\(filtered, search, \(p: any\) => \[p\.name, p\.barcode, p\.plu\]\), \[filtered, search\]\);/.test(pos), 'exact first');
-  assert(/const grid = useGridWindow\(gridList\.length, `\$\{activeCategory\}\|\$\{search\}\|\$\{flags\.isPetrol\}`\);/.test(pos), 'reset key');
+  // A537: a menu chosen in the category panel starts the grid again too.
+  assert(/const grid = useGridWindow\(gridList\.length, `\$\{activeMenu\}\|\$\{activeCategory\}\|\$\{search\}\|\$\{flags\.isPetrol\}`\);/.test(pos), 'reset key');
   assert(/const gridTiles = useMemo\(\(\) => gridList\.slice\(0, grid\.count\), \[gridList, grid\.count\]\);/.test(pos), 'slice memoised');
   assert(/<div ref=\{grid\.rootRef\} className="flex-1 overflow-y-auto p-4">/.test(pos), 'root = the scroll box');
   assert(/\{gridTiles\.map\(\(product: any\) => \(\s*<ProductTile key=\{product\.id\}/.test(pos) && !/\{filtered\.map\(\(product: any\)/.test(pos), 'tiles');

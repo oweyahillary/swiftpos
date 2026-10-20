@@ -6,6 +6,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { menuIdForCategory } from '../lib/menus';   // A537
 
 const router = safeRouter();
 
@@ -32,10 +33,17 @@ router.post('/', requirePermission('menu.edit'), validateLoose(CreateCategorySch
   const { name, color, icon, sort_order, super_category, is_kitchen } = req.body;
 
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+  // A537: the menu it is under (Food, Soft drinks …) — this business's own, or none.
+  const extra: Record<string, unknown> = {};
+  if (req.body.menu_id !== undefined) {
+    const m = await menuIdForCategory(req.businessId!, req.body.menu_id);
+    if (!m.ok) { res.status(400).json({ error: m.error }); return; }
+    extra.menu_id = m.value;
+  }
 
   const { data, error } = await supabase
     .from('categories')
-    .insert({ business_id: req.businessId, name, color, icon, sort_order: sort_order ?? 0, super_category: super_category ?? null, is_kitchen: is_kitchen === true })
+    .insert({ business_id: req.businessId, name, color, icon, sort_order: sort_order ?? 0, super_category: super_category ?? null, is_kitchen: is_kitchen === true, ...extra })
     .select()
     .single();
 
@@ -57,6 +65,12 @@ router.patch('/:id', requirePermission('menu.edit'), async (req, res) => {
   if (status !== undefined)         patch.status = status;
   if (super_category !== undefined) patch.super_category = super_category;
   if (is_kitchen !== undefined)     patch.is_kitchen = is_kitchen === true;
+  // A537: one menu per category — another business's menu is refused ("Menu not found"), null takes it out of any menu.
+  if (req.body.menu_id !== undefined) {
+    const m = await menuIdForCategory(req.businessId!, req.body.menu_id);
+    if (!m.ok) { res.status(400).json({ error: m.error }); return; }
+    patch.menu_id = m.value;
+  }
 
   // Ensure the record belongs to this business before updating
   const { data, error } = await supabase

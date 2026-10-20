@@ -24,9 +24,10 @@ node tests/runner.mjs \
   --password YourPassword123 \
   --stress
 
-# Against production
+# Against the DEV environment (A536: production is refused — exit 3; see docs/E2E-NIGHTLY.md).
+# The target and the owner login can also come from E2E_API_URL / E2E_OWNER_EMAIL / E2E_OWNER_PASSWORD.
 node tests/runner.mjs \
-  --url https://your-server.railway.app \
+  --url https://swiftpos-20c2.onrender.com \
   --email owner@yourbusiness.com \
   --password YourPassword123
 

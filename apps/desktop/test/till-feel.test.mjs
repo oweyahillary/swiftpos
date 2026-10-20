@@ -106,7 +106,7 @@ ok(`Pay, open / close shift, start selling, void / refund, kitchen void and conf
 // ── speed (measured; see the header) ──────────────────────────────────────────────────────────────────────────────────
 ok('speed: the grid\'s list is memoised on what it depends on (catalogue, category, search, petrol, the day), not rebuilt each render',
   /const filtered = useMemo\(\(\) => products\.filter\(p => \{/.test(pos)
-  && pos.includes('}), [products, activeCategory, search, flags.isPetrol, gridDay]);')
+  && pos.includes('}), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay]);')   // A537: + the menu
   && pos.includes('const gridDay = offerClock.toDateString();'));
 ok('speed: each product\'s count on the order is one Map built per cart change — no per-tile scan of the cart',
   /const cartCounts = useMemo\(\(\) => \{\s*const m = new Map<string, number>\(\);\s*for \(const i of cart\) m\.set\(i\.product\.id, \(m\.get\(i\.product\.id\) \?\? 0\) \+ i\.quantity\);\s*return m;\s*\}, \[cart\]\);/.test(pos)

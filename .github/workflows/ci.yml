@@ -1100,6 +1100,47 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/live-sync-a531.test.mjs
 
+      # A533 — ZapTill support pulls a till's log from the admin portal: the 90 s beat asks once and a waiting request is
+      # answered with ONE upload (its window across the rolled files, a PIN and a token redacted, auth.log only when
+      # asked, the diagnostics block); the push channel's doorbell asks at once (another device's ring asks nothing); a
+      # failing upload tried three times then left; a closed request never again; a peer through its branch server.
+      - name: Desktop log pull from the admin portal (A533)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/log-pull-a533.test.mjs
+
+      # A534 — four small 1.0.20 items: the whole pull takes staff names from the till's own branch list (no GET
+      # /api/staff with the till's token); the update state reported only to a cloud that says it takes it, on a change
+      # or every 30 min (downloading n %, downloaded since, failed and why), a refusal rests it 6 h; the branch server's
+      # distribution lag (what waits by table, the oldest, the last push, the runbook line — register A23).
+      - name: Desktop small 1.0.20 items (A534)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/a534-small-items.test.mjs
+
+      # A535 — at a branch only the server talks to the cloud for drawer checks too: ONE branch-level call for every
+      # drawer (a till's answer only its own drawers), a 'drawers' ring asks it at once; a till behind the server makes
+      # ZERO gateway calls for web sales, web closes, confirmations and its 90 s beat (an older server → the old way);
+      # stock levels arrive as changes (no 30-minute re-read; an older cloud keeps it); a log request rung for a till
+      # behind the server reaches it within one LAN beat and it uploads.
+      - name: Desktop drawer checks through the branch server, stock on change (A535)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/branch-drawers-a535.test.mjs
+
+      # A537 — the categories in a collapsible left panel (collapsed at start, a pin remembered on the till) and menus
+      # (Food, Soft drinks, Alcohol, Tea …) above them: local schema 73; the whole pull and a change store the menus and
+      # each category's menu (an older cloud leaves them); the branch server relays them; the shared panel helper (no
+      # menus → the plain list; a menu → its categories and products; Other); the sale screen and Manager › Menu wiring.
+      - name: Desktop category panel and menus (A537)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/menus-a537.test.mjs
+
       # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
       # proven till, joins, the gateway's path check, the roster, TLS pins.
       - name: Desktop branch server hardening

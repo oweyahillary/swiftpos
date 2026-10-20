@@ -47,12 +47,15 @@ import {
   useRef,
   useState,
   useCallback,
+  useMemo,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import type { CartItem } from '../../lib/cart';
 import { cartSubtotal, extractTaxes } from '../../lib/cart';
 import { useBusiness } from '../../context/BusinessContext';
-import type { Product, Category } from '../../types';
+import type { Product, Category, Menu } from '../../types';
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip } from './cashier/CategoryPanel';   // A537
+import { ALL_MENUS, categoriesForMenu, inMenuScope, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
 import { exactFirst } from '../../lib/paginate';   // A472
 import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 
@@ -79,6 +82,8 @@ type ScanResult =
 interface Props {
   products: Product[];
   categories: Category[];
+  /** A537: the business's menus (Food, Soft drinks …); [] = none — the plain category list. */
+  menus?: Menu[];
   cart: CartItem[];
   currency: string;
   onAddToCart: (product: Product, qty?: number) => void;
@@ -136,6 +141,7 @@ function clamp(n: number, min: number, max: number) {
 export default function MinimartPOS({
   products,
   categories,
+  menus = [],
   cart,
   currency,
   onAddToCart,
@@ -153,6 +159,19 @@ export default function MinimartPOS({
   const [showCatalogue, setShowCatalogue]     = useState(false);
   const [activeCategory, setActiveCategory]   = useState('all');
   const [catalogueSearch, setCatalogueSearch] = useState('');
+  // A537: the categories in a left panel behind ☰ (collapsed at start, pinned open if pinned), menus as tabs on top.
+  const catPanel = useCategoryPanel();
+  const activeMenu = catPanel.prefs.menu;
+  const menuCats = useMemo(() => categoriesForMenu(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  const menuFilterScope = useMemo(() => menuScope(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  useEffect(() => {
+    const keep = resolveCategory(activeCategory, menuCats);
+    if (keep !== activeCategory) setActiveCategory(keep);
+  }, [menuCats, activeCategory]);
+  const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c) => c.id === activeCategory)?.name ?? null);
+  const chosenMenuName = menuTabs(menus, categories).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
+  const catChip = chosenCategoryName ?? (chosenMenuName ? `${chosenMenuName} menu` : null);
+  const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
   // ── Scan bar ───────────────────────────────────────────────────────────────
   const scanInputRef  = useRef<HTMLInputElement>(null);
@@ -360,6 +379,7 @@ export default function MinimartPOS({
   // ── Filtered catalogue ─────────────────────────────────────────────────────
   const filteredProducts = products.filter(p => {
     if (activeCategory !== 'all' && p.category_id !== activeCategory) return false;
+    if (!inMenuScope(p, menuFilterScope)) return false;   // A537: a menu chosen = its categories only
     if (catalogueSearch) {
       const q = catalogueSearch.toLowerCase();
       return (
@@ -374,7 +394,7 @@ export default function MinimartPOS({
   // PLU is the first tile.
   const gridList = exactFirst(filteredProducts, catalogueSearch,
     (p) => [p.name, (p as { barcode?: string }).barcode, (p as { plu_code?: string }).plu_code]);
-  const grid = useGridWindow(gridList.length, `${activeCategory}|${catalogueSearch}`);
+  const grid = useGridWindow(gridList.length, `${activeMenu}|${activeCategory}|${catalogueSearch}`);
 
   // ── Cart totals ────────────────────────────────────────────────────────────
   const subtotal = cartSubtotal(cart);
@@ -492,31 +512,22 @@ export default function MinimartPOS({
         {/* ── Product catalogue (hidden by default) ──────────────────────── */}
         {showCatalogue && (
           <div style={s.catalogue}>
-            {/* Category tabs */}
-            <div style={s.catRow}>
-              {[{ id: 'all', name: 'All' }, ...categories].map(cat => (
-                <button
-                  key={cat.id}
-                  style={{
-                    ...s.catBtn,
-                    ...(activeCategory === cat.id ? s.catBtnActive : {}),
-                  }}
-                  onClick={() => setActiveCategory(cat.id)}
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Catalogue search */}
-            <div style={s.catSearchWrap}>
+            {/* Catalogue search — A537: ☰ at its left opens the category panel (it replaced the category tabs). */}
+            <div style={{ ...s.catSearchWrap, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <PanelToggle panel={catPanel} />
               <input
-                style={s.catSearchInput}
+                style={{ ...s.catSearchInput, flex: 1, minWidth: 0 }}
                 placeholder="Filter by name, barcode or PLU…"
                 value={catalogueSearch}
                 onChange={e => setCatalogueSearch(e.target.value)}
               />
+              <CategoryChip label={catChip} onClear={clearCatChip} />
             </div>
+
+            <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
+            <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}
+              activeMenu={activeMenu} activeCategory={activeCategory}
+              onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={isPhone} />
 
             {/* Product grid */}
             <div ref={grid.rootRef} style={s.productGrid}>
@@ -545,6 +556,7 @@ export default function MinimartPOS({
                 );
               })}
               {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden style={{ gridColumn: '1/-1', height: 1 }} />}
+            </div>
             </div>
           </div>
         )}
@@ -1035,32 +1047,6 @@ const s: Record<string, React.CSSProperties> = {
     borderRight: '1px solid #1e293b',
     overflow: 'hidden',
     minWidth: 0,
-  },
-  catRow: {
-    display: 'flex',
-    gap: 6,
-    padding: '10px 14px 8px',
-    borderBottom: '1px solid #1e293b',
-    overflowX: 'auto',
-    flexShrink: 0,
-  },
-  catBtn: {
-    padding: '5px 12px',
-    background: '#1e293b',
-    border: '1px solid #334155',
-    borderRadius: 20,
-    color: '#64748b',
-    fontSize: 12,
-    fontWeight: 500,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-    flexShrink: 0,
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
-  },
-  catBtnActive: {
-    background: 'rgb(var(--act-fill, 59 130 246) / 0.15)',
-    borderColor: 'rgb(var(--act-fill, 59 130 246) / 0.4)',
-    color: 'rgb(var(--act-text, 96 165 250))',
   },
   catSearchWrap: {
     padding: '8px 14px',

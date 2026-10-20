@@ -19,7 +19,7 @@ import { api } from '../../../lib/api';
 import { usePOSAuth } from '../../../context/POSAuthContext';
 import { connectQZ } from '../../../lib/localPrintServer';
 import type { BranchPrinter } from '../../../lib/printKOT';
-import type { ComboComponent } from '../../../types';
+import type { ComboComponent, Menu } from '../../../types';
 import {
   deriveMode,
   type BusinessMode,
@@ -35,6 +35,8 @@ import {
 export interface POSData {
   products:          Product[];
   categories:        Category[];
+  /** A537: the business's menus (Food, Soft drinks …) — on, in order; [] = none (the plain category list). */
+  menus:             Menu[];
   variantsByProduct: Record<string, VariantGroup[]>;
   comboItems:        Record<string, ComboComponent[]>;
   kitchenExclusions: string[];
@@ -75,6 +77,7 @@ export function usePOSData(): POSData {
 
   const [products,          setProducts]          = useState<Product[]>([]);
   const [categories,        setCategories]        = useState<Category[]>([]);
+  const [menus,             setMenus]             = useState<Menu[]>([]);   // A537
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [paymentMethodsEnabled, setPaymentMethodsEnabled] = useState<string[] | null>(null);   // A429
   const [offers, setOffers] = useState<Offer[]>([]);   // A445
@@ -114,6 +117,7 @@ export function usePOSData(): POSData {
 
       setProducts(init.products ?? []);
       setCategories(init.categories ?? []);
+      setMenus(Array.isArray(init.menus) ? init.menus : []);   // A537 (an older cloud sends none)
       setPaymentMethods(init.paymentMethods ?? []);
       setPaymentMethodsEnabled(Array.isArray(init.paymentMethodsEnabled) ? init.paymentMethodsEnabled : null);   // A429
       setOffers((Array.isArray(init.offers) ? init.offers : []).flatMap((o) => { const c = cleanOffer(o); return c.ok ? [(c as { offer: Offer }).offer] : []; }));   // A445
@@ -197,7 +201,7 @@ export function usePOSData(): POSData {
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
+    products, categories, menus, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
     loading, error,

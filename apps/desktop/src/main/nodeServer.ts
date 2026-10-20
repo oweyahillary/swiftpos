@@ -76,6 +76,7 @@ import { createJoinRequest, readJoin, JOIN_PROOF_HEADER } from './serverJoin';  
 import { NODE_PROTOCOL, NODE_CAPABILITIES, MIN_TILL_PROTOCOL } from './nodeHealth';   // A501
 import { noteGatewayCall, noteTillSync } from './activityTracker';   // A508
 import { liveMode, liveActive, serveLiveLog } from './liveSync';   // A531
+import { answerDrawers } from './branchDrawers';   // A535
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
 
@@ -697,12 +698,25 @@ export function startNodeServer(): void {
       // cloud's GET /api/pos/changes; a staff row carries its PIN hash from this server's list, so only to a proven till.
       // 404 while this server itself takes changes the old way (its cloud keeps no change log): its tills do the same.
       if (req.method === 'GET' && url === '/node/live') {
-        if (!requireProven(req, res, '/node/live')) return;
+        const me = requireProven(req, res, '/node/live');
+        if (!me) return;
         if (liveMode() === 'legacy') return json(res, 404, { error: 'This branch server takes changes the old way.', code: 'CHANGES_UNAVAILABLE' });
         if (!liveActive()) return json(res, 503, { error: 'The branch server is starting - ask again shortly.' });
         const raw = new URL(req.url ?? '', 'http://node').searchParams.get('since');
         const since = raw === null || raw === '' ? null : Number(raw);
-        return json(res, 200, serveLiveLog(since, getDeviceConfig()?.branch_id ?? null, changeVersion(getLocalDb())));
+        // A535: the asking till (proven) — a ZapTill log request for it rides this answer.
+        return json(res, 200, serveLiveLog(since, getDeviceConfig()?.branch_id ?? null, changeVersion(getLocalDb()), me.device));
+      }
+      // A535: a till's drawer checks — the web's sales on its drawer, whether the web closed or a manager confirmed it, and
+      // what its 90 s beat needs — answered from this server's ONE branch-level poll of the cloud (branchDrawers.ts), never
+      // forwarded one by one. Only a proven till, only about its OWN drawers. 404 while this server's cloud does not answer
+      // the branch-level call (the till asks through the gateway as before); 503 while this server's copy is stale.
+      if (req.method === 'POST' && url === '/node/drawers') {
+        const me = requireProven(req, res, '/node/drawers');
+        if (!me) return;
+        const body = await readBody(req);
+        const a = answerDrawers(me.device, body ?? {});
+        return json(res, a.status, a.body);
       }
       if (req.method === 'GET' && url === '/node/changes/version') {
         return json(res, 200, { version: changeVersion(getLocalDb()) });

@@ -5,6 +5,7 @@ import enrolRoutes         from './enrol';
 import businessRoutes      from './business';
 import onboardingRoutes    from './onboarding';
 import categoriesRoutes    from './categories';
+import menusRoutes         from './menus';          // A537: Food, Soft drinks, Alcohol, Tea … above the categories
 import stationsRoutes      from './stations';
 import productsRoutes      from './products';
 import posRoutes           from './pos';
@@ -59,11 +60,14 @@ import controlsRoutes      from './controls';   // A490: the owner's business op
 import branchPricesRoutes  from './branch-prices';
 import supportRoutes       from './support';        // A519: a till's log to support; terminal codes in use
 import supportAdminRoutes  from './supportAdmin';   // A519: the admin portal reads them
+import logRequestsAdminRoutes from './logRequestsAdmin';   // A533: support pulls a till's log from the admin portal
 import tillsDaysRoutes     from './tills-days';      // A523: the owner's Tills & days page
 import tillsDaysAdminRoutes from './tillsDaysAdmin'; // A523: the same page in the admin portal
 import opsRoutes           from './ops';            // A525: the GitHub workflows post the deploy check and the scan
 import opsAdminRoutes      from './opsAdmin';       // A525: the admin portal's System page reads them
 import { forgetOnWrite }   from '../lib/forgetOnWrite';   // A528
+import { ringDrawersOnWrite } from '../lib/drawerBell';   // A535
+import branchDrawersRoutes from './branchDrawers';       // A535: a branch server asks about every drawer of its branch at once
 
 const router = Router();
 
@@ -72,12 +76,19 @@ const router = Router();
 // next request (the sign-in check remembers rows 30 s). Before the routers, so it sees every write they handle.
 router.use(['/products', '/categories', '/variants', '/modifiers', '/combos', '/business', '/controls', '/flags',
   '/tables', '/branches', '/printers', '/stations', '/branch-prices', '/stock-takes', '/offers', '/promotions',
-  '/onboarding', '/payment-methods'], forgetOnWrite({ catalogue: true }));
+  '/onboarding', '/payment-methods', '/menus'], forgetOnWrite({ catalogue: true }));
 router.use(['/business', '/controls'], forgetOnWrite({ people: true }));   // the owner, the business's options
 router.use(['/staff', '/changes'], forgetOnWrite({ catalogue: true, staff: true, people: true }));
 router.use(['/auth/set-pin', '/auth/me'], forgetOnWrite({ staff: true }));   // a PIN changed: the branch's staff list
 router.use(['/devices', '/tills-days'], forgetOnWrite({ staff: true, tills: true }));
 router.use(['/admin'], forgetOnWrite({ catalogue: true, staff: true, tills: true, people: true, everyBusiness: true }));
+// A535: a stock level changed on the web (a restock, a transfer, wastage) rings the branch at once — a sale's levels ring
+// at most every 5 minutes (lib/liveHub.ts). And a drawer changed on the web rings the branch server, which asks
+// GET /api/pos/branch-drawers at once (lib/drawerBell.ts) — a till's own drawer writes and the read-only POSTs do not.
+router.use(['/inventory', '/stock', '/wastage'], forgetOnWrite({}));
+router.use(['/shifts'], ringDrawersOnWrite({ skip: /\/(foreign-cash|foreign-orders|confirmer|confirm-view)$/ }));
+router.use(['/orders', '/day-close'], ringDrawersOnWrite({ webOnly: true }));
+router.use('/pos/branch-drawers', branchDrawersRoutes);
 
 router.use('/auth',           authRoutes);
 router.use('/enrol',          enrolRoutes);
@@ -108,6 +119,7 @@ router.use('/printers',       printersRoutes);
 router.use('/business',       businessRoutes);
 router.use('/onboarding',     onboardingRoutes);
 router.use('/categories',     categoriesRoutes);
+router.use('/menus',          menusRoutes);       // A537
 router.use('/stations',       stationsRoutes);
 router.use('/products',       productsRoutes);
 router.use('/branch-prices',  branchPricesRoutes);
@@ -138,6 +150,7 @@ router.use('/reports',        reportsRoutes);
 
 router.use('/admin/version',  adminVersionRouter);   // before /admin, which takes the rest of /admin/*
 router.use('/admin/support-logs', supportAdminRoutes);   // A519: before /admin, which takes the rest of /admin/*
+router.use('/admin/clients', logRequestsAdminRoutes);   // A533: …/:id/log-requests only; the rest falls through to /admin
 router.use('/admin/tills-days', tillsDaysAdminRoutes);   // A523: before /admin, which takes the rest of /admin/*
 router.use('/admin/ops',      opsAdminRoutes);   // A525: before /admin, which takes the rest of /admin/*
 router.use('/admin',          adminRoutes);

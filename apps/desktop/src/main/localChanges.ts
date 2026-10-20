@@ -61,7 +61,8 @@ export function readLocal(db: Database.Database, entity: ChangeEntity, id: strin
       return r ? { name: r.name, kind: r.kind, sort_order: r.sort_order, active: !!r.active } : null;
     }
     if (entity === 'category') {
-      const r = db.prepare(`SELECT name, color, icon, sort_order, status, is_kitchen FROM categories WHERE id = ?`).get(id) as any;
+      // A537: menu_id — the menu it is under (local schema 73)
+      const r = db.prepare(`SELECT name, color, icon, sort_order, status, is_kitchen, menu_id FROM categories WHERE id = ?`).get(id) as any;
       return r ? { ...r, is_kitchen: !!r.is_kitchen } : null;
     }
     if (entity === 'product') {
@@ -106,7 +107,8 @@ export function applyLocal(db: Database.Database, c: Pick<TillChange, 'entity' |
     if (c.op === 'delete') { db.prepare(`DELETE FROM category_stations WHERE category_id = ?`).run(c.entity_id); db.prepare(`DELETE FROM categories WHERE id = ?`).run(c.entity_id); return; }
     if (c.op === 'create') db.prepare(`INSERT OR IGNORE INTO categories (id, name, status, sort_order) VALUES (?, ?, 'active', 0)`).run(c.entity_id, d.name);
     set('categories', { name: d.name, color: d.color, icon: d.icon, sort_order: d.sort_order, status: d.status,
-      is_kitchen: d.is_kitchen === undefined ? undefined : bit(d.is_kitchen) });
+      is_kitchen: d.is_kitchen === undefined ? undefined : bit(d.is_kitchen),
+      menu_id: d.menu_id === undefined ? undefined : (d.menu_id ?? null) });   // A537
     return;
   }
   if (c.entity === 'product') {

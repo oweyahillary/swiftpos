@@ -86,6 +86,7 @@ import { ownOpenShift } from './shiftService';   // A465
 import { takeSnapshot, setBackupDir, maintenanceStatus } from './maintenance';
 import { emitEvent, resetOutboxCursors, rearmNodeOutbox, rearmFailedNodeRows, rearmPeerQuarantine, retryPeerQuarantine, peerQuarantineSummary, nodeQueueDepth } from './nodeIngest';
 import { channelHealth, serverInfo, protocolVerdict, NODE_PROTOCOL } from './nodeHealth';   // A501
+import { distributionLag } from './distributionLag';   // A534 (A23)
 import { lastFollowLook } from './nodeFollow';   // A501
 import { setNodeDeviceToken, nodeDeviceToken, joinProofHeaders } from './nodeClient';   // F7, A503
 import { nextBillNumber } from './billNumber';   // A500
@@ -120,6 +121,7 @@ function clearCatalogue(db: ReturnType<typeof getLocalDb>) {
   db.exec(`
     DELETE FROM products;
     DELETE FROM categories;
+    DELETE FROM menus;
     DELETE FROM variant_groups;
     DELETE FROM variant_options;
     DELETE FROM modifier_groups;
@@ -417,6 +419,14 @@ export function registerIpcHandlers() {
       refusal: nodeRefusal(),
       heard: lastFollowLook(),
     };
+  });
+  // A534 (register A23): on a branch server, how far its distribution to the cloud is behind — what waits by table, the
+  // oldest, the last push the cloud took, and the runbook line. Read-only; the same gate as Branch sync above.
+  handle('node:distribution', async () => {
+    if (!getActiveSession() && !signedInCan('settings.business')) throw new Error('Only a technician or someone who manages the business settings can see that.');
+    const cfg = getDeviceConfig();
+    if (!isNodeRole(cfg?.device_role)) return { role: 'not_server' as const };
+    return { role: 'server' as const, ...distributionLag(getLocalDb(), Date.now(), cfg?.device_id ?? null) };
   });
   // A501: "Retry failed records" — the rows the server refused (after five tries) go to it again, and the rows held back
   // from other tills are tried again now. Same gate as the row above.
@@ -1211,10 +1221,16 @@ export function registerIpcHandlers() {
       categories: p.category_name ? { name: p.category_name, color: p.category_color } : null,
     }));
 
+    // A537: the business's menus (Food, Soft drinks …) — on, in order; the panel's tabs (none = the plain list).
+    let menus: unknown[] = [];
+    try { menus = db.prepare(`SELECT id, name, sort_order, color, icon FROM menus WHERE active = 1 ORDER BY sort_order, name`).all(); }
+    catch { menus = []; }   // a database before local schema 73
+
     return {
       products: shaped,
       branchName,
       categories,
+      menus,
       branchId: branch?.id ?? null,
       // Real business rate, refreshed by every catalogue pull. Null until the
       // first successful sync — POSPage falls back to 16 in that window only.

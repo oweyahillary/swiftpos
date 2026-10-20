@@ -90,7 +90,11 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   // 0.6.28: + 2 — the kitchen-void dialog's selected option (KitchenVoidModal optOn border and fill).
   // A490: − 3 — the POS Menu drawer lost its sub-tab row (subTabActive's colour, border and fill): each screen is one
   // catalogue key now, so there are no sub-tabs; its rail's active tab still takes the theme.
-  ok(`93 inline uses take the theme (found ${themedUses})`, themedUses === 93);
+  // A537: − 4 — the category row is gone (CashierScreen's active tab, MinimartPOS's catBtnActive fill, border and text);
+  // the category panel that replaced it (cashier/CategoryPanel.tsx) takes the theme through --act-strong.
+  ok(`89 inline uses take the theme (found ${themedUses})`, themedUses === 89);
+  ok('A537: the category panel takes the theme (--act-strong)',
+    /const ACT = 'rgb\(var\(--act-strong, 15 118 110\)\)';/.test(fs.readFileSync(path.join(posDir, 'cashier/CategoryPanel.tsx'), 'utf8')));
   const cs = fs.readFileSync(path.join(posDir, 'CashierScreen.tsx'), 'utf8');
   ok('Charge (dark label) is the theme\'s 500 (the per-use fallback is its original green; the alias default is teal)', /chargeBtn: \{[\s\S]{0,120}background: 'rgb\(var\(--act-fill, 34 197 94\)\)'/.test(cs));
   ok('Open Table / modal confirm (white label) is the theme\'s 700 (per-use fallback its original blue; alias default teal)', /modalConfirm: \{[\s\S]{0,120}background: 'rgb\(var\(--act-strong, 59 130 246\)\)'/.test(cs));

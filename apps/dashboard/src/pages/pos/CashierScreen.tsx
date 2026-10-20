@@ -29,6 +29,8 @@ import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
 import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip } from './cashier/CategoryPanel';   // A537
+import { ALL_MENUS, categoriesForMenu, inMenuScope, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
@@ -180,6 +182,7 @@ export default function CashierScreen() {
   const {
     products,
     categories,
+    menus,   // A537
     variantsByProduct,
     tables,
     pumps,
@@ -819,18 +822,22 @@ export default function CashierScreen() {
   }, [cart]);
   useEffect(() => () => { if (cartFlashTimer.current) clearTimeout(cartFlashTimer.current); }, []);
 
-  // A464: the category bar has more to the right (a phone shows a fade there until it is scrolled to the end).
-  const catRowRef = useRef<HTMLDivElement | null>(null);
-  const [catMore, setCatMore] = useState(false);
-  const checkCatMore = useCallback(() => {
-    const el = catRowRef.current;
-    setCatMore(!!el && el.scrollWidth - el.scrollLeft - el.clientWidth > 4);
-  }, []);
+  // A537 (owner, 2026-10-20: "the menu categories at the top, can we add them to the left like a hamburger, which can
+  // collapse, and it should start collapsed by default?"): the category bar (and A464's fade at its right edge) became a
+  // left panel behind ☰ — collapsed at start, pinned open if the cashier pins it, the business's menus as tabs on top.
+  const catPanel = useCategoryPanel();
+  const activeMenu = catPanel.prefs.menu;
+  const menuCats = useMemo(() => categoriesForMenu(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  const menuFilterScope = useMemo(() => menuScope(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  // A menu change can take the chosen category away: back to All.
   useEffect(() => {
-    checkCatMore();
-    window.addEventListener('resize', checkCatMore);
-    return () => window.removeEventListener('resize', checkCatMore);
-  }, [checkCatMore, categories.length, isPhone, activeKey]);
+    const keep = resolveCategory(activeCategory, menuCats);
+    if (keep !== activeCategory) setActiveCategory(keep);
+  }, [menuCats, activeCategory]);
+  const chosenMenuName = menuTabs(menus, categories).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
+  const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c) => c.id === activeCategory)?.name ?? null);
+  const catChip = chosenCategoryName ?? (chosenMenuName ? `${chosenMenuName} menu` : null);
+  const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
   function resumeParked(key: string) {
     const order = openOrders[key];
@@ -1101,18 +1108,19 @@ export default function CashierScreen() {
   // ── Product filter ─────────────────────────────────────────────────────────
   const filtered = products.filter((p) => {
     const matchCat = activeCategory === 'all' || p.category_id === activeCategory;
+    const matchMenu = inMenuScope(p, menuFilterScope);   // A537: a menu chosen = its categories only
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     // For petrol stations, show only fuel products on the product grid
     const matchFuel = isPetrol ? (p as any).is_fuel === true : !(p as any).is_fuel;
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay = onGrid((p as any).show_days, search.trim() !== '');
-    return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
+    return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay;
   });
   // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000 at
   // once. A new category or search starts again at the top. An exact hit (a product's name or barcode typed in full) is
   // the first tile, so it is on screen at once.
   const gridList = exactFirst(filtered, search, (p) => [p.name, (p as any).barcode]);
-  const grid = useGridWindow(gridList.length, `${activeCategory}|${search}|${isPetrol}`);
+  const grid = useGridWindow(gridList.length, `${activeMenu}|${activeCategory}|${search}|${isPetrol}`);
 
   const currentOrderLabel = activeKey
     ? (openOrders[activeKey]?.tableName ?? 'Order')
@@ -1322,6 +1330,7 @@ export default function CashierScreen() {
           <MinimartPOS
             products={products}
             categories={categories}
+            menus={menus}
             cart={cart}
             currency={currency}
             onAddToCart={minimartAddToCartChecked}
@@ -1573,49 +1582,23 @@ export default function CashierScreen() {
                 </div>
               )}
 
-              {/* Search */}
-              <div style={s.productHeader}>
+              {/* Search — A537: ☰ at its left opens the category panel; the chosen category shows by it ("Burgers ✕"). */}
+              <div style={{ ...s.productHeader, display: 'flex', gap: 8, alignItems: 'center', borderBottom: '1px solid var(--pos-border-l)' }}>
+                <PanelToggle panel={catPanel} />
                 <input
-                  style={s.searchInput}
+                  style={{ ...s.searchInput, flex: 1, minWidth: 0 }}
                   placeholder={isMinimart ? 'Search or scan barcode…' : 'Search products…'}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                <CategoryChip label={catChip} onClear={clearCatChip} />
               </div>
 
-              {/* Category tabs */}
-              {/* A464: on a phone a fade at the right edge says there are more categories; a tapped one scrolls into view. */}
-              <div style={{ position: 'relative', flexShrink: 0 }}>
-              {isPhone && catMore && (
-                <div data-testid="cat-more-fade" aria-hidden
-                  style={{ position: 'absolute', top: 0, right: 0, bottom: 1, width: 36, pointerEvents: 'none', zIndex: 1,
-                           background: 'linear-gradient(to right, transparent, var(--pos-panel))' }} />
-              )}
-              <div style={s.catRow} ref={catRowRef} onScroll={checkCatMore}>
-                {[{ id: 'all', name: 'All', color: null, icon: null }, ...categories].map((cat) => (
-                  <button
-                    key={cat.id}
-                    style={{
-                      ...s.catBtn,
-                      ...(activeCategory === cat.id
-                        ? {
-                            background: (cat as Category).color ?? 'rgb(var(--act-strong, 34 197 94))',
-                            color: '#fff',
-                            borderColor: 'transparent',
-                          }
-                        : {}),
-                    }}
-                    onClick={(e) => {
-                      setActiveCategory(cat.id);
-                      if (isPhone) e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                    }}
-                  >
-                    {(cat as Category).icon && <span>{(cat as Category).icon} </span>}
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-              </div>
+              {/* A537: the category panel (collapsed at start) beside — or, on a phone, over — the product grid. */}
+              <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
+              <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}
+                activeMenu={activeMenu} activeCategory={activeCategory}
+                onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={isPhone} />
 
               {/* Product grid */}
               <div ref={grid.rootRef} style={s.productGrid}>
@@ -1675,6 +1658,7 @@ export default function CashierScreen() {
                   })
                 )}
                 {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden style={{ gridColumn: '1/-1', height: 1 }} />}
+              </div>
               </div>
             </>
           )}
@@ -2963,16 +2947,6 @@ const s: Record<string, React.CSSProperties> = {
     width: '100%', background: 'var(--pos-input)', border: '1px solid var(--pos-input-border)',
     borderRadius: 8, padding: '8px 14px', color: 'var(--pos-text)', fontSize: 13,
     outline: 'none', boxSizing: 'border-box' as const,
-  },
-  catRow: {
-    display: 'flex', gap: 6, padding: '8px 16px',
-    borderBottom: '1px solid var(--pos-border-l)', overflowX: 'auto' as const, flexShrink: 0,
-    background: 'var(--pos-panel)',
-  },
-  catBtn: {
-    padding: '5px 12px', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)',
-    borderRadius: 20, color: 'var(--pos-text3)', fontSize: 12, fontWeight: 500,
-    cursor: 'pointer', whiteSpace: 'nowrap' as const, flexShrink: 0,
   },
   productGrid: {
     flex: 1, overflowY: 'auto' as const, padding: 12,

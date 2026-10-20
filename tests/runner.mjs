@@ -15,12 +15,15 @@
 
 import { parseArgs } from 'node:util';
 import { state, counts, failures, setVerbose, BASE_URL } from './lib.mjs';
+import { assertNotProduction, assertHealthNotProduction } from '../e2e/lib/prod-guard.mjs';
 
+// A536: the nightly workflow passes the target and the owner login as environment variables (secrets never on a
+// command line): E2E_API_URL, E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD. A flag still wins.
 const { values: args } = parseArgs({
   options: {
-    url:      { type: 'string',  default: 'http://localhost:4000' },
-    email:    { type: 'string',  default: '' },
-    password: { type: 'string',  default: '' },
+    url:      { type: 'string',  default: process.env.E2E_API_URL || 'http://localhost:4000' },
+    email:    { type: 'string',  default: process.env.E2E_OWNER_EMAIL || '' },
+    password: { type: 'string',  default: process.env.E2E_OWNER_PASSWORD || '' },
     suite:    { type: 'string',  default: 'auth,data,orders,reports,security,permissions' },
     stress:   { type: 'boolean', default: false },
     verbose:  { type: 'boolean', default: false },
@@ -65,9 +68,26 @@ function summary() {
 console.log(`\nSwiftPOS System Test Suite`);
 console.log(`Target: ${BASE_URL.value}`);
 console.log(`Suites: ${[...suitesToRun].join(', ')}`);
+// A536: never production. The address first (a thrown guard error stops here, exit 3), then the server's own answer:
+// production's /health hides `env`, so a missing or "production" env is refused too. A local server says
+// "development".
+try {
+  assertNotProduction({ url: BASE_URL.value });
+} catch (e) {
+  console.error(e.message);
+  process.exit(3);
+}
 console.log(`\nChecking server health...`);
 
-const health = await fetch(`${BASE_URL.value}/health`).then(r => r.json()).catch(() => null);
+let health = null;
+try {
+  health = await assertHealthNotProduction(BASE_URL.value, {
+    waitS: Number(process.env.E2E_HEALTH_WAIT_S || 0), log: () => {},
+  });
+} catch (e) {
+  if (e.code === 'E2E_PROD_GUARD') { console.error(e.message); process.exit(3); }
+  health = null;
+}
 if (!health || health.status !== 'ok') {
   console.error(`\n✗ Server not reachable at ${BASE_URL.value}\n  Start it with: pnpm --filter server dev\n`);
   process.exit(1);

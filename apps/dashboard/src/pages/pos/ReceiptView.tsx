@@ -41,6 +41,11 @@ interface Props {
     signature?: string | null;     // rcptSign
     qrPayload?: string | null;     // QR content/URL
   } | null;
+  /**
+   * A534: the client's "classic receipt layout" switch (admin portal › posFeatures `receipt_classic_layout`, A530) — the
+   * browser-printed receipt as it was. Off (the standard): the compact layout A530 gave the thermal receipt, here too.
+   */
+  classic?: boolean;
 }
 
 function fmtMoney(n: number) {
@@ -59,9 +64,16 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
     loyaltyDiscount = 0, promoDiscount = 0, promoName, customerName,
     footerMessage = 'Thank you for your business!',
     etims = null,
+    classic = false,
   },
   ref,
 ) => {
+  // A534 (owner, 2026-10-20: "add all of them since effort is small"; A530: "I feel the receipt is too long wasting
+  // paper"): the browser-printed receipt (a Windows / non-thermal printer, the dialog fallback) follows the thermal
+  // receipt's compact rules — layout only: the date and the order share a line, phone and PIN share a line, no Subtotal
+  // when it equals the total (no discount), no "Split payment" heading, the cash line carries what was tendered, the
+  // footer does not repeat the PIN, and no doubled rule. `classic` (receipt_classic_layout) keeps every line as before.
+  const compact = !classic;
   // Guard against a transient null business during the modal→receipt transition
   // (a rapid double-click could render this before business context resolves).
   if (!business) return <div ref={ref} />;
@@ -94,10 +106,26 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
           <p style={{ fontSize: '11px' }}>{branchName}</p>
         )}
         {business.address && <p style={{ fontSize: '11px' }}>{business.address}</p>}
-        {business.phone && <p style={{ fontSize: '11px' }}>Tel: {business.phone}</p>}
-        {business.tax_pin && <p style={{ fontSize: '11px' }}>PIN: {business.tax_pin}</p>}
-        <p style={{ fontSize: '11px', marginTop: '4px' }}>{dateStr}  {timeStr}</p>
-        <p style={{ fontSize: '11px' }}>Order: {orderNumber}</p>
+        {compact ? (
+          (business.phone || business.tax_pin) && (
+            <p style={{ fontSize: '11px' }}>
+              {[business.phone ? `Tel: ${business.phone}` : '', business.tax_pin ? `PIN: ${business.tax_pin}` : ''].filter(Boolean).join(' · ')}
+            </p>
+          )
+        ) : (
+          <>
+            {business.phone && <p style={{ fontSize: '11px' }}>Tel: {business.phone}</p>}
+            {business.tax_pin && <p style={{ fontSize: '11px' }}>PIN: {business.tax_pin}</p>}
+          </>
+        )}
+        {compact ? (
+          <p style={{ fontSize: '11px', marginTop: '4px' }}>{dateStr} {timeStr} · Order: {orderNumber}</p>
+        ) : (
+          <>
+            <p style={{ fontSize: '11px', marginTop: '4px' }}>{dateStr}  {timeStr}</p>
+            <p style={{ fontSize: '11px' }}>Order: {orderNumber}</p>
+          </>
+        )}
         {customerName && <p style={{ fontSize: '11px' }}>Customer: {customerName}</p>}
       </div>
 
@@ -132,7 +160,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {divider()}
 
       {/* Totals */}
-      {line('Subtotal', `${currency} ${fmtMoney(subtotal)}`)}
+      {(!compact || promoDiscount > 0 || loyaltyDiscount > 0) && line('Subtotal', `${currency} ${fmtMoney(subtotal)}`)}
       {promoDiscount > 0 && line(`${promoName ?? 'Promo discount'}`, `- ${currency} ${fmtMoney(promoDiscount)}`, false, '#92400e')}
       {loyaltyDiscount > 0 && line('Loyalty discount', `- ${currency} ${fmtMoney(loyaltyDiscount)}`, false, '#065f46')}
       {/* A349: the taxes INSIDE the total (after any discount) — the figures the cloud stores for this sale. */}
@@ -151,13 +179,20 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {/* Payment(s) */}
       {isSplit ? (
         <>
-          <p style={{ fontWeight: 'bold', marginBottom: '3px' }}>Split payment</p>
+          {!compact && <p style={{ fontWeight: 'bold', marginBottom: '3px' }}>Split payment</p>}
           {payments.map((p, i) => (
             <div key={i}>
               {line(fmtMethod(p.method), `${currency} ${fmtMoney(p.amount)}`)}
               {p.reference && line('  Ref', p.reference)}
             </div>
           ))}
+        </>
+      ) : compact ? (
+        <>
+          {/* A534: the method and the amount on one line (cash: what was tendered), then the change only when there is some */}
+          {line(fmtMethod(payments[0]?.method ?? 'cash'), `${currency} ${fmtMoney(cashPayment && tendered > 0 ? tendered : (payments[0]?.amount ?? total))}`)}
+          {cashPayment && change > 0 && line('Change', `${currency} ${fmtMoney(change)}`)}
+          {payments[0]?.reference && line('Ref', payments[0].reference)}
         </>
       ) : (
         <>
@@ -174,7 +209,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
 
       {divider()}
 
-      {divider()}
+      {!compact && divider()}
 
       {/* KRA eTIMS fiscal block — renders only when the invoice is signed */}
       {etims && (etims.receiptNo || etims.signature) && (
@@ -209,7 +244,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {/* Footer */}
       <div style={{ textAlign: 'center', marginTop: '6px' }}>
         <p>{footerMessage}</p>
-        {business.tax_pin && (
+        {!compact && business.tax_pin && (
           <p style={{ fontSize: '10px', marginTop: '2px' }}>VAT Reg: {business.tax_pin}</p>
         )}
         <p style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>Powered by ZapTill</p>

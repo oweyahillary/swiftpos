@@ -632,6 +632,7 @@ export default function PaymentModal({
               promoName={discountState?.discount.name}
               customerName={customerName.trim() || loyaltyState?.customer.name}
               footerMessage={printerSettings.footerMessage}
+              classic={posFeatures?.receipt_classic_layout === true}   // A534: the client's classic layout switch (A530)
             />
           </div>
 

@@ -27,6 +27,7 @@ const OnboardingPage          = lazy(() => import('./pages/OnboardingPage'));
 const ForcePasswordChangePage = lazy(() => import('./pages/ForcePasswordChangePage'));
 const OverviewPage            = lazy(() => import('./pages/OverviewPage'));
 const CategoriesPage          = lazy(() => import('./pages/products/CategoriesPage'));
+const MenusPage               = lazy(() => import('./pages/products/MenusPage'));   // A537
 const ProductsPage            = lazy(() => import('./pages/products/ProductsPage'));
 const POSPage                 = lazy(() => import('./pages/pos/POSPage'));
 const POSEntryPage            = lazy(() => import('./pages/pos/POSEntryPage'));
@@ -137,6 +138,7 @@ export default function App() {
                     <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
                       <Route index                             element={<OverviewPage />} />
                       <Route path="categories"                element={<CategoriesPage />} />
+                      <Route path="menus"                     element={<MenusPage />} />
                       <Route path="products"                  element={<ProductsPage />} />
                       <Route path="pos"                       element={<POSPage />} />
                       <Route path="inventory"                 element={<InventoryPage />} />

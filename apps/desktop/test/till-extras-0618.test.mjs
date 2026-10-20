@@ -54,7 +54,8 @@ ok('A279: an empty grid says a filter is hiding things, so Clear is the fix', ()
 const pos = read('src/renderer/pages/POSPage.tsx');
 ok('A279: POSPage shows the line and one Clear that restores All and empties the search', () => {
   assert.match(pos, /const gridFilterSummary = filterSummary\(gridFilter\);/);
-  assert.match(pos, /const clearGridFilter = \(\) => \{ setActiveCategory\('all'\); setSearch\(''\); \};/);
+  // A537: Clear also goes back to All menus (the category panel's menu).
+  assert.match(pos, /const clearGridFilter = \(\) => \{ setActiveCategory\('all'\); setSearch\(''\); catPanel\.setMenu\(ALL_MENUS\); \};/);
   assert.match(pos, /\{gridFilterSummary && \(\s*<div data-testid="grid-filter"/);
   assert.match(pos, /\{emptyGridMessage\(gridFilter\)\}/);
 });

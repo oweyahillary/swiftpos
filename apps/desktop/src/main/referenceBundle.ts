@@ -55,6 +55,8 @@ export interface ReferenceBundle {
   posInit: {
     products: any[];
     categories: any[];
+    /** A537: the business's menus (Food, Soft drinks …) as the cloud sent them. Absent from an older node. */
+    menus?: any[];
     branchId: string | null;
     vatRate: number | null;
     ctlRate: number | null;
@@ -118,6 +120,7 @@ export interface ReferenceBundle {
 export interface ReferenceRows {
   products: any[];
   categories: any[];
+  menus?: any[];            // A537: menus rows (id, name, sort_order, active, color, icon)
   comboItems: any[];        // combo_items rows
   paymentMethods: any[];    // payment_methods rows (code, name, sort_order)
   offers?: any[];           // A445: offers rows (id, data JSON)
@@ -230,6 +233,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
     sort_order: Number(c.sort_order) || 0,
     status: c.status ?? 'active',
     is_kitchen: asBool(c.is_kitchen),
+    menu_id: c.menu_id ?? null,   // A537: relayed so a peer shows the same menus
   }));
 
   // Users: local {id,name,role_name,status} -> cloud {id,name,roles:{name},status}.
@@ -247,6 +251,8 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
     posInit: {
       products,
       categories,
+      // A537: relayed so a peer's category panel shows the same menus.
+      menus: (rows.menus ?? []).map((m: any) => ({ id: m.id, name: m.name, sort_order: Number(m.sort_order) || 0, active: true, color: m.color ?? null, icon: m.icon ?? null })),
       branchId: rows.config.branchId,
       vatRate: rows.config.vatRate,
       ctlRate: rows.config.ctlRate,
@@ -334,7 +340,8 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
     products: all(`SELECT id, category_id, name, description, base_price, branch_price, image_url,
                           has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days
                    FROM products`),
-    categories: all(`SELECT id, name, color, icon, sort_order, status, is_kitchen FROM categories`),
+    categories: all(`SELECT id, name, color, icon, sort_order, status, is_kitchen, menu_id FROM categories`),
+    menus: all(`SELECT id, name, sort_order, active, color, icon FROM menus WHERE active = 1 ORDER BY sort_order, name`),   // A537
     comboItems: all(`SELECT combo_id, product_id, name, quantity, sort_order, is_kitchen FROM combo_items ORDER BY combo_id, sort_order`),
     paymentMethods: all(`SELECT code, name, sort_order FROM payment_methods ORDER BY sort_order`),
     offers: all(`SELECT id, data FROM offers`),   // A445
@@ -411,6 +418,7 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
 export interface AcquiredReference {
   products: any[];
   categories: any[];
+  menus: any[] | null;       // A537: null = the source sent none (an older node) — leave the till's menus
   comboItems: Record<string, any[]>;
   paymentMethods: Array<{ code: string; name: string }> | null; // null = leave tenders
   offers: any[] | null;      // A445: null = the source sent none (an older node) — leave the till's offers
@@ -483,6 +491,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
   return {
     products: arr(pi.products),
     categories: arr(pi.categories),
+    menus: Array.isArray(pi.menus) ? pi.menus : null,   // A537
     comboItems: pi.comboItems && typeof pi.comboItems === 'object' && !Array.isArray(pi.comboItems) ? pi.comboItems : {},
     paymentMethods: Array.isArray(pi.paymentMethods) ? pi.paymentMethods : null,
     offers: Array.isArray(pi.offers) ? pi.offers : null,   // A445

@@ -43,6 +43,8 @@ import { onGrid } from '../../shared/productDays';
 import { exactFirst } from '../../shared/paginate';   // A472
 import { useGridWindow } from '../hooks/useGridWindow';   // A472
 import { reportBusy } from '../lib/activity';   // A508
+import CategoryPanel, { useCategoryPanel, useNarrowWindow, PanelToggle, CategoryChip } from '../components/CategoryPanel';   // A537
+import { ALL_MENUS, categoriesForMenu, inMenuScope, menuScope, menuTabs, resolveCategory } from '../../shared/menuFilter';   // A537
 
 interface Props {
   business: { id: string; name: string; currency: string };
@@ -135,6 +137,7 @@ const ProductTile = memo(function ProductTile({ product, cartCount, currency, on
 export default function POSPage({ business, onLogout, onShiftClosed, onOpenManager, canManagePrinters = false, reverseRights = { void: false, refund: false }, canCloseDay = false, canDiscount = false, canAddExpenseType = false, canSeeSync = false, canSell = true, onHelp }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [menus, setMenus] = useState<any[]>([]);   // A537: Food, Soft drinks … ([] = none: the plain category list)
   const [branchId, setBranchId] = useState<string | null>(null);
   // Real business rate from /api/pos/init, persisted locally by each catalogue
   // pull. Null only before the first sync completes.
@@ -415,9 +418,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // shows on the till without a restart. Cart lines are snapshots, so an in-progress sale is
   // unaffected — only the product grid and rates-for-new-items refresh.
   const loadCatalogue = useCallback(() => {
-    posApi.pos.init().then(({ products, categories, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }: any) => {
+    posApi.pos.init().then(({ products, categories, menus: mn, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }: any) => {
       setProducts(products);
       setCategories(categories);
+      setMenus(Array.isArray(mn) ? mn : []);   // A537 (a till before the menus pull: none)
       setBranchId(branchId);
       if (typeof vatRate === 'number') setVatRateFromServer(vatRate);
       if (typeof ctlRate === 'number') setCtlRateFromServer(ctlRate);
@@ -1177,8 +1181,22 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // the 30-s sync poll and the offer clock; with 1,000+ products that was a full filter (a lower-casing per product)
   // every time. `gridDay` keeps the chosen-days rule (onGrid) turning over at midnight, as it did.
   const gridDay = offerClock.toDateString();
+  // A537 (owner, 2026-10-20: "the menu categories at the top, can we add them to the left like a hamburger, which can
+  // collapse, and it should start collapsed by default?"): the category row became a left panel behind ☰ — collapsed at
+  // start, pinned open if the cashier pins it (remembered on this till), the business's menus as tabs on top. A menu
+  // chosen narrows the panel's list AND the grid to that menu's categories (shared/menuFilter.ts, as the web POS).
+  const catPanel = useCategoryPanel();
+  const narrowWindow = useNarrowWindow();   // a narrow till window: the panel lies over the grid, not beside it
+  const activeMenu = catPanel.prefs.menu;
+  const menuCats = useMemo(() => categoriesForMenu(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  const menuFilterScope = useMemo(() => menuScope(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  useEffect(() => {   // a menu change can take the chosen category away: back to All
+    const keep = resolveCategory(activeCategory, menuCats);
+    if (keep !== activeCategory) setActiveCategory(keep);
+  }, [menuCats, activeCategory]);
   const filtered = useMemo(() => products.filter(p => {
     const matchCat    = activeCategory === 'all' || p.category_id === activeCategory;
+    const matchMenu   = inMenuScope(p, menuFilterScope);   // A537
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     // Petrol: only show fuel grades on the product grid (shop items are still
     // reachable via PumpsView → "Shop items →" which clears the fuel filter).
@@ -1188,13 +1206,13 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       : !(p as any).is_fuel;
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay    = onGrid((p as any).show_days, search.trim() !== '');
-    return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
-  }), [products, activeCategory, search, flags.isPetrol, gridDay]);
+    return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay;
+  }), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay]);
   // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000
   // tiles at once. A new category or search starts again at the top. The tiles stay memoised (ProductTile). An exact
   // hit (a product's name, barcode or PLU typed in full) is the first tile, so it is on screen at once.
   const gridList = useMemo(() => exactFirst(filtered, search, (p: any) => [p.name, p.barcode, p.plu]), [filtered, search]);
-  const grid = useGridWindow(gridList.length, `${activeCategory}|${search}|${flags.isPetrol}`);
+  const grid = useGridWindow(gridList.length, `${activeMenu}|${activeCategory}|${search}|${flags.isPetrol}`);
   const gridTiles = useMemo(() => gridList.slice(0, grid.count), [gridList, grid.count]);
   // A470 (speed): how many of each product are on the order, counted once per cart change — each tile used to scan the
   // whole cart twice (some + filter), products × lines on every render.
@@ -1209,12 +1227,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   handleTapRef.current = handleTap;
   const tapTile = useCallback((product: any) => handleTapRef.current(product), []);
   // A279: which filter the grid is showing, and one Clear back to everything.
+  // A537: the chosen category, else the chosen menu ("Food menu") — the chip by the search and this line both say it.
+  const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c: any) => c.id === activeCategory)?.name ?? null);
+  const chosenMenuName = menuTabs(menus, categories).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
   const gridFilter = {
-    categoryName: activeCategory === 'all' ? null : (categories.find((c: any) => c.id === activeCategory)?.name ?? null),
+    categoryName: chosenCategoryName ?? (chosenMenuName ? `${chosenMenuName} menu` : null),
     search, count: filtered.length,
   };
   const gridFilterSummary = filterSummary(gridFilter);
-  const clearGridFilter = () => { setActiveCategory('all'); setSearch(''); };
+  const clearGridFilter = () => { setActiveCategory('all'); setSearch(''); catPanel.setMenu(ALL_MENUS); };
+  const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
   // ── After payment: a success screen ─────────────────────
   // 0.6.29 (owner, 2026-10-01): "should we remove this modal, we replace it with a success modal … since we are getting
@@ -1595,31 +1617,18 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                 ← Pumps
               </button>
             )}
+            {/* A537: ☰ opens the category panel; the chosen category shows by the search ("Burgers ✕"). */}
+            <PanelToggle panel={catPanel} />
             <input
               type="text"
               placeholder="Search products…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 text-sm focus:outline-none focus:border-action-500 transition-colors"
+              className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 text-sm focus:outline-none focus:border-action-500 transition-colors"
             />
+            <CategoryChip label={gridFilter.categoryName} onClear={clearCatChip} />
           </div>
 
-          <div className="flex gap-2 px-4 py-3 border-b border-gray-800 overflow-x-auto">
-            <button
-              onClick={() => setActiveCategory('all')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === 'all' ? 'bg-action-500 text-gray-950' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
-            >All</button>
-            {categories.map((cat: any) => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === cat.id ? 'text-gray-950 font-semibold' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
-                style={activeCategory === cat.id ? { backgroundColor: cat.color ?? '#22c55e' } : {}}
-              >
-                {cat.icon && <span className="mr-1">{cat.icon}</span>}{cat.name}
-              </button>
-            ))}
-          </div>
           {gridFilterSummary && (
             <div data-testid="grid-filter" className="flex items-center justify-between gap-3 px-4 py-1.5 border-b border-gray-800 bg-gray-900/60 text-xs text-gray-300">
               <span className="truncate">{gridFilterSummary}</span>
@@ -1630,6 +1639,11 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             </div>
           )}
 
+          {/* A537: the category panel (collapsed at start) beside — or, in a narrow window, over — the product grid. */}
+          <div className="flex-1 flex min-h-0 relative">
+          <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}
+            activeMenu={activeMenu} activeCategory={activeCategory}
+            onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={narrowWindow} />
           <div ref={grid.rootRef} className="flex-1 overflow-y-auto p-4">
             {filtered.length === 0 ? (
               <div className="text-center py-20 text-gray-400 text-sm">
@@ -1652,6 +1666,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                 {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden className="col-span-full h-px" />}
               </div>
             )}
+          </div>
           </div>
         </div>
         )}

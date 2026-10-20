@@ -162,12 +162,13 @@ try {
   gh.releases = [fullRelease(1, '0.6.16'), fullRelease(2, '0.6.15')]; fresh();
   await ok('a new business is HELD: status says so, and no file is handed out', async () => {
     const s = await till(A, '/status');
-    assert.deepEqual(s.body, { approvedVersion: null, held: true });
+    // A534: reportsState — this cloud takes a 1.0.20 till's update state (POST /api/desktop-update/state).
+    assert.deepEqual(s.body, { approvedVersion: null, held: true, reportsState: true });
     assert.equal((await till(A, '/v/0.6.16/latest.yml')).status, 403);
   });
   await ok('approved 0.6.16 → status names it; each file redirects to GitHub BY FILE ID (no token needed) — A350', async () => {
     db.businesses[0].desktop_approved_version = '0.6.16';
-    assert.deepEqual((await till(A, '/status')).body, { approvedVersion: '0.6.16', held: false });
+    assert.deepEqual((await till(A, '/status')).body, { approvedVersion: '0.6.16', held: false, reportsState: true });
     gh.calls = [];
     for (const [f, id] of [['latest.yml', 11], ['SwiftPOS-0.6.16-x64.exe', 12], ['SwiftPOS-0.6.16-x64.exe.blockmap', 13]]) {
       const r = await till(A, `/v/0.6.16/${f}`);
@@ -195,13 +196,13 @@ try {
   });
   await ok('a stored value that is not x.y.z (hand-edited) counts as HELD, never as approved', async () => {
     db.businesses[1].desktop_approved_version = '';
-    assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true });
+    assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true, reportsState: true });
     db.businesses[1].desktop_approved_version = 'latest';
-    assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true });
+    assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true, reportsState: true });
     db.businesses[1].desktop_approved_version = null;
   });
   await ok('approval is per business: the other client is still held', async () => {
-    assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true });
+    assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true, reportsState: true });
     assert.equal((await till(B, '/v/0.6.16/latest.yml')).status, 403);
   });
   await ok('a file that is not an updater file → 404', async () => {
@@ -256,7 +257,7 @@ try {
     assert.equal(r.status, 200);
     assert.equal(db.businesses[1].desktop_approved_version, null);
     assert.equal(db.admin_audit_log.at(-1).action, 'desktop_update.hold');
-    assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true });
+    assert.deepEqual((await till(B, '/status')).body, { approvedVersion: null, held: true, reportsState: true });
   });
   await ok('a till token cannot use the admin routes', async () => {
     const r = await realFetch(`${base}/api/admin/clients/${B}/desktop-version`, { method: 'PATCH', headers: { Authorization: `Bearer ${tillToken(B)}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ version: '0.6.16' }) });

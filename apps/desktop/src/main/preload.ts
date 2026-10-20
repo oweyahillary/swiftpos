@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     tlsRetrust:   ()                        => ipcRenderer.invoke('node:tlsRetrust'),     // A489
     syncHealth:   ()                        => ipcRenderer.invoke('node:syncHealth'),     // A501
     retryFailed:  ()                        => ipcRenderer.invoke('node:retryFailed'),    // A501
+    distribution: ()                        => ipcRenderer.invoke('node:distribution'),   // A534 (A23)
   },
 
   pos: {

@@ -1848,8 +1848,24 @@ router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
     branchName = Object.fromEntries((branches ?? []).map(b => [b.id, b.name]));
   }
 
+  // A534: each till's update state (migration 154) and when it last synced — the Desktop updates card's "why isn't this
+  // till updating?". A second read so the list above never fails on a database before 154 (that read errors; ignored).
+  // ZapTill only: this route is requireAdmin (super admin and agent); no client route selects these columns.
+  const updateOf = new Map<string, { update_state: unknown; update_state_at: string | null; last_sync_at: string | null }>();
+  {
+    const { data: ups, error: upErr } = await supabase
+      .from('user_devices')
+      .select('id, update_state, update_state_at, last_sync_at')
+      .eq('business_id', businessId)
+      .limit(500);
+    if (!upErr) for (const u of (ups ?? []) as Array<{ id: string; update_state: unknown; update_state_at: string | null; last_sync_at: string | null }>) updateOf.set(u.id, u);
+  }
+
   res.json({
     devices: (devices ?? []).map(d => ({
+      updateState:   updateOf.get(d.id)?.update_state ?? null,      // A534
+      updateStateAt: updateOf.get(d.id)?.update_state_at ?? null,   // A534
+      lastSyncAt:    updateOf.get(d.id)?.last_sync_at ?? null,      // A534: a silent till ("last seen 3 days ago")
       id:         d.id,
       label:      d.device_label ?? '—',
       role:       d.device_role ?? null,          // 'till' | 'node' | 'office' | null

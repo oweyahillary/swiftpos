@@ -56,6 +56,7 @@ import { execFile } from 'child_process';
 import { defaultTaskDeps, hasUpdaterTask, requestTaskInstall, updaterLogTail, type TaskInstallResult } from './updaterTask';   // A509
 import { whenStartupSettled, lastStartupLine, UPDATE_AFTER_LAUNCH_MS, UPDATE_AFTER_SETTLED_MS } from './lowImpactStart';   // A513
 import { graphicsLine } from './lowImpactStart';   // A513
+import { buildUpdateReport, createUpdateReporter, type UpdateStateReport } from './updateReport';   // A534
 
 const ONE_HOUR = 60 * 60 * 1000;   // A348: the approval check is one small JSON call
 
@@ -139,6 +140,7 @@ export function getUpdateDiagnostics(): {
 export function _resetUpdateDiagnostics(): void {
   diag.length = 0; current = { state: 'idle', version: null, percent: null, note: null, checkedAt: null, approved: null };
   lastIdleInstall = null; idleNote = null; taskKnown = null; taskCheckedAt = 0; taskInstallStarted = false; closeTaskDone = false;
+  stateAt = null;   // A534
 }
 
 // ── A509: the updater task (updaterTask.ts) — an install with no Windows prompt ─────────────────────────────────────
@@ -186,9 +188,18 @@ function broadcast(): void {
   }
 }
 
+/** A534: when the current state began (downloaded at 14:02, failed at 14:10) — for the admin portal's report. */
+let stateAt: string | null = null;
 function set(patch: Partial<UpdateStatus>): void {
+  if (patch.state && patch.state !== current.state) stateAt = new Date().toISOString();
   current = { ...current, ...patch };
   broadcast();
+}
+/** A534: what the till reports to the cloud (updateReport.ts) — the status, since when, the idle note, the task. */
+export function currentUpdateReport(): UpdateStateReport {
+  let running = '';
+  try { running = app.getVersion(); } catch { /* tests */ }
+  return buildUpdateReport({ status: current, running, stateAt, idleNote, task: taskKnown });
 }
 
 /**
@@ -270,6 +281,9 @@ export interface UpdateCheckDeps {
   onStarted?: (cancel: () => void) => void;
   /** A496: the most a check (latest.yml) may take — Electron's network stack has no timeout of its own. */
   checkTimeoutMs?: number;
+  /** A534: told whether the cloud takes this machine's update state (`reportsState: true` on the status answer; an older
+   *  cloud has no such field → false, and nothing is reported). */
+  cloudReportsState?: (yes: boolean) => void;
 }
 export interface UpdateCheckResult {
   decision: UpdateDecision | 'unreachable'; approved: string | null; waiting?: boolean;
@@ -295,8 +309,9 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
       if (token) res = await ask(token);
     }
     if (!res.ok) return say({ decision: 'unreachable', approved: null, reason: `update status: HTTP ${res.status} — holding` });
-    const body = await res.json() as { approvedVersion?: unknown };
+    const body = await res.json() as { approvedVersion?: unknown; reportsState?: unknown };
     approved = typeof body?.approvedVersion === 'string' ? body.approvedVersion : null;
+    try { d.cloudReportsState?.(body?.reportsState === true); } catch { /* never stops a check */ }   // A534
   } catch (e: any) {
     return say({ decision: 'unreachable', approved: null, reason: `update status unreachable (${e?.message ?? e}) — holding` });
   }
@@ -797,6 +812,29 @@ export function initAutoUpdate(): void {
   catch (e: any) { console.warn('[autoUpdate] could not trust the branch server certificate for downloads:', e?.message ?? e); }
 
   const running = app.getVersion();
+  // A534: where this machine's update is, told to the cloud (admin portal › Desktop updates) — only once the cloud says it
+  // takes it (the status answer's reportsState), on a change, and at least every 30 minutes. Through the branch server's
+  // gateway on a till behind one (cloudFetch, A410), with the till's own session (renewed once on a 401).
+  const reporter = createUpdateReporter({
+    build: () => currentUpdateReport(),
+    post: async (body) => {
+      const cloud = (() => { try { return getCloudUrl(); } catch { return null; } })();
+      if (!cloud) return { status: 0 };
+      const go = (tok: string) => cloudFetch(`${String(cloud).replace(/\/+$/, '')}/api/desktop-update/state`, {
+        method: 'POST', headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+      });
+      let tok = readSessionTokens().token;
+      if (!tok) return { status: 0 };
+      let res = await go(tok);
+      if (res.status === 401 && await refreshAccessToken().catch(() => false)) {
+        tok = readSessionTokens().token;
+        if (tok) res = await go(tok);
+      }
+      return { status: res.status };
+    },
+    log: noteUpdate,
+  });
   // A496: per version, since when the branch server has said "not ready" (a till stops waiting after TILL_WAIT_LIMIT_MS).
   const waitingSince = new Map<string, number>();
   const loop = createUpdateLoop({
@@ -825,6 +863,7 @@ export function initAutoUpdate(): void {
         refresh: () => refreshAccessToken(),
         running: next,
         log: noteUpdate,
+        cloudReportsState: (yes) => reporter.setCloudTakes(yes),   // A534
         // A443: the branch server fetches the approved version once for the branch and updates itself from that copy.
         // A443: a till behind a branch server waits until the server holds the approved version (it then downloads it
         // from the server over the shop network). A server that does not answer the question (an older build) → as before.
@@ -997,6 +1036,8 @@ export function initAutoUpdate(): void {
     // it is back): told of a newer version the server holds, it checks with the cloud at once and takes it from the server.
     void loop.ask();
     setInterval(() => { void loop.ask(); }, 2 * 60_000);
+    // A534: the update state to the cloud — a look every minute; sent only on a change or every 30 minutes.
+    setInterval(() => { void reporter.tick(); }, 60_000);
     startIdleTicks();
   }, { minSinceLaunchMs: UPDATE_AFTER_LAUNCH_MS, afterMs: UPDATE_AFTER_SETTLED_MS });
   // A443: a till asked this server for a version it does not hold yet — check now (at most every 5 minutes).

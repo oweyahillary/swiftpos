@@ -16,17 +16,27 @@
  *                      cashier money views), POS switches (feature_flags), the business rates (VAT, CTL, currency)
  *   look   (≤ 30 min)  logo / colours / theme, receipt header and footer, the business name and contact settings
  *   setup  (≤ 30 min)  print stations and their categories, tables, pumps, branches, every other setting
+ *   stock  (critical)  A535: a stock level at a branch (stock_levels — sales, restocks, transfers, wastage, counts; migration
+ *                      153). Stored at once; never touches a sale in the cart (the cart's lines are the till's own).
+ *
+ * A535 also names one DOORBELL topic that is not in the change log: `drawers` — the cloud rings a branch server's socket
+ * ({ type: 'changed', topics: ['drawers'] }) when a drawer changed on the web (a close, a force-close, a confirmation, a
+ * web sale), and the server asks GET /api/pos/branch-drawers at once instead of waiting for its beat. Owner, 2026-10-19:
+ * "for a setup like KRUNCH only the server does the communication to cloud, not all tills".
  *
  * This file is the ONE classification for the TypeScript side; public.sync_setting_topic (migration 151) is its SQL
  * mirror, and scripts/test-migration-151.mjs runs both on the same keys. To move a setting: change both, run that test.
  * Copied verbatim: shared/, apps/server/src/lib/, apps/desktop/src/main/ (scripts/check-shared-sync.mjs).
  */
 
-export const SYNC_TOPICS = ['menu', 'staff', 'money', 'look', 'setup'] as const;
+export const SYNC_TOPICS = ['menu', 'staff', 'money', 'look', 'setup', 'stock'] as const;
 export type SyncTopicName = (typeof SYNC_TOPICS)[number];
 
 /** Applied at once. The others wait for an idle moment, a shift opening or closing, or at most NON_CRITICAL_WAIT_MS. */
-export const CRITICAL_TOPICS: readonly SyncTopicName[] = ['menu', 'staff', 'money'];
+export const CRITICAL_TOPICS: readonly SyncTopicName[] = ['menu', 'staff', 'money', 'stock'];
+/** A535: the doorbell topic for drawers (not a change-log topic: no entry is written, the ring is the whole message). */
+export const DRAWERS_TOPIC = 'drawers';
+export const DOORBELL_TOPICS: readonly string[] = [DRAWERS_TOPIC];
 export const NON_CRITICAL_WAIT_MS = 30 * 60_000;
 
 export function isCriticalTopic(t: string): boolean {
@@ -89,6 +99,12 @@ export const CHANGE_TABLES = {
   print_stations:  { topic: 'setup', from: ['print_stations', 'category_stations'] },
   tables:          { topic: 'setup', from: ['tables'] },
   pumps:           { topic: 'setup', from: ['pumps'] },
+  // A535: a stock level (row id = the product, the entry's branch = the level's branch). Its own trigger (migration 153,
+  // trg_log_sync_stock_change on stock_levels), not 151's.
+  stock:           { topic: 'stock', from: ['stock_levels'], trigger: 'trg_log_sync_stock_change' },
+  // A537: a menu (Food, Soft drinks …) — row id = the menu; a category's menu is the categories entry. Its own trigger
+  // (migration 155, trg_log_menu_sync_change on menus), not 151's.
+  menus:           { topic: 'menu',  from: ['menus'], trigger: 'trg_log_menu_sync_change' },
 } as const;
 export type ChangeTable = keyof typeof CHANGE_TABLES;
 
@@ -118,4 +134,9 @@ export interface ChangesAnswer {
   changes: ChangeEntry[];
   more?: boolean;
   full_resync_needed?: boolean;
+  /** A535: the logical tables this cloud logs beyond A531's — ['stock'] once migration 153 runs (a till then drops its
+   *  30-minute stock re-read; without it the re-read stays). */
+  serves?: string[];
+  /** A535 (a branch server's /node/live only): ZapTill support asked THIS till for its log — it asks for the request now. */
+  log_request?: boolean;
 }

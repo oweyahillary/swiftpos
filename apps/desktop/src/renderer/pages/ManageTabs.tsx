@@ -302,6 +302,24 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
     } finally { setBusy(false); }
   };
 
+  // A537: the business's menus (Food, Soft drinks …, made on the web) as this till holds them — a category is put under
+  // one here too, saved on the till first and sent to the cloud like any category change (A448). No menus: no select.
+  const [menus, setMenus] = useState<any[]>([]);
+  useEffect(() => {
+    let live = true;
+    posApi.pos.init().then((r: any) => { if (live) setMenus(Array.isArray(r?.menus) ? r.menus : []); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const setMenu = async (c: any, menuId: string) => {
+    setBusy(true); setErr('');
+    try {
+      await posApi.manage.updateCategory(c.id, { menu_id: menuId || null });
+      onChanged();
+    } catch (e: any) {
+      setErr(e?.message ?? 'Could not update category.');
+    } finally { setBusy(false); }
+  };
+
   return (
     <div className="mt-6">
       <p className="text-white font-semibold mb-2">Categories</p>
@@ -325,6 +343,15 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
         {categories.map(c => (
           <div key={c.id} className="flex items-center gap-3 px-4 py-2">
             <span className="flex-1 text-gray-200 truncate">{c.name}</span>
+            {(menus.length > 0 || c.menu_id) && (
+              <select data-testid="category-menu" value={c.menu_id ?? ''} disabled={busy} aria-label={`Menu of ${c.name}`}
+                onChange={e => void setMenu(c, e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-action-500">
+                <option value="">No menu</option>
+                {menus.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {c.menu_id && !menus.some((m: any) => m.id === c.menu_id) && <option value={c.menu_id}>(a menu that is off)</option>}
+              </select>
+            )}
             <button onClick={() => toggleKitchen(c)} disabled={busy}
               className={`text-xs px-2 py-0.5 rounded-md border transition-colors ${
                 c.is_kitchen ? 'border-action-500 text-action-400' : 'border-gray-700 text-gray-300'}`}>

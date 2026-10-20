@@ -25,7 +25,7 @@ import { cleanCutoff } from '../lib/businessDay';   // 0.6.34
 import { cleanHistoryMethods } from '../lib/cashierHistory';
 import { cleanSeesSales, historyTotalsOn } from '../lib/cashierShiftSales';   // A416 / A418   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
-import { frozenAtBranch } from '../lib/stockTakeAccess';   // A394
+import { frozenAtBranch, may as mayStock } from '../lib/stockTakeAccess';   // A394 (A535: may)
 import { pageAll, chunkPaged } from '../lib/pgQuery';
 import { seesCosts, stripFields, COST_FIELDS } from '../lib/costAccess';   // A494
 import { readTopicVersion, cachedFallback } from '../lib/syncVersions';   // A528
@@ -33,6 +33,7 @@ import { readTill } from '../lib/authCache';                           // A528
 import { traffic } from '../lib/trafficStats';                         // A528
 import { initAnswer, setInitBuilder, type BuiltInit } from '../lib/posInit';   // A531
 import { changesAnswer, ChangesUnavailable } from '../lib/syncChanges';         // A531
+import { menusForPos } from '../lib/menus';                                    // A537
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -138,7 +139,9 @@ router.get('/changes', async (req, res) => {
   const branchId = typeof req.query.branch_id === 'string' && req.query.branch_id ? req.query.branch_id : (req.branchId ?? null);
   traffic.count('changes.answered');
   try {
-    const answer = await changesAnswer({ businessId: req.businessId!, branchId, isTill: !!req.isTill, seesCosts: seesCosts(req) }, since);
+    // A535: and whether the caller may see a level a blind count is counting (a till's own session never — A394).
+    const answer = await changesAnswer({ businessId: req.businessId!, branchId, isTill: !!req.isTill, seesCosts: seesCosts(req),
+      seesCountedStock: mayStock(req, 'inventory.adjust') }, since);
     res.set('Cache-Control', 'no-store');
     res.json(answer);
   } catch (e) {
@@ -654,6 +657,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       ...(await promotionOffersFor(req.businessId!)),
     ],
     categories: categories ?? [],
+    // A537: the business's menus (Food, Soft drinks …) — on, not deleted, in order; each category's menu_id names one.
+    // Always sent: [] = none (before migration 155 too). Older tills ignore it.
+    menus: await menusForPos(req.businessId!),
     // Custom payment methods (A96) — the extras a business accepts beyond the
     // built-in Cash / M-Pesa / Card. Active only; the till caches these so they
     // appear as tender options offline. Per business (owner decision, A95).

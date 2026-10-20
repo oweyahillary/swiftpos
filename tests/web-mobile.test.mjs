@@ -60,9 +60,11 @@ ok('A464: the last item added shows for 2 s (not when switching to another order
 ok('A464: the bar and the product list clear the iPhone home bar',
   /bottom: 'calc\(10px \+ env\(safe-area-inset-bottom, 0px\)\)'/.test(bar) && /paddingBottom: 'calc\(76px \+ env\(safe-area-inset-bottom/.test(pos)
   && /viewport-fit=cover/.test(read('apps/dashboard/index.html')));
-ok('A464: the category bar fades where there are more, and a tapped one scrolls into view',
-  /isPhone && catMore && \(/.test(pos) && /onScroll=\{checkCatMore\}/.test(pos)
-  && /if \(isPhone\) e\.currentTarget\.scrollIntoView\(\{ behavior: 'smooth', inline: 'center'/.test(pos));
+// A537 (owner, 2026-10-20: "the menu categories at the top, can we add them to the left like a hamburger"): A464's
+// sideways category bar (its fade and scroll-into-view) is gone — on a phone the category panel lies over the grid.
+ok('A537: the category bar became the ☰ panel — on a phone it lies over the grid (A464\'s fade retired)',
+  !/catMore/.test(pos) && !/s\.catRow/.test(pos)
+  && /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{isPhone\} \/>/.test(pos) && /<PanelToggle panel=\{catPanel\} \/>/.test(pos));
 ok('the POS dialogs fit a phone', /maxWidth: 340, maxHeight: '90dvh', overflowY: 'auto'/.test(pos) && !/width: 340,/.test(pos));
 ok('the POS fills the dynamic viewport', (pos.match(/height: '100dvh'/g) || []).length >= 2 && !/height: '100vh'/.test(pos));
 

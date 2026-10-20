@@ -208,7 +208,8 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "super_category": "\"text\"",
-    "is_kitchen": "\"boolean\" NOT NULL"
+    "is_kitchen": "\"boolean\" NOT NULL",
+    "menu_id": "\"uuid\""
   },
   "category_stations": {
     "category_id": "\"uuid\" NOT NULL",
@@ -549,6 +550,22 @@
     "device_id": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "log_requests": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "device_id": "\"text\" NOT NULL",
+    "requested_by_admin": "\"uuid\"",
+    "requested_by_email": "\"text\"",
+    "requested_at": "\"timestamp with time zone\" NOT NULL",
+    "reason": "\"text\" NOT NULL",
+    "range_hours": "\"integer\" NOT NULL",
+    "include": "\"jsonb\" NOT NULL",
+    "status": "\"text\" NOT NULL",
+    "delivered_at": "\"timestamp with time zone\"",
+    "support_log_id": "\"uuid\"",
+    "cancelled_at": "\"timestamp with time zone\"",
+    "expires_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "login_otp_codes": {
     "id": "\"uuid\" NOT NULL",
     "subject_kind": "\"text\" NOT NULL",
@@ -568,6 +585,18 @@
     "points": "\"integer\" NOT NULL",
     "notes": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "menus": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL",
+    "active": "\"boolean\" NOT NULL",
+    "color": "\"text\"",
+    "icon": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "deleted_at": "\"timestamp with time zone\""
   },
   "mode_switch_requests": {
     "id": "\"uuid\" NOT NULL",
@@ -1565,7 +1594,9 @@
     "serial_hash": "\"text\"",
     "identity_seen_at": "\"timestamp with time zone\"",
     "security_alert_at": "\"timestamp with time zone\"",
-    "security_alert_reason": "\"text\""
+    "security_alert_reason": "\"text\"",
+    "update_state": "\"jsonb\"",
+    "update_state_at": "\"timestamp with time zone\""
   },
   "user_permissions": {
     "id": "\"uuid\" NOT NULL",
