@@ -37,8 +37,9 @@ export const PRINTER_MAX_DOTS = 576;
  *  printed logo not be too small. A530: storage stays at 288 (owner, 2026-10-19: "that's okay" — so 'receipt_full_logo'
  *  can print any client's logo at its full size); the receipt PRINTS at RECEIPT_LOGO_PRINT_MAX_HEIGHT unless it is on. */
 export const RECEIPT_LOGO_MAX_HEIGHT = 288;
-/** A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper"): the compact receipt prints the logo at most
- *  120 dots tall (15 mm), shrunk at print time by fitMonoRaster — unless the client has 'receipt_full_logo'. */
+/** A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper"): the receipt prints the logo at most
+ *  120 dots tall (15 mm), shrunk at print time by fitMonoRaster — unless the client has 'receipt_full_logo'. A538 keeps
+ *  this small logo on the standard (classic-layout) receipt. */
 export const RECEIPT_LOGO_PRINT_MAX_HEIGHT = 120;
 export const DEFAULT_THRESHOLD = 128;
 

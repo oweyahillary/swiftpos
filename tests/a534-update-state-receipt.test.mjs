@@ -12,6 +12,9 @@
  *     version-only hints for tills older than 1.0.20, "Last seen 3 days ago" for a silent till.
  *   - the browser-printed (Windows / non-thermal) web POS receipt: the compact layout A530 gave the thermal receipt,
  *     and every line as before with the client's receipt_classic_layout switch — the REAL ReceiptView rendered.
+ *     A538 (owner, 2026-10-21: "go back to the old layout"): turned round — every line as before is the standard, the
+ *     compact lines only with receipt_compact_layout (`compact`). Mutations (A538): ReceiptView's default back to
+ *     compact → "the standard … classic layout" fails; PaymentModal passing the old switch → its source pin fails.
  *
  * MUTATIONS TO CONFIRM BITE (checked by hand, 2026-10-20):
  *   - cleanUpdateState keeping a percent outside a download                   → "percent only while downloading" fails
@@ -131,30 +134,37 @@ const sale = {
          { product: { id: 'p2', name: 'Juice' }, quantity: 1, unitPrice: 500, lineTotal: 500, selectedVariants: [], selectedModifiers: [] }],
   payments: [{ method: 'cash', amount: 1250 }], tendered: 1300, change: 50,
 };
-await ok('compact (the standard): one line for date and order, one for phone and PIN, no Subtotal = Total, the cash line carries the tendered', () => {
-  const t = text(R.render(sale));
+// A538 (owner, 2026-10-21: "go back to the old layout"): the classic layout is the standard again; compact needs the
+// client's receipt_compact_layout switch (the `compact` prop). `classic` (A534's prop) is gone and changes nothing.
+await ok('A538: compact (receipt_compact_layout, opt-in): one line for date and order, one for phone and PIN, no Subtotal = Total, the cash line carries the tendered', () => {
+  const t = text(R.render({ ...sale, compact: true }));
   assert.ok(t.some((l) => /· Order: W-1042$/.test(l)), t.join(' | '));
   assert.ok(t.includes('Tel: 0712 345678 · PIN: P051234567X'), t.join(' | '));
   assert.ok(!t.includes('Subtotal'), 'Subtotal printed with no discount');
   assert.ok(!t.includes('Payment') && !t.includes('Tendered'), t.join(' | '));
   const i = t.indexOf('CASH'); assert.equal(t[i + 1], 'KES 1,300.00'); assert.equal(t[t.indexOf('Change') + 1], 'KES 50.00');
   assert.ok(!t.some((l) => l.startsWith('VAT Reg:')), 'the PIN printed twice');
-  assert.equal(rules(R.render(sale)), 4, 'dashed rules');
+  assert.equal(rules(R.render({ ...sale, compact: true })), 4, 'dashed rules');
 });
 await ok('compact keeps what carries money: a discount brings the Subtotal back; tip → TOTAL PAID; split without its heading', () => {
-  const t = text(R.render({ ...sale, promoDiscount: 125, promoName: 'Happy hour', total: 1125, tip: 100,
+  const t = text(R.render({ ...sale, compact: true, promoDiscount: 125, promoName: 'Happy hour', total: 1125, tip: 100,
     payments: [{ method: 'cash', amount: 600 }, { method: 'mpesa', amount: 625, reference: 'QK12' }] }));
   assert.ok(t.includes('Subtotal') && t.includes('Happy hour') && t.includes('TOTAL PAID'), t.join(' | '));
   assert.ok(!t.includes('Split payment') && t.includes('M-PESA'), t.join(' | '));
 });
-await ok('classic (receipt_classic_layout): every line as before', () => {
-  const html = R.render({ ...sale, classic: true });
-  const t = text(html);
-  for (const want of ['Tel: 0712 345678', 'PIN: P051234567X', 'Order: W-1042', 'Subtotal', 'Payment', 'Tendered', 'VAT Reg: P051234567X']) assert.ok(t.includes(want), `${want} missing: ${t.join(' | ')}`);
-  assert.equal(rules(html), 5, 'dashed rules (the doubled one too)');
+await ok('A538: the standard (no switch) is the classic layout — every line as before', () => {
+  for (const html of [R.render(sale), R.render({ ...sale, compact: false }), R.render({ ...sale, classic: true })]) {
+    const t = text(html);
+    for (const want of ['Tel: 0712 345678', 'PIN: P051234567X', 'Order: W-1042', 'Subtotal', 'Payment', 'Tendered', 'VAT Reg: P051234567X']) assert.ok(t.includes(want), `${want} missing: ${t.join(' | ')}`);
+    assert.ok(!t.some((l) => /· Order: W-1042$/.test(l)), 'date and order on one line (compact) on the standard');
+    assert.equal(rules(html), 5, 'dashed rules (the doubled one too)');
+  }
+  assert.equal(R.render({ ...sale, classic: true }), R.render(sale), 'A534\'s `classic` prop changes nothing now');
 });
 await ok('the web POS hands the client\'s switch to the receipt', () => {
-  assert.match(read('apps/dashboard/src/pages/pos/PaymentModal.tsx'), /classic=\{posFeatures\?\.receipt_classic_layout === true\}/);
+  const pm = read('apps/dashboard/src/pages/pos/PaymentModal.tsx');
+  assert.match(pm, /compact=\{posFeatures\?\.receipt_compact_layout === true\}/);
+  assert.ok(!/receipt_classic_layout/.test(pm), 'the retired switch is not read');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

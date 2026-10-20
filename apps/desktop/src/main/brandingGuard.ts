@@ -39,7 +39,7 @@ export interface LogoRgba { width: number; height: number; data: ArrayLike<numbe
 /** Widest a receipt logo is ever prepared at; raster.ts shrinks further if needed. */
 export const RGBA_MAX_WIDTH = 384;
 // 0.6.25 (was 240) — mirrors shared/printing RECEIPT_LOGO_MAX_HEIGHT, the STORED size. A530: unchanged (owner,
-// 2026-10-19: "that's okay") — the compact receipt shrinks it to 120 at print time unless 'receipt_full_logo' is on.
+// 2026-10-19: "that's okay") — the receipt (A538: classic or compact) shrinks it to 120 at print time unless 'receipt_full_logo' is on.
 export const RGBA_MAX_HEIGHT = 288;
 
 /**

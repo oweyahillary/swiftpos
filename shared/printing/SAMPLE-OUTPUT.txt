@@ -50,7 +50,7 @@ DISPATCH   (549 bytes)
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT   (1384 bytes)
+CUSTOMER RECEIPT   (1789 bytes)
 ============================================================
 +------------------------------------------------+
 |                 Your Business                  |
@@ -58,8 +58,13 @@ CUSTOMER RECEIPT   (1384 bytes)
 |                PIN: P051234567X                |
 |               Tel: 0700 000 000                |
 |------------------------------------------------|
-|Type: Takeaway                Bill No.: T1--5718|
-|Cashier: Amina               2026-08-05 19:42:11|
+|Type: Takeaway                                  |
+|------------------------------------------------|
+|Bill No.: T1--5718                              |
+|Cashier: Amina                                  |
+|Date: 2026-08-05 19:42:11                       |
+|Kots: 2                                         |
+|------------------------------------------------|
 |Item                             Qty         Amt|
 |------------------------------------------------|
 |3PC Chicken Combo                  1      754.24|
@@ -75,31 +80,43 @@ CUSTOMER RECEIPT   (1384 bytes)
 |------------------------------------------------|
 |Total Qty:                                     4|
 |SubTotal:                               2,796.61|
+|------------------------------------------------|
 |CTL (2%)                                   55.93|
 |VAT (16%)                                 447.46|
 |------------------------------------------------|
+|Round Off:                                  0.00|
+|Total:                                  3,300.00|
+|------------------------------------------------|
 |PAY: KES 3,300.00                               |
+|------------------------------------------------|
+|Payment Detail:                                 |
 |CASH                                    3,500.00|
 |CHANGE                                    200.00|
 |Buy Goods: 000000                               |
 |------------------------------------------------|
 |          Thank you for your business!          |
 |         For delivery call 0700 000 000         |
+|------------------------------------------------|
 |            TAX RECEIPT UPON REQUEST            |
 |               Powered by ZapTill               |
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — duplicate, optional fields off   (1344 bytes)
+CUSTOMER RECEIPT — duplicate, optional fields off   (1749 bytes)
 ============================================================
 +------------------------------------------------+
 |                Duplicate Print                 |
 |------------------------------------------------|
 |                 Your Business                  |
 |------------------------------------------------|
-|Type: Takeaway                Bill No.: T1--5718|
-|Cashier: Amina               2026-08-05 19:42:11|
+|Type: Takeaway                                  |
+|------------------------------------------------|
+|Bill No.: T1--5718                              |
+|Cashier: Amina                                  |
+|Date: 2026-08-05 19:42:11                       |
 |RePrint T.: 2026-08-05 21:06:09                 |
+|Kots: 2                                         |
+|------------------------------------------------|
 |Item                             Qty         Amt|
 |------------------------------------------------|
 |3PC Chicken Combo                  1      754.24|
@@ -115,14 +132,21 @@ CUSTOMER RECEIPT — duplicate, optional fields off   (1344 bytes)
 |------------------------------------------------|
 |Total Qty:                                     4|
 |SubTotal:                               2,796.61|
+|------------------------------------------------|
 |CTL (2%)                                   55.93|
 |VAT (16%)                                 447.46|
 |------------------------------------------------|
+|Round Off:                                  0.00|
+|Total:                                  3,300.00|
+|------------------------------------------------|
 |PAY: KES 3,300.00                               |
+|------------------------------------------------|
+|Payment Detail:                                 |
 |CASH                                    3,500.00|
 |CHANGE                                    200.00|
 |------------------------------------------------|
 |          Thank you for your business!          |
+|------------------------------------------------|
 |            TAX RECEIPT UPON REQUEST            |
 |               Powered by ZapTill               |
 +------------------------------------------------+
@@ -153,7 +177,7 @@ KITCHEN — 58mm   (418 bytes)
 +--------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — 58mm   (1016 bytes)
+CUSTOMER RECEIPT — 58mm   (1325 bytes)
 ============================================================
 +--------------------------------+
 |         Your Business          |
@@ -161,8 +185,13 @@ CUSTOMER RECEIPT — 58mm   (1016 bytes)
 |        PIN: P051234567X        |
 |       Tel: 0700 000 000        |
 |--------------------------------|
-|Takeaway      Bill No.: T1--5718|
-|Cashier: Amina    05/08/26 19:42|
+|Type: Takeaway                  |
+|--------------------------------|
+|Bill No.: T1--5718              |
+|Cashier: Amina                  |
+|Date: 2026-08-05 19:42:11       |
+|Kots: 2                         |
+|--------------------------------|
 |Item               Qty       Amt|
 |--------------------------------|
 |3PC Chicken Combo    1    754.24|
@@ -178,115 +207,14 @@ CUSTOMER RECEIPT — 58mm   (1016 bytes)
 |--------------------------------|
 |Total Qty:                     4|
 |SubTotal:               2,796.61|
+|--------------------------------|
 |CTL (2%)                   55.93|
 |VAT (16%)                 447.46|
 |--------------------------------|
-|PAY: KES 3,300.00               |
-|CASH                    3,500.00|
-|CHANGE                    200.00|
-|Buy Goods: 000000               |
+|Round Off:                  0.00|
+|Total:                  3,300.00|
 |--------------------------------|
-|  Thank you for your business!  |
-| For delivery call 0700 000 000 |
-|    TAX RECEIPT UPON REQUEST    |
-|       Powered by ZapTill       |
-+--------------------------------+
-
-============================================================
-A530 — the receipt BEFORE (classic, 1.0.19) and AFTER (compact, the 1.0.20 standard)
-============================================================
-Classic = all four admin-portal switches on (receipt_classic_spacing, receipt_full_logo, receipt_classic_layout,
-receipt_extra_feed); compact = all off, the standard. Same sale; the AFTER is the CUSTOMER RECEIPT above.
-
-80 mm
-BEFORE (classic)                                      AFTER (compact)
-+------------------------------------------------+    +------------------------------------------------+
-|                 Your Business                  |    |                 Your Business                  |
-|                  Main Branch                   |    |                  Main Branch                   |
-|                PIN: P051234567X                |    |                PIN: P051234567X                |
-|               Tel: 0700 000 000                |    |               Tel: 0700 000 000                |
-|------------------------------------------------|    |------------------------------------------------|
-|Type: Takeaway                                  |    |Type: Takeaway                Bill No.: T1--5718|
-|------------------------------------------------|    |Cashier: Amina               2026-08-05 19:42:11|
-|Bill No.: T1--5718                              |    |Item                             Qty         Amt|
-|Cashier: Amina                                  |    |------------------------------------------------|
-|Date: 2026-08-05 19:42:11                       |    |3PC Chicken Combo                  1      754.24|
-|Kots: 2                                         |    |  3PC Chicken  all spicy                        |
-|------------------------------------------------|    |  Fries large                              50.85|
-|Item                             Qty         Amt|    |  Soda 1.25L                               42.37|
-|------------------------------------------------|    |                                                |
-|3PC Chicken Combo                  1      754.24|    |Wings Combo 8PC                    2    1,847.46|
-|  3PC Chicken  all spicy                        |    |  8PC Hot Wings  all spicy                      |
-|  Fries large                              50.85|    |  BBQ Sauce, Garlic Sauce                       |
-|  Soda 1.25L                               42.37|    |                                                |
-|                                                |    |Soda 500ml                         1      101.69|
-|Wings Combo 8PC                    2    1,847.46|    |------------------------------------------------|
-|  8PC Hot Wings  all spicy                      |    |Total Qty:                                     4|
-|  BBQ Sauce, Garlic Sauce                       |    |SubTotal:                               2,796.61|
-|                                                |    |CTL (2%)                                   55.93|
-|Soda 500ml                         1      101.69|    |VAT (16%)                                 447.46|
-|------------------------------------------------|    |------------------------------------------------|
-|Total Qty:                                     4|    |PAY: KES 3,300.00                               |
-|SubTotal:                               2,796.61|    |CASH                                    3,500.00|
-|------------------------------------------------|    |CHANGE                                    200.00|
-|CTL (2%)                                   55.93|    |Buy Goods: 000000                               |
-|VAT (16%)                                 447.46|    |------------------------------------------------|
-|------------------------------------------------|    |          Thank you for your business!          |
-|Round Off:                                  0.00|    |         For delivery call 0700 000 000         |
-|Total:                                  3,300.00|    |            TAX RECEIPT UPON REQUEST            |
-|------------------------------------------------|    |               Powered by ZapTill               |
-|PAY: KES 3,300.00                               |    +------------------------------------------------+
-|------------------------------------------------|
-|Payment Detail:                                 |
-|CASH                                    3,500.00|
-|CHANGE                                    200.00|
-|Buy Goods: 000000                               |
-|------------------------------------------------|
-|          Thank you for your business!          |
-|         For delivery call 0700 000 000         |
-|------------------------------------------------|
-|            TAX RECEIPT UPON REQUEST            |
-|               Powered by ZapTill               |
-+------------------------------------------------+
-
-58 mm
-BEFORE (classic)                      AFTER (compact)
-+--------------------------------+    +--------------------------------+
-|         Your Business          |    |         Your Business          |
-|          Main Branch           |    |          Main Branch           |
-|        PIN: P051234567X        |    |        PIN: P051234567X        |
-|       Tel: 0700 000 000        |    |       Tel: 0700 000 000        |
-|--------------------------------|    |--------------------------------|
-|Type: Takeaway                  |    |Takeaway      Bill No.: T1--5718|
-|--------------------------------|    |Cashier: Amina    05/08/26 19:42|
-|Bill No.: T1--5718              |    |Item               Qty       Amt|
-|Cashier: Amina                  |    |--------------------------------|
-|Date: 2026-08-05 19:42:11       |    |3PC Chicken Combo    1    754.24|
-|Kots: 2                         |    |  3PC Chicken  all spicy        |
-|--------------------------------|    |  Fries large              50.85|
-|Item               Qty       Amt|    |  Soda 1.25L               42.37|
-|--------------------------------|    |                                |
-|3PC Chicken Combo    1    754.24|    |Wings Combo 8PC      2  1,847.46|
-|  3PC Chicken  all spicy        |    |  8PC Hot Wings  all spicy      |
-|  Fries large              50.85|    |  BBQ Sauce, Garlic Sauce       |
-|  Soda 1.25L               42.37|    |                                |
-|                                |    |Soda 500ml           1    101.69|
-|Wings Combo 8PC      2  1,847.46|    |--------------------------------|
-|  8PC Hot Wings  all spicy      |    |Total Qty:                     4|
-|  BBQ Sauce, Garlic Sauce       |    |SubTotal:               2,796.61|
-|                                |    |CTL (2%)                   55.93|
-|Soda 500ml           1    101.69|    |VAT (16%)                 447.46|
-|--------------------------------|    |--------------------------------|
-|Total Qty:                     4|    |PAY: KES 3,300.00               |
-|SubTotal:               2,796.61|    |CASH                    3,500.00|
-|--------------------------------|    |CHANGE                    200.00|
-|CTL (2%)                   55.93|    |Buy Goods: 000000               |
-|VAT (16%)                 447.46|    |--------------------------------|
-|--------------------------------|    |  Thank you for your business!  |
-|Round Off:                  0.00|    | For delivery call 0700 000 000 |
-|Total:                  3,300.00|    |    TAX RECEIPT UPON REQUEST    |
-|--------------------------------|    |       Powered by ZapTill       |
-|PAY: KES 3,300.00               |    +--------------------------------+
+|PAY: KES 3,300.00               |
 |--------------------------------|
 |Payment Detail:                 |
 |CASH                    3,500.00|
@@ -300,12 +228,122 @@ BEFORE (classic)                      AFTER (compact)
 |       Powered by ZapTill       |
 +--------------------------------+
 
-Estimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530):
-                       text lines        classic    compact    saved
-  80 mm                46 -> 34            210 mm     118 mm   93 mm (44%)
-  80 mm, logo          46 -> 34            246 mm     133 mm   114 mm (46%)
-  58 mm                46 -> 34            210 mm     118 mm   93 mm (44%)
-  58 mm, logo          46 -> 34            246 mm     133 mm   114 mm (46%)
+============================================================
+A538 — the receipt in 1.0.19, the A538 standard, and the compact opt-in
+============================================================
+1.0.19 = receipt_classic_spacing + receipt_full_logo + receipt_extra_feed on (the layout is classic by default).
+Standard = all switches off: the classic layout at 3.75 mm (ESC 3 30), a small logo, 1 line fed before the cut —
+the CUSTOMER RECEIPT above. Compact = receipt_compact_layout on (A530's lines, at 3.75 mm). Same sale.
+
+80 mm
+1.0.19                                                STANDARD (A538)                                       COMPACT (opt-in)
++------------------------------------------------+    +------------------------------------------------+    +------------------------------------------------+
+|                 Your Business                  |    |                 Your Business                  |    |                 Your Business                  |
+|                  Main Branch                   |    |                  Main Branch                   |    |                  Main Branch                   |
+|                PIN: P051234567X                |    |                PIN: P051234567X                |    |                PIN: P051234567X                |
+|               Tel: 0700 000 000                |    |               Tel: 0700 000 000                |    |               Tel: 0700 000 000                |
+|------------------------------------------------|    |------------------------------------------------|    |------------------------------------------------|
+|Type: Takeaway                                  |    |Type: Takeaway                                  |    |Type: Takeaway                Bill No.: T1--5718|
+|------------------------------------------------|    |------------------------------------------------|    |Cashier: Amina               2026-08-05 19:42:11|
+|Bill No.: T1--5718                              |    |Bill No.: T1--5718                              |    |Item                             Qty         Amt|
+|Cashier: Amina                                  |    |Cashier: Amina                                  |    |------------------------------------------------|
+|Date: 2026-08-05 19:42:11                       |    |Date: 2026-08-05 19:42:11                       |    |3PC Chicken Combo                  1      754.24|
+|Kots: 2                                         |    |Kots: 2                                         |    |  3PC Chicken  all spicy                        |
+|------------------------------------------------|    |------------------------------------------------|    |  Fries large                              50.85|
+|Item                             Qty         Amt|    |Item                             Qty         Amt|    |  Soda 1.25L                               42.37|
+|------------------------------------------------|    |------------------------------------------------|    |                                                |
+|3PC Chicken Combo                  1      754.24|    |3PC Chicken Combo                  1      754.24|    |Wings Combo 8PC                    2    1,847.46|
+|  3PC Chicken  all spicy                        |    |  3PC Chicken  all spicy                        |    |  8PC Hot Wings  all spicy                      |
+|  Fries large                              50.85|    |  Fries large                              50.85|    |  BBQ Sauce, Garlic Sauce                       |
+|  Soda 1.25L                               42.37|    |  Soda 1.25L                               42.37|    |                                                |
+|                                                |    |                                                |    |Soda 500ml                         1      101.69|
+|Wings Combo 8PC                    2    1,847.46|    |Wings Combo 8PC                    2    1,847.46|    |------------------------------------------------|
+|  8PC Hot Wings  all spicy                      |    |  8PC Hot Wings  all spicy                      |    |Total Qty:                                     4|
+|  BBQ Sauce, Garlic Sauce                       |    |  BBQ Sauce, Garlic Sauce                       |    |SubTotal:                               2,796.61|
+|                                                |    |                                                |    |CTL (2%)                                   55.93|
+|Soda 500ml                         1      101.69|    |Soda 500ml                         1      101.69|    |VAT (16%)                                 447.46|
+|------------------------------------------------|    |------------------------------------------------|    |------------------------------------------------|
+|Total Qty:                                     4|    |Total Qty:                                     4|    |PAY: KES 3,300.00                               |
+|SubTotal:                               2,796.61|    |SubTotal:                               2,796.61|    |CASH                                    3,500.00|
+|------------------------------------------------|    |------------------------------------------------|    |CHANGE                                    200.00|
+|CTL (2%)                                   55.93|    |CTL (2%)                                   55.93|    |Buy Goods: 000000                               |
+|VAT (16%)                                 447.46|    |VAT (16%)                                 447.46|    |------------------------------------------------|
+|------------------------------------------------|    |------------------------------------------------|    |          Thank you for your business!          |
+|Round Off:                                  0.00|    |Round Off:                                  0.00|    |         For delivery call 0700 000 000         |
+|Total:                                  3,300.00|    |Total:                                  3,300.00|    |            TAX RECEIPT UPON REQUEST            |
+|------------------------------------------------|    |------------------------------------------------|    |               Powered by ZapTill               |
+|PAY: KES 3,300.00                               |    |PAY: KES 3,300.00                               |    +------------------------------------------------+
+|------------------------------------------------|    |------------------------------------------------|
+|Payment Detail:                                 |    |Payment Detail:                                 |
+|CASH                                    3,500.00|    |CASH                                    3,500.00|
+|CHANGE                                    200.00|    |CHANGE                                    200.00|
+|Buy Goods: 000000                               |    |Buy Goods: 000000                               |
+|------------------------------------------------|    |------------------------------------------------|
+|          Thank you for your business!          |    |          Thank you for your business!          |
+|         For delivery call 0700 000 000         |    |         For delivery call 0700 000 000         |
+|------------------------------------------------|    |------------------------------------------------|
+|            TAX RECEIPT UPON REQUEST            |    |            TAX RECEIPT UPON REQUEST            |
+|               Powered by ZapTill               |    |               Powered by ZapTill               |
++------------------------------------------------+    +------------------------------------------------+
+
+58 mm
+1.0.19                                STANDARD (A538)                       COMPACT (opt-in)
++--------------------------------+    +--------------------------------+    +--------------------------------+
+|         Your Business          |    |         Your Business          |    |         Your Business          |
+|          Main Branch           |    |          Main Branch           |    |          Main Branch           |
+|        PIN: P051234567X        |    |        PIN: P051234567X        |    |        PIN: P051234567X        |
+|       Tel: 0700 000 000        |    |       Tel: 0700 000 000        |    |       Tel: 0700 000 000        |
+|--------------------------------|    |--------------------------------|    |--------------------------------|
+|Type: Takeaway                  |    |Type: Takeaway                  |    |Takeaway      Bill No.: T1--5718|
+|--------------------------------|    |--------------------------------|    |Cashier: Amina    05/08/26 19:42|
+|Bill No.: T1--5718              |    |Bill No.: T1--5718              |    |Item               Qty       Amt|
+|Cashier: Amina                  |    |Cashier: Amina                  |    |--------------------------------|
+|Date: 2026-08-05 19:42:11       |    |Date: 2026-08-05 19:42:11       |    |3PC Chicken Combo    1    754.24|
+|Kots: 2                         |    |Kots: 2                         |    |  3PC Chicken  all spicy        |
+|--------------------------------|    |--------------------------------|    |  Fries large              50.85|
+|Item               Qty       Amt|    |Item               Qty       Amt|    |  Soda 1.25L               42.37|
+|--------------------------------|    |--------------------------------|    |                                |
+|3PC Chicken Combo    1    754.24|    |3PC Chicken Combo    1    754.24|    |Wings Combo 8PC      2  1,847.46|
+|  3PC Chicken  all spicy        |    |  3PC Chicken  all spicy        |    |  8PC Hot Wings  all spicy      |
+|  Fries large              50.85|    |  Fries large              50.85|    |  BBQ Sauce, Garlic Sauce       |
+|  Soda 1.25L               42.37|    |  Soda 1.25L               42.37|    |                                |
+|                                |    |                                |    |Soda 500ml           1    101.69|
+|Wings Combo 8PC      2  1,847.46|    |Wings Combo 8PC      2  1,847.46|    |--------------------------------|
+|  8PC Hot Wings  all spicy      |    |  8PC Hot Wings  all spicy      |    |Total Qty:                     4|
+|  BBQ Sauce, Garlic Sauce       |    |  BBQ Sauce, Garlic Sauce       |    |SubTotal:               2,796.61|
+|                                |    |                                |    |CTL (2%)                   55.93|
+|Soda 500ml           1    101.69|    |Soda 500ml           1    101.69|    |VAT (16%)                 447.46|
+|--------------------------------|    |--------------------------------|    |--------------------------------|
+|Total Qty:                     4|    |Total Qty:                     4|    |PAY: KES 3,300.00               |
+|SubTotal:               2,796.61|    |SubTotal:               2,796.61|    |CASH                    3,500.00|
+|--------------------------------|    |--------------------------------|    |CHANGE                    200.00|
+|CTL (2%)                   55.93|    |CTL (2%)                   55.93|    |Buy Goods: 000000               |
+|VAT (16%)                 447.46|    |VAT (16%)                 447.46|    |--------------------------------|
+|--------------------------------|    |--------------------------------|    |  Thank you for your business!  |
+|Round Off:                  0.00|    |Round Off:                  0.00|    | For delivery call 0700 000 000 |
+|Total:                  3,300.00|    |Total:                  3,300.00|    |    TAX RECEIPT UPON REQUEST    |
+|--------------------------------|    |--------------------------------|    |       Powered by ZapTill       |
+|PAY: KES 3,300.00               |    |PAY: KES 3,300.00               |    +--------------------------------+
+|--------------------------------|    |--------------------------------|
+|Payment Detail:                 |    |Payment Detail:                 |
+|CASH                    3,500.00|    |CASH                    3,500.00|
+|CHANGE                    200.00|    |CHANGE                    200.00|
+|Buy Goods: 000000               |    |Buy Goods: 000000               |
+|--------------------------------|    |--------------------------------|
+|  Thank you for your business!  |    |  Thank you for your business!  |
+| For delivery call 0700 000 000 |    | For delivery call 0700 000 000 |
+|--------------------------------|    |--------------------------------|
+|    TAX RECEIPT UPON REQUEST    |    |    TAX RECEIPT UPON REQUEST    |
+|       Powered by ZapTill       |    |       Powered by ZapTill       |
++--------------------------------+    +--------------------------------+
+
+Estimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530;
+"A530" = the 1.0.20 compact standard at 3.25 mm that A538 replaces, for reference):
+                       text lines      1.0.19   standard    compact       A530
+  80 mm                46 / 34          210 mm  179 mm -15%  134 mm -36%  118 mm -44%
+  80 mm, logo          46 / 34          246 mm  194 mm -21%  149 mm -39%  133 mm -46%
+  58 mm                46 / 34          210 mm  179 mm -15%  134 mm -36%  118 mm -44%
+  58 mm, logo          46 / 34          246 mm  194 mm -21%  149 mm -39%  133 mm -46%
 
 ============================================================
 Against the incumbent's printed receipts

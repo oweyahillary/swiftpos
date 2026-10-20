@@ -65,9 +65,9 @@ function sampleBusinessForThisTill(): typeof sampleBusiness {
     name = (db?.prepare(`SELECT business_name FROM session WHERE id = 1`).get() as { business_name?: string } | undefined)
       ?.business_name ?? null;
   } catch { /* not enrolled yet / no session row: fall back */ }
-  // A530: and this client's classic-receipt switches, so the test print and the preview are the receipt the till prints.
+  // A530: and this client's receipt switches, so the test print and the preview are the receipt the till prints.
   let receiptClassic: ReturnType<typeof receiptClassicFrom> | undefined;
-  try { receiptClassic = receiptClassicFrom(getPosFeatures()); } catch { /* no device_config yet: the compact standard */ }
+  try { receiptClassic = receiptClassicFrom(getPosFeatures()); } catch { /* no device_config yet: the standard (A538: classic layout, 3.75 mm) */ }
   return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name, ...(receiptClassic ? { receiptClassic } : {}) };
 }
 

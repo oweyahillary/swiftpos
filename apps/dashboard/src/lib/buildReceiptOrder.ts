@@ -54,8 +54,9 @@ export interface ReceiptBusinessConfig {
   tillNumber?: string;
   vatRate: number;   // required by shared/printing's tax line
   ctlRate: number;   // required by shared/printing's tax line
-  /** A530: the admin portal's classic-receipt switches (pos/init posFeatures); all false = the compact standard. */
-  receiptClassic?: { spacing: boolean; fullLogo: boolean; layout: boolean; extraFeed: boolean };
+  /** A530/A538: the admin portal's receipt switches (pos/init posFeatures); all false = the standard (classic layout at
+   *  ~3.75 mm, small logo, 1-line feed). */
+  receiptClassic?: { spacing: boolean; fullLogo: boolean; compactLayout: boolean; extraFeed: boolean };
 }
 
 const toCents = (n: number) => Math.round((Number(n) || 0) * 100);
@@ -139,10 +140,11 @@ export function buildReceiptOrder(a: {
 
 /** A530: the receipt_* switches as shared/printing takes them — posFeatures.ts receiptClassicFrom, written out here so
  *  this file stays a pure mapper with no runtime import (the web receipt test runs it type-stripped on plain node).
- *  tests/receipt-compact-a530.test.mjs pins the two to the same answer. Only a real `true` restores a part. */
+ *  tests/receipt-compact-a530.test.mjs pins the two to the same answer. Only a real `true` changes a part.
+ *  A538: receipt_compact_layout opts in to A530's compact lines; the retired receipt_classic_layout is not read. */
 function receiptClassic(f: Partial<Record<string, unknown>> | null | undefined): NonNullable<ReceiptBusinessConfig['receiptClassic']> {
   return { spacing: f?.receipt_classic_spacing === true, fullLogo: f?.receipt_full_logo === true,
-           layout: f?.receipt_classic_layout === true, extraFeed: f?.receipt_extra_feed === true };
+           compactLayout: f?.receipt_compact_layout === true, extraFeed: f?.receipt_extra_feed === true };
 }
 
 export function buildReceiptBusinessConfig(
@@ -154,7 +156,7 @@ export function buildReceiptBusinessConfig(
            pay?: { label: string; number: string } | null;
            /** A313: already resolved by the caller (toggle ON + decodable raster) — the builder never decides. */
            logoRaster?: import('./escposRenderer').MonoRaster | null;
-           /** A530: the client's POS switches (pos/init, or GET /api/flags) — the receipt_* ones pick classic parts. */
+           /** A530: the client's POS switches (pos/init, or GET /api/flags) — the receipt_* ones pick receipt parts. */
            posFeatures?: Partial<Record<string, unknown>> | null } = {},
 ): ReceiptBusinessConfig {
   return {

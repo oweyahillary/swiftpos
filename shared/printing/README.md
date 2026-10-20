@@ -46,7 +46,7 @@ has drifted. So when a change moves the paper on purpose:
 
 and commit all of it together. CI also rebuilds the web bundle
 (`build-escpos-renderer.mjs --check`, esbuild pinned) and fails if it is stale.
-`BYTE-CHECK.txt` was refreshed for A530 (2026-10-19, the compact receipt); `VERIFICATION.txt` is a one-off capture from 2026-08-05 and
+`BYTE-CHECK.txt` was refreshed for A538 (2026-10-21, the classic layout back as the standard at ESC 3 30, ~3.75 mm); `VERIFICATION.txt` is a one-off capture from 2026-08-05 and
 is NOT maintained — its byte counts predate the receipt closing block.
 
 Compiles clean under `strict: true`. The three app tsconfigs are currently

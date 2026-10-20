@@ -67,6 +67,7 @@ export function toEscPos(doc: Document, opts: EscPosOptions = {}): Buffer {
 
   // A530: a document that asks for tighter spacing (the compact receipt) starts with ESC 3 n instead of ESC 2. Without
   // lineSpacing the stream is byte-identical to before — kitchen, dispatch, the Z-report and a classic receipt.
+  // A538: the receipt standard asks for 30 dots (~3.75 mm, owner 2026-10-21: "line spacing in the middle"), not 26.
   const compact = doc.lineSpacing;
   push(...INIT, ...CODEPAGE_CP437, ...(compact === undefined ? LINE_SPACING_DEFAULT : lineSpacingDots(compact)));
   // -1 = the default (ESC 2); otherwise the dots last set.

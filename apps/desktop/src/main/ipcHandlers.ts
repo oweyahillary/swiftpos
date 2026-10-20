@@ -1486,7 +1486,8 @@ export function registerIpcHandlers() {
           // and a raster exists. Decoded by shared/printing; a malformed stored value decodes
           // to null and prints no logo. The renderer prints it on receipts only (A310).
           logoRaster:      resolveReceiptLogo(),
-          // A530: the admin portal's classic-receipt switches for this client (pos/init, cached) — all off = compact.
+          // A530: the admin portal's receipt switches for this client (pos/init, cached) — all off = the standard
+          // (A538: the classic layout at ~3.75 mm, small logo, 1-line feed; receipt_compact_layout opts in to compact).
           receiptClassic:  receiptClassicFrom(getPosFeatures()),
         },
         // The presets shared/printing exports, NOT a hand-rolled config here.

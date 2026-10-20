@@ -150,22 +150,25 @@ export interface BusinessConfig {
    *  identical to before. The caller resolves the client's toggle before setting
    *  this; the renderer never decides whether a logo is wanted. */
   logoRaster?: MonoRaster;
-  /** A530: the four "classic receipt" switches the admin portal sets per client (shared/posFeatures.ts). Absent, or a
-   *  switch false = the compact standard; all four true = the receipt as it printed before 1.0.20, byte for byte. */
+  /** A530/A538: the four receipt switches the admin portal sets per client (shared/posFeatures.ts). Absent, or every
+   *  switch false = the standard (classic layout, ~3.75 mm, small logo, 1-line feed); spacing + fullLogo + extraFeed true
+   *  with compactLayout false = the receipt as it printed before 1.0.20, byte for byte. */
   receiptClassic?: ReceiptClassic;
 }
 
 /**
- * A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper"): the compact receipt is the standard; each
- * switch puts one part back the way it was, for a client who asks (admin portal, per client).
+ * A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper") made the receipt compact; A538 (owner,
+ * 2026-10-21: "it feels congested everywhere … top arrangement totally off" — "go back to the old layout", "line spacing in
+ * the middle, about 3.75 mm") made the classic layout the standard again. Each switch changes one part, per client.
  */
 export interface ReceiptClassic {
-  /** 'receipt_classic_spacing' — ESC 2 (1/6", ~4.23 mm) between lines, not ESC 3 26 (~3.25 mm). */
+  /** 'receipt_classic_spacing' — ESC 2 (1/6", ~4.23 mm) between lines, not ESC 3 30 (~3.75 mm, A538). */
   spacing?: boolean;
   /** 'receipt_full_logo' — the stored logo as it is (up to 288 dots, 36 mm), not scaled to 120 dots (15 mm). */
   fullLogo?: boolean;
-  /** 'receipt_classic_layout' — every rule and line of the old layout (Kots, Payment Detail, Round Off 0.00, ...). */
-  layout?: boolean;
+  /** A538: 'receipt_compact_layout' — A530's compact lines (Type + Bill No. and Cashier + time on one line each, no Kots,
+   *  Round Off only when not zero, Total only with a tip or fee, no Payment Detail heading, 5 rules). Opt-in. */
+  compactLayout?: boolean;
   /** 'receipt_extra_feed' — 3 lines fed before the cut, not 1 (a cutter that clips the last line). */
   extraFeed?: boolean;
 }

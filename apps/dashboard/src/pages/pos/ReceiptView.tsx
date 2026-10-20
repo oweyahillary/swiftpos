@@ -42,10 +42,11 @@ interface Props {
     qrPayload?: string | null;     // QR content/URL
   } | null;
   /**
-   * A534: the client's "classic receipt layout" switch (admin portal › posFeatures `receipt_classic_layout`, A530) — the
-   * browser-printed receipt as it was. Off (the standard): the compact layout A530 gave the thermal receipt, here too.
+   * A538: the client's "Compact receipt layout" switch (admin portal › posFeatures `receipt_compact_layout`) — the
+   * compact lines A534 gave this browser-printed receipt. Off (the standard again, owner 2026-10-21: "go back to the old
+   * layout"): every line as it was before A534. (A534 had it the other way round, keyed by `receipt_classic_layout`.)
    */
-  classic?: boolean;
+  compact?: boolean;
 }
 
 function fmtMoney(n: number) {
@@ -64,7 +65,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
     loyaltyDiscount = 0, promoDiscount = 0, promoName, customerName,
     footerMessage = 'Thank you for your business!',
     etims = null,
-    classic = false,
+    compact = false,
   },
   ref,
 ) => {
@@ -72,8 +73,8 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
   // paper"): the browser-printed receipt (a Windows / non-thermal printer, the dialog fallback) follows the thermal
   // receipt's compact rules — layout only: the date and the order share a line, phone and PIN share a line, no Subtotal
   // when it equals the total (no discount), no "Split payment" heading, the cash line carries what was tendered, the
-  // footer does not repeat the PIN, and no doubled rule. `classic` (receipt_classic_layout) keeps every line as before.
-  const compact = !classic;
+  // footer does not repeat the PIN, and no doubled rule. A538 (owner, 2026-10-21: "it feels congested everywhere" — "go
+  // back to the old layout"): those rules only with `compact` (receipt_compact_layout); the standard is every line as before.
   // Guard against a transient null business during the modal→receipt transition
   // (a rapid double-click could render this before business context resolves).
   if (!business) return <div ref={ref} />;

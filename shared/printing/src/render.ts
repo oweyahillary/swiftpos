@@ -62,11 +62,12 @@ function compactStamp(d: Date): string {
 }
 
 /**
- * A530: the compact receipt's line spacing — ESC 3 26, 26 dots (~3.25 mm at 203 dpi) for a 24-dot Font A glyph, where
- * ESC 2 gives ~34 (1/6", ~4.23 mm). Two dots of air above and below the glyph; still reads as separate lines.
+ * A538: the receipt's standard line spacing — ESC 3 30, 30 dots (~3.76 mm at 203 dpi) for a 24-dot Font A glyph, where
+ * ESC 2 gives ~34 (1/6", ~4.23 mm). A530 had 26 (~3.25 mm); on a real printer the owner (2026-10-21) found it "congested
+ * everywhere" and chose "line spacing in the middle, about 3.75 mm". 'receipt_classic_spacing' still gives ESC 2.
  */
-export const COMPACT_LINE_SPACING_DOTS = 26;
-/** A530: lines fed before the cut on the compact receipt (GS V 66 0 already carries the last line to the blade). */
+export const RECEIPT_LINE_SPACING_DOTS = 30;
+/** A530: lines fed before the cut (GS V 66 0 already carries the last line to the blade) — kept by A538. */
 export const COMPACT_CUT_FEED = 1;
 
 /** 16 -> "16", 2 -> "2", 16.5 -> "16.5". Never "16.00%" on a receipt. */
@@ -226,12 +227,15 @@ function renderReceipt(ctx: PrintContext): Document {
   const c = itemColumns(cols);
   const d = new DocBuilder(cols);
 
-  // A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper"): the compact receipt is the standard; the
-  // admin portal puts each part back per client (shared/posFeatures.ts receipt_classic_spacing, receipt_full_logo,
-  // receipt_classic_layout, receipt_extra_feed). All four on = the 1.0.19 receipt byte for byte (receipt-compact.test).
+  // A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper") made the receipt compact; A538 (owner,
+  // 2026-10-21, on paper: "it feels congested everywhere — qty, subtotal, ctl, vat, roundoff — top arrangement totally
+  // off") puts the classic (1.0.19) LAYOUT back as the standard at ~3.75 mm, keeping A530's small logo and 1-line feed.
+  // The admin portal sets per client (shared/posFeatures.ts): receipt_compact_layout (A530's compact lines, opt-in),
+  // receipt_classic_spacing, receipt_full_logo, receipt_extra_feed. Spacing + full logo + extra feed on and compact off
+  // = the 1.0.19 receipt byte for byte (receipt-compact.test).
   const classic = business.receiptClassic ?? {};
-  const full = classic.layout === true;            // every rule and line, as before
-  if (classic.spacing !== true) d.lineSpacing(COMPACT_LINE_SPACING_DOTS);
+  const full = classic.compactLayout !== true;     // A538: every rule and line, as before — unless the client opted in
+  if (classic.spacing !== true) d.lineSpacing(RECEIPT_LINE_SPACING_DOTS);
   if (classic.extraFeed !== true) d.cutFeed(COMPACT_CUT_FEED);
   /** A rule the compact layout drops (the classic layout prints it). The five it keeps are plain d.line(rule(cols)). */
   const minorRule = () => { if (full) d.line(rule(cols)); };

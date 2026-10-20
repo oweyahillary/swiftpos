@@ -365,7 +365,7 @@ function fullStamp(d) {
 function compactStamp(d) {
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${p2(d.getFullYear() % 100)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }
-var COMPACT_LINE_SPACING_DOTS = 26;
+var RECEIPT_LINE_SPACING_DOTS = 30;
 var COMPACT_CUT_FEED = 1;
 function rate(n) {
   return String(Number(n.toFixed(2)));
@@ -464,8 +464,8 @@ function renderReceipt(ctx) {
   const c = itemColumns(cols);
   const d = new DocBuilder(cols);
   const classic = business.receiptClassic ?? {};
-  const full = classic.layout === true;
-  if (classic.spacing !== true) d.lineSpacing(COMPACT_LINE_SPACING_DOTS);
+  const full = classic.compactLayout !== true;
+  if (classic.spacing !== true) d.lineSpacing(RECEIPT_LINE_SPACING_DOTS);
   if (classic.extraFeed !== true) d.cutFeed(COMPACT_CUT_FEED);
   const minorRule = () => {
     if (full) d.line(rule(cols));

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
-import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_CLASSIC_KEYS } from "./lib/posFeatures";
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
@@ -1625,7 +1625,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
           <div data-testid="pos-options-owner-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_WHERE}.</div>
           {POS_FEATURES.map(pf => {
-            if ((RECEIPT_CLASSIC_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
+            if ((RECEIPT_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
             const on = features.some(f => f.key === pf.key && f.enabled);
             const perRole = PER_ROLE_SWITCHES[pf.key];
             return (
@@ -1645,11 +1645,12 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
               </div>
             );
           })}
-          {/* A530 (owner, 2026-10-19: "the switch settings … should be in the admin per client"): the compact receipt is the
-              standard; each switch puts one part of the old receipt back for this client. ZapTill sets them, here. */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Receipt (classic switches)</div>
-          <div data-testid="receipt-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Off = the compact receipt (the standard since 1.0.20). Thermal receipts on the tills and the web POS; kitchen tickets never change.</div>
-          {RECEIPT_CLASSIC_KEYS.map(key => {
+          {/* A530 (owner, 2026-10-19: "the switch settings … should be in the admin per client"); A538 (owner, 2026-10-21:
+              "go back to the old layout", "line spacing in the middle, about 3.75 mm"): the standard is the classic layout
+              at 3.75 mm with a small logo; each switch changes one part for this client. ZapTill sets them, here. */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Receipt options</div>
+          <div data-testid="receipt-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>All off = the standard receipt: the classic layout at 3.75 mm line spacing with a small logo. Thermal receipts on the tills and the web POS; kitchen tickets never change.</div>
+          {RECEIPT_OPTION_KEYS.map(key => {
             const rf = POS_FEATURES.find(x => x.key === key);
             const on = features.some(f => f.key === key && f.enabled);
             return (
@@ -1662,10 +1663,11 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
               </div>
             );
           })}
-          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").length > 0 && (
+          {/* A538: a retired switch's stored row (receipt_classic_layout) is read by nothing — not listed here either. */}
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").length > 0 && (
             <>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
-              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").map(f => (
+              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").map(f => (
                 <div key={f.key} data-testid={`other-flag-${f.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, gap: 12 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>

@@ -58,16 +58,20 @@ show('CUSTOMER RECEIPT — duplicate, optional fields off', {
 show('KITCHEN — 58mm', { order, business, station: kitchenPreset(KITCHEN, 'Kitchen', 58) });
 show('CUSTOMER RECEIPT — 58mm', { order, business, station: receiptPreset('st-till', 'Till', 58) });
 
-// ── A530: before / after, for the owner to approve on paper ─────────────────
+// ── A530 / A538: the receipt before and after, for the owner to approve on paper ──
+//
+// A538 (owner, 2026-10-21, on the A530 compact receipt: "it feels congested everywhere" — chose "go back to the old
+// layout" and "line spacing in the middle, about 3.75 mm"): three receipts side by side — 1.0.19; the A538 standard
+// (classic layout, ESC 3 30, small logo, 1-line feed); and the 'receipt_compact_layout' opt-in (A530's lines at 30).
 //
 // PAPER LENGTH ESTIMATE (the method; the printer's own figures will differ by a few mm):
-//   * a normal-size text line advances the line spacing — classic ESC 2 = 1/6" = 4.23 mm; compact ESC 3 26 = 26 dots
-//     at 203 dpi = 3.25 mm;
-//   * a double-height line (PAY, a Duplicate/VOID/BILL banner) advances its 48-dot glyph, 6.0 mm, either way (the
-//     compact receipt prints it at the default spacing, escpos.ts);
-//   * a logo advances its height in dots at 8 dots/mm (203 dpi): 288 dots = 36 mm classic, 120 dots = 15 mm compact;
-//   * the feed before the cut is that many lines at 1/6" (the spacing is back to the default by then): 3 classic,
-//     1 compact. The blade's own distance (GS V 66 0 feeds the last line past it) is the same both ways and left out.
+//   * a normal-size text line advances the line spacing — ESC 2 = 1/6" = 4.23 mm (1.0.19); ESC 3 30 = 30 dots at 203 dpi
+//     = 3.75 mm (A538 standard); ESC 3 26 = 3.25 mm (A530, shown for reference);
+//   * a double-height line (PAY, a Duplicate/VOID/BILL banner) advances its 48-dot glyph, 6.0 mm, either way (a receipt
+//     with ESC 3 prints it at the default spacing, escpos.ts);
+//   * a logo advances its height in dots at 8 dots/mm (203 dpi): 288 dots = 36 mm (1.0.19), 120 dots = 15 mm (A530/A538);
+//   * the feed before the cut is that many lines at 1/6" (the spacing is back to the default by then): 3 in 1.0.19, 1
+//     now. The blade's own distance (GS V 66 0 feeds the last line past it) is the same every way and left out.
 const DOT_MM = 25.4 / 203;
 function paperMm(doc: ReturnType<typeof renderTicket>, cut: boolean, feedBeforeCut: number): number {
   let mm = 0;
@@ -82,30 +86,41 @@ function paperMm(doc: ReturnType<typeof renderTicket>, cut: boolean, feedBeforeC
 }
 const textLines = (doc: ReturnType<typeof renderTicket>) => doc.blocks.filter(b => b.kind === 'text').length;
 
-log(`\n${'='.repeat(60)}\nA530 — the receipt BEFORE (classic, 1.0.19) and AFTER (compact, the 1.0.20 standard)\n${'='.repeat(60)}`);
-log('Classic = all four admin-portal switches on (receipt_classic_spacing, receipt_full_logo, receipt_classic_layout,');
-log('receipt_extra_feed); compact = all off, the standard. Same sale; the AFTER is the CUSTOMER RECEIPT above.');
-const CLASSIC = { spacing: true, fullLogo: true, layout: true, extraFeed: true };
+log(`\n${'='.repeat(60)}\nA538 — the receipt in 1.0.19, the A538 standard, and the compact opt-in\n${'='.repeat(60)}`);
+log('1.0.19 = receipt_classic_spacing + receipt_full_logo + receipt_extra_feed on (the layout is classic by default).');
+log('Standard = all switches off: the classic layout at 3.75 mm (ESC 3 30), a small logo, 1 line fed before the cut —');
+log('the CUSTOMER RECEIPT above. Compact = receipt_compact_layout on (A530\'s lines, at 3.75 mm). Same sale.');
+const CLASSIC = { spacing: true, fullLogo: true, extraFeed: true };
+const COMPACT = { compactLayout: true };
 for (const w of [80, 58] as const) {
   const st = receiptPreset('st-till', 'Till', w);
-  const before = toPreview(renderTicket({ order, business: { ...business, receiptClassic: CLASSIC }, station: st }), { showMargins: true }).split('\n');
-  const after = toPreview(renderTicket({ order, business, station: st }), { showMargins: true }).split('\n');
-  const left = before[0].length + 4;
+  const cols = [
+    toPreview(renderTicket({ order, business: { ...business, receiptClassic: CLASSIC }, station: st }), { showMargins: true }).split('\n'),
+    toPreview(renderTicket({ order, business, station: st }), { showMargins: true }).split('\n'),
+    toPreview(renderTicket({ order, business: { ...business, receiptClassic: COMPACT }, station: st }), { showMargins: true }).split('\n'),
+  ];
+  const left = cols[0][0].length + 4;
   log(`\n${w} mm`);
-  log('BEFORE (classic)'.padEnd(left) + 'AFTER (compact)');
-  for (let i = 0; i < Math.max(before.length, after.length); i++) log(((before[i] ?? '').padEnd(left) + (after[i] ?? '')).trimEnd());
+  log('1.0.19'.padEnd(left) + 'STANDARD (A538)'.padEnd(left) + 'COMPACT (opt-in)');
+  for (let i = 0; i < Math.max(...cols.map(c => c.length)); i++) {
+    log(((cols[0][i] ?? '').padEnd(left) + (cols[1][i] ?? '').padEnd(left) + (cols[2][i] ?? '')).trimEnd());
+  }
 }
-log('\nEstimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530):');
-log('                       text lines        classic    compact    saved');
+log('\nEstimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530;');
+log('"A530" = the 1.0.20 compact standard at 3.25 mm that A538 replaces, for reference):');
+log('                       text lines      1.0.19   standard    compact       A530');
 for (const w of [80, 58] as const) {
   for (const withLogo of [false, true]) {
     const st = receiptPreset('st-till', 'Till', w);
     const b = { ...business, ...(withLogo ? { logoRaster: bigLogo() } : {}) };
-    const cd = renderTicket({ order, business: { ...b, receiptClassic: CLASSIC }, station: st });
-    const nd = renderTicket({ order, business: b, station: st });
-    const cm = paperMm(cd, st.cutPaper, st.feedBeforeCut), nm = paperMm(nd, st.cutPaper, st.feedBeforeCut);
-    log(`  ${`${w} mm${withLogo ? ', logo' : ''}`.padEnd(20)} ${`${textLines(cd)} -> ${textLines(nd)}`.padEnd(16)}`
-      + ` ${`${cm.toFixed(0)} mm`.padStart(9)}  ${`${nm.toFixed(0)} mm`.padStart(9)}   ${`${(cm - nm).toFixed(0)} mm (${Math.round((1 - nm / cm) * 100)}%)`}`);
+    const od = renderTicket({ order, business: { ...b, receiptClassic: CLASSIC }, station: st });
+    const sd = renderTicket({ order, business: b, station: st });
+    const cd = renderTicket({ order, business: { ...b, receiptClassic: COMPACT }, station: st });
+    const mm = (d: typeof od) => paperMm(d, st.cutPaper, st.feedBeforeCut);
+    const om = mm(od), sm = mm(sd), cm = mm(cd), am = mm({ ...cd, lineSpacing: 26 });
+    const pct = (x: number) => `${Math.round((1 - x / om) * 100)}%`;
+    log(`  ${`${w} mm${withLogo ? ', logo' : ''}`.padEnd(20)} ${`${textLines(sd)} / ${textLines(cd)}`.padEnd(13)}`
+      + ` ${`${om.toFixed(0)} mm`.padStart(9)}  ${`${sm.toFixed(0)} mm -${pct(sm)}`.padStart(9)}  ${`${cm.toFixed(0)} mm -${pct(cm)}`.padStart(9)}  ${`${am.toFixed(0)} mm -${pct(am)}`.padStart(9)}`);
   }
 }
 
