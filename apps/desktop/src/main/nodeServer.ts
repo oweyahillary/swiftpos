@@ -30,6 +30,8 @@
 // `sync_queue` never drains and nothing else drains it, so the CLOUD never sees
 // those sales. Read A17/A19 before designing anything that assumes a peer can
 // stay offline indefinitely; today it cannot, because auth is cloud-only too.
+// (A548, 2026-10-21: the paragraph above predates A410 — read the A410 section below, which is how it works now:
+// a peer's cloud leg runs through this server, so a peer without internet of its own still reaches the cloud.)
 //
 // A node is also a normal till; its own sales use the usual local path. Received
 // peer orders are upserted into the same local tables so reports aggregate.
@@ -377,7 +379,9 @@ export function startNodeServer(): void {
       if (url.startsWith(`${GATEWAY_PREFIX}/`)) {
         // A443: a till's update files come from this server's own copy (fetched once for the branch), not live.
         if (serveSharedUpdate(req, res, shareDir(), shareWanted)) return;
-        noteGatewayCall(req.method, url);   // A508: a till trading through the server keeps the server from installing
+        // A508: a till trading through the server keeps the server from installing. A541: trading only (an allowlist —
+        // activityTracker.classifyGatewayCall); the body size tells an empty sync push from one carrying rows.
+        { const n = Number(req.headers['content-length']); noteGatewayCall(req.method, url, Date.now(), Number.isFinite(n) ? n : null); }
         const serverUrl = getDeviceConfig()?.server_url ?? '';
         return await forwardToCloud(req, res, serverUrl);
       }

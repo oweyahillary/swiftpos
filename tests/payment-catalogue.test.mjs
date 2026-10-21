@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.PAY_CAT_TS) {
@@ -142,9 +143,9 @@ ok('Manager › Settings › Payment methods — a switch per method, saved for 
   assert.ok(read('apps/desktop/src/renderer/components/SettingsPanel.tsx').includes('<BranchPaymentMethodsPanel canEdit={canPayments} />'));
   assert.ok(/\{canPayments && <section className="border-t border-gray-800 pt-6">\s*<BranchPaymentMethodsPanel/.test(read('apps/desktop/src/renderer/components/SettingsPanel.tsx')));
   assert.ok(read('apps/desktop/src/renderer/pages/ManagerPage.tsx').includes("canPayments={has('settings.payments')}"));
-  assert.ok(read('apps/desktop/src/main/ipcHandlers.ts').includes("handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {\n    requireKey(['settings.payments'], PAYMENTS_REFUSED);"));
+  assert.ok(ipcHandlersSource().includes("handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {\n    requireKey(['settings.payments'], PAYMENTS_REFUSED);"));
   assert.ok(read('apps/desktop/src/renderer/components/BranchPaymentMethodsPanel.tsx').includes('await posApi.manage.setPaymentMethodsEnabled(enabledFromSetting(next));'));
-  assert.ok(read('apps/desktop/src/main/ipcHandlers.ts').includes("const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });"));
+  assert.ok(ipcHandlersSource().includes("const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });"));
 });
 
 console.log('\nThe web');

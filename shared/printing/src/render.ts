@@ -23,7 +23,7 @@
 import type { PrintContext, OrderLine, OrderUnit, OrderType } from './types';
 import { DocBuilder, type Document } from './document';
 import { splitTax, netOf, formatCents } from './money';
-import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns, sanitize } from './layout';
+import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, indentedWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns, sanitize } from './layout';
 import { fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_PRINT_MAX_HEIGHT } from './raster';
 
 const TYPE_CAPS: Record<OrderType, string> = {
@@ -69,6 +69,16 @@ function compactStamp(d: Date): string {
 export const RECEIPT_LINE_SPACING_DOTS = 30;
 /** A530: lines fed before the cut (GS V 66 0 already carries the last line to the blade) — kept by A538. */
 export const COMPACT_CUT_FEED = 1;
+/** A540: the thin gap between the order's info lines on the standard receipt — 10 dots, about 1.25 mm at 203 dpi. */
+export const INFO_GAP_DOTS = 10;
+/**
+ * A543: a Font B kitchen line every 24 dots (ESC 3 24, ~3.0 mm). Font B's glyph is 17 dots tall, so ESC 2 (1/6", ~34
+ * dots) would leave the same line height as Font A and save paper only where a line no longer wraps — almost nowhere
+ * on a kitchen ticket. 24 leaves 7 dots (~0.9 mm) between lines: more air, for its glyph, than the receipt's standard
+ * 30 gives Font A's 24 (6 dots), which the owner found right ("line spacing in the middle"). Double-height dish names
+ * (34 dots) keep ESC 2, as on the receipt (escpos.ts). 'kitchen_font_a' prints Font A at ESC 2, as before.
+ */
+export const KITCHEN_FONT_B_LINE_SPACING_DOTS = 24;
 
 /** 16 -> "16", 2 -> "2", 16.5 -> "16.5". Never "16.00%" on a receipt. */
 function rate(n: number): string {
@@ -118,8 +128,13 @@ function noteRows(note: string | undefined): string[] {
 /** ─── Production tickets: kitchen, dispatch, and anything shaped like them ─── */
 function renderProduction(ctx: PrintContext): Document {
   const { order, station } = ctx;
-  const cols = columnsFor(station.paperWidthMm);
+  // A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "the printer's smaller
+  // Font B so long orders fit on less paper"): a KITCHEN ticket is laid out at Font B's 64 / 42 columns and printed in
+  // it, at KITCHEN_FONT_B_LINE_SPACING_DOTS. Dispatch (packing) stays Font A. 'kitchen_font_a' puts the old ticket back.
+  const fontB = station.kind === 'kitchen' && ctx.business.kitchenFontA !== true;
+  const cols = columnsFor(station.paperWidthMm, fontB ? 'B' : 'A');
   const d = new DocBuilder(cols);
+  if (fontB) d.fontB().lineSpacing(KITCHEN_FONT_B_LINE_SPACING_DOTS);
 
   if (ctx.voided) {
     d.line('VOID', { align: 'center', size: 'large', bold: true });
@@ -138,7 +153,7 @@ function renderProduction(ctx: PrintContext): Document {
     d.line(`Rider  ${order.deliveryPerson}`);
   }
   // A367: the order's note, bold, before any dish — the cook reads it first.
-  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `NOTE: ${ln}`, undefined, 0), { bold: true });
+  for (const ln of noteRows(order.note)) d.lines(indentedWrap(cols, `NOTE: ${ln}`, 0), { bold: true });
   if (ctx.reprint) {
     d.line(`REPRINT  ${fullStamp(ctx.reprint.at)}  (#${ctx.reprint.count})`);
   }
@@ -181,7 +196,7 @@ function renderProduction(ctx: PrintContext): Document {
     if (line.units.length === 0) {
       unitRows++;
       // A367: its note too — this `continue` used to skip the note block below, so a plain dish lost its note.
-      for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, undefined, 6), { bold: true });
+      for (const ln of noteRows(line.note)) d.lines(indentedWrap(cols, `** ${ln}`, 6), { bold: true });
       continue;
     }
 
@@ -193,14 +208,15 @@ function renderProduction(ctx: PrintContext): Document {
         station.attributeStyle === 'inline-when-simple' && attrs
           ? ` (${attrs})`
           : '';
-      d.lines(subRow(cols, `${u.name}${qty}${inline}`, undefined, 6));
+      // A547: indentedWrap keeps the 6 spaces on the first row of a component that wraps (subRow dropped them).
+      d.lines(indentedWrap(cols, `${u.name}${qty}${inline}`, 6));
       if (attrs && !inline) {
-        d.lines(subRow(cols, attrs, undefined, 8));
+        d.lines(indentedWrap(cols, attrs, 8));
       }
     }
 
     // A367: one row per line the cashier typed ("3 normal" / "2 spicy"), bold so it is not read as a component.
-    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, undefined, 6), { bold: true });
+    for (const ln of noteRows(line.note)) d.lines(indentedWrap(cols, `** ${ln}`, 6), { bold: true });
   }
 
   d.line(rule(cols));
@@ -239,6 +255,14 @@ function renderReceipt(ctx: PrintContext): Document {
   if (classic.extraFeed !== true) d.cutFeed(COMPACT_CUT_FEED);
   /** A rule the compact layout drops (the classic layout prints it). The five it keeps are plain d.line(rule(cols)). */
   const minorRule = () => { if (full) d.line(rule(cols)); };
+  // A540 (owner, 2026-10-21, on paper: "add a small space between bill no, cashier, date, kot"): on the standard layout
+  // the order's info lines (Bill No., Delivery Boy, Table, Cashier, Date, RePrint, Voided, Kots) are a thin gap apart —
+  // INFO_GAP_DOTS, about 1.25 mm, not a blank line. The first of them has none above it (the rule is there).
+  let infoLines = 0;
+  const info = (text: string) => {
+    if (full && infoLines++ > 0) d.gap(INFO_GAP_DOTS);
+    d.line(text);
+  };
 
   if (ctx.voided) {
     d.line('VOID', { align: 'center', size: 'large', bold: true });
@@ -278,7 +302,7 @@ function renderReceipt(ctx: PrintContext): Document {
   if (full) {
     d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
     d.line(rule(cols));
-    if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);   // a proforma bill carries no fiscal number
+    if (!ctx.proforma) info(`Bill No.: ${order.billNumber}`);   // a proforma bill carries no fiscal number
   } else if (ctx.proforma) {
     d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
   } else {
@@ -289,11 +313,11 @@ function renderReceipt(ctx: PrintContext): Document {
     const type = labelled.length + 1 + sanitize(bill).length <= cols ? labelled : TYPE_TITLE[order.orderType];
     d.lines(pairOrStack(cols, type, bill));
   }
-  if (order.orderType === 'delivery') d.line(`Delivery Boy: ${order.deliveryPerson ?? ''}`);
-  if (order.orderType === 'dine_in' && order.tableNumber) d.line(`Table: ${order.tableNumber}`);
+  if (order.orderType === 'delivery') info(`Delivery Boy: ${order.deliveryPerson ?? ''}`);
+  if (order.orderType === 'dine_in' && order.tableNumber) info(`Table: ${order.tableNumber}`);
   if (full) {
-    d.line(`Cashier: ${order.cashierName}`);
-    d.line(`Date: ${fullStamp(order.soldAt)}`);
+    info(`Cashier: ${order.cashierName}`);
+    info(`Date: ${fullStamp(order.soldAt)}`);
   } else {
     // A530: the cashier and the time share a line — the full stamp where it fits (80 mm), "05/08/26 19:42" where it
     // does not (58 mm), stacked under the name only when even that does not fit beside a long name.
@@ -301,14 +325,14 @@ function renderReceipt(ctx: PrintContext): Document {
     const stamp = sanitize(who).length + 1 + 19 <= cols ? fullStamp(order.soldAt) : compactStamp(order.soldAt);
     d.lines(pairOrStack(cols, who, stamp));
   }
-  if (ctx.reprint) d.line(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
+  if (ctx.reprint) info(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
   if (ctx.voided) {
     const voided = `Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`;
     // A530: wrapped on the compact layout — on 58 mm it ran past the paper and the printer broke it where it liked.
-    if (full) d.line(voided); else d.lines(wrap(voided, cols));
+    if (full) info(voided); else d.lines(wrap(voided, cols));
   }
   // A530: how many kitchen tickets the order made is the kitchen's business, not the customer's.
-  if (full) d.line(`Kots: ${order.kotCount}`);
+  if (full) info(`Kots: ${order.kotCount}`);
   for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, undefined, 0));   // A367
   minorRule();
 
@@ -393,8 +417,9 @@ function renderReceipt(ctx: PrintContext): Document {
   if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
   d.line(pair(cols, `VAT (${rate(business.vatRate)}%)`, formatCents(tax.vat)));
   minorRule();
-  // A530: "Round Off: 0.00" says nothing — printed only when the cent is really there (or on the classic layout).
-  if (full || tax.roundOff !== 0) d.line(pair(cols, 'Round Off:', formatCents(tax.roundOff)));
+  // A530: "Round Off: 0.00" says nothing — printed only when the cent is really there. A540 (owner, 2026-10-21: "if round
+  // off is 0.00 hide it"): on the standard receipt too.
+  if (tax.roundOff !== 0) d.line(pair(cols, 'Round Off:', formatCents(tax.roundOff)));
   // A530: with no tip and no delivery fee the Total IS what PAY says — the tall PAY line alone carries it. With either,
   // Total (the bill, what the taxes are on), then the extras, then PAY (what the customer hands over).
   if (full || tip > 0 || deliveryFee > 0) d.line(pair(cols, 'Total:', formatCents(tax.total)), { bold: true });
@@ -412,14 +437,26 @@ function renderReceipt(ctx: PrintContext): Document {
   // detail is printed and where buy good is printed"): ONE block — the heading straight above its payments (no rule
   // between them), and the M-Pesa number customers pay to printed WITH the payments, inside the block, before its rule.
   // A530: no heading on the compact receipt — the payment lines straight under PAY say what they are.
-  if (full) d.line('Payment Detail:', { bold: true });
+  // A539 (owner, 2026-10-21): "add a line between payment method and payment details, it should read — payment details:
+  // Pay bill/buygood - 892984 / ---- / mpesa/cash/card". The standard receipt names the number customers pay to IN the
+  // heading, then a rule, then the payments. A Paybill with an account that is wider than the paper keeps its account on
+  // the next line (A492); a number too long even then goes under the heading. The compact opt-in keeps A530's block.
+  if (full) {
+    const label = business.tillLabel ?? 'Buy Goods';
+    const heading = business.tillNumber ? `Payment Details: ${label} - ${business.tillNumber}` : 'Payment Details:';
+    const cut = heading.indexOf(', Account ');
+    if (heading.length <= cols) d.line(heading, { bold: true });
+    else if (cut > 0 && cut <= cols) { d.line(heading.slice(0, cut), { bold: true }); d.line(heading.slice(cut + 2), { bold: true }); }
+    else { d.line('Payment Details:', { bold: true }); d.lines(wrap(`${label} - ${business.tillNumber}`, cols)); }
+    d.line(rule(cols));
+  }
   for (const leg of order.payments) {
     d.line(pair(cols, leg.label.toUpperCase(), formatCents(leg.amount)));
   }
   if (order.changeGiven > 0) {
     d.line(pair(cols, 'CHANGE', formatCents(order.changeGiven)));
   }
-  if (business.tillNumber) {
+  if (!full && business.tillNumber) {
     const payLine = `${business.tillLabel ?? 'Buy Goods'}: ${business.tillNumber}`;
     // A Paybill's account ("4098201, Account WEST1", A492) goes on its own line when the line is wider than the paper.
     const cut = payLine.indexOf(', Account ');

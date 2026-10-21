@@ -23,6 +23,7 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.SHIFT_CONFIRM_TS) {
@@ -267,8 +268,8 @@ ok('0.6.23 — End Shift asks only for methods with money on them, and says to i
   && /Counted cash in drawer \(\{currency\}\) — include the opening float/.test(src('renderer/pages/ShiftPanel.tsx')));
 ok('0.6.23 — a signed-in manager is not asked for a PIN (the till checks the signed-in staff in main)',
   /\{!signedInManager && \(\s*<div data-testid="confirm-pin">/.test(src('renderer/components/ConfirmShiftModal.tsx'))
-  && /const confirmer = signedIn && !String\(pin \?\? ''\)\.trim\(\) \? signedIn : await identifyConfirmer\(String\(pin\)\);/.test(src('main/ipcHandlers.ts'))
-  && /if \(!signedIn && !String\(pin \?\? ''\)\.trim\(\)\) throw/.test(src('main/ipcHandlers.ts')));
+  && /const confirmer = signedIn && !String\(pin \?\? ''\)\.trim\(\) \? signedIn : await identifyConfirmer\(String\(pin\)\);/.test(ipcHandlersSource())
+  && /if \(!signedIn && !String\(pin \?\? ''\)\.trim\(\)\) throw/.test(ipcHandlersSource()));
 ok('0.6.23 — the mouse wheel never changes a number field; no spinner arrows',
   /stopWheelOnNumberInputs\(document\);/.test(src('renderer/main.tsx'))
   && /input\[type='number'\]::-webkit-inner-spin-button \{ -webkit-appearance: none;/.test(src('renderer/index.css')));
@@ -285,14 +286,14 @@ ok('the confirm screen shows a signed-in manager the expected figures and the va
   /const showExpected = !!view\.expected;/.test(src('renderer/components/ConfirmShiftModal.tsx'))
   && /data-testid=\{`variance-\$\{c\}`\}/.test(src('renderer/components/ConfirmShiftModal.tsx'))
   // A527: the cash lines carry the expected figure, so they go with it
-  && /return signedInConfirmer\(\) \? v : \{ \.\.\.v, expected: null, cash: null \};/.test(src('main/ipcHandlers.ts'))
+  && /return signedInConfirmer\(\) \? v : \{ \.\.\.v, expected: null, cash: null \};/.test(ipcHandlersSource())
   && /const cashierSaid = view\.showCashier && view\.declared \? \(view\.declared\[c\] \?\? 0\) : null;/.test(src('renderer/components/ConfirmShiftModal.tsx'))
   && /if \(!showCashier\) return \{ showCashier: false, declared: null, expected, cash \};/.test(src('main/shiftService.ts')));
 ok('Close lists the shifts awaiting a manager and holds the close button',
   /data-testid="awaiting-shifts"/.test(src('renderer/pages/DayCloseTab.tsx'))
   && /disabled=\{!isManager \|\| busy \|\| counted === '' \|\| awaiting\.length > 0\}/.test(src('renderer/pages/DayCloseTab.tsx')));
 ok('the till checks the PIN with an authority first; its saved sign-ins only when none answers',
-  /tillFetch\('\/api\/shifts\/confirmer'/.test(src('main/ipcHandlers.ts')) && /verifyPinOffline\(pin, branchId\)/.test(src('main/ipcHandlers.ts')));
+  /tillFetch\('\/api\/shifts\/confirmer'/.test(ipcHandlersSource()) && /verifyPinOffline\(pin, branchId\)/.test(ipcHandlersSource()));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

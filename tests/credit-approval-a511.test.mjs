@@ -32,7 +32,10 @@ const o = read('apps/server/src/routes/orders.ts');
 ok('both sale paths (POST / and /:id/pay) ask for the approval before the credit is written', () => {
   const calls = o.match(/const ca = await creditApproval\(req, req\.body, [^)]+\);/g) ?? [];
   assert.equal(calls.length, 2, calls.join(' | '));
-  assert.match(o, /if \(req\.isOwner \|\| can\(req, 'customers\.credit'\)\) return/);
+  // A545: the seller holding customers.credit (or the owner) approves it themselves — born confirmed by them.
+  assert.match(o, /if \(req\.isOwner \|\| can\(req, 'customers\.credit'\)\) \{[\s\S]{0,300}?approvedAtSale: true/);
+  // A545: a till's own sale (its sign-in, or a person's on that till) is recorded awaiting a manager — never refused.
+  assert.match(o, /if \(isTillOwnSalePush\(req\) \|\| tillMadeSale\(req\)\) \{\n\s+return \{ approvedBy: null, approvedAtSale: false/);
   assert.match(o, /approverByPin\(req, [\s\S]{0,120}pin, 'credit', branchId\)/);
   assert.match(o, /code:\s+'CREDIT_APPROVAL_REQUIRED'/);
 });

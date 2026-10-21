@@ -45,8 +45,11 @@ const OPT_OUT = /(--|\/\/)\s*no-device:/i;
 let checked = 0;
 const problems = [];
 
+// D10: and src/main/ipc/*.ts — the IPC handlers moved there from ipcHandlers.ts; their inserts stay in the scan.
+const IPC_DIR = path.join(SRC, 'ipc');
 const files = fs.existsSync(SRC)
-  ? fs.readdirSync(SRC).filter(f => f.endsWith('.ts')).sort()
+  ? [...fs.readdirSync(SRC).filter(f => f.endsWith('.ts')).sort(),
+     ...(fs.existsSync(IPC_DIR) ? fs.readdirSync(IPC_DIR).filter(f => f.endsWith('.ts')).sort().map(f => `ipc/${f}`) : [])]
   : [];
 
 for (const file of files) {

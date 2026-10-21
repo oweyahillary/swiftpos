@@ -22,6 +22,14 @@
  *   - tillUpdateLine without the silent check                                  → "Last seen 3 days ago" fails
  *   - ReceiptView compact = classic (always the old layout)                    → "compact: one line for date and order" fails
  *   - PaymentModal not passing classic                                         → its source pin fails
+ *
+ * A547 (owner, 2026-10-21: "you can also finish the leftovers"): the classic (standard) browser receipt's payment block
+ * is the thermal receipt's A539 block — "Payment Details: <Buy Goods|Paybill> - <number>" (bold), a rule, the payments
+ * (a lone cash payment carries the tendered), CHANGE when there is some, no separate till line; "Round Off" only when
+ * it is not 0.00 (A540); the compact opt-in keeps its own block. Mutations (A547, each red on its own): the heading
+ * without the number → "A547: the classic payment block"; the rule under the heading removed → same; Round Off shown at
+ * 0 → "A547: Round Off"; the compact path given the heading → "A547: compact keeps its block"; PaymentModal not passing
+ * `pay` → "the web POS hands …".
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -155,15 +163,54 @@ await ok('compact keeps what carries money: a discount brings the Subtotal back;
 await ok('A538: the standard (no switch) is the classic layout — every line as before', () => {
   for (const html of [R.render(sale), R.render({ ...sale, compact: false }), R.render({ ...sale, classic: true })]) {
     const t = text(html);
-    for (const want of ['Tel: 0712 345678', 'PIN: P051234567X', 'Order: W-1042', 'Subtotal', 'Payment', 'Tendered', 'VAT Reg: P051234567X']) assert.ok(t.includes(want), `${want} missing: ${t.join(' | ')}`);
+    // A547: the payment block is A539's ("Payment Details:" heading, a rule, the payments) — no "Payment" / "Tendered" lines.
+    for (const want of ['Tel: 0712 345678', 'PIN: P051234567X', 'Order: W-1042', 'Subtotal', 'Payment Details:', 'CASH', 'CHANGE', 'VAT Reg: P051234567X']) assert.ok(t.includes(want), `${want} missing: ${t.join(' | ')}`);
     assert.ok(!t.some((l) => /· Order: W-1042$/.test(l)), 'date and order on one line (compact) on the standard');
-    assert.equal(rules(html), 5, 'dashed rules (the doubled one too)');
+    assert.equal(rules(html), 6, 'dashed rules (the doubled one and the one under Payment Details too)');
   }
   assert.equal(R.render({ ...sale, classic: true }), R.render(sale), 'A534\'s `classic` prop changes nothing now');
+});
+// ── A547: the classic payment block as the thermal receipt prints it (A539), no zero round off (A540) ───────────────
+await ok('A547: the classic payment block — "Payment Details: Buy Goods - <number>", a rule, the payments, CHANGE; no till line after', () => {
+  const html = R.render({ ...sale, pay: { label: 'Buy Goods', number: '892984' } });
+  const t = text(html);
+  const i = t.indexOf('Payment Details: Buy Goods - 892984');
+  assert.ok(i >= 0, t.join(' | '));
+  assert.deepEqual(t.slice(i + 1, i + 5), ['CASH', 'KES 1,300.00', 'CHANGE', 'KES 50.00'], t.join(' | '));
+  // In the markup: the bold heading, then a dashed rule, then the CASH line.
+  const h = html.indexOf('data-testid="payment-details"');
+  const ruleAt = html.indexOf('border-top:1px dashed #000', h), cashAt = html.indexOf('>CASH<', h);
+  assert.ok(h > 0 && ruleAt > h && ruleAt < cashAt, 'the rule sits between the heading and the payments');
+  assert.match(html, /<p style="font-weight:bold;margin-bottom:3px" data-testid="payment-details">Payment Details: Buy Goods - 892984<\/p>/);
+  assert.ok(!t.some((l) => /^Buy Goods:|^Paybill:/.test(l)), 'a separate till line after the payments');
+  assert.ok(!t.includes('Payment') && !t.includes('Tendered') && !t.includes('Split payment'), t.join(' | '));
+  // A Paybill with its account, as A450 stores it; no number → the heading alone.
+  assert.ok(text(R.render({ ...sale, pay: { label: 'Paybill', number: '4098201, Account WEST1' } })).includes('Payment Details: Paybill - 4098201, Account WEST1'));
+  assert.ok(text(R.render(sale)).includes('Payment Details:'));
+  assert.ok(text(R.render({ ...sale, pay: { label: 'Buy Goods', number: '  ' } })).includes('Payment Details:'));
+});
+await ok('A547: a split on the classic receipt — one heading, a rule, each payment with its reference; no CHANGE at 0', () => {
+  const t = text(R.render({ ...sale, pay: { label: 'Buy Goods', number: '892984' }, change: 0,
+    payments: [{ method: 'cash', amount: 600 }, { method: 'mpesa', amount: 650, reference: 'QK12' }] }));
+  const i = t.indexOf('Payment Details: Buy Goods - 892984');
+  assert.deepEqual(t.slice(i + 1, i + 7), ['CASH', 'KES 600.00', 'M-PESA', 'KES 650.00', 'Ref', 'QK12'], t.join(' | '));
+  assert.ok(!t.includes('CHANGE') && !t.includes('Split payment'), t.join(' | '));
+});
+await ok('A547: Round Off — hidden at 0.00 (A540), shown when the cent is really there', () => {
+  assert.ok(!text(R.render(sale)).some((l) => /Round Off/.test(l)));
+  assert.ok(!text(R.render({ ...sale, roundOff: 0.001 })).some((l) => /Round Off/.test(l)));
+  const t = text(R.render({ ...sale, roundOff: 0.01 }));
+  assert.equal(t[t.indexOf('Round Off') + 1], 'KES 0.01', t.join(' | '));
+});
+await ok('A547: compact keeps its block — no "Payment Details" heading, the method and amount on one line', () => {
+  const t = text(R.render({ ...sale, compact: true, pay: { label: 'Buy Goods', number: '892984' } }));
+  assert.ok(!t.some((l) => l.startsWith('Payment Details')), t.join(' | '));
+  assert.equal(t[t.indexOf('CASH') + 1], 'KES 1,300.00');
 });
 await ok('the web POS hands the client\'s switch to the receipt', () => {
   const pm = read('apps/dashboard/src/pages/pos/PaymentModal.tsx');
   assert.match(pm, /compact=\{posFeatures\?\.receipt_compact_layout === true\}/);
+  assert.match(pm, /pay=\{receiptPay\}/);   // A547
   assert.ok(!/receipt_classic_layout/.test(pm), 'the retired switch is not read');
 });
 

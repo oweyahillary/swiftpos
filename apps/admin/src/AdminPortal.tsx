@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
-import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538; A543
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
@@ -865,6 +865,10 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
   // A325: client branding Phase 2 — curated action themes (premium; off by default). While off, the client's
   // tills keep today's look and the web hides the theme picker. Price not decided: no invoice is raised here.
   const hasThemes = features.find(f => f.key === 'themes')?.enabled === true;
+  // A549: Analytics v1 — the web dashboard's Analytics page (menu engineering, heatmap, money leaks, credit ageing,
+  // insights). Premium; off by default. While off the page shows "part of ZapTill Premium" and the cloud refuses
+  // /api/analytics (ANALYTICS_OFF). Price not decided: no invoice is raised here.
+  const hasAnalytics = features.find(f => f.key === 'analytics')?.enabled === true;
 
   // A147: set businesses.web_access_expires_at — the date the renewal ladder is
   // measured against (distinct from the legacy web_hosting on/off boolean above).
@@ -940,6 +944,24 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
         const existing = prev.find(f => f.key === 'themes');
         if (existing) return prev.map(f => f.key === 'themes' ? { ...f, enabled: enable } : f);
         return [...prev, { key: 'themes', enabled: enable }];
+      });
+    } catch(e) { setError(e.message); }
+  }
+
+  async function toggleAnalytics(enable) {
+    const msg = enable
+      ? 'Enable Analytics? The owner (and managers with the sales report) see the Analytics page on the web dashboard at once.'
+      : 'Disable Analytics? The Analytics page shows "part of ZapTill Premium" again at once.';
+    if (!(await askConfirm(msg))) return;
+    try {
+      await req("PATCH", `/clients/${client.id}/features/analytics`, {
+        enabled: enable,
+        notes:   enable ? 'Analytics enabled (A549, premium)' : 'Analytics disabled',
+      });
+      setFeatures(prev => {
+        const existing = prev.find(f => f.key === 'analytics');
+        if (existing) return prev.map(f => f.key === 'analytics' ? { ...f, enabled: enable } : f);
+        return [...prev, { key: 'analytics', enabled: enable }];
       });
     } catch(e) { setError(e.message); }
   }
@@ -1620,12 +1642,17 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           {settingRow("App themes",
             hasThemes ? "The client picks an app theme on the Branding page; tills follow it." : "Tills keep the standard look. Turn on to let the client pick an app theme.",
             toggle(hasThemes, () => toggleThemes(!hasThemes), "App themes"))}
+          {/* A549: Analytics v1 (premium; off by default) — the web dashboard's Analytics page. */}
+          {settingRow("Analytics",
+            hasAnalytics ? "The Analytics page is open: menu engineering, sales heatmap, money leaks, credit ageing and insights." : "The Analytics page shows “part of ZapTill Premium”. Turn on when the client has paid for it.",
+            toggle(hasAnalytics, () => toggleAnalytics(!hasAnalytics), "Analytics"), "feature-analytics")}
           {/* 0.6.27: the POS switches — always listed (off until set), named and explained.
               A491: the owner sets them now (A490) — shown read-only with where the owner sets each. */}
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
           <div data-testid="pos-options-owner-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_WHERE}.</div>
           {POS_FEATURES.map(pf => {
             if ((RECEIPT_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
+            if ((KITCHEN_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A543: switched below
             const on = features.some(f => f.key === pf.key && f.enabled);
             const perRole = PER_ROLE_SWITCHES[pf.key];
             return (
@@ -1663,11 +1690,28 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
               </div>
             );
           })}
+          {/* A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "the printer's smaller
+              Font B so long orders fit on less paper"): kitchen tickets are Font B; this client's switch brings Font A back. */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Kitchen ticket options</div>
+          <div data-testid="kitchen-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Off = the standard kitchen ticket: the printer’s smaller Font B, 64 characters a line on 80 mm. Kitchen tickets on the tills and the web POS; dispatch (packing) tickets and receipts are always in the normal font.</div>
+          {KITCHEN_OPTION_KEYS.map(key => {
+            const kf = POS_FEATURES.find(x => x.key === key);
+            const on = features.some(f => f.key === key && f.enabled);
+            return (
+              <div key={key} data-testid={`kitchen-feature-${key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{kf?.label ?? key}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{kf?.description}</div>
+                </div>
+                {toggle(on, () => toggleFeature(key, !on), kf?.label ?? key)}
+              </div>
+            );
+          })}
           {/* A538: a retired switch's stored row (receipt_classic_layout) is read by nothing — not listed here either. */}
-          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").length > 0 && (
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "analytics" && f.key !== "web_hosting").length > 0 && (
             <>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
-              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").map(f => (
+              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "analytics" && f.key !== "web_hosting").map(f => (
                 <div key={f.key} data-testid={`other-flag-${f.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, gap: 12 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>

@@ -24,6 +24,7 @@ import { supabase }  from '../lib/supabase';
 import { buildProductPatch, rowMatchKeys, importKey } from '../lib/productImport';
 import { applyPriceOp, parsePriceOp } from '../lib/priceOps';
 import { cleanShowDays } from '../lib/productDays';
+import { cleanMenuName, isDuplicateName, menusMissing } from '../lib/menus';   // A542: the import's `menu` column
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -552,7 +553,7 @@ router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
   for (let from = 0; ; from += 1000) {
     const { data: page, error: pErr } = await supabase
       .from('products')
-      .select('id, name, plu_code, barcode, status, created_at')
+      .select('id, name, plu_code, barcode, status, created_at, category_id')
       .eq('business_id', req.businessId)
       .order('created_at', { ascending: true })
       .range(from, from + 999);
@@ -590,19 +591,53 @@ router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
     if (created?.id) catMap[importKey(name)] = created.id;
   }
 
+  // Match an existing product: barcode, then a stable plu_code, then name.
+  const matchId = (keys: ReturnType<typeof rowMatchKeys>): string | null =>
+    (keys.barcode && byBarcode[importKey(keys.barcode)]) ||
+    (keys.plu     && byPlu[importKey(keys.plu)]) ||
+    (keys.name    && byName[importKey(keys.name)]) ||
+    null;
+
+  // A542: an optional `menu` column (A537 — menus hold CATEGORIES, one menu per category). The row's category (or, with
+  // no category in the row, the matched product's own) is put in the menu named; a menu not there yet is created (the
+  // same rules as POST /api/menus: this business's, a clean name — the route is menu.edit like the menus routes); blank
+  // leaves the category's menu alone; DELETE takes the category out of its menu. Two rows of one category naming
+  // different menus: the first wins, the later row is refused (a per-row error, the row skipped).
+  const menuCell = (row: Record<string, unknown>) => String(row?.menu ?? '').normalize('NFKC').replace(/[​-‍⁠﻿]/g, '').trim();
+  const categoryOfProduct = new Map<string, string | null>(existingProducts.map((p) => [String(p.id), p.category_id ?? null]));
+  const menuRowError = new Map<number, string>();
+  const menuWant = new Map<string, { row: number; key: string; label: string }>();   // category id → its menu ('' = none)
+  rows.forEach((row: Record<string, unknown>, i: number) => {
+    const cell = menuCell(row);
+    if (!cell) return;
+    const catRaw = String(row.category_name ?? row.category ?? '').trim();
+    let catId: string | null = catRaw ? (catMap[importKey(catRaw)] ?? null) : null;
+    if (!catRaw) { const id = matchId(rowMatchKeys(row)); catId = id ? (categoryOfProduct.get(id) ?? null) : null; }
+    if (!catId) { menuRowError.set(i, `menu "${cell}" needs a category — a menu holds categories, not single products`); return; }
+    let key = '', label = 'DELETE';
+    if (cell.toUpperCase() !== 'DELETE') {
+      const n = cleanMenuName(cell);
+      if (!n.ok) { menuRowError.set(i, n.error); return; }
+      key = importKey(n.value); label = n.value;
+    }
+    const first = menuWant.get(catId);
+    if (!first) menuWant.set(catId, { row: i, key, label });
+    else if (first.key !== key) {
+      menuRowError.set(i, `menu "${label}" clashes with row ${first.row + 1} ("${first.label}") — one menu per category; the first row wins`);
+    }
+  });
+  const rowDone = new Set<number>();
+
   const results = { created: 0, updated: 0, errors: [] as { row: number; error: string }[], createdNames: [] as string[] };
   const mayCost = can(req, 'menu.costs'), mayPrice = can(req, 'menu.prices');
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const keys = rowMatchKeys(row);
+    const menuErr = menuRowError.get(i);   // A542
+    if (menuErr) { results.errors.push({ row: i + 1, error: menuErr }); continue; }
 
-    // Match an existing product: barcode, then a stable plu_code, then name.
-    const existingId =
-      (keys.barcode && byBarcode[importKey(keys.barcode)]) ||
-      (keys.plu     && byPlu[importKey(keys.plu)]) ||
-      (keys.name    && byName[importKey(keys.name)]) ||
-      null;
+    const existingId = matchId(keys);
     const isCreate = !existingId;
 
     // Category is only touched when the row actually carries one.
@@ -644,6 +679,55 @@ router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
       if (error) { results.errors.push({ row: i + 1, error: error.message }); continue; }
       results.updated++;
     }
+    rowDone.add(i);   // A542: only a row that went in decides its category's menu
+  }
+
+  // A542: the menus the file names, applied once per category (from the row that decided it, if that row went in).
+  const menusCreated: string[] = [];
+  const menuErrors: { row: number; error: string }[] = [];
+  let categoriesMoved = 0;
+  const decisions = [...menuWant.entries()].filter(([, d]) => rowDone.has(d.row));
+  if (decisions.length > 0) {
+    const { data: menus, error: mErr } = await supabase.from('menus').select('id, name, sort_order')
+      .eq('business_id', req.businessId).is('deleted_at', null);
+    const { data: cats, error: cErr } = mErr ? { data: null, error: mErr } : await supabase.from('categories')
+      .select('id, menu_id').eq('business_id', req.businessId).in('id', decisions.map(([id]) => id));
+    if (mErr || cErr) {
+      const why = menusMissing(mErr || cErr) ? 'menus are not set up on this server yet' : String((mErr || cErr)?.message ?? 'menus could not be read');
+      for (const [, d] of decisions) menuErrors.push({ row: d.row + 1, error: `menu "${d.label}" not applied — ${why}` });
+    } else {
+      const menuByKey = new Map<string, string>();
+      let lastSort = 0;
+      for (const m of (menus ?? []) as Array<{ id: string; name: string; sort_order?: number }>) {
+        const k = importKey(m.name);
+        if (k && !menuByKey.has(k)) menuByKey.set(k, m.id);
+        lastSort = Math.max(lastSort, Number(m.sort_order) || 0);
+      }
+      const current = new Map<string, string | null>(((cats ?? []) as Array<{ id: string; menu_id?: string | null }>).map((c) => [c.id, c.menu_id ?? null]));
+      for (const [catId, d] of decisions) {
+        let target: string | null = null;
+        if (d.key) {
+          target = menuByKey.get(d.key) ?? null;
+          if (!target) {
+            const { data: made, error } = await supabase.from('menus')
+              .insert({ business_id: req.businessId, name: d.label, color: null, icon: null, sort_order: ++lastSort, active: true })
+              .select('id').single();
+            if (error || !made?.id) {
+              menuErrors.push({ row: d.row + 1, error: `menu "${d.label}" could not be created — ${isDuplicateName(error) ? 'a menu of that name already exists' : String(error?.message ?? 'no id')}` });
+              continue;
+            }
+            target = made.id as string;
+            menuByKey.set(d.key, target);
+            menusCreated.push(d.label);
+          }
+        }
+        if ((current.get(catId) ?? null) === target) continue;   // unchanged: no write, no sync entry
+        const { error } = await supabase.from('categories').update({ menu_id: target })
+          .eq('id', catId).eq('business_id', req.businessId);
+        if (error) { menuErrors.push({ row: d.row + 1, error: `menu "${d.label}" not applied — ${error.message}` }); continue; }
+        categoriesMoved++;
+      }
+    }
   }
 
   // Flat fields AND the summary object. The desktop Import tab reads
@@ -655,6 +739,10 @@ router.post('/bulk', requirePermission('menu.edit'), async (req, res) => {
     errors:  results.errors,
     // 2026-10-04: which rows became NEW products — the screen lists them, so a surprise duplicate is seen at once.
     created_names: results.createdNames,
+    // A542: the `menu` column — menus it created, categories it put in (or took out of) a menu, and what it could not do.
+    menus_created: menusCreated,
+    categories_moved: categoriesMoved,
+    menu_errors: menuErrors,
     summary: {
       total:   rows.length,
       created: results.created,

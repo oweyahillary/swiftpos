@@ -44,6 +44,8 @@ import { chunkIn } from '../lib/pgQuery';
 import { settleLateRows } from '../lib/lateRows';   // A522
 import { withoutCosts } from '../lib/costAccess';   // A494
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
+import { isTillOwnSalePush } from '../lib/tillScope';   // A545
+import { recordCreditSale } from '../lib/creditConfirm';   // A545
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -230,9 +232,23 @@ const CREDIT_APPROVAL_REQUIRED = {
   error: "A sale on account needs a manager's approval — enter their PIN.",
   code:  'CREDIT_APPROVAL_REQUIRED',
 } as const;
+// A545 (owner, 2026-10-21: "for credit I think the manager has to know which sale is on credit and they have to confirm
+// that it was done"): a credit sale a till ALREADY TOOK — pushed under the till's own sign-in (tillScope
+// isTillOwnSalePush, the precise exemption) or a person's sign-in on that till (A505 tillMadeSale) — is RECORDED, never
+// refused for a PIN the till cannot send; it waits for a manager's confirmation (lib/creditConfirm.ts). Whoever is
+// signed in when the till pushes is not who approved it, so it is never born confirmed. Everything else is A511 as it was
+// — the live web POS still needs the manager's PIN at the moment of sale, and that approval is the confirmation.
+type CreditOk = { approvedBy: string | null; approvedAtSale: boolean; approverName: string | null; note: string; tillSale: boolean };
 async function creditApproval(req: any, body: any, branchId: string | null):
-  Promise<{ approvedBy: string | null; note: string } | { status: number; body: Record<string, string> }> {
-  if (req.isOwner || can(req, 'customers.credit')) return { approvedBy: req.userId ?? null, note: '' };
+  Promise<CreditOk | { status: number; body: Record<string, string> }> {
+  if (isTillOwnSalePush(req) || tillMadeSale(req)) {
+    return { approvedBy: null, approvedAtSale: false, approverName: null, note: " — awaiting a manager's confirmation", tillSale: true };
+  }
+  if (req.isOwner || can(req, 'customers.credit')) {
+    // The seller may approve it themselves: born confirmed by them (an owner with no users row is named "Owner").
+    const me = await recordedPerson(req.businessId, req.userId, !!req.isOwner);
+    return { approvedBy: me, approvedAtSale: true, approverName: me ? null : (req.isOwner ? 'Owner' : null), note: '', tillSale: false };
+  }
   const pin = typeof body?.credit_pin === 'string' ? body.credit_pin.trim() : '';
   if (!pin) return { status: 403, body: { ...CREDIT_APPROVAL_REQUIRED } };
   const a = await approverByPin(req, typeof body?.credit_authorizer_id === 'string' ? body.credit_authorizer_id : undefined, pin, 'credit', branchId);
@@ -242,7 +258,7 @@ async function creditApproval(req: any, body: any, branchId: string | null):
     const { data: u } = await supabase.from('users').select('name').eq('id', a.userId).eq('business_id', req.businessId).maybeSingle();
     who = (u as { name?: string | null } | null)?.name || who;
   }
-  return { approvedBy: a.userId, note: ` — approved by ${who}` };
+  return { approvedBy: a.userId, approvedAtSale: true, approverName: who, note: ` — approved by ${who}`, tillSale: false };
 }
 
 const APPROVER_PIN_REFUSED = {
@@ -833,6 +849,8 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
     // is created so we never commit a sale that breaches the limit.
     const creditLeg = paymentLegs.find(l => l.method === 'credit');
     let creditNote = '';   // A511: who approved it, on the ledger line
+    let creditOk: CreditOk | null = null;   // A545: approved at the sale, or a till's sale awaiting a manager
+    let creditOverLimit = false;            // A545: a till's sale past the limit is recorded, flagged
     if (creditLeg) {
       if (!customer_id) {
         res.status(400).json({ error: 'A customer is required for a credit sale' });
@@ -841,6 +859,7 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
       const ca = await creditApproval(req, req.body, branch_id ?? null);   // A511
       if ('status' in ca) { res.status(ca.status).json(ca.body); return; }
       creditNote = ca.note;
+      creditOk = ca;
       const creditAmount = Number(creditLeg.amount) || 0;
       const { data: cust } = await supabase
         .from('customers')
@@ -848,7 +867,10 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         .eq('id', customer_id).eq('business_id', req.businessId).single();
       if (!cust) { res.status(400).json({ error: 'Invalid customer' }); return; }
       const available = Number(cust.credit_limit) - Number(cust.credit_balance);
-      if (creditAmount > available) {
+      // A545: a sale the till already took is never refused for the limit (the goods are gone) — recorded, flagged for
+      // the manager who confirms it.
+      if (creditAmount > available && ca.tillSale) creditOverLimit = true;
+      else if (creditAmount > available) {
         res.status(400).json({
           error: `Credit limit exceeded. Available: ${available.toFixed(2)}, required: ${creditAmount.toFixed(2)}`,
         });
@@ -1255,9 +1277,17 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         p_reference:     null,
         p_notes:         creditNote ? `Credit sale${creditNote}` : null,   // A511
         p_created_by:    req.userId,
-        p_enforce_limit: true,
+        p_enforce_limit: !creditOverLimit,   // A545: a till's sale already taken past the limit is still owed
       });
       if (credErr) console.error('[credit] charge failed for order', order.id, credErr.message);
+      // A545: every sale on account waits for (or, approved at the sale, already has) a manager's confirmation.
+      await recordCreditSale({
+        businessId: req.businessId, orderId: order.id, branchId: branch_id ?? null, customerId: customer_id,
+        amount: Math.abs(Number(creditLeg.amount) || 0), source: creditOk?.tillSale ? 'till' : 'web',
+        approvedAtSale: !!creditOk?.approvedAtSale, approvedBy: creditOk?.approvedBy ?? null, approverName: creditOk?.approverName ?? null,
+        cashierId: resolvedCashierId ?? null, overLimit: creditOverLimit,
+        soldAt: (req.body?.created_at || req.body?.client_created_at || null) as string | null,
+      });
     }
 
     // 11. Fiscalise with KRA eTIMS — non-blocking; never fails the sale.
@@ -1441,12 +1471,19 @@ const reversalGate = (action: ApproveAction) => (req: any, res: any, next: any) 
     res.status(409).json({ error: 'An offline void or refund is sent with the till\'s own session — it is sent again.', code: 'REPLAY_NEEDS_TILL_SESSION' });
     return;
   }
+  // A545: the till's own sign-in WITHOUT a replay — the till's live void / refund when no person's cloud sign-in is on it
+  // (ipcHandlers order:void / order:refund fall back to the till's session; every replay carries offline_approved_by,
+  // pending_reversals.approved_by is NOT NULL). Never the bare permission check (TILL_SCOPE_ENFORCE would refuse it): the
+  // handler's own approval decides — the approver's PIN (approverByPin: sales.void / sales.refund at the sale's branch,
+  // never the asker) for money, and for an unpaid void only the till that holds the sale.
+  if (req.isTill === true && !!req.deviceId) { next(); return; }
   (action === 'void' ? voidKey : refundKey)(req, res, next);
 };
 
 type TillReplay = { approverId: string; actorId: string | null; at: string };
 
-async function checkTillReplay(req: any, order: any, action: ApproveAction): Promise<TillReplay | { status: number; body: Record<string, string> }> {
+/** Does the till whose own sign-in this is hold the sale (its own, or a web sale on its drawer)? A494 / A545. */
+async function tillHoldsOrder(req: any, order: any): Promise<boolean> {
   const dev: string = req.deviceId;   // A494: the till's token — never a header or the body
   let holds = !!dev && order.device_id === dev;
   if (!holds && dev && order.shift_id) {
@@ -1454,8 +1491,13 @@ async function checkTillReplay(req: any, order: any, action: ApproveAction): Pro
       .eq('id', order.shift_id).eq('business_id', req.businessId).maybeSingle();
     holds = (s as { device_id?: string | null } | null)?.device_id === dev;
   }
-  if (!holds) {
-    return { status: 403, body: { error: 'Only the till that holds this sale can send its offline void or refund.', code: 'NOT_THIS_TILL' } };
+  return holds;
+}
+const NOT_THIS_TILL = { error: 'Only the till that holds this sale can send its offline void or refund.', code: 'NOT_THIS_TILL' } as const;
+
+async function checkTillReplay(req: any, order: any, action: ApproveAction): Promise<TillReplay | { status: number; body: Record<string, string> }> {
+  if (!(await tillHoldsOrder(req, order))) {
+    return { status: 403, body: { ...NOT_THIS_TILL } };
   }
   const { rows, ownerId } = await confirmerRows(req.businessId);
   const approver = rows.find((r) => r.id === req.body.offline_approved_by);
@@ -1780,6 +1822,10 @@ router.post('/:id/void', reversalGate('void'), async (req, res) => {
     const a = await approverByPin(req, authorizer_id, pin, 'void', order.branch_id ?? null);
     if ('status' in a) { res.status(a.status).json(a.body); return; }
     authorizedBy = a.userId;
+  } else if (req.isTill) {
+    // A545: an unpaid sale voided from the till's own sign-in (no money moves) — only the till that holds it (the till
+    // checked its person's sales.void at the counter); never another till's sale or a web sale it does not hold.
+    if (!(await tillHoldsOrder(req, order))) { res.status(403).json({ ...NOT_THIS_TILL }); return; }
   }
 
   try {
@@ -2322,6 +2368,7 @@ router.post('/:id/pay', sells, async (req, res) => {
     const creditLeg = paymentLegs.find(l => l.method === 'credit');
     let creditCustomerId: string | null = null;
     let payCreditNote = '';   // A511
+    let payCreditOk: CreditOk | null = null;   // A545
     if (creditLeg) {
       creditCustomerId = customer_id ?? order.customer_id ?? null;
       if (!creditCustomerId) {
@@ -2331,6 +2378,7 @@ router.post('/:id/pay', sells, async (req, res) => {
       const ca = await creditApproval(req, req.body, order.branch_id ?? null);   // A511
       if ('status' in ca) { res.status(ca.status).json(ca.body); return; }
       payCreditNote = ca.note;
+      payCreditOk = ca;
       const creditAmount = Number(creditLeg.amount) || 0;
       const { data: cust } = await supabase
         .from('customers')
@@ -2561,6 +2609,13 @@ router.post('/:id/pay', sells, async (req, res) => {
         p_enforce_limit: true,
       });
       if (creditErr) console.error('[credit] charge failed for order', order.id, creditErr.message);
+      // A545: a live payment on account — approved at the counter (born confirmed) or awaiting a manager.
+      await recordCreditSale({
+        businessId: req.businessId!, orderId: order.id, branchId: order.branch_id ?? null, customerId: creditCustomerId,
+        amount: Math.abs(Number(creditLeg.amount) || 0), source: req.surface === 'desktop' ? 'till' : 'web',
+        approvedAtSale: !!payCreditOk?.approvedAtSale, approvedBy: payCreditOk?.approvedBy ?? null,
+        approverName: payCreditOk?.approverName ?? null, cashierId: (order as any).cashier_id ?? req.userId ?? null,
+      });
     }
 
     // 4. Stock — the SAME effects POST /orders applies.

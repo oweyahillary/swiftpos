@@ -171,14 +171,20 @@ try {
   if (process.env.SHOW_BUNDLE) console.log(t1);
   ok('…the 3-day window across the rolled files: 2 h, 30 h and 50 h ago in (swiftpos.log.1); 100 h ago out',
     /MARK-2H/.test(t1) && /MARK-30H/.test(t1) && /MARK-50H/.test(t1) && !/MARK-100H/.test(t1) && /swiftpos\.log, last 3 days/.test(t1), t1.slice(0, 3000));
-  ok('…a PIN and a token written in the log do not appear (redacted on the till)', !/4321/.test(t1) && !t1.includes(JWT) && !/eyJhbGci/.test(t1), t1.slice(-1500));
+  // The PIN is checked ON ITS OWN LINE (MARK-2H): the bundle also carries numbers of its own (disk free, a random request
+  // id) that can contain "4321" by chance — CI on Linux, 2026-10-21, failed this way with the redaction working.
+  const pinLine = (t) => (t.split('\n').find((l) => l.includes('MARK-2H')) ?? '');
+  ok('…a PIN and a token written in the log do not appear (redacted on the till)',
+    !!pinLine(t1) && !/4321/.test(pinLine(t1)) && !t1.includes(JWT) && !/eyJhbGci/.test(t1), pinLine(t1) || t1.slice(-1500));
   ok('…no auth.log — the sign-in history was not asked for', !/AUTHMARK/.test(t1) && !/auth\.log, last/.test(t1));
   ok('…the diagnostics block: who asked, version and role, sync and what waits, the A531 topics and channel, printer errors, disk',
     /Sent by: ZapTill support — a pull from the admin portal \(request /.test(t1) && /Diagnostics:/.test(t1)
     && /Version 1\.0\.20 · till · branch br-1 · terminal T1/.test(t1) && /Sync: online/.test(t1) && /Change-triggered sync \(A531\): /.test(t1)
     && /Topics: /.test(t1) && /Printer errors in the window: 1/.test(t1) && /receipt printer failed/.test(t1), t1.slice(0, 2500));
-  ok('…the shop\'s own log says it happened: "logs pulled by ZapTill support (request …)"',
-    tillLog().includes(`A533: logs pulled by ZapTill support (request ${r1.id})`) && tillLog().includes('reference REF1'));
+  // The till writes this line only after the cloud ANSWERS the upload; the stand-in cloud has the upload a moment before
+  // that — wait for the line (flaky 2 in 5 when read at once, 2026-10-21).
+  const logged = await until(() => tillLog().includes(`A533: logs pulled by ZapTill support (request ${r1.id})`) && tillLog().includes('reference REF1'));
+  ok('…the shop\'s own log says it happened: "logs pulled by ZapTill support (request …)"', logged);
   cloud.hits = [];
   await E.remoteCloseBeat(); await wait(150);
   ok('answered → the next beat asks /mine once and uploads nothing', mineHits() === 1 && posts() === 0, JSON.stringify(cloud.hits));
@@ -202,7 +208,7 @@ try {
   ok('…the sign-in history when asked (auth.log)', /AUTHMARK/.test(t2) && /auth\.log, last 7 days/.test(t2));
   const opened = [...SL.lazyLogFiles(SL.rolledPaths(logBase, 10), NOW - 168 * 3_600_000)];
   ok('…swiftpos.log.3 (last written 199 h ago) is never opened for a 7-day window', opened.length === 3 && !opened.some((x) => /MARK-200H/.test(x)), String(opened.length));
-  ok('…still redacted', !/4321/.test(t2) && !t2.includes(JWT));
+  ok('…still redacted', !!pinLine(t2) && !/4321/.test(pinLine(t2)) && !t2.includes(JWT), pinLine(t2));
 
   // ── 3 ──
   LP._resetLogPull();

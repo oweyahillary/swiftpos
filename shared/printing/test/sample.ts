@@ -22,6 +22,7 @@ import {
 } from '../src/index';
 import { order, business, KITCHEN, DISPATCH } from './fixture';
 import { bigLogo } from './a530-cases';   // A530
+import { longOrder, productionPaperMm } from './a543-cases';   // A543
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -121,6 +122,42 @@ for (const w of [80, 58] as const) {
     const pct = (x: number) => `${Math.round((1 - x / om) * 100)}%`;
     log(`  ${`${w} mm${withLogo ? ', logo' : ''}`.padEnd(20)} ${`${textLines(sd)} / ${textLines(cd)}`.padEnd(13)}`
       + ` ${`${om.toFixed(0)} mm`.padStart(9)}  ${`${sm.toFixed(0)} mm -${pct(sm)}`.padStart(9)}  ${`${cm.toFixed(0)} mm -${pct(cm)}`.padStart(9)}  ${`${am.toFixed(0)} mm -${pct(am)}`.padStart(9)}`);
+  }
+}
+
+// ── A543: the kitchen ticket in Font A (kitchen_font_a, as before) and Font B (the standard), a long order ──
+//
+// Owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "the printer's smaller Font B so long
+// orders fit on less paper". Font B is 9x17 dots: 64 characters a line on 80 mm, 42 on 58 mm (Font A 12x24: 48 / 32).
+// Its normal lines are 24 dots apart (ESC 3 24, ~3.0 mm) — at ESC 2 (1/6", ~4.23 mm) the line height would be Font A's and
+// the only saving the fewer wrapped lines. A double-height dish name is 34 dots in Font B, 48 in Font A (both at ESC 2).
+// The preview shows each ticket at its own width; Font B's characters are smaller on paper, so the 64-column ticket is
+// the same 72 mm wide as the 48-column one. Estimate as for the receipt (a543-cases.ts productionPaperMm).
+log(`\n${'='.repeat(60)}\nA543 — the kitchen ticket in Font A (kitchen_font_a) and Font B (standard)\n${'='.repeat(60)}`);
+log('A long dine-in order. Dispatch (packing) and receipts stay Font A, unchanged.');
+for (const w of [80, 58] as const) {
+  const st = kitchenPreset(KITCHEN, 'Kitchen', w);
+  const cols = [
+    toPreview(renderTicket({ order: longOrder, business: { ...business, kitchenFontA: true }, station: st }), { showMargins: true }).split('\n'),
+    toPreview(renderTicket({ order: longOrder, business, station: st }), { showMargins: true }).split('\n'),
+  ];
+  const left = cols[0][0].length + 4;
+  log(`\n${w} mm`);
+  log('FONT A (kitchen_font_a)'.padEnd(left) + 'FONT B (standard, A543)');
+  for (let i = 0; i < Math.max(...cols.map(c => c.length)); i++) {
+    log(((cols[0][i] ?? '').padEnd(left) + (cols[1][i] ?? '')).trimEnd());
+  }
+}
+log('\nEstimated paper per kitchen ticket (text lines, mm):');
+log('                           Font A          Font B');
+for (const [label, o] of [['this sale', order], ['the long order', longOrder]] as const) {
+  for (const w of [80, 58] as const) {
+    const st = kitchenPreset(KITCHEN, 'Kitchen', w);
+    const a = renderTicket({ order: o, business: { ...business, kitchenFontA: true }, station: st });
+    const b = renderTicket({ order: o, business, station: st });
+    const am = productionPaperMm(a, st.feedBeforeCut), bm = productionPaperMm(b, st.feedBeforeCut);
+    log(`  ${`${label}, ${w} mm`.padEnd(24)} ${`${textLines(a)} / ${am.toFixed(0)} mm`.padEnd(15)} `
+      + `${textLines(b)} / ${bm.toFixed(0)} mm  -${Math.round((1 - bm / am) * 100)}%`);
   }
 }
 

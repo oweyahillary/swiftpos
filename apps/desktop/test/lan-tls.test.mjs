@@ -22,6 +22,7 @@ import crypto from 'node:crypto';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -239,7 +240,7 @@ console.log('\nWired in\n');
   ok('updates: the updater\'s own session trusts the pin; the feed is https:// once pinned; the server is asked with lanFetch',
     /trustPinnedNodeIn\(session\.fromPartition\('electron-updater', \{ cache: false \}\)\)/.test(au) && /base: lanUrl\(r\.base\)/.test(au)
     && (au.match(/fetch: lanFetch as typeof fetch/g) ?? []).length === 2 && !/askBranchServer\([^)]*globalThis\.fetch/.test(au));
-  const ipc = src('src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   ok('join: the certificate first, the join and its answer over TLS, pinned on success (and put back if a rejoin fails)',
     /const \{ cert \} = await readServerCert\(url, 4000\);/.test(ipc) && /joinFetch\(`\$\{url\}\/node\/join`/.test(ipc) && /joinFetch\(`\$\{ask\.url\}\/node\/join\/status/.test(ipc)
     && (ipc.match(/setTillPin\(ask\.cert\);/g) ?? []).length === 2 && /setTillPin\(pinBefore\);/.test(ipc));

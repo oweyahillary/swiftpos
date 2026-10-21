@@ -14,6 +14,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -89,7 +90,7 @@ await ok('till: Help on the PIN pad, the POS and the manager screens; offline; P
   assert.match(h, /window\.print\(\)/);
   assert.match(h, /@page \{ size: A4/);
   assert.match(h, /HELP_TOPICS/);
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /handle\('pos:help'/);
+  assert.match(ipcHandlersSource(), /handle\('pos:help'/);
   assert.match(read('apps/desktop/src/main/syncEngine.ts'), /setSupportContact\(c\.support\)/);
 });
 await ok('web: /help open to anyone, linked from sign-in, the dashboard menu and the web POS; no placeholder number', () => {

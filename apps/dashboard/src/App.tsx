@@ -51,6 +51,7 @@ const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').t
 const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
 const PosOptionsTab       = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.PosOptionsTab })));     // A491
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
+const AnalyticsPage           = lazy(() => import('./pages/analytics/AnalyticsPage'));   // A549
 const ShiftReportsPage        = lazy(() => import('./pages/ShiftReportsPage'));
 const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
 const KDSPage                 = lazy(() => import('./pages/kds/KDSPage'));
@@ -143,6 +144,7 @@ export default function App() {
                       <Route path="pos"                       element={<POSPage />} />
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
+                      <Route path="analytics"                 element={<AnalyticsPage />} />
                       <Route path="shift-reports"             element={<ShiftReportsPage />} />
                       <Route path="orders"                    element={<OrdersPage />} />
                       <Route path="open-drawers"              element={<OpenShiftsPage />} />

@@ -54,7 +54,10 @@ export default function PinPage({ businessName, onStaffLogin, onTechUnlock, onHe
       posApi.branding.get().then((b) => {
         if (cancelled) return;
         // A326: themes ON but no brand colour → the lock screen wears the action theme (the proposal). OFF → unchanged.
-        setAccentHex(b?.accentHex ?? (b?.themeId ? resolveTheme(b.themeId).shades[500] : null));
+        // A544: the branch's own colour / theme when it overrides them (main resolves branch → business → default).
+        const accent = b?.effective ? b.effective.accentHex : b?.accentHex ?? null;
+        const theme = b?.effective ? b.effective.themeId : b?.themeId ?? null;
+        setAccentHex(accent ?? (theme ? resolveTheme(theme).shades[500] : null));
         setLogoDataUri(b?.logoPng ?? null);
       }).catch(() => { /* keep what is on screen; first paint falls back to the ZapTill default */ });
     };

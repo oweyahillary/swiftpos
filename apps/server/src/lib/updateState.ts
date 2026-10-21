@@ -14,6 +14,9 @@ export type StoredUpdateState = {
   running: string | null; state: typeof UPDATE_STATES[number]; version: string | null; percent: number | null;
   since: string | null; checked_at: string | null; approved: string | null; error: string | null;
   idle_note: string | null; task: boolean | null;
+  // A541 (owner, 2026-10-20: "most apps are not updating, they are stuck in the old version"): why a downloaded update has
+  // not installed. A till before 1.0.20's A541 sends none of these — stored as null / false.
+  blocker: string | null; server: boolean; waiting_server: boolean; downloaded_at: string | null; startup_failed: boolean;
 };
 
 const VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
@@ -45,5 +48,10 @@ export function cleanUpdateState(body: unknown): StoredUpdateState | null {
     error: state === 'error' ? (text(b.error, 160) ?? 'unknown error') : null,
     idle_note: text(b.idle_note, 160),
     task: typeof b.task === 'boolean' ? b.task : null,
+    blocker: state === 'downloaded' ? text(b.blocker, 160) : null,   // A541
+    server: b.server === true,
+    waiting_server: state !== 'downloaded' && b.waiting_server === true,
+    downloaded_at: state === 'downloaded' ? iso(b.downloaded_at) : null,
+    startup_failed: b.startup_failed === true,
   };
 }

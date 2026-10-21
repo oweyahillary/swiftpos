@@ -81,6 +81,10 @@ export interface POSInitResponse {
   /** A304/A311: branding from /pos/init; null when the business has no row. */
   branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean } | null;
   receiptFooter?: string;
+  /** A325: the business's effective action theme (null = themes off). */
+  themeId?: string | null;
+  /** A544: this branch's override of the theme, brand colour and receipt footer (null = none, or themes off). */
+  branchBranding?: unknown;
   receiptPayLabel?: string;    // A450
   receiptPayNumber?: string;   // A450
   businessType: string;

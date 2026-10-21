@@ -30,6 +30,14 @@
 //   - liveTick without the stockTravelsOnChange() check                    → K "not asked" fails
 //   - remoteCloseBeat ignoring hints.day_close                             → P "zero gateway" (the beat) fails
 //   - pullWebSales taking "no answer" as "no such drawer"                  → P "older server" fails
+//
+// A547 (owner, 2026-10-21: "you can also finish the leftovers"): EVERY day-close check on a till behind the server — the
+// start-up steps and the day gate (learnCloudCloses), the remote-instructions step, the 10-minute full sync — asks the
+// server's copy first (syncEngine runDayCloseInstructionsOnce), not only the 90 s beat: none named → ZERO gateway calls
+// for it; named → its own /api/day-close/pending once; an older server → through the gateway as before.
+// MUTATIONS (A547, each red on its own):
+//   - runDayCloseInstructionsOnce without the hint check                  → P "A547: none named … ZERO gateway" fails
+//   - the hint check taken as "skip" when the server does not answer      → P "A547: an older server" fails
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -188,6 +196,14 @@ try {
     forP2.status === 200 && forP2.body.states.length === 1 && forP2.body.states[0].id === S_PEER, JSON.stringify(forP2));
   const webP3 = BD.answerDrawers('dev-P3', { web_shift: { id: S_PEER, own_ids: [] } });
   ok('…another till\'s drawer\'s sales are not handed out (unknown to it)', webP3.body.web === 'unknown', JSON.stringify(webP3.body));
+  // A542: what the branch server's Tech page shows (DrawersCopyPanel ← node:drawersStatus ← drawersStatus()).
+  const st542 = BD.drawersStatus();
+  ok('A542: the Tech page\'s drawer copy — last poll ok, 3 open + 1 waiting for a confirmation, 2 tills asked this hour, push line up, not on the fallback',
+    st542.lastPollOk === true && !!st542.lastPollAt && st542.open === 3 && st542.awaitingConfirmation === 1 && st542.peersLastHour === 2
+    && st542.channel === 'push' && st542.fallback === false && st542.fresh === true, JSON.stringify(st542));
+  ok('A542: …a till that asked more than an hour ago is not counted', BD.drawersStatus(Date.now() + 3_600_001).peersLastHour === 0);
+  ok('A542: the push line at a glance — connected since a time, no ring yet, no fallback polling',
+    !!LS.liveStatus().push.since && LS.liveStatus().push.lastRingAt === null && LS.liveStatus().push.fallbackEveryS === null, JSON.stringify(LS.liveStatus().push));
 
   putShift(S_OWN, 'dev-S');
   cloud.shifts[0] = { ...cloud.shifts[0], status: 'closed', closed_at: iso(), close_method: 'force', closed_by: 'u-mgr', closed_by_name: 'Akinyi', closing_float: 0, cash_variance: 0 };
@@ -195,6 +211,7 @@ try {
   await until(() => hits(/^\/api\/pos\/branch-drawers$/) === 2);
   ok('a "drawers" ring (a web close) → the server asks the branch call at once — and no /changes for it',
     hits(/^\/api\/pos\/branch-drawers$/) === 2 && hits(/^\/api\/pos\/changes/) === 0, JSON.stringify(cloud.hits));
+  ok('A542: …the push line shows the cloud\'s last ring', !!LS.liveStatus().push.lastRingAt, JSON.stringify(LS.liveStatus().push));
   await wait(100);
   cloud.hits = [];
   const closedHere = await E.pullShiftCloses();
@@ -311,7 +328,23 @@ try {
   await wait(200);
   ok('a remote day close named for this till → it asks its own /api/day-close/pending once (through the gateway), nothing else',
     node.gateway.length === 1 && node.gateway[0] === '/api/day-close/pending', JSON.stringify(node.gateway));
+  // A547: …and the start-up / day-gate check (learnCloudCloses) collects it too while it is named.
+  node.gateway = [];
+  E.setDrawerSource(BD.drawerSource);
+  await E.learnCloudCloses();
+  ok('A547: named for this till, the day gate\'s check (learnCloudCloses) collects it — /api/day-close/pending through the gateway',
+    node.gateway.filter((p) => p === '/api/day-close/pending').length === 1, JSON.stringify(node.gateway));
   cloud.dayClose = [];
+  await asServer(() => BD.pollBranchDrawers('test'));
+  // A547: none named — every other day-close check (not only the 90 s beat) asks the server's copy: no gateway call.
+  node.gateway = []; cloud.hits = [];
+  E.setDrawerSource(BD.drawerSource);
+  const learned = await E.learnCloudCloses();
+  await E.runRemoteInstructionsNow();
+  await wait(200);
+  ok('A547: none named — the day gate\'s check (learnCloudCloses) and the remote-instructions step: ZERO gateway calls for the day close',
+    learned === true && !node.gateway.includes('/api/day-close/pending') && !cloud.hits.some((h) => /day-close/.test(h.path)),
+    JSON.stringify({ gw: node.gateway, cloud: cloud.hits }));
 
   // the log bell: the cloud rings the server's socket for dev-P2 (part S proved the socket → notePeerLogRequest)
   LP.startLogPull();
@@ -338,6 +371,21 @@ try {
   await E.pullWebSales();
   ok('an older branch server (its 404 for /node/drawers): the till asks the cloud through the gateway, as before',
     node.gateway.some((p) => p.startsWith('/api/shifts/state')) && node.gateway.some((p) => /foreign-orders$/.test(p)), JSON.stringify(node.gateway));
+  // A547: the older server answers no day-close hint → the till asks its own /api/day-close/pending through the gateway.
+  node.gateway = [];
+  E.setDrawerSource(BD.drawerSource);
+  await E.learnCloudCloses();
+  ok('A547: an older server (no answer to the hint) → the day-close check goes through the gateway, as before',
+    node.gateway.includes('/api/day-close/pending'), JSON.stringify(node.gateway));
+  ok('A542: …and the till\'s drawer status says it is on the fallback path', BD.drawersStatus().fallback === true && !!BD.drawersStatus().fallbackUntil, JSON.stringify(BD.drawersStatus()));
+  // A542: a branch server whose cloud does not answer for the branch in one call — the Tech page says fallback, poll failed.
+  BD._resetBranchDrawers();
+  cloud.noDrawers = true;
+  await asServer(() => BD.pollBranchDrawers('test'));
+  const fb = asServer(() => BD.drawersStatus());
+  ok('A542: a server whose cloud has no branch call → its Tech page shows the fallback (each till asks) and the poll failed',
+    fb.role === 'server' && fb.fallback === true && fb.lastPollOk === false && !!fb.lastPollAt, JSON.stringify(fb));
+  cloud.noDrawers = false;
   nodeSrv.close();
 } catch (e) {
   console.log(`  FAIL threw: ${e?.stack ?? e}`); fail++;

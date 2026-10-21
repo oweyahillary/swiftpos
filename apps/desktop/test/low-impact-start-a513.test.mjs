@@ -23,6 +23,7 @@ import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.join(here, '..');
@@ -189,7 +190,8 @@ console.log('\n2. No window at auto-start — the whole real index.ts\n');
   ok('a server that stops serving with no window open opens it (never left running unseen)',
     sm.includes('if (!quitting && !openMainWindow() && makeWindow) showWindow();') && idx.includes("if (!isServing() && !openMainWindow()) { logLine('startup', 'not serving after the start — opening the window'); showWindow(); }"));
   ok('no spell-checker languages set anywhere (no dictionary download)', !/setSpellCheckerLanguages|setSpellCheckerDictionaryDownloadURL/.test(
-    fs.readdirSync(path.join(desktop, 'src/main')).filter((f) => f.endsWith('.ts')).map((f) => read(`src/main/${f}`)).join('\n')));
+    fs.readdirSync(path.join(desktop, 'src/main')).filter((f) => f.endsWith('.ts')).map((f) => read(`src/main/${f}`)).join('\n')
+    + ipcHandlersSource()));   // D10: and src/main/ipc/*.ts
 }
 
 console.log('\n3. The sequence — one step at a time, each capped\n');
@@ -306,7 +308,7 @@ console.log('\n6. Printer paper size kept across restarts; Get-Printer only on t
     /if \(!r\.ok && opts\.deviceName\) \{ try \{ forgetGeometry\(opts\.deviceName\); \}/.test(read('src/main/printService.ts'))
     && /if \(printers\.length\) \{ try \{ notePrinterList\(printers\.map\(p => p\.name\)\); \}/.test(read('src/main/printService.ts')));
   cp.execFile = realExecFile;
-  const ipc = read('src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   ok('Get-Printer (printerShares) runs only when the printers screen asks — never at start',
     (ipc.match(/printerShares\(\)/g) || []).length === 1 && ipc.includes("handle('print:shares', async () => await printerShares());")
     && !/printerShares|probeGeometry/.test(read('src/main/index.ts'))

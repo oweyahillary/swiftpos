@@ -347,6 +347,16 @@ jobs:
           node scripts/check-api-schema-drift.mjs
           node scripts/check-api-schema-drift.mjs --self-test
 
+      # A549 — Analytics v1 (premium): the routes over HTTP with their aggregates answered by the REAL migration-158
+      # functions in PGlite (flag off, branch scope, another business, the 366-day cap, the matrix, the heatmap in EAT,
+      # the void-rate flag, credit ageing FIFO, costs withheld, the cache), the pure rules and insight sentences, and the
+      # migration on its own. Needs the server build and the root install (PGlite) above.
+      - name: Analytics v1 (A549) routes, rules and migration 158
+        run: |
+          node --no-warnings tests/analytics-a549.test.mjs
+          node --no-warnings tests/analytics-rules-a549.test.mjs
+          node --no-warnings scripts/test-migration-158.mjs
+
       - name: Run offline suites
         run: |
           set -e
@@ -797,6 +807,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/till-wastage.test.mjs
 
+      # A545 — credit sales a manager confirms on the till: the list (kept for offline), a decision offline kept and sent
+      # later with the till's own sign-in naming who, a refusal ends the wait; Close Day / Close Branch never blocked.
+      - name: Desktop credit sales to confirm
+        working-directory: apps/desktop
+        run: node --no-warnings test/credit-confirm-a545.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)
@@ -1140,6 +1156,33 @@ jobs:
         env:
           TZ: UTC
         run: node --no-warnings test/menus-a537.test.mjs
+
+      # A544 — per-branch branding: local schema 74 (branch_branding); the whole pull, a change and the themes switch store
+      # this branch's override (an older cloud leaves it, another branch's never kept); the resolver (branch → business →
+      # default per field; themes off → ignored); the receipt prints the branch's footer in the owner's box, the closing
+      # block and the credit after it, in the receipt's own font; the branch server relays it to its tills.
+      - name: Desktop per-branch branding (A544)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/branch-branding-a544.test.mjs
+
+      # A541 — tills and branch servers stuck on an old version since the A513 autostart install their update: a start at
+      # Windows sign-in installs an approved, newer, downloaded update before serving (the updater task, else the
+      # installer; once per version, never on a start by hand); the branch server is busy only for real trading (every
+      # gateway route classified — a drawer's foreign-orders poll all night no longer holds it); the report says why it
+      # has not installed; managers (never cashiers) are told after 3 days.
+      - name: Desktop stuck updates install (A541)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/update-stuck-a541.test.mjs
+
+      - name: Desktop till installs at sign-in and when opened (A546)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/update-open-a546.test.mjs
 
       # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
       # proven till, joins, the gateway's path check, the roster, TLS pins.

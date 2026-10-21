@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { money, dateTime } from '../lib/format';
 import { agoLabel, syncRecent } from '../lib/tillSync';
+import { CreditAwaitingNotice } from './CreditSalesToConfirm';   // A545
 
 interface Client { get: <T>(p: string) => Promise<T>; post: <T>(p: string, body?: unknown) => Promise<T> }
 
@@ -133,6 +134,8 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
           </p>
         </div>
       )}
+      {/* A545: credit sales still waiting for a manager — said, never a block on closing (the owner: no deadlocks). */}
+      <CreditAwaitingNotice client={client} />
       {error && <p className="text-xs text-red-400">{error}</p>}
       {done && <p className="text-xs text-action-400" data-testid="td-done">{done}</p>}
       {!ov && !error && <p className="text-xs text-gray-500">Loading tills…</p>}

@@ -8,6 +8,7 @@ var DocBuilder = class {
   constructor(columns) {
     this.columns = columns;
     this.blocks = [];
+    this.useFontB = false;
   }
   /** Pre-formatted lines from layout.ts go through here unchanged. */
   line(text, opts = {}) {
@@ -36,6 +37,11 @@ var DocBuilder = class {
     this.blocks.push({ kind: "feed", lines });
     return this;
   }
+  /** A540: a thin gap of `dots` printer dots between two lines. */
+  gap(dots) {
+    this.blocks.push({ kind: "gap", dots });
+    return this;
+  }
   cut() {
     this.blocks.push({ kind: "cut" });
     return this;
@@ -59,10 +65,17 @@ var DocBuilder = class {
     this.cutFeedLines = lines;
     return this;
   }
+  /** A543: the whole document in the printer's Font B (see Document.font). The caller lays it out at
+   *  columnsFor(width, 'B') — this does not re-flow anything. */
+  fontB() {
+    this.useFontB = true;
+    return this;
+  }
   build() {
     const doc = { columns: this.columns, blocks: this.blocks };
     if (this.spacing !== void 0) doc.lineSpacing = this.spacing;
     if (this.cutFeedLines !== void 0) doc.cutFeed = this.cutFeedLines;
+    if (this.useFontB) doc.font = "B";
     return doc;
   }
 };
@@ -120,7 +133,8 @@ function formatCents(c) {
 }
 
 // shared/printing/src/layout.ts
-function columnsFor(paperWidthMm) {
+function columnsFor(paperWidthMm, font = "A") {
+  if (font === "B") return paperWidthMm === 80 ? 64 : 42;
   return paperWidthMm === 80 ? 48 : 32;
 }
 function sanitize(s) {
@@ -151,8 +165,14 @@ function pairOrStack(cols, left, right) {
   return [l.slice(0, cols), " ".repeat(Math.max(0, cols - r.length)) + r.slice(0, cols)];
 }
 function hangingWrap(text, width, indent) {
-  const segs = wrap(text, width);
-  return segs.map((s, i) => i === 0 ? s : " ".repeat(indent) + s);
+  const prefix = sanitize(text.slice(0, indent));
+  const rest = text.slice(indent);
+  const segs = wrap(rest, Math.max(1, width - indent));
+  return segs.map((s, i) => (i === 0 ? prefix : " ".repeat(indent)) + s);
+}
+function indentedWrap(cols, text, indent) {
+  const pad = " ".repeat(indent);
+  return wrap(text, Math.max(1, cols - indent)).map((l) => pad + l);
 }
 function itemColumns(cols) {
   const amt = cols >= 48 ? 12 : 10;
@@ -367,6 +387,8 @@ function compactStamp(d) {
 }
 var RECEIPT_LINE_SPACING_DOTS = 30;
 var COMPACT_CUT_FEED = 1;
+var INFO_GAP_DOTS = 10;
+var KITCHEN_FONT_B_LINE_SPACING_DOTS = 24;
 function rate(n) {
   return String(Number(n.toFixed(2)));
 }
@@ -397,8 +419,10 @@ function noteRows(note) {
 }
 function renderProduction(ctx) {
   const { order, station } = ctx;
-  const cols = columnsFor(station.paperWidthMm);
+  const fontB = station.kind === "kitchen" && ctx.business.kitchenFontA !== true;
+  const cols = columnsFor(station.paperWidthMm, fontB ? "B" : "A");
   const d = new DocBuilder(cols);
+  if (fontB) d.fontB().lineSpacing(KITCHEN_FONT_B_LINE_SPACING_DOTS);
   if (ctx.voided) {
     d.line("VOID", { align: "center", size: "large", bold: true });
     d.line(rule(cols));
@@ -413,7 +437,7 @@ function renderProduction(ctx) {
   if (order.orderType === "delivery" && order.deliveryPerson) {
     d.line(`Rider  ${order.deliveryPerson}`);
   }
-  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `NOTE: ${ln}`, void 0, 0), { bold: true });
+  for (const ln of noteRows(order.note)) d.lines(indentedWrap(cols, `NOTE: ${ln}`, 0), { bold: true });
   if (ctx.reprint) {
     d.line(`REPRINT  ${fullStamp(ctx.reprint.at)}  (#${ctx.reprint.count})`);
   }
@@ -436,7 +460,7 @@ function renderProduction(ctx) {
     );
     if (line.units.length === 0) {
       unitRows++;
-      for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, void 0, 6), { bold: true });
+      for (const ln of noteRows(line.note)) d.lines(indentedWrap(cols, `** ${ln}`, 6), { bold: true });
       continue;
     }
     for (const u of units) {
@@ -444,12 +468,12 @@ function renderProduction(ctx) {
       const attrs = describeAttributes(u);
       const qty = u.quantity > 1 ? ` x${u.quantity}` : "";
       const inline = station.attributeStyle === "inline-when-simple" && attrs ? ` (${attrs})` : "";
-      d.lines(subRow(cols, `${u.name}${qty}${inline}`, void 0, 6));
+      d.lines(indentedWrap(cols, `${u.name}${qty}${inline}`, 6));
       if (attrs && !inline) {
-        d.lines(subRow(cols, attrs, void 0, 8));
+        d.lines(indentedWrap(cols, attrs, 8));
       }
     }
-    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, void 0, 6), { bold: true });
+    for (const ln of noteRows(line.note)) d.lines(indentedWrap(cols, `** ${ln}`, 6), { bold: true });
   }
   d.line(rule(cols));
   if (station.showFooterCount) {
@@ -469,6 +493,11 @@ function renderReceipt(ctx) {
   if (classic.extraFeed !== true) d.cutFeed(COMPACT_CUT_FEED);
   const minorRule = () => {
     if (full) d.line(rule(cols));
+  };
+  let infoLines = 0;
+  const info = (text) => {
+    if (full && infoLines++ > 0) d.gap(INFO_GAP_DOTS);
+    d.line(text);
   };
   if (ctx.voided) {
     d.line("VOID", { align: "center", size: "large", bold: true });
@@ -498,7 +527,7 @@ function renderReceipt(ctx) {
   if (full) {
     d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
     d.line(rule(cols));
-    if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);
+    if (!ctx.proforma) info(`Bill No.: ${order.billNumber}`);
   } else if (ctx.proforma) {
     d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
   } else {
@@ -507,23 +536,23 @@ function renderReceipt(ctx) {
     const type = labelled.length + 1 + sanitize(bill).length <= cols ? labelled : TYPE_TITLE[order.orderType];
     d.lines(pairOrStack(cols, type, bill));
   }
-  if (order.orderType === "delivery") d.line(`Delivery Boy: ${order.deliveryPerson ?? ""}`);
-  if (order.orderType === "dine_in" && order.tableNumber) d.line(`Table: ${order.tableNumber}`);
+  if (order.orderType === "delivery") info(`Delivery Boy: ${order.deliveryPerson ?? ""}`);
+  if (order.orderType === "dine_in" && order.tableNumber) info(`Table: ${order.tableNumber}`);
   if (full) {
-    d.line(`Cashier: ${order.cashierName}`);
-    d.line(`Date: ${fullStamp(order.soldAt)}`);
+    info(`Cashier: ${order.cashierName}`);
+    info(`Date: ${fullStamp(order.soldAt)}`);
   } else {
     const who = `Cashier: ${order.cashierName}`;
     const stamp2 = sanitize(who).length + 1 + 19 <= cols ? fullStamp(order.soldAt) : compactStamp(order.soldAt);
     d.lines(pairOrStack(cols, who, stamp2));
   }
-  if (ctx.reprint) d.line(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
+  if (ctx.reprint) info(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
   if (ctx.voided) {
     const voided = `Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`;
-    if (full) d.line(voided);
+    if (full) info(voided);
     else d.lines(wrap(voided, cols));
   }
-  if (full) d.line(`Kots: ${order.kotCount}`);
+  if (full) info(`Kots: ${order.kotCount}`);
   for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, void 0, 0));
   minorRule();
   d.line("Item".padEnd(c.name) + "Qty".padStart(c.qty) + "Amt".padStart(c.amt));
@@ -586,7 +615,7 @@ function renderReceipt(ctx) {
   if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
   d.line(pair(cols, `VAT (${rate(business.vatRate)}%)`, formatCents(tax.vat)));
   minorRule();
-  if (full || tax.roundOff !== 0) d.line(pair(cols, "Round Off:", formatCents(tax.roundOff)));
+  if (tax.roundOff !== 0) d.line(pair(cols, "Round Off:", formatCents(tax.roundOff)));
   if (full || tip > 0 || deliveryFee > 0) d.line(pair(cols, "Total:", formatCents(tax.total)), { bold: true });
   if (tip > 0) d.line(pair(cols, "Tip:", formatCents(tip)));
   if (deliveryFee > 0) d.line(pair(cols, "Delivery fee:", formatCents(deliveryFee)));
@@ -594,14 +623,27 @@ function renderReceipt(ctx) {
   d.line(rule(cols));
   d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: "tall", bold: true });
   minorRule();
-  if (full) d.line("Payment Detail:", { bold: true });
+  if (full) {
+    const label = business.tillLabel ?? "Buy Goods";
+    const heading = business.tillNumber ? `Payment Details: ${label} - ${business.tillNumber}` : "Payment Details:";
+    const cut = heading.indexOf(", Account ");
+    if (heading.length <= cols) d.line(heading, { bold: true });
+    else if (cut > 0 && cut <= cols) {
+      d.line(heading.slice(0, cut), { bold: true });
+      d.line(heading.slice(cut + 2), { bold: true });
+    } else {
+      d.line("Payment Details:", { bold: true });
+      d.lines(wrap(`${label} - ${business.tillNumber}`, cols));
+    }
+    d.line(rule(cols));
+  }
   for (const leg of order.payments) {
     d.line(pair(cols, leg.label.toUpperCase(), formatCents(leg.amount)));
   }
   if (order.changeGiven > 0) {
     d.line(pair(cols, "CHANGE", formatCents(order.changeGiven)));
   }
-  if (business.tillNumber) {
+  if (!full && business.tillNumber) {
     const payLine = `${business.tillLabel ?? "Buy Goods"}: ${business.tillNumber}`;
     const cut = payLine.indexOf(", Account ");
     if (payLine.length > cols && cut > 0) {
@@ -867,6 +909,8 @@ var INIT = [ESC, 64];
 var CODEPAGE_CP437 = [ESC, 116, 0];
 var LINE_SPACING_DEFAULT = [ESC, 50];
 var lineSpacingDots = (n) => [ESC, 51, Math.max(0, Math.min(255, Math.round(n)))];
+var FONT_A = [ESC, 77, 0];
+var FONT_B = [ESC, 77, 1];
 var ALIGN = { left: 0, center: 1, right: 2 };
 function sizeByte(size) {
   switch (size) {
@@ -891,6 +935,7 @@ function toEscPos(doc, opts = {}) {
   };
   const compact = doc.lineSpacing;
   push(...INIT, ...CODEPAGE_CP437, ...compact === void 0 ? LINE_SPACING_DEFAULT : lineSpacingDots(compact));
+  if (doc.font === "B") push(...FONT_B);
   let curSpacing = compact === void 0 ? -1 : compact;
   let curAlign = -1;
   let curSize = -1;
@@ -942,6 +987,9 @@ function toEscPos(doc, opts = {}) {
       case "feed":
         push(ESC, 100, Math.max(0, Math.min(255, block.lines)));
         break;
+      case "gap":
+        push(ESC, 74, Math.max(0, Math.min(255, Math.round(block.dots))));
+        break;
       case "drawer":
         push(ESC, 112, 0, 25, 250);
         break;
@@ -952,6 +1000,7 @@ function toEscPos(doc, opts = {}) {
   }
   push(ESC, 97, 0, GS, 33, 0, ESC, 69, 0);
   if (compact !== void 0) push(...LINE_SPACING_DEFAULT);
+  if (doc.font === "B") push(...FONT_A);
   if (opts.openDrawer) push(ESC, 112, 0, 25, 250);
   const feed = opts.cut && doc.cutFeed !== void 0 ? doc.cutFeed : opts.feedBeforeCut;
   if (feed) push(ESC, 100, Math.max(0, Math.min(255, feed)));

@@ -92,6 +92,9 @@ let again = false;
 let timer: NodeJS.Timeout | null = null;
 let socket: any = null;
 let socketOpen = false;
+let socketSince = 0;     // A542: when the push channel last opened (the Tech page's "connected since")
+let lastRingAt = 0;      // A542: the cloud's last ring ('changed')
+let fallbackEvery = 0;   // A542: the check interval while the channel is down (0 = not polling for it)
 let socketTries = 0;
 let socketRetryAt = 0;
 let lastError = '';
@@ -353,12 +356,13 @@ function openSocket(now: number): void {
     let m: any = null;
     try { m = JSON.parse(String(ev?.data ?? '')); } catch { return; }
     if (m?.type === 'ready') {
-      socketOpen = true; socketTries = 0;
+      socketOpen = true; socketTries = 0; socketSince = Date.now(); fallbackEvery = 0;
       logLine('sync', 'A531: the cloud will ring when something changes (push channel open)');
       // Only when the log moved past what this till applied (a reconnect after a token renewal asks nothing).
       const held = getKv(K.seq);
       if (held === null || Number(m.last_seq) > Number(held)) void catchUp('connected');
     } else if (m?.type === 'changed') {
+      lastRingAt = Date.now();   // A542
       // A535: a drawer changed on the web — a branch server asks the cloud about its branch's drawers at once
       // (branchDrawers.ts); nothing in the change log moved for it, so a ring for drawers ALONE asks no /changes.
       const topics: string[] = Array.isArray(m.topics) ? m.topics.map(String) : [];
@@ -410,6 +414,7 @@ export async function liveTick(now = Date.now()): Promise<void> {
     openSocket(now);
     if (!socketOpen) {
       const every = drawers > 0 || recentlyTrading(now) ? BUSY_POLL_MS : SOCKET_DOWN_POLL_MS;
+      fallbackEvery = every;   // A542: shown on the Tech page
       if (now - lastPollAt >= every) await catchUp('no push channel');
     }
   }
@@ -459,10 +464,21 @@ export function stopLiveSync(): void {
 export function liveStatus(): {
   mode: LiveMode; channel: 'push' | 'polling' | 'branch server' | 'off'; seq: number | null; lastFullAt: string | null;
   waiting: number; topics: Array<{ topic: string; seq: number | null; at: string | null; rows: number; bytes: number }>; error: string | null;
+  /** A542: the push line at a glance — open since when, the cloud's last ring, and (while it is down) how often this
+   *  machine checks instead and when it tries the line again. Null fields: not known / not applicable. */
+  push: { since: string | null; lastRingAt: string | null; fallbackEveryS: number | null; retryAt: string | null };
 } {
   const t = json<Record<string, TopicState>>(K.topics, {});
   const seq = getKv(K.seq);
+  const iso = (ms: number) => (ms ? new Date(ms).toISOString() : null);
+  const down = mode === 'direct' && !socketOpen;
   return {
+    push: {
+      since: socketOpen ? iso(socketSince) : null,
+      lastRingAt: iso(lastRingAt),
+      fallbackEveryS: down && fallbackEvery ? Math.round(fallbackEvery / 1000) : null,
+      retryAt: down && socketRetryAt > Date.now() ? iso(socketRetryAt) : null,
+    },
     mode,
     channel: mode === 'peer' ? 'branch server' : mode === 'direct' ? (socketOpen ? 'push' : 'polling') : 'off',
     seq: seq === null ? null : Number(seq),
@@ -543,5 +559,6 @@ export function serveLiveLog(since: number | null, branchId: string | null, loca
 export function _resetLive(): void {
   mode = 'unknown'; legacyUntil = 0; lastPollAt = 0; lastFullTry = 0; lastDrawers = -1; inFlight = null; again = false;
   closeSocket(); socketTries = 0; socketRetryAt = 0; lastError = ''; prunedAt = 0; peerBells.clear();   // A535
+  socketSince = 0; lastRingAt = 0; fallbackEvery = 0;   // A542
   if (timer) clearInterval(timer); timer = null; started = false;
 }

@@ -1,8 +1,9 @@
-// A498 — the receipt's payment block is ONE block: "Payment Detail:" straight above its payments, and the M-Pesa number
-// (Buy Goods / Paybill) printed WITH them, inside the block, before its closing rule.
-// Owner, 2026-10-15, with a photo of a printed receipt: "the payment method is printing on the wrong place … check where
-// payment detail is printed and where buy good is printed" — the heading was cut off from its payments by a rule, and the
-// Buy Goods line sat after the block's rule, as if it were a section of its own.
+// A498 → A539 — the receipt's payment block.
+// A498 (owner, 2026-10-15): the heading and its payments are ONE block, with the M-Pesa number printed with them.
+// A539 (owner, 2026-10-21, on paper): "add a line between payment method and payment details, it should read —
+// payment details: Pay bill/buygood - 892984 / ------ / mpesa/cash/card". The standard receipt now names the number in
+// the heading, a rule under it, then the payments and change, then the block's closing rule. The compact opt-in (A530)
+// keeps its own block (no heading, the number after the payments).
 //
 //   cd shared/printing && npm run sample && cd ../.. && node --no-warnings tests/receipt-payment-block.test.mjs
 //
@@ -19,30 +20,35 @@ const web = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/lib/escposRender
 const till = fs.readFileSync(path.join(ROOT, 'shared/printing/src/render.ts'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n       ${e.message}`); } };
-const rows = sample.split('\n').map((l) => l.replace(/^\|/, '').replace(/\|\s*$/, '').trimEnd());
+const all = sample.split('\n');
+// The first CUSTOMER RECEIPT in the sample is the standard one (80 mm, no switches).
+const start = all.findIndex((l) => l.startsWith('CUSTOMER RECEIPT   ('));
+const rows = all.slice(start).map((l) => l.replace(/^\|/, '').replace(/\|\s*$/, '').trimEnd());
+const end = rows.findIndex((l, k) => k > 3 && /^\+-+\+?$/.test(l));
+const receipt = rows.slice(0, end > 0 ? end : rows.length);
 
-console.log('\nThe receipt\'s payment block\n');
-ok('the printed sample: the heading is followed straight by a payment line — no rule between', () => {
-  const i = rows.findIndex((l) => l.startsWith('Payment Detail:'));
-  assert.ok(i >= 0, 'no Payment Detail in the sample');
-  assert.doesNotMatch(rows[i + 1], /^-+$/, `a rule under the heading: "${rows[i + 1]}"`);
-  assert.match(rows[i + 1], /^CASH\s+[\d,]+\.\d\d$/);
+console.log('\nThe receipt\'s payment block (A539)\n');
+ok('the heading names the number customers pay to: "Payment Details: Buy Goods - 000000"', () => {
+  assert.ok(receipt.some((l) => l === 'Payment Details: Buy Goods - 000000'), receipt.join(' | '));
 });
-ok('the printed sample: Buy Goods inside the block — after the payments, before the block\'s rule', () => {
-  const i = rows.findIndex((l) => l.startsWith('Payment Detail:'));
-  const b = rows.findIndex((l, k) => k > i && l.startsWith('Buy Goods:'));
-  const r = rows.findIndex((l, k) => k > i && /^-+$/.test(l));
-  assert.ok(b > i, 'no Buy Goods after the heading'); assert.ok(r > b, `the block's rule (${r}) comes before Buy Goods (${b})`);
-  for (let k = i + 1; k < b; k++) assert.doesNotMatch(rows[k], /^-+$/, 'a rule between the payments and Buy Goods');
+ok('…then a rule, then the payments and change, then the block\'s closing rule', () => {
+  const i = receipt.indexOf('Payment Details: Buy Goods - 000000');
+  assert.match(receipt[i + 1], /^-+$/, `under the heading: "${receipt[i + 1]}"`);
+  assert.match(receipt[i + 2], /^CASH\s+[\d,]+\.\d\d$/);
+  assert.match(receipt[i + 3], /^CHANGE\s+[\d,]+\.\d\d$/);
+  assert.match(receipt[i + 4], /^-+$/, `after the payments: "${receipt[i + 4]}"`);
 });
-ok('the web POS prints the same block (its own renderer)', () => {
-  assert.match(web, /d\.line\("Payment Detail:", \{ bold: true \}\);\n  for \(const leg of order\.payments\)/);
-  assert.match(web, /if \(business\.tillNumber\) \{[\s\S]{0,400}\}\n  d\.line\(rule\(cols\)\);/);
-  assert.match(till, /d\.line\('Payment Detail:', \{ bold: true \}\);\n  for \(const leg of order\.payments\)/);
+ok('no separate "Buy Goods: …" line on the standard receipt any more', () => {
+  assert.ok(!receipt.some((l) => /^Buy Goods:/.test(l)), receipt.join(' | '));
 });
-ok('a Paybill\'s account goes on its own line when the line is wider than the paper (both renderers)', () => {
-  // The web's copy is generated from shared/printing by esbuild (scripts/build-escpos-renderer.mjs), which re-lays it out.
-  for (const s of [till, web]) assert.match(s, /if \(payLine\.length > cols && cut > 0\) \{\s*d\.line\(payLine\.slice\(0, cut\)\);\s*d\.line\(payLine\.slice\(cut \+ 2\)\);\s*\}/);
+ok('the web POS prints the same block (its renderer is built from the till\'s)', () => {
+  for (const s of [till, web]) {
+    assert.match(s, /Payment Details: \$\{label\} - \$\{business\.tillNumber\}/, 'the heading with the number');
+    assert.match(s, /"Payment Details:"|'Payment Details:'/, 'the heading alone (no number, or too long)');
+  }
+});
+ok('a Paybill\'s account goes on its own line when the heading is wider than the paper (both renderers)', () => {
+  for (const s of [till, web]) assert.match(s, /indexOf\(["'], Account ["']\)/);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

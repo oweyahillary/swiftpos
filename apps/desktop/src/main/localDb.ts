@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
 import { monoRasterFromRGBA, monoRasterToString } from '@swiftpos/printing';
 import { validateBrandingWrite } from './brandingGuard';
+import { branchBrandingFromWire, resolveBranchBranding, type BranchBranding } from './branchBranding';   // A544
 
 // Resolved lazily, NOT at import time.
 //
@@ -832,6 +833,12 @@ function initSchema(db: Database.Database) {
     id TEXT PRIMARY KEY, name TEXT NOT NULL, sort_order INTEGER DEFAULT 0, active INTEGER DEFAULT 1,
     color TEXT, icon TEXT, synced_at TEXT
   )`);
+  // A544 (74): this till's branch's override of the business branding (pos/init `branchBranding`, GET /api/pos/changes
+  // table branch_branding; migration 156). Owner, 2026-10-21: "phase 2 branding — we need to do it before value add" …
+  // "yes start". Pulled, never pushed; only this till's own branch's row is kept. NULL column = the business's.
+  db.exec(`CREATE TABLE IF NOT EXISTS branch_branding (
+    branch_id TEXT PRIMARY KEY, theme_id TEXT, accent_hex TEXT, receipt_footer TEXT, synced_at TEXT
+  )`);
 
   // ── Branch replication: which terminal created this row? ──────────────────
   // orders, shifts and business_days already carry device_id. expenses and
@@ -1317,7 +1324,9 @@ function initSchema(db: Database.Database) {
 // 72 adds the till sync audit's local columns: sync_queue.drawer_wait_at, sync_error on expenses / float_transactions /
 // kitchen_voids, and an index on sync_queue (status). Local only. REQUIRED moves.
 // 73 adds A537: menus (pulled — the business's menus) and categories.menu_id (pulled; migration 155). REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 73;
+// 74 adds A544: branch_branding (pulled — this branch's override of the theme, brand colour and receipt footer; migration
+// 156). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 74;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {
@@ -1357,6 +1366,24 @@ export interface BrandingRow {
   /** A325: the effective action theme id from the cloud, or null (themes off → today's look). Resolved against the
    *  registry (themes.ts) by the screens, so an id from a newer cloud degrades to the default, never to nothing. */
   themeId: string | null;
+  /** A544: this till's branch's override, as pulled (null = none, or themes off). accentHex / themeId above stay the
+   *  BUSINESS's (the till's branding editor edits those); `effective` is what the screens wear. */
+  branch?: BranchBranding | null;
+  /** A544: resolved per field — the branch's override → the business's → the ZapTill default (branchBranding.ts). */
+  effective?: { themeId: string | null; accentHex: string | null };
+}
+
+/** A544: the override of THIS till's branch (device_config.branch_id), or null. Fail-soft (a database before 74 → null). */
+export function getBranchBranding(): BranchBranding | null {
+  try {
+    const row = getLocalDb().prepare(
+      `SELECT bb.branch_id, bb.theme_id, bb.accent_hex, bb.receipt_footer FROM branch_branding bb
+         JOIN device_config dc ON dc.id = 1 AND dc.branch_id = bb.branch_id LIMIT 1`).get() as
+      { branch_id: string; theme_id: string | null; accent_hex: string | null; receipt_footer: string | null } | undefined;
+    return row ? branchBrandingFromWire({ branchId: row.branch_id, themeId: row.theme_id, accentHex: row.accent_hex, receiptFooter: row.receipt_footer }) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function getBranding(): BrandingRow | null {
@@ -1365,16 +1392,55 @@ export function getBranding(): BrandingRow | null {
       `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`).get() as
       { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null; theme_id: string | null } | undefined;
     if (!row) return null;
+    const branch = getBranchBranding();
+    const eff = resolveBranchBranding({ themeId: row.theme_id ?? null, accentHex: row.accent_hex ?? null }, branch);
     return {
       accentHex: row.accent_hex ?? null,
       logoPng: row.logo_png ?? null,
       logoReceipt: row.logo_receipt ?? null,
       receiptLogoEnabled: row.receipt_logo_enabled === 1,
       themeId: row.theme_id ?? null,
+      branch,
+      effective: { themeId: eff.themeId, accentHex: eff.accentHex },
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * A544: the receipt footer this till prints — its branch's own (when set, and the business has themes: the stored
+ * effective theme is not null) instead of the business's footer box text (`businessFooter`, device_config.receipt_footer).
+ * Only the owner's box: the closing block, TAX RECEIPT and the credit stay (shared/printing — client copy can add, never
+ * replace). Fail-soft: any read error → the business's.
+ */
+export function effectiveReceiptFooter(businessFooter: string | null | undefined): string {
+  try {
+    const t = getLocalDb().prepare(`SELECT theme_id FROM branding LIMIT 1`).get() as { theme_id: string | null } | undefined;
+    return resolveBranchBranding({ themeId: t?.theme_id ?? null, receiptFooter: businessFooter ?? '' }, getBranchBranding()).receiptFooter;
+  } catch {
+    return businessFooter ?? '';
+  }
+}
+
+/**
+ * A544: store the branch override a pull carried (pos/init `branchBranding`, a `branding` / `branch_branding` change, a
+ * branch server's bundle). undefined = not said (an older cloud or server) → keep; null = none (or themes off) → this
+ * till holds none; a row → this till's branch's only (any other branch's row is dropped). Remote wins; never pushed.
+ */
+export function applyPulledBranchBranding(v: unknown): void {
+  if (v === undefined) return;
+  const db = getLocalDb();
+  const clean = branchBrandingFromWire(v);
+  const own = (db.prepare(`SELECT branch_id FROM device_config WHERE id = 1`).get() as { branch_id?: string | null } | undefined)?.branch_id ?? null;
+  db.transaction(() => {
+    if (!clean || (own && clean.branchId !== own)) { db.prepare(`DELETE FROM branch_branding`).run(); return; }
+    db.prepare(`DELETE FROM branch_branding WHERE branch_id <> ?`).run(clean.branchId);
+    db.prepare(`INSERT INTO branch_branding (branch_id, theme_id, accent_hex, receipt_footer, synced_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(branch_id) DO UPDATE SET theme_id = excluded.theme_id, accent_hex = excluded.accent_hex,
+        receipt_footer = excluded.receipt_footer, synced_at = excluded.synced_at`)
+      .run(clean.branchId, clean.themeId, clean.accentHex, clean.receiptFooter, new Date().toISOString());
+  })();
 }
 
 /**

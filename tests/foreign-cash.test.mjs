@@ -24,6 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.FOREIGN_CASH_TS) {
@@ -113,7 +114,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.FOREIGN_CASH_TS) {
   });
 
   // ── The till's wiring (source — Electron main not run here) ──
-  const ipc = read('apps/desktop/src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   ok('an online PIN sign-in checks the cloud for this till\'s open drawer and returns what it joined', () => {
     assert.match(ipc, /const joinedDrawer = await joinCloudDrawer\(data\.staff\?\.id\);/);
     assert.match(ipc, /const adopted = adoptCloudShift\(cloud\);/);

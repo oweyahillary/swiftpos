@@ -28,7 +28,7 @@ const denied = (m, p, pin) => T.terminalWriteDenied('desktop', m, p, pin);
 const concrete = (p) => p.replace(/\$\{(?:[^{}]|\{[^}]*\})*\}/g, 'x').split('?')[0];
 
 const files = [];
-for (const d of ['apps/desktop/src/main', 'apps/desktop/src/shared']) {
+for (const d of ['apps/desktop/src/main', 'apps/desktop/src/main/ipc', 'apps/desktop/src/shared']) {   // D10: + src/main/ipc (the IPC handlers)
   const abs = path.join(root, d);
   if (!fs.existsSync(abs)) continue;
   for (const f of fs.readdirSync(abs).filter((f) => f.endsWith('.ts'))) files.push({ at: `${d}/${f}`, text: fs.readFileSync(path.join(abs, f), 'utf8') });

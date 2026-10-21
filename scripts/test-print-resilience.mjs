@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from './lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let passed = 0, failed = 0;
@@ -122,7 +123,7 @@ console.log('\n4b. The live printer screen has the same protection');
 
 console.log('\n5. Routing edits are instant; tickets say what to make; one owner per setting');
 {
-  const IH = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
+  const IH = ipcHandlersSource();
   const TL = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/ticketLines.ts'), 'utf8');
   const KT = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printKOT.ts'), 'utf8');
   const PB = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/pages/PrintersTab.tsx'), 'utf8');
@@ -188,10 +189,14 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
        kitchen(['mango juice', 'soda', 'water', '2 dips', 'rice']).join(',') === 'rice');
   }
   {
-    const RB = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/components/ReceiptView.tsx'), 'utf8');
+    // A542: the on-screen HTML receipt (components/ReceiptView.tsx) was imported by nothing since 0.6.29 (the success
+    // screen replaced it; the thermal receipt is shared/printing's render.ts, pinned by its own tests) — it is deleted,
+    // and its source pins here with it. What stays pinned: the two field-approved formats that still print.
     const PP = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/pages/POSPage.tsx'), 'utf8');
-    ok('all three field-approved formats carry the DO-NOT-MODIFY lock',
-       [KT, RB, fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8')]
+    ok('A542: the dead HTML receipt is gone and nothing imports it',
+       !fs.existsSync(path.join(ROOT, 'apps/desktop/src/renderer/components/ReceiptView.tsx')) && !/components\/ReceiptView/.test(PP));
+    ok('the field-approved formats still in use carry the DO-NOT-MODIFY lock',
+       [KT, fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8')]
          .every(src => src.includes('FIELD-APPROVED FORMAT (owner, 04 Aug 2026)')));
     // FINAL OWNER RULING (04 Aug): the font/scale experiment is REVERTED —
     // the owner never asked for it. What is locked is the ARRANGEMENT.
@@ -200,25 +205,10 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
          .every(f => !fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer', f), 'utf8').includes('zoom:')));
     ok('the success modal is untouched', !PP.includes('TRUE PAPER WIDTH'));
     {
-      // The approved footer stack, IN ORDER: payments → owner box (verbatim,
-      // rule only when non-empty) → fixed closing block (thank-you · TAX
-      // RECEIPT · Powered by ZapTill) → final rule.
-      // Anchored search: each element must appear AFTER the previous one —
-      // the lock comment above the stack names the same strings, so a naive
-      // indexOf finds prose, not elements.
-      const iPay = RB.indexOf('Payment Detail:');
-      const iBox = RB.indexOf('lines(footerText).length > 0 && (', iPay);
-      const iFix = RB.indexOf("footerMessage || 'Thank you for your business!'", iBox);
-      const iTax = RB.indexOf('TAX RECEIPT UPON REQUEST', iFix);
-      const iPow = RB.indexOf('Powered by ZapTill', iTax);
-      ok('footer stack order: payments → owner box → fixed block → Powered last',
-         iPay > -1 && iPay < iBox && iBox < iFix && iFix < iTax && iTax < iPow);
-      ok('empty owner box leaves NO orphan rule (rule lives inside the conditional)',
-         /lines\(footerText\)\.length > 0 && \([\s\S]{0,700}\{rule\(\)\}\s*<\/>/.test(RB));
-      ok('header line 2 reads "Branch — Till", never the TILL concatenation',
-         RB.includes('`${branchName} — ${tillNumber}`') && !/TILL \{tillNumber\}/.test(RB));
+      // A542: the HTML receipt's footer-stack / header pins went with ReceiptView.tsx (the printed receipt's footer and
+      // header are pinned on the real render in shared/printing/test/receipt-footer.test.ts and the receipt tests).
       ok('the branch name flows from the local branches table through pos:init',
-         fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8')
+         ipcHandlersSource()
            .includes('SELECT name FROM branches WHERE id = ?'));
     }
     {
@@ -244,8 +234,6 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
          PB2.includes('Kitchen exclusions') && PB2.includes('kitchenExcludeTerms'));
       ok('KOT threads the owner terms through', KT.includes('settings.kitchenExcludeTerms'));
     }
-    ok('ReceiptView stays inline-styled — zero Tailwind classes',
-       !/className=/.test(RB));
   }
   {
     // BEHAVIORAL: run the actual parser (extracted verbatim from the module).
@@ -280,7 +268,7 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
 
 console.log('\n6. The cloud is an improvement, never a requirement');
 {
-  const IH = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
+  const IH = ipcHandlersSource();
   const SI = fs.readFileSync(path.join(ROOT, 'apps/server/src/index.ts'), 'utf8');
   const HK2 = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/hooks/usePaperGeometry.ts'), 'utf8');
   ok('PIN-screen branches come from the LOCAL table first',

@@ -15,6 +15,7 @@
  *   money  (critical)  payment methods, money settings (M-Pesa, tax, voids / refunds, delivery, loyalty, business day,
  *                      cashier money views), POS switches (feature_flags), the business rates (VAT, CTL, currency)
  *   look   (≤ 30 min)  logo / colours / theme, receipt header and footer, the business name and contact settings
+ *                      (A544: and a branch's own override of the theme, colour and footer — branch_branding)
  *   setup  (≤ 30 min)  print stations and their categories, tables, pumps, branches, every other setting
  *   stock  (critical)  A535: a stock level at a branch (stock_levels — sales, restocks, transfers, wastage, counts; migration
  *                      153). Stored at once; never touches a sale in the cart (the cart's lines are the till's own).
@@ -105,6 +106,9 @@ export const CHANGE_TABLES = {
   // A537: a menu (Food, Soft drinks …) — row id = the menu; a category's menu is the categories entry. Its own trigger
   // (migration 155, trg_log_menu_sync_change on menus), not 151's.
   menus:           { topic: 'menu',  from: ['menus'], trigger: 'trg_log_menu_sync_change' },
+  // A544: a branch's override of the business branding (theme, brand colour, receipt footer) — row id = the branch, the
+  // entry at that branch (only its tills are told). Its own trigger (migration 156, trg_log_branch_branding_sync_change).
+  branch_branding: { topic: 'look',  from: ['branch_branding'], trigger: 'trg_log_branch_branding_sync_change' },
 } as const;
 export type ChangeTable = keyof typeof CHANGE_TABLES;
 

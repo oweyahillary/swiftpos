@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A530_TS) {
@@ -106,21 +107,25 @@ await ok('A538: the web bundle prints the classic layout at ESC 3 30 by default,
   const old = Buffer.from(E.renderReceiptEscPos(order, biz(Object.fromEntries(OLD_1019.map((k) => [k, true]))), 80));
   assert.ok(std.subarray(0, 8).equals(Buffer.from([0x1b, 0x40, 0x1b, 0x74, 0, 0x1b, 0x33, 30])), 'ESC 3 30 (~3.75 mm) on the standard receipt');
   assert.ok(!std.includes(Buffer.from([0x1b, 0x33, 26])), 'not A530\'s 26');
-  for (const s of ['Type: Takeaway\n', 'Bill No.: W-1\n', 'Cashier: Amina\n', 'Date: ', 'Kots: 0\n', 'Payment Detail:', 'Round Off:', 'Total:', 'PAY: KES 500.00']) {
+  // A539: the heading is "Payment Details:" (with the till number when there is one). A540: no "Round Off: 0.00", and a
+  // thin gap (ESC J 10) between the info lines.
+  for (const s of ['Type: Takeaway\n', 'Bill No.: W-1\n', 'Cashier: Amina\n', 'Date: ', 'Kots: 0\n', 'Payment Details:', 'Total:', 'PAY: KES 500.00']) {
     assert.ok(std.includes(Buffer.from(s)), `the standard has "${s.trim()}"`);
   }
+  assert.ok(!std.includes(Buffer.from('Round Off:')), 'A540: no "Round Off: 0.00" on the standard receipt');
+  assert.ok(std.includes(Buffer.from([0x1b, 0x4a, 10])), 'A540: a thin gap between the info lines');
   assert.ok(std.subarray(-7).equals(Buffer.from([0x1b, 0x64, 1, 0x1d, 0x56, 0x42, 0])), 'one line before the cut');
   assert.ok(stale.equals(std), 'the retired receipt_classic_layout changes nothing');
   assert.ok(compact.includes(Buffer.from([0x1b, 0x33, 30])), 'the compact opt-in at the same 30');
   assert.ok(!compact.includes(Buffer.from('Payment Detail:')) && !compact.includes(Buffer.from('Kots:')) && !compact.includes(Buffer.from('Round Off:')));
   assert.ok(!old.includes(Buffer.from([0x1b, 0x33])), 'no ESC 3 with the classic spacing');
-  assert.ok(old.includes(Buffer.from('Payment Detail:')) && old.includes(Buffer.from('Kots: 0')));
+  assert.ok(old.includes(Buffer.from('Payment Details:')) && old.includes(Buffer.from('Kots: 0')));
   assert.ok(old.subarray(-7).equals(Buffer.from([0x1b, 0x64, 3, 0x1d, 0x56, 0x42, 0])), 'three lines before the cut');
   assert.ok(compact.length < std.length, 'the compact opt-in is shorter');
 });
 
 await ok('every receipt path hands the switches to the renderer (till and web)', () => {
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /receiptClassic:\s+receiptClassicFrom\(getPosFeatures\(\)\),/);
+  assert.match(ipcHandlersSource(), /receiptClassic:\s+receiptClassicFrom\(getPosFeatures\(\)\),/);
   assert.match(read('apps/desktop/src/main/print/printWorker.ts'), /receiptClassic = receiptClassicFrom\(getPosFeatures\(\)\);/);
   assert.match(read('apps/dashboard/src/pages/pos/PaymentModal.tsx'), /logoRaster: receiptLogo, pay: receiptPay, posFeatures \}\);/);
   assert.match(read('apps/dashboard/src/pages/pos/CashierScreen.tsx'), /posFeatures=\{posFeatures\}/);

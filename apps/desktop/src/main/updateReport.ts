@@ -32,6 +32,18 @@ export interface UpdateStateReport {
   idle_note: string | null;
   /** A509: the Windows updater task is installed (null: not known yet). */
   task: boolean | null;
+  // A541 (owner, 2026-10-20: "most apps are not updating, they are stuck in the old version") — why, for the admin line.
+  // Extra fields: an A534 cloud keeps only the fields it knows (cleanUpdateState) and ignores these.
+  /** Why the downloaded update cannot install by itself on this machine (Windows would ask, the task refused), or null. */
+  blocker: string | null;
+  /** This machine is the branch server (it installs at the next Windows sign-in; a till when it is closed). */
+  server: boolean;
+  /** A till waiting for the branch server's copy of the approved version. */
+  waiting_server: boolean;
+  /** When the version was first seen downloaded here (kept across restarts). */
+  downloaded_at: string | null;
+  /** A start-up install of this version was tried and this machine still runs the old one. */
+  startup_failed: boolean;
 }
 
 export const REPORT_EVERY_MS = 30 * 60_000;
@@ -43,8 +55,11 @@ const clip = (s: unknown, n: number): string | null => {
 };
 
 /** The report from what autoUpdate.ts holds. Pure. */
-export function buildUpdateReport(s: { status: UpdateStatus; running: string; stateAt: string | null; idleNote: string | null; task: boolean | null }): UpdateStateReport {
+export function buildUpdateReport(s: { status: UpdateStatus; running: string; stateAt: string | null; idleNote: string | null; task: boolean | null;
+  blocker?: string | null; server?: boolean; startupFailed?: string | null }): UpdateStateReport {
   const st = s.status;
+  const downloaded = st.state === 'downloaded';
+  const dAt = typeof st.downloadedAt === 'number' && Number.isFinite(st.downloadedAt) ? new Date(st.downloadedAt).toISOString() : null;
   const error = st.state === 'error' ? clip(String(st.note ?? '').replace(/^the last attempt failed:\s*/i, ''), 160) ?? 'unknown error' : null;
   return {
     running: s.running,
@@ -57,13 +72,19 @@ export function buildUpdateReport(s: { status: UpdateStatus; running: string; st
     error,
     idle_note: st.state === 'downloaded' ? clip(s.idleNote, 160) : null,
     task: s.task,
+    blocker: downloaded ? clip(s.blocker, 160) : null,                                           // A541
+    server: s.server === true,
+    waiting_server: !downloaded && st.waitingServer === true,
+    downloaded_at: downloaded ? dAt : null,
+    startup_failed: !!s.startupFailed && (!st.version || st.version === s.startupFailed),
   };
 }
 
 /** What makes two reports "the same" — a download's progress counted in 25 % steps, the idle note without its numbers. */
 export function reportKey(r: UpdateStateReport): string {
   const pct = r.percent === null ? '' : String(Math.floor(r.percent / 25));
-  return [r.running, r.state, r.version, pct, r.since, r.approved, r.error, (r.idle_note ?? '').replace(/\d+/g, '#'), r.task].join('|');
+  return [r.running, r.state, r.version, pct, r.since, r.approved, r.error, (r.idle_note ?? '').replace(/\d+/g, '#'), r.task,
+    r.blocker, r.server, r.waiting_server, r.startup_failed].join('|');   // A541
 }
 
 export interface UpdateReporterDeps {

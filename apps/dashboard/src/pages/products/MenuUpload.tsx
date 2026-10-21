@@ -34,7 +34,9 @@ type Parsed = Record<Tab, Record<string, any>[]>;
 type TabPreview = { rows: number; errors: { row: number; error: string }[] };
 type TabResult = { created?: number; updated?: number; skipped?: number; cleared?: number; deleted?: number; errors?: any[];
   /** 2026-10-04: the rows that became NEW products, and copies of a choice group an earlier upload left (removed). */
-  created_names?: string[]; merged?: number };
+  created_names?: string[]; merged?: number;
+  /** A542: the Products tab's `menu` column — menus created, categories put in / taken out of a menu, what failed. */
+  menus_created?: string[]; categories_moved?: number; menu_errors?: { row: number; error: string }[] };
 
 const empty = (): Parsed => ({ ingredients: [], products: [], upgrades: [], recipe: [] });
 const val = (r: Record<string, any>, ...keys: string[]) => {
@@ -42,6 +44,28 @@ const val = (r: Record<string, any>, ...keys: string[]) => {
   return '';
 };
 const isDelete = (s: string) => s.toUpperCase() === 'DELETE';
+/** A542: names compared as the server does (lib/productImport importKey): case, hidden and double spaces ignored. */
+const nameKey = (s: string) => s.normalize('NFKC').replace(/[​-‍⁠﻿]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * A542: the Products tab's optional `menu` column (A537 — a menu holds categories, one menu per category). Two rows of
+ * one category naming different menus: the first wins and the later row is an error — the server refuses it the same
+ * way. A menu with no category in its row is checked by the server (the product's own category is used there).
+ */
+function menuClashes(rows: Record<string, any>[]): { row: number; error: string }[] {
+  const e: { row: number; error: string }[] = [];
+  const first = new Map<string, { row: number; key: string; label: string }>();
+  rows.forEach((r, i) => {
+    const menu = val(r, 'menu'), cat = val(r, 'category_name', 'category');
+    if (!menu || !cat) return;
+    const key = isDelete(menu) ? '' : nameKey(menu);
+    if (key.length > 60) { e.push({ row: i + 2, error: 'a menu name is at most 60 characters' }); return; }
+    const had = first.get(nameKey(cat));
+    if (!had) first.set(nameKey(cat), { row: i + 2, key, label: menu });
+    else if (had.key !== key) e.push({ row: i + 2, error: `menu "${menu}" clashes with row ${had.row} ("${had.label}") — one menu per category` });
+  });
+  return e;
+}
 
 function normSheet(ws: XLSX.WorkSheet): Record<string, any>[] {
   const raw = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' });
@@ -76,6 +100,7 @@ function validate(tab: Tab, rows: Record<string, any>[]): { row: number; error: 
         e.push({ row: rn, error: `quantity is required for ${ing}` });
     }
   });
+  if (tab === 'products') e.push(...menuClashes(rows));   // A542
   return e;
 }
 
@@ -109,12 +134,14 @@ export default function MenuUpload({
       ['• upgrade — a ladder e.g. 350ml / 1.25L, or Regular / Large fries. ONE option MUST be 0 (baseline); the rest add money.'],
       ['COST: purchased items set cost_price; central_kitchen items leave it blank (worked out from Recipe × ingredient unit_cost).'],
       ['SHOW_DAYS (optional): e.g. Tue, Thu — the item is on the POS grid and QR menu only those days; any day a search still finds and sells it. Blank = every day.'],
+      // A542: the optional menu column (A537 menus — Food, Soft drinks, Alcohol, Tea … above the categories).
+      ['MENU (optional): e.g. Food — puts the product\'s CATEGORY in that menu (a menu holds whole categories, one menu per category); a menu not there yet is created. Blank = leave the category\'s menu alone; DELETE = take the category out of its menu. Two rows of one category naming different menus: the first row wins, the other is refused.'],
     ]), 'Read me');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['name', 'category', 'price', 'cost_price', 'description', 'sold_by', 'unit_label', 'pieces_per_unit',
-        'track_stock', 'source', 'is_kitchen', 'tax_type', 'kra_item_class_code', 'reorder_level', 'plu_code', 'barcode', 'status', 'show_days'],
+        'track_stock', 'source', 'is_kitchen', 'tax_type', 'kra_item_class_code', 'reorder_level', 'plu_code', 'barcode', 'status', 'show_days', 'menu'],
       ['Crispy Chicken Burger', 'Burgers', 550, '', 'Crispy fillet + house sauce', 'each', 'pc', 1,
-        'yes', 'central_kitchen', 'yes', 'B', '', '', 'CCB01', '', 'active', ''],
+        'yes', 'central_kitchen', 'yes', 'B', '', '', 'CCB01', '', 'active', '', 'Food'],
     ]), 'Products');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['product', 'group', 'type', 'option', 'price_added', 'notes'],
@@ -254,6 +281,15 @@ export default function MenuUpload({
                             </span>
                           )}
                           {!!r.merged && <span className="block text-[11px] text-gray-400">{r.merged} duplicate group{r.merged === 1 ? '' : 's'} from an earlier upload removed</span>}
+                          {/* A542: the menu column's outcome */}
+                          {(!!r.menus_created?.length || !!r.categories_moved) && (
+                            <span className="block text-[11px] text-gray-400" data-testid="upload-menus">
+                              {r.categories_moved ?? 0} categor{r.categories_moved === 1 ? 'y' : 'ies'} moved to a menu{r.menus_created?.length ? ` · new menus: ${r.menus_created.join(', ')}` : ''}
+                            </span>
+                          )}
+                          {(r.errors ?? []).concat(r.menu_errors ?? []).slice(0, 5).map((er: any, k: number) => (
+                            <span key={k} className="block text-[11px] text-red-300">row {er.row}: {er.error}</span>
+                          ))}
                         </td>
                         <td className="px-3 py-2 text-right text-green-400" data-testid="upload-counts">{added} added · {updated} updated</td>
                         <td className="px-3 py-2 text-right">{errs ? <span className="text-red-400">{errs} skipped</span> : <span className="text-gray-600">—</span>}</td>

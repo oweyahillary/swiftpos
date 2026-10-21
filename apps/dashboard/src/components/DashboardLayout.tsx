@@ -153,6 +153,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/orders',   label: 'Orders',   icon: 'reports' },
       { to: '/dashboard/expenses', label: 'Expenses', icon: 'expenses' },
       { to: '/dashboard/reports',  label: 'Reports',  icon: 'reports' },
+      // A549: Analytics v1 (premium — the admin portal's 'analytics' switch; off, the page says so).
+      { to: '/dashboard/analytics', label: 'Analytics', icon: 'summary' },
       // A365 (0.6.23): every cashier's shift — running, awaiting a manager, confirmed — and View for the per-method table.
       { to: '/dashboard/shift-reports', label: 'Shift Reports', icon: 'reports' },
       // Table Turnover moved out of Settings — it is a report, not configuration.
@@ -168,7 +170,7 @@ const NAV: NavEntry[] = [
     label: 'Customers', icon: 'customers',
     items: [
       { to: '/dashboard/customers', label: 'Customers', icon: 'customers' },
-      { to: '/dashboard/customers/credit', label: 'Credit Accounts', icon: 'credit' },
+      { to: '/dashboard/customers/credit', label: 'Credit Accounts', icon: 'credit', badgeKey: 'credit' },   // A545: sales to confirm
     ],
   },
   {
@@ -394,7 +396,15 @@ export default function DashboardLayout() {
     const interval = setInterval(check, 60_000);
     return () => clearInterval(interval);
   }, []);
-  const badges: Record<string, number> = { approvals: approvalsCount };
+  // ── A545: credit sales waiting for a manager's confirmation (0 for anyone who may not see them) ──
+  const [creditCount, setCreditCount] = useState(0);
+  useEffect(() => {
+    const check = () => { api.get<{ awaiting: number }>('/api/credit/sales/count').then((r) => setCreditCount(Number(r?.awaiting) || 0)).catch(() => {}); };
+    check();
+    const interval = setInterval(check, 120_000);
+    return () => clearInterval(interval);
+  }, []);
+  const badges: Record<string, number> = { approvals: approvalsCount, credit: creditCount };
 
   // ── Low-stock badge ─────────────────────────────────────────────────────────
   const [lowStockCount, setLowStockCount] = useState(0);

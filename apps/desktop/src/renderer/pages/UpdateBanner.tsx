@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { posApi } from '../lib/posApi';
+import { updateBarContent, type BarStatus } from '../lib/updateNotice';   // A541
 
 /**
  * UpdateBanner — A306. A non-blocking bar that tells staff an update is happening, so the till
@@ -30,7 +31,7 @@ interface Props {
   canRestart?: boolean;
 }
 
-type Status = { state: string; version: string | null; percent: number | null };
+type Status = BarStatus;   // A541: with downloadedAt (the managers' notice after 3 days)
 
 export default function UpdateBanner({ canRestart = false }: Props) {
   const [status, setStatus] = useState<Status>({ state: 'idle', version: null, percent: null });
@@ -69,6 +70,7 @@ export default function UpdateBanner({ canRestart = false }: Props) {
   }, [shown]);
 
   if (!shown) return null;
+  const stale = updateBarContent(status, canRestart);   // A541: the managers' notice after 3 days ready
 
   // A519: one tap, no PIN — main allows it only for a back-office person (or a technician).
   const restartNow = async () => {
@@ -91,6 +93,19 @@ export default function UpdateBanner({ canRestart = false }: Props) {
         <>
           <span className="font-semibold text-green-400">Updating…</span>
           <span className="flex-1">Downloading ZapTill {status.version ?? ''}{typeof status.percent === 'number' ? ` — ${status.percent}%` : ''}. You can keep working.</span>
+        </>
+      ) : stale.kind === 'stale' ? (
+        // A541: ready for 3 days and still not installed — a manager / the owner only (stale needs canRestart); the
+        // A519 one-tap restart. A cashier's bar is the one below, unchanged.
+        <>
+          <span className="font-semibold text-amber-300">{stale.title}</span>
+          <span className="flex-1" data-testid="update-stale-notice">{stale.text}</span>
+          <button onClick={restartNow} disabled={busy} data-testid="update-stale-restart"
+                  className="bg-action-700 hover:bg-action-600 disabled:opacity-40 rounded-lg px-3 py-1.5">
+            {stale.button}
+          </button>
+          <button onClick={() => setDismissed(true)} className="text-gray-400 hover:text-gray-200 px-2">Later</button>
+          {msg && <span className="text-amber-400">{msg}</span>}
         </>
       ) : (
         <>

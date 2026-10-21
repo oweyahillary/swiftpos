@@ -32,10 +32,12 @@ export interface TextBlock {
  *  renderer emits one — a logo on a kitchen ticket is paper for nothing. */
 export interface ImageBlock { kind: 'image'; raster: MonoRaster; align: Align }
 export interface FeedBlock { kind: 'feed'; lines: number }
+/** A540: a thin gap — a feed of `dots` printer dots (ESC J), far less than a whole line (8 dots ≈ 1 mm at 203 dpi). */
+export interface GapBlock { kind: 'gap'; dots: number }
 export interface CutBlock { kind: 'cut' }
 export interface DrawerBlock { kind: 'drawer' }
 
-export type Block = TextBlock | ImageBlock | FeedBlock | CutBlock | DrawerBlock;
+export type Block = TextBlock | ImageBlock | FeedBlock | GapBlock | CutBlock | DrawerBlock;
 
 export interface Document {
   /** Character columns this document was laid out for. A serialiser must not
@@ -48,12 +50,17 @@ export interface Document {
   /** A530: lines fed before the cut WHEN the job cuts — overrides the caller's feedBeforeCut (GS V 66 0 already feeds
    *  the last line to the blade). Absent = the caller's. A tear-off job (no cut) always feeds the caller's. */
   cutFeed?: number;
+  /** A543: the printer font for the whole document (ESC M n). Absent = Font A, the printer's default after ESC @ — and
+   *  no ESC M byte is sent, so a receipt, a dispatch ticket and the Z-report are byte-identical to before. 'B' (the
+   *  kitchen ticket's standard) starts with ESC M 1 and resets ESC M 0 at the end. `columns` already counts in it. */
+  font?: 'B';
 }
 
 export class DocBuilder {
   private blocks: Block[] = [];
   private spacing?: number;
   private cutFeedLines?: number;
+  private useFontB = false;
 
   constructor(readonly columns: number) {}
 
@@ -89,6 +96,12 @@ export class DocBuilder {
     return this;
   }
 
+  /** A540: a thin gap of `dots` printer dots between two lines. */
+  gap(dots: number): this {
+    this.blocks.push({ kind: 'gap', dots });
+    return this;
+  }
+
   cut(): this {
     this.blocks.push({ kind: 'cut' });
     return this;
@@ -117,10 +130,18 @@ export class DocBuilder {
     return this;
   }
 
+  /** A543: the whole document in the printer's Font B (see Document.font). The caller lays it out at
+   *  columnsFor(width, 'B') — this does not re-flow anything. */
+  fontB(): this {
+    this.useFontB = true;
+    return this;
+  }
+
   build(): Document {
     const doc: Document = { columns: this.columns, blocks: this.blocks };
     if (this.spacing !== undefined) doc.lineSpacing = this.spacing;
     if (this.cutFeedLines !== undefined) doc.cutFeed = this.cutFeedLines;
+    if (this.useFontB) doc.font = 'B';
     return doc;
   }
 }

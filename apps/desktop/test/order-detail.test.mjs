@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..', '..', '..');
@@ -165,7 +166,7 @@ signIn('u-mary', 'Mary', 'manager');
   ok('…the money as the sale was (discount, tip, delivery) and who sold it',
     p.total === 950 && p.discount_amount === 50 && p.tip_amount === 20 && p.delivery_fee === 100 && p.cashier_name === 'Amy');
   ok('…and only the payments taken (a refund leg is not printed as a payment)', p.payments.length === 1 && p.payments[0].amount === 1070);
-  ok('the receipt names who sold it, not whoever reprints', /cashierName:\s+String\(payload\.cashier_name \?\? staff\?\.staff_name/.test(read('apps/desktop/src/main/ipcHandlers.ts')));
+  ok('the receipt names who sold it, not whoever reprints', /cashierName:\s+String\(payload\.cashier_name \?\? staff\?\.staff_name/.test(ipcHandlersSource()));
 }
 
 console.log('\nThe screens\n');

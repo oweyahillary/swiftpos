@@ -37,6 +37,7 @@ import http from 'node:http';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -202,7 +203,7 @@ try {
     && /const matchMenu\s+= inMenuScope\(p, menuFilterScope\);/.test(pos) && /&& matchCat && matchMenu && matchSearch/.test(pos)
     && /from '\.\.\/\.\.\/shared\/menuFilter'/.test(pos));
   ok('pos:init gives the sale screen the menus (on, in order; none before schema 73)',
-    /SELECT id, name, sort_order, color, icon FROM menus WHERE active = 1 ORDER BY sort_order, name/.test(src('main/ipcHandlers.ts'))
+    /SELECT id, name, sort_order, color, icon FROM menus WHERE active = 1 ORDER BY sort_order, name/.test(ipcHandlersSource())
     && /menus: mn, branchId/.test(pos));
   const manage = src('renderer/pages/ManageTabs.tsx');
   const TC = await import(pathToFileURL(path.join(here, '..', 'src', 'shared', 'tillChanges.ts')).href);

@@ -13,7 +13,7 @@ import { nodeChangeVersion } from './nodeClient';   // A448
 import { cleanOffer, type Offer } from './offers';   // A445
 import type { ChangeEntry } from './syncTopics';   // A531
 import { net } from 'electron';
-import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
+import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme, applyPulledBranchBranding } from './localDb';
 import { logLine, describeResponse, getLogPath, authLog } from './logFile';
 import { getMacAddressCached, identityHeaders } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, readDeviceSecret, writeDeviceSecret } from './tokenStore';
@@ -31,6 +31,7 @@ import { followMovedServer } from './nodeFollow';   // A501
 import { nodeRefusal, cloudFetch } from './cloudGateway';
 import { setReceiptPay } from './receiptPay';   // A450   // A410
 import { readPending as readPendingWaste, pushPendingWastage, type WasteOutcome } from './tillWastage';   // A414
+import { readPending as readPendingCredit, pushPendingDecisions, type DecisionOutcome } from './creditConfirm';   // A545
 import { readPending as readPendingRouting, overlayPending as overlayPendingRouting, pushPendingRouting, type PushOutcome } from './stationRouting';   // A411
 // A275: reuse the SAME local close the branch-LAN central close uses, so remote
 // and on-prem closes run identical cash arithmetic. Called only at runtime (during
@@ -753,6 +754,8 @@ async function runPushStagesOnce(errors: string[]): Promise<number> {
   await stage('station routing', async () => { await pushStationRoutingNow(); return 0; });
   // A414: wastage recorded on this till while the cloud could not be reached.
   await stage('wastage', async () => { await pushWastageNow(); return 0; });
+  // A545: a manager's confirmation / dispute of a credit sale made on this till while the cloud could not be reached.
+  await stage('credit decisions', async () => { await pushCreditDecisionsNow(); return 0; });
   orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
   // 0.6.30 (A336 stage 3): then the voids and refunds made while offline — after the order push, so the sale is there.
   // Till sync audit (F2): and BEFORE the shift close — a close that reached the cloud ahead of its drawer's offline voids
@@ -813,7 +816,8 @@ export function pushWastageNow(): Promise<Record<string, WasteOutcome>> {
       const post = () => syncFetch(`${_serverUrl}/api/wastage`, {
         method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ branch_id: rec.branch_id, reason: rec.reason, note: rec.note, items: rec.items,
-          client_id: rec.client_id, recorded_by_name: rec.recorded_by_name, recorded_at: rec.recorded_at }),
+          client_id: rec.client_id, recorded_by_name: rec.recorded_by_name, recorded_at: rec.recorded_at,
+          ...(rec.recorded_by ? { recorded_by: rec.recorded_by } : {}) }),   // A545: who recorded it
       });
       let res = await post();
       if (res.status === 401 && await refreshAccessToken()) res = await post();
@@ -827,6 +831,42 @@ export function pushWastageNow(): Promise<Record<string, WasteOutcome>> {
     return outcomes;
   })().finally(() => { _wastePushInFlight = null; });
   return _wastePushInFlight;
+}
+
+// ── A545: credit-sale decisions made on this till while offline (creditConfirm.ts) ─────────────────────────────────────
+export function creditDecisionsPending(): boolean {
+  try { return readPendingCredit(getLocalDb()).length > 0; } catch { return false; }
+}
+let _creditPushInFlight: Promise<Record<string, DecisionOutcome>> | null = null;
+/**
+ * Send what is waiting (single-flight). Under the till's OWN sign-in (authHeaders), naming who decided and when — the
+ * person may have signed out; POST /api/credit/sales/:id/replay checks THEY hold customers.credit at the sale's branch.
+ * Never throws.
+ */
+export function pushCreditDecisionsNow(): Promise<Record<string, DecisionOutcome>> {
+  if (_creditPushInFlight) return _creditPushInFlight;
+  _creditPushInFlight = (async () => {
+    const db = getLocalDb();
+    if (!readPendingCredit(db).length) return {};
+    if (!_accessToken || !_serverUrl || !isOnline()) return {};
+    const outcomes = await pushPendingDecisions(db, async (d) => {
+      const post = () => syncFetch(`${_serverUrl}/api/credit/sales/${encodeURIComponent(d.order_id)}/replay`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ decision: d.decision, by: d.by, at: d.at, ...(d.decision === 'dispute' ? { reason: d.reason } : {}) }),
+      });
+      let res = await post();
+      if (res.status === 401 && await refreshAccessToken()) res = await post();
+      const body = await res.json().catch(() => ({}));
+      return { status: res.status, body };
+    }, describeServerError);
+    for (const [id, o] of Object.entries(outcomes)) {
+      if (o.state === 'saved') logLine('sync', `credit sale ${id}: decision sent`);
+      else if (o.state === 'refused') logLine('sync', `credit sale ${id}: decision refused — ${o.message}`);
+    }
+    return outcomes;
+  })().catch((e: any) => { logLine('sync', `credit decisions: ${e?.message ?? e}`); return {}; })
+    .finally(() => { _creditPushInFlight = null; });
+  return _creditPushInFlight;
 }
 
 export function pushStationRoutingNow(): Promise<Record<string, PushOutcome>> {
@@ -1147,6 +1187,13 @@ async function runDayCloseInstructions(errors: string[]): Promise<void> {
 async function runDayCloseInstructionsOnce(errors: string[]): Promise<void> {
   const deviceId = getDeviceConfig()?.device_id ?? '';
   if (!deviceId) return;
+  // A547 (A535's leftover): EVERY day-close check — the 10-minute full sync, the start-up steps, the day gate's
+  // learnBeforeLock, the 90 s beat — asks the branch server first. Its copy (GET /api/pos/branch-drawers, one call for the
+  // whole branch) lists the devices with a pending day close (the same rows /api/day-close/pending reads: this device,
+  // status pending); when it says none waits for this till, no request goes through the gateway. It names this till →
+  // collect it from the cloud as before; no answer (no server, an older one, its copy stale) → as before.
+  const hints = await drawerBeatHints();
+  if (hints && !hints.day_close) return;
   let pending: Array<{ id: string; kind: string; payload: any }> = [];
   try {
     const res = await syncFetch(`${_serverUrl}/api/day-close/pending`, { headers: authHeaders() });
@@ -1915,6 +1962,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (c.branding && !brandingPushPending()) applyPulledBranding(c.branding);
   // A325: the effective action theme — its own field (see applyPulledTheme); undefined = older cloud → keep.
   if (c.themeId !== undefined) applyPulledTheme(c.themeId);
+  // A544: this branch's override of the theme, brand colour and receipt footer. undefined = not said (older cloud) → keep.
+  applyPulledBranchBranding(c.branchBranding);
   // A346: the web POS switch (decides the manager screen's Stock). undefined = not said → keep.
   setWebPosEnabled(c.webPosEnabled);
   // A367: the quick picks for order notes. undefined = not said → keep.
@@ -1964,6 +2013,8 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
       : null,
     // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
     themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
+    // A544: the branch's override; absent on a cloud before A544 (and on a money / look / setup change) → undefined (keep).
+    branchBranding: 'branchBranding' in _j ? (_j.branchBranding ?? null) : undefined,
     // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
     webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
     noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
@@ -2663,6 +2714,9 @@ export function applyChangeEntries(entries: ChangeEntry[]): AppliedChanges {
           count(e.table); break;
         case 'branding':
           if (up) configs.push(row);
+          count(e.table); break;
+        case 'branch_branding':   // A544: this branch's override ({ branchBranding }: a row, or null = none)
+          if (up) configs.push({ branchBranding: row.branchBranding ?? null });
           count(e.table); break;
         case 'print_stations':
           if (up && Array.isArray(row.stations)) writeStations(db, row.stations, now);

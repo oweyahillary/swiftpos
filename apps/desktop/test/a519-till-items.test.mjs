@@ -35,6 +35,7 @@ import zlib from 'node:zlib';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.join(here, '..');
@@ -304,8 +305,8 @@ const SL = require(path.join(dist, 'supportLogs.js'));
     && sch.includes("'tech:saveLog':       NO_PAYLOAD,") && tp.includes('Send logs to support') && tp.includes('`Sent — reference ${r.reference}`')
     && /support\?\.offerSave &&[\s\S]{0,300}Save log to file/.test(tp));
   ok('…sent under the till\'s own session to POST /api/support/logs, gzip + base64, the technician token alongside',
-    /tillFetch\('\/api\/support\/logs', \{ method: 'POST',[\s\S]{0,200}'X-Tech-Token': raw/.test(read('src/main/ipcHandlers.ts'))
-    && /log_gz_b64: packed\.b64/.test(read('src/main/ipcHandlers.ts')));
+    /tillFetch\('\/api\/support\/logs', \{ method: 'POST',[\s\S]{0,200}'X-Tech-Token': raw/.test(ipcHandlersSource())
+    && /log_gz_b64: packed\.b64/.test(ipcHandlersSource()));
 }
 
 // ── 4. The lazy-screen boundary ─────────────────────────────────────────────────────────────────────────────────────

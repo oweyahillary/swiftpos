@@ -333,6 +333,19 @@ const SHARED = [
       'apps/desktop/src/shared/themes.ts',
       'apps/dashboard/src/lib/themes.ts',
       'apps/server/src/lib/themes.ts',     // A325: the cloud validates theme ids on write
+      'apps/desktop/src/main/themes.ts',   // A544: the till's main process resolves its branch's look (branchBranding.ts)
+    ],
+  },
+  {
+    // A544: a branch's override of the business branding — the write rules (theme, brand colour, footer width) and the
+    // resolution branch → business → ZapTill default. Each copy sits beside a themes.ts copy (it imports ./themes).
+    name: 'branchBranding.ts',
+    copies: [
+      'shared/branchBranding.ts',
+      'apps/server/src/lib/branchBranding.ts',      // the cloud validates a write; /pos/init and /pos/changes
+      'apps/desktop/src/main/branchBranding.ts',    // the till's own branch: getBranding's effective look, the receipt footer
+      'apps/desktop/src/shared/branchBranding.ts',  // the till's screens
+      'apps/dashboard/src/lib/branchBranding.ts',   // Settings › Branding › Per branch; the web POS's branch
     ],
   },
   {

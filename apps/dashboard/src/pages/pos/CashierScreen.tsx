@@ -198,6 +198,7 @@ export default function CashierScreen() {
     receiptHeader,
     receiptFooter,
     receiptPay,   // A450
+    brandStrip,   // A547
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
@@ -966,6 +967,7 @@ export default function CashierScreen() {
           tableNumber: order.tableId ? order.tableName : undefined,
           comboItems, categories, kitchenExclusions,
           orderNote,   // A367
+          posFeatures,   // A543: kitchen_font_a — the kitchen ticket's font
           kinds: ['kitchen', 'dispatch'],   // A253: food + packing fire at send, not at pay
         }).catch(err => console.error('[KOT]', err));
       }
@@ -1045,6 +1047,7 @@ export default function CashierScreen() {
         orderType: order?.orderType ?? (order?.tableId ? 'dine_in' : 'retail'),
         cashierName: session?.staffName ?? 'Cashier', total: kitchenVoid.lines.reduce((s, l) => s + l.amount, 0),
         tableNumber: order?.tableId ? order.tableName : undefined, comboItems, categories, kitchenExclusions,
+        posFeatures,   // A543: kitchen_font_a — the VOID ticket in the kitchen's own font
         kinds: ['kitchen', 'dispatch'], voided: { by: r.approvedBy ?? '', reason: voidReasonLabel(v.reason) },
       }).catch(err => console.error('[KOT void]', err));
     }
@@ -1174,6 +1177,9 @@ export default function CashierScreen() {
 
   return (
     <div style={s.root} data-pos-theme={posTheme}>
+      {/* A547: the till's brand strip (A326) — the branch's colour, else the business's; only with themes on (usePOSData). */}
+      {brandStrip && <div aria-hidden data-testid="pos-brand-strip"
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 3, zIndex: 60, pointerEvents: 'none', background: brandStrip }} />}
       <Toast toast={freezeToast} onDismiss={hideFreezeToast} />
       <style>{posTheme === 'light' ? `
         [data-pos-theme="light"] {
@@ -2459,6 +2465,7 @@ export default function CashierScreen() {
                   ? openOrders[activeKey].tableName : undefined,
                 comboItems, categories, kitchenExclusions,
                 orderNote,   // A367
+                posFeatures,   // A543: kitchen_font_a — the kitchen ticket's font
                 kinds: ['kitchen', 'dispatch'],   // A253: pay-first has no send step
               }).catch(err => console.error('[KOT]', err));
             }

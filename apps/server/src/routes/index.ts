@@ -20,6 +20,7 @@ import reportsExportRoutes from './reports-export';
 import reportsDailyRoutes  from './reports-daily';
 import reportsMonthlyRoutes from './reports-monthly';   // A455
 import reportsRoutes       from './reports';
+import analyticsRoutes     from './analytics';   // A549
 import loyaltyRoutes       from './loyalty';
 import creditRoutes        from './credit';
 import notificationsRoutes from './notifications';
@@ -147,6 +148,7 @@ router.use('/reports/monthly', reportsMonthlyRoutes);   // A455: before /reports
 router.use('/reports/export', reportsDailyRoutes);
 router.use('/reports/export', reportsExportRoutes);
 router.use('/reports',        reportsRoutes);
+router.use('/analytics',      analyticsRoutes);   // A549: Analytics v1 (premium, the 'analytics' flag)
 
 router.use('/admin/version',  adminVersionRouter);   // before /admin, which takes the rest of /admin/*
 router.use('/admin/support-logs', supportAdminRoutes);   // A519: before /admin, which takes the rest of /admin/*

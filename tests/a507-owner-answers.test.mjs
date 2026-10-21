@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'apps/server/dist');
@@ -151,7 +152,7 @@ await ok('1. Find my server: an address may be asked ONLY when nothing was found
   assert.match(inst, /servers\.length === 0 && !joinTarget[\s\S]{0,400}<ServerAddressAsk onAsk=\{askToJoin\} \/>/);
   assert.doesNotMatch(inst, /if \(list\.length === 0\) setStep\('connection'\)/);
   // Still never saved by hand: config:save drops a typed address for a till (A502).
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /A502: refused a typed branch server address/);
+  assert.match(ipcHandlersSource(), /A502: refused a typed branch server address/);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

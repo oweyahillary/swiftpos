@@ -61,6 +61,8 @@ let timer: NodeJS.Timeout | null = null;
 let lastError = '';
 let peerUnsupportedUntil = 0;
 let polls = 0;
+let lastPollOk: boolean | null = null;   // A542: the last poll's outcome, for the Tech page
+const peerAsks = new Map<string, number>();   // A542: device → when it last asked (/node/drawers), for the Tech page
 
 const isServer = (): boolean => isNodeRole(getDeviceConfig()?.device_role ?? null);
 const isPeer = (): boolean => !isServer() && !!nodeUrl();
@@ -80,6 +82,7 @@ function fresh(now: number): boolean { return copy.okAt > 0 && now - copy.okAt <
 async function pollOnce(why: string, now: number): Promise<boolean> {
   if (!isServer() || now < unsupportedUntil) return false;
   lastPollAt = now;
+  lastPollOk = false;   // A542: true only when this poll gets to its end
   const full = !copy.fullAt || now - copy.fullAt >= FULL_EVERY_MS;
   let cursor = full ? null : copy.cursor;
   const next: Copy = full ? { ...empty(), fullAt: now } : { ...copy, orders: copy.orders };
@@ -129,6 +132,7 @@ async function pollOnce(why: string, now: number): Promise<boolean> {
     next.okAt = Date.now();
     copy = next;
     lastError = '';
+    lastPollOk = true;
     if (full || changedSales || nowClosed) {
       logLine('sync', `A535: the branch's drawers from the cloud in one call (${why}${full ? ', the whole window' : ''}) — ${copy.shifts.size} drawer(s), ${changedSales} sale(s) changed, ${nowClosed} closed on the cloud`);
     }
@@ -165,7 +169,10 @@ export function answerDrawers(device: string, ask: DrawersAsk, o: { self?: boole
   const now = o.now ?? Date.now();
   if (!isServer()) return { status: 404, body: { error: 'not a branch server', code: 'DRAWERS_UNAVAILABLE' } };
   if (now < unsupportedUntil) return { status: 404, body: { error: 'This branch server\'s cloud does not answer the branch\'s drawers in one call - ask it yourself.', code: 'DRAWERS_UNAVAILABLE' } };
-  if (!o.self) lastPeerAskAt = now;
+  if (!o.self) {
+    lastPeerAskAt = now;
+    if (device) { peerAsks.delete(device); peerAsks.set(device, now); if (peerAsks.size > 200) peerAsks.delete(peerAsks.keys().next().value as string); }   // A542
+  }
   if (!fresh(now)) {
     void pollBranchDrawers('a till asked').catch(() => false);
     return { status: 503, body: { error: 'The branch server is fetching the drawers - ask the cloud this time.', code: 'DRAWERS_STALE' } };
@@ -260,12 +267,43 @@ export const drawerSource: DrawerSource = {
   },
 };
 
+export interface DrawersStatus {
+  role: 'server' | 'peer' | 'direct'; mode: string; drawers: number; lastOkAt: string | null; polls: number; error: string | null;
+  /** A542 (the branch server's Tech page): the last poll — when, and whether it got to its end. */
+  lastPollAt: string | null; lastPollOk: boolean | null;
+  /** The drawers held: open, and closed but still waiting for a manager's confirmation. */
+  open: number; awaitingConfirmation: number;
+  /** The tills that asked this server (/node/drawers) in the last hour. */
+  peersLastHour: number;
+  /** The push channel (A531 liveSync): 'push' = the cloud rings; otherwise the beat runs on the shorter fallback. */
+  channel: string;
+  /** On the fallback path: each till asks the cloud itself (an older cloud, or the copy too old to answer from). */
+  fallback: boolean; fallbackUntil: string | null; fresh: boolean;
+}
+const HOUR_MS = 3_600_000;
+
 /** The Tech page / the log pull: how the drawer checks go. */
-export function drawersStatus(): { role: 'server' | 'peer' | 'direct'; mode: string; drawers: number; lastOkAt: string | null; polls: number; error: string | null } {
+export function drawersStatus(now = Date.now()): DrawersStatus {
   const role = isServer() ? 'server' : isPeer() ? 'peer' : 'direct';
-  const mode = role === 'server' ? (Date.now() < unsupportedUntil ? 'each till asks (older cloud)' : `one call for the branch every ${Math.round(beatMs() / 1000)} s`)
-    : role === 'peer' ? (Date.now() < peerUnsupportedUntil ? 'through the gateway (older server)' : 'from the branch server') : 'the cloud';
-  return { role, mode, drawers: copy.shifts.size, lastOkAt: copy.okAt ? new Date(copy.okAt).toISOString() : null, polls, error: lastError || null };
+  const mode = role === 'server' ? (now < unsupportedUntil ? 'each till asks (older cloud)' : `one call for the branch every ${Math.round(beatMs(now) / 1000)} s`)
+    : role === 'peer' ? (now < peerUnsupportedUntil ? 'through the gateway (older server)' : 'from the branch server') : 'the cloud';
+  // A542: what the branch server's Tech page shows (DrawersCopyPanel).
+  let open = 0, awaiting = 0;
+  for (const s of copy.shifts.values()) {
+    if (s?.status === 'open') open++;
+    else if (!s?.confirmed_at) awaiting++;
+  }
+  let peersLastHour = 0;
+  for (const at of peerAsks.values()) if (now - at < HOUR_MS) peersLastHour++;
+  let channel = 'off';
+  try { channel = liveStatus().channel; } catch { channel = 'off'; }
+  const until = role === 'server' ? unsupportedUntil : role === 'peer' ? peerUnsupportedUntil : 0;
+  return {
+    role, mode, drawers: copy.shifts.size, lastOkAt: copy.okAt ? new Date(copy.okAt).toISOString() : null, polls, error: lastError || null,
+    lastPollAt: lastPollAt ? new Date(lastPollAt).toISOString() : null, lastPollOk,
+    open, awaitingConfirmation: awaiting, peersLastHour, channel,
+    fallback: now < until, fallbackUntil: now < until ? new Date(until).toISOString() : null, fresh: fresh(now),
+  };
 }
 
 export function startBranchDrawers(): void {
@@ -284,5 +322,5 @@ export function stopBranchDrawers(): void {
 /** Tests only. */
 export function _resetBranchDrawers(): void {
   copy = empty(); unsupportedUntil = 0; lastPollAt = 0; lastPeerAskAt = 0; polling = null; again = false; lastError = '';
-  peerUnsupportedUntil = 0; polls = 0;
+  peerUnsupportedUntil = 0; polls = 0; lastPollOk = null; peerAsks.clear();
 }

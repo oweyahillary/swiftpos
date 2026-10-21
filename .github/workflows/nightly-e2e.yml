@@ -75,17 +75,26 @@ jobs:
         env:
           E2E_HEALTH_WAIT_S: '180'
 
+      # A536 follow-up (2026-10-21): until the owner sets the DEV test business's login, the SCHEDULED run skips with a
+      # warning (green) instead of failing — and e-mailing — every night. A run started by hand still fails, so the reason
+      # is plain to whoever pressed the button.
       - name: Owner login is set
+        id: login
         shell: bash
         run: |
           if [ -z "${E2E_OWNER_EMAIL:-}" ] || [ -z "${E2E_OWNER_PASSWORD:-}" ]; then
-            echo "::error::the repository secrets E2E_OWNER_EMAIL / E2E_OWNER_PASSWORD are not set (the owner of the DEV test business — docs/E2E-NIGHTLY.md)"
-            exit 1
+            msg="the repository secrets E2E_OWNER_EMAIL / E2E_OWNER_PASSWORD are not set (the owner of the DEV test business — docs/E2E-NIGHTLY.md)"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "::error::$msg"; exit 1; fi
+            echo "::warning::$msg — tonight's run is skipped"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Nightly E2E skipped — $msg" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: API suites
         id: api
-        if: env.SUITES != ''
+        if: steps.login.outputs.ready == 'true' && env.SUITES != ''
         continue-on-error: true
         shell: bash
         run: |
@@ -94,7 +103,7 @@ jobs:
 
       - name: Install Playwright
         id: pwinstall
-        if: env.RUN_PLAYWRIGHT == 'true' && env.E2E_WEB_URL != ''
+        if: steps.login.outputs.ready == 'true' && env.RUN_PLAYWRIGHT == 'true' && env.E2E_WEB_URL != ''
         working-directory: e2e
         run: |
           npm ci --no-audit --no-fund

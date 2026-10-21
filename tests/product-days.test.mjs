@@ -85,7 +85,7 @@ await ok('dashboard: the product form sets the days; the upload template documen
   const f = read('apps/dashboard/src/pages/products/ProductsPage.tsx');
   assert.match(f, /data-testid="show-days"/);
   assert.match(f, /show_days: cleanShowDays\(form\.show_days\) \?\? null,/);
-  assert.match(read('apps/dashboard/src/pages/products/MenuUpload.tsx'), /'status', 'show_days'\]/);
+  assert.match(read('apps/dashboard/src/pages/products/MenuUpload.tsx'), /'status', 'show_days', 'menu'\]/);   // A542: the optional menu column follows show_days
 });
 await ok('migration 113 and the schema index carry products.show_days', () => {
   assert.match(read('migrations/113_product_show_days.sql'), /ADD COLUMN IF NOT EXISTS show_days smallint\[\];/);

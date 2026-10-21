@@ -45,8 +45,8 @@ export default function UpdateDiagnosticsPanel() {
       {diag.idleInstall && (
         <p data-testid="update-idle-install" className={diag.idleInstall.ok ? 'text-gray-400' : 'text-amber-400'}>
           {diag.idleInstall.ok
-            ? `Updated from v${diag.idleInstall.from} to v${diag.idleInstall.to} while idle, ${new Date(diag.idleInstall.at).toLocaleString()}.`
-            : `An install of v${diag.idleInstall.to} while idle (${new Date(diag.idleInstall.at).toLocaleString()}) did not take — it installs when ZapTill is closed.`}
+            ? `Updated from v${diag.idleInstall.from} to v${diag.idleInstall.to} ${diag.idleInstall.reason === 'startup' ? 'at Windows sign-in' : 'while idle'}, ${new Date(diag.idleInstall.at).toLocaleString()}.`
+            : `An install of v${diag.idleInstall.to} ${diag.idleInstall.reason === 'startup' ? 'at Windows sign-in' : 'while idle'} (${new Date(diag.idleInstall.at).toLocaleString()}) did not take — it installs when ZapTill is closed.`}
         </p>
       )}
       {/* A509: the updater task — whether updates can install with no Windows prompt on this machine. */}
@@ -54,7 +54,9 @@ export default function UpdateDiagnosticsPanel() {
         <p data-testid="update-task" className="text-gray-500">
           {diag.updaterTask.installed
             ? 'Updater task: installed — updates install without a Windows prompt.'
-            : 'Updater task: not installed — updates install when ZapTill is closed, and Windows asks for permission. Reinstalling ZapTill adds it.'}
+            // A541: ZapTill cannot add the task itself (it needs an administrator) and never asks for that silently.
+            // A546: a till opened by hand installs a waiting update first (Windows asks there — somebody is at the till).
+            : 'Updater task: not installed — this PC cannot install updates silently (Windows asks for permission). Run the ZapTill installer once as administrator to add it; until then an update installs the next time ZapTill is opened (Windows will ask), or at the next Windows sign-in on a branch server.'}
         </p>
       )}
       {/* A513: how the last start went (Tech page only — never a cashier banner), and the low-memory graphics mode. */}

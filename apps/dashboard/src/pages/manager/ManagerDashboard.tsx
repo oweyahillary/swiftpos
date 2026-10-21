@@ -21,6 +21,7 @@ import POSCustomersTab    from '../pos/POSCustomersTab';
 import StaffTab           from '../settings/StaffTab';
 import PrintersPage       from '../settings/PrintersPage';
 import ManagerReportsPage, { MANAGER_REPORT_KEYS, tabsForBusiness } from './ManagerReportsPage';
+import { Analytics } from '../analytics/AnalyticsPage';   // A549
 import ManagerReceivingTab from './ManagerReceivingTab';
 import ManagerHistoryTab   from './ManagerHistoryTab';
 import ManagerShiftTab from './ManagerShiftTab';
@@ -29,6 +30,8 @@ import SignInSecurity from '../../components/SignInSecurity';   // A391
 import StockCounts from '../../components/StockCounts';   // A394
 import PromotionsPage from '../PromotionsPage';   // A502
 import VoidRefundRulesTab from '../settings/VoidRefundRulesTab';   // A502
+import { BranchBrandingSection } from '../settings/BrandingTab';   // A544
+import CreditSalesToConfirm, { ledgerNote, useCreditAwaiting } from '../../components/CreditSalesToConfirm';   // A545
 import Wastage from '../../components/Wastage';           // A399
 import Expiry from '../../components/Expiry';             // A413
 import SupplierBills from '../../components/SupplierBills';   // A518
@@ -105,6 +108,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
   { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: ['orders.view_all', 'shifts.close_day', 'shifts.force_close'], group: 'Finance' },   // A523: Tills & days is in it
   { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: MANAGER_REPORT_KEYS, group: 'Finance' },
+  // A549: Analytics v1 (premium) — this branch only; off for the business, the page says it is part of ZapTill Premium.
+  { key: 'analytics', label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Analytics</span></>, title: 'Analytics', permission: 'reports.sales', group: 'Finance' },
   { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  title: 'Turnover', permission: 'orders.view_all', group: 'Finance' },
   { key: 'expenses',  label: <><Icon d={I.expenses}  className="flex-shrink-0" /><span className="truncate">Expenses</span></>,  title: 'Expenses', permission: 'expenses.view', group: 'Finance' },
   { key: 'customers', label: <><Icon d={I.customers} className="flex-shrink-0" /><span className="truncate">Customers</span></>, title: 'Customers', permission: 'customers.view', group: 'Customers' },
@@ -112,6 +117,9 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.view', group: 'Settings' },
   { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'stations.manage', group: 'Settings' },
   { key: 'reversals', label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Void &amp; refund rules</span></>, title: 'Void and refund rules', permission: 'settings.reversals', group: 'Settings' },   // A502
+  // A544: their branch's own theme, colour and receipt footer (Themes only — the section says so otherwise; the cloud keeps
+  // a manager to their own branch).
+  { key: 'branding',  label: <><Icon d={I.tag}       className="flex-shrink-0" /><span className="truncate">Branch branding</span></>, title: 'Branch branding', permission: ['receipt.manage', 'settings.business'], group: 'Settings' },
   // A391: the manager's own sign-in code (email or authenticator app).
   { key: 'security',  label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">My sign-in</span></>, title: 'My sign-in', permission: null, group: 'Settings' },
 ];
@@ -1051,6 +1059,8 @@ interface MLedgerRow {
   id: string; type: 'charge' | 'payment' | 'adjustment';
   amount: number; balance_after: number; method: string | null;
   reference: string | null; notes: string | null; order_id: string | null; created_at: string;
+  /** A545: a sale on account's manager confirmation (a disputed one stays on the balance). */
+  confirm_state?: 'awaiting' | 'confirmed' | 'disputed'; dispute_reason?: string | null;
 }
 
 function ManagerCreditTab({ currency }: { currency: string }) {
@@ -1140,6 +1150,8 @@ function ManagerCreditTab({ currency }: { currency: string }) {
           <p className="text-gray-500 text-sm mt-0.5">Customers buying on account · total outstanding {money(totalOwed, currency)}</p>
         </div>
       </div>
+      {/* A545: every sale on account confirmed or disputed by a manager — this branch's. */}
+      <CreditSalesToConfirm client={posApi} currency={currency} canDecide={canManage} onChanged={loadList} />
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name…"
         className="w-full max-w-sm bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600" />
       {msg && !selected && <div className={`px-4 py-2.5 rounded-lg text-sm ${msg.kind === 'ok' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{msg.text}</div>}
@@ -1233,12 +1245,12 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                       <td className={`py-2 capitalize text-gray-300 ${DESK}`}>{l.type}</td>
                       <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{money(l.amount, currency, { sign: true })}</td>
                       <td className={`py-2 text-right text-gray-300 ${DESK}`}>{money(l.balance_after, currency)}</td>
-                      <td className={`py-2 text-gray-500 ${DESK}`}>{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
+                      <td className={`py-2 text-gray-500 ${DESK}`}>{ledgerNote(l)}</td>
                     </tr>
                     <MoreRow open={moreLedger.isOpen(String(l.id))} colSpan={2} items={[
                       ['Type', <span className="capitalize">{l.type}</span>],
                       ['Balance', money(l.balance_after, currency)],
-                      ['Note', l.method ?? l.notes ?? (l.order_id ? 'sale' : '')],
+                      ['Note', ledgerNote(l)],
                     ]} />
                     </Fragment>
                   ))}
@@ -1338,6 +1350,7 @@ export default function ManagerDashboard() {
   const { business }                = useBusiness();
   const { branches, setActiveBranch } = useBranch();
   const [active, setActive]           = useState<string | null>(null);
+  const creditWaiting = useCreditAwaiting(posApi, hasPermission('customers.credit'));   // A545: the Credit badge
   // A463: on a phone the sidebar is a drawer (closed to start, closed again once a page is picked) — it was a rail that
   // still took 64 of 360 pixels and showed clipped labels. From md (768px) up it opens and collapses as before.
   const [isPhone, setIsPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
@@ -1396,6 +1409,7 @@ export default function ManagerDashboard() {
         if (session.businessType === 'parking')         return <ParkingOverviewTab />;
         return <OverviewTab />;
       case 'reports':   return <ManagerReportsPage />;
+      case 'analytics': return <Analytics client={posApi} ownerView={false} currency={currency} branchName={session.branchName} />;   // A549
       case 'orders':    return <POSOrderHistoryTab currency={currency} />;
       case 'inventory': return <POSInventoryTab />;
       case 'receiving': return <ManagerReceivingTab currency={currency} />;
@@ -1433,6 +1447,8 @@ export default function ManagerDashboard() {
         );
       case 'security':
         return <SignInSecurity />;
+      case 'branding':   // A544: the same section as the owner's Settings › Branding, under the manager's own sign-in
+        return <div className="p-4 sm:p-6 max-w-3xl"><BranchBrandingSection client={{ get: posApi.get, patch: posApi.patch, delete: posApi.delete }} /></div>;
       case 'counts':
         return <StockCounts client={posApi} branchId={session.branchId} currency={currency} business={business}
           branches={managerBranch} canFreeze={hasPermission('inventory.count_freeze')} />;   {/* A502 */}
@@ -1486,6 +1502,9 @@ export default function ManagerDashboard() {
                         : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                     }`}>
                     <span className="flex items-center gap-3 min-w-0">{item.label}</span>
+                    {item.key === 'credit' && creditWaiting > 0 && (
+                      <span data-testid="nav-badge-credit" className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-black">{creditWaiting}</span>
+                    )}
                   </button>
                 ))}
               </div>

@@ -50,6 +50,9 @@ export const TILL_WRITES: RegExp[] = [
   // A534: the till's update state (downloading, downloaded, failed and why) for the admin portal — its own session only
   // (routes/desktopUpdate.ts refuses a person's token), only its own user_devices row.
   /^\/api\/desktop-update\/state$/,
+  // A545: a credit sale confirmed / disputed by a manager on the till while it was offline, sent later with the till's own
+  // sign-in naming who decided (routes/credit.ts checks THAT person holds customers.credit at the sale's branch).
+  /^\/api\/credit\/sales\/[^/]+\/replay$/,
   /^\/api\/auth\//,                      // enrol, verify-pin, set-pin, refresh, logout, device-token
   /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
 ];
@@ -73,6 +76,7 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/stock\/transfers$/,                              // A197: Manager › Stock › Transfers — a new transfer (inventory.transfer)
   /^\/api\/stock\/transfers\/[^/]+\/status$/,               // A197: despatch, receive, cancel (inventory.transfer; branch access)
   /^\/api\/reports\/monthly\/movements(\/[^/]+)?$/,          // A466: Manager › Monthly pack › Record for the books (expenses.manage; own branch)
+  /^\/api\/credit\/sales\/[^/]+\/(confirm|dispute)$/,         // A545: Manager › Credit sales — confirm / dispute as themselves (customers.credit)
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';

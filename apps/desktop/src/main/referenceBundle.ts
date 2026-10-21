@@ -101,6 +101,10 @@ export interface ReferenceBundle {
     /** A381: the business's branding (logo, accent) as the server holds it — a logo changed with no internet reaches
      *  every till of the branch. Absent = none on the server. */
     branding?: PulledBranding;
+    /** A544: the effective action theme as the server holds it (null = themes off) and its branch's override of the
+     *  theme, brand colour and receipt footer (null = none). Absent = an older server (the peer keeps its own). */
+    themeId?: string | null;
+    branchBranding?: unknown;
   };
   // The pieces pullCatalogue fetches separately (per-product loops + branch GETs).
   // Served flat here so a peer makes ONE node call instead of the cloud's 7 + N.
@@ -159,6 +163,8 @@ export interface ReferenceRows {
     currency?: string | null;                     // A450
     receiptPay?: ReceiptPay | null;               // A450: undefined = the node has not been told
     branding?: PulledBranding | null;             // A381
+    themeId?: string | null;                      // A544: undefined = the server has no branding row
+    branchBranding?: unknown;                     // A544: undefined = an older local DB
   };
 }
 
@@ -283,6 +289,9 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       ...(rows.config.receiptPay === undefined ? {}
         : { receiptPayLabel: rows.config.receiptPay?.label ?? '', receiptPayNumber: rows.config.receiptPay?.number ?? '' }),
       ...(rows.config.branding ? { branding: rows.config.branding } : {}),   // A381
+      // A544: relayed so a peer wears its branch's look and prints its branch's footer, as the server does.
+      ...(rows.config.themeId === undefined ? {} : { themeId: rows.config.themeId }),
+      ...(rows.config.branchBranding === undefined ? {} : { branchBranding: rows.config.branchBranding }),
     },
     variantGroups: rows.variantGroups,
     variantOptions: rows.variantOptions,
@@ -303,11 +312,18 @@ interface RefDb { prepare(sql: string): { all(...a: any[]): any[] }; }
 
 /** A450 + A381: what the server itself holds of the business — its name and currency, the receipt's pay line, its
  *  branding. Each read on its own: a missing table (an older local DB) leaves that field out, never the bundle. */
-function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config'], 'businessName' | 'currency' | 'receiptPay' | 'branding'> {
+function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config'], 'businessName' | 'currency' | 'receiptPay' | 'branding' | 'themeId' | 'branchBranding'> {
   const one = (sql: string): any => { try { return all(sql)[0]; } catch { return undefined; } };
   const sess = one(`SELECT business_name, currency FROM session WHERE id = 1`);
   const pay = one(`SELECT value FROM maintenance_state WHERE key = 'receipt_pay'`);
-  const b = one(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding LIMIT 1`);
+  const b = one(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`);
+  // A544: the server's own branch's override (the server and its tills are one branch). A database before 74 → not said.
+  let branchBranding: unknown;
+  try {
+    const bb = all(`SELECT bb.branch_id, bb.theme_id, bb.accent_hex, bb.receipt_footer FROM branch_branding bb
+                      JOIN device_config dc ON dc.id = 1 AND dc.branch_id = bb.branch_id LIMIT 1`)[0];
+    branchBranding = bb ? { branchId: bb.branch_id, themeId: bb.theme_id ?? null, accentHex: bb.accent_hex ?? null, receiptFooter: bb.receipt_footer ?? null } : null;
+  } catch { branchBranding = undefined; }
   let receiptPay: ReceiptPay | null | undefined;
   if (pay?.value) { try { const v = JSON.parse(pay.value); receiptPay = v ? cleanReceiptPay(v.label, v.number) : null; } catch { receiptPay = undefined; } }
   return {
@@ -316,6 +332,8 @@ function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config']
     receiptPay,
     branding: b ? { accentHex: b.accent_hex ?? null, logoPng: b.logo_png ?? null, logoReceipt: b.logo_receipt ?? null,
       receiptLogoEnabled: b.receipt_logo_enabled === 1 || b.receipt_logo_enabled === true } : null,
+    themeId: b ? (typeof b.theme_id === 'string' && b.theme_id ? b.theme_id : null) : undefined,   // A544
+    branchBranding,                                                                               // A544
   };
 }
 
@@ -463,9 +481,11 @@ export interface AcquiredReference {
     currency?: string;
     /** A450: the receipt's Buy Goods / Paybill line. undefined = not said → keep; null = none. */
     receiptPay?: ReceiptPay | null;
-    /** A325: the effective action theme (cloud /pos/init only). undefined = not sent (older cloud, or a node bundle,
-     *  which relays no branding today) → the till keeps its local value. */
+    /** A325: the effective action theme. undefined = not sent (an older cloud, or a branch server before A544, which
+     *  relayed no theme) → the till keeps its local value. A544: a branch server relays its own. */
     themeId?: string | null;
+    /** A544: the branch's override of the theme, brand colour and receipt footer. undefined = not said → keep; null = none. */
+    branchBranding?: unknown;
     /** A346: does the business have the web POS? undefined = not said (older cloud / older node) → keep the local value. */
     webPosEnabled?: boolean;
     /** A367: the owner's quick picks for order notes. undefined = not said (older cloud / older node) → keep. */
@@ -529,6 +549,9 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27
       reversalRules: pi.reversalRules && typeof pi.reversalRules === 'object' ? rulesFromWire(pi.reversalRules) : undefined,   // 0.6.30
       ...identityFromWire(pi),   // A450 + A381
+      // A544: the server's theme and its branch's override (an older server sends neither → the peer keeps its own).
+      themeId: pi && typeof pi === 'object' && 'themeId' in pi ? (typeof pi.themeId === 'string' ? pi.themeId : null) : undefined,
+      branchBranding: pi && typeof pi === 'object' && 'branchBranding' in pi ? (pi.branchBranding ?? null) : undefined,
     },
   };
 }

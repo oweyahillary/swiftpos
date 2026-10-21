@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { posApi, type AwaitingShift } from '../lib/posApi';
 import ConfirmShiftModal from '../components/ConfirmShiftModal';
+import { CreditAwaitingNotice } from '../components/CreditSalesTab';   // A545
 
 interface Props { currency: string }
 
@@ -192,6 +193,8 @@ export default function DayCloseTab({ currency }: Props) {
           This is a cash-up. A shift opened later today reopens the day, and the next close counts only the cash since.
         </p>
       </div>
+      {/* A545: credit sales still waiting for a manager — said, never a block on the close (the owner: no deadlocks). */}
+      <CreditAwaitingNotice />
 
       {loadError && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">

@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { ipcHandlersSource } from './lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require_ = createRequire(path.join(ROOT, 'package.json'));
@@ -44,7 +45,7 @@ const ok = (name, cond, extra='') => {
 const SRC_NI = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/nodeIngest.ts'), 'utf8');
 const SRC_SS = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/shiftService.ts'), 'utf8');
 const SRC_DS = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/dayService.ts'), 'utf8');
-const SRC_IH = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
+const SRC_IH = ipcHandlersSource();
 const SRC_NS = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/nodeServer.ts'), 'utf8');
 const SRC_DB = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/localDb.ts'), 'utf8');
 

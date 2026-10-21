@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveBranding, pickButtonText } from '../../lib/contrast';
 import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, type Theme } from '../../lib/themes';
 import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
+import { accentWriteError, footerWriteError, normaliseHex, resolveBranchBranding, FOOTER_LINE_MAX, FOOTER_LINE_NARROW } from '../../lib/branchBranding';   // A544
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, RECEIPT_LOGO_PRINT_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
 import { money } from '../../lib/format';
@@ -264,6 +265,9 @@ export default function BrandingTab() {
             </div>
           )}
           {msg && <p className="text-xs text-gray-600 mt-3">{msg}</p>}
+          {!themesEnabled && (
+            <p className="text-xs text-gray-500 mt-6" data-testid="branch-branding-premium-note">Per-branch branding (a branch’s own theme, colour and receipt footer) is part of Themes — ask ZapTill.</p>
+          )}
         </div>
 
         {/* Live lock-screen preview */}
@@ -287,6 +291,199 @@ export default function BrandingTab() {
             : 'Turn on "Print logo on customer receipts" to see the logo here.'}</p>
         </div>
       </div>
+      {/* A544: a branch's own theme, colour and receipt footer — only with themes (the premium switch, A325). */}
+      {themesEnabled && <BranchBrandingSection client={api} />}
+    </div>
+  );
+}
+
+// ── A544: Per branch ───────────────────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-21: "phase 2 branding — we need to do it before value add" … "yes start" (per-branch branding,
+// docs/SCOPE-A295-branding.md §14–15). Each branch may override the business's action theme, brand colour and receipt
+// footer — each on its own ("Use the business's" = no override). The till and the web POS resolve branch → business →
+// ZapTill default with the same rule (lib/branchBranding.ts). The owner sees every branch; a manager (the manager
+// portal's Branding, under their own sign-in) only their own — the cloud lists and allows exactly that. With themes off
+// the cloud refuses a change and nothing is applied; this section then shows only the "part of Themes" note.
+export interface BranchBrandingClient {
+  get: <T>(path: string) => Promise<T>;
+  patch: <T>(path: string, body: unknown) => Promise<T>;
+  delete: <T>(path: string) => Promise<T>;
+}
+interface BranchBrandingRow {
+  branch_id: string; name: string; is_main?: boolean;
+  theme_id: string | null; accent_hex: string | null; receipt_footer: string | null; updated_at?: string | null;
+}
+interface BranchBrandingList {
+  themes_enabled: boolean;
+  limits?: { line_max: number; line_narrow: number; max_lines: number; max_chars: number };
+  branches: BranchBrandingRow[];
+}
+
+export function BranchBrandingSection({ client }: { client: BranchBrandingClient }) {
+  const [list, setList] = useState<BranchBrandingList | null>(null);
+  const [business, setBusiness] = useState<{ theme_id: string | null; accent_hex: string | null }>({ theme_id: null, accent_hex: null });
+  const [err, setErr] = useState('');
+  const [open, setOpen] = useState<string | null>(null);
+  const load = () => {
+    setErr('');
+    client.get<BranchBrandingList>('/api/business/branding/branches')
+      .then((l) => { setList(l); if (l?.branches?.length === 1) setOpen(l.branches[0].branch_id); })
+      .catch((e: any) => setErr(e?.message ?? 'Could not load the branches.'));
+    client.get<{ theme_id?: string | null; accent_hex?: string | null } | null>('/api/business/branding')
+      .then((b) => setBusiness({ theme_id: b?.theme_id ?? null, accent_hex: b?.accent_hex ?? null }))
+      .catch(() => { /* the preview falls back to the default theme */ });
+  };
+  useEffect(load, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (err) return <div className="mt-10 text-sm text-amber-600" data-testid="branch-branding">{err}</div>;
+  if (!list) return <div className="mt-10 text-sm text-gray-500">Loading branches…</div>;
+  if (!list.themes_enabled) {
+    return <p className="mt-10 text-xs text-gray-500" data-testid="branch-branding-premium-note">Per-branch branding is part of Themes — ask ZapTill.</p>;
+  }
+  return (
+    <div className="mt-10 border-t border-gray-800 pt-6" data-testid="branch-branding">
+      <h3 className="text-base font-semibold mb-1">Per branch</h3>
+      <p className="text-sm text-gray-500 mb-4">A branch can have its own theme, brand colour and receipt footer. Anything left on “Use the business’s” follows the business above.</p>
+      {list.branches.length === 0 && <p className="text-sm text-gray-500">No branch you can change.</p>}
+      <div className="space-y-3">
+        {list.branches.map((b) => (
+          <BranchBrandingEditor key={b.branch_id} row={b} business={business} limits={list.limits} client={client}
+            open={open === b.branch_id} onToggle={() => setOpen(open === b.branch_id ? null : b.branch_id)}
+            onSaved={(r) => setList((l) => l ? { ...l, branches: l.branches.map((x) => x.branch_id === r.branch_id ? { ...x, ...r } : x) } : l)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BranchBrandingEditor({ row, business, limits, client, open, onToggle, onSaved }: {
+  row: BranchBrandingRow; business: { theme_id: string | null; accent_hex: string | null };
+  limits?: BranchBrandingList['limits']; client: BranchBrandingClient; open: boolean; onToggle: () => void;
+  onSaved: (r: Partial<BranchBrandingRow> & { branch_id: string }) => void;
+}) {
+  const [themeId, setThemeId] = useState<string | null>(row.theme_id);
+  const [accent, setAccent] = useState<string>(row.accent_hex ?? '');      // '' = the business's
+  const [footer, setFooter] = useState<string>(row.receipt_footer ?? '');  // '' = the business's
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const lineMax = limits?.line_max ?? FOOTER_LINE_MAX;
+  const lineNarrow = limits?.line_narrow ?? FOOTER_LINE_NARROW;
+
+  // The same checks the cloud runs (lib/branchBranding.ts): a colour seen on the dark till (3:1), a plain-text footer
+  // whose lines fit the paper.
+  const accentErr = accent.trim() ? accentWriteError(accent.trim()) : null;
+  const footerErr = footerWriteError(footer);
+  // What this branch will wear: branch → business → ZapTill default (the till's own rule).
+  const bizTheme = resolveTheme(business.theme_id).id;
+  const look = resolveBranchBranding({ themeId: bizTheme, accentHex: business.accent_hex },
+    { branchId: row.branch_id, themeId, accentHex: accentErr ? null : (normaliseHex(accent) ?? null), receiptFooter: footer || null });
+  const summary = [row.theme_id ? `theme ${resolveTheme(row.theme_id).name}` : null, row.accent_hex ? `colour ${row.accent_hex}` : null,
+    row.receipt_footer ? 'own footer' : null].filter(Boolean).join(' · ') || 'follows the business';
+
+  const save = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const r = await client.patch<BranchBrandingRow>(`/api/business/branding/branches/${row.branch_id}`, {
+        theme_id: themeId, accent_hex: accent.trim() ? accent.trim() : null, receipt_footer: footer.trim() ? footer : null,
+      });
+      onSaved({ branch_id: row.branch_id, theme_id: r?.theme_id ?? null, accent_hex: r?.accent_hex ?? null, receipt_footer: r?.receipt_footer ?? null });
+      setMsg('Saved. This branch’s tills pick it up within about 30 minutes, or when they are idle.');
+    } catch (e: any) { setMsg(e?.message ?? 'Could not save.'); }
+    finally { setBusy(false); }
+  };
+  const clear = async () => {
+    setBusy(true); setMsg('');
+    try {
+      await client.delete(`/api/business/branding/branches/${row.branch_id}`);
+      setThemeId(null); setAccent(''); setFooter('');
+      onSaved({ branch_id: row.branch_id, theme_id: null, accent_hex: null, receipt_footer: null });
+      setMsg('Cleared — this branch follows the business again.');
+    } catch (e: any) { setMsg(e?.message ?? 'Could not clear.'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-lg border border-gray-800" data-testid={`branch-branding-${row.branch_id}`}>
+      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between px-4 py-3 text-left">
+        <span className="text-sm font-medium text-gray-300">{row.name}{row.is_main ? ' (main)' : ''}</span>
+        <span className="text-xs text-gray-500">{summary}</span>
+      </button>
+      {open && (
+        <div className="grid md:grid-cols-2 gap-6 px-4 pb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">App theme</label>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={`${row.name} app theme`}>
+              <button type="button" role="radio" aria-checked={themeId === null} onClick={() => setThemeId(null)}
+                className={`rounded-lg border px-3 py-2 text-left text-sm ${themeId === null ? 'border-gray-400' : 'border-gray-700 hover:border-gray-500'}`}>
+                <span className="font-medium text-gray-300">Use the business’s</span>
+              </button>
+              {THEMES.map((t) => {
+                const on = themeId === t.id;
+                return (
+                  <button key={t.id} type="button" role="radio" aria-checked={on} onClick={() => setThemeId(t.id)}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${on ? '' : 'border-gray-700 hover:border-gray-500'}`}
+                    style={on ? { borderColor: t.shades[500], boxShadow: `0 0 0 2px ${t.shades[500]}` } : undefined}>
+                    <span className="h-5 w-5 rounded" style={{ background: t.shades[500] }} aria-hidden />
+                    <span className="font-medium text-gray-300">{t.name}</span>
+                    {on && <span className="ml-auto text-sm font-bold" style={{ color: t.shades[500] }} aria-hidden>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="block text-sm font-medium text-gray-700 mb-2 mt-5">Brand colour</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {PALETTE.map((p) => (
+                <button key={p.hex} type="button" title={p.name} onClick={() => setAccent(p.hex)}
+                  className={`h-7 w-7 rounded-full border-2 ${accent.trim().toLowerCase() === p.hex.toLowerCase() ? 'border-gray-300' : 'border-transparent'}`}
+                  style={{ background: p.hex }} aria-label={p.name} />
+              ))}
+              <button type="button" onClick={() => setAccent('')}
+                className={`h-7 px-3 rounded-full border text-xs ${accent.trim() === '' ? 'border-gray-300' : 'border-gray-700'} text-gray-400`}>Use the business’s</button>
+            </div>
+            <input type="text" value={accent} onChange={(e) => setAccent(e.target.value)} placeholder={business.accent_hex ?? '#0d9488'}
+              className="border rounded-lg px-3 py-2 text-sm font-mono w-36" aria-label={`${row.name} brand colour`} />
+            {accentErr && <p className="text-xs text-amber-600 mt-1">{accentErr}</p>}
+
+            <label className="block text-sm font-medium text-gray-700 mb-1 mt-5">Receipt footer</label>
+            <p className="text-xs text-gray-500 mb-2">Printed in the footer box instead of the business’s. Plain text; your line breaks are kept. Up to {lineMax} characters a line on 80 mm paper ({lineNarrow} on 58 mm — longer lines wrap there). The thank-you, TAX RECEIPT and “Powered by ZapTill” lines always print.</p>
+            <textarea value={footer} onChange={(e) => setFooter(e.target.value)} rows={4} placeholder="Empty = the business’s footer"
+              className="border rounded-lg px-3 py-2 text-sm font-mono w-full" aria-label={`${row.name} receipt footer`} />
+            {footer && (
+              <div className="text-[11px] font-mono text-gray-500 mt-1" data-testid="footer-line-widths">
+                {footer.replace(/\r\n?/g, '\n').split('\n').map((l, i) => (
+                  <div key={i} className={l.length > lineMax ? 'text-amber-600' : ''}>
+                    line {i + 1}: {l.length}/{lineMax}{l.length > lineNarrow && l.length <= lineMax ? ` (wraps on 58 mm)` : ''}
+                  </div>
+                ))}
+              </div>
+            )}
+            {footerErr && <p className="text-xs text-amber-600 mt-1">{footerErr}</p>}
+
+            <div className="flex gap-2 mt-5">
+              <button type="button" onClick={save} disabled={busy || !!accentErr || !!footerErr}
+                className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40">Save {row.name}</button>
+              <button type="button" onClick={clear} disabled={busy}
+                className="border rounded-lg px-4 py-2 text-sm disabled:opacity-40">Clear override</button>
+            </div>
+            {msg && <p className="text-xs text-gray-500 mt-2">{msg}</p>}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{row.name} till preview</label>
+            <TillPreview theme={resolveTheme(look.themeId)} brandHex={look.accentHex} />
+            <p className="text-xs text-gray-500 mt-2">{look.fromBranch.theme || look.fromBranch.accent ? 'This branch’s own look.' : 'The business’s look (no override).'}</p>
+            {look.receiptFooter && (<>
+              <label className="block text-sm font-medium text-gray-700 mb-2 mt-4">Footer on the receipt</label>
+              <div className="bg-white border rounded-lg p-3 w-[280px] font-mono text-[11px] text-gray-900 whitespace-pre-wrap text-center" data-testid="footer-preview">
+                {look.receiptFooter}
+                <div className="text-gray-400">------------------------</div>
+                <div>Thank you for your business!</div>
+                <div>Powered by ZapTill</div>
+              </div>
+            </>)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

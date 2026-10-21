@@ -19,6 +19,7 @@ import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -82,7 +83,7 @@ ok('no secret: the cloud is still told (it records the till, ZapTill is emailed)
 
 console.log('\nThe wiring (source)\n');
 const src = (p) => fs.readFileSync(path.join(here, '..', 'src', p), 'utf8');
-const ipc = src('main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 // A415: there is no "sign the till out" any more — a technician rejoins it instead, keeping everything on it.
 ok('enrolment (and a technician\'s rejoin) keeps the secret; nothing on the till signs it out of the business',
   /if \(typeof data\.deviceSecret === 'string' && data\.deviceSecret\) writeDeviceSecret\(data\.deviceSecret\);/.test(ipc)

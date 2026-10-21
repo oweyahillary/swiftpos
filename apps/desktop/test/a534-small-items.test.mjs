@@ -28,6 +28,7 @@ import http from 'node:http';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -181,7 +182,7 @@ try {
   db.prepare(`UPDATE sync_queue SET status = 'synced'`).run(); db.prepare(`UPDATE shifts SET sync_status = 'synced' WHERE id = 's-1'`).run();
   const clear = DL.distributionLag(db, Date.now(), 'dev-S');
   ok('everything taken: nothing waits, no oldest', clear.total === 0 && clear.oldestAt === null && clear.oldestAgeMs === null);
-  const ipc = fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcHandlers.ts'), 'utf8');
+  const ipc = ipcHandlersSource();
   const panel = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'components', 'ServerDistributionPanel.tsx'), 'utf8');
   ok('the Tech page asks node:distribution (a technician or settings.business) and shows the runbook line',
     /handle\('node:distribution'[\s\S]{0,300}signedInCan\('settings\.business'\)/.test(ipc) && /d\.runbook/.test(panel));

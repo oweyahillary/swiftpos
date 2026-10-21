@@ -78,6 +78,14 @@
     "ip_address": "\"character varying\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "branch_branding": {
+    "branch_id": "\"uuid\" NOT NULL",
+    "theme_id": "\"text\"",
+    "accent_hex": "\"text\"",
+    "receipt_footer": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "branch_prices": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -265,6 +273,25 @@
     "min_select": "\"integer\" NOT NULL",
     "max_select": "\"integer\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "credit_confirmations": {
+    "order_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "customer_id": "\"uuid\"",
+    "amount": "\"numeric\" NOT NULL",
+    "state": "\"text\" NOT NULL",
+    "source": "\"text\" NOT NULL",
+    "over_limit": "\"boolean\" NOT NULL",
+    "cashier_id": "\"uuid\"",
+    "approved_at_sale_by": "\"uuid\"",
+    "decided_by": "\"uuid\"",
+    "decided_by_name": "\"text\"",
+    "decided_at": "\"timestamp with time zone\"",
+    "dispute_reason": "\"text\"",
+    "sold_at": "\"timestamp with time zone\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
   "customer_credit_transactions": {
     "id": "\"uuid\" NOT NULL",

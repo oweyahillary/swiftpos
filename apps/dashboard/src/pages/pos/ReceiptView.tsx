@@ -47,6 +47,13 @@ interface Props {
    * layout"): every line as it was before A534. (A534 had it the other way round, keyed by `receipt_classic_layout`.)
    */
   compact?: boolean;
+  /**
+   * A547 (A539 on the browser receipt): how a customer pays by M-Pesa — the receipt_pay the thermal receipt prints
+   * (A450). The classic layout names it in the payment block's heading: "Payment Details: Buy Goods - 123456".
+   */
+  pay?: { label?: string | null; number?: string | null } | null;
+  /** A547 (A540): the cent the tax split loses, shown as "Round Off" only when it is really there — never "0.00". */
+  roundOff?: number;
 }
 
 function fmtMoney(n: number) {
@@ -66,6 +73,8 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
     footerMessage = 'Thank you for your business!',
     etims = null,
     compact = false,
+    pay = null,
+    roundOff = 0,
   },
   ref,
 ) => {
@@ -96,6 +105,12 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
   );
 
   const divider = () => <p style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />;
+
+  // A547 (A539, owner 2026-10-21: "payment details: Pay bill/buygood - 892984 / ------ / mpesa/cash/card"): the classic
+  // block as the thermal receipt prints it — the heading names the number customers pay to, a rule, the payments, CHANGE.
+  const payNumber = pay?.number?.trim() || '';
+  const payHeading = payNumber ? `Payment Details: ${pay?.label?.trim() || 'Buy Goods'} - ${payNumber}` : 'Payment Details:';
+  const showRoundOff = Math.abs(roundOff) >= 0.005;   // A540: no "Round Off: 0.00"
 
   return (
     <div ref={ref} style={{ fontFamily: "'Courier New', monospace", fontSize: '12px', color: '#000', lineHeight: '1.6' }}>
@@ -168,6 +183,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {line(`incl. ${vatLabel}`, `${currency} ${fmtMoney(vatAmount)}`)}
       {ctlRate > 0 && line(`incl. CTL (${ctlRate}%)`, `${currency} ${fmtMoney(ctlAmount)}`)}
       <div style={{ borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px' }}>
+        {showRoundOff && line('Round Off', `${currency} ${fmtMoney(roundOff)}`)}
         {line('TOTAL', `${currency} ${fmtMoney(total)}`, true)}
         {tip > 0 && line('Tip', `${currency} ${fmtMoney(tip)}`)}
         {deliveryFee > 0 && line('Delivery fee', `${currency} ${fmtMoney(deliveryFee)}`)}
@@ -178,9 +194,8 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {divider()}
 
       {/* Payment(s) */}
-      {isSplit ? (
+      {compact && isSplit ? (
         <>
-          {!compact && <p style={{ fontWeight: 'bold', marginBottom: '3px' }}>Split payment</p>}
           {payments.map((p, i) => (
             <div key={i}>
               {line(fmtMethod(p.method), `${currency} ${fmtMoney(p.amount)}`)}
@@ -197,14 +212,18 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
         </>
       ) : (
         <>
-          {line('Payment', fmtMethod(payments[0]?.method ?? 'cash'))}
-          {cashPayment && (
-            <>
-              {line('Tendered', `${currency} ${fmtMoney(tendered)}`)}
-              {line('Change', `${currency} ${fmtMoney(change)}`)}
-            </>
-          )}
-          {payments[0]?.reference && line('Ref', payments[0].reference)}
+          {/* A547: the thermal receipt's block — "Payment Details: <Buy Goods|Paybill> - <number>", a rule, each payment
+              (a lone cash payment carries what was tendered), CHANGE when there is some. No till line after them. */}
+          <p style={{ fontWeight: 'bold', marginBottom: '3px' }} data-testid="payment-details">{payHeading}</p>
+          {divider()}
+          {payments.length === 0 && line(fmtMethod('cash'), `${currency} ${fmtMoney(total)}`)}
+          {payments.map((p, i) => (
+            <div key={i}>
+              {line(fmtMethod(p.method), `${currency} ${fmtMoney(!isSplit && p.method === 'cash' && tendered > 0 ? tendered : p.amount)}`)}
+              {p.reference && line('  Ref', p.reference)}
+            </div>
+          ))}
+          {cashPayment && change > 0 && line('CHANGE', `${currency} ${fmtMoney(change)}`)}
         </>
       )}
 

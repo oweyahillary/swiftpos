@@ -172,7 +172,9 @@ console.log('\nThe till\'s callers\n');
   ok('the sync engine goes through it (syncFetch → cloudFetch)', /function syncFetch[\s\S]{0,700}await cloudFetch\(url,/.test(S) && !/function syncFetch[\s\S]{0,700}globalThis\.fetch\(/.test(S));
   // Every remaining raw fetch( in main is not a cloud call.
   const offenders = [];
-  for (const f of fs.readdirSync(src).filter((f) => f.endsWith('.ts'))) {
+  // D10: and src/main/ipc/*.ts — the IPC handlers moved there from ipcHandlers.ts.
+  const ipcTs = fs.readdirSync(path.join(src, 'ipc')).filter((f) => f.endsWith('.ts')).map((f) => `ipc/${f}`);
+  for (const f of [...fs.readdirSync(src).filter((f) => f.endsWith('.ts')), ...ipcTs]) {
     if (['cloudGateway.ts', 'nodeGateway.ts', 'nodeClient.ts'].includes(f)) continue;
     const text = fs.readFileSync(path.join(src, f), 'utf8');
     for (const m of text.matchAll(/(?<![\w.])fetch\(\s*`?\$?\{?([^,\n]*)/g)) {

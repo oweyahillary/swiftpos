@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.CROSS_SYNC_TS) {
@@ -114,7 +115,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.CROSS_SYNC_TS) {
 
   // ── The till's wiring (source — Electron main not run here) ──
   const se = read('apps/desktop/src/main/syncEngine.ts');
-  const ipc = read('apps/desktop/src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   await ok('the till asks for each of its drawers, telling the cloud only what it RANG, and stores the answer', () => {
     const f = se.slice(se.indexOf('export async function pullWebSales'), se.indexOf('// A291: cheap catalogue-freshness poll.'));
     assert.match(f, /for \(const shift of webSaleShifts\(\)\)/);

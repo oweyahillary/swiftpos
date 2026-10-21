@@ -73,7 +73,9 @@
  *  A till on 71 keeps syncing; it simply keeps the old order of its sale queue. */
 /** 73 = A537: menus and categories.menu_id (both pulled; migration 155). A till on 72 keeps syncing; its sale screen
  *  simply shows no menus (the plain category list). */
-export const REQUIRED_DESKTOP_SCHEMA = 73;
+/** 74 = A544: branch_branding (pulled; migration 156). A till on 73 keeps syncing; it simply wears the business's
+ *  branding, not its branch's override. */
+export const REQUIRED_DESKTOP_SCHEMA = 74;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

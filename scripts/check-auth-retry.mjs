@@ -175,7 +175,7 @@ if (offenders.length) {
     + '30-day refresh token sits unused. That is register A47, and it reached a\n'
     + 'client.\n\n'
     + 'Fix: on 401 refresh, re-read the token from the store, retry ONCE. Copy\n'
-    + 'tillFetch in apps/desktop/src/main/ipcHandlers.ts. If the function is a\n'
+    + 'tillFetch in apps/desktop/src/main/ipc/shared.ts. If the function is a\n'
     + 'refresh call itself, add it to EXEMPT in this file WITH a reason.\n');
   process.exit(1);
 }

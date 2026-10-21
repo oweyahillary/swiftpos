@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     syncHealth:   ()                        => ipcRenderer.invoke('node:syncHealth'),     // A501
     retryFailed:  ()                        => ipcRenderer.invoke('node:retryFailed'),    // A501
     distribution: ()                        => ipcRenderer.invoke('node:distribution'),   // A534 (A23)
+    drawersStatus: ()                       => ipcRenderer.invoke('node:drawersStatus'),  // A542
   },
 
   pos: {
@@ -325,6 +326,11 @@ contextBridge.exposeInMainWorld('swiftpos', {
     recordWastage:  (payload: { reason: string; note?: string; items: any[] }) => ipcRenderer.invoke('wastage:record', payload),
     wastageState:   ()                                   => ipcRenderer.invoke('wastage:state'),
     dismissWastage: (clientId: string)                   => ipcRenderer.invoke('wastage:dismiss', clientId),
+    // A545: credit sales a manager confirms or disputes
+    creditSales:    ()                                   => ipcRenderer.invoke('credit:list'),
+    decideCredit:   (orderId: string, decision: 'confirm' | 'dispute', reason?: string) => ipcRenderer.invoke('credit:decide', { orderId, decision, reason }),
+    creditAwaiting: ()                                   => ipcRenderer.invoke('credit:awaiting'),
+    dismissCredit:  (orderId: string)                    => ipcRenderer.invoke('credit:dismiss', orderId),
     expiringBatches: ()                                  => ipcRenderer.invoke('batches:expiring'),
     deleteStation:        (id: string)                   => ipcRenderer.invoke('manage:deleteStation', id),
     listStaff:      ()                                   => ipcRenderer.invoke('manage:listStaff'),

@@ -94,6 +94,11 @@ Two deviations from the drawn mockups, both deliberate:
   - 80mm is 48 columns, not the 42 that was drawn. 42 is Font B; Font A is
     wider and materially easier to read across a counter. Same arrangement,
     more room.
+  - A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing
+    is okay"): KITCHEN tickets print in Font B (9x17 dots) — 64 columns on
+    80mm, 42 on 58mm, lines 24 dots apart (ESC M 1 … ESC M 0, ESC 3 24). The
+    per-client switch `kitchen_font_a` puts the Font A kitchen ticket back,
+    byte for byte. Dispatch and receipts are always Font A.
 
 ## Not built yet
 

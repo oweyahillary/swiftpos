@@ -31,7 +31,7 @@ import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@s
 import { printHtmlSilent } from '../printService';   // A454: the Z-report on the Windows receipt printer
 import { getBranding } from '../localDb';
 import { getPosFeatures } from '../deviceConfig';   // A530
-import { receiptClassicFrom } from '../posFeatures';   // A530
+import { receiptClassicFrom, kitchenFontAFrom } from '../posFeatures';   // A530; A543
 import { noteActivity, setPrintPendingProbe } from '../activityTracker';   // A508
 import { signedInCan } from '../tillAccess';   // A490
 import { getActiveSession } from '../techService';   // A490: a technician sets printers up before anyone signs in
@@ -68,7 +68,11 @@ function sampleBusinessForThisTill(): typeof sampleBusiness {
   // A530: and this client's receipt switches, so the test print and the preview are the receipt the till prints.
   let receiptClassic: ReturnType<typeof receiptClassicFrom> | undefined;
   try { receiptClassic = receiptClassicFrom(getPosFeatures()); } catch { /* no device_config yet: the standard (A538: classic layout, 3.75 mm) */ }
-  return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name, ...(receiptClassic ? { receiptClassic } : {}) };
+  // A543: and its kitchen font, so a kitchen test print is the kitchen ticket the till prints (Font B unless 'kitchen_font_a').
+  let kitchenFontA = false;
+  try { kitchenFontA = kitchenFontAFrom(getPosFeatures()); } catch { /* no device_config yet: the standard, Font B */ }
+  return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name, ...(receiptClassic ? { receiptClassic } : {}),
+    ...(kitchenFontA ? { kitchenFontA } : {}) };
 }
 
 export function initPrinting(database: Database.Database, win: () => BrowserWindow | null): void {

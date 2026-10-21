@@ -2,6 +2,10 @@
 
 **Generated 2026-08-10 by reading the tree. Not hand-maintained.**
 
+> **Superseded 2026-10-21 (A548).** Every "cited only" ID below now has a row in `AUDIT-REGISTER.md` — §B (the 08-08
+> findings) or §K (the July audit IDs, traced to the fix commits that first cited them). Read those; the line numbers
+> below are as of 2026-08-10. `check-register-consistency` holds the orphan count at 0.
+
 ## Why this file exists
 
 `AUDIT-REGISTER.md` records that it was opened on 2026-08-07 with sections

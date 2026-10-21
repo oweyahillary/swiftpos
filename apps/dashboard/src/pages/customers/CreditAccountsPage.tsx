@@ -12,6 +12,8 @@ import { money, dateShort } from '../../lib/format';
 import { useBusiness } from '../../context/BusinessContext';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
+import CreditSalesToConfirm, { ledgerNote } from '../../components/CreditSalesToConfirm';   // A545
+import { usePermissions } from '../../context/PermissionsContext';   // A545
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -21,11 +23,14 @@ interface LedgerRow {
   id: string; type: 'charge' | 'payment' | 'adjustment';
   amount: number; balance_after: number; method: string | null;
   reference: string | null; notes: string | null; order_id: string | null; created_at: string;
+  /** A545: a sale on account's manager confirmation (a disputed one stays on the balance). */
+  confirm_state?: 'awaiting' | 'confirmed' | 'disputed'; dispute_reason?: string | null;
 }
 
 
 export default function CreditAccountsPage() {
   const currency = useBusiness().business?.currency ?? 'KES';
+  const mayCredit = usePermissions().can('customers.credit');   // A545: confirm / dispute sales on account
   const [rows, setRows] = useState<CreditCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -135,6 +140,8 @@ export default function CreditAccountsPage() {
         <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{money(totalOwed, currency)}</span></div>
       </div>
       <p className="text-sm text-gray-400 mb-5">Customers buying on account. Debtors shown first.</p>
+      {/* A545: every sale on account confirmed or disputed by a manager — the owner sees every branch. */}
+      <CreditSalesToConfirm client={api} currency={currency} canDecide={mayCredit} showBranch onChanged={loadList} />
 
       <input
         value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name…"
@@ -261,12 +268,12 @@ export default function CreditAccountsPage() {
                       <td className={`py-2 capitalize text-gray-300 ${DESK}`}>{l.type}</td>
                       <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{money(l.amount, currency, { sign: true })}</td>
                       <td className={`py-2 text-right text-gray-300 ${DESK}`}>{money(l.balance_after, currency)}</td>
-                      <td className={`py-2 text-gray-500 ${DESK}`}>{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
+                      <td className={`py-2 text-gray-500 ${DESK}`}>{ledgerNote(l)}</td>
                     </tr>
                     <MoreRow open={moreLedger.isOpen(l.id)} colSpan={2} items={[
                       ['Type', <span className="capitalize">{l.type}</span>],
                       ['Balance', money(l.balance_after, currency)],
-                      ['Note', l.method ?? l.notes ?? (l.order_id ? 'sale' : '')],
+                      ['Note', ledgerNote(l)],
                     ]} />
                     </Fragment>
                   ))}

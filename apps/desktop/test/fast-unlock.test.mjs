@@ -17,6 +17,7 @@ import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -96,7 +97,7 @@ console.log('\nWired (source)\n');
   ok('the refusal is remembered only when the renewal AND the device sign-in said no',
     /if \(res\.status === 401 && await tryDeviceGrant\(\)\) return true;\n\s*if \(res\.status === 401\) _sessionRefusedAt = Date\.now\(\);/.test(se));
   ok('…and cleared by every successful renewal of the till\'s session', (se.match(/clearInboundFailure\('auth'\); _sessionRefusedAt = null;/g) ?? []).length === 3);
-  const ih = fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcHandlers.ts'), 'utf8');
+  const ih = ipcHandlersSource();
   ok('the whole cloud exchange is bounded (the renewal after a 401 included)',
     /res = await withinMs\(tillFetch\('\/api\/auth\/verify-pin'/.test(ih) && /knownHere \? 4_000 : 8_000\), knownHere \? 5_000 : 10_000\)/.test(ih));
 }

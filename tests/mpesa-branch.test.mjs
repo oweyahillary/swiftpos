@@ -18,6 +18,7 @@ import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installMemDb } from './lib-memdb.mjs';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'apps/server/dist');
@@ -177,7 +178,7 @@ await ok('pos/init: the line is ONE thing — the branch\'s own, else the busine
   assert.match(pos, /latest\('branch_settings',\s+'branch_id',\s+branchId\)/, 'a change reaches the other tills within 20 s');
 });
 await ok('the till: Manager › Settings › M-Pesa, its main process checks the person and prints the new line at once', async () => {
-  const ipc = read('apps/desktop/src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   assert.match(ipc, /handle\('manage:setMpesa'[\s\S]{0,400}if \(!mayMpesa\(\)\) throw new Error\(MPESA_REFUSED\);/);
   assert.match(ipc, /setReceiptPay\(value \? \{ label: mpesaLabel\(value\.kind\), number: mpesaReceiptNumber\(value\) \} : null\);/);
   const sp = read('apps/desktop/src/renderer/components/SettingsPanel.tsx');

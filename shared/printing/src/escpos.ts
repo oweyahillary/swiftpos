@@ -34,6 +34,10 @@ const LINE_SPACING_DEFAULT = [ESC, 0x32];
 /** A530: ESC 3 n — line spacing n dots (the vertical motion unit; 1/203" on the 203 dpi heads this package targets). */
 const lineSpacingDots = (n: number) => [ESC, 0x33, Math.max(0, Math.min(255, Math.round(n)))];
 
+/** A543: ESC M n — character font: 0 = Font A (12x24 dots), 1 = Font B (9x17 dots). */
+const FONT_A = [ESC, 0x4d, 0x00];
+const FONT_B = [ESC, 0x4d, 0x01];
+
 const ALIGN = { left: 0, center: 1, right: 2 } as const;
 
 /** GS ! n — the low nibble is height, the high nibble is width, each 0-7
@@ -70,6 +74,9 @@ export function toEscPos(doc: Document, opts: EscPosOptions = {}): Buffer {
   // A538: the receipt standard asks for 30 dots (~3.75 mm, owner 2026-10-21: "line spacing in the middle"), not 26.
   const compact = doc.lineSpacing;
   push(...INIT, ...CODEPAGE_CP437, ...(compact === undefined ? LINE_SPACING_DEFAULT : lineSpacingDots(compact)));
+  // A543: a Font B document (the kitchen ticket) says so once, here — ESC M 1. Font A is what ESC @ just selected, so a
+  // Font A document sends no ESC M at all and its bytes are what they were (receipts, dispatch, the Z-report).
+  if (doc.font === 'B') push(...FONT_B);
   // -1 = the default (ESC 2); otherwise the dots last set.
   let curSpacing = compact === undefined ? -1 : compact;
 
@@ -121,6 +128,10 @@ export function toEscPos(doc: Document, opts: EscPosOptions = {}): Buffer {
       case 'feed':
         push(ESC, 0x64, Math.max(0, Math.min(255, block.lines)));
         break;
+      case 'gap':
+        // A540: ESC J n — feed n dots (the motion unit), the thin space between two info lines.
+        push(ESC, 0x4a, Math.max(0, Math.min(255, Math.round(block.dots))));
+        break;
       case 'drawer':
         // ESC p 0 25 250 — pin 2, 50ms on, 500ms off. The conservative timing;
         // some drawers ignore shorter pulses.
@@ -137,6 +148,9 @@ export function toEscPos(doc: Document, opts: EscPosOptions = {}): Buffer {
   push(ESC, 0x61, 0, GS, 0x21, 0x00, ESC, 0x45, 0);
   // A530: and the default line spacing back, so the next job (ours or another program's) and the feed below are at 1/6".
   if (compact !== undefined) push(...LINE_SPACING_DEFAULT);
+  // A543: and Font A back after a kitchen ticket, so the receipt or the other program printing next on the same printer
+  // starts in the normal font even if it sends no ESC @ (ours always does).
+  if (doc.font === 'B') push(...FONT_A);
 
   if (opts.openDrawer) push(ESC, 0x70, 0x00, 0x19, 0xfa);
   // A530: GS V 66 0 feeds the last printed line past the blade on its own, so a cutting job needs only the document's

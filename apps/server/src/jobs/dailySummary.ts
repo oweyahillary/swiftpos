@@ -12,6 +12,7 @@ import { getDayCutoff } from '../lib/dayCutoff';
 import { readAlerts } from './ownerAlertsDecision';     // A476: what the owner chose the email includes
 import { dailyExtrasHtml } from './ownerAlertsData';    // A476: open tills, cash differences, voids, tills, expenses
 import { esc } from './ownerEmails';
+import { creditCounts, creditEmailBlock, listCreditSales, type CreditListRow } from '../lib/creditConfirm';   // A545
 
 /**
  * A476: the owner also chooses what it includes (Settings › Report Scheduler › "What the daily email includes"): tills
@@ -232,6 +233,10 @@ async function sendSummaryForBusiness(
   // loss. A line in the email only when there are any; before migration 133 there are none to read.
   const priceDiffs = await offlinePriceDifferences(biz.id, dateFrom, dateTo);
 
+  // A545: credit sales still waiting for a manager's confirmation, and the disputed ones listed for the owner. Never
+  // blocks anything (the day closes regardless); '' when there are none — and before migration 157.
+  const creditHtml = await creditSummaryHtml(biz.id, currency);
+
   const totalOrders  = orders?.length ?? 0;
   const totalRevenue = (orders ?? []).reduce((s, o) => s + Number(o.total), 0);
   const totalVat     = (orders ?? []).reduce((s, o) => s + Number(o.vat_amount), 0);
@@ -390,7 +395,7 @@ async function sendSummaryForBusiness(
       dateLabel: todayLabel,
       showLowStock: settings.low_stock,
       showTopProducts: settings.top_products,
-      extrasHtml,
+      extrasHtml: `${extrasHtml ?? ''}${creditHtml}`,   // A545
       priceDiffs,
     }),
     // TODO (Step 19/21): pass fromOverride from business_settings 'notify_from_email'
@@ -419,6 +424,18 @@ export async function offlinePriceDifferences(businessId: string, dateFrom: stri
   } catch (e: any) {
     console.warn(`[dailySummary] price differences not read for ${businessId} (is migration 133 applied?):`, e?.message);
     return { count: 0, loss: 0, suspicious: 0 };
+  }
+}
+
+/** A545: the e-mail's credit block (lib/creditConfirm.ts) — '' when nothing waits and nothing is disputed, or on any error. */
+export async function creditSummaryHtml(businessId: string, currency: string): Promise<string> {
+  try {
+    const counts = await creditCounts(businessId, null);
+    const disputed: CreditListRow[] = counts.disputed ? await listCreditSales(businessId, null, ['disputed'], 20) : [];
+    return creditEmailBlock(counts, disputed, currency);
+  } catch (e: any) {
+    console.warn(`[dailySummary] credit confirmations not read for ${businessId}:`, e?.message);
+    return '';
   }
 }
 

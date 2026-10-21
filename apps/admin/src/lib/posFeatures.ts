@@ -82,6 +82,15 @@ export const POS_FEATURES = [
     label: 'Extra paper before the cut (3 lines) — for a cutter that clips the last line',
     description: 'Three blank lines before the receipt is cut instead of one. A printer without a cutter always feeds three.',
   },
+  // A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "the printer's smaller Font
+  // B so long orders fit on less paper"): kitchen tickets print in Font B (64 a line on 80 mm, 42 on 58 mm) on the till
+  // and the web POS. This switch, set in the admin portal only, puts a client's kitchen tickets back in Font A exactly as
+  // before. Dispatch (packing) tickets and receipts are Font A either way.
+  {
+    key: 'kitchen_font_a',
+    label: 'Kitchen tickets in the normal font',
+    description: 'Kitchen tickets print in the printer’s normal font (Font A, 48 characters a line on 80 mm) instead of the smaller Font B (64 a line), which fits long orders on less paper.',
+  },
 ] as const;
 
 /**
@@ -109,6 +118,14 @@ export function receiptClassicFrom(features: Partial<Record<string, unknown>> | 
     compactLayout: f.receipt_compact_layout === true,
     extraFeed: f.receipt_extra_feed === true,
   };
+}
+
+/** A543: the kitchen-ticket switches, in the order the admin portal lists them — set by ZapTill, never by the owner. */
+export const KITCHEN_OPTION_KEYS = ['kitchen_font_a'] as const;
+
+/** A543: shared/printing's BusinessConfig.kitchenFontA. Only a real `true` — anything else is the standard, Font B. */
+export function kitchenFontAFrom(features: Partial<Record<string, unknown>> | null | undefined): boolean {
+  return (features ?? {}).kitchen_font_a === true;
 }
 
 /**

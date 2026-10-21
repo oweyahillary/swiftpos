@@ -32,7 +32,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DIRS = ['apps/desktop/src/main'];
+// D10: the IPC handlers moved from ipcHandlers.ts into src/main/ipc/*.ts — scanned too, or their SQL would leave the check.
+const DIRS = ['apps/desktop/src/main', 'apps/desktop/src/main/ipc'];
 
 let inspected = 0, skipped = 0;
 const problems = [];

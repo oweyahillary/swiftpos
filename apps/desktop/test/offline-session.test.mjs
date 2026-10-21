@@ -25,6 +25,7 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -238,7 +239,7 @@ ok('…and once online the refund first makes it a cloud sign-in, then goes out 
   JSON.stringify(rf.map((c) => [c.url, c.auth])));
 
 // ── The screens (source — React not run here) ──
-const ipc = src('main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 ok('a timer retries the upgrade every 30 s while a PIN is held, and never keeps the app alive',
   /setInterval\(\(\) => \{ if \(heldOfflinePin\(\)\) void tryUpgradeOfflineSession\(\); \}, 30_000\)/.test(ipc) && /offlineUpgradeTimer as any\)\.unref/.test(ipc));
 const menuPage = src('renderer/pages/MenuWorkbench.tsx');

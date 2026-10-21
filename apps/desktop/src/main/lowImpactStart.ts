@@ -9,7 +9,7 @@
  *    "<product> start at sign-in": a logon trigger 45 s after ANY user signs in, launching `ZapTill.exe --at-login`. A
  *    scheduled task is not a Startup app (Task Manager does not count it). The launch exits at once (startGate.ts,
  *    before the rest of ZapTill loads) unless THIS Windows user's ZapTill is a branch server — the marker file below,
- *    written by server mode. A machine whose installer could not register the task keeps a "start with Windows" (HKCU
+ *    written by server mode (A546: or a till with an approved update waiting — it installs it quietly, then ends). A machine whose installer could not register the task keeps a "start with Windows" (HKCU
  *    Run) entry, now `--at-login --login-wait`: the app waits LOGIN_WAIT_MS before it does anything.
  *  - NO WINDOW AT AUTO-START. A branch server started by the task, the watchdog or the updater's relaunch runs in the
  *    tray only; its window is made when somebody opens it.
@@ -60,15 +60,73 @@ export function isAutoLaunch(argv: readonly string[]): boolean {
  *               task's process and Task Scheduler never launches another while it runs (IgnoreNew);
  *   'go'      — start as usual.
  */
-export type GateDecision = 'exit' | 'handoff' | 'go';
-export function gateDecision(argv: readonly string[], o: { server: boolean; quitByHand: boolean }): GateDecision {
+export type GateDecision = 'exit' | 'handoff' | 'go' | 'till-install';
+export function gateDecision(argv: readonly string[], o: { server: boolean; quitByHand: boolean; updateWaiting?: boolean }): GateDecision {
   const atLogin = argv.includes(AT_LOGIN_ARG);
   const watchdog = argv.includes(WATCHDOG);
+  // A546: a till's sign-in launch with an approved, newer update waiting goes on — only to install it quietly, then end.
+  if (atLogin && !watchdog && !o.server && o.updateWaiting === true && !argv.includes(UPDATED_ARG)) return 'till-install';
   if ((atLogin || watchdog) && !o.server) return 'exit';
   if (watchdog && o.quitByHand) return 'exit';
   // The Run fallback waits in this process (no start task means no restart task to hand to is likely either).
   if (atLogin && !argv.includes(LOGIN_WAIT_ARG)) return 'handoff';
   return 'go';
+}
+
+// ── A541: "this start is the one at Windows sign-in" ─────────────────────────────────────────────────────────────────
+// The sign-in start of a branch server hands over to the restart task (startGate.ts), whose launch carries --watchdog
+// like a launch after a crash. The hand-over leaves this small file first, so the task's launch knows it IS the sign-in
+// start — the one moment ZapTill installs a waiting update before serving (autoUpdate.installAtStartIfDue).
+export const SIGNIN_FLAG_FILE = 'signin-start.flag';
+export const SIGNIN_FLAG_MAX_AGE_MS = 5 * 60_000;
+export function markSignInHandoff(userData: string, now = Date.now()): void {
+  try { fs.writeFileSync(path.join(userData, SIGNIN_FLAG_FILE), String(now)); } catch { /* best effort */ }
+}
+/** Pure: a start at sign-in — `--at-login` itself, or the restart task's launch within 5 min of a sign-in hand-over. */
+export function signInStartFrom(argv: readonly string[], flagAt: number | null, now: number): boolean {
+  if (argv.includes(UPDATED_ARG)) return false;
+  if (argv.includes(AT_LOGIN_ARG)) return true;
+  return argv.includes(WATCHDOG) && flagAt !== null && now - flagAt >= 0 && now - flagAt <= SIGNIN_FLAG_MAX_AGE_MS;
+}
+/** Reads and removes the hand-over file (used once: a later crash restart is not a sign-in start). */
+export function consumeSignInStart(argv: readonly string[], userData: string, now = Date.now()): boolean {
+  const f = path.join(userData, SIGNIN_FLAG_FILE);
+  let at: number | null = null;
+  try { if (fs.existsSync(f)) { const n = Number(fs.readFileSync(f, 'utf8').trim()); at = Number.isFinite(n) ? n : null; fs.rmSync(f, { force: true }); } } catch { at = null; }
+  return signInStartFrom(argv, at, now);
+}
+
+// ── A546: "an approved update is waiting" — read by the gate, before anything heavy loads ───────────────────────────
+// Owner, 2026-10-21, asked whether a till should also install when opened by hand: "yes, but what if it auto starts like
+// a server — what happens?" A till's sign-in launch used to end at once (above). Now, when an approved, newer update is
+// downloaded, it goes on just far enough to install it through the updater task — quietly, no window, no relaunch — and
+// ends. The download is kept in the database (autoUpdate.ts, update_staged); this small file mirrors it so the gate can
+// decide without opening the database. `signinTried`: the version a quiet sign-in install was already tried (or could not
+// be — no updater task) for, so the next sign-ins end at once again.
+export const UPDATE_WAITING_FILE = 'update-waiting.json';
+export interface UpdateWaiting { version: string; approved: boolean; signinTried?: string | null }
+const VERSION3 = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
+function newerThan(a: string, b: string): boolean {
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) { if (x[i] !== y[i]) return x[i] > y[i]; }
+  return false;
+}
+export function readUpdateWaiting(userData: string): UpdateWaiting | null {
+  try {
+    const w = JSON.parse(fs.readFileSync(path.join(userData, UPDATE_WAITING_FILE), 'utf8'));
+    return w && typeof w.version === 'string' && VERSION3.test(w.version) ? { version: w.version, approved: w.approved === true, signinTried: typeof w.signinTried === 'string' ? w.signinTried : null } : null;
+  } catch { return null; }
+}
+export function writeUpdateWaiting(userData: string, w: UpdateWaiting | null): void {
+  try {
+    const f = path.join(userData, UPDATE_WAITING_FILE);
+    if (!w) fs.rmSync(f, { force: true });
+    else fs.writeFileSync(f, JSON.stringify(w));
+  } catch { /* best effort — without it a till's sign-in launch ends at once, and the next open installs it */ }
+}
+/** Pure: should a till's sign-in launch go on to install? Newer than what runs, approved, not tried at sign-in yet. */
+export function tillSignInInstallDue(w: UpdateWaiting | null, running: string): boolean {
+  return !!w && w.approved && VERSION3.test(running) && newerThan(w.version, running) && w.signinTried !== w.version;
 }
 
 /** No window at start: an automatic start of a branch server. A till (and anything started by hand) opens its window. */

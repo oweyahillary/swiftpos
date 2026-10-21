@@ -74,6 +74,14 @@ export type ServerDistribution =
       waiting: { orders: number; ordersFromTills: number; shifts: number; days: number; floats: number; expenses: number; kitchenVoids: number; reversals: number };
       total: number; oldestAt: string | null; oldestAgeMs: number | null; lastPushOkAt: string | null; lastSyncedAt: string | null; runbook: string };
 
+/** A542: what node:drawersStatus answers — the branch server's copy of its branch's drawers (A535, main/branchDrawers.ts). */
+export type ServerDrawers =
+  | { role: 'not_server' }
+  | { role: 'server';
+      status: { role: 'server' | 'peer' | 'direct'; mode: string; drawers: number; lastOkAt: string | null; polls: number; error: string | null;
+        lastPollAt: string | null; lastPollOk: boolean | null; open: number; awaitingConfirmation: number; peersLastHour: number;
+        channel: string; fallback: boolean; fallbackUntil: string | null; fresh: boolean } };
+
 export interface TechStatus {
   device: {
     device_id: string | null; device_name: string | null; device_role: DeviceRole;
@@ -379,6 +387,13 @@ export interface WasteRecordingView {
   client_id: string; reason: string; note: string; recorded_by_name: string; recorded_at: string;
   items: Array<{ kind: string; id: string; name: string; quantity: number }>;
 }
+/** A545: a sale on account and its manager's confirmation (main/creditConfirm.ts). */
+export interface CreditSaleView {
+  order_id: string; order_number: string | null; branch_id: string | null; branch_name: string | null;
+  customer_name: string | null; amount: number; state: 'awaiting' | 'confirmed' | 'disputed'; source: string; over_limit: boolean;
+  cashier_name: string | null; approved_by_name: string | null; decided_by_name: string | null; decided_at: string | null;
+  dispute_reason: string | null; sold_at: string; pending?: boolean;
+}
 /** A413: a batch on the expiry list. */
 export interface ExpiringBatch {
   id: string; name: string; unit: string | null; batch_no: string | null; expiry_date: string | null; remaining: number;
@@ -470,6 +485,8 @@ declare global {
         retryFailed: () => Promise<{ requeued: number; released: number; applied: number }>;
         /** A534 (A23): on a branch server, how far its distribution to the cloud is behind (Tech page). */
         distribution: () => Promise<ServerDistribution>;
+        /** A542: on a branch server, its copy of the branch's drawers (Tech page). */
+        drawersStatus: () => Promise<ServerDrawers>;
       };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
@@ -653,7 +670,10 @@ declare global {
         html: (opts: { html: string; deviceName: string; paperWidthMm: 58 | 80; copies: number }) => Promise<{ ok: boolean; error?: string }>;
       };
       branding: {
-        get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null } | null>;
+        get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null;
+                             /** A544: this till's branch's override (null = none) and the look resolved branch → business → default. */
+                             branch?: { branchId: string; themeId: string | null; accentHex: string | null; receiptFooter: string | null } | null;
+                             effective?: { themeId: string | null; accentHex: string | null } } | null>;
         // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
         // Rejects (throws) on a bad hex, an SVG, a non-raster data-URI, or a logo over 250 KB.
         // A312: logoRgba = the logo's pixels (≤384×240 RGBA); main thresholds them into the receipt
@@ -667,12 +687,12 @@ declare global {
       };
       // A306: auto-update status + manager-gated install-now.
       update: {
-        getStatus: () => Promise<{ state: string; version: string | null; percent: number | null }>;
+        getStatus: () => Promise<{ state: string; version: string | null; percent: number | null; downloadedAt?: number | null }>;   // A541: downloadedAt
         /** A496: the status with its reason (note), when it last checked, the approved version, and the last log lines. */
         getDiagnostics: () => Promise<{ status: { state: string; version: string | null; percent: number | null; note?: string | null; checkedAt?: string | null; approved?: string | null };
                                         running: string | null; log: Array<{ at: string; line: string }>;
                                         /** A508: the last idle install (shown on the Tech page only — never a cashier banner). */
-                                        idleInstall?: { from: string; to: string; at: string; reason: 'idle'; why?: string; ok: boolean } | null;
+                                        idleInstall?: { from: string; to: string; at: string; reason: 'idle' | 'startup'; why?: string; ok: boolean } | null;   // A541: 'startup'
                                         /** A508: why the downloaded update has not installed on its own yet. */
                                         idleNote?: string | null;
                                         /** A509: the updater task (installs with no Windows prompt) and its own log's last lines. */
@@ -681,7 +701,7 @@ declare global {
                                         startup?: string | null; graphics?: string | null }>;
         /** A519: one tap — main allows the signed-in back-office person or a technician (no PIN — the PIN restart channel is gone). */
         installNow: () => Promise<{ ok: boolean; reason?: string }>;
-        onStatus: (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => () => void;
+        onStatus: (cb: (s: { state: string; version: string | null; percent: number | null; downloadedAt?: number | null }) => void) => () => void;
       };
       config: {
         get: () => Promise<DeviceConfig | null>;
@@ -791,6 +811,12 @@ declare global {
           Promise<{ client_id: string; state: 'saved' | 'pending' | 'refused'; ref?: string; value?: number; message?: string }>;
         wastageState: () => Promise<{ pending: WasteRecordingView[]; refused: Array<WasteRecordingView & { refused_at: string; message: string }> }>;
         dismissWastage: (clientId: string) => Promise<{ ok: true }>;
+        // A545: credit sales a manager confirms or disputes (the cloud's list; the last one kept for offline).
+        creditSales: () => Promise<{ online: boolean; saved_at: string | null; message?: string; rows: CreditSaleView[];
+          refused: Array<{ order_id: string; decision: 'confirm' | 'dispute'; by_name: string | null; refused_at: string; message: string }> }>;
+        decideCredit: (orderId: string, decision: 'confirm' | 'dispute', reason?: string) => Promise<{ state: 'saved' } | { state: 'pending'; message: string }>;
+        creditAwaiting: () => Promise<{ count: number; notice: string; saved: boolean }>;
+        dismissCredit: (orderId: string) => Promise<{ ok: true }>;
         expiringBatches: () => Promise<{ online: false; message: string } | { online: true; batches: ExpiringBatch[]; summary: { expired: number; soon: number } }>;
         updateCategory: (id: string, patch: any) => Promise<any>;
         bulkProducts:       (rows: any[]) => Promise<{ created: number; updated: number; errors: Array<{ row: number; error: string }> }>;

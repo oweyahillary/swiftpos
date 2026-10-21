@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -94,7 +95,7 @@ console.log('\nThe Tech page\n');
   const tech = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'pages', 'TechPage.tsx'), 'utf8');
   ok('it warns while the backups are on the database\'s disk, and offers "Choose backup folder…"',
     /data-testid="backup-same-disk"/.test(tech) && /data-testid="choose-backup-dir"/.test(tech));
-  const ipc = fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcHandlers.ts'), 'utf8');
+  const ipc = ipcHandlersSource();
   ok('only a technician signed in may change it (and it is logged)',
     /handle\('tech:setBackupDir'[\s\S]{0,300}if \(!getActiveSession\(\)\) throw new Error\('Tech session required'\);[\s\S]{0,200}logTechAction\('backup\.dir'/.test(ipc));
 }

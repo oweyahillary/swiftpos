@@ -21,6 +21,7 @@ import { methodLabel } from '../../shared/paymentCatalogue';   // A452
 import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import TransfersTab from '../components/TransfersTab';   // A197
 import MonthlyPackTab from '../components/MonthlyPackTab';   // A466
+import CreditSalesTab from '../components/CreditSalesTab';   // A545
 import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';   // A441
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
@@ -2034,6 +2035,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canItems: has('reports.items'),
     canShifts: hasAny('reports.shifts', 'shifts.confirm'),
     canMonthly: has('reports.monthly_pack') || has('expenses.manage'),
+    canCredit: has('customers.credit'),   // A545
     canExpenses: hasAny('expenses.view', 'expenses.manage'),
     canCloseDay: has('shifts.close_day'),
     canCloseBranch: has('shifts.close_branch'),   // A520
@@ -2118,6 +2120,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'transfers': return online ? <TransfersTab /> : <RetailOverview currency={currency} />;   // A197
       // A466: the web's Monthly pack; recording for the books as the web gates it (expenses.manage).
       case 'monthly': return <MonthlyPackTab currency={currency} canRecord={has('expenses.manage')} />;
+      // A545: every sale on account, confirmed or disputed by a manager (as themselves; offline kept and sent later).
+      case 'credit': return <CreditSalesTab currency={currency} />;
       default:        return nav.length ? <RetailOverview currency={currency} /> : (
         <p className="text-sm text-gray-300" data-testid="manager-nothing">Nothing here is open to your role. Use Open POS, or ask the owner (Settings › Roles and permissions).</p>
       );

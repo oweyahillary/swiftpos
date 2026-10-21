@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission, requirePermission, can } from '../middleware/rbac';
+import { requireAnyPermission, requirePermission, can, assertBranchAccess } from '../middleware/rbac';
+import { accentWriteError, themeOverrideError, footerWriteError, cleanFooter, normaliseHex,
+  FOOTER_LINE_MAX, FOOTER_LINE_NARROW, FOOTER_MAX_LINES, FOOTER_MAX_CHARS } from '../lib/branchBranding';   // A544
+import { BRANCH_BRANDING_COLUMNS, type BranchBrandingRow, servedBranchBranding } from '../lib/branchBrandingStore';   // A544, A547
+import { effectiveThemeId } from '../lib/themeRules';   // A547
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 import { themesEnabled, themeWriteError } from '../lib/themeAccess';
@@ -344,6 +348,155 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     .single();
   if (error) { sendError(res, error); return; }
   res.json(data);
+});
+
+// ── A544: per-branch branding ─────────────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-21: "phase 2 branding — we need to do it before value add" … "yes start" (per-branch branding;
+// docs/SCOPE-A295-branding.md §14–15). A branch may override the business's action theme, brand colour and receipt
+// footer — each on its own (NULL = the business's). The till and the web POS resolve branch → business → ZapTill default
+// (lib/branchBranding.ts). Who: the owner, any branch; a manager with the Branding tab's permission (receipt.manage or
+// settings.business), their own branch only (assertBranchAccess, as the branch settings routes); a till's own session
+// never. Premium: the business's `themes` flag (A325) — off, the web hides the section, a write is refused, a stored
+// override is kept but never served. Validated as the business level is: a curated theme, a brand colour seen on the
+// dark till (3:1), a plain-text footer whose lines fit the paper. Every change in the business's audit log.
+const BRANCH_BRANDING_FIELDS = ['theme_id', 'accent_hex', 'receipt_footer'] as const;
+
+/** A branch of THIS business (never another tenant's — 404 either way). */
+async function businessBranch(businessId: string | undefined, branchId: string): Promise<{ id: string; name: string } | null> {
+  if (!businessId || !branchId) return null;
+  const { data } = await supabase.from('branches').select('id, name').eq('id', branchId).eq('business_id', businessId).maybeSingle();
+  return (data as { id: string; name: string } | null) ?? null;
+}
+
+/** The branch-branding gate a write passes before anything is read: a person (never a till's own session). */
+function branchBrandingCaller(req: any, res: any): boolean {
+  if (req.isTill) { res.status(403).json({ error: 'Branch branding is changed by a person on the web, not by a till.' }); return false; }
+  return true;
+}
+
+async function auditBranchBranding(req: any, action: string, branchId: string, before: unknown, after: unknown): Promise<void> {
+  try {
+    const { data: me } = req.userId ? await supabase.from('users').select('name').eq('id', req.userId).maybeSingle() : { data: null };
+    const { error } = await supabase.from('audit_log').insert({
+      business_id: req.businessId, branch_id: branchId, user_id: req.userId ?? null, user_name: (me as any)?.name ?? null,
+      action, table_name: 'branch_branding', record_id: branchId, before_data: before ?? null, after_data: after ?? null,
+    });
+    if (error) console.error('[branding] branch branding audit not written:', error.message);
+  } catch (e) { console.error('[branding] branch branding audit not written:', (e as Error)?.message ?? e); }
+}
+
+// GET /api/business/branding/branches — the branches the caller may brand (owner: every one; a manager: their own) and
+// each one's override (null fields = the business's), with whether the business has themes.
+router.get('/branding/branches', requireAuth, requireAnyPermission('receipt.manage', 'settings.business'), async (req, res) => {
+  if (!branchBrandingCaller(req, res)) return;
+  const [{ data: branches, error }, enabled] = await Promise.all([
+    supabase.from('branches').select('id, name, is_main').eq('business_id', req.businessId).order('name'),
+    themesEnabled(req.businessId),
+  ]);
+  if (error) { sendError(res, error); return; }
+  const mine = ((branches ?? []) as Array<{ id: string; name: string; is_main?: boolean }>).filter((b) => assertBranchAccess(req, b.id));
+  let rows: BranchBrandingRow[] = [];
+  if (mine.length) {
+    const r = await supabase.from('branch_branding').select(BRANCH_BRANDING_COLUMNS).in('branch_id', mine.map((b) => b.id));
+    if (r.error) { res.status(503).json({ error: 'Branch branding is not available yet on this server.', code: 'BRANCH_BRANDING_UNAVAILABLE' }); return; }
+    rows = (r.data ?? []) as BranchBrandingRow[];
+  }
+  const byBranch = new Map(rows.map((r) => [r.branch_id, r]));
+  res.json({
+    themes_enabled: enabled,
+    limits: { line_max: FOOTER_LINE_MAX, line_narrow: FOOTER_LINE_NARROW, max_lines: FOOTER_MAX_LINES, max_chars: FOOTER_MAX_CHARS },
+    branches: mine.map((b) => {
+      const r = byBranch.get(b.id);
+      return { branch_id: b.id, name: b.name, is_main: b.is_main === true, theme_id: r?.theme_id ?? null, accent_hex: r?.accent_hex ?? null,
+        receipt_footer: r?.receipt_footer ?? null, updated_at: r?.updated_at ?? null };
+    }),
+  });
+});
+
+// GET /api/business/branding/branches/:branchId/served — A547 (A544's "not done" (a)): what pos/init serves a till of
+// THIS branch — the business's effective theme (null = themes off) and the branch's override, or null — so the web's
+// reprint of an old receipt resolves the branch's footer with the till's rule (lib/branchBranding.ts) instead of
+// printing the business footer. Any signed-in member who may see the branch (a cashier their own, the owner every one);
+// another business's branch 404. Read only; nothing is served with themes off (servedBranchBranding).
+router.get('/branding/branches/:branchId/served', requireAuth, async (req, res) => {
+  const branch = await businessBranch(req.businessId, req.params.branchId);
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!assertBranchAccess(req, branch.id)) { res.status(403).json({ error: 'You can see your own branch only.' }); return; }
+  const [enabled, { data: biz }] = await Promise.all([
+    themesEnabled(req.businessId),
+    supabase.from('business_branding').select('theme_id').eq('business_id', req.businessId).maybeSingle(),
+  ]);
+  res.json({
+    themeId: effectiveThemeId(enabled, (biz as { theme_id?: unknown } | null)?.theme_id),
+    branchBranding: await servedBranchBranding(branch.id, enabled),
+  });
+});
+
+// PATCH /api/business/branding/branches/:branchId — set this branch's override. Omitted field = leave as-is; null = use the
+// business's. A row left with nothing in it is removed.
+router.patch('/branding/branches/:branchId', requireAuth, requireAnyPermission('receipt.manage', 'settings.business'), async (req, res) => {
+  if (!branchBrandingCaller(req, res)) return;
+  const branch = await businessBranch(req.businessId, req.params.branchId);
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!assertBranchAccess(req, branch.id)) { res.status(403).json({ error: 'You can change the branding of your own branch only.' }); return; }
+  if (!(await themesEnabled(req.businessId))) {
+    res.status(403).json({ error: 'Per-branch branding is part of Themes — ask ZapTill to turn it on.', code: 'THEMES_OFF' }); return;
+  }
+  const body = req.body ?? {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+  if (!BRANCH_BRANDING_FIELDS.some(has)) { res.status(400).json({ error: 'Send theme_id, accent_hex or receipt_footer.' }); return; }
+  const patch: Record<string, string | null> = {};
+  if (has('theme_id')) {
+    const err = themeOverrideError(body.theme_id);
+    if (err) { res.status(400).json({ error: err, field: 'theme_id' }); return; }
+    patch.theme_id = body.theme_id;
+  }
+  if (has('accent_hex')) {
+    const err = accentWriteError(body.accent_hex);
+    if (err) { res.status(400).json({ error: err, field: 'accent_hex' }); return; }
+    patch.accent_hex = body.accent_hex === null ? null : normaliseHex(body.accent_hex);
+  }
+  if (has('receipt_footer')) {
+    const err = footerWriteError(body.receipt_footer);
+    if (err) { res.status(400).json({ error: err, field: 'receipt_footer' }); return; }
+    patch.receipt_footer = cleanFooter(body.receipt_footer);
+  }
+  const { data: before, error: rErr } = await supabase.from('branch_branding').select(BRANCH_BRANDING_COLUMNS).eq('branch_id', branch.id).maybeSingle();
+  if (rErr) { res.status(503).json({ error: 'Branch branding is not available yet on this server.', code: 'BRANCH_BRANDING_UNAVAILABLE' }); return; }
+  const next = { theme_id: (before as any)?.theme_id ?? null, accent_hex: (before as any)?.accent_hex ?? null,
+    receipt_footer: (before as any)?.receipt_footer ?? null, ...patch };
+  if (next.theme_id === null && next.accent_hex === null && next.receipt_footer === null) {
+    if (before) {
+      const { error } = await supabase.from('branch_branding').delete().eq('branch_id', branch.id);
+      if (error) { sendError(res, error); return; }
+      await auditBranchBranding(req, 'branch_branding.clear', branch.id, before, null);
+    }
+    res.json({ branch_id: branch.id, theme_id: null, accent_hex: null, receipt_footer: null, updated_at: null });
+    return;
+  }
+  const { data, error } = await supabase.from('branch_branding')
+    .upsert({ branch_id: branch.id, ...next, updated_at: new Date().toISOString() }, { onConflict: 'branch_id' })
+    .select(BRANCH_BRANDING_COLUMNS).single();
+  if (error) { sendError(res, error); return; }
+  await auditBranchBranding(req, 'branch_branding.update', branch.id, before ?? null, data);
+  res.json(data);
+});
+
+// DELETE /api/business/branding/branches/:branchId — clear this branch's override (it follows the business again).
+// Allowed with themes off too: taking an override away is never premium.
+router.delete('/branding/branches/:branchId', requireAuth, requireAnyPermission('receipt.manage', 'settings.business'), async (req, res) => {
+  if (!branchBrandingCaller(req, res)) return;
+  const branch = await businessBranch(req.businessId, req.params.branchId);
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!assertBranchAccess(req, branch.id)) { res.status(403).json({ error: 'You can change the branding of your own branch only.' }); return; }
+  const { data: before, error: rErr } = await supabase.from('branch_branding').select(BRANCH_BRANDING_COLUMNS).eq('branch_id', branch.id).maybeSingle();
+  if (rErr) { res.status(503).json({ error: 'Branch branding is not available yet on this server.', code: 'BRANCH_BRANDING_UNAVAILABLE' }); return; }
+  if (before) {
+    const { error } = await supabase.from('branch_branding').delete().eq('branch_id', branch.id);
+    if (error) { sendError(res, error); return; }
+    await auditBranchBranding(req, 'branch_branding.clear', branch.id, before, null);
+  }
+  res.json({ branch_id: branch.id, cleared: true });
 });
 
 // GET /api/business/settings

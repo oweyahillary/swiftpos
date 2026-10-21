@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const DESKTOP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(DESKTOP, p), 'utf8').replace(/\r\n/g, '\n');
@@ -37,7 +38,7 @@ ok('it says what it shows', /source: 'cloud',\s*scopeLabel: 'All tills at this b
 ok('the IPC channel is handled, bridged and validated',
   // A490: the handler first asks the person's key (reports.overview / orders.view_all), then reads the branch.
   // A494: the read is kept (const day = await branchDay(...)) so expected cash can be taken out for those without the key.
-  /handle\('manager:branchDay', async \(_e, r\?: RangeArg\) => \{\s*requireKey\(\['reports\.overview', 'orders\.view_all'\][^\n]*\n\s*const day = await branchDay\(resolveRange\(/.test(read('src/main/ipcHandlers.ts'))
+  /handle\('manager:branchDay', async \(_e, r\?: RangeArg\) => \{\s*requireKey\(\['reports\.overview', 'orders\.view_all'\][^\n]*\n\s*const day = await branchDay\(resolveRange\(/.test(ipcHandlersSource())
   && /branchDay: +\(range\?: any\) => ipcRenderer\.invoke\('manager:branchDay', range\)/.test(read('src/main/preload.ts'))
   && /'manager:branchDay': +\{ \.\.\.rangeArg \}/.test(read('src/main/ipcSchemas.ts')));
 

@@ -7,6 +7,7 @@ import UpdateDiagnosticsPanel from '../components/UpdateDiagnosticsPanel';   // 
 import TechFindServer from '../components/TechFindServer';   // A502
 import BranchSyncPanel from '../components/BranchSyncPanel';   // A501
 import ServerDistributionPanel from '../components/ServerDistributionPanel';   // A534 (A23)
+import DrawersCopyPanel from '../components/DrawersCopyPanel';   // A542
 import type { TechSession, TechStatus } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
 
@@ -292,6 +293,14 @@ export default function TechPage({ onExit }: Props) {
                   : `as they happen (${sync.live.channel})`}
                 {sync.live.waiting > 0 ? ` · ${sync.live.waiting} look/setup change(s) wait for an idle moment` : ''}
               </div>
+              {/* A542: the push line at a glance (A531 liveSync status) */}
+              {sync.live.push && sync.live.mode === 'direct' && (
+                <div className="mb-1 text-gray-400" data-testid="tech-push-line">
+                  Push line: {sync.live.push.since ? `connected since ${new Date(sync.live.push.since).toLocaleString()}`
+                    : `down — checking every ${sync.live.push.fallbackEveryS ? `${sync.live.push.fallbackEveryS} s` : 'few minutes'} instead${sync.live.push.retryAt ? `, trying the line again at ${new Date(sync.live.push.retryAt).toLocaleTimeString()}` : ''}`}
+                  {` · last ring: ${sync.live.push.lastRingAt ? new Date(sync.live.push.lastRingAt).toLocaleString() : 'none since start'}`}
+                </div>
+              )}
               <table className="w-full">
                 <tbody>
                   {(sync.live.topics ?? []).map((t: { topic: string; seq: number | null; at: string | null; rows: number; bytes: number }) => (
@@ -311,6 +320,8 @@ export default function TechPage({ onExit }: Props) {
           {dev?.node_url && dev.device_role === 'till' && <BranchSyncPanel />}
           {/* A534 (A23): on the branch server — how far its distribution to the cloud is behind, and the runbook line */}
           {(dev?.device_role === 'node' || dev?.device_role === 'office') && <ServerDistributionPanel />}
+          {/* A542: on the branch server — its copy of the branch's drawers (A535) */}
+          {(dev?.device_role === 'node' || dev?.device_role === 'office') && <DrawersCopyPanel />}
         </section>
 
         {/* A415: Rejoin this till */}

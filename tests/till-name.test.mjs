@@ -27,6 +27,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_NAME_TS) {
@@ -127,7 +128,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_NAME_TS) {
 
   // ── 4. The till sends them (source pin — Electron main not run here) ──
   await ok('the till sends its name and code on enrolment AND on every sign-in', () => {
-    const s = read('apps/desktop/src/main/ipcHandlers.ts');
+    const s = ipcHandlersSource();
     const at = s.indexOf('}/api/auth/enrol/redeem`');   // the fetch, not the file-header comment
     const enrol = s.slice(at, at + 1500);
     // A345 (0.6.15): the sign-in's body is built by verifyPinBody(), shared with the offline session's background upgrade.

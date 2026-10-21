@@ -6,13 +6,20 @@
  * produce a receipt with a wrapped, ragged Amt column is to lay it out for one
  * width and print it on the other.
  *
- * COLUMN COUNTS are for the printer's Font A, which is what this package uses
- * throughout. Font B is narrower and fits more, but it is noticeably harder to
- * read across a counter and under a heat lamp, and legibility matters more on
- * these documents than saving paper.
+ * COLUMN COUNTS are for the printer's Font A (12x24 dots) unless Font B is asked
+ * for. Font A is what receipts, dispatch and the Z-report use: it reads across a
+ * counter. A543 (owner, 2026-10-21: "change the font of the kitchen printer,
+ * packing is okay" — chose "the printer's smaller Font B so long orders fit on
+ * less paper") puts KITCHEN tickets in Font B (9x17 dots) unless the client's
+ * 'kitchen_font_a' switch is on.
  */
 
-export function columnsFor(paperWidthMm: 58 | 80): number {
+export type PrinterFont = 'A' | 'B';
+
+/** Characters a line: Font A 12 dots wide → 48 on 80 mm (576 dots), 32 on 58 mm (384); A543: Font B 9 dots wide →
+ *  64 on 80 mm, 42 on 58 mm (384 / 9 = 42.7, rounded down). */
+export function columnsFor(paperWidthMm: 58 | 80, font: PrinterFont = 'A'): number {
+  if (font === 'B') return paperWidthMm === 80 ? 64 : 42;
   return paperWidthMm === 80 ? 48 : 32;
 }
 
@@ -68,10 +75,26 @@ export function pairOrStack(cols: number, left: string, right: string): string[]
 }
 
 /** Wrap with a hanging indent, so continuation lines sit under the text rather
- *  than under the quantity that opened the line. */
+ *  than under the quantity that opened the line.
+ *
+ *  The first `indent` characters of `text` are its prefix (a kitchen ticket's "2   "). A547: the prefix is kept as
+ *  written and only the rest is wrapped, in `width - indent` — before, the whole text went through wrap(), which
+ *  split on runs of spaces and joined with one, so a wrapped dish name lost the three spaces after its quantity
+ *  ("2 CHICKEN ..."), and a continuation row could run `indent` past the paper. A line that fits is unchanged. */
 export function hangingWrap(text: string, width: number, indent: number): string[] {
-  const segs = wrap(text, width);
-  return segs.map((s, i) => (i === 0 ? s : ' '.repeat(indent) + s));
+  const prefix = sanitize(text.slice(0, indent));
+  const rest = text.slice(indent);
+  const segs = wrap(rest, Math.max(1, width - indent));
+  return segs.map((s, i) => (i === 0 ? prefix : ' '.repeat(indent)) + s);
+}
+
+/** A547: an indented row on a production ticket (a component, its attributes, a note) — every row of it, the first
+ *  included, `indent` spaces in, the text wrapped in `cols - indent` so no row runs past the paper. subRow (the
+ *  receipt's) wraps the already-indented text, which drops the indent on the first row of a line that wraps and can
+ *  push a continuation past the margin; the receipt's committed bytes keep subRow as it is. */
+export function indentedWrap(cols: number, text: string, indent: number): string[] {
+  const pad = ' '.repeat(indent);
+  return wrap(text, Math.max(1, cols - indent)).map(l => pad + l);
 }
 
 export interface ItemColumns {

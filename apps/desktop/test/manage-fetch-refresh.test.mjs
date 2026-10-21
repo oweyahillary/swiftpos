@@ -35,11 +35,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 // fileURLToPath, not new URL(...).pathname — the latter yields /C:/... on
 // Windows and path.resolve then prepends the drive again (register A33).
 const here = dirname(fileURLToPath(import.meta.url));
-const IPC  = resolve(here, '../src/main/ipcHandlers.ts');
 const SYNC = resolve(here, '../src/main/syncEngine.ts');
 
 let passed = 0, failed = 0;
@@ -48,7 +48,7 @@ const ok = (name, cond, detail = '') => {
   else { failed++; console.log(`  FAIL ${name}${detail ? `\n         ${detail}` : ''}`); }
 };
 
-const ipcSrc  = readFileSync(IPC,  'utf8');
+const ipcSrc  = ipcHandlersSource();   // D10: manageFetch and tillFetch are in ipc/shared.ts
 const syncSrc = readFileSync(SYNC, 'utf8');
 
 /**

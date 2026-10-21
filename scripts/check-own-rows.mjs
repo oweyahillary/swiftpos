@@ -94,7 +94,12 @@ if (!fs.existsSync(SRC)) {
   process.exit(2);
 }
 
-const files = fs.readdirSync(SRC).filter(f => f.endsWith('.ts'));
+// D10: and src/main/ipc/*.ts — the IPC handlers moved there from ipcHandlers.ts; their queries stay in the scan.
+const IPC_DIR = path.join(SRC, 'ipc');
+const files = [
+  ...fs.readdirSync(SRC).filter(f => f.endsWith('.ts')),
+  ...(fs.existsSync(IPC_DIR) ? fs.readdirSync(IPC_DIR).filter(f => f.endsWith('.ts')).map(f => `ipc/${f}`) : []),
+];
 let checked = 0;
 const problems = [];
 

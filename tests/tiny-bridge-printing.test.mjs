@@ -214,7 +214,9 @@ ok('A255: receipt carries branch + owner header/footer + credit (matches desktop
   assert.match(bo, /thankYouMessage: extra\.footerText \|\| footerMessage/);  // owner receipt_footer wins
   const hook = r('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
   assert.match(hook, /setReceiptHeader\(init\.receiptHeader \?\? ''\)/);
-  assert.match(hook, /setReceiptFooter\(init\.receiptFooter \?\? ''\)/);
+  // A544: the owner's footer, unless the branch has its own (resolveBranchBranding — the business's when it has none).
+  assert.match(hook, /receiptFooter: init\.receiptFooter \?\? '' \}/);
+  assert.match(hook, /setReceiptFooter\(look\.receiptFooter\)/);
 });
 ok('A255: Print Bill proforma does NOT open the cash drawer', () => {
   const e = r('scripts/escpos-renderer/entry.ts');

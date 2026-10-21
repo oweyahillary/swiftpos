@@ -57,7 +57,11 @@ await ok('a till\'s replay: from a till, from THE till that holds the sale, with
   assert.match(orders, /let holds = !!dev && order\.device_id === dev;/);
   assert.match(orders, /code: 'NOT_THIS_TILL'/);
   assert.match(orders, /if \(!approver \|\| !mayApprove\(approver, ownerId, action\)\) \{/  /* A490: sales.void / sales.refund per action */);
-  assert.match(orders, /if \(isTillReplay\(req\)\) \{ next\(\); return; \}[\s\S]{0,600}?\(action === 'void' \? voidKey : refundKey\)\(req, res, next\);/  /* A490: sales.void / sales.refund; A494: a person's replay → 409 retry */);
+  // A545: the window widened — between the person's 409 and the key, the till's own session without a replay goes to the
+  // handler's approval (a PIN for money; for an unpaid void only the till that holds it), never the bare permission check.
+  assert.match(orders, /if \(req\.isTill === true && !!req\.deviceId\) \{ next\(\); return; \}\n  \(action === 'void' \? voidKey : refundKey\)/);
+  assert.match(orders, /\} else if \(req\.isTill\) \{[\s\S]{0,400}?if \(!\(await tillHoldsOrder\(req, order\)\)\) \{ res\.status\(403\)\.json\(\{ \.\.\.NOT_THIS_TILL \}\); return; \}/);
+  assert.match(orders, /if \(isTillReplay\(req\)\) \{ next\(\); return; \}[\s\S]{0,1400}?\(action === 'void' \? voidKey : refundKey\)\(req, res, next\);/  /* A490: sales.void / sales.refund; A494: a person's replay → 409 retry */);
   assert.match(orders, /router\.post\('\/:id\/void', reversalGate\('void'\),/);
   assert.match(orders, /router\.post\('\/:id\/refund', reversalGate\('refund'\),/);
   assert.match(orders, /voided_at: replay\?\.at \?\? new Date\(\)\.toISOString\(\)/);

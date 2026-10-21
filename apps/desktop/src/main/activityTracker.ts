@@ -70,16 +70,64 @@ export function noteRendererPing(payload: unknown, now = Date.now()): boolean {
 }
 
 /**
- * A branch server: a till's request through the gateway (/node/cloud/…). Only a till TRADING counts — a request that
- * writes (POST/PUT/PATCH/DELETE: a sale, a close, an edit). Reads and the background traffic every open till makes all
- * night (the catalogue poll, a token renewal, the update question and its download) do not: a till left on overnight
- * would otherwise keep its server from ever installing. Returns whether it counted (tests).
+ * A541 (owner, 2026-10-20: "since we added the autostart feature most apps are not updating, they are stuck in the old
+ * version"): what a till sends through the branch server's gateway that is TRADING — an explicit allowlist. Before, every
+ * non-GET counted (a denylist of three background routes), and a 1.0.18/1.0.19 till sends read-only POSTs on a beat — the
+ * web sales on an open drawer (`POST /api/shifts/:id/foreign-orders`, every 20 s), the cash rung elsewhere, a PIN check,
+ * its changes queue, a log upload, the technician audit. A drawer left open overnight kept its server "in use" all night,
+ * so the server never installed (and its tills, who take their update from the server's copy, waited on it).
+ *
+ * Counted: a sale and its void / refund, the drawer's rows (`/api/sync/push` — opens, closes, floats, expenses, the day;
+ * the till never sends it empty, and a body too small to carry a row is not counted), a drawer closed or confirmed, a
+ * wastage record, a day close acknowledged, and a manager's edit made at a till (menu, staff, prices, offers, settings —
+ * somebody is standing there). Everything else is not trading — a route not listed here never keeps the server busy.
  */
-export function noteGatewayCall(method: string | undefined, url: string | undefined, now = Date.now()): boolean {
+export type GatewayKind = 'trading' | 'person' | 'background';
+const ID = '[^/]+';
+export const GATEWAY_TRADING: ReadonlyArray<{ methods: string[]; path: RegExp; what: string }> = [
+  { methods: ['POST'], path: /^orders$/, what: 'a sale' },
+  { methods: ['POST'], path: new RegExp(`^orders/${ID}/(void|refund)$`), what: 'a void or a refund' },
+  { methods: ['POST'], path: /^sync\/push$/, what: 'drawer rows (open, close, float, expense, the day)' },
+  { methods: ['POST'], path: new RegExp(`^shifts/${ID}/(close|force-close|confirm|manager-confirm)$`), what: 'a drawer closed or confirmed' },
+  { methods: ['POST'], path: /^wastage$/, what: 'wastage recorded' },
+  { methods: ['POST'], path: /^day-close\/ack$/, what: 'a day close' },
+];
+/** A manager's edit at a till (manageFetch / the till's own edits): somebody is there. */
+export const GATEWAY_PERSON: ReadonlyArray<{ methods: string[]; path: RegExp; what: string }> = [
+  { methods: ['POST', 'PATCH', 'PUT', 'DELETE'], path: /^(products|categories|combos|variants|modifiers|payment-methods|offers|staff|stock|branch-prices|business|branches|expenses\/categories|reports\/monthly\/movements)(\/|$)/, what: 'a manager editing at a till' },
+  { methods: ['PUT'], path: new RegExp(`^stations/${ID}/categories$`), what: 'station routing saved' },
+  { methods: ['POST'], path: /^stations\/seed(-defaults)?$/, what: 'stations set up' },
+  // A545: a manager confirming / disputing a credit sale at a till (the list is a read; the offline replay, sent later by
+  // the sync with the till's own sign-in, is background like /api/changes).
+  { methods: ['POST'], path: new RegExp(`^credit/sales/${ID}/(confirm|dispute)$`), what: 'a manager confirming a credit sale' },
+];
+/** The smallest /api/sync/push body that can carry a row (an empty push, five empty lists, is about 80 bytes). */
+export const SYNC_PUSH_MIN_BYTES = 100;
+
+/** Pure: what one gateway request is. `url` is the path the server saw (/node/cloud/api/…, the query is cut off). */
+export function classifyGatewayCall(method: string | undefined, url: string | undefined, contentLength?: number | null): { kind: GatewayKind; what: string } {
   const m = String(method ?? 'GET').toUpperCase();
-  const u = String(url ?? '');
-  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return false;
-  if (/\/api\/(auth\/refresh|desktop-update\/|devices?\/(heartbeat|ping))/i.test(u)) return false;
+  const u = String(url ?? '').split('?')[0];
+  const at = u.indexOf('/api/');
+  const p = at >= 0 ? u.slice(at + 5).replace(/\/+$/, '') : '';
+  if (!p || m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return { kind: 'background', what: 'a read' };
+  for (const r of GATEWAY_TRADING) {
+    if (!r.methods.includes(m) || !r.path.test(p)) continue;
+    if (p === 'sync/push' && typeof contentLength === 'number' && Number.isFinite(contentLength) && contentLength < SYNC_PUSH_MIN_BYTES) {
+      return { kind: 'background', what: 'an empty sync push' };
+    }
+    return { kind: 'trading', what: r.what };
+  }
+  for (const r of GATEWAY_PERSON) if (r.methods.includes(m) && r.path.test(p)) return { kind: 'person', what: r.what };
+  return { kind: 'background', what: 'background traffic (a poll, a read-only query, a sign-in, a log or update report)' };
+}
+
+/**
+ * A branch server: a till's request through the gateway (/node/cloud/…). Only a till TRADING (or a manager editing at a
+ * till) counts — classifyGatewayCall above (A541). Returns whether it counted (tests).
+ */
+export function noteGatewayCall(method: string | undefined, url: string | undefined, now = Date.now(), contentLength?: number | null): boolean {
+  if (classifyGatewayCall(method, url, contentLength).kind === 'background') return false;
   noteActivity('till-cloud', now);
   return true;
 }

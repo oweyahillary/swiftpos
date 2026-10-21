@@ -16,7 +16,8 @@
  *   staff            { user: { id, name, roles: { name }, status }, roster } — the roster row exactly as branch-staff
  *                    sends it (bcrypt PIN hash, the permission map; override PIN never), and only to a till's own session
  *   config           money / look / setup: that topic's pos/init keys (shared/syncTopics.ts CONFIG_KEYS)
- *   branding         { branding, themeId }
+ *   branding         { branding, themeId, branchBranding }
+ *   branch_branding  A544 (migration 156): { branchBranding } — THIS branch's override (null: none, or themes off)
  *   print_stations   { stations } — the whole list with category_ids, as /api/stations (a few rows)
  *   tables / pumps   the row, at this branch (pumps: or every branch)
  *   stock            A535 (migration 153): { product_id, branch_id, quantity, low_stock_threshold, qty_pieces } — the level
@@ -323,7 +324,10 @@ async function rowsFor(c: ChangesCaller, branch: string | null, entries: RawEntr
   }
 
   // config / branding: from /init's kept answer, built after the change (lib/posInit.ts)
-  const cfgEntries = [...by('config'), ...by('branding')];
+  // A544: a branch's override (branch_branding) — answered from the same kept answer (its `branchBranding` is the
+  // operating branch's, null while themes are off). Only THIS branch's entry: another branch's is never answered (the
+  // log tells only that branch's tills; this is the second lock).
+  const cfgEntries = [...by('config'), ...by('branding'), ...by('branch_branding').filter((e) => !!branch && e.row_id === branch)];
   if (cfgEntries.length) {
     const changedAt = Math.max(...cfgEntries.map((e) => (e.changed_at ? Date.parse(e.changed_at) : now)));
     const version = await readTopicVersion(biz, 'catalogue');
@@ -333,7 +337,13 @@ async function rowsFor(c: ChangesCaller, branch: string | null, entries: RawEntr
     const body = (built as { body: Record<string, unknown> }).body;
     for (const e of cfgEntries) {
       if (e.table_name === 'branding') {
-        out.push(entry(e, 'branding', 'branding', 'upsert', { branding: body.branding ?? null, themeId: body.themeId ?? null }));
+        // A544: with the branch's override — the themes switch turning on or off takes it on or off too.
+        out.push(entry(e, 'branding', 'branding', 'upsert', { branding: body.branding ?? null, themeId: body.themeId ?? null,
+          branchBranding: body.branchBranding ?? null }));
+        continue;
+      }
+      if (e.table_name === 'branch_branding') {
+        out.push(entry(e, 'branch_branding', e.row_id, 'upsert', { branchBranding: body.branchBranding ?? null }));
         continue;
       }
       const topic = e.row_id as keyof typeof CONFIG_KEYS;

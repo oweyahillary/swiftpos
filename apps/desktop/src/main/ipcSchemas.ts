@@ -112,6 +112,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'node:syncHealth':        NO_PAYLOAD,                                                          // A501
   'node:retryFailed':       NO_PAYLOAD,                                                          // A501
   'node:distribution':      NO_PAYLOAD,                                                          // A534 (A23)
+  'node:drawersStatus':     NO_PAYLOAD,                                                          // A542
   'branding:get':           NO_PAYLOAD,
   // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so
@@ -274,6 +275,11 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'wastage:record':              { reason: { t: 'string' }, note: { t: 'string', optional: true }, items: { t: 'objectArray', item: {} } },
   'wastage:state':               NO_PAYLOAD,
   'wastage:dismiss':             { kind: 'string' },
+  // A545: credit sales a manager confirms or disputes (online, or kept and sent later).
+  'credit:list':                 NO_PAYLOAD,
+  'credit:decide':               { orderId: { t: 'string', min: 1 }, decision: { t: 'string', min: 1 }, reason: { t: 'string', optional: true } },
+  'credit:awaiting':             NO_PAYLOAD,
+  'credit:dismiss':              { kind: 'string' },
   'batches:expiring':            NO_PAYLOAD,
   'manage:createCategory':      { name: { t: 'string' } },
   'manage:updateCategory':      idPatch,

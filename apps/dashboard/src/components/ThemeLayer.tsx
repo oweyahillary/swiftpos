@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { api } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
-import { computeDashboardThemeVars, applyDashboardThemeVars, BRANDING_SAVED_EVENT, type BrandingForTheme } from '../lib/themeVars';
+import { computeDashboardThemeVars, applyDashboardThemeVars, BRANDING_SAVED_EVENT, withBranchTheme, posBranchTheme, type BrandingForTheme } from '../lib/themeVars';
 
 /**
  * A328: applies the signed-in business's action theme to the whole dashboard (the web POS and shared components use the
@@ -15,7 +15,8 @@ export default function ThemeLayer() {
     let cancelled = false;
     const load = () => {
       api.get<BrandingForTheme | null>('/api/business/branding')
-        .then((b) => { if (!cancelled) applyDashboardThemeVars(computeDashboardThemeVars(b)); })
+        // A544: the web POS's branch theme, when it overrides the business's (and themes are on).
+        .then((b) => { if (!cancelled) applyDashboardThemeVars(computeDashboardThemeVars(withBranchTheme(b, posBranchTheme()))); })
         .catch(() => { /* keep what is applied; the defaults are today's look */ });
     };
     load();

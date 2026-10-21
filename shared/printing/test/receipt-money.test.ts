@@ -62,8 +62,9 @@ ok('it prints (it used to throw) with the discount, the taxes, the total, the ti
   assert.equal(val(p, 'SubTotal:'), '953.39');
   assert.equal(val(p, 'CTL (2%)'), '19.07');
   assert.equal(val(p, 'VAT (16%)'), '152.54');
-  // A538: the standard is the classic layout again — "Round Off: 0.00" printed; only the compact opt-in drops it (A530).
-  assert.equal(val(p, 'Round Off:'), '0.00');
+  // A540 (owner, 2026-10-21: "if round off is 0.00 hide it"): no "Round Off: 0.00" on the standard receipt either
+  // (A538 had brought it back with the classic layout); the compact opt-in never printed it (A530).
+  assert.equal(val(p, 'Round Off:'), null);
   assert.equal(val(paper({ total: 112500, discount: 12500, tip: 5000 }, { receiptClassic: { compactLayout: true } }), 'Round Off:'), null);
   assert.equal(val(p, 'Total:'), '1,125.00');
   assert.equal(val(p, 'Tip:'), '50.00');

@@ -57,6 +57,8 @@ export interface ReceiptBusinessConfig {
   /** A530/A538: the admin portal's receipt switches (pos/init posFeatures); all false = the standard (classic layout at
    *  ~3.75 mm, small logo, 1-line feed). */
   receiptClassic?: { spacing: boolean; fullLogo: boolean; compactLayout: boolean; extraFeed: boolean };
+  /** A543: the admin portal's 'kitchen_font_a' — kitchen tickets in Font A as before; false = Font B (the standard). */
+  kitchenFontA?: boolean;
 }
 
 const toCents = (n: number) => Math.round((Number(n) || 0) * 100);
@@ -161,6 +163,9 @@ export function buildReceiptBusinessConfig(
 ): ReceiptBusinessConfig {
   return {
     receiptClassic:  receiptClassic(extra.posFeatures),   // A530
+    // A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay"): posFeatures.kitchenFontAFrom,
+    // written out for the same reason as receiptClassic — only a real `true` keeps the kitchen ticket in Font A.
+    kitchenFontA:    extra.posFeatures?.kitchen_font_a === true,
     logoRaster:      extra.logoRaster ?? undefined,
     name:            b.name,
     branchName:      extra.branchName || undefined,

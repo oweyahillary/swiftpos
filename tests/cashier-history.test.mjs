@@ -16,6 +16,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -118,7 +119,7 @@ await ok('the till: pulled and relayed, cached, filtered for a cashier, set from
   assert.match(se, /setCashierHistoryMethods\(c\.cashierHistoryMethods\)/);
   const rb = read('apps/desktop/src/main/referenceBundle.ts');
   assert.match(rb, /cashierHistoryMethods/);
-  const ipc = read('apps/desktop/src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   assert.match(ipc, /scope\.methods\.length \? cashierHistoryView\(orders as any\[\], scope\.methods\) : orders/);
   assert.match(ipc, /handle\('manage:setCashierHistoryMethods'/);
   assert.match(read('apps/desktop/src/main/ipcSchemas.ts'), /'manage:setCashierHistoryMethods': \{ kind: 'stringArray' \}/);

@@ -17,6 +17,7 @@ import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -138,7 +139,7 @@ console.log('\nOn a till with a branch server (A410)\n');
 console.log('\nWired in\n');
 {
   const S = fs.readFileSync(path.join(src, 'syncEngine.ts'), 'utf8');
-  const I = fs.readFileSync(path.join(src, 'ipcHandlers.ts'), 'utf8');
+  const I = ipcHandlersSource();
   const X = fs.readFileSync(path.join(src, 'index.ts'), 'utf8');
   ok('sent in every push pass and on the 20 s beat', /stage\('wastage'/.test(S) && /if \(wastagePending\(\)\) pushWastageNow\(\)/.test(X));
   ok('recording: the role checked on the till, kept here FIRST, then sent',

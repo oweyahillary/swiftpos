@@ -75,6 +75,7 @@ ok('only a real true turns one on; unknown keys are dropped',
                                                 receipt_compact_layout: false,   // A538: the compact layout, opt-in
                                                 receipt_classic_spacing: false, receipt_full_logo: false,   // A530: the receipt switches
                                                 receipt_extra_feed: false,
+                                                kitchen_font_a: false,   // A543: kitchen tickets in Font A, opt-in
                                                 blind_shift_close: true, confirm_shows_cashier_figures: true, kitchen_void_approval: true }),   // 0.6.29 / A461: standard ones last, always on
   JSON.stringify(C.getPosFeatures()));
 C.setPosFeatures(undefined);

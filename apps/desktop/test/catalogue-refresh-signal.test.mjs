@@ -80,7 +80,8 @@ const localDbShim = w('localDb.cjs', `
   }
   // applyPulled* are the real module's writers; the engine calls them when the cloud sends branding/theme.
   module.exports = { getLocalDb: () => ({ prepare, exec: () => {}, transaction: (f) => f }),
-                     LOCAL_SCHEMA_VERSION: 51, applyPulledBranding: () => {}, applyPulledTheme: () => {} };`);
+                     LOCAL_SCHEMA_VERSION: 51, applyPulledBranding: () => {}, applyPulledTheme: () => {},
+                     applyPulledBranchBranding: () => {} };`);   // A544: the branch override's writer
 
 const deviceConfigShim = w('deviceConfig.cjs', `
   module.exports = { getDeviceConfig: () => ({ device_id: 'test-device', branch_id: null }),
@@ -219,7 +220,8 @@ check('the lock screen re-reads branding on the refresh signal', /const unsubscr
 // A326 changed this line: with themes ON and no brand colour the PIN screen now takes the theme. The A321 intent
 // is unchanged — with no brand colour and themes OFF, null is APPLIED (back to the default), never ignored.
 check('…and a cleared branding returns it to the default (null is applied, not ignored)',
-  /setAccentHex\(b\?\.accentHex \?\? \(b\?\.themeId \? resolveTheme\(b\.themeId\)\.shades\[500\] : null\)\)/.test(pin) && !/if \(cancelled \|\| !b\) return;/.test(pin));
+  // A544: through the branch's effective look — a null branding still clears it (accent and theme null → the default).
+  /setAccentHex\(accent \?\? \(theme \? resolveTheme\(theme\)\.shades\[500\] : null\)\)/.test(pin) && !/if \(cancelled \|\| !b\) return;/.test(pin));
 const pos = src('renderer/pages/POSPage.tsx');
 check('the POS grid still reloads on the same signal', /posApi\.pos\.onCatalogueChanged\(loadCatalogue\)/.test(pos));
 

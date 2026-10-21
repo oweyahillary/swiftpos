@@ -18,6 +18,7 @@ import { startBranchDrawers } from './branchDrawers';   // A535
 import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet, pullCatalogueNow, refreshTechConfigNow, runRemoteInstructionsNow, testClearsBeforePush, remoteCloseBeat, REMOTE_CLOSE_BEAT_MS, learnCloudCloses } from './syncEngine';   // A523: learnCloudCloses
 import { AT_LOGIN_ARG, LOGIN_WAIT_ARG, LOGIN_WAIT_MS, isAutoLaunch, startsAtSignIn, startsWindowless, runStartupSequence, markStartup, markStartupSettled, startupLine, noteStartupLine, type StartupStep } from './lowImpactStart';   // A513
+import { consumeSignInStart } from './lowImpactStart';   // A541
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer, onServingChange } from './nodeServer';
@@ -31,6 +32,7 @@ import { applyDistribution, distributionCursors, retryPeerQuarantine } from './n
 import { nodeReplicationTick } from './syncEngine';   // F10: branch replication on its own beat
 import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
+import { installAtStartIfDue } from './autoUpdate';   // A541
 import { getBuildInfo } from './buildInfo';
 import { installConsoleCapture, logLine } from './logFile';
 import { loadMachineIdentity } from './machineFingerprint';   // A477
@@ -237,6 +239,11 @@ app.whenReady().then(async () => {
   // someone opens it. A till, and anything started by hand, opens its window as before (straight to the PIN screen).
   const server = startsAtSignIn(app.getPath('userData'));
   const windowless = startsWindowless(process.argv, server);
+  // A541: the start at Windows sign-in (also the restart task's launch the sign-in start handed over to) — read once.
+  const signInStart = consumeSignInStart(process.argv, app.getPath('userData'));
+  // A546: a till's sign-in launch (the gate let it go on: an approved update is waiting) — install quietly, then end.
+  const tillSignIn = process.argv.includes(AT_LOGIN_ARG) && !server && !process.argv.includes(WATCHDOG_ARG);
+  let openedDuringSignIn = false;
   const how = process.argv.includes(AT_LOGIN_ARG) ? 'after sign-in' : process.argv.includes(WATCHDOG_ARG) ? 'by the restart task'
     : process.argv.includes('--updated') ? 'after an update' : 'by hand';
   // A513: the "start with Windows" fallback (no sign-in task on this machine): wait before doing anything.
@@ -259,6 +266,26 @@ app.whenReady().then(async () => {
     // Init DB schema (runs additive migrations on older local DBs)
     getLocalDb();
 
+    // A546 (owner, 2026-10-21, on a till installing a waiting update: "yes, but what if it auto starts like a server — what
+    // happens?"): a till's sign-in launch reaches here only when the gate saw an approved, newer update waiting. It
+    // installs it through the updater task — no window, no Windows prompt, ZapTill stays closed after (the next open runs
+    // the new version) — and ends. No task, a refusal, withdrawn: it ends as before; the next open installs it.
+    if (tillSignIn) {
+      try { initAutoUpdate(); } catch (e) { console.error('[startup] autoUpdate init failed:', e); }
+      if (await installAtStartIfDue({ signInStart: true, updatedLaunch: false, quiet: true })) {
+        logLine('startup', "a till's sign-in launch: the waiting update is installing quietly — ZapTill stays closed until it is opened");
+        return;
+      }
+      if (!windowAsked) {
+        logLine('startup', "a till's sign-in launch: nothing installed — it ends here (the next open installs a waiting update)");
+        try { closeLocalDb(); } catch { /* ending anyway */ }
+        app.exit(0);
+        return;
+      }
+      logLine('startup', 'ZapTill was opened while the sign-in launch was checking for an update — it starts as usual');
+      openedDuringSignIn = true;
+    }
+
     // Register all IPC handlers
     registerIpcHandlers();
 
@@ -277,6 +304,19 @@ app.whenReady().then(async () => {
     onServingChange((on) => { if (on) enterServerMode(); else leaveServerMode(); });
     // A436: a till asking to join brings this server's window forward and raises a Windows notification.
     onJoinAsked(({ name, ip }) => announceJoin(name, ip));
+
+    // A541 (owner, 2026-10-20: "since we added the autostart feature most apps are not updating, they are stuck in the
+    // old version"): a start at Windows sign-in with an approved, newer update already downloaded installs it HERE —
+    // before the branch server serves and before any window — through the updater task (no prompt), else the installer
+    // (Windows may ask; somebody has just signed in). Once per version; a start by hand or after an update never does.
+    // initAutoUpdate is idempotent (called again below as before); it starts nothing until the start-up is over.
+    try { initAutoUpdate(); } catch (e) { console.error('[startup] autoUpdate init failed:', e); }
+    // A546: and a till opened by hand installs a waiting update first, as a backup ("Updating ZapTill…", then the PIN screen).
+    if (await installAtStartIfDue({ signInStart: signInStart && !tillSignIn, updatedLaunch: process.argv.includes('--updated'),
+      openedByHand: !isAutoLaunch(process.argv) || openedDuringSignIn })) {
+      logLine('startup', 'closing to install the waiting update before serving or opening — ZapTill starts again after the install');
+      return;
+    }
 
     // If this device is the branch aggregation node, start its LAN listener so
     // peer tills can push orders and read combined branch reports.

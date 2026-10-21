@@ -84,7 +84,9 @@ ok('reads, the web and a token without a surface are never gated', () => {
 // takes the next method within 30 lines.
 const DIR = path.join(root, 'apps/desktop/src/main');
 const writes = [];
-for (const f of fs.readdirSync(DIR).filter((f) => f.endsWith('.ts'))) {
+// D10: and src/main/ipc/*.ts — the IPC handlers moved there from ipcHandlers.ts.
+const IPC_TS = fs.readdirSync(path.join(DIR, 'ipc')).filter((f) => f.endsWith('.ts')).map((f) => `ipc/${f}`);
+for (const f of [...fs.readdirSync(DIR).filter((f) => f.endsWith('.ts')), ...IPC_TS]) {
   const lines = fs.readFileSync(path.join(DIR, f), 'utf8').split('\n');
   lines.forEach((ln, i) => {
     if (/^\s*(\/\/|\*)/.test(ln)) return;

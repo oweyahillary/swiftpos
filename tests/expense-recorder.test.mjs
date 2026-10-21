@@ -18,6 +18,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -40,7 +41,7 @@ ok('A360: adding, renaming and deleting a type stay expenses.manage', () => {
   assert.match(code, /router\.delete\('\/categories\/:id', requirePermission\('expenses\.manage'\)/);
 });
 ok('A360: the till asks this route with the signed-in staff\'s own token', () => {
-  const h = read('apps/desktop/src/main/ipcHandlers.ts');
+  const h = ipcHandlersSource();
   assert.match(h, /const token = staffRow\?\.token \?\? ownerRow\?\.token;/);
   // A410: through cloudFetch (the branch server on a till that has one).
   assert.match(h, /cloudFetch\(`\$\{cfg\.server_url\}\/api\/expenses\/categories`, \{\s+headers: \{ Authorization: `Bearer \$\{token\}` \},/);
@@ -75,7 +76,7 @@ ok('A361: a till\'s expense is stamped on sync with the till\'s signed-in staff'
   // …which is who the till puts in paid_by (the Shift panel offers no pick)
   // A465: expense:create's body moved to shiftService.recordExpense (also used by the branch server's instruction)
   assert.match(read('apps/desktop/src/main/shiftService.ts'), /e\.paid_by \?\? staff\?\.staff_id \?\? null,/);
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /recordExpense\(\{/);
+  assert.match(ipcHandlersSource(), /recordExpense\(\{/);
   const sp = read('apps/desktop/src/renderer/pages/ShiftPanel.tsx');
   const call = sp.slice(sp.indexOf('await posApi.expense.create({'), sp.indexOf('});', sp.indexOf('await posApi.expense.create({')));
   assert.ok(!/paid_by/.test(call), 'the till never sends a picked paid_by');

@@ -29,6 +29,31 @@ export interface TillUpdateState {
   running?: string | null; state?: string | null; version?: string | null; percent?: number | null;
   since?: string | null; checked_at?: string | null; approved?: string | null; error?: string | null;
   idle_note?: string | null; task?: boolean | null;
+  /** A541: why it cannot install by itself, the branch server, waiting for the server's copy, since when, a start-up try. */
+  blocker?: string | null; server?: boolean | null; waiting_server?: boolean | null; downloaded_at?: string | null; startup_failed?: boolean | null;
+}
+/** A541: a download waiting this long gets "ready for n days" on its line. */
+export const READY_LONG_MS = 72 * 60 * 60_000;
+
+/**
+ * A541 (owner, 2026-10-20: "since we added the autostart feature most apps are not updating, they are stuck in the old
+ * version"): the "Downloaded" line says WHY it has not installed — Windows would ask for permission (no ZapTill Updater
+ * task: what to do about it), a start-up install that did not take, or the idle install's own reason ("waiting: in use 3
+ * min ago (a till was trading)"). A report without these fields (A534's) reads as before. Pure.
+ */
+export function downloadedLine(s: TillUpdateState, v: string | null | undefined, now: number): string | null {
+  const ver = v ? ` ${v}` : "";
+  const long = s.downloaded_at && Number.isFinite(Date.parse(s.downloaded_at)) && now - Date.parse(s.downloaded_at) >= READY_LONG_MS
+    ? ` · ready for ${Math.floor((now - Date.parse(s.downloaded_at)) / 86_400_000)} days` : "";
+  // A546: a till opened by hand installs a waiting update first (Windows asks there — somebody is at the till).
+  const after = s.server ? "or it installs at the next Windows sign-in" : "or it installs the next time ZapTill is opened (Windows will ask)";
+  if (s.blocker && s.task === false) {
+    return `Downloaded${ver} — can't install silently on this PC (no ZapTill Updater task): run the installer once as administrator, ${after}${long}`;
+  }
+  if (s.blocker) return `Downloaded${ver} — can't install by itself: ${s.blocker}${long}`;
+  if (s.startup_failed) return `Downloaded${ver} — the install at Windows sign-in did not take; it installs when ZapTill is closed${long}`;
+  if (s.downloaded_at && s.idle_note) return `Downloaded${ver} — ${s.idle_note}${long}`;
+  return null;
 }
 export interface TillUpdateRow {
   appVersion?: string | null; lastSeenAt?: string | null; lastSyncAt?: string | null;
@@ -87,13 +112,16 @@ export function tillUpdateLine(dv: TillUpdateRow, approved: string | null | unde
     case "available":
       line = { text: `Downloading ${v}${typeof s.percent === "number" ? ` (${s.percent}%)` : ""}`, tone: "busy" }; break;
     case "downloaded":
-      line = { text: `Downloaded — installs when ZapTill is next closed${s.since ? ` (waiting since ${hhmm(s.since)})` : ""}${s.idle_note ? ` · ${s.idle_note}` : ""}`, tone: "warn" }; break;
+      line = { text: downloadedLine(s, v, now)   // A541: why it has not installed (a report from before A541: as it was)
+        ?? `Downloaded — installs when ZapTill is next closed${s.since ? ` (waiting since ${hhmm(s.since)})` : ""}${s.idle_note ? ` · ${s.idle_note}` : ""}`, tone: "warn" }; break;
     case "error":
       line = { text: `Update failed: ${s.error || "unknown error"}${s.since ? ` (at ${hhmm(s.since)})` : ""}`, tone: "bad" }; break;
     case "checking":
       line = { text: "Checking for the update", tone: "busy" }; break;
     default:
-      line = { text: s.approved && compareTillVersions(s.approved, approved) < 0
+      line = { text: s.waiting_server   // A541: a till behind a branch server that has not got the version yet
+        ? `Waiting for the branch server's copy of ${approved} — the server fetches it first${s.checked_at ? ` (last checked ${hhmm(s.checked_at)})` : ""}`
+        : s.approved && compareTillVersions(s.approved, approved) < 0
         ? `Not told about ${approved} yet (it last heard ${s.approved}${s.checked_at ? ` at ${hhmm(s.checked_at)}` : ""})`
         : `Waiting to download ${approved}${s.checked_at ? ` (last checked ${hhmm(s.checked_at)})` : ""}`, tone: "warn" };
   }

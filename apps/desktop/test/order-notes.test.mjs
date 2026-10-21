@@ -23,6 +23,7 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.ORDER_NOTES_TS) {
@@ -161,7 +162,7 @@ ok('a held order keeps its note, and a recall brings it back',
   /orderNote: orderNote\.trim\(\) \|\| undefined/.test(pos) && (pos.match(/setOrderNote\(held\.orderNote \?\? ''\)/g) ?? []).length === 2);
 ok('the note editor is on every line (not a fuel line) and on the order',
   /data-testid="line-note-btn"/.test(pos) && /data-testid="order-note-btn"/.test(pos) && /<NoteModal/.test(pos));
-const ipc = read('src/main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 ok('a held tab stores the order note', /INSERT INTO held_orders \(id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note(, delivery_fee(, delivery_free)?)?\)/.test(ipc)
   && /orderNote: r\.order_note \?\? undefined/.test(ipc));
 ok('the receipt and kitchen ticket get the order note', /note:\s+payload\.notes \?\? null/.test(ipc));

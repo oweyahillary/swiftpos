@@ -67,9 +67,23 @@ ok('a blank name falls back to "Your Business"', blank.includes('Your Business')
 
 // The rest of the sample is neutral — it prints on every client's paper.
 ok('neutral branch on the sample', own.includes('Main Branch'));
-ok('neutral till number (no real Buy Goods number)', /Buy Goods: 000000/.test(own), (own.match(/Buy Goods:[^\n|]*/) || [''])[0]);
+// A539: the number is in the payment heading — "Payment Details: Buy Goods - 000000".
+ok('neutral till number (no real Buy Goods number)', /Buy Goods - 000000/.test(own), (own.match(/Buy Goods[^\n|]*/) || [''])[0]);
 ok('neutral cashier', /Cashier: Amina/.test(own));
 ok('neutral phone', /0700 000 000/.test(own) && !/0700 000 033|0117 000 033/.test(own));
+
+// A543: the kitchen preview is the Font B kitchen ticket (64 / 42 a line) on a till with no 'kitchen_font_a'; dispatch
+// (packing) and the receipt keep Font A (48). The switch itself is tests/kitchen-font-a543.test.mjs and shared/printing.
+{
+  const db = new Database(':memory:');
+  db.exec('CREATE TABLE session (id INTEGER PRIMARY KEY, business_name TEXT NOT NULL)');
+  initPrinting(db, () => null);
+  const edge = (stationId, paperWidthMm) => String(handlers['escpos:preview'](null, { stationId, paperWidthMm })).split('\n')[0];
+  ok('A543: the kitchen preview is Font B — 64 a line on 80 mm, 42 on 58 mm',
+    edge('kitchen', 80) === '+' + '-'.repeat(64) + '+' && edge('kitchen', 58) === '+' + '-'.repeat(42) + '+', edge('kitchen', 80));
+  ok('A543: dispatch and the receipt stay Font A (48 on 80 mm)',
+    edge('dispatch', 80) === '+' + '-'.repeat(48) + '+' && edge('receipt', 80) === '+' + '-'.repeat(48) + '+');
+}
 
 // The test print (escpos:test) renders through the same helper — it needs a printer, so pin the call site.
 const src = fs.readFileSync(path.join(here, '..', 'src', 'main', 'print', 'printWorker.ts'), 'utf8');

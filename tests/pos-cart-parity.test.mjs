@@ -36,7 +36,7 @@ ok('A265: receiptHeader/receiptFooter are destructured from usePOSData (Charge n
   // They are used in the PaymentModal props + printBill; must be declared or the
   // PaymentModal render throws ReferenceError (the dashboard build is esbuild-only,
   // so an undeclared identifier is only caught at runtime).
-  assert.match(c, /\n    receiptHeader,\n    receiptFooter,\n(?:    receiptPay,   \/\/ A450\n)?    businessMode:/);
+  assert.match(c, /\n    receiptHeader,\n    receiptFooter,\n(?:    receiptPay,   \/\/ A450\n)?(?:    brandStrip,   \/\/ A547\n)?    businessMode:/);   // A547: the brand strip
   assert.match(c, /receiptHeader=\{receiptHeader\}/);
 });
 
@@ -63,7 +63,7 @@ ok('A268: pay-first payment does not re-fire the kitchen if Send to Kitchen alre
 ok('A269: Print Bill is a proforma BILL (no fiscal number), distinct from the payment receipt', () => {
   const rnd = fs.readFileSync(path.join(root, 'shared/printing/src/render.ts'), 'utf8');
   assert.match(rnd, /if \(ctx\.proforma\) \{[\s\S]{0,120}BILL - NOT A RECEIPT/);
-  assert.match(rnd, /if \(!ctx\.proforma\) d\.line\(`Bill No\./);      // proforma carries no bill number
+  assert.match(rnd, /if \(!ctx\.proforma\) (?:d\.line|info)\(`Bill No\./);      // proforma carries no bill number (A540: info() adds the thin gap)
   const cs = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/pos/CashierScreen.tsx'), 'utf8');
   assert.match(cs, /proforma: true,/);                                      // Print Bill sets it
   const pr = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/printRouted.ts'), 'utf8');

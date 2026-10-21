@@ -34,6 +34,7 @@ import { traffic } from '../lib/trafficStats';                         // A528
 import { initAnswer, setInitBuilder, type BuiltInit } from '../lib/posInit';   // A531
 import { changesAnswer, ChangesUnavailable } from '../lib/syncChanges';         // A531
 import { menusForPos } from '../lib/menus';                                    // A537
+import { servedBranchBranding } from '../lib/branchBrandingStore';             // A544
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -452,7 +453,8 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
   // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
   // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
-  const themeId = effectiveThemeId(await themesEnabled(req.businessId), branding?.theme_id);
+  const themesOn = await themesEnabled(req.businessId);
+  const themeId = effectiveThemeId(themesOn, branding?.theme_id);
   // A346: does the business have the web POS? Same entitlement as web sign-in (lib/webAccess.ts) — fully usable = active
   // or in grace (owner, 2026-09-27: "stock should only appear if the web pos is enabled"; reports-only week → no).
   const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
@@ -464,6 +466,10 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // The branch the till OPERATES on (the licence gate, in the route, reads its desktop_licensed — D11): the bound branch it
   // sent, falling back to the main branch only for legacy callers with no binding.
   const opBranch = boundBranch ?? mainBranch;
+  // A544: this branch's override of the business branding (theme, brand colour, receipt footer) — only while the business
+  // has themes (A325); null otherwise, so a till and the web POS apply none (stored, never applied). Only the till's own
+  // branch's row: another branch's override never reaches it.
+  const branchBranding = await servedBranchBranding((opBranch as { id?: string } | null)?.id ?? null, themesOn);
 
   // Fetch variant groups using the resolved product ID array (not a sub-query)
   const productIds = (products ?? []).map((p) => p.id);
@@ -590,6 +596,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       receiptLogoEnabled: branding.receipt_logo_enabled === true,
     } : null,
     themeId,
+    // A544: the branch's own override ({ branchId, themeId, accentHex, receiptFooter }), or null. The till and the web POS
+    // resolve per field: branch → business → ZapTill default (lib/branchBranding.ts). Older tills ignore it.
+    branchBranding,
     receiptHeader: receiptText.receipt_header ?? '',
     // 24-hour / continuous operation (A104): when on, an unclosed prior day gets
     // a short grace window at rollover instead of an immediate hard lock, so a

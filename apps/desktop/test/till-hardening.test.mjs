@@ -32,6 +32,7 @@ import crypto from 'node:crypto';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.join(here, '..');
@@ -139,7 +140,7 @@ console.log('\n9. Technician tokens and channels\n');
   ok('the right token opens a session — and the channels answer', good.ok === true && (await said(() => call('tech:status'))) === 'OK'
     && (await said(() => call('tech:maintenance'))) === 'OK' && (await said(() => call('tech:logAction', { action: 'x' }))) === 'OK', JSON.stringify(good));
   ok('…developer tools on an installed till now too', T.devToolsAllowed(true) === true);
-  const ipc = fs.readFileSync(path.join(desktop, 'src/main/ipcHandlers.ts'), 'utf8');
+  const ipc = ipcHandlersSource();
   ok('closing the session clears the token the branch server holds for its tills (broadcastTechToken(\'\'))',
     /handle\('tech:closeSession', async \(\) => \{\s*closeTechSession\(\);\s*revealPassedAt = 0;\s*broadcastTechToken\(''\)/.test(ipc));
   await call('tech:closeSession');

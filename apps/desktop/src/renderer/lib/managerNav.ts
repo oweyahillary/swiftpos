@@ -20,7 +20,8 @@
 
 export type TabKey =
   | 'overview' | 'orders' | 'items' | 'shift' | 'zreport' | 'expenses' | 'dayclose' | 'branchclose'
-  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers' | 'monthly';
+  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers' | 'monthly'
+  | 'credit';
 
 export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 'settings' | 'stock';
 
@@ -43,6 +44,8 @@ export interface NavAccess {
   canShifts: boolean;
   /** A466 / A481: reports.monthly_pack or expenses.manage — the monthly pack (A455), from the cloud. */
   canMonthly?: boolean;
+  /** A545: customers.credit — Credit sales (every sale on account, confirmed or disputed by a manager). */
+  canCredit?: boolean;
   /** expenses.view or expenses.manage — Expenses. */
   canExpenses: boolean;
   /** shifts.close_day — Close Day (dayService mayCloseDay's rule). */
@@ -84,6 +87,7 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
       ...(a.isRestaurant && a.canItems ? [{ key: 'items' as TabKey, label: 'Item Mix' }] : []),   // restaurant only (A105)
       ...(a.canShifts ? [{ key: 'shift' as TabKey, label: 'Current shift' }, { key: 'zreport' as TabKey, label: 'Shift report' }] : []),
       ...(a.canMonthly ? [{ key: 'monthly' as TabKey, label: 'Monthly pack' }] : []),   // A466: the web's Monthly pack (A455)
+      ...(a.canCredit ? [{ key: 'credit' as TabKey, label: 'Credit sales' }] : []),   // A545: a manager confirms every sale on account
     ] },
     { key: 'expenses', label: 'Expenses', tabs: a.canExpenses ? [{ key: 'expenses', label: 'Expenses' }] : [] },   // 0.6.11
     // Close Day is the escape route for the trading-day gate — shifts.close_day.

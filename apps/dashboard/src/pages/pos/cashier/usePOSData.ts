@@ -14,6 +14,8 @@ import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/
 import { rulesFromWire } from '../../../lib/reversalRules';
 import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
+import { resolveBranchBranding, branchBrandingFromWire } from '../../../lib/branchBranding';   // A544
+import { setPosBranchTheme, applyDashboardThemeVars, computeDashboardThemeVars, posBrandStrip } from '../../../lib/themeVars';   // A544, A547
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';
 import { usePOSAuth } from '../../../context/POSAuthContext';
@@ -53,6 +55,8 @@ export interface POSData {
   receiptLogo:       MonoRaster | null;
   receiptFooter:     string;
   receiptPay:        { label: string; number: string } | null;   // A450
+  /** A547: the brand strip's colour (the till's A326 strip) — the branch's colour, else the business's; null with themes off. */
+  brandStrip:        string | null;
   tables:            Table[];
   pumps:             Pump[];
   setPumps:          Dispatch<SetStateAction<Pump[]>>;
@@ -91,6 +95,8 @@ export function usePOSData(): POSData {
   const [receiptHeader,     setReceiptHeader]     = useState('');
   const [receiptLogo,       setReceiptLogo]       = useState<MonoRaster | null>(null);
   const [receiptFooter,     setReceiptFooter]     = useState('');
+  const [branchThemeId,     setBranchThemeId]     = useState<string | null>(null);   // A544: the branch's own theme
+  const [brandStrip,        setBrandStrip]        = useState<string | null>(null);   // A547: the till's brand strip, on the web POS
   const [receiptPay,        setReceiptPay]        = useState<{ label: string; number: string } | null>(null);   // A450
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
@@ -134,7 +140,15 @@ export function usePOSData(): POSData {
       // (resolveReceiptLogo in ipcHandlers): toggle ON and a decodable raster.
       setReceiptLogo(init.branding?.receiptLogoEnabled && init.branding.logoReceipt
         ? monoRasterFromString(init.branding.logoReceipt) : null);
-      setReceiptFooter(init.receiptFooter ?? '');
+      // A544: this branch's look and footer — its override per field, else the business's, else the ZapTill default
+      // (lib/branchBranding.ts, the till's own rule). Only while the business has themes (init.themeId not null).
+      const look = resolveBranchBranding(
+        { themeId: init.themeId ?? null, accentHex: init.branding?.accentHex ?? null, receiptFooter: init.receiptFooter ?? '' },
+        branchBrandingFromWire(init.branchBranding));
+      setReceiptFooter(look.receiptFooter);
+      setBranchThemeId(look.fromBranch.theme ? look.themeId : null);
+      // A547: the brand strip the till draws — the branch's colour, else the business's — only while themes are on.
+      setBrandStrip(posBrandStrip(look.themeId, look.accentHex));
       setReceiptPay(init.receiptPayNumber ? { label: init.receiptPayLabel ?? '', number: init.receiptPayNumber } : null);   // A450
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
@@ -200,8 +214,18 @@ export function usePOSData(): POSData {
 
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A544: the web POS wears its branch's theme while it is open (ThemeLayer defers to it); leaving gives the business's back.
+  // Applied here as well: a cashier's POS session may have no owner sign-in for ThemeLayer to read the business with.
+  useEffect(() => {
+    if (!branchThemeId) return;
+    applyDashboardThemeVars(computeDashboardThemeVars({ themes_enabled: true, theme_id: branchThemeId }));
+    setPosBranchTheme(branchThemeId);
+    return () => { applyDashboardThemeVars(null); setPosBranchTheme(null); };
+  }, [branchThemeId]);
+
   return {
     products, categories, menus, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
+    brandStrip,   // A547
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
     loading, error,
