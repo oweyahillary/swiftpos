@@ -40,6 +40,9 @@ export interface PermissionDef {
   /** Granted to a NEW business's roles of this kind (existing roles keep what migration 134 gives them). */
   cashier?: boolean;
   manager?: boolean;
+  /** A550: it only lets the person SEE something (a list, a report, a figure, a download) — it changes nothing. Decides
+   *  the built-in Auditor (VIEW_KEYS); a new key says which it is here. */
+  view?: boolean;
 }
 
 export const PERMISSION_GROUPS: Array<{ id: PermissionGroup; label: string; description: string }> = [
@@ -68,7 +71,7 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Refund sales', description: 'Refund a completed sale (with a reason)' },
   { key: 'sales.reprint',        group: 'selling', surface: 'both', manager: true,
     label: 'Reprint receipts', description: 'Reprint a receipt from the sales history' },
-  { key: 'sales.history_all',    group: 'selling', surface: 'both', manager: true,
+  { key: 'sales.history_all',    group: 'selling', surface: 'both', view: true, manager: true,
     label: 'See every cashier\'s sales', description: 'The sales history shows every cashier\'s sales, not only their own' },
   { key: 'invoice.create',       group: 'selling', surface: 'web', cashier: true, manager: true,
     label: 'Raise invoices', description: 'Raise an invoice for an order or a customer' },
@@ -88,41 +91,41 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Close the branch', description: 'Close Branch on the branch server: confirm the day totals of every till and close every till day' },
 
   // ── Reports — one key per report ─────────────────────────────────────────────────────────────────────────────────
-  { key: 'reports.overview',     group: 'reports', surface: 'both', manager: true,
+  { key: 'reports.overview',     group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Overview', description: 'The Overview page: today\'s sales, orders and open drawers' },
-  { key: 'reports.sales',        group: 'reports', surface: 'both', manager: true,
+  { key: 'reports.sales',        group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Sales reports', description: 'Master / DSR, daily and hourly sales, payment methods and order channels' },
-  { key: 'reports.items',        group: 'reports', surface: 'both', manager: true,
+  { key: 'reports.items',        group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Item mix and menu matrix', description: 'What sold, by product and category' },
-  { key: 'reports.staff',        group: 'reports', surface: 'both', manager: true,
+  { key: 'reports.staff',        group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Staff performance', description: 'Sales, voids and refunds by cashier' },
-  { key: 'reports.shifts',       group: 'reports', surface: 'both', manager: true,
+  { key: 'reports.shifts',       group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Shift reports and Z-reports', description: 'Each drawer\'s report: expected cash, counted cash and the difference' },
-  { key: 'reports.voids',        group: 'reports', surface: 'both', manager: true,
+  { key: 'reports.voids',        group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Voids, refunds and exceptions', description: 'Voids and refunds, price differences on offline sales and other exceptions' },
-  { key: 'reports.inventory',    group: 'reports', surface: 'both', manager: true,
+  { key: 'reports.inventory',    group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Inventory report', description: 'Stock movement and value over a period' },
-  { key: 'reports.fuel',         group: 'reports', surface: 'both', manager: true,
+  { key: 'reports.fuel',         group: 'reports', surface: 'both', view: true, manager: true,
     label: 'Fuel reports', description: 'Fuel sales, wet stock and the pump monitor' },
-  { key: 'reports.tax',          group: 'reports', surface: 'web',
+  { key: 'reports.tax',          group: 'reports', surface: 'web', view: true,
     label: 'Tax report', description: 'VAT and levy by branch and category, and eTIMS invoices' },
-  { key: 'reports.costs',        group: 'reports', surface: 'both',
+  { key: 'reports.costs',        group: 'reports', surface: 'both', view: true,
     label: 'Costs, margins and profit', description: 'Food cost, cost prices, margins, net profit and profit and loss' },
-  { key: 'reports.labour',       group: 'reports', surface: 'web',
+  { key: 'reports.labour',       group: 'reports', surface: 'web', view: true,
     label: 'Labour cost', description: 'Sales per labour hour and labour cost' },
-  { key: 'reports.monthly_pack', group: 'reports', surface: 'both',
+  { key: 'reports.monthly_pack', group: 'reports', surface: 'both', view: true,
     label: 'Monthly pack', description: 'The monthly books: daily sales, expenses, cash and M-Pesa books' },
-  { key: 'reports.payments',     group: 'reports', surface: 'web',
+  { key: 'reports.payments',     group: 'reports', surface: 'web', view: true,
     label: 'Payment exceptions', description: 'M-Pesa payments that did not match a sale' },
-  { key: 'reports.export',       group: 'reports', surface: 'both',
+  { key: 'reports.export',       group: 'reports', surface: 'both', view: true,
     label: 'Download reports', description: 'Download Excel and the exports (sales, items, shifts, profit and loss, expenses, audit)' },
 
   // ── Orders (back office) ─────────────────────────────────────────────────────────────────────────────────────────
-  { key: 'orders.view_all',      group: 'orders', surface: 'both', manager: true,
+  { key: 'orders.view_all',      group: 'orders', surface: 'both', view: true, manager: true,
     label: 'Orders, shifts and turnover pages', description: 'See every order of the branch, its shifts and table turnover' },
 
   // ── Menu ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-  { key: 'products.view',        group: 'menu', surface: 'both', cashier: true, manager: true,
+  { key: 'products.view',        group: 'menu', surface: 'both', view: true, cashier: true, manager: true,
     label: 'See the menu', description: 'Read the menu and its prices' },
   { key: 'menu.edit',            group: 'menu', surface: 'both',
     label: 'Edit the menu', description: 'Add and change products, categories, variants, choices, extras and combos' },
@@ -135,11 +138,11 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Promotions', description: 'Create, change and delete promotions, which run at every branch' },
   { key: 'menu.recipes',         group: 'menu', surface: 'web',
     label: 'Recipes and packaging', description: 'What each product uses from stock' },
-  { key: 'menu.costs',           group: 'menu', surface: 'both',
+  { key: 'menu.costs',           group: 'menu', surface: 'both', view: true,
     label: 'See cost prices', description: 'Cost prices and margins wherever they appear (menu, deliveries, stock)' },
 
   // ── Stock ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  { key: 'inventory.view',       group: 'stock', surface: 'both', cashier: true, manager: true,
+  { key: 'inventory.view',       group: 'stock', surface: 'both', view: true, cashier: true, manager: true,
     label: 'See stock levels', description: 'Stock levels of the branch' },
   { key: 'inventory.receive',    group: 'stock', surface: 'both', manager: true,
     label: 'Receive deliveries', description: 'Suppliers, purchase orders and receiving deliveries' },
@@ -159,11 +162,11 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'payables.manage',      group: 'stock', surface: 'web',
     label: 'Supplier bills and payments', description: 'What is owed to suppliers, their bills and paying them' },
   // A518: read-only supplier accounts (the Accountant's). Whoever holds payables.manage sees them already.
-  { key: 'payables.view',        group: 'stock', surface: 'web',
+  { key: 'payables.view',        group: 'stock', surface: 'web', view: true,
     label: 'See supplier bills', description: 'See supplier bills, payments and returns, without recording or paying them' },
 
   // ── Customers ────────────────────────────────────────────────────────────────────────────────────────────────────
-  { key: 'customers.view',       group: 'customers', surface: 'both', cashier: true, manager: true,
+  { key: 'customers.view',       group: 'customers', surface: 'both', view: true, cashier: true, manager: true,
     label: 'See customers', description: 'Customer records, points and credit balances' },
   { key: 'customers.edit',       group: 'customers', surface: 'both', cashier: true, manager: true,
     label: 'Add and edit customers', description: 'Add customers and change their details' },
@@ -171,13 +174,13 @@ export const PERMISSIONS: PermissionDef[] = [
     label: 'Customer credit', description: 'Approve sales on account with their PIN, set credit limits, record repayments and adjust balances' },   // A511
 
   // ── Expenses ─────────────────────────────────────────────────────────────────────────────────────────────────────
-  { key: 'expenses.view',        group: 'expenses', surface: 'both', manager: true,
+  { key: 'expenses.view',        group: 'expenses', surface: 'both', view: true, manager: true,
     label: 'See expenses', description: 'The expenses list and its totals' },
   { key: 'expenses.manage',      group: 'expenses', surface: 'both', manager: true,
     label: 'Record expenses', description: 'Record, change and remove expenses and expense types, and record entries in the monthly pack' },
 
   // ── Staff ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  { key: 'staff.view',           group: 'staff', surface: 'both', manager: true,
+  { key: 'staff.view',           group: 'staff', surface: 'both', view: true, manager: true,
     label: 'See staff', description: 'The staff list of their branch' },
   { key: 'staff.edit',           group: 'staff', surface: 'both', manager: true,
     label: 'Add and edit staff', description: 'Add staff, set PINs and branches, and deactivate staff — never with more rights than they hold themselves' },
@@ -225,6 +228,8 @@ export const PERMISSIONS: PermissionDef[] = [
 /** Every fine key. */
 export const PERMISSION_KEYS: readonly string[] = PERMISSIONS.map((p) => p.key);
 const FINE = new Set(PERMISSION_KEYS);
+/** A550: the keys that only show something (`view`) — everything a non-owner can be given to SEE, nothing that changes. */
+export const VIEW_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.view).map((p) => p.key);
 
 /**
  * The broad keys used before A490, and the fine keys each stood for. Each list reproduces EVERYTHING the broad key
@@ -365,9 +370,45 @@ export interface BuiltInRole {
  *     roles 142 made). No selling, no edits, no settings, no staff, no paying suppliers (payables.manage).
  *   Fuel attendant — pump sales and the pumps (fuel.manage: active / idle, tank deliveries) and the menu. No discounts,
  *     refunds, reports or drawer money.
+ *
+ * A550 (owner, 2026-10-21, with partner login: "add general manager, ops manager, accountant and any user you feel will be
+ * needed") — five more, for the people an owner lets into the web dashboard (web dashboard access, lib/webPartners.ts) as
+ * well as for the till. Migration 159 adds them to every existing business (scripts/test-migration-159.mjs compares).
+ * Nothing that is the OWNER's by design is a key, so no role can carry it: the owner's password, account and role, giving
+ * or taking web dashboard access, the M-Pesa credentials, the sign-in-code switch and the kitchen display key stay the
+ * owner's whatever a role holds.
+ *   General Manager — runs the whole business day to day: EVERY key of the catalogue (PERMISSION_KEYS), the three the owner
+ *     keeps by default (A502: menu.promotions, inventory.count_freeze, settings.reversals) included — the role an owner
+ *     means by "full rights like an owner". Still never the owner: the ceiling (lib/roleCeiling.ts) keeps them from the
+ *     owner's role and from anyone holding more than they do, and they never change their own access.
+ *   Operations Manager — runs operations: the menu (menu.edit, menu.prices, menu.offers, menu.recipes; menu.costs because
+ *     deliveries and recipes carry cost prices), stock (receive, transfer, count, waste, inventory.adjust — the count review
+ *     — and the ingredient list), the kitchen and the floor (stations.manage, tables.manage, changes.approve for menu and
+ *     staff changes made on a till), drawers and the day (shifts.close_day, shifts.close_branch, shifts.force_close), the
+ *     staff list and staff (staff.view, staff.edit — within their own keys), front of house (reservations, parking,
+ *     fuel.manage), and the operational reports (overview, sales, items, inventory, shifts, voids, fuel, the orders pages,
+ *     every cashier's sales). NOT finance: no tax, cost / profit, labour, monthly-pack, payment or download reports, no
+ *     supplier bills (payables.*), no expenses, no shifts.confirm (it approves cash out and expenses), no customer credit,
+ *     no roles (staff.roles), no business, payment, M-Pesa, receipt or integration settings, no devices, no selling.
+ *   Finance Manager — the Accountant who also acts: every Accountant key, plus payables.manage (supplier bills and paying
+ *     them), expenses.manage (recording expenses), customers.view and customers.credit (credit limits, repayments,
+ *     adjustments, approving sales on account) and shifts.confirm (confirming drawers — the cash side of reconciling — and
+ *     approving cash out and expenses; it also approves a kitchen removal with their PIN, which the catalogue keeps in the
+ *     same key). Payment reconciliation is the Accountant's reports.payments. No selling, menu, stock edits or staff.
+ *   Auditor — reads everything a non-owner can be shown and changes nothing: exactly VIEW_KEYS (each key's `view` flag —
+ *     every report and the downloads, the orders and shifts pages, every cashier's sales, the menu and cost prices, stock
+ *     levels, supplier bills, customers, expenses and the staff list). The catalogue has no settings-view key, so the
+ *     settings pages are not theirs. For an outside auditor given web dashboard access.
+ *   Kitchen Manager — runs the kitchen: the menu (products.view, menu.edit, menu.recipes, menu.costs) and its ingredients
+ *     (ingredients.manage), receiving, counting and writing off stock (inventory.view, .receive, .count, .waste), the stock
+ *     report (reports.inventory), and the kitchen and bar print stations (stations.manage — the kitchen display key itself
+ *     is the owner's). No prices, money, selling, transfers or staff.
  */
 const CASHIER_DEFAULT_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.cashier).map((p) => p.key);
 const MANAGER_DEFAULT_KEYS: readonly string[] = PERMISSIONS.filter((p) => p.manager).map((p) => p.key);
+const ACCOUNTANT_KEYS: readonly string[] = ['reports.overview', 'reports.sales', 'reports.items', 'reports.staff', 'reports.shifts',
+  'reports.voids', 'reports.inventory', 'reports.fuel', 'reports.tax', 'reports.costs', 'reports.labour', 'reports.monthly_pack',
+  'reports.payments', 'reports.export', 'orders.view_all', 'expenses.view', 'payables.view'];
 export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
   { name: 'Manager', description: 'Runs a branch', keys: MANAGER_DEFAULT_KEYS },
   { name: 'Cashier', description: 'Sells at the till', keys: CASHIER_DEFAULT_KEYS },
@@ -383,11 +424,27 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
     keys: ['products.view', 'inventory.view', 'inventory.receive', 'inventory.transfer', 'inventory.count',
       'inventory.waste', 'reports.inventory', 'menu.costs'] },
   { name: 'Accountant', description: 'Reads the books - every report, the orders and the expenses, changes nothing',
-    keys: ['reports.overview', 'reports.sales', 'reports.items', 'reports.staff', 'reports.shifts', 'reports.voids',
-      'reports.inventory', 'reports.fuel', 'reports.tax', 'reports.costs', 'reports.labour', 'reports.monthly_pack',
-      'reports.payments', 'reports.export', 'orders.view_all', 'expenses.view', 'payables.view'] },
+    keys: ACCOUNTANT_KEYS },
   { name: 'Fuel attendant', description: 'Sells fuel at the pumps', keys: ['orders.create', 'products.view', 'fuel.manage'],
     types: FUEL_BUSINESS_TYPES },
+  // ── A550 ──
+  { name: 'General Manager', description: 'Runs the whole business day to day - every permission, never the owner',
+    keys: PERMISSION_KEYS },
+  { name: 'Operations Manager', description: 'Runs operations - menu, stock, kitchen, shifts and the day, staff and the operational reports',
+    keys: ['products.view', 'menu.edit', 'menu.prices', 'menu.offers', 'menu.recipes', 'menu.costs',
+      'inventory.view', 'inventory.receive', 'inventory.transfer', 'inventory.count', 'inventory.waste', 'inventory.adjust',
+      'ingredients.manage', 'stations.manage', 'tables.manage', 'changes.approve',
+      'shifts.close_day', 'shifts.close_branch', 'shifts.force_close', 'staff.view', 'staff.edit',
+      'reservations.manage', 'parking.manage', 'fuel.manage',
+      'reports.overview', 'reports.sales', 'reports.items', 'reports.inventory', 'reports.shifts', 'reports.voids',
+      'reports.fuel', 'orders.view_all', 'sales.history_all'] },
+  { name: 'Finance Manager', description: 'The accountant who acts - pays suppliers, records expenses, customer credit and drawer checks',
+    keys: [...ACCOUNTANT_KEYS, 'payables.manage', 'expenses.manage', 'customers.view', 'customers.credit', 'shifts.confirm'] },
+  { name: 'Auditor', description: 'Sees every report, list and figure a non-owner can be shown, changes nothing',
+    keys: VIEW_KEYS },
+  { name: 'Kitchen Manager', description: 'Runs the kitchen - the menu and recipes, receiving, counting and writing off stock',
+    keys: ['products.view', 'menu.edit', 'menu.recipes', 'menu.costs', 'ingredients.manage', 'inventory.view',
+      'inventory.receive', 'inventory.count', 'inventory.waste', 'reports.inventory', 'stations.manage'] },
 ];
 
 const roleNameKey = (name: string | null | undefined): string => String(name ?? '').trim().toLowerCase().replace(/[\s_]+/g, ' ');

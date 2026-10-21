@@ -36,6 +36,11 @@ router.get('/', requireAuth, async (req, res) => {
     .order('created_at', { ascending: true });
 
   if (error) { sendError(res, error); return; }
+  // A550: a partner who works at some branches is offered those in the dashboard's picker (one of every branch: all).
+  if (req.webPartner && !req.allBranches) {
+    res.json(((data ?? []) as unknown as Array<{ id: string }>).filter((b) => req.partnerBranches.includes(b.id)));
+    return;
+  }
   res.json(data);
 });
 

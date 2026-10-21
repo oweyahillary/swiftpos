@@ -33,7 +33,18 @@ const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: st
 export default function LoginPage() {
   const navigate = useNavigate();
   const tenant = useTenant();   // A378: on a client's own address — their logo, and sign-in locked to them
-  const [email, setEmail]       = useState('');
+  // A550: the web dashboard access invitation links here with #set_password=1&email=… — "Forgot password?" opens with the
+  // address filled in, so the person sets their password with the emailed code (the link carries no secret). The email
+  // rides in the fragment, which the browser never sends to a server, and is wiped from the address bar once read.
+  const [invite] = useState(() => {
+    try {
+      const q = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const found = { email: (q.get('email') ?? '').slice(0, 200), setPassword: q.get('set_password') === '1' };
+      if (found.email || found.setPassword) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      return found;
+    } catch { return { email: '', setPassword: false }; }
+  });
+  const [email, setEmail]       = useState(invite.email);
   const [password, setPassword] = useState('');
   const [showPw, setShowPw]     = useState(false);
   const [error, setError]       = useState('');
@@ -49,13 +60,14 @@ export default function LoginPage() {
    */
   const [businessChoices, setBusinessChoices] =
     useState<{ id: string; name?: string }[] | null>(null);
-  // A391: an owner always enters a one-time code after the password (emailed, or from an authenticator app).
+  // A391: an owner always enters a one-time code after the password (emailed, or from an authenticator app). A550: so does
+  // a partner — someone on the staff the owner gave web dashboard access (same form, same steps).
   const [otp, setOtp]           = useState<OtpPrompt | null>(null);
   const [otpCode, setOtpCode]   = useState('');
   const [remember, setRemember] = useState(true);
   const [pickedBusiness, setPickedBusiness] = useState<string | undefined>(undefined);
   // A402: "Forgot password?" — the reset steps replace the sign-in form; `info` is what it says when done.
-  const [forgot, setForgot] = useState(false);
+  const [forgot, setForgot] = useState(invite.setPassword);
   const [info, setInfo] = useState('');
 
   const inputCls =

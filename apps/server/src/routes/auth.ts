@@ -51,7 +51,7 @@ import { refreshHandshakeDecision, type HandshakeDecision, type HandshakeSuccess
 import { checkTillIdentity, resetTillIdentity } from '../lib/tillIdentity';   // A477
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A398
 import { sessionKind, revokeBrowserSessions, markTillSessionLost, clearTillSessionLost, markTillSecurityAlert } from '../lib/tillSessions';   // A407, A477
-import { cleanEmail, passwordProblem, ownerAccountForEmail, sendResetCode, checkResetCode, setOwnerPassword } from '../lib/passwordReset';   // A402
+import { cleanEmail, passwordProblem, signInAccountForEmail, sendResetCode, checkResetCode, setOwnerPassword } from '../lib/passwordReset';   // A402, A550
 import { otpGate, needsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
@@ -64,6 +64,7 @@ import { permissionsOpenBefore } from '../lib/permissionsState';   // A490
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY, accountLocked, noteAccountFailure, noteAccountSuccess, ACCOUNT_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { notifyAccountLocked } from '../lib/accountLockNotice';   // A507
+import { resolvePartnerSignIn, checkPartner, writePartners, type PartnerCheck, type PartnerPerson } from '../lib/webPartners';   // A550
 
 const router = safeRouter();
 
@@ -104,6 +105,11 @@ interface TokenPayload {
   surface?:           string;
   /** A494: the owner's password sign-in (/login) — the real owner (middleware isOwnerPasswordSession). */
   ownerLogin?:        true;
+  /** A550: a partner's password sign-in (/login, lib/webPartners.ts) — a person with their own keys, never the owner. Their
+   *  branches (partnerBranches; allBranches = every one) are worked out at sign-in and again at every renewal. */
+  webPartner?:        true;
+  partnerBranches?:   string[];
+  allBranches?:       boolean;
   /** A159: a person's PIN sign-in on a till — may use the manager screens' writes (lib/terminalWrites.ts). Carried
    *  through refresh with the rest of the payload. The till's device token (enrolment) never has it. */
   pinSignIn?:         boolean;
@@ -638,6 +644,75 @@ async function otpSubjectFor(userId: string, email: string, name?: string | null
   };
 }
 
+/**
+ * A550: a partner's password sign-in (lib/webPartners.ts) — reached from /login once the password is right, the account is
+ * not the owner of the business asked for, and resolvePartnerSignIn has checked the grant, the account link, the person
+ * (active, not on the owner's role) and their branches. The business must be open to the web as for the owner (suspension,
+ * web access). The one-time code is ALWAYS asked (A391's second step, as for back office, whatever their keys — not the
+ * client's 'Sign-in codes' switch, which is the owner's own sign-in): a password alone never opens the dashboard to
+ * someone who is not the owner. No device approval: as for the owner and back office, a partner runs the system
+ * (checkDeviceRegistration exempts both).
+ */
+async function partnerSignIn(req: any, res: any, authUser: { id: string; email?: string | null }, email: string,
+  businessId: string, check: Extract<PartnerCheck, { ok: true }>): Promise<void> {
+  const { data: business, error: bErr } = await supabase.from('businesses')
+    .select('id, name, currency, type, status').eq('id', businessId).maybeSingle();
+  if (bErr || !business) { res.status(503).json({ error: 'Could not sign you in right now — please try again' }); return; }
+  const biz = business as { id: string; name?: string; status?: string };
+  if (biz.status === 'suspended') {
+    res.status(403).json({ error: 'Your account has been suspended. Please contact ZapTill support.', code: 'ACCOUNT_SUSPENDED' });
+    return;
+  }
+  const webAccess = await getWebAccess(biz.id, biz.status);
+  if (!webAccess.canLogin) {
+    res.status(403).json({
+      error: webAccess.state === 'locked'
+        ? 'Your web portal subscription has expired. Please renew to continue.'
+        : 'Web portal access is not enabled for your account. Please contact ZapTill to upgrade.',
+      code:  webAccess.state === 'locked' ? 'WEB_ACCESS_EXPIRED' : 'WEB_HOSTING_REQUIRED',
+    });
+    return;
+  }
+  const person: PartnerPerson = check.person;
+  const gate = await otpGate(await otpSubjectFor(person.id, authUser.email ?? email, person.name), req.body);
+  if (gate.ok === false) { res.status(gate.status).json(gate.body); return; }
+
+  const held = effectiveKeysForRow(person as any);
+  if (held.has('*')) { res.status(401).json({ error: 'Invalid email or password' }); return; }   // never the owner's '*'
+  if (check.record.status === 'invited') {
+    const err = await writePartners(businessId, { ...check.map,
+      [person.id]: { ...check.record, status: 'active', activated_at: new Date().toISOString() } });
+    if (err) console.warn('[auth] A550: could not mark a partner active', { businessId, userId: person.id });
+  }
+
+  const payload: TokenPayload = {
+    userId:             person.id,   // their own users row — every action is recorded as them, never as the owner
+    businessId,
+    branchId:           check.allBranches ? null : (check.branchIds[0] ?? null),
+    roleId:             person.role_id ?? null,
+    roleName:           person.roles?.name ?? null,
+    isOwner:            false,
+    webPartner:         true,
+    partnerBranches:    check.branchIds,
+    allBranches:        check.allBranches,
+    permissionKeys:     tokenKeys(held),
+    permissionsVersion: person.permissions_version ?? 1,
+    sessionId:          newSessionId(),
+    surface:            'web',
+  };
+  const { accessToken, refreshToken } = issueTokenPair(payload);
+  await storeRefreshToken(refreshToken, payload, req.ip ?? undefined,
+    (req.body?.device_id as string | undefined) ?? req.headers['user-agent'] ?? undefined);
+  console.log(`[auth] A550: partner ${person.id} signed in to business ${businessId}`);
+  res.json({
+    accessToken, refreshToken, token: accessToken,
+    user: { id: authUser.id, email: authUser.email },
+    business, mustChangePassword: false, partner: true,
+    permissions: clientPermissionMap(held),
+    ...(gate.trust ? { otp_trust: gate.trust } : {}),
+  });
+}
+
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
 router.post('/login', validateLoose(LoginSchema), async (req, res) => {
@@ -678,6 +753,26 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
     data.user.id, 'id, name, currency, type, status',
     tenant.kind === 'found' ? tenant.tenant.id : (business_id ?? null));
 
+  // A550: not the owner of the business asked for (the client's address, or the one picked), or of any — a partner's
+  // sign-in if the account is one there (lib/webPartners.ts: the owner's grant AND the account's own link, both). The
+  // owner of the business asked for never comes here: their sign-in below is exactly as before. An account that is
+  // neither — a revoked or deactivated partner, a deleted person — gets the wrong-password answer, word for word.
+  const wanted: string | null = tenant.kind === 'found' ? tenant.tenant.id : (business_id ?? null);
+  if (owned.kind !== 'error' && (owned.kind === 'none' || (wanted && !ownedTenantBusiness(owned, wanted)))) {
+    const partner = await resolvePartnerSignIn(data.user, { businessId: wanted });
+    if (partner.kind === 'error') { res.status(503).json({ error: 'Could not sign you in right now — please try again' }); return; }
+    if (partner.kind === 'one') { await partnerSignIn(req, res, data.user, email, partner.businessId, partner.check); return; }
+    if (partner.kind === 'many') {
+      res.status(409).json({
+        error: 'This account opens more than one business. Choose which one to open.',
+        code:  'MULTIPLE_BUSINESSES',
+        businesses: partner.businesses,
+      });
+      return;
+    }
+    if (owned.kind === 'none') { res.status(401).json({ error: 'Invalid email or password' }); return; }
+  }
+
   // A378: on a client's address the account must own THAT business — not another one it also owns, and no choice list.
   if (tenant.kind === 'found') {
     if (owned.kind !== 'error' && !ownedTenantBusiness(owned, tenant.tenant.id)) {
@@ -690,10 +785,8 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
     res.status(503).json({ error: 'Could not sign you in right now — please try again' });
     return;
   }
-  if (owned.kind === 'none') {
-    res.status(403).json({ error: 'No business found for this account' });
-    return;
-  }
+  // (owned.kind 'none' is answered above, A550 — a partner's sign-in, or the wrong-password answer; it used to be 403
+  // "No business found for this account", which told a revoked partner their password was right.)
   if (owned.kind === 'many') {
     res.status(409).json({
       error: 'This account owns more than one business. Choose which one to open.',
@@ -1085,6 +1178,30 @@ router.post('/refresh', async (req, res) => {
       branchId: tillBranch(null, row.branch_id, cleanPayload.branchId), sessionId: cleanPayload.sessionId,
     });
     if (!isTillPayload(cleanPayload)) console.log(`[refresh] till ${row.device_id}: owner-era session replaced by the till's own`);
+  } else if (cleanPayload.webPartner === true) {
+    // A550: a partner renews only while the owner's grant stands and they are still an active person of the business, not
+    // on the owner's role, with an open branch (lib/webPartners.ts checkPartner) — their keys and branches read afresh.
+    // Anything else: 401 SIGN_IN_AGAIN, the same answer whichever it is. Never the owner (isOwner stays false).
+    const c = await checkPartner(String(cleanPayload.businessId ?? ''), String(cleanPayload.userId ?? ''), null);
+    if (c.ok === false) {
+      if (c.reason === 'DB_ERROR') { res.status(503).json({ error: 'Could not check the sign-in just now — try again', code: 'DB_UNAVAILABLE' }); return; }
+      console.warn(`[refresh] A550: partner ${c.reason} — renewal refused`, { userId: cleanPayload.userId, businessId: cleanPayload.businessId });
+      res.status(401).json({ error: 'Please sign in again.', code: 'SIGN_IN_AGAIN', reason: 'PARTNER_ENDED' });
+      return;
+    }
+    const held = effectiveKeysForRow(c.person as any);
+    if (held.has('*')) { res.status(401).json({ error: 'Please sign in again.', code: 'SIGN_IN_AGAIN', reason: 'PARTNER_ENDED' }); return; }
+    cleanPayload.isOwner = false;
+    cleanPayload.roleId = c.person.role_id ?? null;
+    cleanPayload.roleName = c.person.roles?.name ?? null;
+    cleanPayload.permissionKeys = tokenKeys(held);
+    cleanPayload.permissionsVersion = c.person.permissions_version ?? 1;
+    cleanPayload.partnerBranches = c.branchIds;
+    cleanPayload.allBranches = c.allBranches;
+    cleanPayload.branchId = c.allBranches ? null
+      : (cleanPayload.branchId && c.branchIds.includes(cleanPayload.branchId) ? cleanPayload.branchId : (c.branchIds[0] ?? null));
+    personPermissions = clientPermissionMap(held);
+    newPayload = { ...cleanPayload };
   } else {
     // A451: an owner session that carries no users row (issued before A451) is mended at its next renewal — it takes
     // the owner's row (found, or created) instead of the auth.users id the database refuses.
@@ -1910,13 +2027,13 @@ router.post('/set-pin', requireAuth, async (req, res) => {
 // ── A402: an owner resets (forgot) or changes their own password ─────────────────────────────────────────────────
 // On /api/auth, so authLimiter (brute force) covers all three. lib/passwordReset.ts has the rules.
 
-// The same answer whoever asks — the page never says which emails belong to a ZapTill owner.
-const FORGOT_REPLY = 'If that email is an owner\'s ZapTill sign-in, a 6-digit code is on its way to it. It works for 15 minutes.';
+// The same answer whoever asks — the page never says which emails belong to a ZapTill owner (or partner, A550).
+const FORGOT_REPLY = 'If that email is a ZapTill dashboard sign-in, a 6-digit code is on its way to it. It works for 15 minutes.';
 
 router.post('/password/forgot', async (req, res) => {
   const email = cleanEmail(req.body?.email);
   if (!email.includes('@')) { res.status(400).json({ error: 'Enter the email you sign in with.' }); return; }
-  const acct = await ownerAccountForEmail(email);
+  const acct = await signInAccountForEmail(email);   // A550: an owner's, or a partner's with a live grant
   if (acct) {
     const r = await sendResetCode(acct);
     if (r === 'failed') { res.status(503).json({ error: 'Could not send the code just now. Try again in a minute, or call ZapTill support.' }); return; }
@@ -1930,22 +2047,30 @@ router.post('/password/reset', async (req, res) => {
   const problem = passwordProblem(req.body?.new_password);
   if (!email.includes('@') || !/^\d{6}$/.test(code)) { res.status(400).json({ error: 'Enter your email and the 6-digit code.' }); return; }
   if (problem) { res.status(400).json({ error: problem, code: 'WEAK_PASSWORD' }); return; }
-  const acct = await ownerAccountForEmail(email);
+  const acct = await signInAccountForEmail(email);   // A550
   const check = acct ? await checkResetCode(acct.authId, code) : 'expired';
   if (check === 'expired') { res.status(400).json({ error: 'That code has expired or was tried too often. Ask for a new code.', code: 'RESET_EXPIRED' }); return; }
   if (check === 'wrong') { res.status(400).json({ error: 'That code is not right. Check the email and try again.', code: 'RESET_INVALID' }); return; }
   const err = await setOwnerPassword(acct!.authId, String(req.body.new_password));
   if (err) { res.status(500).json({ error: 'Could not set the new password. Try again, or call ZapTill support.' }); return; }
-  console.log(`[password-reset] owner password reset by emailed code (${acct!.authId})`);
+  console.log(`[password-reset] dashboard password reset by emailed code (${acct!.authId})`);   // the owner's, or a partner's (A550)
   res.json({ ok: true, message: 'Your password is changed. Sign in with the new one.' });
 });
 
 router.post('/password/change', requireAuth, async (req, res) => {
+  // A550: a partner changes the password of THEIR OWN sign-in account (the one the owner's grant names) — never the owner's.
+  let authId: string | null | undefined = null;
+  if (req.webPartner) {
+    const c = await checkPartner(req.businessId, String(req.userId ?? ''), null);
+    if (c.ok === false) { res.status(403).json({ error: 'Your web dashboard access has ended — ask the owner.', code: 'PARTNER_ENDED' }); return; }
+    authId = c.record.auth_user_id;
+  } else {
   if (!req.isOwner) { res.status(403).json({ error: 'Only the owner signs in with a password. Managers use their PIN — the owner can change it in Staff.' }); return; }
+  const { data: biz } = await supabase.from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle();
+  authId = (biz as { owner_id?: string | null } | null)?.owner_id;
+  }
   const problem = passwordProblem(req.body?.new_password);
   if (problem) { res.status(400).json({ error: problem, code: 'WEAK_PASSWORD' }); return; }
-  const { data: biz } = await supabase.from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle();
-  const authId = (biz as { owner_id?: string | null } | null)?.owner_id;
   if (!authId) { res.status(400).json({ error: 'This business has no owner sign-in account.' }); return; }
   const { data: acct } = await supabase.auth.admin.getUserById(authId);
   const email = acct?.user?.email;
@@ -1965,7 +2090,8 @@ async function otpSelf(req: any, res: any): Promise<{ id: string; email: string 
   const { data: u } = await supabase
     .from('users').select('id, email, roles ( name )').eq('id', req.userId).eq('business_id', req.businessId).maybeSingle();
   if (!u) { res.status(404).json({ error: 'Account not found' }); return null; }
-  if (!needsOtp(req.permissionKeys ?? [], req.isOwner)) {   // A490: back office (isBackOffice), not a role name
+  // A490: back office (isBackOffice), not a role name. A550: a partner always enters a code (whatever their keys).
+  if (!needsOtp(req.permissionKeys ?? [], req.isOwner || req.webPartner === true)) {
     res.status(403).json({ error: 'Sign-in codes are for owners and managers.' }); return null;
   }
   return { id: (u as any).id, email: (u as any).email };
@@ -1994,6 +2120,26 @@ router.post('/otp/email', requireAuth, async (req, res) => {
   const me = await otpSelf(req, res); if (!me) return;
   if (await useEmailCodes('user', me.id)) { res.status(500).json({ error: 'Could not save — is migration 119 applied?' }); return; }
   res.json({ method: 'email' });
+});
+
+// ── GET /api/auth/session ─────────────────────────────────────────────────────
+// A550: who the web dashboard is signed in as — the owner ('*', every branch) or a partner (their own keys and branches),
+// so the dashboard shows what they may use, offers the branches they work at, and hides what is the owner's alone. Read
+// only; the cloud decides every request on its own (requirePermission, branchScope).
+router.get('/session', requireAuth, async (req, res) => {
+  if (req.isTill) { res.status(403).json({ error: 'A till has no dashboard session.', code: 'PERSON_ONLY' }); return; }
+  const { data: me } = req.userId
+    ? await supabase.from('users').select('name').eq('id', req.userId).eq('business_id', req.businessId).maybeSingle()
+    : { data: null };
+  const owner = req.isOwner === true;
+  res.json({
+    owner,
+    partner: req.webPartner === true,
+    name: (me as { name?: string } | null)?.name ?? null,
+    permissions: owner ? { '*': true } : clientPermissionMap(new Set(req.permissionKeys ?? [])),
+    allBranches: owner || req.allBranches === true,
+    branchIds: owner ? null : (req.webPartner ? req.partnerBranches : (req.branchId ? [req.branchId] : [])),
+  });
 });
 
 // ── PATCH /api/auth/me ────────────────────────────────────────────────────────

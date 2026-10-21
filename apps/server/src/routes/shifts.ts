@@ -1605,7 +1605,8 @@ router.get('/:id', async (req, res) => {
   if (sErr || !shift) { res.status(404).json({ error: 'Shift not found' }); return; }
   // Audit 2026-10-14: a non-owner reads only shifts of the branch they are signed in at (the business was already checked
   // above). A person with no branch (works at every branch, A426) keeps the business-wide view GET /api/shifts gives them.
-  if (!req.isOwner && req.branchId && shift.branch_id !== req.branchId) { res.status(404).json({ error: 'Shift not found' }); return; }
+  // A550: a partner of every branch reads any of their branches' shifts (as the owner any).
+  if (!req.isOwner && (req.allBranches ? !req.partnerBranches.includes(shift.branch_id) : (req.branchId && shift.branch_id !== req.branchId))) { res.status(404).json({ error: 'Shift not found' }); return; }
 
   // Previously this query selected orders.payment_method, which is not a column.
   // The error was not destructured, so a failed query left `orders` null and the

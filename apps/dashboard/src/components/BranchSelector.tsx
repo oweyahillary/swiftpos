@@ -1,7 +1,7 @@
 import { useBranch } from "../context/BranchContext";
 
 export default function BranchSelector() {
-  const { branches, activeBranch, setActiveBranch, loading } = useBranch();
+  const { branches, activeBranch, setActiveBranch, loading, allowAll } = useBranch();
 
   // Show loading shimmer while branches fetch
   if (loading) return <div className="mt-1 h-6 bg-gray-800 rounded-md animate-pulse" />;
@@ -23,7 +23,8 @@ export default function BranchSelector() {
       // Single branch — show name but don't allow changing (cosmetic only)
       disabled={!isMulti}
     >
-      {isMulti && (
+      {/* A550: a partner who works at some branches picks one of them — never "All Branches" */}
+      {isMulti && allowAll && (
         <option value="all">🌐 All Branches</option>
       )}
       {branches.map(b => (

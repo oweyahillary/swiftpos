@@ -135,6 +135,12 @@ export function branchScope(req: Request): string | null {
     // Absent both = owner is viewing "All Branches" → no filter.
     return (req.headers['x-branch-id'] as string) || (req.query.branch_id as string) || null;
   }
+  // A550: a partner of every branch is scoped as the owner is — the branch picked (requireAuth took X-Branch-Id only when
+  // it is one of theirs), else ?branch_id when it is one of theirs, else every branch (null). Never a branch not theirs.
+  if (req.allBranches) {
+    const asked = typeof req.query.branch_id === 'string' ? req.query.branch_id : '';
+    return req.branchId || (asked && (req.partnerBranches ?? []).includes(asked) ? asked : null);
+  }
   // Staff are always locked to their JWT branch.
   // A494: a non-owner WITHOUT a branch is not "every branch" (null meant no filter — the owner's view): they get a
   // branch that matches nothing, so a read filtered by it is empty and a `branchScope(req) ?? asked` cannot fall back
@@ -145,12 +151,23 @@ export function branchScope(req: Request): string | null {
 /** A494: the branch a branchless non-owner is scoped to — a UUID no branch has. */
 export const NO_BRANCH = '00000000-0000-0000-0000-000000000000';
 
+/**
+ * A550: does this caller reach EVERY branch — the owner, or a partner who works at every branch (lib/webPartners.ts)?
+ * The branch half of what used to read `req.isOwner`: where the owner was let past a "your own branch" check, a partner of
+ * every branch is too. Never the owner's other powers — those still read req.isOwner (the A550 entry lists each check).
+ */
+export function allBranchAccess(req: Pick<Request, 'isOwner' | 'allBranches'>): boolean {
+  return req.isOwner === true || req.allBranches === true;
+}
+
 // assertBranchAccess checks that a specific branch_id is accessible to the
 // requester. Use this when a branch_id comes from the request body (not query).
 // Returns true if access is allowed, false if it should be rejected with 403.
 
 export function assertBranchAccess(req: Request, branchId: string | null | undefined): boolean {
   if (req.isOwner) return true;
+  // A550: a partner of every branch acts at any branch of theirs (the token's list — this business's, checked at sign-in).
+  if (req.allBranches) return !!branchId && (req.partnerBranches ?? []).includes(branchId);
   // A494: a non-owner without a branch has access to none (null === null used to pass), and no branch named is no access.
   if (!req.branchId || !branchId || branchId === NO_BRANCH) return false;
   return req.branchId === branchId;

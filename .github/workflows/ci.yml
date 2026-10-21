@@ -347,6 +347,14 @@ jobs:
           node scripts/check-api-schema-drift.mjs
           node scripts/check-api-schema-drift.mjs --self-test
 
+      # A550: partner login — someone on the staff the owner lets into the web dashboard with a password, never the owner
+      # (the real auth / staff routers over HTTP) — and the five built-in roles that came with it. They run in the loop
+      # below too; named here so a failure says what broke.
+      - name: Partner login and partner roles (A550)
+        run: |
+          node --no-warnings tests/partner-login-a550.test.mjs
+          node --no-warnings tests/partner-roles-a550.test.mjs
+
       - name: Run offline suites
         run: |
           set -e

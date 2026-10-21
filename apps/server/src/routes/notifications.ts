@@ -13,11 +13,20 @@ import { branchScope } from "../middleware/rbac";
 function forCaller(req: any, q: any): any {
   if (req.isOwner) return q;
   const me = req.userId ? String(req.userId) : null;
-  q = q.eq("branch_id", branchScope(req));
+  // A550: a partner of every branch reads every branch's (or the one picked) — still only rows addressed to nobody or to
+  // them, never the owner's own.
+  const scope = branchScope(req);
+  if (!(req.allBranches && scope === null)) q = q.eq("branch_id", scope);
   return me ? q.or(`user_id.is.null,user_id.eq.${me}`) : q.is("user_id", null);
 }
-const mayRead = (req: any, row: { branch_id?: string | null; user_id?: string | null }): boolean =>
-  !!req.isOwner || (row.branch_id === branchScope(req) && (row.user_id == null || row.user_id === req.userId));
+const mayRead = (req: any, row: { branch_id?: string | null; user_id?: string | null }): boolean => {
+  if (req.isOwner) return true;
+  const scope = branchScope(req);
+  const inScope = req.allBranches && scope === null
+    ? (row.branch_id == null || (req.partnerBranches ?? []).includes(row.branch_id))
+    : row.branch_id === scope;
+  return inScope && (row.user_id == null || row.user_id === req.userId);
+};
 
 const router = safeRouter();
 router.use(requireAuth);
