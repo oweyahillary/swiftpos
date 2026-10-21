@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import BranchSelector from './BranchSelector';
 import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
+import { usePermissions } from '../context/PermissionsContext';   // A550
 import { relative } from '../lib/format';
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
@@ -183,6 +184,47 @@ const NAV: NavEntry[] = [
   },
 ];
 
+/**
+ * A550: the keys that open each menu entry — a partner (someone on the staff with web dashboard access) sees an entry only
+ * when they hold ANY of them; the owner holds '*' and sees everything, as before. An entry not listed is shown to anyone:
+ * Overview (where everyone lands) and Users and access (which holds "My sign-in": their own password and sign-in code).
+ * Presentation only — the cloud decides every request (requirePermission).
+ */
+const REPORT_KEYS = ['reports.overview', 'reports.sales', 'reports.items', 'reports.staff', 'reports.shifts', 'reports.voids',
+  'reports.inventory', 'reports.fuel', 'reports.tax', 'reports.costs', 'reports.labour', 'reports.monthly_pack',
+  'reports.payments', 'reports.export'];
+const NAV_KEYS: Record<string, string[]> = {
+  '/dashboard/pos':                   ['orders.create'],
+  '/kds':                             ['stations.manage'],
+  '/dashboard/inventory':             ['inventory.view'],
+  '/dashboard/approvals':             ['changes.approve'],
+  '/dashboard/reservations':          ['reservations.manage'],
+  '/dashboard/categories':            ['products.view', 'menu.edit'],
+  '/dashboard/products':              ['products.view', 'menu.edit'],
+  '/dashboard/discounts':             ['menu.offers'],
+  '/dashboard/offers':                ['menu.offers'],
+  '/dashboard/combos':                ['menu.edit'],
+  '/dashboard/stock/ingredients':     ['ingredients.manage', 'inventory.view'],
+  '/dashboard/stock/purchase-orders': ['inventory.receive'],
+  '/dashboard/stock/suppliers':       ['inventory.receive', 'payables.view', 'payables.manage'],
+  '/dashboard/stock/transfers':       ['inventory.transfer'],
+  '/dashboard/stock/counts':          ['inventory.count', 'inventory.adjust'],
+  '/dashboard/stock/wastage':         ['inventory.waste', 'reports.inventory'],
+  '/dashboard/stock/expiry':          ['inventory.view'],
+  '/dashboard/orders':                ['orders.view_all'],
+  '/dashboard/expenses':              ['expenses.view', 'expenses.manage'],
+  '/dashboard/reports':               REPORT_KEYS,
+  '/dashboard/shift-reports':         ['reports.shifts', 'shifts.confirm'],
+  '/dashboard/turnover':              ['orders.view_all'],
+  '/dashboard/open-drawers':          ['shifts.force_close', 'shifts.confirm'],
+  '/dashboard/tills-days':            ['shifts.close_day', 'shifts.force_close'],
+  '/dashboard/customers':             ['customers.view'],
+  '/dashboard/customers/credit':      ['customers.credit', 'customers.view'],
+  '/dashboard/settings/devices':      ['devices.approve', 'stations.manage'],
+  '/dashboard/settings/business':     ['settings.business', 'settings.branches', 'settings.payments', 'settings.reversals',
+    'settings.integrations', 'settings.pos', 'receipt.manage', 'tables.manage', 'etims.manage'],
+};
+
 const TYPE_ICON: Record<string, string> = {
   low_stock: 'warning', daily_summary: 'summary', default: 'bell',
 };
@@ -241,6 +283,11 @@ export default function DashboardLayout() {
   const { signOut } = useAuth();
   const { business } = useBusiness();
   const { activeBranchId } = useBranch();
+  const { can } = usePermissions();   // A550
+  const mayOpen = (to: string): boolean => {
+    const keys = NAV_KEYS[to.split('?')[0]];
+    return !keys || keys.some((k) => can(k));
+  };
 
   // Tailor the menu to the business vertical: drop restaurant-only entries
   // (Reservations, Combo Meals, Ingredients, Table Turnover, KDS) for petrol /
@@ -330,7 +377,10 @@ export default function DashboardLayout() {
       }
       return { ...e, label, items };
     })
-    .filter(e => (isGroup(e) ? allowed(e.verticals) && e.items.length > 0 : allowed(e.verticals)));
+    .filter(e => (isGroup(e) ? allowed(e.verticals) && e.items.length > 0 : allowed(e.verticals)))
+    // A550: what a partner's keys open (NAV_KEYS); the owner's '*' opens everything.
+    .map(e => (isGroup(e) ? { ...e, items: e.items.filter(i => mayOpen(i.to)) } : e))
+    .filter(e => (isGroup(e) ? e.items.length > 0 : mayOpen(e.to)));
 
   // ── Accordion nav: exactly one group open at a time ─────────────────────────
   // On load, only the group holding the current route is open (nothing else),

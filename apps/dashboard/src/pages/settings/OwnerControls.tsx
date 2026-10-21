@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
+import { usePermissions } from '../../context/PermissionsContext';   // A550
 import { POS_FEATURES } from '../../lib/posFeatures';
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../../lib/paymentCatalogue';
 import { dateShort } from '../../lib/format';
@@ -62,6 +63,7 @@ const card = 'rounded-xl border border-gray-800 bg-gray-900';
 
 export function PosOptionsTab() {
   const { business } = useBusiness();
+  const { isOwner } = usePermissions();   // A550: sign-in codes are the owner's alone (the cloud refuses anyone else)
   const currency = (business as { currency?: string } | null)?.currency || 'KES';
   const { data, setData, error, setError, reload } = useControls();
   const [busy, setBusy] = useState<string | null>(null);
@@ -108,7 +110,8 @@ export function PosOptionsTab() {
                   <div className="text-sm font-medium text-white">{w.label}</div>
                   {w.description && <div className="mt-0.5 text-xs leading-relaxed text-gray-400">{w.description}</div>}
                 </div>
-                <Switch on={!!data.pos![key]} onClick={() => void flip(key)} label={w.label} disabled={busy === key} testid={`pos-option-${key}`} />
+                <Switch on={!!data.pos![key]} onClick={() => void flip(key)} label={w.label}
+                  disabled={busy === key || (key === 'login_codes' && !isOwner)} testid={`pos-option-${key}`} />
               </div>
             );
           })}

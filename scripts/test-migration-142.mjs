@@ -89,18 +89,22 @@ const roleNamed = async (biz, name) => (await rolesOf(biz)).find((r) => r.name =
 // supervisor shifts.close_day — the built-in Supervisor's defaults carry it since A520.
 const LATER = { Accountant: ['payables.view'], Manager: ['shifts.close_branch'], Supervisor: ['shifts.close_day'] };
 const keys142 = (r) => [...new Set(r.keys)].filter((k) => !(LATER[r.name] ?? []).includes(k));
-const want = (name) => keys142(P.BUILT_IN_ROLES.find((r) => r.name === name)).sort();
+// A550: the roles migration 159 adds later (General Manager, Operations Manager, …) are not 142's — 142 is compared with the
+// built-in roles it made, in their order (scripts/test-migration-159.mjs compares the rest).
+const LATER_ROLES = ['General Manager', 'Operations Manager', 'Finance Manager', 'Auditor', 'Kitchen Manager'];
+const ROLES_142 = P.BUILT_IN_ROLES.filter((r) => !LATER_ROLES.includes(r.name));
+const want = (name) => keys142(ROLES_142.find((r) => r.name === name)).sort();
 const before = { aSup: await keysOf(R.aSup), aCash: await keysOf(R.aCash), cStore: await keysOf(R.cStore), aMgr: await keysOf(R.aMgr) };
 
 const sql = fs.readFileSync(path.join(MIG, THIS), 'utf8');
 await ok('the SQL carries exactly shared BUILT_IN_ROLES (names, descriptions, fuel-only, keys)', async () => {
   const built = [...sql.matchAll(/^\s+\('([^']+)', '([^']*)', (true|false)\)/gm)].map((m) => ({ name: m[1], description: m[2], fuel: m[3] === 'true' }));
-  assert.deepEqual(built, P.BUILT_IN_ROLES.map((r) => ({ name: r.name, description: r.description, fuel: !!r.types })));
-  for (const r of P.BUILT_IN_ROLES) if (r.types) assert.deepEqual([...r.types], ['petrol_station'], r.name);
+  assert.deepEqual(built, ROLES_142.map((r) => ({ name: r.name, description: r.description, fuel: !!r.types })));
+  for (const r of ROLES_142) if (r.types) assert.deepEqual([...r.types], ['petrol_station'], r.name);
   const pairs = [...sql.matchAll(/^\s+\('([^']+)', '([a-z_]+\.[a-z_]+)'\)/gm)].map((m) => `${m[1]}|${m[2]}`).sort();
-  assert.deepEqual(pairs, P.BUILT_IN_ROLES.flatMap((r) => keys142(r).map((k) => `${r.name}|${k}`)).sort());
-  for (const [name, ks] of Object.entries(LATER)) for (const k of ks) assert.ok(P.BUILT_IN_ROLES.find((r) => r.name === name).keys.includes(k), `${name}: ${k}`);
-  for (const r of P.BUILT_IN_ROLES) for (const k of r.keys) assert.ok(P.isPermissionKey(k), `${r.name}: ${k}`);
+  assert.deepEqual(pairs, ROLES_142.flatMap((r) => keys142(r).map((k) => `${r.name}|${k}`)).sort());
+  for (const [name, ks] of Object.entries(LATER)) for (const k of ks) assert.ok(ROLES_142.find((r) => r.name === name).keys.includes(k), `${name}: ${k}`);
+  for (const r of ROLES_142) for (const k of r.keys) assert.ok(P.isPermissionKey(k), `${r.name}: ${k}`);
 });
 await ok('142 runs', async () => { await db.exec(sanitize(sql)); });
 await ok('a restaurant gets Waiter, Kitchen, Storekeeper and Accountant with exactly the shared defaults, is_default, nobody on them', async () => {

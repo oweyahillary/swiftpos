@@ -24,7 +24,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess, allBranchAccess } from '../middleware/rbac';   // A550: allBranchAccess
 import { branchOfBusiness, idsOfBusiness } from '../lib/branchGuard';   // A494
 import type { Request, Response } from 'express';
 
@@ -57,8 +57,9 @@ async function idsOk(req: Request, res: Response, b: { branch_id?: unknown; fuel
     const id = String(b.branch_id);
     if (!assertBranchAccess(req, id)) { res.status(403).json({ error: 'No access to that branch' }); return false; }
     if (!(await branchOfBusiness(req.businessId, id))) { res.status(404).json({ error: 'Branch not found in this business' }); return false; }
-  } else if (b.branch_id !== undefined && !req.isOwner) {
-    // Business-wide equipment serves every branch — only the owner sets one up or moves one there.
+  } else if (b.branch_id !== undefined && !allBranchAccess(req)) {
+    // Business-wide equipment serves every branch — only the owner (A550: or a partner of every branch) sets one up or
+    // moves one there.
     res.status(403).json({ error: 'Only the owner sets up a tank or pump for every branch.' }); return false;
   }
   if (b.fuel_product_id && !(await idsOfBusiness('products', req.businessId, [String(b.fuel_product_id)]))) {
@@ -101,12 +102,12 @@ fuelTanksRouter.post('/', canManageFuel, async (req, res) => {
     res.status(400).json({ error: 'name, fuel_product_id, capacity_litres are required' });
     return;
   }
-  if (!(await idsOk(req, res, { branch_id: branch_id ?? (req.isOwner ? null : req.branchId), fuel_product_id }))) return;   // A494
+  if (!(await idsOk(req, res, { branch_id: branch_id ?? (allBranchAccess(req) ? null : req.branchId), fuel_product_id }))) return;   // A494
   const { data, error } = await supabase
     .from('fuel_tanks')
     .insert({
       business_id: req.businessId,
-      branch_id: branch_id ?? (req.isOwner ? null : req.branchId),   // A494: a manager's tank is their branch's
+      branch_id: branch_id ?? (allBranchAccess(req) ? null : req.branchId),   // A494: a manager's tank is their branch's
       name: name.trim(),
       fuel_product_id,
       capacity_litres: Number(capacity_litres),
@@ -259,7 +260,7 @@ fuelTanksRouter.post('/:id/delivery', canManageFuel, async (req, res) => {
     product_id:     tank.fuel_product_id,
     // A494: the tank's branch — was ?branch_id=, whatever the caller named (another branch's, or another business's).
     // A business-wide tank's delivery is booked at the caller's branch (the owner's: none).
-    branch_id:      tank.branch_id ?? (req.isOwner ? null : req.branchId),
+    branch_id:      tank.branch_id ?? (allBranchAccess(req) ? null : req.branchId),
     movement_type:  'restock',
     quantity_change: Number(litres),   // was incorrectly 'quantity' — silent DB fail
     quantity_after:  newLevel,
@@ -300,12 +301,12 @@ pumpsRouter.get('/', canReadFuel, async (req, res) => {
 pumpsRouter.post('/', canManageFuel, async (req, res) => {
   const { name, fuel_product_id, tank_id, status, sort_order, branch_id } = req.body;
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
-  if (!(await idsOk(req, res, { branch_id: branch_id ?? (req.isOwner ? null : req.branchId), fuel_product_id, tank_id }))) return;   // A494
+  if (!(await idsOk(req, res, { branch_id: branch_id ?? (allBranchAccess(req) ? null : req.branchId), fuel_product_id, tank_id }))) return;   // A494
   const { data, error } = await supabase
     .from('pumps')
     .insert({
       business_id:     req.businessId,
-      branch_id:       branch_id ?? (req.isOwner ? null : req.branchId),   // A494
+      branch_id:       branch_id ?? (allBranchAccess(req) ? null : req.branchId),   // A494
       name:            name.trim(),
       fuel_product_id: fuel_product_id ?? null,
       tank_id:         tank_id ?? null,

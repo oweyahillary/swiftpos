@@ -18,7 +18,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, allBranchAccess } from '../middleware/rbac';   // A550: allBranchAccess
 import { cleanOffer, type Offer } from '../lib/offers';
 
 const router = safeRouter();
@@ -31,7 +31,7 @@ type Row = Record<string, any>;
 
 /** May this person change this offer? The owner any; anyone else only an offer for exactly their branch. */
 function mayEdit(req: any, row: Row): boolean {
-  if (req.isOwner) return true;
+  if (allBranchAccess(req)) return true;   // A550: a partner of every branch, as the owner
   const b = Array.isArray(row.branch_ids) ? row.branch_ids : null;
   return !!req.branchId && !!b && b.length === 1 && b[0] === req.branchId;
 }
@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
   const { data, error } = await supabase.from('offers').select(COLS)
     .eq('business_id', req.businessId).is('deleted_at', null).order('created_at', { ascending: false });
   if (error) { sendError(res, error); return; }
-  const rows = ((data ?? []) as Row[]).filter((r) => req.isOwner || !r.branch_ids || (req.branchId && r.branch_ids.includes(req.branchId)));
+  const rows = ((data ?? []) as Row[]).filter((r) => allBranchAccess(req) || !r.branch_ids || (req.branchId && r.branch_ids.includes(req.branchId)));
   res.json(rows.map((r) => ({ ...r, editable: mayEdit(req, r) })));
 });
 
@@ -74,7 +74,7 @@ router.post('/', requirePermission('menu.offers'), async (req, res) => {
   const c = cleanOffer(req.body);
   if (!c.ok) { res.status(400).json({ error: (c as { error: string }).error }); return; }
   const offer = (c as { offer: Offer }).offer;
-  if (!req.isOwner) {
+  if (!allBranchAccess(req)) {
     if (!req.branchId) { res.status(403).json({ error: 'Only the owner creates an offer for more than one branch.' }); return; }
     offer.branch_ids = [req.branchId];
   }
@@ -98,7 +98,7 @@ router.patch('/:id', requirePermission('menu.offers'), async (req, res) => {
   const c = cleanOffer({ ...(row as Row), ...req.body, id: req.params.id });
   if (!c.ok) { res.status(400).json({ error: (c as { error: string }).error }); return; }
   const offer = (c as { offer: Offer }).offer;
-  if (!req.isOwner) offer.branch_ids = [req.branchId!];
+  if (!allBranchAccess(req)) offer.branch_ids = [req.branchId!];
   const bad = await foreignIds(req.businessId!, offer);
   if (bad) { res.status(400).json({ error: bad }); return; }
   const { data, error } = await supabase.from('offers').update({ ...toRow(offer), updated_at: new Date().toISOString() })

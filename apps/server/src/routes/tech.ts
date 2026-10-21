@@ -146,6 +146,7 @@ export function branchConfigAllowed(req: any, branchId: string): boolean {
   if (req.isTill) return !req.branchId || req.branchId === branchId;
   if (req.isOwner) return true;
   if (!can(req, 'devices.approve')) return false;
+  if (req.allBranches) return (req.partnerBranches ?? []).includes(branchId);   // A550: a partner of every branch
   return !req.branchId || req.branchId === branchId;
 }
 

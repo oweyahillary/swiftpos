@@ -19,7 +19,7 @@
 import type { Request, Response } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { requirePermission, can } from '../middleware/rbac';
+import { requirePermission, can, allBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { seesCosts } from '../lib/costAccess';
 import { getDayCutoff } from '../lib/dayCutoff';
@@ -76,10 +76,11 @@ async function context(req: Request, res: Response): Promise<Ctx | null> {
   if (!businessId) { res.status(403).json({ error: 'No business on this sign-in.' }); return null; }
   if (!(await analyticsEnabled(businessId))) { res.status(403).json({ error: ANALYTICS_OFF_MESSAGE, code: 'ANALYTICS_OFF' }); return null; }
 
-  // the branch: an owner names one of their branches or none (all); anyone else is held to their own
+  // the branch: an owner — or an A550 partner of every branch — names one of the business's branches or none (all);
+  // anyone else is held to their own
   const q = req.query.branch ?? req.query.branch_id;
   let branch: string | null;
-  if (req.isOwner) {
+  if (allBranchAccess(req)) {
     const asked = typeof q === 'string' ? q.trim() : String(req.headers['x-branch-id'] ?? '').trim();
     branch = asked && asked !== 'all' ? asked : null;
     if (branch) {

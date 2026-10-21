@@ -41,7 +41,9 @@ console.log('\nA514 — built-in roles\n');
 await ok('every built-in role is made of catalogue keys only (never a broad / legacy key)', () => {
   for (const r of P.BUILT_IN_ROLES) for (const k of r.keys) assert.ok(P.isPermissionKey(k) && !P.isLegacyKey(k), `${r.name}: ${k}`);
   assert.deepEqual(P.BUILT_IN_ROLES.map((r) => r.name),
-    ['Manager', 'Cashier', 'Supervisor', 'Waiter', 'Kitchen', 'Storekeeper', 'Accountant', 'Fuel attendant']);
+    ['Manager', 'Cashier', 'Supervisor', 'Waiter', 'Kitchen', 'Storekeeper', 'Accountant', 'Fuel attendant',
+      // A550: added by migration 159 (tests/partner-roles-a550.test.mjs)
+      'General Manager', 'Operations Manager', 'Finance Manager', 'Auditor', 'Kitchen Manager']);
 });
 await ok('Manager and Cashier are the catalogue\'s own manager / cashier defaults (as before A514)', () => {
   assert.deepEqual(sorted(keysOf('Manager')), sorted(P.defaultKeysFor('manager')));

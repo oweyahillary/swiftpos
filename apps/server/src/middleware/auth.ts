@@ -10,6 +10,7 @@ import { expandKeys } from '../lib/permissions';                 // A490
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
 import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
+import { partnerRequestBranch } from '../lib/webPartners';    // A550
 
 /**
  * A494: a session from the owner's password sign-in (/auth/login — only the account that owns the business can make
@@ -40,6 +41,12 @@ declare global {
       /** A415: the till's own session (no person) — and which till. */
       isTill:             boolean;
       deviceId:           string | null;
+      /** A550: a partner's password sign-in on the web dashboard (lib/webPartners.ts) — a person, never the owner. */
+      webPartner:         boolean;
+      /** A550: the branches a partner works at (their token's, checked at sign-in and every renewal); [] for anyone else. */
+      partnerBranches:    string[];
+      /** A550: a partner who works at EVERY branch — the owner's branch picker ("All branches" = branchId null). */
+      allBranches:        boolean;
     }
   }
 }
@@ -139,6 +146,17 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.permissionsVersion = payload.permissionsVersion ?? 0;
     req.isTill             = isTillPayload(payload as { till?: unknown; deviceId?: unknown });
     req.deviceId           = req.isTill ? String((payload as { deviceId?: unknown }).deviceId) : null;
+    // A550: a partner (lib/webPartners.ts) — never the owner, never a till. Acts at the branch picked in the dashboard
+    // (X-Branch-Id) only when it is one of theirs; a partner of every branch with none picked sees every branch.
+    const pc = payload as { webPartner?: unknown; partnerBranches?: unknown; allBranches?: unknown };
+    req.webPartner         = pc.webPartner === true && !req.isOwner && !req.isTill;
+    req.partnerBranches    = req.webPartner && Array.isArray(pc.partnerBranches) ? pc.partnerBranches.filter((b): b is string => typeof b === 'string') : [];
+    req.allBranches        = req.webPartner && pc.allBranches === true;
+    if (req.webPartner) {
+      req.branchId = partnerRequestBranch(
+        { branchIds: req.partnerBranches, allBranches: req.allBranches, sessionBranch: payload.branchId ?? null },
+        req.headers['x-branch-id']);
+    }
 
     // A KDS display token (surface:'kds') is a long-lived, branch-scoped capability
     // that the kitchen router accepts BEFORE this middleware. Reject it everywhere
@@ -320,6 +338,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.permissionsVersion = 0; // Supabase tokens don't carry pv
   req.isTill             = false;
   req.deviceId           = null;
+  req.webPartner         = false;   // A550: a Supabase session is only ever the owner's (resolveOwnerBusinesses above)
+  req.partnerBranches    = [];
+  req.allBranches        = false;
 
   if (supabaseEmail) {
     const { data: userRow } = await supabase
