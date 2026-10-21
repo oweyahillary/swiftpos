@@ -18,6 +18,7 @@ import { supabase } from './supabase';
 import { sendEmailChecked } from './mailer';
 import { hashCode, newEmailCode, maskEmail } from './loginOtp';
 import { revokeBrowserSessions } from './tillSessions';   // A407
+import { readPartners, partnerLive, metaLinks } from './webPartners';   // A550
 
 export const RESET = { CODE_TTL_MIN: 15, MAX_TRIES: 5, RESEND_SEC: 60, MIN_LENGTH: 8 } as const;
 
@@ -56,6 +57,29 @@ export async function ownerAccountForEmail(email: string): Promise<{ authId: str
     if (e && e === email) return { authId: id, email: e, name };
   }
   return null;
+}
+
+/**
+ * A550: a partner's sign-in account for an email (lib/webPartners.ts) — a users row with this email whose business holds
+ * a live grant, the grant naming a sign-in account with this same email. A revoked partner has none (no code is sent).
+ */
+export async function partnerAccountForEmail(email: string): Promise<{ authId: string; email: string; name: string | null } | null> {
+  if (!email || !email.includes('@')) return null;
+  const { data: rows } = await supabase.from('users').select('id, business_id, name, email').ilike('email', email).limit(20);
+  for (const r of (rows ?? []) as Array<{ id: string; business_id: string | null; name?: string | null; email?: string | null }>) {
+    if (!r.business_id || cleanEmail(r.email) !== email) continue;
+    const { map, error } = await readPartners(r.business_id);
+    const rec = map[r.id];
+    if (error || !rec || !partnerLive(rec, rec.auth_user_id)) continue;
+    const { data } = await supabase.auth.admin.getUserById(rec.auth_user_id);
+    if (cleanEmail(data?.user?.email) === email) return { authId: rec.auth_user_id, email, name: r.name ?? null };
+  }
+  return null;
+}
+
+/** A550: the dashboard sign-in account for an email — an owner's, else a partner's (forgot / reset password). */
+export async function signInAccountForEmail(email: string): Promise<{ authId: string; email: string; name: string | null } | null> {
+  return (await ownerAccountForEmail(email)) ?? (await partnerAccountForEmail(email));
 }
 
 function resetEmailHtml(code: string, name: string | null): string {
@@ -120,6 +144,10 @@ export async function setOwnerPassword(authId: string, password: string, keepSes
     userIds = [...userIds, ...((rows ?? []) as Array<{ id: string }>).map((r) => r.id)];
     await supabase.from('users').update({ must_change_password: false }).in('id', userIds.slice(1));
   }
+  // A550: a partner's account — the people its app_metadata links (lib/webPartners.ts) are signed out of every browser too.
+  const links = metaLinks(acct?.user?.app_metadata);
+  userIds = [...userIds, ...links.map((l) => l.userId)];
+  bizIds.push(...links.map((l) => l.businessId));
   // A406/A407: the owner's browsers only — a till's own session names no person (A415), so it is never among them;
   // this browser stays.
   await revokeBrowserSessions(userIds, bizIds, keepSession);

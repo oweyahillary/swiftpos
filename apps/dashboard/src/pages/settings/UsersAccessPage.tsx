@@ -6,6 +6,7 @@ import StaffTab from './StaffTab';
 import RolesTab from './RolesTab';
 import ChangePassword from '../../components/ChangePassword';   // A402
 import SignInSecurity from '../../components/SignInSecurity';
+import { usePermissions } from '../../context/PermissionsContext';   // A550
 
 // Settings › Users and access (register A133).
 // Consolidates the staff/roles half of the old Staff Management page.
@@ -33,9 +34,11 @@ export default function UsersAccessPage() {
 // Child route wrappers — kept here so the section owns its data (branches).
 export function StaffMembersRoute() {
   const { branches } = useOutletContext<{ branches: Branch[] }>();
+  // A550: resetting a sign-in code and giving web dashboard access are the owner's; a partner manages staff by their keys.
+  const { isOwner, can } = usePermissions();
   return (
     <div className="p-4 sm:p-6">
-      <StaffTab branches={branches} canResetSignIn />
+      <StaffTab branches={branches} canResetSignIn={isOwner} webAccess={isOwner} canEdit={can('staff.edit')} />
     </div>
   );
 }

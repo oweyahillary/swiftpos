@@ -16,6 +16,7 @@ import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
 import { cleanReportSchedule } from '../jobs/ownerAlertsDecision';   // A476
 import { isOwnerAlertJobKey } from '../jobs/ownerAlerts';             // A476
+import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 
 const router = safeRouter();
 
@@ -457,7 +458,9 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // ── A476: the owner's email schedule — only the known keys, each cleaned (amounts in range, real addresses) ──
   // Who may write it is unchanged: settings.manage / owner (checked above). The alert job's own bookkeeping keys are
   // never written from here.
-  if (isOwnerAlertJobKey(String(key))) {
+  // A550: web dashboard access is given and taken only through Staff (routes/staff.ts /:id/web-access), which also links
+  // and unlinks the sign-in account and ends sessions — never written here.
+  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY) {
     res.status(403).json({ error: 'That setting is kept by ZapTill itself.', code: 'READ_ONLY_KEY' });
     return;
   }

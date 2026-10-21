@@ -31,6 +31,8 @@ router.use(requireAuth);
  */
 async function deviceInReach(req: any, device: { branch_id?: string | null; user_id?: string | null }): Promise<boolean> {
   if (req.isOwner) return true;
+  // A550: a partner of every branch reaches a till of any of their branches (assertBranchAccess), and a browser of anyone.
+  if (req.allBranches) return device.branch_id ? assertBranchAccess(req, device.branch_id) : true;
   if (device.branch_id) return assertBranchAccess(req, device.branch_id);
   if (!device.user_id || !req.branchId) return false;
   const { data: ub, error } = await supabase.from('user_branches').select('branch_id').eq('user_id', device.user_id);

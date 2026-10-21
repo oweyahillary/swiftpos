@@ -192,7 +192,9 @@ router.post('/ack', async (req: any, res) => {
 // ── Manager: the screen — open trading days + latest instruction per till ────
 router.get('/overview', MANAGER, async (req: any, res) => {
   // A494: a non-owner sees their own branch only (branchScope); the owner any branch, or every branch.
-  const branchId = req.isOwner ? (String(req.query.branch_id ?? '').trim() || branchScope(req) || '') : String(branchScope(req) ?? '');
+  // A550: a partner of every branch: the branch picked (branchScope keeps it to theirs), or every branch.
+  const branchId = req.isOwner ? (String(req.query.branch_id ?? '').trim() || branchScope(req) || '')
+    : req.allBranches ? (branchScope(req) || '') : String(branchScope(req) ?? '');
 
   let daysQ = supabase
     .from('business_days')

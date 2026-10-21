@@ -400,7 +400,8 @@ try {
     const a = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/auth.ts'), 'utf8');
     assert.match(a, /personPermissions = clientPermissionMap\(held\);/);
     assert.match(a, /\.\.\.\(personPermissions \? \{ permissions: personPermissions \} : \{\}\)/);
-    const till = a.slice(a.indexOf('newPayload = buildDeviceTokenPayload'), a.indexOf('} else {', a.indexOf('newPayload = buildDeviceTokenPayload')));
+    // The till's block ends at the next branch — `} else if` (A550: the partner's renewal) or `} else {` (a person's).
+    const till = a.slice(a.indexOf('newPayload = buildDeviceTokenPayload'), a.indexOf('} else', a.indexOf('newPayload = buildDeviceTokenPayload')));
     assert.doesNotMatch(till, /personPermissions/, 'the till\'s own renewal carries none');
   });
 

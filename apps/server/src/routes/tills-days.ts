@@ -11,7 +11,7 @@
 //   POST /instructions/:id/cancel     — withdraw a stuck close (shifts.close_day)
 //   POST /abandon                     — close a retired / 24-h-silent till's day as abandoned (shifts.close_day)
 // Every action needs a reason; a silent till needs `silent_ok`; each is audited and the owner told.
-import { requirePermission, requireAnyPermission, branchScope, can } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, branchScope, can, allBranchAccess } from '../middleware/rbac';   // A550: allBranchAccess
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -33,8 +33,9 @@ async function actorOf(req: any): Promise<Actor> {
     businessId: req.businessId,
     userId: req.userId ?? null,
     name: (me as any)?.name ?? (req.isOwner ? 'The owner' : null),
-    // The owner reaches every branch; anyone else their own (a branchless non-owner none — NO_BRANCH).
-    branchId: req.isOwner ? null : String(branchScope(req) ?? ''),
+    // The owner reaches every branch; anyone else their own (a branchless non-owner none — NO_BRANCH). A550: a partner of
+    // every branch as the owner.
+    branchId: allBranchAccess(req) ? null : String(branchScope(req) ?? ''),
   };
 }
 
@@ -47,7 +48,7 @@ router.get('/overview', requireAnyPermission('shifts.close_day', 'shifts.force_c
   try {
     const actor = await actorOf(req);
     // The owner: the branch picked in the dashboard (X-Branch-Id / ?branch_id), or every branch.
-    const branchId = req.isOwner ? (branchScope(req) || null) : actor.branchId;
+    const branchId = allBranchAccess(req) ? (branchScope(req) || null) : actor.branchId;   // A550
     const ov = await tillsOverview(req.businessId, { branchId, seesFigures: can(req, 'reports.shifts', 'shifts.confirm') });
     res.json({ ...ov, may: { close_day: can(req, 'shifts.close_day'), force_close: can(req, 'shifts.force_close') },
       sees_figures: can(req, 'reports.shifts', 'shifts.confirm') });

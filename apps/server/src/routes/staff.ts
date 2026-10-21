@@ -3,7 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { verifyPin } from './auth';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, allBranchAccess } from '../middleware/rbac';   // A550: allBranchAccess
 import { supabase } from '../lib/supabase';
 import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
@@ -18,6 +18,10 @@ import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { revokePersonSessions } from '../lib/tillSessions';   // A494
 import { worksAtBranch } from '../lib/branchAccess';   // A494
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
+import { readPartners, writePartners, partnerLive, withMetaLink, unusablePassword, type PartnerMap } from '../lib/webPartners';   // A550
+import { forgetUser } from '../lib/authCache';   // A550
+import { sendEmailChecked } from '../lib/mailer';   // A550
+import { signInAddress } from '../lib/tenant';   // A550
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -142,6 +146,49 @@ async function refuseIfBeyondCaller(req: any, targetUserId: string): Promise<str
 }
 
 /**
+ * A550: a partner names only branches they work at (their token's list — this business's, checked at sign-in). The owner
+ * and everyone else are unaffected (their own rules above). Returns a refusal, or null.
+ */
+function partnerBranchRefusal(req: any, branchIds: unknown): string | null {
+  if (!req.webPartner || branchIds === undefined || branchIds === null) return null;
+  if (!Array.isArray(branchIds)) return 'You can only assign staff to your own branches';
+  const mine: string[] = req.partnerBranches ?? [];
+  return branchIds.every((b) => typeof b === 'string' && mine.includes(b)) ? null : 'You can only assign staff to your own branches';
+}
+
+/**
+ * A550: end a person's web dashboard access (lib/webPartners.ts) — the owner's grant marked revoked, the sign-in account's
+ * link removed, and every session of theirs ended now: refresh tokens revoked (lib/tillSessions.ts — never a till's own)
+ * and permissions_version moved on, so an access token already out is refused at its next request (requireAuth), not
+ * when it expires. Returns false when there was no live grant. A failure to unlink the account is logged: the grant alone
+ * already refuses every sign-in and renewal.
+ */
+async function endPartnerAccess(businessId: string, userId: string, reason: string): Promise<boolean> {
+  const { map, error } = await readPartners(businessId);
+  if (error) throw error;
+  const rec = map[userId];
+  if (!rec || !partnerLive(rec, rec.auth_user_id)) return false;
+  const next: PartnerMap = { ...map, [userId]: { ...rec, status: 'revoked', revoked_at: new Date().toISOString(), revoked_reason: reason } };
+  const wErr = await writePartners(businessId, next);
+  if (wErr) throw wErr;
+  try {
+    const { data: acct } = await supabase.auth.admin.getUserById(rec.auth_user_id);
+    if (acct?.user) {
+      const { error: uErr } = await supabase.auth.admin.updateUserById(rec.auth_user_id,
+        { app_metadata: withMetaLink(acct.user.app_metadata, businessId, null) });
+      if (uErr) console.warn('[staff] A550: could not unlink the sign-in account', { businessId, userId }, uErr.message);
+    }
+  } catch (e) { console.warn('[staff] A550: could not unlink the sign-in account', { businessId, userId }, (e as Error)?.message); }
+  const { data: row } = await supabase.from('users').select('permissions_version').eq('id', userId).eq('business_id', businessId).maybeSingle();
+  await supabase.from('users').update({ permissions_version: ((row as { permissions_version?: number } | null)?.permissions_version ?? 1) + 1 })
+    .eq('id', userId).eq('business_id', businessId);
+  forgetUser(userId);
+  await revokePersonSessions(userId, businessId);
+  console.log(`[staff] A550: web dashboard access ended (${reason})`, { businessId, userId });
+  return true;
+}
+
+/**
  * A494: the keys a person WOULD hold after this change — the role they will have (the new one, else their current one)
  * and the overrides they will have (the ones sent replace all of theirs; else their current ones). A non-owner's change
  * must leave them within the caller's own keys: taking away a person's `granted: false` row for a key the caller lacks
@@ -231,8 +278,9 @@ function shapeStaff(rows: any[]): any[] {
 
 // Owner: sees all staff. Non-owners: only staff assigned to their branch.
 // A490: staff.view (everyone held it before migration 134 — OPEN_BEFORE_A490).
+// A550: a partner of every branch sees everyone too — never the owner's own account (filtered below, as for any non-owner).
 router.get('/', requirePermission('staff.view'), async (req, res) => {
-  if (req.isOwner) {
+  if (allBranchAccess(req)) {
     // Owner sees everyone
     const { data, error } = await supabase
       .from('users')
@@ -246,7 +294,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
       .order('name');
 
     if (error) { sendError(res, error); return; }
-    res.json(shapeStaff(data ?? []));
+    res.json(shapeStaff(req.isOwner ? (data ?? []) : (data ?? []).filter((u: any) => !isOwnerRoleName(u?.roles?.name))));
     return;
   }
 
@@ -321,18 +369,21 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
 
   // Non-owners can only assign staff to their own branch. A494: exactly their branch — a non-owner with no branch adds
   // nobody (the person would have had no branch = every branch).
-  if (!req.isOwner && !req.branchId) {
+  // A550: a partner of every branch assigns any of their branches, as the owner does (partnerBranchRefusal).
+  if (!allBranchAccess(req) && !req.branchId) {
     res.status(403).json({ error: 'You are not signed in at a branch — you can only add staff to your own branch.', code: 'NO_BRANCH' });
     return;
   }
-  const effectiveBranchIds: string[] = req.isOwner
+  const effectiveBranchIds: string[] = allBranchAccess(req)
     ? (branch_ids ?? [])
     : [req.branchId!];
 
-  if (!req.isOwner && branch_ids?.length && !(branch_ids.length === 1 && branch_ids[0] === req.branchId)) {
+  if (!allBranchAccess(req) && branch_ids?.length && !(branch_ids.length === 1 && branch_ids[0] === req.branchId)) {
     res.status(403).json({ error: 'You can only assign staff to your own branch' });
     return;
   }
+  const brRefusal = partnerBranchRefusal(req, branch_ids);
+  if (brRefusal) { res.status(403).json({ error: brRefusal }); return; }
 
   // Server-side role guard: a non-owner gives only a role within their own keys (never the owner's).
   const roleRefusal = await roleAssignRefusal(req, role_id);
@@ -402,21 +453,24 @@ router.post('/invite', requirePermission('staff.edit'), async (req, res) => {
   // A340: the invite path had NO role or branch guard — a manager could invite anyone as the owner, the one gap in
   // an otherwise guarded set (POST /, PATCH, DELETE). Same rules as POST /.
   if (!req.isOwner) {
-    // A494: a non-owner with no branch invites nobody (the person would have had every branch).
-    if (!req.branchId) {
+    // A494: a non-owner with no branch invites nobody (the person would have had every branch). A550: a partner of every
+    // branch invites to any of their branches, as the owner does.
+    if (!allBranchAccess(req) && !req.branchId) {
       res.status(403).json({ error: 'You are not signed in at a branch — you can only invite staff to your own branch.', code: 'NO_BRANCH' });
       return;
     }
     const roleRefusal = await roleAssignRefusal(req, role_id);
     if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
-    if (branch_ids?.length && !(branch_ids.length === 1 && branch_ids[0] === req.branchId)) {
+    if (!allBranchAccess(req) && branch_ids?.length && !(branch_ids.length === 1 && branch_ids[0] === req.branchId)) {
       res.status(403).json({ error: 'You can only assign staff to your own branch' });
       return;
     }
+    const brRefusal = partnerBranchRefusal(req, branch_ids);
+    if (brRefusal) { res.status(403).json({ error: brRefusal }); return; }
     const overRefusal = await refuseOverridesBeyondCaller(req);   // A494: the invite stores no overrides, but never accepts a grant beyond
     if (overRefusal) { res.status(403).json(overRefusal); return; }
   }
-  const inviteBranchIds: string[] = req.isOwner ? (branch_ids ?? []) : (req.branchId ? [req.branchId] : []);
+  const inviteBranchIds: string[] = allBranchAccess(req) ? (branch_ids ?? []) : (req.branchId ? [req.branchId] : []);
 
   const { data: user, error: uErr } = await supabase
     .from('users')
@@ -450,7 +504,7 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   const { name, email, role_id, pin, status, branch_ids, hourly_rate } = req.body;
 
   const { data: existing } = await supabase
-    .from('users').select('id, role_id, status').eq('id', req.params.id).eq('business_id', req.businessId).single();
+    .from('users').select('id, role_id, status, email').eq('id', req.params.id).eq('business_id', req.businessId).single();
   if (!existing) { res.status(404).json({ error: 'Staff member not found' }); return; }
 
   const overridePin = req.body.override_pin;
@@ -474,6 +528,8 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
 
   // Non-owners: verify target staff belongs to their branch
   if (!req.isOwner) {
+    // A550: a partner of every branch manages staff of any branch (as the owner does) and assigns only their branches.
+    if (!allBranchAccess(req)) {
     if (!req.branchId) { res.status(403).json({ error: 'You can only manage staff in your own branch', code: 'NO_BRANCH' }); return; }
     const { data: branchCheck } = await supabase
       .from('user_branches')
@@ -491,6 +547,9 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
       res.status(403).json({ error: 'You can only assign staff to your own branch' });
       return;
     }
+    }
+    const brRefusal = partnerBranchRefusal(req, branch_ids);
+    if (brRefusal) { res.status(403).json({ error: brRefusal }); return; }
 
     // Server-side role guard (client-side excludeRoles is not sufficient):
     //  - cannot give a role holding more than the caller, and
@@ -583,6 +642,14 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   const deactivated = !!status && status !== 'active';
   if (roleChanged || deactivated || branchesChanged) await revokePersonSessions(req.params.id, req.businessId);
 
+  // A550: a new e-mail ends web dashboard access — the sign-in account the owner's grant names is the old address's.
+  // The owner gives access again (and the invite goes to the new address).
+  const emailChanged = email !== undefined && String(email || '').trim().toLowerCase() !== String((existing as any).email ?? '').trim().toLowerCase();
+  if (emailChanged) {
+    try { await endPartnerAccess(req.businessId, req.params.id, 'email_changed'); }
+    catch (e) { console.error('[staff] A550: could not end web access after an email change', req.params.id, (e as Error)?.message); }
+  }
+
   res.json(data);
 });
 
@@ -611,7 +678,8 @@ router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
     const beyond = await refuseIfBeyondCaller(req, req.params.id);
     if (beyond) { res.status(403).json({ error: beyond }); return; }
 
-    const { data: branchCheck } = await supabase
+    // A550: a partner of every branch deactivates staff of any branch, as the owner does (the ceiling above still applies).
+    const { data: branchCheck } = allBranchAccess(req) ? { data: { user_id: req.params.id } } : await supabase
       .from('user_branches')
       .select('user_id')
       .eq('user_id', req.params.id)
@@ -632,6 +700,121 @@ router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
   if (error) { sendError(res, error); return; }
   await revokePersonSessions(req.params.id, req.businessId);   // A494: no session outlives the deactivation
   res.json({ success: true });
+});
+
+// ── A550: web dashboard access (partner login, lib/webPartners.ts) — the OWNER's alone ──────────────────────────────
+// Owner, 2026-10-21: "I want to create a user, full rights like an owner but not the owner, they should be able to log
+// in using the URL and a password." The owner marks someone on the staff; they sign in at the owner's own address with
+// their e-mail and a password they set, and see what their role allows. Never by anyone but the owner — not a partner,
+// not a manager holding staff.edit (a partner giving access would be a non-owner minting password sign-ins).
+
+/** The owner, signed in as themselves (not a till, not a PIN sign-in on one, never a partner — who is never isOwner). */
+const ownerOnly = (req: any): boolean => req.isOwner === true && !req.isTill && !req.pinSignIn && req.webPartner !== true;
+const OWNER_ONLY_ACCESS = { error: 'Only the owner gives or takes away web dashboard access.', code: 'OWNER_ONLY' } as const;
+
+// GET /api/staff/web-access — each person's web dashboard access: invited (not signed in yet), active, revoked.
+router.get('/web-access', async (req, res) => {
+  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  const { map, error } = await readPartners(req.businessId);
+  if (error) { sendError(res, error as Error); return; }
+  const out: Record<string, { status: string; granted_at: string; activated_at: string | null; revoked_at: string | null }> = {};
+  for (const [id, r] of Object.entries(map)) {
+    out[id] = { status: r.status, granted_at: r.granted_at, activated_at: r.activated_at ?? null, revoked_at: r.revoked_at ?? null };
+  }
+  res.json(out);
+});
+
+/** The sign-in account for an invite: a new one (a password nobody knows — they set theirs with "Forgot password?"), or the
+ *  one that address already has (an owner elsewhere, an earlier invite), found without sending anything. */
+async function partnerSignInAccount(email: string): Promise<{ id: string; app_metadata: unknown } | null> {
+  const { data, error } = await supabase.auth.admin.createUser({ email, email_confirm: true, password: unusablePassword() });
+  if (!error && data?.user) return { id: data.user.id, app_metadata: data.user.app_metadata };
+  const { data: link, error: lErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email });
+  if (!lErr && link?.user) return { id: link.user.id, app_metadata: link.user.app_metadata };
+  console.error('[staff] A550: no sign-in account for the invite', error?.message, lErr?.message);
+  return null;
+}
+
+function escapeHtml(s: unknown): string {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
+/** The invite: where to sign in and how to set a password (the A402 emailed code — no link that could be forwarded). */
+async function sendPartnerInvite(to: string, name: string | null, businessName: string, address: string): Promise<boolean> {
+  // The email goes in the fragment (#), never the query: a fragment is not sent to servers, so it stays out of web logs.
+  const setUp = `${address}/login#set_password=1&email=${encodeURIComponent(to)}`;
+  const sent = await sendEmailChecked({
+    to,
+    subject: `You can now sign in to ${businessName} on ZapTill`,
+    html: `<div style="font-family:system-ui,sans-serif;font-size:15px;color:#0f172a">
+  <p>${name ? `Hi ${escapeHtml(name)},` : 'Hi,'}</p>
+  <p>The owner of <b>${escapeHtml(businessName)}</b> has given you access to its ZapTill dashboard.</p>
+  <p>1. Open <a href="${escapeHtml(setUp)}">${escapeHtml(address)}</a> and choose <b>Forgot password?</b><br>
+     2. Enter this email address — a 6-digit code is emailed to you.<br>
+     3. Enter the code and choose your password, then sign in with this email and that password.</p>
+  <p>Each time you sign in you also enter a one-time code (emailed to you, or from an authenticator app).</p>
+  <p>If you were not expecting this, ignore this email.</p>
+</div>`,
+  });
+  if (!sent.ok) console.error('[staff] A550: the invite email was not sent', sent.error);
+  return sent.ok;
+}
+
+// POST /api/staff/:id/web-access — give web dashboard access (or send the invite again). The person must be an active
+// member of the staff with an e-mail address, and never on the owner's role.
+router.post('/:id/web-access', async (req, res) => {
+  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  const { data: target, error: tErr } = await supabase.from('users')
+    .select('id, name, email, status, business_id, roles ( name )').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (tErr) { sendError(res, tErr); return; }
+  if (!target) { res.status(404).json({ error: 'Staff member not found' }); return; }
+  const t = target as { id: string; name: string | null; email: string | null; status: string; roles?: { name?: string | null } | null };
+  if (isOwnerRoleName(t.roles?.name)) {
+    res.status(400).json({ error: 'The owner\'s role signs in as the owner. Give them another role (for example General Manager) first.', code: 'OWNER_ROLE' });
+    return;
+  }
+  if (t.status !== 'active') { res.status(400).json({ error: 'Activate this staff member first.', code: 'INACTIVE' }); return; }
+  const email = String(t.email ?? '').trim().toLowerCase();
+  if (!email.includes('@')) { res.status(400).json({ error: 'Add an email address for this staff member first.', code: 'NO_EMAIL' }); return; }
+
+  const { data: biz, error: bErr } = await supabase.from('businesses').select('id, name, owner_id, subdomain').eq('id', req.businessId).maybeSingle();
+  if (bErr || !biz) { sendError(res, bErr ?? new Error('business not found')); return; }
+  const acct = await partnerSignInAccount(email);
+  if (!acct) { res.status(502).json({ error: 'Could not set up a sign-in for this email. Try again in a minute.' }); return; }
+  if (acct.id === (biz as { owner_id?: string | null }).owner_id) {
+    res.status(400).json({ error: 'That email is the owner\'s own sign-in.', code: 'OWNER_ACCOUNT' });
+    return;
+  }
+
+  const { map, error: rErr } = await readPartners(req.businessId);
+  if (rErr) { sendError(res, rErr as Error); return; }
+  const prior = map[t.id];
+  const keepActive = !!prior && partnerLive(prior, acct.id) && prior.status === 'active';
+  const { error: mErr } = await supabase.auth.admin.updateUserById(acct.id, { app_metadata: withMetaLink(acct.app_metadata, req.businessId, t.id) });
+  if (mErr) { res.status(502).json({ error: 'Could not link the sign-in. Try again in a minute.' }); return; }
+  const now = new Date().toISOString();
+  const wErr = await writePartners(req.businessId, { ...map, [t.id]: {
+    auth_user_id: acct.id, status: keepActive ? 'active' : 'invited',
+    granted_at: prior && partnerLive(prior, acct.id) ? prior.granted_at : now, granted_by: req.userId ?? null,
+    activated_at: keepActive ? (prior?.activated_at ?? null) : null, revoked_at: null, revoked_reason: null,
+  } });
+  if (wErr) { sendError(res, wErr as Error); return; }
+
+  const address = signInAddress((biz as { subdomain?: string | null }).subdomain) ?? (process.env.DASHBOARD_URL ?? 'https://app.zaptill.co.ke');
+  const emailed = await sendPartnerInvite(email, t.name, (biz as { name?: string }).name ?? 'your business', address);
+  console.log(`[staff] A550: web dashboard access given${prior ? ' (again)' : ''}`, { businessId: req.businessId, userId: t.id });
+  res.status(emailed ? 200 : 207).json({ status: keepActive ? 'active' : 'invited', emailed,
+    ...(emailed ? {} : { warning: 'Access was given, but the invitation email could not be sent — use "Resend invite".' }) });
+});
+
+// DELETE /api/staff/:id/web-access — take web dashboard access away: they are signed out everywhere at once.
+router.delete('/:id/web-access', async (req, res) => {
+  if (!ownerOnly(req)) { res.status(403).json(OWNER_ONLY_ACCESS); return; }
+  try {
+    const ended = await endPartnerAccess(req.businessId, req.params.id, 'revoked_by_owner');
+    if (!ended) { res.status(404).json({ error: 'This staff member has no web dashboard access.' }); return; }
+    res.json({ status: 'revoked' });
+  } catch (e) { sendError(res, e as Error); }
 });
 
 // NOTE: POST /api/staff/verify-pin has been moved to POST /api/auth/verify-pin
@@ -828,9 +1011,13 @@ router.post('/clock', async (req, res) => {
   if (!who) { res.status(400).json({ error: 'staff_id is required on a till\'s own session' }); return; }
   if (!/^\d{4,6}$/.test(String(pin))) { invalid(); return; }
 
-  // Where: a non-owner clocks at their own branch only.
-  const branch = req.isOwner ? (branch_id ?? null) : req.branchId;
-  if (!req.isOwner && branch_id && branch_id !== req.branchId) {
+  // Where: a non-owner clocks at their own branch only. A550: a partner of every branch at any of theirs.
+  const branch = allBranchAccess(req) ? (branch_id ?? req.branchId ?? null) : req.branchId;
+  if (!allBranchAccess(req) && branch_id && branch_id !== req.branchId) {
+    res.status(403).json({ error: 'You can only clock in at your own branch' });
+    return;
+  }
+  if (partnerBranchRefusal(req, branch_id ? [branch_id] : undefined)) {
     res.status(403).json({ error: 'You can only clock in at your own branch' });
     return;
   }

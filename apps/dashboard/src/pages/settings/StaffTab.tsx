@@ -31,7 +31,17 @@ interface Props {
   canResetSignIn?: boolean;
   /** A490: add, edit, deactivate — staff.edit (the manager portal passes it; the owner always may). */
   canEdit?: boolean;
+  /** A550: the owner gives, re-sends and takes away web dashboard access (partner login) — the owner's dashboard only. */
+  webAccess?: boolean;
 }
+
+/** A550: GET /api/staff/web-access — each person's web dashboard access. */
+type WebAccessState = { status: 'invited' | 'active' | 'revoked'; granted_at: string; activated_at: string | null; revoked_at: string | null };
+const WEB_STATUS: Record<WebAccessState['status'], { label: string; cls: string }> = {
+  invited: { label: 'Web: invited',  cls: 'bg-amber-500/15 text-amber-300' },
+  active:  { label: 'Web: active',   cls: 'bg-swift/15 text-swift-text' },
+  revoked: { label: 'Web: revoked',  cls: 'bg-gray-700 text-gray-400' },
+};
 
 /** A490: a role's keys as a set ('*' for the owner's role). */
 export function roleKeySet(role: Role | undefined): Set<string> {
@@ -62,7 +72,7 @@ const STATUS_COLORS: Record<string, string> = {
   inactive: 'bg-gray-700 text-gray-500',
 };
 
-export default function StaffTab({ branches, canResetSignIn, canEdit = true }: Props) {
+export default function StaffTab({ branches, canResetSignIn, canEdit = true, webAccess = false }: Props) {
   const { activeBranchId } = useBranch();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -76,13 +86,17 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
   const [mode, setMode] = useState<'pin' | 'invite'>('pin');
   const [page, setPage] = useState(1);   // A475
   const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.staff');
+  const [web, setWeb] = useState<Record<string, WebAccessState>>({});   // A550
+  const [webNote, setWebNote] = useState('');
 
   const fetchAll = async () => {
     try {
-      const [staffData, rolesData] = await Promise.all([
+      const [staffData, rolesData, webData] = await Promise.all([
         api.get<StaffMember[]>(activeBranchId ? `/api/staff?branch_id=${activeBranchId}` : '/api/staff'),
         api.get<Role[]>('/api/staff/roles'),
+        webAccess ? api.get<Record<string, WebAccessState>>('/api/staff/web-access').catch(() => ({})) : Promise.resolve({}),
       ]);
+      setWeb(webData ?? {});
       setStaff(staffData ?? []);
       // A340 / A490: the cloud marks the roles THIS user may hand out (`assignable` — never a role with more than they
       // hold, never the owner's). No role names are listed here any more.
@@ -122,6 +136,39 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
     });
   };
 
+  // A550: web dashboard access — they sign in at this business's address with their email and a password they set.
+  const giveWeb = (s: StaffMember, again: boolean) => {
+    showConfirm({
+      title: again ? `Send ${s.name} the invitation again?` : `Give ${s.name} web dashboard access?`,
+      message: again
+        ? `A new invitation goes to ${s.email}.`
+        : `${s.name} will sign in to this dashboard with ${s.email} and a password they set (the invitation says how), plus a one-time code each time. They see and do only what their role allows — never what is yours alone.`,
+      intent: 'warning',
+      confirmLabel: again ? 'Send again' : 'Give access',
+      onConfirm: async () => {
+        setWebNote(''); setListError('');
+        try {
+          const r = await api.post<{ emailed?: boolean; warning?: string }>(`/api/staff/${s.id}/web-access`, {});
+          setWebNote(r?.warning ?? `Invitation sent to ${s.email}.`);
+          fetchAll();
+        } catch (e: any) { setListError(e?.message ?? 'Could not give web dashboard access'); }
+      },
+    });
+  };
+  const revokeWeb = (s: StaffMember) => {
+    showConfirm({
+      title: `Take away ${s.name}'s web dashboard access?`,
+      message: 'They are signed out of the dashboard everywhere at once. Their PIN on the tills is not changed.',
+      intent: 'warning',
+      confirmLabel: 'Revoke',
+      onConfirm: async () => {
+        setWebNote(''); setListError('');
+        try { await api.delete(`/api/staff/${s.id}/web-access`); setWebNote(`${s.name} no longer has web dashboard access.`); fetchAll(); }
+        catch (e: any) { setListError(e?.message ?? 'Could not revoke web dashboard access'); }
+      },
+    });
+  };
+
   const activate = async (id: string) => {
     try { await api.patch(`/api/staff/${id}`, { status: 'active' }); fetchAll(); }
     catch (e: any) { setListError(e?.message ?? 'Could not activate'); }   // A506
@@ -149,6 +196,7 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
       </div>
 
       {listError && <p className="text-sm text-red-400" data-testid="staff-error">{listError}</p>}
+      {webNote && <p className="text-sm text-gray-300" data-testid="web-access-note">{webNote}</p>}
       {loading ? (
         <div className="text-gray-500 text-sm py-10 text-center">Loading…</div>
       ) : staff.length === 0 ? (
@@ -181,6 +229,11 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[s.status] ?? 'bg-gray-700 text-gray-500'}`}>
                         {s.status}
                       </span>
+                      {webAccess && web[s.id] && (
+                        <span data-testid="web-access-status" className={`text-xs px-2 py-0.5 rounded-full font-medium ${WEB_STATUS[web[s.id].status]?.cls ?? ''}`}>
+                          {WEB_STATUS[web[s.id].status]?.label ?? web[s.id].status}
+                        </span>
+                      )}
                     </div>
                     <p className="text-gray-500 text-xs mt-0.5">
                       {s.email ?? s.phone ?? 'PIN only'} · {branchNames.length ? branchNames.join(', ') : 'All branches'}
@@ -188,6 +241,25 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true }: P
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                  {/* A550: web dashboard access — the owner's; never for the owner's own role, someone inactive or without email */}
+                  {webAccess && s.status === 'active' && s.email && !role?.is_owner_role && (() => {
+                    const w = web[s.id];
+                    const live = w && w.status !== 'revoked';
+                    return (
+                      <>
+                        <button onClick={() => giveWeb(s, !!live)} data-testid={live ? 'web-access-resend' : 'web-access-give'}
+                          className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
+                          {live ? 'Resend invite' : 'Give web access'}
+                        </button>
+                        {live && (
+                          <button onClick={() => revokeWeb(s)} data-testid="web-access-revoke"
+                            className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+                            Revoke web access
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
                   {canResetSignIn && s.status === 'active' && needsSignInCode(role, s.override_keys) && (
                     <button onClick={() => resetSignIn(s)} data-testid="reset-signin"
                       className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">

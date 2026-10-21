@@ -1,4 +1,5 @@
 import { useBusiness } from '../../context/BusinessContext';
+import { usePermissions } from '../../context/PermissionsContext';   // A550
 import SettingsSection from './SettingsSection';
 import ReportSchedulerTab from './ReportSchedulerTab';
 import WebhooksTab from './WebhooksTab';
@@ -29,6 +30,7 @@ const SETUP_LABELS: Record<string, string> = {
 
 export function useBusinessTabs() {
   const { business } = useBusiness();
+  const { can } = usePermissions();   // A550: a partner sees the POS options only with settings.pos (the owner holds '*')
   const setupLabel = SETUP_LABELS[business?.type ?? ''] ?? 'Setup';
   return [
     { to: 'profile',      label: 'Profile' },
@@ -37,7 +39,7 @@ export function useBusinessTabs() {
     { to: 'tax',          label: 'Tax & compliance' },
     { to: 'payments',     label: 'Payments' },
     { to: 'voids-refunds', label: 'Voids, refunds & delivery' },   // 0.6.30 (A336 stage 3): the owner's rules; 0.6.33 + free delivery
-    { to: 'pos-options',  label: 'POS options' },    // A491: the owner's now (was the admin portal's)
+    ...(can('settings.pos') ? [{ to: 'pos-options',  label: 'POS options' }] : []),    // A491: the owner's now (was the admin portal's)
     { to: 'setup',        label: setupLabel },
     { to: 'integrations', label: 'Integrations' },
   ];
