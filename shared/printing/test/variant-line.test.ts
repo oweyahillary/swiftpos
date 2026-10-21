@@ -134,5 +134,38 @@ console.log('\n5. What is not a variant\'s own unit prints as before');
     && units[0].name === 'Chicken Burger' && units[0].attributes[0].option === 'Chicken Burger Spicy' && units[0].stationIds.includes(KITCHEN));
 }
 
+console.log('\n7. A556 — the receipt folds EVERY variant: a combo and a product with a description (the owner\'s paper test)');
+{
+  const ids2 = { kitchen: [KITCHEN], dispatch: [DISPATCH] };
+  const r2 = { byCategory: {}, kitchenCategories: new Set<string>() };
+  const mk = (l: any, cents: number): OrderLine => ({ name: l.product.name, quantity: 1, stationIds: [KITCHEN], unitPrice: cents,
+    lineTotal: cents, units: toUnits(l, ids2, ids2.kitchen, r2) });
+  const described = mk({ product: { id: 'a', name: 'Crispy Chicken Burger', description: 'Crispy fillet, lettuce, house sauce' },
+    selectedVariants: [{ groupName: 'Spice level', optionName: 'Spicy' }] }, 55000);
+  const combo = mk({ product: { id: 'c', name: '5PC Chicken Combo' }, comboComponents: [{ name: '5PC Chicken', quantity: 1, is_kitchen: true },
+    { name: 'Fries', quantity: 1, is_kitchen: true }], selectedVariants: [{ groupName: 'Spice level', optionName: 'Normal' }] }, 139000);
+  const priced: OrderLine = { ...combo, units: combo.units.map((u, i) => (i === 0 ? { ...u, priceDelta: 5000 } : u)), lineTotal: 144000, unitPrice: 144000 };
+  for (const w of [80, 58] as const) {
+    const o = { ...order, lines: [described, combo], total: 194000, payments: [{ label: 'CASH', amount: 194000 }] };
+    const rr = rows({ order: o, business, station: receipt(w) });
+    // On 58 mm the item column is narrower, so a long "name - variant" wraps like any long name ("Crispy Chicken" /
+    // "Burger - Spicy"); what matters is that it is the ITEM's text, and no sub-row repeats the item with the choice.
+    const item = rr.slice(rr.findIndex(t => t.startsWith('Item')) + 2, rr.findIndex(t => t.startsWith('Total Qty')) - 1)
+      .map(t => t.replace(/\s+\d+\s+[\d,]+\.\d\d$/, '').trim()).join(' ');
+    ok(`${w} mm receipt: "Crispy Chicken Burger - Spicy" is the item, no "Crispy fillet  Spicy" row`,
+      item.includes('Crispy Chicken Burger - Spicy') && !rr.some(t => /Crispy fillet/.test(t)), item);
+    ok(`${w} mm receipt: "5PC Chicken Combo - Normal" is the item, no "5PC Chicken  Normal" row`,
+      item.includes('5PC Chicken Combo - Normal') && !rr.some(t => /^\s+5PC Chicken/.test(t)), item);
+  }
+  const pr = rows({ order: { ...order, lines: [priced], total: 144000, payments: [{ label: 'CASH', amount: 144000 }] }, business, station: receipt(80) });
+  ok('a priced component keeps its own price row, its choice moved to the heading', pr.some(t => t.startsWith('5PC Chicken Combo - Normal'))
+    && pr.some(t => /^\s+5PC Chicken\s+\S/.test(t) && !/Normal/.test(t)), pr.join(' | '));
+  const k = rows({ order: { ...order, lines: [described, combo], total: 194000 }, business, station: kitchen(80) });
+  ok('kitchen: the described burger folds — "1   CRISPY CHICKEN BURGER - SPICY", its parts listed beneath without the choice',
+    k.includes('1   CRISPY CHICKEN BURGER - SPICY') && k.some(t => t.trim() === 'Crispy fillet'), k.join(' | '));
+  ok('kitchen: a combo keeps the choice on its component (the cook sees which piece)',
+    k.includes('1   5PC CHICKEN COMBO') && k.some(t => /5PC Chicken/.test(t) && !/COMBO/.test(t)) && k.some(t => /Normal/.test(t)), k.join(' | '));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -447,6 +447,18 @@ function lineHeading(line) {
   if (!folded) return { name: line.name };
   return { name: nameWithVariant(line.name, folded.attributes.map((a) => a.option)), folded };
 }
+function receiptHeading(line) {
+  const options = [];
+  const hidden = /* @__PURE__ */ new Set();
+  const moved = /* @__PURE__ */ new Set();
+  for (const u of line.units) {
+    if (!u.attributes.length || u.quantity !== 1 || u.portions > 1 || u.attributes.some((a) => a.priceDelta !== 0)) continue;
+    options.push(...u.attributes.filter((a) => a.count > 0).map((a) => a.option));
+    if (u.priceDelta === 0) hidden.add(u);
+    else moved.add(u);
+  }
+  return { name: options.length ? nameWithVariant(line.name, options) : line.name, hidden, moved };
+}
 function noteRows(note) {
   return (note ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 }
@@ -609,9 +621,9 @@ function renderReceipt(ctx) {
     if (lastHadSubLines) d.blank();
     const deltas = line.units.reduce((a, u) => a + u.priceDelta * u.quantity, 0);
     const baseNet = tax.lineNets[i] - netOf(deltas * line.quantity, business.vatRate, business.ctlRate);
-    const { name, folded } = lineHeading(line);
+    const { name, hidden, moved } = receiptHeading(line);
     d.lines(itemRow(cols, name, String(line.quantity), formatCents(baseNet)));
-    const units = visibleUnits(line, ctx).filter((u) => u !== folded);
+    const units = visibleUnits(line, ctx).filter((u) => !hidden.has(u)).map((u) => moved.has(u) ? { ...u, attributes: [] } : u);
     const before = d.length;
     const plain = [];
     for (const u of units) {
@@ -1127,6 +1139,7 @@ function toUnits(line, ids, lineStationIds, routing) {
       stationIds: c.category_id ? stationsForCategory(c.category_id, ids, routing) : c.is_kitchen ? ids.kitchen : ids.dispatch
     });
   }
+  const realComponents = units.length;
   if (units.length === 0) {
     for (const part of describeFromText(line.product.description)) {
       units.push({
@@ -1148,7 +1161,7 @@ function toUnits(line, ids, lineStationIds, routing) {
     priceDelta: 0
   }));
   if (attrs.length) {
-    if (units.length) {
+    if (realComponents) {
       units[0].attributes = attrs;
       units[0].chosen = true;
     } else {

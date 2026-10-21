@@ -184,6 +184,7 @@ export function toUnits(
     });
   }
 
+  const realComponents = units.length;   // A556: a combo's own components, not parts guessed from the description
   if (units.length === 0) {
     for (const part of describeFromText(line.product.description)) {
       units.push({
@@ -208,7 +209,10 @@ export function toUnits(
       priceDelta: 0,
     }));
   if (attrs.length) {
-    if (units.length) {
+    // A556: the variant is the PRODUCT's choice. On a combo it goes on the first component (the cook sees which piece);
+    // on a product whose parts come from its description ("Crispy fillet, lettuce, house sauce") it is the product's own
+    // unit — before, it landed on "Crispy fillet" and printed "Crispy fillet  Spicy" under the burger.
+    if (realComponents) {
       units[0].attributes = attrs;
       units[0].chosen = true;
     } else {

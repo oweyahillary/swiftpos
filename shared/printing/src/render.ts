@@ -156,6 +156,28 @@ function lineHeading(line: OrderLine): { name: string; folded?: OrderUnit } {
   return { name: nameWithVariant(line.name, folded.attributes.map(a => a.option)), folded };
 }
 
+/**
+ * A556 (owner, on paper after A551: "YOU DID NOT DO THIS ON THE RECEIPT WE STILL HAVE TWO LINES OF THE SAME"): on the
+ * CUSTOMER RECEIPT every variant choice goes on the item's own row, whatever carries it. A551's variantUnit only caught
+ * the unit made for a plain product; a combo hangs its variant on the first component ("5PC Chicken Combo" then
+ * "  5PC Chicken  Normal") and a described product on the first part of its description ("  Crispy fillet  Spicy") —
+ * both still printed two rows. Here any unit of one, a single portion, whose choices cost nothing gives its choices to the
+ * heading; the unit itself then prints no row unless it carries a price of its own (that row stays, without the choice).
+ * Split portions ("1 spicy, 2 normal": portions > 1) and priced choices print as before. Kitchen and dispatch tickets
+ * keep lineHeading: the cook still sees which piece of a combo the choice is for.
+ */
+function receiptHeading(line: OrderLine): { name: string; hidden: Set<OrderUnit>; moved: Set<OrderUnit> } {
+  const options: string[] = [];
+  const hidden = new Set<OrderUnit>();
+  const moved = new Set<OrderUnit>();
+  for (const u of line.units) {
+    if (!u.attributes.length || u.quantity !== 1 || u.portions > 1 || u.attributes.some(a => a.priceDelta !== 0)) continue;
+    options.push(...u.attributes.filter(a => a.count > 0).map(a => a.option));
+    if (u.priceDelta === 0) hidden.add(u); else moved.add(u);
+  }
+  return { name: options.length ? nameWithVariant(line.name, options) : line.name, hidden, moved };
+}
+
 /** A367: a typed note as printed rows — the cashier's line breaks kept, blank lines dropped. */
 function noteRows(note: string | undefined): string[] {
   return (note ?? '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -409,10 +431,10 @@ function renderReceipt(ctx: PrintContext): Document {
     const deltas = line.units.reduce((a, u) => a + u.priceDelta * u.quantity, 0);
     const baseNet = tax.lineNets[i] - netOf(deltas * line.quantity, business.vatRate, business.ctlRate);
 
-    const { name, folded } = lineHeading(line);   // A551: "Chicken Burger - Spicy" on the item's own row
+    const { name, hidden, moved } = receiptHeading(line);   // A551/A556: "Chicken Burger - Spicy" on the item's own row
     d.lines(itemRow(cols, name, String(line.quantity), formatCents(baseNet)));
 
-    const units = visibleUnits(line, ctx).filter(u => u !== folded);
+    const units = visibleUnits(line, ctx).filter(u => !hidden.has(u)).map(u => (moved.has(u) ? { ...u, attributes: [] } : u));
     const before = d.length;
 
     // Chosen units that cost nothing and carry no choice detail are collapsed
