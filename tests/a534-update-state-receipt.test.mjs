@@ -30,6 +30,13 @@
  * without the number → "A547: the classic payment block"; the rule under the heading removed → same; Round Off shown at
  * 0 → "A547: Round Off"; the compact path given the heading → "A547: compact keeps its block"; PaymentModal not passing
  * `pay` → "the web POS hands …".
+ *
+ * A551 (owner, 2026-10-21, on paper: "we just write `PAY BILL/BUY GOODS:` newline `123445` and we center it and increase
+ * the font size and thickness, We remove the wordings payment details"; "why not write `Chicken burger - Spicy`"): the
+ * classic block is the label alone ("BUY GOODS:"), the number, centred, large and bold (a Paybill's account under them),
+ * a rule, the payments; no number, no heading; a variant on the item's own line. Mutations (A551, each red on its own):
+ * the "Payment Details" words back → "A551: the classic payment block"; not centred → same; the account not split off →
+ * same; a heading with no number → "A538: the standard"; the variants as rows again → "A551: a variant".
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -76,7 +83,13 @@ await ok('returned to ZapTill only: the admin devices route (requireAdmin) — n
   assert.match(admin, /router\.get\('\/clients\/:id\/devices', requireAdmin,[\s\S]{0,2500}update_state, update_state_at/);
   const dir = path.join(ROOT, 'apps/server/src/routes');
   const readers = fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && /update_state/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
-  assert.deepEqual(readers.sort(), ['admin.ts', 'desktopUpdate.ts'], `routes naming update_state: ${readers}`);
+  // A554: the admin portal's Pull logs card (logRequestsAdmin.ts, every route requireAdmin) reads ONE field of it —
+  // log_pull, whether the till answers a pull — and returns only that yes/no (can_answer), never the state itself.
+  assert.deepEqual(readers.sort(), ['admin.ts', 'desktopUpdate.ts', 'logRequestsAdmin.ts'], `routes naming update_state: ${readers}`);
+  const lr = read('apps/server/src/routes/logRequestsAdmin.ts');
+  assert.equal((lr.match(/router\.(get|post)\(/g) || []).length, (lr.match(/router\.(get|post)\('[^']+', requireAdmin,/g) || []).length, 'every log-requests route is admin-only');
+  assert.match(lr, /r\.update_state && r\.update_state\.log_pull === true\) get\(r\.device_id\)\.reportsLogPull = true;/);
+  assert.equal((lr.match(/update_state/g) || []).length, 4, 'update_state named only where log_pull is read');
   assert.doesNotMatch(read('apps/server/src/routes/desktopUpdate.ts'), /select\([^)]*update_state/);
   const adminAuth = read('apps/server/src/middleware/adminAuth.ts');
   assert.match(adminAuth, /role: 'super_admin' \| 'agent'/);
@@ -163,38 +176,58 @@ await ok('compact keeps what carries money: a discount brings the Subtotal back;
 await ok('A538: the standard (no switch) is the classic layout — every line as before', () => {
   for (const html of [R.render(sale), R.render({ ...sale, compact: false }), R.render({ ...sale, classic: true })]) {
     const t = text(html);
-    // A547: the payment block is A539's ("Payment Details:" heading, a rule, the payments) — no "Payment" / "Tendered" lines.
-    for (const want of ['Tel: 0712 345678', 'PIN: P051234567X', 'Order: W-1042', 'Subtotal', 'Payment Details:', 'CASH', 'CHANGE', 'VAT Reg: P051234567X']) assert.ok(t.includes(want), `${want} missing: ${t.join(' | ')}`);
+    // A551: no till number here — no heading at all (and no rule of its own); never the words "Payment Details".
+    for (const want of ['Tel: 0712 345678', 'PIN: P051234567X', 'Order: W-1042', 'Subtotal', 'CASH', 'CHANGE', 'VAT Reg: P051234567X']) assert.ok(t.includes(want), `${want} missing: ${t.join(' | ')}`);
+    assert.ok(!t.some((l) => /payment details/i.test(l)) && !html.includes('data-testid="payment-details"'), t.join(' | '));
     assert.ok(!t.some((l) => /· Order: W-1042$/.test(l)), 'date and order on one line (compact) on the standard');
-    assert.equal(rules(html), 6, 'dashed rules (the doubled one and the one under Payment Details too)');
+    assert.equal(rules(html), 5, 'dashed rules (the doubled one; none under a heading that is not there)');
   }
   assert.equal(R.render({ ...sale, classic: true }), R.render(sale), 'A534\'s `classic` prop changes nothing now');
 });
-// ── A547: the classic payment block as the thermal receipt prints it (A539), no zero round off (A540) ───────────────
-await ok('A547: the classic payment block — "Payment Details: Buy Goods - <number>", a rule, the payments, CHANGE; no till line after', () => {
+// ── A551: the classic payment block as the thermal receipt prints it, no zero round off (A540) ─────────────────────
+await ok('A551: the classic payment block — "BUY GOODS:", the number (centred, large, bold), a rule, the payments, CHANGE', () => {
   const html = R.render({ ...sale, pay: { label: 'Buy Goods', number: '892984' } });
   const t = text(html);
-  const i = t.indexOf('Payment Details: Buy Goods - 892984');
-  assert.ok(i >= 0, t.join(' | '));
-  assert.deepEqual(t.slice(i + 1, i + 5), ['CASH', 'KES 1,300.00', 'CHANGE', 'KES 50.00'], t.join(' | '));
-  // In the markup: the bold heading, then a dashed rule, then the CASH line.
+  const i = t.indexOf('BUY GOODS:');
+  assert.ok(i >= 0 && t[i + 1] === '892984', t.join(' | '));
+  assert.deepEqual(t.slice(i + 2, i + 6), ['CASH', 'KES 1,300.00', 'CHANGE', 'KES 50.00'], t.join(' | '));
+  assert.ok(!t.some((l) => /payment details/i.test(l)), 'the words "Payment Details" are gone');
+  // In the markup: a centred bold block, the label and the number larger than the receipt's 12px, then a rule, then CASH.
+  assert.match(html, /<div style="text-align:center;font-weight:bold;margin-bottom:3px" data-testid="payment-details"><p style="font-size:16px">BUY GOODS:<\/p><p style="font-size:18px">892984<\/p><\/div>/);
   const h = html.indexOf('data-testid="payment-details"');
   const ruleAt = html.indexOf('border-top:1px dashed #000', h), cashAt = html.indexOf('>CASH<', h);
-  assert.ok(h > 0 && ruleAt > h && ruleAt < cashAt, 'the rule sits between the heading and the payments');
-  assert.match(html, /<p style="font-weight:bold;margin-bottom:3px" data-testid="payment-details">Payment Details: Buy Goods - 892984<\/p>/);
+  assert.ok(h > 0 && ruleAt > h && ruleAt < cashAt, 'the rule sits between the block and the payments');
   assert.ok(!t.some((l) => /^Buy Goods:|^Paybill:/.test(l)), 'a separate till line after the payments');
   assert.ok(!t.includes('Payment') && !t.includes('Tendered') && !t.includes('Split payment'), t.join(' | '));
-  // A Paybill with its account, as A450 stores it; no number → the heading alone.
-  assert.ok(text(R.render({ ...sale, pay: { label: 'Paybill', number: '4098201, Account WEST1' } })).includes('Payment Details: Paybill - 4098201, Account WEST1'));
-  assert.ok(text(R.render(sale)).includes('Payment Details:'));
-  assert.ok(text(R.render({ ...sale, pay: { label: 'Buy Goods', number: '  ' } })).includes('Payment Details:'));
+  // A Paybill with its account, as A450 stores it: the label, the number, then "Account: WEST1" in the normal weight.
+  const pb = R.render({ ...sale, pay: { label: 'Paybill', number: '4098201, Account WEST1' } });
+  const tp = text(pb);
+  assert.deepEqual(tp.slice(tp.indexOf('PAYBILL:'), tp.indexOf('PAYBILL:') + 3), ['PAYBILL:', '4098201', 'Account: WEST1'], tp.join(' | '));
+  assert.match(pb, /<p style="font-weight:normal">Account: WEST1<\/p><\/div>/);
+  assert.ok(!tp.some((l) => l.includes(', Account')));
+  // No number → no heading at all.
+  for (const p of [undefined, { label: 'Buy Goods', number: '  ' }]) {
+    const x = R.render({ ...sale, pay: p });
+    assert.ok(!x.includes('data-testid="payment-details"') && !text(x).includes('BUY GOODS:'), JSON.stringify(p));
+  }
 });
-await ok('A547: a split on the classic receipt — one heading, a rule, each payment with its reference; no CHANGE at 0', () => {
+await ok('A551: a split on the classic receipt — one block, a rule, each payment with its reference; no CHANGE at 0', () => {
   const t = text(R.render({ ...sale, pay: { label: 'Buy Goods', number: '892984' }, change: 0,
     payments: [{ method: 'cash', amount: 600 }, { method: 'mpesa', amount: 650, reference: 'QK12' }] }));
-  const i = t.indexOf('Payment Details: Buy Goods - 892984');
+  const i = t.indexOf('892984');
   assert.deepEqual(t.slice(i + 1, i + 7), ['CASH', 'KES 600.00', 'M-PESA', 'KES 650.00', 'Ref', 'QK12'], t.join(' | '));
   assert.ok(!t.includes('CHANGE') && !t.includes('Split payment'), t.join(' | '));
+});
+await ok('A551: a variant on the item\'s own line — "Chicken Burger - Spicy x1", no "Spice: …" row; a modifier keeps its row', () => {
+  const cart = [{ product: { id: 'p1', name: 'Chicken Burger' }, quantity: 1, unitPrice: 650, lineTotal: 650,
+    selectedVariants: [{ groupId: 'g', groupName: 'Spice', optionId: 'o', optionName: 'Chicken Burger Spicy', priceAdjustment: 0 }],
+    selectedModifiers: [{ groupId: 'm', groupName: 'Extras', optionId: 'x', optionName: 'Extra Cheese', price: 50 }] },
+    { product: { id: 'p2', name: 'Beef Burger' }, quantity: 2, unitPrice: 800, lineTotal: 1600,
+      selectedVariants: [{ groupId: 'g2', groupName: 'Size', optionId: 'l', optionName: 'Large', priceAdjustment: 100 }], selectedModifiers: [] }];
+  const t = text(R.render({ ...sale, cart }));
+  assert.ok(t.includes('Chicken Burger - Spicy x1') && t.includes('Beef Burger - Large x2'), t.join(' | '));
+  assert.ok(!t.some((l) => /^Spice:|^Size:|Chicken Burger Spicy/.test(l)), t.join(' | '));
+  assert.ok(t.includes('+ Extra Cheese'), 'the modifier still a row of its own');
 });
 await ok('A547: Round Off — hidden at 0.00 (A540), shown when the cent is really there', () => {
   assert.ok(!text(R.render(sale)).some((l) => /Round Off/.test(l)));

@@ -709,6 +709,32 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
 }
 setInitBuilder(buildInit);   // A531: lib/posInit.ts keeps what this builds
 
+// A552 (owner, 2026-10-21: "for credit sales we need them on desktop app since its the one used by most clients"): the
+// customers a till may sell to on account — every customer of the business with a credit limit or a balance owed — with
+// their limit and balance, so the till sells on account offline (main/creditCustomers.ts). Desktop only: the till's own
+// session (it pulls with it, like the staff list) or a person signed in on a till. No permission key: the till's own
+// session holds none of the customer keys (tillScope), and who may SELL on account is decided at the sale (A511 / A552).
+// `at` = when this was read: the till counts its own credit sales the cloud had not yet taken on top of the balance.
+router.get('/credit-customers', async (req, res) => {
+  if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
+  try {
+    const at = new Date().toISOString();
+    const rows = await pageAll<any>(() => supabase.from('customers')
+      .select('id, name, phone, credit_limit, credit_balance, status')
+      .eq('business_id', req.businessId)
+      .or('credit_limit.gt.0,credit_balance.gt.0'));
+    const customers = rows
+      .filter((c) => c && c.status !== 'deleted' && (Number(c.credit_limit) > 0 || Number(c.credit_balance) > 0))
+      .slice(0, 5000)
+      .map((c) => ({ id: c.id, name: c.name ?? '', phone: c.phone ?? null, status: c.status ?? 'active',
+        credit_limit: Number(c.credit_limit) || 0, credit_balance: Number(c.credit_balance) || 0 }));
+    res.set('Cache-Control', 'no-store');
+    res.json({ at, customers });
+  } catch (e: any) {
+    sendError(res, e);
+  }
+});
+
 // A404 — the test-data clears ZapTill made for this business (admin portal, A396) after `after`, oldest first; the
 // till removes the same periods from its own database (main/testDataClear.ts). After the last one it applied (A522).
 // A482: `menu` = that clear deleted the whole menu (migration 132) — the till empties its own menu too. Before 132 the

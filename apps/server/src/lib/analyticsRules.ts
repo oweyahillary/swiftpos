@@ -405,3 +405,138 @@ export function buildInsights(input: InsightInput): Insight[] {
 
   return out.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || TYPE_ORDER[a.type] - TYPE_ORDER[b.type]).slice(0, MAX_INSIGHTS);
 }
+
+// ── A553: the overview (KPI row, revenue trend, payment mix) ──────────────────
+
+/** The day `n` days after (or before, negative) a YYYY-MM-DD date. */
+export function addDays(date: string, n: number): string {
+  const d = dayNumber(date);
+  return new Date(((d ?? 0) + n) * DAY_MS).toISOString().slice(0, 10);
+}
+/** Every date from `from` to `to`, both included. */
+export function datesIn(from: string, to: string): string[] {
+  const days = rangeDays(from, to) ?? 0;
+  return Array.from({ length: Math.max(0, days) }, (_, i) => addDays(from, i));
+}
+/** The previous period of the same length: the `days` days that end the day before `from`. */
+export function previousPeriod(from: string, to: string): { from: string; to: string } {
+  const days = rangeDays(from, to) ?? 1;
+  return { from: addDays(from, -days), to: addDays(from, -1) };
+}
+/** The change from `prev` to `now` as a fraction (0.25 = up 25%); null when there is nothing to compare against. */
+export function pctChange(now: number, prev: number): number | null {
+  if (!Number.isFinite(now) || !Number.isFinite(prev) || prev <= 0) return null;
+  return r4((now - prev) / prev);
+}
+
+export interface DailyRow { day: string | null; method: string | null; revenue: number | string; orders: number | string }
+export type MethodGroup = 'cash' | 'mpesa' | 'card' | 'account' | 'other';
+export const METHOD_GROUPS: { key: MethodGroup; label: string }[] = [
+  { key: 'cash', label: 'Cash' }, { key: 'mpesa', label: 'M-Pesa' }, { key: 'card', label: 'Card' },
+  { key: 'account', label: 'On account' }, { key: 'other', label: 'Other' },
+];
+/** A payment method (free text since migration 89) → one of the five groups the payment-mix chart shows. */
+export function methodGroup(method: string | null | undefined): MethodGroup {
+  const m = String(method ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (m === 'cash') return 'cash';
+  if (m.startsWith('mpesa') || m === 'mobilemoney') return 'mpesa';
+  if (m === 'card' || m === 'visa' || m === 'mastercard' || m === 'pdq' || m.endsWith('card')) return 'card';
+  if (m === 'credit' || m === 'account' || m === 'onaccount') return 'account';
+  return 'other';
+}
+
+/** Gross margin as a share of the revenue of the items WITH a cost (the margin is only known for those); null without. */
+export function grossMarginPct(m: MenuResult | null): number | null {
+  if (!m || m.costsHidden || m.totals.margin === null) return null;
+  const costedRevenue = m.items.filter((i) => i.unitMargin !== null).reduce((s, i) => s + i.revenue, 0);
+  return costedRevenue > 0 ? r4(m.totals.margin / costedRevenue) : null;
+}
+
+type RiskFigures = Pick<LeakFigures, 'voidValue' | 'itemVoidValue' | 'refundValue' | 'discountValue' | 'wastageValue'>;
+/** Money at risk on a day or a period: voids (orders + kitchen items) + refunds + discounts + wastage (when shown). */
+export function moneyAtRisk(f: RiskFigures): number {
+  return r2(f.voidValue + f.itemVoidValue + f.refundValue + f.discountValue + (f.wastageValue ?? 0));
+}
+
+export interface Kpi { value: number | null; prev: number | null; change: number | null }
+export interface OverviewDay {
+  day: string; revenue: number; orders: number; avgBill: number | null; atRisk: number;
+  prevDay: string; prevRevenue: number; prevOrders: number;
+}
+export interface OverviewResult {
+  previous: { from: string; to: string };
+  days: OverviewDay[];
+  kpis: { revenue: Kpi; orders: Kpi; avgBill: Kpi; margin: Kpi | null; atRisk: Kpi };
+  atRiskParts: { voids: number; refunds: number; discounts: number; wastage: number | null };
+  paymentMix: { key: MethodGroup; label: string; amount: number; share: number }[];
+  marginHidden: boolean; wastageHidden: boolean;
+}
+
+/**
+ * The overview: the period's days (each against the same day of the previous period, by position), the five KPIs with
+ * their change, the money-at-risk split and the payment mix (the period only). `daily` covers BOTH periods (one call);
+ * `leaksNow` / `leaksPrev` and `menuNow` / `menuPrev` are each period's answers. Without costs (A490) the margin KPI is
+ * null and wastage (valued at cost) is left out of money at risk.
+ */
+export function buildOverview(input: {
+  from: string; to: string; daily: DailyRow[]; leaksNow: LeaksResult; leaksPrev: LeaksResult;
+  menuNow: MenuResult | null; menuPrev: MenuResult | null; costs: boolean;
+}): OverviewResult {
+  const { from, to, costs } = input;
+  const prev = previousPeriod(from, to);
+  const sales = new Map<string, { revenue: number; orders: number }>();
+  const mix: Record<MethodGroup, number> = { cash: 0, mpesa: 0, card: 0, account: 0, other: 0 };
+  for (const r of input.daily ?? []) {
+    const day = String(r.day ?? '').slice(0, 10);
+    if (!day) continue;
+    if (r.method === null || r.method === undefined) {
+      const s = sales.get(day) ?? { revenue: 0, orders: 0 };
+      s.revenue += n0(r.revenue); s.orders += n0(r.orders);
+      sales.set(day, s);
+    } else if (day >= from && day <= to) {
+      mix[methodGroup(r.method)] += n0(r.revenue);
+    }
+  }
+  const risky = (f: RiskFigures) => moneyAtRisk(costs ? f : { ...f, wastageValue: null });
+  const riskNow = new Map(input.leaksNow.days.map((d) => [d.day, risky(d)]));
+  const now = datesIn(from, to), before = datesIn(prev.from, prev.to);
+  const days: OverviewDay[] = now.map((day, i) => {
+    const s = sales.get(day) ?? { revenue: 0, orders: 0 };
+    const p = sales.get(before[i]) ?? { revenue: 0, orders: 0 };
+    return {
+      day, revenue: r2(s.revenue), orders: s.orders, avgBill: s.orders > 0 ? r2(s.revenue / s.orders) : null,
+      atRisk: riskNow.get(day) ?? 0, prevDay: before[i], prevRevenue: r2(p.revenue), prevOrders: p.orders,
+    };
+  });
+  const total = (ds: string[]) => ds.reduce((t, d) => {
+    const s = sales.get(d);
+    return { revenue: t.revenue + (s?.revenue ?? 0), orders: t.orders + (s?.orders ?? 0) };
+  }, { revenue: 0, orders: 0 });
+  const a = total(now), b = total(before);
+  const kpi = (value: number | null, prevValue: number | null): Kpi => ({
+    value, prev: prevValue, change: value === null || prevValue === null ? null : pctChange(value, prevValue),
+  });
+  const avgA = a.orders > 0 ? r2(a.revenue / a.orders) : null, avgB = b.orders > 0 ? r2(b.revenue / b.orders) : null;
+  const t = input.leaksNow.totals;
+  let margin: Kpi | null = null;
+  if (costs) {
+    const mA = grossMarginPct(input.menuNow), mB = grossMarginPct(input.menuPrev);
+    // the margin's change is in percentage POINTS (0.02 = up 2 points), not a change of a percentage
+    margin = { value: mA, prev: mB, change: mA === null || mB === null ? null : r4(mA - mB) };
+  }
+  const mixTotal = Object.values(mix).reduce((s, v) => s + v, 0);
+  return {
+    previous: prev, days,
+    kpis: {
+      revenue: kpi(r2(a.revenue), r2(b.revenue)), orders: kpi(a.orders, b.orders), avgBill: kpi(avgA, avgB), margin,
+      atRisk: kpi(risky(t), risky(input.leaksPrev.totals)),
+    },
+    atRiskParts: {
+      voids: r2(t.voidValue + t.itemVoidValue), refunds: t.refundValue, discounts: t.discountValue,
+      wastage: costs ? (t.wastageValue ?? 0) : null,
+    },
+    paymentMix: METHOD_GROUPS.map((g) => ({ ...g, amount: r2(mix[g.key]), share: mixTotal > 0 ? r4(mix[g.key] / mixTotal) : 0 }))
+      .filter((g) => g.amount > 0),
+    marginHidden: !costs, wastageHidden: !costs,
+  };
+}

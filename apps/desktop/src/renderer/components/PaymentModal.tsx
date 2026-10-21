@@ -1,11 +1,12 @@
 import MethodDot from './MethodDot';
 import { methodColour, methodSolid, methodTint } from '../../shared/paymentColours';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
 import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
 import { enabledFromSetting, paymentButtons } from '../../shared/paymentCatalogue';   // A429
 import type { AppliedOffer } from '../../shared/offers';   // A445
+import { posApi, type CreditCustomerView } from '../lib/posApi';   // A552
 
 // Payment modal — split tender + discount + tip.
 //
@@ -41,6 +42,8 @@ export interface PaymentResult {
   vatAmount: number;
   ctlAmount: number;
   legs: PaymentLeg[];
+  /** A552: a sale (partly) on account — the customer, and the approver's PIN when the seller does not hold customers.credit. */
+  credit?: { customerId: string; pin?: string };
 }
 
 interface Props {
@@ -67,6 +70,9 @@ interface Props {
   rider?: string | null;
   /** A445: the offers on this cart (applied by the cart, shared/offers.ts) — shown, and taken off before a manual discount. */
   offers?: AppliedOffer[];
+  /** A552: On account on this till — offered (the branch takes it and a credit customer is held), and whether the person
+   *  signed in approves it themselves (customers.credit) or needs a manager's PIN. Absent / not offered: no button. */
+  onAccount?: { offered: boolean; selfApproves: boolean } | null;
   onConfirm: (result: PaymentResult) => void;
   onClose: () => void;
 }
@@ -76,10 +82,12 @@ interface Props {
 // business's own methods (A96). Delivery apps (Glovo …) collect from the customer and settle later, so nothing enters
 // the drawer: cash reconciliation filters on method = 'cash' specifically, so no other method can inflate expected cash.
 
-export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers = [], onConfirm, onClose }: Props) {
+export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, allowDiscount = true, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers = [], onAccount = null, onConfirm, onClose }: Props) {
   const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);
+  // A552: On account only where this till offers it (a credit customer held; main/creditSale.ts decides again at the sale).
+  const methods = useMemo(() => buttons.filter((b) => b.code !== 'credit' || onAccount?.offered), [buttons, onAccount?.offered]);
   // The first leg starts on cash when the branch takes cash, else on its first method.
-  const firstMethod = buttons.some((b) => b.code === 'cash') ? 'cash' : (buttons[0]?.code ?? 'cash');
+  const firstMethod = methods.some((b) => b.code === 'cash') ? 'cash' : (methods.find((b) => b.code !== 'credit')?.code ?? methods[0]?.code ?? 'cash');
   // ── Adjustments ─────────────────────────────────────────
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
@@ -109,7 +117,36 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
     [legs, amountDue]
   );
 
-  const canConfirm = balanced && allPositive && !cashShort && !placing;
+  // ── A552: On account — the customer (this till's list), what they owe and have left, the approver's PIN ──
+  const creditIdx = legView.findIndex((l) => l.method === 'credit');
+  const creditAmount = creditIdx >= 0 ? legView[creditIdx].resolvedAmount : 0;
+  const [custSearch, setCustSearch] = useState('');
+  const [custList, setCustList] = useState<CreditCustomerView[]>([]);
+  const [customer, setCustomer] = useState<CreditCustomerView | null>(null);
+  const [creditPin, setCreditPin] = useState('');
+  useEffect(() => {
+    if (creditIdx < 0) return;
+    let live = true;
+    const t = setTimeout(() => {
+      posApi.order.creditCustomers(custSearch.trim()).then((r) => {
+        if (!live) return;
+        setCustList(r?.customers ?? []);
+        // the chosen customer's figures as they are now (a pull may have moved them)
+        setCustomer((c) => (c ? (r?.customers ?? []).find((x) => x.id === c.id) ?? c : c));
+      }).catch(() => { if (live) setCustList([]); });
+    }, 200);
+    return () => { live = false; clearTimeout(t); };
+  }, [custSearch, creditIdx]);
+  const needsPin = !onAccount?.selfApproves;
+  const creditProblem = creditIdx < 0 ? ''
+    : !customer ? 'Choose the customer this sale goes on account to.'
+    : customer.credit_limit <= 0 ? `${customer.name} has no credit limit.`
+    : creditAmount > customer.available + EPSILON ? `Over ${customer.name}'s credit limit.`
+    : needsPin && creditPin.trim().length < 4 ? "A manager's PIN approves a sale on account."
+    : '';
+  const creditOk = !creditProblem;
+
+  const canConfirm = balanced && allPositive && !cashShort && creditOk && !placing;
 
   const setLeg = (i: number, patch: Partial<DraftLeg>) =>
     setLegs(prev => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -123,8 +160,8 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
       }));
       // The next leg: a method the branch takes that no leg uses yet (M-Pesa after cash, as before), else the first.
       const used = new Set(pinned.map(l => l.method));
-      const order = ['cash', 'mpesa', ...buttons.map(b => b.code)];
-      const nextMethod: string = order.find(c => !used.has(c) && buttons.some(b => b.code === c)) ?? buttons[0]?.code ?? 'cash';
+      const order = ['cash', 'mpesa', ...methods.map(b => b.code)];
+      const nextMethod: string = order.find(c => !used.has(c) && methods.some(b => b.code === c)) ?? methods.find(b => b.code !== 'credit')?.code ?? 'cash';
       return [...pinned, { method: nextMethod, amount: '', tendered: '', reference: '' }];
     });
   };
@@ -135,6 +172,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
     setLocalError('');
     if (!balanced) { setLocalError(`Payments must add up to ${currency} ${amountDue.toLocaleString()}`); return; }
     if (cashShort) { setLocalError('Cash tendered is less than the cash amount due'); return; }
+    if (creditProblem) { setLocalError(creditProblem); return; }   // A552
     onConfirm({
       discountAmount,
       offerDiscount,
@@ -150,8 +188,10 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
         amount: l.resolvedAmount,
         amount_tendered: l.method === 'cash' ? l.resolvedTendered : l.resolvedAmount,
         change_given: l.method === 'cash' ? l.change : 0,
-        reference: l.method !== 'cash' ? (l.reference || null) : null,
+        reference: l.method !== 'cash' && l.method !== 'credit' ? (l.reference || null) : null,
       })),
+      // A552: the customer, and the approver's PIN when the seller does not approve it themselves (checked in main).
+      ...(creditIdx >= 0 && customer ? { credit: { customerId: customer.id, ...(needsPin ? { pin: creditPin.trim() } : {}) } } : {}),
     });
   };
 
@@ -261,9 +301,11 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
             <div key={i} className="bg-gray-800/40 border border-gray-800 rounded-xl p-3 space-y-3">
               <div className="flex items-center gap-2">
                 <div className="grid grid-cols-3 gap-1.5 flex-1">
-                  {buttons.map(b => ({ code: b.code, label: b.name, icon: b.icon })).map(m => (
+                  {methods.map(b => ({ code: b.code, label: b.name, icon: b.icon })).map(m => (
                     <button
                       key={m.code}
+                      // A552: one leg on account per sale (one customer)
+                      disabled={m.code === 'credit' && creditIdx >= 0 && creditIdx !== i}
                       onClick={() => setLeg(i, { method: m.code })}
                       aria-pressed={leg.method === m.code}
                       className={`py-2 rounded-lg text-xs border transition-colors ${leg.method === m.code ? 'font-bold' : 'font-medium bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'}`}
@@ -299,6 +341,8 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-action-500"
                     />
                   </div>
+                ) : leg.method === 'credit' ? (
+                  <div className="text-xs text-gray-300 self-end pb-2" data-testid="credit-leg-note">On the customer's account</div>
                 ) : (
                   <div>
                     <label className="block text-xs text-gray-300 mb-1">
@@ -313,6 +357,58 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                   </div>
                 )}
               </div>
+
+              {/* A552: On account — the customer (search by name or phone), what they owe and have left, the PIN */}
+              {leg.method === 'credit' && (
+                <div className="space-y-2" data-testid="credit-panel">
+                  {customer ? (
+                    <div className="bg-gray-800 rounded-lg px-3 py-2 text-sm space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-white font-semibold">{customer.name}{customer.phone ? <span className="text-gray-400 font-normal"> · {customer.phone}</span> : null}</span>
+                        <button onClick={() => setCustomer(null)} className="text-xs text-action-400 hover:text-action-300">Change</button>
+                      </div>
+                      <div className="flex justify-between text-gray-300"><span>Credit limit</span><span>{fmt(customer.credit_limit)}</span></div>
+                      <div className="flex justify-between text-gray-300"><span>Owed now</span><span>{fmt(customer.owed)}</span></div>
+                      <div className="flex justify-between font-semibold">
+                        <span className="text-gray-300">Left to use</span>
+                        <span className={customer.available + EPSILON >= creditAmount ? 'text-white' : 'text-red-400'}>{fmt(Math.max(0, customer.available))}</span>
+                      </div>
+                      {customer.pending > 0 && <p className="text-[11px] text-gray-400">Includes {fmt(customer.pending)} on account from this till not yet on the cloud.</p>}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <input
+                        type="text" value={custSearch} autoFocus
+                        onChange={e => setCustSearch(e.target.value)}
+                        placeholder="Customer name or phone"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
+                      />
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {custList.map(c => (
+                          <button key={c.id} onClick={() => setCustomer(c)} disabled={c.status !== 'active'}
+                            className="w-full flex justify-between items-center bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded-lg px-3 py-1.5 text-left text-sm">
+                            <span className="text-white">{c.name}{c.phone ? <span className="text-gray-400"> · {c.phone}</span> : null}</span>
+                            <span className={c.available > 0 ? 'text-gray-300 text-xs' : 'text-red-400 text-xs'}>{fmt(Math.max(0, c.available))} left</span>
+                          </button>
+                        ))}
+                        {custList.length === 0 && <p className="text-xs text-gray-400 px-1">No customer with a credit account matches.</p>}
+                      </div>
+                    </div>
+                  )}
+                  {needsPin && (
+                    <div>
+                      <label className="block text-xs text-gray-300 mb-1">Manager's PIN — approves this sale on account</label>
+                      <input
+                        type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={creditPin}
+                        onChange={e => setCreditPin(e.target.value.replace(/\D/g, ''))}
+                        placeholder="Manager PIN" data-testid="credit-pin"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500"
+                      />
+                    </div>
+                  )}
+                  {creditProblem && <p className="text-xs text-amber-400">{creditProblem}</p>}
+                </div>
+              )}
 
               {leg.method === 'cash' && leg.change > 0 && (
                 <div className="flex justify-between text-sm bg-gray-800 rounded-lg px-3 py-2">

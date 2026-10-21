@@ -967,7 +967,7 @@ export default function CashierScreen() {
           tableNumber: order.tableId ? order.tableName : undefined,
           comboItems, categories, kitchenExclusions,
           orderNote,   // A367
-          posFeatures,   // A543: kitchen_font_a — the kitchen ticket's font
+          posFeatures,   // A543/A551: kitchen_font_b — the kitchen ticket's font
           kinds: ['kitchen', 'dispatch'],   // A253: food + packing fire at send, not at pay
         }).catch(err => console.error('[KOT]', err));
       }
@@ -1047,7 +1047,7 @@ export default function CashierScreen() {
         orderType: order?.orderType ?? (order?.tableId ? 'dine_in' : 'retail'),
         cashierName: session?.staffName ?? 'Cashier', total: kitchenVoid.lines.reduce((s, l) => s + l.amount, 0),
         tableNumber: order?.tableId ? order.tableName : undefined, comboItems, categories, kitchenExclusions,
-        posFeatures,   // A543: kitchen_font_a — the VOID ticket in the kitchen's own font
+        posFeatures,   // A543/A551: kitchen_font_b — the VOID ticket in the kitchen's own font
         kinds: ['kitchen', 'dispatch'], voided: { by: r.approvedBy ?? '', reason: voidReasonLabel(v.reason) },
       }).catch(err => console.error('[KOT void]', err));
     }
@@ -2465,7 +2465,7 @@ export default function CashierScreen() {
                   ? openOrders[activeKey].tableName : undefined,
                 comboItems, categories, kitchenExclusions,
                 orderNote,   // A367
-                posFeatures,   // A543: kitchen_font_a — the kitchen ticket's font
+                posFeatures,   // A543/A551: kitchen_font_b — the kitchen ticket's font
                 kinds: ['kitchen', 'dispatch'],   // A253: pay-first has no send step
               }).catch(err => console.error('[KOT]', err));
             }

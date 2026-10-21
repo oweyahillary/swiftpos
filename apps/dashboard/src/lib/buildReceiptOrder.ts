@@ -14,7 +14,8 @@ import type { CartItem } from './cart';
 import type { Business, ComboComponent } from '../types';
 
 export type ReceiptOrderType = 'takeaway' | 'dine_in' | 'delivery' | 'counter';
-export interface ReceiptOrderUnit { name: string; quantity: number; portions: number; priceDelta: number; chosen: boolean; stationIds: []; attributes: [] }
+export interface ReceiptUnitAttribute { group: string; option: string; count: number; priceDelta: number }
+export interface ReceiptOrderUnit { name: string; quantity: number; portions: number; priceDelta: number; chosen: boolean; stationIds: []; attributes: ReceiptUnitAttribute[] }
 export interface ReceiptOrderLine { name: string; quantity: number; unitPrice: number; lineTotal: number; units: ReceiptOrderUnit[]; stationIds: []; note?: string }
 export interface ReceiptPaymentLeg { label: string; amount: number }
 export interface ReceiptOrder {
@@ -57,8 +58,8 @@ export interface ReceiptBusinessConfig {
   /** A530/A538: the admin portal's receipt switches (pos/init posFeatures); all false = the standard (classic layout at
    *  ~3.75 mm, small logo, 1-line feed). */
   receiptClassic?: { spacing: boolean; fullLogo: boolean; compactLayout: boolean; extraFeed: boolean };
-  /** A543: the admin portal's 'kitchen_font_a' — kitchen tickets in Font A as before; false = Font B (the standard). */
-  kitchenFontA?: boolean;
+  /** A551: the admin portal's 'kitchen_font_b' — kitchen tickets in Font B (A543); false = Font A (the standard). */
+  kitchenFontB?: boolean;
 }
 
 const toCents = (n: number) => Math.round((Number(n) || 0) * 100);
@@ -98,27 +99,29 @@ export function buildReceiptOrder(a: {
     soldAt:      new Date().toISOString(),
     tableNumber: a.tableNumber,
     lines: a.cart.map(c => {
-      // Sub-items: combo components (from comboItems) first, then variants and
-      // modifiers. Each becomes a named unit so kitchen/dispatch tickets list what
-      // is in the item; the receipt shows them too. priceDelta stays 0 (names only)
-      // — the line's lineTotal already carries the full price, so totals reconcile
-      // exactly. Components carry is_kitchen/category_id for later routing (A248).
+      // Sub-items: combo components (from comboItems) first, then modifiers. Each becomes a named unit so kitchen/dispatch
+      // tickets list what is in the item; the receipt shows them too. priceDelta stays 0 (names only) — the line's
+      // lineTotal already carries the full price, so totals reconcile exactly. Components carry is_kitchen/category_id for
+      // later routing (A248).
+      // A551 (owner, 2026-10-21: "why not write `Chicken burger - Spicy` we avoid 2 lines of the same item"): the variants
+      // as shared/printing's toUnits (routing.ts) gives them on the till — the options as the first component's
+      // attributes, or, for a product without components, one unit of the product itself carrying them, which the renderer
+      // prints on the item's own row ("Chicken Burger - Spicy"). Was one "Group: Option" unit per variant.
+      const name = c.product?.name ?? 'Item';
       const combo = a.comboItems?.[c.product?.id ?? ''] ?? [];
-      const units = [
-        ...combo.map(k => ({
-          name: k.name, quantity: k.quantity, portions: 1, priceDelta: 0, chosen: false,
-          stationIds: [] as [], attributes: [] as [],
-        })),
-        ...(c.selectedVariants ?? []).map(v => ({
-          name: v.groupName ? `${v.groupName}: ${v.optionName}` : v.optionName,
-          quantity: 1, portions: 1, priceDelta: 0, chosen: false, stationIds: [] as [], attributes: [] as [],
-        })),
-        ...(c.selectedModifiers ?? []).map(m => ({
-          name: m.optionName, quantity: 1, portions: 1, priceDelta: 0, chosen: false, stationIds: [] as [], attributes: [] as [],
-        })),
-      ];
+      const units: ReceiptOrderUnit[] = combo.map(k => ({
+        name: k.name, quantity: k.quantity, portions: 1, priceDelta: 0, chosen: false,
+        stationIds: [] as [], attributes: [],
+      }));
+      const attrs: ReceiptUnitAttribute[] = (c.selectedVariants ?? []).filter(v => v.optionName)
+        .map(v => ({ group: v.groupName ?? '', option: v.optionName, count: 1, priceDelta: 0 }));
+      if (attrs.length && units.length) { units[0].attributes = attrs; units[0].chosen = true; }
+      else if (attrs.length) units.push({ name, quantity: 1, portions: 1, priceDelta: 0, chosen: true, stationIds: [] as [], attributes: attrs });
+      for (const m of c.selectedModifiers ?? []) {
+        units.push({ name: m.optionName, quantity: 1, portions: 1, priceDelta: 0, chosen: false, stationIds: [] as [], attributes: [] });
+      }
       return {
-        name:      c.product?.name ?? 'Item',
+        name,
         quantity:  c.quantity,
         unitPrice: toCents(c.unitPrice),
         lineTotal: toCents(c.lineTotal),
@@ -138,6 +141,26 @@ export function buildReceiptOrder(a: {
     kotCount:    0,
     note:        a.orderNote || undefined,   // A367
   };
+}
+
+/**
+ * A551: the item's name with its variants on one line — "Chicken Burger - Spicy" — as shared/printing's nameWithVariant
+ * prints it on the thermal receipt (layout.ts; written out here so this file stays a pure mapper — the web receipt test
+ * pins the two to the same answer). An option that starts with the product's name loses that repeat ("Chicken Burger
+ * Spicy" -> "Spicy"); one that does not ("Large") is kept; an option that only repeats the name adds nothing.
+ */
+export function nameWithVariants(product: string, options: string[]): string {
+  const name = product.trim();
+  const strip = (o: string) => {
+    const v = o.trim();
+    if (name && v.slice(0, name.length).toLowerCase() === name.toLowerCase() && !/[A-Za-z0-9]/.test(v.charAt(name.length))) {
+      return v.slice(name.length).replace(/^[\s\-:,/|]+/, '').trim();
+    }
+    return v;
+  };
+  const seen = new Set<string>();
+  const parts = options.map(strip).filter(o => !!o && !seen.has(o.toLowerCase()) && !!seen.add(o.toLowerCase()));
+  return parts.length ? `${name} - ${parts.join(', ')}` : name;
 }
 
 /** A530: the receipt_* switches as shared/printing takes them — posFeatures.ts receiptClassicFrom, written out here so
@@ -163,9 +186,9 @@ export function buildReceiptBusinessConfig(
 ): ReceiptBusinessConfig {
   return {
     receiptClassic:  receiptClassic(extra.posFeatures),   // A530
-    // A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay"): posFeatures.kitchenFontAFrom,
-    // written out for the same reason as receiptClassic — only a real `true` keeps the kitchen ticket in Font A.
-    kitchenFontA:    extra.posFeatures?.kitchen_font_a === true,
+    // A551 (owner, 2026-10-21: "kitchen receipt use the same font as the despatcher"): posFeatures.kitchenFontBFrom,
+    // written out for the same reason as receiptClassic — only a real `true` puts the kitchen ticket in Font B.
+    kitchenFontB:    extra.posFeatures?.kitchen_font_b === true,
     logoRaster:      extra.logoRaster ?? undefined,
     name:            b.name,
     branchName:      extra.branchName || undefined,

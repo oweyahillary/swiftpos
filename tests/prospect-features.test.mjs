@@ -48,7 +48,7 @@ await ok('the switches, all off unless set; the standard ones always on (0.6.29;
   // 0.6.28 added the last two; 0.6.29 made blind_shift_close and confirm_shows_cashier_figures standard (not switches).
   // A461: kitchen_void_approval became standard (always on); pay_later_tabs (eat now, pay later) is a new switch, off.
   assert.deepEqual(F.POS_FEATURE_KEYS, ['delivery_fee', 'cashier_own_history', 'cashier_no_reprint', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'cashier_no_money_out',
-    'receipt_compact_layout', 'receipt_classic_spacing', 'receipt_full_logo', 'receipt_extra_feed', 'kitchen_font_a']);   // A543: kitchen_font_a
+    'receipt_compact_layout', 'receipt_classic_spacing', 'receipt_full_logo', 'receipt_extra_feed', 'kitchen_font_b']);   // A543: kitchen_font_a; A551: kitchen_font_b (Font B opt-in)
   // A398: login_codes; A453: cashier_no_money_out; A530: the receipt switches; A538: receipt_compact_layout replaces receipt_classic_layout
   // A538: a stale receipt_classic_layout row (on for some clients in production) is an unknown key — dropped.
   assert.ok(!('receipt_classic_layout' in F.parsePosFeatures([{ key: 'receipt_classic_layout', enabled: true }])));

@@ -15,7 +15,7 @@ import { cacheStaffCredential, verifyPinOffline } from '../pinCache';
 import { assertPinAllowed, recordPinFailure } from '../pinAttempts';
 import path from 'path';   // A516
 import { configureStaffSession, syncAll, syncPush, refreshAccessToken, refreshStaffToken, pullWebSales } from '../syncEngine';
-import { receiptClassicFrom, kitchenFontAFrom } from '../posFeatures';
+import { receiptClassicFrom, kitchenFontBFrom } from '../posFeatures';
 import { signedIn as sessionPerson, signedInCan, personCan, roleCeilingRefusal, mayActOn, type PersonLike } from '../tillAccess';
 import { getCloudUrl, getDeviceConfig, getPosFeatures } from '../deviceConfig';
 import { localShiftIds, type ForeignCash } from '../shiftService';
@@ -290,6 +290,10 @@ export function createIpcShared(handle: IpcHandle) {
           note:           payload.notes ?? null,   // A367: the order's note, on the kitchen ticket and the receipt
           cart:           payload.items ?? [],
           payments:       payload.payments ?? [],
+          // A552: a sale on account — the customer and what they owe after it (prepareCreditSale set it).
+          account:        payload.on_account && typeof payload.on_account === 'object'
+            ? { customer: String(payload.on_account.customer ?? ''), balanceOwed: Number(payload.on_account.balance_owed) }
+            : undefined,
           changeGiven:    Number(payload.change_given ?? 0),
           total:          Number(payload.total ?? 0),
           // A349: the BILL is after the discount and excludes the tip; the receipt needs both to reconcile and print.
@@ -335,9 +339,9 @@ export function createIpcShared(handle: IpcHandle) {
           // A530: the admin portal's receipt switches for this client (pos/init, cached) — all off = the standard
           // (A538: the classic layout at ~3.75 mm, small logo, 1-line feed; receipt_compact_layout opts in to compact).
           receiptClassic:  receiptClassicFrom(getPosFeatures()),
-          // A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay"): kitchen tickets in Font B
-          // unless the admin portal's 'kitchen_font_a' is on for this client. Dispatch and receipts are Font A either way.
-          kitchenFontA:    kitchenFontAFrom(getPosFeatures()),
+          // A551 (owner, 2026-10-21: "kitchen receipt use the same font as the despatcher"): kitchen tickets in Font A
+          // unless the admin portal's 'kitchen_font_b' is on for this client (A543's Font B). Dispatch and receipts: Font A.
+          kitchenFontB:    kitchenFontBFrom(getPosFeatures()),
         },
         // The presets shared/printing exports, NOT a hand-rolled config here.
         // They are what the verified sample output was rendered from, so a

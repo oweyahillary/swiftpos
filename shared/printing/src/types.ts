@@ -154,10 +154,11 @@ export interface BusinessConfig {
    *  switch false = the standard (classic layout, ~3.75 mm, small logo, 1-line feed); spacing + fullLogo + extraFeed true
    *  with compactLayout false = the receipt as it printed before 1.0.20, byte for byte. */
   receiptClassic?: ReceiptClassic;
-  /** A543: 'kitchen_font_a' (admin portal, per client) — kitchen tickets in the printer's normal Font A, laid out and
-   *  printed byte for byte as before 1.0.20. Absent / false = the standard: kitchen tickets in Font B (owner, 2026-10-21:
-   *  "change the font of the kitchen printer, packing is okay"). Dispatch tickets and receipts are Font A either way. */
-  kitchenFontA?: boolean;
+  /** A551: 'kitchen_font_b' (admin portal, per client) — kitchen tickets in the printer's smaller Font B (64 / 42 a line,
+   *  A543's layout). Absent / false = the standard: kitchen tickets in Font A, the dispatch ticket's font (owner,
+   *  2026-10-21, on paper: "kitchen receipt use the same font as the despatcher"). A543's `kitchenFontA` (Font A when
+   *  Font B was the standard) is not read any more. Dispatch tickets and receipts are Font A either way. */
+  kitchenFontB?: boolean;
 }
 
 /**

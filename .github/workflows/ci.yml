@@ -357,6 +357,16 @@ jobs:
           node --no-warnings tests/analytics-rules-a549.test.mjs
           node --no-warnings scripts/test-migration-158.mjs
 
+      # A553 — Analytics v2: GET /api/analytics/overview over HTTP (the daily series against the previous period, the
+      # KPIs, the payment mix, costs withheld, branch scope, the cache) on the REAL migration-158/160 functions in PGlite,
+      # the pure transforms (the server's rules and the page's chart maths and palette, read as TypeScript), and
+      # migration 160 on its own. Needs the server build and the root install (PGlite) above.
+      - name: Analytics v2 (A553) overview, chart transforms and migration 160
+        run: |
+          node --no-warnings tests/analytics-a553.test.mjs
+          node --no-warnings tests/analytics-rules-a553.test.mjs
+          node --no-warnings scripts/test-migration-160.mjs
+
       # A550: partner login — someone on the staff the owner lets into the web dashboard with a password, never the owner
       # (the real auth / staff routers over HTTP) — and the five built-in roles that came with it. They run in the loop
       # below too; named here so a failure says what broke.
@@ -821,6 +831,13 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/credit-confirm-a545.test.mjs
 
+      # A552 — sales on account at the till: offered only with a credit customer, the customer required, the limit, the
+      # approver (customers.credit, or a manager's PIN of this branch, never the asker), saved offline with the balance
+      # moved, pushed naming who approved; the branch server's copy for its tills; the receipt; day close not counting it as cash.
+      - name: Desktop sales on account (A552)
+        working-directory: apps/desktop
+        run: node --no-warnings test/credit-sale-a552.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)
@@ -1155,7 +1172,7 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/branch-drawers-a535.test.mjs
 
-      # A537 — the categories in a collapsible left panel (collapsed at start, a pin remembered on the till) and menus
+      # A537 — the categories in a collapsible left panel (collapsed at start — A554: always, the pin is the session's) and menus
       # (Food, Soft drinks, Alcohol, Tea …) above them: local schema 73; the whole pull and a change store the menus and
       # each category's menu (an older cloud leaves them); the branch server relays them; the shared panel helper (no
       # menus → the plain list; a menu → its categories and products; Other); the sale screen and Manager › Menu wiring.
@@ -1191,6 +1208,17 @@ jobs:
         env:
           TZ: UTC
         run: node --no-warnings test/update-open-a546.test.mjs
+
+      # A554 — fixes from the first pulled till log (B Foods' branch server) and the owner's test: the push channel takes a
+      # renewed token on the open socket (or reconnects itself, never a 1006) and keeps itself alive (ping every 25 s, a
+      # silent socket replaced at once); a branch server never asks "the branch server" about updates; one ZapTill (a launch
+      # without the lock ends, the relaunch after an update waits for it; the server waits for 4100); a wrong PIN is not
+      # logged as an error; the categories panel starts collapsed at every start (the pin is never stored).
+      - name: Desktop fixes from the first pulled log (A554)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/a554-log-fixes.test.mjs
 
       # A496 — branch-server access hardening: device keys (no self-enrolment), relayed changes, routes that need a
       # proven till, joins, the gateway's path check, the roster, TLS pins.

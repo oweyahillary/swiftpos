@@ -387,6 +387,12 @@ export interface WasteRecordingView {
   client_id: string; reason: string; note: string; recorded_by_name: string; recorded_at: string;
   items: Array<{ kind: string; id: string; name: string; quantity: number }>;
 }
+/** A552: a customer this till may sell to on account (main/creditSale.ts) — owed = the cloud's balance + this till's sales
+ *  on account the cloud had not taken; available = the limit less that. */
+export interface CreditCustomerView {
+  id: string; name: string; phone: string | null; status: string;
+  credit_limit: number; cloud_balance: number; pending: number; owed: number; available: number;
+}
 /** A545: a sale on account and its manager's confirmation (main/creditConfirm.ts). */
 export interface CreditSaleView {
   order_id: string; order_number: string | null; branch_id: string | null; branch_name: string | null;
@@ -540,6 +546,8 @@ declare global {
         /** A444: an order's items, sizes, extras, notes and payments; `canReprint` = this person may reprint it. */
         detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('../../shared/orderDetail').OrderDetail; canReprint?: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
+        /** A552: On account — offered on this till?, may the person signed in approve it themselves (no PIN)?, the customers. */
+        creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;
       };
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;

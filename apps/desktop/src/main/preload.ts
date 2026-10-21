@@ -93,6 +93,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     detail: (orderId: string) => ipcRenderer.invoke('order:detail', orderId),
     refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) =>
               ipcRenderer.invoke('order:refund', { orderId, reason, override_pin, authorizer_id }),
+    // A552: On account — offered here?, may the person approve it themselves, the customers matching a name or phone.
+    creditCustomers: (search?: string) => ipcRenderer.invoke('credit:customers', { search }),
   },
 
   sync: {

@@ -174,11 +174,13 @@ try {
   // ── 6 ──
   ok('collapsed by default: nothing stored → not pinned, All menus, the panel closed at start and after a pick',
     M.parsePanelPrefs(null).pinned === false && M.parsePanelPrefs(undefined).menu === 'all'
-    && M.panelStartsOpen(M.parsePanelPrefs(null)) === false && M.panelOpenAfterPick(M.DEFAULT_PANEL_PREFS) === false);
+    && M.panelStartsOpen() === false && M.panelOpenAfterPick(M.DEFAULT_PANEL_PREFS) === false);
   const stored = M.panelPrefsText({ pinned: true, menu: 'drinks' });
-  ok('pinned: remembered (text round trip), open at start and stays open after a pick',
-    M.parsePanelPrefs(stored).pinned === true && M.parsePanelPrefs(stored).menu === 'drinks'
-    && M.panelStartsOpen(M.parsePanelPrefs(stored)) && M.panelOpenAfterPick(M.parsePanelPrefs(stored)));
+  // A554: the pin is this session's only — never stored, a stored one (an older build) not honoured; the menu is kept.
+  ok('A554: the menu is remembered (text round trip) but never the pin — the panel starts collapsed even after a pin',
+    M.parsePanelPrefs(stored).pinned === false && M.parsePanelPrefs(stored).menu === 'drinks' && !/pinned/.test(stored)
+    && M.parsePanelPrefs('{"pinned":true,"menu":"tea"}').pinned === false && M.panelStartsOpen() === false
+    && M.panelOpenAfterPick({ pinned: true, menu: 'all' }) === true);
   ok('junk in storage is the default (bad JSON, a string "true", a long menu id)',
     M.parsePanelPrefs('{oops').pinned === false && M.parsePanelPrefs('{"pinned":"true"}').pinned === false
     && M.parsePanelPrefs(JSON.stringify({ pinned: 1, menu: 'x'.repeat(200) })).menu === 'all');
@@ -186,8 +188,8 @@ try {
   // ── 7 ──
   const panel = src('renderer/components/CategoryPanel.tsx');
   const pos = src('renderer/pages/POSPage.tsx');
-  ok('the panel starts collapsed (open only when pinned) and remembers on this till — every storage access in try/catch',
-    /useState<boolean>\(\(\) => panelStartsOpen\(readPrefs\(\)\)\)/.test(panel)
+  ok('the panel starts collapsed (A554: at every start, pinned or not) and remembers the menu on this till — every storage access in try/catch',
+    /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/.test(panel)
     && /try \{ return parsePanelPrefs\(window\.localStorage\.getItem\(PANEL_PREFS_KEY\)\); \} catch/.test(panel)
     && /try \{ window\.localStorage\.setItem\(PANEL_PREFS_KEY, panelPrefsText\(p\)\); \} catch/.test(panel)
     && /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/.test(panel));

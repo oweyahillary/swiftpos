@@ -52,7 +52,9 @@ export const longOrder: Order = {
  * Paper a production ticket uses, in mm, at 203 dpi (8 dots/mm) — the method sample.ts uses for the receipt:
  *   a normal line advances the document's line spacing (ESC 3 n), else ESC 2 = 1/6" (~33.8 dots, 4.23 mm);
  *   a double-height line advances its glyph — 48 dots in Font A, 34 in Font B (at ESC 2, escpos.ts);
- *   the feed before the cut is that many lines at 1/6" (the spacing is back to the default by then).
+ *   a thin gap (A551, between two items) advances its dots;
+ *   the feed before the cut is that many lines at 1/6" (the spacing is back to the default by then) — the document's
+ *   cutFeed when it has one (A551: 1 on a kitchen or dispatch ticket; every caller here cuts).
  */
 export function productionPaperMm(doc: Document, feedBeforeCut: number): number {
   const DOT = 25.4 / 203;
@@ -61,6 +63,8 @@ export function productionPaperMm(doc: Document, feedBeforeCut: number): number 
   for (const b of doc.blocks) {
     if (b.kind === 'text') mm += (b.size === 'tall' || b.size === 'large' ? tallDots : (doc.lineSpacing ?? 34)) * DOT;
     else if (b.kind === 'feed') mm += b.lines * 34 * DOT;
+    else if (b.kind === 'gap') mm += b.dots * DOT;   // A551: the thin gap between two items
   }
-  return mm + feedBeforeCut * (25.4 / 6);
+  // A551: a cutting printer feeds the document's cutFeed (1) when it has one, as escpos.ts does.
+  return mm + (doc.cutFeed ?? feedBeforeCut) * (25.4 / 6);
 }

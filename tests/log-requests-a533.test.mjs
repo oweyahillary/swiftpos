@@ -337,6 +337,62 @@ try {
     assert.equal(LR.rangeOf('72'), 72); assert.equal(LR.rangeOf(0), null); assert.equal(LR.rangeOf(undefined), 24);
     assert.equal(LR.cleanReason('a'.repeat(400)).length, LR.REASON_MAX);
   });
+
+  // A554 (the owner's screenshot, 2026-10-21): the warning showed twice (orange, then green), and appeared for a test
+  // build labelled 1.0.19 that then delivered the log — the version alone decided. Now what the device says (its update
+  // state's log_pull, A534's report) or did (a pull answered) decides first; the words say "may wait".
+  console.log('\nA554. Whether a device answers a pull: what it says, not its version alone\n');
+  const devOf = (r, id) => r.body.devices.find((d) => d.device_id === id);
+  await ok('A554: a device reporting log_pull in its update state answers — whatever its version (no note, on the list and on a request)', async () => {
+    reset();
+    mem.db.user_devices.find((d) => d.device_id === 'dev-T2').update_state = { state: 'idle', running: '1.0.5', log_pull: true };
+    const r = await call('GET', base, T.agent);
+    assert.equal(devOf(r, 'dev-T2').can_answer, true); assert.equal(devOf(r, 'dev-T2').note, null);
+    const a = await ask(T.agent, { device_id: 'dev-T2' });
+    assert.equal(a.status, 201); assert.equal(a.body.note, null);
+    const l = await call('GET', base, T.agent);
+    assert.equal(l.body.requests[0].note, null);
+  });
+  await ok('A554: a device that answered a pull before answers (no note)', async () => {
+    reset();
+    mk({ device_id: 'dev-T2', status: 'delivered', delivered_at: new Date().toISOString() });
+    const r = await call('GET', base, T.agent);
+    assert.equal(devOf(r, 'dev-T2').can_answer, true); assert.equal(devOf(r, 'dev-T2').note, null);
+    assert.equal((await ask(T.agent, { device_id: 'dev-T2' })).body.note, null);
+  });
+  await ok('A554: nothing known but an old version → noted, and softened ("may wait until it updates")', async () => {
+    reset();
+    const r = await call('GET', base, T.agent);
+    assert.equal(devOf(r, 'dev-T2').can_answer, false);
+    assert.match(devOf(r, 'dev-T2').note, /may wait until it updates/);
+    assert.doesNotMatch(devOf(r, 'dev-T2').note, /The request waits until/);
+    assert.equal(LR.canAnswerPull('1.0.19'), false); assert.equal(LR.canAnswerPull('1.0.19', { reportsLogPull: true }), true);
+    assert.equal(LR.canAnswerPull('1.0.19', { answeredBefore: true }), true); assert.equal(LR.canAnswerPull('1.0.20'), true);
+  });
+  await ok('A554: the till\'s report carries log_pull and the cloud keeps it (cleanUpdateState); junk is false', async () => {
+    const US = require(path.join(DIST, 'lib/updateState.js'));
+    assert.equal(US.cleanUpdateState({ state: 'idle', log_pull: true }).log_pull, true);
+    assert.equal(US.cleanUpdateState({ state: 'idle', log_pull: 'yes' }).log_pull, false);
+    assert.equal(US.cleanUpdateState({ state: 'idle' }).log_pull, false);
+    const rep = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/updateReport.ts'), 'utf8');
+    assert.match(rep, /startup_failed: !!s\.startupFailed[^\n]*\n\s*log_pull: true,/);
+  });
+  await ok('A554: the admin card shows ONE warning in the warning colour (the device\'s note or the request\'s), the green notice only when it is not one', async () => {
+    const card = fs.readFileSync(path.join(ROOT, 'apps/admin/src/PullLogsCard.tsx'), 'utf8');
+    assert.match(card, /const warning = notice\?\.warn \? notice\.text : chosen && !chosen\.can_answer && chosen\.note \? chosen\.note : null;/);
+    assert.match(card, /\{warning && <div style=\{\{ fontSize: 12, color: WARN, marginTop: 8 \}\} data-testid="pull-warning">\{warning\}<\/div>\}/);
+    assert.match(card, /\{notice && !notice\.warn && <div style=\{\{ fontSize: 12, color: C\.green/);
+    assert.match(card, /setNotice\(d\?\.note \? \{ text: d\.note, warn: true \}/);
+    assert.doesNotMatch(card, /chosen\.note && <div/, 'the device note is not rendered on its own as well');
+    assert.equal((card.match(/data-testid="pull-warning"/g) || []).length, 1);
+  });
+  await ok('A554: the device list shows the whole version — straight after the name, in a wider list', async () => {
+    const card = fs.readFileSync(path.join(ROOT, 'apps/admin/src/PullLogsCard.tsx'), 'utf8');
+    assert.match(card, /return `\$\{d\.label\}\$\{code\} · \$\{d\.app_version \? `v\$\{d\.app_version\}` : "version \?"\} · \$\{roleLabel\(d\.role\)\}/);
+    assert.match(card, /data-testid="pull-device">/);
+    assert.match(card, /flex: "1 1 380px", minWidth: 240, maxWidth: "100%"/);
+    assert.doesNotMatch(card, /maxWidth: 320/);
+  });
 } finally {
   server.close();
 }

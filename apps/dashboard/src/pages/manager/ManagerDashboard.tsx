@@ -9,7 +9,7 @@
  */
 
 import { OffersManager } from '../OffersPage';   // A445
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback, Fragment, lazy, Suspense } from 'react';
 import { useNavigate }    from 'react-router-dom';
 import { usePOSAuth }     from '../../context/POSAuthContext';
 import { useBusiness }    from '../../context/BusinessContext';
@@ -21,7 +21,6 @@ import POSCustomersTab    from '../pos/POSCustomersTab';
 import StaffTab           from '../settings/StaffTab';
 import PrintersPage       from '../settings/PrintersPage';
 import ManagerReportsPage, { MANAGER_REPORT_KEYS, tabsForBusiness } from './ManagerReportsPage';
-import { Analytics } from '../analytics/AnalyticsPage';   // A549
 import ManagerReceivingTab from './ManagerReceivingTab';
 import ManagerHistoryTab   from './ManagerHistoryTab';
 import ManagerShiftTab from './ManagerShiftTab';
@@ -41,6 +40,8 @@ import { money, compactMoney, litres, dateShort } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
 import { hasAnyPermission } from '../../lib/permissions';   // A490
+// A549 · A553: the Analytics tab loads its own chunk (and the chart library) only when it is opened
+const Analytics = lazy(() => import('../analytics/AnalyticsPage').then((m) => ({ default: m.Analytics })));
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
 function Icon({ d, size = 18, className = '' }: { d: string; size?: number; className?: string }) {
@@ -1409,7 +1410,7 @@ export default function ManagerDashboard() {
         if (session.businessType === 'parking')         return <ParkingOverviewTab />;
         return <OverviewTab />;
       case 'reports':   return <ManagerReportsPage />;
-      case 'analytics': return <Analytics client={posApi} ownerView={false} currency={currency} branchName={session.branchName} />;   // A549
+      case 'analytics': return <Suspense fallback={<p className="p-6 text-sm text-gray-500">Loading…</p>}><Analytics client={posApi} ownerView={false} currency={currency} branchName={session.branchName} /></Suspense>;   // A549 · A553
       case 'orders':    return <POSOrderHistoryTab currency={currency} />;
       case 'inventory': return <POSInventoryTab />;
       case 'receiving': return <ManagerReceivingTab currency={currency} />;

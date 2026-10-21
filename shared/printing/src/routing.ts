@@ -37,7 +37,8 @@ export interface RoutableLine {
     description?: string | null;
   };
   selectedVariants?: Array<{ groupName?: string; optionName?: string }>;
-  selectedModifiers?: Array<{ name?: string; price?: number }>;
+  // The web sends { name }, the till's VariantModal { optionName } — A555: both are read, or a till's extras never printed.
+  selectedModifiers?: Array<{ name?: string; optionName?: string; price?: number }>;
   comboComponents?: Array<{
     name: string;
     quantity: number;
@@ -225,10 +226,11 @@ export function toUnits(
   }
 
   for (const m of line.selectedModifiers ?? []) {
-    if (!m.name) continue;
+    const modName = (m.name ?? m.optionName ?? '').trim();
+    if (!modName) continue;
     units.push({
-      productId:  m.name,
-      name:       m.name,
+      productId:  modName,
+      name:       modName,
       quantity:   1,
       portions:   1,
       priceDelta: toCents(m.price ?? 0),

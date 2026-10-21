@@ -1,21 +1,34 @@
 /**
- * AnalyticsPage.tsx — A549: Analytics v1 (premium). Menu engineering, a sales heatmap, money leaks and credit ageing for
- * a period, with rule-based insights at the top. The cloud works every figure out in SQL and keeps it a few minutes
- * (routes/analytics.ts); this page asks once per tab and period and NEVER polls.
+ * AnalyticsPage.tsx — A549: Analytics v1 (premium); A553: Analytics v2 — the same figures, drawn. A KPI row (sales, orders,
+ * average bill, gross margin, money at risk — each against the previous period of the same length, with a sparkline), the
+ * daily sales trend against the previous period, the payment mix, insight cards by severity, and four tabs: menu
+ * engineering (the tinted quadrant scatter, bubbles sized by revenue, the top 10 by revenue), busy times (the heatmap on a
+ * one-hue ramp, sales by hour and by weekday), money leaks (a stacked bar per cashier, the split of leak types) and credit
+ * ageing (the buckets green → red, the top debtors). The tables stay below the charts.
+ *
+ * The cloud works every figure out in SQL and keeps it a few minutes (routes/analytics.ts); this page asks once per tab
+ * and period (the overview and the insights once per period) and NEVER polls.
  *
  * Owner (/dashboard/analytics): every branch, or one, from the branch filter (the dashboard's own branch selection).
  * Manager portal (Analytics tab, reports.sales): their own branch — no filter; the cloud holds them to it anyway.
  * Off for the business (the admin portal's 'analytics' switch): the cloud answers ANALYTICS_OFF and the page shows the
- * premium panel instead. Colours: the fixed SwiftPOS teal (swift-*) and status colours only — never raw green or blue
- * (check-back-office-colour); light and dark through the usual gray classes.
+ * premium panel instead. Without costs (A490) no margin, class or wastage value is sent, so none is drawn.
+ * Colours: the back office's actions stay the SwiftPOS teal (swift-*); every chart colour comes from chartPalette.ts for the
+ * dashboard's mode (light / dark), and text stays in the usual gray classes.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
+import { useTheme } from '../../context/ThemeContext';
 import { localDateStr } from '../../lib/localDate';
 import { DESK } from '../../components/RowMore';
 import * as fmt from '../../lib/format';
+import { chartPalette, CLASS_ORDER, CLASS_SHAPE, type ChartPalette, type PayKey } from './chartPalette';
+import {
+  ChartCard, Legend, KpiTile, RevenueTrend, Donut, MenuScatter, TopItemsBar, Heatmap, HourColumns, WeekdayBars, LeakStack,
+  AgeingBar, TopDebtors, classLegend, leakLegend,
+} from './charts';
 
 // ── Types (the cloud's answers) ───────────────────────────────────────────────
 
@@ -56,12 +69,21 @@ interface CreditAnswer {
   totals: { customers: number; owed: number; d0_30: number; d31_60: number; d61_90: number; d90_plus: number; disputedCount: number; disputedAmount: number };
 }
 interface Insight { id: string; type: 'menu' | 'timing' | 'leaks' | 'credit'; severity: 'high' | 'medium' | 'low'; text: string }
+interface Kpi { value: number | null; prev: number | null; change: number | null }
+interface OverviewAnswer {
+  period: { from: string; to: string }; previous: { from: string; to: string };
+  days: { day: string; revenue: number; orders: number; avgBill: number | null; atRisk: number; prevDay: string; prevRevenue: number; prevOrders: number }[];
+  kpis: { revenue: Kpi; orders: Kpi; avgBill: Kpi; margin: Kpi | null; atRisk: Kpi };
+  atRiskParts: { voids: number; refunds: number; discounts: number; wastage: number | null };
+  paymentMix: { key: PayKey; label: string; amount: number; share: number }[];
+  marginHidden: boolean; wastageHidden: boolean;
+}
 
 export interface AnalyticsClient { get: <T>(path: string) => Promise<T> }
 type Tab = 'menu' | 'heatmap' | 'leaks' | 'credit';
 const TABS: { key: Tab; label: string; path: string }[] = [
   { key: 'menu', label: 'Menu engineering', path: '/api/analytics/menu-engineering' },
-  { key: 'heatmap', label: 'Sales heatmap', path: '/api/analytics/heatmap' },
+  { key: 'heatmap', label: 'Busy times', path: '/api/analytics/heatmap' },
   { key: 'leaks', label: 'Money leaks', path: '/api/analytics/money-leaks' },
   { key: 'credit', label: 'Credit ageing', path: '/api/analytics/credit-ageing' },
 ];
@@ -86,21 +108,14 @@ const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00
 
 // ── Small pieces ──────────────────────────────────────────────────────────────
 
-const CLASS_META: Record<MenuClass, { label: string; text: string; fill: string; hint: string }> = {
-  star:      { label: 'Star',      text: 'text-swift-text',  fill: 'fill-swift',       hint: 'Popular and profitable — keep it prominent.' },
-  plowhorse: { label: 'Plowhorse', text: 'text-amber-400',   fill: 'fill-amber-500',   hint: 'Popular, low margin — a small price rise or a cheaper recipe.' },
-  puzzle:    { label: 'Puzzle',    text: 'text-purple-400',  fill: 'fill-purple-500',  hint: 'Profitable but slow — feature it, have staff suggest it.' },
-  dog:       { label: 'Dog',       text: 'text-red-400',     fill: 'fill-red-500',     hint: 'Slow and low margin — rework it or take it off.' },
-  no_cost:   { label: 'No cost set', text: 'text-gray-500',  fill: 'fill-gray-500',    hint: 'Set a cost price or a recipe to see its margin.' },
-};
-const SEVERITY_STYLE: Record<Insight['severity'], string> = {
-  high: 'border-red-500/40 bg-red-500/10 text-red-400',
-  medium: 'border-amber-500/40 bg-amber-500/10 text-amber-400',
-  low: 'border-gray-700 bg-gray-800/60 text-gray-300',
+const CLASS_META: Record<MenuClass, { label: string; hint: string }> = {
+  star:      { label: 'Star',        hint: 'Popular and profitable — keep it prominent.' },
+  plowhorse: { label: 'Plowhorse',   hint: 'Popular, low margin — a small price rise or a cheaper recipe.' },
+  puzzle:    { label: 'Puzzle',      hint: 'Profitable but slow — feature it, have staff suggest it.' },
+  dog:       { label: 'Dog',         hint: 'Slow and low margin — rework it or take it off.' },
+  no_cost:   { label: 'No cost set', hint: 'Set a cost price or a recipe to see its margin.' },
 };
 const pct = (x: number | null | undefined, dp = 1) => (x === null || x === undefined ? '—' : `${(x * 100).toFixed(dp)}%`);
-const hh = (h: number) => `${String(h % 24).padStart(2, '0')}:00`;
-const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function Card({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
@@ -112,6 +127,47 @@ function Card({ label, value, sub, tone }: { label: string; value: string; sub?:
   );
 }
 
+/** A small marker of a class's own shape and colour — the scatter's key, so a class never reads by colour alone. */
+function ClassMark({ k, p }: { k: MenuClass; p: ChartPalette }) {
+  const c = p.classes[k];
+  const s = CLASS_SHAPE[k];
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden className="flex-shrink-0">
+      {s === 'circle' ? <circle cx="6" cy="6" r="5" fill={c} />
+        : s === 'square' ? <rect x="1" y="1" width="10" height="10" rx="2" fill={c} />
+        : s === 'diamond' ? <path d="M6 0.5 L11.5 6 L6 11.5 L0.5 6 Z" fill={c} />
+        : s === 'triangle' ? <path d="M6 1 L11.5 11 H0.5 Z" fill={c} />
+        : <path d="M2 2 L10 10 M10 2 L2 10" stroke={c} strokeWidth="2" />}
+    </svg>
+  );
+}
+
+const INSIGHT_ICON: Record<Insight['type'], string> = {
+  leaks: 'M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z',
+  credit: 'M3 7h18v12H3zM3 11h18M7 15h3',
+  menu: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9Z',
+  timing: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+};
+const INSIGHT_TYPE: Record<Insight['type'], string> = { timing: 'Timing', leaks: 'Money leak', credit: 'Credit', menu: 'Menu' };
+const SEVERITY_LABEL: Record<Insight['severity'], string> = { high: 'Act now', medium: 'Worth a look', low: 'Good to know' };
+
+/** An insight as a card: a stripe and an icon in its severity's colour, the severity in words (never colour alone). */
+function InsightCard({ i, p }: { i: Insight; p: ChartPalette }) {
+  const c = p.severity[i.severity];
+  return (
+    <li className="relative bg-gray-900 border border-gray-800 rounded-xl pl-4 pr-3 py-3 flex gap-3 overflow-hidden" data-severity={i.severity}>
+      <span aria-hidden className="absolute left-0 top-0 bottom-0 w-1" style={{ background: c }} />
+      <span aria-hidden className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${c}22` }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={INSIGHT_ICON[i.type]} /></svg>
+      </span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{INSIGHT_TYPE[i.type]} · {SEVERITY_LABEL[i.severity]}</p>
+        <p className="text-sm text-gray-200 mt-0.5">{i.text}</p>
+      </div>
+    </li>
+  );
+}
+
 /** A549: what a business without Analytics sees — the premium panel, as the Branding page's Themes note. */
 export function AnalyticsLocked() {
   return (
@@ -119,8 +175,9 @@ export function AnalyticsLocked() {
       <p className="text-xs font-bold uppercase tracking-wider text-swift-text">ZapTill Premium</p>
       <h2 className="text-lg font-bold text-white mt-1">Analytics is part of ZapTill Premium</h2>
       <p className="text-sm text-gray-400 mt-2">
-        Menu engineering (your Stars, Plowhorses, Puzzles and Dogs), a sales heatmap by day and hour, money leaks by
-        cashier and day, and credit ageing — with plain-English suggestions. Contact ZapTill to enable it.
+        Sales against the previous period, menu engineering (your Stars, Plowhorses, Puzzles and Dogs), busy times by day and
+        hour, money leaks by cashier and day, and credit ageing — drawn as charts, with plain-English suggestions. Contact
+        ZapTill to enable it.
       </p>
     </div>
   );
@@ -136,12 +193,14 @@ export default function AnalyticsRoute() {
 
 export function Analytics({ client, ownerView, currency, branchName }: { client: AnalyticsClient; ownerView: boolean; currency: string; branchName?: string }) {
   const branchCtx = useBranch();
+  const p = chartPalette(useTheme().theme === 'light' ? 'light' : 'dark');
   const [preset, setPreset] = useState<PresetKey>('30d');
   const [range, setRange] = useState(() => presetRange('30d'));
   const [draft, setDraft] = useState(range);
   const [tab, setTab] = useState<Tab>('menu');
   const [locked, setLocked] = useState(false);
   const [insights, setInsights] = useState<Insight[] | null>(null);
+  const [overview, setOverview] = useState<OverviewAnswer | null>(null);
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -149,9 +208,9 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   // the owner's branch filter is the dashboard's branch selection (the api client sends it as X-Branch-Id too)
   const branch = ownerView ? (branchCtx.activeBranchId ?? '') : '';
   const qs = useMemo(() => {
-    const p = new URLSearchParams({ from: range.from, to: range.to });
-    if (ownerView) p.set('branch', branch);
-    return p.toString();
+    const q = new URLSearchParams({ from: range.from, to: range.to });
+    if (ownerView) q.set('branch', branch);
+    return q.toString();
   }, [range, branch, ownerView]);
 
   const fail = useCallback((e: unknown) => {
@@ -160,10 +219,13 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
     setError(err?.message || 'Could not load analytics.');
   }, []);
 
-  // insights: once per period and branch
+  // the overview and the insights: once per period and branch
   useEffect(() => {
     let live = true;
-    setInsights(null); setError(null);
+    setInsights(null); setOverview(null); setError(null);
+    client.get<OverviewAnswer>(`/api/analytics/overview?${qs}`)
+      .then((r) => { if (live) { setLocked(false); setOverview(r); } })
+      .catch((e) => { if (live) fail(e); });
     client.get<{ insights: Insight[] }>(`/api/analytics/insights?${qs}`)
       .then((r) => { if (live) { setLocked(false); setInsights(r.insights ?? []); } })
       .catch((e) => { if (live) fail(e); });
@@ -211,24 +273,29 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
             {ownerView ? (branchCtx.activeBranch?.name ?? 'All branches') : (branchName ?? 'Your branch')} · {fmt.dateShort(`${range.from}T12:00:00`)} – {fmt.dateShort(`${range.to}T12:00:00`)}
           </p>
         </div>
-        {ownerView && branchCtx.branches.length > 1 && (
-          <label className="text-sm text-gray-400 flex items-center gap-2">
-            Branch
-            <select value={branch} onChange={(e) => branchCtx.setActiveBranch(branchCtx.branches.find((b) => b.id === e.target.value) ?? null)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm max-w-[12rem]" data-testid="analytics-branch">
-              <option value="">All branches</option>
-              {branchCtx.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </label>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {ownerView && branchCtx.branches.length > 1 && (
+            <label className="text-sm text-gray-400 flex items-center gap-2">
+              Branch
+              <select value={branch} onChange={(e) => branchCtx.setActiveBranch(branchCtx.branches.find((b) => b.id === e.target.value) ?? null)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm max-w-[12rem]" data-testid="analytics-branch">
+                <option value="">All branches</option>
+                {branchCtx.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </label>
+          )}
+          <button onClick={() => window.print()} className="px-3 py-2 rounded-lg text-sm bg-gray-800 text-gray-300 hover:text-white print:hidden" data-testid="analytics-print">
+            Print
+          </button>
+        </div>
       </div>
 
       {/* period */}
-      <div className="flex flex-wrap items-end gap-2">
-        {PRESETS.map((p) => (
-          <button key={p.key} onClick={() => choose(p.key)}
-            className={`px-3 py-1.5 rounded-lg text-sm ${preset === p.key ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
-            {p.label}
+      <div className="flex flex-wrap items-end gap-2 print:hidden">
+        {PRESETS.map((x) => (
+          <button key={x.key} onClick={() => choose(x.key)}
+            className={`px-3 py-1.5 rounded-lg text-sm ${preset === x.key ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+            {x.label}
           </button>
         ))}
         {preset === 'custom' && (
@@ -249,24 +316,23 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
 
       {error && <div className="px-4 py-2.5 rounded-lg text-sm bg-red-500/10 text-red-400">{error}</div>}
 
+      {/* KPI row, the trend and the payment mix */}
+      {overview ? <OverviewSection o={overview} p={p} currency={currency} />
+        : <p className="text-sm text-gray-500">Working out the figures…</p>}
+
       {/* insights */}
       <section aria-label="Insights">
         {insights === null ? <p className="text-sm text-gray-500">Working out insights…</p>
           : insights.length === 0 ? <p className="text-sm text-gray-500">Nothing stands out in this period.</p>
           : (
-            <ul className="grid gap-2 sm:grid-cols-2" data-testid="analytics-insights">
-              {insights.map((i) => (
-                <li key={i.id} className={`border rounded-lg px-3 py-2 text-sm ${SEVERITY_STYLE[i.severity]}`}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-80 mr-2">{i.type === 'timing' ? 'Timing' : i.type === 'leaks' ? 'Money leak' : i.type === 'credit' ? 'Credit' : 'Menu'}</span>
-                  {i.text}
-                </li>
-              ))}
+            <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" data-testid="analytics-insights">
+              {insights.map((i) => <InsightCard key={i.id} i={i} p={p} />)}
             </ul>
           )}
       </section>
 
       {/* tabs */}
-      <div className="flex gap-1 overflow-x-auto border-b border-gray-800">
+      <div className="flex gap-1 overflow-x-auto border-b border-gray-800 print:hidden">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-400 hover:text-white'}`}>
@@ -276,10 +342,53 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
       </div>
 
       {!current ? <p className="text-sm text-gray-500">{busy ? 'Loading…' : ''}</p>
-        : tab === 'menu' ? <MenuSection m={current as MenuAnswer} currency={currency} />
-        : tab === 'heatmap' ? <HeatmapSection h={current as HeatAnswer} currency={currency} />
-        : tab === 'leaks' ? <LeaksSection l={current as LeaksAnswer} currency={currency} />
-        : <CreditSection c={current as CreditAnswer} currency={currency} />}
+        : tab === 'menu' ? <MenuSection m={current as MenuAnswer} p={p} currency={currency} />
+        : tab === 'heatmap' ? <HeatmapSection h={current as HeatAnswer} p={p} currency={currency} />
+        : tab === 'leaks' ? <LeaksSection l={current as LeaksAnswer} p={p} currency={currency} />
+        : <CreditSection c={current as CreditAnswer} p={p} currency={currency} />}
+    </div>
+  );
+}
+
+// ── Overview: KPI row, trend, payment mix ─────────────────────────────────────
+
+function OverviewSection({ o, p, currency }: { o: OverviewAnswer; p: ChartPalette; currency: string }) {
+  const days = o.days.length;
+  const compareLabel = `previous ${days} day${days === 1 ? '' : 's'}`;
+  const money0 = (n: number | null) => fmt.money(n, currency, { decimals: 0, blank: '—' });
+  const k = o.kpis;
+  const spark = (pick: (d: OverviewAnswer['days'][number]) => number) => o.days.map(pick);
+  const traded = o.days.some((d) => d.revenue > 0 || d.prevRevenue > 0);
+  return (
+    <div className="space-y-4" data-testid="analytics-overview">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 ${k.margin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`} data-testid="analytics-kpis">
+        <KpiTile label="Sales" value={money0(k.revenue.value)} change={k.revenue.change} upIsGood compareLabel={compareLabel}
+          spark={spark((d) => d.revenue)} p={p} testId="kpi-revenue" />
+        <KpiTile label="Orders" value={fmt.num(k.orders.value ?? 0)} change={k.orders.change} upIsGood compareLabel={compareLabel}
+          spark={spark((d) => d.orders)} p={p} testId="kpi-orders" />
+        <KpiTile label="Average bill" value={money0(k.avgBill.value)} change={k.avgBill.change} upIsGood compareLabel={compareLabel}
+          spark={spark((d) => d.avgBill ?? 0)} p={p} testId="kpi-avg-bill" />
+        {k.margin && (
+          <KpiTile label="Gross margin" value={pct(k.margin.value)} change={k.margin.change} upIsGood points compareLabel={compareLabel}
+            p={p} note="on items with a cost set" testId="kpi-margin" />
+        )}
+        <KpiTile label="Money at risk" value={money0(k.atRisk.value)} change={k.atRisk.change} upIsGood={false} compareLabel={compareLabel}
+          spark={spark((d) => d.atRisk)} p={p} testId="kpi-at-risk"
+          note={o.wastageHidden ? 'voids, refunds, discounts' : 'voids, refunds, discounts, wastage'} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 min-w-0">
+          <ChartCard title="Daily sales" sub={`Against the ${compareLabel} (${fmt.dateShort(`${o.previous.from}T12:00:00`)} – ${fmt.dateShort(`${o.previous.to}T12:00:00`)})`}
+            legend={<Legend items={[{ label: 'This period', colour: p.accent, line: true }, { label: 'Previous period', colour: p.compare, line: true }]} />}
+            testId="analytics-trend">
+            {traded ? <RevenueTrend days={o.days} p={p} currency={currency} /> : <p className="text-sm text-gray-500 py-6 text-center">No sales in either period.</p>}
+          </ChartCard>
+        </div>
+        <ChartCard title="Payment mix" sub="What the period's sales were paid with" testId="analytics-payment-mix">
+          <Donut slices={o.paymentMix.map((m) => ({ key: m.key, label: m.label, value: m.amount, colour: p.payments[m.key] }))}
+            p={p} currency={currency} centre={fmt.compactMoney(o.paymentMix.reduce((s, m) => s + m.amount, 0), currency)} />
+        </ChartCard>
+      </div>
     </div>
   );
 }
@@ -288,7 +397,7 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
 
 type SortKey = 'name' | 'qty' | 'revenue' | 'unitCost' | 'unitMargin' | 'totalMargin' | 'share' | 'class';
 
-function MenuSection({ m, currency }: { m: MenuAnswer; currency: string }) {
+function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; currency: string }) {
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'qty', desc: true });
   const rows = useMemo(() => {
     const v = (i: MenuItem): number | string => sort.key === 'name' ? i.name.toLowerCase() : sort.key === 'class' ? (i.class ?? '') : (i[sort.key] ?? -Infinity);
@@ -300,24 +409,49 @@ function MenuSection({ m, currency }: { m: MenuAnswer; currency: string }) {
     </th>
   );
   if (!m.items.length) return <p className="text-sm text-gray-500">No items sold in this period.</p>;
+  const hasMatrix = !m.costsHidden && m.avgUnitMargin !== null && m.items.some((i) => i.class && i.class !== 'no_cost');
   return (
     <div className="space-y-4">
       {m.costsHidden ? (
-        <p className="text-sm text-gray-400">Costs and margins are hidden for your role, so items are not classified — the list shows what sold.</p>
+        <p className="text-sm text-gray-400">Costs and margins are hidden for your role, so items are not classified — the charts show what sold.</p>
       ) : (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {(Object.keys(CLASS_META) as MenuClass[]).map((k) => (
-              <Card key={k} label={CLASS_META[k].label} value={String(m.counts[k] ?? 0)} tone={CLASS_META[k].text} />
-            ))}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {CLASS_ORDER.map((k) => (
+            <div key={k} className="bg-gray-900 border border-gray-800 rounded-xl p-3" title={CLASS_META[k].hint}>
+              <p className="text-xs text-gray-500 flex items-center gap-1.5"><ClassMark k={k} p={p} />{CLASS_META[k].label}</p>
+              <p className="font-semibold mt-0.5 text-white text-lg">{m.counts[k] ?? 0}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="grid gap-4 xl:grid-cols-5">
+        {hasMatrix ? (
+          <div className="xl:col-span-3 min-w-0">
+            <ChartCard title="Menu engineering matrix" sub="Popularity across, margin a unit up; bubble size = revenue"
+              legend={<ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+                {(['star', 'plowhorse', 'puzzle', 'dog'] as MenuClass[]).map((k) => (
+                  <li key={k} className="flex items-center gap-1.5"><ClassMark k={k} p={p} />{CLASS_META[k].label}s</li>
+                ))}
+              </ul>}>
+              <MenuScatter items={m.items} threshold={m.popularityThreshold} avgMargin={m.avgUnitMargin as number} p={p} currency={currency} />
+            </ChartCard>
           </div>
-          <MenuMatrix m={m} currency={currency} />
-          <p className="text-xs text-gray-500">
-            Popular = at least {pct(m.popularityThreshold)} of the items sold (70% of an even share). High margin = at least the
-            average margin per item sold, {fmt.money(m.avgUnitMargin ?? 0, currency)}. Margin = average selling price − the cost of one
-            serving (the cost price, else the recipe).
-          </p>
-        </>
+        ) : !m.costsHidden && (
+          <p className="text-sm text-gray-500 xl:col-span-3">No item sold has a cost set yet, so there is no matrix.</p>
+        )}
+        <div className={`${hasMatrix || !m.costsHidden ? 'xl:col-span-2' : 'xl:col-span-5'} min-w-0`}>
+          <ChartCard title="Top 10 items by revenue" sub={m.costsHidden ? undefined : 'Each bar in its class colour'}
+            legend={m.costsHidden ? undefined : <Legend items={classLegend(p, m.counts.no_cost > 0)} />}>
+            <TopItemsBar items={m.items} p={p} currency={currency} />
+          </ChartCard>
+        </div>
+      </div>
+      {!m.costsHidden && (
+        <p className="text-xs text-gray-500">
+          Popular = at least {pct(m.popularityThreshold)} of the items sold (70% of an even share). High margin = at least the
+          average margin per item sold, {fmt.money(m.avgUnitMargin ?? 0, currency)}. Margin = average selling price − the cost of one
+          serving (the cost price, else the recipe).
+        </p>
       )}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -341,7 +475,11 @@ function MenuSection({ m, currency }: { m: MenuAnswer; currency: string }) {
                 {!m.costsHidden && <td className="p-2 text-right text-gray-300">{fmt.money(i.unitMargin, currency, { blank: '—' })}</td>}
                 {!m.costsHidden && <td className={`p-2 text-right text-gray-300 ${DESK}`}>{fmt.money(i.totalMargin, currency, { blank: '—' })}</td>}
                 <td className={`p-2 text-right text-gray-400 ${DESK}`}>{pct(i.share)}</td>
-                {!m.costsHidden && <td className={`p-2 whitespace-nowrap ${i.class ? CLASS_META[i.class].text : 'text-gray-500'}`} title={i.class ? CLASS_META[i.class].hint : ''}>{i.class ? CLASS_META[i.class].label : '—'}</td>}
+                {!m.costsHidden && (
+                  <td className="p-2 whitespace-nowrap text-gray-300" title={i.class ? CLASS_META[i.class].hint : ''}>
+                    {i.class ? <span className="inline-flex items-center gap-1.5"><ClassMark k={i.class} p={p} />{CLASS_META[i.class].label}</span> : '—'}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -351,96 +489,45 @@ function MenuSection({ m, currency }: { m: MenuAnswer; currency: string }) {
   );
 }
 
-/** Popularity (share of items sold) across, unit margin up; the two thresholds split the four quadrants. Plain SVG. */
-function MenuMatrix({ m, currency }: { m: MenuAnswer; currency: string }) {
-  const pts = m.items.filter((i) => i.unitMargin !== null && i.class && i.class !== 'no_cost');
-  if (!pts.length || m.avgUnitMargin === null) return <p className="text-sm text-gray-500">No item sold has a cost set yet, so there is no matrix.</p>;
-  const W = 600, H = 340, L = 56, R = 12, T = 12, B = 36;
-  const maxX = Math.max(m.popularityThreshold * 2, ...pts.map((p) => p.share)) * 1.08;
-  const margins = pts.map((p) => p.unitMargin as number);
-  const minY = Math.min(0, ...margins, m.avgUnitMargin), maxY = Math.max(...margins, m.avgUnitMargin) * 1.1 || 1;
-  const x = (v: number) => L + (v / maxX) * (W - L - R);
-  const y = (v: number) => T + (1 - (v - minY) / (maxY - minY || 1)) * (H - T - B);
-  const tx = x(m.popularityThreshold), ty = y(m.avgUnitMargin);
-  const corner = (cls: MenuClass, cx: number, cy: number, anchor: 'start' | 'end') => (
-    <text x={cx} y={cy} textAnchor={anchor} className={`${CLASS_META[cls].fill} text-[13px] font-bold`} opacity={0.75}>{CLASS_META[cls].label}s</text>
-  );
-  return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-3">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto text-gray-500" role="img" aria-label="Menu engineering matrix: popularity against margin">
-        <line x1={L} y1={H - B} x2={W - R} y2={H - B} stroke="currentColor" strokeOpacity={0.4} />
-        <line x1={L} y1={T} x2={L} y2={H - B} stroke="currentColor" strokeOpacity={0.4} />
-        <line x1={tx} y1={T} x2={tx} y2={H - B} stroke="currentColor" strokeDasharray="4 4" strokeOpacity={0.6} />
-        <line x1={L} y1={ty} x2={W - R} y2={ty} stroke="currentColor" strokeDasharray="4 4" strokeOpacity={0.6} />
-        {corner('puzzle', L + 6, T + 14, 'start')}
-        {corner('star', W - R - 6, T + 14, 'end')}
-        {corner('dog', L + 6, H - B - 8, 'start')}
-        {corner('plowhorse', W - R - 6, H - B - 8, 'end')}
-        <text x={(L + W - R) / 2} y={H - 8} textAnchor="middle" fill="currentColor" className="text-[11px]">Popularity (share of items sold) →</text>
-        <text x={14} y={(T + H - B) / 2} textAnchor="middle" fill="currentColor" className="text-[11px]" transform={`rotate(-90 14 ${(T + H - B) / 2})`}>Unit margin →</text>
-        <text x={tx} y={H - B + 14} textAnchor="middle" fill="currentColor" className="text-[10px]">{pct(m.popularityThreshold)}</text>
-        <text x={L - 4} y={ty + 3} textAnchor="end" fill="currentColor" className="text-[10px]">{fmt.num(m.avgUnitMargin)}</text>
-        {pts.map((p) => (
-          <g key={p.productId ?? p.name}>
-            <circle cx={x(p.share)} cy={y(p.unitMargin as number)} r={6} className={CLASS_META[p.class as MenuClass].fill} fillOpacity={0.85}>
-              <title>{`${p.name} — ${CLASS_META[p.class as MenuClass].label}: ${fmt.qty(p.qty)} sold (${pct(p.share)}), margin ${fmt.money(p.unitMargin, currency)} a unit`}</title>
-            </circle>
-          </g>
-        ))}
-      </svg>
-    </div>
-  );
-}
+// ── Busy times ────────────────────────────────────────────────────────────────
 
-// ── Heatmap ───────────────────────────────────────────────────────────────────
-
-function HeatmapSection({ h, currency }: { h: HeatAnswer; currency: string }) {
+function HeatmapSection({ h, p, currency }: { h: HeatAnswer; p: ChartPalette; currency: string }) {
   if (!h.totalOrders || !h.tradingHours) return <p className="text-sm text-gray-500">No sales in this period.</p>;
-  const hours: number[] = [];
-  for (let k = h.tradingHours.from; k <= h.tradingHours.to; k++) hours.push(k);
-  const shade = (v: number) => (v <= 0 || h.maxRevenue <= 0 ? 0 : 0.12 + 0.78 * (v / h.maxRevenue));
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <Card label="Busiest slot" value={h.busiest?.label ?? '—'} sub={h.busiest ? `${fmt.money(h.busiest.revenue, currency)} · ${h.busiest.orders} orders` : undefined} tone="text-swift-text" />
-        <Card label="Quietest slot" value={h.quietest?.label ?? '—'} sub={h.quietest ? `${fmt.money(h.quietest.revenue, currency)} · ${h.quietest.orders} orders` : undefined} tone="text-amber-400" />
+        <Card label="Busiest slot" value={h.busiest?.label ?? '—'} sub={h.busiest ? `${fmt.money(h.busiest.revenue, currency)} · ${h.busiest.orders} orders` : undefined} />
+        <Card label="Quietest slot" value={h.quietest?.label ?? '—'} sub={h.quietest ? `${fmt.money(h.quietest.revenue, currency)} · ${h.quietest.orders} orders` : undefined} />
         <Card label="Sales in the period" value={fmt.money(h.totalRevenue, currency)} sub={`${fmt.num(h.totalOrders)} orders · East Africa Time`} />
       </div>
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-3">
-        <div className="overflow-x-auto">
-          <table className="border-separate text-[11px]" style={{ borderSpacing: 2 }} data-testid="analytics-heatmap">
-            <thead><tr>
-              <th className="w-10" />
-              {hours.map((k) => <th key={k} className="font-normal text-gray-500 px-0.5 min-w-[1.75rem]">{String(k).padStart(2, '0')}</th>)}
-            </tr></thead>
-            <tbody>
-              {DAYS_SHORT.map((d, di) => (
-                <tr key={d}>
-                  <th className="text-left font-normal text-gray-500 pr-1">{d}</th>
-                  {hours.map((k) => {
-                    const v = h.revenue[di]?.[k] ?? 0, o = h.orders[di]?.[k] ?? 0;
-                    return (
-                      <td key={k} className="h-7 rounded border border-gray-800" style={{ background: v > 0 ? `rgb(var(--swift) / ${shade(v).toFixed(2)})` : undefined }}
-                        title={`${d} ${hh(k)}–${hh(k + 1)}: ${fmt.money(v, currency)} · ${o} orders`} />
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-xs text-gray-500 mt-2">Darker = more sales. Hours with no sale in the whole period are left out. Sales are counted when rung, before refunds.</p>
+      <ChartCard title="Sales by day and hour" sub="Darker = more sales. Hours with no sale in the whole period are left out.">
+        <Heatmap h={h} p={p} currency={currency} />
+      </ChartCard>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Sales by hour" sub="Every day of the period added together">
+          <HourColumns h={h} p={p} currency={currency} />
+        </ChartCard>
+        <ChartCard title="Sales by weekday" sub="Every hour added together">
+          <WeekdayBars h={h} p={p} currency={currency} />
+        </ChartCard>
       </div>
+      <p className="text-xs text-gray-500">Sales are counted when rung, before refunds.</p>
     </div>
   );
 }
 
 // ── Money leaks ───────────────────────────────────────────────────────────────
 
-function LeaksSection({ l, currency }: { l: LeaksAnswer; currency: string }) {
+function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; currency: string }) {
   const m = (n: number | null) => fmt.money(n, currency, { blank: '—' });
   const variance = (n: number) => <span className={n < 0 ? 'text-red-400' : n > 0 ? 'text-amber-400' : 'text-gray-500'}>{fmt.money(n, currency, { sign: true })}</span>;
   const flagged = l.cashiers.filter((c) => c.flags.length);
+  const split = [
+    { key: 'voids', label: 'Voids', value: l.totals.voidValue + l.totals.itemVoidValue, colour: p.leaks.voids },
+    { key: 'refunds', label: 'Refunds', value: l.totals.refundValue, colour: p.leaks.refunds },
+    { key: 'discounts', label: 'Discounts', value: l.totals.discountValue, colour: p.leaks.discounts },
+    ...(l.wastageHidden ? [] : [{ key: 'wastage', label: 'Wastage', value: l.totals.wastageValue ?? 0, colour: p.leaks.wastage }]),
+  ];
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -449,6 +536,19 @@ function LeaksSection({ l, currency }: { l: LeaksAnswer; currency: string }) {
         <Card label="Discounts" value={m(l.totals.discountValue)} sub={`${l.totals.discounts} orders`} />
         <Card label="Day close short" value={m(-l.totals.dayCloseShort)} sub={l.wastageHidden ? `Wastage: ${l.totals.wastage} entries` : `Wastage ${m(l.totals.wastageValue)}`}
           tone={l.totals.dayCloseShort < 0 ? 'text-red-400' : 'text-white'} />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-5">
+        <div className="xl:col-span-3 min-w-0">
+          <ChartCard title="By cashier" sub={flagged.length ? `${flagged.length} flagged (marked ⚑, listed first)` : 'Nobody is flagged'}
+            legend={<Legend items={leakLegend(p, l.wastageHidden)} />}>
+            <LeakStack cashiers={l.cashiers} p={p} currency={currency} wastageHidden={l.wastageHidden} />
+          </ChartCard>
+        </div>
+        <div className="xl:col-span-2 min-w-0">
+          <ChartCard title="Where it goes" sub="The split of the period's leaks">
+            <Donut slices={split} p={p} currency={currency} centre={fmt.compactMoney(split.reduce((s, x) => s + x.value, 0), currency)} testId="analytics-leak-donut" />
+          </ChartCard>
+        </div>
       </div>
       <p className="text-xs text-gray-500">
         A cashier is flagged when their void rate or discount rate is at least 2× the median of the cashiers here (median void
@@ -517,17 +617,22 @@ function LeaksSection({ l, currency }: { l: LeaksAnswer; currency: string }) {
 
 // ── Credit ageing ─────────────────────────────────────────────────────────────
 
-function CreditSection({ c, currency }: { c: CreditAnswer; currency: string }) {
+function CreditSection({ c, p, currency }: { c: CreditAnswer; p: ChartPalette; currency: string }) {
   const m = (n: number) => (n ? fmt.money(n, currency) : '—');
   if (!c.customers.length) return <p className="text-sm text-gray-500">Nobody owes on credit.</p>;
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        <Card label="0–30 days" value={fmt.money(c.totals.d0_30, currency)} />
-        <Card label="31–60 days" value={fmt.money(c.totals.d31_60, currency)} />
-        <Card label="61–90 days" value={fmt.money(c.totals.d61_90, currency)} tone={c.totals.d61_90 > 0 ? 'text-amber-400' : undefined} />
-        <Card label="Over 90 days" value={fmt.money(c.totals.d90_plus, currency)} tone={c.totals.d90_plus > 0 ? 'text-red-400' : undefined} />
-        <Card label="Owed in all" value={fmt.money(c.totals.owed, currency)} sub={`${c.totals.customers} customers${c.totals.disputedCount ? ` · ${c.totals.disputedCount} disputed` : ''}`} />
+      <div className="grid gap-4 xl:grid-cols-5">
+        <div className="xl:col-span-2 min-w-0 space-y-4">
+          <ChartCard title="How old the credit is" sub={`${fmt.money(c.totals.owed, currency, { decimals: 0 })} owed by ${c.totals.customers} customer${c.totals.customers === 1 ? '' : 's'}${c.totals.disputedCount ? ` · ${c.totals.disputedCount} disputed` : ''}`}>
+            <AgeingBar totals={c.totals} p={p} currency={currency} />
+          </ChartCard>
+        </div>
+        <div className="xl:col-span-3 min-w-0">
+          <ChartCard title="Top debtors" sub="Each bar split by age" testId="analytics-debtors-card">
+            <TopDebtors customers={c.customers} p={p} currency={currency} />
+          </ChartCard>
+        </div>
       </div>
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">

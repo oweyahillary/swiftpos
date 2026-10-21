@@ -26,8 +26,8 @@ import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { ringLogRequest } from '../lib/liveHub';
 import {
-  cleanReason, rangeOf, includeOf, expireWaiting, versionNote, versionBelow, ANSWERS_FROM_VERSION, EXPIRES_AFTER_MS,
-  REQUESTS_PER_ADMIN_HOUR,
+  cleanReason, rangeOf, includeOf, expireWaiting, versionNote, canAnswerPull, EXPIRES_AFTER_MS,
+  REQUESTS_PER_ADMIN_HOUR, type PullAbility,
 } from '../lib/logRequests';
 
 const router = safeRouter();
@@ -60,12 +60,37 @@ const lastSeen = (d: Dev | undefined) => {
   return a && b ? (a > b ? a : b) : (a ?? b);
 };
 const labelOf = (d: Dev | undefined, id: string) => d?.device_label || d?.terminal_code || id;
-const deviceView = (d: Dev, branches: Map<string, string>) => ({
+const deviceView = (d: Dev, branches: Map<string, string>, ability: PullAbility = {}) => ({
   device_id: d.device_id, label: labelOf(d, d.device_id), terminal_code: d.terminal_code ?? null,
   role: d.device_role ?? 'till', branch: d.branch_id ? (branches.get(d.branch_id) ?? null) : null,
   app_version: d.app_version ?? null, last_seen_at: lastSeen(d),
-  can_answer: !versionBelow(d.app_version, ANSWERS_FROM_VERSION), note: versionNote(d.app_version),
+  can_answer: canAnswerPull(d.app_version, ability), note: versionNote(d.app_version, ability),   // A554: what it reports, not only its version
 });
+
+/**
+ * A554: per device of the business, what says it answers a pull beyond its version — `log_pull: true` in its update
+ * state (A534's report; a cloud before migration 154 has no column: nothing known) and whether it answered one before.
+ * Never throws: unknown → the version decides, as before.
+ */
+async function pullAbilities(businessId: string, deviceIds: string[] = []): Promise<Map<string, PullAbility>> {
+  const out = new Map<string, PullAbility>();
+  const get = (id: string) => { let a = out.get(id); if (!a) { a = {}; out.set(id, a); } return a; };
+  try {
+    let q = supabase.from('user_devices').select('device_id, update_state').eq('business_id', businessId);
+    if (deviceIds.length) q = q.in('device_id', deviceIds);
+    const { data, error } = await q.limit(500);
+    if (!error) for (const r of (data ?? []) as Array<{ device_id?: string; update_state?: { log_pull?: unknown } | null }>) {
+      if (r.device_id && r.update_state && r.update_state.log_pull === true) get(r.device_id).reportsLogPull = true;
+    }
+  } catch { /* the version decides */ }
+  try {
+    let q = supabase.from('log_requests').select('device_id').eq('business_id', businessId).eq('status', 'delivered');
+    if (deviceIds.length) q = q.in('device_id', deviceIds);
+    const { data, error } = await q.limit(500);
+    if (!error) for (const r of (data ?? []) as Array<{ device_id?: string }>) if (r.device_id) get(r.device_id).answeredBefore = true;
+  } catch { /* the version decides */ }
+  return out;
+}
 
 // A533: a log request changes nothing a till reads — no need for the /admin write hook to forget every business's
 // cache and make every till socket sign in again (lib/forgetOnWrite.ts honours this).
@@ -88,15 +113,16 @@ router.get('/:businessId/log-requests', requireAdmin, async (req: any, res) => {
   const logIds = rows.map((r) => r.support_log_id).filter(Boolean);
   const { data: logs } = logIds.length ? await supabase.from('support_logs').select('id, reference, bytes, trimmed, created_at').in('id', logIds) : { data: [] };
   const logById = new Map(((logs ?? []) as Array<Record<string, any>>).map((l) => [l.id, l]));
+  const ability = await pullAbilities(client.id);   // A554
   res.json({
     requests: rows.map((r) => {
       const d = byId.get(r.device_id);
       const log = r.support_log_id ? logById.get(r.support_log_id) : null;
       return { ...r, device_label: labelOf(d, r.device_id), terminal_code: d?.terminal_code ?? null, app_version: d?.app_version ?? null,
-        last_seen_at: lastSeen(d), note: r.status === 'waiting' ? versionNote(d?.app_version) : null,
+        last_seen_at: lastSeen(d), note: r.status === 'waiting' ? versionNote(d?.app_version, ability.get(r.device_id)) : null,
         support_log: log ? { id: log.id, reference: log.reference, bytes: log.bytes, trimmed: log.trimmed, created_at: log.created_at } : null };
     }),
-    devices: devices.filter((d) => d.status === 'approved' && !d.retired_at).map((d) => deviceView(d, branches)),
+    devices: devices.filter((d) => d.status === 'approved' && !d.retired_at).map((d) => deviceView(d, branches, ability.get(d.device_id))),
   });
 });
 
@@ -142,7 +168,8 @@ router.post('/:businessId/log-requests', requireAdmin, async (req: any, res) => 
   await adminAudit(req, client, 'log_requests.create', { request_id: id, device_id: deviceId, till: labelOf(d, deviceId), range_hours: range, include: row.include }, reason);
   const rang = ringLogRequest(client.id, deviceId);
   console.log(`[log-requests] ${req.adminEmail} asked ${labelOf(d, deviceId)} (${client.id}) for ${range} h — request ${id}; ${rang} socket(s) rung`);
-  res.status(201).json({ request: { ...(made as object), device_label: labelOf(d, deviceId), last_seen_at: lastSeen(d) }, rung: rang, note: versionNote(d.app_version) });
+  const ability = (await pullAbilities(client.id, [deviceId])).get(deviceId);   // A554
+  res.status(201).json({ request: { ...(made as object), device_label: labelOf(d, deviceId), last_seen_at: lastSeen(d) }, rung: rang, note: versionNote(d.app_version, ability) });
 });
 
 router.post('/:businessId/log-requests/:id/cancel', requireAdmin, async (req: any, res) => {

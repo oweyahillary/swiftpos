@@ -26,7 +26,8 @@ export interface CatalogueMethod {
   defaultOn: boolean;
   /** What the reference box asks for (null: no reference). */
   reference: string | null;
-  /** On account needs a customer with a credit account — the web POS has that flow, the till does not. */
+  /** A method only the web POS takes (none now). A552: the till takes On account too — offered there only when this till
+   *  holds a customer with a credit account (main/creditSale.ts), so the till's payment screen decides that itself. */
   webOnly?: boolean;
 }
 
@@ -35,7 +36,7 @@ export const PAYMENT_CATALOGUE: CatalogueMethod[] = [
   { code: 'mpesa',         name: 'M-Pesa',                  icon: '📱', kind: 'mobile',   defaultOn: true,  reference: 'QHX4K2L9MP' },
   { code: 'card',          name: 'Card',                    icon: '💳', kind: 'card',     defaultOn: true,  reference: 'Txn ID' },
   { code: 'glovo',         name: 'Glovo',                   icon: '🛵', kind: 'delivery', defaultOn: true,  reference: 'Glovo order #' },
-  { code: 'credit',        name: 'On account',              icon: '📒', kind: 'account',  defaultOn: true,  reference: null, webOnly: true },
+  { code: 'credit',        name: 'On account',              icon: '📒', kind: 'account',  defaultOn: true,  reference: null },
   { code: 'airtel_money',  name: 'Airtel Money',            icon: '📲', kind: 'mobile',   defaultOn: false, reference: 'Transaction ID' },
   { code: 'tkash',         name: 'T-Kash',                  icon: '📲', kind: 'mobile',   defaultOn: false, reference: 'Transaction ID' },
   { code: 'bank_transfer', name: 'Bank transfer / Pesalink', icon: '🏦', kind: 'bank',     defaultOn: false, reference: 'Bank reference' },

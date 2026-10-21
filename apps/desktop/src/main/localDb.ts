@@ -410,6 +410,19 @@ function initSchema(db: Database.Database) {
       sync_status   TEXT DEFAULT 'pending'
     );
 
+    -- A552: the customers this till may sell to on account (pulled: GET /api/pos/credit-customers, or the branch server's
+    -- copy). credit_balance is the cloud's; the till adds its own sales on account the cloud had not taken when it was
+    -- read (pulled_at, this till's clock — creditSale.ts). Replaced on every pull.
+    CREATE TABLE IF NOT EXISTS credit_customers (
+      id             TEXT PRIMARY KEY,
+      name           TEXT NOT NULL,
+      phone          TEXT,
+      status         TEXT DEFAULT 'active',
+      credit_limit   REAL NOT NULL DEFAULT 0,
+      credit_balance REAL NOT NULL DEFAULT 0,
+      pulled_at      TEXT NOT NULL
+    );
+
     -- ════════════════════════════════════════════════════════
     -- Phase B — attribution + offline operational reporting
     -- See syncEngine.ts SYNC_DIRECTION for the per-table sync direction.
@@ -1211,6 +1224,9 @@ function initSchema(db: Database.Database) {
   //     for a passing reason by an older cloud can be told from one refused for its data (requeueTransientConflicts);
   //   an index on sync_queue (status) — every pass and every badge read filters on it, and synced rows are now pruned.
   migrateColumns(db, 'sync_queue', [['drawer_wait_at', 'TEXT']]);
+  // A552 (75): when the sale's order reached the cloud — a charge synced before a credit list was read is in that list's
+  // balance; one synced later (or not yet) is added on top (creditSale.ts).
+  migrateColumns(db, 'customer_credit_transactions', [['synced_at', 'TEXT']]);
   migrateColumns(db, 'expenses', [['sync_error', 'TEXT']]);
   migrateColumns(db, 'float_transactions', [['sync_error', 'TEXT']]);
   migrateColumns(db, 'kitchen_voids', [['sync_error', 'TEXT']]);
@@ -1326,7 +1342,9 @@ function initSchema(db: Database.Database) {
 // 73 adds A537: menus (pulled — the business's menus) and categories.menu_id (pulled; migration 155). REQUIRED moves.
 // 74 adds A544: branch_branding (pulled — this branch's override of the theme, brand colour and receipt footer; migration
 // 156). REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 74;
+// 75 adds A552: credit_customers (pulled — the customers this till sells to on account, their limit and balance) and
+// customer_credit_transactions.synced_at (local — when the sale's order reached the cloud). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 75;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

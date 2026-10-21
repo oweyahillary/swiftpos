@@ -9,9 +9,9 @@
  *
  *   ☰ at the left of the search opens it; it starts COLLAPSED. Picking a category closes it (unless pinned) and the
  *   chosen category shows by the search as "Burgers ✕". The pin keeps it open and pushes the grid aside (on a narrow
- *   window it lies over the grid). The pin and the chosen menu are remembered on THIS till (its own renderer store,
- *   localStorage — as Pager and the printer settings; every access in try/catch, so a blocked store just starts
- *   collapsed). Touch first: 48 px rows, nothing on hover only. The till's dark styling and its `action-*` colours.
+ *   window it lies over the grid). The chosen menu is remembered on THIS till (its own renderer store, localStorage —
+ *   as Pager and the printer settings; every access in try/catch). A554: the pin is this session's only — the panel
+ *   starts collapsed at every launch and sign-in, pinned or not. Touch first: 48 px rows, nothing on hover only. The till's dark styling and its `action-*` colours.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -26,10 +26,10 @@ function writePrefs(p: PanelPrefs): void {
   try { window.localStorage.setItem(PANEL_PREFS_KEY, panelPrefsText(p)); } catch { /* not remembered — still applied */ }
 }
 
-/** The panel's state: open (collapsed at start unless pinned), the pin and the chosen menu (remembered on this till). */
+/** The panel's state: open (collapsed at every start — A554), the pin (this session) and the chosen menu (remembered on this till). */
 export function useCategoryPanel() {
   const [prefs, setPrefs] = useState<PanelPrefs>(() => readPrefs());
-  const [open, setOpen] = useState<boolean>(() => panelStartsOpen(readPrefs()));
+  const [open, setOpen] = useState<boolean>(() => panelStartsOpen());   // A554: collapsed at every start and sign-in
   const save = useCallback((next: PanelPrefs) => { setPrefs(next); writePrefs(next); }, []);
   const setPinned = useCallback((pinned: boolean) => { save({ ...prefs, pinned }); if (pinned) setOpen(true); }, [prefs, save]);
   const setMenu = useCallback((menu: string) => save({ ...prefs, menu }), [prefs, save]);

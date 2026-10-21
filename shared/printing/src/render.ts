@@ -23,7 +23,8 @@
 import type { PrintContext, OrderLine, OrderUnit, OrderType } from './types';
 import { DocBuilder, type Document } from './document';
 import { splitTax, netOf, formatCents } from './money';
-import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, indentedWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns, sanitize } from './layout';
+import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, indentedWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns, sanitize,
+  nameWithVariant } from './layout';
 import { fitMonoRaster, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_PRINT_MAX_HEIGHT } from './raster';
 
 const TYPE_CAPS: Record<OrderType, string> = {
@@ -76,9 +77,21 @@ export const INFO_GAP_DOTS = 10;
  * dots) would leave the same line height as Font A and save paper only where a line no longer wraps — almost nowhere
  * on a kitchen ticket. 24 leaves 7 dots (~0.9 mm) between lines: more air, for its glyph, than the receipt's standard
  * 30 gives Font A's 24 (6 dots), which the owner found right ("line spacing in the middle"). Double-height dish names
- * (34 dots) keep ESC 2, as on the receipt (escpos.ts). 'kitchen_font_a' prints Font A at ESC 2, as before.
+ * (34 dots) keep ESC 2, as on the receipt (escpos.ts). A551: Font B is the opt-in now ('kitchen_font_b'); the standard
+ * kitchen ticket is Font A at ESC 2, like the dispatch ticket.
  */
 export const KITCHEN_FONT_B_LINE_SPACING_DOTS = 24;
+/**
+ * A551 (owner, 2026-10-21, on paper: "reduce the spacing between item in the kitchen printer; spacing between content is
+ * okay but items i feel its too big"): kitchen and dispatch tickets put a thin gap between one item and the next — ESC J
+ * 10, about 1.25 mm (the receipt's A540 info gap) — instead of a blank line (ESC 2, 34 dots, ~4.2 mm). An item's own rows
+ * (its name, components, attributes, notes), the header and the footer are spaced as before.
+ */
+export const ITEM_GAP_DOTS = 10;
+/** A551 (owner: "spacing at the end of packaging and kitchen receipt"): kitchen and dispatch tickets feed 1 line before
+ *  the cut, as the receipt does (A530/A538) — GS V 66 0 carries the last line to the blade. A tear-off printer (no cut)
+ *  still feeds the station's feedBeforeCut (3). */
+export const PRODUCTION_CUT_FEED = 1;
 
 /** 16 -> "16", 2 -> "2", 16.5 -> "16.5". Never "16.00%" on a receipt. */
 function rate(n: number): string {
@@ -120,6 +133,29 @@ function visibleUnits(line: OrderLine, ctx: PrintContext): OrderUnit[] {
   return units;
 }
 
+/**
+ * A551 (owner, 2026-10-21: "on items with variants assume chicken burger instead of writing `Chicken burger` then
+ * `  Chicken burger spicy` why not write `Chicken burger - Spicy` we avoid 2 lines of the same item"): the unit that only
+ * carries a line's variant — the one toUnits (routing.ts) makes for a product sold with a variant and no components: the
+ * product's own name, one of it, one portion, no price of its own, the variant options as its attributes. Its options go
+ * on the line's own row ("Chicken Burger - Spicy", nameWithVariant) and the unit prints no row of its own. Any other unit
+ * (a combo's component, a modifier, a split "1 spicy, 2 normal") prints as before.
+ */
+function variantUnit(line: OrderLine): OrderUnit | undefined {
+  const key = (s: string) => sanitize(s).trim().toLowerCase();
+  const name = key(line.name);
+  if (!name) return undefined;
+  return line.units.find(u => u.attributes.length > 0 && u.quantity === 1 && u.portions <= 1 && u.priceDelta === 0
+    && key(u.name) === name);
+}
+
+/** A551: the line's printed name — with its variant when a unit carries one (variantUnit) — and that unit. */
+function lineHeading(line: OrderLine): { name: string; folded?: OrderUnit } {
+  const folded = variantUnit(line);
+  if (!folded) return { name: line.name };
+  return { name: nameWithVariant(line.name, folded.attributes.map(a => a.option)), folded };
+}
+
 /** A367: a typed note as printed rows — the cashier's line breaks kept, blank lines dropped. */
 function noteRows(note: string | undefined): string[] {
   return (note ?? '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -128,13 +164,14 @@ function noteRows(note: string | undefined): string[] {
 /** ─── Production tickets: kitchen, dispatch, and anything shaped like them ─── */
 function renderProduction(ctx: PrintContext): Document {
   const { order, station } = ctx;
-  // A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "the printer's smaller
-  // Font B so long orders fit on less paper"): a KITCHEN ticket is laid out at Font B's 64 / 42 columns and printed in
-  // it, at KITCHEN_FONT_B_LINE_SPACING_DOTS. Dispatch (packing) stays Font A. 'kitchen_font_a' puts the old ticket back.
-  const fontB = station.kind === 'kitchen' && ctx.business.kitchenFontA !== true;
+  // A543 made the KITCHEN ticket Font B (64 / 42 columns, at KITCHEN_FONT_B_LINE_SPACING_DOTS). A551 (owner, 2026-10-21,
+  // on paper: "kitchen receipt use the same font as the despatcher"): Font A again, the dispatch ticket's font, size and
+  // columns — Font B only for a client with 'kitchen_font_b' (admin portal). Dispatch (packing) is Font A either way.
+  const fontB = station.kind === 'kitchen' && ctx.business.kitchenFontB === true;
   const cols = columnsFor(station.paperWidthMm, fontB ? 'B' : 'A');
   const d = new DocBuilder(cols);
   if (fontB) d.fontB().lineSpacing(KITCHEN_FONT_B_LINE_SPACING_DOTS);
+  d.cutFeed(PRODUCTION_CUT_FEED);   // A551: 1 line before the cut, not the station's 3
 
   if (ctx.voided) {
     d.line('VOID', { align: 'center', size: 'large', bold: true });
@@ -178,17 +215,21 @@ function renderProduction(ctx: PrintContext): Document {
       if (!earns) continue;
     }
 
-    if (printedLines > 0) d.blank();
+    // A551: a thin gap between two items (ITEM_GAP_DOTS), not a blank line.
+    if (printedLines > 0) d.gap(ITEM_GAP_DOTS);
     printedLines++;
+    const { name, folded } = lineHeading(line);   // A551: "Chicken Burger - Spicy" on one row
 
-    // Double-width glyphs cost two columns each, so an emphasized heading has
-    // half the room. The hanging indent keeps a wrapped dish name under itself
-    // rather than under the quantity, which on 58mm is the difference between
-    // a readable ticket and a puzzle.
+    // The hanging indent keeps a wrapped dish name under itself rather than
+    // under the quantity, which on 58mm is the difference between a readable
+    // ticket and a puzzle.
+    // A551: an emphasized heading is 'tall' — GS ! 0x01, double HEIGHT only, its glyphs one column wide — so it has the
+    // whole line. It used to be wrapped at half the line as if it were double width, which split "1   CHICKEN BURGER -
+    // SPICY" (26 characters) over two rows on 80 mm and wasted the right half of every long dish name.
     const qtyPrefix = `${line.quantity}   `;
-    const headingWidth = station.emphasizeParent ? Math.floor(cols / 2) : cols;
+    const headingWidth = cols;
     d.lines(
-      hangingWrap(`${qtyPrefix}${line.name.toUpperCase()}`, headingWidth, qtyPrefix.length),
+      hangingWrap(`${qtyPrefix}${name.toUpperCase()}`, headingWidth, qtyPrefix.length),
       { size: station.emphasizeParent ? 'tall' : 'normal', bold: true },
     );
 
@@ -202,6 +243,7 @@ function renderProduction(ctx: PrintContext): Document {
 
     for (const u of units) {
       unitRows++;
+      if (u === folded) continue;   // A551: its variant is on the line's row
       const attrs = describeAttributes(u);
       const qty = u.quantity > 1 ? ` x${u.quantity}` : '';
       const inline =
@@ -367,9 +409,10 @@ function renderReceipt(ctx: PrintContext): Document {
     const deltas = line.units.reduce((a, u) => a + u.priceDelta * u.quantity, 0);
     const baseNet = tax.lineNets[i] - netOf(deltas * line.quantity, business.vatRate, business.ctlRate);
 
-    d.lines(itemRow(cols, line.name, String(line.quantity), formatCents(baseNet)));
+    const { name, folded } = lineHeading(line);   // A551: "Chicken Burger - Spicy" on the item's own row
+    d.lines(itemRow(cols, name, String(line.quantity), formatCents(baseNet)));
 
-    const units = visibleUnits(line, ctx);
+    const units = visibleUnits(line, ctx).filter(u => u !== folded);
     const before = d.length;
 
     // Chosen units that cost nothing and carry no choice detail are collapsed
@@ -434,20 +477,25 @@ function renderReceipt(ctx: PrintContext): Document {
   minorRule();
 
   // A498 (owner, 2026-10-15, a printed receipt: "the payment method is printing on the wrong place … check where payment
-  // detail is printed and where buy good is printed"): ONE block — the heading straight above its payments (no rule
-  // between them), and the M-Pesa number customers pay to printed WITH the payments, inside the block, before its rule.
-  // A530: no heading on the compact receipt — the payment lines straight under PAY say what they are.
-  // A539 (owner, 2026-10-21): "add a line between payment method and payment details, it should read — payment details:
-  // Pay bill/buygood - 892984 / ---- / mpesa/cash/card". The standard receipt names the number customers pay to IN the
-  // heading, then a rule, then the payments. A Paybill with an account that is wider than the paper keeps its account on
-  // the next line (A492); a number too long even then goes under the heading. The compact opt-in keeps A530's block.
-  if (full) {
-    const label = business.tillLabel ?? 'Buy Goods';
-    const heading = business.tillNumber ? `Payment Details: ${label} - ${business.tillNumber}` : 'Payment Details:';
-    const cut = heading.indexOf(', Account ');
-    if (heading.length <= cols) d.line(heading, { bold: true });
-    else if (cut > 0 && cut <= cols) { d.line(heading.slice(0, cut), { bold: true }); d.line(heading.slice(cut + 2), { bold: true }); }
-    else { d.line('Payment Details:', { bold: true }); d.lines(wrap(`${label} - ${business.tillNumber}`, cols)); }
+  // detail is printed and where buy good is printed"): ONE block — the number customers pay to, straight above the
+  // payments, inside the block, before its rule. A530: no heading on the compact receipt — the payment lines straight
+  // under PAY say what they are. A539 put the number in a "Payment Details: Buy Goods - 892984" heading, then a rule.
+  // A551 (owner, 2026-10-21, on paper: "we just write `PAY BILL/BUY GOODS:` newline `123445` and we center it and increase
+  // the font size and thickness, We remove the wordings payment details"): the standard receipt prints the label alone
+  // ("BUY GOODS:" / "PAYBILL:"), then the number, each centred, double size and bold; a Paybill's account under them in
+  // normal size ("Account: WEST1", A492's ", Account " split); then the rule and the payments as before. No number, no
+  // heading (and no rule of its own — the one under PAY is there). Double width halves the line (24 on 80 mm, 16 on 58 mm):
+  // when the label or the number does not fit in it, both print double height only. The compact opt-in keeps A530's block.
+  if (full && business.tillNumber?.trim()) {
+    const label = `${sanitize(business.tillLabel ?? '').trim().toUpperCase() || 'BUY GOODS'}:`;
+    const raw = sanitize(business.tillNumber).trim();
+    const cut = raw.indexOf(', Account ');
+    const number = cut > 0 ? raw.slice(0, cut).trim() : raw;
+    const account = cut > 0 ? raw.slice(cut + ', Account '.length).trim() : '';
+    const half = Math.floor(cols / 2);
+    const size = label.length <= half && number.length <= half ? 'large' : 'tall';
+    for (const t of [label, number]) d.lines(size === 'large' ? [t] : wrap(t, cols), { align: 'center', size, bold: true });
+    if (account) d.lines(wrap(`Account: ${account}`, cols), { align: 'center' });
     d.line(rule(cols));
   }
   for (const leg of order.payments) {

@@ -57,11 +57,24 @@ export function versionBelow(a: string | null | undefined, b: string): boolean {
   return false;
 }
 
+/**
+ * A554: what the cloud knows about a device beyond its version — it reports `log_pull: true` in its update state (a till
+ * from A554 on: user_devices.update_state, A534), or it has answered a pull already. Either says it answers, whatever its
+ * version reads (B Foods, 2026-10-21: a test build labelled 1.0.19 with the 1.0.20 code was warned about, then delivered).
+ */
+export interface PullAbility { reportsLogPull?: boolean; answeredBefore?: boolean }
+
+/** Whether the device answers a pull: it says so, it did before, or its version is one that does. */
+export function canAnswerPull(version: string | null | undefined, a: PullAbility = {}): boolean {
+  return a.reportsLogPull === true || a.answeredBefore === true || !versionBelow(version, ANSWERS_FROM_VERSION);
+}
+
 /** What the admin portal says about a device's version: null when it can answer a pull. */
-export function versionNote(version: string | null | undefined): string | null {
-  if (!versionBelow(version, ANSWERS_FROM_VERSION)) return null;
+export function versionNote(version: string | null | undefined, a: PullAbility = {}): string | null {
+  if (canAnswerPull(version, a)) return null;
   const v = version ? `runs ${version}` : 'has not reported its version';
-  return `This till ${v} — it can only send logs from its Tech page from ${SENDS_FROM_VERSION}, and answer a pull from ${ANSWERS_FROM_VERSION}. The request waits until it updates (7 days).`;
+  // A554: "may wait" — the version is all the cloud knows (an older till reports nothing more); a build that answers anyway is not held back.
+  return `This till ${v} — it can only send logs from its Tech page from ${SENDS_FROM_VERSION}, and answer a pull from ${ANSWERS_FROM_VERSION}. The request may wait until it updates (kept 7 days).`;
 }
 
 /** Waiting requests past their 7 days become expired (of a business; of one device when named). Never throws. */

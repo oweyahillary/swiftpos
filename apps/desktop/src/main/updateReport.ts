@@ -44,6 +44,12 @@ export interface UpdateStateReport {
   downloaded_at: string | null;
   /** A start-up install of this version was tried and this machine still runs the old one. */
   startup_failed: boolean;
+  /**
+   * A554: this till answers a log pull from the admin portal (A533) — the admin portal goes by this, not by the version
+   * (a test build labelled 1.0.19 with the 1.0.20 code answered a pull it had been warned would wait). A cloud before
+   * A554 ignores it.
+   */
+  log_pull: true;
 }
 
 export const REPORT_EVERY_MS = 30 * 60_000;
@@ -77,6 +83,7 @@ export function buildUpdateReport(s: { status: UpdateStatus; running: string; st
     waiting_server: !downloaded && st.waitingServer === true,
     downloaded_at: downloaded ? dAt : null,
     startup_failed: !!s.startupFailed && (!st.version || st.version === s.startupFailed),
+    log_pull: true,   // A554
   };
 }
 

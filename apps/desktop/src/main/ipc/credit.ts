@@ -3,6 +3,9 @@ import { assertPayload } from '../ipcValidate';
 import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import * as creditConfirm from '../creditConfirm';   // A545
+import { readCreditCustomers, onAccountOffered, ensureCreditCustomers, creditListAt, selfApproves, pullCreditCustomers } from '../creditSale';   // A552
+import { signedIn as sessionPerson } from '../tillAccess';
+import { onCataloguePulled } from '../syncEngine';
 import { NO_CONNECTION_MESSAGE } from '../offlineSession';
 import { type IpcShared } from './shared';
 
@@ -69,6 +72,27 @@ export function registerCreditHandlers(ctx: IpcShared) {
       return { count: n, notice: creditConfirm.awaitingSentence(n), saved: true };
     }
   });
+  // ── A552: sales on account at the till (creditSale.ts) ─────────────────────────────────────────────────────────────
+  // The payment screen: is "On account" offered here, may the person signed in approve it themselves (customers.credit —
+  // no PIN), and the customers matching a name or phone with what they owe and have left. The list is read again when
+  // older than a minute (at most 4 s waited; offline: the saved one). The sale itself is checked again in order:create.
+  handle('credit:customers', async (_e, payload) => {
+    const { search } = assertPayload<{ search?: string }>({ search: { t: 'string', optional: true } }, payload ?? {});
+    const me = sessionPerson();
+    if (!me) return { offered: false, selfApproves: false, saved_at: null, customers: [] };
+    await ensureCreditCustomers().catch(() => { /* the saved list */ });
+    const db = getLocalDb();
+    const offered = onAccountOffered(db);
+    return {
+      offered,
+      selfApproves: selfApproves({ id: me.staffId, name: me.name, roleName: me.roleName, permissions: me.permissions }),
+      saved_at: creditListAt(db),
+      customers: offered ? readCreditCustomers(db, String(search ?? ''), 30) : [],
+    };
+  });
+  // The list is read with every catalogue pull too (startup, a change), so "On account" appears without a sale first.
+  onCataloguePulled(() => { void pullCreditCustomers().catch(() => false); });
+
   handle('credit:dismiss', async (_e, orderId: string) => {
     requireKey(['customers.credit'], CREDIT_REFUSED);
     creditConfirm.dismissRefused(getLocalDb(), String(orderId));

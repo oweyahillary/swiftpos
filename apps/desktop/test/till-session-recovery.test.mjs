@@ -90,7 +90,7 @@ ok('enrolment (and a technician\'s rejoin) keeps the secret; nothing on the till
   && !/handle\('auth:logout'/.test(ipc) && !/clearDeviceSecret\(\)/.test(ipc));
 ok('a refused session: the PIN is checked on the till and the cashier sells (a wrong PIN stays wrong)',
   // A494: a wrong PIN also counts toward the till's PIN lockout (recordPinFailure) — still thrown, still final.
-  /if \(res\.status === 401 && isSessionRefusal\(data\)\) \{[\s\S]{0,200}return fallbackToLocalAuthority\(\);\s*\}\s*if \(!res\.ok\) \{\s*if \(res\.status === 401\) recordPinFailure\(\);[^\n]*\n\s*throw new Error\(data\.error \?\? 'Invalid PIN'\);/.test(ipc));
+  /if \(res\.status === 401 && isSessionRefusal\(data\)\) \{[\s\S]{0,200}return fallbackToLocalAuthority\(\);\s*\}\s*if \(!res\.ok\) \{\s*if \(res\.status === 401\) recordPinFailure\(\);[^\n]*\n\s*throw expectedRefusal\(new Error\(data\.error \?\? 'Invalid PIN'\)\);/.test(ipc));   // A554: marked an expected answer (same Error)
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

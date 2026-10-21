@@ -67,21 +67,23 @@ ok('a blank name falls back to "Your Business"', blank.includes('Your Business')
 
 // The rest of the sample is neutral — it prints on every client's paper.
 ok('neutral branch on the sample', own.includes('Main Branch'));
-// A539: the number is in the payment heading — "Payment Details: Buy Goods - 000000".
-ok('neutral till number (no real Buy Goods number)', /Buy Goods - 000000/.test(own), (own.match(/Buy Goods[^\n|]*/) || [''])[0]);
+// A551: "BUY GOODS:" then the number, double width (the preview spaces a double-width line's letters out).
+ok('neutral till number (no real Buy Goods number)', /B U Y   G O O D S :/.test(own) && /\|\s+0 0 0 0 0 0\s+\|/.test(own),
+  (own.match(/[^\n]*B U Y[^\n]*\n[^\n]*/) || [''])[0]);
 ok('neutral cashier', /Cashier: Amina/.test(own));
 ok('neutral phone', /0700 000 000/.test(own) && !/0700 000 033|0117 000 033/.test(own));
 
-// A543: the kitchen preview is the Font B kitchen ticket (64 / 42 a line) on a till with no 'kitchen_font_a'; dispatch
-// (packing) and the receipt keep Font A (48). The switch itself is tests/kitchen-font-a543.test.mjs and shared/printing.
+// A543 made the kitchen preview Font B; A551 (owner: "kitchen receipt use the same font as the despatcher"): on a till with
+// no 'kitchen_font_b' it is the Font A kitchen ticket (48 / 32 a line), like dispatch (packing) and the receipt. The switch
+// itself is tests/kitchen-font-a543.test.mjs and shared/printing.
 {
   const db = new Database(':memory:');
   db.exec('CREATE TABLE session (id INTEGER PRIMARY KEY, business_name TEXT NOT NULL)');
   initPrinting(db, () => null);
   const edge = (stationId, paperWidthMm) => String(handlers['escpos:preview'](null, { stationId, paperWidthMm })).split('\n')[0];
-  ok('A543: the kitchen preview is Font B — 64 a line on 80 mm, 42 on 58 mm',
-    edge('kitchen', 80) === '+' + '-'.repeat(64) + '+' && edge('kitchen', 58) === '+' + '-'.repeat(42) + '+', edge('kitchen', 80));
-  ok('A543: dispatch and the receipt stay Font A (48 on 80 mm)',
+  ok('A551: the kitchen preview is Font A — 48 a line on 80 mm, 32 on 58 mm, as dispatch',
+    edge('kitchen', 80) === '+' + '-'.repeat(48) + '+' && edge('kitchen', 58) === '+' + '-'.repeat(32) + '+', edge('kitchen', 80));
+  ok('dispatch and the receipt stay Font A (48 on 80 mm)',
     edge('dispatch', 80) === '+' + '-'.repeat(48) + '+' && edge('receipt', 80) === '+' + '-'.repeat(48) + '+');
 }
 

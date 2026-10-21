@@ -1,29 +1,28 @@
 
 ============================================================
-KITCHEN   (582 bytes)
+KITCHEN   (488 bytes)
 ============================================================
-+----------------------------------------------------------------+
-|                        * * KITCHEN * *                         |
-|                                                                |
-|Order  T1--5718                                         TAKEAWAY|
-|Wed 05 Aug 19:42                                  Cashier  Amina|
-|----------------------------------------------------------------|
-|1   3PC CHICKEN COMBO                                           |
-|      3PC Chicken                                               |
-|        all spicy                                               |
-|      Fries large                                               |
-|      Popcorn chicken                                           |
-|                                                                |
-|2   WINGS COMBO 8PC                                             |
-|      8PC Hot Wings                                             |
-|        all spicy                                               |
-|      Fries medium                                              |
-|----------------------------------------------------------------|
-|                        5 items to cook                         |
-+----------------------------------------------------------------+
++------------------------------------------------+
+|                * * KITCHEN * *                 |
+|                                                |
+|Order  T1--5718                         TAKEAWAY|
+|Wed 05 Aug 19:42                  Cashier  Amina|
+|------------------------------------------------|
+|1   3PC CHICKEN COMBO                           |
+|      3PC Chicken                               |
+|        all spicy                               |
+|      Fries large                               |
+|      Popcorn chicken                           |
+|2   WINGS COMBO 8PC                             |
+|      8PC Hot Wings                             |
+|        all spicy                               |
+|      Fries medium                              |
+|------------------------------------------------|
+|                5 items to cook                 |
++------------------------------------------------+
 
 ============================================================
-DISPATCH   (549 bytes)
+DISPATCH   (553 bytes)
 ============================================================
 +------------------------------------------------+
 |                * * DISPATCH * *                |
@@ -37,20 +36,18 @@ DISPATCH   (549 bytes)
 |      Popcorn chicken                           |
 |      Cole slaw                                 |
 |      Soda 1.25L                                |
-|                                                |
 |2   WINGS COMBO 8PC                             |
 |      8PC Hot Wings (all spicy)                 |
 |      Fries medium                              |
 |      BBQ Sauce                                 |
 |      Garlic Sauce                              |
-|                                                |
 |1   SODA 500ML                                  |
 |------------------------------------------------|
 |                     3 bags                     |
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT   (1800 bytes)
+CUSTOMER RECEIPT   (1799 bytes)
 ============================================================
 +------------------------------------------------+
 |                 Your Business                  |
@@ -88,7 +85,8 @@ CUSTOMER RECEIPT   (1800 bytes)
 |------------------------------------------------|
 |PAY: KES 3,300.00                               |
 |------------------------------------------------|
-|Payment Details: Buy Goods - 000000             |
+|              B U Y   G O O D S :               |
+|                  0 0 0 0 0 0                   |
 |------------------------------------------------|
 |CASH                                    3,500.00|
 |CHANGE                                    200.00|
@@ -101,7 +99,7 @@ CUSTOMER RECEIPT   (1800 bytes)
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — duplicate, optional fields off   (1762 bytes)
+CUSTOMER RECEIPT — duplicate, optional fields off   (1690 bytes)
 ============================================================
 +------------------------------------------------+
 |                Duplicate Print                 |
@@ -139,8 +137,6 @@ CUSTOMER RECEIPT — duplicate, optional fields off   (1762 bytes)
 |------------------------------------------------|
 |PAY: KES 3,300.00                               |
 |------------------------------------------------|
-|Payment Details:                                |
-|------------------------------------------------|
 |CASH                                    3,500.00|
 |CHANGE                                    200.00|
 |------------------------------------------------|
@@ -151,30 +147,29 @@ CUSTOMER RECEIPT — duplicate, optional fields off   (1762 bytes)
 +------------------------------------------------+
 
 ============================================================
-KITCHEN — 58mm   (483 bytes)
+KITCHEN — 58mm   (416 bytes)
 ============================================================
-+------------------------------------------+
-|             * * KITCHEN * *              |
-|                                          |
-|Order  T1--5718                   TAKEAWAY|
-|Wed 05 Aug 19:42            Cashier  Amina|
-|------------------------------------------|
-|1   3PC CHICKEN COMBO                     |
-|      3PC Chicken                         |
-|        all spicy                         |
-|      Fries large                         |
-|      Popcorn chicken                     |
-|                                          |
-|2   WINGS COMBO 8PC                       |
-|      8PC Hot Wings                       |
-|        all spicy                         |
-|      Fries medium                        |
-|------------------------------------------|
-|             5 items to cook              |
-+------------------------------------------+
++--------------------------------+
+|        * * KITCHEN * *         |
+|                                |
+|Order  T1--5718         TAKEAWAY|
+|Wed 05 Aug 19:42  Cashier  Amina|
+|--------------------------------|
+|1   3PC CHICKEN COMBO           |
+|      3PC Chicken               |
+|        all spicy               |
+|      Fries large               |
+|      Popcorn chicken           |
+|2   WINGS COMBO 8PC             |
+|      8PC Hot Wings             |
+|        all spicy               |
+|      Fries medium              |
+|--------------------------------|
+|        5 items to cook         |
++--------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — 58mm   (1336 bytes)
+CUSTOMER RECEIPT — 58mm   (1335 bytes)
 ============================================================
 +--------------------------------+
 |         Your Business          |
@@ -212,8 +207,8 @@ CUSTOMER RECEIPT — 58mm   (1336 bytes)
 |--------------------------------|
 |PAY: KES 3,300.00               |
 |--------------------------------|
-|Payment Details:                |
-|Buy Goods - 000000              |
+|      B U Y   G O O D S :       |
+|          0 0 0 0 0 0           |
 |--------------------------------|
 |CASH                    3,500.00|
 |CHANGE                    200.00|
@@ -270,7 +265,8 @@ the CUSTOMER RECEIPT above. Compact = receipt_compact_layout on (A530's lines, a
 |------------------------------------------------|    |------------------------------------------------|    |            TAX RECEIPT UPON REQUEST            |
 |PAY: KES 3,300.00                               |    |PAY: KES 3,300.00                               |    |               Powered by ZapTill               |
 |------------------------------------------------|    |------------------------------------------------|    +------------------------------------------------+
-|Payment Details: Buy Goods - 000000             |    |Payment Details: Buy Goods - 000000             |
+|              B U Y   G O O D S :               |    |              B U Y   G O O D S :               |
+|                  0 0 0 0 0 0                   |    |                  0 0 0 0 0 0                   |
 |------------------------------------------------|    |------------------------------------------------|
 |CASH                                    3,500.00|    |CASH                                    3,500.00|
 |CHANGE                                    200.00|    |CHANGE                                    200.00|
@@ -320,8 +316,8 @@ the CUSTOMER RECEIPT above. Compact = receipt_compact_layout on (A530's lines, a
 |--------------------------------|    |--------------------------------|    |    TAX RECEIPT UPON REQUEST    |
 |PAY: KES 3,300.00               |    |PAY: KES 3,300.00               |    |       Powered by ZapTill       |
 |--------------------------------|    |--------------------------------|    +--------------------------------+
-|Payment Details:                |    |Payment Details:                |
-|Buy Goods - 000000              |    |Buy Goods - 000000              |
+|      B U Y   G O O D S :       |    |      B U Y   G O O D S :       |
+|          0 0 0 0 0 0           |    |          0 0 0 0 0 0           |
 |--------------------------------|    |--------------------------------|
 |CASH                    3,500.00|    |CASH                    3,500.00|
 |CHANGE                    200.00|    |CHANGE                    200.00|
@@ -336,18 +332,18 @@ the CUSTOMER RECEIPT above. Compact = receipt_compact_layout on (A530's lines, a
 Estimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530;
 "A530" = the 1.0.20 compact standard at 3.25 mm that A538 replaces, for reference):
                        text lines      1.0.19   standard    compact       A530
-  80 mm                45 / 34          206 mm  175 mm -15%  134 mm -35%  118 mm -43%
-  80 mm, logo          45 / 34          242 mm  190 mm -21%  149 mm -38%  133 mm -45%
-  58 mm                46 / 34          210 mm  179 mm -15%  134 mm -36%  118 mm -44%
-  58 mm, logo          46 / 34          246 mm  194 mm -21%  149 mm -39%  133 mm -46%
+  80 mm                46 / 34          214 mm  184 mm -14%  134 mm -37%  118 mm -45%
+  80 mm, logo          46 / 34          250 mm  199 mm -20%  149 mm -40%  133 mm -47%
+  58 mm                46 / 34          214 mm  184 mm -14%  134 mm -37%  118 mm -45%
+  58 mm, logo          46 / 34          250 mm  199 mm -20%  149 mm -40%  133 mm -47%
 
 ============================================================
-A543 — the kitchen ticket in Font A (kitchen_font_a) and Font B (standard)
+A543/A551 — the kitchen ticket in Font A (standard) and Font B (kitchen_font_b)
 ============================================================
-A long dine-in order. Dispatch (packing) and receipts stay Font A, unchanged.
+A long dine-in order. Dispatch (packing) and receipts are Font A either way.
 
 80 mm
-FONT A (kitchen_font_a)                               FONT B (standard, A543)
+FONT A (standard, A551)                               FONT B (kitchen_font_b)
 +------------------------------------------------+    +----------------------------------------------------------------+
 |                * * KITCHEN * *                 |    |                        * * KITCHEN * *                         |
 |                                                |    |                                                                |
@@ -357,49 +353,38 @@ FONT A (kitchen_font_a)                               FONT B (standard, A543)
 |NOTE: Birthday table - bring the cake out with  |    |NOTE: Birthday table - bring the cake out with the mains, not   |
 |the mains, not before                           |    |before                                                          |
 |------------------------------------------------|    |----------------------------------------------------------------|
-|1   FAMILY FEAST BUCKET                         |    |1   FAMILY FEAST BUCKET 12PC                                    |
-|    12PC WITH TWO LARGE                         |    |    WITH TWO LARGE SIDES                                        |
+|1   FAMILY FEAST BUCKET 12PC WITH TWO LARGE     |    |1   FAMILY FEAST BUCKET 12PC WITH TWO LARGE SIDES               |
 |    SIDES                                       |    |      12PC Original Recipe Chicken                              |
 |      12PC Original Recipe Chicken              |    |        6 spicy, 6 normal                                       |
 |        6 spicy, 6 normal                       |    |      Large Fries                                               |
 |      Large Fries                               |    |      Large Coleslaw With Extra Dressing On The Side            |
 |      Large Coleslaw With Extra Dressing On The |    |      ** Cut the chicken into small pieces for the kids         |
-|      Side                                      |    |                                                                |
-|      ** Cut the chicken into small pieces for  |    |2   GRILLED TILAPIA WHOLE FISH                                  |
-|      the kids                                  |    |    SERVED WITH UGALI AND SUKUMA                                |
-|                                                |    |    WIKI                                                        |
-|2   GRILLED TILAPIA                             |    |      Whole Tilapia                                             |
-|    WHOLE FISH SERVED                           |    |        well done                                               |
-|    WITH UGALI AND                              |    |      Ugali                                                     |
-|    SUKUMA WIKI                                 |    |      Sukuma Wiki Fried With Onions And Tomatoes                |
-|      Whole Tilapia                             |    |                                                                |
-|        well done                               |    |3   BEEF BURGER DOUBLE PATTY                                    |
-|      Ugali                                     |    |    CHEESE                                                      |
-|      Sukuma Wiki Fried With Onions And Tomatoes|    |      Double Beef Patty                                         |
-|                                                |    |      No Onions, Extra Pickles, Cheese Melted On Top            |
-|3   BEEF BURGER DOUBLE                          |    |      Medium Fries                                              |
-|    PATTY CHEESE                                |    |                                                                |
-|      Double Beef Patty                         |    |2   CHICKEN WINGS 10PC HONEY                                    |
-|      No Onions, Extra Pickles, Cheese Melted On|    |    BARBECUE GLAZE                                              |
-|      Top                                       |    |      10PC Wings                                                |
-|      Medium Fries                              |    |        all spicy                                               |
-|                                                |    |      ** Sauce separately                                       |
-|2   CHICKEN WINGS 10PC                          |    |                                                                |
-|    HONEY BARBECUE GLAZE                        |    |6   VEGETABLE SAMOSA                                            |
-|      10PC Wings                                |    |                                                                |
-|        all spicy                               |    |1   MANDAZI BASKET FOR THE TABLE                                |
-|      ** Sauce separately                       |    |----------------------------------------------------------------|
-|                                                |    |                        12 items to cook                        |
-|6   VEGETABLE SAMOSA                            |    +----------------------------------------------------------------+
-|                                                |
-|1   MANDAZI BASKET FOR                          |
-|    THE TABLE                                   |
+|      Side                                      |    |2   GRILLED TILAPIA WHOLE FISH SERVED WITH UGALI AND SUKUMA WIKI|
+|      ** Cut the chicken into small pieces for  |    |      Whole Tilapia                                             |
+|      the kids                                  |    |        well done                                               |
+|2   GRILLED TILAPIA WHOLE FISH SERVED WITH UGALI|    |      Ugali                                                     |
+|    AND SUKUMA WIKI                             |    |      Sukuma Wiki Fried With Onions And Tomatoes                |
+|      Whole Tilapia                             |    |3   BEEF BURGER DOUBLE PATTY CHEESE                             |
+|        well done                               |    |      Double Beef Patty                                         |
+|      Ugali                                     |    |      No Onions, Extra Pickles, Cheese Melted On Top            |
+|      Sukuma Wiki Fried With Onions And Tomatoes|    |      Medium Fries                                              |
+|3   BEEF BURGER DOUBLE PATTY CHEESE             |    |2   CHICKEN WINGS 10PC HONEY BARBECUE GLAZE                     |
+|      Double Beef Patty                         |    |      10PC Wings                                                |
+|      No Onions, Extra Pickles, Cheese Melted On|    |        all spicy                                               |
+|      Top                                       |    |      ** Sauce separately                                       |
+|      Medium Fries                              |    |6   VEGETABLE SAMOSA                                            |
+|2   CHICKEN WINGS 10PC HONEY BARBECUE GLAZE     |    |1   MANDAZI BASKET FOR THE TABLE                                |
+|      10PC Wings                                |    |----------------------------------------------------------------|
+|        all spicy                               |    |                        12 items to cook                        |
+|      ** Sauce separately                       |    +----------------------------------------------------------------+
+|6   VEGETABLE SAMOSA                            |
+|1   MANDAZI BASKET FOR THE TABLE                |
 |------------------------------------------------|
 |                12 items to cook                |
 +------------------------------------------------+
 
 58 mm
-FONT A (kitchen_font_a)               FONT B (standard, A543)
+FONT A (standard, A551)               FONT B (kitchen_font_b)
 +--------------------------------+    +------------------------------------------+
 |        * * KITCHEN * *         |    |             * * KITCHEN * *              |
 |                                |    |                                          |
@@ -409,66 +394,153 @@ FONT A (kitchen_font_a)               FONT B (standard, A543)
 |Table  14                       |    |NOTE: Birthday table - bring the cake out |
 |NOTE: Birthday table - bring the|    |with the mains, not before                |
 |cake out with the mains, not    |    |------------------------------------------|
-|before                          |    |1   FAMILY FEAST                          |
-|--------------------------------|    |    BUCKET 12PC WITH                      |
-|1   FAMILY FEAST                |    |    TWO LARGE SIDES                       |
-|    BUCKET 12PC                 |    |      12PC Original Recipe Chicken        |
-|    WITH TWO                    |    |        6 spicy, 6 normal                 |
-|    LARGE SIDES                 |    |      Large Fries                         |
-|      12PC Original Recipe      |    |      Large Coleslaw With Extra Dressing  |
-|      Chicken                   |    |      On The Side                         |
-|        6 spicy, 6 normal       |    |      ** Cut the chicken into small pieces|
-|      Large Fries               |    |      for the kids                        |
-|      Large Coleslaw With Extra |    |                                          |
-|      Dressing On The Side      |    |2   GRILLED TILAPIA                       |
-|      ** Cut the chicken into   |    |    WHOLE FISH SERVED                     |
-|      small pieces for the kids |    |    WITH UGALI AND                        |
-|                                |    |    SUKUMA WIKI                           |
-|2   GRILLED                     |    |      Whole Tilapia                       |
-|    TILAPIA                     |    |        well done                         |
-|    WHOLE FISH                  |    |      Ugali                               |
-|    SERVED WITH                 |    |      Sukuma Wiki Fried With Onions And   |
-|    UGALI AND                   |    |      Tomatoes                            |
-|    SUKUMA WIKI                 |    |                                          |
-|      Whole Tilapia             |    |3   BEEF BURGER                           |
-|        well done               |    |    DOUBLE PATTY                          |
-|      Ugali                     |    |    CHEESE                                |
-|      Sukuma Wiki Fried With    |    |      Double Beef Patty                   |
-|      Onions And Tomatoes       |    |      No Onions, Extra Pickles, Cheese    |
-|                                |    |      Melted On Top                       |
-|3   BEEF BURGER                 |    |      Medium Fries                        |
-|    DOUBLE PATTY                |    |                                          |
-|    CHEESE                      |    |2   CHICKEN WINGS                         |
-|      Double Beef Patty         |    |    10PC HONEY                            |
-|      No Onions, Extra Pickles, |    |    BARBECUE GLAZE                        |
-|      Cheese Melted On Top      |    |      10PC Wings                          |
-|      Medium Fries              |    |        all spicy                         |
-|                                |    |      ** Sauce separately                 |
-|2   CHICKEN                     |    |                                          |
-|    WINGS 10PC                  |    |6   VEGETABLE SAMOSA                      |
-|    HONEY                       |    |                                          |
-|    BARBECUE                    |    |1   MANDAZI BASKET                        |
-|    GLAZE                       |    |    FOR THE TABLE                         |
+|before                          |    |1   FAMILY FEAST BUCKET 12PC WITH TWO     |
+|--------------------------------|    |    LARGE SIDES                           |
+|1   FAMILY FEAST BUCKET 12PC    |    |      12PC Original Recipe Chicken        |
+|    WITH TWO LARGE SIDES        |    |        6 spicy, 6 normal                 |
+|      12PC Original Recipe      |    |      Large Fries                         |
+|      Chicken                   |    |      Large Coleslaw With Extra Dressing  |
+|        6 spicy, 6 normal       |    |      On The Side                         |
+|      Large Fries               |    |      ** Cut the chicken into small pieces|
+|      Large Coleslaw With Extra |    |      for the kids                        |
+|      Dressing On The Side      |    |2   GRILLED TILAPIA WHOLE FISH SERVED WITH|
+|      ** Cut the chicken into   |    |    UGALI AND SUKUMA WIKI                 |
+|      small pieces for the kids |    |      Whole Tilapia                       |
+|2   GRILLED TILAPIA WHOLE FISH  |    |        well done                         |
+|    SERVED WITH UGALI AND SUKUMA|    |      Ugali                               |
+|    WIKI                        |    |      Sukuma Wiki Fried With Onions And   |
+|      Whole Tilapia             |    |      Tomatoes                            |
+|        well done               |    |3   BEEF BURGER DOUBLE PATTY CHEESE       |
+|      Ugali                     |    |      Double Beef Patty                   |
+|      Sukuma Wiki Fried With    |    |      No Onions, Extra Pickles, Cheese    |
+|      Onions And Tomatoes       |    |      Melted On Top                       |
+|3   BEEF BURGER DOUBLE PATTY    |    |      Medium Fries                        |
+|    CHEESE                      |    |2   CHICKEN WINGS 10PC HONEY BARBECUE     |
+|      Double Beef Patty         |    |    GLAZE                                 |
+|      No Onions, Extra Pickles, |    |      10PC Wings                          |
+|      Cheese Melted On Top      |    |        all spicy                         |
+|      Medium Fries              |    |      ** Sauce separately                 |
+|2   CHICKEN WINGS 10PC HONEY    |    |6   VEGETABLE SAMOSA                      |
+|    BARBECUE GLAZE              |    |1   MANDAZI BASKET FOR THE TABLE          |
 |      10PC Wings                |    |------------------------------------------|
 |        all spicy               |    |             12 items to cook             |
 |      ** Sauce separately       |    +------------------------------------------+
-|                                |
-|6   VEGETABLE                   |
-|    SAMOSA                      |
-|                                |
-|1   MANDAZI                     |
-|    BASKET FOR                  |
-|    THE TABLE                   |
+|6   VEGETABLE SAMOSA            |
+|1   MANDAZI BASKET FOR THE TABLE|
 |--------------------------------|
 |        12 items to cook        |
 +--------------------------------+
 
-Estimated paper per kitchen ticket (text lines, mm):
-                           Font A          Font B
-  this sale, 80 mm         17 / 90 mm      17 / 68 mm  -25%
-  this sale, 58 mm         19 / 102 mm     17 / 68 mm  -34%
-  the long order, 80 mm    47 / 239 mm     41 / 151 mm  -37%
-  the long order, 58 mm    60 / 310 mm     50 / 184 mm  -41%
+Estimated paper per kitchen ticket (text lines, mm; A551 = the item gap and the 1-line feed):
+                           Font A before   Font A (A551)   Font B (A551)
+  this sale, 80 mm         17 / 90 mm      16 / 79 mm -13% 16 / 57 mm -37%
+  this sale, 58 mm         17 / 90 mm      16 / 79 mm -13% 16 / 57 mm -37%
+  the long order, 80 mm    41 / 203 mm     36 / 179 mm -12% 31 / 112 mm -45%
+  the long order, 58 mm    48 / 238 mm     43 / 214 mm -10% 38 / 137 mm -42%
+
+============================================================
+A551 — a variant on the item's line; the payment block
+============================================================
+The cart as the till hands it in (toUnits): a Chicken Burger with the variant "Chicken Burger Spicy", a Beef Burger
+with "Large", and a long name with its variant (the hanging wrap keeps the quantity column). Paybill 4098201, Account WEST1.
+
+80 mm
+KITCHEN                                               DISPATCH                                              RECEIPT (Paybill)
++------------------------------------------------+    +------------------------------------------------+    +------------------------------------------------+
+|                * * KITCHEN * *                 |    |                * * DISPATCH * *                |    |                 Your Business                  |
+|                                                |    |                                                |    |                  Main Branch                   |
+|Order  T1--5718                         TAKEAWAY|    |Order  T1--5718                         TAKEAWAY|    |                PIN: P051234567X                |
+|Wed 05 Aug 19:42                  Cashier  Amina|    |Wed 05 Aug 19:42                  Cashier  Amina|    |               Tel: 0700 000 000                |
+|------------------------------------------------|    |------------------------------------------------|    |------------------------------------------------|
+|1   CHICKEN BURGER - SPICY                      |    |1   CHICKEN BURGER - SPICY                      |    |Type: Takeaway                                  |
+|2   BEEF BURGER - LARGE                         |    |2   BEEF BURGER - LARGE                         |    |------------------------------------------------|
+|1   GRILLED CHICKEN BURGER DOUBLE PATTY - EXTRA |    |      Extra Cheese                              |    |Bill No.: T1--5718                              |
+|    HOT PERI PERI                               |    |1   GRILLED CHICKEN BURGER DOUBLE PATTY - EXTRA |    |Cashier: Amina                                  |
+|------------------------------------------------|    |    HOT PERI PERI                               |    |Date: 2026-08-05 19:42:11                       |
+|                3 items to cook                 |    |------------------------------------------------|    |Kots: 2                                         |
++------------------------------------------------+    |                     3 bags                     |    |------------------------------------------------|
+                                                      +------------------------------------------------+    |Item                             Qty         Amt|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |Chicken Burger - Spicy             1      550.85|
+                                                                                                            |Beef Burger - Large                2    1,440.68|
+                                                                                                            |  Extra Cheese                                  |
+                                                                                                            |                                                |
+                                                                                                            |Grilled Chicken Burger Double      1      805.08|
+                                                                                                            |Patty - Extra Hot Peri Peri                     |
+                                                                                                            |------------------------------------------------|
+                                                                                                            |Total Qty:                                     4|
+                                                                                                            |SubTotal:                               2,796.61|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |CTL (2%)                                   55.93|
+                                                                                                            |VAT (16%)                                 447.46|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |Total:                                  3,300.00|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |PAY: KES 3,300.00                               |
+                                                                                                            |------------------------------------------------|
+                                                                                                            |                P A Y B I L L :                 |
+                                                                                                            |                4 0 9 8 2 0 1                   |
+                                                                                                            |                 Account: WEST1                 |
+                                                                                                            |------------------------------------------------|
+                                                                                                            |M-PESA                                  3,300.00|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |          Thank you for your business!          |
+                                                                                                            |         For delivery call 0700 000 000         |
+                                                                                                            |------------------------------------------------|
+                                                                                                            |            TAX RECEIPT UPON REQUEST            |
+                                                                                                            |               Powered by ZapTill               |
+                                                                                                            +------------------------------------------------+
+
+58 mm
+KITCHEN                               DISPATCH                              RECEIPT (Paybill)
++--------------------------------+    +--------------------------------+    +--------------------------------+
+|        * * KITCHEN * *         |    |        * * DISPATCH * *        |    |         Your Business          |
+|                                |    |                                |    |          Main Branch           |
+|Order  T1--5718         TAKEAWAY|    |Order  T1--5718         TAKEAWAY|    |        PIN: P051234567X        |
+|Wed 05 Aug 19:42  Cashier  Amina|    |Wed 05 Aug 19:42  Cashier  Amina|    |       Tel: 0700 000 000        |
+|--------------------------------|    |--------------------------------|    |--------------------------------|
+|1   CHICKEN BURGER - SPICY      |    |1   CHICKEN BURGER - SPICY      |    |Type: Takeaway                  |
+|2   BEEF BURGER - LARGE         |    |2   BEEF BURGER - LARGE         |    |--------------------------------|
+|1   GRILLED CHICKEN BURGER      |    |      Extra Cheese              |    |Bill No.: T1--5718              |
+|    DOUBLE PATTY - EXTRA HOT    |    |1   GRILLED CHICKEN BURGER      |    |Cashier: Amina                  |
+|    PERI PERI                   |    |    DOUBLE PATTY - EXTRA HOT    |    |Date: 2026-08-05 19:42:11       |
+|--------------------------------|    |    PERI PERI                   |    |Kots: 2                         |
+|        3 items to cook         |    |--------------------------------|    |--------------------------------|
++--------------------------------+    |             3 bags             |    |Item               Qty       Amt|
+                                      +--------------------------------+    |--------------------------------|
+                                                                            |Chicken Burger -     1    550.85|
+                                                                            |Spicy                           |
+                                                                            |Beef Burger -        2  1,440.68|
+                                                                            |Large                           |
+                                                                            |  Extra Cheese                  |
+                                                                            |                                |
+                                                                            |Grilled Chicken      1    805.08|
+                                                                            |Burger Double                   |
+                                                                            |Patty - Extra Hot               |
+                                                                            |Peri Peri                       |
+                                                                            |--------------------------------|
+                                                                            |Total Qty:                     4|
+                                                                            |SubTotal:               2,796.61|
+                                                                            |--------------------------------|
+                                                                            |CTL (2%)                   55.93|
+                                                                            |VAT (16%)                 447.46|
+                                                                            |--------------------------------|
+                                                                            |Total:                  3,300.00|
+                                                                            |--------------------------------|
+                                                                            |PAY: KES 3,300.00               |
+                                                                            |--------------------------------|
+                                                                            |        P A Y B I L L :         |
+                                                                            |        4 0 9 8 2 0 1           |
+                                                                            |         Account: WEST1         |
+                                                                            |--------------------------------|
+                                                                            |M-PESA                  3,300.00|
+                                                                            |--------------------------------|
+                                                                            |  Thank you for your business!  |
+                                                                            | For delivery call 0700 000 000 |
+                                                                            |--------------------------------|
+                                                                            |    TAX RECEIPT UPON REQUEST    |
+                                                                            |       Powered by ZapTill       |
+                                                                            +--------------------------------+
 
 ============================================================
 Against the incumbent's printed receipts

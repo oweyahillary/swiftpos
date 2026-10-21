@@ -3210,9 +3210,12 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   // per row; the same statements the two success branches ran inline before.
   const _markQueueSynced = db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1, drawer_wait_at=NULL WHERE id=?`);
   const _markOrderSynced = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
+  // A552: the sale's charge on a customer's account is now in the cloud's balance — from this moment (creditSale.ts).
+  const _markChargeSynced = db.prepare(`UPDATE customer_credit_transactions SET synced_at=? WHERE order_id=? AND synced_at IS NULL`);
   const markSynced = db.transaction((queueId: number, orderId: string) => {
     _markQueueSynced.run(queueId);
     _markOrderSynced.run(orderId);
+    _markChargeSynced.run(new Date().toISOString(), orderId);
   });
 
   // Every till pushes its OWN orders to the cloud, including tills that have a

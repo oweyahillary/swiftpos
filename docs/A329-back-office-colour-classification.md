@@ -1239,3 +1239,13 @@ Reviewed: on a phone a wide table hides its secondary columns (`hidden sm:table-
 badges, a pump's idle / dispensing state, delivered or restocked litres, revenue, a margin band, the peak-hour tint — the
 same classes are drawn a second time in the phone-only details, so the count rises with no new colour and no action in
 green or blue. Baselines raised: `pages/BranchDetailPage.tsx` 7 → 8, `pages/DiscountsPage.tsx` 7 → 10, `pages/manager/ManagerDashboard.tsx` 33 → 37, `pages/manager/ManagerReportsPage.tsx` 20 → 21, `pages/products/ProductsPage.tsx` 9 → 11, `pages/ReportsPage.tsx` 49 → 55, `pages/settings/MinimartSettingsPage.tsx` 7 → 8, `pages/settings/PetrolSettingsPage.tsx` 16 → 20, `pages/stock/IngredientsPage.tsx` 10 → 12, `pages/stock/SuppliersPage.tsx` 5 → 7.
+
+## Addendum 2026-10-21 — A553 the analytics charts' palette (`pages/analytics/chartPalette.ts`, baseline 26)
+
+Reviewed: the 26 hits are **data** colours (not actions), all in the one palette file the Analytics page's charts read —
+the dataviz reference categorical slots (blue `#2a78d6` / `#3987e5`, aqua `#1baf7a` / `#199e70`, violet `#6250d6` /
+`#9085e9`) that tell series apart (payment methods, leak types, menu classes), the one-hue blue ramp of the sales heatmap
+(13 steps), the status green `#0ca30c` of the newest credit bucket and the "up is good" change text (`#006300` light /
+`#0ca30c` dark). Each mode is selected for its own surface and was run through the dataviz validator. Nothing pressed,
+selected or linked uses them — the page's buttons, tabs and period presets stay `swift-*`; chart text stays in the gray
+classes.

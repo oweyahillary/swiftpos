@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import type { CartItem } from '../../lib/cart';
 import type { Business } from '../../types';
+import { nameWithVariants } from '../../lib/buildReceiptOrder';
 
 interface PaymentLine {
   method: string;
@@ -49,7 +50,8 @@ interface Props {
   compact?: boolean;
   /**
    * A547 (A539 on the browser receipt): how a customer pays by M-Pesa — the receipt_pay the thermal receipt prints
-   * (A450). The classic layout names it in the payment block's heading: "Payment Details: Buy Goods - 123456".
+   * (A450). A551: the classic layout prints it as the thermal receipt does — "BUY GOODS:" then "123456", centred, large
+   * and bold (a Paybill's account under them), no "Payment Details" words.
    */
   pay?: { label?: string | null; number?: string | null } | null;
   /** A547 (A540): the cent the tax split loses, shown as "Round Off" only when it is really there — never "0.00". */
@@ -106,10 +108,15 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
 
   const divider = () => <p style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />;
 
-  // A547 (A539, owner 2026-10-21: "payment details: Pay bill/buygood - 892984 / ------ / mpesa/cash/card"): the classic
-  // block as the thermal receipt prints it — the heading names the number customers pay to, a rule, the payments, CHANGE.
-  const payNumber = pay?.number?.trim() || '';
-  const payHeading = payNumber ? `Payment Details: ${pay?.label?.trim() || 'Buy Goods'} - ${payNumber}` : 'Payment Details:';
+  // A547 (A539) gave the classic block the thermal receipt's heading. A551 (owner, 2026-10-21, on paper: "we just write
+  // `PAY BILL/BUY GOODS:` newline `123445` and we center it and increase the font size and thickness, We remove the
+  // wordings payment details"): the label alone, then the number, centred, large and bold; a Paybill's account (A492's
+  // "4098201, Account WEST1") on a third line in the normal size; then a rule, the payments, CHANGE. No number: no heading.
+  const payRaw = pay?.number?.trim() || '';
+  const payCut = payRaw.indexOf(', Account ');
+  const payNumber = payCut > 0 ? payRaw.slice(0, payCut).trim() : payRaw;
+  const payAccount = payCut > 0 ? payRaw.slice(payCut + ', Account '.length).trim() : '';
+  const payLabel = `${(pay?.label?.trim() || 'Buy Goods').toUpperCase()}:`;
   const showRoundOff = Math.abs(roundOff) >= 0.005;   // A540: no "Round Off: 0.00"
 
   return (
@@ -151,17 +158,11 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {cart.map((item, index) => (
         <div key={index} style={{ marginBottom: '5px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ flex: 1, paddingRight: '8px' }}>{item.product.name} x{item.quantity}</span>
+            {/* A551: the variants on the item's own line — "Chicken Burger - Spicy x1" — not a row of their own each
+                (the line total already carries any variant's price, as on the thermal receipt). */}
+            <span style={{ flex: 1, paddingRight: '8px' }}>{nameWithVariants(item.product.name, item.selectedVariants.map(v => v.optionName))} x{item.quantity}</span>
             <span style={{ whiteSpace: 'nowrap' }}>{currency} {fmtMoney(item.lineTotal)}</span>
           </div>
-
-          {/* Variants */}
-          {item.selectedVariants.map(v => (
-            <div key={v.optionId} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '10px', color: '#555', fontSize: '11px' }}>
-              <span>{v.groupName}: {v.optionName}</span>
-              <span>{v.priceAdjustment === 0 ? 'incl.' : `+${currency} ${fmtMoney(v.priceAdjustment * item.quantity)}`}</span>
-            </div>
-          ))}
 
           {/* Modifiers */}
           {item.selectedModifiers.map(m => (
@@ -212,10 +213,17 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
         </>
       ) : (
         <>
-          {/* A547: the thermal receipt's block — "Payment Details: <Buy Goods|Paybill> - <number>", a rule, each payment
-              (a lone cash payment carries what was tendered), CHANGE when there is some. No till line after them. */}
-          <p style={{ fontWeight: 'bold', marginBottom: '3px' }} data-testid="payment-details">{payHeading}</p>
-          {divider()}
+          {/* A551: the thermal receipt's block — "BUY GOODS:" / "PAYBILL:", the number, centred, large and bold (a Paybill's
+              account under them), a rule, each payment (a lone cash payment carries what was tendered), CHANGE when there
+              is some. No number: straight to the payments. */}
+          {payNumber && (
+            <div style={{ textAlign: 'center', fontWeight: 'bold', marginBottom: '3px' }} data-testid="payment-details">
+              <p style={{ fontSize: '16px' }}>{payLabel}</p>
+              <p style={{ fontSize: '18px' }}>{payNumber}</p>
+              {payAccount && <p style={{ fontWeight: 'normal' }}>Account: {payAccount}</p>}
+            </div>
+          )}
+          {payNumber && divider()}
           {payments.length === 0 && line(fmtMethod('cash'), `${currency} ${fmtMoney(total)}`)}
           {payments.map((p, i) => (
             <div key={i}>

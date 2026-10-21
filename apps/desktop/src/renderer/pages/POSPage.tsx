@@ -300,6 +300,15 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
+  // A552: On account on this till — offered?, and may the person signed in approve it themselves (read as Pay opens).
+  const [onAccount, setOnAccount] = useState<{ offered: boolean; selfApproves: boolean } | null>(null);
+  useEffect(() => {
+    if (!showPayment) return;
+    let live = true;
+    posApi.order.creditCustomers('').then((r) => { if (live) setOnAccount({ offered: !!r?.offered, selfApproves: !!r?.selfApproves }); })
+      .catch(() => { if (live) setOnAccount(null); });
+    return () => { live = false; };
+  }, [showPayment]);
   // A508: a sale under way (items in the cart, the payment screen open) — an update never installs on its own meanwhile.
   useEffect(() => { reportBusy({ cart: cart.length > 0, payment: showPayment }); }, [cart.length, showPayment]);
   useEffect(() => () => reportBusy({ cart: false, payment: false }), []);
@@ -1144,6 +1153,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         // A367: the note on the whole order.
         notes: orderNote.trim() || null,
         payments: payment.legs,
+        // A552: a sale on account — the customer; the approver's PIN when the seller does not approve it themselves.
+        ...(payment.credit ? { customer_id: payment.credit.customerId, ...(payment.credit.pin ? { credit_pin: payment.credit.pin } : {}) } : {}),
       });
 
       setCompletedOrder({ orderNumber: created?.orderNumber || num, payment,   // A503 (E1): the final number (A500 may renumber)
@@ -1978,6 +1989,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           deliveryFee={feeDue}
           rider={orderType === 'delivery' ? deliveryPerson.trim() || null : null}
           offers={offerResult.applied}
+          onAccount={onAccount}
           onConfirm={handleCharge}
           onClose={() => { setShowPayment(false); setPayError(''); }}
         />

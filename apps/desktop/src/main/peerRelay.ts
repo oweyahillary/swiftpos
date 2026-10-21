@@ -70,7 +70,9 @@ export interface CloudOrderCtx {
 export function buildCloudOrderPayload(orderPayload: any, ctx: CloudOrderCtx): Record<string, any> {
   const src = orderPayload ?? {};
   // A456: receipt_copies, like kot_sent, is a renderer-to-main printing hint with no cloud column.
-  const { kot_sent: _kotSent, receipt_copies: _receiptCopies, ...rest } = src;
+  // A552: on_account is the receipt's (the customer's name, what is owed) and credit_pin never leaves the till; the
+  // approver the till checked travels as credit_approved_by (the cloud checks that person).
+  const { kot_sent: _kotSent, receipt_copies: _receiptCopies, on_account: _onAccount, credit_pin: _creditPin, ...rest } = src;
   const legs = nonEmptyArray(src.payments)
     ? src.payments
     : (src.payment && typeof src.payment === 'object') ? [src.payment] : [];

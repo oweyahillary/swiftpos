@@ -18,7 +18,7 @@ export { renderTicket } from './render';
 export { toEscPos } from './escpos';
 export { toPreview } from './preview';
 export { splitTax, netOf, formatCents } from './money';
-export { columnsFor } from './layout';
+export { columnsFor, nameWithVariant, variantLabel } from './layout';
 export * from './raster';
 
 import type { StationConfig } from './types';
@@ -36,7 +36,7 @@ export function kitchenPreset(id: string, name: string, paperWidthMm: 58 | 80 = 
     attributeStyle: 'always-sublines',
     openCashDrawer: false,
     cutPaper: true,
-    feedBeforeCut: 3,
+    feedBeforeCut: 3,            // A551: a tear-off printer's; a cutting one feeds 1 (render.ts PRODUCTION_CUT_FEED)
   };
 }
 
@@ -53,7 +53,7 @@ export function dispatchPreset(id: string, name: string, paperWidthMm: 58 | 80 =
     attributeStyle: 'inline-when-simple',
     openCashDrawer: false,
     cutPaper: true,
-    feedBeforeCut: 3,
+    feedBeforeCut: 3,            // A551: as the kitchen's
   };
 }
 

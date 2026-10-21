@@ -109,19 +109,18 @@ const targets = [
   ['receipt-80', receiptPreset('st-till', 'Till', 80)],
   ['kitchen-58', kitchenPreset(KITCHEN, 'Kitchen', 58)],
   ['receipt-58', receiptPreset('st-till', 'Till', 58)],
-  // A543: the kitchen ticket with 'kitchen_font_a' on — committed from the 1.0.19-1.0.20 kitchen-80/58.bin before Font B,
-  // so --check proves the switch puts the old kitchen bytes back exactly. A547: the switch now reproduces the FIXED Font A
-  // layout — a wrapped dish name keeps the three spaces after its quantity — so kitchen-58-font-a.bin was regenerated
-  // ("1   3PC CHICKEN", "2   WINGS COMBO"; +4 bytes); kitchen-80-font-a.bin wraps nothing and is the pre-A543 bytes still.
-  ['kitchen-80-font-a', kitchenPreset(KITCHEN, 'Kitchen', 80)],
-  ['kitchen-58-font-a', kitchenPreset(KITCHEN, 'Kitchen', 58)],
+  // A551: the kitchen ticket with 'kitchen_font_b' on — A543's Font B ticket (64 / 42 columns, ESC M 1, ESC 3 24), the
+  // opt-in now. kitchen-80/58.bin are the standard, Font A like dispatch (A543's kitchen-*-font-a.bin, which A551 retires,
+  // with A551's item gap and 1-line feed — kitchen-font.test section 9 proves it against test/golden/a551-pre.json).
+  ['kitchen-80-font-b', kitchenPreset(KITCHEN, 'Kitchen', 80)],
+  ['kitchen-58-font-b', kitchenPreset(KITCHEN, 'Kitchen', 58)],
 ] as const;
 
 let failures = 0;
 const fail = (m: string) => { failures++; console.log(`FAIL  ${m}`); };
 
 for (const [name, station] of targets) {
-  const doc = renderTicket({ order, business: name.endsWith('-font-a') ? { ...business, kitchenFontA: true } : business, station });
+  const doc = renderTicket({ order, business: name.endsWith('-font-b') ? { ...business, kitchenFontB: true } : business, station });
   const buf = toEscPos(doc, {
     cut: station.cutPaper,
     openDrawer: station.openCashDrawer,

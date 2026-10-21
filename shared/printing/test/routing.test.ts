@@ -38,6 +38,13 @@ ok('modifier routes to dispatch only', () => {
   const u = toUnits({ product: { id: 'p', name: 'Wings' }, selectedModifiers: [{ name: 'BBQ Sauce', price: 50 }] }, ids, ids.kitchen, routing);
   assert.deepEqual(u[u.length - 1].stationIds, ['d1']); assert.equal(u[u.length - 1].priceDelta, 5000);
 });
+ok("A555: a till's modifier ({ optionName }) prints like the web's ({ name })", () => {
+  const u = toUnits({ product: { id: 'p', name: 'Wings' }, selectedModifiers: [{ optionName: 'Extra Cheese', price: 50 }] }, ids, ids.kitchen, routing);
+  const m = u[u.length - 1];
+  assert.equal(m.name, 'Extra Cheese'); assert.deepEqual(m.stationIds, ['d1']); assert.equal(m.priceDelta, 5000);
+  assert.equal(toUnits({ product: { id: 'p', name: 'Wings' }, selectedModifiers: [{ optionName: '  ', price: 0 }] }, ids, ids.kitchen, routing)
+    .some((x) => x.name.trim() === ''), false, 'a blank name still prints nothing');
+});
 ok('description fallback, but not prose', () => {
   assert.deepEqual(describeFromText('chicken + fries + soda'), ['chicken', 'fries', 'soda']);
   assert.deepEqual(describeFromText('Our famous crispy chicken, marinated for 24 hours.'), []);

@@ -3,7 +3,7 @@
 import { isNodeRole } from '../deviceConfig';
 import { assertPayload } from '../ipcValidate';
 import { getLocalDb } from '../localDb';
-import { logLine, authLog } from '../logFile';
+import { logLine, authLog, expectedRefusal } from '../logFile';
 import { readStaffTokens } from '../tokenStore';
 import { isSessionRefusal } from '../sessionRecovery';   // A407
 import { verifyPinOffline } from '../pinCache';
@@ -86,7 +86,8 @@ export function registerSignInHandlers(ctx: IpcShared) {
     // renderer already catches, instead of destructuring undefined mid-handler.
     const { pin, branch_id } = assertPayload<{ pin: string; branch_id: string }>(
       { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } }, payload);
-    assertPinAllowed();   // A494: too many wrong PINs on this till — nothing is checked until the lockout ends
+    // A494: too many wrong PINs on this till — nothing is checked until the lockout ends. A554: an expected answer.
+    try { assertPinAllowed(); } catch (e) { throw expectedRefusal(e as Error); }
     const db = getLocalDb();
     const session = db.prepare(`SELECT business_name, currency FROM session WHERE id=1`).get() as any;
 
@@ -196,7 +197,7 @@ export function registerSignInHandlers(ctx: IpcShared) {
       void refreshStaffRosterNow('a PIN this till did not know');
       // A494: a PIN some authority said no to counts toward this till's lockout (one that could not be checked does not).
       if (nodeSaidNo || v.reason === 'no_match' || verdict.reason === 'no_match') recordPinFailure();
-      throw new Error(nodeSaidNo ?? (v.reason === 'no_match' ? 'Invalid PIN' : verdict.message));
+      throw expectedRefusal(new Error(nodeSaidNo ?? (v.reason === 'no_match' ? 'Invalid PIN' : verdict.message)));   // A554
     };
 
     // A473: the cloud has refused this till's own session in the last minute (a technician must rejoin it) — asking again
@@ -258,7 +259,7 @@ export function registerSignInHandlers(ctx: IpcShared) {
     }
     if (!res.ok) {
       if (res.status === 401) recordPinFailure();   // A494: a wrong PIN, whoever said so
-      throw new Error(data.error ?? 'Invalid PIN');
+      throw expectedRefusal(new Error(data.error ?? 'Invalid PIN'));   // A554: a wrong PIN is an answer, not an error
     }
 
     // Online sign-in succeeded: an offline PIN held from an earlier sign-in is no longer needed (A345).

@@ -215,10 +215,12 @@ check('dispatch puts a simple attribute inline',
 check('dispatch counts bags, not items',
   D.includes('4 bags'));
 
+// A551 (owner, 2026-10-21: "why not write `Chicken burger - Spicy` we avoid 2 lines of the same item"): the choice is on
+// the dish's own row, upper case like the rest of it — not a second "Chicken Burger" row with the choice under it.
 check('a plain product reaches the KITCHEN with its choice, not as a bare title',
-  K.includes('CHICKEN BURGER') && /Large/.test(K));
-check('the choice is not silently dropped',
-  K.includes('Large'));
+  K.includes('1   CHICKEN BURGER - LARGE'));
+check('the choice is not silently dropped — and the product is not printed twice',
+  /LARGE/.test(K) && (K.match(/chicken burger/gi) ?? []).length === 1);
 // ── The fallback has to work for ANY menu, and refuse prose ────────────────
 // A restaurant types a flat menu with a line of prose. Requiring structured
 // components before a kitchen ticket is useful would make every new client

@@ -10,8 +10,9 @@
  * for. Font A is what receipts, dispatch and the Z-report use: it reads across a
  * counter. A543 (owner, 2026-10-21: "change the font of the kitchen printer,
  * packing is okay" — chose "the printer's smaller Font B so long orders fit on
- * less paper") puts KITCHEN tickets in Font B (9x17 dots) unless the client's
- * 'kitchen_font_a' switch is on.
+ * less paper") put KITCHEN tickets in Font B (9x17 dots). A551 (owner, on paper:
+ * "kitchen receipt use the same font as the despatcher"): Font A again; Font B
+ * only with the client's 'kitchen_font_b' switch.
  */
 
 export type PrinterFont = 'A' | 'B';
@@ -95,6 +96,39 @@ export function hangingWrap(text: string, width: number, indent: number): string
 export function indentedWrap(cols: number, text: string, indent: number): string[] {
   const pad = ' '.repeat(indent);
   return wrap(text, Math.max(1, cols - indent)).map(l => pad + l);
+}
+
+/**
+ * A551: a variant option without a leading repeat of the product's name — "Chicken Burger Spicy" on "Chicken Burger" is
+ * "Spicy" (case aside, the separators after the name dropped: spaces, "-", ":", ",", "/", "|"). Only a whole-word repeat:
+ * "Chicken Burgers" is not "Chicken Burger" + "s". An option that does not start with the name ("Large") is kept as it is.
+ */
+export function variantLabel(product: string, option: string): string {
+  const p = sanitize(product).trim();
+  const v = sanitize(option).trim();
+  const head = v.slice(0, p.length);
+  if (p && head.toLowerCase() === p.toLowerCase() && !/[A-Za-z0-9]/.test(v.charAt(p.length))) {
+    return v.slice(p.length).replace(/^[\s\-:,/|]+/, '').trim();
+  }
+  return v;
+}
+
+/**
+ * A551 (owner, 2026-10-21: "why not write `Chicken burger - Spicy` we avoid 2 lines of the same item"): the product's
+ * name and its variant on one line — "Chicken Burger - Spicy", "Chicken Burger - Large"; two variant groups
+ * "Chicken Burger - Large, Spicy". An option that only repeats the name adds nothing ("Chicken Burger"). The caller wraps
+ * it as any other name (the kitchen ticket's hanging wrap keeps the quantity column, A547).
+ */
+export function nameWithVariant(product: string, options: string[]): string {
+  const name = sanitize(product).trim();
+  const seen = new Set<string>();
+  const parts = options.map(o => variantLabel(name, o)).filter(o => {
+    const k = o.toLowerCase();
+    if (!o || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return parts.length ? `${name} - ${parts.join(', ')}` : name;
 }
 
 export interface ItemColumns {

@@ -23,6 +23,7 @@ import {
 import { order, business, KITCHEN, DISPATCH } from './fixture';
 import { bigLogo } from './a530-cases';   // A530
 import { longOrder, productionPaperMm } from './a543-cases';   // A543
+import { variantCases } from './a551-cases';   // A551
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -125,39 +126,71 @@ for (const w of [80, 58] as const) {
   }
 }
 
-// ── A543: the kitchen ticket in Font A (kitchen_font_a, as before) and Font B (the standard), a long order ──
+// ── A543 / A551: the kitchen ticket in Font A (the standard again, A551) and Font B (kitchen_font_b), a long order ──
 //
-// Owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "the printer's smaller Font B so long
-// orders fit on less paper". Font B is 9x17 dots: 64 characters a line on 80 mm, 42 on 58 mm (Font A 12x24: 48 / 32).
-// Its normal lines are 24 dots apart (ESC 3 24, ~3.0 mm) — at ESC 2 (1/6", ~4.23 mm) the line height would be Font A's and
-// the only saving the fewer wrapped lines. A double-height dish name is 34 dots in Font B, 48 in Font A (both at ESC 2).
-// The preview shows each ticket at its own width; Font B's characters are smaller on paper, so the 64-column ticket is
-// the same 72 mm wide as the 48-column one. Estimate as for the receipt (a543-cases.ts productionPaperMm).
-log(`\n${'='.repeat(60)}\nA543 — the kitchen ticket in Font A (kitchen_font_a) and Font B (standard)\n${'='.repeat(60)}`);
-log('A long dine-in order. Dispatch (packing) and receipts stay Font A, unchanged.');
+// A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay") made it Font B; A551 (owner, the
+// same day, on paper: "kitchen receipt use the same font as the despatcher") made Font A the standard again and Font B
+// the 'kitchen_font_b' opt-in. Font B is 9x17 dots: 64 characters a line on 80 mm, 42 on 58 mm (Font A 12x24: 48 / 32).
+// Its normal lines are 24 dots apart (ESC 3 24, ~3.0 mm). A double-height dish name is 34 dots in Font B, 48 in Font A
+// (both at ESC 2). The preview shows each ticket at its own width; Font B's characters are smaller on paper, so the
+// 64-column ticket is the same 72 mm wide as the 48-column one. Estimate as for the receipt (a543-cases.ts
+// productionPaperMm). A551: both with the thin gap between items (invisible here) and a 1-line feed before the cut.
+log(`\n${'='.repeat(60)}\nA543/A551 — the kitchen ticket in Font A (standard) and Font B (kitchen_font_b)\n${'='.repeat(60)}`);
+log('A long dine-in order. Dispatch (packing) and receipts are Font A either way.');
 for (const w of [80, 58] as const) {
   const st = kitchenPreset(KITCHEN, 'Kitchen', w);
   const cols = [
-    toPreview(renderTicket({ order: longOrder, business: { ...business, kitchenFontA: true }, station: st }), { showMargins: true }).split('\n'),
     toPreview(renderTicket({ order: longOrder, business, station: st }), { showMargins: true }).split('\n'),
+    toPreview(renderTicket({ order: longOrder, business: { ...business, kitchenFontB: true }, station: st }), { showMargins: true }).split('\n'),
   ];
   const left = cols[0][0].length + 4;
   log(`\n${w} mm`);
-  log('FONT A (kitchen_font_a)'.padEnd(left) + 'FONT B (standard, A543)');
+  log('FONT A (standard, A551)'.padEnd(left) + 'FONT B (kitchen_font_b)');
   for (let i = 0; i < Math.max(...cols.map(c => c.length)); i++) {
     log(((cols[0][i] ?? '').padEnd(left) + (cols[1][i] ?? '')).trimEnd());
   }
 }
-log('\nEstimated paper per kitchen ticket (text lines, mm):');
-log('                           Font A          Font B');
+log('\nEstimated paper per kitchen ticket (text lines, mm; A551 = the item gap and the 1-line feed):');
+log('                           Font A before   Font A (A551)   Font B (A551)');
 for (const [label, o] of [['this sale', order], ['the long order', longOrder]] as const) {
   for (const w of [80, 58] as const) {
     const st = kitchenPreset(KITCHEN, 'Kitchen', w);
-    const a = renderTicket({ order: o, business: { ...business, kitchenFontA: true }, station: st });
-    const b = renderTicket({ order: o, business, station: st });
-    const am = productionPaperMm(a, st.feedBeforeCut), bm = productionPaperMm(b, st.feedBeforeCut);
-    log(`  ${`${label}, ${w} mm`.padEnd(24)} ${`${textLines(a)} / ${am.toFixed(0)} mm`.padEnd(15)} `
-      + `${textLines(b)} / ${bm.toFixed(0)} mm  -${Math.round((1 - bm / am) * 100)}%`);
+    const a = renderTicket({ order: o, business, station: st });
+    // Before A551: a blank line where the gap is, and the station's 3-line feed.
+    const old = { ...a, cutFeed: undefined, blocks: a.blocks.map(b => (b.kind === 'gap' ? { kind: 'text' as const, text: '', align: 'left' as const, size: 'normal' as const, bold: false } : b)) };
+    const b = renderTicket({ order: o, business: { ...business, kitchenFontB: true }, station: st });
+    const om = productionPaperMm(old, st.feedBeforeCut), am = productionPaperMm(a, st.feedBeforeCut), bm = productionPaperMm(b, st.feedBeforeCut);
+    log(`  ${`${label}, ${w} mm`.padEnd(24)} ${`${textLines(old)} / ${om.toFixed(0)} mm`.padEnd(15)} `
+      + `${`${textLines(a)} / ${am.toFixed(0)} mm -${Math.round((1 - am / om) * 100)}%`.padEnd(15)} `
+      + `${textLines(b)} / ${bm.toFixed(0)} mm -${Math.round((1 - bm / om) * 100)}%`);
+  }
+}
+
+// ── A551: variants on the item's own line, and the payment block ──
+//
+// Owner, 2026-10-21, on paper: "on items with variants assume chicken burger instead of writing `Chicken burger` then
+// `  Chicken burger spicy` why not write `Chicken burger - Spicy`" and "we just write `PAY BILL/BUY GOODS:` newline
+// `123445` and we center it and increase the font size and thickness, We remove the wordings payment details".
+log(`\n${'='.repeat(60)}\nA551 — a variant on the item's line; the payment block\n${'='.repeat(60)}`);
+log('The cart as the till hands it in (toUnits): a Chicken Burger with the variant "Chicken Burger Spicy", a Beef Burger');
+log('with "Large", and a long name with its variant (the hanging wrap keeps the quantity column). Paybill 4098201, Account WEST1.');
+{
+  const variantOrder: typeof order = {
+    ...order, lines: variantCases.lines, total: variantCases.total, payments: [{ label: 'M-PESA', amount: variantCases.total }], changeGiven: 0,
+  };
+  const paybill = { ...business, tillLabel: 'Paybill', tillNumber: '4098201, Account WEST1' };
+  for (const w of [80, 58] as const) {
+    const cols = [
+      toPreview(renderTicket({ order: variantOrder, business, station: kitchenPreset(KITCHEN, 'Kitchen', w) }), { showMargins: true }).split('\n'),
+      toPreview(renderTicket({ order: variantOrder, business, station: dispatchPreset(DISPATCH, 'Dispatch', w) }), { showMargins: true }).split('\n'),
+      toPreview(renderTicket({ order: variantOrder, business: paybill, station: receiptPreset('st-till', 'Till', w) }), { showMargins: true }).split('\n'),
+    ];
+    const left = cols[0][0].length + 4;
+    log(`\n${w} mm`);
+    log('KITCHEN'.padEnd(left) + 'DISPATCH'.padEnd(left) + 'RECEIPT (Paybill)');
+    for (let i = 0; i < Math.max(...cols.map(c => c.length)); i++) {
+      log(((cols[0][i] ?? '').padEnd(left) + (cols[1][i] ?? '').padEnd(left) + (cols[2][i] ?? '')).trimEnd());
+    }
   }
 }
 

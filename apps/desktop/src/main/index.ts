@@ -19,6 +19,7 @@ import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow, rosterCloudGet, pullCatalogueNow, refreshTechConfigNow, runRemoteInstructionsNow, testClearsBeforePush, remoteCloseBeat, REMOTE_CLOSE_BEAT_MS, learnCloudCloses } from './syncEngine';   // A523: learnCloudCloses
 import { AT_LOGIN_ARG, LOGIN_WAIT_ARG, LOGIN_WAIT_MS, isAutoLaunch, startsAtSignIn, startsWindowless, runStartupSequence, markStartup, markStartupSettled, startupLine, noteStartupLine, type StartupStep } from './lowImpactStart';   // A513
 import { consumeSignInStart } from './lowImpactStart';   // A541
+import { takeSingleInstanceLock, sleepSync } from './singleInstance';   // A554
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer, onServingChange } from './nodeServer';
@@ -202,11 +203,16 @@ function createWindow(): BrowserWindow {
  *
  * On a till, a double-clicked shortcut is enough to cause it. So the second
  * launch focuses the first window and exits, rather than starting a rival.
+ *
+ * A554: and it EXITS — process.exit, not app.quit(). Before Electron is ready app.quit() does not stop the start-up
+ * ('ready' still fires and the whenReady handler below ran in the second launch too): B Foods' branch server ran a
+ * second ZapTill beside the one in the tray, with a second branch server on 4101. The relaunch after an update waits
+ * for the lock while the old ZapTill closes (singleInstance.ts).
  */
-const gotTheLock = app.requestSingleInstanceLock();
+const gotTheLock = takeSingleInstanceLock({ request: () => app.requestSingleInstanceLock(), argv: process.argv, sleep: sleepSync });
 
 if (!gotTheLock) {
-  app.quit();
+  process.exit(0);   // A554: Windows has already handed this launch's arguments to the running ZapTill ('second-instance')
 } else {
   app.on('second-instance', (_e, argv) => {
     if (argv.includes(WATCHDOG_ARG)) return;   // A435: the watchdog's check — ZapTill is running; leave the window be
@@ -222,6 +228,7 @@ let startupReady = false;
 let windowAsked = false;
 
 app.whenReady().then(async () => {
+  if (!gotTheLock) return;   // A554: never the start-up of a launch that is not the one (belt and braces: it exited above)
   // A435: a watchdog launch after someone quit from the tray stays down; opening ZapTill by hand clears that.
   if (watchdogStaysDown(process.argv, quitByHand())) { app.exit(0); return; }
   if (!process.argv.includes(WATCHDOG_ARG)) clearQuitByHand();

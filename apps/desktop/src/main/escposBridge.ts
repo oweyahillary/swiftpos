@@ -86,7 +86,7 @@ interface CartLine {
   notes?: string | null;
   note?: string;
   selectedVariants?: Array<{ groupName?: string; optionName?: string }>;
-  selectedModifiers?: Array<{ name?: string; price?: number }>;
+  selectedModifiers?: Array<{ name?: string; optionName?: string; price?: number }>;   // A555: the till sends optionName
   comboComponents?: Array<{
     name: string;
     quantity: number;
@@ -267,6 +267,25 @@ export interface SaleForPrint {
   reprint?: { at: Date; count: number };
   /** 0.6.28: a KITCHEN VOID — the production ticket prints under a VOID banner so the kitchen stops that dish. */
   voided?: { at: Date; by: string; reason?: string };
+  /** A552: a sale on account — the customer, and what they owe after it (the receipt's payment block). */
+  account?: { customer: string; balanceOwed: number };
+}
+
+/**
+ * A552: the receipt's payment lines. A leg on account reads "ON ACCOUNT: <customer>" with its amount, and one more line
+ * "BALANCE OWED" with what the customer owes after this sale. Built here, on the till's side, from the renderer's own
+ * payment lines (label + amount) — shared/printing's render.ts is unchanged. Every other leg as before (its method).
+ */
+export function receiptPaymentRows(payments: Array<{ method: string; amount: number }>, account?: { customer: string; balanceOwed: number }): PaymentLeg[] {
+  const rows: PaymentLeg[] = [];
+  let onAccount = false;
+  for (const p of payments) {
+    const credit = String(p.method ?? '').toLowerCase() === 'credit';
+    if (credit) onAccount = true;
+    rows.push({ label: credit ? `On account${account?.customer ? `: ${account.customer}` : ''}` : String(p.method ?? '').toUpperCase(), amount: toCents(p.amount) });
+  }
+  if (onAccount && account && Number.isFinite(Number(account.balanceOwed))) rows.push({ label: 'Balance owed', amount: toCents(Number(account.balanceOwed)) });
+  return rows;
 }
 
 const ORDER_TYPES: Record<string, OrderType> = {
@@ -360,10 +379,7 @@ export function printSale(
       };
     });
 
-    const payments: PaymentLeg[] = sale.payments.map(p => ({
-      label:  p.method.toUpperCase(),
-      amount: toCents(p.amount),
-    }));
+    const payments: PaymentLeg[] = receiptPaymentRows(sale.payments, sale.account);   // A552: on account names the customer
 
     const ctx: Omit<PrintContext, 'station'> = {
       business,

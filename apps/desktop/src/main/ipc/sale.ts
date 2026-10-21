@@ -14,6 +14,7 @@ import { markKitchenPaid } from '../kitchenService';
 import { sellRefusal, isOpenBill } from '../sellGate';
 import { receiptPayloadFromDetail } from '../orderDetail';
 import { openBills, type IpcShared } from './shared';
+import { prepareCreditSale, pullCreditCustomers } from '../creditSale';   // A552
 
 /** A sale and its tickets: kitchen exclusions, reprints and order:create. */
 export function registerSaleHandlers(ctx: IpcShared) {
@@ -197,6 +198,12 @@ export function registerSaleHandlers(ctx: IpcShared) {
     }
     const manual = (Number(orderPayload?.discount_amount) || 0) - offerOff;
     if (manual > 0.004 && !signedInCan('sales.discount')) throw new Error('Your role does not give discounts. Remove the discount, or ask someone who may.');
+    // A552: a sale on account — the customer (this till's list), the limit and the approver (A511) checked HERE; the
+    // screen's credit fields are dropped and the PIN never leaves this process. No leg on account: nothing changes.
+    const me = sessionPerson();
+    const credit = await prepareCreditSale(orderPayload, {
+      asker: me ? { id: me.staffId, name: me.name, roleName: me.roleName, permissions: me.permissions } : null,
+    });
     const askedNumber = orderPayload?.order_number ?? null;   // A503 (E1): A500 may renumber the sale
     const orderId = createLocalOrder(orderPayload);
     markKitchenPaid(orderPayload?.order_number);   // 0.6.28: its sent lines are paid for
@@ -212,6 +219,8 @@ export function registerSaleHandlers(ctx: IpcShared) {
     // Push-only flush — the old syncAll here re-pulled the entire catalogue
     // (N+1 variant/modifier fetches) on every single sale.
     syncPush().catch(console.error);
+    // A552: after a sale on account, the customer's balance is read again once the sale has gone up (best-effort).
+    if (credit) setTimeout(() => { void pullCreditCustomers().catch(() => false); }, 15_000).unref?.();
 
     // AFTER the order is committed and AFTER the sync flush is scheduled, and
     // never awaited. The spool owns delivery; the sale does not wait on a

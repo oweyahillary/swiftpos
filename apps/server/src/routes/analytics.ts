@@ -13,7 +13,10 @@
  *
  * Cheap by design (the Render / Supabase quotas, A528 / A531): each figure is ONE aggregate function of migration 158
  * (a few hundred grouped rows, never a period of raw orders); each answer is kept 5 minutes per business, branch and
- * period (a request already in flight is shared, not repeated); the page never polls. Costs, margins and the wastage
+ * period (a request already in flight is shared, not repeated); the page never polls.
+ * A553 (Analytics v2): GET /overview — the KPI row, the revenue trend against the PREVIOUS period of the same length and
+ * the payment mix — from migration 160's analytics_daily_sales (both periods in ONE call) plus the money-leaks and menu
+ * answers of each period (the current ones shared with the tabs through the cache). Costs, margins and the wastage
  * value go only to a caller who may see costs (A490 seesCosts); credit ageing needs customers.view or customers.credit.
  */
 import type { Request, Response } from 'express';
@@ -27,8 +30,8 @@ import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { analyticsEnabled } from '../lib/analyticsAccess';
 import {
   ANALYTICS_OFF_MESSAGE, rangeError, defaultRange, classifyMenu, menuWithoutCosts, summariseHeatmap, summariseLeaks,
-  leaksWithoutWastageValue, summariseCredit, buildInsights,
-  type MenuRow, type HeatRow, type LeakRow, type CreditRow, type MenuResult, type LeaksResult, type CreditResult,
+  leaksWithoutWastageValue, summariseCredit, buildInsights, previousPeriod, buildOverview,
+  type MenuRow, type HeatRow, type LeakRow, type CreditRow, type DailyRow, type MenuResult, type LeaksResult, type CreditResult,
 } from '../lib/analyticsRules';
 
 const router = safeRouter();
@@ -136,6 +139,17 @@ function credit(c: Ctx): Promise<CreditResult & { asOf: string }> {
     return { asOf, ...summariseCredit(await aggregate<CreditRow>('analytics_credit_ageing', { p_business: c.businessId, p_branch: c.branch, p_as_of: asOf })) };
   });
 }
+// A553: the previous period of the same length, as its own context (its own cache keys)
+function before(c: Ctx): Ctx {
+  const p = previousPeriod(c.from, c.to);
+  const { start, end } = businessRangeEAT(p.from, p.to, c.cutoff);
+  return { ...c, from: p.from, to: p.to, start, end };
+}
+// A553: sales per business day for the previous period AND this one, in one aggregate call
+function daily(c: Ctx, prev: Ctx): Promise<DailyRow[]> {
+  return cached(`daily|${c.businessId}|${c.branch ?? 'all'}|${prev.from}|${c.to}|${c.cutoff}`,
+    () => aggregate<DailyRow>('analytics_daily_sales', { p_business: c.businessId, p_branch: c.branch, p_from: prev.start, p_to: c.end, p_cutoff: c.cutoff }));
+}
 const seesCredit = (req: Request) => can(req, 'customers.view', 'customers.credit');
 
 async function answer(res: Response, work: () => Promise<unknown>) {
@@ -176,6 +190,22 @@ router.get('/credit-ageing', async (req, res) => {
   if (!seesCredit(req)) { res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: customers.view' }); return; }
   const c = await context(req, res); if (!c) return;
   await answer(res, async () => ({ branchId: c.branch, ...(await credit(c)) }));
+});
+
+// GET /api/analytics/overview?from&to&branch — A553: the KPI row (each against the previous period), the daily trend and
+// the payment mix. Costs (A490): without them no margin, and wastage (valued at cost) is not in money at risk.
+router.get('/overview', async (req, res) => {
+  const c = await context(req, res); if (!c) return;
+  await answer(res, async () => {
+    const p = before(c);
+    const [rows, lNow, lPrev, mNow, mPrev] = await Promise.all([
+      daily(c, p), leaks(c), leaks(p), c.costs ? menu(c) : Promise.resolve(null), c.costs ? menu(p) : Promise.resolve(null),
+    ]);
+    return {
+      period: period(c), branchId: c.branch,
+      ...buildOverview({ from: c.from, to: c.to, daily: rows, leaksNow: lNow, leaksPrev: lPrev, menuNow: mNow, menuPrev: mPrev, costs: c.costs }),
+    };
+  });
 });
 
 // GET /api/analytics/insights?from&to&branch — the rule-based sentences from the four above

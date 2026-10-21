@@ -402,6 +402,17 @@ export interface BranchServerAnswer {
 }
 
 /**
+ * A554: only a till BEHIND a branch server asks one about updates — never the branch server itself (role node/office:
+ * it IS the server), and never a till with no server configured. Pure. Before A554 the 2-minute loop asked on every
+ * machine and a branch server logged "the branch server did not answer the update question" every hour (B Foods,
+ * 2026-10-21: a node with no other tills).
+ */
+export function asksBranchServer(cfg: { device_role?: string | null; node_url?: string | null } | null | undefined): boolean {
+  if (!cfg || isNodeRole(cfg.device_role ?? null)) return false;
+  return String(cfg.node_url ?? '').trim().replace(/\/+$/, '') !== '';
+}
+
+/**
  * A443: a till behind a branch server asks it "I run X — is there a newer version?". The server answers with the version
  * it holds ready (and notes this till's). Null when there is no server, or it cannot be reached (asked again later).
  * A496: `want` — the version the cloud approved for this till, so a server holding another one fetches it now.
@@ -415,7 +426,7 @@ export async function askBranchServer(d: {
 }): Promise<BranchServerAnswer | null> {
   const c = d.cfg;
   const node = String(c?.node_url ?? '').trim().replace(/\/+$/, '');
-  if (!c || !node || isNodeRole(c.device_role ?? null)) return null;
+  if (!c || !asksBranchServer(c)) return null;
   const q = new URLSearchParams({ device: String(c.device_id ?? ''), name: String(c.device_name || c.terminal_code || ''), v: d.running });
   if (d.want && VERSION_RE.test(d.want)) q.set('want', d.want);
   try {
@@ -476,6 +487,12 @@ export interface UpdateLoopDeps {
   checkDeps: (o: { running: string; selfUpdate: boolean }) => UpdateCheckDeps;
   /** A till behind a branch server asks it (null: none, or no answer). */
   askServer: () => Promise<BranchServerAnswer | null>;
+  /**
+   * A554: whether this machine sits behind a branch server at all (asksBranchServer). False — a branch server itself, or
+   * a till with no server configured — the 2-minute question is not asked (and nothing is logged about it). Read on every
+   * ask: a till joined to a server later starts asking at its next one. Omitted: asked (the tests before A554).
+   */
+  behindServer?: () => boolean;
   log: (line: string) => void;
   now?: () => number;
   stallMs?: number;
@@ -575,6 +592,7 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
 
   /** A till behind a branch server: "is there a newer one?" — told yes, it checks now. */
   async function ask(): Promise<void> {
+    if (d.behindServer && !d.behindServer()) return;   // A554: a branch server (or a till with none) asks nobody
     if (busy) return;
     unstick();
     const s = d.status();
@@ -1116,6 +1134,7 @@ export function initAutoUpdate(): void {
       noteStagedApproval(on);   // A541: a sign-in start obeys the last answer, offline too
     },
     askServer: () => askBranchServer({ cfg: getDeviceConfig() as any, running, fetch: lanFetch as typeof fetch }),
+    behindServer: () => asksBranchServer(getDeviceConfig() as any),   // A554
     checkDeps: ({ running: next }) => {
       const cfg = getDeviceConfig();
       const server = isNodeRole(cfg?.device_role ?? null);

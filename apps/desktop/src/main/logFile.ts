@@ -192,6 +192,25 @@ export function authLog(event: string, detail = ''): void {
  * A477: repeats collapse here too.
  */
 let _captured = false;
+/**
+ * A554 (B Foods' log, 2026-10-21: a wrong PIN logged as "[console.error] Error occurred in handler for 'auth:verifyPin':
+ * Error: Invalid PIN at …signIn.js:268:19 …" — a stack trace for every mistyped PIN): an expected answer a handler gives by
+ * throwing (a wrong PIN, the PIN lockout) is marked, and Electron's "Error occurred in handler" console line for it is
+ * not printed — one short line in the log instead. The renderer gets exactly what it got before (the same rejection,
+ * "Error invoking remote method 'auth:verifyPin': Error: Invalid PIN" — posApi turns it into the friendly message), so
+ * nothing on the screen and nothing in the lockout counting changes. The error stays an Error (its toString unchanged).
+ */
+export function expectedRefusal<E extends Error>(e: E): E {
+  try { Object.defineProperty(e, 'zaptillExpected', { value: true, enumerable: false }); } catch { /* frozen: logged as before */ }
+  return e;
+}
+/** Electron's console line for a handler that threw an expected refusal: the channel and the message, else null. */
+export function expectedHandlerError(args: unknown[]): { channel: string; message: string } | null {
+  const m = typeof args[0] === 'string' ? /^Error occurred in handler for '([^']+)':/.exec(args[0]) : null;
+  const e = args[1] as { zaptillExpected?: unknown; message?: unknown } | null | undefined;
+  return m && e && e.zaptillExpected === true ? { channel: m[1], message: String(e.message ?? '') } : null;
+}
+
 export function installConsoleCapture(): void {
   if (_captured) return;
   _captured = true;
@@ -208,6 +227,8 @@ export function installConsoleCapture(): void {
       .replace(/\s+/g, ' ')
       .slice(0, 2000);
   console.error = (...args: unknown[]) => {
+    const quiet = expectedHandlerError(args);   // A554: an expected answer, not an error — one line, no stack
+    if (quiet) { try { emit('ipc', `${quiet.channel}: ${quiet.message.slice(0, 200)} (an expected answer — shown on the screen)`, false); } catch { /* never */ } return; }
     _origConsole.error(...args);
     try { emit('console.error', fmt(args), false); } catch { /* never */ }
   };

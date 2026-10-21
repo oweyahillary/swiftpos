@@ -1,0 +1,81 @@
+/**
+ * chartMath.ts — A553 (Analytics v2): the small PURE transforms behind the analytics charts (no imports — the tests read
+ * this file directly): the change badge on a KPI tile, the heatmap folded into "by hour" and "by weekday", the top items,
+ * the leak stack per cashier, the credit buckets and the top debtors. Every figure is the cloud's; nothing is recomputed
+ * beyond adding up what it sent.
+ */
+
+export type Direction = 'up' | 'down' | 'flat' | 'none';
+export interface Delta { direction: Direction; text: string; good: boolean | null }
+
+/**
+ * The change badge: ▲ / ▼ with the change, and whether that is GOOD (up is good for sales, bad for money at risk). A change
+ * under half a percent (or half a point) is flat; no previous figure is "none" (nothing to compare against).
+ * `points`: the change is already in percentage points (the margin), shown as "pts".
+ */
+export function deltaOf(change: number | null | undefined, opts: { upIsGood: boolean; points?: boolean }): Delta {
+  if (change === null || change === undefined || !Number.isFinite(change)) return { direction: 'none', text: 'no earlier figure', good: null };
+  const pct = change * 100;
+  if (Math.abs(pct) < 0.5) return { direction: 'flat', text: opts.points ? '0.0 pts' : '0%', good: null };
+  const up = pct > 0;
+  const size = Math.abs(pct);
+  const text = opts.points ? `${size.toFixed(1)} pts` : `${size >= 100 ? Math.round(size).toLocaleString('en-US') : size.toFixed(1)}%`;
+  return { direction: up ? 'up' : 'down', text: `${up ? '▲' : '▼'} ${text}`, good: up === opts.upIsGood };
+}
+
+/** A compact number for an axis tick: 950 · 1.2K · 34K · 1.5M. */
+export function compact(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e6) return `${(n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, '')}M`;
+  if (a >= 1e3) return `${(n / 1e3).toFixed(a >= 1e4 ? 0 : 1).replace(/\.0$/, '')}K`;
+  return String(Math.round(n));
+}
+
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const hh = (h: number) => `${String(h % 24).padStart(2, '0')}:00`;
+
+/** The heatmap (weekday × hour) summed over the weekdays: one column per hour inside the trading hours. */
+export function byHour(revenue: number[][], orders: number[][], hours: { from: number; to: number } | null): { hour: number; label: string; revenue: number; orders: number }[] {
+  if (!hours) return [];
+  const out = [];
+  for (let h = hours.from; h <= hours.to; h++) {
+    let r = 0, o = 0;
+    for (let d = 0; d < 7; d++) { r += revenue[d]?.[h] ?? 0; o += orders[d]?.[h] ?? 0; }
+    out.push({ hour: h, label: hh(h), revenue: Math.round(r * 100) / 100, orders: o });
+  }
+  return out;
+}
+
+/** The heatmap summed over the hours: one bar per weekday, Monday first. */
+export function byWeekday(revenue: number[][], orders: number[][]): { day: string; revenue: number; orders: number }[] {
+  return DAYS.map((day, d) => ({
+    day,
+    revenue: Math.round((revenue[d] ?? []).reduce((s, v) => s + (v || 0), 0) * 100) / 100,
+    orders: (orders[d] ?? []).reduce((s, v) => s + (v || 0), 0),
+  }));
+}
+
+/** The `n` best by `key`, biggest first (ties by name) — never more than there are. */
+export function topBy<T extends { name: string }>(rows: T[], key: (r: T) => number, n = 10): T[] {
+  return [...rows].filter((r) => key(r) > 0).sort((a, b) => key(b) - key(a) || a.name.localeCompare(b.name)).slice(0, n);
+}
+
+export interface LeakParts { voids: number; refunds: number; discounts: number; wastage: number }
+/** One cashier's leaks as the four stacked parts (wastage 0 when its value is withheld). */
+export function leakParts(c: { voidValue: number; itemVoidValue: number; refundValue: number; discountValue: number; wastageValue: number | null }): LeakParts {
+  return { voids: c.voidValue + c.itemVoidValue, refunds: c.refundValue, discounts: c.discountValue, wastage: c.wastageValue ?? 0 };
+}
+export const leakTotal = (p: LeakParts) => p.voids + p.refunds + p.discounts + p.wastage;
+
+/** Each slice's share of the whole (0..1), the slices with nothing dropped. */
+export function shares<T extends { value: number }>(slices: T[]): (T & { share: number })[] {
+  const total = slices.reduce((s, x) => s + (x.value > 0 ? x.value : 0), 0);
+  return slices.filter((x) => x.value > 0).map((x) => ({ ...x, share: total > 0 ? x.value / total : 0 }));
+}
+
+/** The time axis label for a business date: "21 Oct". */
+export function dayLabel(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return `${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`;
+}

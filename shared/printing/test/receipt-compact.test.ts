@@ -67,10 +67,12 @@ const st = (w: 58 | 80) => receiptPreset('st-till', 'Till', w);
 const caseByName = (name: string, classic?: ReceiptClassic) => cases(classic).find(c => c.name === name)!.ctx;
 const golden = (name: string) => JSON.parse(readFileSync(join(__dirname, '..', '..', 'test', 'golden', name), 'utf8')) as Record<string, string>;
 
-console.log('\n1. Classic spacing + full logo + extra feed = the 1.0.19 receipt, byte for byte, except A539\'s payment block');
-// A539 (owner, 2026-10-21): the payment block reads "Payment Details: Buy Goods - <n>", a rule, then the payments — on
-// purpose different from 1.0.19 ("Payment Detail:", the payments, then the till line). Everything before the heading
-// and everything from the block's closing rule on is still the 1.0.19 renderer's bytes (golden written by it).
+console.log('\n1. Classic spacing + full logo + extra feed = the 1.0.19 receipt, byte for byte, except the payment block');
+// A539 (owner, 2026-10-21) made the payment block "Payment Details: Buy Goods - <n>", a rule, then the payments; A551 (owner,
+// the same day, on paper) makes it "BUY GOODS:" then "<n>", centred, double size and bold, a rule, then the payments — on
+// purpose different from 1.0.19 ("Payment Detail:", the payments, then the till line). Everything before the block (up to
+// the rule under PAY) and everything from the block's closing rule on is still the 1.0.19 renderer's bytes (golden
+// written by it); between them, the same payment lines.
 {
   const g = golden('a530-classic.json');
   const all = cases(CLASSIC);
@@ -78,15 +80,20 @@ console.log('\n1. Classic spacing + full logo + extra feed = the 1.0.19 receipt,
   for (const c of all) {
     const got = bytesOf(c.ctx), want = Buffer.from(g[c.name] ?? '', 'base64');
     const ruleBytes = Buffer.from(rule(c.ctx.station.paperWidthMm === 80 ? 48 : 32), 'latin1');
-    const hNew = got.indexOf(Buffer.from('Payment Details:', 'latin1'));
-    const hOld = want.indexOf(Buffer.from('Payment Detail:', 'latin1'));
-    if (hNew < 0 || hOld < 0) {   // a receipt with no payment block (none today) must still be 1.0.19 exactly
-      ok(`classic ${c.name}`, got.equals(want), `no payment block, yet ${got.length} vs ${want.length} bytes`);
+    // The block starts after the rule under PAY, in both. 1.0.19: the first rule after it closes the block. A551: the
+    // first is the block's own, under the number; the second closes it.
+    const startOf = (buf: Buffer) => {
+      const pay = buf.indexOf(Buffer.from('PAY: ', 'latin1'));
+      const r = pay < 0 ? -1 : buf.indexOf(ruleBytes, pay);
+      return r < 0 ? -1 : buf.indexOf(0x0a, r) + 1;
+    };
+    const sNew = startOf(got), sOld = startOf(want);
+    if (sNew <= 0 || sOld <= 0 || got.indexOf(Buffer.from('BUY GOODS:', 'latin1'), sNew) < 0) {
+      ok(`classic ${c.name}`, false, `no payment block found (${sNew}, ${sOld})`);
       continue;
     }
-    // 1.0.19: the first rule after its heading closes the block. A539: the first is the new one under the heading.
-    const closeOld = want.indexOf(ruleBytes, hOld);
-    const closeNew = got.indexOf(ruleBytes, got.indexOf(ruleBytes, hNew) + ruleBytes.length);
+    const closeOld = want.indexOf(ruleBytes, sOld);
+    const closeNew = got.indexOf(ruleBytes, got.indexOf(ruleBytes, sNew) + ruleBytes.length);
     // A540 (owner, 2026-10-21): the thin gaps between the info lines (ESC J INFO_GAP_DOTS) and no "Round Off: 0.00" line
     // are the only other intended differences — take both out, and the rest before the block is still 1.0.19's bytes.
     const noGaps = (buf: Buffer) => {
@@ -104,10 +111,16 @@ console.log('\n1. Classic spacing + full logo + extra feed = the 1.0.19 receipt,
       const lineText = buf.subarray(at, end).toString('latin1');
       return /\s0\.00$/.test(lineText) ? Buffer.concat([buf.subarray(0, at), buf.subarray(end + 1)]) : buf;
     };
-    const before = noGaps(got.subarray(0, hNew)).equals(noZeroRoundOff(want.subarray(0, hOld)));
+    const before = noGaps(got.subarray(0, sNew)).equals(noZeroRoundOff(want.subarray(0, sOld)));
     const after = closeNew > 0 && closeOld > 0 && got.subarray(closeNew).equals(want.subarray(closeOld));
-    ok(`classic ${c.name}: 1.0.19 bytes before the payment block and after it`, before && after,
-      `before ${before ? 'same' : 'differs'}, after ${after ? 'same' : 'differs'}`);
+    // Inside: 1.0.19's payment lines less its heading and its till line = A551's less the label, the number and the rule.
+    const rows = (buf: Buffer) => buf.toString('latin1').replace(/\x1b[@2]|\x1b[ta3EJMda].|\x1bp...|\x1d!.|\x1dV../gs, '').split('\n').filter(Boolean);
+    const midOld = rows(want.subarray(sOld, closeOld)).filter(l => l !== 'Payment Detail:' && l !== 'Buy Goods: 000000');
+    const midNew = rows(got.subarray(sNew, closeNew));
+    const middle = JSON.stringify(midNew.slice(0, 3)) === JSON.stringify(['BUY GOODS:', '000000', ruleBytes.toString('latin1')])
+      && JSON.stringify(midNew.slice(3)) === JSON.stringify(midOld) && midOld.length > 0;
+    ok(`classic ${c.name}: 1.0.19 bytes before the payment block and after it, the same payments inside`, before && after && middle,
+      `before ${before ? 'same' : 'differs'}, after ${after ? 'same' : 'differs'}, inside ${JSON.stringify(midNew)} vs ${JSON.stringify(midOld)}`);
   }
   // plain-80 / plain-58 are the 1.0.19 out/receipt-80.bin and receipt-58.bin exactly (checked when the golden was
   // written: 1781 and 1317 bytes, as the 1.0.19 SAMPLE-OUTPUT.txt headers say).
@@ -124,14 +137,13 @@ for (const w of [80, 58] as const) {
   ok(`${w}: "Cashier: Amina" on its own line`, p.includes('Cashier: Amina'));
   ok(`${w}: "Date: 2026-08-05 19:42:11" on its own line`, p.includes('Date: 2026-08-05 19:42:11'));
   ok(`${w}: the Kots line`, has(/^Kots: \d+$/));
-  // A539: "Payment Details: Buy Goods - 000000", a rule, then the payments and change; the till line is no longer under them.
-  // 80 mm: one line. 58 mm (32 columns): it does not fit, so the heading and the number take a line each.
-  const one = p.indexOf('Payment Details: Buy Goods - 000000');
-  const two = p.indexOf('Payment Details:');
-  const hd = w === 80 ? one : (p[two + 1] === 'Buy Goods - 000000' ? two + 1 : -1);
-  ok(`${w}: A539 heading names the till number${w === 58 ? ' (on the next line on 58 mm)' : ''}`, hd >= 0, p.join(' | '));
-  ok(`${w}: …then a rule, then the payments (CASH, CHANGE)`, /^-+$/.test(p[hd + 1] ?? '') && /^CASH\s/.test(p[hd + 2] ?? '')
-    && /^CHANGE\s/.test(p[hd + 3] ?? '') && /^-+$/.test(p[hd + 4] ?? ''), p.slice(hd, hd + 5).join(' | '));
+  // A551: "BUY GOODS:", then "000000" (centred, double size, bold — receipt-pay-block.test), a rule, then the payments and change; no
+  // "Payment Details" words; the till line is no longer under them (A539).
+  const hd = p.indexOf('BUY GOODS:');
+  ok(`${w}: A551 the label, then the number on its own line`, hd >= 0 && p[hd + 1] === '000000', p.join(' | '));
+  ok(`${w}: …then a rule, then the payments (CASH, CHANGE)`, /^-+$/.test(p[hd + 2] ?? '') && /^CASH\s/.test(p[hd + 3] ?? '')
+    && /^CHANGE\s/.test(p[hd + 4] ?? '') && /^-+$/.test(p[hd + 5] ?? ''), p.slice(hd, hd + 6).join(' | '));
+  ok(`${w}: no "Payment Details" words`, !p.some(l => /payment detail/i.test(l)));
   ok(`${w}: no separate "Buy Goods: 000000" line any more`, !p.includes('Buy Goods: 000000'));
   // A540: no "Round Off: 0.00" on the standard receipt (a real round-off still prints — the round-off case below).
   ok(`${w}: no "Round Off: 0.00" (A540)`, !has(/^Round Off:\s+0\.00$/));
@@ -242,15 +254,15 @@ console.log('\n3. Line spacing — ESC 3 30 on the receipt (A538), back to ESC 2
   ok('receipt_classic_spacing: ESC 2 at the start and no ESC 3 anywhere', find(spaced, [ESC, 0x40, ESC, 0x74, 0x00, ESC, 0x32]) === 0 && count(spaced, [ESC, 0x33]) === 0);
   for (const [name, station] of [['kitchen', kitchenPreset(KITCHEN, 'Kitchen')], ['dispatch', dispatchPreset(DISPATCH, 'Dispatch')],
     ['kitchen-58', kitchenPreset(KITCHEN, 'Kitchen', 58)]] as const) {
-    // A543: a kitchen ticket is Font B at ESC 3 24 now (kitchen-font.test); with 'kitchen_font_a' it is the Font A ticket
-    // these switches never touched — the committed kitchen-*-font-a.bin (the pre-A543 kitchen bytes with A547's layout fixes).
-    const kb = name === 'dispatch' ? business : { ...business, kitchenFontA: true };
+    // A551: the kitchen ticket is Font A again (kitchen-font.test), the ticket these switches never touched — the committed
+    // kitchen-80.bin / kitchen-58.bin.
+    const kb = business;
     const ctx = { order, business: kb, station };
     const t = bytesOf(ctx);
     ok(`${name}: no ESC 3, the same bytes with or without the switches, the committed ticket`,
       count(t, [ESC, 0x33]) === 0 && t.equals(bytesOf({ ...ctx, business: { ...kb, receiptClassic: CLASSIC } }))
       && t.equals(bytesOf({ ...ctx, business: { ...kb, receiptClassic: COMPACT } }))
-      && t.equals(readFileSync(join(__dirname, '..', '..', 'out', `${name === 'kitchen' ? 'kitchen-80-font-a' : name === 'dispatch' ? 'dispatch-80' : 'kitchen-58-font-a'}.bin`))));
+      && t.equals(readFileSync(join(__dirname, '..', '..', 'out', `${name === 'kitchen' ? 'kitchen-80' : name === 'dispatch' ? 'dispatch-80' : 'kitchen-58'}.bin`))));
   }
 }
 

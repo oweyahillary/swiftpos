@@ -272,14 +272,15 @@ try {
     }
     assert.match(cashier, /menus=\{menus\}/);
   });
-  await ok('the panel starts collapsed (open only when pinned) and remembers the pin and menu in this browser, in try/catch', async () => {
-    assert.match(panel, /useState<boolean>\(\(\) => panelStartsOpen\(readPrefs\(\)\)\)/);
+  await ok('the panel starts collapsed (A554: at every sign-in, pinned or not) and remembers the menu in this browser, in try/catch', async () => {
+    assert.match(panel, /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/);
     assert.match(panel, /try \{ return parsePanelPrefs\(window\.localStorage\.getItem\(PANEL_PREFS_KEY\)\); \} catch/);
     assert.match(panel, /try \{ window\.localStorage\.setItem\(PANEL_PREFS_KEY, panelPrefsText\(p\)\); \} catch/);
     assert.match(panel, /const picked = useCallback\(\(\) => setOpen\(panelOpenAfterPick\(prefs\)\)/);
     assert.match(panel, /minHeight: 44/);   // touch-sized rows
     const M = await import(new URL('../shared/menuFilter.ts', import.meta.url).href);
-    assert.equal(M.panelStartsOpen(M.parsePanelPrefs(null)), false);
+    assert.equal(M.panelStartsOpen(), false);
+    assert.equal(M.parsePanelPrefs(M.panelPrefsText({ pinned: true, menu: 'tea' })).pinned, false);   // A554: never the pin
   });
   await ok('the back office: Menu › Menus next to Categories (its route), and a Menu select on each category', async () => {
     const layout = read('apps/dashboard/src/components/DashboardLayout.tsx');

@@ -175,7 +175,8 @@ const WRITES = [
 // The reads a till makes with its own sign-in (the A541 table's GETs, less the manager screens' manageFetch reads).
 const READS = ['/api/pos/init', '/api/pos/changes', '/api/pos/branch-drawers', '/api/pos/branch-staff', '/api/pos/catalogue-version',
   '/api/pos/test-data-clears', '/api/pos/branch', '/api/changes/state', '/api/day-close/pending', '/api/shifts/current', '/api/shifts/state',
-  `/api/orders/${PAID}`, '/api/support/log-requests/mine', '/api/desktop-update/status', '/api/health'];
+  `/api/orders/${PAID}`, '/api/support/log-requests/mine', '/api/desktop-update/status', '/api/health',
+  '/api/pos/credit-customers'];   // A552: the customers a till sells to on account
 
 const send = async (method, p, body) => {
   const lines = [];

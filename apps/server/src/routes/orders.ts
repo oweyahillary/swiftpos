@@ -22,7 +22,8 @@ import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib
 import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
 import { verifyPin } from './auth';
-import { findApprover, mayApprove, type ApproverRow, type ApproveAction } from '../lib/approver';
+import { findApprover, mayApprove, isOwnerRow, type ApproverRow, type ApproveAction } from '../lib/approver';
+import { worksAtBranch } from '../lib/branchAccess';   // A552
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
 import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
@@ -242,6 +243,14 @@ type CreditOk = { approvedBy: string | null; approvedAtSale: boolean; approverNa
 async function creditApproval(req: any, body: any, branchId: string | null):
   Promise<CreditOk | { status: number; body: Record<string, string> }> {
   if (isTillOwnSalePush(req) || tillMadeSale(req)) {
+    // A552: the till approved it AT THE SALE (the seller holding customers.credit, or a manager's PIN checked on the till)
+    // and names who (`credit_approved_by`) — born confirmed by that person, as a web sale approved with a PIN is. The
+    // person is checked here as the A545 replay checks `by`: customers.credit (or the owner), working at the sale's branch.
+    // Anyone else named, or no one, is a till's sale awaiting a manager (A545). Never refused either way.
+    const named = await tillCreditApprover(req.businessId, body?.credit_approved_by, branchId);
+    if (named) {
+      return { approvedBy: named.id, approvedAtSale: true, approverName: named.name, note: ` — approved by ${named.name || 'a manager'} at the till`, tillSale: true };
+    }
     return { approvedBy: null, approvedAtSale: false, approverName: null, note: " — awaiting a manager's confirmation", tillSale: true };
   }
   if (req.isOwner || can(req, 'customers.credit')) {
@@ -259,6 +268,23 @@ async function creditApproval(req: any, body: any, branchId: string | null):
     who = (u as { name?: string | null } | null)?.name || who;
   }
   return { approvedBy: a.userId, approvedAtSale: true, approverName: who, note: ` — approved by ${who}`, tillSale: false };
+}
+
+/**
+ * A552: the person a till names as having approved its sale on account at the moment of sale, if they may — they hold
+ * customers.credit (or are the owner) and work at the sale's branch (the owner anywhere). null = not one (unknown, a
+ * cashier, another branch's manager, not a user id): the sale is recorded awaiting a manager, as any till's sale.
+ */
+export async function tillCreditApprover(businessId: string | undefined, by: unknown, branchId: string | null):
+  Promise<{ id: string; name: string | null } | null> {
+  if (!businessId || typeof by !== 'string' || !/^[0-9a-f-]{36}$/i.test(by)) return null;
+  try {
+    const { rows, ownerId } = await confirmerRows(businessId);
+    const row = rows.find((r) => r.id === by);
+    if (!row || !mayApprove(row, ownerId, 'credit')) return null;
+    if (branchId && !isOwnerRow(row, ownerId) && !worksAtBranch(row.user_branches, branchId)) return null;
+    return { id: row.id, name: row.name ?? null };
+  } catch { return null; }
 }
 
 const APPROVER_PIN_REFUSED = {

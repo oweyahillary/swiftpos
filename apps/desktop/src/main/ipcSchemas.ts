@@ -85,6 +85,9 @@ const orderCreate: Schema = {
   subtotal:     { t: 'number' },
   vat_amount:   { t: 'number' },
   total:        { t: 'number' },
+  // A552: a sale on account — the customer and, when the seller does not hold customers.credit, the approver's PIN.
+  customer_id:  { t: 'string', optional: true },
+  credit_pin:   { t: 'string', optional: true },
   items: {
     t: 'objectArray', minLen: 1,
     item: {
@@ -280,6 +283,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'credit:decide':               { orderId: { t: 'string', min: 1 }, decision: { t: 'string', min: 1 }, reason: { t: 'string', optional: true } },
   'credit:awaiting':             NO_PAYLOAD,
   'credit:dismiss':              { kind: 'string' },
+  'credit:customers':            { search: { t: 'string', optional: true } },   // A552: On account at the till
   'batches:expiring':            NO_PAYLOAD,
   'manage:createCategory':      { name: { t: 'string' } },
   'manage:updateCategory':      idPatch,

@@ -9,6 +9,10 @@
  * 90 s beat) and sends the log the same way as "Send logs to support" on its Tech page (secrets removed). The list shows
  * each request: waiting (with when the till was last seen; Cancel), delivered (View / Download the log, as below),
  * expired (7 days unanswered), cancelled. A till older than 1.0.20 cannot answer — it says so.
+ * A554 (the owner's screenshot, 2026-10-21): the version warning showed twice (orange under the device, then green as
+ * the request's notice) — now once, in the warning colour; the cloud warns only when nothing says the device answers
+ * (it reports log_pull, or answered a pull before — not its version alone), "may wait"; and the device list shows each
+ * version in full (it came second, after the name, and the list is wider — "Mama Ngina · v1.0" was cut).
  * Cloud: /api/admin/clients/:id/log-requests (routes/logRequestsAdmin.ts) — any admin; audited.
  */
 import { useEffect, useRef, useState } from "react";
@@ -28,8 +32,17 @@ const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-KE"
 const time = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" }) : "never");
 const rangeLabel = (h: number) => RANGES.find(([n]) => n === h)?.[1] ?? `${h} h`;
 const roleLabel = (r: string) => (r === "node" ? "branch server" : r === "office" ? "office PC" : "till");
+const WARN = "#f59e0b";
+/**
+ * A554: one device in the list — the version straight after the name, so a narrow list never cuts it ("Mama Ngina ·
+ * v1.0" in the owner's screenshot), then the role, the branch and when it was last seen.
+ */
+function deviceOption(d: Device): string {
+  const code = d.terminal_code && d.terminal_code !== d.label ? ` (${d.terminal_code})` : "";
+  return `${d.label}${code} · ${d.app_version ? `v${d.app_version}` : "version ?"} · ${roleLabel(d.role)}${d.branch ? ` · ${d.branch}` : ""} · seen ${time(d.last_seen_at)}`;
+}
 const STATUS: Record<PullRow["status"], { label: string; color: string }> = {
-  waiting: { label: "Waiting", color: "#f59e0b" }, delivered: { label: "Delivered", color: C.green },
+  waiting: { label: "Waiting", color: WARN }, delivered: { label: "Delivered", color: C.green },
   expired: { label: "Expired", color: C.muted }, cancelled: { label: "Cancelled", color: C.muted },
 };
 
@@ -43,7 +56,7 @@ export default function PullLogs({ clientId, req, onView, onDownload, onDelivere
   const [auth, setAuth] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<{ text: string; warn: boolean } | null>(null);   // A554: a warning is shown as one
   const [busy, setBusy] = useState(false);
   const delivered = useRef<Set<string> | null>(null);
 
@@ -72,11 +85,12 @@ export default function PullLogs({ clientId, req, onView, onDownload, onDelivere
 
   const chosen = devices.find((d) => d.device_id === deviceId) ?? null;
   const request = async () => {
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true); setError(""); setNotice(null);
     try {
       const d = await req("POST", base, { device_id: deviceId, reason, range_hours: range, include: { auth } });
       setReason("");
-      setNotice(d?.note ? d.note : `Asked ${d?.request?.device_label ?? "the till"} — it answers within a minute or two when it is on and online.`);
+      setNotice(d?.note ? { text: d.note, warn: true }
+        : { text: `Asked ${d?.request?.device_label ?? "the till"} — it answers within a minute or two when it is on and online.`, warn: false });
       await load(true);
     } catch (e: any) { setError(e?.message ?? "Could not ask for the log."); }
     finally { setBusy(false); }
@@ -93,11 +107,11 @@ export default function PullLogs({ clientId, req, onView, onDownload, onDelivere
       <div style={{ fontSize: 13, fontWeight: 600 }}>Pull logs</div>
       <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Ask a till or the branch server to send its log — no one at the shop needs to press anything. Secrets are removed on the till.</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
-        <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} style={{ ...S.input, maxWidth: 320 }} data-testid="pull-device">
+        <select value={deviceId} onChange={(e) => { setDeviceId(e.target.value); setNotice(null); }} style={{ ...S.input, flex: "1 1 380px", minWidth: 240, maxWidth: "100%" }} data-testid="pull-device">
           <option value="">Choose a till or server…</option>
           {devices.map((d) => (
             <option key={d.device_id} value={d.device_id}>
-              {d.label}{d.terminal_code && d.terminal_code !== d.label ? ` (${d.terminal_code})` : ""} · {roleLabel(d.role)}{d.branch ? ` · ${d.branch}` : ""} · {d.app_version ? `v${d.app_version}` : "version ?"} · seen {time(d.last_seen_at)}
+              {deviceOption(d)}
             </option>
           ))}
         </select>
@@ -113,8 +127,16 @@ export default function PullLogs({ clientId, req, onView, onDownload, onDelivere
           style={{ ...S.input, flex: 1, minWidth: 220 }} data-testid="pull-reason" />
         <button disabled={busy || !deviceId || !reason.trim()} onClick={request} style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }} data-testid="pull-request">Request</button>
       </div>
-      {chosen && !chosen.can_answer && chosen.note && <div style={{ fontSize: 12, color: "#f59e0b", marginTop: 8 }}>{chosen.note}</div>}
-      {notice && <div style={{ fontSize: 12, color: C.green, marginTop: 8 }}>{notice}</div>}
+      {(() => {
+        // A554: one warning, in the warning colour — the device's note, or the request's (the same words) once asked.
+        const warning = notice?.warn ? notice.text : chosen && !chosen.can_answer && chosen.note ? chosen.note : null;
+        return (
+          <>
+            {warning && <div style={{ fontSize: 12, color: WARN, marginTop: 8 }} data-testid="pull-warning">{warning}</div>}
+            {notice && !notice.warn && <div style={{ fontSize: 12, color: C.green, marginTop: 8 }} data-testid="pull-notice">{notice.text}</div>}
+          </>
+        );
+      })()}
       {error && <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{error}</div>}
       {rows && rows.length > 0 && (
         <div style={{ marginTop: 10 }}>

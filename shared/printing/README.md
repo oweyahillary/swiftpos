@@ -46,7 +46,7 @@ has drifted. So when a change moves the paper on purpose:
 
 and commit all of it together. CI also rebuilds the web bundle
 (`build-escpos-renderer.mjs --check`, esbuild pinned) and fails if it is stale.
-`BYTE-CHECK.txt` was refreshed for A538 (2026-10-21, the classic layout back as the standard at ESC 3 30, ~3.75 mm); `VERIFICATION.txt` is a one-off capture from 2026-08-05 and
+`BYTE-CHECK.txt` was refreshed for A551 (2026-10-21: kitchen tickets back in Font A, the item gap and 1-line feed on kitchen and dispatch tickets, the receipt's large payment block); `VERIFICATION.txt` is a one-off capture from 2026-08-05 and
 is NOT maintained — its byte counts predate the receipt closing block.
 
 Compiles clean under `strict: true`. The three app tsconfigs are currently
@@ -97,8 +97,16 @@ Two deviations from the drawn mockups, both deliberate:
   - A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing
     is okay"): KITCHEN tickets print in Font B (9x17 dots) — 64 columns on
     80mm, 42 on 58mm, lines 24 dots apart (ESC M 1 … ESC M 0, ESC 3 24). The
-    per-client switch `kitchen_font_a` puts the Font A kitchen ticket back,
-    byte for byte. Dispatch and receipts are always Font A.
+    per-client switch `kitchen_font_a` put the Font A kitchen ticket back.
+  - A551 (owner, 2026-10-21, on paper: "kitchen receipt use the same font as
+    the despatcher"): KITCHEN tickets are Font A again — the dispatch ticket's
+    font, size and columns — and Font B is the per-client opt-in
+    `kitchen_font_b` (`kitchen_font_a` is retired). Kitchen and dispatch
+    tickets put a thin gap (ESC J 10, ~1.25 mm) between items instead of a
+    blank line, feed 1 line before the cut, and print a variant on the item's
+    own row ("Chicken Burger - Spicy", as the receipt does). The receipt's
+    payment block is "BUY GOODS:" / the number, centred, double size, bold.
+    Dispatch and receipts are always Font A.
 
 ## Not built yet
 

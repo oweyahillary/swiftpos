@@ -29,6 +29,8 @@ export default defineConfig({
             // A469: the spreadsheet library (~400 KB) is its own chunk, fetched only by the menu import and a report's
             // Download Excel — in 'vendor' every page downloaded it.
             if (id.includes('/xlsx/')) return 'xlsx';
+            // A553: the chart library and what only it uses — its own chunk, fetched by the Analytics page alone
+            if (/[\/]node_modules[\/](recharts|victory-vendor|d3-[a-z-]+|@reduxjs|redux|react-redux|reselect|immer|es-toolkit|decimal\.js-light|eventemitter3|internmap|tiny-invariant|use-sync-external-store)[\/]/.test(id)) return 'charts';
             if (id.includes('react-router')) return 'router';
             if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler')) {
               return 'react-vendor';

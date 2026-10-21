@@ -15,6 +15,12 @@
  *     business's sockets at once (4001), so a revoked till is refused on its reconnect. Every socket is checked again
  *     every 10 minutes as well (a change made outside this server).
  *   - A ping every 45 s; a socket that did not answer the last one is closed.
+ *   - A554 (B Foods' log, 2026-10-21: "push channel closed (1006)" every ~13 minutes — the till renews its 15-minute
+ *     token every 13, and this socket ended with the token it signed in with): after the hello the till may send
+ *       { type: 'reauth', token } — its renewed token, checked as the hello is and for the SAME business and till →
+ *       'reauthed' and the expiry moves to the new token's (refused → 4001, as before); and
+ *       { type: 'ping' } → 'pong' (its own keepalive: a half-open line behind a proxy is found within seconds).
+ *     `ready` lists them (features: ['ping', 'reauth']); a till before A554 sends neither and is unchanged.
  *   - How the server learns of a change: (a) at once after its own writes (forgetOnWrite → nudge(business): one read of
  *     that business's newest entry); (b) ONE read for every business every 5 s (sync_changes_heads) for a change made
  *     anywhere else — the SQL editor, a migration, another job. Only while at least one socket is open.
@@ -100,6 +106,32 @@ export function checkToken(token: string): Promise<AuthVerdict> {
 function send(c: Conn, msg: unknown): void {
   if (c.ws.readyState !== WebSocket.OPEN) return;
   try { c.ws.send(JSON.stringify(msg)); traffic.count('live.sent'); } catch { /* the close handler tidies */ }
+}
+
+/** A554: what a till may send after its hello (named in `ready`, so a till knows this cloud takes them). */
+export const LIVE_FEATURES = ['ping', 'reauth'] as const;
+
+/** The socket ends when its token does (+60 s) — set at the hello, moved by a reauth (A554). */
+function armExpiry(c: Conn): void {
+  if (c.expiryTimer) clearTimeout(c.expiryTimer);
+  c.expiryTimer = null;
+  const exp = Number((jwt.decode(c.token) as { exp?: number } | null)?.exp ?? 0) * 1000;
+  if (exp) c.expiryTimer = setTimeout(() => { try { c.ws.close(4001, 'token expired'); } catch { /* gone */ } }, Math.max(1_000, exp - Date.now() + EXPIRY_GRACE_MS));
+}
+
+/** A554: a message on a signed-in socket — the till's keepalive, or its renewed token. */
+async function onSignedIn(c: Conn, msg: any): Promise<void> {
+  if (msg?.type === 'ping') { c.alive = true; send(c, { type: 'pong' }); return; }
+  if (msg?.type !== 'reauth' || typeof msg.token !== 'string' || !msg.token) return;
+  const v = await checkToken(msg.token);
+  if (v.status === 503) return;   // the database is busy: the old token holds until its own expiry
+  const same = v.ok && v.isTill && v.surface === 'desktop' && v.businessId === c.businessId && (v.deviceId ?? null) === c.deviceId;
+  if (!same) { try { c.ws.close(4001, v.ok ? 'not the same till' : (v.code ?? `refused ${v.status}`)); } catch { /* gone */ } return; }
+  c.token = msg.token;
+  c.branchId = v.branchId ?? c.branchId;
+  armExpiry(c);
+  traffic.count('live.reauth');
+  send(c, { type: 'reauthed' });
 }
 
 function drop(c: Conn): void {
@@ -266,7 +298,8 @@ function onConnection(ws: WebSocket): void {
   ws.on('message', async (raw) => {
     let msg: any = null;
     try { msg = JSON.parse(String(raw)); } catch { /* ignored */ }
-    if (conn || msg?.type !== 'hello' || typeof msg.token !== 'string') return;
+    if (conn) { await onSignedIn(conn, msg); return; }   // A554
+    if (msg?.type !== 'hello' || typeof msg.token !== 'string') return;
     const token = msg.token as string;
     const v = await checkToken(token);
     if (!v.ok) { try { ws.close(4001, v.code ?? `refused ${v.status}`); } catch { /* gone */ } return; }
@@ -274,14 +307,13 @@ function onConnection(ws: WebSocket): void {
     clearTimeout(helloTimer);
     const c: Conn = { ws, businessId: v.businessId!, branchId: v.branchId ?? null, deviceId: v.deviceId ?? null, token, alive: true, expiryTimer: null, lastPushed: 0 };
     conn = c;
-    const exp = Number((jwt.decode(token) as { exp?: number } | null)?.exp ?? 0) * 1000;
-    if (exp) c.expiryTimer = setTimeout(() => { try { ws.close(4001, 'token expired'); } catch { /* gone */ } }, Math.max(1_000, exp - Date.now() + EXPIRY_GRACE_MS));
+    armExpiry(c);
     let set = byBusiness.get(c.businessId);
     if (!set) { set = new Set(); byBusiness.set(c.businessId, set); }
     set.add(c);
     let last = 0;
     try { last = await latestSeq(c.businessId); } catch { last = 0; }
-    send(c, { type: 'ready', last_seq: last });
+    send(c, { type: 'ready', last_seq: last, features: [...LIVE_FEATURES] });   // A554: features
   });
 }
 
@@ -354,4 +386,10 @@ export function _resetLiveHub(): void {
   byBusiness.clear(); heads.clear(); globalAfter = null; for (const t of nudged.values()) clearTimeout(t); nudged.clear();
   headsB.clear(); byBranchUntil = 0; stockRungAt.clear(); stockWaiting.clear();   // A535
   for (const t of drawersRinging.values()) clearTimeout(t); drawersRinging.clear();
+}
+/** Test seam (A554): each socket's till and when its token runs out (ms). */
+export function _liveConnsForTest(): Array<{ deviceId: string | null; exp: number }> {
+  const out: Array<{ deviceId: string | null; exp: number }> = [];
+  for (const set of byBusiness.values()) for (const c of set) out.push({ deviceId: c.deviceId, exp: Number((jwt.decode(c.token) as { exp?: number } | null)?.exp ?? 0) * 1000 });
+  return out;
 }

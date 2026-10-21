@@ -25,6 +25,7 @@
     "155_menus.sql": "A537: log_menu_sync_change (one sync_changes entry per changed menu; the menus table, categories.menu_id, the catalogue-version trigger) - written 2026-10-20, not yet run in production.",
     "156_branch_branding.sql": "A544: log_branch_branding_sync_change (one sync_changes entry per changed branch override, topic look, at that branch; the branch_branding table, the catalogue-version trigger) - written 2026-10-21, not yet run in production.",
     "153_sync_stock_changes.sql": "A535: log_sync_stock_change (stock_levels into sync_changes, topic stock, one entry per level), sync_changes_heads_by_branch, sync_stock_ready - written 2026-10-20, not yet run in production.",
-    "158_analytics.sql": "A549: analytics_menu_engineering, analytics_sales_heatmap, analytics_money_leaks, analytics_credit_ageing (Analytics v1 aggregates for /api/analytics; no table) - written 2026-10-21, not yet run in production."
+    "158_analytics.sql": "A549: analytics_menu_engineering, analytics_sales_heatmap, analytics_money_leaks, analytics_credit_ageing (Analytics v1 aggregates for /api/analytics; no table) - written 2026-10-21, not yet run in production.",
+    "160_analytics_daily.sql": "A553: analytics_daily_sales (Analytics v2: completed sales and their payments per business day, for /api/analytics/overview; no table) - written 2026-10-21, not yet run in production."
   }
 }

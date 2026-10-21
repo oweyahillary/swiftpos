@@ -13,8 +13,9 @@
  *     when some category has no menu (or names a menu that is off or gone);
  *   - a menu chosen → its categories in the list, and only their products on the grid ("Other" also takes the products
  *     with no category); "All menus" → every category, grouped under each menu's name, "Other" last;
- *   - the panel starts collapsed; a pin keeps it open, and the pin and the chosen menu are remembered per till / per
- *     browser (parsePanelPrefs / panelPrefsText — the caller wraps the storage in try/catch).
+ *   - the panel starts collapsed — A554: at EVERY start and sign-in, pinned or not; a pin keeps it open for this
+ *     session only, and only the chosen menu is remembered per till / per browser (parsePanelPrefs / panelPrefsText —
+ *     the caller wraps the storage in try/catch).
  *
  * Pure (no React, no storage), so the tests run it. Copied verbatim: shared/, apps/desktop/src/shared/ (the till's sale
  * screen), apps/dashboard/src/lib/ (the web POS) — scripts/check-shared-sync.mjs.
@@ -135,6 +136,10 @@ export function productCounts(products: readonly ProductLike[]): Map<string, num
 }
 
 // ── The panel's remembered state ─────────────────────────────────────────────────────────────────────────────────────
+// A554 (the owner, 2026-10-21: the categories panel "must START COLLAPSED" — it did not): the pin was remembered in the
+// till's (and the browser's) storage, and a pinned panel opened at every start — once anybody had pinned it, every launch
+// and every sign-in began with it open. Now the pin lasts for the session only (the panel's own state) and is never
+// stored; a pin an older build stored is not honoured. Only the chosen menu is remembered.
 export interface PanelPrefs { pinned: boolean; menu: string }
 /** Collapsed and All menus until the cashier pins it ("it should start collapsed by default"). */
 export const DEFAULT_PANEL_PREFS: PanelPrefs = { pinned: false, menu: ALL_MENUS };
@@ -146,12 +151,13 @@ export function parsePanelPrefs(raw: unknown): PanelPrefs {
   if (!v || typeof v !== 'object') return { ...DEFAULT_PANEL_PREFS };
   const o = v as Record<string, unknown>;
   const menu = typeof o.menu === 'string' && o.menu.length > 0 && o.menu.length <= 64 ? o.menu : ALL_MENUS;
-  return { pinned: o.pinned === true, menu };
+  return { pinned: false, menu };   // A554: a stored pin (an older build) is not honoured — the pin is this session's
 }
+/** What is stored: the chosen menu only (A554: never the pin). */
 export function panelPrefsText(p: PanelPrefs): string {
-  return JSON.stringify({ pinned: p.pinned === true, menu: typeof p.menu === 'string' && p.menu ? p.menu : ALL_MENUS });
+  return JSON.stringify({ menu: typeof p.menu === 'string' && p.menu ? p.menu : ALL_MENUS });
 }
-/** The panel is open at start only when it was pinned. */
-export function panelStartsOpen(p: PanelPrefs): boolean { return p.pinned === true; }
+/** A554: the panel starts collapsed at every start and sign-in — pinned or not. */
+export function panelStartsOpen(): boolean { return false; }
 /** After a category is picked: open only while pinned (an unpinned panel closes). */
 export function panelOpenAfterPick(p: PanelPrefs): boolean { return p.pinned === true; }

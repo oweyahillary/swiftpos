@@ -174,6 +174,26 @@ function indentedWrap(cols, text, indent) {
   const pad = " ".repeat(indent);
   return wrap(text, Math.max(1, cols - indent)).map((l) => pad + l);
 }
+function variantLabel(product, option) {
+  const p = sanitize(product).trim();
+  const v = sanitize(option).trim();
+  const head = v.slice(0, p.length);
+  if (p && head.toLowerCase() === p.toLowerCase() && !/[A-Za-z0-9]/.test(v.charAt(p.length))) {
+    return v.slice(p.length).replace(/^[\s\-:,/|]+/, "").trim();
+  }
+  return v;
+}
+function nameWithVariant(product, options) {
+  const name = sanitize(product).trim();
+  const seen = /* @__PURE__ */ new Set();
+  const parts = options.map((o) => variantLabel(name, o)).filter((o) => {
+    const k = o.toLowerCase();
+    if (!o || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return parts.length ? `${name} - ${parts.join(", ")}` : name;
+}
 function itemColumns(cols) {
   const amt = cols >= 48 ? 12 : 10;
   const qty = cols >= 48 ? 5 : 4;
@@ -389,6 +409,8 @@ var RECEIPT_LINE_SPACING_DOTS = 30;
 var COMPACT_CUT_FEED = 1;
 var INFO_GAP_DOTS = 10;
 var KITCHEN_FONT_B_LINE_SPACING_DOTS = 24;
+var ITEM_GAP_DOTS = 10;
+var PRODUCTION_CUT_FEED = 1;
 function rate(n) {
   return String(Number(n.toFixed(2)));
 }
@@ -414,15 +436,27 @@ function visibleUnits(line, ctx) {
   }
   return units;
 }
+function variantUnit(line) {
+  const key = (s) => sanitize(s).trim().toLowerCase();
+  const name = key(line.name);
+  if (!name) return void 0;
+  return line.units.find((u) => u.attributes.length > 0 && u.quantity === 1 && u.portions <= 1 && u.priceDelta === 0 && key(u.name) === name);
+}
+function lineHeading(line) {
+  const folded = variantUnit(line);
+  if (!folded) return { name: line.name };
+  return { name: nameWithVariant(line.name, folded.attributes.map((a) => a.option)), folded };
+}
 function noteRows(note) {
   return (note ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 }
 function renderProduction(ctx) {
   const { order, station } = ctx;
-  const fontB = station.kind === "kitchen" && ctx.business.kitchenFontA !== true;
+  const fontB = station.kind === "kitchen" && ctx.business.kitchenFontB === true;
   const cols = columnsFor(station.paperWidthMm, fontB ? "B" : "A");
   const d = new DocBuilder(cols);
   if (fontB) d.fontB().lineSpacing(KITCHEN_FONT_B_LINE_SPACING_DOTS);
+  d.cutFeed(PRODUCTION_CUT_FEED);
   if (ctx.voided) {
     d.line("VOID", { align: "center", size: "large", bold: true });
     d.line(rule(cols));
@@ -450,12 +484,13 @@ function renderProduction(ctx) {
       const earns = line.units.length > 0 ? units.length > 0 : station.includeUnits === "all" || line.stationIds.includes(station.id);
       if (!earns) continue;
     }
-    if (printedLines > 0) d.blank();
+    if (printedLines > 0) d.gap(ITEM_GAP_DOTS);
     printedLines++;
+    const { name, folded } = lineHeading(line);
     const qtyPrefix = `${line.quantity}   `;
-    const headingWidth = station.emphasizeParent ? Math.floor(cols / 2) : cols;
+    const headingWidth = cols;
     d.lines(
-      hangingWrap(`${qtyPrefix}${line.name.toUpperCase()}`, headingWidth, qtyPrefix.length),
+      hangingWrap(`${qtyPrefix}${name.toUpperCase()}`, headingWidth, qtyPrefix.length),
       { size: station.emphasizeParent ? "tall" : "normal", bold: true }
     );
     if (line.units.length === 0) {
@@ -465,6 +500,7 @@ function renderProduction(ctx) {
     }
     for (const u of units) {
       unitRows++;
+      if (u === folded) continue;
       const attrs = describeAttributes(u);
       const qty = u.quantity > 1 ? ` x${u.quantity}` : "";
       const inline = station.attributeStyle === "inline-when-simple" && attrs ? ` (${attrs})` : "";
@@ -573,8 +609,9 @@ function renderReceipt(ctx) {
     if (lastHadSubLines) d.blank();
     const deltas = line.units.reduce((a, u) => a + u.priceDelta * u.quantity, 0);
     const baseNet = tax.lineNets[i] - netOf(deltas * line.quantity, business.vatRate, business.ctlRate);
-    d.lines(itemRow(cols, line.name, String(line.quantity), formatCents(baseNet)));
-    const units = visibleUnits(line, ctx);
+    const { name, folded } = lineHeading(line);
+    d.lines(itemRow(cols, name, String(line.quantity), formatCents(baseNet)));
+    const units = visibleUnits(line, ctx).filter((u) => u !== folded);
     const before = d.length;
     const plain = [];
     for (const u of units) {
@@ -623,18 +660,16 @@ function renderReceipt(ctx) {
   d.line(rule(cols));
   d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: "tall", bold: true });
   minorRule();
-  if (full) {
-    const label = business.tillLabel ?? "Buy Goods";
-    const heading = business.tillNumber ? `Payment Details: ${label} - ${business.tillNumber}` : "Payment Details:";
-    const cut = heading.indexOf(", Account ");
-    if (heading.length <= cols) d.line(heading, { bold: true });
-    else if (cut > 0 && cut <= cols) {
-      d.line(heading.slice(0, cut), { bold: true });
-      d.line(heading.slice(cut + 2), { bold: true });
-    } else {
-      d.line("Payment Details:", { bold: true });
-      d.lines(wrap(`${label} - ${business.tillNumber}`, cols));
-    }
+  if (full && business.tillNumber?.trim()) {
+    const label = `${sanitize(business.tillLabel ?? "").trim().toUpperCase() || "BUY GOODS"}:`;
+    const raw = sanitize(business.tillNumber).trim();
+    const cut = raw.indexOf(", Account ");
+    const number = cut > 0 ? raw.slice(0, cut).trim() : raw;
+    const account = cut > 0 ? raw.slice(cut + ", Account ".length).trim() : "";
+    const half = Math.floor(cols / 2);
+    const size = label.length <= half && number.length <= half ? "large" : "tall";
+    for (const t of [label, number]) d.lines(size === "large" ? [t] : wrap(t, cols), { align: "center", size, bold: true });
+    if (account) d.lines(wrap(`Account: ${account}`, cols), { align: "center" });
     d.line(rule(cols));
   }
   for (const leg of order.payments) {
@@ -1130,10 +1165,11 @@ function toUnits(line, ids, lineStationIds, routing) {
     }
   }
   for (const m of line.selectedModifiers ?? []) {
-    if (!m.name) continue;
+    const modName = (m.name ?? m.optionName ?? "").trim();
+    if (!modName) continue;
     units.push({
-      productId: m.name,
-      name: m.name,
+      productId: modName,
+      name: modName,
       quantity: 1,
       portions: 1,
       priceDelta: toCents(m.price ?? 0),

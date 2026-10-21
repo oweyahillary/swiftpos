@@ -75,7 +75,9 @@
  *  simply shows no menus (the plain category list). */
 /** 74 = A544: branch_branding (pulled; migration 156). A till on 73 keeps syncing; it simply wears the business's
  *  branding, not its branch's override. */
-export const REQUIRED_DESKTOP_SCHEMA = 74;
+/** 75 = A552: credit_customers (pulled — the customers a till sells to on account, GET /api/pos/credit-customers) and
+ *  customer_credit_transactions.synced_at (local). A till on 74 keeps syncing; it simply offers no On account. */
+export const REQUIRED_DESKTOP_SCHEMA = 75;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

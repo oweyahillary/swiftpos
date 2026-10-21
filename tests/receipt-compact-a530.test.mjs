@@ -65,7 +65,7 @@ await ok('the four switches, named and explained, off unless set', () => {
 
 await ok('A538: receipt_classic_layout is retired — a stale row in production is dropped, read by nothing, not listed', () => {
   assert.ok(!F.POS_FEATURE_KEYS.includes('receipt_classic_layout'));
-  assert.deepEqual([...F.RETIRED_POS_FEATURE_KEYS], ['receipt_classic_layout']);
+  assert.deepEqual([...F.RETIRED_POS_FEATURE_KEYS], ['receipt_classic_layout', 'kitchen_font_a']);   // A551: kitchen_font_a too
   const parsed = F.parsePosFeatures([{ key: 'receipt_classic_layout', enabled: true }, { key: 'receipt_full_logo', enabled: true }]);
   assert.ok(!('receipt_classic_layout' in parsed), 'unknown keys are dropped');
   assert.equal(parsed.receipt_full_logo, true, 'the rest still read');
@@ -107,9 +107,10 @@ await ok('A538: the web bundle prints the classic layout at ESC 3 30 by default,
   const old = Buffer.from(E.renderReceiptEscPos(order, biz(Object.fromEntries(OLD_1019.map((k) => [k, true]))), 80));
   assert.ok(std.subarray(0, 8).equals(Buffer.from([0x1b, 0x40, 0x1b, 0x74, 0, 0x1b, 0x33, 30])), 'ESC 3 30 (~3.75 mm) on the standard receipt');
   assert.ok(!std.includes(Buffer.from([0x1b, 0x33, 26])), 'not A530\'s 26');
-  // A539: the heading is "Payment Details:" (with the till number when there is one). A540: no "Round Off: 0.00", and a
-  // thin gap (ESC J 10) between the info lines.
-  for (const s of ['Type: Takeaway\n', 'Bill No.: W-1\n', 'Cashier: Amina\n', 'Date: ', 'Kots: 0\n', 'Payment Details:', 'Total:', 'PAY: KES 500.00']) {
+  // A539 headed the payments "Payment Details:"; A551: no such words — with no till number (this business) no heading at
+  // all (shared/printing receipt-pay-block.test). A540: no "Round Off: 0.00", and a thin gap (ESC J 10) between the info lines.
+  assert.ok(!std.includes(Buffer.from('Payment Detail')), 'A551: no "Payment Details" words');
+  for (const s of ['Type: Takeaway\n', 'Bill No.: W-1\n', 'Cashier: Amina\n', 'Date: ', 'Kots: 0\n', 'CASH', 'Total:', 'PAY: KES 500.00']) {
     assert.ok(std.includes(Buffer.from(s)), `the standard has "${s.trim()}"`);
   }
   assert.ok(!std.includes(Buffer.from('Round Off:')), 'A540: no "Round Off: 0.00" on the standard receipt');
@@ -119,7 +120,7 @@ await ok('A538: the web bundle prints the classic layout at ESC 3 30 by default,
   assert.ok(compact.includes(Buffer.from([0x1b, 0x33, 30])), 'the compact opt-in at the same 30');
   assert.ok(!compact.includes(Buffer.from('Payment Detail:')) && !compact.includes(Buffer.from('Kots:')) && !compact.includes(Buffer.from('Round Off:')));
   assert.ok(!old.includes(Buffer.from([0x1b, 0x33])), 'no ESC 3 with the classic spacing');
-  assert.ok(old.includes(Buffer.from('Payment Details:')) && old.includes(Buffer.from('Kots: 0')));
+  assert.ok(!old.includes(Buffer.from('Payment Detail')) && old.includes(Buffer.from('Kots: 0')));
   assert.ok(old.subarray(-7).equals(Buffer.from([0x1b, 0x64, 3, 0x1d, 0x56, 0x42, 0])), 'three lines before the cut');
   assert.ok(compact.length < std.length, 'the compact opt-in is shorter');
 });

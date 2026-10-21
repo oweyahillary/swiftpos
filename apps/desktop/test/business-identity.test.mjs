@@ -10,7 +10,7 @@
 //
 // MUTATIONS TO CONFIRM BITE:
 //   - applyBusinessIdentity not called from applyReferenceConfig      → "the new business name is on the till" fails
-//   - the receipt's tillNumber not set from getReceiptPay             → "Payment Details: Paybill - 4098201" fails (A539)
+//   - the receipt's tillNumber not set from getReceiptPay             → "PAYBILL: / 4098201" fails (A539; A551)
 //   - nodeIdentity left out of the branch server's bundle             → "a till behind the branch server gets them" fails
 //   - businesses missing from the cloud's catalogue-version           → its pin fails
 import fs from 'node:fs';
@@ -98,7 +98,7 @@ console.log('\nThe business renamed on the web\n');
   ok('…and the screens read it (the session they load names it)', s?.business?.name === 'Krunch Westlands', JSON.stringify(s?.business));
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
   ok('…and the receipt prints it', /KRUNCH WESTLANDS|Krunch Westlands/.test(lastReceipt()), lastReceipt().slice(0, 200));
-  ok('no receipt M-Pesa line while none is set', !/Buy Goods|Paybill/.test(lastReceipt()));
+  ok('no receipt M-Pesa line while none is set', !/Buy Goods|Paybill/i.test(lastReceipt()));
 }
 
 console.log('\nThe receipt\'s M-Pesa line\n');
@@ -107,23 +107,23 @@ console.log('\nThe receipt\'s M-Pesa line\n');
   cloud.version = '2026-10-12T09:40:00Z';
   await E.pullIfCatalogueChanged();
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
-  // A539: the number is in the payment heading — "Payment Details: Paybill - 4098201" (was a line under the payments).
-  ok('set on the web → "Payment Details: Paybill - 4098201" on this till\'s receipt', /Payment Details: Paybill - 4098201/.test(lastReceipt()), lastReceipt().slice(-600));
+  // A551: the payment block's label, then the number on the next line (A539 had "Payment Details: Paybill - 4098201").
+  ok('set on the web → "PAYBILL:" / "4098201" on this till\'s receipt', /PAYBILL:\n4098201\n/.test(lastReceipt()), lastReceipt().slice(-600));
   cloud.pay = { label: '', number: '777111' };
   cloud.version = '2026-10-12T09:50:00Z';
   await E.pullIfCatalogueChanged();
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
-  ok('a number with no label prints as Buy Goods', /Payment Details: Buy Goods - 777111/.test(lastReceipt()));
+  ok('a number with no label prints as Buy Goods', /BUY GOODS:\n777111\n/.test(lastReceipt()));
   const offline = globalThis.fetch;
   globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
-  ok('offline the till still prints it (kept on the till)', /Payment Details: Buy Goods - 777111/.test(lastReceipt()));
+  ok('offline the till still prints it (kept on the till)', /BUY GOODS:\n777111\n/.test(lastReceipt()));
   globalThis.fetch = offline;
   cloud.pay = { label: 'Buy Goods', number: '' };
   cloud.version = '2026-10-12T10:00:00Z';
   await E.pullIfCatalogueChanged();
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
-  ok('cleared on the web → no line', !/Buy Goods|Paybill/.test(lastReceipt()));
+  ok('cleared on the web → no line', !/Buy Goods|Paybill/i.test(lastReceipt()));
 }
 
 console.log('\nA till behind the branch server, and an older cloud\n');
