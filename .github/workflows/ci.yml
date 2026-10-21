@@ -367,6 +367,16 @@ jobs:
           node --no-warnings tests/analytics-rules-a553.test.mjs
           node --no-warnings scripts/test-migration-160.mjs
 
+      # A558 — Analytics "decisions made easy": GET /api/analytics/item-times (what sells when: the dayparts at the EAT
+      # boundary, the owner's cut-off, branch scope, the cache) and /recommendations ("Do this next" and "How was this
+      # period?": ranked estimates, costs withheld) over HTTP on the REAL migration-158/160/161 functions in PGlite; every
+      # recommendation rule and the page's plain-words maths; migration 161 on its own. Needs the server build and PGlite.
+      - name: Analytics decisions (A558) item times, recommendations and migration 161
+        run: |
+          node --no-warnings tests/analytics-a558.test.mjs
+          node --no-warnings tests/analytics-rules-a558.test.mjs
+          node --no-warnings scripts/test-migration-161.mjs
+
       # A550: partner login — someone on the staff the owner lets into the web dashboard with a password, never the owner
       # (the real auth / staff routers over HTTP) — and the five built-in roles that came with it. They run in the loop
       # below too; named here so a failure says what broke.

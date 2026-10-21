@@ -514,9 +514,9 @@ function renderReceipt(ctx: PrintContext): Document {
     const cut = raw.indexOf(', Account ');
     const number = cut > 0 ? raw.slice(0, cut).trim() : raw;
     const account = cut > 0 ? raw.slice(cut + ', Account '.length).trim() : '';
-    const half = Math.floor(cols / 2);
-    const size = label.length <= half && number.length <= half ? 'large' : 'tall';
-    for (const t of [label, number]) d.lines(size === 'large' ? [t] : wrap(t, cols), { align: 'center', size, bold: true });
+    // A557 (owner, on paper: "reduce the font size of paybil abit"): double HEIGHT only (GS ! 0x01) — the glyphs keep the
+    // normal width, a step down from A551's double size. ESC/POS has no sizes in between; bold and centred as before.
+    for (const t of [label, number]) d.lines(wrap(t, cols), { align: 'center', size: 'tall', bold: true });
     if (account) d.lines(wrap(`Account: ${account}`, cols), { align: 'center' });
     d.line(rule(cols));
   }

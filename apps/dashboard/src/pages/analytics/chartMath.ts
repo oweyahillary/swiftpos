@@ -79,3 +79,49 @@ export function dayLabel(iso: string): string {
   if (!y || !m || !d) return iso;
   return `${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`;
 }
+
+// ── A558: plain words for the KPI tiles, the 10-row caps, the item heatmap ────
+
+export interface ChangeWords { arrow: '▲' | '▼' | ''; text: string; good: boolean | null }
+/**
+ * A KPI's change as words a non-analyst reads: "9.5% more than the 30 days before", "about the same as …", "2.1 points
+ * higher than …" (`points`: the change is already in percentage points). `good` follows `upIsGood` (money at risk: up
+ * is bad); null when flat or nothing to compare against.
+ */
+export function changeWords(change: number | null | undefined, opts: { upIsGood: boolean; points?: boolean; compare: string }): ChangeWords {
+  if (change === null || change === undefined || !Number.isFinite(change)) return { arrow: '', text: `no earlier figure to compare with`, good: null };
+  const pct = change * 100;
+  if (Math.abs(pct) < 0.5) return { arrow: '', text: `about the same as ${opts.compare}`, good: null };
+  const up = pct > 0;
+  const size = Math.abs(pct);
+  const n = opts.points ? size.toFixed(1) : size >= 100 ? Math.round(size).toLocaleString('en-US') : size.toFixed(1);
+  const text = opts.points ? `${n} points ${up ? 'higher' : 'lower'} than ${opts.compare}` : `${n}% ${up ? 'more' : 'less'} than ${opts.compare}`;
+  return { arrow: up ? '▲' : '▼', text, good: up === opts.upIsGood };
+}
+
+/** "the 30 days before" / "the day before" — what a period is compared against. */
+export const compareWords = (days: number) => (days === 1 ? 'the day before' : `the ${days} days before`);
+
+/** Of every 100 sold, how much is left after the cost (a margin of 0.553 → 55). */
+export const per100 = (margin: number | null | undefined) => (margin === null || margin === undefined || !Number.isFinite(margin) ? null : Math.round(margin * 100));
+
+/** A table's rows capped at `n` (A558: every analytics table shows the top 10 and says so — no paging). */
+export function capRows<T>(rows: T[], n = 10): { rows: T[]; total: number; capped: boolean } {
+  const all = rows ?? [];
+  return { rows: all.slice(0, n), total: all.length, capped: all.length > n };
+}
+
+/** One product's cells ([weekday 0–6, hour, qty, revenue]) as a 7 × 24 quantity grid, its busiest cell and its hours. */
+export function itemGrid(cells: [number, number, number, number][]): { qty: number[][]; max: number; hours: { from: number; to: number } | null; peak: { dow: number; hour: number; qty: number } | null } {
+  const qty = Array.from({ length: 7 }, () => Array(24).fill(0) as number[]);
+  let max = 0, lo = 24, hi = -1;
+  let peak: { dow: number; hour: number; qty: number } | null = null;
+  for (const [d, h, q] of cells ?? []) {
+    if (d < 0 || d > 6 || h < 0 || h > 23 || !(q > 0)) continue;
+    qty[d][h] += q;
+    if (qty[d][h] > max) max = qty[d][h];
+    if (!peak || qty[d][h] > peak.qty) peak = { dow: d, hour: h, qty: qty[d][h] };
+    lo = Math.min(lo, h); hi = Math.max(hi, h);
+  }
+  return { qty, max, hours: hi >= 0 ? { from: lo, to: hi } : null, peak };
+}

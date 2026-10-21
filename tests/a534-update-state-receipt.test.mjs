@@ -193,7 +193,9 @@ await ok('A551: the classic payment block — "BUY GOODS:", the number (centred,
   assert.deepEqual(t.slice(i + 2, i + 6), ['CASH', 'KES 1,300.00', 'CHANGE', 'KES 50.00'], t.join(' | '));
   assert.ok(!t.some((l) => /payment details/i.test(l)), 'the words "Payment Details" are gone');
   // In the markup: a centred bold block, the label and the number larger than the receipt's 12px, then a rule, then CASH.
-  assert.match(html, /<div style="text-align:center;font-weight:bold;margin-bottom:3px" data-testid="payment-details"><p style="font-size:16px">BUY GOODS:<\/p><p style="font-size:18px">892984<\/p><\/div>/);
+  // A557 (owner: "reduce the font size of paybill a bit by 3 points"): 13px / 15px, 3px under A551's 16px / 18px.
+  assert.match(html, /<div style="text-align:center;font-weight:bold;margin-bottom:3px" data-testid="payment-details"><p style="font-size:13px">BUY GOODS:<\/p><p style="font-size:15px">892984<\/p><\/div>/);
+  assert.ok(!/font-size:1[68]px/.test(html.slice(html.indexOf('data-testid="payment-details"'))), "A551's 16px / 18px are gone");
   const h = html.indexOf('data-testid="payment-details"');
   const ruleAt = html.indexOf('border-top:1px dashed #000', h), cashAt = html.indexOf('>CASH<', h);
   assert.ok(h > 0 && ruleAt > h && ruleAt < cashAt, 'the rule sits between the block and the payments');

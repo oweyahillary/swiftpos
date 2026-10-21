@@ -678,9 +678,7 @@ function renderReceipt(ctx) {
     const cut = raw.indexOf(", Account ");
     const number = cut > 0 ? raw.slice(0, cut).trim() : raw;
     const account = cut > 0 ? raw.slice(cut + ", Account ".length).trim() : "";
-    const half = Math.floor(cols / 2);
-    const size = label.length <= half && number.length <= half ? "large" : "tall";
-    for (const t of [label, number]) d.lines(size === "large" ? [t] : wrap(t, cols), { align: "center", size, bold: true });
+    for (const t of [label, number]) d.lines(wrap(t, cols), { align: "center", size: "tall", bold: true });
     if (account) d.lines(wrap(`Account: ${account}`, cols), { align: "center" });
     d.line(rule(cols));
   }
@@ -1271,7 +1269,8 @@ function stationConfigForType(type, id, paperWidthMm) {
     showPrices: false,
     showUnchangedUnits: true,
     showOptionPrices: false,
-    emphasizeParent: true,
+    emphasizeParent: false,
+    // A557: as dispatch
     showFooterCount: true,
     attributeStyle: "always-sublines",
     openCashDrawer: false

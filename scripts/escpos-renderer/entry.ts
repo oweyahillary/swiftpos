@@ -54,7 +54,7 @@ function stationConfigForType(type, id, paperWidthMm) {
   // kitchen | bar | kot  → kitchen header; kitchen/bar route by category, kot shows all.
   const routed = (type === 'kitchen' || type === 'bar');
   return { ...common, name: 'Kitchen', kind: 'kitchen', includeUnits: routed ? 'routed' : 'all',
-    showPrices: false, showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: true,
+    showPrices: false, showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: false,   // A557: as dispatch
     showFooterCount: true, attributeStyle: 'always-sublines', openCashDrawer: false };
 }
 

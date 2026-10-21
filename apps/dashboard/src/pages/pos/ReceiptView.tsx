@@ -215,11 +215,12 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
         <>
           {/* A551: the thermal receipt's block — "BUY GOODS:" / "PAYBILL:", the number, centred, large and bold (a Paybill's
               account under them), a rule, each payment (a lone cash payment carries what was tendered), CHANGE when there
-              is some. No number: straight to the payments. */}
+              is some. No number: straight to the payments. A557 (owner: "reduce the font size of paybill a bit by 3
+              points"): 13px / 15px, 3px under A551's 16px / 18px — still bold and above the receipt's 12px. */}
           {payNumber && (
             <div style={{ textAlign: 'center', fontWeight: 'bold', marginBottom: '3px' }} data-testid="payment-details">
-              <p style={{ fontSize: '16px' }}>{payLabel}</p>
-              <p style={{ fontSize: '18px' }}>{payNumber}</p>
+              <p style={{ fontSize: '13px' }}>{payLabel}</p>
+              <p style={{ fontSize: '15px' }}>{payNumber}</p>
               {payAccount && <p style={{ fontWeight: 'normal' }}>Account: {payAccount}</p>}
             </div>
           )}

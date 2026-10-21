@@ -1,4 +1,4 @@
-// A498 → A539 → A551 — the receipt's payment block.
+// A498 → A539 → A551 → A557 — the receipt's payment block.
 // A498 (owner, 2026-10-15): the heading and its payments are ONE block, with the M-Pesa number printed with them.
 // A539 (owner, 2026-10-21, on paper): "payment details: Pay bill/buygood - 892984 / ------ / mpesa/cash/card".
 // A551 (owner, 2026-10-21, on paper again): "we just write `PAY BILL/BUY GOODS:` newline `123445` and we center it and
@@ -7,6 +7,9 @@
 // them, normal size), a rule, then the payments and change, then the block's closing rule. The compact opt-in (A530)
 // keeps its own block (no heading, the number after the payments). The bytes are pinned in shared/printing
 // (test/receipt-pay-block.test.ts).
+// A557 (owner, 2026-10-21, on paper: "also reduce the font size of paybill a bit by 3 points"): the label and the number
+// are double HEIGHT only (GS ! 0x01), always — ESC/POS has no size between that and A551's double size — and a long
+// value wraps at the full line. The preview prints a tall line unspaced ("BUY GOODS:", not "B U Y   G O O D S :").
 //
 //   cd shared/printing && npm run sample && cd ../.. && node --no-warnings tests/receipt-payment-block.test.mjs
 //
@@ -30,18 +33,22 @@ const start = all.findIndex((l) => l.startsWith('CUSTOMER RECEIPT   ('));
 const rows = all.slice(start).map((l) => l.replace(/^\|/, '').replace(/\|\s*$/, '').trim());
 const end = rows.findIndex((l, k) => k > 3 && /^\+-+\+?$/.test(l));
 const receipt = rows.slice(0, end > 0 ? end : rows.length);
-// The preview draws a double-width line with its letters spaced out ("B U Y   G O O D S :").
+// The preview draws a double-width line with its letters spaced out ("B U Y   G O O D S :"); A557's tall line is not.
 const wide = (s) => s.split('').join(' ');
 
-console.log('\nThe receipt\'s payment block (A551)\n');
+console.log('\nThe receipt\'s payment block (A551, A557)\n');
 ok('the label alone, then the number on its own line — no "Payment Details" words', () => {
-  const i = receipt.indexOf(wide('BUY GOODS:'));
+  const i = receipt.indexOf('BUY GOODS:');
   assert.ok(i > 0, receipt.join(' | '));
-  assert.equal(receipt[i + 1], wide('000000'));
+  assert.equal(receipt[i + 1], '000000');
   assert.ok(!receipt.some((l) => /payment detail/i.test(l)), receipt.join(' | '));
 });
+ok('A557: double height only — the sample no longer draws the block double width (no spaced-out letters)', () => {
+  assert.ok(!receipt.includes(wide('BUY GOODS:')) && !receipt.includes(wide('000000')), receipt.join(' | '));
+  assert.ok(!sample.includes(wide('PAYBILL:')) && sample.includes('|                    PAYBILL:                    |'));
+});
 ok('…under the rule below PAY; then a rule, the payments and change, then the block\'s closing rule', () => {
-  const i = receipt.indexOf(wide('BUY GOODS:'));
+  const i = receipt.indexOf('BUY GOODS:');
   assert.match(receipt[i - 2], /^PAY: KES /);
   assert.match(receipt[i - 1], /^-+$/);
   assert.match(receipt[i + 2], /^-+$/, `under the number: "${receipt[i + 2]}"`);
@@ -52,19 +59,22 @@ ok('…under the rule below PAY; then a rule, the payments and change, then the 
 ok('no separate "Buy Goods: …" line on the standard receipt any more', () => {
   assert.ok(!receipt.some((l) => /^Buy Goods:/.test(l)), receipt.join(' | '));
 });
-ok('the web POS prints the same block (its renderer is built from the till\'s): centred, double size, bold', () => {
+ok('the web POS prints the same block (its renderer is built from the till\'s): centred, double height, bold', () => {
   for (const s of [till, web]) {
     assert.ok(!/Payment Details/.test(s.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '')), 'no "Payment Details" in the code');
-    assert.match(s, /\{ align: ["']center["'], size, bold: true \}/, 'the label and the number centred, bold');
+    assert.match(s, /for \(const t of \[label, number\]\) d\.lines\(wrap\(t, cols\), \{ align: ["']center["'], size: ["']tall["'], bold: true \}\)/,
+      'the label and the number centred, tall, bold, wrapped at the full line');
+    assert.ok(!/["']large["'] : ["']tall["']/.test(s), "A551's large-when-it-fits rule is gone");
   }
   const biz = { name: 'B Foods', currencyCode: 'KES', vatRate: 16, ctlRate: 0, tillLabel: 'Paybill', tillNumber: '4098201, Account WEST1' };
   const order = { billNumber: 'W-1', orderType: 'takeaway', cashierName: 'Amina', soldAt: '2026-10-21T09:00:00Z', kotCount: 0,
     lines: [{ name: 'Burger', quantity: 1, unitPrice: 50000, lineTotal: 50000, units: [], stationIds: [] }],
     payments: [{ label: 'M-PESA', amount: 50000 }], changeGiven: 0, total: 50000 };
   const b = Buffer.from(E.renderReceiptEscPos(order, biz, 80));
-  const want = Buffer.concat([Buffer.from([0x1b, 0x61, 1, 0x1d, 0x21, 0x11, 0x1b, 0x45, 1, 0x1b, 0x32]), Buffer.from('PAYBILL:\n4098201\n'),
+  const want = Buffer.concat([Buffer.from([0x1b, 0x61, 1, 0x1d, 0x21, 0x01, 0x1b, 0x45, 1, 0x1b, 0x32]), Buffer.from('PAYBILL:\n4098201\n'),
     Buffer.from([0x1d, 0x21, 0, 0x1b, 0x45, 0, 0x1b, 0x33, 30]), Buffer.from('Account: WEST1\n')]);
-  assert.ok(b.includes(want), 'web: ESC a 1, GS ! 0x11, ESC E 1 — PAYBILL: / 4098201 — then Account: WEST1 normal');
+  assert.ok(b.includes(want), 'web: ESC a 1, GS ! 0x01, ESC E 1 — PAYBILL: / 4098201 — then Account: WEST1 normal');
+  assert.ok(!b.includes(Buffer.from([0x1d, 0x21, 0x11])), 'web: no GS ! 0x11 (double size) anywhere on the receipt');
 });
 ok('a Paybill\'s account goes on its own line (both renderers)', () => {
   for (const s of [till, web]) assert.match(s, /indexOf\(["'], Account ["']\)/);

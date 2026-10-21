@@ -30,7 +30,7 @@ export function kitchenPreset(id: string, name: string, paperWidthMm: 58 | 80 = 
     showPrices: false,
     showUnchangedUnits: true,
     showOptionPrices: false,
-    emphasizeParent: true,        // (UNSETTLED) double-height dish names
+    emphasizeParent: false,       // A557 (owner: "I want exactly as the packaging/dispatcher receipt EXACT FONT SIZE"): bold, normal size
     aggregateUnits: false,        // (UNSETTLED) per-parent, not multiplied out
     showFooterCount: true,        // (UNSETTLED) "5 items to cook"
     attributeStyle: 'always-sublines',

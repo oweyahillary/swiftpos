@@ -104,13 +104,14 @@ const NAV_ITEMS: NavItem[] = [
   // A413: batches and expiry dates.
   { key: 'expiry',    label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Expiry</span></>, title: 'Expiry', permission: 'inventory.waste', group: 'Inventory' },
   { key: 'history',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">History</span></>,   title: 'Stock history', permission: 'inventory.receive', group: 'Inventory' },
+  // A549: Analytics (premium) — this branch only; off for the business, the page says it is part of ZapTill Premium.
+  // A558: first in Finance — the decisions page.
+  { key: 'analytics', label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Analytics</span></>, title: 'Analytics', permission: 'reports.sales', group: 'Finance' },
   // A518: supplier bills — read with payables.view (the Accountant's), recorded and paid with payables.manage.
   { key: 'bills',     label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Supplier bills</span></>, title: 'Supplier bills', permission: ['payables.view', 'payables.manage'], group: 'Finance' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
   { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: ['orders.view_all', 'shifts.close_day', 'shifts.force_close'], group: 'Finance' },   // A523: Tills & days is in it
   { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: MANAGER_REPORT_KEYS, group: 'Finance' },
-  // A549: Analytics v1 (premium) — this branch only; off for the business, the page says it is part of ZapTill Premium.
-  { key: 'analytics', label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Analytics</span></>, title: 'Analytics', permission: 'reports.sales', group: 'Finance' },
   { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  title: 'Turnover', permission: 'orders.view_all', group: 'Finance' },
   { key: 'expenses',  label: <><Icon d={I.expenses}  className="flex-shrink-0" /><span className="truncate">Expenses</span></>,  title: 'Expenses', permission: 'expenses.view', group: 'Finance' },
   { key: 'customers', label: <><Icon d={I.customers} className="flex-shrink-0" /><span className="truncate">Customers</span></>, title: 'Customers', permission: 'customers.view', group: 'Customers' },

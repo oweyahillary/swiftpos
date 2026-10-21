@@ -111,6 +111,9 @@ const FOOD_VERTICALS = ['restaurant', 'cafe'];
 
 const NAV: NavEntry[] = [
   { to: '/dashboard',          label: 'Overview',  icon: 'overview', end: true },
+  // A549 · A558: Analytics (premium — the admin portal's 'analytics' switch; off, the page says so), right below Overview:
+  // the owner's decisions page, not a finance tool.
+  { to: '/dashboard/analytics', label: 'Analytics', icon: 'summary' },
   { to: '/dashboard/pos',      label: 'POS',      icon: 'till' },
   // KDS moved out of Settings — it is a live operational screen, not a setting.
   { to: '/kds',                label: 'KDS',      icon: 'kds', verticals: FOOD_VERTICALS },
@@ -154,8 +157,6 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/orders',   label: 'Orders',   icon: 'reports' },
       { to: '/dashboard/expenses', label: 'Expenses', icon: 'expenses' },
       { to: '/dashboard/reports',  label: 'Reports',  icon: 'reports' },
-      // A549: Analytics v1 (premium — the admin portal's 'analytics' switch; off, the page says so).
-      { to: '/dashboard/analytics', label: 'Analytics', icon: 'summary' },
       // A365 (0.6.23): every cashier's shift — running, awaiting a manager, confirmed — and View for the per-method table.
       { to: '/dashboard/shift-reports', label: 'Shift Reports', icon: 'reports' },
       // Table Turnover moved out of Settings — it is a report, not configuration.
@@ -214,6 +215,7 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/orders':                ['orders.view_all'],
   '/dashboard/expenses':              ['expenses.view', 'expenses.manage'],
   '/dashboard/reports':               REPORT_KEYS,
+  '/dashboard/analytics':             ['reports.sales'],   // A558: the cloud's own gate for every /api/analytics route
   '/dashboard/shift-reports':         ['reports.shifts', 'shifts.confirm'],
   '/dashboard/turnover':              ['orders.view_all'],
   '/dashboard/open-drawers':          ['shifts.force_close', 'shifts.confirm'],

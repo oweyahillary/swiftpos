@@ -18,6 +18,9 @@
  * the payment mix — from migration 160's analytics_daily_sales (both periods in ONE call) plus the money-leaks and menu
  * answers of each period (the current ones shared with the tabs through the cache). Costs, margins and the wastage
  * value go only to a caller who may see costs (A490 seesCosts); credit ageing needs customers.view or customers.credit.
+ * A558 (decisions made easy): GET /item-times — what sells when (each product by business weekday × hour, migration 161's
+ * analytics_item_times, ONE call) — and GET /recommendations — the "Do this next" cards and the "How was this period?"
+ * summary, from the answers above (all shared through the cache: after /overview and /item-times it runs nothing new).
  */
 import type { Request, Response } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -30,8 +33,10 @@ import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { analyticsEnabled } from '../lib/analyticsAccess';
 import {
   ANALYTICS_OFF_MESSAGE, rangeError, defaultRange, classifyMenu, menuWithoutCosts, summariseHeatmap, summariseLeaks,
-  leaksWithoutWastageValue, summariseCredit, buildInsights, previousPeriod, buildOverview,
+  leaksWithoutWastageValue, summariseCredit, buildInsights, previousPeriod, buildOverview, summariseItemTimes,
+  buildRecommendations, buildSummary, valueFound, rangeDays, ITEM_TIMES_LIMIT,
   type MenuRow, type HeatRow, type LeakRow, type CreditRow, type DailyRow, type MenuResult, type LeaksResult, type CreditResult,
+  type ItemTimeRow, type ItemTimesResult,
 } from '../lib/analyticsRules';
 
 const router = safeRouter();
@@ -150,6 +155,11 @@ function daily(c: Ctx, prev: Ctx): Promise<DailyRow[]> {
   return cached(`daily|${c.businessId}|${c.branch ?? 'all'}|${prev.from}|${c.to}|${c.cutoff}`,
     () => aggregate<DailyRow>('analytics_daily_sales', { p_business: c.businessId, p_branch: c.branch, p_from: prev.start, p_to: c.end, p_cutoff: c.cutoff }));
 }
+// A558: what sells when — each product by business weekday × hour (the best ITEM_TIMES_LIMIT sellers + a total row)
+function itemTimes(c: Ctx): Promise<ItemTimesResult> {
+  return cached(key('times', c), async () => summariseItemTimes(
+    await aggregate<ItemTimeRow>('analytics_item_times', { ...span(c), p_cutoff: c.cutoff, p_limit: ITEM_TIMES_LIMIT }), c.cutoff));
+}
 const seesCredit = (req: Request) => can(req, 'customers.view', 'customers.credit');
 
 async function answer(res: Response, work: () => Promise<unknown>) {
@@ -204,6 +214,38 @@ router.get('/overview', async (req, res) => {
     return {
       period: period(c), branchId: c.branch,
       ...buildOverview({ from: c.from, to: c.to, daily: rows, leaksNow: lNow, leaksPrev: lPrev, menuNow: mNow, menuPrev: mPrev, costs: c.costs }),
+    };
+  });
+});
+
+// GET /api/analytics/item-times?from&to&branch — A558: what sells when. Quantities and revenue only (no cost), so the
+// same answer for every caller who may see sales.
+router.get('/item-times', async (req, res) => {
+  const c = await context(req, res); if (!c) return;
+  await answer(res, async () => ({ period: period(c), branchId: c.branch, timeZone: 'Africa/Nairobi', cutoff: c.cutoff, ...(await itemTimes(c)) }));
+});
+
+// GET /api/analytics/recommendations?from&to&branch — A558: "Do this next" (ranked, each with its estimate and the
+// assumption) and "How was this period?". Without costs the menu is never worked out here (every menu rule needs a
+// margin) and wastage is out; without customers.view / customers.credit no credit rule.
+router.get('/recommendations', async (req, res) => {
+  const c = await context(req, res); if (!c) return;
+  await answer(res, async () => {
+    const p = before(c);
+    const [m, mPrev, h, l, lPrev, cr, t, rows] = await Promise.all([
+      c.costs ? menu(c) : Promise.resolve(null), c.costs ? menu(p) : Promise.resolve(null), heatmap(c), leaks(c), leaks(p),
+      seesCredit(req) ? credit(c) : Promise.resolve(null), itemTimes(c), daily(c, p),
+    ]);
+    const overview = buildOverview({ from: c.from, to: c.to, daily: rows, leaksNow: l, leaksPrev: lPrev, menuNow: m, menuPrev: mPrev, costs: c.costs });
+    const recommendations = buildRecommendations({
+      days: rangeDays(c.from, c.to) ?? 1, costs: c.costs, menu: m, heatmap: h,
+      leaks: c.costs ? l : leaksWithoutWastageValue(l), credit: cr, times: t,
+    });
+    const today = businessDateEAT(new Date(), c.cutoff);
+    return {
+      period: period(c), branchId: c.branch, costsHidden: !c.costs,
+      summary: buildSummary({ from: c.from, to: c.to, today, overview, recommendations }),
+      recommendations, found: valueFound(recommendations),
     };
   });
 });

@@ -15,6 +15,10 @@
  *     least 2× the median of the cashiers in view, with at least 5 such events and a rate above zero.
  *   Credit ageing — totals per bucket (0–30, 31–60, 61–90, 90+ days) from the ledger allocation of migration 158.
  *   Insights — short sentences from fixed rules (no AI), each with a type and a severity so the page can sort them.
+ *   A558 — what sells when (each product by business weekday × hour; the dayparts' top 5, each hour's top 3), the
+ *     "Do this next" recommendations (rules only, each with a KES estimate a month or once and the assumption it rests
+ *     on, ranked by the KES at stake; none without enough data; none that tells a margin to someone who may not see
+ *     costs) and the one- or two-sentence "How was this period?" summary.
  */
 
 export const ANALYTICS_FLAG = 'analytics';
@@ -539,4 +543,481 @@ export function buildOverview(input: {
       .filter((g) => g.amount > 0),
     marginHidden: !costs, wastageHidden: !costs,
   };
+}
+
+// ── A558: what sells when (item × time) ───────────────────────────────────────
+
+export interface ItemTimeRow {
+  is_total: boolean; product_id: string | null; product_name: string | null;
+  qty: number | string; revenue: number | string; cells: unknown;
+}
+export type DaypartKey = 'morning' | 'lunch' | 'afternoon' | 'evening' | 'late';
+export interface Daypart { key: DaypartKey; label: string; from: number; to: number }
+/** The dayparts, by the clock hour (East Africa Time). Late runs from 22:00 to the start of the morning. */
+export const DAYPARTS: Daypart[] = [
+  { key: 'morning', label: 'Morning', from: 5, to: 11 },
+  { key: 'lunch', label: 'Lunch', from: 11, to: 15 },
+  { key: 'afternoon', label: 'Afternoon', from: 15, to: 18 },
+  { key: 'evening', label: 'Evening', from: 18, to: 22 },
+  { key: 'late', label: 'Late', from: 22, to: 5 },
+];
+export const ITEM_TIMES_LIMIT = 100;
+export const DAYPART_TOP = 5;
+export const HOUR_TOP = 3;
+
+/** The hour the morning starts: 05:00, or later when the owner's day runs past it (a 06:00 cut-off → 06:00). */
+export function morningStart(cutoffMinutes = 0): number {
+  const c = Math.max(0, Math.min(360, Math.round(n0(cutoffMinutes))));
+  return Math.max(5, Math.ceil(c / 60));
+}
+/** The daypart a clock hour falls in. Hours before the morning (the small hours, or before the cut-off) are Late. */
+export function daypartOf(hour: number, cutoffMinutes = 0): DaypartKey {
+  const h = ((Math.floor(n0(hour)) % 24) + 24) % 24;
+  if (h >= 22 || h < morningStart(cutoffMinutes)) return 'late';
+  if (h < 11) return 'morning';
+  if (h < 15) return 'lunch';
+  if (h < 18) return 'afternoon';
+  return 'evening';
+}
+/** The dayparts with their hours for this business (the morning starts at morningStart). */
+export function daypartsFor(cutoffMinutes = 0): Daypart[] {
+  const m = morningStart(cutoffMinutes);
+  return DAYPARTS.map((d) => (d.key === 'morning' ? { ...d, from: m } : d.key === 'late' ? { ...d, to: m } : d));
+}
+
+/** One weekday × hour cell: weekday 0 = Monday … 6 = Sunday (the business day), the clock hour, quantity, revenue. */
+export type ItemCell = [number, number, number, number];
+export interface ItemTimes {
+  productId: string | null; name: string; qty: number; revenue: number; cells: ItemCell[];
+  /** quantity per daypart */
+  dayparts: Record<DaypartKey, number>;
+  bestDaypart: DaypartKey | null; bestDaypartShare: number | null;
+  /** the weekday × hour it sells most in */
+  peak: { dow: number; day: string; hour: number; qty: number } | null;
+}
+export interface TopItem { productId: string | null; name: string; qty: number; share: number }
+export interface DaypartSummary extends Daypart { qty: number; revenue: number; share: number; top: TopItem[] }
+export interface HourSummary { hour: number; label: string; qty: number; revenue: number; top: TopItem[] }
+export interface ItemTimesResult {
+  items: ItemTimes[];
+  totals: { qty: number; revenue: number };
+  dayparts: DaypartSummary[];
+  hours: HourSummary[];
+  /** true when only the best ITEM_TIMES_LIMIT sellers were sent (the totals and shares still count every product) */
+  limited: boolean;
+}
+
+function cellsOf(raw: unknown): ItemCell[] {
+  let arr: unknown = raw;
+  if (typeof raw === 'string') { try { arr = JSON.parse(raw); } catch { arr = []; } }
+  if (!Array.isArray(arr)) return [];
+  const out: ItemCell[] = [];
+  for (const c of arr) {
+    if (!Array.isArray(c) || c.length < 4) continue;
+    const d = n0(c[0]) - 1, h = n0(c[1]);   // ISO weekday 1 (Monday) … 7 (Sunday)
+    if (d < 0 || d > 6 || h < 0 || h > 23) continue;
+    out.push([d, h, r4(n0(c[2])), r2(n0(c[3]))]);
+  }
+  return out;
+}
+const emptyParts = (): Record<DaypartKey, number> => ({ morning: 0, lunch: 0, afternoon: 0, evening: 0, late: 0 });
+
+/**
+ * What sells when: each product's cells and dayparts (its best daypart and peak hour), each daypart's top 5 and each
+ * trading hour's top 3 — every share against the TOTAL row (all products, not only the ones sent).
+ */
+export function summariseItemTimes(rows: ItemTimeRow[], cutoffMinutes = 0, limit = ITEM_TIMES_LIMIT): ItemTimesResult {
+  const totalRow = (rows ?? []).find((r) => r.is_total);
+  const all = totalRow ? cellsOf(totalRow.cells) : [];
+  const items: ItemTimes[] = (rows ?? []).filter((r) => !r.is_total && n0(r.qty) > 0).map((r) => {
+    const cells = cellsOf(r.cells);
+    const parts = emptyParts();
+    let peak: ItemTimes['peak'] = null;
+    for (const [d, h, q] of cells) {
+      parts[daypartOf(h, cutoffMinutes)] += q;
+      if (!peak || q > peak.qty) peak = { dow: d, day: WEEKDAYS[d], hour: h, qty: q };
+    }
+    const qty = r4(n0(r.qty));
+    const keys = Object.keys(parts) as DaypartKey[];
+    const best = keys.reduce<DaypartKey | null>((b, k) => (parts[k] > 0 && (b === null || parts[k] > parts[b]) ? k : b), null);
+    return {
+      productId: r.product_id, name: r.product_name || 'Unnamed item', qty, revenue: r2(n0(r.revenue)), cells,
+      dayparts: Object.fromEntries(keys.map((k) => [k, r4(parts[k])])) as Record<DaypartKey, number>,
+      bestDaypart: best, bestDaypartShare: best && qty > 0 ? r4(parts[best] / qty) : null, peak,
+    };
+  }).sort((a, b) => b.qty - a.qty || b.revenue - a.revenue || a.name.localeCompare(b.name));
+
+  // the denominators: every product's quantity per daypart and per hour (the total row)
+  const partQty = emptyParts(), partRev = emptyParts();
+  const hourQty = Array(24).fill(0) as number[], hourRev = Array(24).fill(0) as number[];
+  for (const [, h, q, v] of all) {
+    const k = daypartOf(h, cutoffMinutes);
+    partQty[k] += q; partRev[k] += v; hourQty[h] += q; hourRev[h] += v;
+  }
+  const totalQty = all.reduce((s, c) => s + c[2], 0);
+  const top = (inIt: (c: ItemCell) => boolean, denom: number, n: number): TopItem[] => items
+    .map((i) => ({ i, q: i.cells.reduce((s, c) => s + (inIt(c) ? c[2] : 0), 0) })).filter((x) => x.q > 0)
+    .sort((a, b) => b.q - a.q || b.i.revenue - a.i.revenue || a.i.name.localeCompare(b.i.name)).slice(0, n)
+    .map(({ i, q }) => ({ productId: i.productId, name: i.name, qty: r4(q), share: denom > 0 ? r4(q / denom) : 0 }));
+  const dayparts: DaypartSummary[] = daypartsFor(cutoffMinutes).map((d) => ({
+    ...d, qty: r4(partQty[d.key]), revenue: r2(partRev[d.key]), share: totalQty > 0 ? r4(partQty[d.key] / totalQty) : 0,
+    top: top((c) => daypartOf(c[1], cutoffMinutes) === d.key, partQty[d.key], DAYPART_TOP),
+  }));
+  // the hours that sold, in the day's order: from the morning start round to the small hours
+  const start = morningStart(cutoffMinutes);
+  const hours: HourSummary[] = [];
+  for (let k = 0; k < 24; k++) {
+    const h = (start + k) % 24;
+    if (hourQty[h] <= 0) continue;
+    hours.push({ hour: h, label: hh(h), qty: r4(hourQty[h]), revenue: r2(hourRev[h]), top: top((c) => c[1] === h, hourQty[h], HOUR_TOP) });
+  }
+  return {
+    items, dayparts, hours,
+    totals: { qty: r4(totalQty), revenue: r2(totalRow ? n0(totalRow.revenue) : 0) },
+    limited: items.length >= limit,
+  };
+}
+
+// ── A558: "Do this next" — the recommendations ────────────────────────────────
+
+export const MONTH_DAYS = 30;
+export const MENU_MIN_QTY = 50;          // no menu advice on fewer items sold than this in the period
+export const MENU_MIN_DAYS = 7;          // …or on less than a week
+export const PRICE_MIN_QTY = 20;         // a Plowhorse needs this many sold to be worth a price change
+export const PRICE_STEP = 10;            // prices move in KES 10
+export const PRICE_MAX_RISE = 0.15;      // never more than 15% of its price at once
+export const PRICE_TOP = 2;
+export const PROMOTE_MIN_QTY = 3;
+export const PROMOTE_UPLIFT = 0.2;       // the assumed lift from featuring a Puzzle
+export const DROP_MIN_DAYS = 14;         // never "drop it" on less than two weeks
+export const DROP_TOP = 3;
+export const TIMING_MIN_ORDERS = 100;    // no staffing or happy-hour advice on fewer orders
+export const TIMING_MIN_DAYS = 7;
+export const STAFF_BLOCK_HOURS = 3;
+export const STAFF_MIN_MULTIPLE = 2;     // the block takes at least 2× an even share of the sales
+export const STAFF_UPLIFT = 0.05;        // the assumed gain from quicker service in the rush
+export const QUIET_MAX_RATIO = 0.5;      // the quietest two hours at most half a typical two hours
+export const QUIET_FILL = 0.25;          // the assumed share of that gap an offer fills
+export const LEAK_TOP = 3;
+export const DAY_CLOSE_MIN_SHORT = 500;
+export const CREDIT_MIN_OVER60 = 1000;
+export const COST_MIN_QTY = 5;
+export const MAX_RECOMMENDATIONS = 7;
+
+export type RecKind = 'price' | 'promote' | 'rework' | 'staffing' | 'quiet' | 'leak' | 'day_close' | 'credit' | 'cost';
+export type Confidence = 'high' | 'medium' | 'low';
+export type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times';
+export interface Recommendation {
+  id: string; kind: RecKind;
+  /** verb first: "Raise the price of Tusker lager by KES 20" */
+  title: string;
+  /** why, in one sentence, with the numbers */
+  why: string;
+  /** the estimate in KES (null: no honest KES figure), a month or once, and what kind of money it is */
+  impact: number | null; impactPer: 'month' | 'once' | null; impactKind: 'gain' | 'recover' | 'collect' | null;
+  /** the assumption the estimate rests on, said plainly */
+  assumption: string;
+  confidence: Confidence;
+  /** the tab (or section) that shows the evidence */
+  evidence: Evidence;
+}
+export interface RecInput {
+  days: number; costs: boolean; currency?: string;
+  menu: MenuResult | null; heatmap: HeatmapResult | null; leaks: LeaksResult | null; credit: CreditResult | null;
+  times: ItemTimesResult | null;
+}
+
+const perMonth = (x: number, days: number) => (days > 0 ? (x * MONTH_DAYS) / days : 0);
+const roundTo = (x: number, step: number) => Math.round(x / step) * step;
+const floorTo = (x: number, step: number) => Math.floor(x / step) * step;
+const pctText = (x: number) => { const p = x * 100; return `${p < 10 && p > 0 ? p.toFixed(1) : Math.round(p)}%`; };
+const qtyText = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 10) / 10).toLocaleString('en-US'));
+const andList = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+/** The menu, when menu advice may be given: costs shown, a margin line, enough sold over enough days. */
+function menuReady(i: RecInput): MenuResult | null {
+  const m = i.menu;
+  if (!i.costs || !m || m.costsHidden || m.avgUnitMargin === null) return null;
+  if (m.totals.qty < MENU_MIN_QTY || i.days < MENU_MIN_DAYS) return null;
+  return m;
+}
+const daypartLabel = (k: DaypartKey) => (DAYPARTS.find((d) => d.key === k) as Daypart).label;
+const timesFor = (t: ItemTimesResult | null, it: { productId: string | null; name: string }) =>
+  t?.items.find((x) => (it.productId ? x.productId === it.productId : !x.productId && x.name === it.name)) ?? null;
+
+/** The rise for a Plowhorse: half its margin gap to the average, in KES 10, at least 10, at most 15% of its price. */
+export function suggestedRise(gap: number, price: number): number {
+  const cap = Math.max(PRICE_STEP, floorTo(price * PRICE_MAX_RISE, PRICE_STEP));
+  return Math.min(cap, Math.max(PRICE_STEP, roundTo(gap / 2, PRICE_STEP)));
+}
+
+/** Plowhorses (popular, low margin): a small price rise. Impact = the rise × the quantity a month. */
+export function recPriceRise(i: RecInput): Recommendation[] {
+  const m = menuReady(i); if (!m) return [];
+  const cur = i.currency || 'KES';
+  const avg = m.avgUnitMargin as number;
+  return m.items.filter((it) => it.class === 'plowhorse' && it.unitMargin !== null && it.qty >= PRICE_MIN_QTY)
+    .map((it): Recommendation => {
+      const gap = avg - (it.unitMargin as number);
+      const rise = suggestedRise(gap, it.avgPrice);
+      const monthly = Math.round(perMonth(it.qty, i.days));
+      return {
+        id: `price.${it.productId ?? it.name}`, kind: 'price',
+        title: `Raise the price of ${it.name} by ${moneyText(rise, cur)}`,
+        why: `It is a best seller (${qtyText(it.qty)} sold, number ${it.rank}) but leaves ${moneyText(it.unitMargin as number, cur)} each after its cost — ${moneyText(gap, cur)} below your average of ${moneyText(avg, cur)}.`,
+        impact: Math.round(rise * monthly), impactPer: 'month', impactKind: 'gain',
+        assumption: `If the same ${qtyText(monthly)} a month still sell at ${moneyText(it.avgPrice + rise, cur)}.`,
+        confidence: it.qty >= 100 ? 'high' : 'medium', evidence: 'menu',
+      };
+    }).sort((a, b) => (b.impact ?? 0) - (a.impact ?? 0)).slice(0, PRICE_TOP);
+}
+
+/** The best Puzzle (high margin, low popularity): feature it at its best daypart. Impact = margin × 20% more a month. */
+export function recPromote(i: RecInput): Recommendation[] {
+  const m = menuReady(i); if (!m) return [];
+  const cur = i.currency || 'KES';
+  const avg = m.avgUnitMargin as number;
+  const best = m.items.filter((it) => it.class === 'puzzle' && it.unitMargin !== null && it.qty >= PROMOTE_MIN_QTY)
+    .map((it) => ({ it, monthly: perMonth(it.qty, i.days) }))
+    .sort((a, b) => (b.it.unitMargin as number) * b.monthly - (a.it.unitMargin as number) * a.monthly)[0];
+  if (!best) return [];
+  const { it, monthly } = best;
+  const t = timesFor(i.times, it);
+  const part = t?.bestDaypart ?? null;
+  const extra = monthly * PROMOTE_UPLIFT;
+  return [{
+    id: `promote.${it.productId ?? it.name}`, kind: 'promote',
+    title: part ? `Feature ${it.name} at ${daypartLabel(part).toLowerCase()}` : `Have staff suggest ${it.name}`,
+    why: `It leaves ${moneyText(it.unitMargin as number, cur)} each — ${moneyText((it.unitMargin as number) - avg, cur)} more than your average — but only ${qtyText(it.qty)} sold in ${i.days} days`
+      + (part && t?.bestDaypartShare ? `, ${pctText(t.bestDaypartShare)} of them at ${daypartLabel(part).toLowerCase()}.` : '.'),
+    impact: Math.round((it.unitMargin as number) * extra), impactPer: 'month', impactKind: 'gain',
+    assumption: `If featuring it lifts its sales by ${Math.round(PROMOTE_UPLIFT * 100)}% (about ${qtyText(Math.round(monthly))} → ${qtyText(Math.round(monthly + extra))} a month) at today's margin.`,
+    confidence: 'low', evidence: 'menu',
+  }];
+}
+
+/** Dogs (slow and low margin): rework or drop. No KES estimate — it says how little they earn. */
+export function recRework(i: RecInput): Recommendation[] {
+  const m = menuReady(i); if (!m || i.days < DROP_MIN_DAYS) return [];
+  const cur = i.currency || 'KES';
+  const dogs = m.items.filter((it) => it.class === 'dog').sort((a, b) => (a.totalMargin ?? 0) - (b.totalMargin ?? 0) || a.qty - b.qty).slice(0, DROP_TOP);
+  if (!dogs.length) return [];
+  const margin = perMonth(dogs.reduce((s, d) => s + (d.totalMargin ?? 0), 0), i.days);
+  const sold = dogs.reduce((s, d) => s + d.qty, 0);
+  return [{
+    id: 'rework.dogs', kind: 'rework',
+    title: dogs.length === 1 ? `Rework or drop ${dogs[0].name}` : `Rework or drop ${dogs.length} slow items`,
+    why: `${andList(dogs.map((d) => d.name))} sell little and earn little: ${qtyText(sold)} sold in ${i.days} days, about ${moneyText(margin, cur)} a month left after cost${dogs.length === 1 ? '' : ' between them'}.`,
+    impact: null, impactPer: null, impactKind: null,
+    assumption: 'No KES estimate: a shorter menu saves prep, stock and waste, and points customers to your best items.',
+    confidence: 'medium', evidence: 'menu',
+  }];
+}
+
+/** Every `width`-hour slot inside the trading hours, on the days that traded (as summariseHeatmap's busiest / quietest). */
+export function slotsOf(h: HeatmapResult, width: number): Slot[] {
+  const out: Slot[] = [];
+  if (!h.tradingHours) return out;
+  const { from, to } = h.tradingHours;
+  for (let d = 0; d < 7; d++) {
+    if (!h.orders[d]?.some((x) => x > 0)) continue;
+    for (let s = from; s + width - 1 <= to; s++) {
+      let rev = 0, ord = 0;
+      for (let k = 0; k < width; k++) { rev += h.revenue[d][s + k]; ord += h.orders[d][s + k]; }
+      out.push({ dow: d, day: WEEKDAYS[d], startHour: s, endHour: s + width, label: slotLabel(d, s, s + width), revenue: r2(rev), orders: ord });
+    }
+  }
+  return out;
+}
+function timingReady(i: RecInput): HeatmapResult | null {
+  const h = i.heatmap;
+  return h && h.tradingHours && h.totalOrders >= TIMING_MIN_ORDERS && i.days >= TIMING_MIN_DAYS && h.totalRevenue > 0 ? h : null;
+}
+/** The items sold most in a weekday's hours [fromHour, toHour) (from item × time), by quantity. */
+export function topItemsIn(t: ItemTimesResult | null, dow: number, fromHour: number, toHour: number, n = 3): string[] {
+  if (!t) return [];
+  return t.items.map((it) => ({ it, q: it.cells.reduce((s, c) => s + (c[0] === dow && c[1] >= fromHour && c[1] < toHour ? c[2] : 0), 0) }))
+    .filter((x) => x.q > 0).sort((a, b) => b.q - a.q || a.it.name.localeCompare(b.it.name)).slice(0, n).map((x) => x.it.name);
+}
+
+/** The busiest three hours of the week: an extra cashier. Impact = 5% more of those hours' sales a month. */
+export function recStaffing(i: RecInput): Recommendation[] {
+  const h = timingReady(i); if (!h || !h.tradingHours) return [];
+  const span = h.tradingHours.to - h.tradingHours.from + 1;
+  if (span <= STAFF_BLOCK_HOURS) return [];
+  const cur = i.currency || 'KES';
+  const block = slotsOf(h, STAFF_BLOCK_HOURS).sort((a, b) => b.revenue - a.revenue || a.dow - b.dow || a.startHour - b.startHour)[0];
+  if (!block) return [];
+  const share = block.revenue / h.totalRevenue;
+  const even = STAFF_BLOCK_HOURS / (7 * span);
+  if (share < STAFF_MIN_MULTIPLE * even) return [];
+  const items = topItemsIn(i.times, block.dow, block.startHour, block.endHour);
+  return [{
+    id: `staffing.${block.dow}.${block.startHour}`, kind: 'staffing',
+    title: `Put an extra cashier on ${block.label}`,
+    why: `You take ${pctText(share)} of all your sales in those three hours (${moneyText(block.revenue, cur)}, ${qtyText(block.orders)} orders in ${i.days} days)`
+      + (items.length ? ` — most bought then: ${andList(items)}; have them ready.` : '.'),
+    impact: Math.round(perMonth(block.revenue, i.days) * STAFF_UPLIFT), impactPer: 'month', impactKind: 'gain',
+    assumption: `If quicker service there adds ${Math.round(STAFF_UPLIFT * 100)}% to those hours' sales.`,
+    confidence: 'low', evidence: 'heatmap',
+  }];
+}
+
+/** The quietest two hours (at most half a typical two hours): a happy-hour offer. Impact = a quarter of the gap a month. */
+export function recQuietSlot(i: RecInput): Recommendation[] {
+  const h = timingReady(i); if (!h || !h.quietest || !h.busiest || h.quietest.label === h.busiest.label) return [];
+  const cur = i.currency || 'KES';
+  const q = h.quietest;
+  const typical = median(slotsOf(h, q.endHour - q.startHour).map((s) => s.revenue));
+  if (typical === null || typical <= 0 || q.revenue > QUIET_MAX_RATIO * typical) return [];
+  return [{
+    id: `quiet.${q.dow}.${q.startHour}`, kind: 'quiet',
+    title: `Try a happy-hour offer on ${q.label}`,
+    why: `It is your quietest time: ${moneyText(q.revenue, cur)} in ${i.days} days, against ${moneyText(typical, cur)} for a typical two hours.`,
+    impact: Math.round(perMonth(typical - q.revenue, i.days) * QUIET_FILL), impactPer: 'month', impactKind: 'gain',
+    assumption: `If an offer fills a quarter of the gap to a typical two hours (sales, before the offer's cost).`,
+    confidence: 'low', evidence: 'heatmap',
+  }];
+}
+
+/** A flagged cashier (A549's flag: ≥ 2× the median, ≥ 5 events): a talk. Impact = what is above the median, a month. */
+export function recLeaks(i: RecInput): Recommendation[] {
+  const l = i.leaks; if (!l) return [];
+  const cur = i.currency || 'KES';
+  const out: Recommendation[] = [];
+  for (const c of l.cashiers) {
+    for (const f of c.flags) {
+      const isVoid = f.kind === 'void';
+      const value = isVoid ? c.voidValue + c.itemVoidValue : c.discountValue;
+      const excess = f.rate > 0 ? value * Math.max(0, 1 - f.median / f.rate) : 0;
+      const what = isVoid ? 'voids' : 'discounts';
+      out.push({
+        id: `leak.${f.kind}.${c.cashierId ?? c.name}`, kind: 'leak',
+        title: `Talk to ${c.name} about ${what}`,
+        why: f.multiple !== null
+          ? `${qtyText(f.events)} ${what} (${moneyText(value, cur)}) in ${i.days} days — ${times(f.multiple)} the branch median rate.`
+          : `${qtyText(f.events)} ${what} (${moneyText(value, cur)}) in ${i.days} days, while the typical cashier had none.`,
+        impact: Math.round(perMonth(excess, i.days)), impactPer: 'month', impactKind: 'recover',
+        assumption: `If their ${isVoid ? 'void' : 'discount'} rate comes down to the branch median (${pctText(f.median)}).`,
+        confidence: isVoid ? 'high' : 'medium', evidence: 'leaks',
+      });
+    }
+  }
+  return out.sort((a, b) => (b.impact ?? 0) - (a.impact ?? 0)).slice(0, LEAK_TOP);
+}
+
+/** Day closes short in total: check them. Impact = the shortfall a month. */
+export function recDayClose(i: RecInput): Recommendation[] {
+  const l = i.leaks; if (!l || -l.totals.dayCloseShort < DAY_CLOSE_MIN_SHORT) return [];
+  const cur = i.currency || 'KES';
+  const short = -l.totals.dayCloseShort;
+  const daysShort = l.days.filter((d) => d.dayCloseVariance < 0).length;
+  return [{
+    id: 'day_close.short', kind: 'day_close',
+    title: 'Check why the day closes came up short',
+    why: `The cash counted at day close was ${moneyText(short, cur)} short in all, on ${daysShort} ${daysShort === 1 ? 'day' : 'days'} of ${i.days}.`,
+    impact: Math.round(perMonth(short, i.days)), impactPer: 'month', impactKind: 'recover',
+    assumption: 'If the shortfall stops (part of it may be counting mistakes rather than loss).',
+    confidence: 'medium', evidence: 'leaks',
+  }];
+}
+
+/** Credit over 60 days: chase it, the top names first. Impact = the amount, once. */
+export function recCredit(i: RecInput): Recommendation[] {
+  const c = i.credit; if (!c || c.over60.amount < CREDIT_MIN_OVER60) return [];
+  const cur = i.currency || 'KES';
+  const old = c.customers.filter((x) => x.d61_90 + x.d90_plus > 0)
+    .sort((a, b) => (b.d61_90 + b.d90_plus) - (a.d61_90 + a.d90_plus) || a.name.localeCompare(b.name));
+  const names = old.slice(0, 3).map((x) => `${x.name} ${moneyText(x.d61_90 + x.d90_plus, cur)}`);
+  const more = old.length - names.length;
+  return [{
+    id: 'credit.over60', kind: 'credit',
+    title: `Chase ${moneyText(c.over60.amount, cur)} owed for over 60 days`,
+    why: `${andList(more > 0 ? [...names, `${more} more`] : names)} — owed for more than two months.`,
+    impact: Math.round(c.over60.amount), impactPer: 'once', impactKind: 'collect',
+    assumption: 'Money already owed to you — counted once, if it is paid.',
+    confidence: 'high', evidence: 'credit',
+  }];
+}
+
+/** Items sold with no cost: set one. No KES estimate. Costs only (it tells which items have a cost). */
+export function recCostData(i: RecInput): Recommendation[] {
+  const m = i.menu; if (!i.costs || !m || m.costsHidden) return [];
+  const cur = i.currency || 'KES';
+  const missing = m.items.filter((it) => it.class === 'no_cost' && it.qty >= COST_MIN_QTY).sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name));
+  if (!missing.length) return [];
+  const shown = missing.slice(0, 3).map((x) => x.name);
+  const revenue = missing.reduce((s, x) => s + x.revenue, 0);
+  return [{
+    id: 'cost.missing', kind: 'cost',
+    title: missing.length === 1 ? `Set a cost for ${missing[0].name}` : `Set a cost for ${missing[0].name} and ${missing.length - 1} more`,
+    why: `${andList(missing.length > shown.length ? [...shown, `${missing.length - shown.length} more`] : shown)} sold ${moneyText(revenue, cur)} in ${i.days} days with no cost price or recipe, so the margin is unknown.`,
+    impact: null, impactPer: null, impactKind: null,
+    assumption: 'No KES estimate: with a cost set, every margin on this page is complete.',
+    confidence: 'medium', evidence: 'menu',
+  }];
+}
+
+const CONFIDENCE_ORDER: Record<Confidence, number> = { high: 0, medium: 1, low: 2 };
+/** Ranked by the KES at stake (a month, or once), biggest first; no estimate last; then by confidence. At most 7. */
+export function rankRecommendations(recs: Recommendation[]): Recommendation[] {
+  return [...recs].sort((a, b) => (b.impact ?? -1) - (a.impact ?? -1) || CONFIDENCE_ORDER[a.confidence] - CONFIDENCE_ORDER[b.confidence]
+    || a.id.localeCompare(b.id)).slice(0, MAX_RECOMMENDATIONS);
+}
+
+/** Every rule, ranked. Upsell ("what sells together") is not here: it needs baskets, which no cheap aggregate gives. */
+export function buildRecommendations(i: RecInput): Recommendation[] {
+  return rankRecommendations([
+    ...recPriceRise(i), ...recPromote(i), ...recRework(i), ...recStaffing(i), ...recQuietSlot(i),
+    ...recLeaks(i), ...recDayClose(i), ...recCredit(i), ...recCostData(i),
+  ]);
+}
+
+/** "Analytics found about KES X a month you could gain or recover" — the estimates added up (a month; once apart). */
+export function valueFound(recs: Recommendation[]): { monthly: number; once: number; count: number } {
+  const monthly = recs.filter((r) => r.impactPer === 'month').reduce((s, r) => s + (r.impact ?? 0), 0);
+  const once = recs.filter((r) => r.impactPer === 'once').reduce((s, r) => s + (r.impact ?? 0), 0);
+  return { monthly: Math.round(monthly), once: Math.round(once), count: recs.filter((r) => r.impact !== null).length };
+}
+
+// ── A558: "How was this period?" ──────────────────────────────────────────────
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayText = (iso: string) => { const [, m, d] = iso.split('-').map(Number); return `${d} ${MONTH_NAMES[m - 1] ?? ''}`; };
+export interface Summary { good: string; worry: string | null; tone: 'up' | 'down' | 'flat' }
+
+/**
+ * One or two plain sentences from the overview: the good news first (sales up, or else the best other good figure), then
+ * the biggest worry (sales down, money at risk up, else the top recommendation). `today` is the business date now: a
+ * period ending today reads "in the last N days".
+ */
+export function buildSummary(input: { from: string; to: string; today: string; overview: OverviewResult; recommendations: Recommendation[]; currency?: string }): Summary {
+  const cur = input.currency || 'KES';
+  const k = input.overview.kpis;
+  const days = rangeDays(input.from, input.to) ?? 1;
+  const span = input.to === input.today ? (days === 1 ? 'today' : `in the last ${days} days`)
+    : (days === 1 ? `on ${dayText(input.from)}` : `from ${dayText(input.from)} to ${dayText(input.to)}`);
+  const before = days === 1 ? 'the day before' : `the ${days} days before`;
+  const sales = k.revenue.value ?? 0;
+  const ch = k.revenue.change;
+  const risk = input.overview.wastageHidden ? 'voids, refunds and discounts' : 'voids, refunds, discounts and wastage';
+  const goods: string[] = [];
+  const worries: string[] = [];
+  let tone: Summary['tone'] = 'flat';
+  let salesLine: string;
+  if (sales <= 0) { salesLine = `No sales were recorded ${span}.`; tone = 'down'; }
+  else if (ch === null) salesLine = `You sold ${moneyText(sales, cur)} ${span}.`;
+  else if (ch >= 0.005) { salesLine = `You sold ${moneyText(sales, cur)} ${span} — ${pctText(ch)} more than ${before}.`; goods.push(salesLine); tone = 'up'; }
+  else if (ch <= -0.005) { salesLine = `You sold ${moneyText(sales, cur)} ${span}, ${pctText(-ch)} less than ${before}.`; worries.push(salesLine); tone = 'down'; }
+  else salesLine = `You sold ${moneyText(sales, cur)} ${span}, about the same as ${before}.`;
+  if (k.avgBill.change !== null && k.avgBill.value !== null && k.avgBill.change >= 0.05) goods.push(`The average bill rose ${pctText(k.avgBill.change)} to ${moneyText(k.avgBill.value, cur)}.`);
+  if (k.margin && k.margin.change !== null && k.margin.change >= 0.01) goods.push(`Your margin rose ${(k.margin.change * 100).toFixed(1)} points.`);
+  if (k.atRisk.change !== null && k.atRisk.change <= -0.1) goods.push(`Money lost to ${risk} fell ${pctText(-k.atRisk.change)}.`);
+  if (k.atRisk.change !== null && k.atRisk.change >= 0.1 && (k.atRisk.value ?? 0) > 0) worries.push(`Money lost to ${risk} rose ${pctText(k.atRisk.change)} to ${moneyText(k.atRisk.value ?? 0, cur)}.`);
+  const top = input.recommendations[0];
+  if (top) worries.push(`The biggest thing to act on: ${lowerFirst(top.title)}.`);
+  // good news first: the sales line when it is good, else the best other good figure, else the sales line as it is
+  const good = goods[0] ?? salesLine;
+  const worry = worries.find((w) => w !== good) ?? null;
+  return { good, worry, tone };
 }

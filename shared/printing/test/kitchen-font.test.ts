@@ -28,6 +28,14 @@
  * A551, test/golden/a551-pre.json), the 'kitchen_font_b' ticket is A543's standard (out/kitchen-*.bin before A551), and
  * dispatch is its pre-A551 bytes — each with only A551's changes: a thin gap between items instead of a blank line, one
  * line fed before the cut instead of three, and (58 mm) the double-height dish name on the whole line.
+ *
+ * A557 (owner, 2026-10-21, on paper: "kitchen receipt font are not the same as the packaging receipt, they are bold and
+ * big i want exactly as the packaging/dispatcher receipt EXACT FONT SIZE AND FONT"): the kitchen preset's emphasizeParent
+ * is off — a dish name is bold at normal size (GS ! 0x00), the dispatch ticket's row and bytes, never GS ! 0x01; the
+ * banner is the one double-height line. Font B ('kitchen_font_b') shares the preset, so its dish names are normal size
+ * too. Section 4 pins the kitchen rows against dispatch's; section 9's pre-A551 comparison puts the dish names back at
+ * 'tall' as A557's one other, asserted, difference. emphasizeParent on (a station option) is still checked (4, 5, 8).
+ * MUTATION-CHECKED: kitchenPreset's emphasizeParent back to true (1, 3, 4, 9).
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -118,34 +126,61 @@ for (const w of [80, 58] as const) {
     bytesOf({ ...ctx, business: { ...business, kitchenFontA: false } as unknown as BusinessConfig }).equals(b));
 }
 
-console.log('\n4. Long dish names wrap at the ticket\'s width; the double-height name has the whole line (A551)');
+console.log('\n4. Long dish names wrap at the ticket\'s width; A557: bold at normal size, the dispatch ticket\'s, never double height');
 {
+  /** A dish heading row: "<qty>   <NAME>" or its continuation hung 4 in — bold, at the size given. */
+  const isDish = (b: Block, size: 'normal' | 'tall') => b.kind === 'text' && b.bold && b.size === size && /^\d+ {3}\S|^ {4}\S/.test(b.text);
+  const dishRows = (doc: Document, size: 'normal' | 'tall' = 'normal') => doc.blocks.flatMap(b => (b.kind === 'text' && isDish(b, size) ? [b.text] : []));
   for (const [f, biz] of [['Font A', business], ['Font B', FONT_B_BIZ]] as const) {
     for (const w of [80, 58] as const) {
       const cols = columnsFor(w, f === 'Font B' ? 'B' : 'A');
-      const doc = renderTicket({ order: longOrder, business: biz, station: kitchen(w) });
-      const dish = doc.blocks.flatMap(b => (b.kind === 'text' && b.size === 'tall' && !b.text.includes('* *') ? [b.text] : []));
-      // A551: 'tall' is GS ! 0x01 — double height, single width — so the name is wrapped at the whole line, not at half
-      // (A543/A547 halved it as if it were double width). Each continuation hangs under the name (+4, A547).
-      ok(`${f} ${w}: the emphasised dish names wrap at ${cols}, continuations hung under the name`,
-        dish.length > 0 && dish.every(t => t.length <= cols) && dish.some(t => t.length > Math.floor(cols / 2)),
-        dish.join(' | '));
-      ok(`${f} ${w}: the double-height dish names are size 'tall' (GS ! 0x01, one column a character)`,
-        doc.blocks.every(b => b.kind !== 'text' || b.size !== 'large' && b.size !== 'wide'));
-      const flat = renderTicket({ order: longOrder, business: biz, station: { ...kitchen(w), emphasizeParent: false } });
+      const ctx: PrintContext = { order: longOrder, business: biz, station: kitchen(w) };
+      const doc = renderTicket(ctx);
+      const dish = dishRows(doc);
+      // A557: the dish name is bold at normal size (GS ! 0x00) — the dispatch ticket's — wrapped at the whole line, each
+      // continuation hung under the name (+4, A547).
+      ok(`${f} ${w}: the dish names wrap at ${cols}, continuations hung under the name`,
+        dish.length > 0 && dish.every(t => t.length <= cols) && dish.some(t => t.length > Math.floor(cols / 2))
+        && (f === 'Font B' && w === 80 ? dish.every(t => /^\d/.test(t)) : dish.some(t => /^ {4}\S/.test(t))), dish.join(' | '));   // Font B 80: one row each (below)
+      ok(`${f} ${w}: A557: no dish name is double height or double width — the banner is the only 'tall' line, one GS ! 0x01`,
+        doc.blocks.every(b => b.kind !== 'text' || b.size === 'normal' || (b.size === 'tall' && b.text === '* * KITCHEN * *'))
+        && dishRows(doc, 'tall').length === 0 && count(bytesOf(ctx), [GS, 0x21, 0x01]) === 1);
+      // The station's emphasizeParent (off by default since A557) still prints the very same rows, only double height.
+      const tall = renderTicket({ ...ctx, station: { ...kitchen(w), emphasizeParent: true } });
       ok(`${f} ${w}: emphasised or not, a dish name wraps the same way`,
-        JSON.stringify(textOf(flat).filter(t => /^\d+ {3}[A-Z]|^ {4}[A-Z]/.test(t)).slice(0, 2))
-          === JSON.stringify(dish.slice(0, 2)), `${textOf(flat).slice(5, 7).join(' | ')} vs ${dish.slice(0, 2).join(' | ')}`);
+        JSON.stringify(dishRows(tall, 'tall')) === JSON.stringify(dish) && dishRows(tall).length === 0,
+        `${dishRows(tall, 'tall').slice(0, 2).join(' | ')} vs ${dish.slice(0, 2).join(' | ')}`);
       ok(`${f} ${w}: no line on the ticket is wider than ${cols}`, textOf(doc).every(t => t.length <= cols));
     }
   }
-  const head = (w: 58 | 80, biz: BusinessConfig) => renderTicket({ order: longOrder, business: biz, station: kitchen(w) }).blocks
-    .flatMap(b => (b.kind === 'text' && b.size === 'tall' && !b.text.includes('* *') ? [b.text] : [])).slice(0, 2);
+  const head = (w: 58 | 80, biz: BusinessConfig) => dishRows(renderTicket({ order: longOrder, business: biz, station: kitchen(w) })).slice(0, 2);
   ok('Font A 80: "FAMILY FEAST BUCKET 12PC WITH TWO LARGE" / "SIDES" (was 4 rows at 24)',
     JSON.stringify(head(80, business)) === JSON.stringify(['1   FAMILY FEAST BUCKET 12PC WITH TWO LARGE', '    SIDES']), JSON.stringify(head(80, business)));
   ok('Font B 80: the whole name on one row',
     JSON.stringify(head(80, FONT_B_BIZ)) === JSON.stringify(['1   FAMILY FEAST BUCKET 12PC WITH TWO LARGE SIDES', '2   GRILLED TILAPIA WHOLE FISH SERVED WITH UGALI AND SUKUMA WIKI']),
     JSON.stringify(head(80, FONT_B_BIZ)));
+  // A557 (owner, 2026-10-21: "I want exactly as the packaging/dispatcher receipt EXACT FONT SIZE AND FONT"): every dish
+  // row the kitchen prints is the dispatch ticket's row for it — the same text, size, weight and alignment — and the
+  // same bytes on the printer.
+  for (const w of [80, 58] as const) {
+    for (const o of [order, longOrder]) {
+      const k = renderTicket({ order: o, business, station: kitchen(w) });
+      const d = renderTicket({ order: o, business, station: dispatchPreset(DISPATCH, 'Dispatch', w) });
+      const heads = k.blocks.filter(b => isDish(b, 'normal'));
+      ok(`kitchen ${w} (${o === order ? 'this sale' : 'the long order'}): each of its ${heads.length} dish rows is the dispatch ticket's row, size and weight`,
+        heads.length >= 2 && heads.length === dishRows(k).length && heads.every(b => b.kind === 'text' && d.blocks.some(x => x.kind === 'text'
+          && x.text === b.text && x.size === b.size && x.bold === b.bold && x.align === b.align)));
+    }
+    const kb = bytesOf({ order, business, station: kitchen(w) }).toString('latin1');
+    const db = bytesOf({ order, business, station: dispatchPreset(DISPATCH, 'Dispatch', w) }).toString('latin1');
+    const name = '1   3PC CHICKEN COMBO';
+    const around = (s: string) => { const at = s.indexOf(name); return at < 0 ? '' : s.slice(s.lastIndexOf('\n', at) + 1, at + name.length); };
+    /** The size in force when the name prints: the byte after the last GS ! before it. */
+    const sizeAt = (s: string) => s.charCodeAt(s.lastIndexOf('\x1d!', s.indexOf(name)) + 2);
+    ok(`kitchen-${w}: "${name}" goes to the printer with the dispatch ticket's bytes (ESC E 1, at GS ! 0x00)`,
+      around(kb) === '\x1bE\x01' + name && around(kb) === around(db) && sizeAt(kb) === 0x00 && sizeAt(db) === 0x00,
+      JSON.stringify([around(kb), around(db), sizeAt(kb), sizeAt(db)]));
+  }
   const p = toPreview(renderTicket({ order: longOrder, business: FONT_B_BIZ, station: kitchen(80) }), { showMargins: true }).split('\n');
   ok('the Font B text preview is drawn at the Font B width (64 between the margins)', p[0] === '+' + '-'.repeat(64) + '+' && p.every(l => l.length === 66));
 }
@@ -154,9 +189,16 @@ console.log('\n5. Font B line spacing: normal lines 24 dots apart, double-height
 {
   const b = bytesOf({ order: longOrder, business: FONT_B_BIZ, station: kitchen(80) });
   // Every switch to a double-height line is preceded by ESC 2 and the next normal line goes back to ESC 3 24.
+  // A557: the banner is the ticket's one double-height line; a station with emphasizeParent on still gets its dish names so.
   const tallAt = find(b, [GS, 0x21, 0x01]);
-  ok('a dish name (double height) prints at ESC 2, the next normal line at ESC 3 24',
-    tallAt > 0 && find(b, [ESC, 0x32], tallAt) > tallAt && find(b, [ESC, 0x33, 24], tallAt) > find(b, [ESC, 0x32], tallAt));
+  ok('the banner (double height) prints at ESC 2, the next normal line at ESC 3 24',
+    tallAt > 0 && tallAt < b.indexOf('KITCHEN') && find(b, [ESC, 0x32], tallAt) > tallAt
+    && find(b, [ESC, 0x33, 24], tallAt) > find(b, [ESC, 0x32], tallAt));
+  const e = bytesOf({ order: longOrder, business: FONT_B_BIZ, station: { ...kitchen(80), emphasizeParent: true } });
+  const dishAt = find(e, [GS, 0x21, 0x01], find(e, [GS, 0x21, 0x01]) + 1);
+  ok('emphasizeParent on: a dish name (double height) prints at ESC 2, the next normal line at ESC 3 24',
+    dishAt > 0 && e.indexOf('1   FAMILY FEAST') > dishAt && find(e, [ESC, 0x32], dishAt) > dishAt
+    && find(e, [ESC, 0x33, 24], dishAt) > find(e, [ESC, 0x32], dishAt));
   const st = kitchen(80);
   const fontA = renderTicket({ order: longOrder, business, station: st });
   const fontB = renderTicket({ order: longOrder, business: FONT_B_BIZ, station: st });
@@ -211,8 +253,9 @@ console.log('\n8. A547: a wrapped dish name keeps its quantity gap; a wrapped co
       const f = fontB ? 'Font B' : 'Font A';
       const cols = columnsFor(w, fontB ? 'B' : 'A');
       const biz = fontB ? FONT_B_BIZ : business;
-      const flat = textOf(renderTicket({ order: longOrder, business: biz, station: { ...kitchen(w), emphasizeParent: false } }));
-      const tall = textOf(renderTicket({ order: longOrder, business: biz, station: kitchen(w) }));
+      // A557: the kitchen preset is now the flat (normal-size) ticket; emphasizeParent on is still checked as the option.
+      const flat = textOf(renderTicket({ order: longOrder, business: biz, station: kitchen(w) }));
+      const tall = textOf(renderTicket({ order: longOrder, business: biz, station: { ...kitchen(w), emphasizeParent: true } }));
       for (const [how, rows] of [['flat', flat], ['tall', tall]] as const) {
         // Every dish heading, wrapped or not, is "<qty>   <NAME>", never "<qty> <NAME>".
         const heads = rows.filter(t => /^\d+ +[A-Z]/.test(t));
@@ -246,21 +289,30 @@ console.log('\n8. A547: a wrapped dish name keeps its quantity gap; a wrapped co
 
 console.log('\n9. A551: the tickets are their pre-A551 bytes with only the item gap, the 1-line feed and the whole-line dish name');
 {
-  /** The document as the pre-A551 renderer built it: a blank line where the item gap is, the caller's feed. */
-  const legacy = (doc: Document): Document => ({
+  /** A557: a dish heading row ("<qty>   <NAME>" or its 4-in continuation), bold — normal size since A557, 'tall' before. */
+  const isDishRow = (b: Block) => b.kind === 'text' && b.bold && /^\d+ {3}\S|^ {4}\S/.test(b.text);
+  /** The document as the pre-A551 renderer built it: a blank line where the item gap is, the caller's feed — and, for a
+   *  kitchen ticket (A557's one other difference), its dish names back at double height. */
+  const legacy = (doc: Document, tallDishes = false): Document => ({
     ...doc, cutFeed: undefined,
-    blocks: doc.blocks.map((b): Block => (b.kind === 'gap' ? { kind: 'text', text: '', align: 'left', size: 'normal', bold: false } : b)),
+    blocks: doc.blocks.map((b): Block => (b.kind === 'gap' ? { kind: 'text', text: '', align: 'left', size: 'normal', bold: false }
+      : tallDishes && b.kind === 'text' && isDishRow(b) && b.size === 'normal' ? { ...b, size: 'tall' } : b)),
   });
-  const cases: Array<[string, PrintContext, string]> = [
-    ['kitchen-80 (Font A, the standard)', { order, business, station: kitchen(80) }, 'kitchen-80-font-a'],
-    ['kitchen-80-font-b (kitchen_font_b)', { order, business: FONT_B_BIZ, station: kitchen(80) }, 'kitchen-80'],
-    ['kitchen-58-font-b (kitchen_font_b)', { order, business: FONT_B_BIZ, station: kitchen(58) }, 'kitchen-58'],
-    ['dispatch-80', { order, business, station: dispatchPreset(DISPATCH, 'Dispatch', 80) }, 'dispatch-80'],
+  const cases: Array<[string, PrintContext, string, boolean]> = [
+    ['kitchen-80 (Font A, the standard)', { order, business, station: kitchen(80) }, 'kitchen-80-font-a', true],
+    ['kitchen-80-font-b (kitchen_font_b)', { order, business: FONT_B_BIZ, station: kitchen(80) }, 'kitchen-80', true],
+    ['kitchen-58-font-b (kitchen_font_b)', { order, business: FONT_B_BIZ, station: kitchen(58) }, 'kitchen-58', true],
+    ['dispatch-80', { order, business, station: dispatchPreset(DISPATCH, 'Dispatch', 80) }, 'dispatch-80', false],
   ];
-  for (const [label, ctx, was] of cases) {
+  for (const [label, ctx, was, kitchenTicket] of cases) {
     const doc = renderTicket(ctx);
-    ok(`${label}: = the pre-A551 ${was}.bin with the gap a blank line and the feed the station's`,
-      toEscPos(legacy(doc), optsOf(ctx)).equals(preBytes(was)), `${toEscPos(legacy(doc), optsOf(ctx)).length} vs ${preBytes(was).length}`);
+    ok(`${label}: = the pre-A551 ${was}.bin with the gap a blank line and the feed the station's${kitchenTicket ? ' and the dish names double height' : ''}`,
+      toEscPos(legacy(doc, kitchenTicket), optsOf(ctx)).equals(preBytes(was)), `${toEscPos(legacy(doc, kitchenTicket), optsOf(ctx)).length} vs ${preBytes(was).length}`);
+    // A557: the dish names are the one other difference — normal size now (were 'tall' on the kitchen ticket; never on dispatch).
+    const dishes = doc.blocks.filter(isDishRow);
+    ok(`${label}: A557: its ${dishes.length} dish names bold at normal size${kitchenTicket ? ' (A551: double height), and nothing else differs' : ', as before'}`,
+      dishes.length === (kitchenTicket ? 2 : 3) && dishes.every(b => b.kind === 'text' && b.size === 'normal')
+      && (kitchenTicket ? !toEscPos(legacy(doc), optsOf(ctx)).equals(preBytes(was)) : toEscPos(legacy(doc, true), optsOf(ctx)).equals(preBytes(was)) === false));
     const gaps = doc.blocks.filter(b => b.kind === 'gap');
     const printedItems = textOf(doc).filter(t => /^\d+ {3}\S/.test(t)).length;
     ok(`${label}: one ESC J ${ITEM_GAP_DOTS} between each two items (${printedItems} items), no blank line between them`,
@@ -281,7 +333,7 @@ console.log('\n9. A551: the tickets are their pre-A551 bytes with only the item 
       if (/^ {4}\S/.test(l) &&/^\d+ {3}\S/.test(joined[joined.length - 1] ?? '')) joined[joined.length - 1] += ` ${l.trim()}`;
       else joined.push(l);
     }
-    const now = lines(toEscPos(legacy(renderTicket(ctx)), optsOf(ctx)));
+    const now = lines(toEscPos(legacy(renderTicket(ctx), true), optsOf(ctx)));
     ok('kitchen-58 (Font A): the pre-A551 kitchen-58-font-a.bin\'s lines, its two wrapped dish names on one row',
       JSON.stringify(now) === JSON.stringify(joined) && old.length === now.length + 2, `${now.join(' | ')}\n vs ${joined.join(' | ')}`);
   }

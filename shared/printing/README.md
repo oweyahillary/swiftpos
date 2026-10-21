@@ -46,7 +46,7 @@ has drifted. So when a change moves the paper on purpose:
 
 and commit all of it together. CI also rebuilds the web bundle
 (`build-escpos-renderer.mjs --check`, esbuild pinned) and fails if it is stale.
-`BYTE-CHECK.txt` was refreshed for A551 (2026-10-21: kitchen tickets back in Font A, the item gap and 1-line feed on kitchen and dispatch tickets, the receipt's large payment block); `VERIFICATION.txt` is a one-off capture from 2026-08-05 and
+`BYTE-CHECK.txt` was refreshed for A551 (2026-10-21: kitchen tickets back in Font A, the item gap and 1-line feed on kitchen and dispatch tickets, the receipt's large payment block) and A557 (2026-10-21: kitchen dish names at the dispatch ticket's normal size, the payment block double height only); `VERIFICATION.txt` is a one-off capture from 2026-08-05 and
 is NOT maintained — its byte counts predate the receipt closing block.
 
 Compiles clean under `strict: true`. The three app tsconfigs are currently
@@ -80,7 +80,8 @@ business has working stations on day one. Copy one and change the flags.
 Marked `(UNSETTLED)` in `index.ts` so they are greppable. Each currently matches
 the approved mockups; each is one boolean.
 
-  emphasizeParent      double-height dish names on the kitchen ticket
+  emphasizeParent      double-height dish names on the kitchen ticket (off since
+                       A557: bold at normal size, as the dispatch ticket)
   aggregateUnits       collapse identical units across lines, vs per-parent
   showFooterCount      the "5 items to cook" / "3 bags" line
   showOptionPrices     net price deltas beneath a receipt line
@@ -107,6 +108,14 @@ Two deviations from the drawn mockups, both deliberate:
     own row ("Chicken Burger - Spicy", as the receipt does). The receipt's
     payment block is "BUY GOODS:" / the number, centred, double size, bold.
     Dispatch and receipts are always Font A.
+  - A557 (owner, 2026-10-21, on paper: "kitchen receipt font are not the same
+    as the packaging receipt, they are bold and big i want exactly as the
+    packaging/dispatcher receipt EXACT FONT SIZE AND FONT, also reduce the font
+    size of paybill a bit"): the kitchen preset's emphasizeParent is off, so a
+    dish name is bold at normal size, byte for byte the dispatch ticket's row
+    (Font B kitchen tickets too). The payment block's label and number are
+    double HEIGHT only (GS ! 0x01), always — ESC/POS has no size between that
+    and A551's double size — and a long value wraps at the full line.
 
 ## Not built yet
 

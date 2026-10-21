@@ -1,22 +1,29 @@
 /**
- * AnalyticsPage.tsx — A549: Analytics v1 (premium); A553: Analytics v2 — the same figures, drawn. A KPI row (sales, orders,
- * average bill, gross margin, money at risk — each against the previous period of the same length, with a sparkline), the
- * daily sales trend against the previous period, the payment mix, insight cards by severity, and four tabs: menu
- * engineering (the tinted quadrant scatter, bubbles sized by revenue, the top 10 by revenue), busy times (the heatmap on a
- * one-hue ramp, sales by hour and by weekday), money leaks (a stacked bar per cashier, the split of leak types) and credit
- * ageing (the buckets green → red, the top debtors). The tables stay below the charts.
+ * AnalyticsPage.tsx — A549: Analytics v1 (premium); A553: Analytics v2 — the figures drawn; A558: "decisions made easy".
  *
- * The cloud works every figure out in SQL and keeps it a few minutes (routes/analytics.ts); this page asks once per tab
- * and period (the overview and the insights once per period) and NEVER polls.
+ * The owner, 2026-10-21: "i dont understand the cards at the top … add recommendations … what is sold more at what time
+ * make it fine to grain level … the owner/manager needs to feel the value not just numbers on the screen … any table cap
+ * it to 10 rows". The page, top to bottom:
+ *   1. "How was this period?" — one or two sentences from the numbers, the good news first, then the biggest worry;
+ *   2. "Do this next" — 3 to 7 ranked action cards (verb first, why with the numbers, the KES estimate a month or once
+ *      with the assumption it rests on, a confidence marker, a link to the evidence) and the estimates added up;
+ *   3. the KPI tiles in plain words ("9.5% more than the 30 days before", "What one customer spends per visit");
+ *   4. "What sells when" — the dayparts' top 5, one item's own weekday × hour grid, every hour's top 3;
+ *   5. daily sales against the previous period and the payment mix;
+ *   6. the tabs (menu engineering, busy times, money leaks, credit ageing), each opening with what it tells you.
+ * Every table shows its top 10 by the column that matters and says "Showing the top 10 of N" — no paging.
+ *
+ * The cloud works every figure out in SQL and keeps it a few minutes (routes/analytics.ts); this page asks once per
+ * period for the overview, the recommendations and what sells when, once per tab and period for a tab, and NEVER polls.
  *
  * Owner (/dashboard/analytics): every branch, or one, from the branch filter (the dashboard's own branch selection).
  * Manager portal (Analytics tab, reports.sales): their own branch — no filter; the cloud holds them to it anyway.
  * Off for the business (the admin portal's 'analytics' switch): the cloud answers ANALYTICS_OFF and the page shows the
- * premium panel instead. Without costs (A490) no margin, class or wastage value is sent, so none is drawn.
+ * premium panel instead. Without costs (A490) no margin, class, wastage value or menu advice is sent, so none is drawn.
  * Colours: the back office's actions stay the SwiftPOS teal (swift-*); every chart colour comes from chartPalette.ts for the
  * dashboard's mode (light / dark), and text stays in the usual gray classes.
  */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
@@ -25,9 +32,10 @@ import { localDateStr } from '../../lib/localDate';
 import { DESK } from '../../components/RowMore';
 import * as fmt from '../../lib/format';
 import { chartPalette, CLASS_ORDER, CLASS_SHAPE, type ChartPalette, type PayKey } from './chartPalette';
+import { capRows, compareWords, per100 } from './chartMath';
 import {
   ChartCard, Legend, KpiTile, RevenueTrend, Donut, MenuScatter, TopItemsBar, Heatmap, HourColumns, WeekdayBars, LeakStack,
-  AgeingBar, TopDebtors, classLegend, leakLegend,
+  AgeingBar, TopDebtors, ItemHeatmap, ShareList, classLegend, leakLegend,
 } from './charts';
 
 // ── Types (the cloud's answers) ───────────────────────────────────────────────
@@ -68,7 +76,6 @@ interface CreditAnswer {
   asOf: string; customers: CreditCustomer[]; over60: { amount: number; customers: number };
   totals: { customers: number; owed: number; d0_30: number; d31_60: number; d61_90: number; d90_plus: number; disputedCount: number; disputedAmount: number };
 }
-interface Insight { id: string; type: 'menu' | 'timing' | 'leaks' | 'credit'; severity: 'high' | 'medium' | 'low'; text: string }
 interface Kpi { value: number | null; prev: number | null; change: number | null }
 interface OverviewAnswer {
   period: { from: string; to: string }; previous: { from: string; to: string };
@@ -78,14 +85,40 @@ interface OverviewAnswer {
   paymentMix: { key: PayKey; label: string; amount: number; share: number }[];
   marginHidden: boolean; wastageHidden: boolean;
 }
+type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times';
+interface Recommendation {
+  id: string; kind: string; title: string; why: string;
+  impact: number | null; impactPer: 'month' | 'once' | null; impactKind: 'gain' | 'recover' | 'collect' | null;
+  assumption: string; confidence: 'high' | 'medium' | 'low'; evidence: Evidence;
+}
+interface RecAnswer {
+  summary: { good: string; worry: string | null; tone: 'up' | 'down' | 'flat' };
+  recommendations: Recommendation[]; found: { monthly: number; once: number; count: number }; costsHidden: boolean;
+}
+type DaypartKey = 'morning' | 'lunch' | 'afternoon' | 'evening' | 'late';
+interface TopItem { productId: string | null; name: string; qty: number; share: number }
+interface ItemTimes {
+  productId: string | null; name: string; qty: number; revenue: number; cells: [number, number, number, number][];
+  dayparts: Record<DaypartKey, number>; bestDaypart: DaypartKey | null; bestDaypartShare: number | null;
+  peak: { dow: number; day: string; hour: number; qty: number } | null;
+}
+interface TimesAnswer {
+  cutoff: number; items: ItemTimes[]; totals: { qty: number; revenue: number }; limited: boolean;
+  dayparts: { key: DaypartKey; label: string; from: number; to: number; qty: number; revenue: number; share: number; top: TopItem[] }[];
+  hours: { hour: number; label: string; qty: number; revenue: number; top: TopItem[] }[];
+}
 
 export interface AnalyticsClient { get: <T>(path: string) => Promise<T> }
 type Tab = 'menu' | 'heatmap' | 'leaks' | 'credit';
-const TABS: { key: Tab; label: string; path: string }[] = [
-  { key: 'menu', label: 'Menu engineering', path: '/api/analytics/menu-engineering' },
-  { key: 'heatmap', label: 'Busy times', path: '/api/analytics/heatmap' },
-  { key: 'leaks', label: 'Money leaks', path: '/api/analytics/money-leaks' },
-  { key: 'credit', label: 'Credit ageing', path: '/api/analytics/credit-ageing' },
+const TABS: { key: Tab; label: string; path: string; tells: string }[] = [
+  { key: 'menu', label: 'Menu engineering', path: '/api/analytics/menu-engineering',
+    tells: 'Which items earn you money and which only keep the kitchen busy: keep the Stars, re-price the Plowhorses, push the Puzzles, rework the Dogs.' },
+  { key: 'heatmap', label: 'Busy times', path: '/api/analytics/heatmap',
+    tells: 'When customers come: put more staff on the dark squares, run offers in the pale ones.' },
+  { key: 'leaks', label: 'Money leaks', path: '/api/analytics/money-leaks',
+    tells: 'Where money leaves without a sale — voids, refunds, discounts, wastage — and which cashier to talk to first.' },
+  { key: 'credit', label: 'Credit ageing', path: '/api/analytics/credit-ageing',
+    tells: 'Who owes you and for how long: chase the oldest (red) first — the longer it waits, the less likely it is paid.' },
 ];
 
 // ── Period presets ────────────────────────────────────────────────────────────
@@ -105,6 +138,7 @@ const PRESETS: { key: PresetKey; label: string }[] = [
 ];
 const MAX_DAYS = 366;
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000) + 1;
+const TABLE_ROWS = 10;
 
 // ── Small pieces ──────────────────────────────────────────────────────────────
 
@@ -116,6 +150,7 @@ const CLASS_META: Record<MenuClass, { label: string; hint: string }> = {
   no_cost:   { label: 'No cost set', hint: 'Set a cost price or a recipe to see its margin.' },
 };
 const pct = (x: number | null | undefined, dp = 1) => (x === null || x === undefined ? '—' : `${(x * 100).toFixed(dp)}%`);
+const hh = (h: number) => `${String(h % 24).padStart(2, '0')}:00`;
 
 function Card({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
@@ -125,6 +160,12 @@ function Card({ label, value, sub, tone }: { label: string; value: string; sub?:
       {sub && <p className="text-[11px] text-gray-500 mt-0.5">{sub}</p>}
     </div>
   );
+}
+
+/** A558: under every capped table — the top 10 of how many, and by what. */
+function CapNote({ shown, total, by }: { shown: number; total: number; by: string }) {
+  if (total <= shown) return null;
+  return <p className="px-3 py-2 text-[11px] text-gray-500 border-t border-gray-800" data-testid="analytics-cap">Showing the top {shown} of {total}, {by}.</p>;
 }
 
 /** A small marker of a class's own shape and colour — the scatter's key, so a class never reads by colour alone. */
@@ -142,32 +183,6 @@ function ClassMark({ k, p }: { k: MenuClass; p: ChartPalette }) {
   );
 }
 
-const INSIGHT_ICON: Record<Insight['type'], string> = {
-  leaks: 'M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z',
-  credit: 'M3 7h18v12H3zM3 11h18M7 15h3',
-  menu: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9Z',
-  timing: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
-};
-const INSIGHT_TYPE: Record<Insight['type'], string> = { timing: 'Timing', leaks: 'Money leak', credit: 'Credit', menu: 'Menu' };
-const SEVERITY_LABEL: Record<Insight['severity'], string> = { high: 'Act now', medium: 'Worth a look', low: 'Good to know' };
-
-/** An insight as a card: a stripe and an icon in its severity's colour, the severity in words (never colour alone). */
-function InsightCard({ i, p }: { i: Insight; p: ChartPalette }) {
-  const c = p.severity[i.severity];
-  return (
-    <li className="relative bg-gray-900 border border-gray-800 rounded-xl pl-4 pr-3 py-3 flex gap-3 overflow-hidden" data-severity={i.severity}>
-      <span aria-hidden className="absolute left-0 top-0 bottom-0 w-1" style={{ background: c }} />
-      <span aria-hidden className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${c}22` }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={INSIGHT_ICON[i.type]} /></svg>
-      </span>
-      <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{INSIGHT_TYPE[i.type]} · {SEVERITY_LABEL[i.severity]}</p>
-        <p className="text-sm text-gray-200 mt-0.5">{i.text}</p>
-      </div>
-    </li>
-  );
-}
-
 /** A549: what a business without Analytics sees — the premium panel, as the Branding page's Themes note. */
 export function AnalyticsLocked() {
   return (
@@ -175,9 +190,9 @@ export function AnalyticsLocked() {
       <p className="text-xs font-bold uppercase tracking-wider text-swift-text">ZapTill Premium</p>
       <h2 className="text-lg font-bold text-white mt-1">Analytics is part of ZapTill Premium</h2>
       <p className="text-sm text-gray-400 mt-2">
-        Sales against the previous period, menu engineering (your Stars, Plowhorses, Puzzles and Dogs), busy times by day and
-        hour, money leaks by cashier and day, and credit ageing — drawn as charts, with plain-English suggestions. Contact
-        ZapTill to enable it.
+        A plain-English verdict on every period, a short list of what to do next with what each is worth in shillings, what
+        sells at what time of day, which items earn you money, when to staff up, which cashier to talk to and who owes you —
+        drawn as charts. Contact ZapTill to enable it.
       </p>
     </div>
   );
@@ -199,11 +214,14 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   const [draft, setDraft] = useState(range);
   const [tab, setTab] = useState<Tab>('menu');
   const [locked, setLocked] = useState(false);
-  const [insights, setInsights] = useState<Insight[] | null>(null);
+  const [recs, setRecs] = useState<RecAnswer | null>(null);
   const [overview, setOverview] = useState<OverviewAnswer | null>(null);
+  const [times, setTimes] = useState<TimesAnswer | null>(null);
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const timesRef = useRef<HTMLElement>(null);
 
   // the owner's branch filter is the dashboard's branch selection (the api client sends it as X-Branch-Id too)
   const branch = ownerView ? (branchCtx.activeBranchId ?? '') : '';
@@ -219,15 +237,18 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
     setError(err?.message || 'Could not load analytics.');
   }, []);
 
-  // the overview and the insights: once per period and branch
+  // the overview, the recommendations and what sells when: once per period and branch (the cloud shares the work)
   useEffect(() => {
     let live = true;
-    setInsights(null); setOverview(null); setError(null);
+    setRecs(null); setOverview(null); setTimes(null); setError(null);
     client.get<OverviewAnswer>(`/api/analytics/overview?${qs}`)
       .then((r) => { if (live) { setLocked(false); setOverview(r); } })
       .catch((e) => { if (live) fail(e); });
-    client.get<{ insights: Insight[] }>(`/api/analytics/insights?${qs}`)
-      .then((r) => { if (live) { setLocked(false); setInsights(r.insights ?? []); } })
+    client.get<RecAnswer>(`/api/analytics/recommendations?${qs}`)
+      .then((r) => { if (live) { setLocked(false); setRecs(r); } })
+      .catch((e) => { if (live) fail(e); });
+    client.get<TimesAnswer>(`/api/analytics/item-times?${qs}`)
+      .then((r) => { if (live) { setLocked(false); setTimes(r); } })
       .catch((e) => { if (live) fail(e); });
     return () => { live = false; };
   }, [qs]); // eslint-disable-line react-hooks/exhaustive-deps -- posApi is a new object every render (ManagerDashboard note)
@@ -250,6 +271,12 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
     setPreset(k);
     if (k !== 'custom') { const r = presetRange(k); setRange(r); setDraft(r); }
   }
+  /** A card's "See why": the tab with the evidence (or What sells when), scrolled into view. */
+  function evidence(e: Evidence) {
+    if (e === 'times') { timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    setTab(e);
+    tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   const draftDays = draft.from && draft.to ? daysBetween(draft.from, draft.to) : 0;
   const draftError = !draft.from || !draft.to ? 'Choose both dates.' : draftDays < 1 ? 'The start must be on or before the end.'
     : draftDays > MAX_DAYS ? `At most ${MAX_DAYS} days.` : null;
@@ -264,8 +291,10 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   }
 
   const current = data[tabKey];
+  const days = daysBetween(range.from, range.to);
+  const openTab = TABS.find((t) => t.key === tab)!;
   return (
-    <div className="p-4 sm:p-6 space-y-4 min-w-0" data-testid="analytics-page">
+    <div className="p-4 sm:p-6 space-y-5 min-w-0" data-testid="analytics-page">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-bold text-white">Analytics</h1>
@@ -316,79 +345,266 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
 
       {error && <div className="px-4 py-2.5 rounded-lg text-sm bg-red-500/10 text-red-400">{error}</div>}
 
-      {/* KPI row, the trend and the payment mix */}
-      {overview ? <OverviewSection o={overview} p={p} currency={currency} />
+      {/* 1 · 2 — the verdict and what to do next */}
+      {recs ? (
+        <>
+          <SummarySection r={recs} p={p} />
+          <DoThisNext r={recs} p={p} currency={currency} onEvidence={evidence} />
+        </>
+      ) : <p className="text-sm text-gray-500">Working out what to do next…</p>}
+
+      {/* 3 · 5 — the KPI tiles; the trend and the payment mix come after What sells when */}
+      {overview ? <KpiRow o={overview} p={p} currency={currency} />
         : <p className="text-sm text-gray-500">Working out the figures…</p>}
 
-      {/* insights */}
-      <section aria-label="Insights">
-        {insights === null ? <p className="text-sm text-gray-500">Working out insights…</p>
-          : insights.length === 0 ? <p className="text-sm text-gray-500">Nothing stands out in this period.</p>
-          : (
-            <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" data-testid="analytics-insights">
-              {insights.map((i) => <InsightCard key={i.id} i={i} p={p} />)}
-            </ul>
-          )}
+      {/* 4 — what sells when */}
+      <section ref={timesRef} aria-label="What sells when" className="scroll-mt-4">
+        {times ? <WhatSellsWhen t={times} p={p} /> : <p className="text-sm text-gray-500">Working out what sells when…</p>}
       </section>
 
-      {/* tabs */}
-      <div className="flex gap-1 overflow-x-auto border-b border-gray-800 print:hidden">
-        {TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-400 hover:text-white'}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {overview && <TrendAndMix o={overview} p={p} currency={currency} />}
 
-      {!current ? <p className="text-sm text-gray-500">{busy ? 'Loading…' : ''}</p>
-        : tab === 'menu' ? <MenuSection m={current as MenuAnswer} p={p} currency={currency} />
-        : tab === 'heatmap' ? <HeatmapSection h={current as HeatAnswer} p={p} currency={currency} />
-        : tab === 'leaks' ? <LeaksSection l={current as LeaksAnswer} p={p} currency={currency} />
-        : <CreditSection c={current as CreditAnswer} p={p} currency={currency} />}
+      {/* 6 — the tabs */}
+      <div ref={tabsRef} className="scroll-mt-4 space-y-3">
+        <div className="flex gap-1 overflow-x-auto border-b border-gray-800 print:hidden">
+          {TABS.map((t) => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-400 hover:text-white'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-sm text-gray-300" data-testid="analytics-tab-tells">{openTab.tells}</p>
+        {!current ? <p className="text-sm text-gray-500">{busy ? 'Loading…' : ''}</p>
+          : tab === 'menu' ? <MenuSection m={current as MenuAnswer} p={p} currency={currency} />
+          : tab === 'heatmap' ? <HeatmapSection h={current as HeatAnswer} p={p} currency={currency} />
+          : tab === 'leaks' ? <LeaksSection l={current as LeaksAnswer} p={p} currency={currency} />
+          : <CreditSection c={current as CreditAnswer} p={p} currency={currency} />}
+      </div>
+      {days > 0 && <p className="text-[11px] text-gray-500">Every figure is worked out from the sales of this period ({days} day{days === 1 ? '' : 's'}), in East Africa Time, with your day cut-off.</p>}
     </div>
   );
 }
 
-// ── Overview: KPI row, trend, payment mix ─────────────────────────────────────
+// ── 1 · How was this period? ──────────────────────────────────────────────────
 
-function OverviewSection({ o, p, currency }: { o: OverviewAnswer; p: ChartPalette; currency: string }) {
-  const days = o.days.length;
-  const compareLabel = `previous ${days} day${days === 1 ? '' : 's'}`;
+const ICON = {
+  up: 'M5 15l7-7 7 7',
+  down: 'M19 9l-7 7-7-7',
+  flat: 'M5 12h14',
+  warn: 'M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z',
+};
+function Glyph({ d, colour, size = 18 }: { d: string; colour: string; size?: number }) {
+  return (
+    <span aria-hidden className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${colour}22` }}>
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={colour} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+    </span>
+  );
+}
+
+function SummarySection({ r, p }: { r: RecAnswer; p: ChartPalette }) {
+  const s = r.summary;
+  const tone = s.tone === 'up' ? p.deltaGood : s.tone === 'down' ? p.deltaBad : p.muted;
+  return (
+    <section className="bg-gray-900 border border-gray-800 rounded-xl p-4 sm:p-5" aria-label="How was this period?" data-testid="analytics-summary">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">How was this period?</p>
+      <div className="flex gap-3 mt-2">
+        <Glyph d={ICON[s.tone]} colour={tone} />
+        <p className="text-base sm:text-lg font-semibold text-white leading-snug" data-testid="analytics-summary-good">{s.good}</p>
+      </div>
+      {s.worry && (
+        <div className="flex gap-3 mt-3">
+          <Glyph d={ICON.warn} colour={p.severity.medium} size={16} />
+          <p className="text-sm sm:text-base text-gray-300 leading-snug self-center" data-testid="analytics-summary-worry">{s.worry}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ── 2 · Do this next ──────────────────────────────────────────────────────────
+
+const CONFIDENCE: Record<Recommendation['confidence'], { dots: number; label: string }> = {
+  high: { dots: 3, label: 'Strong evidence' }, medium: { dots: 2, label: 'Good evidence' }, low: { dots: 1, label: 'Worth a try' },
+};
+const IMPACT_LABEL: Record<NonNullable<Recommendation['impactKind']>, string> = { gain: 'more profit', recover: 'to recover', collect: 'to collect' };
+const EVIDENCE_LABEL: Record<Evidence, string> = {
+  menu: 'Menu engineering', heatmap: 'Busy times', leaks: 'Money leaks', credit: 'Credit ageing', times: 'What sells when',
+};
+
+function DoThisNext({ r, p, currency, onEvidence }: { r: RecAnswer; p: ChartPalette; currency: string; onEvidence: (e: Evidence) => void }) {
+  const money0 = (n: number) => fmt.money(n, currency, { decimals: 0 });
+  const f = r.found;
+  return (
+    <section aria-label="Do this next" data-testid="analytics-do-next">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 mb-2">
+        <h2 className="text-lg font-bold text-white">Do this next</h2>
+        {f.count > 0 && (
+          <p className="text-sm text-gray-400" data-testid="analytics-found">
+            In this period's figures Analytics found about <span className="font-semibold text-white">{money0(f.monthly)} a month</span> you could gain or recover
+            {f.once > 0 && <>, plus <span className="font-semibold text-white">{money0(f.once)}</span> of old credit to collect</>}
+            <span className="text-gray-500"> — estimates; each card says what it assumes.</span>
+          </p>
+        )}
+      </div>
+      {r.recommendations.length === 0 ? (
+        <p className="text-sm text-gray-400 bg-gray-900 border border-gray-800 rounded-xl p-4">
+          Nothing to act on yet — either all is well, or there is not enough trading in this period to be sure. Try a longer period.
+        </p>
+      ) : (
+        <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="analytics-recommendations">
+          {r.recommendations.map((x, i) => {
+            const c = CONFIDENCE[x.confidence];
+            return (
+              <li key={x.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-2 min-w-0" data-kind={x.kind} data-confidence={x.confidence}>
+                <div className="flex gap-3 items-start">
+                  <span className="w-7 h-7 rounded-full bg-gray-800 text-white text-sm font-bold flex items-center justify-center flex-shrink-0" aria-label={`Number ${i + 1}`}>{i + 1}</span>
+                  <h3 className="text-base font-semibold text-white leading-snug">{x.title}</h3>
+                </div>
+                <p className="text-sm text-gray-300 leading-snug">{x.why}</p>
+                <div className="mt-auto pt-1">
+                  {x.impact !== null && x.impactKind ? (
+                    <p className="text-sm">
+                      <span className="text-gray-500">Estimate: </span>
+                      <span className="text-lg font-bold text-white tabular-nums">≈ {money0(x.impact)}</span>
+                      <span className="text-gray-400"> {x.impactPer === 'once' ? 'once' : 'a month'} {IMPACT_LABEL[x.impactKind]}</span>
+                    </p>
+                  ) : <p className="text-sm text-gray-500">No KES estimate</p>}
+                  <p className="text-[11px] text-gray-500 leading-snug mt-0.5">{x.assumption}</p>
+                </div>
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-800">
+                  <span className="flex items-center gap-1.5 text-xs text-gray-400" title={`Confidence: ${c.label}`}>
+                    <span aria-hidden className="flex gap-0.5">
+                      {[0, 1, 2].map((k) => <span key={k} className="w-1.5 h-3 rounded-sm" style={{ background: k < c.dots ? p.ink : p.grid }} />)}
+                    </span>
+                    {c.label}
+                  </span>
+                  <button onClick={() => onEvidence(x.evidence)} className="text-xs text-swift-text hover:underline print:hidden">
+                    See why · {EVIDENCE_LABEL[x.evidence]}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+// ── 3 · The KPI tiles, in plain words ─────────────────────────────────────────
+
+function KpiRow({ o, p, currency }: { o: OverviewAnswer; p: ChartPalette; currency: string }) {
+  const compare = compareWords(o.days.length);
   const money0 = (n: number | null) => fmt.money(n, currency, { decimals: 0, blank: '—' });
   const k = o.kpis;
-  const spark = (pick: (d: OverviewAnswer['days'][number]) => number) => o.days.map(pick);
-  const traded = o.days.some((d) => d.revenue > 0 || d.prevRevenue > 0);
+  const left = per100(k.margin?.value);
+  const cur = currency || 'KES';
   return (
-    <div className="space-y-4" data-testid="analytics-overview">
-      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 ${k.margin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`} data-testid="analytics-kpis">
-        <KpiTile label="Sales" value={money0(k.revenue.value)} change={k.revenue.change} upIsGood compareLabel={compareLabel}
-          spark={spark((d) => d.revenue)} p={p} testId="kpi-revenue" />
-        <KpiTile label="Orders" value={fmt.num(k.orders.value ?? 0)} change={k.orders.change} upIsGood compareLabel={compareLabel}
-          spark={spark((d) => d.orders)} p={p} testId="kpi-orders" />
-        <KpiTile label="Average bill" value={money0(k.avgBill.value)} change={k.avgBill.change} upIsGood compareLabel={compareLabel}
-          spark={spark((d) => d.avgBill ?? 0)} p={p} testId="kpi-avg-bill" />
-        {k.margin && (
-          <KpiTile label="Gross margin" value={pct(k.margin.value)} change={k.margin.change} upIsGood points compareLabel={compareLabel}
-            p={p} note="on items with a cost set" testId="kpi-margin" />
-        )}
-        <KpiTile label="Money at risk" value={money0(k.atRisk.value)} change={k.atRisk.change} upIsGood={false} compareLabel={compareLabel}
-          spark={spark((d) => d.atRisk)} p={p} testId="kpi-at-risk"
-          note={o.wastageHidden ? 'voids, refunds, discounts' : 'voids, refunds, discounts, wastage'} />
+    <section aria-label="The numbers" className={`grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 gap-2 ${k.margin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`} data-testid="analytics-kpis">
+      <KpiTile label="Sales" value={money0(k.revenue.value)} change={k.revenue.change} upIsGood compare={compare}
+        explain="Everything you rang up in the period, before refunds." spark={o.days.map((d) => d.revenue)} p={p} testId="kpi-revenue" />
+      <KpiTile label="Bills" value={fmt.num(k.orders.value ?? 0)} change={k.orders.change} upIsGood compare={compare}
+        explain="How many sales were paid — one per table or customer." p={p} testId="kpi-orders" />
+      <KpiTile label="Average bill" value={money0(k.avgBill.value)} change={k.avgBill.change} upIsGood compare={compare}
+        explain="What one customer spends per visit, on average." p={p} testId="kpi-avg-bill" />
+      {k.margin && (
+        <KpiTile label="Gross margin" value={pct(k.margin.value)} change={k.margin.change} upIsGood points compare={compare}
+          explain={left === null ? 'Set costs on your items to see what is left after the cost of the food.'
+            : `Of every ${cur} 100 sold, ${cur} ${left} is left after the cost of the food (items with a cost set).`} p={p} testId="kpi-margin" />
+      )}
+      <KpiTile label="Money at risk" value={money0(k.atRisk.value)} change={k.atRisk.change} upIsGood={false} compare={compare}
+        explain={`${o.wastageHidden ? 'Voids, refunds and discounts' : 'Voids, refunds, discounts and wastage'} — money that left without a sale.`} p={p} testId="kpi-at-risk" />
+    </section>
+  );
+}
+
+// ── 4 · What sells when ───────────────────────────────────────────────────────
+
+const PART_WORD: Record<DaypartKey, string> = { morning: 'in the morning', lunch: 'at lunch', afternoon: 'in the afternoon', evening: 'in the evening', late: 'late at night' };
+
+function WhatSellsWhen({ t, p }: { t: TimesAnswer; p: ChartPalette }) {
+  const [pick, setPick] = useState<string>('');
+  if (!t.items.length) return null;
+  const chosen = t.items.find((i) => (i.productId ?? `name:${i.name}`) === pick) ?? t.items[0];
+  const parts = t.dayparts.filter((d) => d.qty > 0);
+  const best = chosen.bestDaypart ? t.dayparts.find((d) => d.key === chosen.bestDaypart) : null;
+  return (
+    <div className="space-y-4" data-testid="analytics-times">
+      <div>
+        <h2 className="text-lg font-bold text-white">What sells when</h2>
+        <p className="text-sm text-gray-400">By the hour it was rung, every day of the period added together — so you know what to prep, push and stock for each part of the day.</p>
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2 min-w-0">
-          <ChartCard title="Daily sales" sub={`Against the ${compareLabel} (${fmt.dateShort(`${o.previous.from}T12:00:00`)} – ${fmt.dateShort(`${o.previous.to}T12:00:00`)})`}
-            legend={<Legend items={[{ label: 'This period', colour: p.accent, line: true }, { label: 'Previous period', colour: p.compare, line: true }]} />}
-            testId="analytics-trend">
-            {traded ? <RevenueTrend days={o.days} p={p} currency={currency} /> : <p className="text-sm text-gray-500 py-6 text-center">No sales in either period.</p>}
+
+      {/* (a) the dayparts' top 5 */}
+      <div className={`grid gap-2 grid-cols-1 min-[420px]:grid-cols-2 ${parts.length >= 5 ? 'lg:grid-cols-5' : parts.length === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`} data-testid="analytics-dayparts">
+        {parts.map((d) => (
+          <div key={d.key} className="bg-gray-900 border border-gray-800 rounded-xl p-3 min-w-0" data-daypart={d.key}>
+            <p className="text-sm font-semibold text-white">What sells {PART_WORD[d.key]}</p>
+            <p className="text-[11px] text-gray-500 mb-2">{hh(d.from)}–{hh(d.to)} · {Math.round(d.share * 100)}% of everything sold</p>
+            <ShareList items={d.top.map((x) => ({ key: x.productId ?? x.name, name: x.name, share: x.share }))} p={p} />
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-5">
+        {/* (b) one item's own grid */}
+        <div className="xl:col-span-3 min-w-0">
+          <ChartCard title={`When does ${chosen.name} sell?`}
+            sub={chosen.peak ? `Most on ${chosen.peak.day} ${hh(chosen.peak.hour)}–${hh(chosen.peak.hour + 1)}${best && chosen.bestDaypartShare ? `; ${Math.round(chosen.bestDaypartShare * 100)}% of it sells ${PART_WORD[best.key]}` : ''}. ${fmt.qty(chosen.qty)} sold in the period.` : undefined}
+            legend={(
+              <label className="text-xs text-gray-400 flex items-center gap-2 print:hidden">
+                Item
+                <select value={chosen.productId ?? `name:${chosen.name}`} onChange={(e) => setPick(e.target.value)} data-testid="analytics-item-pick"
+                  className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-sm max-w-[14rem]">
+                  {t.items.map((i) => <option key={i.productId ?? `name:${i.name}`} value={i.productId ?? `name:${i.name}`}>{i.name}</option>)}
+                </select>
+              </label>
+            )} testId="analytics-item-card">
+            <ItemHeatmap cells={chosen.cells} name={chosen.name} p={p} />
+            {t.cutoff > 0 && <p className="text-[11px] text-gray-500 mt-2">A sale after midnight counts on the day before, as your business day ends at {`${String(Math.floor(t.cutoff / 60)).padStart(2, '0')}:${String(t.cutoff % 60).padStart(2, '0')}`}.</p>}
+            {t.limited && <p className="text-[11px] text-gray-500 mt-1">The list holds your {t.items.length} best sellers; every share counts everything sold.</p>}
           </ChartCard>
         </div>
-        <ChartCard title="Payment mix" sub="What the period's sales were paid with" testId="analytics-payment-mix">
-          <Donut slices={o.paymentMix.map((m) => ({ key: m.key, label: m.label, value: m.amount, colour: p.payments[m.key] }))}
-            p={p} currency={currency} centre={fmt.compactMoney(o.paymentMix.reduce((s, m) => s + m.amount, 0), currency)} />
+
+        {/* (c) every hour's top 3 */}
+        <div className="xl:col-span-2 min-w-0">
+          <ChartCard title="The top 3 at every hour" sub="Have these ready before the hour starts" testId="analytics-hour-grid">
+            <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-x-4 gap-y-1.5 text-sm">
+              {t.hours.map((h) => (
+                <li key={h.hour} className="flex gap-2 min-w-0">
+                  <span className="text-white font-semibold tabular-nums w-11 flex-shrink-0">{h.label}</span>
+                  <span className="text-gray-300 truncate" title={h.top.map((x) => `${x.name} ${Math.round(x.share * 100)}%`).join(' · ')}>
+                    {h.top.map((x) => x.name).join(' · ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </ChartCard>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 5 · Daily sales and the payment mix ───────────────────────────────────────
+
+function TrendAndMix({ o, p, currency }: { o: OverviewAnswer; p: ChartPalette; currency: string }) {
+  const traded = o.days.some((d) => d.revenue > 0 || d.prevRevenue > 0);
+  const compare = compareWords(o.days.length);
+  return (
+    <div className="grid gap-4 lg:grid-cols-3" data-testid="analytics-overview">
+      <div className="lg:col-span-2 min-w-0">
+        <ChartCard title="Daily sales" sub={`Each day against ${compare} (${fmt.dateShort(`${o.previous.from}T12:00:00`)} – ${fmt.dateShort(`${o.previous.to}T12:00:00`)})`}
+          legend={<Legend items={[{ label: 'This period', colour: p.accent, line: true }, { label: 'Previous period', colour: p.compare, line: true }]} />}
+          testId="analytics-trend">
+          {traded ? <RevenueTrend days={o.days} p={p} currency={currency} /> : <p className="text-sm text-gray-500 py-6 text-center">No sales in either period.</p>}
         </ChartCard>
       </div>
+      <ChartCard title="Payment mix" sub="What the period's sales were paid with" testId="analytics-payment-mix">
+        <Donut slices={o.paymentMix.map((m) => ({ key: m.key, label: m.label, value: m.amount, colour: p.payments[m.key] }))}
+          p={p} currency={currency} centre={fmt.compactMoney(o.paymentMix.reduce((s, m) => s + m.amount, 0), currency)} />
+      </ChartCard>
     </div>
   );
 }
@@ -396,13 +612,20 @@ function OverviewSection({ o, p, currency }: { o: OverviewAnswer; p: ChartPalett
 // ── Menu engineering ──────────────────────────────────────────────────────────
 
 type SortKey = 'name' | 'qty' | 'revenue' | 'unitCost' | 'unitMargin' | 'totalMargin' | 'share' | 'class';
+const SORT_WORD: Record<SortKey, string> = {
+  name: 'by name', qty: 'by quantity sold', revenue: 'by revenue', unitCost: 'by unit cost', unitMargin: 'by unit margin',
+  totalMargin: 'by total margin', share: 'by share', class: 'by class',
+};
 
 function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; currency: string }) {
-  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'qty', desc: true });
-  const rows = useMemo(() => {
+  // A558: the top 10 by the column that matters for the decision — what the item brings in (total margin with costs,
+  // else revenue); the headers still sort, the cap stays 10
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: m.costsHidden ? 'revenue' : 'totalMargin', desc: true });
+  const sorted = useMemo(() => {
     const v = (i: MenuItem): number | string => sort.key === 'name' ? i.name.toLowerCase() : sort.key === 'class' ? (i.class ?? '') : (i[sort.key] ?? -Infinity);
     return [...m.items].sort((a, b) => { const x = v(a), y = v(b); const c = x < y ? -1 : x > y ? 1 : 0; return sort.desc ? -c : c; });
   }, [m.items, sort]);
+  const cap = capRows(sorted, TABLE_ROWS);
   const head = (key: SortKey, label: string, cls = '') => (
     <th className={`p-2 font-medium cursor-pointer select-none ${cls}`} onClick={() => setSort((s) => ({ key, desc: s.key === key ? !s.desc : key !== 'name' }))}>
       {label}{sort.key === key ? (sort.desc ? ' ↓' : ' ↑') : ''}
@@ -420,6 +643,7 @@ function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; curre
             <div key={k} className="bg-gray-900 border border-gray-800 rounded-xl p-3" title={CLASS_META[k].hint}>
               <p className="text-xs text-gray-500 flex items-center gap-1.5"><ClassMark k={k} p={p} />{CLASS_META[k].label}</p>
               <p className="font-semibold mt-0.5 text-white text-lg">{m.counts[k] ?? 0}</p>
+              <p className="text-[11px] text-gray-500 leading-snug">{CLASS_META[k].hint}</p>
             </div>
           ))}
         </div>
@@ -453,7 +677,7 @@ function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; curre
           serving (the cost price, else the recipe).
         </p>
       )}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden" data-testid="analytics-menu-table">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800">
             {head('name', 'Item')}
@@ -466,7 +690,7 @@ function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; curre
             {!m.costsHidden && head('class', 'Class')}
           </tr></thead>
           <tbody>
-            {rows.map((i) => (
+            {cap.rows.map((i) => (
               <tr key={`${i.productId ?? i.name}`} className="border-b border-gray-800 last:border-0">
                 <td className="p-2 text-white">{i.name}{i.category && <span className="block text-[11px] text-gray-500">{i.category}</span>}</td>
                 <td className="p-2 text-right text-gray-300">{fmt.qty(i.qty)}</td>
@@ -484,6 +708,7 @@ function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; curre
             ))}
           </tbody>
         </table></div>
+        <CapNote shown={cap.rows.length} total={cap.total} by={SORT_WORD[sort.key]} />
       </div>
     </div>
   );
@@ -496,8 +721,8 @@ function HeatmapSection({ h, p, currency }: { h: HeatAnswer; p: ChartPalette; cu
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <Card label="Busiest slot" value={h.busiest?.label ?? '—'} sub={h.busiest ? `${fmt.money(h.busiest.revenue, currency)} · ${h.busiest.orders} orders` : undefined} />
-        <Card label="Quietest slot" value={h.quietest?.label ?? '—'} sub={h.quietest ? `${fmt.money(h.quietest.revenue, currency)} · ${h.quietest.orders} orders` : undefined} />
+        <Card label="Busiest two hours — staff up" value={h.busiest?.label ?? '—'} sub={h.busiest ? `${fmt.money(h.busiest.revenue, currency)} · ${h.busiest.orders} orders` : undefined} />
+        <Card label="Quietest two hours — run an offer" value={h.quietest?.label ?? '—'} sub={h.quietest ? `${fmt.money(h.quietest.revenue, currency)} · ${h.quietest.orders} orders` : undefined} />
         <Card label="Sales in the period" value={fmt.money(h.totalRevenue, currency)} sub={`${fmt.num(h.totalOrders)} orders · East Africa Time`} />
       </div>
       <ChartCard title="Sales by day and hour" sub="Darker = more sales. Hours with no sale in the whole period are left out.">
@@ -518,6 +743,8 @@ function HeatmapSection({ h, p, currency }: { h: HeatAnswer; p: ChartPalette; cu
 
 // ── Money leaks ───────────────────────────────────────────────────────────────
 
+const dayLeak = (d: DayLeak) => d.voidValue + d.itemVoidValue + d.refundValue + d.discountValue + (d.wastageValue ?? 0) + Math.max(0, -d.dayCloseVariance);
+
 function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; currency: string }) {
   const m = (n: number | null) => fmt.money(n, currency, { blank: '—' });
   const variance = (n: number) => <span className={n < 0 ? 'text-red-400' : n > 0 ? 'text-amber-400' : 'text-gray-500'}>{fmt.money(n, currency, { sign: true })}</span>;
@@ -528,6 +755,10 @@ function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; cur
     { key: 'discounts', label: 'Discounts', value: l.totals.discountValue, colour: p.leaks.discounts },
     ...(l.wastageHidden ? [] : [{ key: 'wastage', label: 'Wastage', value: l.totals.wastageValue ?? 0, colour: p.leaks.wastage }]),
   ];
+  // A558: the top 10 — cashiers flagged first, then by what went through their hands (the cloud's order); days by what
+  // the day lost (voids, refunds, discounts, wastage and a short day close)
+  const cashiers = capRows(l.cashiers, TABLE_ROWS);
+  const days = capRows([...l.days].filter((d) => dayLeak(d) > 0).sort((a, b) => dayLeak(b) - dayLeak(a) || a.day.localeCompare(b.day)), TABLE_ROWS);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -555,7 +786,7 @@ function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; cur
         rate {pct(l.medians.voidRate)}, discount rate {pct(l.medians.discountRate)}), with at least 5 such events.
         {flagged.length ? ` ${flagged.length} flagged.` : ' Nobody is flagged.'}
       </p>
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden" data-testid="analytics-leak-cashiers">
         <h3 className="px-3 pt-3 text-sm font-semibold text-white">By cashier</h3>
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800">
@@ -566,7 +797,7 @@ function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; cur
             <th className={`p-2 font-medium text-right ${DESK}`}>Drawer ±</th>
           </tr></thead>
           <tbody>
-            {l.cashiers.map((c) => {
+            {cashiers.rows.map((c) => {
               const fv = c.flags.find((f) => f.kind === 'void'), fd = c.flags.find((f) => f.kind === 'discount');
               const tag = (f?: LeakFlag) => f ? <span className="ml-1 px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[10px] font-semibold">{f.multiple !== null ? `${f.multiple.toFixed(1)}× median` : 'flagged'}</span> : null;
               return (
@@ -585,30 +816,34 @@ function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; cur
             })}
           </tbody>
         </table></div>
+        <CapNote shown={cashiers.rows.length} total={cashiers.total} by="flagged first, then by the money through their hands" />
       </div>
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <h3 className="px-3 pt-3 text-sm font-semibold text-white">By day</h3>
-        <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800">
-            <th className="p-2 font-medium">Day</th><th className={`p-2 font-medium text-right ${DESK}`}>Orders</th>
-            <th className="p-2 font-medium text-right">Voids</th><th className={`p-2 font-medium text-right ${DESK}`}>Refunds</th>
-            <th className={`p-2 font-medium text-right ${DESK}`}>Discounts</th><th className={`p-2 font-medium text-right ${DESK}`}>Wastage</th>
-            <th className="p-2 font-medium text-right">Day close ±</th>
-          </tr></thead>
-          <tbody>
-            {l.days.map((d) => (
-              <tr key={d.day} className={`border-b border-gray-800 last:border-0 ${d.dayCloseVariance < 0 ? 'bg-red-500/5' : ''}`}>
-                <td className="p-2 text-white whitespace-nowrap">{fmt.dateShort(`${d.day}T12:00:00`)}</td>
-                <td className={`p-2 text-right text-gray-300 ${DESK}`}>{d.orders}</td>
-                <td className="p-2 text-right text-gray-300">{m(d.voidValue + d.itemVoidValue)}</td>
-                <td className={`p-2 text-right text-gray-300 ${DESK}`}>{m(d.refundValue)}</td>
-                <td className={`p-2 text-right text-gray-300 ${DESK}`}>{m(d.discountValue)}</td>
-                <td className={`p-2 text-right text-gray-300 ${DESK}`}>{l.wastageHidden ? d.wastage : m(d.wastageValue)}</td>
-                <td className="p-2 text-right">{variance(d.dayCloseVariance)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden" data-testid="analytics-leak-days">
+        <h3 className="px-3 pt-3 text-sm font-semibold text-white">The days that lost the most</h3>
+        {days.rows.length === 0 ? <p className="p-3 text-sm text-gray-500">No day lost money to voids, refunds, discounts or a short close.</p> : (
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800">
+              <th className="p-2 font-medium">Day</th><th className={`p-2 font-medium text-right ${DESK}`}>Orders</th>
+              <th className="p-2 font-medium text-right">Voids</th><th className={`p-2 font-medium text-right ${DESK}`}>Refunds</th>
+              <th className={`p-2 font-medium text-right ${DESK}`}>Discounts</th><th className={`p-2 font-medium text-right ${DESK}`}>Wastage</th>
+              <th className="p-2 font-medium text-right">Day close ±</th>
+            </tr></thead>
+            <tbody>
+              {days.rows.map((d) => (
+                <tr key={d.day} className={`border-b border-gray-800 last:border-0 ${d.dayCloseVariance < 0 ? 'bg-red-500/5' : ''}`}>
+                  <td className="p-2 text-white whitespace-nowrap">{fmt.dateShort(`${d.day}T12:00:00`)}</td>
+                  <td className={`p-2 text-right text-gray-300 ${DESK}`}>{d.orders}</td>
+                  <td className="p-2 text-right text-gray-300">{m(d.voidValue + d.itemVoidValue)}</td>
+                  <td className={`p-2 text-right text-gray-300 ${DESK}`}>{m(d.refundValue)}</td>
+                  <td className={`p-2 text-right text-gray-300 ${DESK}`}>{m(d.discountValue)}</td>
+                  <td className={`p-2 text-right text-gray-300 ${DESK}`}>{l.wastageHidden ? d.wastage : m(d.wastageValue)}</td>
+                  <td className="p-2 text-right">{variance(d.dayCloseVariance)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        )}
+        <CapNote shown={days.rows.length} total={days.total} by="by what the day lost" />
       </div>
       <p className="text-xs text-gray-500">Voids are voided orders plus kitchen items removed after they were sent. Refunds count on the day they were given, against the cashier of the sale. Drawer ± is the cashier's shift count; day close ± the till's day close (over +, short −).</p>
     </div>
@@ -620,6 +855,8 @@ function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; cur
 function CreditSection({ c, p, currency }: { c: CreditAnswer; p: ChartPalette; currency: string }) {
   const m = (n: number) => (n ? fmt.money(n, currency) : '—');
   if (!c.customers.length) return <p className="text-sm text-gray-500">Nobody owes on credit.</p>;
+  // A558: the top 10 — the oldest debt first (over 60 days), then what is owed (the cloud's order)
+  const rows = capRows(c.customers, TABLE_ROWS);
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-5">
@@ -634,7 +871,7 @@ function CreditSection({ c, p, currency }: { c: CreditAnswer; p: ChartPalette; c
           </ChartCard>
         </div>
       </div>
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden" data-testid="analytics-credit-table">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800">
             <th className="p-2 font-medium">Customer</th><th className="p-2 font-medium text-right">Owed</th>
@@ -643,7 +880,7 @@ function CreditSection({ c, p, currency }: { c: CreditAnswer; p: ChartPalette; c
             <th className={`p-2 font-medium text-right ${DESK}`}>Disputed</th>
           </tr></thead>
           <tbody>
-            {c.customers.map((r) => (
+            {rows.rows.map((r) => (
               <tr key={r.customerId} className="border-b border-gray-800 last:border-0">
                 <td className="p-2 text-white">{r.name}{r.phone && <span className="block text-[11px] text-gray-500">{r.phone}</span>}</td>
                 <td className="p-2 text-right text-gray-300">{m(r.owed)}</td>
@@ -656,6 +893,7 @@ function CreditSection({ c, p, currency }: { c: CreditAnswer; p: ChartPalette; c
             ))}
           </tbody>
         </table></div>
+        <CapNote shown={rows.rows.length} total={rows.total} by="the oldest debt first, then by what is owed" />
       </div>
       <p className="text-xs text-gray-500">
         As of {fmt.dateTime(c.asOf)}. The balance is the customer's credit account; repayments clear the oldest sales first, so what

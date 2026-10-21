@@ -67,9 +67,10 @@ ok('a blank name falls back to "Your Business"', blank.includes('Your Business')
 
 // The rest of the sample is neutral — it prints on every client's paper.
 ok('neutral branch on the sample', own.includes('Main Branch'));
-// A551: "BUY GOODS:" then the number, double width (the preview spaces a double-width line's letters out).
-ok('neutral till number (no real Buy Goods number)', /B U Y   G O O D S :/.test(own) && /\|\s+0 0 0 0 0 0\s+\|/.test(own),
-  (own.match(/[^\n]*B U Y[^\n]*\n[^\n]*/) || [''])[0]);
+// A551: "BUY GOODS:" then the number. A557: double height only, so the preview no longer spaces the letters out
+// (that is how it draws a double-width line): "BUY GOODS:" / "000000" centred, never "B U Y   G O O D S :".
+ok('neutral till number (no real Buy Goods number)', /\|\s+BUY GOODS:\s+\|\n\|\s+000000\s+\|/.test(own) && !/B U Y/.test(own)
+  && !/0 0 0 0 0 0/.test(own), (own.match(/[^\n]*BUY GOODS:[^\n]*\n[^\n]*/) || [''])[0]);
 ok('neutral cashier', /Cashier: Amina/.test(own));
 ok('neutral phone', /0700 000 000/.test(own) && !/0700 000 033|0117 000 033/.test(own));
 

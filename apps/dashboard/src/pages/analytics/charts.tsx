@@ -14,7 +14,7 @@ import {
   CLASS_ORDER, CLASS_SHAPE, LEAK_ORDER, LEAK_LABEL, BUCKET_ORDER, BUCKET_LABEL, heatColour,
   type ChartPalette, type ClassKey, type LeakKey,
 } from './chartPalette';
-import { deltaOf, compact, dayLabel, byHour, byWeekday, topBy, leakParts, leakTotal, shares } from './chartMath';
+import { changeWords, compact, dayLabel, byHour, byWeekday, topBy, leakParts, leakTotal, shares, itemGrid } from './chartMath';
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
@@ -78,25 +78,33 @@ const noAnim = { isAnimationActive: false } as const;
 
 export interface KpiTileProps {
   label: string; value: string; change: number | null | undefined; upIsGood: boolean; points?: boolean;
-  compareLabel: string; spark?: number[]; p: ChartPalette; note?: string; testId?: string;
+  /** what the period is compared with: "the 30 days before" */
+  compare: string;
+  /** A558: one plain line saying what the number means ("What one customer spends per visit") */
+  explain: string;
+  spark?: number[]; p: ChartPalette; testId?: string;
 }
-export function KpiTile({ label, value, change, upIsGood, points, compareLabel, spark, p, note, testId }: KpiTileProps) {
-  const d = deltaOf(change, { upIsGood, points });
-  const tone = d.good === null ? undefined : d.good ? p.deltaGood : p.deltaBad;
+/**
+ * A558: a KPI a non-analyst reads — the number, its change as words ("▲ 9.5% more than the 30 days before", coloured by
+ * whether that is good, the arrow and the words carrying it too), and one line saying what the number is. Only the
+ * sales tile keeps a (small) sparkline.
+ */
+export function KpiTile({ label, value, change, upIsGood, points, compare, explain, spark, p, testId }: KpiTileProps) {
+  const w = changeWords(change, { upIsGood, points, compare });
+  const tone = w.good === null ? undefined : w.good ? p.deltaGood : p.deltaBad;
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 min-w-0 flex flex-col" data-testid={testId}>
-      <p className="text-xs text-gray-500 truncate">{label}</p>
-      <p className="text-xl sm:text-2xl font-semibold text-white mt-0.5 truncate">{value}</p>
-      <p className="text-xs mt-0.5 truncate">
-        <span className={tone ? 'font-semibold' : 'text-gray-500'} style={tone ? { color: tone } : undefined} data-direction={d.direction}>{d.text}</span>
-        {d.direction !== 'none' && <span className="text-gray-500"> vs {compareLabel}</span>}
+      <p className="text-xs font-medium text-gray-400">{label}</p>
+      <p className="text-xl sm:text-2xl font-semibold text-white mt-0.5 truncate tabular-nums">{value}</p>
+      <p className="text-xs mt-1 leading-snug" data-direction={w.arrow === '▲' ? 'up' : w.arrow === '▼' ? 'down' : 'none'}>
+        <span className={tone ? 'font-semibold' : 'text-gray-400'} style={tone ? { color: tone } : undefined}>{w.arrow ? `${w.arrow} ` : ''}{w.text}</span>
       </p>
-      {note && <p className="text-[11px] text-gray-500 mt-0.5 truncate">{note}</p>}
+      <p className="text-[11px] text-gray-500 mt-1 leading-snug">{explain}</p>
       {spark && spark.length > 1 && (
-        <div className="h-9 mt-auto pt-1" aria-hidden>
+        <div className="h-6 mt-auto pt-1" aria-hidden>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={spark.map((v, i) => ({ i, v }))} margin={{ top: 2, right: 2, bottom: 0, left: 2 }}>
-              <Area type="monotone" dataKey="v" stroke={p.accent} strokeWidth={1.5} fill={p.accent} fillOpacity={0.12} dot={false} {...noAnim} />
+              <Area type="monotone" dataKey="v" stroke={p.accent} strokeWidth={1.5} fill={p.accent} fillOpacity={0.1} dot={false} {...noAnim} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -355,16 +363,87 @@ export function WeekdayBars({ h, p, currency }: { h: HeatData; p: ChartPalette; 
   );
 }
 
+// ── A558: what sells when ─────────────────────────────────────────────────────
+
+/** One item's weekday × hour grid of quantities on the same one-hue ramp as Busy times, with a hover readout. */
+export function ItemHeatmap({ cells, name, p }: { cells: [number, number, number, number][]; name: string; p: ChartPalette }) {
+  const [hover, setHover] = useState<{ d: number; k: number } | null>(null);
+  const g = itemGrid(cells);
+  if (!g.hours) return <p className="text-sm text-gray-500 py-6 text-center">{name} did not sell in this period.</p>;
+  const hours: number[] = [];
+  for (let k = g.hours.from; k <= g.hours.to; k++) hours.push(k);
+  const read = hover ? { label: `${DAYS_SHORT[hover.d]} ${hh(hover.k)}–${hh(hover.k + 1)}`, q: g.qty[hover.d]?.[hover.k] ?? 0 } : null;
+  return (
+    <div>
+      <p className="text-xs text-gray-400 h-5 mb-1" aria-live="polite">
+        {read ? <><span className="text-white font-semibold">{fmt.qty(read.q)} sold</span> · {read.label}</> : 'Point at a square to see how many sold.'}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="border-separate text-[11px] w-full table-fixed" style={{ borderSpacing: 2, minWidth: `${Math.max(16, hours.length * 2 + 3)}rem` }}
+          data-testid="analytics-item-heatmap" onMouseLeave={() => setHover(null)}>
+          <thead><tr>
+            <th className="w-10" />
+            {hours.map((k) => <th key={k} className="font-normal text-gray-500 px-0.5">{String(k).padStart(2, '0')}</th>)}
+          </tr></thead>
+          <tbody>
+            {DAYS_SHORT.map((d, di) => (
+              <tr key={d}>
+                <th className="text-left font-normal text-gray-500 pr-1">{d}</th>
+                {hours.map((k) => {
+                  const v = g.qty[di]?.[k] ?? 0;
+                  const on = hover?.d === di && hover.k === k;
+                  return (
+                    <td key={k} tabIndex={0} className="h-7 rounded border border-gray-800 cursor-default outline-none"
+                      style={{ background: heatColour(p, v, g.max) ?? undefined, boxShadow: on ? `0 0 0 2px ${p.ink}` : undefined }}
+                      onMouseEnter={() => setHover({ d: di, k })} onFocus={() => setHover({ d: di, k })}
+                      title={`${d} ${hh(k)}–${hh(k + 1)}: ${fmt.qty(v)} sold`} />
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center gap-2 mt-2 text-[11px] text-gray-500">
+        <span>Fewer</span>
+        <span aria-hidden className="h-2.5 w-32 rounded" style={{ background: `linear-gradient(to right, ${p.ramp.slice(1).join(', ')})` }} />
+        <span>More</span>
+        <span className="ml-2">busiest hour {fmt.qty(g.max)} sold</span>
+      </div>
+    </div>
+  );
+}
+
+/** A ranked list with a thin share bar under each name (one hue — the bar only says "how much", the text says what). */
+export function ShareList({ items, p, testId }: { items: { key: string; name: string; share: number; note?: string }[]; p: ChartPalette; testId?: string }) {
+  const max = Math.max(0, ...items.map((i) => i.share));
+  return (
+    <ol className="space-y-1.5" data-testid={testId}>
+      {items.map((i) => (
+        <li key={i.key} className="min-w-0">
+          <div className="flex items-baseline justify-between gap-2 text-sm">
+            <span className="text-gray-200 truncate">{i.name}</span>
+            <span className="text-white font-semibold tabular-nums flex-shrink-0">{Math.round(i.share * 100)}%</span>
+          </div>
+          <div className="h-1 mt-0.5 rounded-full" style={{ background: p.grid }} aria-hidden>
+            <div className="h-1 rounded-full" style={{ width: `${max > 0 ? Math.max(4, (i.share / max) * 100) : 0}%`, background: p.accent }} />
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 // ── Money leaks ───────────────────────────────────────────────────────────────
 
 export interface LeakCashier { cashierId: string | null; name: string; voidValue: number; itemVoidValue: number; refundValue: number; discountValue: number; wastageValue: number | null; flags: unknown[] }
 
-/** One stacked bar per cashier (the 12 with the most at stake); a flagged cashier's name carries a red flag mark. */
+/** One stacked bar per cashier (the 10 with the most at stake — A558); a flagged cashier's name carries a red flag mark. */
 export function LeakStack({ cashiers, p, currency, wastageHidden }: { cashiers: LeakCashier[]; p: ChartPalette; currency: string; wastageHidden: boolean }) {
   const keys = LEAK_ORDER.filter((k) => !(wastageHidden && k === 'wastage'));
   const rows = cashiers.map((c) => ({ id: c.cashierId ?? 'none', name: c.name, flagged: c.flags.length > 0, ...leakParts(c) }))
     .map((r) => ({ ...r, total: leakTotal(r) })).filter((r) => r.total > 0)
-    .sort((a, b) => Number(b.flagged) - Number(a.flagged) || b.total - a.total).slice(0, 12);
+    .sort((a, b) => Number(b.flagged) - Number(a.flagged) || b.total - a.total).slice(0, 10);
   if (!rows.length) return <p className="text-sm text-gray-500 py-6 text-center">No voids, refunds, discounts or wastage in this period.</p>;
   const flagged = new Set(rows.filter((r) => r.flagged).map((r) => r.name));
   const Tick = (t: { x?: number | string; y?: number | string; payload?: { value?: string } }) => {
