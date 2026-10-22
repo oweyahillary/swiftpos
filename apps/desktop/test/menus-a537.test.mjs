@@ -199,10 +199,12 @@ try {
     /<PanelToggle panel=\{catPanel\} \/>\s*<input\s+type="text"\s+placeholder="Search products…"/.test(pos)
     && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} \/>/.test(pos)
     && !/border-b border-gray-800 overflow-x-auto/.test(pos) && !/categories\.map\(\(cat: any\) => \(/.test(pos));
+  // A566: the panel is told when the menus are across the top (menuBar) and the menu does not narrow a search
+  // (gridMenuScope) — apps/desktop/test/menus-top-a566.test.mjs pins the rest.
   ok('…the panel beside the grid (over it in a narrow window), and the menu narrows the grid (the shared helper)',
-    /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{narrowWindow\} \/>\s*<div ref=\{grid\.rootRef\} className="flex-1 overflow-y-auto p-4">/.test(pos)
+    /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{narrowWindow\} menuBar=\{menuBar\.length > 0\} \/>\s*<div ref=\{grid\.rootRef\} className="flex-1 overflow-y-auto p-4">/.test(pos)
     && /const menuFilterScope = useMemo\(\(\) => menuScope\(categories, menus, activeMenu\)/.test(pos)
-    && /const matchMenu\s+= inMenuScope\(p, menuFilterScope\);/.test(pos) && /&& matchCat && matchMenu && matchSearch/.test(pos)
+    && /const matchMenu\s+= inMenuScope\(p, gridMenuScope\(menuFilterScope, search\)\);/.test(pos) && /&& matchCat && matchMenu && matchSearch/.test(pos)
     && /from '\.\.\/\.\.\/shared\/menuFilter'/.test(pos));
   ok('pos:init gives the sale screen the menus (on, in order; none before schema 73)',
     /SELECT id, name, sort_order, color, icon FROM menus WHERE active = 1 ORDER BY sort_order, name/.test(ipcHandlersSource())

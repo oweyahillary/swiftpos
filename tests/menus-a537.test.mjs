@@ -264,9 +264,10 @@ try {
     for (const [n, s] of [['CashierScreen', cashier], ['MinimartPOS', mini]]) {
       assert.match(s, /from '\.\.\/\.\.\/lib\/menuFilter'/, n);
       assert.match(s, /const menuFilterScope = useMemo\(\(\) => menuScope\(categories, menus, activeMenu\)/, n);
-      assert.match(s, /inMenuScope\(p, menuFilterScope\)/, n);
+      // A566: the menu does not narrow a search (gridMenuScope); the panel is told when the menus are across the top.
+      assert.match(s, /inMenuScope\(p, gridMenuScope\(menuFilterScope, (?:search|catalogueSearch)\)\)/, n);
       assert.match(s, /<PanelToggle panel=\{catPanel\} \/>/, n);
-      assert.match(s, /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{isPhone\} \/>/, n);
+      assert.match(s, /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{isPhone\} menuBar=\{menuBar\.length > 0\} \/>/, n);
       assert.match(s, /<CategoryChip label=\{catChip\} onClear=\{clearCatChip\} \/>/, n);
       assert.doesNotMatch(s, /s\.catRow|s\.catBtn/, `${n}: the old category row is gone`);
     }

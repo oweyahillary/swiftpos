@@ -85,13 +85,51 @@ router.get('/customer/:id', canReadCredit, async (req, res) => {
   });
 });
 
+// GET /api/credit/candidates?search= — A567: the business's customers by name or phone, to give one their FIRST credit
+// limit (Credit Accounts › "+ Give credit"). The list above only shows customers who already have a limit or a balance,
+// so no screen could start an account. customers.credit — the key that sets the limit.
+router.get('/candidates', requirePermission('customers.credit'), async (req, res) => {
+  // PostgREST's or() is a comma/parenthesis grammar: those (and the LIKE wildcards) are taken out of what was typed.
+  const term = String(req.query.search ?? '').replace(/[,()%*\\:"']/g, ' ').trim().slice(0, 60);
+  let q = supabase
+    .from('customers')
+    .select('id, name, phone, email, credit_limit, credit_balance, status')
+    .eq('business_id', req.businessId)
+    .eq('status', 'active')
+    .order('name', { ascending: true })
+    .limit(20);
+  if (term) q = q.or(`name.ilike.%${term}%,phone.ilike.%${term}%`);
+  const { data, error } = await q;
+  if (error) { sendError(res, error); return; }
+  res.json((data ?? []).map((c: any) => ({
+    ...c,
+    credit_limit: Number(c.credit_limit) || 0,
+    credit_balance: Number(c.credit_balance) || 0,
+    available_credit: Math.max(0, Number(c.credit_limit) - Number(c.credit_balance)),
+  })));
+});
+
 // PATCH /api/credit/customer/:id/limit — set the credit limit
+// A567: the limit is APPROVED by whoever sets it — customers.credit (the owner always, managers by default) — and who and
+// when go in the business's audit log (audit_log: before and after). The till's credit-customer list
+// (GET /api/pos/credit-customers) carries a customer once their limit is above 0, at its next pull.
 router.patch('/customer/:id/limit', requirePermission('customers.credit'), async (req, res) => {
+  // A567: a person approves a limit — a till's own session names nobody.
+  if (req.isTill || !req.userId) { res.status(403).json({ error: 'A credit limit is set by a person, signed in.', code: 'PERSON_ONLY' }); return; }
   const limit = Number(req.body?.credit_limit);
   if (!Number.isFinite(limit) || limit < 0) {
     res.status(400).json({ error: 'credit_limit must be a non-negative number' });
     return;
   }
+
+  const { data: before } = await supabase
+    .from('customers')
+    .select('id, credit_limit')
+    .eq('id', req.params.id)
+    .eq('business_id', req.businessId)
+    .maybeSingle();
+  if (!before) { res.status(404).json({ error: 'Customer not found' }); return; }
+  const from = Number((before as { credit_limit?: number }).credit_limit) || 0;
 
   const { data, error } = await supabase
     .from('customers')
@@ -102,8 +140,23 @@ router.patch('/customer/:id/limit', requirePermission('customers.credit'), async
     .single();
 
   if (error || !data) { res.status(404).json({ error: 'Customer not found' }); return; }
+  await auditLimit(req, req.params.id, from, limit);
   res.json(data);
 });
+
+/** A567: who approved a credit limit, and when (audit_log.created_at) — best-effort, never fails the change. */
+async function auditLimit(req: any, customerId: string, from: number, to: number): Promise<void> {
+  if (from === to) return;
+  try {
+    const { data: me } = req.userId ? await supabase.from('users').select('name').eq('id', req.userId).maybeSingle() : { data: null };
+    const { error } = await supabase.from('audit_log').insert({
+      business_id: req.businessId, branch_id: null, user_id: req.userId ?? null, user_name: (me as any)?.name ?? null,
+      action: from === 0 ? 'customer.credit_limit.granted' : 'customer.credit_limit.changed', table_name: 'customers',
+      record_id: customerId, before_data: { credit_limit: from }, after_data: { credit_limit: to },
+    });
+    if (error) console.error('[credit] limit audit not written:', error.message);
+  } catch (e) { console.error('[credit] limit audit not written:', (e as Error)?.message ?? e); }
+}
 
 // POST /api/credit/customer/:id/payment — record a repayment (decreases balance)
 // Body: { amount, method, reference?, notes? }

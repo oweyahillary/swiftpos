@@ -71,7 +71,12 @@ export function installMemDb(supabase) {
         if (prop === 'is') return (k, v) => { f.push((r) => (v === null ? r[k] == null : r[k] === v)); return q; };
         if (prop === 'not') return (k, o2, v) => { f.push((r) => (o2 === 'is' && v === null ? r[k] != null : r[k] !== v)); return q; };
         if (['gte', 'lte', 'gt', 'lt'].includes(prop)) return (k, v) => { f.push((r) => cmp(r[k], v, prop)); return q; };
-        if (prop === 'ilike') return (k, v) => { f.push((r) => String(r[k] ?? '').toLowerCase() === String(v).toLowerCase()); return q; };
+        // A564: a pattern with % matches as LIKE does (any run of characters), case-insensitive; without one, equality as before.
+        if (prop === 'ilike') return (k, v) => {
+          const pat = String(v);
+          const re = pat.includes('%') ? new RegExp(`^${pat.split('%').map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`, 'i') : null;
+          f.push((r) => (re ? re.test(String(r[k] ?? '')) : String(r[k] ?? '').toLowerCase() === pat.toLowerCase())); return q;
+        };
         if (prop === 'order') return (k, o) => { ord = [k, o?.ascending !== false]; return q; };
         if (prop === 'range') return (a, b) => { rng = [a, b]; return q; };
         if (prop === 'limit') return (n) => { lim = n; return q; };

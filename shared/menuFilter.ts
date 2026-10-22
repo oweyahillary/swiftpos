@@ -17,6 +17,12 @@
  *     session only, and only the chosen menu is remembered per till / per browser (parsePanelPrefs / panelPrefsText —
  *     the caller wraps the storage in try/catch).
  *
+ * A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
+ * categories used to appear so that cashiers can easily pick the menu"): with menus, the menus are ALSO a row of big tabs
+ * across the top of the grid ("All", "Food", "Drinks" …, menuBarTabs / menuBarLabel) — the panel then lists only the
+ * chosen menu's categories, for drilling further, and drops its own tabs; a search looks through every menu
+ * (gridMenuScope). With no menus nothing changes: the panel alone, as A537 built it.
+ *
  * Pure (no React, no storage), so the tests run it. Copied verbatim: shared/, apps/desktop/src/shared/ (the till's sale
  * screen), apps/dashboard/src/lib/ (the web POS) — scripts/check-shared-sync.mjs.
  */
@@ -121,6 +127,26 @@ export function inMenuScope(p: ProductLike, scope: MenuScope | null): boolean {
   if (!scope) return true;
   const c = p?.category_id ?? null;
   return c ? scope.categoryIds.has(c) : scope.uncategorised;
+}
+
+// ── A566: the menus as tabs across the top of the grid ───────────────────────────────────────────────────────────────
+/** The row of menus across the top of the grid: the menu tabs when the business uses menus, else [] (no row — the ☰ panel
+ *  alone, exactly as before). */
+export function menuBarTabs(menus: readonly MenuLike[] | null | undefined, categories: readonly CategoryLike[]): MenuTab[] {
+  return menuTabs(menus, categories);
+}
+/** A top tab's words: "All" for every menu (the panel's "All menus"), else the menu's name. */
+export function menuBarLabel(t: MenuTab): string {
+  return t.id === ALL_MENUS ? 'All' : t.name;
+}
+/** A search looks through every menu: while the cashier types, the chosen menu does not narrow the grid. */
+export function gridMenuScope(scope: MenuScope | null, search: string | null | undefined): MenuScope | null {
+  return String(search ?? '').trim() ? null : scope;
+}
+/** Which ends of the sideways menu row hide more tabs (an arrow and a fade show there) — from the row's scroll box. */
+export function menuBarEdges(scrollLeft: number, scrollWidth: number, clientWidth: number): { left: boolean; right: boolean } {
+  const l = Number(scrollLeft) || 0, w = Number(scrollWidth) || 0, c = Number(clientWidth) || 0;
+  return { left: l > 4, right: l + c < w - 4 };
 }
 
 /** The category to keep chosen: still in the list → it, else All (a menu change can take it away). */

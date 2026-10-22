@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
-import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538; A543
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, STAFF_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538; A543; A562
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
@@ -15,6 +15,8 @@ import SignInCodeCard from "./SignInCodeCard";   // A391
 import TestDataCard from "./TestDataCard";   // A396
 import SupportLogsCard from "./SupportLogsCard";   // A519
 import TillsDaysCard from "./TillsDaysCard";   // A523
+import DownloadZapTill from "./DownloadZapTill";   // A570: the installer, through our own server
+import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone } from "./cloudPlan";   // A569
 import AdminPager, { usePageSize } from "./AdminPager";   // A475
 import { paginate } from "./lib/paginate";
 
@@ -115,6 +117,9 @@ function timeAgo(iso) {
   if (d < 604800) return `${Math.floor(d/86400)}d ago`;
   return new Date(iso).toLocaleDateString("en-KE");
 }
+
+// A569: the colours of the cloud plan words (cloudPlan.ts).
+const TONE = { ok: "#34e5a0", warn: "#f59e0b", bad: C.danger, muted: C.muted };
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -383,6 +388,7 @@ const NAV_GROUPS = [
   { title: "Money & support", items: [
     { id: "billing", icon: "◉", label: "Billing" },
     { id: "tech",    icon: "⌘", label: "Tech access" },
+    { id: "download", icon: "⤓", label: "Download ZapTill" },   // A570
   ] },
   { title: "System", items: [
     { id: "team",       icon: "◎", label: "Team", superOnly: true },
@@ -703,11 +709,11 @@ function ClientsPage({ req, onSelectClient }) {
       <div style={S.card}>
         <div className="sp-table-wrap"><table style={S.table}>
           <thead>
-            <tr>{["Client","Type","Status","Currency","Phone","Joined",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+            <tr>{["Client","Type","Status","Plan","Currency","Phone","Joined",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ ...S.td, textAlign: "center", color: C.muted, padding: 40 }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ ...S.td, textAlign: "center", color: C.muted, padding: 40 }}>Loading…</td></tr>
             ) : clients.map(b => (
               <tr key={b.id} style={{ cursor: "pointer" }} onClick={() => onSelectClient(b)}>
                 <td style={S.td}>
@@ -716,6 +722,8 @@ function ClientsPage({ req, onSelectClient }) {
                 </td>
                 <td style={S.td}><TypeIcon type={b.type} size={16} style={{ marginRight: 4, verticalAlign: "middle" }} /> <span style={{ fontSize: 12, color: TYPE_META[b.type]?.color }}>{TYPE_META[b.type]?.label}</span></td>
                 <td style={S.td}><StatusBadge status={b.status} />{isPurgeDue(b) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 20, padding: "2px 7px" }}>purge-due</span>}</td>
+                {/* A569: Desktop / Cloud trial / Cloud trial ended / Cloud / No licence yet */}
+                <td data-testid="client-plan" style={{ ...S.td, fontSize: 12, color: TONE[planTone(b.plan_label)] }}>{b.plan_label || "—"}</td>
                 <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{b.currency}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{b.phone || "—"}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(b.created_at)}</td>
@@ -732,7 +740,7 @@ function ClientsPage({ req, onSelectClient }) {
 }
 
 // ─── CLIENT DETAIL ────────────────────────────────────────────────────────────
-function ClientDetailPage({ client, req, onBack, isSuper = false }) {
+function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false }) {
   const [tab, setTab]     = useState("overview");
   const [detail, setDetail] = useState(null);
   const [features, setFeatures] = useState([]);
@@ -897,10 +905,18 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     finally { setSavingDesktop(false); }
   }
 
-  async function toggleWebHosting(enable) {
-    const confirmMsg = enable
+  // A569: the client's detail again (the cloud trial and the plan in words change with web access and licences).
+  async function reloadDetail() {
+    try {
+      const [d2, f2] = await Promise.all([req("GET", `/clients/${client.id}`), req("GET", `/clients/${client.id}/features`)]);
+      setDetail(d2); setFeatures(f2);
+    } catch { /* the page keeps what it shows */ }
+  }
+
+  async function toggleWebHosting(enable, confirmOverride = null) {
+    const confirmMsg = confirmOverride ?? (enable
       ? 'Enable web portal access? This will allow the client to log into the dashboard. Ensure payment of KES 10,000 has been received.'
-      : 'Disable web portal access? The client will be locked out of the dashboard immediately.';
+      : 'Disable web portal access? The client will be locked out of the dashboard immediately.');
     if (!(await askConfirm(confirmMsg))) return;
 
     try {
@@ -926,7 +942,10 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             currency:    'KES',
           });
         } catch(e) { /* Invoice creation is non-fatal */ }
+        // A569: a cloud trial converted to paid — web access now runs a year; the invoices list shows the new one.
+        req("GET", `/clients/${client.id}/billing`).then(setInvoices).catch(() => {});
       }
+      await reloadDetail();
     } catch(e) { setError(e.message); }
   }
 
@@ -975,7 +994,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
 
     setLicencingBranch(branch.id);
     try {
-      await req("POST", `/clients/${client.id}/branches/${branch.id}/licence`, {
+      const r = await req("POST", `/clients/${client.id}/branches/${branch.id}/licence`, {
         licensed,
         invoice_amount: price ? parseInt(price as string) : null,
         invoice_ref:    ref || null,
@@ -985,6 +1004,11 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           ? { ...b, desktop_licensed: licensed, desktop_licensed_at: licensed ? new Date().toISOString() : null }
           : b
       ));
+      // A569: the first desktop licence started the client's one-month cloud trial (no invoice).
+      await reloadDetail();
+      if (r?.cloud_trial?.ends_at) {
+        await askConfirm(`Licence activated. ${detail?.name ?? "The client"} also gets a one-month cloud trial — the web dashboard until ${fmtDate(r.cloud_trial.ends_at)}. No invoice was raised for it.`);
+      }
     } catch(e) { setError(e.message); }
     finally { setLicencingBranch(null); }
   }
@@ -1237,8 +1261,9 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           <button onClick={() => { setEditForm({ name: d.name ?? "", type: d.type ?? "", currency: d.currency ?? "" }); setEditing(true); }} style={{ ...S.btn, ...S.btnGhost }}>Edit details</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 16 }}>
-          {fact("Web portal", hasWebHosting ? "Active" : "Not enabled", hasWebHosting ? "#34e5a0" : C.danger, () => setTab("billing"))}
-          {fact("Plan", activeSub ? `${activeSub.plans?.name || "Active"} · to ${fmtDate(activeSub.expires_at)}` : "None", activeSub ? C.text : C.muted, () => setTab("billing"))}
+          {/* A569: a cloud trial shows its end; "Plan" reads Desktop / Cloud trial / Cloud, never "None" for a desktop client */}
+          {(() => { const w = webPortalTile(d.cloud_trial, hasWebHosting); return fact("Web portal", w.text, TONE[w.tone], () => setTab("billing")); })()}
+          {(() => { const p = planTile(activeSub, d.plan_label); return fact("Plan", p.text, p.tone === "ok" ? C.text : TONE[p.tone], () => setTab("billing")); })()}
           {fact("Branches", `${branches.length} · ${licensedCount} licensed`, C.text, () => setTab("branches"))}
           {fact("Tills", `${devices.length} enrolled`, C.text, () => setTab("branches"))}
           {fact("Desktop version", d.desktop_approved_version ? `v${d.desktop_approved_version}` : "Held", d.desktop_approved_version ? C.text : "#f59e0b", () => setTab("updates"))}
@@ -1521,7 +1546,22 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
         <>
           <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Web portal access</div>
-            {settingRow(
+            {/* A569: a cloud trial (started with the first desktop licence) — its end, and Convert to paid (the paid flow + invoice) */}
+            {unpaidTrial(d.cloud_trial) ? settingRow(
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <IconGlobe size={18} color={d.cloud_trial.phase === "active" ? "#f59e0b" : C.danger} />
+                {trialBillingLine(d.cloud_trial).title}
+              </span>,
+              trialBillingLine(d.cloud_trial).text,
+              superOnly(<>
+                <button onClick={() => toggleWebHosting(true, `Convert ${d.name}'s cloud trial to paid web access? Web access runs a year from today and an invoice of KES 10,000 is raised. Ensure payment has been received.`)}
+                  style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }} data-testid="trial-convert">Convert to paid</button>
+                {d.cloud_trial.phase === "active" && hasWebHosting && (
+                  <button onClick={() => toggleWebHosting(false, `End ${d.name}'s cloud trial now? The owner is locked out of the web dashboard at once. Tills are not affected.`)}
+                    style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>End trial</button>
+                )}
+              </>),
+              "cloud-trial") : settingRow(
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 {hasWebHosting ? <IconGlobe size={18} color="#22c55e" /> : <IconLock size={18} color={C.danger} />}
                 Web portal {hasWebHosting ? "active" : "not enabled"}
@@ -1653,6 +1693,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           {POS_FEATURES.map(pf => {
             if ((RECEIPT_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
             if ((KITCHEN_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A543: switched below
+            if ((STAFF_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A562: switched below
             const on = features.some(f => f.key === pf.key && f.enabled);
             const perRole = PER_ROLE_SWITCHES[pf.key];
             return (
@@ -1704,6 +1745,22 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{kf?.description}</div>
                 </div>
                 {toggle(on, () => toggleFeature(key, !on), kf?.label ?? key)}
+              </div>
+            );
+          })}
+          {/* A562 (owner, 2026-10-22: "we remove approval pin and add it as a feature we can turn on or off in the admin
+              panel"): off = managers approve with their sign-in PIN and the staff form offers no approval PIN. */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Staff options</div>
+          {STAFF_OPTION_KEYS.map(key => {
+            const sf = POS_FEATURES.find(x => x.key === key);
+            const on = features.some(f => f.key === key && f.enabled);
+            return (
+              <div key={key} data-testid={`staff-feature-${key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{sf?.label ?? key}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{sf?.description}</div>
+                </div>
+                {toggle(on, () => toggleFeature(key, !on), sf?.label ?? key)}
               </div>
             );
           })}
@@ -1787,6 +1844,8 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
         </div>
       )}
       {/* A519: the logs this client's tills sent to support (Tech page › Send logs to support) */}
+      {/* A570: the installer for this client's new till — the version approved for it first, through our own server */}
+      {tab === "updates" && <DownloadZapTill req={req} apiUrl={apiUrl} clientId={client.id} />}
       {tab === "updates" && <SupportLogsCard clientId={client.id} req={req} />}
       {/* A523: every till's open day and drawers — close them for the client (any admin: super admin or agent) */}
       {tab === "tills" && <TillsDaysCard clientId={client.id} req={req} />}
@@ -2580,7 +2639,7 @@ function NewClientPage({ req, onCreated }) {
     <div style={S.content}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>New Client</h1>
-        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0" }}>Create a new business account. A trial subscription is automatically applied.</p>
+        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0" }}>Create a new business account. The one-month cloud trial starts when the first desktop licence is activated.</p>
       </div>
 
       <div style={{ maxWidth: 680 }}>
@@ -2754,7 +2813,7 @@ export default function AdminPortal() {
 
   const pageEl = (() => {
     if (page === "client_detail" && selectedClient)
-      return <ClientDetailPage client={selectedClient} req={req} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} />;
+      return <ClientDetailPage client={selectedClient} req={req} apiUrl={apiUrl} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} />;
     if (page === "new_client") return <NewClientPage req={req} onCreated={(biz) => { setSelectedClient(biz); setPage("client_detail"); }} />;
     if (page === "clients")   return <ClientsPage req={req} onSelectClient={handleSelectClient} />;
     if (page === "billing")   return <BillingPage req={req} />;
@@ -2763,6 +2822,8 @@ export default function AdminPortal() {
     if (page === "account")   return <AccountPage req={req} apiUrl={apiUrl} setApiUrl={setApiUrl} />;
     if (page === "alerts")    return <AlertsPage req={req} isSuper={admin?.role === "super_admin"} />;
     if (page === "tech")      return <TechPage req={req} admin={admin} />;
+    // A570: the latest installer (a super admin can pick any version), streamed through the cloud.
+    if (page === "download")  return <div style={S.content}><DownloadZapTill req={req} apiUrl={apiUrl} /></div>;
     if (page === "migrations") return <MigrationsPage req={(p: string) => req("GET", p, undefined)} />;
     // A525: super admins only — the menu hides it from agents and the cloud refuses them.
     if (page === "system" && admin?.role === "super_admin") return <SystemPage req={req} />;

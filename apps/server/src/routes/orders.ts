@@ -46,6 +46,7 @@ import { settleLateRows } from '../lib/lateRows';   // A522
 import { withoutCosts } from '../lib/costAccess';   // A494
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { isTillOwnSalePush } from '../lib/tillScope';   // A545
+import { webSaleStockRefusal } from '../lib/stockGateStore';   // A563
 import { recordCreditSale } from '../lib/creditConfirm';   // A545
 
 const router = safeRouter();
@@ -764,6 +765,14 @@ router.post('/', sellsOrTillSale, async (req, res) => {   // A505: a till's own 
         return;
       }
     }
+  }
+
+  // ── A563: the owner's "When an item's stock reaches zero" — "show as sold out" or "hide" refuses a LIVE web sale of a
+  // tracked item the branch is known to be out of (409 SOLD_OUT). A till's pushed sale (X-Device-Id, or made with its own
+  // time) already happened and is NEVER refused for stock; unknown stock always sells.
+  if (!deviceIdFromRequest(req) && !(req.body?.created_at || req.body?.client_created_at)) {
+    const soldOut = await webSaleStockRefusal(req.businessId, branch_id, items);
+    if (soldOut) { res.status(409).json(soldOut); return; }
   }
 
   try {
@@ -2357,6 +2366,12 @@ router.post('/:id/pay', sells, async (req, res) => {
     if (order.status !== 'open') {
       res.status(400).json({ error: `Order is already ${order.status}` });
       return;
+    }
+    // A563: an open bill charged on the web — a line that has sold out since it was opened is refused now (only the lines
+    // known to be out). Never a till's (a till charges on itself and pushes the finished sale).
+    if (!deviceIdFromRequest(req) && !req.isTill && req.surface !== 'desktop') {
+      const soldOut = await webSaleStockRefusal(req.businessId, order.branch_id, (order as any).order_items ?? []);
+      if (soldOut) { res.status(409).json(soldOut); return; }
     }
 
     // A494: the customer named must be this business's (their points are deducted below by id), and a redemption is at

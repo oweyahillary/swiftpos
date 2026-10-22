@@ -18,6 +18,10 @@
  *   - /recommendations working the menu out without costs too        → "costs withheld" fails
  *   - itemTimes() with p_branch: null                                 → "a manager is held to their own branch" fails
  *   - the item-times cache key without the period                     → "the cache" fails
+ * A560 (what to stock; never a price rise; voids a warning):
+ *   - stockLevels() reading every branch (no branch check)               → "A560: stock levels" fails
+ *   - stockLevels() keeping a product sold through a recipe, or one not tracked → "A560: stock levels" fails
+ *   - /item-times without `week`                                         → "A560: the week at a glance" fails
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -224,12 +228,14 @@ try {
     const recs = r.body.recommendations;
     assert.ok(recs.length >= 1 && recs.length <= 7);
     const vic = recs.find((x) => x.kind === 'leak');
-    assert.equal(vic.title, 'Talk to Vic about voids');
+    assert.equal(vic.title, "Check Vic's voids", 'A560: a warning to look into');
     assert.equal(vic.evidence, 'leaks');
-    assert.ok(vic.impact > 0 && vic.impactPer === 'month' && vic.assumption.startsWith('If their void rate comes down'));
-    assert.ok(recs.some((x) => x.kind === 'price'), 'costs shown: menu advice (a Plowhorse sold 20 times)');
+    assert.deepEqual([vic.impact, vic.impactPer, vic.warning], [null, null, true], 'no KES estimate');
+    assert.ok(!recs.some((x) => x.kind === 'price'), 'A560: never a price rise');
     for (let i = 1; i < recs.length; i++) assert.ok((recs[i - 1].impact ?? -1) >= (recs[i].impact ?? -1), 'ranked by the estimate');
-    assert.deepEqual(r.body.found.monthly, recs.filter((x) => x.impactPer === 'month').reduce((s, x) => s + x.impact, 0));
+    assert.deepEqual(r.body.found.monthly, recs.filter((x) => x.impactPer === 'month' && !x.warning).reduce((s, x) => s + x.impact, 0));
+    assert.equal(r.body.found.warnings, 1);
+    assert.match(r.body.found.line, /^This period: \d+ things? to act on/);
     assert.match(r.body.summary.good, /^You sold KES 12,720 (from 1 Oct to 21 Oct|in the last 21 days)\.$/, 'nothing sold before: no change claimed (the wording follows the date it runs on)');
     assert.equal(r.body.costsHidden, false);
     assert.ok(!recs.some((x) => x.kind === 'credit'), 'KES 500 over 60 days is under the KES 1,000 floor');
@@ -247,13 +253,14 @@ try {
     assert.equal(rpcs.filter((x) => x.name === 'analytics_credit_ageing').length, 0, 'no customers.view: no credit aggregate');
   });
 
-  await ok('the cache: after /overview and /item-times, /recommendations runs only the heatmap and credit; a repeat runs nothing', async () => {
+  await ok('the cache: after /overview and /item-times, /recommendations runs only the heatmap and credit (and the three of A561); a repeat runs nothing', async () => {
     reset([S.A]);
     await call(`/api/analytics/overview?${PERIOD}`, T.mgr);
     await call(IT(), T.mgr);
     const before = rpcs.length;
     await call(REC(), T.mgr);
-    assert.deepEqual(rpcs.slice(before).map((x) => x.name).sort(), ['analytics_credit_ageing', 'analytics_sales_heatmap']);
+    // A561: plus its own three (stock use, customers, cost watch) — not in this schema (through 161), so left out softly
+    assert.deepEqual(rpcs.slice(before).map((x) => x.name).sort(), ['analytics_cost_watch', 'analytics_credit_ageing', 'analytics_customers', 'analytics_sales_heatmap', 'analytics_stock_use']);
     const n = ROUTE._analyticsCache().rpcCalls();
     await call(REC(), T.mgr);
     await call(IT(), T.mgr);
@@ -275,6 +282,70 @@ try {
       assert.equal(rec.status, 503);
     } finally { supabase.rpc = real; }
     assert.equal((await call(IT(), T.owner)).status, 200, 'a failure is never kept');
+  });
+  // ── A560: what to stock ─────────────────────────────────────────────────────
+  // Tusker sells 10 every day of the period at Westlands (20:00 EAT) and 40 on each Friday — Friday is its busy day.
+  for (const d of ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21']) {
+    const fri = new Date(`2026-10-${d}T12:00:00Z`).getUTCDay() === 5;
+    await sale({ total: (fri ? 40 : 10) * 300, created_at: `2026-10-${d}T17:00:00Z` }, [[TUSKER, 'Tusker', fri ? 40 : 10, (fri ? 40 : 10) * 300]]);
+  }
+  const stockDb = () => {
+    db.products = [{ id: TUSKER, business_id: S.A, name: 'Tusker', track_stock: true }, { id: PILAU, business_id: S.A, name: 'Pilau', track_stock: true }];
+    db.recipes = [{ id: id(), business_id: S.A, product_id: PILAU, ingredient_id: id(), quantity_per_serving: 1 }];
+    db.stock_levels = [{ product_id: TUSKER, branch_id: S.W, quantity: '5.00' }, { product_id: PILAU, branch_id: S.W, quantity: '0.00' },
+      { product_id: TUSKER, branch_id: S.K, quantity: '900.00' }];
+  };
+
+  await ok('A560: the week at a glance — each weekday\'s top 3 with its typical sales', async () => {
+    reset([S.A]);
+    const r = await call(IT(), T.mgr);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.week.length, 7, '1–21 October holds every weekday');
+    const fri = r.body.week.find((d) => d.day === 'Friday');
+    assert.deepEqual([fri.count, fri.top[0].name, fri.top[0].qty], [3, 'Tusker', 40]);
+    assert.ok(r.body.week.every((d) => d.top.length <= 3));
+    assert.equal(r.body.weekdays.length, 7);
+  });
+
+  await ok('A560: stock levels — the branch in view, tracked items without a recipe; stock up for Friday; never a price', async () => {
+    reset([S.A]); stockDb();
+    const r = await call(REC(), T.mgr);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const recs = r.body.recommendations;
+    const low = recs.filter((x) => x.kind === 'stock_low');
+    assert.equal(low.length, 1, JSON.stringify(recs.map((x) => x.title)));
+    assert.match(low[0].title, /^Order about \d+ more Tusker/);
+    assert.equal(low[0].stock.items[0].onHand, 5, 'the branch in view (Westlands 5), not Kilimani (900)');
+    assert.equal(low[0].impactKind, 'at_risk');
+    assert.ok(!recs.some((x) => x.kind === 'stock_low' && /Pilau/.test(x.title)), 'Pilau goes through a recipe: no level read for it');
+    assert.equal(recs[0].kind, 'stock_low', 'a stock-out risk ranks first');
+    const up = recs.find((x) => x.kind === 'stock_up');
+    assert.equal(up.title, 'Stock up for Friday: 45 Tusker');
+    assert.equal(up.why, 'Fridays: you sell about 40 Tusker (vs 15 on an average day).');
+    assert.equal(recs[1].kind, 'stock_up');
+    assert.equal(r.body.stockNote, null);
+    assert.ok(r.body.found.line.includes('stock up for 1 busy day') && r.body.found.line.includes('1 item running low'), r.body.found.line);
+    for (const x of recs) assert.ok(!/price|raise|re-price/i.test(`${x.title} ${x.why} ${x.assumption}`), x.title);
+    // Tusker sold through a recipe: its stock is the ingredients', so no level is read and no running-low card comes
+    reset([S.A]); stockDb();
+    db.recipes.push({ id: id(), business_id: S.A, product_id: TUSKER, ingredient_id: id(), quantity_per_serving: 1 });
+    const viaRecipe = await call(REC(), T.mgr);
+    assert.ok(!viaRecipe.body.recommendations.some((x) => x.kind === 'stock_low'), 'a recipe item: no running-low card');
+    // nor when the product does not track stock
+    reset([S.A]); stockDb();
+    db.products[0].track_stock = false;
+    assert.ok(!(await call(REC(), T.mgr)).body.recommendations.some((x) => x.kind === 'stock_low'), 'track_stock off: no card');
+  });
+
+  await ok('A560: every branch in view with two branches — no stock level read, and the page is told why', async () => {
+    reset([S.A]); stockDb();
+    const r = await call(REC(), T.owner);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok(!r.body.recommendations.some((x) => x.kind === 'stock_low'));
+    assert.equal(r.body.stockNote, 'Pick a branch to see what is running low — stock is counted per branch.');
+    assert.ok(r.body.recommendations.some((x) => x.kind === 'stock_up'), 'stocking up needs no stock level');
+    const one = await call(REC(`&branch=${S.K}`), T.owner);
+    assert.ok(!one.body.recommendations.some((x) => x.kind === 'stock_low'), 'Kilimani holds 900 Tusker');
   });
 } finally {
   server.close();

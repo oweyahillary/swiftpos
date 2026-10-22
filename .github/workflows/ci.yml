@@ -377,6 +377,47 @@ jobs:
           node --no-warnings tests/analytics-rules-a558.test.mjs
           node --no-warnings scripts/test-migration-161.mjs
 
+      # A560 — Analytics suggests what to stock, never a price rise; a cashier's voids a warning only: every stock rule
+      # (the weekday uplift, the suggested quantity, running low with and without stock levels, the week at a glance, the
+      # slow movers), the ranking, the value line, and no generated text that says price or raise. The HTTP side (stock
+      # levels per branch, recipes left out) runs in the A558 step above. Needs the server build.
+      - name: Analytics what to stock (A560) rules
+        run: node --no-warnings tests/analytics-rules-a560.test.mjs
+
+      # A561 — Analytics: how fast stock goes, who comes back, costs and margins, the items without a cost, and the area
+      # tiles: GET /api/analytics/stock, /customers, /costs over HTTP on the REAL migration-158/160/161/162 functions in
+      # PGlite (branch scope, costs and customers withheld, the cache, the cut-off, 503 before 162 while /recommendations
+      # still answers); every new rule (run out, wastage, regulars gone quiet, food cost, thin margin, cost rise, the tiles'
+      # hooks, the 10-row caps, no price wording) and the page's tile helpers; migration 162 on its own. Needs the server
+      # build and PGlite.
+      - name: Analytics stock, customers and costs (A561) and migration 162
+        run: |
+          node --no-warnings tests/analytics-a561.test.mjs
+          node --no-warnings tests/analytics-rules-a561.test.mjs
+          node --no-warnings scripts/test-migration-162.mjs
+
+      # A565 — Analytics suggests moving stock between branches and flags a branch that falls behind: GET
+      # /api/analytics/branches and the move / falling-branch cards in /recommendations over HTTP on the REAL
+      # migration-158/160/161/162 functions in PGlite (the owner and a partner of every branch only; one active branch;
+      # before 162; the cache shared per branch; no quantity or score sent), and every rule (short and surplus, the
+      # internal 14-day floor, the minimum data, grouping, no numbers in the words, the ranking and the run-out de-dupe, the
+      # 10-point gap, the tile). Needs the server build and PGlite.
+      - name: Analytics between branches (A565)
+        run: |
+          node --no-warnings tests/analytics-a565.test.mjs
+          node --no-warnings tests/analytics-rules-a565.test.mjs
+
+      # A569 — a one-month cloud trial starts with the client's first desktop licence: the real admin and business routers
+      # over HTTP (the trial starts with no invoice, once per client, never for a paid client; Convert to paid), the lapse
+      # (a week of reports only, then CLOUD_TRIAL_ENDED), the owner's notice in the last 7 days, the admin portal's words.
+      # A570 — Download ZapTill from the admin portal through our server: the source (our download server wins; GitHub with
+      # the token and octet-stream; neither → 503), admin only, one-use links, streamed, audited, 404 for an unknown version.
+      # Need the server build.
+      - name: Cloud trial (A569) and Download ZapTill (A570)
+        run: |
+          node --no-warnings tests/cloud-trial-a569.test.mjs
+          node --no-warnings tests/installer-download-a570.test.mjs
+
       # A550: partner login — someone on the staff the owner lets into the web dashboard with a password, never the owner
       # (the real auth / staff routers over HTTP) — and the five built-in roles that came with it. They run in the loop
       # below too; named here so a failure says what broke.
@@ -384,6 +425,52 @@ jobs:
         run: |
           node --no-warnings tests/partner-login-a550.test.mjs
           node --no-warnings tests/partner-roles-a550.test.mjs
+
+      # A562: the Staff page's edit form shows the person's real role (the owner's role given to nobody, the owner's own
+      # account kept); the approval PIN is a per-client switch in the admin portal (off: a new one refused, one already set
+      # still approves). The real staff / orders routers over HTTP, the till-change applier, the form's role picker run.
+      # Runs in the loop below too; named here so a failure says what broke.
+      - name: Staff form role and the approval PIN switch (A562)
+        run: node --no-warnings tests/staff-a562.test.mjs
+
+      # A564: another branch's stock and asking it for an item — GET /api/stock/other-branches (inventory.view, this business,
+      # quantities only, never a cost, the blind count) and the request lifecycle (ask for your own branch, accept → an
+      # ordinary transfer despatched and received through PATCH /transfers/:id/status, decline with a reason, cancel, the
+      # branch-scope refusals, the owner and partners, a till's PIN sign-in vs its own sign-in) over HTTP on the real
+      # routers; migration 163 on its own (PGlite). Runs in the loops too; named here so a failure says what broke.
+      - name: Other branches' stock and requests (A564) and migration 163
+        run: |
+          TZ=UTC node --no-warnings tests/branch-stock-a564.test.mjs
+          node --no-warnings scripts/test-migration-163.mjs
+
+      # A566: the menus as big tabs across the top of the web POS's grid again (CashierScreen and MinimartPOS) — the bar
+      # and the panel under it rendered (react-dom/server), the menu narrowing the grid, a search looking through every menu.
+      # Runs in the loop below too; named here so a failure says what broke.
+      - name: Web POS menus as top tabs (A566)
+        run: node --no-warnings tests/menus-top-a566.test.mjs
+
+      # A563: when an item's stock reaches zero — sell as normal, show as sold out, or hide (the owner's choice, two POS
+      # switches). The real controls / pos / orders routers over HTTP: the owner's setting and its sync, a live web sale of
+      # a sold-out item refused (409 SOLD_OUT), a till's pushed sale never refused, the web POS's view. Runs in the loop
+      # below too; named here so a failure says what broke.
+      - name: When stock reaches zero (A563)
+        run: node --no-warnings tests/stock-zero-a563.test.mjs
+
+      # A567: giving an existing customer a credit limit (Credit Accounts' "+ Give credit", the profile, New Customer —
+      # customers.credit, audited, then on the till's list). A568: the owner's first-sign-in password change is enforced
+      # (no timestamp inference; only a new password clears it; the admin reset forces again). The real routers over HTTP.
+      # Run in the loop below too; named here so a failure says what broke.
+      - name: Credit limits (A567) and the forced password change (A568)
+        run: |
+          TZ=UTC node --no-warnings tests/credit-limit-a567.test.mjs
+          node --no-warnings tests/owner-password-a568.test.mjs
+
+      # A571: barcodes and labels — the encoders against published references (EAN-13 / UPC-A tables, Code 128 values,
+      # check digits, subset switching), in-store codes (prefix 20), the label layout on every size, the sheet grid and
+      # "start at N", TSPL / ZPL / ESC/POS golden output, the web's print page; POST /api/products/barcodes/generate and
+      # the label settings over HTTP (menu.edit, never over a barcode, two at once never duplicate). Runs in the loop too.
+      - name: Barcodes and labels (A571)
+        run: TZ=UTC node --no-warnings tests/barcode-labels-a571.test.mjs
 
       - name: Run offline suites
         run: |
@@ -844,9 +931,22 @@ jobs:
       # A552 — sales on account at the till: offered only with a credit customer, the customer required, the limit, the
       # approver (customers.credit, or a manager's PIN of this branch, never the asker), saved offline with the balance
       # moved, pushed naming who approved; the branch server's copy for its tills; the receipt; day close not counting it as cash.
+      # A559: finding the customers (and selling on account) needs customers.view or customers.credit, checked in main.
       - name: Desktop sales on account (A552)
         working-directory: apps/desktop
         run: node --no-warnings test/credit-sale-a552.test.mjs
+
+      # A559 — a till sale through queueThermal → printSale: its extras ("+ Extra Cheese") and its notes on the kitchen
+      # ticket, the extras not counted as dishes, a soda's extra kept off the kitchen; the packer still sees every extra.
+      - name: Desktop extras and notes on the kitchen ticket (A559)
+        working-directory: apps/desktop
+        run: node --no-warnings test/kitchen-extras-a559.test.mjs
+
+      # A563 — when an item's stock reaches zero on the till: the real order:create refuses a line its branch's known levels
+      # do not cover (sold out / hide); unknown stock and untracked items always sell; the grid hides or greys; the switches sync.
+      - name: Desktop when stock reaches zero (A563)
+        working-directory: apps/desktop
+        run: node --no-warnings test/stock-zero-a563.test.mjs
 
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
@@ -1192,6 +1292,14 @@ jobs:
           TZ: UTC
         run: node --no-warnings test/menus-a537.test.mjs
 
+      # A566 — the menus as big tabs across the top of the till's selling screen again (the ☰ panel then lists only the
+      # chosen menu's categories; no menus → no bar, the panel alone); a search looks through every menu; A563's hide /
+      # sold out kept; "Check other branches" from the selling screen (a search that finds an item out here, a long press
+      # or right-click on a tile) only with inventory.view and the online licence, A564's lookup read only.
+      - name: Desktop menus as top tabs and check other branches (A566)
+        working-directory: apps/desktop
+        run: node --no-warnings test/menus-top-a566.test.mjs
+
       # A544 — per-branch branding: local schema 74 (branch_branding); the whole pull, a change and the themes switch store
       # this branch's override (an older cloud leaves it, another branch's never kept); the resolver (branch → business →
       # default per field; themes off → ignored); the receipt prints the branch's footer in the owner's box, the closing
@@ -1201,6 +1309,20 @@ jobs:
         env:
           TZ: UTC
         run: node --no-warnings test/branch-branding-a544.test.mjs
+
+      # A564 — Manager › Stock › Other branches on the till: the lookup and the requests through the branch server's gateway
+      # (A410) with the person's own sign-in; offline "Needs a connection"; a refusal keeps the cloud's words; the keys
+      # (inventory.view to look, inventory.transfer to ask and answer) and the online licence; the tab and its count.
+      - name: Desktop other branches' stock (A564)
+        working-directory: apps/desktop
+        run: node --no-warnings test/branch-stock-a564.test.mjs
+
+      # A571 — Manager › Stock › Labels on the till: the real labels IPC on real SQLite, the printers stood in — TSPL / ZPL
+      # to the label printer's address, ESC/POS to the Till station's printer, the Windows-driver page at the label's size;
+      # the keys (menu.edit or inventory.view), the online licence, the cloud's settings kept for offline; the tab.
+      - name: Desktop barcode labels (A571)
+        working-directory: apps/desktop
+        run: node --no-warnings test/labels-a571.test.mjs
 
       # A541 — tills and branch servers stuck on an old version since the A513 autostart install their update: a start at
       # Windows sign-in installs an approved, newer, downloaded update before serving (the updater task, else the

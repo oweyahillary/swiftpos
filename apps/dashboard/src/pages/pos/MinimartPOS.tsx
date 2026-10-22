@@ -54,8 +54,8 @@ import type { CartItem } from '../../lib/cart';
 import { cartSubtotal, extractTaxes } from '../../lib/cart';
 import { useBusiness } from '../../context/BusinessContext';
 import type { Product, Category, Menu } from '../../types';
-import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip } from './cashier/CategoryPanel';   // A537
-import { ALL_MENUS, categoriesForMenu, inMenuScope, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar } from './cashier/CategoryPanel';   // A537; A566
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
 import { exactFirst } from '../../lib/paginate';   // A472
 import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 
@@ -170,7 +170,13 @@ export default function MinimartPOS({
   }, [menuCats, activeCategory]);
   const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c) => c.id === activeCategory)?.name ?? null);
   const chosenMenuName = menuTabs(menus, categories).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
-  const catChip = chosenCategoryName ?? (chosenMenuName ? `${chosenMenuName} menu` : null);
+  // A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
+  // categories used to appear so that cashiers can easily pick the menu"): with menus they are big tabs across the top
+  // of the grid (MenuBar) and the chip names only the chosen category; a tap on a menu shows its items (its category and
+  // any search start again). No menus: no bar, as before.
+  const menuBar = useMemo(() => menuBarTabs(menus, categories), [menus, categories]);
+  const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); setCatalogueSearch(''); };
+  const catChip = chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} menu` : null);
   const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
   // ── Scan bar ───────────────────────────────────────────────────────────────
@@ -379,7 +385,7 @@ export default function MinimartPOS({
   // ── Filtered catalogue ─────────────────────────────────────────────────────
   const filteredProducts = products.filter(p => {
     if (activeCategory !== 'all' && p.category_id !== activeCategory) return false;
-    if (!inMenuScope(p, menuFilterScope)) return false;   // A537: a menu chosen = its categories only
+    if (!inMenuScope(p, gridMenuScope(menuFilterScope, catalogueSearch))) return false;   // A537: a menu chosen = its categories only; A566: a search looks through every menu
     if (catalogueSearch) {
       const q = catalogueSearch.toLowerCase();
       return (
@@ -523,11 +529,13 @@ export default function MinimartPOS({
               />
               <CategoryChip label={catChip} onClear={clearCatChip} />
             </div>
+            {/* A566: the menus as big tabs across the top of the catalogue (none when the business has no menus). */}
+            <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} />
 
             <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
             <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}
               activeMenu={activeMenu} activeCategory={activeCategory}
-              onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={isPhone} />
+              onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={isPhone} menuBar={menuBar.length > 0} />
 
             {/* Product grid */}
             <div ref={grid.rootRef} style={s.productGrid}>

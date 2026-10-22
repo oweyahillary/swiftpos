@@ -84,7 +84,7 @@ ok('the phone\'s cart sheet slides up (only on a phone)', /data-testid="pos-cart
 ok('the cart bar rises in', /data-testid="pos-cart-bar" className="animate-slide-up"/.test(pos));
 
 // ── the web POS answers a tap ──
-const tile = pos.slice(pos.indexOf('data-testid="product-card"'), pos.indexOf('data-testid="product-card"') + 600);
+const tile = pos.slice(pos.indexOf('data-testid="product-card"'), pos.indexOf('data-testid="product-card"') + 1200);   // A563: + the sold-out badge
 ok('a product tile presses', /className="press"/.test(tile));
 ok('the tile\'s in-cart badge bumps when its quantity changes (the key remounts it)',
   /<span key=\{cartQty\} data-testid="cart-badge" className="animate-bump" style=\{s\.cartBadge\}>\{cartQty\}<\/span>/.test(tile));

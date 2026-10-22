@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
+import OtherBranchesPanel from '../../components/OtherBranchesPanel';   // A564
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,8 @@ export default function POSInventoryTab() {
   const [error, setError]     = useState('');
   const [search, setSearch]   = useState('');
   const [filter, setFilter]   = useState<'all' | 'low' | 'out'>('all');
+  // A564: this branch's stock, or another branch's (and, with inventory.transfer, asking it for some).
+  const [view, setView]       = useState<'here' | 'others'>('here');
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -94,8 +97,26 @@ export default function POSInventoryTab() {
   const paged = paginate(filtered, page, pageSize);
   useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
+  const viewTabs = (
+    <div style={s.chips}>
+      {([['here', 'This branch'], ['others', 'Other branches']] as const).map(([key, label]) => (
+        <button key={key} data-testid={`pos-stock-view-${key}`} style={{ ...s.chip, ...(view === key ? s.chipActive : {}) }}
+          onClick={() => setView(key)}>{label}</button>
+      ))}
+    </div>
+  );
+  if (view === 'others') {
+    return (
+      <div style={s.root}>
+        {viewTabs}
+        <OtherBranchesPanel http={posApi} canRequest={hasPermission('inventory.transfer')} />
+      </div>
+    );
+  }
+
   return (
     <div style={s.root}>
+      {viewTabs}
       {/* Filter chips */}
       <div style={s.chips}>
         {([

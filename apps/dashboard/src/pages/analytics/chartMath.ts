@@ -125,3 +125,52 @@ export function itemGrid(cells: [number, number, number, number][]): { qty: numb
   }
   return { qty, max, hours: hi >= 0 ? { from: lo, to: hi } : null, peak };
 }
+
+// ── A561: the area tiles, the order-type mix, days left ──────────────────────
+
+export type AreaKey = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'stock' | 'branches' | 'customers' | 'costs';
+/** The tiles' order: the four A549 areas, then stock, branches (A565), customers and costs. */
+export const AREA_ORDER: AreaKey[] = ['menu', 'heatmap', 'leaks', 'credit', 'stock', 'branches', 'customers', 'costs'];
+export interface AreaHook { text: string; alert: boolean; hidden: boolean }
+
+/**
+ * The tiles a person sees: a tile the cloud marks hidden goes (credit, costs); costs also go when costs are hidden. A565:
+ * Branches shows only when the cloud says so (two or more branches and a viewer who sees every branch) — never by default.
+ */
+export function visibleAreas(hooks: Partial<Record<AreaKey, AreaHook>> | null | undefined, costsHidden: boolean): AreaKey[] {
+  return AREA_ORDER.filter((k) => !(hooks?.[k]?.hidden) && !(k === 'costs' && costsHidden) && !(k === 'branches' && !hooks?.branches));
+}
+
+/** `?tab=stock` → the area, when it is one the person sees; anything else → null. */
+export function areaFromQuery(search: string, allowed: AreaKey[]): AreaKey | null {
+  const v = new URLSearchParams(search).get('tab');
+  return v && (allowed as string[]).includes(v) ? (v as AreaKey) : null;
+}
+
+/** The tile the arrow keys move to (wrapping), Home / End to the first / last; any other key stays. */
+export function nextArea(list: AreaKey[], current: AreaKey, key: string): AreaKey {
+  if (!list.length) return current;
+  const i = Math.max(0, list.indexOf(current));
+  if (key === 'ArrowRight' || key === 'ArrowDown') return list[(i + 1) % list.length];
+  if (key === 'ArrowLeft' || key === 'ArrowUp') return list[(i - 1 + list.length) % list.length];
+  if (key === 'Home') return list[0];
+  if (key === 'End') return list[list.length - 1];
+  return current;
+}
+
+/** Days left in words: "out now", "under a day", "about 2 days", "about 3 weeks"; unknown → "—". */
+export function daysLeftWords(d: number | null | undefined): string {
+  if (d === null || d === undefined || !Number.isFinite(d)) return '—';
+  if (d <= 0) return 'out now';
+  if (d < 1) return 'under a day';
+  if (d < 14) { const n = Math.round(d); return `about ${n} ${n === 1 ? 'day' : 'days'}`; }
+  if (d < 70) return `about ${Math.round(d / 7)} weeks`;
+  return 'over 10 weeks';
+}
+
+/** A change against the previous period in words for a table cell: "+25%", "−10%", "new", "—". */
+export function changeCell(change: number | null | undefined, prev: number): string {
+  if (change === null || change === undefined || !Number.isFinite(change)) return prev > 0 ? '—' : 'new';
+  const p = Math.round(change * 100);
+  return p === 0 ? 'same' : `${p > 0 ? '+' : '−'}${Math.abs(p)}%`;
+}

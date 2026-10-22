@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     notePicks: () => ipcRenderer.invoke('pos:notePicks'),   // A367
     features: () => ipcRenderer.invoke('pos:features'),     // 0.6.27
     stockCountFreeze: () => ipcRenderer.invoke('pos:stockCountFreeze'),   // A394
+    stockView: () => ipcRenderer.invoke('pos:stockView'),   // A563
     approveFrozenSale: (pin: string, product_id: string) => ipcRenderer.invoke('pos:approveFrozenSale', { pin, product_id }),   // A521
     history: () => ipcRenderer.invoke('pos:history'),       // 0.6.27
     reversalRules: () => ipcRenderer.invoke('pos:reversalRules'),   // 0.6.30
@@ -148,6 +149,21 @@ contextBridge.exposeInMainWorld('swiftpos', {
     status:   (body: { id: string; status: 'in_transit' | 'received' | 'cancelled'; reason?: string;
                 received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
       ipcRenderer.invoke('transfers:status', body),
+  },
+  // A564: another branch's stock, and asking that branch for an item (online licence).
+  branchStock: {
+    find:     (q: string, product_id?: string) => ipcRenderer.invoke('branchStock:find', { q, product_id }),
+    requests: () => ipcRenderer.invoke('branchStock:requests'),
+    request:  (from_branch_id: string, product_id: string, quantity: number, note?: string) =>
+      ipcRenderer.invoke('branchStock:request', { from_branch_id, product_id, quantity, note }),
+    decide:   (id: string, step: 'accept' | 'decline' | 'cancel', extra?: { reason?: string; quantity?: number }) =>
+      ipcRenderer.invoke('branchStock:decide', { id, step, ...(extra ?? {}) }),
+  },
+  // A571: barcode labels on any printer and any label size.
+  labels: {
+    setup: () => ipcRenderer.invoke('labels:setup'),
+    save:  (body: { settings?: unknown; printer?: unknown }) => ipcRenderer.invoke('labels:save', body),
+    print: (body: { items: Array<{ product_id: string; copies: number }>; path?: string; settings?: unknown }) => ipcRenderer.invoke('labels:print', body),
   },
   // A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in.
   monthly: {

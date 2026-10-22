@@ -36,6 +36,8 @@ interface WebSession {
   permissions:  Record<string, boolean>;
   allBranches:  boolean;
   branchIds:    string[] | null;
+  /** A568: the owner still has the password they were given — /change-password first. */
+  mustChangePassword?: boolean;
 }
 
 interface PermissionsContextType {
@@ -47,6 +49,10 @@ interface PermissionsContextType {
   isPartner:       boolean;
   loading:         boolean;
   refresh:         () => void;
+  /** A568: the owner must set a new password before using the dashboard (ProtectedRoute sends them there). */
+  mustChangePassword: boolean;
+  /** A568: the forced page set a new password — let them in without waiting for the session to be read again. */
+  passwordChanged: () => void;
 }
 
 const PermissionsContext = createContext<PermissionsContextType | null>(null);
@@ -55,6 +61,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const [permissionKeys,  setPermissionKeys]  = useState<Set<string>>(new Set());
   const [isPartner,       setIsPartner]       = useState(false);
+  const [mustChange,      setMustChange]      = useState(false);
   const [loading,         setLoading]         = useState(true);
   const [tick,            setTick]            = useState(0);
 
@@ -63,6 +70,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       // Sign-out: clear immediately
       setPermissionKeys(new Set());
       setIsPartner(false);
+      setMustChange(false);
       setLoading(false);
       return;
     }
@@ -76,6 +84,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         if (!live) return;
         const partner = s?.partner === true && s?.owner !== true;
         setIsPartner(partner);
+        setMustChange(!partner && s?.mustChangePassword === true);
         setPermissionKeys(partner ? expandMap(s.permissions ?? {}) : new Set(['*']));
       })
       .catch(() => {
@@ -92,6 +101,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   }, [session?.user.id, tick]);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
+  const passwordChanged = useCallback(() => setMustChange(false), []);
 
   const can = useCallback((key: string): boolean => {
     if (permissionKeys.has('*')) return true;
@@ -100,7 +110,8 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
   return (
     <PermissionsContext.Provider
-      value={{ permissionKeys, can, isOwner: !isPartner, isPartner, loading, refresh }}
+      value={{ permissionKeys, can, isOwner: !isPartner, isPartner, loading, refresh,
+        mustChangePassword: mustChange, passwordChanged }}
     >
       {children}
     </PermissionsContext.Provider>

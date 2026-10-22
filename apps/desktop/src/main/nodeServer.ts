@@ -745,6 +745,9 @@ export function startNodeServer(): void {
       }
       // A552: the customers a till sells to on account (limit, balance) — this server's copy of the cloud's list, read again
       // when older than a minute, and how old it is (the till adds its own sales the cloud had not taken). A proven till only.
+      // A559: no person's key here, like every /node route (they prove the TILL, not who is signed in on it — /node/report,
+      // /node/roster too): the till pulls this with its catalogue, signed in or not, into its own copy. Who may SEE the
+      // list is decided on the till, in main (ipc/credit.ts credit:customers and order:create: customers.view or .credit).
       if (req.method === 'GET' && url === '/node/credit-customers') {
         if (!requireProven(req, res, '/node/credit-customers')) return;
         const a = await answerCreditCustomers();

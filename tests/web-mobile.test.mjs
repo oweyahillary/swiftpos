@@ -64,7 +64,7 @@ ok('A464: the bar and the product list clear the iPhone home bar',
 // sideways category bar (its fade and scroll-into-view) is gone — on a phone the category panel lies over the grid.
 ok('A537: the category bar became the ☰ panel — on a phone it lies over the grid (A464\'s fade retired)',
   !/catMore/.test(pos) && !/s\.catRow/.test(pos)
-  && /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{isPhone\} \/>/.test(pos) && /<PanelToggle panel=\{catPanel\} \/>/.test(pos));
+  && /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{isPhone\}(?: menuBar=\{menuBar\.length > 0\})? \/>/.test(pos) && /<PanelToggle panel=\{catPanel\} \/>/.test(pos));
 ok('the POS dialogs fit a phone', /maxWidth: 340, maxHeight: '90dvh', overflowY: 'auto'/.test(pos) && !/width: 340,/.test(pos));
 ok('the POS fills the dynamic viewport', (pos.match(/height: '100dvh'/g) || []).length >= 2 && !/height: '100vh'/.test(pos));
 

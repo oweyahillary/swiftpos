@@ -31,6 +31,8 @@ import { registerCreditHandlers } from './ipc/credit';
 import { registerKitchenHandlers } from './ipc/kitchen';
 import { registerMenuHandlers, registerMenuOptionHandlers } from './ipc/menu';
 import { registerWastageHandlers, registerTransferHandlers } from './ipc/stock';
+import { registerBranchStockHandlers } from './ipc/branchStock';   // A564
+import { registerLabelHandlers } from './ipc/labels';   // A571
 import { registerStaffHandlers, registerStaffUpdateHandlers } from './ipc/staff';
 import { registerMonthlyHandlers } from './ipc/monthly';
 import { registerBranchSettingsHandlers } from './ipc/branchSettings';
@@ -69,6 +71,8 @@ export function registerIpcHandlers() {
   registerMenuOptionHandlers(ctx);   // menu.ts
   registerStaffHandlers(ctx);
   registerTransferHandlers(ctx);   // stock.ts
+  registerBranchStockHandlers(ctx);   // A564: other branches' stock, and asking them for it
+  registerLabelHandlers(ctx);   // A571: barcode labels on any printer and any label size
   registerMonthlyHandlers(ctx);
   registerStaffUpdateHandlers(ctx);   // staff.ts
   registerBranchSettingsHandlers(ctx);

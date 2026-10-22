@@ -103,6 +103,20 @@ services:
       - key: OPS_INGEST_TOKEN
         sync: false
 
+      # ── Desktop releases (A348, A570) — optional ─────────────────────────────
+      # GITHUB_RELEASES_TOKEN: a read-only GitHub token (fine-grained, Contents: read on the releases repository). The
+      # tills' update feed and the admin portal's release list read GitHub Releases with it (5,000 calls an hour, and a
+      # PRIVATE repository), and the admin portal's "Download ZapTill" streams the installer with it. Unset: updates work
+      # only while the repository is public, and Download ZapTill answers 503 unless DESKTOP_DOWNLOAD_BASE_URL is set.
+      # DESKTOP_DOWNLOAD_BASE_URL: our own download server (the planned VPS / object storage), e.g. https://dl.example/apps
+      # — serves {base}/ZapTill-<version>.exe and optionally {base}/latest-<version>.yml. When set it WINS over GitHub for
+      # Download ZapTill (lib/installerSource.ts). DESKTOP_RELEASES_REPO (owner/repo) is optional; default
+      # oweyahillary/swiftpos.
+      - key: GITHUB_RELEASES_TOKEN
+        sync: false
+      - key: DESKTOP_DOWNLOAD_BASE_URL
+        sync: false
+
       # ── Mail — optional, degrades gracefully ────────────────────────────────
       # lib/mailer.ts:16 guards on presence; unset simply disables outbound mail.
       # Needed for owner notifications (e.g. device_pending) and daily summaries.

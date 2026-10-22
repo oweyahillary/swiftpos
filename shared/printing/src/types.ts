@@ -54,6 +54,12 @@ export interface OrderUnit {
   chosen: boolean;
   attributes: UnitAttribute[];
   stationIds: string[];
+  /**
+   * A559: an extra the customer added to the line ("Extra Cheese"). It prints under its dish ("+ Extra Cheese") on the
+   * stations its line goes to and on dispatch, but it is not a dish of its own: it never earns a line a place on a ticket
+   * (the line's own routing does) and it is not counted in "items to cook".
+   */
+  modifier?: boolean;
 }
 
 export interface OrderLine {

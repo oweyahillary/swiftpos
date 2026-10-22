@@ -17,6 +17,9 @@
 //   - markSynced not stamping synced_at                                     → "after the push the cloud's balance carries it" fails
 //   - buildCloudOrderPayload keeping credit_pin                             → "never the PIN" fails
 //   - the Z-report counting credit as cash                                  → "day close: on account is its own line" fails
+//   - A559: credit:customers without the mayFindCreditCustomers check        → "refused without customers.view …" fails
+//   - A559: prepareCreditSale without it                                     → "order:create refuses …" fails
+//   - A559: mayFindCreditCustomers on customers.view only                    → "allowed with customers.credit" fails
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -57,7 +60,8 @@ E.configureSyncEngine('http://cloud', 'acc', 'ref');
 db.prepare(`INSERT INTO products (id, name, base_price, status) VALUES ('p-chips', 'Chips', 200, 'active')`).run();
 
 const V2 = (keys) => JSON.stringify({ 'catalogue.v2': true, ...Object.fromEntries(keys.map((k) => [k, true])) });
-const CASHIER = { id: 'u-cate', name: 'Cate', roleName: 'cashier', permissions: V2(['orders.create']) };
+// A559: a cashier who sells on account holds customers.view (the built-in cashier role does); Nia below does not.
+const CASHIER = { id: 'u-cate', name: 'Cate', roleName: 'cashier', permissions: V2(['orders.create', 'customers.view']) };
 const MANAGER = { id: 'u-max', name: 'Max', roleName: 'Manager', permissions: V2(['orders.create', 'customers.credit']) };
 // The till's saved sign-ins (A446: each till keeps its branch's PINs): Max (manager, this branch), Cate (cashier),
 // Mo (a manager saved for ANOTHER branch), Sue (a supervisor without customers.credit).
@@ -261,6 +265,40 @@ console.log('\nDay close: on account is its own line, never cash');
   const expected = S.expectedMethods(z.shift.id);
   ok('…and per method: credit expected as credit, never in cash (cash = float 1000 + 280)', expected.credit === 320 && expected.cash === 1280, JSON.stringify(expected));
   void cashSale;
+}
+
+console.log('\nA559: finding the customers needs customers.view or customers.credit (the web POS\'s rule)');
+{
+  // The real IPC handler (ipc/credit.ts), registered on a stand-in `handle`, with the person in staff_session.
+  const handlers = {};
+  const { registerCreditHandlers } = require(path.join(dist, 'ipc', 'credit.js'));
+  registerCreditHandlers({ handle: (name, fn) => { handlers[name] = fn; }, requireKey: () => {}, creditOffline: () => true, manageFetch: async () => null });
+  const ask = () => handlers['credit:customers'](null, { search: '' });
+  globalThis.__online = false;
+  const NIA = { id: 'u-nia', name: 'Nia', roleName: 'cashier', permissions: V2(['orders.create']) };
+  const VIEWER = { id: 'u-vic', name: 'Vic', roleName: 'cashier', permissions: V2(['orders.create', 'customers.view']) };
+  const CREDITOR = { id: 'u-cal', name: 'Cal', roleName: 'Supervisor', permissions: V2(['orders.create', 'customers.credit']) };
+  ok('the rule: customers.view or customers.credit (the owner always); neither → no', K.mayFindCreditCustomers(VIEWER) && K.mayFindCreditCustomers(CREDITOR)
+    && K.mayFindCreditCustomers({ id: 'u-o', name: 'O', roleName: 'owner', permissions: '{}' }) && !K.mayFindCreditCustomers(NIA) && !K.mayFindCreditCustomers(null));
+  signIn(NIA);
+  let r = await ask();
+  ok('credit:customers refused without customers.view or customers.credit: not offered, no list (no On account button)',
+    r.offered === false && r.customers.length === 0 && r.selfApproves === false, JSON.stringify(r));
+  signIn(VIEWER);
+  r = await ask();
+  ok('…allowed with customers.view: offered, the list, a manager\'s PIN still approves it', r.offered === true && r.customers.length >= 1 && r.selfApproves === false, JSON.stringify(r));
+  signIn(CREDITOR);
+  r = await ask();
+  ok('…allowed with customers.credit (it approves itself)', r.offered === true && r.customers.length >= 1 && r.selfApproves === true, JSON.stringify(r));
+  const m = await throwsMsg(() => K.prepareCreditSale(sale(30, onAcct(10), { customer_id: 'c-acme', credit_pin: '1111' }), { asker: NIA, db, enabled: null, verify: async () => MANAGER }));
+  ok('order:create refuses a sale on account by someone without the key — even with a manager\'s PIN', m === K.NO_CUSTOMER_ACCESS, m);
+  const p = sale(31, onAcct(10), { customer_id: 'c-acme', credit_pin: '1111' });
+  const okView = await K.prepareCreditSale(p, { asker: VIEWER, db, enabled: null, verify: async () => MANAGER });
+  ok('…with customers.view the sale goes ahead on the manager\'s PIN', okView?.approver.id === 'u-max', JSON.stringify(okView?.approver));
+  const pc = sale(32, onAcct(10), { customer_id: 'c-acme' });
+  ok('…with customers.credit, on their own approval', (await K.prepareCreditSale(pc, { asker: CREDITOR, db, enabled: null }))?.approver.id === 'u-cal');
+  const src = fs.readFileSync(path.join(srcDir, 'main', 'ipc', 'credit.ts'), 'utf8');
+  ok('the check is in MAIN, before the list is read', /if \(!mayFindCreditCustomers\(person\)\) return \{ offered: false[^\n]*\n\s+await ensureCreditCustomers\(\)/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

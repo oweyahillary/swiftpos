@@ -20,6 +20,8 @@ import { posApi, ZReport } from '../lib/posApi';
 import { methodLabel } from '../../shared/paymentCatalogue';   // A452
 import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import TransfersTab from '../components/TransfersTab';   // A197
+import BranchStockTab from '../components/BranchStockTab';   // A564
+import LabelsTab from '../components/LabelsTab';   // A571
 import MonthlyPackTab from '../components/MonthlyPackTab';   // A466
 import CreditSalesTab from '../components/CreditSalesTab';   // A545
 import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';   // A441
@@ -2000,6 +2002,13 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
 
   // A460: the online licence — offers, variants / combos, wastage and transfers are shown only with it.
   const online = useOnlineLicence();
+  // A564: requests from other branches waiting for this branch's answer — read once when the screen opens (no polling);
+  // the Other branches page refreshes it after each answer.
+  const [branchRequests, setBranchRequests] = useState(0);
+  useEffect(() => {
+    if (!online || !can(staff, 'inventory.transfer')) return;
+    posApi.branchStock.requests().then((r) => { if (r.ok && r.data) setBranchRequests(Number(r.data.incoming_open) || 0); }).catch(() => {});
+  }, [online]);
   // A520: the branch server (node / office) shows Close Branch alone under Close.
   const [isBranchServer, setIsBranchServer] = useState(false);
   useEffect(() => {
@@ -2049,6 +2058,9 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canWaste: has('inventory.waste'),   // A414
     online,   // A460
     canTransfer: has('inventory.transfer'),   // A197
+    canBranchStock: has('inventory.view'),   // A564: another branch's stock (asking for it: inventory.transfer)
+    branchRequests,   // A564
+    canLabels: hasAny('menu.edit', 'inventory.view'),   // A571: barcode labels
   });
   const GROUP_ICON: Record<GroupKey, string> = {
     overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,
@@ -2118,6 +2130,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'stock':   return showStock ? <StockTab currency={currency} /> : <RetailOverview currency={currency} />;
       case 'wastage': return online ? <TillWastage /> : <RetailOverview currency={currency} />;   // A414; A460
       case 'transfers': return online ? <TransfersTab /> : <RetailOverview currency={currency} />;   // A197
+      case 'labels': return online ? <LabelsTab /> : <RetailOverview currency={currency} />;   // A571
+      case 'branchstock': return online ? <BranchStockTab canRequest={has('inventory.transfer')} onCount={setBranchRequests} /> : <RetailOverview currency={currency} />;   // A564
       // A466: the web's Monthly pack; recording for the books as the web gates it (expenses.manage).
       case 'monthly': return <MonthlyPackTab currency={currency} canRecord={has('expenses.manage')} />;
       // A545: every sale on account, confirmed or disputed by a manager (as themselves; offline kept and sent later).

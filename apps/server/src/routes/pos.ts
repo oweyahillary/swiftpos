@@ -35,6 +35,8 @@ import { initAnswer, setInitBuilder, type BuiltInit } from '../lib/posInit';   /
 import { changesAnswer, ChangesUnavailable } from '../lib/syncChanges';         // A531
 import { menusForPos } from '../lib/menus';                                    // A537
 import { servedBranchBranding } from '../lib/branchBrandingStore';             // A544
+import { businessOutOfStockMode, branchStockView } from '../lib/stockGateStore';  // A563
+import { assertBranchAccess } from '../middleware/rbac';                        // A563
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -715,6 +717,25 @@ setInitBuilder(buildInit);   // A531: lib/posInit.ts keeps what this builds
 // session (it pulls with it, like the staff list) or a person signed in on a till. No permission key: the till's own
 // session holds none of the customer keys (tillScope), and who may SELL on account is decided at the sale (A511 / A552).
 // `at` = when this was read: the till counts its own credit sales the cloud had not yet taken on top of the balance.
+// A563 — GET /api/pos/stock-view?branch_id= : the owner's "When an item's stock reaches zero" choice and, unless it is
+// "sell", the branch's known levels of tracked items and the combos' items — the web POS greys ("Sold out") or hides
+// an item that is out (lib/stockGate.ts) and checks again every 30 s. The cloud refuses the sale too (POST /orders).
+router.get('/stock-view', async (req, res) => {
+  const branchId = String(req.query.branch_id ?? '');
+  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  try {
+    const { data: br } = await supabase.from('branches').select('id').eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
+    if (!br) { res.status(404).json({ error: 'Branch not found' }); return; }
+    const mode = await businessOutOfStockMode(req.businessId);
+    const view = mode === 'sell' ? { levels: {}, combos: {} } : await branchStockView(req.businessId, branchId);
+    res.set('Cache-Control', 'no-store');
+    res.json({ mode, ...view });
+  } catch (e: any) {
+    sendError(res, e);
+  }
+});
+
 router.get('/credit-customers', async (req, res) => {
   if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
   try {

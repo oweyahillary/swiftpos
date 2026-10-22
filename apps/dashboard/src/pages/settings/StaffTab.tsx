@@ -6,6 +6,7 @@ import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
 import { expandKeys, isBackOffice, OPEN_BEFORE_A490 } from '../../lib/permissions';   // A490
 import PermissionPicker, { usePermissionCatalogue, keyDifferences, type CatalogueKey, type CatalogueGroup } from '../../components/PermissionPicker';
+import { approvalPinOn } from '../../lib/posFeatures';   // A562
 
 interface Branch { id: string; name: string; }
 /** A490: a role as GET /api/staff/roles answers it — its FINE keys, whether it is the owner's, whether this user may give it. */
@@ -23,6 +24,10 @@ interface StaffMember {
   user_permissions?: { permission_id: string; granted: boolean }[];
   /** A490: the person's own rights — a key given (true) or taken away (false) on top of their role's. */
   override_keys?: Record<string, boolean> | null;
+  /** The cloud's: they have an approval (override) PIN set (never the PIN). */
+  can_authorize?: boolean;
+  /** A562: the row of whoever is signed in (the owner's own account, for the owner). */
+  is_self?: boolean;
 }
 
 interface Props {
@@ -88,15 +93,19 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
   const [pageSize, setPageSize] = usePageSize('swiftpos.pageSize.staff');
   const [web, setWeb] = useState<Record<string, WebAccessState>>({});   // A550
   const [webNote, setWebNote] = useState('');
+  const [approvalPin, setApprovalPin] = useState(false);   // A562: the admin portal's 'approval_pin' switch
 
   const fetchAll = async () => {
     try {
-      const [staffData, rolesData, webData] = await Promise.all([
+      const [staffData, rolesData, webData, flags] = await Promise.all([
         api.get<StaffMember[]>(activeBranchId ? `/api/staff?branch_id=${activeBranchId}` : '/api/staff'),
         api.get<Role[]>('/api/staff/roles'),
         webAccess ? api.get<Record<string, WebAccessState>>('/api/staff/web-access').catch(() => ({})) : Promise.resolve({}),
+        // A562: a separate approval PIN is offered only when ZapTill has switched it on for this business (admin portal).
+        api.get<Record<string, boolean>>('/api/flags').catch(() => ({} as Record<string, boolean>)),
       ]);
       setWeb(webData ?? {});
+      setApprovalPin(approvalPinOn(flags));
       setStaff(staffData ?? []);
       // A340 / A490: the cloud marks the roles THIS user may hand out (`assignable` — never a role with more than they
       // hold, never the owner's). No role names are listed here any more.
@@ -221,6 +230,14 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
                           {s.roles.name}
                         </span>
                       )}
+                      {/* A562: the owner's role on someone who is not the signed-in owner — a second owner account (every
+                          right, every branch). Said, so the owner can give them another role or deactivate them. */}
+                      {role?.is_owner_role && !s.is_self && (
+                        <span data-testid="second-owner" title="On the owner's role (every right, every branch) but not the account you sign in with. If they are not the owner, Edit and choose another role."
+                          className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300">
+                          Not your sign-in account
+                        </span>
+                      )}
                       {overrideCount > 0 && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300">
                           {overrideCount} custom right{overrideCount !== 1 ? 's' : ''}
@@ -260,7 +277,8 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
                       </>
                     );
                   })()}
-                  {canResetSignIn && s.status === 'active' && needsSignInCode(role, s.override_keys) && (
+                  {/* A562: never on your own row — your own sign-in code is under My sign-in. */}
+                  {canResetSignIn && s.status === 'active' && needsSignInCode(role, s.override_keys) && !s.is_self && (
                     <button onClick={() => resetSignIn(s)} data-testid="reset-signin"
                       className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
                       Reset sign-in code
@@ -271,8 +289,10 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
                     Edit
                   </button>}
                   {!canEdit ? null : s.status === 'active' ? (
-                    <button onClick={() => deactivate(s.id)}
-                      className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+                    // A562: nobody deactivates themselves (the cloud refuses SELF_DEACTIVATE) — said, not offered.
+                    <button onClick={() => deactivate(s.id)} disabled={!!s.is_self} data-testid="staff-deactivate"
+                      title={s.is_self ? 'You cannot deactivate yourself' : undefined}
+                      className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-red-400">
                       Deactivate
                     </button>
                   ) : (
@@ -298,6 +318,10 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
           branches={branches}
           mode={mode}
           setMode={setMode}
+          approvalPin={approvalPin}
+          web={webAccess && editing ? web[editing.id] ?? null : undefined}
+          onWebGive={(again) => editing && giveWeb(editing, again)}
+          onWebRevoke={() => editing && revokeWeb(editing)}
           onClose={() => setShowModal(false)}
           onSaved={() => { setShowModal(false); fetchAll(); }}
         />
@@ -328,18 +352,57 @@ interface ModalProps {
   branches: Branch[];
   mode: 'pin' | 'invite';
   setMode: (m: 'pin' | 'invite') => void;
+  /** A562: the admin portal's 'approval_pin' switch — off, no approval PIN is offered (one already set may be removed). */
+  approvalPin: boolean;
+  /** A550: this person's web dashboard access — undefined when this user does not give it (only the owner does). */
+  web?: WebAccessState | null;
+  onWebGive: (again: boolean) => void;
+  onWebRevoke: () => void;
   onClose: () => void;
   onSaved: () => void;
 }
 
+/** A562: the role a new person starts on — Cashier when this user may give it, else the first role they may give. Never
+ *  the owner's role (the list given here has none). */
+export function defaultRoleId(roles: readonly Role[]): string {
+  const ok = roles.filter(r => !r.is_owner_role && r.assignable !== false);
+  return (ok.find(r => r.name.trim().toLowerCase() === 'cashier') ?? ok[0])?.id ?? '';
+}
+
+/**
+ * A562 (owner, 2026-10-22: "the user role should reflect the exact role the user is assigned when editing"): the role
+ * picker of the edit form. It always shows the person's OWN role — the picker listed only the roles this user may give,
+ * so the owner's role (or one beyond this user) had no option and the browser showed the first one ("Accountant"), and
+ * touching it really changed the role. Locked (shown, not changeable) for the owner's own account and for a role this user
+ * may not give; a second account on the owner's role may be moved to another role by the owner.
+ */
+export function rolePicker(editing: Pick<StaffMember, 'roles' | 'is_self'> | null, roles: readonly Role[], allRoles: readonly Role[]): {
+  options: Role[]; locked: boolean; note: string;
+} {
+  if (!editing?.roles?.id) return { options: [...roles], locked: false, note: '' };
+  const current: Role = allRoles.find(r => r.id === editing.roles!.id) ?? { id: editing.roles.id, name: editing.roles.name };
+  const givable = roles.some(r => r.id === current.id);
+  const options = givable ? [...roles] : [current, ...roles];
+  if (current.is_owner_role && editing.is_self) return { options: [current], locked: true, note: 'Owner — the owner\'s role can\'t be changed here.' };
+  if (current.is_owner_role) return { options, locked: false, note: 'The owner\'s role: every right, every branch. If they are not the owner, choose another role.' };
+  if (!givable) return { options: [current], locked: true, note: 'You can\'t change this person\'s role.' };
+  return { options, locked: false, note: '' };
+}
+
+const field = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift';
+
 // A423: an email followed by password-type PINs reads to the browser as a sign-in form, and it filled in the OWNER's
 // saved email and password. Every email here is autoComplete="off" and every PIN "new-password" — the form starts empty.
-function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMode, onClose, onSaved }: ModalProps) {
+// A562: one column of plain steps — name and role, email, PIN, (approval PIN when switched on), branches, hourly rate,
+// permissions, web dashboard access.
+function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMode, approvalPin, web, onWebGive, onWebRevoke, onClose, onSaved }: ModalProps) {
   const [hourlyRate, setHourlyRate] = useState(editing?.hourly_rate != null ? String(editing.hourly_rate) : '');
   const [name, setName] = useState(editing?.name ?? '');
   const [email, setEmail] = useState(editing?.email ?? '');
   const [phone, setPhone] = useState(editing?.phone ?? '');
-  const [roleId, setRoleId] = useState(editing?.roles?.id ?? roles[0]?.id ?? '');
+  // A562: an edit starts on the person's own role, a new person on Cashier (never the owner's role).
+  const [roleId, setRoleId] = useState(editing?.roles?.id ?? defaultRoleId(roles));
+  const picker = rolePicker(editing, roles, allRoles);
   const [pin, setPin] = useState('');
   const [overridePin, setOverridePin] = useState('');
   const [clearOverride, setClearOverride] = useState(false);
@@ -372,17 +435,17 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
   // someone an approver: of voids, refunds, sales on account (customers.credit) or drawers / cash out (shifts.confirm).
   // The cloud's rule is the same list (routes/staff.ts APPROVAL_PIN_KEYS). A518: an approver's SIGN-IN PIN approves as it
   // is; this approval PIN is optional — a second PIN for someone who would rather not type their sign-in PIN in front of
-  // cashiers.
+  // cashiers. A562: offered only when the admin portal's 'approval_pin' switch is on for this business.
   const mayApprove = effectiveKeys.has('*') || ['sales.void', 'sales.refund', 'customers.credit', 'shifts.confirm'].some(k => effectiveKeys.has(k));
+  const hasApprovalPin = !!editing?.can_authorize;
+  // A562: the owner's own e-mail is how they sign in — ZapTill support changes it (the cloud refuses OWNER_SIGNIN_EMAIL).
+  const ownSignInEmail = !!editing?.is_self && !!roleById(editing?.roles?.id ?? '')?.is_owner_role;
 
   // When the role changes, start again from the new role's keys.
   const handleRoleChange = (newRoleId: string) => {
     setRoleId(newRoleId);
     setEffectiveKeys(roleKeySet(roleById(newRoleId)));
   };
-
-  const toggleBranch = (id: string) =>
-    setSelectedBranches(prev => prev.includes(id) ? prev.filter(b => b !== id) : [...prev, id]);
 
   const handleSave = async () => {
     if (!name.trim()) { setError('Name is required'); return; }
@@ -398,10 +461,11 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
     }
 
     // Override (approval) PIN payload: '' clears (revoke), a value sets/replaces, omit = keep. A506/A514: only for someone
-    // who will be able to approve (the cloud refuses it otherwise — OVERRIDE_PIN_NO_AUTHORITY).
+    // who will be able to approve (the cloud refuses it otherwise — OVERRIDE_PIN_NO_AUTHORITY). A562: a new one only while
+    // the switch is on (the cloud refuses it otherwise — APPROVAL_PIN_OFF); removing one is always allowed.
     const overrideField: { override_pin?: string } =
       clearOverride ? { override_pin: '' }
-      : overridePin && mayApprove ? { override_pin: overridePin }
+      : approvalPin && overridePin && mayApprove ? { override_pin: overridePin }
       : {};
 
     // A494: an empty branch list is left out, never sent as [] — the cloud refuses [] from a manager (it used to mean
@@ -422,7 +486,7 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
     try {
       if (editing) {
         await api.patch(`/api/staff/${editing.id}`, {
-        hourly_rate: hourlyRate ? Number(hourlyRate) : null,
+          hourly_rate: hourlyRate ? Number(hourlyRate) : null,
           name,
           ...(emailChanged ? { email: email.trim() } : {}),   // A506: '' clears it (the cloud stores null)
           ...(roleChanged ? { role_id: roleId } : {}),
@@ -458,59 +522,61 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           </div>
         )}
 
-        {/* Basic info */}
+        {/* Name and role — one row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="sm:col-span-2 md:col-span-1">
-            <label className="block text-sm text-gray-400 mb-1">Full Name</label>
-            <input value={name} onChange={e => setName(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Full name</label>
+            <input value={name} onChange={e => setName(e.target.value)} className={field} />
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">Role</label>
-            <select value={roleId} onChange={e => handleRoleChange(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift">
-              {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            <select value={roleId} onChange={e => handleRoleChange(e.target.value)} disabled={picker.locked} data-testid="staff-role"
+              title={picker.locked ? picker.note : undefined}
+              className={`${field} capitalize disabled:opacity-60 disabled:cursor-not-allowed`}>
+              {picker.options.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
+            {picker.note && <p className="text-xs text-gray-500 mt-1" data-testid="staff-role-note">{picker.note}</p>}
           </div>
-          {(!editing && mode === 'invite') && (
-            <div className="sm:col-span-2">
-              <label className="block text-sm text-gray-400 mb-1">Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                name="staff-email" autoComplete="off"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
-            </div>
-          )}
-          {editing && (
-            <div className="sm:col-span-2">
-              <label className="block text-sm text-gray-400 mb-1">
-                Email <span className="text-amber-400 text-xs ml-1">— used for POS login</span>
-              </label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                name="staff-email" autoComplete="off"
-                placeholder="staff@example.com"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
-            </div>
-          )}
-          {(!editing && mode === 'pin') && (
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                Email <span className="text-amber-400 text-xs ml-1">— required for POS login</span>
-              </label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                name="staff-email" autoComplete="off"
-                placeholder="staff@example.com"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
-              <p className="text-xs text-gray-600 mt-1">Staff use their email + PIN to log into the POS terminal.</p>
-            </div>
-          )}
-          {(!editing && mode === 'pin') && (
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Phone (optional)</label>
-              <input value={phone} onChange={e => setPhone(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
-            </div>
-          )}
-          {(mode === 'pin' || editing) && (
+        </div>
+
+        {/* Email — what it is for */}
+        {(!editing && mode === 'invite') && (
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              name="staff-email" autoComplete="off"
+              className={field} />
+            <p className="text-xs text-gray-600 mt-1">They get an invitation to set up their sign-in.</p>
+          </div>
+        )}
+        {editing && (
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Email <span className="text-amber-400 text-xs ml-1">— used for sign-in</span>
+            </label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              name="staff-email" autoComplete="off" readOnly={ownSignInEmail}
+              placeholder="staff@example.com"
+              className={`${field} read-only:opacity-60`} />
+            {ownSignInEmail && <p className="text-xs text-gray-600 mt-1">Your own sign-in email — ZapTill support changes it for you.</p>}
+          </div>
+        )}
+        {(!editing && mode === 'pin') && (
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Email <span className="text-amber-400 text-xs ml-1">— used for sign-in</span>
+            </label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              name="staff-email" autoComplete="off"
+              placeholder="staff@example.com"
+              className={field} />
+            <p className="text-xs text-gray-600 mt-1">Staff use their email and PIN to sign in to the POS.</p>
+          </div>
+        )}
+
+        {/* PIN (and, adding by PIN, the phone) */}
+        {(mode === 'pin' || editing) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1">
                 PIN {editing ? '(leave blank to keep)' : '(4–6 digits)'}
@@ -518,10 +584,20 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
               <input type="password" value={pin} onChange={e => setPin(e.target.value)}
                 name="staff-pin" autoComplete="new-password"
                 maxLength={6} placeholder="••••"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
+                className={field} />
             </div>
-          )}
-          <div className="sm:col-span-2">
+            {!editing && (
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Phone (optional)</label>
+                <input value={phone} onChange={e => setPhone(e.target.value)} className={field} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* A562: the approval PIN — only when ZapTill switched it on for this business. */}
+        {approvalPin && (
+          <div data-testid="approval-pin">
             <label className="block text-sm text-gray-400 mb-1">
               {/* A518 (owner, 2026-10-16: "rather than them having to remember 2 pins"): the sign-in PIN already approves
                   (lib/approver.ts findApprover); this one is optional. */}
@@ -536,12 +612,12 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
               onChange={e => { setOverridePin(e.target.value.replace(/\D/g, '')); setClearOverride(false); }}
               maxLength={6}
               disabled={clearOverride || !mayApprove}
-              placeholder={!mayApprove ? 'Give them an approving right first (Void, Refund, Customer credit or Approve with their PIN)' : editing ? '•••• (leave blank to keep)' : '4–6 digits (optional)'}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift disabled:opacity-40 tracking-widest"
+              placeholder={!mayApprove ? 'Give them a right to approve first (void, refund, credit or drawers)' : editing && hasApprovalPin ? '•••• (leave blank to keep)' : '4–6 digits'}
+              className={`${field} disabled:opacity-40 tracking-widest`}
             />
             <p className="text-xs text-gray-600 mt-1">
-              Their sign-in PIN already approves voids, refunds and sales on account. Set a different one only if they would rather not type their sign-in PIN in front of cashiers.
-              {editing && (
+              A second PIN for approving, so they need not type their sign-in PIN in front of cashiers.
+              {editing && hasApprovalPin && (
                 <button type="button"
                   onClick={() => { setClearOverride(c => !c); setOverridePin(''); }}
                   className={`ml-2 underline ${clearOverride ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}>
@@ -550,23 +626,22 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
               )}
             </p>
           </div>
-        </div>
+        )}
+        {/* A562: switched off, a PIN set before still approves — the owner can take it away here. */}
+        {!approvalPin && editing && hasApprovalPin && (
+          <p className="text-xs text-gray-500" data-testid="approval-pin-left">
+            They still have an approval PIN from before (it works until removed; managers otherwise approve with their sign-in PIN).
+            <button type="button" onClick={() => setClearOverride(c => !c)}
+              className={`ml-2 underline ${clearOverride ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}>
+              {clearOverride ? 'Will remove it — undo' : 'Remove it'}
+            </button>
+          </p>
+        )}
 
         {/* Branch access — dropdown */}
         {branches.length > 0 && (
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Hourly rate (optional)</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">KES</span>
-              <input type="number" min="0" step="0.5"
-                value={hourlyRate} onChange={e => setHourlyRate(e.target.value)}
-                placeholder="e.g. 250"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-12 pr-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
-              />
-            </div>
-            <p className="text-xs text-gray-600 mt-1">Used for labour cost % in the SPLH report.</p>
-
-            <label className="block text-sm text-gray-400 mb-1">Branch Access</label>
+            <label className="block text-sm text-gray-400 mb-1">Branch access</label>
 
             {/* Dropdown trigger */}
             <div className="relative">
@@ -616,6 +691,20 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           </div>
         )}
 
+        {/* Hourly rate */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Hourly rate (optional)</label>
+          <div className="relative sm:max-w-[50%]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">KES</span>
+            <input type="number" min="0" step="0.5"
+              value={hourlyRate} onChange={e => setHourlyRate(e.target.value)}
+              placeholder="e.g. 250"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-12 pr-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
+            />
+          </div>
+          <p className="text-xs text-gray-600 mt-1">Used for labour cost % in the SPLH report.</p>
+        </div>
+
         {/* A490: this person's rights, key by key — pre-filled from the role; what differs from it is marked. */}
         <div>
           <div className="flex items-start justify-between gap-3 mb-3">
@@ -632,6 +721,36 @@ function StaffModal({ editing, roles, allRoles, catalogue, branches, mode, setMo
           <PermissionPicker keys={catalogue.keys} groups={catalogue.groups} checked={effectiveKeys}
             onChange={setEffectiveKeys} baseline={roleBaseline} idPrefix="staff" />
         </div>
+
+        {/* A550: web dashboard access — the owner's to give; never on the owner's role, an inactive person or no email. */}
+        {web !== undefined && editing && (
+          <div data-testid="staff-web-access" className="flex items-center justify-between gap-3 flex-wrap border-t border-gray-800 pt-4">
+            <div className="min-w-0">
+              <p className="text-white text-sm font-medium">Web dashboard access</p>
+              <p className="text-gray-500 text-xs">
+                {roleById(editing.roles?.id ?? '')?.is_owner_role ? 'The owner\'s role signs in as the owner.'
+                  : editing.status !== 'active' ? 'Activate them first.'
+                  : !editing.email ? 'Add an email address first.'
+                  : web && web.status !== 'revoked' ? (web.status === 'active' ? 'They sign in with their email and password.' : 'Invited — not signed in yet.')
+                  : 'They sign in to this dashboard with their email and a password, and see only what their role allows.'}
+              </p>
+            </div>
+            {!roleById(editing.roles?.id ?? '')?.is_owner_role && editing.status === 'active' && !!editing.email && (
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => onWebGive(!!web && web.status !== 'revoked')}
+                  className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
+                  {web && web.status !== 'revoked' ? 'Resend invite' : 'Give web access'}
+                </button>
+                {web && web.status !== 'revoked' && (
+                  <button type="button" onClick={onWebRevoke}
+                    className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+                    Revoke
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
 

@@ -66,6 +66,7 @@ import tillsDaysRoutes     from './tills-days';      // A523: the owner's Tills 
 import tillsDaysAdminRoutes from './tillsDaysAdmin'; // A523: the same page in the admin portal
 import opsRoutes           from './ops';            // A525: the GitHub workflows post the deploy check and the scan
 import opsAdminRoutes      from './opsAdmin';       // A525: the admin portal's System page reads them
+import adminInstallerRoutes from './adminInstaller';   // A570: Download ZapTill, through the cloud
 import { forgetOnWrite }   from '../lib/forgetOnWrite';   // A528
 import { ringDrawersOnWrite } from '../lib/drawerBell';   // A535
 import branchDrawersRoutes from './branchDrawers';       // A535: a branch server asks about every drawer of its branch at once
@@ -155,6 +156,7 @@ router.use('/admin/support-logs', supportAdminRoutes);   // A519: before /admin,
 router.use('/admin/clients', logRequestsAdminRoutes);   // A533: …/:id/log-requests only; the rest falls through to /admin
 router.use('/admin/tills-days', tillsDaysAdminRoutes);   // A523: before /admin, which takes the rest of /admin/*
 router.use('/admin/ops',      opsAdminRoutes);   // A525: before /admin, which takes the rest of /admin/*
+router.use('/admin/desktop',  adminInstallerRoutes);   // A570: before /admin, which takes the rest of /admin/*
 router.use('/admin',          adminRoutes);
 router.use('/tech',           techRoutes);
 router.use('/sync',           syncRoutes);

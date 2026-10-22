@@ -22,6 +22,8 @@ export type ClassKey = 'star' | 'plowhorse' | 'puzzle' | 'dog' | 'no_cost';
 export type LeakKey = 'voids' | 'refunds' | 'discounts' | 'wastage';
 export type PayKey = 'cash' | 'mpesa' | 'card' | 'account' | 'other';
 export type BucketKey = 'd0_30' | 'd31_60' | 'd61_90' | 'd90_plus';
+/** A561: the order-type mix (dine-in, takeaway, delivery, counter and other) */
+export type OrderTypeKey = 'dine_in' | 'takeaway' | 'delivery' | 'other';
 
 export interface ChartPalette {
   mode: ChartMode;
@@ -34,6 +36,8 @@ export interface ChartPalette {
   quadrantOpacity: number;
   leaks: Record<LeakKey, string>;
   payments: Record<PayKey, string>;
+  /** A561: the order-type mix — categorical slots 1–4 in their fixed order (adjacent pairs pass, as the payment mix) */
+  orderTypes: Record<OrderTypeKey, string>;
   buckets: Record<BucketKey, string>;
   flagged: string;
   /** the heatmap ramp, from no sales to the busiest hour */
@@ -69,6 +73,7 @@ function build(mode: ChartMode): ChartPalette {
     quadrantOpacity: light ? 0.07 : 0.1,
     leaks: { voids: c[0], refunds: c[1], discounts: c[2], wastage: c[3] },
     payments: { cash: c[0], mpesa: c[1], card: c[2], account: c[3], other: c[4] },
+    orderTypes: { dine_in: c[0], takeaway: c[1], delivery: c[2], other: c[3] },
     buckets: { d0_30: STATUS.good, d31_60: STATUS.warning, d61_90: STATUS.serious, d90_plus: STATUS.critical },
     flagged: STATUS.critical,
     ramp: light ? BLUE_RAMP : [...BLUE_RAMP.slice(3)].reverse(),
@@ -86,6 +91,8 @@ export const CLASS_ORDER: ClassKey[] = ['star', 'plowhorse', 'puzzle', 'dog', 'n
 export const CLASS_SHAPE: Record<ClassKey, 'circle' | 'diamond' | 'triangle' | 'square' | 'cross'> = {
   star: 'circle', plowhorse: 'square', puzzle: 'diamond', dog: 'triangle', no_cost: 'cross',
 };
+export const ORDER_TYPE_ORDER: OrderTypeKey[] = ['dine_in', 'takeaway', 'delivery', 'other'];
+export const ORDER_TYPE_LABEL: Record<OrderTypeKey, string> = { dine_in: 'Dine-in', takeaway: 'Takeaway', delivery: 'Delivery', other: 'Counter and other' };
 export const LEAK_ORDER: LeakKey[] = ['voids', 'refunds', 'discounts', 'wastage'];
 export const LEAK_LABEL: Record<LeakKey, string> = { voids: 'Voids', refunds: 'Refunds', discounts: 'Discounts', wastage: 'Wastage' };
 export const BUCKET_ORDER: BucketKey[] = ['d0_30', 'd31_60', 'd61_90', 'd90_plus'];

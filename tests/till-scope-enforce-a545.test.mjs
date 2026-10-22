@@ -271,6 +271,18 @@ try {
     }
     assert.deepEqual(bad, []);
   });
+
+  // A564: another branch's stock and the requests between branches are a PERSON's (the till sends the signed-in person's
+  // own sign-in — ipc/branchStock.ts manageFetch). The till's own sign-in is refused them: TILL_KEYS stays as it was.
+  await ok('A564: the till\'s own sign-in never reads another branch\'s stock or the requests, nor asks (tillScope refuses)', async () => {
+    assert.ok(!TS.TILL_KEYS.has('inventory.view') && !TS.TILL_KEYS.has('inventory.transfer'), 'TILL_KEYS widened');
+    for (const [m, p, b] of [['GET', '/api/stock/other-branches?q=tusker'], ['GET', '/api/stock/requests'],
+      ['POST', '/api/stock/requests', { from_branch_id: 'x', product_id: 'y', quantity: 1 }]]) {
+      reset();
+      const r = await send(m, p, b);
+      assert.equal(r.status, 403, `${m} ${p} → ${r.status}`);
+    }
+  });
 } finally {
   server.close();
 }

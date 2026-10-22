@@ -278,7 +278,7 @@ try {
     const sev = r.body.insights.map((i) => i.severity);
     assert.deepEqual(sev, [...sev].sort((a, b) => ['high', 'medium', 'low'].indexOf(a) - ['high', 'medium', 'low'].indexOf(b)));
     assert.ok(texts.includes('Cashier Vic voided 5.0× the branch median this period (6 voids)'), texts.join('\n'));
-    assert.ok(texts.includes('Chicken wings is a Plowhorse: top 3 seller but margin KES 13 below average – consider a small price rise'), texts.join('\n'));
+    assert.ok(texts.includes('Chicken wings is a Plowhorse: top 3 seller but margin KES 13 below average – check the recipe cost or portion, or pair it with a higher-margin item'), texts.join('\n'));
     assert.ok(texts.some((t) => /^KES 100 is over 60 days old on credit \(1 customer\)$/.test(t)), texts.join('\n'));
     assert.ok(texts.some((t) => /is your quietest slot$/.test(t)));
     for (const i of r.body.insights) assert.ok(['menu', 'timing', 'leaks', 'credit'].includes(i.type) && ['high', 'medium', 'low'].includes(i.severity));

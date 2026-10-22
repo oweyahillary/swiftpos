@@ -4,6 +4,7 @@ import { getLocalDb } from '../localDb';
 import { roleMap } from '../tillAccess';
 import { staffChangedHere } from '../staffRoster';
 import { recordTillChange } from '../changeQueue';
+import { signedIn } from '../tillAccess';   // A562
 import { type IpcShared } from './shared';
 
 /** Staff and roles: list, add, set a PIN. */
@@ -65,6 +66,8 @@ export function registerStaffUpdateHandlers(ctx: IpcShared) {
     // A459: the screen's Deactivate sent { is_active } — a field the cloud does not know (it never deactivated anyone).
     const p: Record<string, unknown> = { ...(patch ?? {}) };
     if (typeof p.is_active === 'boolean') { p.status = p.is_active ? 'active' : 'inactive'; delete p.is_active; }
+    // A562: nobody deactivates themselves (the cloud refuses SELF_DEACTIVATE; a till-first change would have done it here).
+    if (typeof p.status === 'string' && p.status !== 'active' && signedIn()?.staffId === String(id)) throw new Error('You cannot deactivate yourself.');
     // A459 (owner, 2026-10-13: rename, role and deactivate on the till, offline too): these go on this till first — at
     // once, offline too — and reach the branch server and the cloud later (A448). Anything else (an override PIN, branches,
     // an email) still needs the cloud first.

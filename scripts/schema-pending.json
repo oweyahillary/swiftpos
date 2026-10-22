@@ -27,6 +27,7 @@
     "153_sync_stock_changes.sql": "A535: log_sync_stock_change (stock_levels into sync_changes, topic stock, one entry per level), sync_changes_heads_by_branch, sync_stock_ready - written 2026-10-20, not yet run in production.",
     "158_analytics.sql": "A549: analytics_menu_engineering, analytics_sales_heatmap, analytics_money_leaks, analytics_credit_ageing (Analytics v1 aggregates for /api/analytics; no table) - written 2026-10-21, not yet run in production.",
     "160_analytics_daily.sql": "A553: analytics_daily_sales (Analytics v2: completed sales and their payments per business day, for /api/analytics/overview; no table) - written 2026-10-21, not yet run in production.",
-    "161_analytics_item_times.sql": "A558: analytics_item_times (Analytics decisions: per product sold, quantity and revenue by business weekday x hour, for /api/analytics/item-times and the recommendations; no table) - written 2026-10-21, not yet run in production."
+    "161_analytics_item_times.sql": "A558: analytics_item_times (Analytics decisions: per product sold, quantity and revenue by business weekday x hour, for /api/analytics/item-times and the recommendations; no table) - written 2026-10-21, not yet run in production.",
+    "162_analytics_stock_customers_costs.sql": "A561: analytics_stock_use, analytics_customers, analytics_cost_watch (Analytics: how fast stock goes, who comes back, cost moves and items with no cost, for /api/analytics/stock, /customers, /costs and the recommendations; no table) - written 2026-10-22, not yet run in production."
   }
 }

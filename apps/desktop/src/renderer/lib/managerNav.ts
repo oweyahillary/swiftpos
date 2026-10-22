@@ -21,7 +21,7 @@
 export type TabKey =
   | 'overview' | 'orders' | 'items' | 'shift' | 'zreport' | 'expenses' | 'dayclose' | 'branchclose'
   | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers' | 'monthly'
-  | 'credit';
+  | 'credit' | 'branchstock' | 'labels';
 
 export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 'settings' | 'stock';
 
@@ -74,6 +74,12 @@ export interface NavAccess {
   online?: boolean;
   /** A197: inventory.transfer — send and receive stock between branches (online licence). */
   canTransfer?: boolean;
+  /** A564: inventory.view — Other branches: another branch's stock (and, with inventory.transfer, asking for it). */
+  canBranchStock?: boolean;
+  /** A564: requests from other branches waiting for this branch's answer — shown on the tab (none: the plain label). */
+  branchRequests?: number;
+  /** A571: menu.edit or inventory.view — Labels: barcode labels on any printer (online licence, as the other Stock pages). */
+  canLabels?: boolean;
 }
 
 /** Pages opened from inside a group's page, not tabs of their own. */
@@ -110,6 +116,11 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
       ...(a.showStock ? [{ key: 'stock' as TabKey, label: 'Stock' }] : []),
       ...(a.online && a.canWaste ? [{ key: 'wastage' as TabKey, label: 'Wastage' }] : []),   // A414; A460: online licence
       ...(a.online && a.canTransfer ? [{ key: 'transfers' as TabKey, label: 'Transfers' }] : []),   // A197 (A460: online licence)
+      // A564: another branch's stock, and requests from other branches (online licence) — the count waiting on the tab.
+      ...(a.online && a.canBranchStock ? [{ key: 'branchstock' as TabKey,
+        label: a.branchRequests && a.branchRequests > 0 ? `Other branches (${a.branchRequests})` : 'Other branches' }] : []),
+      // A571: barcode labels — any label printer (driver, TSPL, ZPL) or the receipt printer (online licence).
+      ...(a.online && a.canLabels ? [{ key: 'labels' as TabKey, label: 'Labels' }] : []),
     ] },
   ];
   return groups.filter((g) => g.tabs.length > 0);

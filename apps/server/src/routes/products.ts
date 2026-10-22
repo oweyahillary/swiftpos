@@ -7,6 +7,8 @@
  *   POST /api/products/bulk            — CSV bulk import (up to 500 rows)
  *   POST /api/products                 — create (extended: barcode, PLU, sold_by, is_fuel)
  *   PATCH /api/products/:id            — update (extended fields)
+ *   POST /api/products/barcodes/generate — A571: in-store EAN-13s for products without a barcode
+ *   GET|PUT /api/products/labels/settings — A571: the label designer; GET …/labels/restocked — items in a delivery
  *
  * DROP-IN: this file replaces apps/server/src/routes/products.ts entirely.
  */
@@ -17,7 +19,9 @@ import { Router }    from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, can } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, can, branchScope } from '../middleware/rbac';
+import { lacksBarcode, nextInStoreCodes } from '../lib/barcode';                  // A571
+import { cleanLabelSettings, LABEL_SETTINGS_KEY } from '../lib/labels';           // A571
 import { stripCostsUnlessAllowed } from '../lib/costAccess';
 import { idsOfBusiness } from '../lib/branchGuard';   // A494   // A490
 import { supabase }  from '../lib/supabase';
@@ -103,9 +107,109 @@ router.get('/barcode/:code', async (req, res) => {
   res.json(data);
 });
 
+// ── A571: barcodes and labels ─────────────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-22: "we do not have barcode generation mechanism, what does it entail can we add it?" — then, on the
+// label printer and size: "for now i cant tell what my clients will use as their printer or the label size can we do all?"
+
+/** The business's stored barcodes, trimmed (empty ones left out). */
+async function businessBarcodes(businessId: string): Promise<{ rows: Array<{ id: string; name: string; barcode: string | null; status: string }>; error: unknown }> {
+  const { data, error } = await supabase.from('products').select('id, name, barcode, status').eq('business_id', businessId);
+  return { rows: (data ?? []) as Array<{ id: string; name: string; barcode: string | null; status: string }>, error };
+}
+
+// POST /api/products/barcodes/generate  { product_ids?: string[], dry_run?: boolean }
+// Gives every chosen product WITHOUT a barcode an in-store EAN-13 ("20" + item number + check digit, lib/barcode.ts);
+// none chosen = every active product without one. A product that has a barcode is never touched — the write is
+// conditional on the field still being empty, so one typed (or generated) meanwhile is kept. The unique index
+// products_barcode_business_idx (business_id, barcode) makes a duplicate impossible: a clash with a concurrent
+// generate re-reads the business's codes and takes the next free number. dry_run answers how many would get one.
+router.post('/barcodes/generate', requirePermission('menu.edit'), async (req, res) => {
+  const body = req.body ?? {};
+  if (body.product_ids !== undefined && !Array.isArray(body.product_ids)) {
+    res.status(400).json({ error: 'product_ids must be a list' }); return;
+  }
+  const ids: string[] | null = Array.isArray(body.product_ids) ? body.product_ids.map(String).filter(Boolean) : null;
+  if (ids && ids.length > 5000) { res.status(400).json({ error: 'At most 5000 products at a time' }); return; }
+  const wanted = ids ? new Set(ids) : null;
+  const read = await businessBarcodes(req.businessId);
+  if (read.error) { sendError(res, read.error); return; }
+  const chosen = read.rows.filter((p) => (wanted ? wanted.has(p.id) : p.status === 'active'));
+  const targets = chosen.filter((p) => lacksBarcode(p.barcode));
+  if (body.dry_run === true) {
+    res.json({ count: targets.length, already: chosen.length - targets.length,
+      sample: nextInStoreCodes(read.rows.map((p) => p.barcode), Math.min(3, targets.length)) });
+    return;
+  }
+  const taken = new Set(read.rows.map((p) => String(p.barcode ?? '').trim()).filter(Boolean));
+  const assigned: Array<{ id: string; name: string; barcode: string }> = [];
+  const kept: string[] = [];
+  for (const p of targets) {
+    let settled = false;
+    for (let attempt = 0; attempt < 30 && !settled; attempt++) {
+      const [code] = nextInStoreCodes(taken, 1);
+      taken.add(code);
+      let q = supabase.from('products').update({ barcode: code }).eq('id', p.id).eq('business_id', req.businessId);
+      q = p.barcode == null ? q.is('barcode', null) : q.eq('barcode', p.barcode);   // still empty — never overwrite
+      const { data: upd, error: uErr } = await q.select('id, barcode');
+      if (uErr) {
+        if ((uErr as { code?: string }).code !== '23505') { sendError(res, uErr); return; }
+        // Another request took that number first: learn every code the business has now, and try the next one.
+        const again = await businessBarcodes(req.businessId);
+        for (const r of again.rows) { const c = String(r.barcode ?? '').trim(); if (c) taken.add(c); }
+        continue;
+      }
+      if (!upd || (upd as unknown[]).length === 0) kept.push(p.id);   // given a barcode meanwhile: kept as it is
+      else assigned.push({ id: p.id, name: p.name, barcode: code });
+      settled = true;
+    }
+    if (!settled) { res.status(409).json({ error: 'Could not find a free barcode — try again', assigned, kept }); return; }
+  }
+  res.json({ assigned, kept, count: assigned.length });
+});
+
+// GET /api/products/labels/settings — the label designer (size, what is printed, the sheet), defaults filled in.
+router.get('/labels/settings', async (req, res) => {
+  const { data, error } = await supabase.from('business_settings').select('value')
+    .eq('business_id', req.businessId).eq('key', LABEL_SETTINGS_KEY).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  res.json(cleanLabelSettings((data as { value?: unknown } | null)?.value ?? null));
+});
+
+// PUT /api/products/labels/settings — menu.edit (whoever looks after the products); stored cleaned (lib/labels.ts).
+router.put('/labels/settings', requirePermission('menu.edit'), async (req, res) => {
+  const clean = cleanLabelSettings(req.body ?? {});
+  const { data: existing } = await supabase.from('business_settings').select('id')
+    .eq('business_id', req.businessId).eq('key', LABEL_SETTINGS_KEY).maybeSingle();
+  const { error } = existing
+    ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', (existing as { id: string }).id)
+    : await supabase.from('business_settings').insert({ business_id: req.businessId, key: LABEL_SETTINGS_KEY, value: clean });
+  if (error) { sendError(res, error); return; }
+  res.json(clean);
+});
+
+// GET /api/products/labels/restocked?since=YYYY-MM-DD — "items in this delivery": the products restocked since that day
+// (stock_movements 'restock'), with how many came in — one label each. (A goods-received note receives INGREDIENTS,
+// never products, so a delivery of products is its restock movements.)
+router.get('/labels/restocked', requirePermission('inventory.view'), async (req, res) => {
+  const since = String(req.query.since ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) { res.status(400).json({ error: 'since must be a date (YYYY-MM-DD)' }); return; }
+  const scoped = branchScope(req);
+  let q = supabase.from('stock_movements').select('product_id, quantity_change, products!inner ( business_id )')
+    .eq('products.business_id', req.businessId).eq('movement_type', 'restock').gte('created_at', `${since}T00:00:00Z`)
+    .limit(5000);
+  if (scoped) q = q.eq('branch_id', scoped);
+  const { data, error } = await q;
+  if (error) { sendError(res, error); return; }
+  const qty = new Map<string, number>();
+  for (const m of (data ?? []) as Array<{ product_id: string; quantity_change: number }>) {
+    if (Number(m.quantity_change) > 0) qty.set(m.product_id, (qty.get(m.product_id) ?? 0) + Number(m.quantity_change));
+  }
+  res.json([...qty].map(([product_id, quantity]) => ({ product_id, quantity })));
+});
+
 // ── POST /api/products ────────────────────────────────────────────────────────
 
-router.post('/', requirePermission('menu.edit'), validateLoose(CreateProductSchema), async (req, res) => {
+router.post('/', requirePermission('menu.edit'),validateLoose(CreateProductSchema), async (req, res) => {
   // A490: adding a product is menu.edit (its first price with it); a cost price with it is menu.costs.
   if (costSent(req.body?.cost_price) && !can(req, 'menu.costs')) {
     res.status(403).json({ error: 'Forbidden', detail: 'Missing permission: menu.costs' }); return;

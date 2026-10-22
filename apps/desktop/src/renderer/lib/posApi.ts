@@ -1,5 +1,7 @@
 import type { PosFeatures } from '../../shared/posFeatures';
 import type { StockCountFreeze } from '../../shared/stockCountFreeze';
+import type { StockView, OutOfStockMode } from '../../shared/stockGate';   // A563
+import type { LabelSettings } from '../../shared/labels';   // A571
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
@@ -246,6 +248,32 @@ export interface StockTransfer {
   from_branch_id: string; to_branch_id: string; from_branch_name?: string | null; to_branch_name?: string | null;
   notes: string | null; receipt_note?: string | null; created_at: string;
   stock_transfer_items: Array<{ id: string; product_id: string; quantity: number; quantity_received: number | null; products?: { name: string } | null }>;
+}
+
+/** A564: the cloud's answer through the till — or why not (offline: no connection, said plainly). */
+/** A571: barcode labels (main/ipc/labels.ts). */
+export type LabelPath = 'windows' | 'tspl' | 'zpl' | 'escpos';
+export interface LabelPrinter {
+  path: LabelPath; windowsPrinter: string; rawTarget: string; escposTarget: string; escposWidthMm: 58 | 80; escposMode: 'gsk' | 'raster';
+}
+export interface LabelProduct { id: string; name: string; barcode: string | null; price: number; category_id: string | null; category: string | null }
+export interface LabelSetup {
+  settings: LabelSettings; from: 'cloud' | 'saved' | 'default'; printer: LabelPrinter; products: LabelProduct[];
+  business: { name: string; currency: string }; receiptPrinter: { target: string; paperWidthMm: 58 | 80 } | null; canSaveForBusiness: boolean;
+}
+export interface BranchStockAnswer<T> { ok: boolean; data?: T; offline?: boolean; error?: string; code?: string | null }
+/** A564: how much each OTHER branch holds of the items found (GET /api/stock/other-branches) — quantities only. */
+export interface BranchStockFind {
+  branch_id: string | null; truncated: boolean;
+  products: Array<{ product_id: string; name: string; sold_by: string | null;
+    branches: Array<{ branch_id: string; branch_name: string; quantity: number | null; qty_pieces: number | null; updated_at: string | null; counting: boolean }> }>;
+}
+/** A564: a branch asking another for an item (GET /api/stock/requests). */
+export interface StockRequest {
+  id: string; from_branch_id: string; to_branch_id: string; from_branch_name: string; to_branch_name: string;
+  product_id: string; product_name: string; quantity: number; sent_quantity: number | null; note: string | null;
+  status: 'requested' | 'accepted' | 'declined' | 'cancelled'; requested_by_name: string | null; requested_at: string;
+  decided_by_name: string | null; decided_at: string | null; decline_reason: string | null; transfer_id: string | null;
 }
 
 /** A466: the monthly pack (A455) as the cloud builds it (apps/server/src/lib/monthlyPack.ts Pack). */
@@ -522,6 +550,7 @@ declare global {
         /** 0.6.27: the per-client POS switches (set in the admin portal; all off until the till is told). */
         features: () => Promise<PosFeatures>;
         stockCountFreeze: () => Promise<StockCountFreeze>;   // A394
+        stockView: () => Promise<StockView & { mode: OutOfStockMode; branchId: string | null }>;   // A563
         /** A521: a manager's PIN releases a frozen item for sale on this till. */
         approveFrozenSale: (pin: string, productId: string) => Promise<{ ok: boolean; error?: string; approvedBy?: string | null }>;
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
@@ -656,6 +685,22 @@ declare global {
         status: (body: { id: string; status: 'in_transit' | 'received' | 'cancelled'; reason?: string;
           received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
           Promise<{ ok: boolean; data?: StockTransfer; error?: string; code?: string | null }>;
+      };
+      /** A564: another branch's stock, and asking that branch for an item (online licence; from the cloud). */
+      branchStock: {
+        find: (q: string, productId?: string) => Promise<BranchStockAnswer<BranchStockFind>>;
+        requests: () => Promise<BranchStockAnswer<{ branch_id: string | null; incoming_open: number; requests: StockRequest[] }>>;
+        request: (fromBranchId: string, productId: string, quantity: number, note?: string) => Promise<BranchStockAnswer<StockRequest>>;
+        decide: (id: string, step: 'accept' | 'decline' | 'cancel', extra?: { reason?: string; quantity?: number }) =>
+          Promise<BranchStockAnswer<StockRequest & { transfer?: { id: string; transfer_number: string; status: string }; warning?: string }>>;
+      };
+      /** A571: barcode labels — this till's catalogue, the business's label, this till's label printer (main/ipc/labels.ts). */
+      labels: {
+        setup: () => Promise<LabelSetup>;
+        save: (body: { settings?: LabelSettings; printer?: LabelPrinter }) =>
+          Promise<{ ok: boolean; settings: LabelSettings; printer: LabelPrinter; cloud: 'saved' | 'offline' | 'not-allowed' | null }>;
+        print: (body: { items: Array<{ product_id: string; copies: number }>; path?: LabelPath; settings?: LabelSettings }) =>
+          Promise<{ ok: boolean; labels: number; bytes?: number; error?: string; warnings?: string[] }>;
       };
       /** A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in; online only. */
       monthly: {

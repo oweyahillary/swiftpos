@@ -163,6 +163,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:notePicks':      NO_PAYLOAD,
   'pos:features':       NO_PAYLOAD,
   'pos:stockCountFreeze': NO_PAYLOAD,   // A394
+  'pos:stockView': NO_PAYLOAD,          // A563
   'pos:approveFrozenSale': { pin: { t: 'string', min: 1 }, product_id: { t: 'string', min: 1 } },   // A521
   'pos:history':        NO_PAYLOAD,
   'pos:reversalRules':  NO_PAYLOAD,   // 0.6.30
@@ -374,6 +375,17 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'transfers:status':   { id: { t: 'string', min: 1 }, status: { t: 'string', min: 1 }, reason: { t: 'string', optional: true },
                           received_items: { t: 'any', optional: true }, receipt_note: { t: 'string', optional: true },
                           allow_same_user: { t: 'boolean', optional: true } },                            // A197
+  // A564: another branch's stock, and asking that branch for an item (from the cloud, with the person's own sign-in).
+  'branchStock:find':     { q: { t: 'string', optional: true }, product_id: { t: 'string', optional: true } },
+  'branchStock:requests': NO_PAYLOAD,
+  'branchStock:request':  { from_branch_id: { t: 'string', min: 1 }, product_id: { t: 'string', min: 1 }, quantity: { t: 'number' },
+                            note: { t: 'string', optional: true } },
+  'branchStock:decide':   { id: { t: 'string', min: 1 }, step: { t: 'string', min: 1 }, reason: { t: 'string', optional: true },
+                            quantity: { t: 'number', optional: true } },
+  // A571: barcode labels — the setup (this till's catalogue, the business's label, this till's label printer), print.
+  'labels:setup': NO_PAYLOAD,
+  'labels:save':  { settings: { t: 'any', optional: true }, printer: { t: 'any', optional: true } },
+  'labels:print': { items: { t: 'any' }, path: { t: 'string', optional: true }, settings: { t: 'any', optional: true } },
   // A466: the monthly pack (A455) on the till — read, download and record for the books, from the cloud.
   'monthly:get':              { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },
   'monthly:export':           { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },

@@ -11,8 +11,8 @@ import {
 } from 'recharts';
 import * as fmt from '../../lib/format';
 import {
-  CLASS_ORDER, CLASS_SHAPE, LEAK_ORDER, LEAK_LABEL, BUCKET_ORDER, BUCKET_LABEL, heatColour,
-  type ChartPalette, type ClassKey, type LeakKey,
+  CLASS_ORDER, CLASS_SHAPE, LEAK_ORDER, LEAK_LABEL, BUCKET_ORDER, BUCKET_LABEL, ORDER_TYPE_ORDER, ORDER_TYPE_LABEL, heatColour,
+  type ChartPalette, type ClassKey, type LeakKey, type OrderTypeKey,
 } from './chartPalette';
 import { changeWords, compact, dayLabel, byHour, byWeekday, topBy, leakParts, leakTotal, shares, itemGrid } from './chartMath';
 
@@ -544,6 +544,58 @@ export function TopDebtors({ customers, p, currency }: { customers: Debtor[]; p:
             </Bar>
           ))}
         </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ── A561: the order-type mix and the average bill over the period ────────────
+
+export interface MixBucket { from: string; to: string; orders: Record<OrderTypeKey, number>; total: number; sales: number; avgBill: number | null }
+const bucketLabel = (b: MixBucket) => (b.from === b.to ? dayLabel(b.from) : `${dayLabel(b.from)}–${dayLabel(b.to)}`);
+
+/** Orders per day (or week) stacked by order type — the four types in their fixed order, a 2 px surface gap between parts. */
+export function OrderMixBars({ mix, p }: { mix: MixBucket[]; p: ChartPalette }) {
+  const data = mix.map((b) => ({ ...b, label: dayLabel(b.from), ...b.orders }));
+  const used = ORDER_TYPE_ORDER.filter((k) => mix.some((b) => b.orders[k] > 0));
+  return (
+    <div className="h-52" data-testid="analytics-order-mix">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap="20%">
+          <CartesianGrid vertical={false} stroke={p.grid} />
+          <XAxis dataKey="label" tick={axisTick(p)} tickLine={false} axisLine={{ stroke: p.axis }} minTickGap={20} />
+          <YAxis tick={axisTick(p)} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+          <Tooltip cursor={{ fill: p.grid, fillOpacity: 0.5 }} content={(t: TipProps) => {
+            const d = first<MixBucket>(t);
+            return d ? <TipBox title={`${bucketLabel(d)} · ${d.total} orders`} rows={used.map((k) => ({ label: ORDER_TYPE_LABEL[k], value: String(d.orders[k]), colour: p.orderTypes[k] }))} /> : null;
+          }} />
+          {used.map((k, i) => (
+            <Bar key={k} dataKey={k} stackId="mix" fill={p.orderTypes[k]} stroke={p.surface} strokeWidth={1} maxBarSize={24}
+              radius={i === used.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} {...noAnim} />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** The average bill per day (or week) — one line, a dot on hover. */
+export function AvgBillLine({ mix, p, currency }: { mix: MixBucket[]; p: ChartPalette; currency: string }) {
+  const data = mix.map((b) => ({ ...b, label: dayLabel(b.from) }));
+  return (
+    <div className="h-52" data-testid="analytics-avg-bill">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid vertical={false} stroke={p.grid} />
+          <XAxis dataKey="label" tick={axisTick(p)} tickLine={false} axisLine={{ stroke: p.axis }} minTickGap={20} />
+          <YAxis tick={axisTick(p)} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => compact(v)} />
+          <Tooltip cursor={{ stroke: p.axis, strokeWidth: 1 }} content={(t: TipProps) => {
+            const d = first<MixBucket>(t);
+            return d ? <TipBox title={bucketLabel(d)} rows={[{ label: `average bill · ${d.total} orders`, value: d.avgBill === null ? '—' : fmt.money(d.avgBill, currency, { decimals: 0 }), colour: p.accent }]} /> : null;
+          }} />
+          <Line type="monotone" dataKey="avgBill" stroke={p.accent} strokeWidth={2} dot={false} connectNulls
+            activeDot={{ r: 4, fill: p.accent, stroke: p.surface, strokeWidth: 2 }} {...noAnim} />
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

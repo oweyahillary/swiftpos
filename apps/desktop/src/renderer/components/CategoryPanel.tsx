@@ -12,11 +12,16 @@
  *   window it lies over the grid). The chosen menu is remembered on THIS till (its own renderer store, localStorage —
  *   as Pager and the printer settings; every access in try/catch). A554: the pin is this session's only — the panel
  *   starts collapsed at every launch and sign-in, pinned or not. Touch first: 48 px rows, nothing on hover only. The till's dark styling and its `action-*` colours.
+ *
+ *   A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
+ *   categories used to appear so that cashiers can easily pick the menu"): with menus, MenuBar puts them across the top
+ *   of the grid as big tabs (as the categories were before A537) and the panel lists only the chosen menu's categories
+ *   (`menuBar` — its own tabs drop out). No menus: no bar, the panel alone as before.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ALL_CATEGORIES, ALL_MENUS, PANEL_PREFS_KEY, categoryGroups, menuTabs, parsePanelPrefs, panelPrefsText,
-  panelStartsOpen, panelOpenAfterPick, productCounts, type PanelPrefs,
+  ALL_CATEGORIES, ALL_MENUS, PANEL_PREFS_KEY, categoryGroups, menuBarEdges, menuBarLabel, menuTabs, parsePanelPrefs,
+  panelPrefsText, panelStartsOpen, panelOpenAfterPick, productCounts, resolveMenu, type MenuTab, type PanelPrefs,
 } from '../../shared/menuFilter';
 
 function readPrefs(): PanelPrefs {
@@ -75,6 +80,62 @@ export function CategoryChip({ label, onClear }: { label: string | null; onClear
   );
 }
 
+/**
+ * A566: the menus across the top of the grid — "All", "Food", "Drinks" … — big tabs (48 px) as the categories were before
+ * A537. Many menus: the row scrolls sideways (a swipe, the wheel, or the ‹ › arrows that show, with a fade, on the side
+ * that hides more); the chosen tab is kept in view. Nothing when the business has no menus.
+ */
+export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    const next = menuBarEdges(el.scrollLeft, el.scrollWidth, el.clientWidth);
+    setEdges((cur) => (cur.left === next.left && cur.right === next.right ? cur : next));
+  }, []);
+  useEffect(() => {
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [measure, tabs]);
+  const shown = resolveMenu(active, tabs);
+  useEffect(() => {   // the chosen menu stays in view (a remembered one far along the row)
+    try { (rowRef.current?.querySelector('[aria-selected="true"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); } catch { /* fine */ }
+  }, [shown]);
+  if (tabs.length === 0) return null;
+  const nudge = (dir: 1 | -1) => {
+    const el = rowRef.current;
+    if (el) el.scrollBy({ left: dir * Math.max(160, el.clientWidth * 0.6), behavior: 'smooth' });
+  };
+  const arrow = 'absolute inset-y-0 z-10 w-14 flex items-center text-2xl font-bold text-gray-100 from-gray-950 via-gray-950/90 to-transparent';
+  return (
+    <div data-testid="menu-bar" className="relative flex-shrink-0 border-b border-gray-800">
+      <div ref={rowRef} role="tablist" aria-label="Menus" onScroll={measure}
+        className="flex gap-2 px-4 py-2.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {tabs.map((t) => {
+          const on = t.id === shown;
+          return (
+            <button key={t.id} type="button" role="tab" aria-selected={on} data-testid="menu-bar-tab" onClick={() => onPick(t.id)}
+              className={`flex-shrink-0 min-h-[48px] min-w-[88px] px-5 rounded-xl text-base font-semibold whitespace-nowrap border transition-colors ${
+                on ? 'bg-action-500 border-action-500 text-gray-950' : 'bg-gray-800 border-gray-700 text-gray-200 hover:text-white hover:border-gray-600'}`}>
+              {t.icon && <span aria-hidden className="mr-1.5">{t.icon}</span>}{menuBarLabel(t)}
+            </button>
+          );
+        })}
+      </div>
+      {edges.left && (
+        <button type="button" data-testid="menu-bar-left" aria-label="More menus to the left" onClick={() => nudge(-1)}
+          className={`${arrow} left-0 justify-start pl-2 bg-gradient-to-r`}>‹</button>
+      )}
+      {edges.right && (
+        <button type="button" data-testid="menu-bar-right" aria-label="More menus to the right" onClick={() => nudge(1)}
+          className={`${arrow} right-0 justify-end pr-2 bg-gradient-to-l`}>›</button>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   panel: CategoryPanelState;
   categories: any[];
@@ -86,9 +147,11 @@ interface Props {
   onCategory: (id: string) => void;
   /** Lies over the grid (a narrow window) instead of pushing it aside. */
   overlay: boolean;
+  /** A566: the menus are across the top of the grid (MenuBar) — the panel lists the chosen menu's categories, no tabs of its own. */
+  menuBar?: boolean;
 }
 
-export default function CategoryPanel({ panel, categories, menus, products, activeMenu, activeCategory, onMenu, onCategory, overlay }: Props) {
+export default function CategoryPanel({ panel, categories, menus, products, activeMenu, activeCategory, onMenu, onCategory, overlay, menuBar = false }: Props) {
   const tabs = useMemo(() => menuTabs(menus, categories), [menus, categories]);
   const groups = useMemo(() => categoryGroups(categories, menus, activeMenu), [categories, menus, activeMenu]);
   const counts = useMemo(() => productCounts(products.filter((p: any) => p.status === 'active')), [products]);
@@ -114,7 +177,7 @@ export default function CategoryPanel({ panel, categories, menus, products, acti
           className="min-w-[44px] min-h-[40px] rounded-lg border border-gray-700 text-gray-300 text-sm">✕</button>
       </div>
 
-      {tabs.length > 0 && (
+      {tabs.length > 0 && !menuBar && (
         <div data-testid="menu-tabs" role="tablist" aria-label="Menus" className="flex gap-1.5 px-3 pb-2 overflow-x-auto flex-shrink-0">
           {tabs.map((t) => (
             <button key={t.id} type="button" role="tab" aria-selected={t.id === shownMenu} onClick={() => onMenu(t.id)}

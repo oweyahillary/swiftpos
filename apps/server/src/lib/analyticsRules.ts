@@ -19,6 +19,18 @@
  *     "Do this next" recommendations (rules only, each with a KES estimate a month or once and the assumption it rests
  *     on, ranked by the KES at stake; none without enough data; none that tells a margin to someone who may not see
  *     costs) and the one- or two-sentence "How was this period?" summary.
+ *   A560 — never a price rise (the owner: prices must stay competitive). What to stock instead: "Stock up for Friday"
+ *     (an item's typical Friday at least 1.5× its average day), "Order more before Friday" (the cloud's stock level below
+ *     what sells until the end of its next busy day), the week at a glance (each weekday's top 3) and the slow movers. A
+ *     cashier's voids or discounts are a warning to look into, with no KES estimate and out of the value line.
+ *   A561 — how fast stock goes (use a day, days left at one branch, the wastage share; "runs out in about 2 days — order
+ *     now"), who comes back (new and returning, the top spenders, regulars gone quiet, the order-type mix), what each
+ *     sale really earns (food cost, the thinnest margins, ingredient cost rises — never a price rise) and the items with
+ *     no cost; the analytics tiles' one-line hooks.
+ *   A565 — between branches (a viewer who sees every branch, two or more branches): which stock to move from a branch
+ *     where it sits to one where it runs low — worked out in units to decide and rank, shown as a plain recommendation
+ *     with no quantity and no KES (the owner's call) — and the branches side by side, a branch flagged when its sales fall
+ *     against its own previous period more than the other branches'.
  */
 
 export const ANALYTICS_FLAG = 'analytics';
@@ -338,6 +350,12 @@ export function moneyText(n: number, currency = 'KES'): string {
   const v = Math.round(Math.abs(n));
   return `${n < 0 && v > 0 ? '-' : ''}${currency || 'KES'} ${v.toLocaleString('en-US')}`;
 }
+/** A561: a unit cost for a sentence — whole shillings, or two decimals under KES 100 when it has cents ("KES 0.40"). */
+export function costText(n: number, currency = 'KES'): string {
+  const v = Math.abs(n);
+  if (v >= 100 || Number.isInteger(Math.round(v * 100) / 100)) return moneyText(n, currency);
+  return `${n < 0 ? '-' : ''}${currency || 'KES'} ${v.toFixed(2)}`;
+}
 const times = (x: number) => `${(Math.round(x * 10) / 10).toFixed(1)}×`;
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const list = (names: string[], max = 3) => names.length <= max ? names.join(', ') : `${names.slice(0, max).join(', ')} and ${names.length - max} more`;
@@ -353,7 +371,7 @@ export function buildInsights(input: InsightInput): Insight[] {
     const avg = m.avgUnitMargin;
     for (const it of m.items.filter((i) => i.class === 'plowhorse' && i.rank <= 3)) {
       add(`menu.plowhorse.${it.productId ?? it.name}`, 'menu', 'medium',
-        `${it.name} is a Plowhorse: top 3 seller but margin ${moneyText(avg - (it.unitMargin ?? 0), cur)} below average – consider a small price rise`);
+        `${it.name} is a Plowhorse: top 3 seller but margin ${moneyText(avg - (it.unitMargin ?? 0), cur)} below average – check the recipe cost or portion, or pair it with a higher-margin item`);
     }
     const puzzle = m.items.filter((i) => i.class === 'puzzle').sort((a, b) => (b.unitMargin ?? 0) - (a.unitMargin ?? 0))[0];
     if (puzzle) {
@@ -367,7 +385,7 @@ export function buildInsights(input: InsightInput): Insight[] {
   }
   if (m && !m.costsHidden && m.counts.no_cost > 0) {
     const names = m.items.filter((i) => i.class === 'no_cost').map((i) => i.name);
-    add('menu.no_cost', 'menu', 'low', `${plural(names.length, 'item sold has', 'items sold have')} no cost set (${list(names)}) – set a cost price or recipe to see the margin`);
+    add('menu.no_cost', 'menu', 'low', `${plural(names.length, 'item sold has', 'items sold have')} no cost set (${list(names)}) – set a cost or a recipe to see the margin`);
   }
 
   // timing
@@ -603,6 +621,8 @@ export interface ItemTimesResult {
   totals: { qty: number; revenue: number };
   dayparts: DaypartSummary[];
   hours: HourSummary[];
+  /** A560: everything sold (the total row) per business weekday, 0 = Monday — a weekday with 0 did not trade */
+  weekdays: number[];
   /** true when only the best ITEM_TIMES_LIMIT sellers were sent (the totals and shares still count every product) */
   limited: boolean;
 }
@@ -650,9 +670,10 @@ export function summariseItemTimes(rows: ItemTimeRow[], cutoffMinutes = 0, limit
   // the denominators: every product's quantity per daypart and per hour (the total row)
   const partQty = emptyParts(), partRev = emptyParts();
   const hourQty = Array(24).fill(0) as number[], hourRev = Array(24).fill(0) as number[];
-  for (const [, h, q, v] of all) {
+  const dayQty = Array(7).fill(0) as number[];
+  for (const [d, h, q, v] of all) {
     const k = daypartOf(h, cutoffMinutes);
-    partQty[k] += q; partRev[k] += v; hourQty[h] += q; hourRev[h] += v;
+    partQty[k] += q; partRev[k] += v; hourQty[h] += q; hourRev[h] += v; dayQty[d] += q;
   }
   const totalQty = all.reduce((s, c) => s + c[2], 0);
   const top = (inIt: (c: ItemCell) => boolean, denom: number, n: number): TopItem[] => items
@@ -672,7 +693,7 @@ export function summariseItemTimes(rows: ItemTimeRow[], cutoffMinutes = 0, limit
     hours.push({ hour: h, label: hh(h), qty: r4(hourQty[h]), revenue: r2(hourRev[h]), top: top((c) => c[1] === h, hourQty[h], HOUR_TOP) });
   }
   return {
-    items, dayparts, hours,
+    items, dayparts, hours, weekdays: dayQty.map(r4),
     totals: { qty: r4(totalQty), revenue: r2(totalRow ? n0(totalRow.revenue) : 0) },
     limited: items.length >= limit,
   };
@@ -683,10 +704,6 @@ export function summariseItemTimes(rows: ItemTimeRow[], cutoffMinutes = 0, limit
 export const MONTH_DAYS = 30;
 export const MENU_MIN_QTY = 50;          // no menu advice on fewer items sold than this in the period
 export const MENU_MIN_DAYS = 7;          // …or on less than a week
-export const PRICE_MIN_QTY = 20;         // a Plowhorse needs this many sold to be worth a price change
-export const PRICE_STEP = 10;            // prices move in KES 10
-export const PRICE_MAX_RISE = 0.15;      // never more than 15% of its price at once
-export const PRICE_TOP = 2;
 export const PROMOTE_MIN_QTY = 3;
 export const PROMOTE_UPLIFT = 0.2;       // the assumed lift from featuring a Puzzle
 export const DROP_MIN_DAYS = 14;         // never "drop it" on less than two weeks
@@ -703,33 +720,82 @@ export const DAY_CLOSE_MIN_SHORT = 500;
 export const CREDIT_MIN_OVER60 = 1000;
 export const COST_MIN_QTY = 5;
 export const MAX_RECOMMENDATIONS = 7;
+// A560: what to stock
+export const STOCK_MIN_DAYS = 14;        // no stock advice on less than two weeks
+export const STOCK_MIN_WEEKDAYS = 2;     // a weekday needs at least two of itself in the period
+export const STOCK_UP_MULTIPLE = 1.5;    // a busy day for an item: its typical sales that weekday ≥ 1.5× its average day
+export const STOCK_UP_MIN_QTY = 10;      // …and at least 10 units on that weekday
+export const STOCK_BUFFER = 0.1;         // 10% over the typical day, so a busier one does not run you out
+export const STOCK_UP_ITEMS = 3;         // items named per weekday card
+export const STOCK_UP_TOP = 2;           // weekday cards at most
+export const STOCK_COVER_DAYS = 2;       // no busy day ahead: today and tomorrow
+export const STOCK_LOW_MIN_SHORT = 3;    // units short before a "running low" card
+export const STOCK_LOW_TOP = 2;
+export const WEEK_TOP = 3;               // the week at a glance: the top 3 per weekday
+export const SLOW_MIN_DAYS = 28;         // never "stock less" on less than four weeks
+export const SLOW_MAX_PER_WEEK = 2;      // a slow mover sells under 2 a week
+export const SLOW_MIN_ITEMS = 5;         // a list of at least 5 items sold to compare with
+export const SLOW_TOP = 3;
 
-export type RecKind = 'price' | 'promote' | 'rework' | 'staffing' | 'quiet' | 'leak' | 'day_close' | 'credit' | 'cost';
+export type RecKind = 'stock_low' | 'stock_up' | 'slow' | 'promote' | 'rework' | 'staffing' | 'quiet' | 'leak' | 'day_close' | 'credit' | 'cost'
+  | 'stock_out' | 'wastage' | 'lapsed' | 'food_cost' | 'thin_margin' | 'cost_rise' | 'stock_move' | 'branch_drop';
 export type Confidence = 'high' | 'medium' | 'low';
-export type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times';
+export type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times' | 'stock' | 'customers' | 'costs' | 'branches';
 export interface Recommendation {
   id: string; kind: RecKind;
-  /** verb first: "Raise the price of Tusker lager by KES 20" */
+  /** verb first: "Stock up for Friday: 140 Tusker lager" */
   title: string;
   /** why, in one sentence, with the numbers */
   why: string;
-  /** the estimate in KES (null: no honest KES figure), a month or once, and what kind of money it is */
-  impact: number | null; impactPer: 'month' | 'once' | null; impactKind: 'gain' | 'recover' | 'collect' | null;
+  /**
+   * the estimate in KES (null: no honest KES figure), a month or once, and what kind of money it is. A560: 'at_risk' —
+   * the sales lost if an item runs out (units short × what it sells for), never called profit.
+   */
+  impact: number | null; impactPer: 'month' | 'once' | null; impactKind: 'gain' | 'recover' | 'collect' | 'at_risk' | null;
+  /** A560: a stock card's estimate in units — what to have in by `by` (and, running low, what is on hand and to order) */
+  stock: { by: string; items: StockLine[] } | null;
+  /** A560: a warning to look into (a cashier's voids or discounts) — no estimate, drawn as a warning */
+  warning: boolean;
   /** the assumption the estimate rests on, said plainly */
   assumption: string;
   confidence: Confidence;
   /** the tab (or section) that shows the evidence */
   evidence: Evidence;
+  /** A565: a stock move to consider — the items and the two branches, never a quantity (the owner decides how much) */
+  move?: MoveLine;
+  /** A565: the branch a card is about (an underperforming branch) — "What sells when" there */
+  branchId?: string;
+  /** A565: internal only — orders cards with no estimate inside their group; the route never sends it */
+  score?: number;
 }
+export interface StockLine { name: string; qty: number; onHand?: number; order?: number }
+/** A560: an item's stock level now at the branch in view (stock_levels, tracked products only). */
+export interface StockLevel { productId: string; onHand: number }
 export interface RecInput {
   days: number; costs: boolean; currency?: string;
   menu: MenuResult | null; heatmap: HeatmapResult | null; leaks: LeaksResult | null; credit: CreditResult | null;
   times: ItemTimesResult | null;
+  /** A560: the period (business dates) — the weekday counts; without it no stock rule */
+  from?: string; to?: string;
+  /** A560: the business date now — where "the next busy day" counts from */
+  today?: string;
+  /** A560: stock levels now (one branch); null or absent — no "running low" card */
+  stock?: StockLevel[] | null;
+  /** A561: how fast stock goes (on hand only for one branch); null or absent — no run-out or wastage card */
+  stockUse?: StockUseResult | null;
+  /** A561: who comes back (customers.view / customers.credit only); null or absent — no lapsed-regulars card */
+  customers?: CustomersResult | null;
+  /** A561: costs and margins (seesCosts only); null or absent — no food-cost, thin-margin or cost-rise card */
+  costWatch?: CostsResult | null;
+  /** A565: the stock moves worked out across every branch (all-branch viewers, 2+ branches); null or absent — none */
+  moves?: StockMove[] | null;
+  /** A565: the branch comparison (all-branch viewers, 2+ branches); null or absent — no underperforming card */
+  branchCompare?: BranchCompare | null;
+  /** A565: the branch in view (null: every branch) — moves touching it, and the run-out cards a move replaces */
+  branchInView?: string | null;
 }
 
 const perMonth = (x: number, days: number) => (days > 0 ? (x * MONTH_DAYS) / days : 0);
-const roundTo = (x: number, step: number) => Math.round(x / step) * step;
-const floorTo = (x: number, step: number) => Math.floor(x / step) * step;
 const pctText = (x: number) => { const p = x * 100; return `${p < 10 && p > 0 ? p.toFixed(1) : Math.round(p)}%`; };
 const qtyText = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 10) / 10).toLocaleString('en-US'));
 const andList = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
@@ -744,33 +810,6 @@ function menuReady(i: RecInput): MenuResult | null {
 const daypartLabel = (k: DaypartKey) => (DAYPARTS.find((d) => d.key === k) as Daypart).label;
 const timesFor = (t: ItemTimesResult | null, it: { productId: string | null; name: string }) =>
   t?.items.find((x) => (it.productId ? x.productId === it.productId : !x.productId && x.name === it.name)) ?? null;
-
-/** The rise for a Plowhorse: half its margin gap to the average, in KES 10, at least 10, at most 15% of its price. */
-export function suggestedRise(gap: number, price: number): number {
-  const cap = Math.max(PRICE_STEP, floorTo(price * PRICE_MAX_RISE, PRICE_STEP));
-  return Math.min(cap, Math.max(PRICE_STEP, roundTo(gap / 2, PRICE_STEP)));
-}
-
-/** Plowhorses (popular, low margin): a small price rise. Impact = the rise × the quantity a month. */
-export function recPriceRise(i: RecInput): Recommendation[] {
-  const m = menuReady(i); if (!m) return [];
-  const cur = i.currency || 'KES';
-  const avg = m.avgUnitMargin as number;
-  return m.items.filter((it) => it.class === 'plowhorse' && it.unitMargin !== null && it.qty >= PRICE_MIN_QTY)
-    .map((it): Recommendation => {
-      const gap = avg - (it.unitMargin as number);
-      const rise = suggestedRise(gap, it.avgPrice);
-      const monthly = Math.round(perMonth(it.qty, i.days));
-      return {
-        id: `price.${it.productId ?? it.name}`, kind: 'price',
-        title: `Raise the price of ${it.name} by ${moneyText(rise, cur)}`,
-        why: `It is a best seller (${qtyText(it.qty)} sold, number ${it.rank}) but leaves ${moneyText(it.unitMargin as number, cur)} each after its cost — ${moneyText(gap, cur)} below your average of ${moneyText(avg, cur)}.`,
-        impact: Math.round(rise * monthly), impactPer: 'month', impactKind: 'gain',
-        assumption: `If the same ${qtyText(monthly)} a month still sell at ${moneyText(it.avgPrice + rise, cur)}.`,
-        confidence: it.qty >= 100 ? 'high' : 'medium', evidence: 'menu',
-      };
-    }).sort((a, b) => (b.impact ?? 0) - (a.impact ?? 0)).slice(0, PRICE_TOP);
-}
 
 /** The best Puzzle (high margin, low popularity): feature it at its best daypart. Impact = margin × 20% more a month. */
 export function recPromote(i: RecInput): Recommendation[] {
@@ -790,7 +829,7 @@ export function recPromote(i: RecInput): Recommendation[] {
     title: part ? `Feature ${it.name} at ${daypartLabel(part).toLowerCase()}` : `Have staff suggest ${it.name}`,
     why: `It leaves ${moneyText(it.unitMargin as number, cur)} each — ${moneyText((it.unitMargin as number) - avg, cur)} more than your average — but only ${qtyText(it.qty)} sold in ${i.days} days`
       + (part && t?.bestDaypartShare ? `, ${pctText(t.bestDaypartShare)} of them at ${daypartLabel(part).toLowerCase()}.` : '.'),
-    impact: Math.round((it.unitMargin as number) * extra), impactPer: 'month', impactKind: 'gain',
+    impact: Math.round((it.unitMargin as number) * extra), impactPer: 'month', impactKind: 'gain', stock: null, warning: false,
     assumption: `If featuring it lifts its sales by ${Math.round(PROMOTE_UPLIFT * 100)}% (about ${qtyText(Math.round(monthly))} → ${qtyText(Math.round(monthly + extra))} a month) at today's margin.`,
     confidence: 'low', evidence: 'menu',
   }];
@@ -808,7 +847,7 @@ export function recRework(i: RecInput): Recommendation[] {
     id: 'rework.dogs', kind: 'rework',
     title: dogs.length === 1 ? `Rework or drop ${dogs[0].name}` : `Rework or drop ${dogs.length} slow items`,
     why: `${andList(dogs.map((d) => d.name))} sell little and earn little: ${qtyText(sold)} sold in ${i.days} days, about ${moneyText(margin, cur)} a month left after cost${dogs.length === 1 ? '' : ' between them'}.`,
-    impact: null, impactPer: null, impactKind: null,
+    impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
     assumption: 'No KES estimate: a shorter menu saves prep, stock and waste, and points customers to your best items.',
     confidence: 'medium', evidence: 'menu',
   }];
@@ -857,7 +896,7 @@ export function recStaffing(i: RecInput): Recommendation[] {
     title: `Put an extra cashier on ${block.label}`,
     why: `You take ${pctText(share)} of all your sales in those three hours (${moneyText(block.revenue, cur)}, ${qtyText(block.orders)} orders in ${i.days} days)`
       + (items.length ? ` — most bought then: ${andList(items)}; have them ready.` : '.'),
-    impact: Math.round(perMonth(block.revenue, i.days) * STAFF_UPLIFT), impactPer: 'month', impactKind: 'gain',
+    impact: Math.round(perMonth(block.revenue, i.days) * STAFF_UPLIFT), impactPer: 'month', impactKind: 'gain', stock: null, warning: false,
     assumption: `If quicker service there adds ${Math.round(STAFF_UPLIFT * 100)}% to those hours' sales.`,
     confidence: 'low', evidence: 'heatmap',
   }];
@@ -874,36 +913,41 @@ export function recQuietSlot(i: RecInput): Recommendation[] {
     id: `quiet.${q.dow}.${q.startHour}`, kind: 'quiet',
     title: `Try a happy-hour offer on ${q.label}`,
     why: `It is your quietest time: ${moneyText(q.revenue, cur)} in ${i.days} days, against ${moneyText(typical, cur)} for a typical two hours.`,
-    impact: Math.round(perMonth(typical - q.revenue, i.days) * QUIET_FILL), impactPer: 'month', impactKind: 'gain',
+    impact: Math.round(perMonth(typical - q.revenue, i.days) * QUIET_FILL), impactPer: 'month', impactKind: 'gain', stock: null, warning: false,
     assumption: `If an offer fills a quarter of the gap to a typical two hours (sales, before the offer's cost).`,
     confidence: 'low', evidence: 'heatmap',
   }];
 }
 
-/** A flagged cashier (A549's flag: ≥ 2× the median, ≥ 5 events): a talk. Impact = what is above the median, a month. */
+/**
+ * A flagged cashier (A549's flag: ≥ 2× the median, ≥ 5 events). A560 (the owner: "warning only for investigation"): a
+ * warning to look into — no KES estimate (a void before payment is not always a loss) and never in the value line.
+ */
 export function recLeaks(i: RecInput): Recommendation[] {
   const l = i.leaks; if (!l) return [];
   const cur = i.currency || 'KES';
-  const out: Recommendation[] = [];
+  const out: { rec: Recommendation; value: number }[] = [];
   for (const c of l.cashiers) {
     for (const f of c.flags) {
       const isVoid = f.kind === 'void';
       const value = isVoid ? c.voidValue + c.itemVoidValue : c.discountValue;
-      const excess = f.rate > 0 ? value * Math.max(0, 1 - f.median / f.rate) : 0;
       const what = isVoid ? 'voids' : 'discounts';
+      const count = `${qtyText(f.events)} ${f.events === 1 ? what.slice(0, -1) : what} (${moneyText(value, cur)}) in ${i.days} days`;
       out.push({
-        id: `leak.${f.kind}.${c.cashierId ?? c.name}`, kind: 'leak',
-        title: `Talk to ${c.name} about ${what}`,
-        why: f.multiple !== null
-          ? `${qtyText(f.events)} ${what} (${moneyText(value, cur)}) in ${i.days} days — ${times(f.multiple)} the branch median rate.`
-          : `${qtyText(f.events)} ${what} (${moneyText(value, cur)}) in ${i.days} days, while the typical cashier had none.`,
-        impact: Math.round(perMonth(excess, i.days)), impactPer: 'month', impactKind: 'recover',
-        assumption: `If their ${isVoid ? 'void' : 'discount'} rate comes down to the branch median (${pctText(f.median)}).`,
-        confidence: isVoid ? 'high' : 'medium', evidence: 'leaks',
+        value,
+        rec: {
+          id: `leak.${f.kind}.${c.cashierId ?? c.name}`, kind: 'leak',
+          title: `Check ${c.name}'s ${what}`,
+          why: (f.multiple !== null ? `${count} — ${times(f.multiple)} the branch median rate.` : `${count}, while the typical cashier had none.`)
+            + (isVoid ? ' Worth a look; a void before payment is not always a loss.' : ' Worth a look; some discounts are offers you approved.'),
+          impact: null, impactPer: null, impactKind: null, stock: null, warning: true,
+          assumption: 'A warning to look into, not money lost — no KES estimate.',
+          confidence: isVoid ? 'high' : 'medium', evidence: 'leaks',
+        },
       });
     }
   }
-  return out.sort((a, b) => (b.impact ?? 0) - (a.impact ?? 0)).slice(0, LEAK_TOP);
+  return out.sort((a, b) => b.value - a.value || a.rec.id.localeCompare(b.rec.id)).slice(0, LEAK_TOP).map((x) => x.rec);
 }
 
 /** Day closes short in total: check them. Impact = the shortfall a month. */
@@ -916,7 +960,7 @@ export function recDayClose(i: RecInput): Recommendation[] {
     id: 'day_close.short', kind: 'day_close',
     title: 'Check why the day closes came up short',
     why: `The cash counted at day close was ${moneyText(short, cur)} short in all, on ${daysShort} ${daysShort === 1 ? 'day' : 'days'} of ${i.days}.`,
-    impact: Math.round(perMonth(short, i.days)), impactPer: 'month', impactKind: 'recover',
+    impact: Math.round(perMonth(short, i.days)), impactPer: 'month', impactKind: 'recover', stock: null, warning: false,
     assumption: 'If the shortfall stops (part of it may be counting mistakes rather than loss).',
     confidence: 'medium', evidence: 'leaks',
   }];
@@ -934,7 +978,7 @@ export function recCredit(i: RecInput): Recommendation[] {
     id: 'credit.over60', kind: 'credit',
     title: `Chase ${moneyText(c.over60.amount, cur)} owed for over 60 days`,
     why: `${andList(more > 0 ? [...names, `${more} more`] : names)} — owed for more than two months.`,
-    impact: Math.round(c.over60.amount), impactPer: 'once', impactKind: 'collect',
+    impact: Math.round(c.over60.amount), impactPer: 'once', impactKind: 'collect', stock: null, warning: false,
     assumption: 'Money already owed to you — counted once, if it is paid.',
     confidence: 'high', evidence: 'credit',
   }];
@@ -951,33 +995,290 @@ export function recCostData(i: RecInput): Recommendation[] {
   return [{
     id: 'cost.missing', kind: 'cost',
     title: missing.length === 1 ? `Set a cost for ${missing[0].name}` : `Set a cost for ${missing[0].name} and ${missing.length - 1} more`,
-    why: `${andList(missing.length > shown.length ? [...shown, `${missing.length - shown.length} more`] : shown)} sold ${moneyText(revenue, cur)} in ${i.days} days with no cost price or recipe, so the margin is unknown.`,
-    impact: null, impactPer: null, impactKind: null,
+    why: `${andList(missing.length > shown.length ? [...shown, `${missing.length - shown.length} more`] : shown)} sold ${moneyText(revenue, cur)} in ${i.days} days with no cost or recipe set, so the margin is unknown.`,
+    impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
     assumption: 'No KES estimate: with a cost set, every margin on this page is complete.',
-    confidence: 'medium', evidence: 'menu',
+    confidence: 'medium', evidence: 'costs',
   }];
 }
 
+// ── A560: what to stock ───────────────────────────────────────────────────────
+
+/** The weekday of a business date, 0 = Monday … 6 = Sunday. */
+export function weekdayOf(date: string): number {
+  const d = dayNumber(date) ?? 0;   // 1970-01-01 was a Thursday (3)
+  return (((d + 3) % 7) + 7) % 7;
+}
+/** How many of each weekday (0 = Monday) the period holds. */
+export function weekdayCounts(from: string, to: string): number[] {
+  const out = Array(7).fill(0) as number[];
+  for (const d of datesIn(from, to)) out[weekdayOf(d)] += 1;
+  return out;
+}
+/** What to have in for a typical day's `typical` sales: 10% more, rounded UP (to 1 under 20, to 5 under 100, else to 10). */
+export function stockQty(typical: number): number {
+  const v = Math.max(0, typical) * (1 + STOCK_BUFFER);
+  const step = v < 20 ? 1 : v < 100 ? 5 : 10;
+  return Math.ceil(v / step - 1e-9) * step;
+}
+
+export interface WeekdayProfile {
+  productId: string | null; name: string;
+  /** what it sells for on average (revenue / quantity) */
+  avgPrice: number;
+  /** its typical sales on each weekday (the weekday's quantity / how many of that weekday the period held); null: none */
+  perDay: (number | null)[];
+  /** its average day: the mean of perDay over the weekdays the business traded */
+  avgDay: number;
+}
+/** Each item's typical sales by weekday — the period's weekday totals over the number of that weekday in it. */
+export function weekdayProfiles(t: ItemTimesResult, counts: number[]): WeekdayProfile[] {
+  const traded = counts.map((c, d) => c > 0 && (t.weekdays?.[d] ?? 0) > 0);
+  const n = traded.filter(Boolean).length;
+  return t.items.map((it) => {
+    const q = Array(7).fill(0) as number[];
+    for (const [d, , qty] of it.cells) q[d] += qty;
+    const perDay = q.map((x, d) => (counts[d] > 0 ? x / counts[d] : null));
+    const avgDay = n > 0 ? perDay.reduce<number>((s, x, d) => s + (traded[d] ? x ?? 0 : 0), 0) / n : 0;
+    return { productId: it.productId, name: it.name, avgPrice: it.qty > 0 ? it.revenue / it.qty : 0, perDay, avgDay };
+  });
+}
+/** A busy day for an item: at least two of that weekday, ≥ 10 units typically, and ≥ 1.5× its average day. */
+export function isBusyDay(p: WeekdayProfile, d: number, counts: number[]): boolean {
+  const x = p.perDay[d];
+  return x !== null && counts[d] >= STOCK_MIN_WEEKDAYS && x >= STOCK_UP_MIN_QTY && p.avgDay > 0 && x >= STOCK_UP_MULTIPLE * p.avgDay - 1e-9;
+}
+function stockReady(i: RecInput): { counts: number[]; profiles: WeekdayProfile[] } | null {
+  const t = i.times;
+  if (!t || !t.items.length || !i.from || !i.to || i.days < STOCK_MIN_DAYS) return null;
+  const counts = weekdayCounts(i.from, i.to);
+  return { counts, profiles: weekdayProfiles(t, counts) };
+}
+const round0 = (x: number) => Math.round(x);
+
+/**
+ * "Stock up for Friday": for each weekday, the items whose typical sales that day are ≥ 1.5× their average day (≥ 10
+ * units, ≥ 2 of that weekday in the period). One card per weekday — the two weekdays with the most extra sales (the
+ * extra units × what each sells for) — naming its top 3 items by the extra units. The estimate is units, not KES: the
+ * typical day plus 10%, rounded up (stockQty).
+ */
+export function recStockUp(i: RecInput): Recommendation[] {
+  const r = stockReady(i); if (!r) return [];
+  const { counts, profiles } = r;
+  const days: { d: number; score: number; items: { p: WeekdayProfile; typical: number; extra: number }[] }[] = [];
+  for (let d = 0; d < 7; d++) {
+    const items = profiles.filter((p) => isBusyDay(p, d, counts))
+      .map((p) => ({ p, typical: p.perDay[d] as number, extra: (p.perDay[d] as number) - p.avgDay }))
+      .sort((a, b) => b.extra - a.extra || a.p.name.localeCompare(b.p.name));
+    if (items.length) days.push({ d, score: items.reduce((s, x) => s + x.extra * x.p.avgPrice, 0), items });
+  }
+  return days.sort((a, b) => b.score - a.score || a.d - b.d).slice(0, STOCK_UP_TOP).map(({ d, items }): Recommendation => {
+    const day = WEEKDAYS[d];
+    const shown = items.slice(0, STOCK_UP_ITEMS);
+    const more = items.length - shown.length;
+    const lines = shown.map((x, k) => `${k === 0 ? 'you sell about ' : ''}${qtyText(round0(x.typical))} ${x.p.name} (vs ${qtyText(round0(x.p.avgDay))}${k === 0 ? ' on an average day' : ''})`);
+    return {
+      id: `stock_up.${d}`, kind: 'stock_up',
+      title: shown.length === 1 ? `Stock up for ${day}: ${qtyText(stockQty(shown[0].typical))} ${shown[0].p.name}`
+        : `Stock up for ${day}: ${shown[0].p.name} and ${items.length - 1} more`,
+      why: `${day}s: ${andList(more > 0 ? [...lines, `${more} more`] : lines)}.`,
+      impact: null, impactPer: null, impactKind: null, warning: false,
+      stock: { by: day, items: shown.map((x) => ({ name: x.p.name, qty: stockQty(x.typical) })) },
+      assumption: `The average ${day} in this period (${counts[d]} of them), plus 10% so a busier one does not run you out, rounded up.`,
+      confidence: counts[d] >= 4 ? 'high' : 'medium', evidence: 'times',
+    };
+  });
+}
+
+/**
+ * "Running low before your busy day" — only with stock levels (one branch, tracked items): from today to the end of the
+ * item's next busy day (isBusyDay, within the week; none: today and tomorrow) it typically sells `expected`; when what
+ * is on hand is below that, order up to the expected sales + 10% (rounded up). KES = the units short (expected − on
+ * hand) × what it sells for on average: sales at risk if it runs out, not profit. The two with the most at risk.
+ */
+export function recRunningLow(i: RecInput): Recommendation[] {
+  const r = stockReady(i); if (!r || !i.stock?.length || !i.today) return [];
+  const cur = i.currency || 'KES';
+  const { counts, profiles } = r;
+  const levels = new Map(i.stock.filter((x) => Number.isFinite(x.onHand) && x.onHand >= 0).map((x) => [x.productId, x.onHand]));
+  const d0 = weekdayOf(i.today);
+  const out: Recommendation[] = [];
+  for (const p of profiles) {
+    const onHand = p.productId ? levels.get(p.productId) : undefined;
+    if (onHand === undefined) continue;
+    let k = -1;
+    for (let j = 0; j < 7; j++) if (isBusyDay(p, (d0 + j) % 7, counts)) { k = j; break; }
+    const horizon = k >= 0 ? k : STOCK_COVER_DAYS - 1;
+    let expected = 0;
+    for (let j = 0; j <= horizon; j++) expected += p.perDay[(d0 + j) % 7] ?? 0;
+    if (expected <= 0 || onHand >= expected) continue;
+    const need = stockQty(expected);
+    const order = Math.ceil(need - onHand - 1e-9);
+    if (order < STOCK_LOW_MIN_SHORT) continue;
+    const busy = k >= 0 ? WEEKDAYS[(d0 + k) % 7] : null;
+    const typicalBusy = k >= 0 ? round0(p.perDay[(d0 + k) % 7] ?? 0) : 0;
+    const have = `You have ${qtyText(Math.round(onHand * 100) / 100)} ${p.name}`;
+    out.push({
+      id: `stock_low.${p.productId}`, kind: 'stock_low',
+      title: busy === null ? `Order about ${qtyText(order)} more ${p.name}`
+        : k === 0 ? `Order about ${qtyText(order)} more ${p.name} today` : `Order about ${qtyText(order)} more ${p.name} before ${busy}`,
+      why: busy === null ? `${have}; you usually sell about ${qtyText(round0(expected))} today and tomorrow.`
+        : k === 0 ? `${have}; a normal ${busy} (today) sells about ${qtyText(typicalBusy)}.`
+        : `${have}; a normal ${busy} sells about ${qtyText(typicalBusy)}, and from today to the end of ${busy} about ${qtyText(round0(expected))}.`,
+      impact: Math.round((expected - onHand) * p.avgPrice), impactPer: 'once', impactKind: 'at_risk', warning: false,
+      stock: { by: busy ?? 'tomorrow', items: [{ name: p.name, qty: need, onHand, order }] },
+      assumption: `Your stock level as the cloud has it now, against the average of each weekday in this period, plus 10%. ${cur} = the units you would be short × what it sells for on average (sales at risk, not profit).`,
+      confidence: 'medium', evidence: 'times',
+    });
+  }
+  return out.sort((a, b) => (b.impact ?? 0) - (a.impact ?? 0) || a.id.localeCompare(b.id)).slice(0, STOCK_LOW_TOP);
+}
+
+/** The Dogs recRework names (none when it does not run) — the slow movers leave them out, so no item is named twice. */
+function reworkNames(i: RecInput): Set<string> {
+  const m = menuReady(i); if (!m || i.days < DROP_MIN_DAYS) return new Set();
+  return new Set(m.items.filter((it) => it.class === 'dog').sort((a, b) => (a.totalMargin ?? 0) - (b.totalMargin ?? 0) || a.qty - b.qty)
+    .slice(0, DROP_TOP).map((it) => it.productId ?? it.name));
+}
+
+/**
+ * "Slow movers": items sold under 2 a week over at least 4 weeks, from the menu's full list (every product sold), else
+ * from what sells when when it holds every product. Not when half the list or more is slow (a quiet business, not a slow
+ * item), and not the Dogs the rework card already names. No KES estimate, no talk of what it sells for.
+ */
+export function recSlowMovers(i: RecInput): Recommendation[] {
+  if (i.days < SLOW_MIN_DAYS) return [];
+  const fromMenu = !!(i.menu && i.menu.items.length);
+  const src: { key: string; name: string; qty: number }[] | null = fromMenu
+    ? (i.menu as MenuResult).items.map((x) => ({ key: x.productId ?? x.name, name: x.name, qty: x.qty }))
+    : i.times && !i.times.limited ? i.times.items.map((x) => ({ key: x.productId ?? x.name, name: x.name, qty: x.qty })) : null;
+  if (!src || src.length < SLOW_MIN_ITEMS) return [];
+  const slowAll = src.filter((x) => x.qty > 0 && (x.qty * 7) / i.days < SLOW_MAX_PER_WEEK);
+  if (!slowAll.length || slowAll.length * 2 >= src.length) return [];
+  const named = reworkNames(i);
+  const slow = slowAll.filter((x) => !named.has(x.key)).sort((a, b) => a.qty - b.qty || a.name.localeCompare(b.name));
+  if (!slow.length) return [];
+  const shown = slow.slice(0, SLOW_TOP);
+  const more = slow.length - shown.length;
+  const parts = shown.map((x) => `${x.name} (${qtyText(x.qty)})`);
+  const one = slow.length === 1;
+  return [{
+    id: 'slow.items', kind: 'slow',
+    title: one ? `Stock less of ${slow[0].name}` : `Stock less of ${slow.length} slow sellers`,
+    why: `${andList(more > 0 ? [...parts, `${more} more`] : parts)} sold in ${i.days} days — under ${SLOW_MAX_PER_WEEK} a week${one ? '' : ' each'}. Consider stocking less, or dropping ${one ? 'it' : 'them'}.`,
+    impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
+    assumption: 'No KES estimate: less of a slow item on the shelf ties up less money and leaves less to spoil or expire.',
+    confidence: i.days >= 56 ? 'high' : 'medium', evidence: fromMenu ? 'menu' : 'times',
+  }];
+}
+
+export interface WeekPlanDay { dow: number; day: string; count: number; top: { productId: string | null; name: string; qty: number }[] }
+/**
+ * "Your week at a glance — what to prepare each day": for each weekday the period holds, its top 3 items by quantity and
+ * their typical sales that day (the weekday's quantity / how many of that weekday, rounded, at least 1).
+ */
+export function weekPlan(t: ItemTimesResult | null, from: string, to: string): WeekPlanDay[] {
+  if (!t) return [];
+  const counts = weekdayCounts(from, to);
+  const out: WeekPlanDay[] = [];
+  for (let d = 0; d < 7; d++) {
+    if (!counts[d]) continue;
+    const top = t.items.map((it) => ({ it, q: it.cells.reduce((s, c) => s + (c[0] === d ? c[2] : 0), 0) })).filter((x) => x.q > 0)
+      .sort((a, b) => b.q - a.q || a.it.name.localeCompare(b.it.name)).slice(0, WEEK_TOP)
+      .map(({ it, q }) => ({ productId: it.productId, name: it.name, qty: Math.max(1, Math.round(q / counts[d])) }));
+    out.push({ dow: d, day: WEEKDAYS[d], count: counts[d], top });
+  }
+  return out;
+}
+
+// ── Ranking and the value line ────────────────────────────────────────────────
+
 const CONFIDENCE_ORDER: Record<Confidence, number> = { high: 0, medium: 1, low: 2 };
-/** Ranked by the KES at stake (a month, or once), biggest first; no estimate last; then by confidence. At most 7. */
+/** A560: stock-out risks first, then stocking up for a busy day, then the rest. */
+const kindGroup = (k: RecKind | undefined) => (k === 'stock_low' || k === 'stock_out' || k === 'stock_move' ? 0 : k === 'stock_up' ? 1 : 2);
+/**
+ * Stock-out risks first, then stock-up-for-a-day, then the rest — each group by the KES at stake (a month, or once),
+ * biggest first, no estimate last, then by confidence. At most 7.
+ */
 export function rankRecommendations(recs: Recommendation[]): Recommendation[] {
-  return [...recs].sort((a, b) => (b.impact ?? -1) - (a.impact ?? -1) || CONFIDENCE_ORDER[a.confidence] - CONFIDENCE_ORDER[b.confidence]
-    || a.id.localeCompare(b.id)).slice(0, MAX_RECOMMENDATIONS);
+  const all = [...recs].sort((a, b) => kindGroup(a.kind) - kindGroup(b.kind) || (b.impact ?? -1) - (a.impact ?? -1)
+    || (b.score ?? 0) - (a.score ?? 0) || CONFIDENCE_ORDER[a.confidence] - CONFIDENCE_ORDER[b.confidence] || a.id.localeCompare(b.id));
+  const top = all.slice(0, MAX_RECOMMENDATIONS);
+  // A560: a warning has no estimate, so it would always sort last — the strongest one keeps a place, in the last slot
+  // of "the rest" (never in place of a stock card)
+  const warning = all.find((r) => r.warning);
+  if (warning && !top.includes(warning) && top.length === MAX_RECOMMENDATIONS && kindGroup(top[top.length - 1].kind) === 2) top[top.length - 1] = warning;
+  return top;
 }
 
 /** Every rule, ranked. Upsell ("what sells together") is not here: it needs baskets, which no cheap aggregate gives. */
 export function buildRecommendations(i: RecInput): Recommendation[] {
-  return rankRecommendations([
-    ...recPriceRise(i), ...recPromote(i), ...recRework(i), ...recStaffing(i), ...recQuietSlot(i),
-    ...recLeaks(i), ...recDayClose(i), ...recCredit(i), ...recCostData(i),
-  ]);
+  return rankRecommendations(allRecommendations(i));
+}
+/** A561: every card the rules give, before the ranking keeps 7 — the tiles' "To do" badge counts them all. */
+export function allRecommendations(i: RecInput): Recommendation[] {
+  const low = recRunningLow(i);
+  // A561: a run-out card never repeats an item A560's running-low card already names (one card per item)
+  const named = new Set(low.map((r) => r.id.replace(/^stock_low\./, '')));
+  const out = recRunOut(i).filter((r) => !named.has(r.id.replace(/^stock_out\.product\./, '')));
+  // A565: a move INTO the branch in view replaces its run-out / running-low card for that item (merged into the move)
+  const moves = recStockMoves(i);
+  const into = new Map<string, Recommendation>();
+  for (const m of moves) if (i.branchInView && m.move && m.move.toId === i.branchInView) for (const it of m.move.items) into.set(`${it.kind}.${it.itemId}`, m);
+  const keep = (r: Recommendation, k: string) => {
+    const m = into.get(k);
+    if (!m || !m.move) return true;
+    const note = ` If ${m.move.from} cannot spare enough, order the rest.`;
+    if (!m.why.endsWith(note)) m.why += note;
+    return false;
+  };
+  return [
+    ...low.filter((r) => keep(r, `product.${r.id.replace(/^stock_low\./, '')}`)), ...out.filter((r) => keep(r, r.id.replace(/^stock_out\./, ''))),
+    ...moves, ...recStockUp(i), ...recSlowMovers(i), ...recBranchDrop(i),
+    ...recPromote(i), ...recRework(i), ...recStaffing(i), ...recQuietSlot(i), ...recLeaks(i), ...recDayClose(i), ...recCredit(i),
+    ...recCostData(i), ...recWastage(i), ...recLapsed(i), ...recFoodCost(i), ...recThinMargin(i), ...recCostRise(i),
+  ];
 }
 
-/** "Analytics found about KES X a month you could gain or recover" — the estimates added up (a month; once apart). */
-export function valueFound(recs: Recommendation[]): { monthly: number; once: number; count: number } {
-  const monthly = recs.filter((r) => r.impactPer === 'month').reduce((s, r) => s + (r.impact ?? 0), 0);
-  const once = recs.filter((r) => r.impactPer === 'once').reduce((s, r) => s + (r.impact ?? 0), 0);
-  return { monthly: Math.round(monthly), once: Math.round(once), count: recs.filter((r) => r.impact !== null).length };
+export interface Found {
+  /** the monthly estimates added up: gains and recoveries only — never a warning, never sales at risk */
+  monthly: number;
+  /** old credit to collect, once */
+  once: number;
+  /** sales at risk if the items running low run out */
+  atRisk: number;
+  /** cards with a KES estimate */
+  count: number;
+  /** every card; the busy days to stock for; the items running low; the warnings */
+  actions: number; stockDays: number; lowItems: number; warnings: number;
+  /** A565: stock moves to consider — counted, never valued */
+  moves: number;
+  /** the line above the cards: "This period: 6 things to act on — …" (null with no card) */
+  line: string | null;
+}
+/**
+ * A560: the value line counts what to do rather than one big KES total — the monthly figure is only the gains and
+ * recoveries (no price rise exists, and a cashier's voids are a warning, never counted); sales at risk and old credit
+ * stand apart.
+ */
+export function valueFound(recs: Recommendation[], currency = 'KES'): Found {
+  const sum = (f: (r: Recommendation) => boolean) => Math.round(recs.filter(f).reduce((s, r) => s + (r.impact ?? 0), 0));
+  const monthly = sum((r) => r.impactPer === 'month' && !r.warning && (r.impactKind === 'gain' || r.impactKind === 'recover'));
+  const once = sum((r) => r.impactKind === 'collect');
+  const atRisk = sum((r) => r.impactKind === 'at_risk');
+  const stockDays = recs.filter((r) => r.kind === 'stock_up').length;
+  const lowItems = recs.filter((r) => r.kind === 'stock_low' || r.kind === 'stock_out').length;   // A561: running out too
+  const warnings = recs.filter((r) => r.warning).length;
+  const moves = recs.filter((r) => r.kind === 'stock_move').length;
+  const parts: string[] = [];
+  if (stockDays) parts.push(`stock up for ${plural(stockDays, 'busy day', 'busy days')}`);
+  if (lowItems) parts.push(`${plural(lowItems, 'item', 'items')} running low${atRisk > 0 ? ` (about ${moneyText(atRisk, currency)} of sales at risk if ${lowItems === 1 ? 'it runs' : 'they run'} out)` : ''}`);
+  if (moves) parts.push(`${plural(moves, 'stock move', 'stock moves')} between branches to consider`);
+  if (once > 0) parts.push(`${moneyText(once, currency)} of old credit to collect`);
+  if (monthly > 0) parts.push(`about ${moneyText(monthly, currency)} a month from the other ideas`);
+  if (warnings) parts.push(`${plural(warnings, 'warning', 'warnings')} to look into`);
+  const line = recs.length ? `This period: ${plural(recs.length, 'thing', 'things')} to act on${parts.length ? ` — ${andList(parts)}` : ''}.` : null;
+  return { monthly, once, atRisk, count: recs.filter((r) => r.impact !== null).length, actions: recs.length, stockDays, lowItems, warnings, moves, line };
 }
 
 // ── A558: "How was this period?" ──────────────────────────────────────────────
@@ -1020,4 +1321,786 @@ export function buildSummary(input: { from: string; to: string; today: string; o
   const good = goods[0] ?? salesLine;
   const worry = worries.find((w) => w !== good) ?? null;
   return { good, worry, tone };
+}
+
+// ── A561: how fast your stock goes ────────────────────────────────────────────
+
+export const STOCK_USE_MIN_DAYS = 7;     // no run-out or wastage card on less than a week
+export const STOCK_OUT_DAYS = 3;         // a run-out card when an item lasts under 3 days at the current rate
+export const STOCK_OUT_MIN_USED = 5;     // …and it used at least 5 in the period
+export const STOCK_OUT_TOP = 2;
+export const STOCK_WEEK_DAYS = 7;        // what to order: a week's worth (+10%, rounded up)
+export const WASTE_MIN_SHARE = 0.15;     // a wastage card when 15% or more of what was used was thrown away
+export const WASTE_MIN_QTY = 5;          // …and at least 5 thrown away
+export const TABLE_TOP = 10;             // every table: the top 10
+export const STOCK_NOTE_ALL = 'Pick a branch to see how many days your stock lasts — stock is counted per branch.';
+/** What the stock tab covers and what it does not, said once. */
+export const STOCK_COVERS = 'Covers items that track stock (what the sales took off, less voided or refunded sales put back, plus wastage written off) and ingredients taken off through recipes, variant links and takeaway packaging when a sale reaches the cloud. Not covered: items that do not track stock, fuel (the tanks have their own page), and the ingredients of a voided sale (the cloud does not put them back).';
+
+export interface StockUseRow {
+  kind: string; item_id: string | null; item_name: string | null; unit: string | null; by_piece: boolean | null;
+  sold: number | string; wasted: number | string; prev_sold: number | string; prev_wasted: number | string; on_hand: number | string | null;
+}
+export interface StockItem {
+  kind: 'product' | 'ingredient'; id: string | null; name: string; unit: string | null;
+  /** sold + wasted in the period, and the parts */
+  used: number; sold: number; wasted: number;
+  prevUsed: number; change: number | null;
+  /** average use a day over the period */
+  perDay: number;
+  /** on hand now at the branch in view (null: every branch, or no level, or a negative level nobody counts) */
+  onHand: number | null;
+  /** on hand ÷ use a day (null when unknown or nothing is used) */
+  daysLeft: number | null;
+  /** wasted ÷ used (null when nothing was used) */
+  wasteShare: number | null;
+}
+export interface StockUseResult {
+  days: number;
+  /** every item used, by what was used */
+  items: StockItem[];
+  /** the top 10 by days left (soonest out first) and by wastage share; and how many qualified for each */
+  runOut: StockItem[]; runOutTotal: number;
+  wasted: StockItem[]; wastedTotal: number;
+  /** on hand is known (one branch in view) */
+  onHandKnown: boolean;
+  /** why days left is missing (every branch in view) */
+  note: string | null;
+  covers: string;
+}
+
+const r1 = (n: number) => Math.round(n * 10) / 10;
+
+/** The stock use rows → each item's use, use a day, days left (one branch) and wastage share; the two top-10 lists. */
+export function summariseStockUse(rows: StockUseRow[], days: number, onHandKnown: boolean, note: string | null = null): StockUseResult {
+  const d = Math.max(1, days);
+  const items: StockItem[] = (rows ?? []).map((r): StockItem => {
+    const sold = Math.max(0, n0(r.sold)), wasted = Math.max(0, n0(r.wasted));
+    const used = sold + wasted;
+    const prevUsed = Math.max(0, n0(r.prev_sold)) + Math.max(0, n0(r.prev_wasted));
+    const raw = r.on_hand === null || r.on_hand === undefined ? null : n0(r.on_hand);
+    const onHand = onHandKnown && raw !== null && raw >= 0 ? r2(raw) : null;
+    const perDay = used / d;
+    return {
+      kind: r.kind === 'ingredient' ? 'ingredient' : 'product', id: r.item_id, name: r.item_name || 'Unnamed item', unit: r.unit ?? null,
+      used: r4(used), sold: r4(sold), wasted: r4(wasted), prevUsed: r4(prevUsed), change: pctChange(used, prevUsed),
+      perDay: r4(perDay), onHand, daysLeft: onHand !== null && perDay > 0 ? r1(onHand / perDay) : null,
+      wasteShare: used > 0 ? r4(wasted / used) : null,
+    };
+  }).filter((x) => x.used > 0 || x.prevUsed > 0)
+    .sort((a, b) => b.used - a.used || a.name.localeCompare(b.name));
+  const runAll = items.filter((x) => x.daysLeft !== null).sort((a, b) => (a.daysLeft as number) - (b.daysLeft as number) || b.perDay - a.perDay || a.name.localeCompare(b.name));
+  const wasteAll = items.filter((x) => x.wasted > 0).sort((a, b) => (b.wasteShare ?? 0) - (a.wasteShare ?? 0) || b.wasted - a.wasted || a.name.localeCompare(b.name));
+  return {
+    days: d, items, runOut: runAll.slice(0, TABLE_TOP), runOutTotal: runAll.length, wasted: wasteAll.slice(0, TABLE_TOP), wastedTotal: wasteAll.length,
+    onHandKnown, note: onHandKnown ? null : note, covers: STOCK_COVERS,
+  };
+}
+
+const unitText = (it: { unit: string | null }) => (it.unit ? ` ${it.unit}` : '');
+/** "about 2 days" — never "0 days" for an item still on the shelf. */
+export function daysLeftText(daysLeft: number): string {
+  const n = Math.max(1, Math.round(daysLeft));
+  return `about ${n} ${n === 1 ? 'day' : 'days'}`;
+}
+
+/**
+ * "Tusker lager runs out in about 2 days at your current rate — order now": an item (product or ingredient) whose stock
+ * at the branch in view lasts under 3 days at this period's average use a day (sales + wastage), used ≥ 5 in the
+ * period, ≥ 7 days of data. What to order: a week's worth (7 days of use + 10%, rounded up) less what is on hand. No KES.
+ */
+export function recRunOut(i: RecInput): Recommendation[] {
+  const s = i.stockUse;
+  if (!s || !s.onHandKnown || i.days < STOCK_USE_MIN_DAYS) return [];
+  return s.items.filter((x) => x.daysLeft !== null && x.daysLeft < STOCK_OUT_DAYS && x.used >= STOCK_OUT_MIN_USED && x.perDay > 0)
+    .sort((a, b) => (a.daysLeft as number) - (b.daysLeft as number) || b.perDay - a.perDay || a.name.localeCompare(b.name))
+    .slice(0, STOCK_OUT_TOP).map((x): Recommendation => {
+      const onHand = x.onHand as number;
+      const need = stockQty(x.perDay * STOCK_WEEK_DAYS);
+      const order = Math.max(0, Math.ceil(need - onHand - 1e-9));
+      const title = onHand <= 0 ? `${x.name} has run out — order now`
+        : `${x.name} runs out in ${daysLeftText(x.daysLeft as number)} at your current rate — order now`;
+      return {
+        id: `stock_out.${x.kind}.${x.id ?? x.name}`, kind: 'stock_out', title,
+        why: `You have ${qtyText(onHand)}${unitText(x)} left and use about ${qtyText(r1(x.perDay))} a day (${qtyText(r1(x.used))} in ${i.days} days${x.wasted > 0 ? `, ${qtyText(r1(x.wasted))} of it thrown away` : ''}).`,
+        impact: null, impactPer: null, impactKind: null, warning: false,
+        stock: { by: 'a week', items: [{ name: x.name, qty: need, onHand, order }] },
+        assumption: 'At this period\'s average use a day (sales and wastage), with the stock level as the cloud has it now; a week\'s worth is 7 days of use plus 10%, rounded up.',
+        confidence: i.days >= 14 ? 'high' : 'medium', evidence: 'stock',
+      };
+    });
+}
+
+/** "You throw away 20% of your milk — …": 15% or more of what an item used was thrown away (≥ 5, ≥ 7 days). One card. */
+export function recWastage(i: RecInput): Recommendation[] {
+  const s = i.stockUse;
+  if (!s || i.days < STOCK_USE_MIN_DAYS) return [];
+  const bad = s.items.filter((x) => (x.wasteShare ?? 0) >= WASTE_MIN_SHARE - 1e-9 && x.wasted >= WASTE_MIN_QTY)
+    .sort((a, b) => (b.wasteShare ?? 0) - (a.wasteShare ?? 0) || b.wasted - a.wasted || a.name.localeCompare(b.name));
+  if (!bad.length) return [];
+  const top = bad[0];
+  const others = bad.slice(1, 3).map((x) => `${x.name} (${pctText(x.wasteShare ?? 0)})`);
+  const more = bad.length - 1 - others.length;
+  return [{
+    id: `wastage.${top.kind}.${top.id ?? top.name}`, kind: 'wastage',
+    title: `You throw away ${pctText(top.wasteShare ?? 0)} of your ${top.name} — order less at a time or check how it is stored`,
+    why: `${qtyText(r1(top.wasted))}${unitText(top)} of the ${qtyText(r1(top.used))} used in ${i.days} days went to wastage.`
+      + (others.length ? ` Also high: ${andList(more > 0 ? [...others, `${more} more`] : others)}.` : ''),
+    impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
+    assumption: 'From the wastage your staff wrote off; no KES estimate — less waste means less to buy.',
+    confidence: top.used >= 20 ? 'high' : 'medium', evidence: 'stock',
+  }];
+}
+
+// ── A561: who comes back ──────────────────────────────────────────────────────
+
+export const CUSTOMER_COVERAGE_LOW = 0.2;   // under 20% of orders with a customer: say so
+export const REGULAR_MIN_VISITS = 4;        // a regular: at least 4 visits in the 90 days to the period's end
+export const REGULAR_MAX_GAP = 15;          // …about every two weeks or more often (at least 2 a month)
+export const LAPSED_MULTIPLE = 2;           // gone quiet: no visit for twice their usual gap
+export const LAPSED_MIN_DAYS = 14;          // …and at least two weeks
+export const LAPSED_NAMED = 3;
+
+export interface CustomerAggRow {
+  kind: string; which: string | null; day: string | null; order_type: string | null; orders: number | string | null; sales: number | string | null;
+  linked_orders: number | string | null; linked_sales: number | string | null; customers: number | string | null; new_customers: number | string | null;
+  customer_id: string | null; customer_name: string | null; phone: string | null; visits: number | string | null; spend: number | string | null;
+  prev_visits: number | string | null; visits_90: number | string | null; first_90: string | null; last_visit: string | null;
+}
+export interface PeriodCustomers { orders: number; sales: number; linkedOrders: number; linkedSales: number; customers: number; newCustomers: number; returning: number }
+export interface CustomerLine {
+  customerId: string; name: string; phone: string | null; visits: number; spend: number; lastVisit: string | null;
+  visits90: number; gap: number | null; regular: boolean; daysSince: number | null;
+}
+export type OrderTypeKey = 'dine_in' | 'takeaway' | 'delivery' | 'other';
+export const ORDER_TYPES: { key: OrderTypeKey; label: string }[] = [
+  { key: 'dine_in', label: 'Dine-in' }, { key: 'takeaway', label: 'Takeaway' }, { key: 'delivery', label: 'Delivery' }, { key: 'other', label: 'Counter and other' },
+];
+export interface MixBucket { from: string; to: string; orders: Record<OrderTypeKey, number>; total: number; sales: number; avgBill: number | null }
+export interface CustomersResult {
+  customersHidden: boolean;
+  now: PeriodCustomers; prev: PeriodCustomers;
+  change: { customers: number | null; newCustomers: number | null; returning: number | null };
+  coverage: { share: number | null; low: boolean; note: string | null };
+  /** the top 10 by spend; how many customers came in the period */
+  top: CustomerLine[]; totalCustomers: number;
+  frequency: { regulars: number; medianGap: number | null };
+  /** regulars gone quiet, the best regulars first */
+  lapsed: CustomerLine[];
+  avgBill: { customer: number | null; walkIn: number | null };
+  /** the order-type mix and the average bill, per day (≤ 31 days) or per 7-day block */
+  mix: MixBucket[]; byWeek: boolean;
+  mixTotals: { key: OrderTypeKey; label: string; orders: number; share: number }[];
+  asOf: string;
+}
+
+/** An order type (free text) → one of the four groups the mix shows. */
+export function orderTypeGroup(t: string | null | undefined): OrderTypeKey {
+  const s = String(t ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'dine_in' || s === 'dinein' || s === 'table') return 'dine_in';
+  if (s === 'takeaway' || s === 'take_away' || s === 'pickup' || s === 'collection') return 'takeaway';
+  if (s === 'delivery') return 'delivery';
+  return 'other';
+}
+const daysFrom = (a: string, b: string) => (rangeDays(a, b) ?? 1) - 1;   // b − a in days
+const emptyPeriod = (): PeriodCustomers => ({ orders: 0, sales: 0, linkedOrders: 0, linkedSales: 0, customers: 0, newCustomers: 0, returning: 0 });
+
+/**
+ * Who comes back: new against returning in this and the previous period, the top 10 by spend, how often regulars come,
+ * the regulars gone quiet, the average bill with a customer against a walk-in, and the order-type mix over the period.
+ * `asOf` (a business date): the end of the period, or today when the period runs past it.
+ */
+export function summariseCustomers(rows: CustomerAggRow[], from: string, to: string, asOf: string, customersHidden = false): CustomersResult {
+  const pe = { now: emptyPeriod(), prev: emptyPeriod() };
+  for (const r of (rows ?? []).filter((x) => x.kind === 'period')) {
+    const p = r.which === 'prev' ? pe.prev : pe.now;
+    p.orders = n0(r.orders); p.sales = r2(n0(r.sales)); p.linkedOrders = n0(r.linked_orders); p.linkedSales = r2(n0(r.linked_sales));
+    p.customers = n0(r.customers); p.newCustomers = n0(r.new_customers); p.returning = Math.max(0, p.customers - p.newCustomers);
+  }
+  const share = pe.now.orders > 0 ? r4(pe.now.linkedOrders / pe.now.orders) : null;
+  const low = share !== null && share < CUSTOMER_COVERAGE_LOW;
+  const note = share !== null && low
+    ? `Only ${pctText(share)} of your sales are linked to a customer, so these trends cover your account and loyalty customers only.` : null;
+
+  const lines: CustomerLine[] = (rows ?? []).filter((x) => x.kind === 'customer' && x.customer_id).map((r): CustomerLine => {
+    const v90 = n0(r.visits_90);
+    const last = r.last_visit ? String(r.last_visit).slice(0, 10) : null;
+    const first90 = r.first_90 ? String(r.first_90).slice(0, 10) : null;
+    const gap = v90 >= 2 && first90 && last ? r1(daysFrom(first90, last) / (v90 - 1)) : null;
+    return {
+      customerId: r.customer_id as string, name: r.customer_name || 'Unnamed customer', phone: r.phone ?? null,
+      visits: n0(r.visits), spend: r2(n0(r.spend)), lastVisit: last, visits90: v90, gap,
+      regular: v90 >= REGULAR_MIN_VISITS && gap !== null && gap <= REGULAR_MAX_GAP,
+      daysSince: last ? Math.max(0, daysFrom(last, asOf)) : null,
+    };
+  });
+  const top = lines.filter((c) => c.visits > 0).sort((a, b) => b.spend - a.spend || b.visits - a.visits || a.name.localeCompare(b.name)).slice(0, TABLE_TOP);
+  const regulars = lines.filter((c) => c.regular);
+  const lapsed = regulars.filter((c) => c.daysSince !== null && c.daysSince > LAPSED_MULTIPLE * (c.gap as number) && c.daysSince >= LAPSED_MIN_DAYS)
+    .sort((a, b) => b.visits90 - a.visits90 || (b.daysSince ?? 0) - (a.daysSince ?? 0) || a.name.localeCompare(b.name));
+
+  // the order-type mix and the average bill: per day (≤ 31 days), else per 7-day block from the period's start
+  const days = datesIn(from, to);
+  const byWeek = days.length > 31;
+  const step = byWeek ? 7 : 1;
+  const buckets: MixBucket[] = [];
+  for (let k = 0; k < days.length; k += step) {
+    buckets.push({ from: days[k], to: days[Math.min(days.length - 1, k + step - 1)], orders: { dine_in: 0, takeaway: 0, delivery: 0, other: 0 }, total: 0, sales: 0, avgBill: null });
+  }
+  const totals: Record<OrderTypeKey, number> = { dine_in: 0, takeaway: 0, delivery: 0, other: 0 };
+  for (const r of (rows ?? []).filter((x) => x.kind === 'type' && x.day)) {
+    const idx = rangeDays(from, String(r.day).slice(0, 10));
+    if (idx === null || idx < 1 || idx > days.length) continue;
+    const b = buckets[Math.floor((idx - 1) / step)];
+    const g = orderTypeGroup(r.order_type);
+    b.orders[g] += n0(r.orders); b.total += n0(r.orders); b.sales += n0(r.sales); totals[g] += n0(r.orders);
+  }
+  for (const b of buckets) { b.sales = r2(b.sales); b.avgBill = b.total > 0 ? r2(b.sales / b.total) : null; }
+  const allOrders = Object.values(totals).reduce((s, v) => s + v, 0);
+  const walkOrders = pe.now.orders - pe.now.linkedOrders;
+  const out: CustomersResult = {
+    customersHidden: false, now: pe.now, prev: pe.prev,
+    change: {
+      customers: pctChange(pe.now.customers, pe.prev.customers), newCustomers: pctChange(pe.now.newCustomers, pe.prev.newCustomers),
+      returning: pctChange(pe.now.returning, pe.prev.returning),
+    },
+    coverage: { share, low, note },
+    top, totalCustomers: pe.now.customers,
+    frequency: { regulars: regulars.length, medianGap: median(regulars.map((c) => c.gap as number)) },
+    lapsed,
+    avgBill: {
+      customer: pe.now.linkedOrders > 0 ? r2(pe.now.linkedSales / pe.now.linkedOrders) : null,
+      walkIn: walkOrders > 0 ? r2((pe.now.sales - pe.now.linkedSales) / walkOrders) : null,
+    },
+    mix: buckets, byWeek,
+    mixTotals: ORDER_TYPES.map((t) => ({ ...t, orders: totals[t.key], share: allOrders > 0 ? r4(totals[t.key] / allOrders) : 0 })).filter((t) => t.orders > 0),
+    asOf,
+  };
+  return customersHidden ? customersWithheld(out) : out;
+}
+/** Without customers.view / customers.credit: the order-type mix and the average bill stay (no customer in them). */
+export function customersWithheld(c: CustomersResult): CustomersResult {
+  return {
+    ...c, customersHidden: true, top: [], lapsed: [], totalCustomers: 0, frequency: { regulars: 0, medianGap: null },
+    change: { customers: null, newCustomers: null, returning: null }, coverage: { share: null, low: false, note: null },
+    avgBill: { customer: null, walkIn: null },
+    now: { ...emptyPeriod(), orders: c.now.orders, sales: c.now.sales }, prev: { ...emptyPeriod(), orders: c.prev.orders, sales: c.prev.sales },
+  };
+}
+
+/**
+ * "5 regulars have not been back in over 3 weeks — call or message them": regulars (≥ 4 visits in 90 days, about every
+ * two weeks or more often) with no visit for twice their usual gap and at least two weeks. Three names in the card, then
+ * "N more"; the Customers tab lists them (10 at a time). No KES estimate.
+ */
+export function recLapsed(i: RecInput): Recommendation[] {
+  const c = i.customers;
+  if (!c || c.customersHidden || !c.lapsed.length) return [];
+  const n = c.lapsed.length;
+  const minSince = Math.min(...c.lapsed.map((x) => x.daysSince ?? 0));
+  const weeks = Math.floor(minSince / 7);
+  const named = c.lapsed.slice(0, LAPSED_NAMED).map((x) => `${x.name} (usually every ${qtyText(Math.round(x.gap ?? 0))} days, last came ${x.daysSince} days ago)`);
+  const more = n - named.length;
+  return [{
+    id: 'lapsed.regulars', kind: 'lapsed',
+    title: n === 1 ? `${c.lapsed[0].name}, a regular, has not been back in ${c.lapsed[0].daysSince} days — call or message them`
+      : `${n} regulars have not been back in over ${weeks} weeks — call or message them`,
+    why: `${andList(more > 0 ? [...named, `${more} more`] : named)}.`,
+    impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
+    assumption: `A regular: at least ${REGULAR_MIN_VISITS} visits in the last 90 days, about every two weeks or more often; gone quiet: no visit for twice their usual gap and at least two weeks. No KES estimate.`,
+    confidence: 'medium', evidence: 'customers',
+  }];
+}
+
+// ── A561: what each sale really earns ─────────────────────────────────────────
+
+export const FOOD_COST_RISE = 0.02;      // a food-cost card when it rose 2 points or more
+export const THIN_MIN_QTY = 5;           // the thinnest-margin table: items sold at least 5
+export const THIN_MAX = 0.2;             // a thin-margin card under 20% …
+export const THIN_CARD_MIN_QTY = 10;     // … sold at least 10
+export const COST_RISE_MIN = 0.05;       // a cost-rise card when an ingredient's cost rose 5% or more
+export const NO_COST_BANNER = 0.05;      // the page's call-out when 5% or more of sales have no cost
+
+export interface CostWatchRow {
+  kind: string; item_id: string | null; item_name: string | null; unit: string | null; cost_start: number | string | null; cost_end: number | string | null;
+  changes: number | string | null; used_in: number | string | null; delta: number | string | null; cost_now: number | string | null; names: string[] | null;
+}
+export interface ThinItem { productId: string | null; name: string; qty: number; avgPrice: number; unitCost: number; unitMargin: number; marginPct: number; topIngredient: string | null }
+export interface CostRise {
+  ingredientId: string | null; name: string; unit: string | null; from: number; to: number; change: number; changes: number; usedIn: number;
+  products: { name: string; delta: number; qty: number; extra: number }[]; extraMonth: number;
+}
+export interface NoCostItem { productId: string | null; name: string; category: string | null; qty: number; revenue: number }
+export interface CostsResult {
+  days: number;
+  foodCost: { now: number | null; prev: number | null; change: number | null; costedShare: number | null; movers: { name: string; now: number; prev: number }[] };
+  thin: ThinItem[]; thinTotal: number;
+  rises: CostRise[]; risesTotal: number; historyNote: string;
+  noCost: { items: NoCostItem[]; total: number; revenue: number; share: number | null; unsold: number; unsoldNames: string[] };
+}
+/** Food cost: the cost of what was sold ÷ what it sold for, over the items with a cost (1 − the gross margin). */
+export const foodCostOf = (m: MenuResult | null) => { const g = grossMarginPct(m); return g === null ? null : r4(1 - g); };
+/** The share of the period's item sales with no cost (null without costs or sales). */
+export function noCostShare(m: MenuResult | null): { share: number | null; items: number; revenue: number } {
+  if (!m || m.costsHidden || m.totals.revenue <= 0) return { share: null, items: 0, revenue: 0 };
+  const none = m.items.filter((x) => x.unitCost === null);
+  const revenue = r2(none.reduce((s, x) => s + x.revenue, 0));
+  return { share: r4(revenue / m.totals.revenue), items: none.length, revenue };
+}
+
+/** Costs and margins (seesCosts only): food cost now and before, the thinnest margins, ingredient cost rises, items with no cost. */
+export function buildCosts(input: { menu: MenuResult; menuPrev: MenuResult | null; watch: CostWatchRow[]; days: number }): CostsResult {
+  const { menu: m, menuPrev: mp, days } = input;
+  const w = input.watch ?? [];
+  const now = foodCostOf(m), prev = foodCostOf(mp);
+  const costed = m.items.filter((x) => x.unitCost !== null);
+  const costedRev = costed.reduce((s, x) => s + x.revenue, 0);
+  const prevCosted = (mp?.items ?? []).filter((x) => x.unitCost !== null);
+  const prevRev = prevCosted.reduce((s, x) => s + x.revenue, 0);
+  const key = (x: { productId: string | null; name: string }) => x.productId ?? `name:${x.name}`;
+  // a mover: an item whose cost took a bigger share of the costed sales than before (its mix or its selling level moved)
+  const prevShare = new Map(prevCosted.map((x) => [key(x), prevRev > 0 ? ((x.unitCost as number) * x.qty) / prevRev : 0]));
+  const movers = costed.map((x) => ({ name: x.name, now: costedRev > 0 ? ((x.unitCost as number) * x.qty) / costedRev : 0, prev: prevShare.get(key(x)) ?? 0 }))
+    .filter((x) => x.now - x.prev > 0.001).sort((a, b) => (b.now - b.prev) - (a.now - a.prev) || a.name.localeCompare(b.name)).slice(0, 3)
+    .map((x) => ({ name: x.name, now: r4(x.now), prev: r4(x.prev) }));
+  const topIng = new Map(w.filter((r) => r.kind === 'top_ingredient' && r.item_id).map((r) => [r.item_id as string, r.item_name ?? null]));
+  const thinAll = costed.filter((x) => x.qty >= THIN_MIN_QTY && x.avgPrice > 0).map((x): ThinItem => ({
+    productId: x.productId, name: x.name, qty: x.qty, avgPrice: x.avgPrice, unitCost: x.unitCost as number, unitMargin: x.unitMargin as number,
+    marginPct: r4((x.unitMargin as number) / x.avgPrice), topIngredient: x.productId ? topIng.get(x.productId) ?? null : null,
+  })).sort((a, b) => a.marginPct - b.marginPct || b.qty - a.qty || a.name.localeCompare(b.name));
+  const qtyOf = new Map(m.items.filter((x) => x.productId).map((x) => [x.productId as string, x.qty]));
+  const productRows = w.filter((r) => r.kind === 'product' && r.item_id);
+  const risesAll = w.filter((r) => r.kind === 'ingredient' && n0(r.cost_start) > 0 && n0(r.cost_end) > n0(r.cost_start)).map((r): CostRise => {
+    const from = n0(r.cost_start), to = n0(r.cost_end);
+    return {
+      ingredientId: r.item_id, name: r.item_name || 'Unnamed ingredient', unit: r.unit ?? null, from: r4(from), to: r4(to), change: r4((to - from) / from),
+      changes: n0(r.changes), usedIn: n0(r.used_in), products: [], extraMonth: 0,
+    };
+  }).sort((a, b) => b.change - a.change || a.name.localeCompare(b.name));
+  // a product row is one product × one moved ingredient: what that ingredient's rise adds to one serving
+  for (const rise of risesAll) {
+    for (const p of productRows) {
+      const delta = n0(p.delta);
+      if (delta <= 0 || !(p.names ?? []).includes(rise.ingredientId ?? '')) continue;
+      const qty = qtyOf.get(p.item_id as string) ?? 0;
+      rise.products.push({ name: p.item_name || 'Unnamed item', delta: r2(delta), qty, extra: r2(delta * qty) });
+    }
+    rise.products.sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name));
+    rise.extraMonth = Math.round(perMonth(rise.products.reduce((s, x) => s + x.extra, 0), days));
+  }
+  const none = m.items.filter((x) => x.unitCost === null).sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name));
+  const unsold = w.find((r) => r.kind === 'unsold_no_cost');
+  const nc = noCostShare(m);
+  return {
+    days,
+    foodCost: { now, prev, change: now === null || prev === null ? null : r4(now - prev), costedShare: m.totals.revenue > 0 ? r4(costedRev / m.totals.revenue) : null, movers },
+    thin: thinAll.slice(0, TABLE_TOP), thinTotal: thinAll.length,
+    rises: risesAll.slice(0, TABLE_TOP), risesTotal: risesAll.length,
+    historyNote: 'Cost changes come from ingredient cost edits and delivery notes. An item\'s own cost keeps no history, so a change to it is not seen here.',
+    noCost: {
+      items: none.slice(0, TABLE_TOP).map((x) => ({ productId: x.productId, name: x.name, category: x.category, qty: x.qty, revenue: x.revenue })),
+      total: none.length, revenue: nc.revenue, share: nc.share,
+      unsold: n0(unsold?.changes), unsoldNames: (unsold?.names ?? []).filter(Boolean),
+    },
+  };
+}
+
+/** "Your food cost rose from 31% to 35% — check the biggest movers". Impact = the rise × the costed sales, a month. */
+export function recFoodCost(i: RecInput): Recommendation[] {
+  const c = i.costWatch; const m = menuReady(i);
+  if (!c || !m) return [];
+  const f = c.foodCost;
+  if (f.now === null || f.prev === null || f.change === null || f.change < FOOD_COST_RISE - 1e-9) return [];
+  const costedRev = m.items.filter((x) => x.unitCost !== null).reduce((s, x) => s + x.revenue, 0);
+  const names = f.movers.map((x) => x.name);
+  return [{
+    id: 'food_cost.rise', kind: 'food_cost',
+    title: `Your food cost rose from ${pctText(f.prev)} to ${pctText(f.now)} — check the biggest movers`,
+    why: names.length ? `The biggest movers are ${andList(names)}: they took a bigger share of what you spend on food. Check their portions and what you pay for them.`
+      : 'Check the portions of your best sellers and what you pay for them.',
+    impact: Math.round(perMonth(f.change * costedRev, i.days)), impactPer: 'month', impactKind: 'recover', stock: null, warning: false,
+    assumption: `If your food cost goes back to ${pctText(f.prev)} of what these items sell for. Both periods use today's costs, so the change comes from what sold and what it sold for; cost rises show on the Costs tab.`,
+    confidence: 'low', evidence: 'costs',
+  }];
+}
+
+/** "Chips masala earns 12% — check the portion or the oil cost": the best seller (≥ 10 sold) earning under 20%. No KES. */
+export function recThinMargin(i: RecInput): Recommendation[] {
+  const c = i.costWatch; const m = menuReady(i);
+  if (!c || !m) return [];
+  const cur = i.currency || 'KES';
+  const thin = c.thin.filter((x) => x.marginPct < THIN_MAX && x.qty >= THIN_CARD_MIN_QTY).sort((a, b) => b.qty - a.qty || a.marginPct - b.marginPct);
+  if (!thin.length) return [];
+  const t = thin[0];
+  const others = thin.slice(1, 3).map((x) => `${x.name} (${pctText(Math.max(0, x.marginPct))})`);
+  return [{
+    id: `thin.${t.productId ?? t.name}`, kind: 'thin_margin',
+    title: `${t.name} earns ${pctText(Math.max(0, t.marginPct))} — check the portion or ${t.topIngredient ? `the ${t.topIngredient.toLowerCase()} cost` : 'what goes into it'}`,
+    why: `Of every ${moneyText(t.avgPrice, cur)} it sells for, ${moneyText(Math.max(0, t.unitMargin), cur)} is left after its cost (${qtyText(t.qty)} sold in ${i.days} days).`
+      + (others.length ? ` Also thin: ${andList(others)}.` : ''),
+    impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
+    assumption: 'No KES estimate: what it earns = what it sells for less the cost of one serving (its own cost, else the recipe).',
+    confidence: 'medium', evidence: 'costs',
+  }];
+}
+
+/** "Compare suppliers for cooking oil: its cost rose 25%": the rise (≥ 5%) that costs the most a month in what you sell. */
+export function recCostRise(i: RecInput): Recommendation[] {
+  const c = i.costWatch;
+  if (!c || !i.costs || i.days < MENU_MIN_DAYS) return [];
+  const cur = i.currency || 'KES';
+  const r = c.rises.filter((x) => x.change >= COST_RISE_MIN - 1e-9 && x.extraMonth > 0).sort((a, b) => b.extraMonth - a.extraMonth || b.change - a.change)[0];
+  if (!r) return [];
+  const names = r.products.map((p) => p.name);
+  const shown = names.slice(0, 2);
+  return [{
+    id: `cost_rise.${r.ingredientId ?? r.name}`, kind: 'cost_rise',
+    title: `Compare suppliers for ${r.name}: its cost rose ${pctText(r.change)}`,
+    why: `${r.name} went from ${costText(r.from, cur)} to ${costText(r.to, cur)}${r.unit ? ` a ${r.unit}` : ''} this period; ${andList(names.length > 2 ? [...shown, `${names.length - 2} more`] : shown)} now ${names.length === 1 ? 'costs' : 'cost'} more to make.`,
+    impact: r.extraMonth, impactPer: 'month', impactKind: 'recover', stock: null, warning: false,
+    assumption: 'If you find it at the old cost again: the extra cost of one serving × what you sell a month.',
+    confidence: 'medium', evidence: 'costs',
+  }];
+}
+
+// ── A561: the tiles' hooks ────────────────────────────────────────────────────
+
+export type TileKey = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'stock' | 'branches' | 'customers' | 'costs';
+export interface TileHook { text: string; alert: boolean; hidden: boolean }
+const TILE_OF: Partial<Record<RecKind, TileKey>> = {
+  promote: 'menu', rework: 'menu', slow: 'menu', staffing: 'heatmap', quiet: 'heatmap', leak: 'leaks', day_close: 'leaks', credit: 'credit',
+  stock_low: 'stock', stock_out: 'stock', stock_up: 'stock', wastage: 'stock', lapsed: 'customers',
+  cost: 'costs', food_cost: 'costs', thin_margin: 'costs', cost_rise: 'costs', stock_move: 'branches', branch_drop: 'branches',
+};
+const DAY3 = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+/**
+ * One live figure per area for its tile ("4 stars · 2 dogs", "Busiest: Sat 19:00", "1 cashier to check", …) and whether
+ * a card or a warning points there (`recommendations`: every card the rules give, allRecommendations — not only the 7
+ * "Do this next" keeps). A tile the person may not open is hidden (costs, credit).
+ */
+export function tileHooks(input: {
+  costs: boolean; seesCredit: boolean; currency?: string;
+  menu: MenuResult | null; heatmap: HeatmapResult | null; leaks: LeaksResult | null; credit: CreditResult | null;
+  stockUse: StockUseResult | null; customers: CustomersResult | null; costWatch: CostsResult | null; recommendations: Recommendation[];
+  /** without costs (no menu worked out): how many items sold, from what sells when */
+  itemsSold?: number | null;
+  /** A565: the Branches tile — null (one branch, or a viewer held to one): hidden */
+  branches?: { count: number; moves: number; underperforming: { name: string; change: number | null }[] } | null;
+}): Record<TileKey, TileHook> {
+  const cur = input.currency || 'KES';
+  const alert = new Set(input.recommendations.map((r) => TILE_OF[r.kind]).filter(Boolean) as TileKey[]);
+  const hook = (k: TileKey, text: string, hidden = false): TileHook => ({ text, alert: !hidden && alert.has(k), hidden });
+  const m = input.menu;
+  const sold = m ? m.totals.items : input.itemsSold ?? 0;
+  const menuText = !sold ? 'No items sold yet'
+    : m && input.costs && !m.costsHidden && m.avgUnitMargin !== null ? `${plural(m.counts.star, 'star', 'stars')} · ${plural(m.counts.dog, 'dog', 'dogs')}`
+    : `${plural(sold, 'item', 'items')} sold`;
+  const h = input.heatmap;
+  const heatText = h?.busiest ? `Busiest: ${DAY3[h.busiest.dow]} ${hh(h.busiest.startHour)}` : 'No sales yet';
+  const flagged = input.leaks ? input.leaks.cashiers.filter((c) => c.flags.length).length : 0;
+  const leakText = flagged ? `${plural(flagged, 'cashier', 'cashiers')} to check` : 'Nobody flagged';
+  const c = input.credit;
+  const creditText = !c ? 'Who owes you' : c.over60.amount > 0 ? `${moneyText(c.over60.amount, cur)} over 60 days`
+    : c.totals.owed > 0 ? `${moneyText(c.totals.owed, cur)} owed` : 'Nobody owes you';
+  const s = input.stockUse;
+  const soon = s ? s.items.filter((x) => x.daysLeft !== null && x.daysLeft < 7 && x.perDay > 0).length : 0;
+  const stockText = !s ? 'How fast stock goes' : !s.onHandKnown ? (s.items.length ? `${plural(s.items.length, 'item', 'items')} used` : 'No stock tracked')
+    : soon ? `${plural(soon, 'item runs', 'items run')} out this week` : s.items.length ? 'Nothing runs out this week' : 'No stock tracked';
+  const cu = input.customers;
+  const custText = !cu ? 'Who comes back' : cu.customersHidden ? 'Order types and average bill'
+    : cu.lapsed.length ? `${plural(cu.lapsed.length, 'regular', 'regulars')} gone quiet`
+    : `${plural(cu.now.returning, 'customer', 'customers')} came back`;
+  const cw = input.costWatch;
+  const costText = !cw ? 'What each sale earns' : cw.noCost.total ? `${plural(cw.noCost.total, 'item has', 'items have')} no cost`
+    : cw.foodCost.now !== null ? `Food cost ${pctText(cw.foodCost.now)}` : 'What each sale earns';
+  return {
+    menu: hook('menu', menuText), heatmap: hook('heatmap', heatText), leaks: hook('leaks', leakText),
+    credit: hook('credit', creditText, !input.seesCredit), stock: hook('stock', stockText),
+    branches: hook('branches', branchText(input.branches ?? null), !input.branches),
+    customers: hook('customers', custText), costs: hook('costs', costText, !input.costs),
+  };
+}
+
+// ── A565: between branches ────────────────────────────────────────────────────
+//
+// The owner (2026-10-22): "also under analytics if there are several branches it can suggest items movement since branch
+// A is not performing"; then: "it should be a recommendation so it should not show number something like product x sells
+// well in shop b than A, or items in shop c are moving slow unlike in shop d which sells 10 items in a day and their stock
+// levels are low you can move some items to the shop". So the maths below DECIDES which moves to suggest and ranks them;
+// what is shown is a plain recommendation in words (a daily rate at most) — never a quantity, never a KES estimate.
+// Only for a viewer who sees every branch (the owner, an A550 partner of every branch) with two or more active branches.
+
+export const BRANCH_MIN_DAYS = 14;        // no move or branch flag on less than two weeks
+export const MAX_BRANCHES = 10;           // the comparison (and the work behind it) covers 10 branches at most
+export const MOVE_SHORT_DAYS = 3;         // short: under 3 days of its own sales on hand …
+export const MOVE_FAST_DAYS = 7;          // … or under a week while it sells ≥ 2× the other branches' median a day
+export const MOVE_FAST_MULTIPLE = 2;
+export const MOVE_MIN_USED = 10;          // the short branch used at least 10 in the period
+export const MOVE_SURPLUS_DAYS = 30;      // surplus: over 30 days of its own sales on hand …
+export const MOVE_SURPLUS_MEDIAN = 3;     // … or over 3× the median cover of the branches that sell it
+export const MOVE_SURPLUS_MIN = 10;       // … and at least 10 on hand
+export const MOVE_TARGET_DAYS = 7;        // internal: a move would bring the short branch to about a week
+export const MOVE_KEEP_DAYS = 14;         // internal: never leave the surplus branch under two weeks of its own sales
+export const MOVE_MIN_QTY = 3;            // internal: a move worth suggesting is at least 3 units
+export const MOVE_TOP = 3;                // movement cards at most in "Do this next"
+export const MOVE_GROUP = 3;              // items named in one card (same two branches, same way)
+export const BRANCH_DROP = 0.2;           // underperforming: sales down 20% or more on its own previous period …
+export const BRANCH_GAP = 0.1;            // … and at least 10 points worse than the other branches together
+export const BRANCH_MIN_PREV_ORDERS = 30; // a previous period with at least 30 bills to compare against
+export const BRANCH_DROP_TOP = 2;
+export const BRANCH_BASIS = 'Each branch is compared with its own previous period: it is flagged when its sales fall 20% or more and at least 10 points more than the other branches together. So a small branch is never flagged for being small, and a quiet month for everyone flags no branch.';
+export const MOVE_BASIS = 'A suggestion, not an order: how much to move is your call or your manager\'s. From this period\'s sales and wastage and the stock levels now. Running low means under about 3 days of its own sales (or under a week while it sells at least twice what the other branches do); plenty means over a month of its own sales, keeping at least two weeks after a move.';
+
+export interface BranchInfo { id: string; name: string }
+/** A stock level at a branch from a plain read — an item a branch did not use in either period is not in its use rows. */
+export interface BranchLevel { kind: 'product' | 'ingredient'; itemId: string; branchId: string; onHand: number }
+/** Internal: one possible move, with the quantity and the covers that decide and rank it (never sent to the page). */
+export interface StockMove {
+  kind: 'product' | 'ingredient'; itemId: string; name: string;
+  fromId: string; from: string; toId: string; to: string;
+  qty: number; score: number;
+  source: { perDay: number; cover: number | null };
+  target: { perDay: number; cover: number; fast: boolean };
+}
+/** What the page sees of a move: the items and the two branches — no quantity. */
+export interface MoveLine { fromId: string; from: string; toId: string; to: string; items: { kind: 'product' | 'ingredient'; itemId: string; name: string }[] }
+/** A grouped suggestion (one card, one row of the Branches area): 1–3 items moving the same way between two branches. */
+export interface MoveSuggestion { id: string; move: MoveLine; title: string; why: string; score: number }
+
+interface ItemAtBranch { branchId: string; branch: string; onHand: number | null; used: number }
+interface ItemAcross { kind: 'product' | 'ingredient'; itemId: string; name: string; at: Map<string, ItemAtBranch> }
+
+/** A quantity to a sensible step (1 under 20, 5 under 100, else 10) — up for what is needed, down for what can go. */
+export function stepRound(x: number, up: boolean): number {
+  const v = Math.max(0, x);
+  const step = v < 20 ? 1 : v < 100 ? 5 : 10;
+  return up ? Math.ceil(v / step - 1e-9) * step : Math.floor(v / step + 1e-9) * step;
+}
+
+function itemsAcross(branches: BranchInfo[], stock: Record<string, StockUseResult | null>, levels: BranchLevel[] = []): ItemAcross[] {
+  const map = new Map<string, ItemAcross>();
+  for (const b of branches) {
+    for (const x of stock[b.id]?.items ?? []) {
+      if (!x.id) continue;
+      const k = `${x.kind}.${x.id}`;
+      const it = map.get(k) ?? { kind: x.kind, itemId: x.id, name: x.name, at: new Map() };
+      it.at.set(b.id, { branchId: b.id, branch: b.name, onHand: x.onHand, used: x.used });
+      map.set(k, it);
+    }
+  }
+  for (const l of levels) {
+    const it = map.get(`${l.kind}.${l.itemId}`);
+    const b = branches.find((x) => x.id === l.branchId);
+    if (!it || !b || !Number.isFinite(l.onHand) || l.onHand < 0) continue;
+    const cur = it.at.get(b.id);
+    if (cur && cur.onHand !== null) continue;   // the use rows' level wins
+    it.at.set(b.id, { branchId: b.id, branch: b.name, onHand: l.onHand, used: cur?.used ?? 0 });
+  }
+  return [...map.values()];
+}
+
+interface Cover { branchId: string; branch: string; onHand: number; perDay: number; cover: number | null; used: number }
+function coversOf(it: ItemAcross, days: number): Cover[] {
+  return [...it.at.values()].filter((a) => a.onHand !== null && a.onHand >= 0).map((a) => {
+    const perDay = a.used / days;
+    return { branchId: a.branchId, branch: a.branch, onHand: a.onHand as number, perDay, used: a.used, cover: perDay > 0 ? (a.onHand as number) / perDay : null };
+  });
+}
+function shortsOf(cs: Cover[]): (Cover & { fast: boolean })[] {
+  const out: (Cover & { fast: boolean })[] = [];
+  for (const c of cs) {
+    if (c.perDay <= 0 || c.used < MOVE_MIN_USED || c.cover === null) continue;
+    const others = median(cs.filter((o) => o.branchId !== c.branchId && o.perDay > 0).map((o) => o.perDay));
+    const fast = others !== null && c.perDay >= MOVE_FAST_MULTIPLE * others - 1e-9;
+    if (c.cover < MOVE_SHORT_DAYS || (c.cover < MOVE_FAST_DAYS && fast)) out.push({ ...c, fast });
+  }
+  return out;
+}
+
+/** The items short at some branch (the only ones whose levels elsewhere are worth reading). */
+export function moveCandidates(input: { days: number; branches: BranchInfo[]; stock: Record<string, StockUseResult | null> }): { kind: 'product' | 'ingredient'; itemId: string }[] {
+  if (input.days < BRANCH_MIN_DAYS || input.branches.length < 2) return [];
+  return itemsAcross(input.branches, input.stock).filter((it) => shortsOf(coversOf(it, input.days)).length > 0)
+    .map((it) => ({ kind: it.kind, itemId: it.itemId }));
+}
+
+/**
+ * The moves, worked out per item across the branches. Short branch: under 3 days of cover, or under a week while it sells
+ * at least 2× the other branches' median a day (used ≥ 10). Surplus branch: ≥ 10 on hand and over 30 days of cover (or
+ * over 3× the median cover of the branches that sell it; a branch that sold none counts as surplus). Internally the
+ * quantity = the need to bring the short branch to 7 days (rounded up to a step) or what the surplus branch can spare
+ * keeping 14 days of its own sales (rounded down), whichever is less; under 3: no move. Each short branch takes from the
+ * branch that can spare most. score = the units that would otherwise run short × the average price (products), else the
+ * units — used ONLY to choose and rank.
+ */
+export function stockMoves(input: {
+  days: number; branches: BranchInfo[]; stock: Record<string, StockUseResult | null>; levels?: BranchLevel[]; prices?: Record<string, number>;
+}): StockMove[] {
+  const { days, branches } = input;
+  if (days < BRANCH_MIN_DAYS || branches.length < 2) return [];
+  const out: StockMove[] = [];
+  for (const it of itemsAcross(branches, input.stock, input.levels)) {
+    const cs = coversOf(it, days);
+    const shorts = shortsOf(cs).sort((a, b) => (a.cover as number) - (b.cover as number) || b.perDay - a.perDay);
+    if (!shorts.length) continue;
+    const medCover = median(cs.filter((c) => c.cover !== null).map((c) => c.cover as number));
+    const spare = new Map<string, number>();
+    for (const c of cs) {
+      if (c.onHand < MOVE_SURPLUS_MIN || shorts.some((s) => s.branchId === c.branchId)) continue;
+      const plenty = c.cover === null || c.cover > MOVE_SURPLUS_DAYS || (medCover !== null && medCover > 0 && c.cover > MOVE_SURPLUS_MEDIAN * medCover);
+      if (!plenty) continue;
+      const can = c.onHand - MOVE_KEEP_DAYS * c.perDay;
+      if (can > 0) spare.set(c.branchId, can);
+    }
+    for (const s of shorts) {
+      const from = [...spare.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (!from) break;
+      const need = MOVE_TARGET_DAYS * s.perDay - s.onHand;
+      const qty = Math.min(stepRound(need, true), stepRound(from[1], false));
+      if (qty < MOVE_MIN_QTY) continue;
+      spare.set(from[0], from[1] - qty);
+      const src = cs.find((c) => c.branchId === from[0]) as Cover;
+      const price = it.kind === 'product' ? input.prices?.[it.itemId] ?? null : null;
+      const units = Math.min(qty, Math.max(0, need));
+      out.push({
+        kind: it.kind, itemId: it.itemId, name: it.name, fromId: src.branchId, from: src.branch, toId: s.branchId, to: s.branch,
+        qty, score: r2(price !== null && price > 0 ? units * price : units),
+        source: { perDay: r4(src.perDay), cover: src.cover === null ? null : r1(src.cover) },
+        target: { perDay: r4(s.perDay), cover: r1(s.cover as number), fast: s.fast },
+      });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score || a.target.cover - b.target.cover || a.name.localeCompare(b.name));
+}
+
+/** "about 18 a day" — a daily rate only when it is at least one a day (the owner's own example uses one). */
+const dayRate = (perDay: number) => (perDay >= 1 ? ` (about ${Math.round(perDay)} a day)` : '');
+
+/**
+ * The moves grouped into plain suggestions: the same two branches the same way → one suggestion naming up to 3 items (the
+ * best scored first; the rest wait for a later period). Words only — no quantity, no stock count, no KES; a daily rate at
+ * most. `branchInView`: only suggestions touching that branch (null: every one).
+ */
+export function moveSuggestions(moves: StockMove[] | null | undefined, branchInView: string | null = null): MoveSuggestion[] {
+  const groups = new Map<string, StockMove[]>();
+  for (const m of moves ?? []) {
+    if (branchInView && m.fromId !== branchInView && m.toId !== branchInView) continue;
+    const k = `${m.fromId}>${m.toId}`;
+    groups.set(k, [...(groups.get(k) ?? []), m]);
+  }
+  const out: MoveSuggestion[] = [];
+  for (const [k, ms] of groups) {
+    const g = [...ms].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)).slice(0, MOVE_GROUP);
+    const { from, to, fromId, toId } = g[0];
+    const m = g[0];
+    const one = g.length === 1;
+    const urgent = g.some((x) => x.target.cover < 1);
+    const idle = g.every((x) => x.source.perDay <= 0);
+    const why = one
+      ? `${m.name} sells well at ${to}${dayRate(m.target.perDay)} and is ${m.target.cover < 1 ? 'about to run out' : 'running low'} there, but ${m.source.perDay > 0 ? `sells slowly at ${from}, where you hold plenty` : `is not selling at ${from}, where you hold some`} — consider moving some to ${to}.`
+      : `${andList(g.map((x) => x.name))} are ${idle ? `not selling at ${from}` : `moving slowly at ${from}`} but sell fast at ${to}, where ${urgent ? 'some are about to run out' : 'they are running low'} — consider moving some across.`;
+    out.push({
+      id: `stock_move.${k}`,
+      move: { fromId, from, toId, to, items: g.map((x) => ({ kind: x.kind, itemId: x.itemId, name: x.name })) },
+      title: one ? `Consider moving some ${m.name} from ${from} to ${to}` : `Consider moving some stock from ${from} to ${to}`,
+      why, score: r2(g.reduce((s, x) => s + x.score, 0)),
+    });
+  }
+  return out.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+}
+
+/** The movement cards: at most 3, ranked with the stock-out risks. No estimate — a suggestion; the owner decides how much. */
+export function recStockMoves(i: RecInput): Recommendation[] {
+  if (!i.moves?.length || i.days < BRANCH_MIN_DAYS) return [];
+  return moveSuggestions(i.moves, i.branchInView ?? null).slice(0, MOVE_TOP).map((s): Recommendation => ({
+    id: s.id, kind: 'stock_move', title: s.title, why: s.why,
+    impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
+    assumption: MOVE_BASIS, confidence: i.days >= 28 ? 'high' : 'medium', evidence: 'branches', move: s.move, score: s.score,
+  }));
+}
+
+export interface BranchRow {
+  id: string; name: string; sales: number; prevSales: number; change: number | null; orders: number; prevOrders: number;
+  tradingDays: number; perDay: number | null; avgBill: number | null; margin: number | null; share: number | null;
+  flagged: boolean; reason: string | null;
+  /** items whose stock moves slowly here and would sell faster at another branch (a count of items, not of stock) */
+  slowOut: number;
+}
+export interface BranchCompare { days: number; rows: BranchRow[]; total: number; underperforming: BranchRow[]; basis: string; marginHidden: boolean }
+
+/**
+ * The branches side by side: sales, the change against each branch's own previous period, sales per trading day, the
+ * average bill and (costs only) the gross margin. Underperforming (BRANCH_BASIS): ≥ 2 weeks, ≥ 30 bills before, sales
+ * down ≥ 20% AND ≥ 10 points worse than the other branches together. `daily`: each branch's analytics_daily_sales rows
+ * (both periods); `margins`: each branch's gross margin (null without costs). At most 10 rows, by sales.
+ */
+export function compareBranches(input: {
+  from: string; to: string; branches: BranchInfo[]; daily: Record<string, DailyRow[] | null>;
+  margins: Record<string, number | null> | null; moves?: StockMove[] | null;
+}): BranchCompare {
+  const { from, to } = input;
+  const days = rangeDays(from, to) ?? 1;
+  const sums = input.branches.map((b) => {
+    let sales = 0, orders = 0, prevSales = 0, prevOrders = 0;
+    const traded = new Set<string>();
+    for (const r of input.daily[b.id] ?? []) {
+      if (r.method !== null && r.method !== undefined) continue;
+      const d = String(r.day ?? '').slice(0, 10);
+      if (!d) continue;
+      if (d >= from && d <= to) { sales += n0(r.revenue); orders += n0(r.orders); if (n0(r.revenue) > 0) traded.add(d); }
+      else if (d < from) { prevSales += n0(r.revenue); prevOrders += n0(r.orders); }
+    }
+    return { b, sales, orders, prevSales, prevOrders, tradingDays: traded.size };
+  });
+  const total = sums.reduce((s, x) => s + x.sales, 0);
+  const rows: BranchRow[] = sums.map((x) => {
+    const others = sums.filter((o) => o.b.id !== x.b.id);
+    const rest = pctChange(others.reduce((s, o) => s + o.sales, 0), others.reduce((s, o) => s + o.prevSales, 0));
+    const change = pctChange(x.sales, x.prevSales);
+    const flagged = days >= BRANCH_MIN_DAYS && x.prevOrders >= BRANCH_MIN_PREV_ORDERS && change !== null
+      && change <= -BRANCH_DROP + 1e-9 && (rest === null || change <= rest - BRANCH_GAP + 1e-9);
+    const restWords = rest === null ? '' : rest >= 0.005 ? `, while the other branches together sold ${pctText(rest)} more`
+      : rest <= -0.005 ? `, while the other branches together sold ${pctText(-rest)} less` : ', while the other branches together held steady';
+    return {
+      id: x.b.id, name: x.b.name, sales: r2(x.sales), prevSales: r2(x.prevSales), change, orders: x.orders, prevOrders: x.prevOrders,
+      tradingDays: x.tradingDays, perDay: x.tradingDays > 0 ? r2(x.sales / x.tradingDays) : null,
+      avgBill: x.orders > 0 ? r2(x.sales / x.orders) : null, margin: input.margins ? input.margins[x.b.id] ?? null : null,
+      share: total > 0 ? r4(x.sales / total) : null,
+      flagged, reason: flagged && change !== null ? `Sales fell ${pctText(-change)} against the previous ${days} days${restWords}.` : null,
+      slowOut: new Set((input.moves ?? []).filter((m) => m.fromId === x.b.id).map((m) => `${m.kind}.${m.itemId}`)).size,
+    };
+  }).sort((a, b) => b.sales - a.sales || a.name.localeCompare(b.name));
+  return {
+    days, rows: rows.slice(0, TABLE_TOP), total: rows.length, basis: BRANCH_BASIS, marginHidden: !input.margins,
+    underperforming: rows.filter((r) => r.flagged).sort((a, b) => (a.change ?? 0) - (b.change ?? 0) || a.name.localeCompare(b.name)),
+  };
+}
+
+/**
+ * "Sales at Westlands fell 28% against the previous 30 days": a branch flagged by compareBranches (the branch in view, or
+ * every branch). When some of its stock is moving slowly and sells faster elsewhere, the card says so in words. No KES,
+ * never a price; the page links it to What sells when there.
+ */
+export function recBranchDrop(i: RecInput): Recommendation[] {
+  const bc = i.branchCompare;
+  if (!bc || i.days < BRANCH_MIN_DAYS) return [];
+  return bc.underperforming.filter((r) => !i.branchInView || r.id === i.branchInView).slice(0, BRANCH_DROP_TOP).map((r): Recommendation => {
+    const toward = [...new Set((i.moves ?? []).filter((m) => m.fromId === r.id).map((m) => m.to))];
+    return {
+      id: `branch_drop.${r.id}`, kind: 'branch_drop', branchId: r.id,
+      title: `Sales at ${r.name} fell ${pctText(-(r.change as number))} against the previous ${bc.days} days`,
+      why: `${r.reason ?? ''}${toward.length ? ` Its stock is moving slowly — some of it may sell faster at ${andList(toward.slice(0, 2))}.` : ''} Look at what sells when at ${r.name} to see which hours and items dropped.`.trim(),
+      impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
+      assumption: `No KES estimate. ${BRANCH_BASIS}`, confidence: bc.days >= 28 ? 'high' : 'medium', evidence: 'branches',
+    };
+  });
+}
+
+/** The Branches tile's hook: the moves to consider first, else the branch that fell, else how many are compared. */
+function branchText(b: { count: number; moves: number; underperforming: { name: string; change: number | null }[] } | null): string {
+  if (!b) return 'Compare your branches';
+  if (b.moves) return `${plural(b.moves, 'stock move', 'stock moves')} to consider`;
+  const u = b.underperforming[0];
+  if (u && u.change !== null) return `${u.name} down ${pctText(-u.change)}`;
+  return `${b.count} branches compared`;
 }

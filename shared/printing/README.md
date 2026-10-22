@@ -46,7 +46,7 @@ has drifted. So when a change moves the paper on purpose:
 
 and commit all of it together. CI also rebuilds the web bundle
 (`build-escpos-renderer.mjs --check`, esbuild pinned) and fails if it is stale.
-`BYTE-CHECK.txt` was refreshed for A551 (2026-10-21: kitchen tickets back in Font A, the item gap and 1-line feed on kitchen and dispatch tickets, the receipt's large payment block) and A557 (2026-10-21: kitchen dish names at the dispatch ticket's normal size, the payment block double height only); `VERIFICATION.txt` is a one-off capture from 2026-08-05 and
+`BYTE-CHECK.txt` was refreshed for A551 (2026-10-21: kitchen tickets back in Font A, the item gap and 1-line feed on kitchen and dispatch tickets, the receipt's large payment block) and A557 (2026-10-21: kitchen dish names at the dispatch ticket's normal size, the payment block double height only); A559 (2026-10-22: extras on the kitchen ticket as "+ Extra Cheese") changed SAMPLE-OUTPUT only — the byte fixture carries no extra, so BYTE-CHECK is unchanged; `VERIFICATION.txt` is a one-off capture from 2026-08-05 and
 is NOT maintained — its byte counts predate the receipt closing block.
 
 Compiles clean under `strict: true`. The three app tsconfigs are currently

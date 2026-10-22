@@ -92,6 +92,29 @@ export const POS_FEATURES = [
     label: 'Kitchen tickets in the small font',
     description: 'Kitchen tickets print in the printer’s smaller Font B (64 characters a line on 80 mm) instead of the normal Font A (48 a line, like the dispatch ticket). Fits long orders on less paper; harder to read at a distance.',
   },
+  // A562 (owner, 2026-10-22: "we remove approval pin and add it as a feature we can turn on or off in the admin panel").
+  // Off: the staff forms (web and till) offer no approval PIN and the cloud refuses a new one (APPROVAL_PIN_OFF) — managers
+  // approve with their sign-in PIN (A518). An approval PIN set before stays usable (lib/approver.ts reads no switch) until
+  // the owner removes it on the staff form, so no manager's approval breaks when this is off. Set in the admin portal only.
+  {
+    key: 'approval_pin',
+    label: 'Separate approval PIN for managers',
+    description: 'A separate approval PIN for managers (instead of their sign-in PIN). Off: managers approve voids, refunds, sales on account and drawers with their sign-in PIN, and the staff form offers no approval PIN. One already set keeps working until removed.',
+  },
+  // A563 (owner, 2026-10-22: "add a feature where an owner can enable not to prevent items with zero stock from appearing in
+  // the inventory or if they do they cannot be sold"). ONE owner choice carried by two switches (shared/stockGate.ts): neither
+  // = sell as normal; 'stock_zero_sold_out' = shown greyed "Sold out" and not sold; 'stock_zero_hide' (wins) = off the menu
+  // while out. Products that track stock only. Set by the owner (Settings › Business › POS options), never the admin portal.
+  {
+    key: 'stock_zero_sold_out',
+    label: 'Items at zero stock: show as sold out',
+    description: 'A tracked item whose stock at the branch is 0 or less stays on the menu greyed "Sold out" and cannot be sold.',
+  },
+  {
+    key: 'stock_zero_hide',
+    label: 'Items at zero stock: hide',
+    description: 'A tracked item whose stock at the branch is 0 or less is not on the till menu or the web POS, and cannot be sold, until stock comes in.',
+  },
 ] as const;
 
 /**
@@ -129,6 +152,18 @@ export const KITCHEN_OPTION_KEYS = ['kitchen_font_b'] as const;
  *  retired 'kitchen_font_a' is not read (Font A is what it asked for). */
 export function kitchenFontBFrom(features: Partial<Record<string, unknown>> | null | undefined): boolean {
   return (features ?? {}).kitchen_font_b === true;
+}
+
+/** A563: the owner's "When an item's stock reaches zero" choice — two switches, one setting (shared/stockGate.ts). */
+export const STOCK_ZERO_KEYS = ['stock_zero_sold_out', 'stock_zero_hide'] as const;
+
+/** A562: the staff switches, in the order the admin portal lists them — set by ZapTill, never by the owner. */
+export const STAFF_OPTION_KEYS = ['approval_pin'] as const;
+
+/** A562: may a separate approval PIN be SET for this business (the staff forms show it; the cloud accepts it)? Only a real
+ *  `true`. It never decides whether one already set approves — that stays as it was (lib/approver.ts). */
+export function approvalPinOn(features: Partial<Record<string, unknown>> | null | undefined): boolean {
+  return (features ?? {}).approval_pin === true;
 }
 
 /**

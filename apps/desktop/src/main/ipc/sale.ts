@@ -15,6 +15,7 @@ import { sellRefusal, isOpenBill } from '../sellGate';
 import { receiptPayloadFromDetail } from '../orderDetail';
 import { openBills, type IpcShared } from './shared';
 import { prepareCreditSale, pullCreditCustomers } from '../creditSale';   // A552
+import { saleStockRefusal } from '../stockGateLocal';   // A563
 
 /** A sale and its tickets: kitchen exclusions, reprints and order:create. */
 export function registerSaleHandlers(ctx: IpcShared) {
@@ -180,6 +181,11 @@ export function registerSaleHandlers(ctx: IpcShared) {
     // A519: paying a bill already open is never refused (finish what was started); a sale nobody opened needs "Sell".
     const refusedSale = sellRefusal('pay', sessionPerson(), isOpenBill(getLocalDb(), orderPayload?.order_number, openBills));
     if (refusedSale) { logLine('sale', `A519: refused a sale — ${sessionPerson()?.staffId ?? 'nobody'} has no Sell on this till`); throw new Error(refusedSale); }
+    // A563: the owner's "When an item's stock reaches zero" — with "show as sold out" or "hide", a line this till's own
+    // levels KNOW are out is refused here (the screen keeps in step; this is the authority). Checked at Charge, so a held
+    // or sent order that holds an item which has since sold out is refused only for that line. Unknown stock sells.
+    const soldOut = saleStockRefusal(orderPayload);
+    if (soldOut) { logLine('sale', `A563: refused a sale — ${soldOut}`); throw new Error(soldOut); }
     // A490: a discount given by hand needs sales.discount — the till is the authority here (offline too; the cloud never
     // refuses a till's sale for it). What offers took off is not the person's discount. Nothing else about selling asks.
     // A494: what the offers took is re-checked on THIS till's offers (the same engine the cart and the cloud use) — the

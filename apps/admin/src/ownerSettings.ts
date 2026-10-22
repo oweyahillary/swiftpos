@@ -10,7 +10,9 @@
  */
 
 /** Settings › Business › POS options — the owner switches them. */
-export const OWNER_POS_OPTIONS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'loyalty_enabled'] as const;
+/** A563: + 'When an item's stock reaches zero' (two switches, one owner choice). */
+export const OWNER_POS_OPTIONS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes', 'loyalty_enabled',
+  'stock_zero_sold_out', 'stock_zero_hide'] as const;
 
 /** Were cashier switches; now a permission each role holds or not. */
 export const PER_ROLE_SWITCHES: Record<string, string> = {

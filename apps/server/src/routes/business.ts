@@ -21,6 +21,7 @@ import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';  
 import { cleanReportSchedule } from '../jobs/ownerAlertsDecision';   // A476
 import { isOwnerAlertJobKey } from '../jobs/ownerAlerts';             // A476
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
+import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
 
 const router = safeRouter();
 
@@ -250,6 +251,18 @@ router.patch('/', requireAuth, requirePermission('settings.business'), async (re
 // Any signed-in member: the web's Help page shows it.
 router.get('/support', requireAuth, async (req, res) => {
   res.json({ support: await getSupportContact(req.businessId) });
+});
+
+// GET /api/business/cloud-trial — A569: the owner's cloud trial, for the dashboard's quiet notice in its last 7 days
+// (components/CloudTrialNotice.tsx). The owner only — a partner or a cashier gets { trial: null } (the notice is not
+// theirs). { trial: { ends_at, phase } | null }; phase is lib/cloudTrial.ts trialPhase.
+router.get('/cloud-trial', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!req.isOwner || req.isTill || req.webPartner === true) { res.json({ trial: null }); return; }
+  let trial;
+  try { trial = await readTrial(req.businessId); }
+  catch (e) { sendError(res, e); return; }
+  res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null });
 });
 
 // GET /api/business/branding
@@ -613,7 +626,8 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // never written from here.
   // A550: web dashboard access is given and taken only through Staff (routes/staff.ts /:id/web-access), which also links
   // and unlinks the sign-in account and ends sessions — never written here.
-  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY) {
+  // A569: the cloud trial record (once per client, ever) is ZapTill's too.
+  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY || String(key) === CLOUD_TRIAL_KEY) {
     res.status(403).json({ error: 'That setting is kept by ZapTill itself.', code: 'READ_ONLY_KEY' });
     return;
   }

@@ -17,6 +17,9 @@ import { DESK, useRowMore, ViewMore, MoreRow } from '../../components/RowMore'; 
 import { money, pct } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A472
 import { paginate, groupDigits } from '../../lib/paginate';
+import { nextInStoreCodes } from '../../lib/barcode';   // A571
+import GenerateBarcodes from './GenerateBarcodes';      // A571
+import { useNavigate } from 'react-router-dom';
 
 const EMPTY_FORM = {
   name: '',
@@ -32,6 +35,7 @@ const EMPTY_FORM = {
   is_fuel: false,
   fuel_unit: 'L',
   show_days: [] as number[],   // 0.6.31: [] = every day
+  barcode: '',   // A571: any format a scanner reads; "Generate" gives an in-store EAN-13
 };
 
 export default function ProductsPage() {
@@ -50,7 +54,9 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
+  // A561: Analytics' "Set cost" links open this page searched for the item (?q=) or with Set costs open (?costs=1)
+  const [search, setSearch] = useState(() => (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('q') ?? '' : ''));
+  const openCostsOnLoad = useRef(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('costs') === '1');
   const [filterCategory, setFilterCategory] = useState('');
   // A472: the list in pages. The size is remembered in this browser; the page resets when the search or category changes.
   const [page, setPage] = useState(1);
@@ -74,6 +80,9 @@ export default function ProductsPage() {
   const [bulkCosts, setBulkCosts] = useState<Record<string, string>>({});
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkResult, setBulkResult] = useState('');
+  const [showGenerate, setShowGenerate] = useState(false);   // A571
+  const [genBusy, setGenBusy] = useState(false);
+  const navigate = useNavigate();
 
   const openBulkCost = () => {
     const seed: Record<string, string> = {};
@@ -146,6 +155,12 @@ export default function ProductsPage() {
   };
 
   useEffect(() => { fetchAll(); }, [business]);
+  // A561: ?costs=1 — open Set costs once the products are in
+  useEffect(() => {
+    if (!openCostsOnLoad.current || loading || !products.length) return;
+    openCostsOnLoad.current = false;
+    openBulkCost();
+  }, [loading, products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openNew = () => {
     setEditing(null);
@@ -172,6 +187,7 @@ export default function ProductsPage() {
       is_fuel: (p as any).is_fuel ?? false,
       fuel_unit: (p as any).fuel_unit ?? 'L',
       show_days: cleanShowDays((p as any).show_days) ?? [],
+      barcode: p.barcode ?? '',
     });
     setImageFile(null);
     setImagePreview(p.image_url);
@@ -184,6 +200,25 @@ export default function ProductsPage() {
     if (!file) return;
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
+  };
+
+  // A571: an existing product gets its code from the cloud at once (conditional — never over one typed meanwhile); a new
+  // product the next free in-store code, checked again for clashes when it is saved.
+  const generateOne = async () => {
+    if (form.barcode.trim()) return;
+    setGenBusy(true); setError('');
+    try {
+      if (editing) {
+        const r = await api.post<{ assigned: { id: string; barcode: string }[] }>('/api/products/barcodes/generate', { product_ids: [editing.id] });
+        const got = r.assigned.find((a) => a.id === editing.id);
+        if (got) { setForm(f => ({ ...f, barcode: got.barcode })); await fetchAll(); }
+        else setError('This product already has a barcode on the cloud — reload to see it.');
+      } else {
+        const [code] = nextInStoreCodes(products.map(p => p.barcode), 1);
+        setForm(f => ({ ...f, barcode: code }));
+      }
+    } catch (e: any) { setError(e.message); }
+    setGenBusy(false);
   };
 
   const handleSave = async () => {
@@ -223,6 +258,7 @@ export default function ProductsPage() {
       is_fuel: form.is_fuel,
       fuel_unit: form.is_fuel ? (form.fuel_unit || 'L') : null,
       show_days: cleanShowDays(form.show_days) ?? null,   // 0.6.31: none or all seven = every day
+      barcode: form.barcode.trim() || null,   // A571
     };
 
     try {
@@ -330,6 +366,14 @@ export default function ProductsPage() {
           </button>
           <button onClick={openBulkCost} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
             Set costs
+          </button>
+          {/* A571: in-store barcodes for products without one, and labels for any printer */}
+          <button onClick={() => setShowGenerate(true)} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
+            Generate barcodes
+          </button>
+          <button onClick={() => navigate(`/dashboard/products/labels${selectedIds.size ? `?ids=${Array.from(selectedIds).join(',')}` : ''}`)}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
+            Print labels
           </button>
           <button onClick={openNew} className="bg-swift hover:bg-swift-light text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
             + New product
@@ -656,6 +700,27 @@ export default function ProductsPage() {
               </div>
             </div>
 
+            {/* A571: the barcode — scanned, typed (any format) or generated (an in-store EAN-13, never over one) */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-1.5">Barcode</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={form.barcode}
+                  onChange={e => setForm(f => ({ ...f, barcode: e.target.value }))}
+                  placeholder="Scan or type, or Generate"
+                  maxLength={64}
+                  data-testid="product-barcode"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
+                />
+                <button type="button" disabled={!!form.barcode.trim() || genBusy} onClick={generateOne}
+                  title={form.barcode.trim() ? 'This product has a barcode — clear it first to generate one' : 'Give it an in-store barcode'}
+                  className="bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 font-medium px-3 py-2 rounded-lg text-sm transition-colors">
+                  Generate
+                </button>
+              </div>
+            </div>
+
             {/* KRA eTIMS tax classification */}
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -767,6 +832,13 @@ export default function ProductsPage() {
         <div className="fixed bottom-6 left-4 sm:left-auto right-6 z-50 bg-gray-800 border border-gray-700 text-sm text-white px-4 py-2 rounded-lg shadow-lg">
           {flash}
         </div>
+      )}
+      {showGenerate && (
+        <GenerateBarcodes
+          ids={selectedIds.size ? Array.from(selectedIds) : null}
+          onClose={() => setShowGenerate(false)}
+          onDone={async (n) => { setShowGenerate(false); await fetchAll(); setFlash(`${n} barcode${n === 1 ? '' : 's'} generated`); }}
+        />
       )}
       {showBulkPrice && (
         <BulkPriceEditor

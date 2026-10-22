@@ -75,8 +75,11 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/offers(\/[^/]+)?$/,                             // A445: Manager › Offers on the till (products.manage; own branch)
   /^\/api\/stock\/transfers$/,                              // A197: Manager › Stock › Transfers — a new transfer (inventory.transfer)
   /^\/api\/stock\/transfers\/[^/]+\/status$/,               // A197: despatch, receive, cancel (inventory.transfer; branch access)
+  /^\/api\/stock\/requests$/,                               // A564: Manager › Stock › Other branches — ask another branch for an item (inventory.transfer; own branch)
+  /^\/api\/stock\/requests\/[^/]+\/(accept|decline|cancel)$/,  // A564: accept and send / decline (the branch asked) · cancel (the branch that asked)
   /^\/api\/reports\/monthly\/movements(\/[^/]+)?$/,          // A466: Manager › Monthly pack › Record for the books (expenses.manage; own branch)
   /^\/api\/credit\/sales\/[^/]+\/(confirm|dispute)$/,         // A545: Manager › Credit sales — confirm / dispute as themselves (customers.credit)
+  /^\/api\/products\/labels\/settings$/,                    // A571: Manager › Stock › Labels — the business's label (menu.edit)
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';

@@ -178,6 +178,19 @@ function receiptHeading(line: OrderLine): { name: string; hidden: Set<OrderUnit>
   return { name: options.length ? nameWithVariant(line.name, options) : line.name, hidden, moved };
 }
 
+/**
+ * Does this line print on this production ticket? A line with units earns its place through them; a FLAT line has no
+ * units, so it routes on its own account — which is the only way a bottled soda stays off the kitchen ticket and still
+ * reaches the packer. A559: an extra (`modifier`) is not a dish — it never earns a line a place, it only prints under a
+ * line that is there anyway — so a line whose only units are extras routes on its own account, like a flat line. (Before,
+ * a kitchen dish sold with an extra had one unit, the extra, routed to dispatch only — and the dish left the kitchen.)
+ */
+function lineEarnsPlace(line: OrderLine, visible: OrderUnit[], station: PrintContext['station']): boolean {
+  return line.units.some(u => !u.modifier)
+    ? visible.some(u => !u.modifier)
+    : station.includeUnits === 'all' || line.stationIds.includes(station.id);
+}
+
 /** A367: a typed note as printed rows — the cashier's line breaks kept, blank lines dropped. */
 function noteRows(note: string | undefined): string[] {
   return (note ?? '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -226,16 +239,8 @@ function renderProduction(ctx: PrintContext): Document {
 
     // A line contributing nothing to this station is omitted entirely rather
     // than printed as an empty heading. A fryer should not read drink orders.
-    //
-    // A line with units earns its place through them. A FLAT line has no units,
-    // so it routes on its own account — which is the only way a bottled soda
-    // stays off the kitchen ticket and still reaches the packer.
-    if (station.includeUnits !== 'none') {
-      const earns = line.units.length > 0
-        ? units.length > 0
-        : station.includeUnits === 'all' || line.stationIds.includes(station.id);
-      if (!earns) continue;
-    }
+    // (lineEarnsPlace: through its units, or on its own account when it has none.)
+    if (station.includeUnits !== 'none' && !lineEarnsPlace(line, units, station)) continue;
 
     // A551: a thin gap between two items (ITEM_GAP_DOTS), not a blank line.
     if (printedLines > 0) d.gap(ITEM_GAP_DOTS);
@@ -263,9 +268,19 @@ function renderProduction(ctx: PrintContext): Document {
       continue;
     }
 
+    // A559: the dish counts once, however many extras it carries — "Wings" with "+ Extra Cheese" is 1 item to cook.
+    // A line with dish units counts them (a combo's pieces) as before; a dish whose only units are extras counts 1.
+    const dishRows = units.filter(u => !u.modifier).length;
+    unitRows += line.units.some(u => !u.modifier) ? dishRows : 1;
+
     for (const u of units) {
-      unitRows++;
       if (u === folded) continue;   // A551: its variant is on the line's row
+      if (u.modifier) {
+        // A559: an extra, under its dish: "+ Extra Cheese" — the "+" so it is not read as a piece of a combo.
+        const times = u.quantity > 1 ? ` x${u.quantity}` : '';
+        d.lines(indentedWrap(cols, `+ ${u.name}${times}`, 6));
+        continue;
+      }
       const attrs = describeAttributes(u);
       const qty = u.quantity > 1 ? ` x${u.quantity}` : '';
       const inline =
@@ -635,12 +650,7 @@ export function hasPrintableContent(ctx: PrintContext): boolean {
   if (station.kind === 'receipt') return true;
   if (station.includeUnits === 'none') return order.lines.length > 0;
 
-  return order.lines.some(line => {
-    const units = visibleUnits(line, ctx);
-    return line.units.length > 0
-      ? units.length > 0
-      : station.includeUnits === 'all' || line.stationIds.includes(station.id);
-  });
+  return order.lines.some(line => lineEarnsPlace(line, visibleUnits(line, ctx), station));
 }
 
 export function renderTicket(ctx: PrintContext): Document {

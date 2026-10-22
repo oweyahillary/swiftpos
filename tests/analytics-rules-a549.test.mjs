@@ -144,7 +144,7 @@ const text = (id) => ins.find((i) => i.id === id)?.text;
 ok('the Plowhorse sentence: a top 3 seller below the average margin, by how much', () => {
   // avg margin = (100×20 + 60×100 + 50×50 + 5×500 + 3×5) / 218 = 59.70; wings 20 → 39.70 below (KES 40)
   assert.equal(menu.avgUnitMargin, 59.7);
-  assert.equal(text('menu.plowhorse.Chicken wings'), 'Chicken wings is a Plowhorse: top 3 seller but margin KES 40 below average – consider a small price rise');
+  assert.equal(text('menu.plowhorse.Chicken wings'), 'Chicken wings is a Plowhorse: top 3 seller but margin KES 40 below average – check the recipe cost or portion, or pair it with a higher-margin item');
   assert.equal(ins.find((i) => i.id === 'menu.plowhorse.Chicken wings').severity, 'medium');
 });
 ok('Puzzle, Dogs and no cost set', () => {

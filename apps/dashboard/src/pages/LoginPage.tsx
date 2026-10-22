@@ -23,6 +23,12 @@ const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: st
     title: 'Web portal access not enabled',
     body:  'Your licence covers the desktop POS app only. To access the web dashboard and cloud portal, contact ZapTill to upgrade your plan (KES 10,000).',
   },
+  // A569: the 30-day cloud trial (started with the first desktop licence) ended, and its week of reports only too.
+  CLOUD_TRIAL_ENDED: {
+    icon:  '⏳',
+    title: 'Your cloud trial has ended',
+    body:  'Your one-month cloud trial is over. Contact ZapTill to keep the web dashboard. Your tills keep working as before.',
+  },
   ACCOUNT_SUSPENDED: {
     icon:  '⛔',
     title: 'Account suspended',
@@ -189,7 +195,7 @@ export default function LoginPage() {
               <h2 className="text-white font-bold text-xl mb-2">{accessError.title}</h2>
               <p className="text-[#64748b] text-sm leading-relaxed">{accessError.body}</p>
             </div>
-            {errorCode === 'WEB_HOSTING_REQUIRED' && (
+            {(errorCode === 'WEB_HOSTING_REQUIRED' || errorCode === 'CLOUD_TRIAL_ENDED') && (
               <div className="bg-[#0a1628] border border-[#1e2d45] rounded-xl p-4 text-left space-y-1">
                 <p className="text-xs text-[#64748b] font-semibold uppercase tracking-wider">What you get with web hosting</p>
                 <ul className="text-sm text-[#94a3b8] space-y-1 mt-2">

@@ -22,6 +22,8 @@ import { readPartners, writePartners, partnerLive, withMetaLink, unusablePasswor
 import { forgetUser } from '../lib/authCache';   // A550
 import { sendEmailChecked } from '../lib/mailer';   // A550
 import { signInAddress } from '../lib/tenant';   // A550
+import { businessPosFeatures } from '../lib/posFeatureFlags';   // A562
+import { approvalPinOn } from '../lib/posFeatures';   // A562
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -41,6 +43,21 @@ function hashOverridePin(pin: string): Promise<string> {
   return bcrypt.hash(String(pin), 10);
 }
 
+// A562 (owner, 2026-10-22: "we remove approval pin and add it as a feature we can turn on or off in the admin panel"):
+// a NEW approval PIN is set only for a business whose admin-portal switch 'approval_pin' is on. Removing one ('') is
+// always allowed. One already set keeps approving either way (lib/approver.ts reads no switch) — no manager's approval
+// breaks the day the switch is off; the owner removes it on the staff form.
+const APPROVAL_PIN_OFF_BODY = {
+  error: 'Separate approval PINs are off for this business — managers approve with their sign-in PIN. ZapTill support can turn them on.',
+  code: 'APPROVAL_PIN_OFF',
+} as const;
+async function approvalPinAllowed(req: any): Promise<boolean> {
+  return approvalPinOn(await businessPosFeatures(req.businessId));
+}
+
+/** A562: the owner's role belongs to the owner alone — nobody is given it, the owner included (lib/roleCeiling.ts). */
+const OWNER_ROLE_REFUSAL = 'The owner\'s role belongs to the owner alone — choose another role (for full rights, a role such as General Manager).';
+
 // ── A490: the ceiling is by PERMISSION (lib/roleCeiling.ts) ──────────────────────────────────────────────────────────
 // A340 matched role names (owner, admin, manager, supervisor, branch_manager). Now: the owner's role (lib/ownerRole.ts)
 // is the owner's alone, and anyone else may assign a role, grant a permission or manage a person only when that holds
@@ -56,6 +73,7 @@ async function roleAssignRefusal(req: any, roleId: string): Promise<string | nul
   const { data: role, error } = await supabase.from('roles').select('id, name, business_id').eq('id', roleId).maybeSingle();
   if (error || !role) return held.has('*') ? null : 'You are not allowed to assign this role';
   if ((role as any).business_id && (role as any).business_id !== req.businessId) return 'You are not allowed to assign this role';
+  if (isOwnerRoleName((role as any).name)) return OWNER_ROLE_REFUSAL;   // A562: by nobody, the owner included
   let keys: Set<string>;
   try { keys = (await roleKeyMap([roleId])).get(roleId) ?? new Set(); } catch { return 'Could not check this role — please try again'; }
   return canAssignRole(held, { name: (role as any).name, keys }) ? null : 'You are not allowed to assign this role';
@@ -263,7 +281,7 @@ function overridePinRefusal(req: any, targetKeys: ReadonlySet<string>): { error:
 // stripped before the response leaves.
 // A490: each person's own overrides also come as `override_keys` — { fine key: granted } (a broad override row from
 // before migration 134 shown as the fine keys it stands for).
-function shapeStaff(rows: any[]): any[] {
+function shapeStaff(rows: any[], selfId?: string | null): any[] {
   return (rows ?? []).map((u: any) => {
     const { override_pin_hash, pin_hash, ...rest } = u ?? {};
     const override_keys: Record<string, boolean> = {};
@@ -272,7 +290,9 @@ function shapeStaff(rows: any[]): any[] {
       if (!k) continue;
       for (const f of expandKeys([k])) if (f !== '*') override_keys[f] = up.granted === true;
     }
-    return { ...rest, can_authorize: !!override_pin_hash, override_keys };
+    // A562: is_self — the row of whoever is asking (the owner's own account, for the owner): the staff form keeps its role,
+    // and Deactivate is not offered (the cloud refuses SELF_DEACTIVATE).
+    return { ...rest, can_authorize: !!override_pin_hash, override_keys, is_self: !!selfId && u?.id === selfId };
   });
 }
 
@@ -294,7 +314,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
       .order('name');
 
     if (error) { sendError(res, error); return; }
-    res.json(shapeStaff(req.isOwner ? (data ?? []) : (data ?? []).filter((u: any) => !isOwnerRoleName(u?.roles?.name))));
+    res.json(shapeStaff(req.isOwner ? (data ?? []) : (data ?? []).filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId));
     return;
   }
 
@@ -330,7 +350,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
   // filter would be undone by anyone talking to the API directly.
   staff = staff.filter((u: any) => !isOwnerRoleName(u?.roles?.name));
 
-  res.json(shapeStaff(staff));
+  res.json(shapeStaff(staff, req.userId));
 });
 
 // GET /api/staff/authorizers — list staff who can authorize overrides.
@@ -407,6 +427,7 @@ router.post('/', requirePermission('staff.edit'), validate(CreateStaffSchema), a
   const overridePin = req.body.override_pin;
   let override_pin_hash: string | null | undefined;
   if (typeof overridePin === 'string' && overridePin.length > 0) {
+    if (!(await approvalPinAllowed(req))) { res.status(403).json(APPROVAL_PIN_OFF_BODY); return; }   // A562
     if (!OVERRIDE_PIN_RE.test(overridePin)) {
       res.status(400).json({ error: 'Override PIN must be 4–6 digits' });
       return;
@@ -452,6 +473,11 @@ router.post('/invite', requirePermission('staff.edit'), async (req, res) => {
 
   // A340: the invite path had NO role or branch guard — a manager could invite anyone as the owner, the one gap in
   // an otherwise guarded set (POST /, PATCH, DELETE). Same rules as POST /.
+  // A562: and the owner never invites someone onto the owner's role either.
+  if (req.isOwner) {
+    const roleRefusal = await roleAssignRefusal(req, role_id);
+    if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
+  }
   if (!req.isOwner) {
     // A494: a non-owner with no branch invites nobody (the person would have had every branch). A550: a partner of every
     // branch invites to any of their branches, as the owner does.
@@ -517,6 +543,25 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
   if (!req.isOwner) {
     const refusal = await refuseIfProprietor(req.params.id, req.businessId);
     if (refusal) { res.status(403).json({ error: refusal }); return; }
+  }
+
+  // A562: nobody deactivates themselves (the owner's own row stopped their PIN on every till); the owner's own role stays
+  // the owner's; the owner's own e-mail is their sign-in — changed here, their next sign-in found no row of theirs and
+  // made a second one on the owner's role (auth.ts ensureOwnerUserRow) — ZapTill support changes it (admin portal).
+  const isSelf = !!req.userId && req.params.id === req.userId;
+  if (isSelf && status && status !== 'active') {
+    res.status(400).json({ error: 'You cannot deactivate yourself.', code: 'SELF_DEACTIVATE' });
+    return;
+  }
+  if (req.isOwner && role_id && role_id !== (existing as any).role_id) {
+    if (isSelf) { res.status(403).json({ error: 'The owner\'s own role cannot be changed.', code: 'OWN_ROLE' }); return; }
+    const roleRefusal = await roleAssignRefusal(req, role_id);
+    if (roleRefusal) { res.status(403).json({ error: roleRefusal }); return; }
+  }
+  if (req.isOwner && req.webPartner !== true && isSelf && email !== undefined
+    && String(email || '').trim().toLowerCase() !== String((existing as any).email ?? '').trim().toLowerCase()) {
+    res.status(400).json({ error: 'Your e-mail is how you sign in — ZapTill support changes it for you.', code: 'OWNER_SIGNIN_EMAIL' });
+    return;
   }
 
   // A494: nobody but the owner changes their OWN role, permissions or branches — a manager could otherwise lift
@@ -604,6 +649,7 @@ router.patch('/:id', requirePermission('staff.edit'), validate(UpdateStaffSchema
     if (overridePin.length === 0) {
       updates.override_pin_hash = null;
     } else if (OVERRIDE_PIN_RE.test(overridePin)) {
+      if (!(await approvalPinAllowed(req))) { res.status(403).json(APPROVAL_PIN_OFF_BODY); return; }   // A562
       const refusal = overridePinRefusal(req, willHold);   // A494
       if (refusal) { res.status(403).json(refusal); return; }
       updates.override_pin_hash = await hashOverridePin(overridePin);
@@ -665,6 +711,11 @@ router.post('/:id/reset-otp', requirePermission('staff.edit'), async (req, res) 
 });
 
 router.delete('/:id', requirePermission('staff.edit'), async (req, res) => {
+  // A562: nobody deactivates themselves — the owner's own row included (their PIN stopped on every till).
+  if (req.userId && req.params.id === req.userId) {
+    res.status(400).json({ error: 'You cannot deactivate yourself.', code: 'SELF_DEACTIVATE' });
+    return;
+  }
   // Non-owners: verify target is in their branch
   if (!req.isOwner) {
     // Same refusal as PATCH. This route had NO elevated-role check whatsoever —

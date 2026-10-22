@@ -454,12 +454,12 @@ KITCHEN                                               DISPATCH                  
 |------------------------------------------------|    |------------------------------------------------|    |------------------------------------------------|
 |1   CHICKEN BURGER - SPICY                      |    |1   CHICKEN BURGER - SPICY                      |    |Type: Takeaway                                  |
 |2   BEEF BURGER - LARGE                         |    |2   BEEF BURGER - LARGE                         |    |------------------------------------------------|
-|1   GRILLED CHICKEN BURGER DOUBLE PATTY - EXTRA |    |      Extra Cheese                              |    |Bill No.: T1--5718                              |
-|    HOT PERI PERI                               |    |1   GRILLED CHICKEN BURGER DOUBLE PATTY - EXTRA |    |Cashier: Amina                                  |
-|------------------------------------------------|    |    HOT PERI PERI                               |    |Date: 2026-08-05 19:42:11                       |
-|                3 items to cook                 |    |------------------------------------------------|    |Kots: 2                                         |
-+------------------------------------------------+    |                     3 bags                     |    |------------------------------------------------|
-                                                      +------------------------------------------------+    |Item                             Qty         Amt|
+|      + Extra Cheese                            |    |      + Extra Cheese                            |    |Bill No.: T1--5718                              |
+|1   GRILLED CHICKEN BURGER DOUBLE PATTY - EXTRA |    |1   GRILLED CHICKEN BURGER DOUBLE PATTY - EXTRA |    |Cashier: Amina                                  |
+|    HOT PERI PERI                               |    |    HOT PERI PERI                               |    |Date: 2026-08-05 19:42:11                       |
+|------------------------------------------------|    |------------------------------------------------|    |Kots: 2                                         |
+|                3 items to cook                 |    |                     3 bags                     |    |------------------------------------------------|
++------------------------------------------------+    +------------------------------------------------+    |Item                             Qty         Amt|
                                                                                                             |------------------------------------------------|
                                                                                                             |Chicken Burger - Spicy             1      550.85|
                                                                                                             |Beef Burger - Large                2    1,440.68|
@@ -501,13 +501,13 @@ KITCHEN                               DISPATCH                              RECE
 |--------------------------------|    |--------------------------------|    |--------------------------------|
 |1   CHICKEN BURGER - SPICY      |    |1   CHICKEN BURGER - SPICY      |    |Type: Takeaway                  |
 |2   BEEF BURGER - LARGE         |    |2   BEEF BURGER - LARGE         |    |--------------------------------|
-|1   GRILLED CHICKEN BURGER      |    |      Extra Cheese              |    |Bill No.: T1--5718              |
-|    DOUBLE PATTY - EXTRA HOT    |    |1   GRILLED CHICKEN BURGER      |    |Cashier: Amina                  |
-|    PERI PERI                   |    |    DOUBLE PATTY - EXTRA HOT    |    |Date: 2026-08-05 19:42:11       |
-|--------------------------------|    |    PERI PERI                   |    |Kots: 2                         |
-|        3 items to cook         |    |--------------------------------|    |--------------------------------|
-+--------------------------------+    |             3 bags             |    |Item               Qty       Amt|
-                                      +--------------------------------+    |--------------------------------|
+|      + Extra Cheese            |    |      + Extra Cheese            |    |Bill No.: T1--5718              |
+|1   GRILLED CHICKEN BURGER      |    |1   GRILLED CHICKEN BURGER      |    |Cashier: Amina                  |
+|    DOUBLE PATTY - EXTRA HOT    |    |    DOUBLE PATTY - EXTRA HOT    |    |Date: 2026-08-05 19:42:11       |
+|    PERI PERI                   |    |    PERI PERI                   |    |Kots: 2                         |
+|--------------------------------|    |--------------------------------|    |--------------------------------|
+|        3 items to cook         |    |             3 bags             |    |Item               Qty       Amt|
++--------------------------------+    +--------------------------------+    |--------------------------------|
                                                                             |Chicken Burger -     1    550.85|
                                                                             |Spicy                           |
                                                                             |Beef Burger -        2  1,440.68|

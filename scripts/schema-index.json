@@ -1347,6 +1347,27 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "quantity_received": "\"numeric\""
   },
+  "stock_transfer_requests": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "from_branch_id": "\"uuid\" NOT NULL",
+    "to_branch_id": "\"uuid\" NOT NULL",
+    "product_id": "\"uuid\" NOT NULL",
+    "quantity": "\"numeric\" NOT NULL",
+    "sent_quantity": "\"numeric\"",
+    "note": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "requested_by": "\"uuid\"",
+    "requested_by_name": "\"text\"",
+    "requested_at": "\"timestamp with time zone\" NOT NULL",
+    "decided_by": "\"uuid\"",
+    "decided_by_name": "\"text\"",
+    "decided_at": "\"timestamp with time zone\"",
+    "decline_reason": "\"text\"",
+    "transfer_id": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "stock_transfers": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",

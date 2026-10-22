@@ -31,7 +31,7 @@
  *   POST /api/auth/pos-login       — email + PIN → branch-scoped token pair
  *   POST /api/auth/verify-pin      — a person's PIN on a till (the till's session, or a PIN sign-in on a till — A494: not the web); branch licence check
  *   POST /api/auth/set-pin         — bcrypt PIN update
- *   PATCH /api/auth/me             — clears must_change_password
+ *   PATCH /api/auth/me             — A568: a no-op (the flag is cleared only by setting a new password)
  */
 import { forgetTill } from '../lib/authCache';   // A528
 import { validateLoose } from '../middleware/validate';
@@ -45,7 +45,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { findTenant, ownedTenantBusiness } from '../lib/tenant';   // A378: a client's own sign-in address
-import { getWebAccess } from '../lib/webAccess';
+import { getWebAccess, webAccessRefusal } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import { refreshHandshakeDecision, type HandshakeDecision, type HandshakeSuccessor } from '../lib/refreshHandshake';   // A477
 import { checkTillIdentity, resetTillIdentity } from '../lib/tillIdentity';   // A477
@@ -665,12 +665,7 @@ async function partnerSignIn(req: any, res: any, authUser: { id: string; email?:
   }
   const webAccess = await getWebAccess(biz.id, biz.status);
   if (!webAccess.canLogin) {
-    res.status(403).json({
-      error: webAccess.state === 'locked'
-        ? 'Your web portal subscription has expired. Please renew to continue.'
-        : 'Web portal access is not enabled for your account. Please contact ZapTill to upgrade.',
-      code:  webAccess.state === 'locked' ? 'WEB_ACCESS_EXPIRED' : 'WEB_HOSTING_REQUIRED',
-    });
+    res.status(403).json(webAccessRefusal(webAccess));   // A569: a lapsed cloud trial says so (CLOUD_TRIAL_ENDED)
     return;
   }
   const person: PartnerPerson = check.person;
@@ -811,12 +806,7 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
   // feature_flags.web_hosting boolean, so existing logins are unchanged.
   const webAccess = await getWebAccess(business.id, business.status);
   if (!webAccess.canLogin) {
-    res.status(403).json({
-      error: webAccess.state === 'locked'
-        ? 'Your web portal subscription has expired. Please renew to continue.'
-        : 'Web portal access is not enabled for your account. Please contact ZapTill to upgrade.',
-      code:  webAccess.state === 'locked' ? 'WEB_ACCESS_EXPIRED' : 'WEB_HOSTING_REQUIRED',
-    });
+    res.status(403).json(webAccessRefusal(webAccess));   // A569: a lapsed cloud trial says so (CLOUD_TRIAL_ENDED)
     return;
   }
 
@@ -825,20 +815,12 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
   // resolveOwnerUserRow.
   const ownerUser = await ensureOwnerUserRow(business.id, data.user.email);   // A451: found, or created
 
-  let mustChangePassword = (ownerUser as any)?.must_change_password ?? false;
-  if (mustChangePassword) {
-    const passwordWasUpdated =
-      data.user.updated_at &&
-      data.user.created_at &&
-      new Date(data.user.updated_at) > new Date(data.user.created_at);
-    if (passwordWasUpdated) {
-      await supabase
-        .from('users')
-        .update({ must_change_password: false, updated_at: new Date().toISOString() })
-        .eq('id', (ownerUser as any).id);
-      mustChangePassword = false;
-    }
-  }
+  // A568: the row's flag, as it is. It used to be cleared here when the sign-in account's updated_at was later than its
+  // created_at — but GoTrue moves updated_at on EVERY sign-in (UpdateOnly(last_sign_in_at) lets pop stamp updated_at too),
+  // and the admin's own reset moves it as well, so the owner was never sent to /change-password. Only setting a new
+  // password clears it: /password/change (the forced page and Settings) or /password/reset (Forgot password), both
+  // through setOwnerPassword.
+  const mustChangePassword = (ownerUser as any)?.must_change_password === true;
 
   // A391: an owner enters a one-time code (emailed, or from their authenticator app). A398: only when the admin portal
   // has turned 'Sign-in codes' on for this client.
@@ -2129,13 +2111,16 @@ router.post('/otp/email', requireAuth, async (req, res) => {
 router.get('/session', requireAuth, async (req, res) => {
   if (req.isTill) { res.status(403).json({ error: 'A till has no dashboard session.', code: 'PERSON_ONLY' }); return; }
   const { data: me } = req.userId
-    ? await supabase.from('users').select('name').eq('id', req.userId).eq('business_id', req.businessId).maybeSingle()
+    ? await supabase.from('users').select('name, must_change_password').eq('id', req.userId).eq('business_id', req.businessId).maybeSingle()
     : { data: null };
   const owner = req.isOwner === true;
   res.json({
     owner,
     partner: req.webPartner === true,
     name: (me as { name?: string } | null)?.name ?? null,
+    // A568: the owner must set a new password before using the dashboard (ProtectedRoute sends them to /change-password).
+    // A partner set their own through the invite — never forced.
+    mustChangePassword: owner && req.webPartner !== true && (me as { must_change_password?: boolean } | null)?.must_change_password === true,
     permissions: owner ? { '*': true } : clientPermissionMap(new Set(req.permissionKeys ?? [])),
     allBranches: owner || req.allBranches === true,
     branchIds: owner ? null : (req.webPartner ? req.partnerBranches : (req.branchId ? [req.branchId] : [])),
@@ -2144,22 +2129,11 @@ router.get('/session', requireAuth, async (req, res) => {
 
 // ── PATCH /api/auth/me ────────────────────────────────────────────────────────
 
-router.patch('/me', requireAuth, async (req, res) => {
-  const { must_change_password } = req.body;
-  if (must_change_password !== false) { res.json({ success: true }); return; }
-
-  // A494: the caller's OWN row only. It cleared the flag on every owner/admin-role row of the business (or, with no
-  // such role, on everybody's) for ANY signed-in person — a cashier could switch off the owner's forced password change.
-  if (!req.userId) { res.status(403).json({ error: 'No person is signed in on this session.' }); return; }
-  try {
-    const { error } = await supabase.from('users')
-      .update({ must_change_password: false, updated_at: new Date().toISOString() })
-      .eq('id', req.userId).eq('business_id', req.businessId);
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (err: any) {
-    sendError(res, err, { message: 'Failed to update profile' });
-  }
+// A568: no longer clears "must change password". Saying so is not changing it: the flag is cleared only where a new
+// password is actually set (/password/change, /password/reset — setOwnerPassword). Answered 200 so an older page that
+// still calls it does not break; nothing changes. (A494's rule — never anyone else's row — holds trivially.)
+router.patch('/me', requireAuth, async (_req, res) => {
+  res.json({ success: true, changed: false });
 });
 
 export default router;

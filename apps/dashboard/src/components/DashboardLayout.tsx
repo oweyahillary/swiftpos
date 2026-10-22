@@ -9,6 +9,7 @@ import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
 import { usePermissions } from '../context/PermissionsContext';   // A550
 import { relative } from '../lib/format';
+import CloudTrialNotice from './CloudTrialNotice';   // A569: the owner's notice in the trial's last 7 days
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
 // One curated stroke path per nav concept, in place of the mixed emoji the web
@@ -128,6 +129,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/menus',      label: 'Menus',      icon: 'menu' },
       { to: '/dashboard/categories', label: 'Categories', icon: 'categories' },
       { to: '/dashboard/products',   label: 'Products',   icon: 'products' },
+      // A571: barcode labels on any printer and any label size (in-store barcodes are generated on Products).
+      { to: '/dashboard/products/labels', label: 'Print labels', icon: 'products' },
       { to: '/dashboard/discounts',  label: 'Discounts',  icon: 'discounts' },
       // Payment methods moved to Settings › Business › Payments (it is tender
       // configuration, not catalogue).
@@ -143,6 +146,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/stock/purchase-orders', label: 'Purchase Orders', icon: 'purchase_orders' },
       { to: '/dashboard/stock/suppliers',       label: 'Suppliers',       icon: 'suppliers' },
       { to: '/dashboard/stock/transfers',       label: 'Transfers',       icon: 'transfers' },
+      // A564: another branch's stock, and the requests between branches (the count waiting for an answer).
+      { to: '/dashboard/stock/other-branches',  label: 'Other branches',  icon: 'transfers', badgeKey: 'branchRequests' },
       // A394: stock take — blind counts, reviewed before stock changes.
       { to: '/dashboard/stock/counts',          label: 'Stock Counts',    icon: 'counts' },
       // A399: wastage — spoiled, expired or damaged, with the reason and what it cost.
@@ -202,6 +207,7 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/reservations':          ['reservations.manage'],
   '/dashboard/categories':            ['products.view', 'menu.edit'],
   '/dashboard/products':              ['products.view', 'menu.edit'],
+  '/dashboard/products/labels':       ['products.view', 'menu.edit', 'inventory.view'],   // A571
   '/dashboard/discounts':             ['menu.offers'],
   '/dashboard/offers':                ['menu.offers'],
   '/dashboard/combos':                ['menu.edit'],
@@ -209,6 +215,7 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/stock/purchase-orders': ['inventory.receive'],
   '/dashboard/stock/suppliers':       ['inventory.receive', 'payables.view', 'payables.manage'],
   '/dashboard/stock/transfers':       ['inventory.transfer'],
+  '/dashboard/stock/other-branches':  ['inventory.view', 'inventory.transfer'],   // A564
   '/dashboard/stock/counts':          ['inventory.count', 'inventory.adjust'],
   '/dashboard/stock/wastage':         ['inventory.waste', 'reports.inventory'],
   '/dashboard/stock/expiry':          ['inventory.view'],
@@ -324,6 +331,7 @@ export default function DashboardLayout() {
       case '/dashboard/stock/counts':      return 'Count the shelf (blind); differences are reviewed before stock changes';
       case '/dashboard/stock/wastage':     return 'What spoiled, expired or was damaged — the reason and what it cost';
       case '/dashboard/stock/expiry':      return 'Batches and expiry dates — what expires soon, what has expired';
+      case '/dashboard/stock/other-branches': return 'How much another branch holds of an item, and asking it for some';
       case '/dashboard/inventory':         return isFood
         ? 'Countable packaged goods sold as-is (bottled drinks, snacks)'
         : 'Stock on hand for each product';
@@ -456,7 +464,15 @@ export default function DashboardLayout() {
     const interval = setInterval(check, 120_000);
     return () => clearInterval(interval);
   }, []);
-  const badges: Record<string, number> = { approvals: approvalsCount, credit: creditCount };
+  // ── A564: requests from other branches waiting for an answer (0 for anyone who does not handle transfers) ──
+  const [branchRequestsCount, setBranchRequestsCount] = useState(0);
+  useEffect(() => {
+    const check = () => { api.get<{ incoming: number }>('/api/stock/requests/count').then((r) => setBranchRequestsCount(Number(r?.incoming) || 0)).catch(() => {}); };
+    check();
+    const interval = setInterval(check, 120_000);
+    return () => clearInterval(interval);
+  }, []);
+  const badges: Record<string, number> = { approvals: approvalsCount, credit: creditCount, branchRequests: branchRequestsCount };
 
   // ── Low-stock badge ─────────────────────────────────────────────────────────
   const [lowStockCount, setLowStockCount] = useState(0);
@@ -622,6 +638,7 @@ export default function DashboardLayout() {
               className="min-w-[1.5rem] h-6 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold">{unreadCount > 99 ? '99+' : unreadCount}</button>
           )}
         </div>
+        <CloudTrialNotice />
         <Outlet key={activeBranchId ?? 'all'} />
       </main>
     </div>

@@ -29,8 +29,8 @@ import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
 import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
-import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip } from './cashier/CategoryPanel';   // A537
-import { ALL_MENUS, categoriesForMenu, inMenuScope, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar } from './cashier/CategoryPanel';   // A537; A566
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
@@ -40,6 +40,8 @@ import { onGrid } from '../../lib/productDays';
 import { exactFirst } from '../../lib/paginate';   // A472
 import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreeze';   // A394
+import { useStockView } from '../../lib/useStockView';   // A563
+import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '../../lib/stockGate';   // A563
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 
@@ -280,11 +282,22 @@ export default function CashierScreen() {
   // A394: an item frozen by a stock count is refused at the counter (the cloud refuses it at payment too).
   const countFreeze = useStockCountFreeze(posApi.get, session?.branchId);
   const { toast: freezeToast, showToast: showFreezeToast, hideToast: hideFreezeToast } = useToast(5000);
+  // A563: the owner's "When an item's stock reaches zero" — a tracked item the branch is known to be out of is greyed
+  // "Sold out" (or hidden) and refused here; the cloud refuses the sale too (409 SOLD_OUT). Unknown stock sells.
+  const { view: stockView, refresh: refreshStockView } = useStockView(posApi.get, session?.branchId);
   const isFrozen = useCallback((product: Product): boolean => {
-    if (!countFreeze.frozen.has(product.id)) return false;
-    showFreezeToast(frozenMessage(countFreeze.ref, product.name), 'warning');
-    return true;
-  }, [countFreeze, showFreezeToast]);
+    if (countFreeze.frozen.has(product.id)) {
+      showFreezeToast(frozenMessage(countFreeze.ref, product.name), 'warning');
+      return true;
+    }
+    if (stockView.mode !== 'sell' && !(product as any).is_fuel) {
+      const lines = [...cart.map((i) => ({ product_id: i.product.id, name: i.product.name, quantity: i.quantity })),
+        { product_id: product.id, name: product.name, quantity: 1 }];
+      const mine = stockRefusals(stockView.mode, stockView, lines).find((r) => r.index === lines.length - 1);
+      if (mine) { showFreezeToast(mine.message, 'warning'); return true; }
+    }
+    return false;
+  }, [countFreeze, showFreezeToast, stockView, cart]);
 
   // Adapter: addToCart needs variantsByProduct from usePOSData
   const addToCart = useCallback(
@@ -837,7 +850,13 @@ export default function CashierScreen() {
   }, [menuCats, activeCategory]);
   const chosenMenuName = menuTabs(menus, categories).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
   const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c) => c.id === activeCategory)?.name ?? null);
-  const catChip = chosenCategoryName ?? (chosenMenuName ? `${chosenMenuName} menu` : null);
+  // A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
+  // categories used to appear so that cashiers can easily pick the menu"): with menus they are big tabs across the top
+  // of the grid (MenuBar) and the chip names only the chosen category; a tap on a menu shows its items (its category and
+  // any search start again). No menus: no bar, as before.
+  const menuBar = useMemo(() => menuBarTabs(menus, categories), [menus, categories]);
+  const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); setSearch(''); };
+  const catChip = chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} menu` : null);
   const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
   function resumeParked(key: string) {
@@ -996,6 +1015,7 @@ export default function CashierScreen() {
   };
   function changeQty(index: number, delta: number) {
     const it = cart[index];
+    if (delta > 0 && it && isFrozen(it.product)) return;   // A563 (and A394): not one more than the branch is known to have
     if (activeSentId && it?.order_item_id && delta < 0) {
       setKitchenVoid({ title: `Take back 1 × ${it.product.name}`,
         lines: [{ order_item_id: it.order_item_id, name: it.product.name, qty: 1, amount: lineAmount(it, 1) }],
@@ -1111,13 +1131,14 @@ export default function CashierScreen() {
   // ── Product filter ─────────────────────────────────────────────────────────
   const filtered = products.filter((p) => {
     const matchCat = activeCategory === 'all' || p.category_id === activeCategory;
-    const matchMenu = inMenuScope(p, menuFilterScope);   // A537: a menu chosen = its categories only
+    const matchMenu = inMenuScope(p, gridMenuScope(menuFilterScope, search));   // A537: a menu chosen = its categories only; A566: a search looks through every menu
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     // For petrol stations, show only fuel products on the product grid
     const matchFuel = isPetrol ? (p as any).is_fuel === true : !(p as any).is_fuel;
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay = onGrid((p as any).show_days, search.trim() !== '');
-    return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay;
+    const matchStock = !hiddenOutOfStock(stockView.mode, stockView, p.id);   // A563: "Hide when out of stock"
+    return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock;
   });
   // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000 at
   // once. A new category or search starts again at the top. An exact hit (a product's name or barcode typed in full) is
@@ -1334,7 +1355,7 @@ export default function CashierScreen() {
         {/* Minimart: self-contained POS replacing both panels */}
         {isMinimart && (
           <MinimartPOS
-            products={products}
+            products={products.filter((p) => !hiddenOutOfStock(stockView.mode, stockView, p.id))}   // A563
             categories={categories}
             menus={menus}
             cart={cart}
@@ -1600,11 +1621,14 @@ export default function CashierScreen() {
                 <CategoryChip label={catChip} onClear={clearCatChip} />
               </div>
 
+              {/* A566: the menus as big tabs across the top of the grid (none when the business has no menus). */}
+              <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} />
+
               {/* A537: the category panel (collapsed at start) beside — or, on a phone, over — the product grid. */}
               <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
               <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}
                 activeMenu={activeMenu} activeCategory={activeCategory}
-                onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={isPhone} />
+                onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={isPhone} menuBar={menuBar.length > 0} />
 
               {/* Product grid */}
               <div ref={grid.rootRef} style={s.productGrid}>
@@ -1618,6 +1642,7 @@ export default function CashierScreen() {
                       .reduce((sum, i) => sum + i.quantity, 0);
                     const hasVariants =
                       product.has_variants && (variantsByProduct[product.id]?.length ?? 0) > 0;
+                    const soldOut = showsSoldOut(stockView.mode, stockView, product.id);   // A563
 
                     return (
                       <button
@@ -1625,9 +1650,12 @@ export default function CashierScreen() {
                         data-testid="product-card"
                         className="press"
                         data-has-variants={hasVariants ? 'true' : 'false'}
-                        style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}) }}
+                        data-sold-out={soldOut ? 'true' : undefined}
+                        aria-disabled={soldOut || undefined}
+                        style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}), ...(soldOut ? { opacity: 0.5, filter: 'grayscale(1)' } : {}) }}
                         onClick={() => addToCart(product)}
                       >
+                        {soldOut && <span style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700 }}>SOLD OUT</span>}
                         {inCart && <span key={cartQty} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{cartQty}</span>}
                         {hasVariants && <span style={s.variantBadge}>options</span>}
                         {(product as any).is_fuel && <span style={s.fuelBadge}>⛽</span>}
@@ -2442,6 +2470,7 @@ export default function CashierScreen() {
           initialEvenSplit={paymentEvenSplit}
           onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {
+            refreshStockView();   // A563: this sale took its tracked items off the branch's stock
             // Free the table immediately on payment (independent of the receipt's
             // New Sale button), so a paid table never stays stuck "Occupied".
             if (activeKey) {

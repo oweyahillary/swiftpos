@@ -3,7 +3,8 @@ import { assertPayload } from '../ipcValidate';
 import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import * as creditConfirm from '../creditConfirm';   // A545
-import { readCreditCustomers, onAccountOffered, ensureCreditCustomers, creditListAt, selfApproves, pullCreditCustomers } from '../creditSale';   // A552
+import { readCreditCustomers, onAccountOffered, ensureCreditCustomers, creditListAt, selfApproves, pullCreditCustomers,
+  mayFindCreditCustomers } from '../creditSale';   // A552; A559
 import { signedIn as sessionPerson } from '../tillAccess';
 import { onCataloguePulled } from '../syncEngine';
 import { NO_CONNECTION_MESSAGE } from '../offlineSession';
@@ -80,12 +81,16 @@ export function registerCreditHandlers(ctx: IpcShared) {
     const { search } = assertPayload<{ search?: string }>({ search: { t: 'string', optional: true } }, payload ?? {});
     const me = sessionPerson();
     if (!me) return { offered: false, selfApproves: false, saved_at: null, customers: [] };
+    // A559: the customers only to someone who may see them — customers.view or customers.credit, as the web POS. Without
+    // either: not offered (the payment screen shows no On account button, as for any key the person does not hold).
+    const person = { id: me.staffId, name: me.name, roleName: me.roleName, permissions: me.permissions };
+    if (!mayFindCreditCustomers(person)) return { offered: false, selfApproves: false, saved_at: null, customers: [] };
     await ensureCreditCustomers().catch(() => { /* the saved list */ });
     const db = getLocalDb();
     const offered = onAccountOffered(db);
     return {
       offered,
-      selfApproves: selfApproves({ id: me.staffId, name: me.name, roleName: me.roleName, permissions: me.permissions }),
+      selfApproves: selfApproves(person),
       saved_at: creditListAt(db),
       customers: offered ? readCreditCustomers(db, String(search ?? ''), 30) : [],
     };

@@ -12,12 +12,17 @@
  *   screen; on a narrow one it lies over the grid). The chosen menu is remembered in this browser (localStorage, every
  *   access in try/catch). A554: the pin is this session's only — the panel starts collapsed at every sign-in.
  *   Big tap targets, nothing on hover only (touch screens).
+ *
+ *   A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
+ *   categories used to appear so that cashiers can easily pick the menu"): with menus, MenuBar puts them across the top
+ *   of the grid as big tabs and the panel lists only the chosen menu's categories (`menuBar` — its own tabs drop out).
+ *   No menus: no bar, the panel alone as before. The theme (--act-strong) and the POS's light / dark tokens (--pos-*).
  */
-import { useCallback, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Category, Menu, Product } from '../../../types';
 import {
-  ALL_CATEGORIES, ALL_MENUS, PANEL_PREFS_KEY, categoryGroups, menuTabs, parsePanelPrefs, panelPrefsText,
-  panelStartsOpen, panelOpenAfterPick, productCounts, type PanelPrefs,
+  ALL_CATEGORIES, ALL_MENUS, PANEL_PREFS_KEY, categoryGroups, menuBarEdges, menuBarLabel, menuTabs, parsePanelPrefs,
+  panelPrefsText, panelStartsOpen, panelOpenAfterPick, productCounts, resolveMenu, type MenuTab, type PanelPrefs,
 } from '../../../lib/menuFilter';
 
 function readPrefs(): PanelPrefs {
@@ -67,6 +72,62 @@ export function CategoryChip({ label, onClear }: { label: string | null; onClear
   );
 }
 
+/**
+ * A566: the menus across the top of the grid — "All", "Food", "Drinks" … — big tabs (46 px) as the categories were before
+ * A537. Many menus: the row scrolls sideways (a swipe, the wheel, or the ‹ › arrows that show, with a fade, on the side
+ * that hides more); the chosen tab is kept in view. Nothing when the business has no menus.
+ */
+export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    const next = menuBarEdges(el.scrollLeft, el.scrollWidth, el.clientWidth);
+    setEdges((cur) => (cur.left === next.left && cur.right === next.right ? cur : next));
+  }, []);
+  useEffect(() => {
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [measure, tabs]);
+  const shown = resolveMenu(active, tabs);
+  useEffect(() => {   // the chosen menu stays in view (a remembered one far along the row)
+    try { (rowRef.current?.querySelector('[aria-selected="true"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); } catch { /* fine */ }
+  }, [shown]);
+  if (tabs.length === 0) return null;
+  const nudge = (dir: 1 | -1) => {
+    const el = rowRef.current;
+    if (el) el.scrollBy({ left: dir * Math.max(160, el.clientWidth * 0.6), behavior: 'smooth' });
+  };
+  const arrow = (side: 'left' | 'right'): CSSProperties => ({
+    position: 'absolute', top: 0, bottom: 0, [side]: 0, zIndex: 2, width: 52, display: 'flex', alignItems: 'center',
+    justifyContent: side === 'left' ? 'flex-start' : 'flex-end', padding: side === 'left' ? '0 0 0 8px' : '0 8px 0 0',
+    border: 'none', cursor: 'pointer', fontSize: 24, fontWeight: 700, color: 'var(--pos-text, #f1f5f9)',
+    background: `linear-gradient(to ${side === 'left' ? 'right' : 'left'}, var(--pos-bg, #0f172a) 45%, transparent)`,
+  });
+  return (
+    <div data-testid="menu-bar" style={{ position: 'relative', flexShrink: 0, borderBottom: '1px solid var(--pos-border-l, #1e293b)' }}>
+      <div ref={rowRef} role="tablist" aria-label="Menus" onScroll={measure}
+        style={{ display: 'flex', gap: 8, padding: '8px 12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+        {tabs.map((t) => {
+          const on = t.id === shown;
+          return (
+            <button key={t.id} type="button" role="tab" aria-selected={on} data-testid="menu-bar-tab" onClick={() => onPick(t.id)}
+              style={{ flexShrink: 0, minHeight: 46, minWidth: 84, padding: '0 18px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap',
+                       fontSize: 15, fontWeight: 700, border: `1px solid ${on ? ACT : 'var(--pos-border, #334155)'}`,
+                       background: on ? ACT : 'var(--pos-surface, #1e293b)', color: on ? '#fff' : 'var(--pos-text, #f1f5f9)' }}>
+              {t.icon && <span aria-hidden style={{ marginRight: 6 }}>{t.icon}</span>}{menuBarLabel(t)}
+            </button>
+          );
+        })}
+      </div>
+      {edges.left && <button type="button" data-testid="menu-bar-left" aria-label="More menus to the left" onClick={() => nudge(-1)} style={arrow('left')}>‹</button>}
+      {edges.right && <button type="button" data-testid="menu-bar-right" aria-label="More menus to the right" onClick={() => nudge(1)} style={arrow('right')}>›</button>}
+    </div>
+  );
+}
+
 interface Props {
   panel: CategoryPanelState;
   categories: Category[];
@@ -78,9 +139,11 @@ interface Props {
   onCategory: (id: string) => void;
   /** Lies over the grid (a narrow screen) instead of pushing it aside. */
   overlay: boolean;
+  /** A566: the menus are across the top of the grid (MenuBar) — the panel lists the chosen menu's categories, no tabs of its own. */
+  menuBar?: boolean;
 }
 
-export default function CategoryPanel({ panel, categories, menus, products, activeMenu, activeCategory, onMenu, onCategory, overlay }: Props) {
+export default function CategoryPanel({ panel, categories, menus, products, activeMenu, activeCategory, onMenu, onCategory, overlay, menuBar = false }: Props) {
   const tabs = useMemo(() => menuTabs(menus, categories), [menus, categories]);
   const groups = useMemo(() => categoryGroups(categories, menus, activeMenu), [categories, menus, activeMenu]);
   const counts = useMemo(() => productCounts(products.filter((p) => p.status === 'active')), [products]);
@@ -113,7 +176,7 @@ export default function CategoryPanel({ panel, categories, menus, products, acti
                    background: 'transparent', color: 'var(--pos-text3, #94a3b8)' }}>✕</button>
       </div>
 
-      {tabs.length > 0 && (
+      {tabs.length > 0 && !menuBar && (
         <div data-testid="menu-tabs" role="tablist" aria-label="Menus"
           style={{ display: 'flex', gap: 6, padding: '4px 10px 8px', overflowX: 'auto', flexShrink: 0 }}>
           {tabs.map((t) => {

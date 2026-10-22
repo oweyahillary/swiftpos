@@ -73,6 +73,7 @@ import { resolveOwnerUserId } from '../lib/ownerBusiness';
 import { listDesktopReleasesOrStale } from '../lib/desktopReleases';
 import { ownerSetsFeature } from './controls';        // A490
 import { checkApprovableVersion } from '../lib/desktopVersionApproval';   // A493: the admin approves till updates
+import { startTrialIfEligible, convertTrialIfAny, readTrial, trialPhase, planLabel, planLabelsFor } from '../lib/cloudTrial';   // A569
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
@@ -543,7 +544,9 @@ router.post('/clients', requireAdmin, async (req, res) => {
       owner_pin_set:         false,
     });
 
-    // 8. Auto-create trial subscription (30 days)
+    // 8. Auto-create trial subscription (30 days) — the legacy plans model: only when a plan named like "trial" exists
+    // (none does today). A569: the client's CLOUD trial is not a plan — it starts with the first desktop licence
+    // (lib/cloudTrial.ts, POST /clients/:id/branches/:branchId/licence) and lives on the web-access fields.
     const { data: trialPlan } = await supabase
       .from('plans').select('id').ilike('name', 'trial').single();
     if (trialPlan) {
@@ -593,7 +596,10 @@ router.get('/clients', requireAdmin, async (req, res) => {
 
   const { data, count, error } = await query;
   if (error) { sendError(res, error); return; }
-  res.json({ clients: data ?? [], total: count ?? 0 });
+  // A569: each client's plan in words — Desktop / Cloud trial / Cloud trial ended / Cloud / No licence yet.
+  const rows = (data ?? []) as Array<{ id: string }>;
+  const labels = await planLabelsFor(rows.map((r) => r.id)).catch(() => new Map<string, string>());
+  res.json({ clients: rows.map((r) => ({ ...r, plan_label: labels.get(r.id) ?? null })), total: count ?? 0 });
 });
 
 router.get('/clients/:id', requireAdmin, async (req, res) => {
@@ -631,8 +637,16 @@ router.get('/clients/:id', requireAdmin, async (req, res) => {
 
   const revenueMtd = (mtdData ?? []).reduce((s: number, o: any) => s + Number(o.total), 0);
 
+  // A569: the cloud trial (started with the first desktop licence), and the plan in words for the header.
+  const cloudTrial = await readTrial(String(id)).catch(() => null);
+  const { count: licensedBranches } = await supabase.from('branches').select('id', { count: 'exact', head: true })
+    .eq('business_id', id).eq('desktop_licensed', true);
+  const webHostingOn = ((flags ?? []) as Array<{ key: string; enabled: boolean }>).some((f) => f.key === 'web_hosting' && f.enabled);
+
   res.json({
     ...biz,
+    cloud_trial:   cloudTrial ? { ...cloudTrial, phase: trialPhase(cloudTrial) } : null,
+    plan_label:    planLabel({ trial: cloudTrial, webHosting: webHostingOn, licensedBranches: licensedBranches ?? 0 }),
     branches:      branches ?? [],
     staff_count:   staffCount ?? 0,
     product_count: productCount ?? 0,
@@ -1070,6 +1084,11 @@ router.post('/clients/:id/change-owner-email', requireAdmin, requireSuperAdmin, 
   // Keep the business contact email in step with the login email.
   await supabase.from('businesses').update({ email: newEmail }).eq('id', req.params.id);
 
+  // A562: and the owner's own staff row (the one with the old address). Left behind, the owner's next sign-in found no
+  // row with the new address and made a SECOND one on the owner's role (auth.ts ensureOwnerUserRow, A451) — the staff
+  // list then showed two "Owner" people. Not when another row already has the new address (that one is found instead).
+  const ownerRowMoved = await moveOwnerRowEmail(String(req.params.id), oldEmail, newEmail);
+
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
     action: 'business.change_owner_email', resource: 'business',
@@ -1093,8 +1112,26 @@ router.post('/clients/:id/change-owner-email', requireAdmin, requireSuperAdmin, 
     if (!oldNotified) console.error(`[admin] change-owner-email: could not tell the old address of ${biz.name}:`, (sent as any).error);
   }
 
-  res.json({ success: true, email: newEmail, old_email_notified: oldNotified });
+  res.json({ success: true, email: newEmail, old_email_notified: oldNotified, owner_row_moved: ownerRowMoved });
 });
+
+/** A562: the owner's users row follows a change of the owner's sign-in email (exact, case-insensitive match on the old
+ *  address; an ilike pattern alone would let `_` match any character). False when nothing was moved. */
+export async function moveOwnerRowEmail(businessId: string, oldEmail: string, newEmail: string): Promise<boolean> {
+  if (!oldEmail || oldEmail === newEmail) return false;
+  const like = (e: string) => e.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+  const { data: taken } = await supabase.from('users').select('id, email').eq('business_id', businessId).ilike('email', like(newEmail));
+  if (((taken ?? []) as Array<{ email?: string | null }>).some((u) => String(u.email ?? '').trim().toLowerCase() === newEmail)) return false;
+  const { data: rows, error } = await supabase.from('users').select('id, email').eq('business_id', businessId).ilike('email', like(oldEmail));
+  if (error) { console.error('[admin] A562: could not read the owner\'s row', error.message); return false; }
+  const ids = ((rows ?? []) as Array<{ id: string; email?: string | null }>)
+    .filter((u) => String(u.email ?? '').trim().toLowerCase() === oldEmail).map((u) => u.id);
+  if (ids.length !== 1) return false;   // none, or more than one — never guess whose
+  const { error: uErr } = await supabase.from('users').update({ email: newEmail, updated_at: new Date().toISOString() })
+    .eq('id', ids[0]).eq('business_id', businessId);
+  if (uErr) { console.error('[admin] A562: could not move the owner\'s row to the new email', uErr.message); return false; }
+  return true;
+}
 
 // ─── FEATURES (feature_flags) ─────────────────────────────────────────────────
 
@@ -1145,6 +1182,25 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
     businessId: id, businessName: biz?.name ?? undefined,
     after: { key, enabled },
   });
+
+  // A569: "Enable web access" (the paid flow — the portal raises the KES 10,000 invoice) on a client in or after its cloud
+  // trial converts it: the trial is marked converted and web access runs one year from today.
+  if (key === 'web_hosting' && enabled) {
+    let converted;
+    try { converted = await convertTrialIfAny(String(id)); }
+    catch (e) { sendError(res, e, { message: 'Web access is on, but the cloud trial could not be marked paid — try again' }); return; }
+    if (converted) {
+      await writeAdminAudit({
+        adminId: req.adminId, adminEmail: req.adminEmail,
+        action: 'web_access.trial_convert', resource: 'business',
+        businessId: id, businessName: biz?.name ?? undefined,
+        before: { trial_ends_at: converted.trial.ends_at },
+        after:  { web_access_expires_at: converted.expiresAt, converted_at: converted.trial.converted_at },
+      });
+      res.json({ ...data, cloud_trial_converted: true, web_access_expires_at: converted.expiresAt });
+      return;
+    }
+  }
 
   res.json(data);
 });
@@ -1760,7 +1816,24 @@ router.post('/clients/:id/branches/:branchId/licence', requireAdmin, requireSupe
     reason:       notes,
   });
 
-  res.json(updated);
+  // A569 (owner, 2026-10-22: "they should get a 1 month trial plan for cloud if they have subscribed on the desktop
+  // platform"): the client's FIRST desktop licence starts a 30-day cloud trial — web access on, no invoice. Once per
+  // client, ever; never for a client that had web access (lib/cloudTrial.ts). Never undoes the licence.
+  let cloudTrial = null;
+  if (licensed) {
+    const t = await startTrialIfEligible({ businessId: id, branchId, by: req.adminEmail ?? null });
+    if (t.started) {
+      cloudTrial = t.trial;
+      await writeAdminAudit({
+        adminId: req.adminId, adminEmail: req.adminEmail,
+        action: 'web_access.trial_start', resource: 'business',
+        businessId: id, businessName: biz?.name,
+        after: { trial_ends_at: t.trial.ends_at, web_access_expires_at: t.trial.ends_at, branch_name: branch.name, invoice: false },
+      });
+    }
+  }
+
+  res.json(cloudTrial ? { ...updated, cloud_trial: cloudTrial } : updated);
 });
 
 /**

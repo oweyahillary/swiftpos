@@ -78,8 +78,9 @@ await ok('cloud: create and edit validate show_days; the QR menu shows a product
   assert.match(q, /products:   menuProducts,/);
 });
 await ok('till and web POS grids: on the grid on its days, found by a search any day', () => {
-  assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /const matchDay    = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);\s*return p\.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay;/);
-  assert.match(read('apps/dashboard/src/pages/pos/CashierScreen.tsx'), /const matchDay = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);\s*return p\.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay;/);
+  // A563: the grid's filter also leaves out an item hidden for stock (matchStock) — the day rule is unchanged.
+  assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /const matchDay    = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);[\s\S]{0,300}return p\.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock;/);
+  assert.match(read('apps/dashboard/src/pages/pos/CashierScreen.tsx'), /const matchDay = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);[\s\S]{0,300}return p\.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock;/);
 });
 await ok('dashboard: the product form sets the days; the upload template documents the column', () => {
   const f = read('apps/dashboard/src/pages/products/ProductsPage.tsx');

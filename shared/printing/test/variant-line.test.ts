@@ -72,7 +72,7 @@ for (const w of [80, 58] as const) {
   const d = rows({ order, business, station: dispatch(w) });
   ok(`${w} dispatch: "1   CHICKEN BURGER - SPICY", no "Chicken Burger (Spicy)"`, d.includes('1   CHICKEN BURGER - SPICY')
     && !d.some(t => /\(.*Spicy\)/i.test(t)), d.join(' | '));
-  ok(`${w} dispatch: the modifier "Extra Cheese" under "BEEF BURGER - LARGE"`, d[d.indexOf('2   BEEF BURGER - LARGE') + 1] === '      Extra Cheese', d.join(' | '));
+  ok(`${w} dispatch: the modifier "Extra Cheese" under "BEEF BURGER - LARGE"`, d[d.indexOf('2   BEEF BURGER - LARGE') + 1] === '      + Extra Cheese', d.join(' | '));
   const r = rows({ order, business, station: receipt(w) });
   const at = r.findIndex(t => t.startsWith('Chicken Burger -'));
   ok(`${w} receipt: the item row names the variant, the qty and amount on it`, at >= 0 && /\s1\s+550\.85$/.test(r[at]), r.join(' | '));

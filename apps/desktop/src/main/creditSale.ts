@@ -49,6 +49,8 @@ export const SELF_APPROVAL = 'Someone else must approve this — enter the PIN o
 export const NO_ON_ACCOUNT = 'This till does not take sales on account.';
 export const CUSTOMER_NEEDED = 'Choose the customer this sale goes on account to.';
 export const ONE_ACCOUNT_LEG = 'Put the account part of this sale in one payment.';
+/** A559: the person signed in may not look up the customers (neither customers.view nor customers.credit). */
+export const NO_CUSTOMER_ACCESS = 'You need permission to sell on account — ask a manager.';
 
 // ── the customers (pulled) ──────────────────────────────────────────────────────────────────────────────────────────
 export interface CloudCreditCustomer { id: string; name: string; phone?: string | null; status?: string | null; credit_limit: number; credit_balance: number }
@@ -144,6 +146,17 @@ export function selfApproves(p: LocalPerson | null | undefined): boolean {
   return !!p?.id && personCan(p, 'customers.credit');
 }
 
+/**
+ * A559 (owner, 2026-10-22, after testing 1.0.20: "yes they need the permission"): who may look up the credit customers
+ * — and so sell on account — at the till: customers.view or customers.credit (the owner always). The web POS's rule
+ * exactly: its credit account reads (GET /api/credit/customers, /api/credit/customer/:id) are requireAnyPermission(
+ * 'customers.view', 'customers.credit'). Without either the till offers no "On account" (credit:customers answers
+ * not offered, no list) and order:create refuses a sale on account (prepareCreditSale).
+ */
+export function mayFindCreditCustomers(p: LocalPerson | null | undefined): boolean {
+  return !!p?.id && personCan(p, 'customers.view', 'customers.credit');
+}
+
 /** What stops this amount going on this customer's account, or null. The web POS's rule: never past what is left. */
 export function limitProblem(c: CreditCustomer, amount: number, currency = 'KES'): string | null {
   if (c.status !== 'active') return `${c.name}'s account is not active.`;
@@ -215,6 +228,7 @@ export async function prepareCreditSale(payload: any, o: { asker: LocalPerson | 
   if (!onAccount.length) return null;
   if (onAccount.length > 1) throw new Error(ONE_ACCOUNT_LEG);
   if (!onAccountOffered(db, o.enabled === undefined ? getPaymentMethodsEnabled() : o.enabled)) throw new Error(NO_ON_ACCOUNT);
+  if (!mayFindCreditCustomers(o.asker)) throw new Error(o.asker?.id ? NO_CUSTOMER_ACCESS : 'Not signed in');   // A559
   const amount = round2(Math.abs(Number(onAccount[0].amount) || 0));
   if (!(amount > 0)) throw new Error('The amount on account must be more than nothing.');
   const customer = creditCustomerById(db, payload.customer_id);

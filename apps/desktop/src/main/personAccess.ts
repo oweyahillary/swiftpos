@@ -108,7 +108,7 @@ export function roleKeys(role: any): Set<string> {
 /** Why the signed-in person may not give this role (the A340 ceiling, by permission), or null when they may. */
 export function roleCeilingRefusal(caller: PersonLike | null | undefined, role: any): string | null {
   if (!caller) return 'Sign in first.';
-  if (isOwnerRoleEntry(role)) return 'The owner\'s role is given only by the owner, on the web.';
+  if (isOwnerRoleEntry(role)) return 'The owner\'s role belongs to the owner alone — choose another role.';   // A562: the cloud gives it to nobody either
   const held = personKeys(caller.roleName, caller.permissions);
   const beyond = keysBeyond(held, roleKeys(role));
   return beyond.length ? `The ${role?.name ?? 'chosen'} role can do more than you can (${beyond.slice(0, 3).join(', ')}${beyond.length > 3 ? ', …' : ''}).` : null;

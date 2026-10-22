@@ -15,6 +15,34 @@ a draft (KES 30,000 setup, about KES 3,000 a month; Analytics planned at about K
 
 ---
 
+## 2026-10-22 (afternoon): owner's answers to the open questions, for tonight
+
+- **Pricing is per branch:** a branch is a 2-computer setup (a server plus a till). Extra PCs cost more, but **don't
+  publish that yet** (owner deliberating).
+- **Desktop app is a one-off purchase**: "once paid it's a done deal".
+- **Cloud (dashboard and online features) is month to month.** Recommend annual or semi-annual on the site.
+- **A one-month cloud trial** comes with the desktop setup (A569).
+- **Support:** 24 hours for **priority clients** only. Don't say 24/7 for everyone.
+- **A UPS is recommended:** keep the outage story's UPS line, and add it to the hardware list.
+- Still open: the company email, the ZapTill Online price, and the contract notice wording beyond "monthly".
+- Rework the Pricing page and FAQ to this model tonight: per-branch desktop setup (one-off), cloud monthly with annual
+  suggested, a one-month cloud trial, Analytics as an add-on.
+
+## 2026-10-22 (day): owner decisions that change the site, for tonight
+
+- **No price-rise recommendations** (owner: "prices should be competitive with other businesses price increase means
+  selling expensive than competitors"). Analytics now suggests **what to stock and what sells on which day** (A560).
+  The site still shows "Raise the price of Tusker lager" as its example: replace it everywhere with stock or
+  best-seller-by-day cards in the app's new wording. Places: `src/components/screens/DoThisNextCard.astro`,
+  `src/lib/analyticsDemo.ts`, the Home teaser, the Analytics page, the Pricing payback, and WORKPLAN §5.4.
+- **Cashier voids are a warning to investigate**, not "KES to recover". The site must not present voids as recovered
+  money.
+- **Extras and notes print on the kitchen ticket** (A559): the restaurant page and the kitchen ticket sample can say so
+  once it ships.
+- **A cashier needs "view customers" to sell on account at the till** (A559).
+
+---
+
 ## 2026-10-22: Night 1 — Phase 2 (depth)
 
 Local only: nothing committed, deployed or published. Run `cd apps/website && npm install && npm run build && npm test && npm run check`.

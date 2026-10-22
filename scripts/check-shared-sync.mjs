@@ -83,6 +83,28 @@ const SHARED = [
     ],
   },
   {
+    // A571: barcodes — EAN-13 / UPC-A / Code 128 bars and the in-store codes the cloud assigns (prefix 20).
+    name: 'barcode.ts',
+    copies: [
+      'shared/barcode.ts',
+      'apps/server/src/lib/barcode.ts',         // POST /api/products/barcodes/generate
+      'apps/dashboard/src/lib/barcode.ts',      // Products (Generate) and Print labels
+      'apps/desktop/src/shared/barcode.ts',     // the till's Labels screen (preview)
+      'apps/desktop/src/main/barcode.ts',       // the till's label printing
+    ],
+  },
+  {
+    // A571: labels of any size for any printer — the layout, the HTML / SVG page, sheets, TSPL, ZPL, ESC/POS.
+    name: 'labels.ts',
+    copies: [
+      'shared/labels.ts',
+      'apps/server/src/lib/labels.ts',          // the label settings, cleaned before they are stored
+      'apps/dashboard/src/lib/labels.ts',       // Print labels (browser driver, sticker sheets)
+      'apps/desktop/src/shared/labels.ts',      // the till's Labels screen (preview)
+      'apps/desktop/src/main/labels.ts',        // the till's label printing (driver, TSPL, ZPL, receipt printer)
+    ],
+  },
+  {
     // A445: offers — the rules the till's cart, the web POS's cart and the cloud's check of a sale all run.
     name: 'offers.ts',
     copies: [
@@ -193,6 +215,17 @@ const SHARED = [
       'shared/stockCountFreeze.ts',
       'apps/desktop/src/main/stockCountFreeze.ts',   // the till caches it (rootDir is src/main)
       'apps/desktop/src/shared/stockCountFreeze.ts', // the till's sale screen
+    ],
+  },
+  {
+    // A563: when an item's stock reaches zero — sell as normal, show as sold out, or hide (the owner's choice).
+    name: 'stockGate.ts',
+    copies: [
+      'shared/stockGate.ts',
+      'apps/server/src/lib/stockGate.ts',         // the cloud refuses a web sale of a sold-out item
+      'apps/desktop/src/main/stockGate.ts',       // the till's order:create refuses it (rootDir is src/main)
+      'apps/desktop/src/shared/stockGate.ts',     // the till's sale screen greys or hides it
+      'apps/dashboard/src/lib/stockGate.ts',      // the web POS and the products list
     ],
   },
   {

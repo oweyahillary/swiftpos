@@ -21,6 +21,7 @@ import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import { parseCsvRows, csvBool } from '../lib/csv';
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '../../shared/paginate';
+import { approvalPinOn } from '../../shared/posFeatures';   // A562
 import type { CsvRow } from '../lib/csv';
 
 const input =
@@ -380,6 +381,10 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
   // A345: set while the cloud is out of reach for an offline reason — the page then lists the people this till knows,
   // read-only, and says why. `source`: 'branch' = a node's whole branch roster; 'till' = people who signed in here.
   const [offline, setOffline] = useState<{ message: string; source: 'branch' | 'till' | null } | null>(null);
+  // A562: the admin portal's 'approval_pin' switch — off, the add form offers no override (approval) PIN; managers approve
+  // with their sign-in PIN (the cloud refuses a new one then: APPROVAL_PIN_OFF).
+  const [approvalPin, setApprovalPin] = useState(false);
+  useEffect(() => { posApi.pos.features().then((f) => setApprovalPin(approvalPinOn(f))).catch(() => setApprovalPin(false)); }, []);
 
   const load = async () => {
     setLoading(true);
@@ -430,9 +435,8 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
         branch_ids: branchId ? [branchId] : [],
         // Optional. Void authority is granted by HAVING this PIN, not by role
         // name — /api/staff/authorizers selects on override_pin_hash — so
-        // without a way to set it here a manager could create a supervisor who
-        // still could not authorise anything.
-        ...(form.override_pin ? { override_pin: form.override_pin } : {}),
+        // still could not authorise anything. A562: only while the switch is on.
+        ...(approvalPin && form.override_pin ? { override_pin: form.override_pin } : {}),
       });
       setOk(`Added ${form.name.trim()}`); setTimeout(() => setOk(''), 3000);
       setForm({ name: '', pin: '', role_id: '', override_pin: '' }); setShowNew(false);
@@ -548,24 +552,23 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
               <select value={form.role_id} onChange={e => setForm({ ...form, role_id: e.target.value })}
                 className={input}>
                 <option value="">— choose —</option>
-                {/* A340: only roles the cloud says this manager may hand out — never Owner. */}
-                {roles.filter(r => r.assignable !== false).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {/* A340: only roles the cloud says this manager may hand out — never Owner (A562: not even for the owner). */}
+                {roles.filter(r => r.assignable !== false && !r.is_owner_role).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
           </div>
 
-          <div>
-            <label className={label}>Override PIN — optional</label>
+          {approvalPin && <div>
+            <label className={label}>Approval PIN — optional</label>
             <input value={form.override_pin} inputMode="numeric" maxLength={6}
               onChange={e => setForm({ ...form, override_pin: e.target.value.replace(/\D/g, '') })}
               placeholder="leave blank for ordinary staff"
               className={`${input} font-mono tracking-widest`} />
             <p className="text-xs text-gray-400 mt-1">
-              Setting this lets the person authorise a void. Void authority comes from
-              having this PIN, not from the job title — a supervisor without one cannot
-              approve anything. Must differ from the sign-in PIN.
+              A second PIN for approving, so they need not type their sign-in PIN in front of
+              cashiers. Their sign-in PIN approves too. Must differ from the sign-in PIN.
             </p>
-          </div>
+          </div>}
 
           <button onClick={add} disabled={busy} className={btn}>
             {busy ? 'Saving…' : 'Add staff member'}
@@ -600,12 +603,19 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
                 <div className="flex flex-wrap items-center gap-2 mt-2" data-testid="staff-edit">
                   <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={80} autoFocus
                     className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white w-44" />
-                  {roles.length > 0 && (
-                    <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
-                      className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white">
-                      {roles.filter((r: any) => r.assignable !== false || r.id === editRole).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                  )}
+                  {roles.length > 0 && (() => {
+                    // A562: the person's own role is always the one shown. The owner's role, or one this person may not
+                    // give, is shown locked — never another role in its place.
+                    const cur = roles.find((r: any) => r.id === (m.role_id ?? m.roles?.id));
+                    const locked = !!cur && (cur.is_owner_role || cur.assignable === false);
+                    return (
+                      <select value={editRole} onChange={(e) => setEditRole(e.target.value)} disabled={locked} data-testid="staff-edit-role"
+                        title={locked ? (cur.is_owner_role ? 'The owner\'s role cannot be changed here' : 'You cannot change this person\'s role') : undefined}
+                        className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white disabled:opacity-60">
+                        {roles.filter((r: any) => r.id === editRole || (!locked && r.assignable !== false && !r.is_owner_role)).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    );
+                  })()}
                   <button data-testid="staff-edit-save" onClick={() => void saveEdit(m)} disabled={busy}
                     className="text-xs bg-action-500 hover:bg-action-400 text-gray-950 font-semibold rounded-lg px-3 py-1">Save</button>
                   <button onClick={() => setEditFor(null)} className="text-xs text-gray-300 px-1">Cancel</button>

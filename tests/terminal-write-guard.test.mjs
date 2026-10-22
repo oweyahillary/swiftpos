@@ -64,6 +64,19 @@ for (const [m, p] of [['POST','/api/products'],['PATCH','/api/products/123'],['P
   ok(`PIN sign-in: ${m} ${p} is allowed (manager screens; the route checks the person's permission)`,
     () => assert.equal(denied('desktop', m, p, true), false));
 }
+// A564: Manager › Stock › Other branches — ask another branch for an item, accept and send / decline / cancel.
+for (const [m, p] of [['POST','/api/stock/requests'],['POST','/api/stock/requests/r1/accept'],['POST','/api/stock/requests/r1/decline'],
+                      ['POST','/api/stock/requests/r1/cancel']]) {
+  ok(`A564 PIN sign-in: ${m} ${p} is allowed; the device token: DENIED`, () => {
+    assert.equal(denied('desktop', m, p, true), false);
+    assert.equal(denied('desktop', m, p, false), true);
+  });
+}
+ok('A564: no other step on a request (a delete, an unknown step, a deeper path) — DENIED even for a PIN sign-in', () => {
+  assert.equal(denied('desktop','DELETE','/api/stock/requests/r1', true), true);
+  assert.equal(denied('desktop','POST','/api/stock/requests/r1/approve', true), true);
+  assert.equal(denied('desktop','POST','/api/stock/requests/r1/accept/x', true), true);
+});
 ok('PIN sign-in: everything else stays DENIED (branches, discounts, roles, deeper paths)', () => {
   assert.equal(denied('desktop','DELETE','/api/branches/2', true), true);
   assert.equal(denied('desktop','PATCH','/api/discounts/1', true), true);

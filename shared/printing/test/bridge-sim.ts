@@ -8,6 +8,7 @@
  */
 import { renderTicket, toPreview, kitchenPreset, dispatchPreset, receiptPreset, hasPrintableContent } from '../src/index';
 import type { OrderLine, OrderUnit, UnitAttribute } from '../src/types';
+import { kitchenExclusionTerms, stripKitchenIfExcluded } from '../src/routing';
 
 const KITCHEN_IDS = ['st-kitchen'];
 const DISPATCH_IDS = ['st-dispatch'];
@@ -68,6 +69,8 @@ function toUnits(line: CartLine): OrderUnit[] {
     }
   }
 
+  // A559: an extra goes where its line goes AND to dispatch (it was dispatch only).
+  const lineIds = routeFor(line.product.category_id);
   for (const m of line.selectedModifiers ?? []) {
     if (!m.name) continue;
     units.push({
@@ -78,7 +81,8 @@ function toUnits(line: CartLine): OrderUnit[] {
       priceDelta: toCents(m.price ?? 0),
       chosen: true,
       attributes: [],
-      stationIds: DISPATCH_IDS,
+      stationIds: [...lineIds, ...DISPATCH_IDS.filter(id => !lineIds.includes(id))],
+      modifier: true,
     });
   }
 
@@ -132,7 +136,8 @@ const lines: OrderLine[] = cart.map(l => ({
   stationIds: routeFor(l.product.category_id),
   unitPrice: toCents(l.unitPrice),
   lineTotal: toCents(l.lineTotal),
-  units: toUnits(l),
+  // As escposBridge.printSale: each unit loses the kitchen when its own name is excluded (A276) — a sauce extra (A358).
+  units: toUnits(l).map(u => ({ ...u, stationIds: stripKitchenIfExcluded(u.name, u.stationIds, { kitchen: KITCHEN_IDS, dispatch: DISPATCH_IDS }, kitchenExclusionTerms()) })),
 }));
 
 const order = {

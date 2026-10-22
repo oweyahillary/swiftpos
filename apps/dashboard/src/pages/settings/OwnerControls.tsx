@@ -18,6 +18,7 @@ import { useBusiness } from '../../context/BusinessContext';
 import { usePermissions } from '../../context/PermissionsContext';   // A550
 import { POS_FEATURES } from '../../lib/posFeatures';
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../../lib/paymentCatalogue';
+import { OUT_OF_STOCK_MODES, type OutOfStockMode } from '../../lib/stockGate';   // A563
 import { dateShort } from '../../lib/format';
 import BranchPaymentMethods from './BranchPaymentMethods';
 
@@ -29,6 +30,7 @@ export interface Controls {
   pos?: Record<PosOptionKey, boolean>;
   loyalty?: { enabled: boolean; earn_rate: number };
   payments?: { enabled: string[] };
+  stock?: { when_zero: OutOfStockMode };   // A563
 }
 
 /** The words for a switch — shared/posFeatures.ts (the same the admin portal shows). */
@@ -81,6 +83,16 @@ export function PosOptionsTab() {
     finally { setBusy(null); }
   };
 
+  // A563: "When an item's stock reaches zero" — one choice of three (PUT /api/controls/stock-zero).
+  const saveStockZero = async (mode: OutOfStockMode) => {
+    if (!data?.stock || data.stock.when_zero === mode) return;
+    setBusy('stock'); setError(''); setMsg('');
+    setData({ ...data, stock: { when_zero: mode } });
+    try { await api.put('/api/controls/stock-zero', { mode }); }
+    catch (e: any) { setError(e?.message ?? 'Could not save'); await reload(); }
+    finally { setBusy(null); }
+  };
+
   const saveLoyalty = async (patch: { enabled?: boolean; earn_rate?: number }) => {
     if (!data?.loyalty) return;
     if (patch.earn_rate !== undefined && !(patch.earn_rate > 0 && patch.earn_rate <= 1000)) { setError('Enter an earn rate above 0.'); return; }
@@ -116,6 +128,26 @@ export function PosOptionsTab() {
             );
           })}
         </div>
+      )}
+
+      {data?.stock && (
+        <fieldset className={`${card} px-4 py-3`} data-testid="stock-zero-options" disabled={busy === 'stock'}>
+          <legend className="sr-only">When an item's stock reaches zero</legend>
+          <div className="text-sm font-medium text-white">When an item's stock reaches zero</div>
+          <div className="mt-0.5 text-xs leading-relaxed text-gray-400">For items that track stock, at each branch. Items that do not track stock are always sold.</div>
+          <div className="mt-3 space-y-2">
+            {OUT_OF_STOCK_MODES.map((m) => (
+              <label key={m.mode} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer ${data.stock!.when_zero === m.mode ? 'border-swift-strong bg-gray-800/60' : 'border-gray-800 hover:border-gray-700'}`}>
+                <input type="radio" name="stock-zero" value={m.mode} checked={data.stock!.when_zero === m.mode}
+                  onChange={() => void saveStockZero(m.mode)} className="mt-1 accent-current" data-testid={`stock-zero-${m.mode}`} />
+                <span className="min-w-0">
+                  <span className="block text-sm text-white">{m.label}</span>
+                  <span className="block text-xs leading-relaxed text-gray-400">{m.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
       )}
 
       {data?.loyalty && (

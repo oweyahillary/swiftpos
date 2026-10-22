@@ -12,6 +12,14 @@
  *   5. daily sales against the previous period and the payment mix;
  *   6. the tabs (menu engineering, busy times, money leaks, credit ageing), each opening with what it tells you.
  * Every table shows its top 10 by the column that matters and says "Showing the top 10 of N" — no paging.
+ * A561: three more areas — Stock ("How fast your stock goes"), Customers ("Who comes back") and Costs ("What each sale
+ * really earns", with the items that have no cost at the top) — and the tab row is now "Dig into the details": tiles with
+ * a live figure each and a "To do" badge (areas.tsx), a compact copy sticking while scrolling inside an area, `?tab=` to
+ * open one directly. A call-out under the summary when 5% or more of the sales have no cost (costs only).
+ * A565: a Branches area (the owner or a partner of every branch, with two or more branches — the cloud's hook says so):
+ * the branches side by side and the stock moves to consider; "Do this next" gains the movement cards (words only — no
+ * quantity, no KES; "Start a transfer" opens the transfer page with the items and both branches filled in, the quantity
+ * blank) and the falling-branch card ("What sells when at Westlands" switches the branch and scrolls there).
  *
  * The cloud works every figure out in SQL and keeps it a few minutes (routes/analytics.ts); this page asks once per
  * period for the overview, the recommendations and what sells when, once per tab and period for a tab, and NEVER polls.
@@ -24,6 +32,7 @@
  * dashboard's mode (light / dark), and text stays in the usual gray classes.
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
@@ -32,7 +41,11 @@ import { localDateStr } from '../../lib/localDate';
 import { DESK } from '../../components/RowMore';
 import * as fmt from '../../lib/format';
 import { chartPalette, CLASS_ORDER, CLASS_SHAPE, type ChartPalette, type PayKey } from './chartPalette';
-import { capRows, compareWords, per100 } from './chartMath';
+import { capRows, compareWords, per100, visibleAreas, areaFromQuery, AREA_ORDER, type AreaKey, type AreaHook } from './chartMath';
+import {
+  AreaTiles, StockSection, CustomersSection, CostsSection, NoCostBanner, BranchesSection, transferLink,
+  type StockAnswer, type CustomersAnswer, type CostsAnswer, type BranchesAnswer, type MoveLine,
+} from './areas';
 import {
   ChartCard, Legend, KpiTile, RevenueTrend, Donut, MenuScatter, TopItemsBar, Heatmap, HourColumns, WeekdayBars, LeakStack,
   AgeingBar, TopDebtors, ItemHeatmap, ShareList, classLegend, leakLegend,
@@ -84,16 +97,29 @@ interface OverviewAnswer {
   atRiskParts: { voids: number; refunds: number; discounts: number; wastage: number | null };
   paymentMix: { key: PayKey; label: string; amount: number; share: number }[];
   marginHidden: boolean; wastageHidden: boolean;
+  /** A561: the share of sales with no cost (costs only) */
+  noCost?: { share: number | null; items: number; revenue: number } | null;
 }
-type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times';
+type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times' | 'stock' | 'customers' | 'costs' | 'branches';
 interface Recommendation {
   id: string; kind: string; title: string; why: string;
-  impact: number | null; impactPer: 'month' | 'once' | null; impactKind: 'gain' | 'recover' | 'collect' | null;
+  impact: number | null; impactPer: 'month' | 'once' | null; impactKind: 'gain' | 'recover' | 'collect' | 'at_risk' | null;
   assumption: string; confidence: 'high' | 'medium' | 'low'; evidence: Evidence;
+  /** A560: a stock card's estimate in units; a warning (a cashier's voids) has no estimate */
+  stock?: { by: string; items: { name: string; qty: number; onHand?: number; order?: number }[] } | null;
+  warning?: boolean;
+  /** A565: a stock move to consider (the items and the two branches — no quantity); the branch a card is about */
+  move?: MoveLine;
+  branchId?: string;
 }
 interface RecAnswer {
   summary: { good: string; worry: string | null; tone: 'up' | 'down' | 'flat' };
-  recommendations: Recommendation[]; found: { monthly: number; once: number; count: number }; costsHidden: boolean;
+  recommendations: Recommendation[]; costsHidden: boolean;
+  found: { monthly: number; once: number; count: number; atRisk?: number; line?: string | null };
+  /** A560: why no "running low" card can be worked out (every branch in view) */
+  stockNote?: string | null;
+  /** A561: one live figure per area tile, and whether a card points there */
+  hooks?: Partial<Record<AreaKey, AreaHook>>;
 }
 type DaypartKey = 'morning' | 'lunch' | 'afternoon' | 'evening' | 'late';
 interface TopItem { productId: string | null; name: string; qty: number; share: number }
@@ -106,20 +132,32 @@ interface TimesAnswer {
   cutoff: number; items: ItemTimes[]; totals: { qty: number; revenue: number }; limited: boolean;
   dayparts: { key: DaypartKey; label: string; from: number; to: number; qty: number; revenue: number; share: number; top: TopItem[] }[];
   hours: { hour: number; label: string; qty: number; revenue: number; top: TopItem[] }[];
+  /** A560: each weekday's top 3 and their typical sales that day */
+  week?: { dow: number; day: string; count: number; top: { productId: string | null; name: string; qty: number }[] }[];
 }
 
 export interface AnalyticsClient { get: <T>(path: string) => Promise<T> }
-type Tab = 'menu' | 'heatmap' | 'leaks' | 'credit';
+type Tab = AreaKey;
 const TABS: { key: Tab; label: string; path: string; tells: string }[] = [
   { key: 'menu', label: 'Menu engineering', path: '/api/analytics/menu-engineering',
-    tells: 'Which items earn you money and which only keep the kitchen busy: keep the Stars, re-price the Plowhorses, push the Puzzles, rework the Dogs.' },
+    tells: 'Which items earn you money and which only keep the kitchen busy: keep the Stars, check the recipe or portion of the Plowhorses, push the Puzzles, rework the Dogs.' },
   { key: 'heatmap', label: 'Busy times', path: '/api/analytics/heatmap',
     tells: 'When customers come: put more staff on the dark squares, run offers in the pale ones.' },
   { key: 'leaks', label: 'Money leaks', path: '/api/analytics/money-leaks',
     tells: 'Where money leaves without a sale — voids, refunds, discounts, wastage — and which cashier to talk to first.' },
   { key: 'credit', label: 'Credit ageing', path: '/api/analytics/credit-ageing',
     tells: 'Who owes you and for how long: chase the oldest (red) first — the longer it waits, the less likely it is paid.' },
+  { key: 'stock', label: 'Stock', path: '/api/analytics/stock',
+    tells: 'How fast your stock goes: order what runs out soonest, and buy less of what you throw away.' },
+  { key: 'branches', label: 'Branches', path: '/api/analytics/branches',
+    tells: 'Your branches side by side: see which one is falling behind, and which stock sits at one branch while another runs low.' },
+  { key: 'customers', label: 'Customers', path: '/api/analytics/customers',
+    tells: 'Who comes back: thank your best customers, call the regulars who have gone quiet, and see how orders come in.' },
+  { key: 'costs', label: 'Costs', path: '/api/analytics/costs',
+    tells: 'What each sale really earns: set the missing costs first, then check the portion or the ingredients of the thinnest items.' },
 ];
+/** A561: a tab the person may not open answers 403 — shown in the area, not as a page error. */
+interface Forbidden { forbidden: string }
 
 // ── Period presets ────────────────────────────────────────────────────────────
 
@@ -144,10 +182,10 @@ const TABLE_ROWS = 10;
 
 const CLASS_META: Record<MenuClass, { label: string; hint: string }> = {
   star:      { label: 'Star',        hint: 'Popular and profitable — keep it prominent.' },
-  plowhorse: { label: 'Plowhorse',   hint: 'Popular, low margin — a small price rise or a cheaper recipe.' },
+  plowhorse: { label: 'Plowhorse',   hint: 'Popular but earns little — check the recipe cost or portion, or pair it with a higher-margin item.' },
   puzzle:    { label: 'Puzzle',      hint: 'Profitable but slow — feature it, have staff suggest it.' },
   dog:       { label: 'Dog',         hint: 'Slow and low margin — rework it or take it off.' },
-  no_cost:   { label: 'No cost set', hint: 'Set a cost price or a recipe to see its margin.' },
+  no_cost:   { label: 'No cost set', hint: 'Set a cost or a recipe to see its margin.' },
 };
 const pct = (x: number | null | undefined, dp = 1) => (x === null || x === undefined ? '—' : `${(x * 100).toFixed(dp)}%`);
 const hh = (h: number) => `${String(h % 24).padStart(2, '0')}:00`;
@@ -191,8 +229,8 @@ export function AnalyticsLocked() {
       <h2 className="text-lg font-bold text-white mt-1">Analytics is part of ZapTill Premium</h2>
       <p className="text-sm text-gray-400 mt-2">
         A plain-English verdict on every period, a short list of what to do next with what each is worth in shillings, what
-        sells at what time of day, which items earn you money, when to staff up, which cashier to talk to and who owes you —
-        drawn as charts. Contact ZapTill to enable it.
+        sells at what time of day, which items earn you money, what runs out soonest, which regulars have gone quiet, when
+        to staff up, which cashier to talk to and who owes you — drawn as charts. Contact ZapTill to enable it.
       </p>
     </div>
   );
@@ -212,7 +250,8 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   const [preset, setPreset] = useState<PresetKey>('30d');
   const [range, setRange] = useState(() => presetRange('30d'));
   const [draft, setDraft] = useState(range);
-  const [tab, setTab] = useState<Tab>('menu');
+  // A561: ?tab=stock opens an area directly (the owner's page keeps it in the address as areas are picked)
+  const [tab, setTab] = useState<Tab>(() => (typeof window !== 'undefined' ? areaFromQuery(window.location.search, AREA_ORDER) : null) ?? 'menu');
   const [locked, setLocked] = useState(false);
   const [recs, setRecs] = useState<RecAnswer | null>(null);
   const [overview, setOverview] = useState<OverviewAnswer | null>(null);
@@ -262,20 +301,47 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
     const path = TABS.find((t) => t.key === tab)!.path;
     client.get<unknown>(`${path}?${qs}`)
       .then((r) => { if (live) setData((d) => ({ ...d, [tabKey]: r })); })
-      .catch((e) => { if (live) fail(e); })
+      .catch((e) => {
+        if (!live) return;
+        const err = e as { status?: number; code?: string; message?: string };
+        if (err?.status === 403 && err.code !== 'ANALYTICS_OFF') { setData((d) => ({ ...d, [tabKey]: { forbidden: err.message || 'Your role cannot see this area.' } satisfies Forbidden })); return; }
+        fail(e);
+      })
       .finally(() => { if (live) setBusy(false); });
     return () => { live = false; };
   }, [tabKey, locked]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A561: once the cloud says which areas this person sees, an area they may not open (a ?tab= link) falls back to the first
+  const seen = visibleAreas(recs?.hooks, recs?.costsHidden ?? overview?.marginHidden ?? false);
+  useEffect(() => { if (recs && !seen.includes(tab)) setTab(seen[0] ?? 'menu'); }, [recs, seen.join('|'), tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function choose(k: PresetKey) {
     setPreset(k);
     if (k !== 'custom') { const r = presetRange(k); setRange(r); setDraft(r); }
   }
-  /** A card's "See why": the tab with the evidence (or What sells when), scrolled into view. */
+  /** A561: open an area; on the owner's page the address keeps it (?tab=), so a link or a refresh opens it again. */
+  function pick(a: Tab) {
+    setTab(a);
+    if (ownerView && typeof window !== 'undefined') {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.set('tab', a);
+        window.history.replaceState(window.history.state, '', `${u.pathname}${u.search}${u.hash}`);
+      } catch { /* the address is a convenience only */ }
+    }
+  }
+  /** A card's "See why": the tile with the evidence (or What sells when), scrolled into view. */
   function evidence(e: Evidence) {
     if (e === 'times') { timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-    setTab(e);
+    pick(e);
     tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  /** A565: "What sells when at Westlands" — that branch in view (the dashboard's branch selection), then What sells when. */
+  function branchTimes(id: string) {
+    const b = branchCtx.branches.find((x) => x.id === id);
+    if (!b) return;
+    branchCtx.setActiveBranch(b);
+    setTimeout(() => timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
   const draftDays = draft.from && draft.to ? daysBetween(draft.from, draft.to) : 0;
   const draftError = !draft.from || !draft.to ? 'Choose both dates.' : draftDays < 1 ? 'The start must be on or before the end.'
@@ -293,6 +359,10 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   const current = data[tabKey];
   const days = daysBetween(range.from, range.to);
   const openTab = TABS.find((t) => t.key === tab)!;
+  const costsHidden = recs?.costsHidden ?? overview?.marginHidden ?? false;
+  const areas = visibleAreas(recs?.hooks, costsHidden);
+  const forbidden = current && typeof current === 'object' && 'forbidden' in (current as object) ? (current as Forbidden).forbidden : null;
+  const noCost = overview?.noCost;
   return (
     <div className="p-4 sm:p-6 space-y-5 min-w-0" data-testid="analytics-page">
       <div className="flex items-start justify-between flex-wrap gap-3">
@@ -349,7 +419,11 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
       {recs ? (
         <>
           <SummarySection r={recs} p={p} />
-          <DoThisNext r={recs} p={p} currency={currency} onEvidence={evidence} />
+          {noCost && noCost.share !== null && noCost.share >= 0.05 && (
+            <NoCostBanner share={noCost.share} items={noCost.items} onOpen={() => evidence('costs')} />
+          )}
+          <DoThisNext r={recs} p={p} currency={currency} onEvidence={evidence} ownerView={ownerView} onBranchTimes={branchTimes}
+            branchName={(id) => branchCtx.branches.find((b) => b.id === id)?.name ?? null} />
         </>
       ) : <p className="text-sm text-gray-500">Working out what to do next…</p>}
 
@@ -364,22 +438,22 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
 
       {overview && <TrendAndMix o={overview} p={p} currency={currency} />}
 
-      {/* 6 — the tabs */}
-      <div ref={tabsRef} className="scroll-mt-4 space-y-3">
-        <div className="flex gap-1 overflow-x-auto border-b border-gray-800 print:hidden">
-          {TABS.map((t) => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-400 hover:text-white'}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-sm text-gray-300" data-testid="analytics-tab-tells">{openTab.tells}</p>
-        {!current ? <p className="text-sm text-gray-500">{busy ? 'Loading…' : ''}</p>
-          : tab === 'menu' ? <MenuSection m={current as MenuAnswer} p={p} currency={currency} />
-          : tab === 'heatmap' ? <HeatmapSection h={current as HeatAnswer} p={p} currency={currency} />
-          : tab === 'leaks' ? <LeaksSection l={current as LeaksAnswer} p={p} currency={currency} />
-          : <CreditSection c={current as CreditAnswer} p={p} currency={currency} />}
+      {/* 6 — dig into the details: the area tiles (A561) */}
+      <div ref={tabsRef} className="scroll-mt-4">
+        <AreaTiles areas={areas} hooks={recs?.hooks ?? null} active={tab} onPick={pick}
+          stickyTop={ownerView ? 'top-12 md:top-0' : 'top-0'}>
+          <p className="text-sm text-gray-300" data-testid="analytics-tab-tells">{openTab.tells}</p>
+          {!current ? <p className="text-sm text-gray-500">{busy ? 'Loading…' : ''}</p>
+            : forbidden ? <p className="text-sm text-gray-400" data-testid="analytics-area-forbidden">{forbidden}</p>
+            : tab === 'menu' ? <MenuSection m={current as MenuAnswer} p={p} currency={currency} />
+            : tab === 'heatmap' ? <HeatmapSection h={current as HeatAnswer} p={p} currency={currency} />
+            : tab === 'leaks' ? <LeaksSection l={current as LeaksAnswer} p={p} currency={currency} />
+            : tab === 'stock' ? <StockSection s={current as StockAnswer} />
+            : tab === 'customers' ? <CustomersSection c={current as CustomersAnswer} p={p} currency={currency} />
+            : tab === 'costs' ? <CostsSection c={current as CostsAnswer} ownerView={ownerView} currency={currency} />
+            : tab === 'branches' ? <BranchesSection b={current as BranchesAnswer} currency={currency} ownerView={ownerView} inView={branch || null} onBranchTimes={branchTimes} />
+            : <CreditSection c={current as CreditAnswer} p={p} currency={currency} />}
+        </AreaTiles>
       </div>
       {days > 0 && <p className="text-[11px] text-gray-500">Every figure is worked out from the sales of this period ({days} day{days === 1 ? '' : 's'}), in East Africa Time, with your day cut-off.</p>}
     </div>
@@ -427,26 +501,31 @@ function SummarySection({ r, p }: { r: RecAnswer; p: ChartPalette }) {
 const CONFIDENCE: Record<Recommendation['confidence'], { dots: number; label: string }> = {
   high: { dots: 3, label: 'Strong evidence' }, medium: { dots: 2, label: 'Good evidence' }, low: { dots: 1, label: 'Worth a try' },
 };
-const IMPACT_LABEL: Record<NonNullable<Recommendation['impactKind']>, string> = { gain: 'more profit', recover: 'to recover', collect: 'to collect' };
+const IMPACT_LABEL: Record<NonNullable<Recommendation['impactKind']>, string> = {
+  gain: 'more profit', recover: 'to recover', collect: 'to collect', at_risk: 'of sales at risk if it runs out',
+};
 const EVIDENCE_LABEL: Record<Evidence, string> = {
   menu: 'Menu engineering', heatmap: 'Busy times', leaks: 'Money leaks', credit: 'Credit ageing', times: 'What sells when',
+  stock: 'Stock', customers: 'Customers', costs: 'Costs', branches: 'Branches',
 };
 
-function DoThisNext({ r, p, currency, onEvidence }: { r: RecAnswer; p: ChartPalette; currency: string; onEvidence: (e: Evidence) => void }) {
+function DoThisNext({ r, p, currency, onEvidence, ownerView, onBranchTimes, branchName }: {
+  r: RecAnswer; p: ChartPalette; currency: string; onEvidence: (e: Evidence) => void;
+  ownerView: boolean; onBranchTimes: (branchId: string) => void; branchName: (id: string) => string | null;
+}) {
   const money0 = (n: number) => fmt.money(n, currency, { decimals: 0 });
   const f = r.found;
   return (
     <section aria-label="Do this next" data-testid="analytics-do-next">
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 mb-2">
         <h2 className="text-lg font-bold text-white">Do this next</h2>
-        {f.count > 0 && (
-          <p className="text-sm text-gray-400" data-testid="analytics-found">
-            In this period's figures Analytics found about <span className="font-semibold text-white">{money0(f.monthly)} a month</span> you could gain or recover
-            {f.once > 0 && <>, plus <span className="font-semibold text-white">{money0(f.once)}</span> of old credit to collect</>}
-            <span className="text-gray-500"> — estimates; each card says what it assumes.</span>
+        {f.line && (
+          <p className="text-sm text-gray-300" data-testid="analytics-found">
+            {f.line}<span className="text-gray-500"> Estimates; each card says what it assumes.</span>
           </p>
         )}
       </div>
+      {r.stockNote && <p className="text-xs text-gray-500 mb-2" data-testid="analytics-stock-note">{r.stockNote}</p>}
       {r.recommendations.length === 0 ? (
         <p className="text-sm text-gray-400 bg-gray-900 border border-gray-800 rounded-xl p-4">
           Nothing to act on yet — either all is well, or there is not enough trading in this period to be sure. Try a longer period.
@@ -455,21 +534,57 @@ function DoThisNext({ r, p, currency, onEvidence }: { r: RecAnswer; p: ChartPale
         <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="analytics-recommendations">
           {r.recommendations.map((x, i) => {
             const c = CONFIDENCE[x.confidence];
+            const st = x.stock;
+            const low = (x.kind === 'stock_low' || x.kind === 'stock_out') && st ? st.items[0] : null;
             return (
-              <li key={x.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-2 min-w-0" data-kind={x.kind} data-confidence={x.confidence}>
+              <li key={x.id} className={`bg-gray-900 border rounded-xl p-4 flex flex-col gap-2 min-w-0 ${x.warning ? 'border-amber-500/40' : 'border-gray-800'}`}
+                data-kind={x.kind} data-confidence={x.confidence} data-warning={x.warning ? 'true' : undefined}>
                 <div className="flex gap-3 items-start">
-                  <span className="w-7 h-7 rounded-full bg-gray-800 text-white text-sm font-bold flex items-center justify-center flex-shrink-0" aria-label={`Number ${i + 1}`}>{i + 1}</span>
-                  <h3 className="text-base font-semibold text-white leading-snug">{x.title}</h3>
+                  {x.warning
+                    ? <span aria-label={`Number ${i + 1}, a warning`} className="flex-shrink-0"><Glyph d={ICON.warn} colour={p.severity.medium} size={15} /></span>
+                    : <span className="w-7 h-7 rounded-full bg-gray-800 text-white text-sm font-bold flex items-center justify-center flex-shrink-0" aria-label={`Number ${i + 1}`}>{i + 1}</span>}
+                  <div className="min-w-0">
+                    {x.warning && <p className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Warning · worth a look</p>}
+                    <h3 className="text-base font-semibold text-white leading-snug">{x.title}</h3>
+                  </div>
                 </div>
                 <p className="text-sm text-gray-300 leading-snug">{x.why}</p>
                 <div className="mt-auto pt-1">
+                  {low && st ? (
+                    <p className="text-sm" data-testid="analytics-stock-plan">
+                      <span className="text-gray-500">Order: </span>
+                      <span className="text-lg font-bold text-white tabular-nums">≈ {fmt.qty(low.order ?? 0)} more</span>
+                      <span className="text-gray-400"> to have {fmt.qty(low.qty)} {st.by === 'tomorrow' ? 'for today and tomorrow' : st.by === 'a week' ? 'for a week' : `by ${st.by}`}</span>
+                    </p>
+                  ) : st && st.items.length > 0 ? (
+                    <p className="text-sm" data-testid="analytics-stock-plan">
+                      <span className="text-gray-500">Have in for {st.by}: </span>
+                      {st.items.map((s, k) => (
+                        <span key={s.name} className="text-white"><span className="font-bold tabular-nums">{fmt.qty(s.qty)}</span> {s.name}{k < st.items.length - 1 ? ' · ' : ''}</span>
+                      ))}
+                    </p>
+                  ) : null}
                   {x.impact !== null && x.impactKind ? (
                     <p className="text-sm">
                       <span className="text-gray-500">Estimate: </span>
-                      <span className="text-lg font-bold text-white tabular-nums">≈ {money0(x.impact)}</span>
-                      <span className="text-gray-400"> {x.impactPer === 'once' ? 'once' : 'a month'} {IMPACT_LABEL[x.impactKind]}</span>
+                      <span className={`${st ? 'text-sm' : 'text-lg'} font-bold text-white tabular-nums`}>≈ {money0(x.impact)}</span>
+                      <span className="text-gray-400"> {x.impactKind === 'at_risk' ? '' : x.impactPer === 'once' ? 'once ' : 'a month '}{IMPACT_LABEL[x.impactKind]}</span>
                     </p>
-                  ) : <p className="text-sm text-gray-500">No KES estimate</p>}
+                  ) : x.warning ? <p className="text-sm text-gray-500">No estimate — look into it first</p>
+                    : x.move ? (
+                      <p className="text-sm text-gray-400" data-testid="analytics-move-plan">
+                        How much to move is your call.
+                        {ownerView && x.move.items.some((i) => i.kind === 'product') && (
+                          <> <Link to={transferLink(x.move)} className="text-swift-text hover:underline print:hidden" data-testid="analytics-move-transfer">Start a transfer →</Link></>
+                        )}
+                      </p>
+                    )
+                    : x.kind === 'branch_drop' && x.branchId && ownerView ? (
+                      <button onClick={() => onBranchTimes(x.branchId as string)} className="text-sm font-semibold text-swift-text hover:underline print:hidden text-left">
+                        What sells when at {branchName(x.branchId) ?? 'that branch'} →
+                      </button>
+                    )
+                    : st ? null : <p className="text-sm text-gray-500">No KES estimate</p>}
                   <p className="text-[11px] text-gray-500 leading-snug mt-0.5">{x.assumption}</p>
                 </div>
                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-800">
@@ -546,6 +661,31 @@ function WhatSellsWhen({ t, p }: { t: TimesAnswer; p: ChartPalette }) {
           </div>
         ))}
       </div>
+
+      {/* A560: the week at a glance — each weekday's top 3 with its typical sales */}
+      {t.week && t.week.some((d) => d.top.length > 0) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 sm:p-4" data-testid="analytics-week">
+          <p className="text-sm font-semibold text-white">Your week at a glance — what to prepare each day</p>
+          <p className="text-[11px] text-gray-500 mb-2">The top 3 on each day of the week, with what a typical one sells</p>
+          <ol className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
+            {t.week.map((d) => (
+              <li key={d.dow} className="bg-gray-800/60 rounded-lg p-2 min-w-0" data-day={d.day}>
+                <p className="text-xs font-bold text-white">{d.day}</p>
+                {d.top.length === 0 ? <p className="text-xs text-gray-500">No sales</p> : (
+                  <ul className="mt-1 space-y-0.5">
+                    {d.top.map((x) => (
+                      <li key={x.productId ?? x.name} className="flex justify-between gap-2 text-xs">
+                        <span className="text-gray-300 truncate" title={x.name}>{x.name}</span>
+                        <span className="text-white font-semibold tabular-nums flex-shrink-0">{fmt.qty(x.qty)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-5">
         {/* (b) one item's own grid */}

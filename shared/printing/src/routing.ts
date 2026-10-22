@@ -229,6 +229,11 @@ export function toUnits(
     }
   }
 
+  // A559 (owner, after testing 1.0.20: "yes let it print in the kitchen receipt too"): an extra goes where its LINE goes
+  // (the kitchen, for a kitchen dish; a combo's, where the combo line routes) AND to dispatch, so the cook sees "Extra
+  // Cheese" under the dish and the packer still does. It was dispatch only. Marked `modifier`: it decorates its dish and
+  // never makes a line print on a ticket by itself (render.ts) — an excluded line (a soda) keeps its extras off the kitchen.
+  const modifierStationIds = [...lineStationIds, ...ids.dispatch.filter(id => !lineStationIds.includes(id))];
   for (const m of line.selectedModifiers ?? []) {
     const modName = (m.name ?? m.optionName ?? '').trim();
     if (!modName) continue;
@@ -240,7 +245,8 @@ export function toUnits(
       priceDelta: toCents(m.price ?? 0),
       chosen:     true,
       attributes: [],
-      stationIds: ids.dispatch,
+      stationIds: modifierStationIds,
+      modifier:   true,
     });
   }
 

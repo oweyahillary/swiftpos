@@ -12,11 +12,11 @@
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted — listed in the A558 report):
  *   - daypartOf: lunch from 12 instead of 11                         → "the dayparts" fails
  *   - summariseItemTimes sharing against the items sent, not the total row → "what sells when" fails
- *   - recPriceRise without the PRICE_MIN_QTY floor                   → "price rise: the minimum data" fails
- *   - recPriceRise impact on the period's quantity, not a month's    → "price rise: the impact" fails
- *   - recPriceRise ignoring `costs` (menuReady without the check)    → "costs hidden" fails
+ *   - menuReady ignoring `costs`                                      → "costs hidden" fails
  *   - rankRecommendations without the cap of 7                       → "the ranking" fails
- *   - recLeaks counting the whole void value, not the excess          → "money leaks" fails
+ *   - recLeaks with a KES estimate again                              → "money leaks" and "the value found" fail
+ * A560 removed the price-rise rule (the owner: prices must stay competitive) and made a cashier's voids a warning; the
+ * stock rules are tested in tests/analytics-rules-a560.test.mjs.
  *   - capRows returning every row                                      → "capRows" fails
  */
 import assert from 'node:assert';
@@ -120,43 +120,12 @@ ok('the scenario classifies as built (the matrix of A549)', () => {
   assert.equal(menu.avgUnitMargin, 231.29);
 });
 
-ok('suggestedRise: half the gap in KES 10, at least 10, at most 15% of the price', () => {
-  assert.equal(R.suggestedRise(45, 300), 20);
-  assert.equal(R.suggestedRise(8, 300), 10, 'a small gap still moves KES 10');
-  assert.equal(R.suggestedRise(181.29, 300), 40, 'capped: 15% of 300 = 45 → 40');
-  assert.equal(R.suggestedRise(200, 50), 10, 'a cheap item: the cap never goes below 10');
-});
-
-ok('price rise: Plowhorses, the rise × the quantity a month, the assumption stated', () => {
-  const r = R.recPriceRise(base);
-  assert.deepEqual(r.map((x) => [x.title, x.impact, x.impactPer, x.confidence]), [
-    ['Raise the price of Tusker by KES 40', 12000, 'month', 'high'],
-    ['Raise the price of Chips by KES 30', 4500, 'month', 'high'],
-  ]);
-  assert.equal(r[0].why, 'It is a best seller (300 sold, number 1) but leaves KES 50 each after its cost — KES 181 below your average of KES 231.');
-  assert.equal(r[0].assumption, 'If the same 300 a month still sell at KES 340.');
-  assert.equal(r[0].evidence, 'menu');
-});
-
-ok('price rise: the impact is a month\'s — 15 days of the same sales double', () => {
-  const r = R.recPriceRise({ ...base, days: 15 });
-  assert.equal(r[0].impact, 40 * 600);
-  assert.equal(r[0].assumption, 'If the same 600 a month still sell at KES 340.');
-});
-
-ok('price rise: the minimum data — 20 sold, 50 items on the menu, 7 days', () => {
-  const few = R.classifyMenu(MENU_ROWS.map((x) => (x.product_name === 'Tusker' ? { ...x, qty: 19, revenue: 19 * 300 } : x)));
-  assert.ok(!R.recPriceRise({ ...base, menu: few }).some((x) => x.title.includes('Tusker')), '19 sold: no rise');
-  const small = R.classifyMenu([mrow('Ale', 19, 300, 250), mrow('Steak', 40, 1000, 500), mrow('Salad', 15, 300, 100)]);
-  assert.equal(small.items.find((x) => x.name === 'Ale').class, 'plowhorse');
-  assert.deepEqual(R.recPriceRise({ ...base, menu: small }), [], 'a Plowhorse sold 19 times: too few to re-price');
-  const enough = R.classifyMenu([mrow('Ale', 20, 300, 250), mrow('Steak', 40, 1000, 500), mrow('Salad', 15, 300, 100)]);
-  assert.deepEqual(R.recPriceRise({ ...base, menu: enough }).map((x) => x.title), ['Raise the price of Ale by KES 40'], '20 sold: enough');
-  const tiny = R.classifyMenu([mrow('A', 20, 300, 290), mrow('B', 20, 300, 100), mrow('C', 5, 300, 100)]);
-  assert.equal(tiny.totals.qty, 45);
-  assert.deepEqual(R.recPriceRise({ ...base, menu: tiny }), [], 'under 50 items sold: no menu advice');
-  assert.deepEqual(R.recPriceRise({ ...base, days: 6 }), [], 'under a week: no menu advice');
-  assert.deepEqual(R.recPriceRise({ ...base, menu: R.classifyMenu([]) }), []);
+ok('A560: no price rule — nothing suggests a price rise, and the Plowhorses get no card', () => {
+  assert.equal(R.recPriceRise, undefined);
+  assert.equal(R.suggestedRise, undefined);
+  const recs = R.buildRecommendations(base);
+  assert.ok(!recs.some((x) => x.kind === 'price'));
+  assert.ok(!recs.some((x) => /Tusker|Chips/.test(x.title)), 'the two Plowhorses are not named in a title');
 });
 
 ok('promote: the best Puzzle at its best daypart; impact = margin × 20% more a month', () => {
@@ -201,14 +170,14 @@ ok('quiet slot: at most half a typical two hours; impact = a quarter of the gap 
   assert.deepEqual(R.recQuietSlot({ ...base, heatmap: mild }), [], '1,200 is more than half of 2,000: not quiet enough');
 });
 
-ok('money leaks: a flagged cashier; impact = what is above the median rate, a month', () => {
+ok('money leaks (A560): a flagged cashier is a warning to look into — no KES estimate', () => {
   const [r] = R.recLeaks(base);
-  assert.equal(r.title, 'Talk to Otieno about voids');
-  assert.equal(r.why, '20 voids (KES 20,000) in 30 days — 10.0× the branch median rate.');
-  assert.equal(r.impact, 18000, '20,000 × (1 − 2% / 20%)');
-  assert.equal(r.assumption, 'If their void rate comes down to the branch median (2.0%).');
+  assert.equal(r.title, "Check Otieno's voids");
+  assert.equal(r.why, '20 voids (KES 20,000) in 30 days — 10.0× the branch median rate. Worth a look; a void before payment is not always a loss.');
+  assert.deepEqual([r.impact, r.impactPer, r.impactKind, r.warning], [null, null, null, true]);
+  assert.equal(r.assumption, 'A warning to look into, not money lost — no KES estimate.');
   assert.equal(r.confidence, 'high');
-  assert.equal(R.recLeaks({ ...base, days: 60 })[0].impact, 9000);
+  assert.equal(R.recLeaks({ ...base, days: 60 })[0].impact, null);
   const calm = R.summariseLeaks([lrow('a', 100, 2, 2000), lrow('v', 100, 4, 4000), lrow('b', 100, 2, 2000)], {});
   assert.deepEqual(R.recLeaks({ ...base, leaks: calm }), [], '4 voids: under the 5-event floor');
 });
@@ -234,15 +203,15 @@ ok('credit: KES 1,000 over 60 days at least; the top names; counted once', () =>
 ok('cost data: items sold (5 at least) with no cost set; no KES estimate', () => {
   const [r] = R.recCostData(base);
   assert.equal(r.title, 'Set a cost for Special');
-  assert.equal(r.why, 'Special sold KES 30,000 in 30 days with no cost price or recipe, so the margin is unknown.');
+  assert.equal(r.why, 'Special sold KES 30,000 in 30 days with no cost or recipe set, so the margin is unknown.');
   assert.equal(r.impact, null);
 });
 
 ok('the ranking: by the KES at stake (once or a month), no estimate last, at most 7', () => {
   const all = R.buildRecommendations(base);
   assert.deepEqual(all.map((x) => [x.kind, x.impact]), [
-    ['credit', 52000], ['leak', 18000], ['price', 12000], ['promote', 4800], ['price', 4500], ['staffing', 1500], ['day_close', 600],
-  ]);
+    ['credit', 52000], ['promote', 4800], ['staffing', 1500], ['day_close', 600], ['quiet', 450], ['leak', null], ['cost', null],
+  ], 'A560: no price card; the void warning has no estimate (after every KES card, first of the rest on its strong evidence)');
   const r = R.rankRecommendations([
     { id: 'b', impact: null, confidence: 'high' }, { id: 'a', impact: 100, confidence: 'low' }, { id: 'c', impact: 100, confidence: 'high' }, { id: 'd', impact: 0, confidence: 'low' },
   ]);
@@ -257,15 +226,18 @@ ok('costs hidden (A490): no menu advice of any kind, and nothing that tells a ma
   assert.deepEqual([...new Set(recs.map((x) => x.kind))].sort(), ['credit', 'day_close', 'leak', 'quiet', 'staffing']);
   const text = JSON.stringify(recs);
   for (const w of ['margin', 'Tusker by', 'Special', 'Soup', 'Fish']) assert.ok(!text.includes(w), w);
-  assert.deepEqual(R.recPriceRise({ ...base, costs: false }), [], 'costs false, even with a full menu');
+  assert.deepEqual(R.recPromote({ ...base, costs: false }), [], 'costs false, even with a full menu');
   assert.deepEqual(R.recCostData({ ...base, costs: false }), []);
   assert.deepEqual(R.recPromote({ ...base, menu: R.menuWithoutCosts(menu) }), []);
 });
 
-ok('the value found: the monthly estimates added up, the once apart', () => {
+ok('the value found (A560): the gains and recoveries a month, the credit apart; no price rise and no voids in it', () => {
   const v = R.valueFound(R.buildRecommendations(base));
-  assert.deepEqual(v, { monthly: 18000 + 12000 + 4800 + 4500 + 1500 + 600, once: 52000, count: 7 });
-  assert.deepEqual(R.valueFound([]), { monthly: 0, once: 0, count: 0 });
+  assert.deepEqual(v, {
+    monthly: 4800 + 1500 + 600 + 450, once: 52000, atRisk: 0, count: 5, actions: 7, stockDays: 0, lowItems: 0, warnings: 1, moves: 0,
+    line: 'This period: 7 things to act on — KES 52,000 of old credit to collect, about KES 7,350 a month from the other ideas and 1 warning to look into.',
+  });
+  assert.deepEqual(R.valueFound([]), { monthly: 0, once: 0, atRisk: 0, count: 0, actions: 0, stockDays: 0, lowItems: 0, warnings: 0, moves: 0, line: null });
 });
 
 // ── the summary ───────────────────────────────────────────────────────────────

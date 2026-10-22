@@ -7,6 +7,7 @@
  *
  *   const pg = await openSchema({ through: 158 });   // every migration up to and including 158
  *   const S = await seedAnalytics(pg);              // ids and the expected figures
+ *   const X = await seedA561(pg, S);                 // A561: stock use, customers, costs (after seedAnalytics)
  *   const rows = await pg.rpc('analytics_sales_heatmap', { p_business: S.A, p_branch: null, p_from, p_to });
  */
 import fs from 'node:fs';
@@ -184,4 +185,82 @@ export async function seedAnalytics(pg) {
     // the period as businessRangeEAT gives it (cut-off 0)
     START: '2026-09-30T21:00:00.000Z', END: '2026-10-21T20:59:59.999Z',
   };
+}
+
+/**
+ * A561 — stock use, customers and costs on top of seedAnalytics (call it after). The previous period is 10–30 September
+ * (PREV_START). Expected figures are in the comments; the tests assert them.
+ *   Stock (Westlands unless said): Tusker lager tracks stock — 21 sales of 10 in the period (210), a paid order voided
+ *   (+6 back), 4 written off (and 9 more whose wastage was voided): used 208, about 9.9 a day; 20 on hand at Westlands
+ *   (Kilimani 500, and 50 sold there) → about 2 days left. 100 sold in September. Eggs by the piece: 12 pieces sold,
+ *   a void's +1 (in units) not netted, 30 pieces on hand. The Wing ingredient: 40 used through recipes, 10 wasted (20%),
+ *   100 on hand. Not listed: Chicken wings (sold through a recipe), Soda (no stock tracking), business B.
+ *   Customers: Wanjiku came every 5 days from 25 July to 23 September (a regular gone quiet); Brian is new (5 and 12
+ *   October); Acme came in September and in October (returning); Paid Up only in October.
+ *   Costs: Cooking oil 0.4 → 0.5 a ml in the period (a delivery on 1 September at 0.4, an edit on 10 October to 0.5);
+ *   Chips masala (100 ml oil + a 20 potato) sold 30 at 100; Fries has its own cost (never a recipe row); Ghost is active
+ *   with no cost and did not sell; Old menu item is inactive.
+ */
+export async function seedA561(pg, S) {
+  const { put, q } = pg;
+  const PREV_START = '2026-09-09T21:00:00.000Z';
+  const TUSKER = (await put('products', { business_id: S.A, name: 'Tusker lager', base_price: 300, cost_price: 190, track_stock: true, unit_label: 'bottles' })).id;
+  const EGGS = (await put('products', { business_id: S.A, name: 'Eggs', base_price: 20, cost_price: 12, track_stock: true, sold_by: 'piece' })).id;
+  const THEIRS = (await put('products', { business_id: S.B, name: 'Their beer', base_price: 300, track_stock: true })).id;
+  await q('UPDATE public.products SET track_stock = true WHERE id = $1', [S.WINGS]);   // a recipe item: never listed
+  await q('UPDATE public.products SET track_stock = false WHERE id = $1', [S.SODA]);
+  const mv = (product_id, branch_id, movement_type, quantity_change, created_at, notes = 'Order X') =>
+    put('stock_movements', { product_id, branch_id, movement_type, quantity_change, quantity_after: 0, created_at, notes, reference_type: movement_type === 'sale' ? 'order' : null });
+  for (let d = 1; d <= 21; d++) await mv(TUSKER, S.W, 'sale', -10, `2026-10-${String(d).padStart(2, '0')}T10:00:00Z`);
+  await mv(TUSKER, S.W, 'correction', 6, '2026-10-12T10:00:00Z', 'Void of Order ORD-9: wrong table');
+  await mv(TUSKER, S.W, 'correction', 5, '2026-10-12T10:00:00Z', 'Stock count');                 // not a sale's return
+  await mv(TUSKER, S.W, 'sale', -100, '2026-09-20T10:00:00Z');                                    // the previous period
+  await mv(TUSKER, S.W, 'sale', -999, '2026-08-01T10:00:00Z');                                    // before both
+  await mv(TUSKER, S.K, 'sale', -50, '2026-10-05T10:00:00Z');
+  await mv(EGGS, S.W, 'sale', -12, '2026-10-05T10:00:00Z');
+  await mv(EGGS, S.W, 'correction', 1, '2026-10-06T10:00:00Z', 'Void of Order ORD-10: x');       // units, not pieces: not netted
+  await mv(S.WINGS, S.W, 'sale', -20, '2026-10-05T10:00:00Z');
+  await mv(S.SODA, S.W, 'sale', -20, '2026-10-05T10:00:00Z');
+  await mv(THEIRS, S.BB, 'sale', -20, '2026-10-05T10:00:00Z');
+  await put('stock_levels', { product_id: TUSKER, branch_id: S.W, quantity: 20, qty_pieces: 0 });
+  await put('stock_levels', { product_id: TUSKER, branch_id: S.K, quantity: 500, qty_pieces: 0 });
+  await put('stock_levels', { product_id: EGGS, branch_id: S.W, quantity: 0, qty_pieces: 30 });
+  await put('wastage_entries', { business_id: S.A, branch_id: S.W, ref: 'W-T1', item_kind: 'product', product_id: TUSKER, name: 'Tusker lager', quantity: 4, value: 760, reason: 'damaged', created_at: '2026-10-14T10:00:00Z' });
+  await put('wastage_entries', { business_id: S.A, branch_id: S.W, ref: 'W-T2', item_kind: 'product', product_id: TUSKER, name: 'Tusker lager', quantity: 9, value: 1710, reason: 'damaged', created_at: '2026-10-14T10:00:00Z', voided_at: '2026-10-14T11:00:00Z' });
+  const ING = (await q(`SELECT id FROM public.ingredients WHERE business_id = $1 AND name = 'Wing'`, [S.A]))[0].id;
+  for (const [n, at] of [[-25, '2026-10-03T10:00:00Z'], [-15, '2026-10-09T10:00:00Z']]) {
+    await put('ingredient_stock_movements', { business_id: S.A, ingredient_id: ING, branch_id: S.W, movement_type: 'sale', quantity_change: n, quantity_after: 0, created_at: at });
+  }
+  await put('ingredient_stock_movements', { business_id: S.A, ingredient_id: ING, branch_id: S.W, movement_type: 'adjustment', quantity_change: 300, quantity_after: 0, created_at: '2026-10-04T10:00:00Z' });
+  await put('wastage_entries', { business_id: S.A, branch_id: S.W, ref: 'W-I1', item_kind: 'ingredient', ingredient_id: ING, name: 'Wing', quantity: 10, value: 200, reason: 'spoiled', created_at: '2026-10-15T10:00:00Z' });
+  await put('ingredient_stock_levels', { business_id: S.A, ingredient_id: ING, branch_id: S.W, current_stock: 100, reorder_level: 0 });
+
+  // ── customers ──
+  let k = 0;
+  const cust = async (name) => (await put('customers', { business_id: S.A, name, phone: `0711${String(++k).padStart(6, '0')}`, credit_limit: 0, credit_balance: 0 })).id;
+  const WANJIKU = await cust('Wanjiku'), BRIAN = await cust('Brian');
+  const visit = (customer_id, created_at, total = 1000, order_type = 'dine_in', branch_id = S.W) =>
+    put('orders', { business_id: S.A, branch_id, order_number: `C-${++k}`, status: 'completed', subtotal: total, total, discount_amount: 0, customer_id, order_type, created_at, cashier_id: S.CATE });
+  for (let t = Date.parse('2026-07-25T09:00:00Z'); t <= Date.parse('2026-09-23T09:00:00Z'); t += 5 * 86_400_000) await visit(WANJIKU, new Date(t).toISOString(), 800);
+  await visit(BRIAN, '2026-10-05T09:00:00Z', 1500, 'takeaway');
+  await visit(BRIAN, '2026-10-12T09:00:00Z', 1500, 'delivery');
+  await visit(S.C1, '2026-09-15T09:00:00Z', 600);
+  await visit(S.C1, '2026-10-16T09:00:00Z', 600);
+
+  // ── costs ──
+  const OIL = (await put('ingredients', { business_id: S.A, name: 'Cooking oil', unit: 'ml', unit_cost: 0.5 })).id;
+  const POTATO = (await put('ingredients', { business_id: S.A, name: 'Potato', unit: 'pc', unit_cost: 20 })).id;
+  const CHIPSM = (await put('products', { business_id: S.A, name: 'Chips masala', base_price: 100 })).id;
+  const FRIES = (await put('products', { business_id: S.A, name: 'Fries', base_price: 100, cost_price: 30 })).id;
+  await put('recipes', { business_id: S.A, product_id: CHIPSM, ingredient_id: OIL, quantity_per_serving: 100, unit: 'ml' });
+  await put('recipes', { business_id: S.A, product_id: CHIPSM, ingredient_id: POTATO, quantity_per_serving: 1, unit: 'pc' });
+  await put('recipes', { business_id: S.A, product_id: FRIES, ingredient_id: OIL, quantity_per_serving: 80, unit: 'ml' });
+  const grn = await put('goods_received_notes', { business_id: S.A, branch_id: S.W, grn_number: 'GRN-1', received_date: '2026-09-01', received_by: S.MGR });
+  await put('grn_items', { grn_id: grn.id, ingredient_id: OIL, quantity_received: 5000, unit_cost: 0.4 });
+  await put('ingredient_cost_history', { business_id: S.A, ingredient_id: OIL, old_unit_cost: 0.4, new_unit_cost: 0.5, created_at: '2026-10-10T08:00:00Z' });
+  const sale = await put('orders', { business_id: S.A, branch_id: S.W, order_number: 'CM-1', status: 'completed', subtotal: 3000, total: 3000, discount_amount: 0, order_type: 'dine_in', created_at: '2026-10-19T12:00:00Z', cashier_id: S.DAN });
+  await put('order_items', { order_id: sale.id, product_id: CHIPSM, product_name: 'Chips masala', quantity: 30, unit_price: 100, subtotal: 3000 });
+  await put('products', { business_id: S.A, name: 'Ghost', base_price: 500, status: 'active' });
+  await put('products', { business_id: S.A, name: 'Old menu item', base_price: 500, status: 'inactive' });
+  return { PREV_START, TUSKER, EGGS, ING, OIL, POTATO, CHIPSM, FRIES, WANJIKU, BRIAN };
 }

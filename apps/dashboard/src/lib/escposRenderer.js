@@ -459,6 +459,9 @@ function receiptHeading(line) {
   }
   return { name: options.length ? nameWithVariant(line.name, options) : line.name, hidden, moved };
 }
+function lineEarnsPlace(line, visible, station) {
+  return line.units.some((u) => !u.modifier) ? visible.some((u) => !u.modifier) : station.includeUnits === "all" || line.stationIds.includes(station.id);
+}
 function noteRows(note) {
   return (note ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 }
@@ -492,10 +495,7 @@ function renderProduction(ctx) {
   let printedLines = 0;
   for (const line of order.lines) {
     const units = visibleUnits(line, ctx);
-    if (station.includeUnits !== "none") {
-      const earns = line.units.length > 0 ? units.length > 0 : station.includeUnits === "all" || line.stationIds.includes(station.id);
-      if (!earns) continue;
-    }
+    if (station.includeUnits !== "none" && !lineEarnsPlace(line, units, station)) continue;
     if (printedLines > 0) d.gap(ITEM_GAP_DOTS);
     printedLines++;
     const { name, folded } = lineHeading(line);
@@ -510,9 +510,15 @@ function renderProduction(ctx) {
       for (const ln of noteRows(line.note)) d.lines(indentedWrap(cols, `** ${ln}`, 6), { bold: true });
       continue;
     }
+    const dishRows = units.filter((u) => !u.modifier).length;
+    unitRows += line.units.some((u) => !u.modifier) ? dishRows : 1;
     for (const u of units) {
-      unitRows++;
       if (u === folded) continue;
+      if (u.modifier) {
+        const times = u.quantity > 1 ? ` x${u.quantity}` : "";
+        d.lines(indentedWrap(cols, `+ ${u.name}${times}`, 6));
+        continue;
+      }
       const attrs = describeAttributes(u);
       const qty = u.quantity > 1 ? ` x${u.quantity}` : "";
       const inline = station.attributeStyle === "inline-when-simple" && attrs ? ` (${attrs})` : "";
@@ -724,10 +730,7 @@ function hasPrintableContent(ctx) {
   const { order, station } = ctx;
   if (station.kind === "receipt") return true;
   if (station.includeUnits === "none") return order.lines.length > 0;
-  return order.lines.some((line) => {
-    const units = visibleUnits(line, ctx);
-    return line.units.length > 0 ? units.length > 0 : station.includeUnits === "all" || line.stationIds.includes(station.id);
-  });
+  return order.lines.some((line) => lineEarnsPlace(line, visibleUnits(line, ctx), station));
 }
 function renderTicket(ctx) {
   return ctx.station.kind === "receipt" ? renderReceipt(ctx) : renderProduction(ctx);
@@ -1175,6 +1178,7 @@ function toUnits(line, ids, lineStationIds, routing) {
       });
     }
   }
+  const modifierStationIds = [...lineStationIds, ...ids.dispatch.filter((id) => !lineStationIds.includes(id))];
   for (const m of line.selectedModifiers ?? []) {
     const modName = (m.name ?? m.optionName ?? "").trim();
     if (!modName) continue;
@@ -1186,7 +1190,8 @@ function toUnits(line, ids, lineStationIds, routing) {
       priceDelta: toCents(m.price ?? 0),
       chosen: true,
       attributes: [],
-      stationIds: ids.dispatch
+      stationIds: modifierStationIds,
+      modifier: true
     });
   }
   return units;

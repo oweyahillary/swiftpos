@@ -4,6 +4,7 @@ import { getLocalDb, effectiveReceiptFooter } from '../localDb';
 import { getDeviceConfig, getPosFeatures, getStockCountFreeze } from '../deviceConfig';
 import { parseNotePicks } from '../orderNotes';
 import { cleanShowDays } from '../productDays';
+import { tillStockView } from '../stockGateLocal';   // A563
 import { type IpcShared } from './shared';
 
 /** The sale screen's data: products, categories, variants, modifiers, tables, pumps, payment methods. */
@@ -190,6 +191,9 @@ export function registerCatalogueHandlers(ctx: IpcShared) {
   handle('pos:features', async () => getPosFeatures());
   // A394: the items a stock count freezes at this branch (the sale screen refuses them).
   handle('pos:stockCountFreeze', async () => getStockCountFreeze());
+  // A563: the owner's "When an item's stock reaches zero" choice and this branch's known levels (tracked items only) — the
+  // sale screen greys ("Sold out") or hides an item that is out. Read again after every sale and every ~20 s.
+  handle('pos:stockView', async () => tillStockView());
 
   handle('pos:getModifiers', async (_event, productId: string) => {
     const db = getLocalDb();
