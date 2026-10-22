@@ -1,0 +1,61 @@
+---
+// The owner's phone at night: the daily summary from a demo business, as it lands by email.
+---
+<div class="ps" role="img" aria-label="A phone showing the day's summary email from a demo restaurant: sales, top sellers, one cashier short.">
+  <div class="ps__bar"><span>22:47</span><span>Inbox</span></div>
+  <div class="ps__mail">
+    <p class="ps__from">ZapTill &middot; Daily summary</p>
+    <p class="ps__subject">Mama Lishe Grill, Tue 21 Oct</p>
+
+    <div class="ps__big">
+      <span>Sales today</span>
+      <strong>KES 84,350</strong>
+      <span>212 orders</span>
+    </div>
+
+    <p class="ps__h">Top sellers</p>
+    <ul class="ps__list">
+      <li><span>Nyama choma 1kg</span><b>15,950</b></li>
+      <li><span>Chicken wings</span><b>9,100</b></li>
+      <li><span>Chips masala</span><b>7,200</b></li>
+    </ul>
+
+    <p class="ps__h">At the day close</p>
+    <ul class="ps__list">
+      <li class="short"><span>Wanjiru's drawer</span><b>350 short</b></li>
+      <li><span>Otieno's drawer</span><b>exact</b></li>
+      <li><span>Voids</span><b>2</b></li>
+    </ul>
+
+    <p class="ps__h">Running low</p>
+    <ul class="ps__list">
+      <li><span>Tilapia</span><b>4 left</b></li>
+    </ul>
+    <p class="ps__note">Demo data</p>
+  </div>
+</div>
+
+<style>
+  .ps {
+    position: absolute; inset: 0;
+    font-family: var(--font-text);
+    font-size: 4.6cqw;
+    line-height: 1.3;
+    background: #f4f7f7;
+    color: #142226;
+    display: flex; flex-direction: column;
+  }
+  .ps__bar { display: flex; justify-content: space-between; padding: 1.3em 1.4em 0.6em; font-weight: 700; font-size: 0.85em; }
+  .ps__mail { padding: 0.4em 1.1em; overflow: hidden; }
+  .ps__from { color: #0f766e; font-weight: 700; margin: 0 0 0.15em; font-size: 0.85em; }
+  .ps__subject { font: 700 1.15em/1.2 var(--font-display); margin: 0 0 0.8em; }
+  .ps__big { background: #061a1d; color: #e4efee; border-radius: 0.7em; padding: 0.8em 0.9em; margin-bottom: 0.8em; }
+  .ps__big span { display: block; font-size: 0.8em; color: #9fb7b5; }
+  .ps__big strong { font: 800 1.5em/1.1 var(--font-display); color: #5eead4; }
+  .ps__h { font-weight: 700; margin: 0.8em 0 0.2em; font-size: 0.85em; color: #56686d; }
+  .ps__list { list-style: none; margin: 0; padding: 0; }
+  .ps__list li { display: flex; justify-content: space-between; gap: 0.5em; padding: 0.38em 0; border-bottom: 1px solid #dbe4e4; font-size: 0.9em; }
+  .ps__list b { font-variant-numeric: tabular-nums; }
+  .ps__list .short b, .ps__list .short span { color: #b42318; }
+  .ps__note { margin-top: 0.8em; font-size: 0.75em; color: #56686d; }
+</style>

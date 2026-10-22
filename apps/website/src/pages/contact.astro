@@ -1,0 +1,101 @@
+---
+import Base from '../layouts/Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import WaIcon from '../components/WaIcon.astro';
+import { SITE, WA_MESSAGES, telLink, waLink } from '../lib/site';
+
+/*
+ * No form in Phase 1, on purpose. The demo request form arrives in Phase 3 with its spam protection
+ * (Turnstile, a honeypot, a time check, rate limits, Kenyan phone validation; WEBSITE-BRIEF §7) and a cloud route.
+ * Until then WhatsApp and the phone are the way in. Never put anything a visitor types into a URL.
+ */
+---
+<Base
+  title="Contact ZapTill: WhatsApp, call or book a visit"
+  description="WhatsApp or call ZapTill on 0717 675 635, or book a visit: we come to you, or show you ZapTill running at a business near you."
+  waMessage={WA_MESSAGES.general}
+  ogImage="/og/contact.png"
+>
+  <section class="page-head contact-head">
+    <div class="wrap">
+      <h1>Talk to a person.</h1>
+      <p class="lede">WhatsApp is quickest. Tell us what kind of business you run and how many tills you have.</p>
+    </div>
+  </section>
+
+  <section class="band band--tight">
+    <div class="wrap ways">
+      <article class="way way--main">
+        <h2>WhatsApp</h2>
+        <p>Send us a message and a person replies. The message is written for you; change it as you like.</p>
+        <WhatsAppButton message={WA_MESSAGES.general} />
+        <p class="way__alt">
+          Running a restaurant? <a href={waLink(WA_MESSAGES.restaurant)} target="_blank" rel="noopener">Ask for a restaurant demo</a>.
+        </p>
+      </article>
+
+      <article class="way">
+        <h2>Call</h2>
+        <p>Same number, if you would rather talk.</p>
+        <p class="way__phone"><a href={telLink}>{SITE.phoneDisplay}</a></p>
+        <!-- TODO(owner): add support hours here. -->
+      </article>
+
+      <article class="way">
+        <h2>Email</h2>
+        <!-- TODO(owner): there is no company email yet. Add it to SITE.email in src/lib/site.ts and show it here
+             as a link, not as plain text (brief §7). -->
+        <p>Coming soon. For now, WhatsApp or call us.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="band band--white" id="visit" aria-labelledby="visit-title">
+    <div class="wrap visit">
+      <div>
+        <h2 id="visit-title">Book a visit</h2>
+        <p class="lede">The best way to judge a till is to watch it work.</p>
+      </div>
+      <ul class="visit__list">
+        <li>
+          <h3>We come to you.</h3>
+          <p>We look at your counter, your kitchen and how you close the day, then show you ZapTill on your own kind of menu.</p>
+        </li>
+        <li>
+          <h3>Or see it running.</h3>
+          <p>Ask, and we'll arrange for you to see ZapTill at work in a business like yours.</p>
+        </li>
+        <li>
+          <h3>You leave with a clear quote.</h3>
+          <p>The setup, the monthly fee and any hardware you need, in writing.</p>
+          <!-- TODO(owner): if the visit is free, say so here. -->
+        </li>
+      </ul>
+      <div class="visit__cta">
+        <a class="btn btn--wa" href={waLink(WA_MESSAGES.visit)} target="_blank" rel="noopener"><WaIcon /><span>Book a visit on WhatsApp</span></a>
+        <p class="small muted">Or call <a href={telLink}>{SITE.phoneDisplay}</a>. A demo request form is coming soon.</p>
+      </div>
+      <!-- TODO(owner): the city and areas we visit. -->
+    </div>
+  </section>
+</Base>
+
+<style>
+  .contact-head { background: var(--card); border-bottom: 1px solid var(--line); }
+  .ways { display: grid; gap: var(--s-5); }
+  .way { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-5); }
+  .way--main { border: 2px solid var(--wa); }
+  .way h2 { font-size: var(--fs-lg); }
+  .way p { color: var(--ink-2); }
+  .way__alt { margin: var(--s-4) 0 0; font-size: var(--fs-sm); }
+  .way__phone a { font: 800 var(--fs-xl)/1.1 var(--font-display); text-decoration: none; color: var(--ink); }
+  .way__phone a:hover { color: var(--teal-strong); }
+  @media (min-width: 900px) { .ways { grid-template-columns: 1.4fr 1fr 1fr; } }
+
+  .visit { display: grid; gap: var(--s-6); }
+  .visit__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-5); }
+  .visit__list li { border-top: 2px solid var(--teal); padding-top: var(--s-4); }
+  .visit__list p { color: var(--ink-2); margin: 0; }
+  .visit__cta { display: grid; gap: var(--s-3); justify-items: start; }
+  @media (min-width: 900px) { .visit__list { grid-template-columns: repeat(3, 1fr); } }
+</style>

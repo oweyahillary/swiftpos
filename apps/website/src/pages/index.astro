@@ -1,0 +1,375 @@
+---
+import Base from '../layouts/Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import VisitButton from '../components/VisitButton.astro';
+import Faq from '../components/Faq.astro';
+import Monitor from '../components/frames/Monitor.astro';
+import Laptop from '../components/frames/Laptop.astro';
+import Phone from '../components/frames/Phone.astro';
+import Shot from '../components/screens/Shot.astro';
+import DayCloseScreen from '../components/screens/DayCloseScreen.astro';
+import PhoneSummary from '../components/screens/PhoneSummary.astro';
+import Receipt from '../components/screens/Receipt.astro';
+import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
+import { WA_MESSAGES, PRICES, kes } from '../lib/site';
+import { HOME_FAQ } from '../lib/faq';
+import { softwareApplication } from '../lib/schema';
+
+const lanes = [
+  { href: '/for/restaurants/', name: 'Restaurants and cafés', line: 'Kitchen tickets, a kitchen display, combos and variants.' },
+  { href: '/for/bars/', name: 'Bars and lounges', line: 'Over and short by cashier, credit for regulars, the night close.' },
+  { href: '/for/quick-service/', name: 'Quick service', line: 'Speed at the counter, offers and dispatch tickets.' },
+  { href: '/for/retail/', name: 'Shops and retail', line: 'Stock levels, deliveries and stock counts.' },
+  { href: '/who-its-for/#petrol', name: 'Petrol stations', line: 'Talk to us about your forecourt.' },
+];
+const description = 'ZapTill runs your tills, kitchen and M-Pesa through internet cuts, closes your day in minutes, shows who was short and sends you the numbers. For restaurants, bars and shops in Kenya.';
+---
+<Base
+  title="ZapTill: know where every shilling went, every single day"
+  description={description}
+  waMessage={WA_MESSAGES.demo}
+  jsonLd={[softwareApplication(description)]}
+>
+  <!-- Hero -->
+  <section class="hero">
+    <div class="wrap hero__grid">
+      <div class="hero__copy">
+        <h1>Know where every shilling went, every single day.</h1>
+        <p class="hero__sub">
+          ZapTill runs your tills, kitchen and <span class="nb">M-Pesa</span> — through internet and power cuts — closes your day in minutes,
+          tells you who was short, and sends you the numbers before you sleep.
+        </p>
+        <div class="actions">
+          <WhatsAppButton message={WA_MESSAGES.demo} />
+          <VisitButton />
+        </div>
+        <p class="hero__small">Built in Kenya. M-Pesa and KES from the first day. We set it up and train your staff.</p>
+      </div>
+      <div class="hero__visual">
+        <Monitor label="The ZapTill till at the counter">
+          <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
+            alt="The real ZapTill till on a demo restaurant: menu buttons on the left, Table 4's order on the right, total KES 3,050." />
+        </Monitor>
+        <div class="hero__slip">
+          <Receipt kind="close" paper={58} lines={[0, 28]} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Trust strip -->
+  <section class="trust" aria-label="Who uses ZapTill">
+    <div class="wrap trust__inner">
+      <p>Trusted by restaurants, bars and shops in Kenya.</p>
+      <!--
+        TODO(owner): client logos go here, only with each client's written permission (analysis §8).
+        Real clients only; never partner or vendor logos. No numbers until they are real.
+      -->
+    </div>
+  </section>
+
+  <!-- Choose your business -->
+  <section class="band" aria-labelledby="lanes-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="lanes-title">Choose your business</h2>
+        <p>The same till, set up the way your place works.</p>
+      </div>
+      <ul class="lanes">
+        {lanes.map((l) => (
+          <li>
+            <a href={l.href}>
+              <span class="lanes__name">{l.name}</span>
+              <span class="lanes__line">{l.line}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <!-- Four benefits -->
+  <section class="band band--white" aria-label="What ZapTill does for you">
+    <div class="wrap benefits">
+      <article class="benefit">
+        <div class="benefit__copy">
+          <h2>Close the day in minutes, and know who was short.</h2>
+          <p>
+            Each cashier counts their drawer. ZapTill shows what should be there, what was counted and the difference,
+            name by name, with their M-Pesa total next to it. The shift is confirmed and the branch is closed, from the
+            till or from the web.
+          </p>
+          <p>No more adding up receipts at midnight. No more guessing.</p>
+        </div>
+        <div class="benefit__visual">
+          <Laptop label="The day close on the web dashboard">
+            <DayCloseScreen />
+          </Laptop>
+        </div>
+      </article>
+
+      <article class="benefit benefit--flip">
+        <div class="benefit__copy">
+          <h2>When the internet goes, your tills don't.</h2>
+          <p>
+            Every till keeps selling and printing with no internet. A branch server keeps all the tills in the shop in
+            step with each other. When the line comes back, everything catches up by itself, and nobody has to do
+            anything.
+          </p>
+          <p><a href="#offline">See a lunch rush with no internet</a></p>
+        </div>
+        <div class="benefit__visual">
+          <Monitor label="The till taking a split payment">
+            <Shot src="/screens/till-split.webp" width={1280} height={800}
+              alt="The real ZapTill till taking payment for Table 4: KES 1,050 cash and KES 2,000 M-Pesa." />
+          </Monitor>
+        </div>
+      </article>
+
+      <article class="benefit">
+        <div class="benefit__copy">
+          <h2>The kitchen gets the order. The customer gets your M-Pesa number.</h2>
+          <p>
+            Orders go straight to the kitchen printer or the kitchen screen, with the variant on the same line, so the
+            cook reads "Chips masala - Spicy" and gets on with it.
+          </p>
+          <p>
+            Your Buy Goods or Paybill number prints large on every receipt. Part M-Pesa, part cash? Split it at the
+            till.
+          </p>
+        </div>
+        <div class="benefit__visual benefit__slips">
+          <Receipt kind="kitchen" />
+          <Receipt kind="sale" />
+        </div>
+      </article>
+
+      <article class="benefit benefit--flip">
+        <div class="benefit__copy">
+          <h2>Run your business properly, even when you're not there.</h2>
+          <p>
+            Every branch sits on one web dashboard that opens on your phone. A summary of the day arrives by email:
+            sales, top sellers, who was short and what is running low.
+          </p>
+          <p>
+            Your partner and your accountant get their own logins, so nobody needs your password.
+          </p>
+        </div>
+        <div class="benefit__visual benefit__phone">
+          <Phone label="The daily summary on the owner's phone">
+            <PhoneSummary />
+          </Phone>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- The offline scene, told as a story -->
+  <section class="band band--night" id="offline" aria-labelledby="offline-title">
+    <div class="wrap offline">
+      <div class="section-head">
+        <h2 id="offline-title">Friday, 12:40. The lunch rush. The internet goes.</h2>
+        <p>Here is what happens at a restaurant running ZapTill.</p>
+      </div>
+      <ol class="timeline">
+        <li>
+          <time>12:40</time>
+          <div>
+            <h3>The router light goes red.</h3>
+            <p>Nobody at the counter notices. The tills carry on selling and the receipts keep printing.</p>
+          </div>
+        </li>
+        <li>
+          <time>12:45</time>
+          <div>
+            <h3>The kitchen keeps cooking.</h3>
+            <p>Orders still reach the kitchen. The branch server keeps the tills in step, so Table 4's order is on every till.</p>
+          </div>
+        </li>
+        <li>
+          <time>13:10</time>
+          <div>
+            <h3>KPLC goes as well.</h3>
+            <p>The till PC needs power, like any computer. On a small UPS it keeps going, and the cashier keeps selling.</p>
+          </div>
+        </li>
+        <li>
+          <time>14:05</time>
+          <div>
+            <h3>The internet is back.</h3>
+            <p>Every sale from the last hour and a half catches up by itself. Nobody types anything in again.</p>
+          </div>
+        </li>
+        <li>
+          <time>22:47</time>
+          <div>
+            <h3>The owner checks the phone.</h3>
+            <p>The day's numbers are all there, outage and all.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Do this next teaser -->
+  <section class="band" aria-labelledby="dtn-title">
+    <div class="wrap teaser">
+      <div class="teaser__copy">
+        <h2 id="dtn-title">Then it tells you what to change.</h2>
+        <p class="lede">
+          ZapTill Analytics reads your sales and ranks what to do next, each with a shilling estimate and what it
+          assumes. Which dish to push, which price to raise, which drawer keeps coming up short.
+        </p>
+        <p><a href="/analytics/">How Analytics works</a></p>
+      </div>
+      <DoThisNextCard />
+    </div>
+  </section>
+
+  <!-- The price in one line -->
+  <section class="price-line" aria-labelledby="price-title">
+    <div class="wrap price-line__inner">
+      <h2 id="price-title">From about KES 100 a day.</h2>
+      <p>
+        KES {kes(PRICES.setup)} to set up, then KES {kes(PRICES.monthly)} a month. Less than one short drawer.
+        <a href="/pricing/">See pricing and work out your own leak</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- FAQ excerpt -->
+  <section class="band" aria-labelledby="faq-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="faq-title">Questions owners ask us</h2>
+      </div>
+      <Faq items={HOME_FAQ} />
+      <p class="faq-more"><a href="/pricing/#faq">More questions on the pricing page</a></p>
+    </div>
+  </section>
+
+  <!-- Final call to action -->
+  <section class="band band--night final" aria-labelledby="final-title">
+    <div class="wrap">
+      <h2 id="final-title">See it running in a business like yours.</h2>
+      <p class="lede">We'll set it up, load your menu and train your team. Start with a message.</p>
+      <div class="actions">
+        <WhatsAppButton message={WA_MESSAGES.demo} />
+        <VisitButton />
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  /* Hero */
+  .hero {
+    background:
+      radial-gradient(60rem 30rem at 85% 10%, rgba(20, 184, 166, 0.16), transparent 60%),
+      var(--night);
+    color: var(--night-text);
+    padding-block: var(--s-7) var(--s-8);
+    overflow: hidden;
+  }
+  .hero__grid { display: grid; gap: var(--s-7); align-items: center; }
+  .hero h1 { max-width: 15ch; }
+  .hero__sub { font-size: var(--fs-md); line-height: 1.5; color: #c4d6d4; max-width: 36rem; margin-bottom: var(--s-6); }
+  .hero__small { margin-top: var(--s-5); font-size: var(--fs-sm); color: var(--night-muted); }
+  .hero__visual { position: relative; padding-bottom: var(--s-6); }
+  .hero__slip {
+    position: absolute;
+    right: -2%;
+    bottom: -10%;
+    width: 46%;
+    max-width: 230px;
+    transform: rotate(2.5deg);
+  }
+  .hero__slip :global(.slip-wrap) { --slip-fs: 0.74rem; }
+
+  @media (min-width: 960px) {
+    .hero { padding-block: var(--s-8) var(--s-9); }
+    .hero__grid { grid-template-columns: 1fr 1.08fr; gap: var(--s-7); }
+    .hero__slip { right: -5%; bottom: -20%; width: 38%; }
+  }
+
+  /* Trust strip */
+  .trust { background: var(--night-2); color: var(--night-muted); border-top: 1px solid var(--night-line); }
+  .trust__inner { padding-block: var(--s-4); }
+  .trust p { margin: 0; font-weight: 500; }
+
+  /* Lanes */
+  .lanes { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line-strong); }
+  .lanes li { border-bottom: 1px solid var(--line-strong); }
+  .lanes a {
+    display: grid; gap: var(--s-1);
+    padding: var(--s-4) var(--s-2);
+    text-decoration: none; color: var(--ink);
+  }
+  .lanes a:hover { background: var(--card); }
+  .lanes a:hover .lanes__name { color: var(--teal-strong); }
+  .lanes__name { font: 700 var(--fs-lg)/1.2 var(--font-display); letter-spacing: -0.015em; }
+  .lanes__line { color: var(--muted); }
+  @media (min-width: 900px) {
+    .lanes { grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--line-strong); }
+    .lanes li { border-bottom: 0; border-left: 1px solid var(--line-strong); }
+    .lanes li:first-child { border-left: 0; }
+    .lanes a { padding: var(--s-5) var(--s-4); height: 100%; align-content: start; }
+    .lanes__name { font-size: 1.3rem; min-height: 2.4em; }
+  }
+
+  /* Benefits */
+  .benefits { display: grid; gap: var(--s-8); }
+  .benefit { display: grid; gap: var(--s-6); align-items: center; }
+  .benefit__copy { max-width: 32rem; }
+  .benefit__copy p { color: var(--ink-2); }
+  .benefit__visual { min-width: 0; }
+  .benefit__slips { display: flex; gap: var(--s-4); align-items: flex-start; justify-content: center; }
+  .benefit__slips :global(.slip-wrap) { flex: 1 1 0; min-width: 0; --slip-fs: 0.72rem; }
+  .benefit__slips :global(.slip-wrap:first-child) { margin-top: var(--s-6); transform: rotate(-1.5deg); }
+  .benefit__phone { display: flex; justify-content: center; }
+  .benefit__phone :global(.phone) { max-width: 260px; }
+  @media (max-width: 600px) {
+    .benefit__slips { flex-direction: column; align-items: center; }
+    .benefit__slips :global(.slip-wrap) { flex: none; width: 100%; }
+    .benefit__slips :global(.slip-wrap:first-child) { margin-top: 0; }
+  }
+  @media (min-width: 900px) {
+    .benefit { grid-template-columns: 1fr 1.15fr; gap: var(--s-8); }
+    .benefit--flip .benefit__copy { order: 2; }
+  }
+
+  /* Offline story */
+  .timeline { list-style: none; margin: 0; padding: 0; max-width: 46rem; position: relative; }
+  .timeline::before {
+    content: ''; position: absolute; left: 3.6rem; top: 0.6rem; bottom: 0.6rem; width: 2px; background: var(--night-line);
+  }
+  .timeline li { display: grid; grid-template-columns: 3.1rem 1fr; gap: var(--s-5); padding-bottom: var(--s-5); position: relative; }
+  .timeline li::before {
+    content: ''; position: absolute; left: calc(3.6rem - 5px); top: 0.45rem;
+    width: 12px; height: 12px; border-radius: 50%; background: var(--night); border: 2px solid var(--teal-light);
+  }
+  .timeline li:nth-child(3)::before { border-color: #fcd34d; }
+  .timeline time { font: 700 1rem/1.6 var(--font-display); color: var(--teal-light); font-variant-numeric: tabular-nums; }
+  .timeline h3 { font-size: var(--fs-md); margin-bottom: var(--s-1); color: #fff; padding-left: var(--s-3); }
+  .timeline p { color: var(--night-muted); margin: 0; padding-left: var(--s-3); }
+
+  /* Do this next teaser */
+  .teaser { display: grid; gap: var(--s-6); align-items: center; }
+  @media (min-width: 900px) { .teaser { grid-template-columns: 1fr 1fr; gap: var(--s-8); } }
+
+  /* Price line */
+  .price-line { background: var(--teal-strong); color: #fff; padding-block: var(--s-7); }
+  .price-line__inner { display: grid; gap: var(--s-3); }
+  .price-line h2 { margin: 0; font-size: var(--fs-2xl); }
+  .price-line p { margin: 0; font-size: var(--fs-md); color: #d7f3ef; max-width: 40rem; }
+  .price-line a { color: #fff; font-weight: 600; display: inline-block; margin-top: var(--s-2); }
+  .price-line a:hover { color: #fff; }
+  @media (min-width: 900px) {
+    .price-line__inner { grid-template-columns: auto 1fr; align-items: center; gap: var(--s-7); }
+  }
+
+  .faq-more { margin-top: var(--s-5); }
+
+  .final h2 { max-width: 18ch; font-size: var(--fs-2xl); }
+  .final .lede { margin-bottom: var(--s-6); }
+</style>

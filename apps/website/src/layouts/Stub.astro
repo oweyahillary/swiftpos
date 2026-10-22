@@ -1,0 +1,42 @@
+---
+// A Phase 1 stub page: a heading, a short intro, optional sections, and a call to action.
+// The "Coming in phase 2" note shows only in `npm run dev`; the built site carries it as an HTML comment.
+import Base from './Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import VisitButton from '../components/VisitButton.astro';
+import { WA_MESSAGES } from '../lib/site';
+
+interface Props {
+  title: string;
+  description: string;
+  heading: string;
+  waMessage?: string;
+  phase2?: string;
+  showActions?: boolean;
+}
+const { title, description, heading, waMessage = WA_MESSAGES.demo, phase2 = 'the full page', showActions = true } = Astro.props;
+const isDev = import.meta.env.DEV;
+---
+<Base title={title} description={description} waMessage={waMessage}>
+  <Fragment set:html={`<!-- Coming in phase 2: ${phase2} -->`} />
+  <section class="page-head stub-head">
+    <div class="wrap">
+      <h1>{heading}</h1>
+      <div class="lede stub-intro"><slot name="intro" /></div>
+      {showActions && (
+        <div class="actions">
+          <WhatsAppButton message={waMessage} />
+          <VisitButton />
+        </div>
+      )}
+      {isDev && <p class="dev-note">Coming in phase 2: {phase2}. (This note shows in dev only.)</p>}
+    </div>
+  </section>
+  <slot />
+</Base>
+
+<style>
+  .stub-head { background: var(--card); border-bottom: 1px solid var(--line); }
+  .stub-intro { margin-bottom: var(--s-5); }
+  .stub-intro :global(p) { margin-bottom: var(--s-3); }
+</style>

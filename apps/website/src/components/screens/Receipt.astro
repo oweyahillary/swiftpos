@@ -1,0 +1,77 @@
+---
+// The site's signature object: a thermal slip, exactly as the printer prints it.
+//
+// The text is not typed here. scripts/render-slips.mjs renders a made-up demo order ("Mama Lishe Grill", Table 4) and
+// a demo shift close through the real print renderer (shared/printing: renderTicket, renderShiftReport, toPreview's
+// layout) and writes src/lib/slips.generated.json. test/slips.test.mjs fails if that file drifts from the renderer.
+//
+//   kind="sale"      the customer receipt: variants on the item's line, the large BUY GOODS number, a split payment
+//   kind="kitchen"   the kitchen ticket ("2   CHIPS MASALA - SPICY")
+//   kind="dispatch"  the dispatch (packing) ticket, with the drinks
+//   kind="close"     the shift close (Z-report): sales by method, the cash count, the variance
+//   kind="shop"      a shop's counter sale (Demo Mini Mart), for the retail page
+//
+// paper: 80 (48 characters a line, the usual) or 58 (32 a line, a narrow printer); the slip scales its type to fit.
+// lines: show only part of the slip, as [first, last) line numbers (an excerpt keeps the torn edge).
+import slips from '../../lib/slips.generated.json';
+
+type Kind = 'sale' | 'kitchen' | 'dispatch' | 'close' | 'shop';
+interface Line { t: string; s?: string; b?: number }
+interface Slip { cols: number; lines: Line[] }
+interface Props { kind?: Kind; paper?: 80 | 58; lines?: [number, number]; class?: string; label?: string }
+
+const { kind = 'close', paper = 80, lines: range, class: extra, label } = Astro.props;
+const slip = (slips as unknown as Record<string, Slip>)[`${kind}${paper}`];
+const shown = range ? slip.lines.slice(range[0], range[1]) : slip.lines;
+
+const labels: Record<Kind, string> = {
+  sale: 'A customer receipt from a demo restaurant, Table 4: Nyama Choma, Chips Masala - Spicy, Chicken Burger - Spicy, Kachumbari and two Passion Juice. KES 3,350, paid KES 2,000 by M-Pesa and KES 1,350 cash, with the Buy Goods number printed large.',
+  kitchen: 'A kitchen ticket for Table 4 from a demo restaurant: 1 Nyama Choma 1kg, 2 Chips Masala - Spicy, 1 Chicken Burger - Spicy, 1 Kachumbari. 4 items to cook.',
+  dispatch: 'A dispatch ticket for Table 4 from a demo restaurant: the four dishes and two Passion Juice. 5 bags.',
+  shop: 'A customer receipt from a demo shop: soap, cooking oil, toothpaste, sodas and biscuits, KES 1,460, paid KES 1,000 by M-Pesa and KES 460 cash, with the Buy Goods number printed large.',
+  close: "A shift-close slip (Z-report) from a demo restaurant: Wanjiru's shift, KES 41,250 in sales, cash expected KES 14,550, counted KES 14,200, variance KES 350 short.",
+};
+---
+<div class:list={['slip-wrap', extra]} style={`--cols:${slip.cols}`}>
+  <div class:list={['slip', `slip--${kind}`]} role="img" aria-label={label ?? labels[kind]}>
+    {shown.map((l) => (
+      <span class:list={['ln', l.s && `ln--${l.s}`, { 'ln--b': l.b, 'ln--rule': /^-+$/.test(l.t), 'ln--short': /short\)/.test(l.t) }]}>{l.t || ' '}</span>
+    ))}
+  </div>
+</div>
+
+<style>
+  .slip-wrap {
+    container-type: inline-size;
+    width: 100%;
+    /* The paper's own width: the slip never grows past it, and shrinks its type below it. */
+    max-width: calc(var(--cols) * 0.6em + 2.2rem);
+    font-size: var(--slip-fs, 0.8rem);
+  }
+  .slip {
+    --tooth: 7px;
+    position: relative;
+    background: var(--thermal);
+    color: var(--thermal-ink);
+    font-family: var(--font-receipt);
+    /* Fit the line to the paper: never larger than the set size, smaller on a narrow screen. */
+    font-size: min(1em, calc((100cqi - 2.2rem) / (var(--cols) * 0.6)));
+    line-height: 1.38;
+    padding: 1.1rem 1.1rem 1.6rem;
+    box-shadow: var(--shadow-object);
+    /* The torn bottom edge of a thermal roll. */
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(2 * var(--tooth)) 51% repeat-x,
+      linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth) + 1px) no-repeat;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(2 * var(--tooth)) 51% repeat-x,
+      linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth) + 1px) no-repeat;
+  }
+  .ln { display: block; white-space: pre; overflow: hidden; }
+  .ln--b { font-weight: 700; }
+  /* A dashed rule prints as a row of hyphens; drawn as a thin dashed line it reads like the paper. */
+  .ln--rule { color: transparent; height: 1.38em; background: linear-gradient(90deg, #9aa3a5 50%, transparent 0) 0 50% / 6px 1px repeat-x; }
+  /* Double height (the printer's tall characters): the same width, twice as tall. */
+  .ln--tall, .ln--large { transform: scaleY(2); transform-origin: 0 0; margin-bottom: 1.38em; }
+  .ln--large { font-size: 2em; transform: none; margin-bottom: 0; line-height: 1.38; }
+  .ln--wide { font-size: 2em; transform: scaleY(0.5); transform-origin: 0 0; margin-bottom: -0.69em; }
+  .ln--short { color: var(--short); }
+</style>

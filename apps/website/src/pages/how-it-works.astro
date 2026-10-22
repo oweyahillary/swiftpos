@@ -1,0 +1,241 @@
+---
+import Base from '../layouts/Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import VisitButton from '../components/VisitButton.astro';
+import Monitor from '../components/frames/Monitor.astro';
+import Laptop from '../components/frames/Laptop.astro';
+import Phone from '../components/frames/Phone.astro';
+import Shot from '../components/screens/Shot.astro';
+import Receipt from '../components/screens/Receipt.astro';
+import KitchenDisplay from '../components/screens/KitchenDisplay.astro';
+import StockScreen from '../components/screens/StockScreen.astro';
+import PhoneSummary from '../components/screens/PhoneSummary.astro';
+import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
+import { WA_MESSAGES } from '../lib/site';
+import { DEMO_CARDS } from '../lib/analyticsDemo';
+
+const voids = DEMO_CARDS.find((c) => c.n === 3)!;
+---
+<Base
+  title="How it works: a day with ZapTill | ZapTill"
+  description="A day at a restaurant running ZapTill: PIN sign-in and the float, the lunch rush with M-Pesa, the kitchen ticket, a delivery and wastage, the evening close, the owner's email at night and Analytics the next morning."
+  waMessage={WA_MESSAGES.demo}
+  ogImage="/og/how-it-works.png"
+>
+  <section class="page-head day-head">
+    <div class="wrap">
+      <h1>A day with ZapTill</h1>
+      <p class="lede">
+        One day at Mama Lishe Grill, a made-up restaurant on Ngong Road, from the first PIN in the morning to the owner's
+        phone at night. Every screen here is the real ZapTill, running on demo data.
+      </p>
+      <ol class="day-jump" aria-label="The day, in order">
+        <li><a href="#open">07:55 Open</a></li>
+        <li><a href="#rush">12:40 Lunch rush</a></li>
+        <li><a href="#kitchen">12:41 Kitchen</a></li>
+        <li><a href="#stock">15:30 Stock</a></li>
+        <li><a href="#close">22:35 Close</a></li>
+        <li><a href="#night">22:45 Night</a></li>
+        <li><a href="#morning">07:30 Next morning</a></li>
+      </ol>
+    </div>
+  </section>
+
+  <div class="day">
+    <section class="moment band band--white" id="open" aria-labelledby="open-h">
+      <div class="wrap split">
+        <div class="split__copy">
+          <p class="moment__time"><time>07:55</time> Morning open</p>
+          <h2 id="open-h">Wanjiru signs in with her PIN and counts her float.</h2>
+          <p>
+            No passwords at the counter: each person has their own PIN, and the till knows who they are and what they may
+            do. Before the first sale, Wanjiru counts the cash already in the drawer and enters it as her opening float.
+          </p>
+          <p>From now on, every shilling in that drawer is hers to account for, and the till keeps the count.</p>
+        </div>
+        <div class="split__visual">
+          <Monitor label="The till asking the cashier to count her opening float">
+            <Shot src="/screens/till-float.webp" eager width={1280} height={800}
+              alt="The real ZapTill till: 'Open your drawer. Wanjiru, count the cash in the drawer before you start.' The opening float is KES 2,000, with a Start selling button." />
+          </Monitor>
+        </div>
+      </div>
+    </section>
+
+    <section class="moment band" id="rush" aria-labelledby="rush-h">
+      <div class="wrap split split--flip">
+        <div class="split__copy">
+          <p class="moment__time"><time>12:40</time> The lunch rush</p>
+          <h2 id="rush-h">Table 4 orders, and pays part M-Pesa, part cash.</h2>
+          <p>
+            The menu is big buttons. Chips Masala asks "Normal or Spicy?" and the answer goes on the order. A table can be
+            held and picked up again when they want more.
+          </p>
+          <p>
+            At the bill, Table 4 pays KES 2,000 by M-Pesa and the rest in cash. Wanjiru splits the payment at the till,
+            and your Buy Goods or Paybill number is printed large on the receipt.
+          </p>
+        </div>
+        <div class="split__visual">
+          <Monitor label="Splitting the bill between cash and M-Pesa at the till">
+            <Shot src="/screens/till-split.webp" width={1280} height={800}
+              alt="The real ZapTill till taking payment for Table 4: total due KES 3,050, split into KES 1,050 cash and KES 2,000 M-Pesa." />
+          </Monitor>
+        </div>
+      </div>
+    </section>
+
+    <section class="moment band band--white" id="kitchen" aria-labelledby="kitchen-h">
+      <div class="wrap split">
+        <div class="split__copy">
+          <p class="moment__time"><time>12:41</time> The kitchen</p>
+          <h2 id="kitchen-h">The kitchen reads "Chips Masala - Spicy" and gets cooking.</h2>
+          <p>
+            The order goes straight to the kitchen printer, or to a kitchen screen where each order is a card with a
+            timer. The variant sits on the dish's own line, so nobody reads the same dish twice.
+          </p>
+          <p>Drinks skip the kitchen and go to dispatch, where the ticket lists everything for the tray.</p>
+        </div>
+        <div class="split__visual kitchen-pair">
+          <Monitor label="The kitchen display">
+            <KitchenDisplay />
+          </Monitor>
+          <Receipt kind="kitchen" paper={58} class="kitchen-pair__slip" />
+        </div>
+      </div>
+    </section>
+
+    <section class="moment band" id="stock" aria-labelledby="stock-h">
+      <div class="wrap split split--flip">
+        <div class="split__copy">
+          <p class="moment__time"><time>15:30</time> Stock</p>
+          <h2 id="stock-h">The meat delivery comes in. A tray of chips hits the floor.</h2>
+          <p>
+            The storekeeper receives the delivery against the supplier's note, and the stock goes up by what actually
+            arrived. The dropped chips are written off as wastage, with a reason and what they cost.
+          </p>
+          <p>Wastage is money too: it shows up in the day's figures and in Analytics, not just in the bin.</p>
+        </div>
+        <div class="split__visual">
+          <Laptop label="Receiving a delivery and writing off wastage on the web dashboard">
+            <StockScreen />
+          </Laptop>
+        </div>
+      </div>
+    </section>
+
+    <section class="moment band band--night" id="close" aria-labelledby="close-h">
+      <div class="wrap split">
+        <div class="split__copy">
+          <p class="moment__time moment__time--night"><time>22:35</time> Evening close</p>
+          <h2 id="close-h">Each drawer is counted. Wanjiru's is KES 350 short.</h2>
+          <p>
+            Each cashier counts their drawer and the till prints their shift report. The manager sees, cashier by
+            cashier, what should be in each drawer, what was counted and the difference, then confirms each shift.
+          </p>
+          <p>When every drawer is in, the branch is closed, from the till or from the web.</p>
+        </div>
+        <div class="split__visual close-pair">
+          <figure class="screen-crop">
+            <Shot src="/screens/till-shifts.webp" width={1200} height={253}
+              alt="The real ZapTill shift report for today: Counter, Wanjiru, expected cash KES 14,550, counted KES 14,200, difference KES -350; Bar, Otieno, expected and counted KES 10,150, difference KES 0. Both awaiting a manager." />
+          </figure>
+          <Receipt kind="close" paper={58} lines={[20, 28]} class="close-pair__slip"
+            label="The cash part of Wanjiru's printed shift report: opening float KES 2,000, cash sales KES 12,550, expected cash KES 14,550, counted KES 14,200, variance KES 350 short." />
+        </div>
+      </div>
+    </section>
+
+    <section class="moment band band--white" id="night" aria-labelledby="night-h">
+      <div class="wrap split split--flip">
+        <div class="split__copy">
+          <p class="moment__time"><time>22:45</time> Night</p>
+          <h2 id="night-h">The owner gets the day by email, wherever she is.</h2>
+          <p>
+            At the time she chose, the day's summary lands in her inbox: sales and orders, top sellers, how each cashier
+            did, and what is running low. Any cash difference at the close can be in it too.
+          </p>
+          <p>
+            For more, the web dashboard opens on her phone, with every branch side by side. Her partner and her
+            accountant have their own logins.
+          </p>
+        </div>
+        <div class="split__visual night-phone">
+          <Phone label="The daily summary email on the owner's phone">
+            <PhoneSummary />
+          </Phone>
+        </div>
+      </div>
+    </section>
+
+    <section class="moment band" id="morning" aria-labelledby="morning-h">
+      <div class="wrap split">
+        <div class="split__copy">
+          <p class="moment__time"><time>07:30</time> Next morning</p>
+          <h2 id="morning-h">Analytics says what to do next, and what it is worth.</h2>
+          <p>
+            With ZapTill Analytics, the month's sales become a short, ranked list of things to do, each with an estimate
+            in shillings and the assumption behind it. This one comes from the voids at the counter.
+          </p>
+          <p><a href="/analytics/">How Analytics works</a></p>
+        </div>
+        <div class="split__visual">
+          <DoThisNextCard {...voids} />
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="band band--night final" aria-labelledby="hfinal-title">
+    <div class="wrap">
+      <h2 id="hfinal-title">Want to see your own day like this?</h2>
+      <p class="lede">We'll load your menu, set up your printers and train your team. Start with a message.</p>
+      <div class="actions">
+        <WhatsAppButton message={WA_MESSAGES.demo} />
+        <VisitButton />
+      </div>
+      <p class="final__note">
+        Variants such as "Spicy", pictures on the till, offers and stock at the till come with ZapTill Online. Analytics is
+        an add-on. <a href="/pricing/">See the packages</a>
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .day-head { background: var(--card); border-bottom: 1px solid var(--line); }
+  .day-head .lede { margin-bottom: var(--s-6); }
+  .day-jump { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  .day-jump a {
+    display: inline-block; padding: 0.35rem 0.8rem; border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+    text-decoration: none; color: var(--ink-2); font-weight: 600; font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
+  }
+  .day-jump a:hover { border-color: var(--teal-strong); color: var(--teal-strong); }
+
+  .moment { scroll-margin-top: 4rem; }
+  .moment h2 { font-size: var(--fs-xl); }
+  .moment__time { display: flex; align-items: baseline; gap: var(--s-3); color: var(--muted); font-weight: 600; margin-bottom: var(--s-3); }
+  .moment__time time {
+    font: 800 var(--fs-lg)/1 var(--font-display); color: var(--teal-strong); font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  }
+  .moment__time--night { color: var(--night-muted); }
+  .moment__time--night time { color: var(--teal-light); }
+
+  .kitchen-pair { position: relative; padding-bottom: var(--s-6); }
+  .kitchen-pair :global(.kitchen-pair__slip) {
+    position: absolute; right: -2%; bottom: -6%; width: 42%; --slip-fs: 0.7rem; transform: rotate(2deg);
+  }
+  .close-pair { display: grid; gap: var(--s-5); justify-items: end; }
+  .close-pair :global(.close-pair__slip) { width: 70%; --slip-fs: 0.78rem; transform: rotate(-1.5deg); margin-right: 4%; }
+  .night-phone { display: flex; justify-content: center; }
+  .night-phone :global(.phone) { max-width: 270px; }
+
+  @media (max-width: 600px) {
+    .kitchen-pair :global(.kitchen-pair__slip) { position: relative; right: auto; bottom: auto; width: 80%; margin: var(--s-4) auto 0; }
+    .close-pair :global(.close-pair__slip) { width: 100%; margin-right: 0; }
+  }
+
+  .final h2 { max-width: 18ch; font-size: var(--fs-2xl); }
+  .final .lede { margin-bottom: var(--s-6); }
+  .final__note { margin-top: var(--s-6); color: var(--night-muted); font-size: var(--fs-sm); max-width: 40rem; }
+</style>

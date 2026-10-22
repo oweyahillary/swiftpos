@@ -1,0 +1,137 @@
+---
+// The leak calculator. Client-side only: nothing is stored, sent or put in a URL.
+// The maths lives in src/lib/leak.ts (tested in test/leak.test.mjs); this file is the form and its wiring.
+// Without JavaScript the form still shows, with the result for the default numbers rendered at build time.
+import { leak, LEAK_DEFAULTS, DAYS_PER_MONTH } from '../lib/leak';
+import { PRICES, kes } from '../lib/site';
+
+const d = LEAK_DEFAULTS;
+const r = leak(d, PRICES.monthly);
+---
+<div class="calc" id="calculator">
+  <form class="calc__form" data-leak-form data-price={PRICES.monthly} novalidate>
+    <div class="field">
+      <label for="leak-sales">Your sales on a normal day</label>
+      <div class="field__input"><span aria-hidden="true">KES</span>
+        <input id="leak-sales" name="dailySales" type="number" inputmode="numeric" min="0" step="500" value={d.dailySales} aria-describedby="leak-sales-hint" />
+      </div>
+      <p class="field__hint" id="leak-sales-hint">All tills together, cash and M-Pesa.</p>
+    </div>
+    <div class="field">
+      <label for="leak-cashiers">Cashiers on a normal day</label>
+      <div class="field__input">
+        <input id="leak-cashiers" name="cashiers" type="number" inputmode="numeric" min="0" max="500" step="1" value={d.cashiers} />
+      </div>
+    </div>
+    <div class="field">
+      <label for="leak-short">Your guess: how much each cashier is short a day</label>
+      <div class="field__input"><span aria-hidden="true">KES</span>
+        <input id="leak-short" name="shortagePerCashier" type="number" inputmode="numeric" min="0" step="50" value={d.shortagePerCashier} aria-describedby="leak-short-hint" />
+      </div>
+      <p class="field__hint" id="leak-short-hint">Money that should be in the drawer and isn't.</p>
+    </div>
+    <div class="field">
+      <label for="leak-waste">Your guess: wastage, as a share of sales</label>
+      <div class="field__input">
+        <input id="leak-waste" name="wastagePct" type="number" inputmode="decimal" min="0" max="100" step="0.5" value={d.wastagePct} aria-describedby="leak-waste-hint" />
+        <span aria-hidden="true">%</span>
+      </div>
+      <p class="field__hint" id="leak-waste-hint">Food or stock thrown away, given away or not accounted for.</p>
+    </div>
+  </form>
+
+  <div class="calc__result" aria-live="polite" aria-atomic="true">
+    <p class="calc__label">Your estimated leak, a month</p>
+    <p class="calc__big">KES <span data-out="monthlyLeak">{kes(r.monthlyLeak)}</span></p>
+    <dl class="calc__split">
+      <div><dt>Short drawers</dt><dd>KES <span data-out="cashLeak">{kes(r.cashLeak)}</span></dd></div>
+      <div><dt>Wastage</dt><dd>KES <span data-out="wastage">{kes(r.wastage)}</span></dd></div>
+      <div class="calc__price"><dt>ZapTill, a month</dt><dd>KES {kes(PRICES.monthly)}</dd></div>
+    </dl>
+    <p class="calc__verdict" data-out="verdict">
+      That is about {r.timesPrice} times what ZapTill costs in a month.
+    </p>
+    <p class="calc__note">
+      An estimate based only on your own numbers, over {DAYS_PER_MONTH} days. Nothing you type here is saved or sent.
+      It is not a promise of savings: ZapTill shows you the leak; stopping it is up to you and your team.
+    </p>
+  </div>
+</div>
+
+<script>
+  import { leak } from '../lib/leak';
+  import { kes } from '../lib/site';
+
+  const form = document.querySelector<HTMLFormElement>('[data-leak-form]');
+  if (form) {
+    const price = Number(form.dataset.price) || 0;
+    const out = (key: string) => document.querySelector<HTMLElement>(`[data-out="${key}"]`);
+
+    const update = () => {
+      const v = (name: string) => (form.elements.namedItem(name) as HTMLInputElement | null)?.value ?? '';
+      const r = leak(
+        {
+          dailySales: v('dailySales') as unknown as number,
+          cashiers: v('cashiers') as unknown as number,
+          shortagePerCashier: v('shortagePerCashier') as unknown as number,
+          wastagePct: v('wastagePct') as unknown as number,
+        },
+        price,
+      );
+      out('monthlyLeak')!.textContent = kes(r.monthlyLeak);
+      out('cashLeak')!.textContent = kes(r.cashLeak);
+      out('wastage')!.textContent = kes(r.wastage);
+      let verdict: string;
+      if (r.monthlyLeak === 0) verdict = 'Put in your own numbers to see an estimate.';
+      else if (r.difference >= 0) verdict = `That is about ${r.timesPrice} times what ZapTill costs in a month.`;
+      else verdict = `On these numbers your leak is less than ZapTill's monthly price. The day close and the daily summary are how you would know for sure.`;
+      out('verdict')!.textContent = verdict;
+    };
+
+    form.addEventListener('input', update);
+    form.addEventListener('submit', (e) => e.preventDefault());
+    update();
+  }
+</script>
+
+<style>
+  .calc {
+    display: grid;
+    gap: var(--s-5);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: var(--s-5);
+  }
+  .calc__form { display: grid; gap: var(--s-4); }
+  .field label { display: block; font-weight: 600; margin-bottom: var(--s-2); }
+  .field__input {
+    display: flex; align-items: center; gap: var(--s-2);
+    border: 1.5px solid var(--line-strong); border-radius: var(--r-sm);
+    padding: 0 var(--s-3); background: #fff;
+  }
+  .field__input:focus-within { border-color: var(--teal-strong); outline: 3px solid rgba(20, 184, 166, 0.35); }
+  .field__input span { color: var(--muted); font-weight: 600; }
+  .field input {
+    flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+    font: 600 1.15rem/1 var(--font-text); color: var(--ink); padding: 0.75rem 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .field__hint { font-size: var(--fs-sm); color: var(--muted); margin: var(--s-1) 0 0; }
+
+  .calc__result { background: var(--night); color: var(--night-text); border-radius: var(--r-md); padding: var(--s-5); }
+  .calc__label { color: var(--night-muted); margin: 0; font-weight: 600; }
+  .calc__big { font: 800 var(--fs-2xl)/1.05 var(--font-display); letter-spacing: -0.03em; color: #fff; margin: var(--s-1) 0 var(--s-4); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .calc__split { margin: 0 0 var(--s-4); display: grid; gap: var(--s-2); }
+  .calc__split div { display: flex; justify-content: space-between; gap: var(--s-3); border-bottom: 1px solid var(--night-line); padding-bottom: var(--s-2); }
+  .calc__split dt { color: var(--night-muted); }
+  .calc__split dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .calc__price dd { color: var(--teal-light); }
+  .calc__verdict { font-weight: 600; font-size: var(--fs-md); line-height: 1.4; }
+  .calc__note { font-size: var(--fs-sm); color: var(--night-muted); margin: 0; }
+
+  @media (min-width: 900px) {
+    .calc { grid-template-columns: 1fr 1fr; padding: var(--s-6); gap: var(--s-6); }
+    .calc__result { padding: var(--s-6); }
+  }
+</style>

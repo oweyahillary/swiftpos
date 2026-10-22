@@ -1,0 +1,58 @@
+---
+// The kitchen display (the web dashboard's KDS screen), drawn in CSS from its layout in
+// apps/dashboard/src/pages/kds/KDSPage.tsx: tickets as cards, Pending / In Progress / Ready, a timer on each, the
+// variant under the dish ("Spice: Spicy"). Made-up demo orders.
+const tickets = [
+  { no: 'T1-1042', where: 'Table 4', state: 'new', time: '0:48', items: [['1', 'Nyama Choma 1kg'], ['2', 'Chips Masala', 'Spice: Spicy'], ['1', 'Chicken Burger', 'Spice: Spicy'], ['1', 'Kachumbari']] },
+  { no: 'T2-0388', where: 'Takeaway', state: 'preparing', time: '4:12', items: [['2', 'Chicken Wings'], ['1', 'Chips Masala', 'Spice: Normal']] },
+  { no: 'T1-1039', where: 'Table 7', state: 'preparing', time: '7:30', items: [['1', 'Tilapia Whole'], ['2', 'Ugali'], ['1', 'Kachumbari']] },
+  { no: 'T1-1036', where: 'Table 2', state: 'ready', time: '11:05', items: [['3', 'Mishkaki'], ['1', 'Pilau']] },
+];
+const label: Record<string, string> = { new: 'Pending', preparing: 'In Progress', ready: 'Ready' };
+const next: Record<string, string> = { new: 'Start', preparing: 'Ready', ready: 'Picked up' };
+---
+<div class="kds" role="img" aria-label="The kitchen display: four orders as cards, one pending, two in progress and one ready, each with a timer. Table 4 shows 2 Chips Masala with Spice: Spicy under it. Demo data.">
+  <div class="kds__bar">
+    <b>Kitchen</b>
+    <span class="kds__tabs"><span class="on">Pending 1</span><span>In Progress 2</span><span>Ready 1</span></span>
+  </div>
+  <div class="kds__grid">
+    {tickets.map((t) => (
+      <div class:list={['kds__card', `is-${t.state}`]}>
+        <div class="kds__head"><span><b>{t.where}</b><small>{t.no}</small></span><span class="kds__badge">{label[t.state]}</span></div>
+        <p class="kds__time">{t.time}</p>
+        <ul>
+          {t.items.map(([q, n, v]) => (<li><span>×{q}</span> {n}{v && <em>{v}</em>}</li>))}
+        </ul>
+        <span class="kds__btn">{next[t.state]}</span>
+      </div>
+    ))}
+  </div>
+</div>
+
+<style>
+  .kds { position: absolute; inset: 0; background: #030712; color: #e5e7eb; font-family: var(--font-text); font-size: 1.85cqw; line-height: 1.3; display: flex; flex-direction: column; }
+  .kds__bar { display: flex; justify-content: space-between; align-items: center; padding: 0.9em 1.3em; background: #111827; border-bottom: 1px solid #1f2937; }
+  .kds__bar b { font-size: 1.3em; color: #fff; }
+  .kds__tabs { display: flex; gap: 0.3em; background: #1f2937; padding: 0.25em; border-radius: 0.5em; }
+  .kds__tabs span { padding: 0.35em 0.8em; border-radius: 0.4em; color: #9ca3af; }
+  .kds__tabs .on { background: #374151; color: #fff; }
+  .kds__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9em; padding: 1.1em; align-items: start; }
+  .kds__card { border: 2px solid; border-radius: 0.8em; padding: 0.8em; display: flex; flex-direction: column; gap: 0.4em; }
+  .is-new { border-color: #eab308; background: rgba(234, 179, 8, 0.1); }
+  .is-preparing { border-color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+  .is-ready { border-color: #22c55e; background: rgba(34, 197, 94, 0.1); }
+  .kds__head { display: flex; justify-content: space-between; gap: 0.4em; align-items: flex-start; }
+  .kds__head b { display: block; color: #fff; font-size: 1.15em; }
+  .kds__head small { color: #9ca3af; font-family: ui-monospace, monospace; }
+  .kds__badge { font-size: 0.8em; font-weight: 700; padding: 0.2em 0.5em; border-radius: 0.4em; white-space: nowrap; }
+  .is-new .kds__badge { background: #eab308; color: #030712; }
+  .is-preparing .kds__badge { background: #3b82f6; color: #fff; }
+  .is-ready .kds__badge { background: #22c55e; color: #030712; }
+  .kds__time { margin: 0; font-size: 1.2em; color: #fbbf24; font-variant-numeric: tabular-nums; }
+  .kds__card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3em; }
+  .kds__card li { color: #fff; }
+  .kds__card li span { font-weight: 700; margin-right: 0.2em; }
+  .kds__card li em { display: block; font-style: normal; color: #9ca3af; font-size: 0.85em; padding-left: 1.6em; }
+  .kds__btn { margin-top: 0.4em; text-align: center; padding: 0.5em; border-radius: 0.5em; background: #1f2937; color: #fff; font-weight: 600; }
+</style>

@@ -1,0 +1,69 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../lib/site';
+import { organization } from '../lib/schema';
+
+interface Props {
+  title: string;
+  description: string;
+  /** The pre-filled WhatsApp message for the header button on this page. */
+  waMessage?: string;
+  /** A page's own Open Graph card (public/og/<page>.png, made by scripts/make-og.mjs); else the default card. */
+  ogImage?: string;
+  /** schema.org objects for this page (SoftwareApplication, FAQPage…). The Organization is added on every page. */
+  jsonLd?: object[];
+}
+
+const { title, description, waMessage, ogImage = '/og-zaptill.png', jsonLd = [] } = Astro.props;
+// JSON in a <script>: "<" escaped so no string we wrote can close the tag.
+const ld = (o: object) => JSON.stringify(o).replace(/</g, '\\u003c');
+const canonical = new URL(Astro.url.pathname, Astro.site ?? SITE.url).href;
+const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.url).href;
+---
+<!doctype html>
+<html lang="en-KE">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta name="theme-color" content="#061a1d" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="256x256" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ZapTill" />
+    <meta property="og:locale" content="en_KE" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script type="application/ld+json" set:html={ld(organization())} />
+    {jsonLd.map((o) => <script type="application/ld+json" set:html={ld(o)} />)}
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap"
+    />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <Header waMessage={waMessage} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

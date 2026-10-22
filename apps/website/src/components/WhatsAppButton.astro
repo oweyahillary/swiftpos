@@ -1,0 +1,16 @@
+---
+// The primary call to action. Every WhatsApp link goes through waLink(), with a fixed, page-specific message.
+import WaIcon from './WaIcon.astro';
+import { waLink, WA_MESSAGES } from '../lib/site';
+
+interface Props {
+  message?: string;
+  label?: string;
+  small?: boolean;
+}
+const { message = WA_MESSAGES.general, label = 'Chat on WhatsApp', small = false } = Astro.props;
+---
+<a class:list={['btn', 'btn--wa', { 'btn--small': small }]} href={waLink(message)} target="_blank" rel="noopener">
+  <WaIcon />
+  <span>{label}</span>
+</a>

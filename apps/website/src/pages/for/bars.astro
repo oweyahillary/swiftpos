@@ -1,0 +1,116 @@
+---
+import Industry from '../../layouts/Industry.astro';
+import Shot from '../../components/screens/Shot.astro';
+import Receipt from '../../components/screens/Receipt.astro';
+import DoThisNextCard from '../../components/screens/DoThisNextCard.astro';
+import { WA_MESSAGES } from '../../lib/site';
+import { BAR_FAQ } from '../../lib/faq';
+import { DEMO_CARDS, DEMO_DAYPARTS } from '../../lib/analyticsDemo';
+
+const problems = [
+  {
+    problem: 'The drawer is short again, and nobody behind the bar knows why.',
+    fix: 'Everyone behind the bar has their own PIN and counts their own drawer. At the close ZapTill shows, by name, what should be there, what was counted and the difference.',
+  },
+  {
+    problem: 'A round is paid for, then quietly cancelled.',
+    fix: 'A paid order can only be voided or refunded with a manager\'s PIN, and every void shows up against the name of the person who rang it.',
+  },
+  {
+    problem: '"I\'ll pay on Friday." Then Friday never comes.',
+    fix: 'Regulars get an account with a limit. Every sale on account is confirmed by a manager, and you can see who owes what, and for how long.',
+  },
+  {
+    problem: 'You close at 2 a.m., and the sales land on the wrong day.',
+    fix: 'You set when your business day ends, so the night\'s takings stay on the night they belong to, and the day close adds up.',
+  },
+  {
+    problem: 'Your best-selling beer barely makes you anything.',
+    fix: 'Analytics shows which drinks sell a lot but earn little, and what a small price change could be worth, as an estimate you can judge.',
+  },
+];
+
+const tusker = DEMO_CARDS.find((c) => c.n === 2)!;
+const late = DEMO_DAYPARTS.find((d) => d.name === 'Late at night')!;
+const evening = DEMO_DAYPARTS.find((d) => d.name === 'Evening')!;
+---
+<Industry
+  title="ZapTill for bars and lounges: over and short by name, credit, the night close | ZapTill"
+  description="ZapTill for bars and lounges in Kenya: each bartender's drawer counted with over and short by name, voids that need a manager's PIN, credit for regulars with limits, and a night close that adds up."
+  ogImage="/og/bars.png"
+  crumb="Bars and lounges"
+  heading="Know whose drawer is short before the lights go off."
+  sub="ZapTill gives everyone behind the bar a PIN and a drawer of their own, stops quiet cancellations, keeps tabs for regulars honest, and closes the night by name."
+  waMessage={WA_MESSAGES.bar}
+  problems={problems}
+  faq={BAR_FAQ}
+  closing="See a night close on ZapTill before your next one."
+>
+  <Fragment slot="hero">
+    <div class="b-hero">
+      <figure class="screen-crop">
+        <Shot src="/screens/till-shifts.webp" eager width={1200} height={253}
+          alt="The real ZapTill shift report: Wanjiru's drawer expected KES 14,550, counted KES 14,200, difference KES -350; Otieno's drawer exact. Both awaiting a manager." />
+      </figure>
+      <Receipt kind="close" paper={58} lines={[20, 28]} class="b-hero__slip"
+        label="The cash part of a printed shift report: expected cash KES 14,550, counted KES 14,200, variance KES 350 short." />
+    </div>
+  </Fragment>
+
+  <!-- The night close -->
+  <section class="band" aria-labelledby="night-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="night-h">The night close, in minutes</h2>
+        <p>
+          Each bartender closes their shift and the till prints the report: what they sold by cash, M-Pesa and card, and
+          the cash that should be in the drawer. They count; the difference is there in black and white.
+        </p>
+        <p>
+          Their own copy shows only what they declared. The manager sees the rest, confirms each drawer, and closes the
+          branch from the till or from the web. The numbers reach you by email that night.
+        </p>
+      </div>
+      <div class="split__visual b-slip">
+        <Receipt kind="close" />
+      </div>
+    </div>
+  </section>
+
+  <!-- What sells when, bars -->
+  <section class="band band--night" aria-labelledby="bwhen-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="bwhen-h">Then: what to charge, and when to staff up</h2>
+        <p>
+          Analytics shows what sells in the evening and late at night, which drinks earn and which only sell, and when an
+          extra pair of hands pays for itself. In the demo, Tusker is {late.items[0][1]}% of everything sold after ten.
+        </p>
+        <ul class="b-parts" aria-label="What sells in the evening and late at night, from a demo business">
+          {[evening, late].map((d) => (
+            <li>
+              <b>{d.name}</b> <span>{d.hours}</span>
+              <span class="b-parts__items">{d.items.slice(0, 3).map(([n, p]) => `${n} ${p}%`).join(', ')}</span>
+            </li>
+          ))}
+        </ul>
+        <p><a href="/analytics/">See Analytics</a></p>
+      </div>
+      <div class="split__visual">
+        <DoThisNextCard {...tusker} />
+      </div>
+    </div>
+  </section>
+</Industry>
+
+<style>
+  .b-hero { display: grid; gap: var(--s-5); justify-items: end; }
+  .b-hero :global(.b-hero__slip) { width: 62%; --slip-fs: 0.74rem; transform: rotate(-1.5deg); margin-right: 4%; }
+  @media (max-width: 600px) { .b-hero :global(.b-hero__slip) { width: 100%; margin-right: 0; } }
+  .b-slip { display: flex; justify-content: center; }
+  .b-slip :global(.slip-wrap) { --slip-fs: 0.74rem; }
+  .b-parts { list-style: none; margin: 0 0 var(--s-5); padding: 0; display: grid; gap: var(--s-3); }
+  .b-parts li { border-top: 1px solid var(--night-line); padding-top: var(--s-3); color: var(--night-muted); }
+  .b-parts b { color: #fff; margin-right: var(--s-2); }
+  .b-parts__items { display: block; color: var(--night-text); }
+</style>

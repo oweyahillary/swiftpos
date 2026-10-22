@@ -1,0 +1,94 @@
+---
+import Industry from '../../layouts/Industry.astro';
+import Laptop from '../../components/frames/Laptop.astro';
+import StockScreen from '../../components/screens/StockScreen.astro';
+import Shot from '../../components/screens/Shot.astro';
+import Receipt from '../../components/screens/Receipt.astro';
+import { WA_MESSAGES } from '../../lib/site';
+import { RETAIL_FAQ } from '../../lib/faq';
+
+const problems = [
+  {
+    problem: 'Stock goes missing, and nobody can say where.',
+    fix: 'Count your stock in ZapTill and see the difference against what the system expected. Damaged or expired goods are written off with a reason and their cost, not just thrown away.',
+  },
+  {
+    problem: 'The delivery was short, and you paid for the full order.',
+    fix: 'Receive each delivery against the supplier\'s note. Stock goes up by what actually arrived, and the supplier\'s bill sits next to it.',
+  },
+  {
+    problem: 'One shop runs out while the other has plenty.',
+    fix: 'Send a transfer from one branch and receive it at the other, so both stock levels stay right and you see every branch from one dashboard.',
+  },
+  {
+    problem: 'The cash at closing never matches the sales.',
+    fix: 'Each cashier counts their own drawer. ZapTill shows what should be there, what was counted and the difference, by name.',
+  },
+  {
+    problem: 'Customers ask for the M-Pesa number at every sale.',
+    fix: 'Your Buy Goods or Paybill number prints large on every receipt, and a customer can pay part M-Pesa, part cash.',
+  },
+];
+---
+<Industry
+  title="ZapTill for shops and retail: stock, deliveries, transfers and M-Pesa | ZapTill"
+  description="ZapTill for shops in Kenya: stock levels and counts, deliveries received against the supplier's note, transfers between branches, wastage with its cost, drawers counted by cashier and M-Pesa on every receipt."
+  ogImage="/og/retail.png"
+  crumb="Shops and retail"
+  heading="Stock that adds up. A till that never stops."
+  sub="ZapTill keeps your stock honest from the delivery to the shelf, moves it between branches, and closes every drawer by name, with or without internet."
+  waMessage={WA_MESSAGES.retail}
+  problems={problems}
+  faq={RETAIL_FAQ}
+  closing="See your own stock on ZapTill."
+>
+  <Fragment slot="hero">
+    <Laptop label="Receiving a delivery and writing off wastage on the web dashboard">
+      <StockScreen />
+    </Laptop>
+  </Fragment>
+
+  <section class="band" aria-labelledby="rclose-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="rclose-h">Every drawer, counted by name</h2>
+        <p>
+          Each cashier opens with a counted float and closes with a counted drawer. The manager sees each one's expected
+          cash, counted cash and difference, confirms it, and closes the day from the till or the web.
+        </p>
+        <p>
+          Stock at the till (counts, deliveries, transfers and wastage at the counter) comes with ZapTill Online.{' '}
+          <a href="/pricing/">See the packages</a>
+        </p>
+      </div>
+      <div class="split__visual">
+        <figure class="screen-crop">
+          <Shot src="/screens/till-shifts.webp" width={1200} height={253}
+            alt="The real ZapTill shift report: two drawers with expected cash, counted cash and the difference; one KES 350 short, one exact." />
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="rrec-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="rrec-h">M-Pesa on every receipt</h2>
+        <p>
+          The receipt carries your Buy Goods or Paybill number in large print, and a split payment shows each part. This
+          is the real receipt ZapTill prints, for a demo shop.
+        </p>
+        <!-- TODO(owner): barcode scanning and weighed items are not described here; add them only once confirmed in the
+             till (they were not checked for Phase 2). -->
+      </div>
+      <div class="split__visual r-rec">
+        <Receipt kind="shop" />
+      </div>
+    </div>
+  </section>
+</Industry>
+
+<style>
+  .r-rec { display: flex; justify-content: center; }
+  .r-rec :global(.slip-wrap) { --slip-fs: 0.72rem; }
+</style>
