@@ -404,8 +404,8 @@ The owner with "All branches" sees and answers every request (and can cancel); a
 Stock tab and the manager portal (`POSInventoryTab`) gain "This branch | Other branches" — a cashier looks, a manager also asks
 and answers. `lib/branchStock.ts` (the same text on the till: `quantityProblem`, `askedSent`). A565's "Start a transfer →"
 (`/dashboard/stock/transfers?from=&to=&products=`) now opens New Transfer with the two branches and the items filled in and
-the quantities blank. Permission descriptions (all six catalogue copies): inventory.view "…and how much other branches hold
-(quantities only)"; inventory.transfer "…ask another branch for stock or answer its requests".
+the quantities blank. Permission descriptions unchanged: migration 134 registers the catalogue's exact words and its
+test fails on any edit (a rewording was tried and reverted after CI caught it).
 
 **Tests.** `tests/branch-stock-a564.test.mjs` (34, the real routers over HTTP, the terminal-write guard and till scope
 ENFORCED, in-memory database): the rules; the lookup (cashier yes, kitchen 403, this business only, tracked active only, every

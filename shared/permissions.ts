@@ -143,11 +143,11 @@ export const PERMISSIONS: PermissionDef[] = [
 
   // ── Stock ────────────────────────────────────────────────────────────────────────────────────────────────────────
   { key: 'inventory.view',       group: 'stock', surface: 'both', view: true, cashier: true, manager: true,
-    label: 'See stock levels', description: 'Stock levels of the branch, and how much other branches hold (quantities only)' },   // A564
+    label: 'See stock levels', description: 'Stock levels of the branch' },
   { key: 'inventory.receive',    group: 'stock', surface: 'both', manager: true,
     label: 'Receive deliveries', description: 'Suppliers, purchase orders and receiving deliveries' },
   { key: 'inventory.transfer',   group: 'stock', surface: 'both', manager: true,
-    label: 'Transfer stock', description: 'Send stock to another branch, receive transfers, and ask another branch for stock or answer its requests' },   // A564
+    label: 'Transfer stock', description: 'Send stock to another branch and receive transfers' },
   { key: 'inventory.count',      group: 'stock', surface: 'both', manager: true,
     label: 'Count stock', description: 'Take part in a stock count (they never see the expected figure)' },
   { key: 'inventory.waste',      group: 'stock', surface: 'both', manager: true,
