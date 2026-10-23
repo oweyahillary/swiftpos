@@ -4,10 +4,11 @@ import { getDayCutoff } from '../lib/dayCutoff';
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 import { notifyAdmin, alertChannels } from '../lib/alertNotify';
-import { recentErrors, digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';
+import { recentErrors, digestCounters, recentSignInFailures, recentSyncAttempts, syncQueueReports } from '../lib/watchdogCounters';
+import { lapsedBusinessIds } from '../lib/cloudPlan';   // A581
 import {
-  Alert, OpenAlertRow, WATCHDOG, planRun, alertText, digestText,
-  tillsNotSyncing, mpesaUnanswered, paymentExceptions, errorBurst, daysNotClosed, oldTills, etimsFailures,
+  Alert, OpenAlertRow, WATCHDOG, planRun, alertText, digestText, DeviceRow, TradeEvidence,
+  tillsNotSyncing, quietCandidates, tillsWithParkedRecords, mpesaUnanswered, paymentExceptions, errorBurst, daysNotClosed, oldTills, etimsFailures,
   repeatedSignInFailures, tillSyncRefused, tillsSignedOut,
 } from '../lib/watchdogRules';
 
@@ -43,6 +44,44 @@ async function names(): Promise<{ active: string[]; names: Record<string, string
   };
 }
 
+/**
+ * A579: for each older till that is on but has not pushed for 2 hours (lib/watchdogRules.ts quietCandidates — normally
+ * none or a handful): is a drawer open on it, and what was sold at its branch since its last sync — by it, and by the
+ * others (or the web POS)? One shifts read for all, one orders read per till (indexed by branch, at most a day back,
+ * capped). A failed read leaves that till without evidence: a warning, never a false critical.
+ */
+async function tradeEvidence(tills: DeviceRow[], now: Date): Promise<Record<string, TradeEvidence>> {
+  const out: Record<string, TradeEvidence> = {};
+  const withId = tills.filter((d) => d.device_id);
+  if (!withId.length) return out;
+  const open = new Set<string>();
+  try {
+    const { data, error } = await supabase.from('shifts').select('device_id').eq('status', 'open')
+      .in('business_id', [...new Set(withId.map((d) => d.business_id))])
+      .in('device_id', withId.map((d) => d.device_id as string).slice(0, 500)).limit(1000);
+    if (error) throw error;
+    for (const r of (data ?? []) as any[]) if (r.device_id) open.add(r.device_id);
+  } catch (err: any) { console.error('[watchdog] A579 open drawers read failed:', err?.message ?? err); }
+  for (const d of withId.slice(0, 200)) {
+    const ev: TradeEvidence = { openShift: open.has(d.device_id as string), otherSales: 0, ownSales: 0 };
+    if (d.branch_id) {
+      const dayAgo = now.getTime() - DAY_MS;
+      const since = new Date(Math.max(d.last_sync_at ? Date.parse(d.last_sync_at) : 0, dayAgo)).toISOString();
+      try {
+        const { data, error } = await supabase.from('orders').select('device_id')
+          .eq('business_id', d.business_id).eq('branch_id', d.branch_id).gte('created_at', since).limit(1000);
+        if (error) throw error;
+        for (const o of (data ?? []) as any[]) {
+          if (o.device_id === d.device_id) ev.ownSales = (ev.ownSales ?? 0) + 1;
+          else ev.otherSales = (ev.otherSales ?? 0) + 1;
+        }
+      } catch (err: any) { console.error('[watchdog] A579 branch sales read failed:', err?.message ?? err); }
+    }
+    out[d.id] = ev;
+  }
+  return out;
+}
+
 /** Every problem found right now, critical and warning. Each check on its own: one failing never hides the others. */
 export async function collectAlerts(now = new Date()): Promise<Alert[]> {
   const { active, names: nm, approved } = await names();
@@ -69,12 +108,18 @@ export async function collectAlerts(now = new Date()): Promise<Alert[]> {
   await step('tills', async () => {
     const { data, error } = await supabase
       .from('user_devices')
-      .select('id, business_id, device_label, terminal_code, status, retired_at, last_seen_at, last_sync_at, app_version, schema_version')
+      .select('id, business_id, branch_id, device_id, device_label, terminal_code, status, retired_at, last_seen_at, last_sync_at, app_version, schema_version')
       .in('business_id', active)
       .is('retired_at', null);
     if (error) throw error;
-    const devices = ((data ?? []) as any[]).filter(inActive);
-    return [...tillsNotSyncing(devices, now, nm), ...oldTills(devices, approved, REQUIRED_DESKTOP_SCHEMA, nm)];
+    // A581: a business whose cloud plan lapsed past its grace has its tills' sync refused on purpose — not "not syncing".
+    const lapsed = await lapsedBusinessIds(now.getTime());
+    const devices = ((data ?? []) as any[]).filter(inActive).filter((d) => !lapsed.has(d.business_id));
+    // A579: the queue each 1.0.20 till reported, and — for an older till that is on and quiet — whether it traded.
+    const queues = syncQueueReports();
+    const evidence = await tradeEvidence(quietCandidates(devices, now, queues), now);
+    return [...tillsNotSyncing(devices, now, nm, { queues, evidence }), ...tillsWithParkedRecords(devices, now, nm, queues),
+      ...oldTills(devices, approved, REQUIRED_DESKTOP_SCHEMA, nm)];
   });
 
   // A407: tills signed out that could not sign back in — read on their own so a cloud before migration 125 still runs

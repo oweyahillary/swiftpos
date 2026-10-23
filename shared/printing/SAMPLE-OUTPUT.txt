@@ -1,6 +1,6 @@
 
 ============================================================
-KITCHEN   (486 bytes)
+KITCHEN   (476 bytes)
 ============================================================
 +------------------------------------------------+
 |                * * KITCHEN * *                 |
@@ -13,7 +13,6 @@ KITCHEN   (486 bytes)
 |        all spicy                               |
 |      Fries large                               |
 |      Popcorn chicken                           |
-|                                                |
 |2   WINGS COMBO 8PC                             |
 |      8PC Hot Wings                             |
 |        all spicy                               |
@@ -23,7 +22,7 @@ KITCHEN   (486 bytes)
 +------------------------------------------------+
 
 ============================================================
-DISPATCH   (549 bytes)
+DISPATCH   (553 bytes)
 ============================================================
 +------------------------------------------------+
 |                * * DISPATCH * *                |
@@ -37,20 +36,18 @@ DISPATCH   (549 bytes)
 |      Popcorn chicken                           |
 |      Cole slaw                                 |
 |      Soda 1.25L                                |
-|                                                |
 |2   WINGS COMBO 8PC                             |
 |      8PC Hot Wings (all spicy)                 |
 |      Fries medium                              |
 |      BBQ Sauce                                 |
 |      Garlic Sauce                              |
-|                                                |
 |1   SODA 500ML                                  |
 |------------------------------------------------|
 |                     3 bags                     |
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT   (1384 bytes)
+CUSTOMER RECEIPT   (1799 bytes)
 ============================================================
 +------------------------------------------------+
 |                 Your Business                  |
@@ -58,8 +55,13 @@ CUSTOMER RECEIPT   (1384 bytes)
 |                PIN: P051234567X                |
 |               Tel: 0700 000 000                |
 |------------------------------------------------|
-|Type: Takeaway                Bill No.: T1--5718|
-|Cashier: Amina               2026-08-05 19:42:11|
+|Type: Takeaway                                  |
+|------------------------------------------------|
+|Bill No.: T1--5718                              |
+|Cashier: Amina                                  |
+|Date: 2026-08-05 19:42:11                       |
+|Kots: 2                                         |
+|------------------------------------------------|
 |Item                             Qty         Amt|
 |------------------------------------------------|
 |3PC Chicken Combo                  1      754.24|
@@ -75,31 +77,43 @@ CUSTOMER RECEIPT   (1384 bytes)
 |------------------------------------------------|
 |Total Qty:                                     4|
 |SubTotal:                               2,796.61|
+|------------------------------------------------|
 |CTL (2%)                                   55.93|
 |VAT (16%)                                 447.46|
 |------------------------------------------------|
+|Total:                                  3,300.00|
+|------------------------------------------------|
 |PAY: KES 3,300.00                               |
+|------------------------------------------------|
+|                   BUY GOODS:                   |
+|                     000000                     |
+|------------------------------------------------|
 |CASH                                    3,500.00|
 |CHANGE                                    200.00|
-|Buy Goods: 000000                               |
 |------------------------------------------------|
 |          Thank you for your business!          |
 |         For delivery call 0700 000 000         |
+|------------------------------------------------|
 |            TAX RECEIPT UPON REQUEST            |
 |               Powered by ZapTill               |
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — duplicate, optional fields off   (1344 bytes)
+CUSTOMER RECEIPT — duplicate, optional fields off   (1690 bytes)
 ============================================================
 +------------------------------------------------+
 |                Duplicate Print                 |
 |------------------------------------------------|
 |                 Your Business                  |
 |------------------------------------------------|
-|Type: Takeaway                Bill No.: T1--5718|
-|Cashier: Amina               2026-08-05 19:42:11|
+|Type: Takeaway                                  |
+|------------------------------------------------|
+|Bill No.: T1--5718                              |
+|Cashier: Amina                                  |
+|Date: 2026-08-05 19:42:11                       |
 |RePrint T.: 2026-08-05 21:06:09                 |
+|Kots: 2                                         |
+|------------------------------------------------|
 |Item                             Qty         Amt|
 |------------------------------------------------|
 |3PC Chicken Combo                  1      754.24|
@@ -115,20 +129,25 @@ CUSTOMER RECEIPT — duplicate, optional fields off   (1344 bytes)
 |------------------------------------------------|
 |Total Qty:                                     4|
 |SubTotal:                               2,796.61|
+|------------------------------------------------|
 |CTL (2%)                                   55.93|
 |VAT (16%)                                 447.46|
 |------------------------------------------------|
+|Total:                                  3,300.00|
+|------------------------------------------------|
 |PAY: KES 3,300.00                               |
+|------------------------------------------------|
 |CASH                                    3,500.00|
 |CHANGE                                    200.00|
 |------------------------------------------------|
 |          Thank you for your business!          |
+|------------------------------------------------|
 |            TAX RECEIPT UPON REQUEST            |
 |               Powered by ZapTill               |
 +------------------------------------------------+
 
 ============================================================
-KITCHEN — 58mm   (418 bytes)
+KITCHEN — 58mm   (404 bytes)
 ============================================================
 +--------------------------------+
 |        * * KITCHEN * *         |
@@ -136,15 +155,12 @@ KITCHEN — 58mm   (418 bytes)
 |Order  T1--5718         TAKEAWAY|
 |Wed 05 Aug 19:42  Cashier  Amina|
 |--------------------------------|
-|1 3PC CHICKEN                   |
-|    COMBO                       |
+|1   3PC CHICKEN COMBO           |
 |      3PC Chicken               |
 |        all spicy               |
 |      Fries large               |
 |      Popcorn chicken           |
-|                                |
-|2 WINGS COMBO                   |
-|    8PC                         |
+|2   WINGS COMBO 8PC             |
 |      8PC Hot Wings             |
 |        all spicy               |
 |      Fries medium              |
@@ -153,7 +169,7 @@ KITCHEN — 58mm   (418 bytes)
 +--------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — 58mm   (1016 bytes)
+CUSTOMER RECEIPT — 58mm   (1335 bytes)
 ============================================================
 +--------------------------------+
 |         Your Business          |
@@ -161,8 +177,13 @@ CUSTOMER RECEIPT — 58mm   (1016 bytes)
 |        PIN: P051234567X        |
 |       Tel: 0700 000 000        |
 |--------------------------------|
-|Takeaway      Bill No.: T1--5718|
-|Cashier: Amina    05/08/26 19:42|
+|Type: Takeaway                  |
+|--------------------------------|
+|Bill No.: T1--5718              |
+|Cashier: Amina                  |
+|Date: 2026-08-05 19:42:11       |
+|Kots: 2                         |
+|--------------------------------|
 |Item               Qty       Amt|
 |--------------------------------|
 |3PC Chicken Combo    1    754.24|
@@ -178,134 +199,348 @@ CUSTOMER RECEIPT — 58mm   (1016 bytes)
 |--------------------------------|
 |Total Qty:                     4|
 |SubTotal:               2,796.61|
+|--------------------------------|
 |CTL (2%)                   55.93|
 |VAT (16%)                 447.46|
 |--------------------------------|
+|Total:                  3,300.00|
+|--------------------------------|
 |PAY: KES 3,300.00               |
+|--------------------------------|
+|           BUY GOODS:           |
+|             000000             |
+|--------------------------------|
 |CASH                    3,500.00|
 |CHANGE                    200.00|
-|Buy Goods: 000000               |
 |--------------------------------|
 |  Thank you for your business!  |
 | For delivery call 0700 000 000 |
+|--------------------------------|
 |    TAX RECEIPT UPON REQUEST    |
 |       Powered by ZapTill       |
 +--------------------------------+
 
 ============================================================
-A530 — the receipt BEFORE (classic, 1.0.19) and AFTER (compact, the 1.0.20 standard)
+A538 — the receipt in 1.0.19, the A538 standard, and the compact opt-in
 ============================================================
-Classic = all four admin-portal switches on (receipt_classic_spacing, receipt_full_logo, receipt_classic_layout,
-receipt_extra_feed); compact = all off, the standard. Same sale; the AFTER is the CUSTOMER RECEIPT above.
+1.0.19 = receipt_classic_spacing + receipt_full_logo + receipt_extra_feed on (the layout is classic by default).
+Standard = all switches off: the classic layout at 3.75 mm (ESC 3 30), a small logo, 1 line fed before the cut —
+the CUSTOMER RECEIPT above. Compact = receipt_compact_layout on (A530's lines, at 3.75 mm). Same sale.
 
 80 mm
-BEFORE (classic)                                      AFTER (compact)
+1.0.19                                                STANDARD (A538)                                       COMPACT (opt-in)
++------------------------------------------------+    +------------------------------------------------+    +------------------------------------------------+
+|                 Your Business                  |    |                 Your Business                  |    |                 Your Business                  |
+|                  Main Branch                   |    |                  Main Branch                   |    |                  Main Branch                   |
+|                PIN: P051234567X                |    |                PIN: P051234567X                |    |                PIN: P051234567X                |
+|               Tel: 0700 000 000                |    |               Tel: 0700 000 000                |    |               Tel: 0700 000 000                |
+|------------------------------------------------|    |------------------------------------------------|    |------------------------------------------------|
+|Type: Takeaway                                  |    |Type: Takeaway                                  |    |Type: Takeaway                Bill No.: T1--5718|
+|------------------------------------------------|    |------------------------------------------------|    |Cashier: Amina               2026-08-05 19:42:11|
+|Bill No.: T1--5718                              |    |Bill No.: T1--5718                              |    |Item                             Qty         Amt|
+|Cashier: Amina                                  |    |Cashier: Amina                                  |    |------------------------------------------------|
+|Date: 2026-08-05 19:42:11                       |    |Date: 2026-08-05 19:42:11                       |    |3PC Chicken Combo                  1      754.24|
+|Kots: 2                                         |    |Kots: 2                                         |    |  3PC Chicken  all spicy                        |
+|------------------------------------------------|    |------------------------------------------------|    |  Fries large                              50.85|
+|Item                             Qty         Amt|    |Item                             Qty         Amt|    |  Soda 1.25L                               42.37|
+|------------------------------------------------|    |------------------------------------------------|    |                                                |
+|3PC Chicken Combo                  1      754.24|    |3PC Chicken Combo                  1      754.24|    |Wings Combo 8PC                    2    1,847.46|
+|  3PC Chicken  all spicy                        |    |  3PC Chicken  all spicy                        |    |  8PC Hot Wings  all spicy                      |
+|  Fries large                              50.85|    |  Fries large                              50.85|    |  BBQ Sauce, Garlic Sauce                       |
+|  Soda 1.25L                               42.37|    |  Soda 1.25L                               42.37|    |                                                |
+|                                                |    |                                                |    |Soda 500ml                         1      101.69|
+|Wings Combo 8PC                    2    1,847.46|    |Wings Combo 8PC                    2    1,847.46|    |------------------------------------------------|
+|  8PC Hot Wings  all spicy                      |    |  8PC Hot Wings  all spicy                      |    |Total Qty:                                     4|
+|  BBQ Sauce, Garlic Sauce                       |    |  BBQ Sauce, Garlic Sauce                       |    |SubTotal:                               2,796.61|
+|                                                |    |                                                |    |CTL (2%)                                   55.93|
+|Soda 500ml                         1      101.69|    |Soda 500ml                         1      101.69|    |VAT (16%)                                 447.46|
+|------------------------------------------------|    |------------------------------------------------|    |------------------------------------------------|
+|Total Qty:                                     4|    |Total Qty:                                     4|    |PAY: KES 3,300.00                               |
+|SubTotal:                               2,796.61|    |SubTotal:                               2,796.61|    |CASH                                    3,500.00|
+|------------------------------------------------|    |------------------------------------------------|    |CHANGE                                    200.00|
+|CTL (2%)                                   55.93|    |CTL (2%)                                   55.93|    |Buy Goods: 000000                               |
+|VAT (16%)                                 447.46|    |VAT (16%)                                 447.46|    |------------------------------------------------|
+|------------------------------------------------|    |------------------------------------------------|    |          Thank you for your business!          |
+|Total:                                  3,300.00|    |Total:                                  3,300.00|    |         For delivery call 0700 000 000         |
+|------------------------------------------------|    |------------------------------------------------|    |            TAX RECEIPT UPON REQUEST            |
+|PAY: KES 3,300.00                               |    |PAY: KES 3,300.00                               |    |               Powered by ZapTill               |
+|------------------------------------------------|    |------------------------------------------------|    +------------------------------------------------+
+|                   BUY GOODS:                   |    |                   BUY GOODS:                   |
+|                     000000                     |    |                     000000                     |
+|------------------------------------------------|    |------------------------------------------------|
+|CASH                                    3,500.00|    |CASH                                    3,500.00|
+|CHANGE                                    200.00|    |CHANGE                                    200.00|
+|------------------------------------------------|    |------------------------------------------------|
+|          Thank you for your business!          |    |          Thank you for your business!          |
+|         For delivery call 0700 000 000         |    |         For delivery call 0700 000 000         |
+|------------------------------------------------|    |------------------------------------------------|
+|            TAX RECEIPT UPON REQUEST            |    |            TAX RECEIPT UPON REQUEST            |
+|               Powered by ZapTill               |    |               Powered by ZapTill               |
 +------------------------------------------------+    +------------------------------------------------+
-|                 Your Business                  |    |                 Your Business                  |
-|                  Main Branch                   |    |                  Main Branch                   |
-|                PIN: P051234567X                |    |                PIN: P051234567X                |
-|               Tel: 0700 000 000                |    |               Tel: 0700 000 000                |
-|------------------------------------------------|    |------------------------------------------------|
-|Type: Takeaway                                  |    |Type: Takeaway                Bill No.: T1--5718|
-|------------------------------------------------|    |Cashier: Amina               2026-08-05 19:42:11|
-|Bill No.: T1--5718                              |    |Item                             Qty         Amt|
-|Cashier: Amina                                  |    |------------------------------------------------|
-|Date: 2026-08-05 19:42:11                       |    |3PC Chicken Combo                  1      754.24|
-|Kots: 2                                         |    |  3PC Chicken  all spicy                        |
-|------------------------------------------------|    |  Fries large                              50.85|
-|Item                             Qty         Amt|    |  Soda 1.25L                               42.37|
-|------------------------------------------------|    |                                                |
-|3PC Chicken Combo                  1      754.24|    |Wings Combo 8PC                    2    1,847.46|
-|  3PC Chicken  all spicy                        |    |  8PC Hot Wings  all spicy                      |
-|  Fries large                              50.85|    |  BBQ Sauce, Garlic Sauce                       |
-|  Soda 1.25L                               42.37|    |                                                |
-|                                                |    |Soda 500ml                         1      101.69|
-|Wings Combo 8PC                    2    1,847.46|    |------------------------------------------------|
-|  8PC Hot Wings  all spicy                      |    |Total Qty:                                     4|
-|  BBQ Sauce, Garlic Sauce                       |    |SubTotal:                               2,796.61|
-|                                                |    |CTL (2%)                                   55.93|
-|Soda 500ml                         1      101.69|    |VAT (16%)                                 447.46|
-|------------------------------------------------|    |------------------------------------------------|
-|Total Qty:                                     4|    |PAY: KES 3,300.00                               |
-|SubTotal:                               2,796.61|    |CASH                                    3,500.00|
-|------------------------------------------------|    |CHANGE                                    200.00|
-|CTL (2%)                                   55.93|    |Buy Goods: 000000                               |
-|VAT (16%)                                 447.46|    |------------------------------------------------|
-|------------------------------------------------|    |          Thank you for your business!          |
-|Round Off:                                  0.00|    |         For delivery call 0700 000 000         |
-|Total:                                  3,300.00|    |            TAX RECEIPT UPON REQUEST            |
-|------------------------------------------------|    |               Powered by ZapTill               |
-|PAY: KES 3,300.00                               |    +------------------------------------------------+
+
+58 mm
+1.0.19                                STANDARD (A538)                       COMPACT (opt-in)
++--------------------------------+    +--------------------------------+    +--------------------------------+
+|         Your Business          |    |         Your Business          |    |         Your Business          |
+|          Main Branch           |    |          Main Branch           |    |          Main Branch           |
+|        PIN: P051234567X        |    |        PIN: P051234567X        |    |        PIN: P051234567X        |
+|       Tel: 0700 000 000        |    |       Tel: 0700 000 000        |    |       Tel: 0700 000 000        |
+|--------------------------------|    |--------------------------------|    |--------------------------------|
+|Type: Takeaway                  |    |Type: Takeaway                  |    |Takeaway      Bill No.: T1--5718|
+|--------------------------------|    |--------------------------------|    |Cashier: Amina    05/08/26 19:42|
+|Bill No.: T1--5718              |    |Bill No.: T1--5718              |    |Item               Qty       Amt|
+|Cashier: Amina                  |    |Cashier: Amina                  |    |--------------------------------|
+|Date: 2026-08-05 19:42:11       |    |Date: 2026-08-05 19:42:11       |    |3PC Chicken Combo    1    754.24|
+|Kots: 2                         |    |Kots: 2                         |    |  3PC Chicken  all spicy        |
+|--------------------------------|    |--------------------------------|    |  Fries large              50.85|
+|Item               Qty       Amt|    |Item               Qty       Amt|    |  Soda 1.25L               42.37|
+|--------------------------------|    |--------------------------------|    |                                |
+|3PC Chicken Combo    1    754.24|    |3PC Chicken Combo    1    754.24|    |Wings Combo 8PC      2  1,847.46|
+|  3PC Chicken  all spicy        |    |  3PC Chicken  all spicy        |    |  8PC Hot Wings  all spicy      |
+|  Fries large              50.85|    |  Fries large              50.85|    |  BBQ Sauce, Garlic Sauce       |
+|  Soda 1.25L               42.37|    |  Soda 1.25L               42.37|    |                                |
+|                                |    |                                |    |Soda 500ml           1    101.69|
+|Wings Combo 8PC      2  1,847.46|    |Wings Combo 8PC      2  1,847.46|    |--------------------------------|
+|  8PC Hot Wings  all spicy      |    |  8PC Hot Wings  all spicy      |    |Total Qty:                     4|
+|  BBQ Sauce, Garlic Sauce       |    |  BBQ Sauce, Garlic Sauce       |    |SubTotal:               2,796.61|
+|                                |    |                                |    |CTL (2%)                   55.93|
+|Soda 500ml           1    101.69|    |Soda 500ml           1    101.69|    |VAT (16%)                 447.46|
+|--------------------------------|    |--------------------------------|    |--------------------------------|
+|Total Qty:                     4|    |Total Qty:                     4|    |PAY: KES 3,300.00               |
+|SubTotal:               2,796.61|    |SubTotal:               2,796.61|    |CASH                    3,500.00|
+|--------------------------------|    |--------------------------------|    |CHANGE                    200.00|
+|CTL (2%)                   55.93|    |CTL (2%)                   55.93|    |Buy Goods: 000000               |
+|VAT (16%)                 447.46|    |VAT (16%)                 447.46|    |--------------------------------|
+|--------------------------------|    |--------------------------------|    |  Thank you for your business!  |
+|Total:                  3,300.00|    |Total:                  3,300.00|    | For delivery call 0700 000 000 |
+|--------------------------------|    |--------------------------------|    |    TAX RECEIPT UPON REQUEST    |
+|PAY: KES 3,300.00               |    |PAY: KES 3,300.00               |    |       Powered by ZapTill       |
+|--------------------------------|    |--------------------------------|    +--------------------------------+
+|           BUY GOODS:           |    |           BUY GOODS:           |
+|             000000             |    |             000000             |
+|--------------------------------|    |--------------------------------|
+|CASH                    3,500.00|    |CASH                    3,500.00|
+|CHANGE                    200.00|    |CHANGE                    200.00|
+|--------------------------------|    |--------------------------------|
+|  Thank you for your business!  |    |  Thank you for your business!  |
+| For delivery call 0700 000 000 |    | For delivery call 0700 000 000 |
+|--------------------------------|    |--------------------------------|
+|    TAX RECEIPT UPON REQUEST    |    |    TAX RECEIPT UPON REQUEST    |
+|       Powered by ZapTill       |    |       Powered by ZapTill       |
++--------------------------------+    +--------------------------------+
+
+Estimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530;
+"A530" = the 1.0.20 compact standard at 3.25 mm that A538 replaces, for reference):
+                       text lines      1.0.19   standard    compact       A530
+  80 mm                46 / 34          214 mm  184 mm -14%  134 mm -37%  118 mm -45%
+  80 mm, logo          46 / 34          250 mm  199 mm -20%  149 mm -40%  133 mm -47%
+  58 mm                46 / 34          214 mm  184 mm -14%  134 mm -37%  118 mm -45%
+  58 mm, logo          46 / 34          250 mm  199 mm -20%  149 mm -40%  133 mm -47%
+
+============================================================
+A543/A551 — the kitchen ticket in Font A (standard) and Font B (kitchen_font_b)
+============================================================
+A long dine-in order. Dispatch (packing) and receipts are Font A either way.
+
+80 mm
+FONT A (standard, A551)                               FONT B (kitchen_font_b)
++------------------------------------------------+    +----------------------------------------------------------------+
+|                * * KITCHEN * *                 |    |                        * * KITCHEN * *                         |
+|                                                |    |                                                                |
+|Order  T1--6204                          DINE IN|    |Order  T1--6204                                          DINE IN|
+|Wed 21 Oct 13:05          Cashier  Amina Wanjiru|    |Wed 21 Oct 13:05                          Cashier  Amina Wanjiru|
+|Table  14                                       |    |Table  14                                                       |
+|NOTE: Birthday table - bring the cake out with  |    |NOTE: Birthday table - bring the cake out with the mains, not   |
+|the mains, not before                           |    |before                                                          |
+|------------------------------------------------|    |----------------------------------------------------------------|
+|1   FAMILY FEAST BUCKET 12PC WITH TWO LARGE     |    |1   FAMILY FEAST BUCKET 12PC WITH TWO LARGE SIDES               |
+|    SIDES                                       |    |      12PC Original Recipe Chicken                              |
+|      12PC Original Recipe Chicken              |    |        6 spicy, 6 normal                                       |
+|        6 spicy, 6 normal                       |    |      Large Fries                                               |
+|      Large Fries                               |    |      Large Coleslaw With Extra Dressing On The Side            |
+|      Large Coleslaw With Extra Dressing On The |    |      ** Cut the chicken into small pieces for the kids         |
+|      Side                                      |    |2   GRILLED TILAPIA WHOLE FISH SERVED WITH UGALI AND SUKUMA WIKI|
+|      ** Cut the chicken into small pieces for  |    |      Whole Tilapia                                             |
+|      the kids                                  |    |        well done                                               |
+|2   GRILLED TILAPIA WHOLE FISH SERVED WITH UGALI|    |      Ugali                                                     |
+|    AND SUKUMA WIKI                             |    |      Sukuma Wiki Fried With Onions And Tomatoes                |
+|      Whole Tilapia                             |    |3   BEEF BURGER DOUBLE PATTY CHEESE                             |
+|        well done                               |    |      Double Beef Patty                                         |
+|      Ugali                                     |    |      No Onions, Extra Pickles, Cheese Melted On Top            |
+|      Sukuma Wiki Fried With Onions And Tomatoes|    |      Medium Fries                                              |
+|3   BEEF BURGER DOUBLE PATTY CHEESE             |    |2   CHICKEN WINGS 10PC HONEY BARBECUE GLAZE                     |
+|      Double Beef Patty                         |    |      10PC Wings                                                |
+|      No Onions, Extra Pickles, Cheese Melted On|    |        all spicy                                               |
+|      Top                                       |    |      ** Sauce separately                                       |
+|      Medium Fries                              |    |6   VEGETABLE SAMOSA                                            |
+|2   CHICKEN WINGS 10PC HONEY BARBECUE GLAZE     |    |1   MANDAZI BASKET FOR THE TABLE                                |
+|      10PC Wings                                |    |----------------------------------------------------------------|
+|        all spicy                               |    |                        12 items to cook                        |
+|      ** Sauce separately                       |    +----------------------------------------------------------------+
+|6   VEGETABLE SAMOSA                            |
+|1   MANDAZI BASKET FOR THE TABLE                |
 |------------------------------------------------|
-|Payment Detail:                                 |
-|CASH                                    3,500.00|
-|CHANGE                                    200.00|
-|Buy Goods: 000000                               |
-|------------------------------------------------|
-|          Thank you for your business!          |
-|         For delivery call 0700 000 000         |
-|------------------------------------------------|
-|            TAX RECEIPT UPON REQUEST            |
-|               Powered by ZapTill               |
+|                12 items to cook                |
 +------------------------------------------------+
 
 58 mm
-BEFORE (classic)                      AFTER (compact)
-+--------------------------------+    +--------------------------------+
-|         Your Business          |    |         Your Business          |
-|          Main Branch           |    |          Main Branch           |
-|        PIN: P051234567X        |    |        PIN: P051234567X        |
-|       Tel: 0700 000 000        |    |       Tel: 0700 000 000        |
-|--------------------------------|    |--------------------------------|
-|Type: Takeaway                  |    |Takeaway      Bill No.: T1--5718|
-|--------------------------------|    |Cashier: Amina    05/08/26 19:42|
-|Bill No.: T1--5718              |    |Item               Qty       Amt|
-|Cashier: Amina                  |    |--------------------------------|
-|Date: 2026-08-05 19:42:11       |    |3PC Chicken Combo    1    754.24|
-|Kots: 2                         |    |  3PC Chicken  all spicy        |
-|--------------------------------|    |  Fries large              50.85|
-|Item               Qty       Amt|    |  Soda 1.25L               42.37|
-|--------------------------------|    |                                |
-|3PC Chicken Combo    1    754.24|    |Wings Combo 8PC      2  1,847.46|
-|  3PC Chicken  all spicy        |    |  8PC Hot Wings  all spicy      |
-|  Fries large              50.85|    |  BBQ Sauce, Garlic Sauce       |
-|  Soda 1.25L               42.37|    |                                |
-|                                |    |Soda 500ml           1    101.69|
-|Wings Combo 8PC      2  1,847.46|    |--------------------------------|
-|  8PC Hot Wings  all spicy      |    |Total Qty:                     4|
-|  BBQ Sauce, Garlic Sauce       |    |SubTotal:               2,796.61|
-|                                |    |CTL (2%)                   55.93|
-|Soda 500ml           1    101.69|    |VAT (16%)                 447.46|
-|--------------------------------|    |--------------------------------|
-|Total Qty:                     4|    |PAY: KES 3,300.00               |
-|SubTotal:               2,796.61|    |CASH                    3,500.00|
-|--------------------------------|    |CHANGE                    200.00|
-|CTL (2%)                   55.93|    |Buy Goods: 000000               |
-|VAT (16%)                 447.46|    |--------------------------------|
-|--------------------------------|    |  Thank you for your business!  |
-|Round Off:                  0.00|    | For delivery call 0700 000 000 |
-|Total:                  3,300.00|    |    TAX RECEIPT UPON REQUEST    |
-|--------------------------------|    |       Powered by ZapTill       |
-|PAY: KES 3,300.00               |    +--------------------------------+
+FONT A (standard, A551)               FONT B (kitchen_font_b)
++--------------------------------+    +------------------------------------------+
+|        * * KITCHEN * *         |    |             * * KITCHEN * *              |
+|                                |    |                                          |
+|Order  T1--6204          DINE IN|    |Order  T1--6204                    DINE IN|
+|Wed 21 Oct 13:05                |    |Wed 21 Oct 13:05    Cashier  Amina Wanjiru|
+|          Cashier  Amina Wanjiru|    |Table  14                                 |
+|Table  14                       |    |NOTE: Birthday table - bring the cake out |
+|NOTE: Birthday table - bring the|    |with the mains, not before                |
+|cake out with the mains, not    |    |------------------------------------------|
+|before                          |    |1   FAMILY FEAST BUCKET 12PC WITH TWO     |
+|--------------------------------|    |    LARGE SIDES                           |
+|1   FAMILY FEAST BUCKET 12PC    |    |      12PC Original Recipe Chicken        |
+|    WITH TWO LARGE SIDES        |    |        6 spicy, 6 normal                 |
+|      12PC Original Recipe      |    |      Large Fries                         |
+|      Chicken                   |    |      Large Coleslaw With Extra Dressing  |
+|        6 spicy, 6 normal       |    |      On The Side                         |
+|      Large Fries               |    |      ** Cut the chicken into small pieces|
+|      Large Coleslaw With Extra |    |      for the kids                        |
+|      Dressing On The Side      |    |2   GRILLED TILAPIA WHOLE FISH SERVED WITH|
+|      ** Cut the chicken into   |    |    UGALI AND SUKUMA WIKI                 |
+|      small pieces for the kids |    |      Whole Tilapia                       |
+|2   GRILLED TILAPIA WHOLE FISH  |    |        well done                         |
+|    SERVED WITH UGALI AND SUKUMA|    |      Ugali                               |
+|    WIKI                        |    |      Sukuma Wiki Fried With Onions And   |
+|      Whole Tilapia             |    |      Tomatoes                            |
+|        well done               |    |3   BEEF BURGER DOUBLE PATTY CHEESE       |
+|      Ugali                     |    |      Double Beef Patty                   |
+|      Sukuma Wiki Fried With    |    |      No Onions, Extra Pickles, Cheese    |
+|      Onions And Tomatoes       |    |      Melted On Top                       |
+|3   BEEF BURGER DOUBLE PATTY    |    |      Medium Fries                        |
+|    CHEESE                      |    |2   CHICKEN WINGS 10PC HONEY BARBECUE     |
+|      Double Beef Patty         |    |    GLAZE                                 |
+|      No Onions, Extra Pickles, |    |      10PC Wings                          |
+|      Cheese Melted On Top      |    |        all spicy                         |
+|      Medium Fries              |    |      ** Sauce separately                 |
+|2   CHICKEN WINGS 10PC HONEY    |    |6   VEGETABLE SAMOSA                      |
+|    BARBECUE GLAZE              |    |1   MANDAZI BASKET FOR THE TABLE          |
+|      10PC Wings                |    |------------------------------------------|
+|        all spicy               |    |             12 items to cook             |
+|      ** Sauce separately       |    +------------------------------------------+
+|6   VEGETABLE SAMOSA            |
+|1   MANDAZI BASKET FOR THE TABLE|
 |--------------------------------|
-|Payment Detail:                 |
-|CASH                    3,500.00|
-|CHANGE                    200.00|
-|Buy Goods: 000000               |
-|--------------------------------|
-|  Thank you for your business!  |
-| For delivery call 0700 000 000 |
-|--------------------------------|
-|    TAX RECEIPT UPON REQUEST    |
-|       Powered by ZapTill       |
+|        12 items to cook        |
 +--------------------------------+
 
-Estimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530):
-                       text lines        classic    compact    saved
-  80 mm                46 -> 34            210 mm     118 mm   93 mm (44%)
-  80 mm, logo          46 -> 34            246 mm     133 mm   114 mm (46%)
-  58 mm                46 -> 34            210 mm     118 mm   93 mm (44%)
-  58 mm, logo          46 -> 34            246 mm     133 mm   114 mm (46%)
+Estimated paper per kitchen ticket (text lines, mm; A551 = the item gap and the 1-line feed):
+                           Font A before   Font A (A551)   Font B (A551)
+  this sale, 80 mm         17 / 87 mm      16 / 75 mm -13% 16 / 55 mm -37%
+  this sale, 58 mm         17 / 87 mm      16 / 75 mm -13% 16 / 55 mm -37%
+  the long order, 80 mm    41 / 189 mm     36 / 165 mm -12% 31 / 105 mm -44%
+  the long order, 58 mm    48 / 219 mm     43 / 195 mm -11% 38 / 126 mm -42%
+
+============================================================
+A551 — a variant on the item's line; the payment block
+============================================================
+The cart as the till hands it in (toUnits): a Chicken Burger with the variant "Chicken Burger Spicy", a Beef Burger
+with "Large", and a long name with its variant (the hanging wrap keeps the quantity column). Paybill 4098201, Account WEST1.
+
+80 mm
+KITCHEN                                               DISPATCH                                              RECEIPT (Paybill)
++------------------------------------------------+    +------------------------------------------------+    +------------------------------------------------+
+|                * * KITCHEN * *                 |    |                * * DISPATCH * *                |    |                 Your Business                  |
+|                                                |    |                                                |    |                  Main Branch                   |
+|Order  T1--5718                         TAKEAWAY|    |Order  T1--5718                         TAKEAWAY|    |                PIN: P051234567X                |
+|Wed 05 Aug 19:42                  Cashier  Amina|    |Wed 05 Aug 19:42                  Cashier  Amina|    |               Tel: 0700 000 000                |
+|------------------------------------------------|    |------------------------------------------------|    |------------------------------------------------|
+|1   CHICKEN BURGER - SPICY                      |    |1   CHICKEN BURGER - SPICY                      |    |Type: Takeaway                                  |
+|2   BEEF BURGER - LARGE                         |    |2   BEEF BURGER - LARGE                         |    |------------------------------------------------|
+|      + Extra Cheese                            |    |      + Extra Cheese                            |    |Bill No.: T1--5718                              |
+|1   GRILLED CHICKEN BURGER DOUBLE PATTY - EXTRA |    |1   GRILLED CHICKEN BURGER DOUBLE PATTY - EXTRA |    |Cashier: Amina                                  |
+|    HOT PERI PERI                               |    |    HOT PERI PERI                               |    |Date: 2026-08-05 19:42:11                       |
+|------------------------------------------------|    |------------------------------------------------|    |Kots: 2                                         |
+|                3 items to cook                 |    |                     3 bags                     |    |------------------------------------------------|
++------------------------------------------------+    +------------------------------------------------+    |Item                             Qty         Amt|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |Chicken Burger - Spicy             1      550.85|
+                                                                                                            |Beef Burger - Large                2    1,440.68|
+                                                                                                            |  Extra Cheese                                  |
+                                                                                                            |                                                |
+                                                                                                            |Grilled Chicken Burger Double      1      805.08|
+                                                                                                            |Patty - Extra Hot Peri Peri                     |
+                                                                                                            |------------------------------------------------|
+                                                                                                            |Total Qty:                                     4|
+                                                                                                            |SubTotal:                               2,796.61|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |CTL (2%)                                   55.93|
+                                                                                                            |VAT (16%)                                 447.46|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |Total:                                  3,300.00|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |PAY: KES 3,300.00                               |
+                                                                                                            |------------------------------------------------|
+                                                                                                            |                    PAYBILL:                    |
+                                                                                                            |                    4098201                     |
+                                                                                                            |                 Account: WEST1                 |
+                                                                                                            |------------------------------------------------|
+                                                                                                            |M-PESA                                  3,300.00|
+                                                                                                            |------------------------------------------------|
+                                                                                                            |          Thank you for your business!          |
+                                                                                                            |         For delivery call 0700 000 000         |
+                                                                                                            |------------------------------------------------|
+                                                                                                            |            TAX RECEIPT UPON REQUEST            |
+                                                                                                            |               Powered by ZapTill               |
+                                                                                                            +------------------------------------------------+
+
+58 mm
+KITCHEN                               DISPATCH                              RECEIPT (Paybill)
++--------------------------------+    +--------------------------------+    +--------------------------------+
+|        * * KITCHEN * *         |    |        * * DISPATCH * *        |    |         Your Business          |
+|                                |    |                                |    |          Main Branch           |
+|Order  T1--5718         TAKEAWAY|    |Order  T1--5718         TAKEAWAY|    |        PIN: P051234567X        |
+|Wed 05 Aug 19:42  Cashier  Amina|    |Wed 05 Aug 19:42  Cashier  Amina|    |       Tel: 0700 000 000        |
+|--------------------------------|    |--------------------------------|    |--------------------------------|
+|1   CHICKEN BURGER - SPICY      |    |1   CHICKEN BURGER - SPICY      |    |Type: Takeaway                  |
+|2   BEEF BURGER - LARGE         |    |2   BEEF BURGER - LARGE         |    |--------------------------------|
+|      + Extra Cheese            |    |      + Extra Cheese            |    |Bill No.: T1--5718              |
+|1   GRILLED CHICKEN BURGER      |    |1   GRILLED CHICKEN BURGER      |    |Cashier: Amina                  |
+|    DOUBLE PATTY - EXTRA HOT    |    |    DOUBLE PATTY - EXTRA HOT    |    |Date: 2026-08-05 19:42:11       |
+|    PERI PERI                   |    |    PERI PERI                   |    |Kots: 2                         |
+|--------------------------------|    |--------------------------------|    |--------------------------------|
+|        3 items to cook         |    |             3 bags             |    |Item               Qty       Amt|
++--------------------------------+    +--------------------------------+    |--------------------------------|
+                                                                            |Chicken Burger -     1    550.85|
+                                                                            |Spicy                           |
+                                                                            |Beef Burger -        2  1,440.68|
+                                                                            |Large                           |
+                                                                            |  Extra Cheese                  |
+                                                                            |                                |
+                                                                            |Grilled Chicken      1    805.08|
+                                                                            |Burger Double                   |
+                                                                            |Patty - Extra Hot               |
+                                                                            |Peri Peri                       |
+                                                                            |--------------------------------|
+                                                                            |Total Qty:                     4|
+                                                                            |SubTotal:               2,796.61|
+                                                                            |--------------------------------|
+                                                                            |CTL (2%)                   55.93|
+                                                                            |VAT (16%)                 447.46|
+                                                                            |--------------------------------|
+                                                                            |Total:                  3,300.00|
+                                                                            |--------------------------------|
+                                                                            |PAY: KES 3,300.00               |
+                                                                            |--------------------------------|
+                                                                            |            PAYBILL:            |
+                                                                            |            4098201             |
+                                                                            |         Account: WEST1         |
+                                                                            |--------------------------------|
+                                                                            |M-PESA                  3,300.00|
+                                                                            |--------------------------------|
+                                                                            |  Thank you for your business!  |
+                                                                            | For delivery call 0700 000 000 |
+                                                                            |--------------------------------|
+                                                                            |    TAX RECEIPT UPON REQUEST    |
+                                                                            |       Powered by ZapTill       |
+                                                                            +--------------------------------+
 
 ============================================================
 Against the incumbent's printed receipts

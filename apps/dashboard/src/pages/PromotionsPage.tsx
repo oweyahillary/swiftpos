@@ -137,7 +137,7 @@ function fmtDays(days: number[]): string {
  *  someone the owner gave menu.promotions. */
 export default function PromotionsPage({ client = api }: { client?: PosApi } = {}) {
   const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
-  const { term } = useTerm();
+  const { term, terms } = useTerm();   // A573: terms.catalogueGroup — Menu / Catalogue
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [promos, setPromos]     = useState<Promotion[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -565,7 +565,7 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
                 )}
               </div>
               {type === 'quantity_discount' && (
-                <p className="text-xs text-amber-400">A quantity discount is not charged at the till yet - set it up as an Offer (Menu › Offers) to charge it.</p>
+                <p className="text-xs text-amber-400">A quantity discount is not charged at the till yet - set it up as an Offer ({terms.catalogueGroup} › Offers) to charge it.</p>
               )}
 
               {error && (

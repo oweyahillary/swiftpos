@@ -177,11 +177,19 @@ async function write(ctx: ChangeContext, c: TillChange, targetId: string, create
   return writeRefusal(error);
 }
 
+/** A537: a category's menu that is gone (deleted, or not this business's) — refused for good, never sent again. */
+export const MENU_GONE = 'its menu is not on the cloud any more (deleted, or not this business) — choose another menu';
+
 /** Things a value names must be this business's (a product's category) and stay unique (a barcode). */
 async function namesAreOurs(ctx: ChangeContext, c: TillChange): Promise<string | null> {
   if (c.entity === 'product' && c.data.category_id) {
     const { data } = await supabase.from('categories').select('id').eq('id', c.data.category_id).eq('business_id', ctx.businessId).maybeSingle();
     if (!data) return 'its category is not on the cloud (yet) — it goes again on the next sync';
+  }
+  // A537: a category put under a menu on a till — the menu must be this business's (and not deleted).
+  if (c.entity === 'category' && c.data.menu_id) {
+    const { data } = await supabase.from('menus').select('id').eq('id', c.data.menu_id).eq('business_id', ctx.businessId).is('deleted_at', null).maybeSingle();
+    if (!data) return MENU_GONE;
   }
   if (c.entity === 'product' && c.data.barcode) {
     const { data } = await supabase.from('products').select('id').eq('business_id', ctx.businessId).eq('barcode', c.data.barcode).neq('id', c.entity_id).maybeSingle();
@@ -248,6 +256,8 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       if (had) return done({ id: c.id, status: 'identical' });
       // A manager may not add someone above themselves (the web's own rule).
       const makerIsOwner = await isOwnerOf(ctx.businessId, c.made_by);
+      // A562: the owner's role is given to nobody — a till's new cashier on it is refused, whoever made it.
+      if (isOwnerRoleName(await roleNameOf(c.data.role_id))) return done({ id: c.id, status: 'refused', message: 'the owner\'s role is given to nobody' });
       if (!makerIsOwner) {
         const { data: role, error: roleErr } = await supabase.from('roles').select('name').eq('id', c.data.role_id).maybeSingle();
         readOk(roleErr, 'role');
@@ -287,6 +297,7 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
           { cloud_value: pick(same, Object.keys(c.data)) });
       }
       const bad = await namesAreOurs(ctx, c);
+      if (bad === MENU_GONE) return done({ id: c.id, status: 'refused', message: bad });   // A537: not fixable by waiting
       if (bad) return { id: c.id, status: 'refused', message: bad, retry: true };   // not recorded: it is sent again once fixable
       const err = await write(ctx, c, c.entity_id, true);
       return err ? { id: c.id, status: 'refused', message: err } : done({ id: c.id, status: 'applied' });
@@ -325,6 +336,7 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       if (refusal) return done({ id: c.id, status: 'refused', message: refusal });
     }
     const bad = await namesAreOurs(ctx, c);
+    if (bad === MENU_GONE) return done({ id: c.id, status: 'refused', message: bad });   // A537: not fixable by waiting
     if (bad) return { id: c.id, status: 'refused', message: bad, retry: true };
     const v = judgeUpdate(c.entity, cur as Row, c.base, c.data);
     if (v.verdict === 'identical') return done({ id: c.id, status: 'identical' });
@@ -390,9 +402,22 @@ async function makerMayGiveRole(businessId: string, makerId: string | null, role
   return canAssignRole(maker.keys, { name: roleName, keys });
 }
 
+/** A562: a role's name (null when there is none). */
+async function roleNameOf(id: unknown): Promise<string | null> {
+  if (!id) return null;
+  const { data } = await supabase.from('roles').select('name').eq('id', String(id)).maybeSingle();
+  return (data as Row | null)?.name ?? null;
+}
+
 /** A459: why a staff edit from a till may not be made — the web's rules (routes/staff.ts PATCH) — or null. */
 async function staffEditRefusal(ctx: ChangeContext, c: TillChange, cur: Row): Promise<string | null> {
-  if (await isOwnerOf(ctx.businessId, c.made_by)) return null;
+  // A562: nobody deactivates themselves from a till either (routes/staff.ts SELF_DEACTIVATE) — the owner included.
+  if (c.made_by && c.entity_id === c.made_by && typeof c.data.status === 'string' && c.data.status !== 'active') return 'nobody deactivates themselves';
+  if (await isOwnerOf(ctx.businessId, c.made_by)) {
+    // A562: the owner's role is given to nobody (lib/roleCeiling.ts), the owner included.
+    if (c.data.role_id !== undefined && c.data.role_id !== cur.role_id && isOwnerRoleName(await roleNameOf(c.data.role_id))) return 'the owner\'s role is given to nobody';
+    return null;
+  }
   const roleName = async (id: unknown) => {
     if (!id) return null;
     const { data } = await supabase.from('roles').select('name').eq('id', String(id)).maybeSingle();

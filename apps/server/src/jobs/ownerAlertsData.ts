@@ -204,7 +204,7 @@ export interface DeviceRow extends DeviceLite {
 
 /** The business's live tills. Without migration 125 (no session_lost_at) it reads them without the sign-in state. */
 export async function loadDevices(businessId: string): Promise<DeviceRow[]> {
-  const base = 'id, device_id, branch_id, device_label, terminal_code, status, retired_at, last_seen_at, last_sync_at';
+  const base = 'id, device_id, branch_id, device_label, terminal_code, status, retired_at, last_seen_at, last_sync_at, app_version';   // A579: app_version (migration 36)
   const q = (cols: string) => supabase.from('user_devices').select(cols)
     .eq('business_id', businessId).eq('status', 'approved').is('retired_at', null).limit(500);
   // A477 (migration 131): and whether another computer seems to hold its data.

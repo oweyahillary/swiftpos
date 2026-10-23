@@ -169,6 +169,9 @@ if (!headerLine) {
 // repository at all, so they are NOT RECOVERABLE. Reconstructing them would
 // mean inventing findings, which is worse than a gap a reader can see.
 //
+// (A548, 2026-10-21: they were traced after all — git still holds the July fix commits that first cited each ID —
+// and §K of the register now records what each one was, so the count below is 0.)
+//
 // So this does NOT demand they be resolved. It RATCHETS: the set may shrink
 // (resolve a reference into the comment, or drop it) and may never grow. A53's
 // recorded fix was "when a cited-only line is next touched", which is a policy
@@ -200,7 +203,16 @@ for (const f of files) {
     cited.get(id).push(`${relative(ROOT, f)}:${ln}`);
   }
 }
-const known = new Set(entries.map(e => e.id));
+// A548 (2026-10-21): the pre-08-08 IDs (B…, C…, H…, M…) are defined by TABLE ROWS, not `### ` headings — §B's
+// closed-findings table (08-08) and §K, "Legacy audit IDs cited in code", reconstructed from git and the code itself
+// on 2026-10-21. A row whose first cell is exactly the ID (`| H10 | …`) counts as its entry. With §K the orphan set
+// reached 0, so the ratchet now holds it there: a new citation must name an ID the register defines.
+const legacyRows = new Set();
+for (const line of lines) {
+  const m = /^\|\s*\*{0,2}([A-Z]\d{1,2})\*{0,2}\s*\|/.exec(line);
+  if (m) legacyRows.add(m[1]);
+}
+const known = new Set([...entries.map(e => e.id), ...legacyRows]);
 const orphans = [...cited].filter(([id]) => !known.has(id)).sort(([a], [b]) => a.localeCompare(b));
 
 console.log(`\n${cited.size} audit ID(s) cited in code; ${orphans.length} have no entry.`);

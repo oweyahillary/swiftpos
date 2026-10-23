@@ -10,14 +10,19 @@
  *   products         { product (init's row: category name/colour, this branch's price), comboItems (a combo's lines) }
  *   product_choices  { product_id, variantGroups, modifierGroups } — as /api/variants/groups and /api/modifiers/groups
  *   categories       the category row
+ *   menus            A537: the menu row (id, name, sort_order, active, color, icon) — a delete when off or deleted
  *   offers / promotions  the offer row pos/init sends (a promotion as the offer it is charged as)
  *   stock_count      { stockCount } — this branch's freeze
  *   staff            { user: { id, name, roles: { name }, status }, roster } — the roster row exactly as branch-staff
  *                    sends it (bcrypt PIN hash, the permission map; override PIN never), and only to a till's own session
  *   config           money / look / setup: that topic's pos/init keys (shared/syncTopics.ts CONFIG_KEYS)
- *   branding         { branding, themeId }
+ *   branding         { branding, themeId, branchBranding }
+ *   branch_branding  A544 (migration 156): { branchBranding } — THIS branch's override (null: none, or themes off)
  *   print_stations   { stations } — the whole list with category_ids, as /api/stations (a few rows)
  *   tables / pumps   the row, at this branch (pumps: or every branch)
+ *   stock            A535 (migration 153): { product_id, branch_id, quantity, low_stock_threshold, qty_pieces } — the level
+ *                    at THIS branch as /api/inventory?branch_id= sends it; a level hidden by a blind count (A394) is sent as
+ *                    { counting: true } without its figures (the till keeps what it has); a level gone is a delete
  *
  * The same row changed several times is answered once (its newest entry). Another branch's rows never reach a till
  * (the entry's branch, and each row's own branch). Nothing of another business (every read is by the caller's business).
@@ -35,7 +40,8 @@ import { stripFields, COST_FIELDS } from './costAccess';
 import { worksAtBranch } from './branchAccess';
 import { effectiveKeysForRow, clientPermissionMap } from './effectivePermissions';
 import { promotionAsOfferRow, type PromotionRow } from './promotionOffers';
-import { frozenAtBranch } from './stockTakeAccess';
+import { frozenAtBranch, openTake } from './stockTakeAccess';
+import { readAvailability } from './menuHours';   // A578
 import { chunkPaged } from './pgQuery';
 
 export const CHANGES_PAGE = 500;
@@ -51,6 +57,8 @@ export interface ChangesCaller {
   isTill: boolean;
   /** May see cost prices (a person with menu.costs / reports.costs); a till never does. */
   seesCosts: boolean;
+  /** A535: may see a level a blind count is counting (inventory.adjust — a till's own session never: A394 / A494). */
+  seesCountedStock?: boolean;
 }
 
 /**
@@ -71,11 +79,25 @@ interface RawEntry { seq: number; topic: string; table_name: string; row_id: str
 
 // ── small caches ───────────────────────────────────────────────────────────────────────────────────────────────────
 let floor: { value: number; at: number } | null = null;
+let stockReady: { value: boolean; at: number } | null = null;
+const STOCK_READY_TTL_MS = 10 * 60_000;
 const branchesOf = new Map<string, { at: number; rows: Array<{ id: string; is_main?: boolean }> }>();
 const answers = new Map<string, { at: number; value: ChangesAnswer }>();
 
 /** Test seam. */
-export function _resetSyncChanges(): void { floor = null; branchesOf.clear(); answers.clear(); }
+export function _resetSyncChanges(): void { floor = null; stockReady = null; branchesOf.clear(); answers.clear(); }
+
+/**
+ * A535: does this database log stock levels (migration 153)? Asked once per 10 minutes (sync_stock_ready). Only then is a
+ * till told `serves: ['stock']` and drops its 30-minute stock re-read — before 153 it keeps re-reading.
+ */
+export async function servesStock(now = Date.now()): Promise<boolean> {
+  if (stockReady && now - stockReady.at < STOCK_READY_TTL_MS) return stockReady.value;
+  let value = false;
+  try { const { data, error } = await supabase.rpc('sync_stock_ready'); value = !error && data === true; } catch { value = false; }
+  stockReady = { value, at: now };
+  return value;
+}
 /** A change this server just made: the remembered answers of the business go (the push follows at once). */
 export function forgetChangesOf(businessId: string | null): void {
   if (!businessId) { answers.clear(); return; }
@@ -115,17 +137,18 @@ async function operatingBranch(businessId: string, requested: string | null, now
 
 /** GET /api/pos/changes. `since` null = "where is the log now" (a till about to take the whole menu notes it first). */
 export async function changesAnswer(c: ChangesCaller, since: number | null, now = Date.now()): Promise<ChangesAnswer> {
+  const serves = (await servesStock(now)) ? { serves: ['stock'] } : {};   // A535
   if (since === null || !Number.isFinite(since) || since < 0) {
-    return { last_seq: await latestSeq(c.businessId), changes: [] };
+    return { last_seq: await latestSeq(c.businessId), changes: [], ...serves };
   }
   const branch = await operatingBranch(c.businessId, c.branchId, now);
-  const key = `${c.businessId}|${branch ?? ''}|${since}|${c.isTill ? 1 : 0}|${c.seesCosts ? 1 : 0}`;
+  const key = `${c.businessId}|${branch ?? ''}|${since}|${c.isTill ? 1 : 0}|${c.seesCosts ? 1 : 0}|${c.seesCountedStock ? 1 : 0}`;
   const hit = answers.get(key);
   if (hit && now - hit.at < ANSWER_TTL_MS) { traffic.count('changes.from_memory'); return hit.value; }
 
   if (since < await changeFloor(now)) {
     traffic.count('changes.full_resync');
-    return { last_seq: await latestSeq(c.businessId), changes: [], full_resync_needed: true };
+    return { last_seq: await latestSeq(c.businessId), changes: [], full_resync_needed: true, ...serves };
   }
   traffic.count('changes.read'); traffic.queries(1);
   const { data, error } = await supabase.rpc('sync_changes_since', { p_business: c.businessId, p_since: since, p_branch: branch, p_limit: CHANGES_PAGE + 1 });
@@ -144,7 +167,7 @@ export async function changesAnswer(c: ChangesCaller, since: number | null, now 
     if (!had || had.seq < r.seq) newest.set(k, r);
   }
   const changes = await rowsFor(c, branch, [...newest.values()], now);
-  const value: ChangesAnswer = { last_seq, changes: changes.sort((a, b) => a.seq - b.seq), ...(more ? { more: true } : {}) };
+  const value: ChangesAnswer = { last_seq, changes: changes.sort((a, b) => a.seq - b.seq), ...(more ? { more: true } : {}), ...serves };
   answers.set(key, { at: now, value });
   while (answers.size > 2_000) { const k = answers.keys().next().value; if (k === undefined) break; answers.delete(k); }
   return value;
@@ -223,6 +246,21 @@ async function rowsFor(c: ChangesCaller, branch: string | null, entries: RawEntr
     }
   }
 
+  // A537: menus — the row as /init sends it (on, not deleted), else a delete (switched off, deleted, or not this business's)
+  const menuEntries = by('menus');
+  if (menuEntries.length) {
+    // A578: select('*') carries the menu's hours (availability, migration 165) — and works before 165 (no column, none sent).
+    const rows = await inChunks<any>(menuEntries.map((e) => e.row_id), (chunk) => supabase.from('menus').select('*').eq('business_id', biz).in('id', chunk));
+    const byId = new Map(rows.map((r) => [String(r.id), r]));
+    for (const e of menuEntries) {
+      const r = byId.get(e.row_id);
+      if (r && r.active === true && !r.deleted_at) {
+        out.push(entry(e, 'menus', e.row_id, 'upsert', { id: r.id, name: r.name, sort_order: r.sort_order, active: true, color: r.color ?? null, icon: r.icon ?? null,
+          availability: readAvailability(r.availability) }));
+      } else out.push(entry(e, 'menus', e.row_id, 'delete'));
+    }
+  }
+
   // offers: on, not deleted, for every branch or this one (as offersForBranch)
   const offerEntries = by('offers');
   if (offerEntries.length) {
@@ -289,7 +327,10 @@ async function rowsFor(c: ChangesCaller, branch: string | null, entries: RawEntr
   }
 
   // config / branding: from /init's kept answer, built after the change (lib/posInit.ts)
-  const cfgEntries = [...by('config'), ...by('branding')];
+  // A544: a branch's override (branch_branding) — answered from the same kept answer (its `branchBranding` is the
+  // operating branch's, null while themes are off). Only THIS branch's entry: another branch's is never answered (the
+  // log tells only that branch's tills; this is the second lock).
+  const cfgEntries = [...by('config'), ...by('branding'), ...by('branch_branding').filter((e) => !!branch && e.row_id === branch)];
   if (cfgEntries.length) {
     const changedAt = Math.max(...cfgEntries.map((e) => (e.changed_at ? Date.parse(e.changed_at) : now)));
     const version = await readTopicVersion(biz, 'catalogue');
@@ -299,7 +340,13 @@ async function rowsFor(c: ChangesCaller, branch: string | null, entries: RawEntr
     const body = (built as { body: Record<string, unknown> }).body;
     for (const e of cfgEntries) {
       if (e.table_name === 'branding') {
-        out.push(entry(e, 'branding', 'branding', 'upsert', { branding: body.branding ?? null, themeId: body.themeId ?? null }));
+        // A544: with the branch's override — the themes switch turning on or off takes it on or off too.
+        out.push(entry(e, 'branding', 'branding', 'upsert', { branding: body.branding ?? null, themeId: body.themeId ?? null,
+          branchBranding: body.branchBranding ?? null }));
+        continue;
+      }
+      if (e.table_name === 'branch_branding') {
+        out.push(entry(e, 'branch_branding', e.row_id, 'upsert', { branchBranding: body.branchBranding ?? null }));
         continue;
       }
       const topic = e.row_id as keyof typeof CONFIG_KEYS;
@@ -341,6 +388,42 @@ async function rowsFor(c: ChangesCaller, branch: string | null, entries: RawEntr
       out.push(here ? entry(e, t, e.row_id, 'upsert', r) : entry(e, t, e.row_id, 'delete'));
     }
   }
+
+  // A535: stock levels at THIS branch (the entry's branch is this one — sync_changes_since — and the row's own is read
+  // here). The product must be this business's. A blind count hides a counted level's figures from a caller that may not
+  // change stock (A394 — a till's own session): { counting: true }, the till keeps what it has.
+  const stockLevelEntries = by('stock');
+  if (stockLevelEntries.length && branch) {
+    const ids = [...new Set(stockLevelEntries.map((e) => e.row_id))];
+    const mine = new Set((await inChunks<{ id: string }>(ids, (chunk) => supabase.from('products').select('id').eq('business_id', biz).in('id', chunk)))
+      .map((p) => String(p.id)));
+    const owned = ids.filter((id) => mine.has(id));
+    const rows = await inChunks<any>(owned, (chunk) => supabase.from('stock_levels')
+      .select('id, product_id, branch_id, quantity, low_stock_threshold, qty_pieces').eq('branch_id', branch).in('product_id', chunk));
+    const byId = new Map(rows.filter((r) => mine.has(String(r.product_id))).map((r) => [String(r.product_id), r]));
+    let hidden = new Set<string>();
+    if (!c.seesCountedStock) hidden = await countedAtBranch(biz, branch);
+    for (const e of stockLevelEntries) {
+      const r = byId.get(e.row_id);
+      if (!r) { out.push(entry(e, 'stock', e.row_id, 'delete')); continue; }
+      const level = { product_id: String(r.product_id), branch_id: String(r.branch_id), quantity: Number(r.quantity),
+        low_stock_threshold: Number(r.low_stock_threshold), qty_pieces: Number(r.qty_pieces ?? 0) };
+      out.push(entry(e, 'stock', e.row_id, 'upsert', hidden.has(e.row_id)
+        ? { product_id: level.product_id, branch_id: level.branch_id, counting: true } : level));
+    }
+  }
+  return out;
+}
+
+/** A535: the products a count at the branch is counting (A394's blind rule, as hiddenWhileCounting). Never throws. */
+async function countedAtBranch(businessId: string, branchId: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  try {
+    const take = await openTake(businessId, branchId);
+    if (!take) return out;
+    const { data } = await supabase.from('stock_take_lines').select('product_id').eq('stock_take_id', take.id).not('product_id', 'is', null).limit(5000);
+    for (const l of (data ?? []) as Array<{ product_id: string | null }>) if (l.product_id) out.add(String(l.product_id));
+  } catch { /* nothing hidden */ }
   return out;
 }
 

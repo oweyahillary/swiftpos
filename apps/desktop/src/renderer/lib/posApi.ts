@@ -1,5 +1,8 @@
 import type { PosFeatures } from '../../shared/posFeatures';
 import type { StockCountFreeze } from '../../shared/stockCountFreeze';
+import type { StockView, OutOfStockMode } from '../../shared/stockGate';   // A563
+import type { LabelSettings } from '../../shared/labels';   // A571
+import type { BarcodeNumbering } from '../../shared/barcode';   // A574
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
@@ -66,6 +69,21 @@ export type NodeSyncHealth =
       branch: { till: string | null; server: string | null; mismatch: boolean };
       refusal: { status: number; since: string; reason: 'access_code' | 'device_key' | 'branch' | 'tls' } | null;
       heard: { url: string; at: string; proven: boolean } | null };
+
+/** A534 (A23): what node:distribution answers — on a machine that is not a branch server, only `role`. */
+export type ServerDistribution =
+  | { role: 'not_server' }
+  | { role: 'server';
+      waiting: { orders: number; ordersFromTills: number; shifts: number; days: number; floats: number; expenses: number; kitchenVoids: number; reversals: number };
+      total: number; oldestAt: string | null; oldestAgeMs: number | null; lastPushOkAt: string | null; lastSyncedAt: string | null; runbook: string };
+
+/** A542: what node:drawersStatus answers — the branch server's copy of its branch's drawers (A535, main/branchDrawers.ts). */
+export type ServerDrawers =
+  | { role: 'not_server' }
+  | { role: 'server';
+      status: { role: 'server' | 'peer' | 'direct'; mode: string; drawers: number; lastOkAt: string | null; polls: number; error: string | null;
+        lastPollAt: string | null; lastPollOk: boolean | null; open: number; awaitingConfirmation: number; peersLastHour: number;
+        channel: string; fallback: boolean; fallbackUntil: string | null; fresh: boolean } };
 
 export interface TechStatus {
   device: {
@@ -233,6 +251,39 @@ export interface StockTransfer {
   stock_transfer_items: Array<{ id: string; product_id: string; quantity: number; quantity_received: number | null; products?: { name: string } | null }>;
 }
 
+/** A564: the cloud's answer through the till — or why not (offline: no connection, said plainly). */
+/** A571: barcode labels (main/ipc/labels.ts). */
+export type LabelPath = 'windows' | 'tspl' | 'zpl' | 'escpos';
+export interface LabelPrinter {
+  path: LabelPath; windowsPrinter: string; rawTarget: string; escposTarget: string; escposWidthMm: 58 | 80; escposMode: 'gsk' | 'raster';
+}
+export interface LabelProduct { id: string; name: string; barcode: string | null; price: number; category_id: string | null; category: string | null }
+export interface LabelSetup {
+  settings: LabelSettings; from: 'cloud' | 'saved' | 'default'; printer: LabelPrinter; products: LabelProduct[];
+  business: { name: string; currency: string; type?: string | null }; receiptPrinter: { target: string; paperWidthMm: 58 | 80 } | null; canSaveForBusiness: boolean;
+  /** A574: the business's barcode numbering, every barcode this till knows (the preview), and whether this person may generate. */
+  numbering: BarcodeNumbering; barcodes: string[]; canGenerate: boolean;
+}
+/** A574: a print run's answer — the items left out (never printed without a barcode) and the codes generated for it. */
+export interface LabelPrintAnswer {
+  ok: boolean; labels: number; bytes?: number; error?: string; warnings?: string[];
+  skipped?: Array<{ id: string; name: string; reason: string }>; notice?: string; generated?: Array<{ id: string; barcode: string }>;
+}
+export interface BranchStockAnswer<T> { ok: boolean; data?: T; offline?: boolean; error?: string; code?: string | null }
+/** A564: how much each OTHER branch holds of the items found (GET /api/stock/other-branches) — quantities only. */
+export interface BranchStockFind {
+  branch_id: string | null; truncated: boolean;
+  products: Array<{ product_id: string; name: string; sold_by: string | null;
+    branches: Array<{ branch_id: string; branch_name: string; quantity: number | null; qty_pieces: number | null; updated_at: string | null; counting: boolean }> }>;
+}
+/** A564: a branch asking another for an item (GET /api/stock/requests). */
+export interface StockRequest {
+  id: string; from_branch_id: string; to_branch_id: string; from_branch_name: string; to_branch_name: string;
+  product_id: string; product_name: string; quantity: number; sent_quantity: number | null; note: string | null;
+  status: 'requested' | 'accepted' | 'declined' | 'cancelled'; requested_by_name: string | null; requested_at: string;
+  decided_by_name: string | null; decided_at: string | null; decline_reason: string | null; transfer_id: string | null;
+}
+
 /** A466: the monthly pack (A455) as the cloud builds it (apps/server/src/lib/monthlyPack.ts Pack). */
 export type MovementKind = 'opening' | 'other_income' | 'drawing' | 'bank_deposit' | 'charges';
 export interface MonthlySummaryRow { day: string; byMethod: Record<string, number>; total: number; expected: number | null; counted: number | null; variance: number | null; cashiers: string[]; remarks: string[] }
@@ -372,6 +423,19 @@ export interface WasteRecordingView {
   client_id: string; reason: string; note: string; recorded_by_name: string; recorded_at: string;
   items: Array<{ kind: string; id: string; name: string; quantity: number }>;
 }
+/** A552: a customer this till may sell to on account (main/creditSale.ts) — owed = the cloud's balance + this till's sales
+ *  on account the cloud had not taken; available = the limit less that. */
+export interface CreditCustomerView {
+  id: string; name: string; phone: string | null; status: string;
+  credit_limit: number; cloud_balance: number; pending: number; owed: number; available: number;
+}
+/** A545: a sale on account and its manager's confirmation (main/creditConfirm.ts). */
+export interface CreditSaleView {
+  order_id: string; order_number: string | null; branch_id: string | null; branch_name: string | null;
+  customer_name: string | null; amount: number; state: 'awaiting' | 'confirmed' | 'disputed'; source: string; over_limit: boolean;
+  cashier_name: string | null; approved_by_name: string | null; decided_by_name: string | null; decided_at: string | null;
+  dispute_reason: string | null; sold_at: string; pending?: boolean;
+}
 /** A413: a batch on the expiry list. */
 export interface ExpiringBatch {
   id: string; name: string; unit: string | null; batch_no: string | null; expiry_date: string | null; remaining: number;
@@ -461,6 +525,10 @@ declare global {
         syncHealth: () => Promise<NodeSyncHealth>;
         /** A501: the records the server refused go to it again; the rows held back from other tills are tried again. */
         retryFailed: () => Promise<{ requeued: number; released: number; applied: number }>;
+        /** A534 (A23): on a branch server, how far its distribution to the cloud is behind (Tech page). */
+        distribution: () => Promise<ServerDistribution>;
+        /** A542: on a branch server, its copy of the branch's drawers (Tech page). */
+        drawersStatus: () => Promise<ServerDrawers>;
       };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
@@ -475,7 +543,7 @@ declare global {
         onLock:     (cb: () => void) => () => void;
       };
       pos: {
-        init: () => Promise<{ products: any[]; categories: any[]; branchId: string | null; vatRate: number | null; ctlRate: number | null; maxDiscountPct: number | null;
+        init: () => Promise<{ products: any[]; categories: any[]; menus?: any[]; branchId: string | null; vatRate: number | null; ctlRate: number | null; maxDiscountPct: number | null;
           comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>>;
           kitchenCategories: string[];
         stationRouting?: {
@@ -490,6 +558,7 @@ declare global {
         /** 0.6.27: the per-client POS switches (set in the admin portal; all off until the till is told). */
         features: () => Promise<PosFeatures>;
         stockCountFreeze: () => Promise<StockCountFreeze>;   // A394
+        stockView: () => Promise<StockView & { mode: OutOfStockMode; branchId: string | null }>;   // A563
         /** A521: a manager's PIN releases a frozen item for sale on this till. */
         approveFrozenSale: (pin: string, productId: string) => Promise<{ ok: boolean; error?: string; approvedBy?: string | null }>;
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
@@ -514,6 +583,8 @@ declare global {
         /** A444: an order's items, sizes, extras, notes and payments; `canReprint` = this person may reprint it. */
         detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('../../shared/orderDetail').OrderDetail; canReprint?: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
+        /** A552: On account — offered on this till?, may the person signed in approve it themselves (no PIN)?, the customers. */
+        creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;
       };
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;
@@ -522,7 +593,9 @@ declare global {
                                 /** A363: records the cloud refused (parked), why, and when the till last had nothing waiting. */
                                 parkedCount?: number; parkedReason?: string; lastSyncedAt?: string | null;
                                 /** A529: the cloud could not be reached on the last try (no answer, its 5xx, another server's page). */
-                                cloudUnreachable?: { since: string; why: string } | null }>;
+                                cloudUnreachable?: { since: string; why: string } | null;
+                                /** A581: the cloud refuses this business's sync (its cloud plan lapsed); records stay queued. */
+                                cloudLapsed?: { since: string; message: string } | null }>;
         retryFailed: () => Promise<{ requeued: number; pushed: number; errors: string[] }>;
         notifyNetworkChange: (online: boolean) => Promise<{ online: boolean; pendingCount: number; failedCount: number }>;
       };
@@ -623,6 +696,24 @@ declare global {
           received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
           Promise<{ ok: boolean; data?: StockTransfer; error?: string; code?: string | null }>;
       };
+      /** A564: another branch's stock, and asking that branch for an item (online licence; from the cloud). */
+      branchStock: {
+        find: (q: string, productId?: string) => Promise<BranchStockAnswer<BranchStockFind>>;
+        requests: () => Promise<BranchStockAnswer<{ branch_id: string | null; incoming_open: number; requests: StockRequest[] }>>;
+        request: (fromBranchId: string, productId: string, quantity: number, note?: string) => Promise<BranchStockAnswer<StockRequest>>;
+        decide: (id: string, step: 'accept' | 'decline' | 'cancel', extra?: { reason?: string; quantity?: number }) =>
+          Promise<BranchStockAnswer<StockRequest & { transfer?: { id: string; transfer_number: string; status: string }; warning?: string }>>;
+      };
+      /** A571: barcode labels — this till's catalogue, the business's label, this till's label printer (main/ipc/labels.ts). */
+      labels: {
+        setup: () => Promise<LabelSetup>;
+        save: (body: { settings?: LabelSettings; printer?: LabelPrinter }) =>
+          Promise<{ ok: boolean; settings: LabelSettings; printer: LabelPrinter; cloud: 'saved' | 'offline' | 'not-allowed' | null }>;
+        print: (body: { items: Array<{ product_id: string; copies: number }>; path?: LabelPath; settings?: LabelSettings; generate?: boolean }) =>
+          Promise<LabelPrintAnswer>;
+        /** A574: save the business's barcode numbering (menu.edit, online). */
+        numbering: (numbering: BarcodeNumbering) => Promise<{ ok: boolean; numbering: BarcodeNumbering; error?: string }>;
+      };
       /** A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in; online only. */
       monthly: {
         get: (month: string, branchId?: string) => Promise<MonthlyAnswer<MonthlyPack>>;
@@ -644,7 +735,10 @@ declare global {
         html: (opts: { html: string; deviceName: string; paperWidthMm: 58 | 80; copies: number }) => Promise<{ ok: boolean; error?: string }>;
       };
       branding: {
-        get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null } | null>;
+        get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null;
+                             /** A544: this till's branch's override (null = none) and the look resolved branch → business → default. */
+                             branch?: { branchId: string; themeId: string | null; accentHex: string | null; receiptFooter: string | null } | null;
+                             effective?: { themeId: string | null; accentHex: string | null } } | null>;
         // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
         // Rejects (throws) on a bad hex, an SVG, a non-raster data-URI, or a logo over 250 KB.
         // A312: logoRgba = the logo's pixels (≤384×240 RGBA); main thresholds them into the receipt
@@ -658,12 +752,12 @@ declare global {
       };
       // A306: auto-update status + manager-gated install-now.
       update: {
-        getStatus: () => Promise<{ state: string; version: string | null; percent: number | null }>;
+        getStatus: () => Promise<{ state: string; version: string | null; percent: number | null; downloadedAt?: number | null }>;   // A541: downloadedAt
         /** A496: the status with its reason (note), when it last checked, the approved version, and the last log lines. */
         getDiagnostics: () => Promise<{ status: { state: string; version: string | null; percent: number | null; note?: string | null; checkedAt?: string | null; approved?: string | null };
                                         running: string | null; log: Array<{ at: string; line: string }>;
                                         /** A508: the last idle install (shown on the Tech page only — never a cashier banner). */
-                                        idleInstall?: { from: string; to: string; at: string; reason: 'idle'; why?: string; ok: boolean } | null;
+                                        idleInstall?: { from: string; to: string; at: string; reason: 'idle' | 'startup'; why?: string; ok: boolean } | null;   // A541: 'startup'
                                         /** A508: why the downloaded update has not installed on its own yet. */
                                         idleNote?: string | null;
                                         /** A509: the updater task (installs with no Windows prompt) and its own log's last lines. */
@@ -672,7 +766,7 @@ declare global {
                                         startup?: string | null; graphics?: string | null }>;
         /** A519: one tap — main allows the signed-in back-office person or a technician (no PIN — the PIN restart channel is gone). */
         installNow: () => Promise<{ ok: boolean; reason?: string }>;
-        onStatus: (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => () => void;
+        onStatus: (cb: (s: { state: string; version: string | null; percent: number | null; downloadedAt?: number | null }) => void) => () => void;
       };
       config: {
         get: () => Promise<DeviceConfig | null>;
@@ -782,6 +876,12 @@ declare global {
           Promise<{ client_id: string; state: 'saved' | 'pending' | 'refused'; ref?: string; value?: number; message?: string }>;
         wastageState: () => Promise<{ pending: WasteRecordingView[]; refused: Array<WasteRecordingView & { refused_at: string; message: string }> }>;
         dismissWastage: (clientId: string) => Promise<{ ok: true }>;
+        // A545: credit sales a manager confirms or disputes (the cloud's list; the last one kept for offline).
+        creditSales: () => Promise<{ online: boolean; saved_at: string | null; message?: string; rows: CreditSaleView[];
+          refused: Array<{ order_id: string; decision: 'confirm' | 'dispute'; by_name: string | null; refused_at: string; message: string }> }>;
+        decideCredit: (orderId: string, decision: 'confirm' | 'dispute', reason?: string) => Promise<{ state: 'saved' } | { state: 'pending'; message: string }>;
+        creditAwaiting: () => Promise<{ count: number; notice: string; saved: boolean }>;
+        dismissCredit: (orderId: string) => Promise<{ ok: true }>;
         expiringBatches: () => Promise<{ online: false; message: string } | { online: true; batches: ExpiringBatch[]; summary: { expired: number; soon: number } }>;
         updateCategory: (id: string, patch: any) => Promise<any>;
         bulkProducts:       (rows: any[]) => Promise<{ created: number; updated: number; errors: Array<{ row: number; error: string }> }>;

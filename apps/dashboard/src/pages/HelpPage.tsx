@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { API_URL } from '../lib/config';
 import { TOKEN_KEYS } from '../lib/api';
-import { HELP_TOPICS, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '../lib/helpTopics';
+import { helpTopicsFor, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '../lib/helpTopics';
+import { isFoodService } from '../lib/businessTerms';
 import { supportContact, displayPhone, whatsappNumber, type SupportContact } from '../lib/support';
 
 /**
@@ -17,13 +18,16 @@ export default function HelpPage() {
   const [contact, setContact] = useState<SupportContact>(() => supportContact(null));
   const [open, setOpen] = useState<string | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);   // A422 part 2: a step's picture, full size
+  // A575: a shop never reads the kitchen-ticket step (signed out: the type is not known, every step shows)
+  const [businessType, setBusinessType] = useState<string | null>(null);
+  const HELP_TOPICS = helpTopicsFor(isFoodService(businessType));
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEYS.ownerAccess) || localStorage.getItem(TOKEN_KEYS.posAccess);
     if (!token) return;
     fetch(`${API_URL}/api/business/support`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (j) setContact(supportContact(j.support)); })
+      .then((j) => { if (j) { setContact(supportContact(j.support)); setBusinessType(j.businessType ?? null); } })
       .catch(() => { /* ZapTill support's numbers stay */ });
   }, []);
 

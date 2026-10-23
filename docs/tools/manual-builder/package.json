@@ -1,0 +1,13 @@
+{
+  "name": "zaptill-manual-builder",
+  "private": true,
+  "type": "module",
+  "description": "Builds a ZapTill manual (one markdown file + its screenshots) into a Word .docx and a self-contained .html",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "docx": "9.5.1",
+    "marked": "15.0.12"
+  }
+}

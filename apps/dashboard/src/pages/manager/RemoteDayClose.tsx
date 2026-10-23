@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { agoLabel, syncRecent } from '../../lib/tillSync';   // A522
+import { CreditAwaitingNotice } from '../../components/CreditSalesToConfirm';   // A545
 
 interface Instruction {
   id: string;
@@ -192,6 +193,8 @@ export default function RemoteDayClose({ currency }: { currency: string }) {
           90 seconds while it is on) — on the shift counts its managers confirmed, or on a count you enter.
         </p>
       </div>
+      {/* A545: credit sales still waiting for a manager — said, never a block on closing (the owner: no deadlocks). */}
+      <CreditAwaitingNotice client={posApi} />
 
       {error && <p className="text-xs text-red-400">{error}</p>}
 

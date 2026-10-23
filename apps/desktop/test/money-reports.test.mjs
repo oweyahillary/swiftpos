@@ -116,9 +116,12 @@ ok('the Overview shows VAT, CTL (when levied), refunds, discounts and tips under
   (mp.match(/<MoneyStrip s=/g) || []).length === 3 && /\{s\.ctlLevied && item\('CTL'/.test(mp));
 const zv = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'components', 'ZReportView.tsx'), 'utf8');
 ok('the Z-report screen shows refunds, net sales, VAT, CTL and tips', /row\('− Refunds'/.test(zv) && /row\('incl\. CTL'/.test(zv) && /row\('incl\. VAT'/.test(zv));
-const rv = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'components', 'ReceiptView.tsx'), 'utf8');
-ok('the on-screen receipt: round off never includes the tip; PAY = total + tip (+ delivery fee, 0.6.27)',
-  /const roundOff = total - \(netSubtotal \+ ctlAmount \+ vatAmount\);/.test(rv) && /PAY: \{currency\} \{moneyBig\(total \+ tipAmount \+ deliveryFee\)\}/.test(rv));
+// A542: the on-screen HTML receipt (components/ReceiptView.tsx) was imported by nothing since 0.6.29 and is deleted;
+// the same money rule is pinned on the receipt that prints (shared/printing render.ts): PAY = total + tip + delivery fee.
+const rv = fs.readFileSync(path.join(here, '..', '..', '..', 'shared', 'printing', 'src', 'render.ts'), 'utf8');
+ok('the printed receipt: PAY = total + tip (+ delivery fee, 0.6.27); the dead HTML receipt is gone',
+  /PAY: \$\{business\.currencyCode\} \$\{formatCents\(tax\.total \+ tip \+ deliveryFee\)\}/.test(rv)
+  && !fs.existsSync(path.join(here, '..', 'src', 'renderer', 'components', 'ReceiptView.tsx')));
 // 0.6.27: the sale screen hands the receipt the BILL (it passed amountDue — bill + tip — so a tip showed as "Round
 // Off" and was counted twice in PAY on the screen; the printed receipt was right).
 const pp = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'pages', 'POSPage.tsx'), 'utf8');

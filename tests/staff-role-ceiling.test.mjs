@@ -14,6 +14,7 @@
  *   - the overrides ceiling removed                         → "…nor grant a permission they do not hold" fails
  *   - GET /roles stops marking `assignable`                 → "the role list tells a manager Owner is not theirs to give" fails
  *   - canAssignRole lets a non-owner assign anything        → the rule checks fail
+ *   - canAssignRole lets the owner give the owner's role    → "the owner cannot create a second owner" fails (A562)
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -116,7 +117,9 @@ try {
     for (const r of ['owner', 'Owner', 'ADMIN']) assert.equal(rule.canAssignRole(held, { name: r, keys: [] }), false, r);
     assert.equal(rule.canAssignRole(held, { name: 'manager', keys: ['settings.business'] }), false, 'beyond the caller');
     assert.equal(rule.canAssignRole(held, { name: null, keys: [] }), false);
-    assert.equal(rule.canAssignRole(new Set(['*']), { name: 'owner', keys: [] }), true);
+    // A562: the owner's role is given to nobody — the owner included (a business showed two "Owner" staff).
+    for (const r of ['owner', 'Owner', ' ADMIN ']) assert.equal(rule.canAssignRole(new Set(['*']), { name: r, keys: [] }), false, `owner → ${r}`);
+    assert.equal(rule.canAssignRole(new Set(['*']), { name: 'General Manager', keys: ['settings.business'] }), true, 'the owner gives any other role');
   });
   await ok('the rule: a non-owner grants only what they hold (a broad key counts as the fine keys it stands for)', () => {
     assert.deepEqual(rule.overridesBeyondCaller(held, ['sales.void', 'settings.business']), ['settings.business']);
@@ -175,16 +178,19 @@ try {
   });
 
   // ── The owner is unaffected ──
-  await ok('the owner can still create an owner and see every role as assignable', async () => {
+  // A562: the owner gives every role but the owner's own — that one belongs to the owner alone.
+  await ok('the owner cannot create a second owner (A562), and sees every role but the owner\'s as assignable', async () => {
     const c = await owner('POST', '/', { name: 'Olga', role_id: R.owner, pin: '1357' });
-    assert.equal(c.status, 201, JSON.stringify(c.body));
+    assert.equal(c.status, 403, JSON.stringify(c.body));
+    assert.match(c.body.error, /belongs to the owner alone/);
     const r = await owner('GET', '/roles');
-    assert.ok(r.body.every((x) => x.assignable === true));
+    assert.ok(r.body.every((x) => x.assignable === !x.is_owner_role), JSON.stringify(r.body.map((x) => [x.name, x.assignable])));
+    assert.ok(r.body.some((x) => x.is_owner_role));
   });
 
   // ── The pickers (source — React not run here) ──
   await ok('both role pickers show only `assignable` roles', () => {
-    assert.match(read('apps/desktop/src/renderer/pages/ManageTabs.tsx'), /roles\.filter\(r => r\.assignable !== false\)\.map\(r => <option/);
+    assert.match(read('apps/desktop/src/renderer/pages/ManageTabs.tsx'), /roles\.filter\(r => r\.assignable !== false && !r\.is_owner_role\)\.map\(r => <option/);   // A562
     // A490: the Role type carries `assignable` now (no cast), and the owner's role is never offered; no role names.
     const st = read('apps/dashboard/src/pages/settings/StaffTab.tsx');
     assert.match(st, /\.filter\(r => r\.assignable !== false && !r\.is_owner_role\)/);

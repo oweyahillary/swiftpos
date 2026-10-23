@@ -310,7 +310,7 @@ console.log('\n6. Activity — the IPC ping (throttled), the main-process events
   } finally { Date.now = realNow; }
 
   const ns = fs.readFileSync(path.join(desktop, 'src/main/nodeServer.ts'), 'utf8');
-  ok('the branch server calls them from /node/sync and the gateway (one line each)', /noteTillSync\(body\?\.tables\)/.test(ns) && /noteGatewayCall\(req\.method, url\)/.test(ns));
+  ok('the branch server calls them from /node/sync and the gateway (one line each)', /noteTillSync\(body\?\.tables\)/.test(ns) && /noteGatewayCall\(req\.method, url[,)]/.test(ns));   // A541: with the body size
   const se = fs.readFileSync(path.join(desktop, 'src/main/syncEngine.ts'), 'utf8');
   ok('a sale (createLocalOrder) counts as use', /noteActivity\('sale'\);[^\n]*\n\s*return orderId;/.test(se));
 

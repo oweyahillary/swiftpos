@@ -2,16 +2,21 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
+import { usePermissions } from '../context/PermissionsContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function ForcePasswordChangePage() {
   const navigate = useNavigate();
+  const { passwordChanged } = usePermissions();
+  const { user } = useAuth();
+  const [current, setCurrent] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const valid = newPassword.length >= 8 && newPassword === confirm;
+  const valid = current.length > 0 && newPassword.length >= 8 && newPassword === confirm && newPassword !== current;
 
   const strengthScore = newPassword.length >= 12 ? 4 : newPassword.length >= 10 ? 3 : newPassword.length >= 8 ? 2 : newPassword.length >= 4 ? 1 : 0;
   const strengthLabel = ['', 'Weak', 'Acceptable', 'Good', 'Strong'][strengthScore];
@@ -23,22 +28,20 @@ export default function ForcePasswordChangePage() {
     setLoading(true);
 
     try {
-      // Step 1: Update password in Supabase auth (the critical step)
-      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
-      if (updateErr) throw new Error(updateErr.message);
-
-      // Step 2: Clear the must_change_password flag — NON-FATAL.
-      // If this fails (e.g. server not restarted yet), we still navigate.
-      // The user's password was changed in step 1 which is what matters.
-      try {
-        await api.patch('/api/auth/me', { must_change_password: false });
-      } catch {
-        console.warn('[ForcePasswordChange] Could not clear must_change_password — proceeding anyway');
+      // A568: through the cloud — POST /api/auth/password/change checks the password they were given, sets the new one and
+      // clears "must change password" (setOwnerPassword). It used to set it in the browser (Supabase updateUser) + PATCH /me,
+      // which cleared the flag without proof a password was set — and the sign-in cleared it on its own anyway.
+      await api.post('/api/auth/password/change', { current_password: current, new_password: newPassword });
+      // The new password ends the old Supabase session on the server; open a fresh one with it (non-fatal — the
+      // ZapTill token is unchanged, and the next sign-in uses the new password either way).
+      if (user?.email) {
+        try { await supabase.auth.signInWithPassword({ email: user.email, password: newPassword }); }
+        catch { console.warn('[ForcePasswordChange] Could not refresh the session — the next sign-in uses the new password'); }
       }
-
+      passwordChanged();
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.message ?? 'Could not update password — please try again.');
+      setError(err?.message ?? 'Could not update password — please try again.');
     } finally {
       setLoading(false);
     }
@@ -78,13 +81,28 @@ export default function ForcePasswordChangePage() {
           <div className="flex items-start gap-3 px-4 py-3 bg-[#f59e0b]/5 border border-[#f59e0b]/20 rounded-xl">
             <span className="text-yellow-400 text-base flex-shrink-0 mt-0.5">🔐</span>
             <p className="text-xs text-[#94a3b8] leading-relaxed">
-              Your account was set up by a ZapTill agent. Please choose a new private password before continuing.
+              Your password was set by ZapTill. Please choose a new private password before continuing.
             </p>
           </div>
 
           <div>
             <h2 className="text-lg font-semibold text-white">Set your password</h2>
             <p className="text-[#475569] text-xs mt-1">Choose something only you know.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[#64748b] mb-1.5 tracking-wide uppercase">
+              Password you were given
+            </label>
+            <input
+              className={inputCls}
+              type={showPw ? 'text' : 'password'}
+              placeholder="The one you just signed in with"
+              value={current}
+              onChange={e => setCurrent(e.target.value)}
+              autoFocus
+              data-testid="force-current-password"
+            />
           </div>
 
           <div>
@@ -98,7 +116,6 @@ export default function ForcePasswordChangePage() {
                 placeholder="Min. 8 characters"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
-                autoFocus
               />
               <button
                 type="button"
@@ -139,6 +156,9 @@ export default function ForcePasswordChangePage() {
             />
             {confirm && newPassword !== confirm && (
               <p className="text-[10px] text-red-400 mt-1.5">Passwords don't match</p>
+            )}
+            {newPassword && newPassword === current && (
+              <p className="text-[10px] text-red-400 mt-1.5">Choose a password different from the one you were given</p>
             )}
           </div>
 

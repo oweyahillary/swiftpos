@@ -7,6 +7,8 @@
     "install:browsers": "playwright install chromium",
     "seed:business": "node --env-file=.env seed/seed-business.mjs",
     "seed:users": "playwright test -c playwright.seed.config.ts",
+    "seed:staff": "node --env-file-if-exists=.env seed/seed-staff-api.mjs",
+    "guard": "node --env-file-if-exists=.env lib/prod-guard.mjs --health",
     "test": "playwright test",
     "test:pos": "playwright test --project=pos",
     "test:manager": "playwright test --project=manager",

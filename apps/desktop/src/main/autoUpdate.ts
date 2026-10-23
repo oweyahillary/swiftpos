@@ -53,9 +53,12 @@ import { stopNodeServer } from './nodeServer';   // A508
 import { readyVersion } from './updateShare';   // A508
 import { markQuitting } from './serverMode';   // A508
 import { execFile } from 'child_process';
+import fs from 'fs';   // A541: the kept installer still on disk
 import { defaultTaskDeps, hasUpdaterTask, requestTaskInstall, updaterLogTail, type TaskInstallResult } from './updaterTask';   // A509
 import { whenStartupSettled, lastStartupLine, UPDATE_AFTER_LAUNCH_MS, UPDATE_AFTER_SETTLED_MS } from './lowImpactStart';   // A513
+import { readUpdateWaiting, writeUpdateWaiting } from './lowImpactStart';   // A546
 import { graphicsLine } from './lowImpactStart';   // A513
+import { buildUpdateReport, createUpdateReporter, type UpdateStateReport } from './updateReport';   // A534
 
 const ONE_HOUR = 60 * 60 * 1000;   // A348: the approval check is one small JSON call
 
@@ -98,6 +101,10 @@ export type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'd
 export interface UpdateStatus {
   state: UpdateState; version: string | null; percent: number | null;
   note?: string | null; checkedAt?: string | null; approved?: string | null;
+  /** A541: when this version was first seen downloaded on this machine (ms, kept across restarts) — the managers' notice. */
+  downloadedAt?: number | null;
+  /** A541: a till behind a branch server waiting for the server's copy of the approved version. */
+  waitingServer?: boolean;
 }
 
 let current: UpdateStatus = { state: 'idle', version: null, percent: null, note: null, checkedAt: null, approved: null };
@@ -139,6 +146,8 @@ export function getUpdateDiagnostics(): {
 export function _resetUpdateDiagnostics(): void {
   diag.length = 0; current = { state: 'idle', version: null, percent: null, note: null, checkedAt: null, approved: null };
   lastIdleInstall = null; idleNote = null; taskKnown = null; taskCheckedAt = 0; taskInstallStarted = false; closeTaskDone = false;
+  stateAt = null;   // A534
+  idleBlocker = null; startupInstallFailed = null;   // A541
 }
 
 // ── A509: the updater task (updaterTask.ts) — an install with no Windows prompt ─────────────────────────────────────
@@ -186,9 +195,43 @@ function broadcast(): void {
   }
 }
 
+/** A534: when the current state began (downloaded at 14:02, failed at 14:10) — for the admin portal's report. */
+let stateAt: string | null = null;
 function set(patch: Partial<UpdateStatus>): void {
+  if (patch.state && patch.state !== current.state) stateAt = new Date().toISOString();
   current = { ...current, ...patch };
   broadcast();
+}
+/** A534: what the till reports to the cloud (updateReport.ts) — the status, since when, the idle note, the task. */
+export function currentUpdateReport(): UpdateStateReport {
+  let running = '';
+  try { running = app.getVersion(); } catch { /* tests */ }
+  let server = false;
+  try { server = isNodeRole(getDeviceConfig()?.device_role ?? null); } catch { /* tests */ }
+  return buildUpdateReport({ status: current, running, stateAt, idleNote, task: taskKnown,
+    blocker: idleBlocker, server, startupFailed: startupInstallFailed });   // A541
+}
+/** A541: why the downloaded update cannot install by itself here (silentInstallBlocker, a refusal), or null. */
+let idleBlocker: string | null = null;
+/** A541: the version a start-up install was tried for and did not take (this machine still runs the old one). */
+let startupInstallFailed: string | null = null;
+
+/** A546: the words of the small screen a till opened by hand shows while its waiting update installs. Pure. */
+export function updatingText(version: string): string { return `Updating ZapTill to ${version} — about a minute`; }
+/**
+ * A546: a till opened by hand with an approved update waiting installs it before the PIN screen — this small screen says
+ * so (owner, 2026-10-21: a till opened by hand installs a waiting update first, "as a backup"). Not a cashier banner: it
+ * is the start of ZapTill, and it closes as ZapTill closes for the install. Never at a quiet sign-in install.
+ */
+function updatingWindow(version: string): BrowserWindow | null {
+  try {
+    const w = new BrowserWindow({ width: 460, height: 150, frame: false, resizable: false, center: true, show: true,
+      skipTaskbar: false, title: 'Updating ZapTill', webPreferences: { sandbox: true, contextIsolation: true, javascript: false } });
+    const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[c]);
+    const html = `<!doctype html><meta charset="utf-8"><title>Updating ZapTill</title><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font:16px Segoe UI,system-ui,sans-serif;background:#0f172a;color:#f8fafc">${esc(updatingText(version))}</body>`;
+    void w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    return w;
+  } catch { return null; }
 }
 
 /**
@@ -270,6 +313,9 @@ export interface UpdateCheckDeps {
   onStarted?: (cancel: () => void) => void;
   /** A496: the most a check (latest.yml) may take — Electron's network stack has no timeout of its own. */
   checkTimeoutMs?: number;
+  /** A534: told whether the cloud takes this machine's update state (`reportsState: true` on the status answer; an older
+   *  cloud has no such field → false, and nothing is reported). */
+  cloudReportsState?: (yes: boolean) => void;
 }
 export interface UpdateCheckResult {
   decision: UpdateDecision | 'unreachable'; approved: string | null; waiting?: boolean;
@@ -295,8 +341,9 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
       if (token) res = await ask(token);
     }
     if (!res.ok) return say({ decision: 'unreachable', approved: null, reason: `update status: HTTP ${res.status} — holding` });
-    const body = await res.json() as { approvedVersion?: unknown };
+    const body = await res.json() as { approvedVersion?: unknown; reportsState?: unknown };
     approved = typeof body?.approvedVersion === 'string' ? body.approvedVersion : null;
+    try { d.cloudReportsState?.(body?.reportsState === true); } catch { /* never stops a check */ }   // A534
   } catch (e: any) {
     return say({ decision: 'unreachable', approved: null, reason: `update status unreachable (${e?.message ?? e}) — holding` });
   }
@@ -355,6 +402,17 @@ export interface BranchServerAnswer {
 }
 
 /**
+ * A554: only a till BEHIND a branch server asks one about updates — never the branch server itself (role node/office:
+ * it IS the server), and never a till with no server configured. Pure. Before A554 the 2-minute loop asked on every
+ * machine and a branch server logged "the branch server did not answer the update question" every hour (B Foods,
+ * 2026-10-21: a node with no other tills).
+ */
+export function asksBranchServer(cfg: { device_role?: string | null; node_url?: string | null } | null | undefined): boolean {
+  if (!cfg || isNodeRole(cfg.device_role ?? null)) return false;
+  return String(cfg.node_url ?? '').trim().replace(/\/+$/, '') !== '';
+}
+
+/**
  * A443: a till behind a branch server asks it "I run X — is there a newer version?". The server answers with the version
  * it holds ready (and notes this till's). Null when there is no server, or it cannot be reached (asked again later).
  * A496: `want` — the version the cloud approved for this till, so a server holding another one fetches it now.
@@ -368,7 +426,7 @@ export async function askBranchServer(d: {
 }): Promise<BranchServerAnswer | null> {
   const c = d.cfg;
   const node = String(c?.node_url ?? '').trim().replace(/\/+$/, '');
-  if (!c || !node || isNodeRole(c.device_role ?? null)) return null;
+  if (!c || !asksBranchServer(c)) return null;
   const q = new URLSearchParams({ device: String(c.device_id ?? ''), name: String(c.device_name || c.terminal_code || ''), v: d.running });
   if (d.want && VERSION_RE.test(d.want)) q.set('want', d.want);
   try {
@@ -429,6 +487,12 @@ export interface UpdateLoopDeps {
   checkDeps: (o: { running: string; selfUpdate: boolean }) => UpdateCheckDeps;
   /** A till behind a branch server asks it (null: none, or no answer). */
   askServer: () => Promise<BranchServerAnswer | null>;
+  /**
+   * A554: whether this machine sits behind a branch server at all (asksBranchServer). False — a branch server itself, or
+   * a till with no server configured — the 2-minute question is not asked (and nothing is logged about it). Read on every
+   * ask: a till joined to a server later starts asking at its next one. Omitted: asked (the tests before A554).
+   */
+  behindServer?: () => boolean;
   log: (line: string) => void;
   now?: () => number;
   stallMs?: number;
@@ -521,13 +585,14 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
         : r.decision === 'current' ? `up to date (approved ${r.approved})`
         : r.decision === 'unreachable' ? (r.reason ?? 'the cloud could not be asked')
         : `downloading ${r.approved}`;
-      d.set({ checkedAt, approved: r.approved, note, ...(r.timedOut ? { state: 'error' as const } : {}) });
+      d.set({ checkedAt, approved: r.approved, note, waitingServer: !!r.waiting, ...(r.timedOut ? { state: 'error' as const } : {}) });   // A541: waitingServer
       return r;
     } finally { busy = false; }
   }
 
   /** A till behind a branch server: "is there a newer one?" — told yes, it checks now. */
   async function ask(): Promise<void> {
+    if (d.behindServer && !d.behindServer()) return;   // A554: a branch server (or a till with none) asks nobody
     if (busy) return;
     unstick();
     const s = d.status();
@@ -567,7 +632,7 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
 // The install-on-close and "Restart & update now" paths are unchanged.
 
 /** What the idle install recorded before it restarted (maintenance_state), read back after the restart. */
-export interface IdleInstallRecord { from: string; to: string; at: string; reason: 'idle'; why?: string; reported?: boolean }
+export interface IdleInstallRecord { from: string; to: string; at: string; reason: 'idle' | 'startup'; why?: string; reported?: boolean }
 const IDLE_INSTALL_KEY = 'update_idle_install';
 let lastIdleInstall: (IdleInstallRecord & { ok: boolean }) | null = null;
 let idleNote: string | null = null;
@@ -594,8 +659,9 @@ export function reportIdleInstall(running: string): (IdleInstallRecord & { ok: b
   const ok = running === r.to;
   const when = (() => { const d = new Date(r!.at); return isNaN(d.getTime()) ? r!.at : d.toLocaleString(); })();
   if (!r.reported) {
-    noteUpdate(ok ? `updated from ${r.from} to ${r.to} while idle (${when}${r.why ? `, ${r.why}` : ''})`
-      : `an install of ${r.to} while idle was started at ${when}, but this machine still runs ${running} — it installs when ZapTill is next closed`);
+    const how = r.reason === 'startup' ? 'at start-up' : 'while idle';   // A541
+    noteUpdate(ok ? `updated from ${r.from} to ${r.to} ${how} (${when}${r.why ? `, ${r.why}` : ''})`
+      : `an install of ${r.to} ${how} was started at ${when}, but this machine still runs ${running} — it installs when ZapTill is next closed`);
     try {
       getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
         .run(IDLE_INSTALL_KEY, JSON.stringify({ ...r, reported: true }), new Date().toISOString());
@@ -680,6 +746,8 @@ export interface IdleInstallDeps {
   installOnQuit?: (on: boolean) => void;
   /** A509: quit ZapTill (the task installs it once it has closed, and starts it again). */
   quit?: () => void;
+  /** A541: told, each minute something is downloaded, why it cannot install by itself here (null: it can) — the report. */
+  onBlocker?: (blocker: string | null) => void;
 }
 
 /** A509: after the updater task refused a version, the idle install does not ask again for this long. */
@@ -713,6 +781,7 @@ export function createIdleInstaller(d: IdleInstallDeps) {
     // and again — once is enough; it installs when ZapTill is closed.
     if (v && !state.blocker && d.failedBefore?.(v)) state.blocker = 'an earlier install of it while idle did not take';
     if (v && !state.blocker && refused && refused.version === v && t - refused.at < TASK_REFUSED_RETRY_MS) state.blocker = `the updater task refused it (${refused.reason})`;
+    try { d.onBlocker?.(v && c.approved ? state.blocker : null); } catch { /* never stops the check */ }   // A541
     const verdict = installVerdict(state, t);
     if (!verdict.install) {
       d.note?.(v ? verdict.reason : null);
@@ -780,6 +849,233 @@ export function closeInstallPlan(s: {
   return s.version;
 }
 
+// ── A541: install at start-up — a branch server started at Windows sign-in installs its waiting update first ─────────
+//
+// Owner, 2026-10-20: "Something I have noticed since we added the autostart feature most apps are not updating, they are
+// stuck in the old version." Since A513 (1.0.17) a branch server starts itself after sign-in, lives in the tray and is
+// never closed (window-all-closed keeps it serving) — "installs when ZapTill is closed" practically never comes, and on a
+// machine without the A509 updater task the idle install is refused (Windows would ask for permission with nobody
+// there). Now, when ZapTill starts at sign-in with an approved, newer update already downloaded, it installs it BEFORE it
+// serves the branch: through the updater task (no prompt), else electron-updater's installer (Windows may ask — somebody
+// has just signed in, so somebody is there). Once per version: the attempt is recorded before anything is installed, so
+// an install that does not take is never tried again at every start (it installs when ZapTill is closed, or idle);
+// the start after the install is not a sign-in start, and the new version is not newer — no loop.
+
+/** What electron-updater downloaded, kept across restarts (it is otherwise known only after the first check, 4 min in). */
+export interface StagedUpdate { version: string; installerPath: string | null; approved: boolean; at: string }
+export const STAGED_KEY = 'update_staged';
+export const STARTUP_INSTALL_KEY = 'update_startup_install';
+
+function readKept<T>(key: string): T | null {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(key) as { value?: string } | undefined;
+    return row?.value ? JSON.parse(row.value) as T : null;
+  } catch { return null; }
+}
+function writeKept(key: string, value: unknown): void {
+  try {
+    getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+      .run(key, JSON.stringify(value), new Date().toISOString());
+  } catch (e: any) { try { logLine('update', `could not keep ${key}: ${e?.message ?? e}`); } catch { /* never */ } }
+}
+/** Written when a download lands (update-downloaded). Never throws. */
+export function recordStaged(s: StagedUpdate): void { if (VERSION_RE.test(s.version)) { writeKept(STAGED_KEY, s); mirrorWaiting(); } }
+export function readStaged(): StagedUpdate | null {
+  const s = readKept<StagedUpdate>(STAGED_KEY);
+  return s && typeof s.version === 'string' && VERSION_RE.test(s.version) ? s : null;
+}
+/** A503's answer at each check (withdrawn → false), kept with the download so a sign-in start obeys it offline too. */
+export function noteStagedApproval(on: boolean): void {
+  const s = readStaged();
+  if (s && s.approved !== on) { writeKept(STAGED_KEY, { ...s, approved: on }); mirrorWaiting(); }
+}
+/**
+ * A546: the kept download mirrored to update-waiting.json — the gate (startGate.ts) reads it before anything loads, so a
+ * till's sign-in launch goes on only when there is something to install. A sign-in try of the same version is kept.
+ */
+export function mirrorWaiting(signinTried?: string): void {
+  try {
+    const dir = app.getPath('userData');
+    const s = readStaged();
+    const was = readUpdateWaiting(dir);
+    const tried = signinTried ?? (was && s && was.version === s.version ? was.signinTried ?? null : null);
+    writeUpdateWaiting(dir, s ? { version: s.version, approved: s.approved, signinTried: tried } : null);
+  } catch { /* best effort — never stops an update */ }
+}
+export interface StartupInstallTry { version: string; from: string; at: string }
+export function readStartupInstallTry(): StartupInstallTry | null {
+  const t = readKept<StartupInstallTry>(STARTUP_INSTALL_KEY);
+  return t && typeof t.version === 'string' ? t : null;
+}
+
+export interface StartupInstallInput {
+  /** Started by Windows at sign-in (lowImpactStart.consumeSignInStart) — not by hand, not the restart task after a crash. */
+  signInStart: boolean;
+  /** The relaunch after an install (--updated). */
+  updatedLaunch: boolean;
+  running: string;
+  staged: StagedUpdate | null;
+  installerExists: boolean;
+  /** The version a start-up install was already tried for (once per version). */
+  triedVersion: string | null;
+  server: boolean;
+  /** A branch server holds the branch's copy of the version for its tills (A496 — never leave them without it). */
+  shareReady: boolean;
+  /** The cloud's answer now: the approved version, null = hold, undefined = not answered (the last answer stands). */
+  cloudApproved?: string | null;
+  /**
+   * A546: a person opened the till (not Windows, not the restart task, not the relaunch after an update) — the backup:
+   * an approved update waiting installs first, before the PIN screen ("Updating ZapTill…"). Never on a branch server.
+   */
+  openedByHand?: boolean;
+  /**
+   * A546: a till's sign-in launch — quiet: through the updater task only (no window, no Windows prompt — nobody may be
+   * there), and ZapTill stays closed after (the next open runs the new version).
+   */
+  quiet?: boolean;
+}
+
+/** Pure: install the waiting update now, at start-up? */
+export function startupInstallPlan(s: StartupInstallInput): { install: boolean; reason: string; withdrawn?: boolean } {
+  const no = (reason: string, withdrawn = false) => ({ install: false, reason, ...(withdrawn ? { withdrawn } : {}) });
+  if (s.updatedLaunch) return no('ZapTill has just been updated');
+  if (s.openedByHand && s.server) return no('a branch server opened by hand — it installs at the next Windows sign-in, or when closed');   // A546: unchanged (A541)
+  if (!s.signInStart && !s.openedByHand) return no('not a start at Windows sign-in (started by hand, or by the restart task) — only a sign-in start installs first');
+  const v = s.staged?.version ?? null;
+  if (!v || !VERSION_RE.test(v)) return no('no update downloaded');
+  if (!VERSION_RE.test(s.running) || compareVersions(v, s.running) <= 0) return no(`${v} is not newer than ${s.running}`);
+  if (s.triedVersion === v) return no(`an install of ${v} at start-up was tried once already and did not take — it installs when ZapTill is closed`);
+  if (!s.staged!.approved) return no(`${v} is no longer approved — it will not be installed`);
+  if (s.cloudApproved === null) return no(`the business is now on hold — ${v} will not be installed`, true);
+  if (typeof s.cloudApproved === 'string' && VERSION_RE.test(s.cloudApproved) && compareVersions(s.cloudApproved, v) < 0) {
+    return no(`the approved version is now ${s.cloudApproved} — ${v} will not be installed`, true);
+  }
+  if (!s.installerExists) return no(`the downloaded installer of ${v} is no longer on this machine — the next check downloads it again`);
+  if (s.server && !s.shareReady) return no(`waiting: the branch's copy of ${v} for the tills is not ready yet`);
+  return { install: true, reason: `${v} is downloaded and approved — installing it before ${s.server ? 'this server serves the branch' : s.quiet ? 'anyone opens the till (quietly, at Windows sign-in)' : 'the till opens'}` };
+}
+
+export interface StartupInstallDeps {
+  input: () => StartupInstallInput;
+  /** GET /api/desktop-update/status: the approved version, null = hold, undefined = no answer (offline, an error). */
+  askCloud: () => Promise<string | null | undefined>;
+  /** Drawers open on this machine (they are in the local database — a restart keeps them). */
+  openDrawers: () => number;
+  markTried: (t: StartupInstallTry) => void;
+  withdraw: () => void;
+  task: () => Promise<boolean>;
+  /** A546: `relaunch` false at a till's quiet sign-in install (ZapTill stays closed; the next open runs the new version). */
+  viaTask: (version: string, relaunch: boolean) => Promise<TaskInstallResult>;
+  /** A546: a till opened by hand — the small "Updating ZapTill to 1.0.20 — about a minute" screen, and its close on a failure. */
+  showUpdating?: (version: string) => void;
+  hideUpdating?: () => void;
+  /** A546 / A508: since when a sync push has been in flight (null: none) — a till opened by hand waits for it, at most 30 s. */
+  syncSince?: () => number | null;
+  sleep?: (ms: number) => Promise<void>;
+  /** electron-updater: validate the download it holds (latest.yml from the cloud, the cached file's checksum). */
+  prepareUpdater: (version: string) => Promise<{ ok: boolean; reason: string }>;
+  record: (r: IdleInstallRecord) => void;
+  /** Lets the window close and closes the database (markQuitting, closeLocalDb). */
+  beforeQuit: () => void;
+  /** The task holds the install: quit (it installs and starts ZapTill again). */
+  quit: () => void;
+  /** electron-updater's install with its progress visible and a start after (quitAndInstall(false, true)). */
+  quitAndInstall: () => void;
+  log: (line: string) => void;
+  now?: () => number;
+}
+
+/** A541: the start-up install. Resolves installing=true when ZapTill is closing to install (the caller starts nothing). */
+export async function runStartupInstall(d: StartupInstallDeps): Promise<{ installing: boolean; reason: string }> {
+  const now = d.now ?? Date.now;
+  const in0 = d.input();
+  const first = startupInstallPlan(in0);
+  if (!first.install) {
+    // Said only when something newer is waiting at a sign-in start (not at every start by hand).
+    const waiting = in0.signInStart && !in0.updatedLaunch && !!in0.staged && VERSION_RE.test(in0.running) && compareVersions(in0.staged.version, in0.running) > 0;
+    if (waiting) d.log(`start-up install: ${first.reason}`);
+    return { installing: false, reason: first.reason };
+  }
+  const cloudApproved = await d.askCloud().catch(() => undefined);
+  const input = { ...d.input(), cloudApproved };
+  const plan = startupInstallPlan(input);
+  if (!plan.install) {
+    if (plan.withdrawn) { try { d.withdraw(); } catch { /* never */ } }
+    d.log(`start-up install: ${plan.reason}`);
+    return { installing: false, reason: plan.reason };
+  }
+  const v = input.staged!.version;
+  const from = input.running;
+  // A546: a till's quiet sign-in launch installs through the updater task only — without it Windows would ask, and
+  // nobody may be at the till (owner: no window at start). Asked BEFORE the try is recorded: nothing was tried, so the
+  // till opened by hand later still installs it (with the Windows prompt — somebody is there).
+  const quiet = input.quiet === true;
+  const byHand = !quiet && input.openedByHand === true && !input.signInStart;
+  if (quiet && !(await d.task().catch(() => false))) {
+    const why = 'no ZapTill Updater task on this PC — Windows would ask for permission and nobody may be at the till';
+    d.log(`start-up install: ${v} not installed at Windows sign-in: ${why}; it installs the next time ZapTill is opened (Windows will ask)`);
+    return { installing: false, reason: why };
+  }
+  d.log(`start-up install: ${plan.reason}${cloudApproved === undefined ? ' (the cloud did not answer — the last answer stands)' : ''}`);
+  if (byHand) {
+    try { d.showUpdating?.(v); } catch { /* never stops the install */ }
+    // A508's rule: a sync push under way is never cut — waited for here, at most 30 s (sales are safe in SQLite anyway).
+    const sleep = d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const t0 = now();
+    let waited = false;
+    while (d.syncSince && d.syncSince() !== null && now() - t0 < OPEN_SYNC_WAIT_MS) { waited = true; await sleep(500); }
+    if (waited) d.log(`start-up install: ${d.syncSince?.() === null ? 'the sync push under way finished' : `a sync push still under way after ${OPEN_SYNC_WAIT_MS / 1000} s — what is left goes up after the update`}`);
+  }
+  let drawers = 0;
+  try { drawers = d.openDrawers(); } catch { /* not known */ }
+  if (drawers > 0) d.log(`start-up install: ${drawers} drawer${drawers === 1 ? ' is' : 's are'} open on this machine — kept as they are (the local database); ZapTill comes back with ${drawers === 1 ? 'it' : 'them'} open`);
+  // Once per version, recorded BEFORE anything is installed — an install that does not take is not tried at every start.
+  d.markTried({ version: v, from, at: new Date(now()).toISOString() });
+  const when = quiet ? 'at Windows sign-in (quietly)' : byHand ? 'when ZapTill was opened' : 'at sign-in';
+  const go = (how: string) => {
+    try { d.record({ from, to: v, at: new Date(now()).toISOString(), reason: 'startup', why: how }); } catch { /* never */ }
+    try { d.beforeQuit(); } catch (e: any) { d.log(`start-up install: closing for the install: ${e?.message ?? e} — going on`); }
+  };
+  const failed = (reason: string) => {
+    if (byHand) { try { d.hideUpdating?.(); } catch { /* never */ } }
+    return { installing: false, reason };
+  };
+  if (await d.task().catch(() => false)) {
+    const r = await d.viaTask(v, !quiet).catch((e: any) => ({ ok: false as const, reason: `the updater task could not be asked (${e?.message ?? e})` }));
+    if (r.ok) { go(`the updater task, ${when}`); d.quit(); return { installing: true, reason: 'the updater task' }; }
+    if (quiet) {
+      d.log(`start-up install: ${r.reason} — not installed at Windows sign-in (no prompt with nobody there); it installs the next time ZapTill is opened`);
+      return failed(r.reason);
+    }
+    d.log(`start-up install: ${r.reason} — trying the installer instead (Windows may ask for permission; somebody is at the ${byHand ? 'till' : 'machine — they have just signed in'})`);
+  }
+  const p = await d.prepareUpdater(v).catch((e: any) => ({ ok: false, reason: String(e?.message ?? e) }));
+  if (!p.ok) {
+    d.log(`start-up install of ${v} not done: ${p.reason} — ZapTill starts as usual; it installs when ZapTill is closed`);
+    return failed(p.reason);
+  }
+  go(`the installer, ${when}`);
+  d.quitAndInstall();
+  return { installing: true, reason: 'electron-updater' };
+}
+/** A546: a till opened by hand waits at most this long for a sync push under way before it installs. */
+export const OPEN_SYNC_WAIT_MS = 30_000;
+/** A546: the manual-open install's own record (once per version, apart from A541's sign-in one). */
+export const OPEN_INSTALL_KEY = 'update_open_install';
+
+/** Set by initAutoUpdate (a packaged build only): the start-up install with the real pieces. */
+/** A546: how this start came about — `quiet`: a till's sign-in launch; `openedByHand`: a person opened the till. */
+export interface StartInstallMode { signInStart: boolean; updatedLaunch: boolean; openedByHand?: boolean; quiet?: boolean }
+let startupInstaller: ((o: StartInstallMode) => Promise<boolean>) | null = null;
+/**
+ * A541: called by index.ts after the database is open and BEFORE the branch server serves or a window opens. True: ZapTill
+ * is closing to install its update (index.ts starts nothing more). Never throws; false in dev and on a manual start.
+ */
+export async function installAtStartIfDue(o: StartInstallMode): Promise<boolean> {
+  if (!startupInstaller) return false;
+  try { return await startupInstaller(o); } catch (e: any) { noteUpdate(`start-up install failed: ${e?.message ?? e} — ZapTill starts as usual`); return false; }
+}
+
 export function initAutoUpdate(): void {
   if (!app.isPackaged) return;                 // dev has no feed/installer to swap
   if (app.getName().toLowerCase().includes('dev')) {
@@ -797,6 +1093,29 @@ export function initAutoUpdate(): void {
   catch (e: any) { console.warn('[autoUpdate] could not trust the branch server certificate for downloads:', e?.message ?? e); }
 
   const running = app.getVersion();
+  // A534: where this machine's update is, told to the cloud (admin portal › Desktop updates) — only once the cloud says it
+  // takes it (the status answer's reportsState), on a change, and at least every 30 minutes. Through the branch server's
+  // gateway on a till behind one (cloudFetch, A410), with the till's own session (renewed once on a 401).
+  const reporter = createUpdateReporter({
+    build: () => currentUpdateReport(),
+    post: async (body) => {
+      const cloud = (() => { try { return getCloudUrl(); } catch { return null; } })();
+      if (!cloud) return { status: 0 };
+      const go = (tok: string) => cloudFetch(`${String(cloud).replace(/\/+$/, '')}/api/desktop-update/state`, {
+        method: 'POST', headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+      });
+      let tok = readSessionTokens().token;
+      if (!tok) return { status: 0 };
+      let res = await go(tok);
+      if (res.status === 401 && await refreshAccessToken().catch(() => false)) {
+        tok = readSessionTokens().token;
+        if (tok) res = await go(tok);
+      }
+      return { status: res.status };
+    },
+    log: noteUpdate,
+  });
   // A496: per version, since when the branch server has said "not ready" (a till stops waiting after TILL_WAIT_LIMIT_MS).
   const waitingSince = new Map<string, number>();
   const loop = createUpdateLoop({
@@ -810,8 +1129,12 @@ export function initAutoUpdate(): void {
     // A503: read by electron-updater when ZapTill quits — a download no longer approved is not installed.
     // A517: not loaded yet → nothing downloaded in this run (withdrawn needs one), and it loads with install-on-quit on —
     // an up-to-date or held till's check never loads electron-updater just to set it.
-    installOnQuit: (on) => { if (updaterIfLoaded()) autoUpdater.autoInstallOnAppQuit = on; },
+    installOnQuit: (on) => {
+      if (updaterIfLoaded()) autoUpdater.autoInstallOnAppQuit = on;
+      noteStagedApproval(on);   // A541: a sign-in start obeys the last answer, offline too
+    },
     askServer: () => askBranchServer({ cfg: getDeviceConfig() as any, running, fetch: lanFetch as typeof fetch }),
+    behindServer: () => asksBranchServer(getDeviceConfig() as any),   // A554
     checkDeps: ({ running: next }) => {
       const cfg = getDeviceConfig();
       const server = isNodeRole(cfg?.device_role ?? null);
@@ -825,6 +1148,7 @@ export function initAutoUpdate(): void {
         refresh: () => refreshAccessToken(),
         running: next,
         log: noteUpdate,
+        cloudReportsState: (yes) => reporter.setCloudTakes(yes),   // A534
         // A443: the branch server fetches the approved version once for the branch and updates itself from that copy.
         // A443: a till behind a branch server waits until the server holds the approved version (it then downloads it
         // from the server over the shop network). A server that does not answer the question (an older build) → as before.
@@ -886,7 +1210,15 @@ export function initAutoUpdate(): void {
   });
   autoUpdater.on('update-downloaded', (info) => {
     noteUpdate(`downloaded ${info?.version} — it installs when ZapTill is next closed`);
-    set({ state: 'downloaded', version: info?.version ?? null, percent: 100, note: `${info?.version} downloaded — installs when ZapTill is closed` });
+    // A541: kept across restarts (a sign-in start installs it before serving), and since when (the managers' notice).
+    const v = typeof info?.version === 'string' ? info.version : null;
+    let at: number | null = null;
+    if (v && VERSION_RE.test(v)) {
+      const file = typeof (info as any)?.downloadedFile === 'string' ? (info as any).downloadedFile as string : downloadedInstaller();
+      recordStaged({ version: v, installerPath: file, approved: true, at: new Date().toISOString() });
+      at = downloadedSince(v);
+    }
+    set({ state: 'downloaded', version: info?.version ?? null, percent: 100, note: `${info?.version} downloaded — installs when ZapTill is closed`, downloadedAt: at });
   });
 
   // A348: each download request goes through the cloud's approval check — no range-by-range differential download.
@@ -955,9 +1287,100 @@ export function initAutoUpdate(): void {
     },
     log: noteUpdate,
     note: (line) => { idleNote = line; },
-    failedBefore: (v) => !!lastIdleInstall && !lastIdleInstall.ok && lastIdleInstall.to === v,
+    onBlocker: (b) => { idleBlocker = b; },   // A541: the report says why it cannot install by itself
+    // A541: an idle install that did not take (a start-up one that did not is tried again once while idle).
+    failedBefore: (v) => !!lastIdleInstall && !lastIdleInstall.ok && lastIdleInstall.to === v && lastIdleInstall.reason !== 'startup',
   });
   const startIdleTicks = () => setInterval(() => { void idle.tick().catch((e: any) => noteUpdate(`idle install check failed: ${e?.message ?? e}`)); }, 60_000);
+
+  // A541: the start-up install (index.ts asks it before the branch server serves) — see runStartupInstall.
+  {
+    // A546: a try when the till was opened by hand counts too (its own record).
+    for (const tried of [readStartupInstallTry(), readKept<StartupInstallTry>(OPEN_INSTALL_KEY)]) {
+      if (tried && typeof tried.version === 'string' && VERSION_RE.test(tried.version) && compareVersions(tried.version, running) > 0) startupInstallFailed = tried.version;
+    }
+  }
+  mirrorWaiting();   // A546: the gate's file follows the kept download (a till upgraded to this build has none yet)
+  startupInstaller = async ({ signInStart, updatedLaunch, openedByHand, quiet }) => {
+    // A546: the manual open has its own once-per-version record — a quiet sign-in try that did not take does not stop it.
+    const byHand = !signInStart && !quiet && openedByHand === true;
+    const triedKey = byHand ? OPEN_INSTALL_KEY : STARTUP_INSTALL_KEY;
+    let splash: BrowserWindow | null = null;
+    const r = await runStartupInstall({
+      input: () => {
+        const staged = readStaged();
+        const cfg = getDeviceConfig();
+        const server = isNodeRole(cfg?.device_role ?? null);
+        let exists = false;
+        try { exists = !!staged?.installerPath && fs.existsSync(staged.installerPath); } catch { exists = false; }
+        return { signInStart, updatedLaunch, running, staged, installerExists: exists,
+          triedVersion: readKept<StartupInstallTry>(triedKey)?.version ?? null, server,
+          shareReady: !staged || !server || !!readyVersion(shareDir(), staged.version),
+          openedByHand: byHand, quiet: quiet === true };
+      },
+      askCloud: async () => {
+        const cloud = (() => { try { return getCloudUrl(); } catch { return null; } })();
+        const tok = readSessionTokens().token;
+        if (!cloud || !tok) return undefined;
+        const res = await cloudFetch(`${String(cloud).replace(/\/+$/, '')}/api/desktop-update/status`, {
+          headers: { Authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) return undefined;
+        const b = await res.json() as { approvedVersion?: unknown };
+        return typeof b?.approvedVersion === 'string' ? b.approvedVersion : b?.approvedVersion === null ? null : undefined;
+      },
+      openDrawers: () => Number((getLocalDb().prepare(`SELECT COUNT(*) AS n FROM shifts WHERE status = 'open' AND COALESCE(device_id,'') = COALESCE(?,'')`).get(getDeviceConfig()?.device_id ?? null) as { n?: number } | undefined)?.n ?? 0),   // this machine's own drawers
+      markTried: (t) => { writeKept(triedKey, t); },
+      withdraw: () => noteStagedApproval(false),
+      task: () => updaterTaskAvailable(true),
+      viaTask: async (v, relaunch) => {
+        const s = readStaged();
+        const r = await requestTaskInstall(defaultTaskDeps(), { version: v, installerPath: s?.installerPath ?? '', relaunch, timeoutMs: 90_000 });
+        if (r.ok) { taskInstallStarted = true; noteUpdate(`the updater task checked ${v} against the official release — ZapTill closes now and ${relaunch ? 'starts again' : 'stays closed (a till at Windows sign-in: the next open runs the new version)'} after the install`); }
+        return r;
+      },
+      // A546: a till opened by hand — a small screen while it installs (somebody is there), never at a quiet sign-in.
+      showUpdating: (v) => { splash = updatingWindow(v); },
+      hideUpdating: () => { try { splash?.destroy(); } catch { /* gone */ } splash = null; },
+      syncSince: () => syncPushSince(),
+      prepareUpdater: async (v) => {
+        // The one cloud-gated check (runUpdateCheck, A348): latest.yml for the approved version from the cloud, then
+        // electron-updater finds its cached file (checksum) and says 'update-downloaded'. No share: before serving, a
+        // server asks the cloud itself (its own copy is the same release).
+        const r = await runUpdateCheck({
+          updater: autoUpdater as any,
+          fetch: ((u: any, i: any) => cloudFetch(String(u), i)) as typeof fetch,
+          route: (c) => { const x = cloudBaseFor(c, getDeviceConfig()); return { ...x, base: lanUrl(x.base) }; },
+          cloudUrl: () => { try { return getCloudUrl(); } catch { return null; } },
+          token: () => readSessionTokens().token || null,
+          refresh: () => refreshAccessToken(),
+          running, log: noteUpdate, checkTimeoutMs: 60_000,
+        });
+        if (r.decision !== 'update' || r.timedOut) return { ok: false, reason: r.reason ?? `the update feed did not offer ${v}` };
+        if (r.approved !== v) return { ok: false, reason: `the cloud now approves ${r.approved} — it downloads that instead` };
+        const until = Date.now() + 60_000;
+        while (Date.now() < until) {
+          if (current.state === 'downloaded' && current.version === v) return { ok: true, reason: 'the download is checked' };
+          if (current.state === 'error') break;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        return { ok: false, reason: current.state === 'downloading' ? `${v} is being downloaded again (${current.percent ?? 0}%)` : `the download of ${v} could not be checked (${current.note ?? current.state})` };
+      },
+      record: (r) => recordIdleInstall(r),
+      beforeQuit: () => { markQuitting(); closeLocalDb(); },
+      quit: () => { const u = updaterIfLoaded(); if (u) u.autoInstallOnAppQuit = false; app.quit(); setTimeout(() => app.exit(0), 60_000); },
+      quitAndInstall: () => {
+        closeTaskDone = true;
+        autoUpdater.quitAndInstall(false /* the progress shows — somebody has just signed in */, true);
+        setTimeout(() => { noteUpdate('the start-up install did not start — ZapTill starts again as it was'); app.relaunch(); app.exit(0); }, 2 * 60_000);
+      },
+      log: noteUpdate,
+    });
+    // A546: a till's sign-in launch tries each version once — installed, or not (no updater task, a refusal, withdrawn):
+    // the next sign-ins end at once again; the next open by hand installs it.
+    if (quiet) mirrorWaiting(readStaged()?.version ?? undefined);
+    return r.installing;
+  };
 
   // A509: install-on-close through the updater task too (no Windows prompt when the till is shut at night). ZapTill is
   // held open (its windows already gone) while the script checks the download — at most 90 s; refused or no answer →
@@ -997,6 +1420,8 @@ export function initAutoUpdate(): void {
     // it is back): told of a newer version the server holds, it checks with the cloud at once and takes it from the server.
     void loop.ask();
     setInterval(() => { void loop.ask(); }, 2 * 60_000);
+    // A534: the update state to the cloud — a look every minute; sent only on a change or every 30 minutes.
+    setInterval(() => { void reporter.tick(); }, 60_000);
     startIdleTicks();
   }, { minSinceLaunchMs: UPDATE_AFTER_LAUNCH_MS, afterMs: UPDATE_AFTER_SETTLED_MS });
   // A443: a till asked this server for a version it does not hold yet — check now (at most every 5 minutes).

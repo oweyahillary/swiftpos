@@ -1,0 +1,95 @@
+---
+// Phase 3 demo request form: FRONT END ONLY. Shown in `npm run dev` only (contact.astro), never in the build, because
+// nothing receives it yet.
+// TODO(owner/server): the cloud route (POST, rate limited, Turnstile verified, the same checks as src/lib/demoForm.ts,
+// stored for the admin portal's list, a Telegram notice) needs a migration; then set ENDPOINT and show the form in the
+// build. Turnstile's widget goes where the TODO below says, with the site key.
+// Nothing a visitor types ever goes into a URL: the form posts JSON in the request body.
+import { BUSINESS_TYPES } from '../lib/demoForm';
+
+const ENDPOINT = ''; // TODO(server): e.g. https://app.zaptill.co.ke/api/public/demo-requests
+---
+<form class="demo-form" data-demo-form data-endpoint={ENDPOINT} novalidate aria-labelledby="demo-form-h">
+  <h2 id="demo-form-h">Ask for a demo</h2>
+  <p class="demo-form__lede">Tell us a little about your business and we'll call you back.</p>
+  <p class="demo-form__dev">Dev preview: not connected yet. Nothing is sent.</p>
+
+  <div class="demo-form__grid">
+    <label>Your name<input name="name" autocomplete="name" required maxlength="80" /></label>
+    <label>Business name<input name="business" autocomplete="organization" required maxlength="120" /></label>
+    <label>Kind of business
+      <select name="type" required>
+        <option value="">Choose…</option>
+        {BUSINESS_TYPES.map((t) => <option value={t.value}>{t.label}</option>)}
+      </select>
+    </label>
+    <label>Branches<input name="branches" inputmode="numeric" maxlength="3" placeholder="1" /></label>
+    <label>Phone<input name="phone" type="tel" autocomplete="tel" required maxlength="20" placeholder="0717 675 635" /></label>
+    <label>Email <span class="opt">(optional)</span><input name="email" type="email" autocomplete="email" maxlength="120" /></label>
+    <label class="wide">Town or area<input name="town" maxlength="80" /></label>
+    <label class="wide">Anything we should know? <span class="opt">(optional)</span><textarea name="message" rows="3" maxlength="1000"></textarea></label>
+  </div>
+
+  <!-- The honeypot: hidden from people and from screen readers. A bot fills it in. -->
+  <div class="demo-form__hp" aria-hidden="true">
+    <label>Website<input name="website" tabindex="-1" autocomplete="off" /></label>
+  </div>
+  <!-- TODO(server): the Turnstile widget goes here, with the site key. -->
+
+  <p class="demo-form__msg" data-msg role="status" aria-live="polite"></p>
+  <button class="btn btn--wa" type="submit">Send</button>
+</form>
+
+<script>
+  import { checkDemoRequest, kenyanPhone, type DemoRequest } from '../lib/demoForm';
+
+  for (const form of document.querySelectorAll<HTMLFormElement>('[data-demo-form]')) {
+    const openedAt = Date.now();
+    const msg = form.querySelector<HTMLElement>('[data-msg]')!;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = new FormData(form);
+      const r = Object.fromEntries(['name', 'business', 'type', 'branches', 'phone', 'email', 'town', 'message', 'website']
+        .map((k) => [k, String(f.get(k) ?? '')])) as unknown as DemoRequest;
+      const errors = checkDemoRequest(r, openedAt, Date.now());
+      for (const el of form.querySelectorAll('[aria-invalid]')) el.removeAttribute('aria-invalid');
+      const keys = Object.keys(errors) as (keyof typeof errors)[];
+      if (keys.length) {
+        for (const k of keys) form.querySelector(`[name="${k}"]`)?.setAttribute('aria-invalid', 'true');
+        msg.textContent = keys.map((k) => errors[k]).join(' ');
+        (form.querySelector('[aria-invalid]') as HTMLElement | null)?.focus();
+        return;
+      }
+      const endpoint = form.dataset.endpoint;
+      if (!endpoint) { msg.textContent = 'All good. (Dev preview: the form is not connected yet, so nothing was sent.)'; return; }
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...r, phone: kenyanPhone(r.phone), openedAt }),
+        });
+        msg.textContent = res.ok ? "Thank you. We'll call you back soon." : 'Something went wrong. Please WhatsApp us instead.';
+        if (res.ok) form.reset();
+      } catch {
+        msg.textContent = 'Something went wrong. Please WhatsApp us instead.';
+      }
+    });
+  }
+</script>
+
+<style>
+  .demo-form { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-5); max-width: 46rem; }
+  .demo-form h2 { font-size: var(--fs-lg); }
+  .demo-form__lede { color: var(--ink-2); }
+  .demo-form__dev { font-size: var(--fs-sm); background: #fff8eb; border: 1px solid #f3d9a4; border-radius: var(--r-md); padding: var(--s-2) var(--s-3); }
+  .demo-form__grid { display: grid; gap: var(--s-4); margin: var(--s-4) 0; }
+  .demo-form label { display: grid; gap: 0.3rem; font-weight: 600; font-size: var(--fs-sm); }
+  .demo-form .opt { font-weight: 400; color: var(--muted); }
+  .demo-form input, .demo-form select, .demo-form textarea {
+    font: inherit; font-weight: 400; font-size: 1rem; padding: 0.6rem 0.7rem; border: 1px solid var(--line-strong);
+    border-radius: var(--r-md); background: #fff; color: var(--ink); width: 100%; min-width: 0;
+  }
+  .demo-form [aria-invalid='true'] { border-color: var(--short); outline: 2px solid color-mix(in srgb, var(--short) 30%, transparent); }
+  .demo-form__hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  .demo-form__msg { min-height: 1.5em; color: var(--ink-2); }
+  @media (min-width: 640px) { .demo-form__grid { grid-template-columns: 1fr 1fr; } .demo-form .wide { grid-column: 1 / -1; } }
+</style>

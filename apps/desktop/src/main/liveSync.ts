@@ -29,8 +29,25 @@
  * 30 minutes at most — and never while a sale is in the cart, the payment screen is open or a print is queued.
  * Safety: the whole catalogue once a day (and the first time, and when the till is further behind than the log keeps:
  * `full_resync_needed`). Stock levels (the manager's stock report: other tills' sales move them, which is not a change
- * the log carries) are re-read every 30 minutes when the till sells stock-tracked items.
+ * the log carries) are re-read every 30 minutes when the till sells stock-tracked items — A535: only against a cloud
+ * before migration 153; from 153 each level travels as its own change (topic stock, `serves: ['stock']` says so).
+ * A535 also: a ring for `drawers` alone asks no /changes (a branch server asks GET /api/pos/branch-drawers —
+ * branchDrawers.ts); a log request the cloud rings for one of a server's tills is passed on with that till's next
+ * /node/live (`log_request: true`), and the till asks for it at once.
  * One log line per pull: the topics, the rows, the bytes on the wire. The Tech page shows each topic's last change.
+ *
+ * A554 (the first pulled till log, B Foods 2026-10-21: "push channel closed (1006)" about every 13 minutes, all day, each
+ * one minute after "device token expires in 120s — refreshing ahead of the 401"): the cloud ends a socket when the token
+ * it signed in with expires (+60 s), and the till renews its token every 13 minutes (2 minutes before the 15). Each
+ * renewal therefore cost a dropped channel, a 5–20 s gap and a reconnect — and the close reached the till as 1006 (no
+ * close frame: lost on the way, Render's proxy or the runtime's WebSocket) instead of the cloud's 4001. Now:
+ *   - renewed token, open socket: an A554 cloud (its `ready` lists `reauth`) is told the new token on the open socket
+ *     ({ type: 'reauth', token } → 'reauthed'): nothing closes. An older cloud: the till closes the socket itself and
+ *     opens a new one with the new token at once (no 1006, no fallback polling) — before the old token runs out.
+ *     A reauth not confirmed within REAUTH_WAIT_MS is the same planned reconnect.
+ *   - keepalive: every KEEPALIVE_MS the till sends { type: 'ping' } (an A554 cloud answers 'pong'; any message counts);
+ *     no answer within PONG_WAIT_MS → the socket is dead (a half-open line behind a proxy) and it reconnects at once.
+ *     An older cloud (no `ping` in `ready`) is not pinged — it pings the till itself every 45 s (ws pings).
  */
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
@@ -42,7 +59,7 @@ import { applyChangeEntries, liveCloudGet, liveSocketTarget, liveWholePull, refr
   refreshAccessToken } from './syncEngine';
 import { readBranchStaffForServe } from './branchStaff';
 import { refreshStaffRosterNow, setRosterLive } from './staffRoster';
-import { isCriticalTopic, NON_CRITICAL_WAIT_MS, SYNC_TOPICS, type ChangeEntry, type ChangesAnswer } from './syncTopics';
+import { isCriticalTopic, NON_CRITICAL_WAIT_MS, SYNC_TOPICS, DRAWERS_TOPIC, type ChangeEntry, type ChangesAnswer } from './syncTopics';
 
 export const SOCKET_DOWN_POLL_MS = 5 * 60_000;
 export const BUSY_POLL_MS = 20_000;
@@ -53,13 +70,21 @@ export const LEGACY_RETRY_MS = 60 * 60_000;
 export const RECENT_KEEP_MS = 150_000;   // the cloud repeats the last 120 s (a late commit): what was applied is skipped
 export const LIVE_LOG_KEEP_MS = 7 * 86_400_000;
 const TICK_MS = 15_000;
+/** A554: the till's keepalive on the push channel (well under a proxy's idle timeout). */
+export const KEEPALIVE_MS = 25_000;
+/** A554: no answer to a keepalive this long → the socket is dead; reconnect at once. */
+export const PONG_WAIT_MS = 20_000;
+/** A554: a reauth the cloud did not confirm this long → the planned reconnect with the new token. */
+export const REAUTH_WAIT_MS = 15_000;
+const KEEPALIVE_CHECK_MS = 5_000;
 const BACKOFF = [5_000, 10_000, 30_000, 60_000, 120_000, 300_000];
 
 export type LiveMode = 'unknown' | 'direct' | 'peer' | 'legacy';
 
 // ── state (maintenance_state) ────────────────────────────────────────────────────────────────────────────────────────
 const K = { seq: 'live_seq', recent: 'live_recent', pending: 'live_pending', full: 'live_full_at', topics: 'live_topics',
-  local: 'live_node_local', stock: 'live_stock_at', floor: 'live_floor', scope: 'live_scope' } as const;
+  local: 'live_node_local', stock: 'live_stock_at', floor: 'live_floor', scope: 'live_scope',
+  serves: 'live_serves_stock' } as const;   // A535: '1' = stock levels arrive as changes (no 30-minute re-read)
 function getKv(key: string): string | null {
   try { return (getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(key) as { value?: string } | undefined)?.value ?? null; }
   catch { return null; }
@@ -87,8 +112,19 @@ let again = false;
 let timer: NodeJS.Timeout | null = null;
 let socket: any = null;
 let socketOpen = false;
+let socketSince = 0;     // A542: when the push channel last opened (the Tech page's "connected since")
+let lastRingAt = 0;      // A542: the cloud's last ring ('changed')
+let fallbackEvery = 0;   // A542: the check interval while the channel is down (0 = not polling for it)
 let socketTries = 0;
 let socketRetryAt = 0;
+// A554: the token the open socket signed in with, what its cloud said it can do (`ready`.features), the keepalive.
+let socketToken = '';
+let socketFeatures = new Set<string>();
+let lastHeardAt = 0;      // the socket's last message (any message proves the line is alive)
+let pingSentAt = 0;       // a keepalive waiting for its answer (0: none)
+let reauthToken = '';     // the renewed token told to the cloud on the open socket, waiting for 'reauthed'
+let reauthSentAt = 0;
+let keepTimer: NodeJS.Timeout | null = null;
 let lastError = '';
 let started = false;
 
@@ -220,6 +256,7 @@ async function fullResync(why: string, now: number): Promise<boolean> {
   if (base.status === 404) { goLegacy(now); return false; }
   // A failed try is not repeated within the hour (the daily safety pull on a till whose cloud is down).
   if (!base.body || !Number.isFinite(Number(base.body.last_seq))) { lastFullTry = now; lastError = `the change log did not answer (HTTP ${base.status})`; return false; }
+  noteServes(base.body);
   const ok = await liveWholePull(shape() === 'direct');
   if (!ok) { lastFullTry = now; lastError = 'the whole catalogue could not be taken'; return false; }
   if (shape() === 'direct') void refreshStaffRosterNow(`whole catalogue (${why})`);
@@ -232,6 +269,17 @@ async function fullResync(why: string, now: number): Promise<boolean> {
   logLine('sync', `A531: whole catalogue taken (${why}) — changes from ${base.body.last_seq} on`);
   return true;
 }
+
+/** A535: does the cloud (or, on a peer, the branch server) send stock levels as changes? Every answer says so. */
+function noteServes(b: ChangesAnswer): void {
+  const v = Array.isArray(b?.serves) && b.serves.includes('stock') ? '1' : '0';
+  if (getKv(K.serves) !== v) {
+    setKv(K.serves, v);
+    logLine('sync', v === '1' ? 'A535: stock levels arrive as changes — no 30-minute re-read' : 'A535: stock levels are re-read every 30 minutes (this cloud does not send them as changes)');
+  }
+}
+/** A535: stock levels arrive as changes (the 30-minute re-read stands down). */
+export function stockTravelsOnChange(): boolean { return liveActive() && getKv(K.serves) === '1'; }
 
 function goLegacy(now: number): void {
   if (mode !== 'legacy') logLine('sync', `A531: ${shape() === 'peer' ? 'the branch server' : 'the cloud'} keeps no change log yet — the till checks and pulls as before (asked again in an hour)`);
@@ -271,6 +319,9 @@ async function catchUpOnce(why: string, now: number): Promise<boolean> {
       if (!f.body) { lastError = `changes: HTTP ${f.status}`; return applied > 0; }
       if (mode !== shape()) { mode = shape(); logLine('sync', `A531: change-triggered sync on (${mode === 'peer' ? 'from the branch server' : 'from the cloud'})`); }
       lastError = '';
+      noteServes(f.body);
+      // A535: ZapTill support asked THIS till for its log (the branch server heard the cloud's doorbell for it).
+      if (shape() === 'peer' && f.body.log_request) { try { logRequestBell?.(getDeviceConfig()?.device_id ?? ''); } catch { /* the 90 s beat */ } }
       if (f.body.full_resync_needed) { await fullResync('behind the change log', now); return true; }
       if (shape() === 'peer' && f.body.local !== undefined) {
         // A448: a change made on another till of the branch (no internet) reached the server: its whole copy (LAN).
@@ -289,10 +340,82 @@ async function catchUpOnce(why: string, now: number): Promise<boolean> {
   }
 }
 
+/** A533: who hears the 'log_request' doorbell (logPull.ts hands it in — this module never imports it). */
+let logRequestBell: ((deviceId: string) => void) | null = null;
+export function setLogRequestBell(fn: ((deviceId: string) => void) | null): void { logRequestBell = fn; }
+
+/** A535: who hears a 'drawers' ring on a branch server (branchDrawers.ts hands it in). */
+let drawersBell: ((why: string) => void) | null = null;
+export function setDrawersBell(fn: ((why: string) => void) | null): void { drawersBell = fn; }
+
+/**
+ * A535: ZapTill support's log requests for this server's tills, waiting to be passed on (device → when heard). Served once
+ * on that till's next /node/live; kept at most PEER_BELL_KEEP_MS (the till's own 90 s beat asks anyway).
+ */
+export const PEER_BELL_KEEP_MS = 10 * 60_000;
+const peerBells = new Map<string, number>();
+export function notePeerLogRequest(deviceId: string, now = Date.now()): void {
+  if (!deviceId) return;
+  if (!peerBells.has(deviceId)) logLine('node', `A535: ZapTill support asked till ${deviceId} for its log — passed on at its next check`);
+  peerBells.set(deviceId, now);
+}
+function takePeerBell(deviceId: string | null, now: number): boolean {
+  for (const [d, at] of [...peerBells]) if (now - at > PEER_BELL_KEEP_MS) peerBells.delete(d);
+  if (!deviceId || !peerBells.has(deviceId)) return false;
+  peerBells.delete(deviceId);
+  return true;
+}
+
 // ── the push channel (direct only) ───────────────────────────────────────────────────────────────────────────────────
-function closeSocket(): void {
+function closeSocket(code?: number, reason?: string): void {
   const s = socket; socket = null; socketOpen = false;
-  try { s?.close(); } catch { /* gone */ }
+  pingSentAt = 0; reauthSentAt = 0; reauthToken = '';
+  try { if (code) s?.close(code, reason); else s?.close(); } catch { /* gone */ }
+}
+function sendOnSocket(msg: unknown): boolean {
+  try { socket?.send(JSON.stringify(msg)); return true; } catch { return false; }
+}
+
+/**
+ * A554: a planned reconnect — closed by the till itself (a normal close, so no "push channel closed" line and no fallback
+ * polling) and opened again at once with the current token. The cloud's `ready` asks nothing unless the log moved.
+ */
+function renewSocket(now: number, why: string): void {
+  logLine('sync', `A554: push channel signed in again (${why})`);
+  closeSocket(1000, 'renewed');
+  socketRetryAt = 0;
+  openSocket(now);
+}
+
+/**
+ * A554: run every few seconds while the push channel is open — the renewed token and the keepalive. Returns what it did
+ * (the tests). Never throws.
+ */
+export function socketKeepalive(now = Date.now()): 'none' | 'ping' | 'dead' | 'reauth' | 'renew' {
+  if (!socket || !socketOpen) return 'none';
+  let target: { url: string; token: string } | null = null;
+  try { target = liveSocketTarget(); } catch { target = null; }
+  // The till renewed its token since this socket signed in: the cloud would end the socket when the old one runs out.
+  if (target?.token && target.token !== socketToken) {
+    if (!socketFeatures.has('reauth')) { renewSocket(now, 'the till renewed its sign-in'); return 'renew'; }
+    if (reauthToken !== target.token) {
+      reauthToken = target.token; reauthSentAt = now;
+      if (!sendOnSocket({ type: 'reauth', token: target.token })) { renewSocket(now, 'the renewed sign-in could not be sent'); return 'renew'; }
+      return 'reauth';
+    }
+    if (now - reauthSentAt >= REAUTH_WAIT_MS) { renewSocket(now, 'the cloud did not confirm the renewed sign-in'); return 'renew'; }
+  }
+  if (!socketFeatures.has('ping')) return 'none';
+  if (pingSentAt && now - pingSentAt >= PONG_WAIT_MS) {
+    logLine('sync', `A554: the push channel did not answer for ${Math.round((now - pingSentAt) / 1000)} s — reconnecting now`);
+    closeSocket(); socketRetryAt = 0;
+    openSocket(now);
+    return 'dead';
+  }
+  if (!pingSentAt && now - lastHeardAt >= KEEPALIVE_MS) {
+    if (sendOnSocket({ type: 'ping' })) { pingSentAt = now; return 'ping'; }
+  }
+  return 'none';
 }
 function openSocket(now: number): void {
   if (socket || now < socketRetryAt || shape() !== 'direct' || mode === 'legacy') return;
@@ -302,18 +425,43 @@ function openSocket(now: number): void {
   let s: any;
   try { s = new WS(target.url); } catch { socketRetryAt = now + BACKOFF[Math.min(socketTries++, BACKOFF.length - 1)]; return; }
   socket = s;
+  socketToken = target.token;   // A554: what this socket signs in with
   s.onopen = () => { try { s.send(JSON.stringify({ type: 'hello', token: target.token })); } catch { /* close follows */ } };
   s.onmessage = (ev: any) => {
+    if (socket !== s) return;   // A554: a socket this till already replaced
     let m: any = null;
     try { m = JSON.parse(String(ev?.data ?? '')); } catch { return; }
+    lastHeardAt = Date.now(); pingSentAt = 0;   // A554: any message — the line is alive
+    if (m?.type === 'pong') return;
+    if (m?.type === 'reauthed') {
+      // A554: the cloud took the renewed token on this socket (its expiry moved with it).
+      if (reauthToken) socketToken = reauthToken;
+      reauthToken = ''; reauthSentAt = 0;
+      return;
+    }
     if (m?.type === 'ready') {
-      socketOpen = true; socketTries = 0;
+      socketOpen = true; socketTries = 0; socketSince = Date.now(); fallbackEvery = 0;
+      socketFeatures = new Set(Array.isArray(m.features) ? m.features.map(String) : []);   // A554
+      pingSentAt = 0; reauthToken = ''; reauthSentAt = 0;
       logLine('sync', 'A531: the cloud will ring when something changes (push channel open)');
       // Only when the log moved past what this till applied (a reconnect after a token renewal asks nothing).
       const held = getKv(K.seq);
       if (held === null || Number(m.last_seq) > Number(held)) void catchUp('connected');
     } else if (m?.type === 'changed') {
-      void catchUp('the cloud rang');
+      lastRingAt = Date.now();   // A542
+      // A535: a drawer changed on the web — a branch server asks the cloud about its branch's drawers at once
+      // (branchDrawers.ts); nothing in the change log moved for it, so a ring for drawers ALONE asks no /changes.
+      const topics: string[] = Array.isArray(m.topics) ? m.topics.map(String) : [];
+      if (topics.includes(DRAWERS_TOPIC)) { try { if (isServer()) drawersBell?.('the cloud rang (drawers)'); } catch { /* the beat */ } }
+      if (!(topics.length && topics.every((t) => t === DRAWERS_TOPIC))) void catchUp('the cloud rang');
+    } else if (m?.type === 'log_request') {
+      // A533: ZapTill support asked a device of this business for its log — a doorbell: the till named asks for the
+      // request itself (logPull.ts, an authenticated GET); any other ignores it.
+      const dev = String(m.device_id ?? '');
+      try { logRequestBell?.(dev); } catch { /* the 90 s beat asks anyway */ }
+      // A535: on a branch server, a request for one of ITS tills is passed on — that till hears it on its next /node/live
+      // (20 s, the shop network) and asks for the request itself through the gateway, as before.
+      if (isServer() && dev && dev !== (getDeviceConfig()?.device_id ?? '')) notePeerLogRequest(dev);
     }
   };
   s.onclose = (ev: any) => {
@@ -352,6 +500,7 @@ export async function liveTick(now = Date.now()): Promise<void> {
     openSocket(now);
     if (!socketOpen) {
       const every = drawers > 0 || recentlyTrading(now) ? BUSY_POLL_MS : SOCKET_DOWN_POLL_MS;
+      fallbackEvery = every;   // A542: shown on the Tech page
       if (now - lastPollAt >= every) await catchUp('no push channel');
     }
   }
@@ -360,9 +509,10 @@ export async function liveTick(now = Date.now()): Promise<void> {
   const fullAt = Date.parse(getKv(K.full) ?? '') || 0;
   if (now - fullAt >= DAILY_FULL_MS && now - lastFullTry >= 3_600_000 && !midSale()) await fullResync('daily safety pull', now);
 
-  // Stock levels (other tills' sales move them; the log does not carry sales): every 30 minutes, when stock is tracked.
+  // Stock levels (other tills' sales move them): every 30 minutes, when stock is tracked — A535: only when they do not
+  // arrive as changes (a cloud before migration 153, or a branch server that does not pass them on).
   const stockAt = Number(getKv(K.stock) ?? 0) || 0;
-  if (now - stockAt >= STOCK_REFRESH_MS && !midSale() && tracksStock()) {
+  if (now - stockAt >= STOCK_REFRESH_MS && !midSale() && tracksStock() && !stockTravelsOnChange()) {
     setKv(K.stock, String(now));
     if (mode === 'peer') await liveWholePull(false);   // the branch server's copy carries its levels (LAN)
     else await refreshStockLevels();
@@ -388,11 +538,15 @@ export function startLiveSync(): void {
   setRosterLive({ quiet: liveActive, preferNode: () => mode === 'peer' });
   timer = setInterval(() => { void liveTick().catch(() => { /* next beat */ }); }, TICK_MS);
   timer.unref?.();
+  // A554: the push channel's keepalive and the renewed token (a few seconds' look; sends nothing while all is well).
+  keepTimer = setInterval(() => { try { socketKeepalive(); } catch { /* the next look */ } }, KEEPALIVE_CHECK_MS);
+  keepTimer.unref?.();
   void liveTick().catch(() => { /* next beat */ });
 }
 export function stopLiveSync(): void {
   if (timer) clearInterval(timer);
-  timer = null; started = false; closeSocket();
+  if (keepTimer) clearInterval(keepTimer);   // A554
+  timer = null; keepTimer = null; started = false; closeSocket();
   setLiveCatalogue(null); setRosterLive(null);
 }
 
@@ -400,10 +554,21 @@ export function stopLiveSync(): void {
 export function liveStatus(): {
   mode: LiveMode; channel: 'push' | 'polling' | 'branch server' | 'off'; seq: number | null; lastFullAt: string | null;
   waiting: number; topics: Array<{ topic: string; seq: number | null; at: string | null; rows: number; bytes: number }>; error: string | null;
+  /** A542: the push line at a glance — open since when, the cloud's last ring, and (while it is down) how often this
+   *  machine checks instead and when it tries the line again. Null fields: not known / not applicable. */
+  push: { since: string | null; lastRingAt: string | null; fallbackEveryS: number | null; retryAt: string | null };
 } {
   const t = json<Record<string, TopicState>>(K.topics, {});
   const seq = getKv(K.seq);
+  const iso = (ms: number) => (ms ? new Date(ms).toISOString() : null);
+  const down = mode === 'direct' && !socketOpen;
   return {
+    push: {
+      since: socketOpen ? iso(socketSince) : null,
+      lastRingAt: iso(lastRingAt),
+      fallbackEveryS: down && fallbackEvery ? Math.round(fallbackEvery / 1000) : null,
+      retryAt: down && socketRetryAt > Date.now() ? iso(socketRetryAt) : null,
+    },
     mode,
     channel: mode === 'peer' ? 'branch server' : mode === 'direct' ? (socketOpen ? 'push' : 'polling') : 'off',
     seq: seq === null ? null : Number(seq),
@@ -459,11 +624,13 @@ function pruneLiveLog(now: number): void {
  * GET /node/live?since=<lseq> — the changes this server applied after `since`, in its order; a staff row with its PIN
  * hash from this server's list (for a proven till only — nodeServer checks). `local` = the A448 change counter.
  */
-export function serveLiveLog(since: number | null, branchId: string | null, local: string | null): ChangesAnswer & { local: string | null } {
+export function serveLiveLog(since: number | null, branchId: string | null, local: string | null, deviceId: string | null = null): ChangesAnswer & { local: string | null } {
   const last = maxLseq();
-  if (since === null || !Number.isFinite(since)) return { last_seq: last, changes: [], local };
+  // A535: what this server's cloud sends as changes (stock), and a log request for the asking till (once).
+  const extra = { ...(getKv(K.serves) === '1' ? { serves: ['stock'] } : {}), ...(takePeerBell(deviceId, Date.now()) ? { log_request: true } : {}) };
+  if (since === null || !Number.isFinite(since)) return { last_seq: last, changes: [], local, ...extra };
   const floor = Number(getKv(K.floor) ?? 0) || 0;
-  if (since < floor) return { last_seq: last, changes: [], full_resync_needed: true, local };
+  if (since < floor) return { last_seq: last, changes: [], full_resync_needed: true, local, ...extra };
   const rows = getLocalDb().prepare(`SELECT * FROM live_log WHERE lseq > ? AND table_name <> 'resync' ORDER BY lseq LIMIT 501`).all(since) as any[];
   const more = rows.length > 500;
   const page = rows.slice(0, 500);
@@ -475,12 +642,17 @@ export function serveLiveLog(since: number | null, branchId: string | null, loca
     return { seq: Number(r.lseq), topic: r.topic, table: r.table_name, id: r.row_id, op: r.op, ...(row !== undefined ? { row } : {}) } as ChangeEntry;
   });
   const lastSeq = page.length ? Number(page[page.length - 1].lseq) : Math.max(since, 0);
-  return { last_seq: more ? lastSeq : Math.max(lastSeq, since), changes, ...(more ? { more: true } : {}), local };
+  return { last_seq: more ? lastSeq : Math.max(lastSeq, since), changes, ...(more ? { more: true } : {}), local, ...extra };
 }
 
 /** Tests only. */
 export function _resetLive(): void {
   mode = 'unknown'; legacyUntil = 0; lastPollAt = 0; lastFullTry = 0; lastDrawers = -1; inFlight = null; again = false;
-  closeSocket(); socketTries = 0; socketRetryAt = 0; lastError = ''; prunedAt = 0;
+  closeSocket(); socketTries = 0; socketRetryAt = 0; lastError = ''; prunedAt = 0; peerBells.clear();   // A535
+  socketSince = 0; lastRingAt = 0; fallbackEvery = 0;   // A542
+  socketToken = ''; socketFeatures = new Set(); lastHeardAt = 0;   // A554
+  if (keepTimer) clearInterval(keepTimer); keepTimer = null;
   if (timer) clearInterval(timer); timer = null; started = false;
 }
+/** Tests only (A554): open the push channel now, as the beat would. */
+export function _openLiveSocket(now = Date.now()): void { openSocket(now); }

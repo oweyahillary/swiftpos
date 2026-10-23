@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.SN_TS) {
@@ -83,7 +84,7 @@ ok('both setup screens show it while waiting', () => {
 
 console.log('\nThe sign-in-code screen finds the server too (A436)\n');
 const enrol = read('src/renderer/pages/EnrolPage.tsx');
-const ipc = read('src/main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 ok('"Find the branch server" on the screen a signed-out till shows', () => {
   assert.ok(enrol.includes("'Find the branch server'"));
   assert.ok(enrol.includes('posApi.install.findServers()'));

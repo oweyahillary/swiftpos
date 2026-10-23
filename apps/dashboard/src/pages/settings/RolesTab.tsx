@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import PermissionPicker, { usePermissionCatalogue } from '../../components/PermissionPicker';
+import { useBusiness } from '../../context/BusinessContext';   // A573
 
 export interface RoleRow {
   id: string;
@@ -44,7 +45,7 @@ export function roleInUseMessage(name: string, members: unknown): string {
 }
 
 export default function RolesTab({ onRolesChange }: Props) {
-  const catalogue = usePermissionCatalogue(api);
+  const catalogue = usePermissionCatalogue(api, useBusiness().business?.type);   // A573: a shop's words
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');

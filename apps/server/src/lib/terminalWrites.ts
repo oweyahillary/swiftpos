@@ -47,6 +47,12 @@ export const TILL_WRITES: RegExp[] = [
   // A519: "Send logs to support" — the till's own log, under its own session only (routes/support.ts refuses a person's
   // token, caps the size and the rate).
   /^\/api\/support\/logs$/,
+  // A534: the till's update state (downloading, downloaded, failed and why) for the admin portal — its own session only
+  // (routes/desktopUpdate.ts refuses a person's token), only its own user_devices row.
+  /^\/api\/desktop-update\/state$/,
+  // A545: a credit sale confirmed / disputed by a manager on the till while it was offline, sent later with the till's own
+  // sign-in naming who decided (routes/credit.ts checks THAT person holds customers.credit at the sale's branch).
+  /^\/api\/credit\/sales\/[^/]+\/replay$/,
   /^\/api\/auth\//,                      // enrol, verify-pin, set-pin, refresh, logout, device-token
   /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
 ];
@@ -69,7 +75,12 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/offers(\/[^/]+)?$/,                             // A445: Manager › Offers on the till (products.manage; own branch)
   /^\/api\/stock\/transfers$/,                              // A197: Manager › Stock › Transfers — a new transfer (inventory.transfer)
   /^\/api\/stock\/transfers\/[^/]+\/status$/,               // A197: despatch, receive, cancel (inventory.transfer; branch access)
+  /^\/api\/stock\/requests$/,                               // A564: Manager › Stock › Other branches — ask another branch for an item (inventory.transfer; own branch)
+  /^\/api\/stock\/requests\/[^/]+\/(accept|decline|cancel)$/,  // A564: accept and send / decline (the branch asked) · cancel (the branch that asked)
   /^\/api\/reports\/monthly\/movements(\/[^/]+)?$/,          // A466: Manager › Monthly pack › Record for the books (expenses.manage; own branch)
+  /^\/api\/credit\/sales\/[^/]+\/(confirm|dispute)$/,         // A545: Manager › Credit sales — confirm / dispute as themselves (customers.credit)
+  /^\/api\/products\/labels\/settings$/,                    // A571: Manager › Stock › Labels — the business's label (menu.edit)
+  /^\/api\/products\/barcodes\/(generate|settings)$/,       // A574: Labels — generate missing codes before printing, the numbering (menu.edit)
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';

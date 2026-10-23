@@ -195,7 +195,8 @@ await ok('grid hook: an IntersectionObserver on the sentinel, rooted in the grid
 const cashier = read('src/pages/pos/CashierScreen.tsx');
 await ok('web POS: draws gridList.slice(0, grid.count), resets on category / search, sentinel at the end', () => {
   assert(/const gridList = exactFirst\(filtered, search, \(p\) => \[p\.name, \(p as any\)\.barcode\]\);/.test(cashier), 'exact first');
-  assert(/const grid = useGridWindow\(gridList\.length, `\$\{activeCategory\}\|\$\{search\}\|\$\{isPetrol\}`\);/.test(cashier), 'reset key');
+  // A537: a menu chosen in the category panel starts the grid again too.
+  assert(/const grid = useGridWindow\(gridList\.length, `\$\{activeMenu\}\|\$\{activeCategory\}\|\$\{search\}\|\$\{isPetrol\}`\);/.test(cashier), 'reset key');
   assert(/<div ref=\{grid\.rootRef\} style=\{s\.productGrid\}>/.test(cashier), 'root = the grid scroll box');
   assert(/gridList\.slice\(0, grid\.count\)\.map\(\(product\) => \{/.test(cashier) && !/filtered\.map\(\(product\)/.test(cashier), 'incremental map');
   assert(/\{grid\.more && <div ref=\{grid\.sentinelRef\} data-testid="grid-more"/.test(cashier), 'sentinel');
@@ -203,7 +204,7 @@ await ok('web POS: draws gridList.slice(0, grid.count), resets on category / sea
 });
 const mini = read('src/pages/pos/MinimartPOS.tsx');
 await ok('minimart POS: the same incremental grid', () => {
-  assert(/const grid = useGridWindow\(gridList\.length, `\$\{activeCategory\}\|\$\{catalogueSearch\}`\);/.test(mini), 'hook');
+  assert(/const grid = useGridWindow\(gridList\.length, `\$\{activeMenu\}\|\$\{activeCategory\}\|\$\{catalogueSearch\}`\);/.test(mini), 'hook');   // A537
   assert(/<div ref=\{grid\.rootRef\} style=\{s\.productGrid\}>/.test(mini), 'root');
   assert(/gridList\.slice\(0, grid\.count\)\.map\(product => \{/.test(mini) && !/filteredProducts\.map\(product/.test(mini), 'map');
   assert(/\{grid\.more && <div ref=\{grid\.sentinelRef\} data-testid="grid-more"/.test(mini), 'sentinel');

@@ -8,6 +8,7 @@ var DocBuilder = class {
   constructor(columns) {
     this.columns = columns;
     this.blocks = [];
+    this.useFontB = false;
   }
   /** Pre-formatted lines from layout.ts go through here unchanged. */
   line(text, opts = {}) {
@@ -36,6 +37,11 @@ var DocBuilder = class {
     this.blocks.push({ kind: "feed", lines });
     return this;
   }
+  /** A540: a thin gap of `dots` printer dots between two lines. */
+  gap(dots) {
+    this.blocks.push({ kind: "gap", dots });
+    return this;
+  }
   cut() {
     this.blocks.push({ kind: "cut" });
     return this;
@@ -59,10 +65,17 @@ var DocBuilder = class {
     this.cutFeedLines = lines;
     return this;
   }
+  /** A543: the whole document in the printer's Font B (see Document.font). The caller lays it out at
+   *  columnsFor(width, 'B') — this does not re-flow anything. */
+  fontB() {
+    this.useFontB = true;
+    return this;
+  }
   build() {
     const doc = { columns: this.columns, blocks: this.blocks };
     if (this.spacing !== void 0) doc.lineSpacing = this.spacing;
     if (this.cutFeedLines !== void 0) doc.cutFeed = this.cutFeedLines;
+    if (this.useFontB) doc.font = "B";
     return doc;
   }
 };
@@ -120,7 +133,8 @@ function formatCents(c) {
 }
 
 // shared/printing/src/layout.ts
-function columnsFor(paperWidthMm) {
+function columnsFor(paperWidthMm, font = "A") {
+  if (font === "B") return paperWidthMm === 80 ? 64 : 42;
   return paperWidthMm === 80 ? 48 : 32;
 }
 function sanitize(s) {
@@ -151,8 +165,34 @@ function pairOrStack(cols, left, right) {
   return [l.slice(0, cols), " ".repeat(Math.max(0, cols - r.length)) + r.slice(0, cols)];
 }
 function hangingWrap(text, width, indent) {
-  const segs = wrap(text, width);
-  return segs.map((s, i) => i === 0 ? s : " ".repeat(indent) + s);
+  const prefix = sanitize(text.slice(0, indent));
+  const rest = text.slice(indent);
+  const segs = wrap(rest, Math.max(1, width - indent));
+  return segs.map((s, i) => (i === 0 ? prefix : " ".repeat(indent)) + s);
+}
+function indentedWrap(cols, text, indent) {
+  const pad = " ".repeat(indent);
+  return wrap(text, Math.max(1, cols - indent)).map((l) => pad + l);
+}
+function variantLabel(product, option) {
+  const p = sanitize(product).trim();
+  const v = sanitize(option).trim();
+  const head = v.slice(0, p.length);
+  if (p && head.toLowerCase() === p.toLowerCase() && !/[A-Za-z0-9]/.test(v.charAt(p.length))) {
+    return v.slice(p.length).replace(/^[\s\-:,/|]+/, "").trim();
+  }
+  return v;
+}
+function nameWithVariant(product, options) {
+  const name = sanitize(product).trim();
+  const seen = /* @__PURE__ */ new Set();
+  const parts = options.map((o) => variantLabel(name, o)).filter((o) => {
+    const k = o.toLowerCase();
+    if (!o || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return parts.length ? `${name} - ${parts.join(", ")}` : name;
 }
 function itemColumns(cols) {
   const amt = cols >= 48 ? 12 : 10;
@@ -365,8 +405,12 @@ function fullStamp(d) {
 function compactStamp(d) {
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${p2(d.getFullYear() % 100)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }
-var COMPACT_LINE_SPACING_DOTS = 26;
+var RECEIPT_LINE_SPACING_DOTS = 30;
 var COMPACT_CUT_FEED = 1;
+var INFO_GAP_DOTS = 10;
+var KITCHEN_FONT_B_LINE_SPACING_DOTS = 24;
+var ITEM_GAP_DOTS = 10;
+var PRODUCTION_CUT_FEED = 1;
 function rate(n) {
   return String(Number(n.toFixed(2)));
 }
@@ -380,6 +424,26 @@ function describeAttributes(unit) {
   }
   return unit.attributes.filter((a) => a.count > 0).map((a) => total === unit.portions ? `${a.count} ${a.option}` : `${a.count} x ${a.option}`).join(", ");
 }
+function isMeasured(line) {
+  return !!line.measureUnit || !Number.isInteger(line.quantity);
+}
+function measureQty(q) {
+  if (Number.isInteger(q)) return String(q);
+  return String(Math.round(q * 1e3) / 1e3);
+}
+function measureText(line) {
+  const unit = line.measureUnit;
+  if (unit === "g") return `${Math.round(line.quantity * 1e3)} g`;
+  if (unit === "kg") return `${(Math.round(line.quantity * 1e3) / 1e3).toFixed(3)} kg`;
+  return unit ? `${measureQty(line.quantity)} ${unit}` : measureQty(line.quantity);
+}
+function perUnitPrice(cents) {
+  return cents % 100 === 0 ? String(cents / 100) : formatCents(cents);
+}
+function measureRow(line) {
+  const per = line.measureUnit === "g" ? "kg" : line.measureUnit;
+  return `${measureText(line)} @ ${perUnitPrice(line.unitPrice)}${per ? `/${per}` : ""}`;
+}
 function visibleUnits(line, ctx) {
   const { station } = ctx;
   if (station.includeUnits === "none") return [];
@@ -392,13 +456,42 @@ function visibleUnits(line, ctx) {
   }
   return units;
 }
+function variantUnit(line) {
+  const key = (s) => sanitize(s).trim().toLowerCase();
+  const name = key(line.name);
+  if (!name) return void 0;
+  return line.units.find((u) => u.attributes.length > 0 && u.quantity === 1 && u.portions <= 1 && u.priceDelta === 0 && key(u.name) === name);
+}
+function lineHeading(line) {
+  const folded = variantUnit(line);
+  if (!folded) return { name: line.name };
+  return { name: nameWithVariant(line.name, folded.attributes.map((a) => a.option)), folded };
+}
+function receiptHeading(line) {
+  const options = [];
+  const hidden = /* @__PURE__ */ new Set();
+  const moved = /* @__PURE__ */ new Set();
+  for (const u of line.units) {
+    if (!u.attributes.length || u.quantity !== 1 || u.portions > 1 || u.attributes.some((a) => a.priceDelta !== 0)) continue;
+    options.push(...u.attributes.filter((a) => a.count > 0).map((a) => a.option));
+    if (u.priceDelta === 0) hidden.add(u);
+    else moved.add(u);
+  }
+  return { name: options.length ? nameWithVariant(line.name, options) : line.name, hidden, moved };
+}
+function lineEarnsPlace(line, visible, station) {
+  return line.units.some((u) => !u.modifier) ? visible.some((u) => !u.modifier) : station.includeUnits === "all" || line.stationIds.includes(station.id);
+}
 function noteRows(note) {
   return (note ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 }
 function renderProduction(ctx) {
   const { order, station } = ctx;
-  const cols = columnsFor(station.paperWidthMm);
+  const fontB = station.kind === "kitchen" && ctx.business.kitchenFontB === true;
+  const cols = columnsFor(station.paperWidthMm, fontB ? "B" : "A");
   const d = new DocBuilder(cols);
+  if (fontB) d.fontB().lineSpacing(KITCHEN_FONT_B_LINE_SPACING_DOTS);
+  d.cutFeed(PRODUCTION_CUT_FEED);
   if (ctx.voided) {
     d.line("VOID", { align: "center", size: "large", bold: true });
     d.line(rule(cols));
@@ -413,7 +506,7 @@ function renderProduction(ctx) {
   if (order.orderType === "delivery" && order.deliveryPerson) {
     d.line(`Rider  ${order.deliveryPerson}`);
   }
-  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `NOTE: ${ln}`, void 0, 0), { bold: true });
+  for (const ln of noteRows(order.note)) d.lines(indentedWrap(cols, `NOTE: ${ln}`, 0), { bold: true });
   if (ctx.reprint) {
     d.line(`REPRINT  ${fullStamp(ctx.reprint.at)}  (#${ctx.reprint.count})`);
   }
@@ -422,34 +515,39 @@ function renderProduction(ctx) {
   let printedLines = 0;
   for (const line of order.lines) {
     const units = visibleUnits(line, ctx);
-    if (station.includeUnits !== "none") {
-      const earns = line.units.length > 0 ? units.length > 0 : station.includeUnits === "all" || line.stationIds.includes(station.id);
-      if (!earns) continue;
-    }
-    if (printedLines > 0) d.blank();
+    if (station.includeUnits !== "none" && !lineEarnsPlace(line, units, station)) continue;
+    if (printedLines > 0) d.gap(ITEM_GAP_DOTS);
     printedLines++;
-    const qtyPrefix = `${line.quantity}   `;
-    const headingWidth = station.emphasizeParent ? Math.floor(cols / 2) : cols;
+    const { name, folded } = lineHeading(line);
+    const qtyPrefix = `${isMeasured(line) ? measureText(line) : line.quantity}   `;
+    const headingWidth = cols;
     d.lines(
-      hangingWrap(`${qtyPrefix}${line.name.toUpperCase()}`, headingWidth, qtyPrefix.length),
+      hangingWrap(`${qtyPrefix}${name.toUpperCase()}`, headingWidth, qtyPrefix.length),
       { size: station.emphasizeParent ? "tall" : "normal", bold: true }
     );
     if (line.units.length === 0) {
       unitRows++;
-      for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, void 0, 6), { bold: true });
+      for (const ln of noteRows(line.note)) d.lines(indentedWrap(cols, `** ${ln}`, 6), { bold: true });
       continue;
     }
+    const dishRows = units.filter((u) => !u.modifier).length;
+    unitRows += line.units.some((u) => !u.modifier) ? dishRows : 1;
     for (const u of units) {
-      unitRows++;
+      if (u === folded) continue;
+      if (u.modifier) {
+        const times = u.quantity > 1 ? ` x${u.quantity}` : "";
+        d.lines(indentedWrap(cols, `+ ${u.name}${times}`, 6));
+        continue;
+      }
       const attrs = describeAttributes(u);
       const qty = u.quantity > 1 ? ` x${u.quantity}` : "";
       const inline = station.attributeStyle === "inline-when-simple" && attrs ? ` (${attrs})` : "";
-      d.lines(subRow(cols, `${u.name}${qty}${inline}`, void 0, 6));
+      d.lines(indentedWrap(cols, `${u.name}${qty}${inline}`, 6));
       if (attrs && !inline) {
-        d.lines(subRow(cols, attrs, void 0, 8));
+        d.lines(indentedWrap(cols, attrs, 8));
       }
     }
-    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, void 0, 6), { bold: true });
+    for (const ln of noteRows(line.note)) d.lines(indentedWrap(cols, `** ${ln}`, 6), { bold: true });
   }
   d.line(rule(cols));
   if (station.showFooterCount) {
@@ -464,11 +562,16 @@ function renderReceipt(ctx) {
   const c = itemColumns(cols);
   const d = new DocBuilder(cols);
   const classic = business.receiptClassic ?? {};
-  const full = classic.layout === true;
-  if (classic.spacing !== true) d.lineSpacing(COMPACT_LINE_SPACING_DOTS);
+  const full = classic.compactLayout !== true;
+  if (classic.spacing !== true) d.lineSpacing(RECEIPT_LINE_SPACING_DOTS);
   if (classic.extraFeed !== true) d.cutFeed(COMPACT_CUT_FEED);
   const minorRule = () => {
     if (full) d.line(rule(cols));
+  };
+  let infoLines = 0;
+  const info = (text) => {
+    if (full && infoLines++ > 0) d.gap(INFO_GAP_DOTS);
+    d.line(text);
   };
   if (ctx.voided) {
     d.line("VOID", { align: "center", size: "large", bold: true });
@@ -498,7 +601,7 @@ function renderReceipt(ctx) {
   if (full) {
     d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
     d.line(rule(cols));
-    if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);
+    if (!ctx.proforma) info(`Bill No.: ${order.billNumber}`);
   } else if (ctx.proforma) {
     d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
   } else {
@@ -507,23 +610,23 @@ function renderReceipt(ctx) {
     const type = labelled.length + 1 + sanitize(bill).length <= cols ? labelled : TYPE_TITLE[order.orderType];
     d.lines(pairOrStack(cols, type, bill));
   }
-  if (order.orderType === "delivery") d.line(`Delivery Boy: ${order.deliveryPerson ?? ""}`);
-  if (order.orderType === "dine_in" && order.tableNumber) d.line(`Table: ${order.tableNumber}`);
+  if (order.orderType === "delivery") info(`Delivery Boy: ${order.deliveryPerson ?? ""}`);
+  if (order.orderType === "dine_in" && order.tableNumber) info(`Table: ${order.tableNumber}`);
   if (full) {
-    d.line(`Cashier: ${order.cashierName}`);
-    d.line(`Date: ${fullStamp(order.soldAt)}`);
+    info(`Cashier: ${order.cashierName}`);
+    info(`Date: ${fullStamp(order.soldAt)}`);
   } else {
     const who = `Cashier: ${order.cashierName}`;
     const stamp2 = sanitize(who).length + 1 + 19 <= cols ? fullStamp(order.soldAt) : compactStamp(order.soldAt);
     d.lines(pairOrStack(cols, who, stamp2));
   }
-  if (ctx.reprint) d.line(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
+  if (ctx.reprint) info(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
   if (ctx.voided) {
     const voided = `Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`;
-    if (full) d.line(voided);
+    if (full) info(voided);
     else d.lines(wrap(voided, cols));
   }
-  if (full) d.line(`Kots: ${order.kotCount}`);
+  if (full && business.kitchenTickets !== false) info(`Kots: ${order.kotCount}`);
   for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, void 0, 0));
   minorRule();
   d.line("Item".padEnd(c.name) + "Qty".padStart(c.qty) + "Amt".padStart(c.amt));
@@ -540,13 +643,16 @@ function renderReceipt(ctx) {
   let totalQty = 0;
   let lastHadSubLines = false;
   order.lines.forEach((line, i) => {
-    totalQty += line.quantity;
+    const measured = isMeasured(line);
+    totalQty += measured ? 1 : line.quantity;
     if (lastHadSubLines) d.blank();
     const deltas = line.units.reduce((a, u) => a + u.priceDelta * u.quantity, 0);
     const baseNet = tax.lineNets[i] - netOf(deltas * line.quantity, business.vatRate, business.ctlRate);
-    d.lines(itemRow(cols, line.name, String(line.quantity), formatCents(baseNet)));
-    const units = visibleUnits(line, ctx);
+    const { name, hidden, moved } = receiptHeading(line);
+    d.lines(itemRow(cols, name, measured ? "1" : String(line.quantity), formatCents(baseNet)));
+    const units = visibleUnits(line, ctx).filter((u) => !hidden.has(u)).map((u) => moved.has(u) ? { ...u, attributes: [] } : u);
     const before = d.length;
+    if (measured) d.lines(subRow(cols, measureRow(line), void 0, 2));
     const plain = [];
     for (const u of units) {
       const attrs = describeAttributes(u);
@@ -586,7 +692,7 @@ function renderReceipt(ctx) {
   if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
   d.line(pair(cols, `VAT (${rate(business.vatRate)}%)`, formatCents(tax.vat)));
   minorRule();
-  if (full || tax.roundOff !== 0) d.line(pair(cols, "Round Off:", formatCents(tax.roundOff)));
+  if (tax.roundOff !== 0) d.line(pair(cols, "Round Off:", formatCents(tax.roundOff)));
   if (full || tip > 0 || deliveryFee > 0) d.line(pair(cols, "Total:", formatCents(tax.total)), { bold: true });
   if (tip > 0) d.line(pair(cols, "Tip:", formatCents(tip)));
   if (deliveryFee > 0) d.line(pair(cols, "Delivery fee:", formatCents(deliveryFee)));
@@ -594,14 +700,23 @@ function renderReceipt(ctx) {
   d.line(rule(cols));
   d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: "tall", bold: true });
   minorRule();
-  if (full) d.line("Payment Detail:", { bold: true });
+  if (full && business.tillNumber?.trim()) {
+    const label = `${sanitize(business.tillLabel ?? "").trim().toUpperCase() || "BUY GOODS"}:`;
+    const raw = sanitize(business.tillNumber).trim();
+    const cut = raw.indexOf(", Account ");
+    const number = cut > 0 ? raw.slice(0, cut).trim() : raw;
+    const account = cut > 0 ? raw.slice(cut + ", Account ".length).trim() : "";
+    for (const t of [label, number]) d.lines(wrap(t, cols), { align: "center", size: "tall", bold: true });
+    if (account) d.lines(wrap(`Account: ${account}`, cols), { align: "center" });
+    d.line(rule(cols));
+  }
   for (const leg of order.payments) {
     d.line(pair(cols, leg.label.toUpperCase(), formatCents(leg.amount)));
   }
   if (order.changeGiven > 0) {
     d.line(pair(cols, "CHANGE", formatCents(order.changeGiven)));
   }
-  if (business.tillNumber) {
+  if (!full && business.tillNumber) {
     const payLine = `${business.tillLabel ?? "Buy Goods"}: ${business.tillNumber}`;
     const cut = payLine.indexOf(", Account ");
     if (payLine.length > cols && cut > 0) {
@@ -637,10 +752,7 @@ function hasPrintableContent(ctx) {
   const { order, station } = ctx;
   if (station.kind === "receipt") return true;
   if (station.includeUnits === "none") return order.lines.length > 0;
-  return order.lines.some((line) => {
-    const units = visibleUnits(line, ctx);
-    return line.units.length > 0 ? units.length > 0 : station.includeUnits === "all" || line.stationIds.includes(station.id);
-  });
+  return order.lines.some((line) => lineEarnsPlace(line, visibleUnits(line, ctx), station));
 }
 function renderTicket(ctx) {
   return ctx.station.kind === "receipt" ? renderReceipt(ctx) : renderProduction(ctx);
@@ -867,6 +979,8 @@ var INIT = [ESC, 64];
 var CODEPAGE_CP437 = [ESC, 116, 0];
 var LINE_SPACING_DEFAULT = [ESC, 50];
 var lineSpacingDots = (n) => [ESC, 51, Math.max(0, Math.min(255, Math.round(n)))];
+var FONT_A = [ESC, 77, 0];
+var FONT_B = [ESC, 77, 1];
 var ALIGN = { left: 0, center: 1, right: 2 };
 function sizeByte(size) {
   switch (size) {
@@ -891,6 +1005,7 @@ function toEscPos(doc, opts = {}) {
   };
   const compact = doc.lineSpacing;
   push(...INIT, ...CODEPAGE_CP437, ...compact === void 0 ? LINE_SPACING_DEFAULT : lineSpacingDots(compact));
+  if (doc.font === "B") push(...FONT_B);
   let curSpacing = compact === void 0 ? -1 : compact;
   let curAlign = -1;
   let curSize = -1;
@@ -942,6 +1057,9 @@ function toEscPos(doc, opts = {}) {
       case "feed":
         push(ESC, 100, Math.max(0, Math.min(255, block.lines)));
         break;
+      case "gap":
+        push(ESC, 74, Math.max(0, Math.min(255, Math.round(block.dots))));
+        break;
       case "drawer":
         push(ESC, 112, 0, 25, 250);
         break;
@@ -952,6 +1070,7 @@ function toEscPos(doc, opts = {}) {
   }
   push(ESC, 97, 0, GS, 33, 0, ESC, 69, 0);
   if (compact !== void 0) push(...LINE_SPACING_DEFAULT);
+  if (doc.font === "B") push(...FONT_A);
   if (opts.openDrawer) push(ESC, 112, 0, 25, 250);
   const feed = opts.cut && doc.cutFeed !== void 0 ? doc.cutFeed : opts.feedBeforeCut;
   if (feed) push(ESC, 100, Math.max(0, Math.min(255, feed)));
@@ -1043,6 +1162,7 @@ function toUnits(line, ids, lineStationIds, routing) {
       stationIds: c.category_id ? stationsForCategory(c.category_id, ids, routing) : c.is_kitchen ? ids.kitchen : ids.dispatch
     });
   }
+  const realComponents = units.length;
   if (units.length === 0) {
     for (const part of describeFromText(line.product.description)) {
       units.push({
@@ -1064,7 +1184,7 @@ function toUnits(line, ids, lineStationIds, routing) {
     priceDelta: 0
   }));
   if (attrs.length) {
-    if (units.length) {
+    if (realComponents) {
       units[0].attributes = attrs;
       units[0].chosen = true;
     } else {
@@ -1080,17 +1200,20 @@ function toUnits(line, ids, lineStationIds, routing) {
       });
     }
   }
+  const modifierStationIds = [...lineStationIds, ...ids.dispatch.filter((id) => !lineStationIds.includes(id))];
   for (const m of line.selectedModifiers ?? []) {
-    if (!m.name) continue;
+    const modName = (m.name ?? m.optionName ?? "").trim();
+    if (!modName) continue;
     units.push({
-      productId: m.name,
-      name: m.name,
+      productId: modName,
+      name: modName,
       quantity: 1,
       portions: 1,
       priceDelta: toCents(m.price ?? 0),
       chosen: true,
       attributes: [],
-      stationIds: ids.dispatch
+      stationIds: modifierStationIds,
+      modifier: true
     });
   }
   return units;
@@ -1173,7 +1296,8 @@ function stationConfigForType(type, id, paperWidthMm) {
     showPrices: false,
     showUnchangedUnits: true,
     showOptionPrices: false,
-    emphasizeParent: true,
+    emphasizeParent: false,
+    // A557: as dispatch
     showFooterCount: true,
     attributeStyle: "always-sublines",
     openCashDrawer: false

@@ -1,0 +1,349 @@
+---
+import Base from '../layouts/Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import Laptop from '../components/frames/Laptop.astro';
+import Shot from '../components/screens/Shot.astro';
+import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
+import { WA_MESSAGES, PRICES, kes } from '../lib/site';
+import { DEMO_CARDS, DEMO_FOUND, DEMO_DAYPARTS, DEMO_TOP3, DEMO_WEEK, DEMO_MOVES, DEMO_NO_COST, demoCard } from '../lib/analyticsDemo';
+import { softwareApplication } from '../lib/schema';
+
+const description =
+  'ZapTill Analytics turns your own sales into a short list of what to do next, in plain words: what to order, what to have in for each day, stock to move between branches, credit to chase and cashiers worth a look. It never suggests raising your prices.';
+
+const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a try' } as const;
+// The payback table: every demo card, with its estimate where it has an honest one (a stock card says how many to have
+// in; a warning has no figure at all).
+const payback = DEMO_CARDS.map((c) => ({
+  title: c.title,
+  evidence: c.evidence,
+  value: c.estimate ? `≈ ${c.estimate}` : c.warning ? 'No figure' : c.plan ? `${c.plan.label} ${c.plan.strong}` : '-',
+  unit: c.estimate ? c.unit : c.warning ? 'a warning to look into' : c.plan?.rest ?? '',
+  plain: !c.estimate,
+}));
+const credit = demoCard(5);
+const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
+---
+<Base
+  title="Analytics: know what to change next, in shillings | ZapTill"
+  description={description}
+  waMessage={WA_MESSAGES.analytics}
+  ogImage="/og/analytics.png"
+  jsonLd={[softwareApplication(description)]}
+>
+  <section class="an-hero">
+    <div class="wrap an-hero__grid">
+      <div>
+        <h1>Run your business properly, even when you're not there.</h1>
+        <p class="an-hero__sub">
+          ZapTill Analytics reads your own sales and tells you what to do next, in plain words: what to order before
+          Friday, what to prepare each day, which branch needs stock from another, and who owes you. Your prices stay
+          competitive: it never tells you to charge more.
+        </p>
+        <p class="an-hero__price">An add-on, planned at about KES {kes(PRICES.analyticsMonthly)} a month for your whole business.</p>
+        <div class="actions">
+          <WhatsAppButton message={WA_MESSAGES.analytics} label="Ask what it would show you" />
+        </div>
+      </div>
+      <div class="an-hero__visual">
+        <Laptop label="The Analytics page in the web dashboard, from a demo restaurant">
+          <Shot src="/screens/analytics-demo.webp" eager width={1400} height={875}
+            alt="The Analytics page from a demo restaurant: a plain summary of the last 30 days, a note that 6 items have no cost, and the first 'Do this next' cards: order about 70 more Tusker lager before Friday, cooking oil runs out in about 2 days, stock up for Friday." />
+        </Laptop>
+        <p class="an-hero__cap">The real Analytics page, on a made-up restaurant.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Do this next -->
+  <section class="band" aria-labelledby="dtn-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="dtn-h">"Do this next": a short list, in plain words</h2>
+        <p>
+          Each card names one thing to do and why. A stock card says how many to have in, and by when. A money card gives
+          an estimate in shillings and what has to be true for it. A warning says what to look into, with no figure at
+          all. Some cards rest on strong evidence, some are worth a try, and each says which. A card appears only when
+          your figures support it.
+        </p>
+      </div>
+      <p class="demo-tag">Example from a demo restaurant</p>
+      <p class="an-found">
+        This period: <b>{DEMO_FOUND.things} things to act on</b>. Two busy days to stock for, two items running low
+        (about {DEMO_FOUND.atRisk} of sales at risk if the beer runs out), <b>{DEMO_FOUND.credit}</b> of old credit to
+        collect, a dish worth featuring, and one warning to look into. Each card says what it assumes.
+      </p>
+      <p class="an-nocost">
+        <b>{DEMO_NO_COST.items} items have no cost</b>: {DEMO_NO_COST.share} of your sales, so your margins are partly
+        blind. Analytics lists them, so you can set a cost and see every margin.
+      </p>
+      <ul class="an-cards">
+        {DEMO_CARDS.map((c) => <li><DoThisNextCard bare {...c} /></li>)}
+      </ul>
+    </div>
+  </section>
+
+  <!-- What sells when -->
+  <section class="band band--white" aria-labelledby="when-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="when-h">What sells when</h2>
+        <p>
+          Every sale, by the hour it was rung, so you know what to prep, push and stock for each part of the day. Then the
+          top 3 at every hour, to have ready before the hour starts.
+        </p>
+      </div>
+      <p class="demo-tag">Example from a demo restaurant</p>
+      <ul class="dayparts">
+        {DEMO_DAYPARTS.map((d) => (
+          <li class="daypart">
+            <h3>What sells {d.name === 'Late at night' ? 'late at night' : d.name === 'Lunch' ? 'at lunch' : `in the ${d.name.toLowerCase()}`}</h3>
+            <p class="daypart__meta">{d.hours} &middot; {d.share} of everything sold</p>
+            <ul>
+              {d.items.map(([name, pct]) => (
+                <li>
+                  <span class="daypart__row"><span>{name}</span><b>{pct}%</b></span>
+                  <span class="daypart__bar" style={`--w:${pct}%`}></span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+
+      <div class="week">
+        <h3 id="week-h">Your week at a glance: what to prepare each day</h3>
+        <p class="week__sub">The top 3 on each day of the week, with what a typical one sells.</p>
+        <ol class="week__days" aria-labelledby="week-h">
+          {DEMO_WEEK.map((d) => (
+            <li>
+              <b>{d.day}</b>
+              <ul>{d.top.map(([name, qty]) => <li><span>{name}</span><b>{qty}</b></li>)}</ul>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div class="top3">
+        <div class="top3__copy">
+          <h3>The top 3 at every hour</h3>
+          <p>Have these ready before the hour starts. In the demo, lunch is chapati, beef burger and pilau; from six it is
+            Tusker, nyama choma and wings.</p>
+        </div>
+        <ol class="top3__list" aria-label="The top 3 sellers at some of the hours, from the demo restaurant">
+          {DEMO_TOP3.map(([h, items]) => <li><time>{h}</time><span>{items}</span></li>)}
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- Money leaks -->
+  <section class="band band--night" aria-labelledby="leaks-h">
+    <div class="wrap leaks">
+      <div class="split__copy leaks__copy">
+        <h2 id="leaks-h">Money leaks, by name</h2>
+        <p>
+          Voids, refunds, discounts, wastage and short drawers: money that left without a sale. Analytics adds them up
+          for each cashier, and flags anyone whose void or discount rate is well above the typical cashier's.
+        </p>
+        <p>A flag is a reason to ask, not proof: a void before payment is not always a loss. So it comes up as a warning
+          to look into, with no shilling figure, never as money to "recover".</p>
+      </div>
+      <div class="leaks__visual">
+        <figure class="screen-crop">
+          <Shot src="/screens/analytics-leaks.webp" width={1396} height={285}
+            alt="Money leaks by cashier from a demo restaurant: Otieno and Achieng flagged, Otieno mostly voids. Where it goes: voids 63%, refunds 15%, discounts 13%, wastage 9%, of KES 147.9K." />
+        </figure>
+        <p class="caption">The Money leaks tab, from the demo restaurant.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Branches -->
+  <section class="band band--white" aria-labelledby="branches-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="branches-h">Stock between branches, in plain words</h2>
+        <p>
+          With more than one branch, Analytics compares what each one sells with what it holds. When an item sits at one
+          branch while another runs low, it says so in a sentence. No quantities and no shilling figures: how much to
+          move is your call, or your manager's.
+        </p>
+        <p>It also flags a branch whose sales fall well behind the others, and shows what sells when at that branch.</p>
+      </div>
+      <div class="split__visual">
+        <figure class="moves">
+          <figcaption class="demo-tag">Example from a demo restaurant with three branches</figcaption>
+          <div class="moves__card">
+            <p class="moves__title">Stock to move between branches</p>
+            <p class="moves__sub">Where stock sits at one branch and runs low at another: how much to move is your call</p>
+            <ul>
+              {DEMO_MOVES.map((m) => (
+                <li>
+                  <p class="moves__head"><b>{m.items}</b> &middot; {m.route}</p>
+                  <p>{m.text}</p>
+                  <span class="moves__link">Start a transfer &rarr;</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- Credit ageing -->
+  <section class="band" aria-labelledby="credit-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="credit-h">Credit ageing: who owes you, and for how long</h2>
+        <p>
+          Every sale on account is confirmed by a manager. Analytics then shows how old the money owed to you is: up to
+          30 days, 31 to 60, 61 to 90 and over 90, with your top debtors and how long each has owed.
+        </p>
+        <p>When KES 1,000 or more has been owed for over 60 days, it becomes a "Do this next" card with the top three names to call.</p>
+      </div>
+      <div class="split__visual credit-shot">
+        <figure class="screen-crop">
+          <Shot src="/screens/analytics-credit.webp" width={552} height={172}
+            alt="How old the credit is, from a demo restaurant: KES 277,900 owed by 7 customers. 0 to 30 days KES 117,500, 31 to 60 days KES 73,000, 61 to 90 days KES 42,400, over 90 days KES 45,000." />
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- Payback -->
+  <section class="band band--white" aria-labelledby="pay-h">
+    <div class="wrap payback">
+      <div>
+        <h2 id="pay-h">Does it pay for itself? Do the sum yourself.</h2>
+        <p class="lede">
+          Analytics is planned at about KES {kes(PRICES.analyticsMonthly)} a month. Here are the demo restaurant's cards
+          above. Not every card has a shilling figure, on purpose: a stock card tells you how many to have in, and a
+          warning tells you what to look into. Where there is a figure, it is an estimate, not a promise.
+        </p>
+        <p>
+          The old credit alone, if it is paid, is about {Math.floor(creditKes / PRICES.analyticsMonthly)} months of
+          Analytics. A Friday without running out of the best-selling beer keeps about {demoCard(1).estimate} of sales.
+        </p>
+      </div>
+      <table class="payback__table">
+        <caption class="visually-hidden">The demo restaurant's estimates against the price of Analytics</caption>
+        <thead><tr><th scope="col">Card (demo restaurant)</th><th scope="col">What it says</th></tr></thead>
+        <tbody>
+          {payback.map((p) => (
+            <tr>
+              <td>{p.title}<small>{evidenceLabel[p.evidence]}</small></td>
+              <td class:list={{ plain: p.plain }}>{p.value}{p.unit && <small>{p.unit}</small>}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr><th scope="row">Analytics</th><td>about KES {kes(PRICES.analyticsMonthly)}<small>a month</small></td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- First-month money-leak report -->
+  <section class="band band--night report" aria-labelledby="report-h">
+    <div class="wrap">
+      <h2 id="report-h">Ask for a first-month money-leak report.</h2>
+      <p class="lede">
+        After your first month on ZapTill, we go through your figures with you: where money left without a sale, which
+        drawers came up short, and the first cards to act on. Ask us how it works for your business.
+      </p>
+      <!-- TODO(owner): decide what the first-month report includes, who prepares it and whether it is paid. Until then the
+           page only invites a conversation and promises no price. -->
+      <div class="actions">
+        <WhatsAppButton message={WA_MESSAGES.leakReport} label="Ask about the report" />
+      </div>
+      <p class="report__note">Analytics works on the sales ZapTill records; it needs a few weeks of trading to say much.</p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .an-hero {
+    background: radial-gradient(56rem 28rem at 80% 0%, rgba(20, 184, 166, 0.16), transparent 60%), var(--night);
+    color: var(--night-text);
+    padding-block: var(--s-7) var(--s-8);
+    overflow: hidden;
+  }
+  .an-hero__grid { display: grid; gap: var(--s-7); align-items: center; }
+  .an-hero h1 { max-width: 19ch; font-size: clamp(2.25rem, 1.5rem + 2.6vw, 3.5rem); }
+  .an-hero__sub { font-size: var(--fs-md); line-height: 1.5; color: #c4d6d4; max-width: 34rem; }
+  .an-hero__price { color: var(--teal-light); font-weight: 600; margin-bottom: var(--s-5); }
+  .an-hero__visual { min-width: 0; }
+  .an-hero__cap { font-size: var(--fs-sm); color: var(--night-muted); text-align: center; margin-top: var(--s-3); }
+  @media (min-width: 960px) { .an-hero__grid { grid-template-columns: 1fr 1.2fr; gap: var(--s-8); } }
+
+  .an-found { max-width: 46rem; color: var(--ink-2); margin-bottom: var(--s-3); }
+  .an-nocost {
+    max-width: 46rem; margin-bottom: var(--s-5); padding: var(--s-3) var(--s-4); font-size: var(--fs-sm);
+    background: #fff8eb; border: 1px solid #f3d9a4; border-radius: var(--r-md); color: var(--ink-2);
+  }
+
+  .week { background: #111a1c; color: #e3ecec; border: 1px solid #24353a; border-radius: var(--r-md); padding: var(--s-4); margin-bottom: var(--s-7); }
+  .week h3 { font: 700 1rem/1.3 var(--font-text); letter-spacing: 0; color: #fff; margin: 0; }
+  .week__sub { font-size: 0.8rem; color: #8da2a2; margin: 0.1rem 0 var(--s-3); }
+  .week__days { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+  .week__days > li { background: #1a2629; border-radius: 8px; padding: var(--s-3); min-width: 0; }
+  .week__days > li > b { color: #fff; font-size: 0.92rem; }
+  .week__days ul { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.3rem; }
+  .week__days ul li { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.88rem; color: #cbd8d8; }
+  .week__days ul b { color: #fff; font-variant-numeric: tabular-nums; }
+
+  .moves { margin: 0; }
+  .moves__card { background: #111a1c; color: #e3ecec; border: 1px solid #24353a; border-radius: var(--r-md); padding: var(--s-4); box-shadow: var(--shadow-object); }
+  .moves__title { font-weight: 700; color: #fff; margin: 0; }
+  .moves__sub { font-size: 0.8rem; color: #8da2a2; margin: 0.1rem 0 var(--s-2); }
+  .moves ul { list-style: none; margin: 0; padding: 0; }
+  .moves ul li { padding: var(--s-3) 0 var(--s-2); border-top: 1px solid #24353a; }
+  .moves ul li p { margin: 0 0 0.3rem; font-size: 0.95rem; }
+  .moves .moves__head { font-size: 0.85rem; color: #9fb2b2; }
+  .moves__head b { color: #fff; }
+  .moves__link { color: #5eead4; font-size: 0.85rem; }
+  .an-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-4); }
+  @media (min-width: 760px) { .an-cards { grid-template-columns: repeat(2, 1fr); } }
+
+  .dayparts { list-style: none; margin: 0 0 var(--s-7); padding: 0; display: grid; gap: var(--s-3); grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+  .daypart { background: #111a1c; color: #e3ecec; border: 1px solid #24353a; border-radius: var(--r-md); padding: var(--s-4); }
+  .daypart h3 { font: 700 1rem/1.3 var(--font-text); letter-spacing: 0; color: #fff; margin: 0; }
+  .daypart__meta { font-size: 0.8rem; color: #8da2a2; margin: 0.1rem 0 var(--s-3); }
+  .daypart ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+  .daypart__row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.92rem; }
+  .daypart__bar { display: block; height: 4px; margin-top: 0.2rem; border-radius: 2px; background: linear-gradient(90deg, #3b82f6 var(--w), #26363a var(--w)); }
+
+  .top3 { display: grid; gap: var(--s-5); align-items: start; }
+  .top3 h3 { font-size: var(--fs-lg); }
+  .top3__copy p { color: var(--ink-2); max-width: 30rem; }
+  .top3__list { list-style: none; margin: 0; padding: var(--s-4) var(--s-5); background: #111a1c; color: #e3ecec; border-radius: var(--r-md); border: 1px solid #24353a; display: grid; gap: 0.45rem; }
+  .top3__list li { display: grid; grid-template-columns: 3.4rem 1fr; gap: var(--s-3); font-size: 0.95rem; }
+  .top3__list time { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+  @media (min-width: 900px) { .top3 { grid-template-columns: 1fr 1.3fr; gap: var(--s-8); } }
+
+  .leaks { display: grid; gap: var(--s-6); }
+  .leaks__copy { max-width: none; display: grid; gap: 0 var(--s-8); }
+  .leaks__copy h2 { grid-column: 1 / -1; }
+  .leaks__copy p { color: var(--night-muted); }
+  @media (min-width: 900px) { .leaks__copy { grid-template-columns: 1fr 1fr; } }
+  .credit-shot { display: flex; justify-content: center; }
+  .credit-shot .screen-crop { max-width: 552px; width: 100%; }
+
+  .payback { display: grid; gap: var(--s-6); align-items: start; }
+  .payback__table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+  .payback__table th, .payback__table td { text-align: left; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); vertical-align: top; }
+  .payback__table thead th { font-size: var(--fs-sm); color: var(--muted); font-weight: 600; }
+  .payback__table td:last-child, .payback__table th:last-child { text-align: right; width: 42%; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .an-cards { align-items: stretch; }
+  @media (min-width: 1100px) { .an-cards { grid-template-columns: repeat(3, 1fr); } }
+  .payback__table td.plain { font-weight: 500; color: var(--ink-2); }
+  .payback__table small { display: block; color: var(--muted); font-weight: 400; font-size: var(--fs-xs); }
+  .payback__table tfoot th, .payback__table tfoot td { border-bottom: 0; background: var(--teal-wash); color: var(--teal-deep); }
+  @media (min-width: 900px) { .payback { grid-template-columns: 1fr 1fr; gap: var(--s-8); } }
+
+  .report h2 { max-width: 20ch; font-size: var(--fs-2xl); }
+  .report .lede { margin-bottom: var(--s-6); max-width: 42rem; }
+  .report__note { margin-top: var(--s-5); color: var(--night-muted); font-size: var(--fs-sm); }
+</style>

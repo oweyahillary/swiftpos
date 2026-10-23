@@ -1,0 +1,4 @@
+# Covered by the root .gitignore too; kept here so the site stands on its own.
+node_modules/
+dist/
+.astro/

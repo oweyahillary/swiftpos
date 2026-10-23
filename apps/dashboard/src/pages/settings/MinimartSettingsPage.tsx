@@ -11,6 +11,7 @@ import { money } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
 import { useBusiness } from '../../context/BusinessContext';
+import { businessTerms } from '../../lib/businessTerms';   // A573: the setup tab of every shop (retail, minimart, other)
 
 interface Product {
   id: string; name: string; base_price: number;
@@ -58,7 +59,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function MinimartSettingsPage() {
-  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
+  const { business } = useBusiness();
+  const currency = business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const [tab, setTab]             = useState<Tab>('scan');
   const [products, setProducts]   = useState<Product[]>([]);
   const [settings, setSettings]   = useState<Record<string, string>>({});
@@ -139,8 +141,8 @@ export default function MinimartSettingsPage() {
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Minimart Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Configure your minimart POS behaviour, products and barcode scanner</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-white">{businessTerms(business?.type).setupLabel}</h1>
+        <p className="text-sm text-gray-500 mt-1">Configure your POS behaviour, products and barcode scanner</p>
       </div>
 
       {/* Tabs */}
@@ -181,22 +183,8 @@ export default function MinimartSettingsPage() {
               />
             </div>
           ))}
-
-          <div className="flex items-center justify-between py-3.5">
-            <div>
-              <div className="text-sm font-medium text-gray-200">Default weight unit</div>
-              <div className="text-xs text-gray-500 mt-0.5">Unit displayed for weighed items on receipts</div>
-            </div>
-            <select
-              className="bg-gray-950 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm"
-              value={settings['weight_unit'] ?? 'kg'}
-              onChange={e => saveSetting('weight_unit', e.target.value)}
-            >
-              <option value="kg">Kilograms (kg)</option>
-              <option value="g">Grams (g)</option>
-              <option value="lb">Pounds (lb)</option>
-            </select>
-          </div>
+          {/* A580 (owner, 2026-10-23: "remove"): the old "Default weight unit" (kg / g / lb) is gone — nothing read it; each
+              weighed item carries its own kg or g (Products › Sold by weight, A577). A stored value is left, harmless. */}
         </div>
       )}
 

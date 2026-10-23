@@ -11,15 +11,18 @@
 import { cleanOffer, type Offer } from '../../../lib/offers';   // A445
 import { parseNotePicks } from '../../../lib/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
+import { scaleSettingsOrDefault, type ScaleSettings } from '../../../lib/scaleBarcode';   // A577
 import { rulesFromWire } from '../../../lib/reversalRules';
 import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
+import { resolveBranchBranding, branchBrandingFromWire } from '../../../lib/branchBranding';   // A544
+import { setPosBranchTheme, applyDashboardThemeVars, computeDashboardThemeVars, posBrandStrip } from '../../../lib/themeVars';   // A544, A547
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';
 import { usePOSAuth } from '../../../context/POSAuthContext';
 import { connectQZ } from '../../../lib/localPrintServer';
 import type { BranchPrinter } from '../../../lib/printKOT';
-import type { ComboComponent } from '../../../types';
+import type { ComboComponent, Menu } from '../../../types';
 import {
   deriveMode,
   type BusinessMode,
@@ -35,6 +38,8 @@ import {
 export interface POSData {
   products:          Product[];
   categories:        Category[];
+  /** A537: the business's menus (Food, Soft drinks …) — on, in order; [] = none (the plain category list). */
+  menus:             Menu[];
   variantsByProduct: Record<string, VariantGroup[]>;
   comboItems:        Record<string, ComboComponent[]>;
   kitchenExclusions: string[];
@@ -51,6 +56,8 @@ export interface POSData {
   receiptLogo:       MonoRaster | null;
   receiptFooter:     string;
   receiptPay:        { label: string; number: string } | null;   // A450
+  /** A547: the brand strip's colour (the till's A326 strip) — the branch's colour, else the business's; null with themes off. */
+  brandStrip:        string | null;
   tables:            Table[];
   pumps:             Pump[];
   setPumps:          Dispatch<SetStateAction<Pump[]>>;
@@ -64,6 +71,8 @@ export interface POSData {
   paymentMethodsEnabled: string[] | null;
   /** A445: the branch's offers, cleaned (shared/offers.ts). */
   offers: Offer[];
+  /** A577: how the business's weighing scales print their labels (the default until pos/init says). */
+  scaleSettings: ScaleSettings;
   orderMode:         'pay_first' | 'order_first';
   loading:           boolean;
   error:             string | null;
@@ -75,9 +84,11 @@ export function usePOSData(): POSData {
 
   const [products,          setProducts]          = useState<Product[]>([]);
   const [categories,        setCategories]        = useState<Category[]>([]);
+  const [menus,             setMenus]             = useState<Menu[]>([]);   // A537
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [paymentMethodsEnabled, setPaymentMethodsEnabled] = useState<string[] | null>(null);   // A429
   const [offers, setOffers] = useState<Offer[]>([]);   // A445
+  const [scaleSettings, setScaleSettings] = useState<ScaleSettings>(() => scaleSettingsOrDefault(null));   // A577
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
   const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
@@ -88,6 +99,8 @@ export function usePOSData(): POSData {
   const [receiptHeader,     setReceiptHeader]     = useState('');
   const [receiptLogo,       setReceiptLogo]       = useState<MonoRaster | null>(null);
   const [receiptFooter,     setReceiptFooter]     = useState('');
+  const [branchThemeId,     setBranchThemeId]     = useState<string | null>(null);   // A544: the branch's own theme
+  const [brandStrip,        setBrandStrip]        = useState<string | null>(null);   // A547: the till's brand strip, on the web POS
   const [receiptPay,        setReceiptPay]        = useState<{ label: string; number: string } | null>(null);   // A450
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
@@ -114,6 +127,7 @@ export function usePOSData(): POSData {
 
       setProducts(init.products ?? []);
       setCategories(init.categories ?? []);
+      setMenus(Array.isArray(init.menus) ? init.menus : []);   // A537 (an older cloud sends none)
       setPaymentMethods(init.paymentMethods ?? []);
       setPaymentMethodsEnabled(Array.isArray(init.paymentMethodsEnabled) ? init.paymentMethodsEnabled : null);   // A429
       setOffers((Array.isArray(init.offers) ? init.offers : []).flatMap((o) => { const c = cleanOffer(o); return c.ok ? [(c as { offer: Offer }).offer] : []; }));   // A445
@@ -121,6 +135,7 @@ export function usePOSData(): POSData {
       setComboItems(init.comboItems ?? {});
       setKitchenExclusions(init.kitchenExclusions ?? []);
       setNotePicks(parseNotePicks(init.noteQuickPicks ?? null));   // A367 (an older cloud sends none → the defaults)
+      setScaleSettings(scaleSettingsOrDefault((init as any).scaleBarcodes ?? null));   // A577 (an older cloud: the default)
       setPosFeatures(parsePosFeatures(init.posFeatures ?? null));   // 0.6.27 (an older cloud sends none → all off)
       setWebDayCutoff((init as any).businessDayCutoff);   // 0.6.34: History's "today" follows the business day
       setFreeDeliveryAllowed(rulesFromWire(init.reversalRules ?? null).freeDeliveryAllowed);   // 0.6.33 (none → not offered)
@@ -130,7 +145,15 @@ export function usePOSData(): POSData {
       // (resolveReceiptLogo in ipcHandlers): toggle ON and a decodable raster.
       setReceiptLogo(init.branding?.receiptLogoEnabled && init.branding.logoReceipt
         ? monoRasterFromString(init.branding.logoReceipt) : null);
-      setReceiptFooter(init.receiptFooter ?? '');
+      // A544: this branch's look and footer — its override per field, else the business's, else the ZapTill default
+      // (lib/branchBranding.ts, the till's own rule). Only while the business has themes (init.themeId not null).
+      const look = resolveBranchBranding(
+        { themeId: init.themeId ?? null, accentHex: init.branding?.accentHex ?? null, receiptFooter: init.receiptFooter ?? '' },
+        branchBrandingFromWire(init.branchBranding));
+      setReceiptFooter(look.receiptFooter);
+      setBranchThemeId(look.fromBranch.theme ? look.themeId : null);
+      // A547: the brand strip the till draws — the branch's colour, else the business's — only while themes are on.
+      setBrandStrip(posBrandStrip(look.themeId, look.accentHex));
       setReceiptPay(init.receiptPayNumber ? { label: init.receiptPayLabel ?? '', number: init.receiptPayNumber } : null);   // A450
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
@@ -196,10 +219,21 @@ export function usePOSData(): POSData {
 
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A544: the web POS wears its branch's theme while it is open (ThemeLayer defers to it); leaving gives the business's back.
+  // Applied here as well: a cashier's POS session may have no owner sign-in for ThemeLayer to read the business with.
+  useEffect(() => {
+    if (!branchThemeId) return;
+    applyDashboardThemeVars(computeDashboardThemeVars({ themes_enabled: true, theme_id: branchThemeId }));
+    setPosBranchTheme(branchThemeId);
+    return () => { applyDashboardThemeVars(null); setPosBranchTheme(null); };
+  }, [branchThemeId]);
+
   return {
-    products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
+    products, categories, menus, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
+    brandStrip,   // A547
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
+    scaleSettings,   // A577
     loading, error,
     reload: () => setTick(t => t + 1),
   };

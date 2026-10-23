@@ -18,6 +18,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -75,7 +76,7 @@ await ok('till and web POS: free automatically from the amount (the tick shown, 
   const c = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   assert.match(c, /const activeAutoFree = activeRiderFee > 0 && autoFreeDelivery\(orderTotal, freeDeliveryOver\);/);
   assert.match(c, /\|\| activeAutoFree\);/);
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /freeDeliveryOver: key === 'delivery_free_over' \? \(JSON\.parse\(clean\) \|\| null\) : now\.freeDeliveryOver,/);
+  assert.match(ipcHandlersSource(), /freeDeliveryOver: key === 'delivery_free_over' \? \(JSON\.parse\(clean\) \|\| null\) : now\.freeDeliveryOver,/);
   assert.match(read('apps/dashboard/src/pages/settings/VoidRefundRulesTab.tsx'), /void save\('delivery_free_over', n, \{ \.\.\.rules, freeDeliveryOver: n \|\| null \}\);/);
   assert.match(read('apps/desktop/src/renderer/components/ReversalRulesPanel.tsx'), /void save\('delivery_free_over', n, \{ \.\.\.rules, freeDeliveryOver: n \|\| null \}\);/);
 });
@@ -148,7 +149,7 @@ await ok('till: the tick is offered with the owner\'s rule; the customer pays th
 await ok('till: the owner switches it in Manager → Settings, and the till keeps the new value at once', () => {
   assert.match(read('apps/desktop/src/renderer/components/ReversalRulesPanel.tsx'),
     /save\('delivery_free_allowed', !free, \{ \.\.\.rules, freeDeliveryAllowed: !free \}\)/);
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'),
+  assert.match(ipcHandlersSource(),
     /freeDeliveryAllowed: key === 'delivery_free_allowed' \? JSON\.parse\(clean\) : now\.freeDeliveryAllowed,/);
 });
 await ok('web POS: pos/init carries the rule; the customer pays the bill alone; the rider\'s fee is sent', () => {

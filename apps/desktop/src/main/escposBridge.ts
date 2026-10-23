@@ -29,6 +29,7 @@
  */
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { getLocalDb } from './localDb';
+import { isSoldByWeight, weightUnitOf } from './scaleBarcode';   // A577
 import { getDeviceConfig, saveDeviceConfig } from './deviceConfig';
 import { queueTickets } from './print/printWorker';
 import type { PrintContext, StationConfig, OrderLine, OrderUnit,
@@ -81,12 +82,15 @@ interface CartLine {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  /** A577: a weighed line's unit ('kg' or 'g'; its quantity is kg) — the sale screen sends it; a reprint has none and the
+   *  product (sold_by 'weight') says it (measureUnitOf). */
+  measureUnit?: string | null;
   /** A367: the cashier's note on the line. `notes` is what the order payload carries (and the cloud stores);
    *  `note` is the older name, still read so a payload from before 0.6.24 prints unchanged. */
   notes?: string | null;
   note?: string;
   selectedVariants?: Array<{ groupName?: string; optionName?: string }>;
-  selectedModifiers?: Array<{ name?: string; price?: number }>;
+  selectedModifiers?: Array<{ name?: string; optionName?: string; price?: number }>;   // A555: the till sends optionName
   comboComponents?: Array<{
     name: string;
     quantity: number;
@@ -267,6 +271,25 @@ export interface SaleForPrint {
   reprint?: { at: Date; count: number };
   /** 0.6.28: a KITCHEN VOID — the production ticket prints under a VOID banner so the kitchen stops that dish. */
   voided?: { at: Date; by: string; reason?: string };
+  /** A552: a sale on account — the customer, and what they owe after it (the receipt's payment block). */
+  account?: { customer: string; balanceOwed: number };
+}
+
+/**
+ * A552: the receipt's payment lines. A leg on account reads "ON ACCOUNT: <customer>" with its amount, and one more line
+ * "BALANCE OWED" with what the customer owes after this sale. Built here, on the till's side, from the renderer's own
+ * payment lines (label + amount) — shared/printing's render.ts is unchanged. Every other leg as before (its method).
+ */
+export function receiptPaymentRows(payments: Array<{ method: string; amount: number }>, account?: { customer: string; balanceOwed: number }): PaymentLeg[] {
+  const rows: PaymentLeg[] = [];
+  let onAccount = false;
+  for (const p of payments) {
+    const credit = String(p.method ?? '').toLowerCase() === 'credit';
+    if (credit) onAccount = true;
+    rows.push({ label: credit ? `On account${account?.customer ? `: ${account.customer}` : ''}` : String(p.method ?? '').toUpperCase(), amount: toCents(p.amount) });
+  }
+  if (onAccount && account && Number.isFinite(Number(account.balanceOwed))) rows.push({ label: 'Balance owed', amount: toCents(Number(account.balanceOwed)) });
+  return rows;
 }
 
 const ORDER_TYPES: Record<string, OrderType> = {
@@ -302,6 +325,21 @@ function buildCategoryRouting(): CategoryRouting {
   ).all() as Array<{ id: string }>;
 
   return { byCategory, kitchenCategories: new Set(kitchenRows.map(r => r.id)) };
+}
+
+/**
+ * A577: the measure a line is sold in — what the sale screen said, else the product's own (sold by weight → its unit), so a
+ * reprint from the till's records prints the weight too. Fuel and every other line: none (a fractional quantity still
+ * prints as a measure, shared/printing isMeasured). Fail-soft: a read error → none.
+ */
+export function measureOf(l: Pick<CartLine, 'measureUnit' | 'product'>): { measureUnit?: string } {
+  if (l.measureUnit === 'kg' || l.measureUnit === 'g') return { measureUnit: l.measureUnit };
+  try {
+    const p = getLocalDb().prepare(`SELECT sold_by, unit_label FROM products WHERE id = ?`).get(l.product?.id) as { sold_by?: string | null; unit_label?: string | null } | undefined;
+    return isSoldByWeight(p) ? { measureUnit: weightUnitOf(p) } : {};
+  } catch {
+    return {};
+  }
 }
 
 export function printSale(
@@ -352,6 +390,7 @@ export function printSale(
       return {
         name:       l.product.name,
         quantity:   l.quantity,
+        ...measureOf(l),   // A577: "0.452 kg @ 650/kg" on the receipt, "0.452 kg   GOAT MEAT" on the kitchen ticket
         stationIds: stripKitchenIfExcluded(l.product.name, lineStationIds, ids, excluded),
         unitPrice:  toCents(l.unitPrice),
         lineTotal:  toCents(l.lineTotal),
@@ -360,10 +399,7 @@ export function printSale(
       };
     });
 
-    const payments: PaymentLeg[] = sale.payments.map(p => ({
-      label:  p.method.toUpperCase(),
-      amount: toCents(p.amount),
-    }));
+    const payments: PaymentLeg[] = receiptPaymentRows(sale.payments, sale.account);   // A552: on account names the customer
 
     const ctx: Omit<PrintContext, 'station'> = {
       business,

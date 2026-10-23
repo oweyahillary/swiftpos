@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Barcodes and labels</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+a{color:var(--teal)}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+figure{margin:18px 0;text-align:center}
+figure img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+figcaption{color:var(--quiet);font-size:.85rem;margin-top:6px}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+li input[type=checkbox]{margin-right:8px;transform:scale(1.15)}
+li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
+.toc{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;margin:20px 0}
+.toc ol{margin:6px 0 0}
+@media print{.toc{break-after:page} h2{break-before:page;border-top:none} figure{break-inside:avoid} table{break-inside:auto} a{color:inherit;text-decoration:none}}
+</style></head><body><div class="wrap">
+<h1 id="barcodes-and-labels">Barcodes and labels</h1>
+<p>ZapTill gives your products barcodes and prints labels for them on almost any printer, at almost any label size. This manual covers:</p>
+<ul>
+<li>giving products a barcode;</li>
+<li>setting the label&#39;s size and what is printed on it;</li>
+<li>printing on a label printer, on A4 sticker sheets, or on the receipt printer;</li>
+<li>setting up the printer driver for Xprinter, TSC and Zebra label printers.</li>
+</ul>
+<blockquote>
+<p>A label shows the item&#39;s price on the day you print it. When you change a price, reprint that item&#39;s labels.</p>
+</blockquote>
+<blockquote>
+<p><strong>Every label has a barcode.</strong> You cannot print a label without one. If an item you choose has no barcode yet, ZapTill gives it one when you print (section 3).</p>
+</blockquote>
+<h2 id="1-barcodes">1. Barcodes</h2>
+<h3 id="products-that-already-have-a-barcode">Products that already have a barcode</h3>
+<p>A product&#39;s own barcode (the EAN-13 or UPC-A printed by the manufacturer, or any code you scan or type) stays as it is. To add one, open the product on the web (<strong>Menu › Products</strong>, then <strong>Edit</strong>), click in <strong>Barcode</strong> and scan the item, or type the code. The tills can scan it as soon as they next refresh the menu.</p>
+<h3 id="products-without-a-barcode-generate">Products without a barcode: Generate</h3>
+<p>Things you pack or make yourself (bread, cut vegetables, own-brand items) have no manufacturer&#39;s barcode. ZapTill can give them one:</p>
+<ol>
+<li>On the web, open <strong>Menu › Products</strong>.</li>
+<li>To do only some products, tick them first. If you tick nothing, every active product without a barcode gets one.</li>
+<li>Click <strong>Generate barcodes</strong>. ZapTill shows how many products will get a barcode and what the first codes will be.</li>
+<li>Click <strong>Generate</strong>.</li>
+</ol>
+<p>To do one product at a time, open the product and click <strong>Generate</strong> beside <strong>Barcode</strong>.</p>
+<p><strong>About the codes.</strong> Unless you change the numbering (below), they are 13-digit EAN-13 codes that start with <strong>20</strong>, for example <code>2000000000015</code>. GS1, the body that issues barcodes, keeps codes starting with 20 to 29 for a shop&#39;s own use: no manufacturer&#39;s product carries one, so your codes never clash with a real product&#39;s. Codes starting with 21 to 29 are often used by weighing scales that print the price or weight inside the barcode, so <strong>20</strong> is the safe choice.</p>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#1-barcodes">1. Barcodes</a></li><li><a href="#2-the-label">2. The label</a></li><li><a href="#3-choosing-what-to-print">3. Choosing what to print</a></li><li><a href="#4-printing-on-a-label-printer-with-its-driver">4. Printing on a label printer (with its driver)</a></li><li><a href="#5-printing-on-a4-sticker-sheets">5. Printing on A4 sticker sheets</a></li><li><a href="#6-label-printers-with-no-driver-and-the-receipt-printer">6. Label printers with no driver, and the receipt printer</a></li><li><a href="#7-driver-set-up-tips">7. Driver set-up tips</a></li><li><a href="#8-when-something-is-wrong">8. When something is wrong</a></li><li><a href="#9-items-sold-by-weight-scale-labels">9. Items sold by weight (scale labels)</a></li></ol></nav>
+<ul>
+<li>A product that already has a barcode is never changed.</li>
+<li>Two products in your business never get the same code.</li>
+<li>These codes work in your own shops only. To sell your products in other shops (a supermarket chain, for example), you need GS1 Kenya codes; type those into <strong>Barcode</strong> instead.</li>
+</ul>
+<h3 id="barcode-numbering-format-prefix-start-number-digits">Barcode numbering: format, prefix, start number, digits</h3>
+<p>You choose how new barcodes are made. On the web it is the <strong>Barcode numbering</strong> section of <strong>Menu › Print labels</strong>; on the till it is the same section on <strong>Manager › Stock › Labels</strong>. Changing it needs the right to edit the menu, and the till needs the internet to save it. Everyone else sees it but cannot change it.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Format</td>
+<td><strong>EAN-13</strong> (13 digits, read by every scanner; the default), <strong>EAN-8</strong> (8 digits, for small items), <strong>UPC-A</strong> (12 digits), or <strong>Code 128, digits only</strong> (any length from 4 to 20 digits).</td>
+</tr>
+<tr>
+<td>Prefix</td>
+<td>The digits every new code starts with, for example <code>20</code>.</td>
+</tr>
+<tr>
+<td>Start at</td>
+<td>The first item number to use, for example <code>1000</code>. The next code always comes after the highest one already used with the same prefix and length, so you never get a duplicate.</td>
+</tr>
+<tr>
+<td>Digits</td>
+<td>Fixed for EAN-13 (13), EAN-8 (8) and UPC-A (12). For Code 128 you choose the length, and you can add a check digit.</td>
+</tr>
+</tbody></table>
+<p><strong>What the digits are made of.</strong> A code is the prefix, then the item number (filled with zeros), then a <strong>check digit</strong> worked out from the other digits. The scanner uses the check digit to catch a misread. For example, EAN-13 with prefix 20: <code>20</code> + <code>0000000001</code> + <code>5</code> = <code>2000000000015</code>. The screen spells this out (&quot;13 digits: prefix 20 (2) + item number (10) + check digit (1)&quot;).</p>
+<p><strong>The preview</strong> under the settings shows the next three codes and how many codes are left in the range.</p>
+<ul>
+<li><strong>Prefix warnings.</strong> For EAN-13 and EAN-8, use a prefix that starts with <strong>20</strong>. For UPC-A, start it with <strong>4</strong>. Any other prefix could match a manufacturer&#39;s barcode, so ZapTill warns you. It still lets you save, in case you have your own reason.</li>
+<li><strong>Weighing scales.</strong> EAN-13 codes starting with <strong>21 to 29</strong>, and UPC-A codes starting with <strong>2</strong>, are the ones weighing scales print with the weight or price inside. If your prefix would make codes like these, ZapTill warns you: a scale label could be read as one of your items, or one of your codes as a weighed item. Keep <strong>20</strong> for EAN-13.</li>
+<li><strong>When the range is used up</strong>, for example a short Code 128 length with a long prefix, ZapTill generates no codes and says so. It does not give some items a code and skip the rest. Choose a shorter prefix or more digits.</li>
+<li><strong>Changing the numbering never changes existing barcodes.</strong> Only codes made from then on follow it.</li>
+</ul>
+<h2 id="2-the-label">2. The label</h2>
+<p>Labels work the same for every kind of business: a shop&#39;s shelf labels, a restaurant&#39;s or café&#39;s grab-and-go and packaged items (bottled drinks, take-away packs), a petrol station&#39;s shop items (lubricants, gas, snacks; pump fuel is sold at the pump and is not listed), and anything a car park sells besides parking.</p>
+<p>On the web the label is set on <strong>Menu › Print labels</strong>. On the till it is set on <strong>Manager › Stock › Labels</strong>. Both screens use the same settings. When someone allowed to edit the menu clicks <strong>Save</strong>, every till and the web use the new settings.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Size</td>
+<td>30×20, 38×25, 40×30, 50×25, 50×30, 58×40 or 60×40 mm, or type any width × height. Measure one label on the roll, without the gap.</td>
+</tr>
+<tr>
+<td>Item name</td>
+<td>The product&#39;s name, on up to two lines.</td>
+</tr>
+<tr>
+<td>Price</td>
+<td>Today&#39;s price at this branch (on the till) or the main price (on the web).</td>
+</tr>
+<tr>
+<td>Barcode</td>
+<td>Always printed. There is no setting to turn it off.</td>
+</tr>
+<tr>
+<td>Digits under the bars</td>
+<td>The barcode&#39;s digits printed under the bars. On by default; turn it off for a cleaner label.</td>
+</tr>
+<tr>
+<td>Business name</td>
+<td>Your business&#39;s name at the top. On a small label it is the first thing left off.</td>
+</tr>
+<tr>
+<td>After the price</td>
+<td>Optional text, for example &quot;per kg&quot;.</td>
+</tr>
+<tr>
+<td>Printer dpi</td>
+<td>203 dpi (most label printers) or 300 dpi. Check the printer&#39;s box or its test page.</td>
+</tr>
+<tr>
+<td>Gap</td>
+<td>The gap between labels on the roll (usually 2 or 3 mm). Only TSPL printing uses it.</td>
+</tr>
+</tbody></table>
+<p>The text sizes itself to fit the label. A preview shows the first label. When something had to give way (a long name cut to one line, very thin bars), a warning under the preview says so. If the bars are very thin, use a wider label and test-scan one label.</p>
+<h2 id="3-choosing-what-to-print">3. Choosing what to print</h2>
+<ul>
+<li>Search by name or barcode, or pick a category, then type how many labels you want of each item.</li>
+<li><strong>Add all shown</strong> adds one label for each item in the list.</li>
+<li><strong>Add every generated code</strong> adds every product that has a code ZapTill generated (by your barcode numbering, or starting with 20).</li>
+<li>On the web, <strong>Delivery since</strong>: pick the day a delivery came in and click <strong>Add the items restocked</strong>. Each product restocked since that day is added, with one label for each unit received.</li>
+<li>On the web, tick products on <strong>Menu › Products</strong> and click <strong>Print labels</strong>. The ticked products are already chosen.</li>
+</ul>
+<h3 id="items-without-a-barcode">Items without a barcode</h3>
+<p>A label is never printed without a barcode. If some of the items you chose have none, the screen says so. When you click <strong>Print</strong>:</p>
+<ul>
+<li><strong>If you may edit the menu</strong>, ZapTill asks: &quot;3 items have no barcode yet — generate them and print?&quot; Click <strong>OK</strong>. ZapTill gives those items, and only those items, a barcode using your numbering. Then it prints every label. Click <strong>Cancel</strong> to print nothing. The new barcodes are saved to the products, and the tills can scan them after their next menu refresh.</li>
+<li><strong>If you may not edit the menu</strong>, those items are left out. The other items print, and the screen lists the items left out: &quot;ask a manager to generate barcodes for: Bread, Eggs&quot;.</li>
+<li><strong>On the till without internet</strong>, barcodes cannot be made, because the codes come from the cloud. Those items are left out and named, and the others print. Print them again when the till is back online.</li>
+<li><strong>A barcode that cannot be printed.</strong> A code with letters outside A to Z, such as &quot;Café&quot;, cannot be drawn. That item is left out and named. Change its barcode on <strong>Menu › Products</strong>. Any other code you typed prints, as Code 128 if it is not a valid EAN or UPC.</li>
+</ul>
+<h2 id="4-printing-on-a-label-printer-with-its-driver">4. Printing on a label printer (with its driver)</h2>
+<p>This works with any label printer that has a Windows driver installed (Xprinter, TSC, Zebra, Godex and others) and with office printers too.</p>
+<p><strong>Web:</strong> on <strong>Print labels</strong>, click <strong>Print … labels</strong> under <em>On a label printer</em>. In the print window:</p>
+<ol>
+<li>Choose the label printer.</li>
+<li>Set <strong>Margins</strong> to <strong>None</strong> and <strong>Scale</strong> to <strong>100%</strong> (or &quot;Actual size&quot;).</li>
+<li>Print.</li>
+</ol>
+<p>To make a PDF, choose <strong>Save as PDF</strong> instead of a printer.</p>
+<p><strong>Till:</strong> on <strong>Manager › Stock › Labels</strong>, under <strong>3. Printer</strong>, choose <strong>Windows printer (driver installed)</strong> and pick the printer. Then click <strong>Print</strong>. The till prints without opening a window.</p>
+<p><strong>The driver must use the same paper size as the label.</strong> This is the setting that matters most: if the driver&#39;s paper is 100 × 150 mm and the label is 40 × 30 mm, the labels come out shrunk or spread over several labels. See section 7.</p>
+<h2 id="5-printing-on-a4-sticker-sheets">5. Printing on A4 sticker sheets</h2>
+<p><strong>Web only.</strong> On <strong>Print labels</strong>, under <em>On A4 / Letter sticker sheets</em>:</p>
+<ol>
+<li>Pick the sheet: <strong>3 × 7</strong> (21 labels, 63.5 × 38.1 mm), <strong>3 × 8</strong> (24 labels, 63.5 × 33.9 mm), <strong>4 × 10</strong> (40 labels, 45.7 × 25.4 mm), <strong>5 × 13</strong> (65 labels, 38.1 × 21.2 mm), or <strong>Custom</strong>. For a custom sheet, give the columns, rows, top and side margins and the gaps; ZapTill works out the label size.</li>
+<li><strong>Start at label</strong>: on a sheet that is partly used, type the number of the first free label. Labels are counted left to right, top row first, so on a 3 × 7 sheet label 4 is the first one on the second row.</li>
+<li>Click <strong>Print on sheets</strong>. In the print window choose <strong>A4</strong> paper, <strong>Margins: None</strong> and <strong>Scale: 100%</strong>.</li>
+</ol>
+<blockquote>
+<p>Print one test sheet on plain paper first and hold it against a sticker sheet up to the light. If everything is shifted, change the margins (Custom) and try again.</p>
+</blockquote>
+<h2 id="6-label-printers-with-no-driver-and-the-receipt-printer">6. Label printers with no driver, and the receipt printer</h2>
+<p><strong>Till only.</strong> Under <strong>3. Printer</strong> on <strong>Manager › Stock › Labels</strong>:</p>
+<ul>
+<li><strong>Label printer, no driver: TSC / Xprinter (TSPL)</strong>: most TSC and Xprinter label printers (XP-365B, XP-420B, TSC TE200 and others).</li>
+<li><strong>Label printer, no driver: Zebra (ZPL)</strong>: Zebra printers (ZD220, ZD420, GK420 and others).</li>
+</ul>
+<p>Type the printer&#39;s <strong>IP address</strong> (for example <code>192.168.1.50</code>; the port is 9100) for a network printer. For a USB printer, choose it from <strong>USB: pick the Windows printer…</strong>. ZapTill sends the label straight to the printer in its own language, so the driver&#39;s paper settings do not matter. The label size, gap and dpi come from the label settings in section 2.</p>
+<p><strong>Receipt printer</strong>: prints a barcode slip on the till&#39;s receipt roll, for a shelf tag or when the label printer is down. ZapTill uses this till&#39;s receipt printer (<strong>Settings › Printing</strong>, Till station) unless you type another address. If the barcode does not print, choose <strong>Send the barcode as an image</strong>.</p>
+<h2 id="7-driver-set-up-tips">7. Driver set-up tips</h2>
+<p>The rule for every brand: <strong>the driver&#39;s paper size must be the label&#39;s size</strong> (width × height, without the gap). Set it once and the label prints at the same size every time.</p>
+<h3 id="xprinter-xp-365b-xp-420b-xp-470b-and-others">Xprinter (XP-365B, XP-420B, XP-470B and others)</h3>
+<ol>
+<li>Install the driver from the CD or Xprinter&#39;s website. On Windows 10 and 11 use the &quot;Windows&quot; driver, not the &quot;POS&quot; one.</li>
+<li>Open <strong>Control Panel › Devices and Printers</strong>, right-click the printer, then <strong>Printing preferences</strong>.</li>
+<li>On <strong>Page Setup</strong> (or <strong>Paper</strong>), click <strong>New</strong>, name the size (for example &quot;40x30&quot;), type <strong>Width 40 mm</strong> and <strong>Height 30 mm</strong>, and save. Choose it.</li>
+<li>On <strong>Options</strong> (or <strong>Media</strong>), set the media to <strong>Labels with gaps</strong>, gap <strong>2 mm</strong> (or whatever your roll has).</li>
+<li>Do a calibration: with the printer on, hold the FEED button until it beeps once and release it. It feeds a few labels and finds the gap.</li>
+</ol>
+<h3 id="tsc-te200-te210-ttp-244-and-others">TSC (TE200, TE210, TTP-244 and others)</h3>
+<ol>
+<li>Install TSC&#39;s &quot;Seagull&quot; Windows driver.</li>
+<li><strong>Printing preferences › Page Setup › Stock</strong>: <strong>New</strong>, type the label&#39;s width and height, and choose it.</li>
+<li><strong>Stock › Type</strong>: <strong>Labels With Gaps</strong>, and the gap height (for example 2 mm).</li>
+<li>Calibrate from the <strong>TSC Console</strong> utility (Calibrate) or by holding FEED at power-on as the manual says.</li>
+</ol>
+<h3 id="zebra-zd220-zd420-gk420-and-others">Zebra (ZD220, ZD420, GK420 and others)</h3>
+<ol>
+<li>Install the <strong>ZDesigner</strong> driver from Zebra&#39;s website.</li>
+<li><strong>Printing preferences › Options</strong>: set <strong>Paper Format</strong> to mm, then <strong>Width</strong> and <strong>Height</strong> to the label&#39;s size.</li>
+<li><strong>Advanced Setup › Media</strong>: <strong>Label with gaps</strong> (non-continuous, web sensing).</li>
+<li>Calibrate: with the printer on, hold FEED until the light flashes twice, then release it. On a ZD420, use the media calibration in the menu.</li>
+</ol>
+<h3 id="office-printers-a4">Office printers (A4)</h3>
+<p>Only sticker sheets (section 5). Choose <strong>A4</strong>, <strong>Margins: None</strong> and <strong>100%</strong> in the print window. Turn off <strong>Fit to page</strong>.</p>
+<h2 id="8-when-something-is-wrong">8. When something is wrong</h2>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A blank label between printed ones, or one label printed over two</td>
+<td>The driver&#39;s paper size or the gap does not match the roll. Set the size (section 7) and calibrate.</td>
+</tr>
+<tr>
+<td>The label is printed too small, in a corner</td>
+<td>The driver&#39;s paper is bigger than the label. Set it to the label&#39;s size. Scale must be 100%.</td>
+</tr>
+<tr>
+<td>The scanner does not read the code</td>
+<td>Print larger (a wider label), turn on <strong>Digits</strong> and check them, raise the print darkness in the driver, and keep a white margin each side of the bars.</td>
+</tr>
+<tr>
+<td>&quot;No barcode yet&quot; next to an item</td>
+<td>Nothing to do if you may edit the menu: it gets a barcode when you print. Otherwise ask a manager, or use <strong>Menu › Products › Generate barcodes</strong>.</td>
+</tr>
+<tr>
+<td>&quot;Not printed: ask a manager to generate barcodes for: …&quot;</td>
+<td>You may not create barcodes. Someone who may edit the menu prints those items, or generates their barcodes first.</td>
+</tr>
+<tr>
+<td>&quot;The barcode numbering range is used up&quot;</td>
+<td>Change <strong>Barcode numbering</strong>: a shorter prefix or more digits.</td>
+</tr>
+<tr>
+<td>The till says the label printer did not answer</td>
+<td>Check the IP address (print the printer&#39;s self-test page to see it), that the printer is on the same network, and that it is switched on.</td>
+</tr>
+<tr>
+<td>The price on the shelf is wrong</td>
+<td>Labels show the price on the day they were printed. Reprint them after a price change.</td>
+</tr>
+</tbody></table>
+<h2 id="9-items-sold-by-weight-scale-labels">9. Items sold by weight (scale labels)</h2>
+<p>Meat, fruit and vegetables, loose sweets and nyama choma can be sold <strong>by the kilo</strong>: the weight is the quantity (0.452 kg) and the amount is the price per kg × the weight. The full guide is <strong>Items sold by weight</strong> (<code>WEIGHED-ITEMS</code>); in short:</p>
+<ol>
+<li>On the web, edit the item: price <strong>per kg</strong>, switch on <strong>Sold by weight</strong>, and give it its <strong>Scale code (PLU)</strong> — the number it has on your weighing scale.</li>
+<li>At any till, tapping the item asks for the weight (a keypad in kg).</li>
+<li>With a <strong>label scale</strong>, scan the sticker the scale prints: the item is added with its weight and amount. Choose your scale (CAS, DIGI, Ishida or standard) and test one label in <strong>Settings › Business › Scale labels</strong>.</li>
+</ol>
+<blockquote>
+<p>Scale labels start with <strong>21–29</strong>. The codes ZapTill generates for your products start with <strong>20</strong> and are never read as scale labels, so the two never clash.</p>
+</blockquote>
+
+</div></body></html>

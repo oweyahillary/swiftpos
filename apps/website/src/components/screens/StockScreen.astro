@@ -1,0 +1,56 @@
+---
+// Stock on the web dashboard, drawn in CSS: a delivery received against what was ordered, and wastage written off with
+// its cost. Made-up demo data (the supplier is a placeholder name, never a real company).
+const received = [
+  { item: 'Beef (choma cut)', unit: 'kg', qty: '20', cost: '13,000' },
+  { item: 'Whole chicken', unit: 'pcs', qty: '30', cost: '16,500' },
+  { item: 'Potatoes', unit: 'bag', qty: '2', cost: '6,400' },
+  { item: 'Tilapia', unit: 'pcs', qty: '12', cost: '7,200' },
+];
+const waste = [
+  { item: 'Chips (cooked)', qty: '1.5 kg', why: 'Dropped', cost: '420' },
+  { item: 'Passion juice', qty: '2 L', why: 'Expired', cost: '360' },
+];
+---
+<div class="st" role="img" aria-label="Stock on the web dashboard for a demo branch: a delivery of beef, chicken, potatoes and tilapia received and added to stock, and two items written off as wastage with their cost.">
+  <div class="st__side">
+    <span class="st__logo">Z</span>
+    <span>Overview</span><span>Sales</span><span class="on">Stock</span><span>Staff</span><span>Analytics</span>
+  </div>
+  <div class="st__main">
+    <div class="st__head">
+      <div><p class="st__title">Receive a delivery</p><p class="st__sub">Mama Lishe Grill &middot; Ngong Road &middot; Tue 21 Oct</p></div>
+      <span class="st__btn">Add to stock</span>
+    </div>
+    <p class="st__from">From <b>Demo Supplies Ltd</b> &middot; note DN-2210</p>
+    <table class="st__table">
+      <thead><tr><th>Item</th><th>Received</th><th>Cost (KES)</th></tr></thead>
+      <tbody>{received.map((r) => <tr><td>{r.item}</td><td>{r.qty} {r.unit}</td><td>{r.cost}</td></tr>)}</tbody>
+    </table>
+    <p class="st__h">Wastage today</p>
+    <table class="st__table st__table--waste">
+      <tbody>{waste.map((w) => <tr><td>{w.item}</td><td>{w.qty}</td><td>{w.why}</td><td>-{w.cost}</td></tr>)}</tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .st { position: absolute; inset: 0; display: grid; grid-template-columns: 17% 1fr; font-family: var(--font-text); font-size: 1.6cqw; line-height: 1.3; background: #f4f7f7; color: #142226; }
+  .st__side { background: #0b1719; color: #9fb7b5; display: flex; flex-direction: column; gap: 0.25em; padding: 1em 0.7em; }
+  .st__side span { padding: 0.5em 0.6em; border-radius: 0.4em; }
+  .st__side .on { background: #12302d; color: #5eead4; font-weight: 700; }
+  .st__logo { color: #14b8a6; font: 800 1.6em/1 var(--font-display); padding: 0 0.4em 0.5em !important; }
+  .st__main { padding: 1.2em 1.4em; overflow: hidden; }
+  .st__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1em; margin-bottom: 0.6em; }
+  .st__title { font: 700 1.5em/1.1 var(--font-display); margin: 0; }
+  .st__sub, .st__from { color: #56686d; margin: 0.2em 0 0; }
+  .st__from { margin-bottom: 0.7em; }
+  .st__from b { color: #142226; }
+  .st__btn { background: #0f766e; color: #fff; font-weight: 700; padding: 0.55em 0.9em; border-radius: 0.45em; white-space: nowrap; }
+  .st__table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d9e3e3; }
+  .st__table th { text-align: left; font-size: 0.85em; color: #56686d; font-weight: 600; padding: 0.55em 0.75em; border-bottom: 1px solid #d9e3e3; }
+  .st__table td { padding: 0.55em 0.75em; border-bottom: 1px solid #eef3f3; font-variant-numeric: tabular-nums; }
+  .st__table td:last-child, .st__table th:last-child { text-align: right; }
+  .st__h { font-weight: 700; margin: 1em 0 0.4em; }
+  .st__table--waste td:last-child { color: #b42318; font-weight: 700; }
+</style>

@@ -99,8 +99,11 @@ const before = { aSup: await keysOf(R.aSup), aCash: await keysOf(R.aCash), cStor
 const sql = fs.readFileSync(path.join(MIG, THIS), 'utf8');
 await ok('the SQL carries exactly shared BUILT_IN_ROLES (names, descriptions, fuel-only, keys)', async () => {
   const built = [...sql.matchAll(/^\s+\('([^']+)', '([^']*)', (true|false)\)/gm)].map((m) => ({ name: m[1], description: m[2], fuel: m[3] === 'true' }));
-  assert.deepEqual(built, ROLES_142.map((r) => ({ name: r.name, description: r.description, fuel: !!r.types })));
-  for (const r of ROLES_142) if (r.types) assert.deepEqual([...r.types], ['petrol_station'], r.name);
+  // A580: Waiter and Kitchen are now food-only in BUILT_IN_ROLES (restaurant / café) — 142 gave them to every business as it
+  // ran; migration 169 takes the unused ones off shops. So "fuel-only" is the petrol-station typing, not any typing.
+  const fuelOnly = (r) => !!r.types && r.types.includes('petrol_station');
+  assert.deepEqual(built, ROLES_142.map((r) => ({ name: r.name, description: r.description, fuel: fuelOnly(r) })));
+  for (const r of ROLES_142) if (r.types) assert.deepEqual([...r.types], fuelOnly(r) ? ['petrol_station'] : ['restaurant', 'cafe'], r.name);
   const pairs = [...sql.matchAll(/^\s+\('([^']+)', '([a-z_]+\.[a-z_]+)'\)/gm)].map((m) => `${m[1]}|${m[2]}`).sort();
   assert.deepEqual(pairs, ROLES_142.flatMap((r) => keys142(r).map((k) => `${r.name}|${k}`)).sort());
   for (const [name, ks] of Object.entries(LATER)) for (const k of ks) assert.ok(ROLES_142.find((r) => r.name === name).keys.includes(k), `${name}: ${k}`);

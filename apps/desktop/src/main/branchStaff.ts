@@ -77,6 +77,8 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
   });
 
   try { tx(); } catch (err: any) { logLine('node', `could not store branch roster: ${err?.message ?? err}`); return; }
+  // A534: the names on shift and day reports come from this list too (the whole pull no longer asks GET /api/staff).
+  mirrorRosterNames(db, roster);
   // A490: the list carries each person's CURRENT role and permissions — the saved sign-ins take them, and the person
   // signed in on this till takes theirs at once (a manager who lost a key loses it now, not at their next sign-in).
   if (refreshPermissionsFromRoster(roster.map((r) => ({ staff_id: r.staff_id, role_name: r.role_name, permissions: r.permissions })))) {
@@ -87,6 +89,32 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
   // catalogue pull and promotion stored a list and quietly undid them until the next roster beat.
   // A521 (#6): freshStaff — a relayed staff change this list already shows is done (no longer laid over).
   try { overlayLocalChanges(db, { freshStaff: true }); } catch { /* the next store lays them again */ }
+}
+
+/**
+ * A534 — staff names from the till's own staff list. Render log 2026-10-19: "[tillScope] DRY-RUN would refuse: a till's
+ * own sign-in (device …) asked for staff.view on GET /api/staff". The whole catalogue pull asked the cloud for the whole
+ * staff list (staff.view) with the till's own token, only to name cashiers on shift and day reports — names the till
+ * already holds in its branch's list (A446). Owner, 2026-10-20: "add all of them since effort is small". The users table
+ * (names for attribution) is now filled from that list: upserted, never cleared, so a person who has left keeps their
+ * name on the old reports.
+ */
+export function rosterAsUsers(db: ReturnType<typeof getLocalDb> = getLocalDb()): Array<{ id: string; name: string; roles: { name: string | null }; status: string }> {
+  try {
+    const rows = db.prepare(`SELECT staff_id, name, role_name, status FROM branch_staff`).all() as Array<{ staff_id: string; name: string; role_name: string | null; status: string | null }>;
+    return rows.map((r) => ({ id: r.staff_id, name: r.name, roles: { name: r.role_name ?? null }, status: r.status ?? 'active' }));
+  } catch { return []; }
+}
+/** A534: the list's names into users (the names reports print). Never throws, never deletes. */
+function mirrorRosterNames(db: ReturnType<typeof getLocalDb>, roster: BranchStaffRow[]): void {
+  try {
+    const up = db.prepare(`
+      INSERT INTO users (id, name, role_name, status, synced_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name, role_name=excluded.role_name, status=excluded.status, synced_at=excluded.synced_at
+    `);
+    const now = new Date().toISOString();
+    db.transaction(() => { for (const s of roster) if (s?.staff_id && s.name) up.run(s.staff_id, s.name, s.role_name ?? null, s.status ?? 'active', now); })();
+  } catch { /* the next list names them */ }
 }
 
 /**

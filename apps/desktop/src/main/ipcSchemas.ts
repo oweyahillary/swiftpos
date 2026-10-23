@@ -85,6 +85,9 @@ const orderCreate: Schema = {
   subtotal:     { t: 'number' },
   vat_amount:   { t: 'number' },
   total:        { t: 'number' },
+  // A552: a sale on account — the customer and, when the seller does not hold customers.credit, the approver's PIN.
+  customer_id:  { t: 'string', optional: true },
+  credit_pin:   { t: 'string', optional: true },
   items: {
     t: 'objectArray', minLen: 1,
     item: {
@@ -111,6 +114,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'node:tlsRetrust':        NO_PAYLOAD,                                                          // A489
   'node:syncHealth':        NO_PAYLOAD,                                                          // A501
   'node:retryFailed':       NO_PAYLOAD,                                                          // A501
+  'node:distribution':      NO_PAYLOAD,                                                          // A534 (A23)
+  'node:drawersStatus':     NO_PAYLOAD,                                                          // A542
   'branding:get':           NO_PAYLOAD,
   // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so
@@ -158,6 +163,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:notePicks':      NO_PAYLOAD,
   'pos:features':       NO_PAYLOAD,
   'pos:stockCountFreeze': NO_PAYLOAD,   // A394
+  'pos:stockView': NO_PAYLOAD,          // A563
   'pos:approveFrozenSale': { pin: { t: 'string', min: 1 }, product_id: { t: 'string', min: 1 } },   // A521
   'pos:history':        NO_PAYLOAD,
   'pos:reversalRules':  NO_PAYLOAD,   // 0.6.30
@@ -273,6 +279,12 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'wastage:record':              { reason: { t: 'string' }, note: { t: 'string', optional: true }, items: { t: 'objectArray', item: {} } },
   'wastage:state':               NO_PAYLOAD,
   'wastage:dismiss':             { kind: 'string' },
+  // A545: credit sales a manager confirms or disputes (online, or kept and sent later).
+  'credit:list':                 NO_PAYLOAD,
+  'credit:decide':               { orderId: { t: 'string', min: 1 }, decision: { t: 'string', min: 1 }, reason: { t: 'string', optional: true } },
+  'credit:awaiting':             NO_PAYLOAD,
+  'credit:dismiss':              { kind: 'string' },
+  'credit:customers':            { search: { t: 'string', optional: true } },   // A552: On account at the till
   'batches:expiring':            NO_PAYLOAD,
   'manage:createCategory':      { name: { t: 'string' } },
   'manage:updateCategory':      idPatch,
@@ -363,6 +375,19 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'transfers:status':   { id: { t: 'string', min: 1 }, status: { t: 'string', min: 1 }, reason: { t: 'string', optional: true },
                           received_items: { t: 'any', optional: true }, receipt_note: { t: 'string', optional: true },
                           allow_same_user: { t: 'boolean', optional: true } },                            // A197
+  // A564: another branch's stock, and asking that branch for an item (from the cloud, with the person's own sign-in).
+  'branchStock:find':     { q: { t: 'string', optional: true }, product_id: { t: 'string', optional: true } },
+  'branchStock:requests': NO_PAYLOAD,
+  'branchStock:request':  { from_branch_id: { t: 'string', min: 1 }, product_id: { t: 'string', min: 1 }, quantity: { t: 'number' },
+                            note: { t: 'string', optional: true } },
+  'branchStock:decide':   { id: { t: 'string', min: 1 }, step: { t: 'string', min: 1 }, reason: { t: 'string', optional: true },
+                            quantity: { t: 'number', optional: true } },
+  // A571: barcode labels — the setup (this till's catalogue, the business's label, this till's label printer), print.
+  'labels:setup': NO_PAYLOAD,
+  'labels:save':  { settings: { t: 'any', optional: true }, printer: { t: 'any', optional: true } },
+  'labels:print': { items: { t: 'any' }, path: { t: 'string', optional: true }, settings: { t: 'any', optional: true }, generate: { t: 'boolean', optional: true } },
+  // A574: the business's barcode numbering (menu.edit; saved in the cloud).
+  'labels:numbering': { numbering: { t: 'any' } },
   // A466: the monthly pack (A455) on the till — read, download and record for the books, from the cloud.
   'monthly:get':              { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },
   'monthly:export':           { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },

@@ -1,0 +1,113 @@
+---
+import Industry from '../../layouts/Industry.astro';
+import Monitor from '../../components/frames/Monitor.astro';
+import Shot from '../../components/screens/Shot.astro';
+import Receipt from '../../components/screens/Receipt.astro';
+import { WA_MESSAGES } from '../../lib/site';
+import { QUICK_FAQ } from '../../lib/faq';
+import { DEMO_DAYPARTS, DEMO_TOP3 } from '../../lib/analyticsDemo';
+
+const problems = [
+  {
+    problem: 'The queue is out the door, and the till is slow.',
+    fix: 'Big buttons in the groups you sell from, a split payment in two taps, and an order that can be held while the customer decides. The till keeps selling with no internet.',
+  },
+  {
+    problem: 'The wrong bag goes to the wrong customer.',
+    fix: 'The dispatch ticket lists everything for the order and counts the bags, with the order number on top, so the packer matches bag to ticket.',
+  },
+  {
+    problem: 'Combos confuse the kitchen.',
+    fix: 'A combo lists its parts on the kitchen ticket, and a variant sits on the item\'s own line: "Chicken Burger - Spicy". The cook reads it once.',
+  },
+  {
+    problem: 'Offers are worked out on a calculator.',
+    fix: 'With ZapTill Online, set up an offer once and the till applies it. The receipt prints the offer by name, and it shows in the day\'s figures.',
+  },
+  {
+    problem: 'Riders\' fees disappear from the drawer.',
+    fix: 'A delivery fee can go on the bill, and money paid to riders from the drawer shows on the shift report, rider by rider.',
+  },
+];
+
+const lunch = DEMO_DAYPARTS.find((d) => d.name === 'Lunch')!;
+const lunchHours = DEMO_TOP3.filter(([h]) => h === '11:00' || h === '13:00');
+---
+<Industry
+  title="ZapTill for quick service and takeaways: speed, combos, dispatch tickets | ZapTill"
+  description="ZapTill for quick-service restaurants and takeaways in Kenya: a fast counter till, combos and variants on one line, dispatch tickets that count the bags, offers, delivery fees and M-Pesa on every receipt."
+  ogImage="/og/quick-service.png"
+  crumb="Quick service and takeaways"
+  heading="Faster at the counter. Right in the bag."
+  sub="ZapTill keeps the queue moving, prints combos the way the kitchen reads them, and counts the bags at dispatch, so every order leaves complete."
+  waMessage={WA_MESSAGES.quickService}
+  problems={problems}
+  faq={QUICK_FAQ}
+  closing="See your busiest hour on ZapTill."
+>
+  <Fragment slot="hero">
+    <div class="q-hero">
+      <Monitor label="Taking a split payment at the ZapTill till">
+        <Shot src="/screens/till-split.webp" eager width={1280} height={800}
+          alt="The real ZapTill till taking payment: total due KES 3,050, split into KES 1,050 cash and KES 2,000 M-Pesa." />
+      </Monitor>
+      <Receipt kind="dispatch" paper={58} class="q-hero__slip" />
+    </div>
+  </Fragment>
+
+  <section class="band" aria-labelledby="qbag-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="qbag-h">The ticket the packer checks the bag against</h2>
+        <p>
+          Every order prints a dispatch ticket with its number, the order type and every item, drinks included. The
+          footer counts the bags. These are the real tickets ZapTill prints, for a demo order.
+        </p>
+        <p>The customer's receipt carries your Buy Goods or Paybill number, printed large, so M-Pesa is quick at the counter.</p>
+      </div>
+      <div class="split__visual q-pair">
+        <Receipt kind="dispatch" />
+        <Receipt kind="sale" paper={58} lines={[27, 36]}
+          label="The bottom of a customer receipt: Total KES 3,350, PAY KES 3,350, the Buy Goods number 123456 printed large, then M-Pesa KES 2,000 and cash KES 1,350." />
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="qwhen-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="qwhen-h">Know your rush before it arrives</h2>
+        <p>
+          With Analytics you see what sells in each part of the day and the top 3 at every hour, so the fryer is loaded
+          before the queue forms. In the demo, lunch is {lunch.share} of everything sold.
+        </p>
+        <p><a href="/analytics/">See Analytics</a></p>
+      </div>
+      <div class="split__visual">
+        <div class="q-when" aria-label="The top 3 at lunch hours, from a demo restaurant">
+          <p class="demo-tag">Example from a demo restaurant</p>
+          <ol>
+            {lunchHours.map(([h, items]) => <li><time>{h}</time><span>{items}</span></li>)}
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+</Industry>
+
+<style>
+  .q-hero { position: relative; padding-bottom: var(--s-6); }
+  .q-hero :global(.q-hero__slip) { position: absolute; right: -3%; bottom: -14%; width: 40%; --slip-fs: 0.66rem; transform: rotate(2.5deg); }
+  @media (max-width: 600px) { .q-hero :global(.q-hero__slip) { width: 62%; bottom: -20%; } }
+  .q-pair { display: flex; gap: var(--s-4); align-items: flex-start; justify-content: center; }
+  .q-pair :global(.slip-wrap) { flex: 1 1 0; min-width: 0; --slip-fs: 0.7rem; }
+  .q-pair :global(.slip-wrap:last-child) { margin-top: var(--s-7); transform: rotate(1.5deg); }
+  @media (max-width: 600px) {
+    .q-pair { flex-direction: column; align-items: center; }
+    .q-pair :global(.slip-wrap) { flex: none; }
+    .q-pair :global(.slip-wrap:last-child) { margin-top: 0; }
+  }
+  .q-when ol { list-style: none; margin: 0; padding: var(--s-4) var(--s-5); background: #111a1c; color: #e3ecec; border-radius: var(--r-md); display: grid; gap: var(--s-2); }
+  .q-when li { display: grid; grid-template-columns: 3.4rem 1fr; gap: var(--s-3); }
+  .q-when time { font-weight: 700; color: #fff; }
+</style>

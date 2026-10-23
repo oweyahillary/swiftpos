@@ -27,7 +27,9 @@ const OnboardingPage          = lazy(() => import('./pages/OnboardingPage'));
 const ForcePasswordChangePage = lazy(() => import('./pages/ForcePasswordChangePage'));
 const OverviewPage            = lazy(() => import('./pages/OverviewPage'));
 const CategoriesPage          = lazy(() => import('./pages/products/CategoriesPage'));
+const MenusPage               = lazy(() => import('./pages/products/MenusPage'));   // A537
 const ProductsPage            = lazy(() => import('./pages/products/ProductsPage'));
+const LabelsPage              = lazy(() => import('./pages/products/LabelsPage'));   // A571
 const POSPage                 = lazy(() => import('./pages/pos/POSPage'));
 const POSEntryPage            = lazy(() => import('./pages/pos/POSEntryPage'));
 const ManagerDashboard        = lazy(() => import('./pages/manager/ManagerDashboard'));
@@ -50,6 +52,10 @@ const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').t
 const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
 const PosOptionsTab       = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.PosOptionsTab })));     // A491
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
+const AnalyticsPage           = lazy(() => import('./pages/analytics/AnalyticsPage'));   // A549
+const WatchListPage           = lazy(() => import('./pages/WatchListPage'));   // A576
+const LossAlertsTab           = lazy(() => import('./pages/settings/LossAlertsTab'));   // A576
+const ScaleLabelsTab          = lazy(() => import('./pages/settings/ScaleLabelsTab'));   // A577
 const ShiftReportsPage        = lazy(() => import('./pages/ShiftReportsPage'));
 const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
 const KDSPage                 = lazy(() => import('./pages/kds/KDSPage'));
@@ -69,6 +75,7 @@ const BranchDetailPage        = lazy(() => import('./pages/BranchDetailPage'));
 const SuppliersPage           = lazy(() => import('./pages/stock/SuppliersPage'));
 const PurchaseOrdersPage      = lazy(() => import('./pages/stock/PurchaseOrdersPage'));
 const StockTransfersPage      = lazy(() => import('./pages/stock/StockTransfersPage'));
+const OtherBranchesPage       = lazy(() => import('./pages/stock/OtherBranchesPage'));   // A564
 const StockCountsPage         = lazy(() => import('./pages/stock/StockCountsPage'));   // A394
 const WastagePage             = lazy(() => import('./pages/stock/WastagePage'));       // A399
 const ExpiryPage              = lazy(() => import('./pages/stock/ExpiryPage'));        // A413
@@ -137,10 +144,14 @@ export default function App() {
                     <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
                       <Route index                             element={<OverviewPage />} />
                       <Route path="categories"                element={<CategoriesPage />} />
+                      <Route path="menus"                     element={<MenusPage />} />
                       <Route path="products"                  element={<ProductsPage />} />
+                      <Route path="products/labels"           element={<LabelsPage />} />
                       <Route path="pos"                       element={<POSPage />} />
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
+                      <Route path="analytics"                 element={<AnalyticsPage />} />
+                      <Route path="watch-list"                element={<WatchListPage />} />
                       <Route path="shift-reports"             element={<ShiftReportsPage />} />
                       <Route path="orders"                    element={<OrdersPage />} />
                       <Route path="open-drawers"              element={<OpenShiftsPage />} />
@@ -187,6 +198,8 @@ export default function App() {
                         <Route path="payments"     element={<PaymentMethodsPage />} />
                         <Route path="voids-refunds" element={<VoidRefundRulesTab />} />
                         <Route path="pos-options"  element={<PosOptionsTab />} />
+                        <Route path="loss-alerts"  element={<LossAlertsTab />} />
+                        <Route path="scale-labels" element={<ScaleLabelsTab />} />
                         <Route path="setup"        element={<VerticalSetupRoute />} />
                         <Route path="integrations" element={<IntegrationsRoute />} />
                       </Route>
@@ -202,6 +215,7 @@ export default function App() {
                       <Route path="stock/ingredients"         element={<IngredientsPage />} />
                       <Route path="stock/purchase-orders"     element={<PurchaseOrdersPage />} />
                       <Route path="stock/transfers"           element={<StockTransfersPage />} />
+                      <Route path="stock/other-branches"      element={<OtherBranchesPage />} />
                       <Route path="stock/counts"              element={<StockCountsPage />} />
                       <Route path="stock/wastage"             element={<WastagePage />} />
                       <Route path="stock/expiry"              element={<ExpiryPage />} />

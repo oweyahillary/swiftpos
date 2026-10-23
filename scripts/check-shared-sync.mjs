@@ -74,6 +74,78 @@ const SHARED = [
     ],
   },
   {
+    // A537: the POS's category side panel — menus as tabs, which categories and products a menu shows, the pin.
+    name: 'menuFilter.ts',
+    copies: [
+      'shared/menuFilter.ts',
+      'apps/desktop/src/shared/menuFilter.ts',  // the till's sale screen
+      'apps/dashboard/src/lib/menuFilter.ts',   // the web POS (CashierScreen, MinimartPOS)
+    ],
+  },
+  {
+    // A578: menus by time of day — which menus are open now, the next change, the refusal words, the schedule's check.
+    name: 'menuHours.ts',
+    copies: [
+      'shared/menuHours.ts',
+      'apps/desktop/src/shared/menuHours.ts',   // the till's sale screen (the bar, the grid, a scan refused)
+      'apps/dashboard/src/lib/menuHours.ts',    // the web POS (CashierScreen, MinimartPOS) and the Menus page's editor
+      'apps/server/src/lib/menuHours.ts',       // the cloud checks a menu's hours before storing them
+    ],
+  },
+  {
+    // A573: what each business type calls things (Menus / Departments / Groups …) and which food-service areas it sees.
+    name: 'businessTerms.ts',
+    copies: [
+      'shared/businessTerms.ts',
+      'apps/dashboard/src/lib/businessTerms.ts',   // the sidebar, Menus page, web POS, manager portal, roles screen
+      'apps/desktop/src/shared/businessTerms.ts',  // the till's Manager screen and sale screen
+      'apps/server/src/lib/businessTerms.ts',      // A575: analyticsTerms.ts builds on it in the cloud
+    ],
+  },
+  {
+    // A575: Analytics in each business type's words, and what to do about two products bought together. Imports
+    // businessTerms.ts (beside each copy); not on the till (it has no Analytics).
+    name: 'analyticsTerms.ts',
+    copies: [
+      'shared/analyticsTerms.ts',
+      'apps/dashboard/src/lib/analyticsTerms.ts',   // the Analytics page
+      'apps/server/src/lib/analyticsTerms.ts',      // the cards (/api/analytics/together, /recommendations)
+    ],
+  },
+  {
+    // A571: barcodes — EAN-13 / UPC-A / Code 128 bars and the in-store codes the cloud assigns (prefix 20).
+    name: 'barcode.ts',
+    copies: [
+      'shared/barcode.ts',
+      'apps/server/src/lib/barcode.ts',         // POST /api/products/barcodes/generate
+      'apps/dashboard/src/lib/barcode.ts',      // Products (Generate) and Print labels
+      'apps/desktop/src/shared/barcode.ts',     // the till's Labels screen (preview)
+      'apps/desktop/src/main/barcode.ts',       // the till's label printing
+    ],
+  },
+  {
+    // A577: items sold by weight — scale label barcodes (21–29, price or weight inside), the weighed line, its amount.
+    name: 'scaleBarcode.ts',
+    copies: [
+      'shared/scaleBarcode.ts',
+      'apps/server/src/lib/scaleBarcode.ts',        // the scale settings cleaned; a weighed line's amount checked
+      'apps/dashboard/src/lib/scaleBarcode.ts',     // the web POS (CashierScreen, MinimartPOS) and the settings' test box
+      'apps/desktop/src/shared/scaleBarcode.ts',    // the till's sale screen
+      'apps/desktop/src/main/scaleBarcode.ts',      // the till's main process (the receipt's weighed lines)
+    ],
+  },
+  {
+    // A571: labels of any size for any printer — the layout, the HTML / SVG page, sheets, TSPL, ZPL, ESC/POS.
+    name: 'labels.ts',
+    copies: [
+      'shared/labels.ts',
+      'apps/server/src/lib/labels.ts',          // the label settings, cleaned before they are stored
+      'apps/dashboard/src/lib/labels.ts',       // Print labels (browser driver, sticker sheets)
+      'apps/desktop/src/shared/labels.ts',      // the till's Labels screen (preview)
+      'apps/desktop/src/main/labels.ts',        // the till's label printing (driver, TSPL, ZPL, receipt printer)
+    ],
+  },
+  {
     // A445: offers — the rules the till's cart, the web POS's cart and the cloud's check of a sale all run.
     name: 'offers.ts',
     copies: [
@@ -184,6 +256,17 @@ const SHARED = [
       'shared/stockCountFreeze.ts',
       'apps/desktop/src/main/stockCountFreeze.ts',   // the till caches it (rootDir is src/main)
       'apps/desktop/src/shared/stockCountFreeze.ts', // the till's sale screen
+    ],
+  },
+  {
+    // A563: when an item's stock reaches zero — sell as normal, show as sold out, or hide (the owner's choice).
+    name: 'stockGate.ts',
+    copies: [
+      'shared/stockGate.ts',
+      'apps/server/src/lib/stockGate.ts',         // the cloud refuses a web sale of a sold-out item
+      'apps/desktop/src/main/stockGate.ts',       // the till's order:create refuses it (rootDir is src/main)
+      'apps/desktop/src/shared/stockGate.ts',     // the till's sale screen greys or hides it
+      'apps/dashboard/src/lib/stockGate.ts',      // the web POS and the products list
     ],
   },
   {
@@ -324,6 +407,19 @@ const SHARED = [
       'apps/desktop/src/shared/themes.ts',
       'apps/dashboard/src/lib/themes.ts',
       'apps/server/src/lib/themes.ts',     // A325: the cloud validates theme ids on write
+      'apps/desktop/src/main/themes.ts',   // A544: the till's main process resolves its branch's look (branchBranding.ts)
+    ],
+  },
+  {
+    // A544: a branch's override of the business branding — the write rules (theme, brand colour, footer width) and the
+    // resolution branch → business → ZapTill default. Each copy sits beside a themes.ts copy (it imports ./themes).
+    name: 'branchBranding.ts',
+    copies: [
+      'shared/branchBranding.ts',
+      'apps/server/src/lib/branchBranding.ts',      // the cloud validates a write; /pos/init and /pos/changes
+      'apps/desktop/src/main/branchBranding.ts',    // the till's own branch: getBranding's effective look, the receipt footer
+      'apps/desktop/src/shared/branchBranding.ts',  // the till's screens
+      'apps/dashboard/src/lib/branchBranding.ts',   // Settings › Branding › Per branch; the web POS's branch
     ],
   },
   {

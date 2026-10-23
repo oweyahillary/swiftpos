@@ -7,6 +7,8 @@
  *   GET  /api/controls            { pos?, loyalty?, payments? } — each section only with its key
  *   PUT  /api/controls/pos/:key   { enabled }            settings.pos — delivery_fee, pay_later_tabs, pay_before_kitchen, login_codes
  *   PUT  /api/controls/loyalty    { enabled?, earn_rate? } settings.pos
+ *   PUT  /api/controls/stock-zero { mode }               settings.pos — A563: when an item's stock reaches zero
+ *                                                        ('sell' | 'sold_out' | 'hide'; two feature_flags, lib/stockGate.ts)
  *   PUT  /api/controls/updates    refused (403 ADMIN_SETS) — A493: ZapTill approves a client's till updates, never the client
  *
  * Business-wide payment methods are written by POST /api/business/settings (payment_methods_enabled, settings.payments);
@@ -24,6 +26,8 @@ import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { PAYMENT_METHODS_ENABLED_KEY, enabledFromSetting } from '../lib/paymentCatalogue';
+import { STOCK_ZERO_KEYS } from '../lib/posFeatures';   // A563
+import { isOutOfStockMode, outOfStockMode, outOfStockFlags } from '../lib/stockGate';   // A563
 
 /** The POS options the owner sets (settings.pos). */
 export const OWNER_POS_KEYS = ['delivery_fee', 'pay_later_tabs', 'pay_before_kitchen', 'login_codes'] as const;
@@ -36,7 +40,7 @@ export const ADMIN_SETS_UPDATES = 'ZapTill approves which version your tills ins
 
 /** Why the admin portal may not set this feature (A490), or null when it still may. */
 export function ownerSetsFeature(key: string): string | null {
-  if ((OWNER_POS_KEYS as readonly string[]).includes(key) || key === 'loyalty_enabled') {
+  if ((OWNER_POS_KEYS as readonly string[]).includes(key) || key === 'loyalty_enabled' || (STOCK_ZERO_KEYS as readonly string[]).includes(key)) {
     return 'The business owner sets this now (Settings › Business › POS options).';
   }
   if ((RETIRED_SWITCHES as readonly string[]).includes(key)) {
@@ -72,6 +76,7 @@ router.get('/', async (req, res) => {
     if (pos) {
       const f = await businessPosFeatures(req.businessId) as unknown as Record<string, boolean>;
       out.pos = Object.fromEntries(OWNER_POS_KEYS.map((k) => [k, f[k] === true]));
+      out.stock = { when_zero: outOfStockMode(f) };   // A563
       const [{ data: loy }, rate] = await Promise.all([
         supabase.from('feature_flags').select('enabled').eq('business_id', req.businessId).eq('key', 'loyalty_enabled').maybeSingle(),
         readSetting(req.businessId, 'loyalty_earn_rate'),
@@ -134,6 +139,21 @@ router.put('/loyalty', requirePermission('settings.pos'), async (req, res) => {
     audit(req, 'loyalty.earn_rate', before, rate);
   }
   res.json({ ...(enabled !== undefined ? { enabled } : {}), ...(rate !== undefined ? { earn_rate: rate } : {}) });
+});
+
+// PUT /api/controls/stock-zero { mode } — A563 (owner, 2026-10-22: "add a feature where an owner can enable not to prevent
+// items with zero stock from appearing in the inventory or if they do they cannot be sold"). One choice, two switches
+// (feature_flags stock_zero_sold_out / stock_zero_hide) — they reach the tills and the web POS as every POS switch does.
+router.put('/stock-zero', requirePermission('settings.pos'), async (req, res) => {
+  const mode = req.body?.mode;
+  if (!isOutOfStockMode(mode)) { res.status(400).json({ error: "mode must be 'sell', 'sold_out' or 'hide'", code: 'BAD_MODE' }); return; }
+  const before = outOfStockMode((await businessPosFeatures(req.businessId)) as unknown as Record<string, unknown>);
+  for (const [key, enabled] of Object.entries(outOfStockFlags(mode))) {
+    const err = await setFlag(req.businessId, key, enabled);
+    if (err) { sendError(res, err as Error); return; }
+  }
+  audit(req, 'pos.stock_zero', before, mode);
+  res.json({ mode });
 });
 
 // PUT /api/controls/updates — A493: refused. ZapTill (the admin portal) approves or holds a client's till version; a

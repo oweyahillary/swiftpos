@@ -22,6 +22,7 @@ import { requirePermission, requireAnyPermission, assertBranchAccess, branchScop
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { actor } from '../lib/actor';
+import { keysForRow } from '../lib/effectiveKeys';   // A545
 import { parseAmount, cleanDate, addDays, round2 } from '../lib/payables';
 import { WASTE_REASONS, cleanReason, noteProblem, wastageRef, entryValue, wastageSummary, type EntryLike } from '../lib/wastage';
 
@@ -34,6 +35,23 @@ function tillTime(v: unknown): string | null {
   return new Date(t).toISOString();
 }
 router.use(requireAuth);
+
+/**
+ * A545: may the person a till names as the recorder (`recorded_by`) type a cost (menu.costs)? An active person of this
+ * business holding it (the owner, the owner's role, '*'); anyone else, or no one named — no.
+ */
+async function recorderMayCost(businessId: string, recordedBy: unknown): Promise<boolean> {
+  if (typeof recordedBy !== 'string' || !UUID.test(recordedBy)) return false;
+  const [{ data: row }, { data: biz }] = await Promise.all([
+    supabase.from('users').select('id, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
+      .eq('id', recordedBy).eq('business_id', businessId).eq('status', 'active').maybeSingle(),
+    supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle(),
+  ]);
+  if (!row) return false;
+  if ((biz as { owner_id?: string | null } | null)?.owner_id === recordedBy) return true;
+  const held = keysForRow(row as Parameters<typeof keysForRow>[0], false);
+  return held.has('*') || held.has('menu.costs');
+}
 // A490: cost prices, margins and cost values go out only to the owner, menu.costs or reports.costs (lib/costAccess.ts).
 // A494: + `cost` — the unit cost each line of GET /items carries.
 router.use(stripCostsUnlessAllowed(['value', 'total', 'cost']));
@@ -98,7 +116,7 @@ router.get('/items', requireAnyPermission('inventory.waste', 'inventory.adjust')
 router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), async (req, res) => {
   const b = (req.body ?? {}) as { branch_id?: string; reason?: string; note?: string;
     items?: Array<{ kind?: string; id?: string; quantity?: unknown; unit_cost?: unknown; batch_id?: string }>;
-    client_id?: string; recorded_by_name?: string; recorded_at?: string };
+    client_id?: string; recorded_by_name?: string; recorded_at?: string; recorded_by?: string };
   const branchId = b.branch_id || req.branchId;
   if (!branchId) { res.status(400).json({ error: 'Choose the branch.' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You can only record wastage at your own branch.' }); return; }
@@ -153,7 +171,12 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
   };
   const lines: Line[] = [];
   // A494: a cost typed by someone without menu.costs is dropped — the line takes the catalogue's cost.
-  const mayCost = can(req, 'menu.costs');
+  // A545: from the till's own sign-in (an offline recording sent later) the till's token is never asked for menu.costs
+  // (TILL_SCOPE_ENFORCE would refuse it, and the entry must never be lost for a cost): a typed cost is kept only when the
+  // person who recorded it (`recorded_by`, carried by the till) holds menu.costs; otherwise — and when nobody typed a
+  // cost, as a 1.0.19/1.0.20 till never does — the line takes the catalogue's cost.
+  const typedAny = raw.some((i) => i.unit_cost !== undefined && i.unit_cost !== null && i.unit_cost !== '');
+  const mayCost = !typedAny ? false : req.isTill ? await recorderMayCost(req.businessId!, b.recorded_by) : can(req, 'menu.costs');
   const typedCost = (v: unknown): number | null => {
     if (!mayCost || v === undefined || v === null || v === '') return null;
     const n = Number(v); return Number.isFinite(n) && n >= 0 ? round2(n) : null;

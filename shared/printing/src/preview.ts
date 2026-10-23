@@ -59,6 +59,9 @@ export function toPreview(doc: Document, opts: PreviewOptions = {}): string {
       case 'feed':
         for (let i = 0; i < block.lines; i++) lines.push('');
         break;
+      case 'gap':
+        break;   // A540: under a line high — nothing to show in a text preview
+
       case 'drawer':
         break;
       case 'cut':

@@ -8,6 +8,7 @@
  */
 import { renderTicket, toPreview, kitchenPreset, dispatchPreset, receiptPreset, hasPrintableContent } from '../src/index';
 import type { OrderLine, OrderUnit, UnitAttribute } from '../src/types';
+import { kitchenExclusionTerms, stripKitchenIfExcluded } from '../src/routing';
 
 const KITCHEN_IDS = ['st-kitchen'];
 const DISPATCH_IDS = ['st-dispatch'];
@@ -68,6 +69,8 @@ function toUnits(line: CartLine): OrderUnit[] {
     }
   }
 
+  // A559: an extra goes where its line goes AND to dispatch (it was dispatch only).
+  const lineIds = routeFor(line.product.category_id);
   for (const m of line.selectedModifiers ?? []) {
     if (!m.name) continue;
     units.push({
@@ -78,7 +81,8 @@ function toUnits(line: CartLine): OrderUnit[] {
       priceDelta: toCents(m.price ?? 0),
       chosen: true,
       attributes: [],
-      stationIds: DISPATCH_IDS,
+      stationIds: [...lineIds, ...DISPATCH_IDS.filter(id => !lineIds.includes(id))],
+      modifier: true,
     });
   }
 
@@ -132,7 +136,8 @@ const lines: OrderLine[] = cart.map(l => ({
   stationIds: routeFor(l.product.category_id),
   unitPrice: toCents(l.unitPrice),
   lineTotal: toCents(l.lineTotal),
-  units: toUnits(l),
+  // As escposBridge.printSale: each unit loses the kitchen when its own name is excluded (A276) — a sauce extra (A358).
+  units: toUnits(l).map(u => ({ ...u, stationIds: stripKitchenIfExcluded(u.name, u.stationIds, { kitchen: KITCHEN_IDS, dispatch: DISPATCH_IDS }, kitchenExclusionTerms()) })),
 }));
 
 const order = {
@@ -215,10 +220,12 @@ check('dispatch puts a simple attribute inline',
 check('dispatch counts bags, not items',
   D.includes('4 bags'));
 
+// A551 (owner, 2026-10-21: "why not write `Chicken burger - Spicy` we avoid 2 lines of the same item"): the choice is on
+// the dish's own row, upper case like the rest of it — not a second "Chicken Burger" row with the choice under it.
 check('a plain product reaches the KITCHEN with its choice, not as a bare title',
-  K.includes('CHICKEN BURGER') && /Large/.test(K));
-check('the choice is not silently dropped',
-  K.includes('Large'));
+  K.includes('1   CHICKEN BURGER - LARGE'));
+check('the choice is not silently dropped — and the product is not printed twice',
+  /LARGE/.test(K) && (K.match(/chicken burger/gi) ?? []).length === 1);
 // ── The fallback has to work for ANY menu, and refuse prose ────────────────
 // A restaurant types a flat menu with a line of prose. Requiring structured
 // components before a kitchen ticket is useful would make every new client

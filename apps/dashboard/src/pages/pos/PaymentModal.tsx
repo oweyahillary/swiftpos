@@ -632,6 +632,8 @@ export default function PaymentModal({
               promoName={discountState?.discount.name}
               customerName={customerName.trim() || loyaltyState?.customer.name}
               footerMessage={printerSettings.footerMessage}
+              compact={posFeatures?.receipt_compact_layout === true}   // A538: compact only when the client opted in (A534 had classic)
+              pay={receiptPay}   // A547: "Payment Details: Buy Goods - <number>" heads the payment block, as on the thermal receipt
             />
           </div>
 

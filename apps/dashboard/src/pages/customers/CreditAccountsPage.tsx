@@ -3,6 +3,7 @@
  *  - List customers with a limit or an outstanding balance (debtors first)
  *  - Open one to view its ledger, set the credit limit, record a repayment,
  *    or post a manual adjustment.
+ *  - A567: "+ Give credit" — an existing customer gets their FIRST limit here (the list only shows limits and balances).
  */
 
 import { useState, useEffect, useCallback, Fragment } from 'react';
@@ -12,6 +13,9 @@ import { money, dateShort } from '../../lib/format';
 import { useBusiness } from '../../context/BusinessContext';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
+import CreditSalesToConfirm, { ledgerNote } from '../../components/CreditSalesToConfirm';   // A545
+import { usePermissions } from '../../context/PermissionsContext';   // A545
+import GiveCreditPicker from '../../components/GiveCreditPicker';   // A567
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -21,17 +25,21 @@ interface LedgerRow {
   id: string; type: 'charge' | 'payment' | 'adjustment';
   amount: number; balance_after: number; method: string | null;
   reference: string | null; notes: string | null; order_id: string | null; created_at: string;
+  /** A545: a sale on account's manager confirmation (a disputed one stays on the balance). */
+  confirm_state?: 'awaiting' | 'confirmed' | 'disputed'; dispute_reason?: string | null;
 }
 
 
 export default function CreditAccountsPage() {
   const currency = useBusiness().business?.currency ?? 'KES';
+  const mayCredit = usePermissions().can('customers.credit');   // A545: confirm / dispute sales on account
   const [rows, setRows] = useState<CreditCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CreditCustomer | null>(null);
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [giving, setGiving] = useState(false);   // A567
 
   // form state for the detail drawer
   const [limit, setLimit] = useState('');
@@ -132,9 +140,17 @@ export default function CreditAccountsPage() {
     <div className="p-4 sm:p-6">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
         <h1 className="text-xl font-bold text-white">Credit Accounts</h1>
-        <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{money(totalOwed, currency)}</span></div>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{money(totalOwed, currency)}</span></div>
+          {mayCredit && (
+            <button onClick={() => { setGiving(true); setMsg(null); }} data-testid="give-credit"
+              className="px-3 py-2 bg-swift-strong hover:bg-swift-deep text-white rounded-lg text-sm">+ Give credit</button>
+          )}
+        </div>
       </div>
       <p className="text-sm text-gray-400 mb-5">Customers buying on account. Debtors shown first.</p>
+      {/* A545: every sale on account confirmed or disputed by a manager — the owner sees every branch. */}
+      <CreditSalesToConfirm client={api} currency={currency} canDecide={mayCredit} showBranch onChanged={loadList} />
 
       <input
         value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name…"
@@ -146,7 +162,7 @@ export default function CreditAccountsPage() {
       )}
 
       {loading ? <p className="text-gray-500">Loading…</p> : rows.length === 0 ? (
-        <p className="text-gray-500">No credit customers yet. Set a credit limit on a customer to start.</p>
+        <p className="text-gray-500">No credit customers yet. {mayCredit ? 'Use "+ Give credit" to give a customer a credit limit.' : 'Someone with credit rights gives a customer a limit to start.'}</p>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -183,6 +199,16 @@ export default function CreditAccountsPage() {
           </table></div>
           <Pager paged={paged} noun="customers" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         </div>
+      )}
+
+      {/* A567: give an existing customer a credit limit */}
+      {giving && (
+        <GiveCreditPicker currency={currency} onClose={() => setGiving(false)}
+          onGiven={(name, lim) => {
+            setGiving(false);
+            setMsg({ kind: 'ok', text: `${name} can now buy on account up to ${money(lim, currency)}. The tills pick it up at their next pull.` });
+            void loadList();
+          }} />
       )}
 
       {/* Detail drawer */}
@@ -261,12 +287,12 @@ export default function CreditAccountsPage() {
                       <td className={`py-2 capitalize text-gray-300 ${DESK}`}>{l.type}</td>
                       <td className={`py-2 text-right ${Number(l.amount) > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{money(l.amount, currency, { sign: true })}</td>
                       <td className={`py-2 text-right text-gray-300 ${DESK}`}>{money(l.balance_after, currency)}</td>
-                      <td className={`py-2 text-gray-500 ${DESK}`}>{l.method ?? l.notes ?? (l.order_id ? 'sale' : '')}</td>
+                      <td className={`py-2 text-gray-500 ${DESK}`}>{ledgerNote(l)}</td>
                     </tr>
                     <MoreRow open={moreLedger.isOpen(l.id)} colSpan={2} items={[
                       ['Type', <span className="capitalize">{l.type}</span>],
                       ['Balance', money(l.balance_after, currency)],
-                      ['Note', l.method ?? l.notes ?? (l.order_id ? 'sale' : '')],
+                      ['Note', ledgerNote(l)],
                     ]} />
                     </Fragment>
                   ))}

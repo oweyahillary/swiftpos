@@ -22,6 +22,7 @@ import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -198,7 +199,7 @@ ok('refused by the cloud: parked with its words, not retried forever', queued(un
   && /may not approve/.test(queued(unsynced)[0].last_error ?? '') && (E.getSyncStatus().parkedCount ?? 0) >= 1, JSON.stringify(queued(unsynced)));
 
 // ── The wiring (source) ──────────────────────────────────────────────────────
-const ipc = src('main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 ok('only when the cloud cannot be reached (no network, a gateway error, an offline sign-in)',
   // A529: the catch also names another server's page in the log (ForeignPageError — cloudFetch throws it: no connection).
   /\} catch \(e: any\) \{\s*\/\/ A529[^\n]*\n\s*if \(e instanceof ForeignPageError\) logLine\('sale'[^\n]*\n\s*return reverseWhileOffline\('void', String\(orderId\), reason, approvalPin\);/.test(ipc)

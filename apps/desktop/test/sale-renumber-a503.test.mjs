@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -46,7 +47,7 @@ K.markKitchenPaid('T1--5');
 ok('…the number the screen asked with closes them', db.prepare(`SELECT status FROM kitchen_lines WHERE line_id = 'l-1'`).get().status === 'paid');
 
 console.log('\nWired in (order:create, the sale screen)\n');
-const ipc = src('src/main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 const create = ipc.slice(ipc.indexOf("handle('order:create'"), ipc.indexOf("handle('print:list'"));
 ok('order:create: the old number\'s kitchen lines are paid', /const askedNumber = orderPayload\?\.order_number \?\? null;/.test(create)
   && /if \(askedNumber && askedNumber !== orderPayload\?\.order_number\) markKitchenPaid\(askedNumber\);/.test(create));

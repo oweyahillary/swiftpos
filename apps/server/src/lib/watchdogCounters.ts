@@ -73,8 +73,39 @@ export function recordSyncAttempt(a: Omit<SyncAttempt, 'at'>, at = Date.now()): 
 
 export function recentSyncAttempts(): SyncAttempt[][] { return [...syncAttempts.values()].map((l) => [...l]); }
 
+// ── A579: what each till says it still has to send (X-Sync-Pending / X-Sync-Failed on its /api/sync/push) ───────────
+// From 1.0.20 a till reports its queue on every push, the idle heartbeat included. Kept here, in memory, rather than in a
+// new user_devices column: the watchdog (same process) only needs the latest report, and a restart loses at most one
+// heartbeat's worth (15 min) — the rule falls back to the till's version until the next report.
+export interface SyncQueueReport { pending: number; failed: number; at: number; /** when `pending` last went above 0 */ pendingSince: number | null }
+const queueReports = new Map<string, SyncQueueReport>();
+
+/** A header value as a count (0 … 1 000 000), or null when absent / not a number. */
+export function parseQueueCount(v: unknown): number | null {
+  const s = String(Array.isArray(v) ? v[0] : (v ?? '')).split(',')[0].trim();
+  if (!/^\d{1,7}$/.test(s)) return null;
+  const n = Number(s);
+  return n <= 1_000_000 ? n : null;
+}
+
+/** A till's push carried its queue. Nothing is recorded without a pending count. */
+export function recordSyncQueue(deviceId: string, pending: number | null, failed: number | null, at = Date.now()): void {
+  const id = String(deviceId ?? '').split(',')[0].trim().slice(0, 64);
+  if (!id || pending === null) return;
+  const prev = queueReports.get(id);
+  const pendingSince = pending > 0 ? (prev && prev.pending > 0 && prev.pendingSince ? prev.pendingSince : at) : null;
+  queueReports.set(id, { pending, failed: failed ?? 0, at, pendingSince });
+  if (queueReports.size > 5000) queueReports.delete(queueReports.keys().next().value as string);
+}
+
+/** The latest queue report per till device id. */
+export function syncQueueReports(): Record<string, SyncQueueReport> {
+  return Object.fromEntries([...queueReports].map(([k, v]) => [k, { ...v }]));
+}
+
 /** For tests: start again. */
 export function resetCounters(): void {
+  queueReports.clear();
   signInFailures.length = 0; syncAttempts.clear(); errorTimes.length = 0; errorPaths.length = 0;
   serverErrors = 0; failedSignIns = 0; writeGuard = 0;
 }

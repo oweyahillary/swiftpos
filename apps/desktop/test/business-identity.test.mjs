@@ -10,7 +10,7 @@
 //
 // MUTATIONS TO CONFIRM BITE:
 //   - applyBusinessIdentity not called from applyReferenceConfig      → "the new business name is on the till" fails
-//   - the receipt's tillNumber not set from getReceiptPay             → "Paybill: 4098201 under the payments" fails
+//   - the receipt's tillNumber not set from getReceiptPay             → "PAYBILL: / 4098201" fails (A539; A551)
 //   - nodeIdentity left out of the branch server's bundle             → "a till behind the branch server gets them" fails
 //   - businesses missing from the cloud's catalogue-version           → its pin fails
 import fs from 'node:fs';
@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..', '..', '..');
@@ -97,7 +98,7 @@ console.log('\nThe business renamed on the web\n');
   ok('…and the screens read it (the session they load names it)', s?.business?.name === 'Krunch Westlands', JSON.stringify(s?.business));
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
   ok('…and the receipt prints it', /KRUNCH WESTLANDS|Krunch Westlands/.test(lastReceipt()), lastReceipt().slice(0, 200));
-  ok('no receipt M-Pesa line while none is set', !/Buy Goods|Paybill/.test(lastReceipt()));
+  ok('no receipt M-Pesa line while none is set', !/Buy Goods|Paybill/i.test(lastReceipt()));
 }
 
 console.log('\nThe receipt\'s M-Pesa line\n');
@@ -106,22 +107,23 @@ console.log('\nThe receipt\'s M-Pesa line\n');
   cloud.version = '2026-10-12T09:40:00Z';
   await E.pullIfCatalogueChanged();
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
-  ok('set on the web → "Paybill: 4098201" under the payments on this till\'s receipt', /Paybill: 4098201/.test(lastReceipt()), lastReceipt().slice(-600));
+  // A551: the payment block's label, then the number on the next line (A539 had "Payment Details: Paybill - 4098201").
+  ok('set on the web → "PAYBILL:" / "4098201" on this till\'s receipt', /PAYBILL:\n4098201\n/.test(lastReceipt()), lastReceipt().slice(-600));
   cloud.pay = { label: '', number: '777111' };
   cloud.version = '2026-10-12T09:50:00Z';
   await E.pullIfCatalogueChanged();
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
-  ok('a number with no label prints as Buy Goods', /Buy Goods: 777111/.test(lastReceipt()));
+  ok('a number with no label prints as Buy Goods', /BUY GOODS:\n777111\n/.test(lastReceipt()));
   const offline = globalThis.fetch;
   globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
-  ok('offline the till still prints it (kept on the till)', /Buy Goods: 777111/.test(lastReceipt()));
+  ok('offline the till still prints it (kept on the till)', /BUY GOODS:\n777111\n/.test(lastReceipt()));
   globalThis.fetch = offline;
   cloud.pay = { label: 'Buy Goods', number: '' };
   cloud.version = '2026-10-12T10:00:00Z';
   await E.pullIfCatalogueChanged();
   await H['escpos:reprintReceiptForOrder'](null, 'o-1');
-  ok('cleared on the web → no line', !/Buy Goods|Paybill/.test(lastReceipt()));
+  ok('cleared on the web → no line', !/Buy Goods|Paybill/i.test(lastReceipt()));
 }
 
 console.log('\nA till behind the branch server, and an older cloud\n');
@@ -158,7 +160,7 @@ console.log('\nThe wiring\n');
   // A492 (owner, 2026-10-15): set on the TILL by the branch's manager — the web's routes refuse it, the branch keeps it.
   ok('…set on the till for its branch (PUT /branches/:id/mpesa); the web\'s settings routes refuse it', /router\.put\('\/:id\/mpesa'/.test(br)
     && /code: 'MPESA_ON_TILL'/.test(br) && /code: 'MPESA_ON_TILL'/.test(bz));
-  const ipc = read('apps/desktop/src/main/ipcHandlers.ts'), ns = read('apps/desktop/src/main/nodeServer.ts');
+  const ipc = ipcHandlersSource(), ns = read('apps/desktop/src/main/nodeServer.ts');
   ok('a logo set on a till goes to its branch server at once', /if \(b\) void relayBrandingToNode\(/.test(ipc)
     && /url === '\/node\/branding'[\s\S]{0,1200}applyPulledBranding\(/.test(ns) && /applyPulledBranding\([\s\S]{0,300}bumpChangeVersion\(getLocalDb\(\)\)/.test(ns));
   const app = read('apps/desktop/src/renderer/App.tsx');

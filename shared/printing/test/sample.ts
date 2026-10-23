@@ -22,6 +22,8 @@ import {
 } from '../src/index';
 import { order, business, KITCHEN, DISPATCH } from './fixture';
 import { bigLogo } from './a530-cases';   // A530
+import { longOrder, productionPaperMm } from './a543-cases';   // A543
+import { variantCases } from './a551-cases';   // A551
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -58,16 +60,20 @@ show('CUSTOMER RECEIPT — duplicate, optional fields off', {
 show('KITCHEN — 58mm', { order, business, station: kitchenPreset(KITCHEN, 'Kitchen', 58) });
 show('CUSTOMER RECEIPT — 58mm', { order, business, station: receiptPreset('st-till', 'Till', 58) });
 
-// ── A530: before / after, for the owner to approve on paper ─────────────────
+// ── A530 / A538: the receipt before and after, for the owner to approve on paper ──
+//
+// A538 (owner, 2026-10-21, on the A530 compact receipt: "it feels congested everywhere" — chose "go back to the old
+// layout" and "line spacing in the middle, about 3.75 mm"): three receipts side by side — 1.0.19; the A538 standard
+// (classic layout, ESC 3 30, small logo, 1-line feed); and the 'receipt_compact_layout' opt-in (A530's lines at 30).
 //
 // PAPER LENGTH ESTIMATE (the method; the printer's own figures will differ by a few mm):
-//   * a normal-size text line advances the line spacing — classic ESC 2 = 1/6" = 4.23 mm; compact ESC 3 26 = 26 dots
-//     at 203 dpi = 3.25 mm;
-//   * a double-height line (PAY, a Duplicate/VOID/BILL banner) advances its 48-dot glyph, 6.0 mm, either way (the
-//     compact receipt prints it at the default spacing, escpos.ts);
-//   * a logo advances its height in dots at 8 dots/mm (203 dpi): 288 dots = 36 mm classic, 120 dots = 15 mm compact;
-//   * the feed before the cut is that many lines at 1/6" (the spacing is back to the default by then): 3 classic,
-//     1 compact. The blade's own distance (GS V 66 0 feeds the last line past it) is the same both ways and left out.
+//   * a normal-size text line advances the line spacing — ESC 2 = 1/6" = 4.23 mm (1.0.19); ESC 3 30 = 30 dots at 203 dpi
+//     = 3.75 mm (A538 standard); ESC 3 26 = 3.25 mm (A530, shown for reference);
+//   * a double-height line (PAY, a Duplicate/VOID/BILL banner) advances its 48-dot glyph, 6.0 mm, either way (a receipt
+//     with ESC 3 prints it at the default spacing, escpos.ts);
+//   * a logo advances its height in dots at 8 dots/mm (203 dpi): 288 dots = 36 mm (1.0.19), 120 dots = 15 mm (A530/A538);
+//   * the feed before the cut is that many lines at 1/6" (the spacing is back to the default by then): 3 in 1.0.19, 1
+//     now. The blade's own distance (GS V 66 0 feeds the last line past it) is the same every way and left out.
 const DOT_MM = 25.4 / 203;
 function paperMm(doc: ReturnType<typeof renderTicket>, cut: boolean, feedBeforeCut: number): number {
   let mm = 0;
@@ -82,30 +88,109 @@ function paperMm(doc: ReturnType<typeof renderTicket>, cut: boolean, feedBeforeC
 }
 const textLines = (doc: ReturnType<typeof renderTicket>) => doc.blocks.filter(b => b.kind === 'text').length;
 
-log(`\n${'='.repeat(60)}\nA530 — the receipt BEFORE (classic, 1.0.19) and AFTER (compact, the 1.0.20 standard)\n${'='.repeat(60)}`);
-log('Classic = all four admin-portal switches on (receipt_classic_spacing, receipt_full_logo, receipt_classic_layout,');
-log('receipt_extra_feed); compact = all off, the standard. Same sale; the AFTER is the CUSTOMER RECEIPT above.');
-const CLASSIC = { spacing: true, fullLogo: true, layout: true, extraFeed: true };
+log(`\n${'='.repeat(60)}\nA538 — the receipt in 1.0.19, the A538 standard, and the compact opt-in\n${'='.repeat(60)}`);
+log('1.0.19 = receipt_classic_spacing + receipt_full_logo + receipt_extra_feed on (the layout is classic by default).');
+log('Standard = all switches off: the classic layout at 3.75 mm (ESC 3 30), a small logo, 1 line fed before the cut —');
+log('the CUSTOMER RECEIPT above. Compact = receipt_compact_layout on (A530\'s lines, at 3.75 mm). Same sale.');
+const CLASSIC = { spacing: true, fullLogo: true, extraFeed: true };
+const COMPACT = { compactLayout: true };
 for (const w of [80, 58] as const) {
   const st = receiptPreset('st-till', 'Till', w);
-  const before = toPreview(renderTicket({ order, business: { ...business, receiptClassic: CLASSIC }, station: st }), { showMargins: true }).split('\n');
-  const after = toPreview(renderTicket({ order, business, station: st }), { showMargins: true }).split('\n');
-  const left = before[0].length + 4;
+  const cols = [
+    toPreview(renderTicket({ order, business: { ...business, receiptClassic: CLASSIC }, station: st }), { showMargins: true }).split('\n'),
+    toPreview(renderTicket({ order, business, station: st }), { showMargins: true }).split('\n'),
+    toPreview(renderTicket({ order, business: { ...business, receiptClassic: COMPACT }, station: st }), { showMargins: true }).split('\n'),
+  ];
+  const left = cols[0][0].length + 4;
   log(`\n${w} mm`);
-  log('BEFORE (classic)'.padEnd(left) + 'AFTER (compact)');
-  for (let i = 0; i < Math.max(before.length, after.length); i++) log(((before[i] ?? '').padEnd(left) + (after[i] ?? '')).trimEnd());
+  log('1.0.19'.padEnd(left) + 'STANDARD (A538)'.padEnd(left) + 'COMPACT (opt-in)');
+  for (let i = 0; i < Math.max(...cols.map(c => c.length)); i++) {
+    log(((cols[0][i] ?? '').padEnd(left) + (cols[1][i] ?? '').padEnd(left) + (cols[2][i] ?? '')).trimEnd());
+  }
 }
-log('\nEstimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530):');
-log('                       text lines        classic    compact    saved');
+log('\nEstimated paper per receipt (this sale; "logo" = a 300 x 288-dot logo stored before A530;');
+log('"A530" = the 1.0.20 compact standard at 3.25 mm that A538 replaces, for reference):');
+log('                       text lines      1.0.19   standard    compact       A530');
 for (const w of [80, 58] as const) {
   for (const withLogo of [false, true]) {
     const st = receiptPreset('st-till', 'Till', w);
     const b = { ...business, ...(withLogo ? { logoRaster: bigLogo() } : {}) };
-    const cd = renderTicket({ order, business: { ...b, receiptClassic: CLASSIC }, station: st });
-    const nd = renderTicket({ order, business: b, station: st });
-    const cm = paperMm(cd, st.cutPaper, st.feedBeforeCut), nm = paperMm(nd, st.cutPaper, st.feedBeforeCut);
-    log(`  ${`${w} mm${withLogo ? ', logo' : ''}`.padEnd(20)} ${`${textLines(cd)} -> ${textLines(nd)}`.padEnd(16)}`
-      + ` ${`${cm.toFixed(0)} mm`.padStart(9)}  ${`${nm.toFixed(0)} mm`.padStart(9)}   ${`${(cm - nm).toFixed(0)} mm (${Math.round((1 - nm / cm) * 100)}%)`}`);
+    const od = renderTicket({ order, business: { ...b, receiptClassic: CLASSIC }, station: st });
+    const sd = renderTicket({ order, business: b, station: st });
+    const cd = renderTicket({ order, business: { ...b, receiptClassic: COMPACT }, station: st });
+    const mm = (d: typeof od) => paperMm(d, st.cutPaper, st.feedBeforeCut);
+    const om = mm(od), sm = mm(sd), cm = mm(cd), am = mm({ ...cd, lineSpacing: 26 });
+    const pct = (x: number) => `${Math.round((1 - x / om) * 100)}%`;
+    log(`  ${`${w} mm${withLogo ? ', logo' : ''}`.padEnd(20)} ${`${textLines(sd)} / ${textLines(cd)}`.padEnd(13)}`
+      + ` ${`${om.toFixed(0)} mm`.padStart(9)}  ${`${sm.toFixed(0)} mm -${pct(sm)}`.padStart(9)}  ${`${cm.toFixed(0)} mm -${pct(cm)}`.padStart(9)}  ${`${am.toFixed(0)} mm -${pct(am)}`.padStart(9)}`);
+  }
+}
+
+// ── A543 / A551: the kitchen ticket in Font A (the standard again, A551) and Font B (kitchen_font_b), a long order ──
+//
+// A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay") made it Font B; A551 (owner, the
+// same day, on paper: "kitchen receipt use the same font as the despatcher") made Font A the standard again and Font B
+// the 'kitchen_font_b' opt-in. Font B is 9x17 dots: 64 characters a line on 80 mm, 42 on 58 mm (Font A 12x24: 48 / 32).
+// Its normal lines are 24 dots apart (ESC 3 24, ~3.0 mm). A double-height dish name is 34 dots in Font B, 48 in Font A
+// (both at ESC 2). The preview shows each ticket at its own width; Font B's characters are smaller on paper, so the
+// 64-column ticket is the same 72 mm wide as the 48-column one. Estimate as for the receipt (a543-cases.ts
+// productionPaperMm). A551: both with the thin gap between items (invisible here) and a 1-line feed before the cut.
+log(`\n${'='.repeat(60)}\nA543/A551 — the kitchen ticket in Font A (standard) and Font B (kitchen_font_b)\n${'='.repeat(60)}`);
+log('A long dine-in order. Dispatch (packing) and receipts are Font A either way.');
+for (const w of [80, 58] as const) {
+  const st = kitchenPreset(KITCHEN, 'Kitchen', w);
+  const cols = [
+    toPreview(renderTicket({ order: longOrder, business, station: st }), { showMargins: true }).split('\n'),
+    toPreview(renderTicket({ order: longOrder, business: { ...business, kitchenFontB: true }, station: st }), { showMargins: true }).split('\n'),
+  ];
+  const left = cols[0][0].length + 4;
+  log(`\n${w} mm`);
+  log('FONT A (standard, A551)'.padEnd(left) + 'FONT B (kitchen_font_b)');
+  for (let i = 0; i < Math.max(...cols.map(c => c.length)); i++) {
+    log(((cols[0][i] ?? '').padEnd(left) + (cols[1][i] ?? '')).trimEnd());
+  }
+}
+log('\nEstimated paper per kitchen ticket (text lines, mm; A551 = the item gap and the 1-line feed):');
+log('                           Font A before   Font A (A551)   Font B (A551)');
+for (const [label, o] of [['this sale', order], ['the long order', longOrder]] as const) {
+  for (const w of [80, 58] as const) {
+    const st = kitchenPreset(KITCHEN, 'Kitchen', w);
+    const a = renderTicket({ order: o, business, station: st });
+    // Before A551: a blank line where the gap is, and the station's 3-line feed.
+    const old = { ...a, cutFeed: undefined, blocks: a.blocks.map(b => (b.kind === 'gap' ? { kind: 'text' as const, text: '', align: 'left' as const, size: 'normal' as const, bold: false } : b)) };
+    const b = renderTicket({ order: o, business: { ...business, kitchenFontB: true }, station: st });
+    const om = productionPaperMm(old, st.feedBeforeCut), am = productionPaperMm(a, st.feedBeforeCut), bm = productionPaperMm(b, st.feedBeforeCut);
+    log(`  ${`${label}, ${w} mm`.padEnd(24)} ${`${textLines(old)} / ${om.toFixed(0)} mm`.padEnd(15)} `
+      + `${`${textLines(a)} / ${am.toFixed(0)} mm -${Math.round((1 - am / om) * 100)}%`.padEnd(15)} `
+      + `${textLines(b)} / ${bm.toFixed(0)} mm -${Math.round((1 - bm / om) * 100)}%`);
+  }
+}
+
+// ── A551: variants on the item's own line, and the payment block ──
+//
+// Owner, 2026-10-21, on paper: "on items with variants assume chicken burger instead of writing `Chicken burger` then
+// `  Chicken burger spicy` why not write `Chicken burger - Spicy`" and "we just write `PAY BILL/BUY GOODS:` newline
+// `123445` and we center it and increase the font size and thickness, We remove the wordings payment details".
+log(`\n${'='.repeat(60)}\nA551 — a variant on the item's line; the payment block\n${'='.repeat(60)}`);
+log('The cart as the till hands it in (toUnits): a Chicken Burger with the variant "Chicken Burger Spicy", a Beef Burger');
+log('with "Large", and a long name with its variant (the hanging wrap keeps the quantity column). Paybill 4098201, Account WEST1.');
+{
+  const variantOrder: typeof order = {
+    ...order, lines: variantCases.lines, total: variantCases.total, payments: [{ label: 'M-PESA', amount: variantCases.total }], changeGiven: 0,
+  };
+  const paybill = { ...business, tillLabel: 'Paybill', tillNumber: '4098201, Account WEST1' };
+  for (const w of [80, 58] as const) {
+    const cols = [
+      toPreview(renderTicket({ order: variantOrder, business, station: kitchenPreset(KITCHEN, 'Kitchen', w) }), { showMargins: true }).split('\n'),
+      toPreview(renderTicket({ order: variantOrder, business, station: dispatchPreset(DISPATCH, 'Dispatch', w) }), { showMargins: true }).split('\n'),
+      toPreview(renderTicket({ order: variantOrder, business: paybill, station: receiptPreset('st-till', 'Till', w) }), { showMargins: true }).split('\n'),
+    ];
+    const left = cols[0][0].length + 4;
+    log(`\n${w} mm`);
+    log('KITCHEN'.padEnd(left) + 'DISPATCH'.padEnd(left) + 'RECEIPT (Paybill)');
+    for (let i = 0; i < Math.max(...cols.map(c => c.length)); i++) {
+      log(((cols[0][i] ?? '').padEnd(left) + (cols[1][i] ?? '').padEnd(left) + (cols[2][i] ?? '')).trimEnd());
+    }
   }
 }
 

@@ -19,7 +19,7 @@
 
 export const DEFAULT_RELEASES_REPO = 'oweyahillary/swiftpos';
 
-export interface GhAsset { id: number; name: string; url: string; browser_download_url: string; size?: number }
+export interface GhAsset { id: number; name: string; url: string; browser_download_url: string; size?: number; /** A570: GitHub's "sha256:<hex>" for the file, when it records one. */ digest?: string | null }
 export interface GhRelease { id: number; tag_name: string; name?: string | null; draft: boolean; prerelease?: boolean; published_at?: string | null; created_at?: string | null; assets: GhAsset[] }
 
 export interface DesktopRelease {

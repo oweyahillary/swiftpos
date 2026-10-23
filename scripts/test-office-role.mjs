@@ -19,6 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from './lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let passed = 0, failed = 0;
@@ -35,7 +36,7 @@ const NC = read('apps/desktop/src/main/nodeClient.ts');
 const MT = read('apps/desktop/src/main/maintenance.ts');
 const SS = read('apps/desktop/src/main/shiftService.ts');
 const SE = read('apps/desktop/src/main/syncEngine.ts');
-const IH = read('apps/desktop/src/main/ipcHandlers.ts');
+const IH = ipcHandlersSource();
 const MR = read('apps/desktop/src/main/managerReports.ts');
 const DR = read('apps/desktop/src/main/dailySalesReport.ts');
 const PA = read('apps/desktop/src/renderer/lib/posApi.ts');

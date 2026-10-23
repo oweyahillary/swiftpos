@@ -18,6 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isWindowsTeardownPass, TEARDOWN_NOTE } from './lib/windows-teardown.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -57,6 +58,10 @@ for (const f of readdirSync(testDir).filter(f => f.endsWith('.test.mjs')).sort()
   }
   const r = node(['--no-warnings', full]);
   if (r.status === 0) { pass++; say(`  PASS  ${f}`); }
+  // A548 (A186): Windows only — printed its own all-passed summary, then crashed in libuv teardown. Pass, with a note.
+  else if (isWindowsTeardownPass({ status: r.status, out: (r.stdout || '') + (r.stderr || '') })) {
+    pass++; say(`  PASS  ${f}  (note: ${TEARDOWN_NOTE}; exit ${r.status})`);
+  }
   else { fail++; say(`  FAIL  ${f}`); say(tail((r.stdout || '') + (r.stderr || ''), 6)); }
 }
 

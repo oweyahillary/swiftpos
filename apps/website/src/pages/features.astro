@@ -1,0 +1,372 @@
+---
+import Base from '../layouts/Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import VisitButton from '../components/VisitButton.astro';
+import Monitor from '../components/frames/Monitor.astro';
+import Laptop from '../components/frames/Laptop.astro';
+import Shot from '../components/screens/Shot.astro';
+import Receipt from '../components/screens/Receipt.astro';
+import StockScreen from '../components/screens/StockScreen.astro';
+import DayCloseScreen from '../components/screens/DayCloseScreen.astro';
+import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
+import LabelSamples from '../components/screens/LabelSamples.astro';
+import { WA_MESSAGES } from '../lib/site';
+import { ROLES } from '../lib/roles';
+import { softwareApplication } from '../lib/schema';
+
+const description =
+  "Everything ZapTill does, grouped by job: selling, the kitchen, money and the day close, stock, barcodes and labels, staff and roles, branches and branding, Analytics, support and updates, and working with no internet.";
+
+const groups = [
+  { id: 'sell', name: 'Sell' },
+  { id: 'kitchen', name: 'Kitchen' },
+  { id: 'money', name: 'Money and day close' },
+  { id: 'stock', name: 'Stock' },
+  { id: 'labels', name: 'Barcodes and labels' },
+  { id: 'staff', name: 'Staff and roles' },
+  { id: 'branches', name: 'Branches and branding' },
+  { id: 'analytics', name: 'Analytics' },
+  { id: 'support', name: 'Support and updates' },
+  { id: 'offline', name: 'Works offline' },
+];
+---
+<Base
+  title="Features: everything ZapTill does, grouped by job | ZapTill"
+  description={description}
+  waMessage={WA_MESSAGES.features}
+  ogImage="/og/features.png"
+  jsonLd={[softwareApplication(description)]}
+>
+  <section class="page-head feat-head">
+    <div class="wrap">
+      <h1>Everything it does, grouped by job</h1>
+      <p class="lede">
+        ZapTill is a till for the counter, tickets and a screen for the kitchen, and a back office on the web that opens on
+        your phone. The screens below are the real app, on a made-up restaurant.
+      </p>
+      <nav class="feat-jump" aria-label="Feature groups">
+        <ul>{groups.map((g) => <li><a href={`#${g.id}`}>{g.name}</a></li>)}</ul>
+      </nav>
+    </div>
+  </section>
+
+  <!-- Sell -->
+  <section class="band feat" id="sell" aria-labelledby="sell-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="sell-h">Sell</h2>
+        <p>A counter till that keeps up with a queue, and doesn't stop when the internet does.</p>
+        <ul class="ticks">
+          <li>Your items as big buttons, with your menus as big tabs across the top: Food, Drinks, Tea (in a shop,
+            your departments)</li>
+          <li>Scan a barcode and the item is on the bill</li>
+          <li>Dine-in with tables, takeaway and delivery from the same screen</li>
+          <li>Hold an order and pick it up again when the table wants more</li>
+          <li>Split a bill between cash, M-Pesa and card</li>
+          <li>Discounts and tips, for the staff you allow</li>
+          <li>Notes for the kitchen, like "No onions"</li>
+          <li>Sales on account for regulars, within the credit limit you set, confirmed by a manager</li>
+          <li>When an item runs out, you choose: keep selling, show it as sold out, or hide it until stock comes in</li>
+          <li>Reprint a receipt when a customer asks</li>
+        </ul>
+      </div>
+      <div class="split__visual">
+        <Monitor label="The ZapTill till with an order for Table 4">
+          <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
+            alt="The real ZapTill till: menu buttons on the left, Table 4's order on the right with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050, and Send to kitchen and Hold order buttons." />
+        </Monitor>
+      </div>
+    </div>
+  </section>
+
+  <!-- Kitchen -->
+  <section class="band band--white feat" id="kitchen" aria-labelledby="kitchen-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="kitchen-h">Kitchen</h2>
+        <p>The order reaches the right cook the moment it's taken, written the way cooks read.</p>
+        <ul class="ticks">
+          <li>Kitchen tickets and dispatch (packing) tickets, printed as the order is sent</li>
+          <li>Each part of the menu to its own station: grill, kitchen, bar or dispatch</li>
+          <li>Variants on the dish's own line: "Chips Masala - Spicy"</li>
+          <li>Extras and the cashier's notes under the dish: "+ Extra Cheese", "** No onions"</li>
+          <li>Combos list their parts, so every piece is cooked and packed</li>
+          <li>A kitchen display: each order as a card with a timer, Pending to Ready</li>
+          <li>Items taken back after they reached the kitchen are recorded, with who approved it</li>
+        </ul>
+      </div>
+      <div class="split__visual slips-pair">
+        <Receipt kind="kitchen" paper={58} />
+        <Receipt kind="extras" paper={58} />
+      </div>
+    </div>
+  </section>
+
+  <!-- Money and day close -->
+  <section class="band band--night feat" id="money" aria-labelledby="money-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="money-h">Money and day close</h2>
+        <p>Know at every close whose drawer is short, by how much, before anyone goes home.</p>
+        <ul class="ticks">
+          <li>An opening float counted by each cashier</li>
+          <li>Drawer counts, with over and short for each cashier</li>
+          <li>Each cashier's takings by payment method: cash, M-Pesa, card</li>
+          <li>A manager confirms every shift</li>
+          <li>The cashier's own slip shows what they declared, never what was expected</li>
+          <li>Cash paid out and expenses from the drawer, each with who approved it</li>
+          <li>Close the day and the branch, from the till or from the web</li>
+          <li>Your Buy Goods or Paybill number, large on every receipt</li>
+        </ul>
+      </div>
+      <div class="split__visual money-pair">
+        <figure class="screen-crop">
+          <Shot src="/screens/till-shifts.webp" width={1200} height={253}
+            alt="The real ZapTill shift report: Wanjiru's drawer expected KES 14,550, counted KES 14,200, difference KES -350; Otieno's drawer exact. Both awaiting a manager." />
+        </figure>
+        <Receipt kind="sale" paper={58} lines={[27, 36]} class="money-pair__slip"
+          label="The bottom of a customer receipt: Total KES 3,350, PAY KES 3,350, the Buy Goods number 123456 printed large, then M-Pesa KES 2,000 and cash KES 1,350." />
+      </div>
+    </div>
+  </section>
+
+  <!-- Stock -->
+  <section class="band feat" id="stock" aria-labelledby="stock-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="stock-h">Stock</h2>
+        <p>What came in, what went out, and what went in the bin, in shillings.</p>
+        <ul class="ticks">
+          <li>Stock levels for every product and ingredient</li>
+          <li>Deliveries received against the supplier's note</li>
+          <li>Transfers between branches, sent by one and received by the other</li>
+          <li>See what your other branches hold, and ask one of them to send some</li>
+          <li>Stock counts</li>
+          <li>Wastage written off with a reason and its cost</li>
+          <li>Recipes, so you know what each dish costs to make</li>
+          <li>Supplier bills and what you still owe</li>
+          <li>Low stock in the daily email</li>
+        </ul>
+        <p class="feat__note">Stock at the till, and checking other branches from the till, come with ZapTill Online.</p>
+      </div>
+      <div class="split__visual">
+        <Laptop label="Receiving a delivery and writing off wastage">
+          <StockScreen />
+        </Laptop>
+      </div>
+    </div>
+  </section>
+
+  <!-- Barcodes and labels -->
+  <section class="band band--white feat" id="labels" aria-labelledby="labels-h">
+    <div class="wrap">
+      <div class="split split--top">
+        <div class="split__copy">
+          <h2 id="labels-h">Barcodes and labels</h2>
+          <p>Every item scannable, on whatever printer you have.</p>
+          <ul class="ticks">
+            <li>Products without a barcode get one: an in-store code in your own numbering, never a code you already have</li>
+            <li>The manufacturer's barcodes keep working as they are</li>
+            <li>Print labels on a label printer (TSC, Xprinter, Zebra and others), any size</li>
+            <li>Or on A4 sticker sheets from an office printer, starting at any sticker on a part-used sheet</li>
+            <li>Or on the receipt printer</li>
+            <li>Every label carries the barcode; the name, the price and your shop's name if you want them</li>
+            <li>Print labels for one item, a category, or the items in a delivery</li>
+          </ul>
+          <p class="feat__note">Printing labels from the till comes with ZapTill Online. When a price changes, print the label again.</p>
+        </div>
+        <div class="split__visual">
+          <LabelSamples />
+          <p class="feat__note">Drawn by ZapTill's own label code, for a demo shop.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Staff and roles -->
+  <section class="band feat" id="staff" aria-labelledby="staff-h">
+    <div class="wrap">
+      <div class="split split--top">
+        <div class="split__copy">
+          <h2 id="staff-h">Staff and roles</h2>
+          <p>Everyone gets their own PIN, and each role sees only what it should.</p>
+          <ul class="ticks">
+            <li>Ready-made roles, so setting up staff takes minutes</li>
+            <li>A PIN for each person at the till; every sale and void carries their name</li>
+            <li>A paid order can only be voided or refunded with a manager's PIN</li>
+            <li>Your partner and your accountant sign in to the web dashboard with their own logins, never yours</li>
+            <li>Sales and voids by cashier in the reports</li>
+            <li>The owner sets their own password at the first sign-in</li>
+          </ul>
+        </div>
+        <div class="split__visual">
+          <ul class="roles" aria-label="The ready-made roles">
+            {ROLES.map((r) => (
+              <li class:list={{ 'roles--petrol': r.petrol }}>
+                <b>{r.name}</b>
+                <span>{r.does}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Branches and branding -->
+  <section class="band band--white feat" id="branches" aria-labelledby="branches-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="branches-h">Branches and branding</h2>
+        <p>Run every branch from one place, even when you're not there.</p>
+        <ul class="ticks">
+          <li>Every branch on one web dashboard, side by side or one at a time</li>
+          <li>Stock in every branch: who has it, and a request to send some</li>
+          <li>A daily summary email, at the time you choose</li>
+          <li>Close a branch's day from the web</li>
+          <li>Your logo on the receipt</li>
+          <li>Each branch can have its own colours on the till and its own receipt footer</li>
+          <li>Add a branch later; it joins the same dashboard, with no second cloud fee</li>
+        </ul>
+      </div>
+      <div class="split__visual">
+        <Laptop label="The day close on the web dashboard">
+          <DayCloseScreen />
+        </Laptop>
+      </div>
+    </div>
+  </section>
+
+  <!-- Analytics -->
+  <section class="band feat" id="analytics" aria-labelledby="analytics-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="analytics-h">Analytics</h2>
+        <p>An add-on that turns your sales into a short list of what to do next, in shillings.</p>
+        <ul class="ticks">
+          <li>"Do this next": a short, ranked list in plain words: what to order, what to have in for a busy day, old
+            credit to chase, a dish to feature</li>
+          <li>Your week at a glance: what to prepare each day, and the top 3 at every hour</li>
+          <li>Stock between branches: "it sells fast at Ngong Road and slowly at Westlands: consider moving some"</li>
+          <li>Money leaks by cashier: unusual voids or discounts come up as a warning to look into</li>
+          <li>Menu engineering, and the items that still have no cost, so every margin is complete</li>
+          <li>Credit ageing: who owes you, and for how long</li>
+          <li>It never suggests raising your prices</li>
+        </ul>
+        <p><a href="/analytics/">See Analytics</a></p>
+      </div>
+      <div class="split__visual">
+        <DoThisNextCard n={1} />
+      </div>
+    </div>
+  </section>
+
+  <!-- Support and updates -->
+  <section class="band band--white feat" id="support" aria-labelledby="support-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="support-h">Support and updates</h2>
+        <p>We set it up with you, and most problems are fixed without anyone driving to your shop.</p>
+        <ul class="ticks">
+          <li>Setup on site: your menu loaded, printers and kitchen screens set up, your staff trained</li>
+          <li>Updates install themselves, quietly, when the till PC starts</li>
+          <li>Support can pull a till's log remotely to see what went wrong</li>
+          <li>Support from 8 am to 7 pm, and 24 hours a day for priority clients</li>
+          <li>A "what to do when" help screen on the till, which works with no internet</li>
+          <li>Reports download to Excel whenever you want them</li>
+        </ul>
+      </div>
+      <div class="split__visual icon-panel" aria-hidden="true">
+        <svg viewBox="0 0 240 160" class="icon-art">
+          <rect x="20" y="20" width="200" height="120" rx="14" fill="#0b2529" stroke="#1d3c40" stroke-width="2" />
+          <path d="M120 48v44m0 0l-18-18m18 18l18-18" fill="none" stroke="#2dd4bf" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+          <rect x="84" y="104" width="72" height="8" rx="4" fill="#2dd4bf" />
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- Works offline -->
+  <section class="band band--night feat" id="offline" aria-labelledby="offline-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="offline-h">Works offline</h2>
+        <p>When the internet goes, your tills don't.</p>
+        <ul class="ticks">
+          <li>Tills keep selling and printing with no internet</li>
+          <li>Staff still sign in with their PIN</li>
+          <li>A branch server keeps every till in the shop in step</li>
+          <li>Everything catches up by itself when the line is back; nobody types anything in again</li>
+          <li>The till PC needs power like any computer; a small UPS keeps it going through a short cut</li>
+        </ul>
+        <p><a href="/#offline">Read the lunch rush with no internet</a></p>
+      </div>
+      <div class="split__visual icon-panel" aria-hidden="true">
+        <svg viewBox="0 0 240 160" class="icon-art">
+          <rect x="20" y="20" width="200" height="120" rx="14" fill="#0b2529" stroke="#1d3c40" stroke-width="2" />
+          <path d="M70 78a70 70 0 0 1 100 0M86 94a46 46 0 0 1 68 0M104 110a20 20 0 0 1 32 0" fill="none" stroke="#9fb7b5" stroke-width="7" stroke-linecap="round" />
+          <path d="M66 46l108 76" stroke="#fcd34d" stroke-width="7" stroke-linecap="round" />
+          <circle cx="120" cy="124" r="6" fill="#2dd4bf" />
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white final" aria-labelledby="ffinal-title">
+    <div class="wrap">
+      <h2 id="ffinal-title">See the parts you need, running on your own menu.</h2>
+      <div class="actions">
+        <WhatsAppButton message={WA_MESSAGES.features} />
+        <VisitButton />
+      </div>
+      <p class="feat__note">
+        Pictures on the till, variants, offers, stock and labels at the till come with ZapTill Online; Analytics is an
+        add-on.{' '}
+        <a href="/pricing/">See the packages</a>
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .feat-head { background: var(--card); border-bottom: 1px solid var(--line); }
+  .feat-head .lede { margin-bottom: var(--s-5); }
+  .feat-jump ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  .feat-jump a {
+    display: inline-block; padding: 0.35rem 0.8rem; border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+    text-decoration: none; color: var(--ink-2); font-weight: 600; font-size: var(--fs-sm);
+  }
+  .feat-jump a:hover { border-color: var(--teal-strong); color: var(--teal-strong); }
+
+  .feat { scroll-margin-top: 4rem; }
+  .feat h2 { font-size: var(--fs-xl); }
+  .feat .ticks { margin-bottom: var(--s-5); }
+  .feat__note { font-size: var(--fs-sm); color: var(--muted); }
+  .band--night .feat__note { color: var(--night-muted); }
+
+  .slips-pair { display: flex; gap: var(--s-4); align-items: flex-start; justify-content: center; }
+  .slips-pair :global(.slip-wrap) { flex: 1 1 0; min-width: 0; --slip-fs: 0.8rem; }
+  .slips-pair :global(.slip-wrap:last-child) { margin-top: var(--s-6); transform: rotate(1.5deg); }
+  @media (max-width: 600px) {
+    .slips-pair { flex-direction: column; align-items: center; }
+    .slips-pair :global(.slip-wrap) { flex: none; }
+    .slips-pair :global(.slip-wrap:last-child) { margin-top: 0; }
+  }
+
+  .money-pair { display: grid; gap: var(--s-5); justify-items: end; }
+  .money-pair :global(.money-pair__slip) { width: 62%; --slip-fs: 0.82rem; transform: rotate(-1.5deg); margin-right: 5%; }
+  @media (max-width: 600px) { .money-pair :global(.money-pair__slip) { width: 100%; margin-right: 0; } }
+
+  .roles { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+  .roles li { background: var(--card); padding: var(--s-3) var(--s-4); display: grid; gap: 0.1rem; }
+  .roles b { font: 700 1rem/1.3 var(--font-display); }
+  .roles span { color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
+  .roles .roles--petrol { background: var(--paper); }
+  @media (min-width: 560px) { .roles { grid-template-columns: 1fr 1fr; } }
+
+  .icon-panel { display: flex; justify-content: center; }
+  .icon-art { width: 100%; max-width: 260px; height: auto; }
+
+  .final h2 { max-width: 24ch; }
+  .final .actions { margin-bottom: var(--s-5); }
+</style>

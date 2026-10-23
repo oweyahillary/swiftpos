@@ -29,12 +29,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlerFiles } from './lib/ipc-handler-files.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// Handlers live in more than one module (same set check-ipc-parity reads).
+// Handlers live in more than one module (same set check-ipc-parity reads). D10: ipcHandlers.ts is the entry point;
+// the handlers themselves are in src/main/ipc/*.ts (ipcHandlerFiles).
 const HANDLER_FILES = [
-  'apps/desktop/src/main/ipcHandlers.ts',
+  ...ipcHandlerFiles(),
   'apps/desktop/src/main/print/printWorker.ts',
 ];
 const REGISTRY_FILE = 'apps/desktop/src/main/ipcSchemas.ts';

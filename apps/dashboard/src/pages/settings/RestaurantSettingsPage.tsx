@@ -466,27 +466,15 @@ export default function RestaurantSettingsPage() {
       {tab === 'periods' && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <h2 className="text-base font-bold text-white mb-1">Menu periods</h2>
-          <p className="text-sm text-gray-500 mb-1">Define time-based menu periods (e.g. Breakfast, Lunch, Dinner).</p>
-          <p className="text-xs text-gray-600 mb-5 italic">Full period-based product filtering — coming in a future update.</p>
-          {[
-            { key: 'period_breakfast', label: 'Breakfast', icon: '🌅', default: '07:00–11:00' },
-            { key: 'period_lunch',     label: 'Lunch',     icon: '☀️', default: '11:00–15:00' },
-            { key: 'period_dinner',    label: 'Dinner',    icon: '🌙', default: '18:00–23:00' },
-            { key: 'period_allday',    label: 'All day',   icon: '⏰', default: '00:00–23:59' },
-          ].map(period => (
-            <div key={period.key} className="flex items-center justify-between py-3.5 border-b border-gray-800 last:border-0">
-              <div>
-                <div className="text-sm font-medium text-gray-200">{period.icon} {period.label}</div>
-                <div className="text-xs text-gray-500 mt-0.5">Time range for this period (24h format, e.g. {period.default})</div>
-              </div>
-              <input
-                className="w-36 bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none"
-                placeholder={period.default}
-                value={settings[period.key] ?? ''}
-                onChange={e => saveSetting(period.key, e.target.value)}
-              />
-            </div>
-          ))}
+          {/* A578: menus by time of day are built — the hours live on each menu (Menu › Menus › Hours), where the POS reads
+              them. The four free-text period fields that stood here ("coming in a future update") were never read by any POS. */}
+          <p className="text-sm text-gray-400 mb-3">
+            Breakfast, Lunch, Dinner and Happy hour are set on each menu: open <b className="text-gray-200">Menu › Menus</b> and
+            press <b className="text-gray-200">Hours</b> — choose the days and the times. Outside its hours the POS (till and web)
+            hides that menu and its items; a manager can show all for the session.
+          </p>
+          <a href="/dashboard/menus" data-testid="menu-periods-to-menus"
+            className="inline-block bg-swift hover:bg-swift-light text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm">Set menu hours</a>
         </div>
       )}
 

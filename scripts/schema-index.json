@@ -78,6 +78,14 @@
     "ip_address": "\"character varying\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "branch_branding": {
+    "branch_id": "\"uuid\" NOT NULL",
+    "theme_id": "\"text\"",
+    "accent_hex": "\"text\"",
+    "receipt_footer": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "branch_prices": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -208,7 +216,8 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "super_category": "\"text\"",
-    "is_kitchen": "\"boolean\" NOT NULL"
+    "is_kitchen": "\"boolean\" NOT NULL",
+    "menu_id": "\"uuid\""
   },
   "category_stations": {
     "category_id": "\"uuid\" NOT NULL",
@@ -247,6 +256,45 @@
     "recorded_at": "\"timestamp with time zone\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "cloud_payments": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "currency": "\"text\" NOT NULL",
+    "period": "\"text\" NOT NULL",
+    "method": "\"text\" NOT NULL",
+    "reference": "\"text\"",
+    "paid_at": "\"timestamp with time zone\" NOT NULL",
+    "paid_until_before": "\"timestamp with time zone\"",
+    "paid_until_after": "\"timestamp with time zone\" NOT NULL",
+    "invoice_id": "\"uuid\"",
+    "recorded_by": "\"uuid\"",
+    "recorded_by_email": "\"text\" NOT NULL",
+    "recorded_at": "\"timestamp with time zone\" NOT NULL",
+    "note": "\"text\""
+  },
+  "cloud_plan_reminders": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "paid_until": "\"timestamp with time zone\" NOT NULL",
+    "milestone": "\"text\" NOT NULL",
+    "sent_at": "\"timestamp with time zone\" NOT NULL",
+    "owner_email": "\"text\"",
+    "owner_sent": "\"boolean\" NOT NULL",
+    "admin_sent": "\"boolean\" NOT NULL",
+    "error": "\"text\""
+  },
+  "cloud_plans": {
+    "business_id": "\"uuid\" NOT NULL",
+    "period": "\"text\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "currency": "\"text\" NOT NULL",
+    "custom_until": "\"timestamp with time zone\"",
+    "notes": "\"text\"",
+    "updated_by": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "combo_items": {
     "id": "\"uuid\" NOT NULL",
     "combo_id": "\"uuid\" NOT NULL",
@@ -264,6 +312,25 @@
     "min_select": "\"integer\" NOT NULL",
     "max_select": "\"integer\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "credit_confirmations": {
+    "order_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "customer_id": "\"uuid\"",
+    "amount": "\"numeric\" NOT NULL",
+    "state": "\"text\" NOT NULL",
+    "source": "\"text\" NOT NULL",
+    "over_limit": "\"boolean\" NOT NULL",
+    "cashier_id": "\"uuid\"",
+    "approved_at_sale_by": "\"uuid\"",
+    "decided_by": "\"uuid\"",
+    "decided_by_name": "\"text\"",
+    "decided_at": "\"timestamp with time zone\"",
+    "dispute_reason": "\"text\"",
+    "sold_at": "\"timestamp with time zone\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
   "customer_credit_transactions": {
     "id": "\"uuid\" NOT NULL",
@@ -549,6 +616,22 @@
     "device_id": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "log_requests": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "device_id": "\"text\" NOT NULL",
+    "requested_by_admin": "\"uuid\"",
+    "requested_by_email": "\"text\"",
+    "requested_at": "\"timestamp with time zone\" NOT NULL",
+    "reason": "\"text\" NOT NULL",
+    "range_hours": "\"integer\" NOT NULL",
+    "include": "\"jsonb\" NOT NULL",
+    "status": "\"text\" NOT NULL",
+    "delivered_at": "\"timestamp with time zone\"",
+    "support_log_id": "\"uuid\"",
+    "cancelled_at": "\"timestamp with time zone\"",
+    "expires_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "login_otp_codes": {
     "id": "\"uuid\" NOT NULL",
     "subject_kind": "\"text\" NOT NULL",
@@ -559,6 +642,29 @@
     "consumed_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "loss_alerts": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "staff_id": "\"uuid\"",
+    "alert_key": "\"text\" NOT NULL",
+    "kind": "\"text\" NOT NULL",
+    "period": "\"text\" NOT NULL",
+    "business_date": "\"date\" NOT NULL",
+    "count": "\"integer\" NOT NULL",
+    "amount": "\"numeric\"",
+    "peer_low": "\"integer\"",
+    "peer_high": "\"integer\"",
+    "score": "\"numeric\" NOT NULL",
+    "message": "\"text\" NOT NULL",
+    "link": "\"text\"",
+    "notified_at": "\"timestamp with time zone\"",
+    "dismissed_at": "\"timestamp with time zone\"",
+    "dismissed_by": "\"uuid\"",
+    "dismiss_note": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "loyalty_transactions": {
     "id": "\"uuid\" NOT NULL",
     "customer_id": "\"uuid\" NOT NULL",
@@ -568,6 +674,19 @@
     "points": "\"integer\" NOT NULL",
     "notes": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "menus": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL",
+    "active": "\"boolean\" NOT NULL",
+    "color": "\"text\"",
+    "icon": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "deleted_at": "\"timestamp with time zone\"",
+    "availability": "\"jsonb\""
   },
   "mode_switch_requests": {
     "id": "\"uuid\" NOT NULL",
@@ -1291,6 +1410,27 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "quantity_received": "\"numeric\""
   },
+  "stock_transfer_requests": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "from_branch_id": "\"uuid\" NOT NULL",
+    "to_branch_id": "\"uuid\" NOT NULL",
+    "product_id": "\"uuid\" NOT NULL",
+    "quantity": "\"numeric\" NOT NULL",
+    "sent_quantity": "\"numeric\"",
+    "note": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "requested_by": "\"uuid\"",
+    "requested_by_name": "\"text\"",
+    "requested_at": "\"timestamp with time zone\" NOT NULL",
+    "decided_by": "\"uuid\"",
+    "decided_by_name": "\"text\"",
+    "decided_at": "\"timestamp with time zone\"",
+    "decline_reason": "\"text\"",
+    "transfer_id": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "stock_transfers": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -1565,7 +1705,9 @@
     "serial_hash": "\"text\"",
     "identity_seen_at": "\"timestamp with time zone\"",
     "security_alert_at": "\"timestamp with time zone\"",
-    "security_alert_reason": "\"text\""
+    "security_alert_reason": "\"text\"",
+    "update_state": "\"jsonb\"",
+    "update_state_at": "\"timestamp with time zone\""
   },
   "user_permissions": {
     "id": "\"uuid\" NOT NULL",

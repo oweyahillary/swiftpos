@@ -419,6 +419,49 @@ try {
     LH.recheckBusiness(B);
     assert.ok(await until(() => c.ws.closedWith === 4001));
   });
+
+  // A554 (B Foods' log, 2026-10-21: "push channel closed (1006)" every ~13 minutes — the till renews its 15-minute token
+  // every 13 and the socket ended with the token it signed in with).
+  console.log('\nW (A554). the renewed token on the open socket, the keepalive\n');
+  const expOf = (t) => jwt.decode(t).exp * 1000;
+  await ok('A554: `ready` names what the till may send after its hello (ping, reauth)', async () => {
+    reset();
+    const c = await connect(T.till1);
+    assert.ok(await until(() => c.got.some((m) => m.type === 'ready')));
+    assert.deepEqual(c.got.find((m) => m.type === 'ready').features, ['ping', 'reauth']);
+    c.ws.close();
+  });
+  await ok('A554: { type: ping } → pong (the till\'s own keepalive)', async () => {
+    reset();
+    const c = await connect(T.till1);
+    assert.ok(await until(() => c.got.some((m) => m.type === 'ready')));
+    c.ws.send(JSON.stringify({ type: 'ping' }));
+    assert.ok(await until(() => c.got.some((m) => m.type === 'pong')), JSON.stringify(c.got));
+    c.ws.close();
+  });
+  await ok('A554: the till\'s renewed token on the open socket → reauthed; the socket now ends with the NEW token (nothing closed)', async () => {
+    reset();
+    const first = sign({ userId: null, deviceId: 'dev-T1', till: true, permissionKeys: ['*'], surface: 'desktop' }, '2m');
+    const renewed = sign({ userId: null, deviceId: 'dev-T1', till: true, permissionKeys: ['*'], surface: 'desktop' }, '15m');
+    const c = await connect(first);
+    assert.ok(await until(() => c.got.some((m) => m.type === 'ready')));
+    assert.equal(LH._liveConnsForTest()[0].exp, expOf(first));
+    c.ws.send(JSON.stringify({ type: 'reauth', token: renewed }));
+    assert.ok(await until(() => c.got.some((m) => m.type === 'reauthed')), JSON.stringify(c.got));
+    assert.equal(LH._liveConnsForTest()[0].exp, expOf(renewed));
+    assert.equal(c.ws.closedWith, undefined); assert.equal(LH.liveCount(), 1);
+    c.ws.close();
+  });
+  await ok('A554: a reauth with another till\'s token, another business\'s, a person\'s or a bad one is refused (4001) — never adopted', async () => {
+    for (const bad of [T.till2, T.tillX, T.owner, 'not-a-token']) {
+      reset();
+      const c = await connect(T.till1);
+      assert.ok(await until(() => c.got.some((m) => m.type === 'ready')));
+      c.ws.send(JSON.stringify({ type: 'reauth', token: bad }));
+      assert.ok(await until(() => c.ws.closedWith === 4001), `closed ${c.ws.closedWith}`);
+      assert.ok(!c.got.some((m) => m.type === 'reauthed'));
+    }
+  });
 } finally {
   console.warn = warn;
   LH._resetLiveHub();

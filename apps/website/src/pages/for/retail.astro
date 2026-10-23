@@ -1,0 +1,157 @@
+---
+import Industry from '../../layouts/Industry.astro';
+import Laptop from '../../components/frames/Laptop.astro';
+import StockScreen from '../../components/screens/StockScreen.astro';
+import Shot from '../../components/screens/Shot.astro';
+import Receipt from '../../components/screens/Receipt.astro';
+import LabelSamples from '../../components/screens/LabelSamples.astro';
+import { WA_MESSAGES } from '../../lib/site';
+import { RETAIL_FAQ } from '../../lib/faq';
+
+// Shop words (owner, 2026-10-22, A573): departments, products, barcodes, labels, stock. No menus, kitchens or tables.
+const problems = [
+  {
+    problem: 'Half the shelf has no barcode, so the cashier types or guesses.',
+    fix: 'ZapTill gives every product without a barcode its own in-store code and prints the labels, so every item scans. The manufacturer\'s barcodes keep working as they are.',
+  },
+  {
+    problem: 'Stock goes missing, and nobody can say where.',
+    fix: 'Count your stock in ZapTill and see the difference against what the system expected. Damaged or expired goods are written off with a reason and their cost, not just thrown away.',
+  },
+  {
+    problem: 'The delivery was short, and you paid for the full order.',
+    fix: 'Receive each delivery against the supplier\'s note. Stock goes up by what actually arrived, and the supplier\'s bill sits next to it.',
+  },
+  {
+    problem: 'A customer asks for something you\'ve run out of, and walks out.',
+    fix: 'Look it up at your other branches from the till, and a manager asks that branch to send some. When it is gone, you choose whether the till keeps selling it, shows it as sold out, or hides it until stock comes in.',
+  },
+  {
+    problem: 'The cash at closing never matches the sales.',
+    fix: 'Each cashier counts their own drawer. ZapTill shows what should be there, what was counted and the difference, by name.',
+  },
+];
+---
+<Industry
+  title="ZapTill for shops and minimarts: barcodes, labels, stock and M-Pesa | ZapTill"
+  description="ZapTill for shops and minimarts in Kenya: your departments as big tabs on the till, barcodes for every product and labels on any printer, stock levels and counts, deliveries, transfers between branches, drawers counted by cashier and M-Pesa on every receipt."
+  ogImage="/og/retail.png"
+  crumb="Shops and retail"
+  heading="Stock that adds up. A till that never stops."
+  sub="ZapTill puts a barcode on every product, keeps your stock honest from the delivery to the shelf, moves it between branches, and closes every drawer by name, with or without internet."
+  waMessage={WA_MESSAGES.retail}
+  problems={problems}
+  faq={RETAIL_FAQ}
+  closing="See your own stock on ZapTill."
+>
+  <Fragment slot="hero">
+    <Laptop label="Receiving a delivery and writing off wastage on the web dashboard">
+      <StockScreen />
+    </Laptop>
+  </Fragment>
+
+  <section class="band" aria-labelledby="rlabels-h">
+    <div class="wrap">
+      <div class="split split--top">
+        <div class="split__copy">
+          <h2 id="rlabels-h">A barcode on every product, a label on any printer</h2>
+          <p>
+            Products that came without a barcode get one from ZapTill: an in-store code, in your own numbering, that no
+            manufacturer uses. Codes you already have are never changed, and the scanner reads both.
+          </p>
+          <p>
+            Then print the labels on whatever you have: a label printer in any size, A4 sticker sheets on an office
+            printer (start at any sticker on a part-used sheet), or the receipt printer. Every label carries the barcode,
+            with the name and the price if you want them. When a delivery comes in, print labels for just the items in
+            it.
+          </p>
+          <p class="r-note">Printing labels from the till comes with ZapTill Online. When a price changes, print the
+            label again.</p>
+        </div>
+        <div class="split__visual">
+          <LabelSamples />
+          <p class="r-note">Drawn by ZapTill's own label code, for a demo shop.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="rdept-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="rdept-h">Built around how a shop sells</h2>
+      </div>
+      <div class="grid4">
+        <div>
+          <h3>Departments across the top</h3>
+          <p>Groceries, Beverages, Toiletries: your departments as big tabs on the till, so the cashier finds an item
+            without scrolling. Or just scan it.</p>
+        </div>
+        <div>
+          <h3>When stock runs out</h3>
+          <p>You choose, once: keep selling as normal, show it as sold out so it can't be rung up, or hide it until the
+            next delivery is in.</p>
+        </div>
+        <div>
+          <h3>Your other branches' shelves</h3>
+          <p>Staff who can see stock check what another branch holds, and a manager asks that branch to send some. The
+            transfer keeps both stock levels right.</p>
+        </div>
+        <div>
+          <h3>Customers on account</h3>
+          <p>A trusted customer gets an account with a credit limit. The cashier puts the bill on it at the till, and
+            the dashboard shows who owes you and for how long.</p>
+        </div>
+      </div>
+      <p class="r-note">Stock at the till, checking other branches and labels from the till come with ZapTill Online.{' '}
+        <a href="/pricing/">See the packages</a></p>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="rclose-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="rclose-h">Every drawer, counted by name</h2>
+        <p>
+          Each cashier opens with a counted float and closes with a counted drawer. The manager sees each one's expected
+          cash, counted cash and difference, confirms it, and closes the day from the till or the web.
+        </p>
+      </div>
+      <div class="split__visual">
+        <figure class="screen-crop">
+          <Shot src="/screens/till-shifts.webp" width={1200} height={253}
+            alt="The real ZapTill shift report: two drawers with expected cash, counted cash and the difference; one KES 350 short, one exact." />
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="rrec-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="rrec-h">M-Pesa on every receipt</h2>
+        <p>
+          The receipt carries your Buy Goods or Paybill number in large print, and a split payment shows each part. This
+          is the real receipt ZapTill prints, for a demo shop.
+        </p>
+        <!-- TODO(owner): items sold by weight (scale barcodes) are not described: in-store codes 21-29 are kept free for
+             them (A571), but weighing is not built. Add only once it ships. -->
+      </div>
+      <div class="split__visual r-rec">
+        <Receipt kind="shop" />
+      </div>
+    </div>
+  </section>
+</Industry>
+
+<style>
+  .r-rec { display: flex; justify-content: center; }
+  .r-rec :global(.slip-wrap) { --slip-fs: 0.72rem; }
+  .r-note { font-size: var(--fs-sm); color: var(--muted); }
+  .grid4 + .r-note { margin-top: var(--s-5); }
+  .grid4 { display: grid; gap: var(--s-5); }
+  .grid4 h3 { font-size: var(--fs-md); margin-bottom: var(--s-2); }
+  .grid4 p { color: var(--ink-2); margin: 0; }
+  @media (min-width: 700px) { .grid4 { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1100px) { .grid4 { grid-template-columns: repeat(4, 1fr); } }
+</style>

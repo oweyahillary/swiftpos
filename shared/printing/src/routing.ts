@@ -37,7 +37,8 @@ export interface RoutableLine {
     description?: string | null;
   };
   selectedVariants?: Array<{ groupName?: string; optionName?: string }>;
-  selectedModifiers?: Array<{ name?: string; price?: number }>;
+  // The web sends { name }, the till's VariantModal { optionName } — A555: both are read, or a till's extras never printed.
+  selectedModifiers?: Array<{ name?: string; optionName?: string; price?: number }>;
   comboComponents?: Array<{
     name: string;
     quantity: number;
@@ -183,6 +184,7 @@ export function toUnits(
     });
   }
 
+  const realComponents = units.length;   // A556: a combo's own components, not parts guessed from the description
   if (units.length === 0) {
     for (const part of describeFromText(line.product.description)) {
       units.push({
@@ -207,7 +209,10 @@ export function toUnits(
       priceDelta: 0,
     }));
   if (attrs.length) {
-    if (units.length) {
+    // A556: the variant is the PRODUCT's choice. On a combo it goes on the first component (the cook sees which piece);
+    // on a product whose parts come from its description ("Crispy fillet, lettuce, house sauce") it is the product's own
+    // unit — before, it landed on "Crispy fillet" and printed "Crispy fillet  Spicy" under the burger.
+    if (realComponents) {
       units[0].attributes = attrs;
       units[0].chosen = true;
     } else {
@@ -224,17 +229,24 @@ export function toUnits(
     }
   }
 
+  // A559 (owner, after testing 1.0.20: "yes let it print in the kitchen receipt too"): an extra goes where its LINE goes
+  // (the kitchen, for a kitchen dish; a combo's, where the combo line routes) AND to dispatch, so the cook sees "Extra
+  // Cheese" under the dish and the packer still does. It was dispatch only. Marked `modifier`: it decorates its dish and
+  // never makes a line print on a ticket by itself (render.ts) — an excluded line (a soda) keeps its extras off the kitchen.
+  const modifierStationIds = [...lineStationIds, ...ids.dispatch.filter(id => !lineStationIds.includes(id))];
   for (const m of line.selectedModifiers ?? []) {
-    if (!m.name) continue;
+    const modName = (m.name ?? m.optionName ?? '').trim();
+    if (!modName) continue;
     units.push({
-      productId:  m.name,
-      name:       m.name,
+      productId:  modName,
+      name:       modName,
       quantity:   1,
       portions:   1,
       priceDelta: toCents(m.price ?? 0),
       chosen:     true,
       attributes: [],
-      stationIds: ids.dispatch,
+      stationIds: modifierStationIds,
+      modifier:   true,
     });
   }
 

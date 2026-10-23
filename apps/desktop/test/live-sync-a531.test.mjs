@@ -238,6 +238,9 @@ try {
   cloud.hits = [];
   await LS.liveTick(tDown + 6 * 60_000 + 25_000);
   ok('…with a drawer open: every 20 s', hits(/^\/api\/pos\/changes/) === 1, JSON.stringify(cloud.hits));
+  // A542: the Tech page's push line — down, so no "connected since", and the fallback check interval shown.
+  ok('A542: the push line down shows no "connected since" and checks every 20 s (a drawer open)',
+    LS.liveStatus().push.since === null && LS.liveStatus().push.fallbackEveryS === 20, JSON.stringify(LS.liveStatus().push));
   openDrawer(false);
   change('products', pid(7), 'upsert', { product: { ...cloud.products[7], base_price: 999 }, comboItems: null });
   cloud.refuseSocket = false;

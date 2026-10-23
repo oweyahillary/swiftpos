@@ -54,6 +54,12 @@ export interface OrderUnit {
   chosen: boolean;
   attributes: UnitAttribute[];
   stationIds: string[];
+  /**
+   * A559: an extra the customer added to the line ("Extra Cheese"). It prints under its dish ("+ Extra Cheese") on the
+   * stations its line goes to and on dispatch, but it is not a dish of its own: it never earns a line a place on a ticket
+   * (the line's own routing does) and it is not counted in "items to cook".
+   */
+  modifier?: boolean;
 }
 
 export interface OrderLine {
@@ -74,6 +80,13 @@ export interface OrderLine {
   units: OrderUnit[];
   /** Free-text kitchen note the cashier typed ("3 normal, 2 spicy", "No salt"). One printed row per typed line (A367). */
   note?: string;
+  /**
+   * A577: a line sold by MEASURE — weighed goods ("kg", or "g" for an item shown in grams) or litres — whose `quantity`
+   * is that measure (kilograms for both kg and g). The receipt prints it as one item with "0.452 kg @ 650/kg" under it,
+   * the kitchen ticket as "0.452 kg  GOAT MEAT". Omitted: a whole-number quantity prints as before; a fractional one
+   * (a line from before A577, fuel) is still printed as a measure, without a unit.
+   */
+  measureUnit?: string;
 }
 
 export type OrderType = 'takeaway' | 'dine_in' | 'delivery' | 'counter';
@@ -150,22 +163,34 @@ export interface BusinessConfig {
    *  identical to before. The caller resolves the client's toggle before setting
    *  this; the renderer never decides whether a logo is wanted. */
   logoRaster?: MonoRaster;
-  /** A530: the four "classic receipt" switches the admin portal sets per client (shared/posFeatures.ts). Absent, or a
-   *  switch false = the compact standard; all four true = the receipt as it printed before 1.0.20, byte for byte. */
+  /** A530/A538: the four receipt switches the admin portal sets per client (shared/posFeatures.ts). Absent, or every
+   *  switch false = the standard (classic layout, ~3.75 mm, small logo, 1-line feed); spacing + fullLogo + extraFeed true
+   *  with compactLayout false = the receipt as it printed before 1.0.20, byte for byte. */
   receiptClassic?: ReceiptClassic;
+  /** A551: 'kitchen_font_b' (admin portal, per client) — kitchen tickets in the printer's smaller Font B (64 / 42 a line,
+   *  A543's layout). Absent / false = the standard: kitchen tickets in Font A, the dispatch ticket's font (owner,
+   *  2026-10-21, on paper: "kitchen receipt use the same font as the despatcher"). A543's `kitchenFontA` (Font A when
+   *  Font B was the standard) is not read any more. Dispatch tickets and receipts are Font A either way. */
+  kitchenFontB?: boolean;
+  /** A580 (owner, 2026-10-23: no kitchen words at a shop): false = a business with no kitchen (retail, minimart,
+   *  petrol_station, parking, other) — the customer receipt has no "Kots: 0" line. Absent / true = a restaurant or café
+   *  (or a type not known yet): the Kots line as before, byte for byte. The caller decides from the business type. */
+  kitchenTickets?: boolean;
 }
 
 /**
- * A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper"): the compact receipt is the standard; each
- * switch puts one part back the way it was, for a client who asks (admin portal, per client).
+ * A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper") made the receipt compact; A538 (owner,
+ * 2026-10-21: "it feels congested everywhere … top arrangement totally off" — "go back to the old layout", "line spacing in
+ * the middle, about 3.75 mm") made the classic layout the standard again. Each switch changes one part, per client.
  */
 export interface ReceiptClassic {
-  /** 'receipt_classic_spacing' — ESC 2 (1/6", ~4.23 mm) between lines, not ESC 3 26 (~3.25 mm). */
+  /** 'receipt_classic_spacing' — ESC 2 (1/6", ~4.23 mm) between lines, not ESC 3 30 (~3.75 mm, A538). */
   spacing?: boolean;
   /** 'receipt_full_logo' — the stored logo as it is (up to 288 dots, 36 mm), not scaled to 120 dots (15 mm). */
   fullLogo?: boolean;
-  /** 'receipt_classic_layout' — every rule and line of the old layout (Kots, Payment Detail, Round Off 0.00, ...). */
-  layout?: boolean;
+  /** A538: 'receipt_compact_layout' — A530's compact lines (Type + Bill No. and Cashier + time on one line each, no Kots,
+   *  Round Off only when not zero, Total only with a tip or fee, no Payment Detail heading, 5 rules). Opt-in. */
+  compactLayout?: boolean;
   /** 'receipt_extra_feed' — 3 lines fed before the cut, not 1 (a cutter that clips the last line). */
   extraFeed?: boolean;
 }

@@ -22,6 +22,7 @@ import dgram from 'node:dgram';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -137,7 +138,7 @@ console.log('\nThrough the REAL branch server\n');
 
 console.log('\nWired in\n');
 {
-  const ipc = src('src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   const status = ipc.slice(ipc.indexOf("handle('install:joinStatus'"), ipc.indexOf("handle('node:joinRequests'"));
   ok('allowed: the server\'s address and code are saved BEFORE enrolling, so enrolling goes through the server (A410)',
     status.indexOf('node_url: ask.url, node_secret: String(g.node_secret)') > 0 && status.indexOf('node_url: ask.url') < status.indexOf('await joinBusiness('));

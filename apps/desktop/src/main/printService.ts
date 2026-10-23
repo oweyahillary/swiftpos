@@ -529,3 +529,37 @@ export function printHtmlSilent(opts: SilentPrintOptions): Promise<{ ok: boolean
     return r;
   });
 }
+
+/**
+ * A571: barcode labels through the printer's Windows driver (any label printer — Xprinter, TSC, Zebra, Godex — or an
+ * office printer): one page per label, the page EXACTLY the label (the HTML's own `@page { size: Wmm Hmm }` says the
+ * same), no margins, at 100%. The driver's paper size must be the label's (docs/Manuals/BARCODE-LABELS.md).
+ */
+export function printLabelsHtml(opts: { html: string; deviceName: string; widthMm: number; heightMm: number }): Promise<{ ok: boolean; error?: string }> {
+  return enqueue(() => new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    let settled = false;
+    const px = (mm: number) => Math.max(1, Math.round((mm / 25.4) * 96));
+    const win = new BrowserWindow({ show: false, width: px(opts.widthMm), height: px(opts.heightMm), useContentSize: true,
+      webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true } });
+    const done = (r: { ok: boolean; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try { win.destroy(); } catch { /* already gone */ }
+      resolve(r);
+    };
+    const timeout = setTimeout(() => done({ ok: false, error: 'Print timed out' }), 60_000);
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.print({
+        silent: true,
+        deviceName: opts.deviceName || undefined,
+        margins: { marginType: 'none' },
+        pageSize: { width: Math.round(opts.widthMm * 1000), height: Math.round(opts.heightMm * 1000) },
+        printBackground: true,
+        scaleFactor: 100,
+      }, (success, failureReason) => done(success ? { ok: true } : { ok: false, error: failureReason || 'Print failed' }));
+    });
+    win.webContents.once('did-fail-load', (_e, _code, desc) => done({ ok: false, error: `Failed to render: ${desc}` }));
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(opts.html));
+  }));
+}

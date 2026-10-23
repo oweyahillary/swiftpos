@@ -63,6 +63,11 @@ ok('A466: the Monthly pack is the last Sales tab, only for reports.monthly_pack 
   assert.equal(N.groupOf(N.buildManagerNav({ ...FULL, canMonthly: false }), 'monthly'), null);
   assert.equal(N.groupOf(N.buildManagerNav({ ...FULL, online: false, canMonthly: true }), 'monthly').key, 'sales', 'not part of the online licence');
 });
+ok('A545: Credit sales (a manager confirms every sale on account) is a Sales tab, only for customers.credit, licence or not', () => {
+  assert.deepEqual(N.groupOf(N.buildManagerNav({ ...FULL, canMonthly: true, canCredit: true, online: false }), 'credit').tabs.map((t) => t.label),
+    ['Orders', 'Item Mix', 'Current shift', 'Shift report', 'Monthly pack', 'Credit sales']);
+  assert.equal(N.groupOf(N.buildManagerNav({ ...FULL, canCredit: false }), 'credit'), null);
+});
 
 ok('a shop (not a restaurant): Sales has no Item Mix; no web POS → no Stock', () => {
   const nav = N.buildManagerNav({ ...FULL, isRestaurant: false, showStock: false, online: false });   // no web POS = no online licence (A460)
@@ -132,8 +137,8 @@ ok('every page ManagerPage can show belongs to exactly one group', () => {
 
 const mp = fs.readFileSync(path.join(DESKTOP, 'src/renderer/pages/ManagerPage.tsx'), 'utf8');
 ok('ManagerPage renders the sidebar from buildManagerNav with each page\'s own gate', () => {
-  // A490: each page by its own fine key — never a role's name.
-  assert.match(mp, /const nav = buildManagerNav\(\{\n\s+isRestaurant: flags\.isRestaurant,\n\s+canOverview: has\('reports\.overview'\),\n\s+canOrders: has\('orders\.view_all'\),\n\s+canItems: has\('reports\.items'\),\n\s+canShifts: hasAny\('reports\.shifts', 'shifts\.confirm'\),\n\s+canMonthly: has\('reports\.monthly_pack'\) \|\| has\('expenses\.manage'\),\n\s+canExpenses: hasAny\('expenses\.view', 'expenses\.manage'\),\n\s+canCloseDay: has\('shifts\.close_day'\),\n\s+canCloseBranch: has\('shifts\.close_branch'\),[^\n]*\n\s+isBranchServer,[^\n]*\n\s+canMenu: hasAny\('menu\.edit', 'menu\.prices'\),\n\s+canOffers: has\('menu\.offers'\),\n\s+canSettings: hasAny\('settings\.business', 'settings\.payments'\) \|\| mayMpesa\(staff\),[^\n]*\n\s+canPrinting: has\('stations\.manage'\) \|\| canManageReceipt,\n\s+canStaff: hasAny\('staff\.view', 'staff\.edit'\),\n\s+showStock,\n\s+canWaste: has\('inventory\.waste'\),   \/\/ A414\n\s+online,   \/\/ A460\n\s+canTransfer: has\('inventory\.transfer'\),[^\n]*\n\s+\}\);/);
+  // A490: each page by its own fine key — never a role's name. A545: Credit sales is customers.credit.
+  assert.match(mp, /const nav = relabelCatalogue\(buildManagerNav\(\{\n\s+isRestaurant: flags\.isRestaurant,\n\s+canOverview: has\('reports\.overview'\),\n\s+canOrders: has\('orders\.view_all'\),\n\s+canItems: has\('reports\.items'\),\n\s+canShifts: hasAny\('reports\.shifts', 'shifts\.confirm'\),\n\s+canMonthly: has\('reports\.monthly_pack'\) \|\| has\('expenses\.manage'\),\n\s+canCredit: has\('customers\.credit'\),   \/\/ A545\n\s+canExpenses: hasAny\('expenses\.view', 'expenses\.manage'\),\n\s+canCloseDay: has\('shifts\.close_day'\),\n\s+canCloseBranch: has\('shifts\.close_branch'\),[^\n]*\n\s+isBranchServer,[^\n]*\n\s+canMenu: hasAny\('menu\.edit', 'menu\.prices'\),\n\s+canOffers: has\('menu\.offers'\),\n\s+canSettings: hasAny\('settings\.business', 'settings\.payments'\) \|\| mayMpesa\(staff\),[^\n]*\n\s+canPrinting: has\('stations\.manage'\) \|\| canManageReceipt,\n\s+canStaff: hasAny\('staff\.view', 'staff\.edit'\),\n\s+showStock,\n\s+canWaste: has\('inventory\.waste'\),   \/\/ A414\n\s+online,   \/\/ A460\n\s+canTransfer: has\('inventory\.transfer'\),[^\n]*\n\s+canBranchStock: has\('inventory\.view'\),[^\n]*\n\s+branchRequests,[^\n]*\n\s+canLabels: hasAny\('menu\.edit', 'inventory\.view'\),[^\n]*\n\s+\}\), words\.catalogue\);/);   // A564: Other branches; A571: Labels
   assert.ok(!/\['owner', 'admin'\]|MANAGER_ROLES|isManagerRole/.test(mp), 'no role-name gate left');
   assert.match(mp, /\{nav\.map\(group => \(\n\s+<button key=\{group\.key\} onClick=\{\(\) => openTab\(openGroup\(group, lastTab\)\)\}/);
   assert.ok(!/navItems/.test(mp), 'the old flat list is gone');

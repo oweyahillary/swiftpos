@@ -1,0 +1,172 @@
+# A536 (closes A189): the end-to-end suites, every night, against the DEV environment.
+#
+# Before this they ran nowhere: tests/runner.mjs (API suites: auth, data, orders, reports, security, permissions,
+# restaurant) and e2e/ (Playwright: owner, POS, manager) need a reachable dashboard + API + a test business, and CI has
+# none. The dev environment is one: the dev API on Render (redeploys from dev, its own development Supabase) and the
+# dev dashboard on Vercel.
+#
+#   1  production guard   e2e/lib/prod-guard.mjs — refuses (exit 3) any address under zaptill.co.ke without a dev/staging
+#                         marker and the production Render/Vercel hosts, then asks the API's /health (waiting up to
+#                         3 min — Render sleeps) and refuses unless it says env=development (production hides env).
+#                         The runner, both Playwright configs and the staff seed run the same guard again, and the test
+#                         browser cannot resolve a production host at all.
+#   2  API suites         node tests/runner.mjs (owner sign-in from the secrets)
+#   3  Playwright         the test staff seeded through the API (idempotent), then every spec; the HTML report is an
+#                         artifact. Skipped with a warning while E2E_WEB_URL is not set.
+#
+# A separate workflow: it never blocks a push or a pull request (ci.yml is untouched). The run goes red when a suite
+# fails — that is the nightly signal.
+#
+# Setup (docs/E2E-NIGHTLY.md):
+#   secrets    E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD   the owner of the test business on DEV (never a production login)
+#   variables  E2E_API_URL    (default https://swiftpos-20c2.onrender.com)
+#              E2E_WEB_URL    the DEV dashboard on Vercel (Playwright is skipped until it is set)
+#              E2E_ADMIN_URL  the DEV admin portal (only guarded today — no admin specs yet)
+#              E2E_EXTRA_PROD_HOSTS  optional, comma-separated: more hosts the guard must refuse
+
+name: Nightly E2E (dev)
+
+on:
+  schedule:
+    - cron: '30 23 * * *'   # 23:30 UTC, 02:30 in Nairobi — after the shops close
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: 'API suites (comma-separated; empty = skip the API suites)'
+        required: false
+        default: 'auth,data,orders,reports,security,permissions,restaurant'
+      playwright:
+        description: 'Run the Playwright specs'
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  group: nightly-e2e
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E against dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      E2E_API_URL: ${{ vars.E2E_API_URL || 'https://swiftpos-20c2.onrender.com' }}
+      E2E_WEB_URL: ${{ vars.E2E_WEB_URL }}
+      E2E_ADMIN_URL: ${{ vars.E2E_ADMIN_URL }}
+      E2E_EXTRA_PROD_HOSTS: ${{ vars.E2E_EXTRA_PROD_HOSTS }}
+      E2E_OWNER_EMAIL: ${{ secrets.E2E_OWNER_EMAIL }}
+      E2E_OWNER_PASSWORD: ${{ secrets.E2E_OWNER_PASSWORD }}
+      SUITES: ${{ github.event_name == 'workflow_dispatch' && inputs.suites || 'auth,data,orders,reports,security,permissions,restaurant' }}
+      RUN_PLAYWRIGHT: ${{ github.event_name != 'workflow_dispatch' || inputs.playwright }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The first thing that runs. Exit 3 = a production address or a production /health: the job stops here.
+      - name: Production guard + wait for the dev API
+        run: node e2e/lib/prod-guard.mjs --health
+        env:
+          E2E_HEALTH_WAIT_S: '180'
+
+      # A536 follow-up (2026-10-21): until the owner sets the DEV test business's login, the SCHEDULED run skips with a
+      # warning (green) instead of failing — and e-mailing — every night. A run started by hand still fails, so the reason
+      # is plain to whoever pressed the button.
+      - name: Owner login is set
+        id: login
+        shell: bash
+        run: |
+          if [ -z "${E2E_OWNER_EMAIL:-}" ] || [ -z "${E2E_OWNER_PASSWORD:-}" ]; then
+            msg="the repository secrets E2E_OWNER_EMAIL / E2E_OWNER_PASSWORD are not set (the owner of the DEV test business — docs/E2E-NIGHTLY.md)"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "::error::$msg"; exit 1; fi
+            echo "::warning::$msg — tonight's run is skipped"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Nightly E2E skipped — $msg" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: API suites
+        id: api
+        if: steps.login.outputs.ready == 'true' && env.SUITES != ''
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          node --no-warnings tests/runner.mjs --suite "$SUITES" 2>&1 | tee /tmp/api-suites.log
+
+      - name: Install Playwright
+        id: pwinstall
+        if: steps.login.outputs.ready == 'true' && env.RUN_PLAYWRIGHT == 'true' && env.E2E_WEB_URL != ''
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Seed the test staff (API, idempotent)
+        id: seed
+        if: steps.pwinstall.outcome == 'success'
+        continue-on-error: true
+        run: node e2e/seed/seed-staff-api.mjs
+
+      - name: Playwright
+        id: pw
+        if: steps.pwinstall.outcome == 'success'
+        continue-on-error: true
+        working-directory: e2e
+        env:
+          CI: 'true'
+          OWNER_EMAIL: ${{ secrets.E2E_OWNER_EMAIL }}
+          OWNER_PASSWORD: ${{ secrets.E2E_OWNER_PASSWORD }}
+        run: npx playwright test
+
+      - name: Upload the Playwright report
+        if: always() && steps.pwinstall.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Nightly E2E against dev"
+            echo ""
+            echo "| part | result |"
+            echo "|---|---|"
+            echo "| API (${E2E_API_URL}) suites \`${SUITES:-none}\` | ${{ steps.api.outcome || 'skipped' }} |"
+            echo "| staff seed | ${{ steps.seed.outcome || 'skipped' }} |"
+            echo "| Playwright (${E2E_WEB_URL:-E2E_WEB_URL not set}) | ${{ steps.pw.outcome || 'skipped' }} |"
+            if [ -f /tmp/api-suites.log ]; then
+              echo ""
+              echo '```'
+              grep -E 'Results:|Total:|✗' /tmp/api-suites.log | head -60
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${RUN_PLAYWRIGHT}" = "true" ] && [ -z "${E2E_WEB_URL:-}" ]; then
+            echo "::warning::Playwright skipped — set the repository variable E2E_WEB_URL to the DEV dashboard"
+          fi
+
+      - name: Fail the run when a suite failed
+        if: always()
+        shell: bash
+        run: |
+          bad=0
+          for o in "${{ steps.api.outcome }}" "${{ steps.seed.outcome }}" "${{ steps.pw.outcome }}"; do
+            [ "$o" = "failure" ] && bad=1
+          done
+          if [ "$bad" = 1 ]; then echo "::error::an end-to-end suite failed — see the summary and the Playwright report"; exit 1; fi
+          echo "all suites that ran passed"

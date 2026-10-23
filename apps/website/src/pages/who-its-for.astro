@@ -1,0 +1,106 @@
+---
+import Base from '../layouts/Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import { WA_MESSAGES } from '../lib/site';
+
+// Each lane keeps to what ships today (WORKPLAN §3). Petrol stays a conversation until the owner decides what to say
+// (WEBSITE-LOG open question 8).
+const lanes = [
+  {
+    href: '/for/restaurants/',
+    name: 'Restaurants and cafés',
+    line: 'From the order to the plate, nothing gets lost.',
+    points: ['Kitchen and dispatch tickets, a kitchen display', 'Variants and combos on one line', 'Tables, takeaway and delivery'],
+  },
+  {
+    href: '/for/bars/',
+    name: 'Bars and lounges',
+    line: 'Know whose drawer is short before the lights go off.',
+    points: ['Over and short by name at every close', 'Voids need a manager\'s PIN', 'Credit for regulars, with limits'],
+  },
+  {
+    href: '/for/quick-service/',
+    name: 'Quick service and takeaways',
+    line: 'Faster at the counter. Right in the bag.',
+    points: ['A fast counter till', 'Dispatch tickets that count the bags', 'Offers, delivery fees and M-Pesa'],
+  },
+  {
+    href: '/for/retail/',
+    name: 'Shops and retail',
+    line: 'Stock that adds up. A till that never stops.',
+    points: ['Deliveries received against the note', 'Counts, wastage and transfers', 'Drawers counted by cashier'],
+  },
+];
+---
+<Base
+  title="Who it's for: restaurants, bars, quick service and shops | ZapTill"
+  description="ZapTill for restaurants and cafés, bars and lounges, quick service and takeaways, and shops in Kenya. Petrol stations: talk to us about your forecourt."
+  waMessage={WA_MESSAGES.demo}
+  ogImage="/og/who-its-for.png"
+>
+  <section class="page-head hub-head">
+    <div class="wrap">
+      <h1>Made for the way your place works</h1>
+      <p class="lede">
+        A restaurant needs its kitchen to keep up. A bar needs to know whose drawer is short. A shop needs its stock to
+        add up. It is the same ZapTill, set up for each, and we set it up with you.
+      </p>
+    </div>
+  </section>
+
+  <section class="band" aria-label="Kinds of business">
+    <div class="wrap">
+      <ul class="hub">
+        {lanes.map((l) => (
+          <li>
+            <a href={l.href} class="hub__card">
+              <h2 class="hub__name">{l.name}</h2>
+              <p class="hub__line">{l.line}</p>
+              <ul class="ticks hub__points">{l.points.map((p) => <li>{p}</li>)}</ul>
+              <span class="hub__go">Read more about ZapTill for {l.name.toLowerCase()}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+
+      <section class="petrol" id="petrol" aria-labelledby="petrol-h">
+        <div>
+          <h2 id="petrol-h">Petrol stations</h2>
+          <p>
+            Talk to us about your forecourt. Tell us how your pumps, attendants and shop work, and we'll tell you honestly
+            what ZapTill covers today.
+          </p>
+          <!-- TODO(owner): open question 8: what to say about petrol stations (pumps, attendants, tank deliveries). -->
+        </div>
+        <WhatsAppButton small message={WA_MESSAGES.petrol} label="Talk to us about your forecourt" />
+      </section>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hub-head { background: var(--card); border-bottom: 1px solid var(--line); }
+  .hub { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-4); }
+  .hub__card {
+    display: flex; flex-direction: column; height: 100%;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: var(--s-5) var(--s-5) var(--s-4);
+    text-decoration: none; color: var(--ink);
+    border-top: 4px solid var(--teal);
+  }
+  .hub__card:hover { border-color: var(--teal-strong); }
+  .hub__card:hover .hub__go { text-decoration: underline; }
+  .hub__name { font-size: var(--fs-lg); margin-bottom: var(--s-2); }
+  .hub__line { color: var(--ink-2); font-size: var(--fs-md); line-height: 1.4; }
+  .hub__points { margin-bottom: var(--s-5); color: var(--ink-2); }
+  .hub__go { margin-top: auto; color: var(--teal-strong); font-weight: 600; }
+  @media (min-width: 760px) { .hub { grid-template-columns: repeat(2, 1fr); gap: var(--s-5); } }
+
+  .petrol {
+    margin-top: var(--s-7); padding: var(--s-5); border: 1px dashed var(--line-strong); border-radius: var(--r-lg);
+    display: grid; gap: var(--s-4); align-items: center; scroll-margin-top: 5rem;
+  }
+  .petrol h2 { font-size: var(--fs-lg); margin-bottom: var(--s-2); }
+  .petrol p { color: var(--ink-2); margin: 0; max-width: 40rem; }
+  @media (min-width: 860px) { .petrol { grid-template-columns: 1fr auto; } }
+</style>

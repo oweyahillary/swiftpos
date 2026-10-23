@@ -25,7 +25,7 @@ import { cleanCutoff } from '../lib/businessDay';   // 0.6.34
 import { cleanHistoryMethods } from '../lib/cashierHistory';
 import { cleanSeesSales, historyTotalsOn } from '../lib/cashierShiftSales';   // A416 / A418   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
-import { frozenAtBranch } from '../lib/stockTakeAccess';   // A394
+import { frozenAtBranch, may as mayStock } from '../lib/stockTakeAccess';   // A394 (A535: may)
 import { pageAll, chunkPaged } from '../lib/pgQuery';
 import { seesCosts, stripFields, COST_FIELDS } from '../lib/costAccess';   // A494
 import { readTopicVersion, cachedFallback } from '../lib/syncVersions';   // A528
@@ -33,6 +33,11 @@ import { readTill } from '../lib/authCache';                           // A528
 import { traffic } from '../lib/trafficStats';                         // A528
 import { initAnswer, setInitBuilder, type BuiltInit } from '../lib/posInit';   // A531
 import { changesAnswer, ChangesUnavailable } from '../lib/syncChanges';         // A531
+import { menusForPos } from '../lib/menus';                                    // A537
+import { servedBranchBranding } from '../lib/branchBrandingStore';             // A544
+import { businessOutOfStockMode, branchStockView } from '../lib/stockGateStore';  // A563
+import { assertBranchAccess } from '../middleware/rbac';                        // A563
+import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -138,7 +143,9 @@ router.get('/changes', async (req, res) => {
   const branchId = typeof req.query.branch_id === 'string' && req.query.branch_id ? req.query.branch_id : (req.branchId ?? null);
   traffic.count('changes.answered');
   try {
-    const answer = await changesAnswer({ businessId: req.businessId!, branchId, isTill: !!req.isTill, seesCosts: seesCosts(req) }, since);
+    // A535: and whether the caller may see a level a blind count is counting (a till's own session never — A394).
+    const answer = await changesAnswer({ businessId: req.businessId!, branchId, isTill: !!req.isTill, seesCosts: seesCosts(req),
+      seesCountedStock: mayStock(req, 'inventory.adjust') }, since);
     res.set('Cache-Control', 'no-store');
     res.json(answer);
   } catch (e) {
@@ -396,6 +403,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
       .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
+        SCALE_SETTINGS_KEY,   // A577: the business's scale label layout
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -449,7 +457,8 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
   // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
   // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
-  const themeId = effectiveThemeId(await themesEnabled(req.businessId), branding?.theme_id);
+  const themesOn = await themesEnabled(req.businessId);
+  const themeId = effectiveThemeId(themesOn, branding?.theme_id);
   // A346: does the business have the web POS? Same entitlement as web sign-in (lib/webAccess.ts) — fully usable = active
   // or in grace (owner, 2026-09-27: "stock should only appear if the web pos is enabled"; reports-only week → no).
   const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
@@ -461,6 +470,10 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   // The branch the till OPERATES on (the licence gate, in the route, reads its desktop_licensed — D11): the bound branch it
   // sent, falling back to the main branch only for legacy callers with no binding.
   const opBranch = boundBranch ?? mainBranch;
+  // A544: this branch's override of the business branding (theme, brand colour, receipt footer) — only while the business
+  // has themes (A325); null otherwise, so a till and the web POS apply none (stored, never applied). Only the till's own
+  // branch's row: another branch's override never reaches it.
+  const branchBranding = await servedBranchBranding((opBranch as { id?: string } | null)?.id ?? null, themesOn);
 
   // Fetch variant groups using the resolved product ID array (not a sub-query)
   const productIds = (products ?? []).map((p) => p.id);
@@ -587,6 +600,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       receiptLogoEnabled: branding.receipt_logo_enabled === true,
     } : null,
     themeId,
+    // A544: the branch's own override ({ branchId, themeId, accentHex, receiptFooter }), or null. The till and the web POS
+    // resolve per field: branch → business → ZapTill default (lib/branchBranding.ts). Older tills ignore it.
+    branchBranding,
     receiptHeader: receiptText.receipt_header ?? '',
     // 24-hour / continuous operation (A104): when on, an unclosed prior day gets
     // a short grace window at rollover instead of an immediate hard lock, so a
@@ -633,6 +649,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A367: the quick picks for order notes, owner-set per business. Unset → the defaults; a saved empty list → none.
     // Always a list, so a till never has to guess (shared/orderNotes.ts parseNotePicks).
     noteQuickPicks: parseNotePicks(receiptTextRows?.find((r: any) => r.key === 'order_note_picks')?.value),
+    // A577: how this business's weighing scales print their labels (shared/scaleBarcode.ts) — always sent, the default
+    // when unset or unreadable, so the till and the web POS read scale labels offline. Older tills ignore it.
+    scaleBarcodes: scaleSettingsOrDefault(receiptTextRows?.find((r: any) => r.key === SCALE_SETTINGS_KEY)?.value ?? null),
     // 0.6.27: the per-client switches the admin portal sets (feature_flags). Always every key, true or false — an unset
     // switch is off. Older tills ignore it.
     posFeatures: await (async () => {
@@ -654,6 +673,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       ...(await promotionOffersFor(req.businessId!)),
     ],
     categories: categories ?? [],
+    // A537: the business's menus (Food, Soft drinks …) — on, not deleted, in order; each category's menu_id names one.
+    // Always sent: [] = none (before migration 155 too). Older tills ignore it.
+    menus: await menusForPos(req.businessId!),
     // Custom payment methods (A96) — the extras a business accepts beyond the
     // built-in Cash / M-Pesa / Card. Active only; the till caches these so they
     // appear as tender options offline. Per business (owner decision, A95).
@@ -693,6 +715,51 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
   } };
 }
 setInitBuilder(buildInit);   // A531: lib/posInit.ts keeps what this builds
+
+// A552 (owner, 2026-10-21: "for credit sales we need them on desktop app since its the one used by most clients"): the
+// customers a till may sell to on account — every customer of the business with a credit limit or a balance owed — with
+// their limit and balance, so the till sells on account offline (main/creditCustomers.ts). Desktop only: the till's own
+// session (it pulls with it, like the staff list) or a person signed in on a till. No permission key: the till's own
+// session holds none of the customer keys (tillScope), and who may SELL on account is decided at the sale (A511 / A552).
+// `at` = when this was read: the till counts its own credit sales the cloud had not yet taken on top of the balance.
+// A563 — GET /api/pos/stock-view?branch_id= : the owner's "When an item's stock reaches zero" choice and, unless it is
+// "sell", the branch's known levels of tracked items and the combos' items — the web POS greys ("Sold out") or hides
+// an item that is out (lib/stockGate.ts) and checks again every 30 s. The cloud refuses the sale too (POST /orders).
+router.get('/stock-view', async (req, res) => {
+  const branchId = String(req.query.branch_id ?? '');
+  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  try {
+    const { data: br } = await supabase.from('branches').select('id').eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
+    if (!br) { res.status(404).json({ error: 'Branch not found' }); return; }
+    const mode = await businessOutOfStockMode(req.businessId);
+    const view = mode === 'sell' ? { levels: {}, combos: {} } : await branchStockView(req.businessId, branchId);
+    res.set('Cache-Control', 'no-store');
+    res.json({ mode, ...view });
+  } catch (e: any) {
+    sendError(res, e);
+  }
+});
+
+router.get('/credit-customers', async (req, res) => {
+  if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
+  try {
+    const at = new Date().toISOString();
+    const rows = await pageAll<any>(() => supabase.from('customers')
+      .select('id, name, phone, credit_limit, credit_balance, status')
+      .eq('business_id', req.businessId)
+      .or('credit_limit.gt.0,credit_balance.gt.0'));
+    const customers = rows
+      .filter((c) => c && c.status !== 'deleted' && (Number(c.credit_limit) > 0 || Number(c.credit_balance) > 0))
+      .slice(0, 5000)
+      .map((c) => ({ id: c.id, name: c.name ?? '', phone: c.phone ?? null, status: c.status ?? 'active',
+        credit_limit: Number(c.credit_limit) || 0, credit_balance: Number(c.credit_balance) || 0 }));
+    res.set('Cache-Control', 'no-store');
+    res.json({ at, customers });
+  } catch (e: any) {
+    sendError(res, e);
+  }
+});
 
 // A404 — the test-data clears ZapTill made for this business (admin portal, A396) after `after`, oldest first; the
 // till removes the same periods from its own database (main/testDataClear.ts). After the last one it applied (A522).

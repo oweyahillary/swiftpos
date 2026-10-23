@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -25,7 +26,7 @@ const R = require(path.join(here, '..', 'dist', 'main', 'peerRelay.js'));
 
 console.log('\nThe till\n');
 {
-  const h = src('main/ipcHandlers.ts');
+  const h = ipcHandlersSource();
   const sale = h.slice(h.indexOf('const printed = queueThermal(\n      orderPayload,'), h.indexOf('return { orderId, printFailed: printed.failed };'));
   ok('two copies queue the receipt twice on the thermal printer', /if \(receiptCopies\(orderPayload\) === 2\) \{\s*const second = queueThermal\(orderPayload, \['receipt'\]\);/.test(sale), sale.slice(0, 400));
   ok('…never a second kitchen ticket (the second call is the receipt only)', !/queueThermal\(orderPayload, \[[^\]]*'kitchen'[^\]]*\]\);/.test(sale.slice(sale.indexOf('receiptCopies'))));

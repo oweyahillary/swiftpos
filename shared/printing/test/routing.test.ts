@@ -34,9 +34,27 @@ ok('plain product + variant synthesises a unit', () => {
   const u = toUnits({ product: { id: 'p', name: 'Burger' }, selectedVariants: [{ groupName: 'Size', optionName: 'Large' }] }, ids, ids.kitchen, routing);
   assert.equal(u.length, 1); assert.equal(u[0].name, 'Burger'); assert.deepEqual(u[0].stationIds, ['k1']);
 });
-ok('modifier routes to dispatch only', () => {
+ok("A559: a modifier routes to the line's stations + dispatch", () => {
   const u = toUnits({ product: { id: 'p', name: 'Wings' }, selectedModifiers: [{ name: 'BBQ Sauce', price: 50 }] }, ids, ids.kitchen, routing);
-  assert.deepEqual(u[u.length - 1].stationIds, ['d1']); assert.equal(u[u.length - 1].priceDelta, 5000);
+  assert.deepEqual(u[u.length - 1].stationIds, ['k1', 'd1']); assert.equal(u[u.length - 1].priceDelta, 5000);
+  assert.equal(u[u.length - 1].modifier, true);
+  // A dispatch-only line: its extra is on dispatch once, not twice.
+  assert.deepEqual(toUnits({ product: { id: 's', name: 'Soda' }, selectedModifiers: [{ name: 'Ice' }] }, ids, ids.dispatch, routing)[0].stationIds, ['d1']);
+});
+ok("A559: a combo's modifier follows the combo LINE's routing, not a component's", () => {
+  const combo = { product: { id: 'c', name: 'Combo' }, comboComponents: [{ name: 'Chicken', quantity: 1, category_id: 'catFood' }, { name: 'Soda', quantity: 1, category_id: 'catDrink' }],
+    selectedModifiers: [{ optionName: 'Extra Cheese' }] };
+  const k = toUnits(combo, ids, ids.kitchen, routing);
+  assert.deepEqual(k[2].stationIds, ['k1', 'd1']); assert.equal(k[2].modifier, true);
+  assert.equal(k[0].modifier, undefined, 'a component is not a modifier');
+  assert.deepEqual(toUnits(combo, ids, ids.dispatch, routing)[2].stationIds, ['d1']);
+});
+ok("A555: a till's modifier ({ optionName }) prints like the web's ({ name })", () => {
+  const u = toUnits({ product: { id: 'p', name: 'Wings' }, selectedModifiers: [{ optionName: 'Extra Cheese', price: 50 }] }, ids, ids.kitchen, routing);
+  const m = u[u.length - 1];
+  assert.equal(m.name, 'Extra Cheese'); assert.deepEqual(m.stationIds, ['k1', 'd1']); assert.equal(m.priceDelta, 5000);   // A559: + the kitchen
+  assert.equal(toUnits({ product: { id: 'p', name: 'Wings' }, selectedModifiers: [{ optionName: '  ', price: 0 }] }, ids, ids.kitchen, routing)
+    .some((x) => x.name.trim() === ''), false, 'a blank name still prints nothing');
 });
 ok('description fallback, but not prose', () => {
   assert.deepEqual(describeFromText('chicken + fries + soda'), ['chicken', 'fries', 'soda']);

@@ -61,6 +61,8 @@ function decode(buf: Buffer): { commands: Decoded[]; text: string[] } {
         case 0x61: need(3); commands.push({ at: i, name: 'ESC a', detail: ['left', 'center', 'right'][buf[i + 2]] ?? `?${buf[i + 2]}` }); i += 3; break;
         case 0x45: need(3); commands.push({ at: i, name: 'ESC E', detail: buf[i + 2] ? 'bold on' : 'bold off' }); i += 3; break;
         case 0x64: need(3); commands.push({ at: i, name: 'ESC d', detail: `feed ${buf[i + 2]} lines` }); i += 3; break;
+        case 0x4a: need(3); commands.push({ at: i, name: 'ESC J', detail: `feed ${buf[i + 2]} dots` }); i += 3; break;   // A540
+        case 0x4d: need(3); commands.push({ at: i, name: 'ESC M', detail: `font ${buf[i + 2] ? 'B' : 'A'}` }); i += 3; break;   // A543
         case 0x70: need(5); commands.push({ at: i, name: 'ESC p', detail: `drawer pin ${buf[i + 2]}, ${buf[i + 3]}/${buf[i + 4]}` }); i += 5; break;
         default: throw new Error(`unknown ESC command 0x${cmd.toString(16)} at ${i}`);
       }
@@ -107,13 +109,18 @@ const targets = [
   ['receipt-80', receiptPreset('st-till', 'Till', 80)],
   ['kitchen-58', kitchenPreset(KITCHEN, 'Kitchen', 58)],
   ['receipt-58', receiptPreset('st-till', 'Till', 58)],
+  // A551: the kitchen ticket with 'kitchen_font_b' on — A543's Font B ticket (64 / 42 columns, ESC M 1, ESC 3 24), the
+  // opt-in now. kitchen-80/58.bin are the standard, Font A like dispatch (A543's kitchen-*-font-a.bin, which A551 retires,
+  // with A551's item gap and 1-line feed — kitchen-font.test section 9 proves it against test/golden/a551-pre.json).
+  ['kitchen-80-font-b', kitchenPreset(KITCHEN, 'Kitchen', 80)],
+  ['kitchen-58-font-b', kitchenPreset(KITCHEN, 'Kitchen', 58)],
 ] as const;
 
 let failures = 0;
 const fail = (m: string) => { failures++; console.log(`FAIL  ${m}`); };
 
 for (const [name, station] of targets) {
-  const doc = renderTicket({ order, business, station });
+  const doc = renderTicket({ order, business: name.endsWith('-font-b') ? { ...business, kitchenFontB: true } : business, station });
   const buf = toEscPos(doc, {
     cut: station.cutPaper,
     openDrawer: station.openCashDrawer,

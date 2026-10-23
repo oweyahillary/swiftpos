@@ -21,6 +21,8 @@ import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import { parseCsvRows, csvBool } from '../lib/csv';
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '../../shared/paginate';
+import { approvalPinOn } from '../../shared/posFeatures';   // A562
+import { businessTerms } from '../../shared/businessTerms';   // A575
 import type { CsvRow } from '../lib/csv';
 
 const input =
@@ -51,6 +53,17 @@ function Banner({ kind, text }: { kind: 'ok' | 'err'; text: string }) {
 
 /** 2026-10-04: how the menu import compares names (the cloud's importKey): case, non-breaking / zero-width and double
  *  spaces never make "Drink size" a different group from "drink  size". */
+/** A575: this till's business type in its words (src/shared/businessTerms.ts); not read yet: a restaurant's. */
+function useTillTerms() {
+  const [businessType, setBusinessType] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    posApi.config.get().then((c: any) => { if (live) setBusinessType(c?.business_type ?? null); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  return businessTerms(businessType);
+}
+
 function importNameKey(raw: unknown): string {
   return String(raw ?? '').normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
@@ -64,6 +77,7 @@ export function MenuTab({ currency }: { currency: string }) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<any | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const terms = useTillTerms();   // A575
 
   const blank = { name: '', base_price: '', category_id: '', description: '' };
   const [form, setForm] = useState<any>(blank);
@@ -76,7 +90,7 @@ export function MenuTab({ currency }: { currency: string }) {
       setCategories(Array.isArray(c) ? c : []);
       setErr('');
     } catch (e: any) {
-      setErr(e?.message ?? 'Could not load the menu.');
+      setErr(e?.message ?? `Could not load the ${terms.importWhat}.`);
     } finally {
       setLoading(false);
     }
@@ -148,7 +162,7 @@ export function MenuTab({ currency }: { currency: string }) {
     try {
       const next = p.status === 'active' ? 'inactive' : 'active';
       await posApi.manage.updateProduct(p.id, { status: next });
-      flash(next === 'active' ? `${p.name} back on the menu` : `${p.name} hidden from the till`);
+      flash(next === 'active' ? `${p.name} ${terms.backOnSale}` : `${p.name} hidden from the till`);
       await load();
     } catch (e: any) {
       setErr(e?.message ?? 'Could not update.');
@@ -160,7 +174,7 @@ export function MenuTab({ currency }: { currency: string }) {
   const shown = products.filter(p =>
     !search.trim() || p.name?.toLowerCase().includes(search.trim().toLowerCase()));
 
-  if (loading) return <p className="text-gray-300 p-4">Loading menu…</p>;
+  if (loading) return <p className="text-gray-300 p-4">Loading {terms.importWhat}…</p>;
 
   return (
     <div className="p-4 max-w-3xl">
@@ -302,6 +316,25 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
     } finally { setBusy(false); }
   };
 
+  // A537: the business's menus (Food, Soft drinks …, made on the web) as this till holds them — a category is put under
+  // one here too, saved on the till first and sent to the cloud like any category change (A448). No menus: no select.
+  const [menus, setMenus] = useState<any[]>([]);
+  const terms = useTillTerms();   // A575: "No department" at a shop, "No menu" at a restaurant
+  useEffect(() => {
+    let live = true;
+    posApi.pos.init().then((r: any) => { if (live) setMenus(Array.isArray(r?.menus) ? r.menus : []); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const setMenu = async (c: any, menuId: string) => {
+    setBusy(true); setErr('');
+    try {
+      await posApi.manage.updateCategory(c.id, { menu_id: menuId || null });
+      onChanged();
+    } catch (e: any) {
+      setErr(e?.message ?? 'Could not update category.');
+    } finally { setBusy(false); }
+  };
+
   return (
     <div className="mt-6">
       <p className="text-white font-semibold mb-2">Categories</p>
@@ -325,6 +358,15 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
         {categories.map(c => (
           <div key={c.id} className="flex items-center gap-3 px-4 py-2">
             <span className="flex-1 text-gray-200 truncate">{c.name}</span>
+            {(menus.length > 0 || c.menu_id) && (
+              <select data-testid="category-menu" value={c.menu_id ?? ''} disabled={busy} aria-label={`${terms.menu} of ${c.name}`}
+                onChange={e => void setMenu(c, e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-action-500">
+                <option value="">{terms.noMenu}</option>
+                {menus.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {c.menu_id && !menus.some((m: any) => m.id === c.menu_id) && <option value={c.menu_id}>{`(a ${terms.menu.toLowerCase()} that is off)`}</option>}
+              </select>
+            )}
             <button onClick={() => toggleKitchen(c)} disabled={busy}
               className={`text-xs px-2 py-0.5 rounded-md border transition-colors ${
                 c.is_kitchen ? 'border-action-500 text-action-400' : 'border-gray-700 text-gray-300'}`}>
@@ -353,6 +395,10 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
   // A345: set while the cloud is out of reach for an offline reason — the page then lists the people this till knows,
   // read-only, and says why. `source`: 'branch' = a node's whole branch roster; 'till' = people who signed in here.
   const [offline, setOffline] = useState<{ message: string; source: 'branch' | 'till' | null } | null>(null);
+  // A562: the admin portal's 'approval_pin' switch — off, the add form offers no override (approval) PIN; managers approve
+  // with their sign-in PIN (the cloud refuses a new one then: APPROVAL_PIN_OFF).
+  const [approvalPin, setApprovalPin] = useState(false);
+  useEffect(() => { posApi.pos.features().then((f) => setApprovalPin(approvalPinOn(f))).catch(() => setApprovalPin(false)); }, []);
 
   const load = async () => {
     setLoading(true);
@@ -403,9 +449,8 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
         branch_ids: branchId ? [branchId] : [],
         // Optional. Void authority is granted by HAVING this PIN, not by role
         // name — /api/staff/authorizers selects on override_pin_hash — so
-        // without a way to set it here a manager could create a supervisor who
-        // still could not authorise anything.
-        ...(form.override_pin ? { override_pin: form.override_pin } : {}),
+        // still could not authorise anything. A562: only while the switch is on.
+        ...(approvalPin && form.override_pin ? { override_pin: form.override_pin } : {}),
       });
       setOk(`Added ${form.name.trim()}`); setTimeout(() => setOk(''), 3000);
       setForm({ name: '', pin: '', role_id: '', override_pin: '' }); setShowNew(false);
@@ -521,24 +566,23 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
               <select value={form.role_id} onChange={e => setForm({ ...form, role_id: e.target.value })}
                 className={input}>
                 <option value="">— choose —</option>
-                {/* A340: only roles the cloud says this manager may hand out — never Owner. */}
-                {roles.filter(r => r.assignable !== false).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {/* A340: only roles the cloud says this manager may hand out — never Owner (A562: not even for the owner). */}
+                {roles.filter(r => r.assignable !== false && !r.is_owner_role).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
           </div>
 
-          <div>
-            <label className={label}>Override PIN — optional</label>
+          {approvalPin && <div>
+            <label className={label}>Approval PIN — optional</label>
             <input value={form.override_pin} inputMode="numeric" maxLength={6}
               onChange={e => setForm({ ...form, override_pin: e.target.value.replace(/\D/g, '') })}
               placeholder="leave blank for ordinary staff"
               className={`${input} font-mono tracking-widest`} />
             <p className="text-xs text-gray-400 mt-1">
-              Setting this lets the person authorise a void. Void authority comes from
-              having this PIN, not from the job title — a supervisor without one cannot
-              approve anything. Must differ from the sign-in PIN.
+              A second PIN for approving, so they need not type their sign-in PIN in front of
+              cashiers. Their sign-in PIN approves too. Must differ from the sign-in PIN.
             </p>
-          </div>
+          </div>}
 
           <button onClick={add} disabled={busy} className={btn}>
             {busy ? 'Saving…' : 'Add staff member'}
@@ -573,12 +617,19 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
                 <div className="flex flex-wrap items-center gap-2 mt-2" data-testid="staff-edit">
                   <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={80} autoFocus
                     className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white w-44" />
-                  {roles.length > 0 && (
-                    <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
-                      className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white">
-                      {roles.filter((r: any) => r.assignable !== false || r.id === editRole).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                  )}
+                  {roles.length > 0 && (() => {
+                    // A562: the person's own role is always the one shown. The owner's role, or one this person may not
+                    // give, is shown locked — never another role in its place.
+                    const cur = roles.find((r: any) => r.id === (m.role_id ?? m.roles?.id));
+                    const locked = !!cur && (cur.is_owner_role || cur.assignable === false);
+                    return (
+                      <select value={editRole} onChange={(e) => setEditRole(e.target.value)} disabled={locked} data-testid="staff-edit-role"
+                        title={locked ? (cur.is_owner_role ? 'The owner\'s role cannot be changed here' : 'You cannot change this person\'s role') : undefined}
+                        className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white disabled:opacity-60">
+                        {roles.filter((r: any) => r.id === editRole || (!locked && r.assignable !== false && !r.is_owner_role)).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    );
+                  })()}
                   <button data-testid="staff-edit-save" onClick={() => void saveEdit(m)} disabled={busy}
                     className="text-xs bg-action-500 hover:bg-action-400 text-gray-950 font-semibold rounded-lg px-3 py-1">Save</button>
                   <button onClick={() => setEditFor(null)} className="text-xs text-gray-300 px-1">Cancel</button>
@@ -1316,7 +1367,8 @@ function readItemKitchen(row: CsvRow): boolean | undefined {
   return undefined;
 }
 
-export function ImportTab({ currency, onDone }: { currency: string; onDone?: () => void }) {
+// A573: `what` — "menu" at a restaurant or café, "products" at a shop (src/shared/businessTerms.ts importWhat).
+export function ImportTab({ currency, onDone, what = 'menu' }: { currency: string; onDone?: () => void; what?: string }) {
   const online = useOnlineLicence();   // A460: variants and add-ons from a file only with the online licence
   const [rows, setRows] = useState<CsvRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -1580,7 +1632,7 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
       )}
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4">
-        <p className="text-white font-semibold mb-1">Import menu from a spreadsheet</p>
+        <p className="text-white font-semibold mb-1">Import {what} from a spreadsheet</p>
         <p className="text-xs text-gray-300 mb-3">
           In Excel or Google Sheets choose <span className="text-gray-300">Save As → CSV</span>, then pick the file here.
         </p>
@@ -1592,7 +1644,7 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
         {/* A412: a template filled with this client's own menu (headings only when there is none yet). */}
         <button onClick={() => { void downloadTemplate(); }} disabled={templateBusy}
           className="mt-3 text-xs text-action-400 hover:text-action-300 disabled:opacity-50 transition-colors">
-          {templateBusy ? 'Preparing your menu…' : '↓ Download a template with your menu'}
+          {templateBusy ? `Preparing your ${what}…` : `↓ Download a template with your ${what}`}
         </button>
         <p className="mt-1 text-[11px] text-gray-500">
           Your current items, ready to edit and upload back — changed items are updated, new rows are added.

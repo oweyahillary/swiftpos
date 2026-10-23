@@ -1,9 +1,11 @@
 /**
  * a530-cases — the receipts the A530 golden pins (test/golden/a530-classic.json).
  *
- * The golden was written by the renderer as it was BEFORE A530 (1.0.19), so with all four classic switches on the
- * receipt must still be those bytes exactly — that is the promise the admin portal's switches make to a client who
- * wants the old receipt back. Every shape of receipt the layout change touches is here: plain, tip, delivery fee, free
+ * The golden was written by the renderer as it was BEFORE A530 (1.0.19), so with the classic spacing, full logo and
+ * extra feed switches on (A538: the classic layout is the standard; compact off) the receipt must still be those bytes
+ * exactly — the promise the admin portal's switches make to a client who wants the old receipt back. A538 also pins
+ * test/golden/a530-compact.json: the A530 renderer's own standard (compact) receipt for each case, which the
+ * 'receipt_compact_layout' opt-in must reproduce at the new spacing. Every shape of receipt the layout change touches is here: plain, tip, delivery fee, free
  * delivery, a discount with an offer, dine-in, a proforma bill, a duplicate, a void, a logo up to the old 288-dot cap,
  * a non-zero round-off, a zero-rated business, both paper widths.
  */

@@ -30,6 +30,8 @@
 // `sync_queue` never drains and nothing else drains it, so the CLOUD never sees
 // those sales. Read A17/A19 before designing anything that assumes a peer can
 // stay offline indefinitely; today it cannot, because auth is cloud-only too.
+// (A548, 2026-10-21: the paragraph above predates A410 — read the A410 section below, which is how it works now:
+// a peer's cloud leg runs through this server, so a peer without internet of its own still reaches the cloud.)
 //
 // A node is also a normal till; its own sales use the usual local path. Received
 // peer orders are upserted into the same local tables so reports aggregate.
@@ -76,14 +78,35 @@ import { createJoinRequest, readJoin, JOIN_PROOF_HEADER } from './serverJoin';  
 import { NODE_PROTOCOL, NODE_CAPABILITIES, MIN_TILL_PROTOCOL } from './nodeHealth';   // A501
 import { noteGatewayCall, noteTillSync } from './activityTracker';   // A508
 import { liveMode, liveActive, serveLiveLog } from './liveSync';   // A531
+import { answerDrawers } from './branchDrawers';   // A535
+import { answerCreditCustomers } from './creditSale';   // A552
 
-const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
+// A554: read when the server starts (not once at load) — the port asked for is the one in force then.
+const portBase = () => Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
+let NODE_PORT = portBase();
 
 // Tried in order when the one before is already in use. Kept short and
 // contiguous deliberately: a human has to be able to read the number off one
 // screen and type it into another, and a wide random range makes that worse.
-const PORT_FALLBACKS = [NODE_PORT, NODE_PORT + 1, NODE_PORT + 2, NODE_PORT + 3];
+let PORT_FALLBACKS = [NODE_PORT, NODE_PORT + 1, NODE_PORT + 2, NODE_PORT + 3];
 let portAttempt = 0;
+let portTries = 0;   // A554: tries on the default port before the fallbacks
+
+/**
+ * A554 (B Foods' log, 2026-10-21: "port 4100 in use, trying 4101" — a second ZapTill had started beside the one in the
+ * tray): the default port is waited for before any fallback. Whoever holds 4100 is most often a ZapTill that is
+ * still closing (the relaunch after an update, a restart) — taking 4101 then leaves the branch on a port its tills do
+ * not use (a till that pinned the server's certificate follows it — nodeFollow.ts, A501 — any other waits for a
+ * technician). So: 4100 again every DEFAULT_PORT_WAIT_MS, DEFAULT_PORT_WAIT_TRIES times (20 s), then 4101–4103 as
+ * before (an unrelated program keeps 4100 for good: a server on another port is still better than none). Pure.
+ */
+export const DEFAULT_PORT_WAIT_TRIES = 10;
+export const DEFAULT_PORT_WAIT_MS = 2_000;
+export function nextListenStep(attempt: number, triesHere: number, fallbacks = PORT_FALLBACKS.length): { attempt: number; delayMs: number } | null {
+  if (attempt === 0 && triesHere < DEFAULT_PORT_WAIT_TRIES) return { attempt: 0, delayMs: DEFAULT_PORT_WAIT_MS };
+  if (attempt < fallbacks - 1) return { attempt: attempt + 1, delayMs: 150 };
+  return null;
+}
 let boundPort: number | null = null;
 
 let server: net.Server | null = null;
@@ -295,6 +318,7 @@ export function startNodeServer(): void {
   if (server) return;                              // already running
   const cfg = getDeviceConfig();
   if (!isNodeRole(cfg?.device_role)) return;        // node OR office — both serve the branch
+  NODE_PORT = portBase(); PORT_FALLBACKS = [NODE_PORT, NODE_PORT + 1, NODE_PORT + 2, NODE_PORT + 3];   // A554
 
   // Mint on first start if absent — covers installs upgraded from a build that
   // predates the node_secret column, which would otherwise come up unauthenticated.
@@ -376,7 +400,9 @@ export function startNodeServer(): void {
       if (url.startsWith(`${GATEWAY_PREFIX}/`)) {
         // A443: a till's update files come from this server's own copy (fetched once for the branch), not live.
         if (serveSharedUpdate(req, res, shareDir(), shareWanted)) return;
-        noteGatewayCall(req.method, url);   // A508: a till trading through the server keeps the server from installing
+        // A508: a till trading through the server keeps the server from installing. A541: trading only (an allowlist —
+        // activityTracker.classifyGatewayCall); the body size tells an empty sync push from one carrying rows.
+        { const n = Number(req.headers['content-length']); noteGatewayCall(req.method, url, Date.now(), Number.isFinite(n) ? n : null); }
         const serverUrl = getDeviceConfig()?.server_url ?? '';
         return await forwardToCloud(req, res, serverUrl);
       }
@@ -697,12 +723,35 @@ export function startNodeServer(): void {
       // cloud's GET /api/pos/changes; a staff row carries its PIN hash from this server's list, so only to a proven till.
       // 404 while this server itself takes changes the old way (its cloud keeps no change log): its tills do the same.
       if (req.method === 'GET' && url === '/node/live') {
-        if (!requireProven(req, res, '/node/live')) return;
+        const me = requireProven(req, res, '/node/live');
+        if (!me) return;
         if (liveMode() === 'legacy') return json(res, 404, { error: 'This branch server takes changes the old way.', code: 'CHANGES_UNAVAILABLE' });
         if (!liveActive()) return json(res, 503, { error: 'The branch server is starting - ask again shortly.' });
         const raw = new URL(req.url ?? '', 'http://node').searchParams.get('since');
         const since = raw === null || raw === '' ? null : Number(raw);
-        return json(res, 200, serveLiveLog(since, getDeviceConfig()?.branch_id ?? null, changeVersion(getLocalDb())));
+        // A535: the asking till (proven) — a ZapTill log request for it rides this answer.
+        return json(res, 200, serveLiveLog(since, getDeviceConfig()?.branch_id ?? null, changeVersion(getLocalDb()), me.device));
+      }
+      // A535: a till's drawer checks — the web's sales on its drawer, whether the web closed or a manager confirmed it, and
+      // what its 90 s beat needs — answered from this server's ONE branch-level poll of the cloud (branchDrawers.ts), never
+      // forwarded one by one. Only a proven till, only about its OWN drawers. 404 while this server's cloud does not answer
+      // the branch-level call (the till asks through the gateway as before); 503 while this server's copy is stale.
+      if (req.method === 'POST' && url === '/node/drawers') {
+        const me = requireProven(req, res, '/node/drawers');
+        if (!me) return;
+        const body = await readBody(req);
+        const a = answerDrawers(me.device, body ?? {});
+        return json(res, a.status, a.body);
+      }
+      // A552: the customers a till sells to on account (limit, balance) — this server's copy of the cloud's list, read again
+      // when older than a minute, and how old it is (the till adds its own sales the cloud had not taken). A proven till only.
+      // A559: no person's key here, like every /node route (they prove the TILL, not who is signed in on it — /node/report,
+      // /node/roster too): the till pulls this with its catalogue, signed in or not, into its own copy. Who may SEE the
+      // list is decided on the till, in main (ipc/credit.ts credit:customers and order:create: customers.view or .credit).
+      if (req.method === 'GET' && url === '/node/credit-customers') {
+        if (!requireProven(req, res, '/node/credit-customers')) return;
+        const a = await answerCreditCustomers();
+        return json(res, a.status, a.body);
       }
       if (req.method === 'GET' && url === '/node/changes/version') {
         return json(res, 200, { version: changeVersion(getLocalDb()) });
@@ -828,11 +877,16 @@ export function startNodeServer(): void {
   // A branch server on a non-default port is unusual but recoverable; a branch
   // server that is not running at all is neither.
   server.on('error', (e: NodeJS.ErrnoException) => {
-    if (e.code === 'EADDRINUSE' && portAttempt < PORT_FALLBACKS.length - 1) {
-      portAttempt++;
+    const step = e.code === 'EADDRINUSE' ? nextListenStep(portAttempt, portTries) : null;   // A554: the default port waited for first
+    if (step) {
+      if (step.attempt === portAttempt) {
+        if (portTries++ === 0) console.warn(`[node] port ${PORT_FALLBACKS[portAttempt]} in use — trying it again for ${Math.round(DEFAULT_PORT_WAIT_TRIES * DEFAULT_PORT_WAIT_MS / 1000)} s (a ZapTill still closing?) before another`);
+      } else {
+        portAttempt = step.attempt; portTries = 0;
+        console.warn(`[node] port ${PORT_FALLBACKS[portAttempt - 1]} in use, trying ${PORT_FALLBACKS[portAttempt]}`);
+      }
       const next = PORT_FALLBACKS[portAttempt];
-      console.warn(`[node] port ${PORT_FALLBACKS[portAttempt - 1]} in use, trying ${next}`);
-      setTimeout(() => server?.listen(next), 150);
+      setTimeout(() => server?.listen(next), step.delayMs);
       return;
     }
     console.error('[node] server error', e);
@@ -873,7 +927,7 @@ export function stopNodeServer(): void {
   plainServer = null; tlsServer = null;
   stopBeacon();
   boundPort = null;
-  portAttempt = 0;
+  portAttempt = 0; portTries = 0;
   if (was) announce(false);
 }
 

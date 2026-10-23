@@ -18,7 +18,7 @@ export { renderTicket } from './render';
 export { toEscPos } from './escpos';
 export { toPreview } from './preview';
 export { splitTax, netOf, formatCents } from './money';
-export { columnsFor } from './layout';
+export { columnsFor, nameWithVariant, variantLabel } from './layout';
 export * from './raster';
 
 import type { StationConfig } from './types';
@@ -30,13 +30,13 @@ export function kitchenPreset(id: string, name: string, paperWidthMm: 58 | 80 = 
     showPrices: false,
     showUnchangedUnits: true,
     showOptionPrices: false,
-    emphasizeParent: true,        // (UNSETTLED) double-height dish names
+    emphasizeParent: false,       // A557 (owner: "I want exactly as the packaging/dispatcher receipt EXACT FONT SIZE"): bold, normal size
     aggregateUnits: false,        // (UNSETTLED) per-parent, not multiplied out
     showFooterCount: true,        // (UNSETTLED) "5 items to cook"
     attributeStyle: 'always-sublines',
     openCashDrawer: false,
     cutPaper: true,
-    feedBeforeCut: 3,
+    feedBeforeCut: 3,            // A551: a tear-off printer's; a cutting one feeds 1 (render.ts PRODUCTION_CUT_FEED)
   };
 }
 
@@ -53,7 +53,7 @@ export function dispatchPreset(id: string, name: string, paperWidthMm: 58 | 80 =
     attributeStyle: 'inline-when-simple',
     openCashDrawer: false,
     cutPaper: true,
-    feedBeforeCut: 3,
+    feedBeforeCut: 3,            // A551: as the kitchen's
   };
 }
 

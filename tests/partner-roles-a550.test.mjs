@@ -48,11 +48,12 @@ const FINANCE = ['reports.tax', 'reports.costs', 'reports.labour', 'reports.mont
 
 console.log('\nA550 — the built-in roles for partners\n');
 
-await ok('all five are built in, made of catalogue keys only, for every business type', () => {
+await ok('all five are built in, made of catalogue keys only, for every business type (A580: Kitchen Manager only at a restaurant or café)', () => {
   for (const n of NAMES) {
     const r = role(n);
     assert.ok(r, n);
-    assert.ok(!r.types, `${n} is for every business`);
+    if (n === 'Kitchen Manager') assert.deepEqual([...(r.types ?? [])], ['restaurant', 'cafe'], n);   // A580 (owner, 2026-10-23)
+    else assert.ok(!r.types, `${n} is for every business`);
     for (const k of r.keys) assert.ok(P.isPermissionKey(k) && !P.isLegacyKey(k), `${n}: ${k}`);
   }
 });
@@ -123,7 +124,8 @@ await ok('the Accountant is unchanged (A514/A518) — and is not on the owner\'s
 await ok('a NEW business is seeded with all five, each with its keys (lib/defaultRolePermissions.ts)', () => {
   for (const type of ['restaurant', 'retail', 'petrol_station']) {
     const names = seed.seededRoleRows('b1', 'Admin', type).map((r) => r.name);
-    for (const n of NAMES) assert.ok(names.includes(n), `${type}: ${n}`);
+    // A580: Kitchen Manager is a restaurant's or café's only (owner, 2026-10-23: no kitchen roles at a shop)
+    for (const n of NAMES) assert.equal(names.includes(n), n !== 'Kitchen Manager' || type === 'restaurant', `${type}: ${n}`);
   }
   for (const n of NAMES) assert.deepEqual([...P.defaultKeysForRoleName(n)].sort(), [...keys(n)].sort(), n);
   assert.deepEqual([...P.defaultKeysForRoleName(' general_manager ')].sort(), [...keys('General Manager')].sort(), 'case and spaces aside');

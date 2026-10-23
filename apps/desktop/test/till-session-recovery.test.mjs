@@ -19,6 +19,7 @@ import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -82,14 +83,14 @@ ok('no secret: the cloud is still told (it records the till, ZapTill is emailed)
 
 console.log('\nThe wiring (source)\n');
 const src = (p) => fs.readFileSync(path.join(here, '..', 'src', p), 'utf8');
-const ipc = src('main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 // A415: there is no "sign the till out" any more — a technician rejoins it instead, keeping everything on it.
 ok('enrolment (and a technician\'s rejoin) keeps the secret; nothing on the till signs it out of the business',
   /if \(typeof data\.deviceSecret === 'string' && data\.deviceSecret\) writeDeviceSecret\(data\.deviceSecret\);/.test(ipc)
   && !/handle\('auth:logout'/.test(ipc) && !/clearDeviceSecret\(\)/.test(ipc));
 ok('a refused session: the PIN is checked on the till and the cashier sells (a wrong PIN stays wrong)',
   // A494: a wrong PIN also counts toward the till's PIN lockout (recordPinFailure) — still thrown, still final.
-  /if \(res\.status === 401 && isSessionRefusal\(data\)\) \{[\s\S]{0,200}return fallbackToLocalAuthority\(\);\s*\}\s*if \(!res\.ok\) \{\s*if \(res\.status === 401\) recordPinFailure\(\);[^\n]*\n\s*throw new Error\(data\.error \?\? 'Invalid PIN'\);/.test(ipc));
+  /if \(res\.status === 401 && isSessionRefusal\(data\)\) \{[\s\S]{0,200}return fallbackToLocalAuthority\(\);\s*\}\s*if \(!res\.ok\) \{\s*if \(res\.status === 401\) recordPinFailure\(\);[^\n]*\n\s*throw expectedRefusal\(new Error\(data\.error \?\? 'Invalid PIN'\)\);/.test(ipc));   // A554: marked an expected answer (same Error)
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

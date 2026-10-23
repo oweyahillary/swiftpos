@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, memo, lazy, Suspense, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { applyOffers, type Offer } from '../../shared/offers';   // A445
 import { posApi } from '../lib/posApi';
 import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
@@ -35,6 +35,7 @@ import { historyView, historyChoices, orderMethod, historyTotal, historyByCashie
 import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, customerDeliveryFee, autoFreeDelivery } from '../../shared/delivery';
 import { noPosFeatures, type PosFeatures } from '../../shared/posFeatures';
 import { NO_FREEZE, isFrozen, frozenMessage, type StockCountFreeze } from '../../shared/stockCountFreeze';   // A394
+import { NO_STOCK_VIEW, showsSoldOut, hiddenOutOfStock, stockRefusals, type OutOfStockMode, type StockView } from '../../shared/stockGate';   // A563
 import type { ZReport } from '../lib/posApi';
 import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
 import KitchenVoidModal from '../components/KitchenVoidModal';
@@ -43,6 +44,17 @@ import { onGrid } from '../../shared/productDays';
 import { exactFirst } from '../../shared/paginate';   // A472
 import { useGridWindow } from '../hooks/useGridWindow';   // A472
 import { reportBusy } from '../lib/activity';   // A508
+import CategoryPanel, { useCategoryPanel, useNarrowWindow, PanelToggle, CategoryChip, MenuBar, LaterButton } from '../components/CategoryPanel';   // A537; A566; A580
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../shared/menuFilter';   // A537; A566
+import { FindInBranches } from '../components/BranchStockTab';   // A566: A564's lookup, from the selling screen
+import { mayCheckOtherBranches, outHereMatches, outHereNote } from '../lib/branchCheck';   // A566
+import { useOnlineLicence } from '../lib/onlineLicence';   // A566 (A460)
+import { businessTerms } from '../../shared/businessTerms';   // A573: Menus / Departments / Groups
+import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '../../shared/menuHours';   // A578: menus by time of day; A580: Later
+import { useMenuHours } from '../lib/useMenuHours';   // A578
+// A577: items sold by weight — the keypad loads on its first use (the main chunk's budget, lazy-load-a517).
+const WeightModal = lazy(() => import('../components/WeightModal'));
+import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, weightUnitOf, formatWeight, type ScaleSettings, type WeighedLine } from '../../shared/scaleBarcode';   // A577
 
 interface Props {
   business: { id: string; name: string; currency: string };
@@ -91,16 +103,70 @@ const withLineIds = (cart: CartItem[]): CartItem[] =>
 // The press answers at once (active:scale + a deeper border); the hover lift only where there is a real pointer, so a
 // touch screen's sticky :hover does not leave the last tile enlarged. The count badge bumps on each change (keyed on the
 // count, the animation replays). Pictures load as they scroll into view and decode off the main thread.
-const ProductTile = memo(function ProductTile({ product, cartCount, currency, onTap, setInfoProduct }: {
-  product: any; cartCount: number; currency: string; onTap: (product: any) => void; setInfoProduct: (product: any) => void;
+// A566: a long press (touch) or a right-click (mouse) on a tile → "Check other branches" — only when the selling screen
+// may offer it (inventory.view + the online licence); the click that ends a long press does not also add the item.
+const LONG_PRESS_MS = 550;
+function useLongPress(on: (() => void) | null) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fired = useRef(false);
+  const last = useRef(0);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const cancel = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
+  useEffect(() => cancel, []);
+  if (!on) return { consume: () => false, handlers: {} };
+  const trigger = () => {   // a touch long press can also raise contextmenu: open once
+    if (Date.now() - last.current < 800) return;
+    last.current = Date.now(); fired.current = true; on();
+  };
+  return {
+    /** True once after a long press opened the offer — the click that follows is not a tap. */
+    consume: () => { const f = fired.current; fired.current = false; return f; },
+    handlers: {
+      onPointerDown: (e: ReactPointerEvent) => {
+        fired.current = false; cancel();
+        if (e.button !== 0) return;
+        start.current = { x: e.clientX, y: e.clientY };
+        timer.current = setTimeout(() => { timer.current = null; trigger(); }, LONG_PRESS_MS);
+      },
+      onPointerMove: (e: ReactPointerEvent) => {
+        if (start.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > 10) cancel();
+      },
+      onPointerUp: cancel, onPointerLeave: cancel, onPointerCancel: cancel,
+      onContextMenu: (e: ReactMouseEvent) => { e.preventDefault(); cancel(); trigger(); fired.current = false; },
+    },
+  };
+}
+
+// A563: `soldOut` — the owner chose "Show as sold out" and this branch's stock of it is 0 or less: greyed, a "Sold out"
+// badge, and a tap says so instead of adding it (main refuses it at Charge too).
+// A580: `later` — the item's menu is closed and shown only because "Later" is on: greyed with a "Later" badge; a tap is
+// refused in A578's words (handleTap's first check), nothing added.
+const ProductTile = memo(function ProductTile({ product, cartCount, currency, onTap, setInfoProduct, soldOut = false, later = false, onCheckBranches }: {
+  product: any; cartCount: number; currency: string; onTap: (product: any) => void; setInfoProduct: (product: any) => void; soldOut?: boolean; later?: boolean;
+  /** A566: long press / right-click → "Check other branches" (absent = not offered). */
+  onCheckBranches?: (product: any) => void;
 }) {
   const inCart = cartCount > 0;
+  const press = useLongPress(onCheckBranches ? () => onCheckBranches(product) : null);
   return (
     <button
-      onClick={() => onTap(product)}
-      className={`relative bg-gray-900 border rounded-xl p-3 text-left transition duration-150 ease-out [@media(hover:hover)]:hover:scale-[1.02] active:scale-[0.97] active:duration-75 active:border-action-500 ${inCart ? 'border-action-500/60 bg-action-500/5' : 'border-gray-800 hover:border-gray-700'}`}
+      onClick={() => { if (press.consume()) return; onTap(product); }}
+      {...press.handlers}
+      aria-disabled={soldOut || later || undefined}
+      data-testid={later ? 'tile-later' : soldOut ? 'tile-sold-out' : undefined}
+      className={`relative bg-gray-900 border rounded-xl p-3 text-left transition duration-150 ease-out [@media(hover:hover)]:hover:scale-[1.02] active:scale-[0.97] active:duration-75 active:border-action-500 ${soldOut || later ? 'opacity-50 grayscale border-gray-800' : inCart ? 'border-action-500/60 bg-action-500/5' : 'border-gray-800 hover:border-gray-700'}`}
     >
-      {inCart && (
+      {later && (
+        <span className="absolute top-2 right-2 z-10 bg-gray-950/90 border border-dashed border-gray-500 text-gray-200 text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded">
+          Later
+        </span>
+      )}
+      {soldOut && !later && (
+        <span className="absolute top-2 right-2 z-10 bg-gray-950/90 border border-gray-600 text-gray-100 text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded">
+          Sold out
+        </span>
+      )}
+      {inCart && !soldOut && (
         <span key={cartCount} data-testid="tile-count"
           className="absolute top-2 right-2 bg-action-500 text-gray-950 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center animate-bump">
           {cartCount}
@@ -135,6 +201,7 @@ const ProductTile = memo(function ProductTile({ product, cartCount, currency, on
 export default function POSPage({ business, onLogout, onShiftClosed, onOpenManager, canManagePrinters = false, reverseRights = { void: false, refund: false }, canCloseDay = false, canDiscount = false, canAddExpenseType = false, canSeeSync = false, canSell = true, onHelp }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [menus, setMenus] = useState<any[]>([]);   // A537: Food, Soft drinks … ([] = none: the plain category list)
   const [branchId, setBranchId] = useState<string | null>(null);
   // Real business rate from /api/pos/init, persisted locally by each catalogue
   // pull. Null only before the first sync completes.
@@ -195,6 +262,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // A367: the note on the whole order, and which note the editor has open (a line index, or 'order').
   const [orderNote, setOrderNote] = useState('');
   const [noteFor, setNoteFor] = useState<number | 'order' | null>(null);
+  // A577: the item sold by weight whose weight is being typed (the keypad), and the scale label layout (pos:init).
+  const [weighFor, setWeighFor] = useState<any | null>(null);
+  // Main sends it already cleaned (getScaleSettings: the default until the cloud says); null = a main before A577.
+  const [scaleSettings, setScaleSettings] = useState<ScaleSettings | null>(null);
   const [notePicks, setNotePicks] = useState<string[]>([]);
   useEffect(() => { posApi.pos.notePicks().then(setNotePicks).catch(() => setNotePicks([])); }, []);
   // 0.6.27: the client's POS switches (admin portal) — read at start and after every catalogue pull.
@@ -228,6 +299,38 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     if (!isFrozen(countFreeze, product?.id) || frozenReleased.current.has(product?.id)) return false;
     setFrozenNote(frozenMessage(countFreeze.ref, product?.name ?? 'This item'));
     setFrozenFor(product); setFrozenPin(''); setFrozenErr('');
+    return true;
+  };
+  // A563: the owner's "When an item's stock reaches zero" and this branch's known levels (tracked items only), read after
+  // every pull, every sale and every 20 s (a stock change alone does not re-read the menu, A535). Refs too: the scanner's
+  // listener and a quick double tap read the latest, not the render they were made in.
+  const [stockView, setStockView] = useState<StockView & { mode: OutOfStockMode }>({ mode: 'sell', ...NO_STOCK_VIEW });
+  const stockViewRef = useRef(stockView);
+  stockViewRef.current = stockView;
+  const loadStockView = useCallback(() => {
+    // Set only when it changed: the grid's list is worked out again on a change, not every 20 s (A470).
+    posApi.pos.stockView().then((v) => {
+      if (v && typeof v === 'object') setStockView((cur) => (JSON.stringify(cur) === JSON.stringify(v) ? cur : v));
+    }).catch(() => { /* keep: unknown sells */ });
+  }, []);
+  useEffect(() => {
+    loadStockView();
+    const t = setInterval(loadStockView, 20_000);
+    const off = posApi.pos.onCatalogueChanged(loadStockView);
+    return () => { clearInterval(t); off?.(); };
+  }, [loadStockView]);
+  const cartRef = useRef<CartItem[]>(cart);
+  cartRef.current = cart;
+  /** A563: one more of `product` would take the order past what this branch is KNOWN to have — say so and refuse. */
+  const refuseOutOfStock = (product: any): boolean => {
+    const v = stockViewRef.current;
+    if (v.mode === 'sell' || !product?.id || product?.is_fuel) return false;
+    const lines = [...cartRef.current.filter((i) => !i.isFuel).map((i) => ({ product_id: i.product?.id, name: i.product?.name, quantity: i.quantity })),
+      { product_id: product.id, name: product.name, quantity: 1 }];
+    const mine = stockRefusals(v.mode, v, lines).find((r) => r.index === lines.length - 1);
+    if (!mine) return false;
+    setFrozenFor(null);
+    setFrozenNote(mine.message);
     return true;
   };
   const closeFrozen = () => { setFrozenFor(null); setFrozenNote(null); setFrozenPin(''); setFrozenErr(''); };
@@ -297,6 +400,15 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
+  // A552: On account on this till — offered?, and may the person signed in approve it themselves (read as Pay opens).
+  const [onAccount, setOnAccount] = useState<{ offered: boolean; selfApproves: boolean } | null>(null);
+  useEffect(() => {
+    if (!showPayment) return;
+    let live = true;
+    posApi.order.creditCustomers('').then((r) => { if (live) setOnAccount({ offered: !!r?.offered, selfApproves: !!r?.selfApproves }); })
+      .catch(() => { if (live) setOnAccount(null); });
+    return () => { live = false; };
+  }, [showPayment]);
   // A508: a sale under way (items in the cart, the payment screen open) — an update never installs on its own meanwhile.
   useEffect(() => { reportBusy({ cart: cart.length > 0, payment: showPayment }); }, [cart.length, showPayment]);
   useEffect(() => () => reportBusy({ cart: false, payment: false }), []);
@@ -336,6 +448,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     // A501: the branch server's refusal (by reason) and this till's backlog for it — the manager's notice names both.
     nodeRefused?: SyncStatusLike['nodeRefused']; nodeBacklog?: SyncStatusLike['nodeBacklog'];
     cloudUnreachable?: SyncStatusLike['cloudUnreachable'];   // A529: "the cloud cannot be reached" in the quiet notice
+    cloudLapsed?: SyncStatusLike['cloudLapsed'];   // A581: the business's cloud plan lapsed — the manager's notice says so
   }>({ online: true, pendingCount: 0, failedCount: 0 });
   // A363: the manager's bottom notice (null when nothing waits); `noticeBusy` while its button runs.
   const notice = canSeeSync ? syncNotice(syncStatus) : null;
@@ -382,6 +495,28 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // A428 (owner, 2026-10-09: "how can the cashier view menu description for ease of explaining to the customer?"):
   // the ⓘ on a tile opens the item's description — nothing is added to the order until the cashier says so.
   const [infoProduct, setInfoProduct] = useState<any | null>(null);
+  // A566: "Check other branches" from the selling screen — A564's lookup (inventory.view + the online licence; a cashier
+  // only looks, asking stays a manager's, inventory.transfer). The item it opened for, or null.
+  const [canViewStock, setCanViewStock] = useState(false);
+  // A578: menus by time of day — when the business day ends (pos:init), the manager's "Show all" for this session
+  // (menu.edit, the menu permission), and the latest view for the scanner's listener (a ref, as A563's stock view).
+  const [menuDayCutoff, setMenuDayCutoff] = useState(0);
+  const [canShowAllMenus, setCanShowAllMenus] = useState(false);
+  const [showAllMenus, setShowAllMenus] = useState(false);
+  // A580: "Later" — any staff member sees the closed menus greyed (view only, nothing sold); this session only, never stored.
+  const [laterMenus, setLaterMenus] = useState(false);
+  const hoursRef = useRef<Pick<MenuHoursView<unknown, unknown>, 'asleep'>>({ asleep: new Map() });
+  /** A578: an item whose menu is outside its hours — scanned, searched for by its code, or tapped — is not sold; say why. */
+  const refuseOutOfHours = (product: any): boolean => {
+    const why = hoursRefusal(product, hoursRef.current);
+    if (!why) return false;
+    setFrozenFor(null);
+    setFrozenNote(why);
+    return true;
+  };
+  const onlineLicence = useOnlineLicence();
+  const mayCheckBranches = mayCheckOtherBranches(onlineLicence, canViewStock);
+  const [branchCheck, setBranchCheck] = useState<string | null>(null);
   const [historyMethod, setHistoryMethod] = useState('');
   const [historyType, setHistoryType] = useState('');
   const [historySort, setHistorySort] = useState<HistorySort>('time');
@@ -415,9 +550,12 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // shows on the till without a restart. Cart lines are snapshots, so an in-progress sale is
   // unaffected — only the product grid and rates-for-new-items refresh.
   const loadCatalogue = useCallback(() => {
-    posApi.pos.init().then(({ products, categories, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }: any) => {
+    posApi.pos.init().then(({ products, categories, menus: mn, businessDayCutoff: bdc, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf, scaleBarcodes: sb }: any) => {
       setProducts(products);
+      setScaleSettings(sb && typeof sb === 'object' ? sb as ScaleSettings : null);   // A577
       setCategories(categories);
+      setMenus(Array.isArray(mn) ? mn : []);   // A537 (a till before the menus pull: none)
+      setMenuDayCutoff(Number(bdc) || 0);   // A578: a menu's hours past midnight belong to the night before
       setBranchId(branchId);
       if (typeof vatRate === 'number') setVatRateFromServer(vatRate);
       if (typeof ctlRate === 'number') setCtlRateFromServer(ctlRate);
@@ -443,6 +581,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       // Audit 2026-10-14: permissions are top-level on the session (auth:getStaffSession), never on `staff`. A490: the
       // one rule (lib/access.ts) — shifts.force_close; the main process checks the same key (shift:forceClose).
       setCanForceClose(can(ss, 'shifts.force_close'));
+      setCanViewStock(can(ss, 'inventory.view'));   // A566: "Check other branches" (A564's key)
+      setCanShowAllMenus(can(ss, 'menu.edit'));     // A578: "Show all" menus outside their hours (the menu permission)
     }).catch(() => {});
     posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});
     posApi.pos.paymentMethodsEnabled().then((r) => setEnabledMethods(r?.enabled ?? null)).catch(() => {});   // A429
@@ -517,8 +657,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // Matches on product.barcode; falls back to PLU code search on the name.
   // Only active when the product grid is visible (not tables or pumps view)
   // and no modal is open that might consume keystrokes.
+  // A577: a petrol station's shop sells scanned goods too — the scanner listens there while the shop's grid is showing
+  // (never on the pump grid). A restaurant still taps (its weighed dishes ask for the weight).
   useEffect(() => {
-    if (flags.isRestaurant || flags.isPetrol) return; // these verticals use tap UI
+    if (flags.isRestaurant || (flags.isPetrol && view !== 'products')) return; // these verticals use tap UI
     let buffer = '';
     let timer: ReturnType<typeof setTimeout>;
 
@@ -531,6 +673,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         const scanned = buffer.trim();
         buffer = '';
         clearTimeout(timer);
+        // A577: a weighing scale's label (21–29, the item's scale code and its price or weight inside) first — a code
+        // starting 20 (ZapTill's own in-store codes) never is one. The newest handler, through a ref (this listener is
+        // only renewed when the products change).
+        if (scaleScanRef.current(scanned)) { setSearch(''); return; }
         // Match by barcode field first, then by PLU prefix in name
         const found = products.find(p =>
           (p as any).barcode === scanned ||
@@ -555,7 +701,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('keydown', onKey); clearTimeout(timer); };
-  }, [products, flags.isRestaurant, flags.isPetrol]);
+  }, [products, flags.isRestaurant, flags.isPetrol, view]);
 
   // A519: a NEW sale (an empty cart with no open bill) needs "Sell" — a bill already open is finished whatever changed.
   const refuseNewSale = (): boolean => {
@@ -564,9 +710,36 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     return true;
   };
 
+  // ── A577: items sold by weight ──────────────────────────────────────────────────────────────────────────────────
+  // A weighed line is always a line of its own (two bags of beef are two weights, never "2"); its quantity is the weight
+  // in kg, its price the price per kg, its amount from the keypad or the scale's label (shared/scaleBarcode.ts).
+  const addWeighed = (product: any, line: WeighedLine) => {
+    if (refuseOutOfHours(product)) return;
+    if (refuseFrozen(product)) return;
+    if (refuseNewSale()) return;
+    if (refuseOutOfStock(product)) return;
+    if (!(line.quantity > 0)) return;
+    setCart(prev => [...prev, { product, quantity: line.quantity, selectedVariants: [], selectedModifiers: [], unitPrice: line.unitPrice,
+      lineTotal: line.lineTotal, kotSent: false, sentQty: 0, lineId: newLineId(), measureUnit: weightUnitOf(product) }]);
+  };
+  /** A scanned code that is a scale label of one of this business's items → its line added; true = handled. */
+  const scaleScan = (code: string): boolean => {
+    const reading = scaleSettings ? parseScaleBarcode(code, scaleSettings) : null;
+    if (!reading) return false;
+    const product = findScaleProduct(products as any[], reading.itemCode);
+    if (!product) { setSearch(code); setFrozenNote(`No item has the scale code ${reading.itemCode}. Set it on the item (Products › Sold by weight).`); return true; }
+    addWeighed(product, scaleLine(effectivePrice(product), reading));
+    return true;
+  };
+  const scaleScanRef = useRef(scaleScan);
+  scaleScanRef.current = scaleScan;
+
   const addSimple = (product: any) => {
+    if (isSoldByWeight(product)) { if (!refuseOutOfHours(product) && !refuseFrozen(product) && !refuseNewSale()) setWeighFor(product); return; }   // A577: the weight first
+    if (refuseOutOfHours(product)) return;   // A578: the scanner comes here — an asleep menu's item is refused, said why
     if (refuseFrozen(product)) return;
     if (refuseNewSale()) return;   // A519
+    if (refuseOutOfStock(product)) return;   // A563
     setCart(prev => {
       // A367: never into a line that carries a note — "2 spicy" plus a tap is not 3 spicy; the tap is a new line.
       const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.notes);
@@ -614,8 +787,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   };
 
   const handleTap = (product: any) => {
+    if (refuseOutOfHours(product)) return;   // A578
     if (refuseFrozen(product)) return;
     if (refuseNewSale()) return;   // A519
+    if (refuseOutOfStock(product)) return;   // A563
     if (product.has_variants || product.has_modifiers) {
       setVariantProduct(product);
     } else {
@@ -677,6 +852,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const updateQty = (index: number, delta: number) => {
     const item = cart[index];
     if (!item || item.isFuel) return;   // fuel qty is litres — re-enter via pump, not stepper
+    if (item.measureUnit) return;   // A577: a weight is weighed again (✕ and add it again), not stepped
+    if (delta > 0 && refuseOutOfStock(item.product)) return;   // A563: one more than the branch is known to have
     const newQty = item.quantity + delta;
     const back = voidQtyFor(item, newQty);
     if (back > 0) {
@@ -1128,6 +1305,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           unitPrice: item.unitPrice,
           quantity: item.quantity,
           lineTotal: item.lineTotal,
+          ...(item.measureUnit ? { measureUnit: item.measureUnit } : {}),   // A577: the receipt's "0.452 kg @ 650/kg"
           selectedVariants: item.selectedVariants,
           selectedModifiers: item.selectedModifiers,
           // What a combo is actually made of. Without these a combo reaches the
@@ -1140,11 +1318,14 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         // A367: the note on the whole order.
         notes: orderNote.trim() || null,
         payments: payment.legs,
+        // A552: a sale on account — the customer; the approver's PIN when the seller does not approve it themselves.
+        ...(payment.credit ? { customer_id: payment.credit.customerId, ...(payment.credit.pin ? { credit_pin: payment.credit.pin } : {}) } : {}),
       });
 
       setCompletedOrder({ orderNumber: created?.orderNumber || num, payment,   // A503 (E1): the final number (A500 may renumber)
         tableNumber, orderType, deliveryPerson: deliveryPerson.trim(), deliveryFree: freeNow });
       setShowPayment(false);
+      loadStockView();   // A563: this sale took its tracked items off this till's levels
       // A349: the sale is saved either way; a ticket that could not be produced is said, never left to the log.
       const failed = Array.isArray(created?.printFailed) ? created.printFailed : [];
       setPrintMsg(failed.length
@@ -1177,8 +1358,29 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // the 30-s sync poll and the offer clock; with 1,000+ products that was a full filter (a lower-casing per product)
   // every time. `gridDay` keeps the chosen-days rule (onGrid) turning over at midnight, as it did.
   const gridDay = offerClock.toDateString();
+  // A537 (owner, 2026-10-20: "the menu categories at the top, can we add them to the left like a hamburger, which can
+  // collapse, and it should start collapsed by default?"): the category row became a left panel behind ☰ — collapsed at
+  // start, pinned open if the cashier pins it (remembered on this till), the business's menus as tabs on top. A menu
+  // chosen narrows the panel's list AND the grid to that menu's categories (shared/menuFilter.ts, as the web POS).
+  const catPanel = useCategoryPanel();
+  const narrowWindow = useNarrowWindow();   // a narrow till window: the panel lies over the grid, not beside it
+  const activeMenu = catPanel.prefs.menu;
+  // A578 (owner, 2026-10-23: menus by time of day): a menu outside its hours leaves the top tabs, the panel, the grid,
+  // the All tab and search, by this till's clock (offline too); one timer at the next change. In every mode — a
+  // restaurant's Breakfast / Lunch, a shop's licensed-hours alcohol department, a petrol station's shop groups. An item
+  // in no menu, or in a menu without hours, is never touched; fuel never. "Show all" (menu.edit) brings them back.
+  const hours = useMenuHours(menus, categories, { cutoff: menuDayCutoff, showAll: showAllMenus && canShowAllMenus, later: laterMenus });
+  hoursRef.current = hours;
+  const menusNow = hours.menus, categoriesNow = hours.categories;
+  const menuCats = useMemo(() => categoriesForMenu(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
+  const menuFilterScope = useMemo(() => menuScope(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
+  useEffect(() => {   // a menu change can take the chosen category away: back to All
+    const keep = resolveCategory(activeCategory, menuCats);
+    if (keep !== activeCategory) setActiveCategory(keep);
+  }, [menuCats, activeCategory]);
   const filtered = useMemo(() => products.filter(p => {
     const matchCat    = activeCategory === 'all' || p.category_id === activeCategory;
+    const matchMenu   = inMenuScope(p, gridMenuScope(menuFilterScope, search));   // A537; A566: a search looks through every menu
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     // Petrol: only show fuel grades on the product grid (shop items are still
     // reachable via PumpsView → "Shop items →" which clears the fuel filter).
@@ -1188,19 +1390,24 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       : !(p as any).is_fuel;
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay    = onGrid((p as any).show_days, search.trim() !== '');
-    return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
-  }), [products, activeCategory, search, flags.isPetrol, gridDay]);
+    // A563: "Hide when out of stock" — a tracked item this branch is known to be out of is off the grid and out of search.
+    const matchStock  = !hiddenOutOfStock(stockView.mode, stockView, p.id);
+    // A578: an item whose menu is outside its hours is off the grid, the All tab and search (Show all: back).
+    // A580: with Later on, a closed menu's items show (greyed, never sold) when that menu or its category is opened.
+    const matchHours  = !hiddenByHours(p, hours) || laterPeek(p, hours, { menu: activeMenu, category: activeCategory, search });
+    return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock && matchHours;
+  }), [products, activeCategory, activeMenu, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);
   // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000
   // tiles at once. A new category or search starts again at the top. The tiles stay memoised (ProductTile). An exact
   // hit (a product's name, barcode or PLU typed in full) is the first tile, so it is on screen at once.
   const gridList = useMemo(() => exactFirst(filtered, search, (p: any) => [p.name, p.barcode, p.plu]), [filtered, search]);
-  const grid = useGridWindow(gridList.length, `${activeCategory}|${search}|${flags.isPetrol}`);
+  const grid = useGridWindow(gridList.length, `${activeMenu}|${activeCategory}|${search}|${flags.isPetrol}`);
   const gridTiles = useMemo(() => gridList.slice(0, grid.count), [gridList, grid.count]);
   // A470 (speed): how many of each product are on the order, counted once per cart change — each tile used to scan the
   // whole cart twice (some + filter), products × lines on every render.
   const cartCounts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const i of cart) m.set(i.product.id, (m.get(i.product.id) ?? 0) + i.quantity);
+    for (const i of cart) m.set(i.product.id, (m.get(i.product.id) ?? 0) + (i.measureUnit ? 1 : i.quantity));   // A577: a weight counts once
     return m;
   }, [cart]);
   // A470 (speed): the tiles get one tap handler that never changes (it calls the current handleTap through a ref), so
@@ -1208,13 +1415,30 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const handleTapRef = useRef(handleTap);
   handleTapRef.current = handleTap;
   const tapTile = useCallback((product: any) => handleTapRef.current(product), []);
+  // A566: long press / right-click on a tile (stable, so the memoised tiles do not all redraw).
+  const checkBranchesFor = useCallback((product: any) => setBranchCheck(String(product?.name ?? '')), []);
+  // A566: a search that finds an item sold out or hidden HERE (A563) offers to look at the other branches.
+  const outHere = useMemo(() => (mayCheckBranches
+    ? outHereMatches(products, search, (p: any) => !p.is_fuel && (hiddenOutOfStock(stockView.mode, stockView, p.id) || showsSoldOut(stockView.mode, stockView, p.id)))
+    : []), [mayCheckBranches, products, search, stockView]);
   // A279: which filter the grid is showing, and one Clear back to everything.
+  // A537: the chosen category, else the chosen menu ("Food menu") — the chip by the search and this line both say it.
+  const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c: any) => c.id === activeCategory)?.name ?? null);
+  const chosenMenuName = menuTabs(menusNow, categoriesNow).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
+  // A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
+  // categories used to appear so that cashiers can easily pick the menu"): with menus they are big tabs across the top
+  // of the grid (MenuBar) — the chip and the filter line then name only the chosen category (the bar shows the menu).
+  // A tap on a menu shows its items: its category and any search start again. No menus: no bar, as before.
+  const menuBar = useMemo(() => menuBarTabs(menusNow, categoriesNow), [menusNow, categoriesNow]);
+  const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); setSearch(''); };
+  const words = businessTerms(flags.mode);   // A573: the business's word for its menus (a shop's Departments)
   const gridFilter = {
-    categoryName: activeCategory === 'all' ? null : (categories.find((c: any) => c.id === activeCategory)?.name ?? null),
+    categoryName: chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} ${words.menu.toLowerCase()}` : null),
     search, count: filtered.length,
   };
   const gridFilterSummary = filterSummary(gridFilter);
-  const clearGridFilter = () => { setActiveCategory('all'); setSearch(''); };
+  const clearGridFilter = () => { setActiveCategory('all'); setSearch(''); catPanel.setMenu(ALL_MENUS); };
+  const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
   // ── After payment: a success screen ─────────────────────
   // 0.6.29 (owner, 2026-10-01): "should we remove this modal, we replace it with a success modal … since we are getting
@@ -1595,31 +1819,49 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                 ← Pumps
               </button>
             )}
+            {/* A537: ☰ opens the category panel; the chosen category shows by the search ("Burgers ✕"). */}
+            <PanelToggle panel={catPanel} />
             <input
               type="text"
               placeholder="Search products…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 text-sm focus:outline-none focus:border-action-500 transition-colors"
+              className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 text-sm focus:outline-none focus:border-action-500 transition-colors"
             />
+            <CategoryChip label={gridFilter.categoryName} onClear={clearCatChip} />
           </div>
 
-          <div className="flex gap-2 px-4 py-3 border-b border-gray-800 overflow-x-auto">
-            <button
-              onClick={() => setActiveCategory('all')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === 'all' ? 'bg-action-500 text-gray-950' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
-            >All</button>
-            {categories.map((cat: any) => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === cat.id ? 'text-gray-950 font-semibold' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
-                style={activeCategory === cat.id ? { backgroundColor: cat.color ?? '#22c55e' } : {}}
-              >
-                {cat.icon && <span className="mr-1">{cat.icon}</span>}{cat.name}
+          {/* A566: the menus as big tabs across the top of the grid (none when the business has no menus). */}
+          <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={words.menus} hints={hours.hints}
+            greyed={hours.later}
+            trailing={hours.anyAsleep ? (<>
+              {/* A580: "Later" — anyone; the closed menus greyed, view only (gone while a manager's Show all is on) */}
+              {!(showAllMenus && canShowAllMenus) && (
+                <LaterButton on={laterMenus} onToggle={() => setLaterMenus((v) => !v)} label={words.menus} />
+              )}
+              {canShowAllMenus && (
+                // A578: the manager's "Show all" — this session only; A580: amber with a key, and it says it SELLS (not Later)
+                <button type="button" data-testid="menu-show-all" aria-pressed={showAllMenus} onClick={() => setShowAllMenus((v) => !v)}
+                  title={`Manager: bring back every ${words.menu.toLowerCase()} and sell from them now`}
+                  className={`min-h-[40px] px-3 rounded-lg text-sm font-semibold whitespace-nowrap border transition-colors ${showAllMenus
+                    ? 'bg-amber-500/15 border-amber-500/50 text-amber-200' : 'bg-gray-900 border-amber-500/40 text-amber-200/90 hover:text-amber-100'}`}>
+                  <span aria-hidden className="mr-1">🔑</span>{showAllMenus ? `Showing all ${words.menus.toLowerCase()} ✕` : `Show all ${words.menus.toLowerCase()} · sell`}
+                </button>
+              )}
+            </>) : undefined} />
+
+          {/* A566: the search found an item that is out HERE — look at the other branches (inventory.view + online licence). */}
+          {outHere.length > 0 && (
+            <div data-testid="branch-check-offer" className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 bg-amber-500/10 text-sm text-amber-100">
+              <span className="flex-1 min-w-0 truncate">{outHereNote(outHere)}</span>
+              <button type="button" data-testid="branch-check-open"
+                onClick={() => setBranchCheck(outHere.length === 1 ? String(outHere[0].name ?? '') : search.trim())}
+                className="flex-shrink-0 min-h-[40px] px-3 rounded-lg border border-amber-400/60 text-amber-100 font-semibold hover:bg-amber-500/20 transition-colors">
+                Check other branches
               </button>
-            ))}
-          </div>
+            </div>
+          )}
+
           {gridFilterSummary && (
             <div data-testid="grid-filter" className="flex items-center justify-between gap-3 px-4 py-1.5 border-b border-gray-800 bg-gray-900/60 text-xs text-gray-300">
               <span className="truncate">{gridFilterSummary}</span>
@@ -1630,6 +1872,12 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             </div>
           )}
 
+          {/* A537: the category panel (collapsed at start) beside — or, in a narrow window, over — the product grid. */}
+          <div className="flex-1 flex min-h-0 relative">
+          <CategoryPanel panel={catPanel} categories={categoriesNow} menus={menusNow} products={products}
+            menusLabel={words.menus} allMenusLabel={words.allMenus}
+            activeMenu={activeMenu} activeCategory={activeCategory}
+            onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={narrowWindow} menuBar={menuBar.length > 0} />
           <div ref={grid.rootRef} className="flex-1 overflow-y-auto p-4">
             {filtered.length === 0 ? (
               <div className="text-center py-20 text-gray-400 text-sm">
@@ -1647,11 +1895,15 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                 {gridTiles.map((product: any) => (
                   <ProductTile key={product.id} product={product} cartCount={cartCounts.get(product.id) ?? 0}
-                    currency={currency} onTap={tapTile} setInfoProduct={setInfoProduct} />
+                    currency={currency} onTap={tapTile} setInfoProduct={setInfoProduct}
+                    soldOut={showsSoldOut(stockView.mode, stockView, product.id)}
+                    later={hours.later.size > 0 && itemAsleep(product, hours) !== null}
+                    onCheckBranches={mayCheckBranches ? checkBranchesFor : undefined} />
                 ))}
                 {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden className="col-span-full h-px" />}
               </div>
             )}
+          </div>
           </div>
         </div>
         )}
@@ -1802,12 +2054,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                     <p className="text-gray-300 text-xs">
                       {item.isFuel
                         ? `${currency} ${item.unitPrice.toLocaleString()}/L`
-                        : `${currency} ${item.unitPrice.toLocaleString()} each`}
+                        : item.measureUnit
+                          ? `${currency} ${item.unitPrice.toLocaleString()}/kg`   /* A577 */
+                          : `${currency} ${item.unitPrice.toLocaleString()} each`}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {item.isFuel ? (
                       <span className="text-white text-sm tabular-nums">{item.quantity.toFixed(2)} L</span>
+                    ) : item.measureUnit ? (
+                      <span className="text-white text-sm tabular-nums" data-testid="weighed-qty">{formatWeight(item.quantity, item.measureUnit)}</span>
                     ) : (
                       <>
                         <button onClick={() => updateQty(index, -1)} className="w-6 h-6 bg-gray-800 hover:bg-gray-700 text-white rounded-md text-sm flex items-center justify-center transition-colors">−</button>
@@ -1920,6 +2176,13 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         />
       )}
 
+      {/* A577: the weight of an item sold by weight */}
+      {weighFor && (
+        <Suspense fallback={null}><WeightModal product={weighFor} pricePerKg={effectivePrice(weighFor)} currency={currency}
+          onConfirm={(line) => { const p = weighFor; setWeighFor(null); addWeighed(p, line); }}
+          onClose={() => setWeighFor(null)} /></Suspense>
+      )}
+
       {/* A367: the note editor — one line, or the whole order */}
       {noteFor !== null && (noteFor === 'order' || cart[noteFor]) && (
         <NoteModal
@@ -1963,6 +2226,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           deliveryFee={feeDue}
           rider={orderType === 'delivery' ? deliveryPerson.trim() || null : null}
           offers={offerResult.applied}
+          onAccount={onAccount}
           onConfirm={handleCharge}
           onClose={() => { setShowPayment(false); setPayError(''); }}
         />
@@ -2036,6 +2300,26 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                 className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium">Close</button>
               <button onClick={() => { const p = infoProduct; setInfoProduct(null); handleTap(p); }}
                 className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm">Add to order</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* A566: another branch's stock of an item — A564's lookup, read only (a manager asks under Manager › Stock). */}
+      {branchCheck !== null && mayCheckBranches && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-fade-in" data-testid="branch-check"
+          onClick={e => e.target === e.currentTarget && setBranchCheck(null)}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg shadow-2xl animate-pop-in">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-800">
+              <div className="min-w-0">
+                <h2 className="text-white font-semibold">Check other branches</h2>
+                <p className="text-gray-300 text-sm mt-0.5">How much each other branch holds — quantities only.</p>
+              </div>
+              <button onClick={() => setBranchCheck(null)} aria-label="Close" className="min-w-[40px] min-h-[40px] text-gray-300 hover:text-white text-lg">✕</button>
+            </div>
+            <div className="px-5 py-4 max-h-[60vh] overflow-y-auto">
+              <FindInBranches key={branchCheck} initial={branchCheck} autoSearch />
+              <p className="text-gray-400 text-xs mt-3">To ask a branch to send some here, a manager uses Manager › Stock › Other branches.</p>
             </div>
           </div>
         </div>

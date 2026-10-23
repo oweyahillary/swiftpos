@@ -472,6 +472,7 @@ try {
     assert.match(mem.db.users.find((x) => x.name === 'Zed').pin_hash, /^\$2/);
   });
   await ok('(e) an override PIN: only from someone who may void/refund, only for someone who may', async () => {
+    mem.db.feature_flags = [...(mem.db.feature_flags ?? []), { business_id: B, key: 'approval_pin', enabled: true }];   // A562: the switch on
     const forCashier = await call('PATCH', `/api/staff/${CASH}`, T.owner(), { override_pin: '8642' });
     assert.equal(forCashier.status, 403); assert.equal(forCashier.body.code, 'OVERRIDE_PIN_NO_AUTHORITY');
     const byNonApprover = await call('PATCH', `/api/staff/${CASH}`, tok({ userId: PEER, roleId: R_MGR, permissionKeys: ['staff.edit', 'staff.view', 'orders.create'] }), { override_pin: '8642' });
@@ -508,15 +509,16 @@ try {
   });
 
   // ── 14. PATCH /auth/me ──────────────────────────────────────────────────────────────────────────────────────────
-  console.log('\n14. PATCH /auth/me clears the caller\'s own flag only\n');
+  // A568: PATCH /me clears nobody's flag now — only setting a new password does (tests/owner-password-a568.test.mjs).
+  console.log('\n14. PATCH /auth/me clears no flag (A494: never the owner\'s; A568: not even the caller\'s own)\n');
   reset();
-  await ok('a cashier cannot clear the owner\'s forced password change', async () => {
+  await ok('a cashier cannot clear the owner\'s forced password change — nor the owner their own by saying so', async () => {
     userRow(CASH).must_change_password = true;
     assert.equal((await call('PATCH', '/api/auth/me', T.cash(), { must_change_password: false })).status, 200);
     assert.equal(userRow(OWNER).must_change_password, true);
-    assert.equal(userRow(CASH).must_change_password, false);
+    assert.equal(userRow(CASH).must_change_password, true);
     await call('PATCH', '/api/auth/me', T.owner(), { must_change_password: false });
-    assert.equal(userRow(OWNER).must_change_password, false);
+    assert.equal(userRow(OWNER).must_change_password, true);
   });
 } finally {
   server.close();

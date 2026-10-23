@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const r = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -28,7 +29,7 @@ let pass = 0, fail = 0;
 const ok = (label, cond, detail = '') => { if (cond) { pass++; console.log(`PASS  ${label}`); } else { fail++; console.log(`FAIL  ${label}  ${detail}`); } };
 
 const au    = r('apps/desktop/src/main/autoUpdate.ts');
-const ih    = r('apps/desktop/src/main/ipcHandlers.ts');
+const ih    = ipcHandlersSource();
 const pre   = r('apps/desktop/src/main/preload.ts');
 const sch   = r('apps/desktop/src/main/ipcSchemas.ts');
 const banner= r('apps/desktop/src/renderer/pages/UpdateBanner.tsx');

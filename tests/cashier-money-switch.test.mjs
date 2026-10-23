@@ -18,6 +18,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'apps/server/dist');
@@ -148,7 +149,7 @@ try {
   await ok('the till refuses it in its own main process (float and expense), not only on screen', () => {
     // A490: the rule is shifts.cash_movements (tillAccess mayMoveMoney); on a map from before migration 134 the switch
     // still applies unless the person may confirm drawers — exactly this guard's meaning before.
-    const h = read('apps/desktop/src/main/ipcHandlers.ts');
+    const h = ipcHandlersSource();
     const n = (h.match(/if \(!mayMoveMoney\(sessionPerson\(\), getPosFeatures\(\)\.cashier_no_money_out\)\) throw new Error\(MONEY_MOVEMENT_MANAGER_ONLY\);/g) ?? []).length;
     assert.equal(n, 2, 'shift:float and expense:create');
     const fl = h.slice(h.indexOf("handle('shift:float'"), h.indexOf("handle('shift:close'"));

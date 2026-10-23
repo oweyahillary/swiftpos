@@ -2,6 +2,9 @@ import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react'
 import { api } from '../../lib/api';
 import { useRowMore, ViewMore } from '../../components/RowMore';
 import { money, num, dateShort } from '../../lib/format';
+import { usePermissions } from '../../context/PermissionsContext';
+import CreditLimitEditor from '../../components/CreditLimitEditor';   // A567
+import { CREDIT_LIMIT_KEY, limitFromInput, limitOnCreate, limitRequest } from '../../lib/creditLimit';   // A567
 
 // ── Types ─────────────────────────────────────────────────────
 interface Customer {
@@ -303,6 +306,9 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
             )}
           </div>
 
+          {/* A567: give or change this customer's credit limit (customers.credit) */}
+          <CreditLimitEditor customerId={customer.id} currency={currency} />
+
           {/* Stats row */}
           <div className="px-5 py-4 border-b border-gray-800/60">
             <div className="grid grid-cols-3 gap-3">
@@ -493,6 +499,10 @@ export default function CustomersPage({ currency }: Props) {
   const [segmentFilter, setSegmentFilter] = useState<Segment | 'all'>('all');
   const [creating, setCreating]     = useState(false);
   const [createError, setCreateError] = useState('');
+  // A567: a credit limit on New Customer — only for someone who may approve one (customers.credit, as the cloud asks).
+  const mayCredit = usePermissions().can(CREDIT_LIMIT_KEY);
+  const [createLimit, setCreateLimit] = useState('');
+  const [createNotice, setCreateNotice] = useState('');
   const more = useRowMore();
 
   const LIMIT = 20;
@@ -542,8 +552,13 @@ export default function CustomersPage({ currency }: Props) {
   };
 
   const handleCreate = async () => {
+    if (mayCredit && createLimit.trim()) {
+      const r = limitFromInput(createLimit);
+      if (r.ok === false) { setCreateError(r.error); return; }
+    }
     setCreating(true);
     setCreateError('');
+    setCreateNotice('');
     try {
       const { customer, tier } = await api.post<{ customer: Customer; tier: Tier }>(
         '/api/loyalty/customer',
@@ -555,10 +570,17 @@ export default function CustomersPage({ currency }: Props) {
         }
       );
       const newCustomer: CustomerWithTier = { ...customer, tier };
+      // A567: the limit after the customer exists — the same approval as anywhere else (who and when are recorded).
+      const limit = limitOnCreate(createLimit, mayCredit);
+      if (limit !== null) {
+        try { const req = limitRequest(customer.id, limit); await api.patch(req.path, req.body); }
+        catch (e: any) { setCreateNotice(`${customer.name} was added, but the credit limit was not saved: ${e?.message ?? 'try again on their profile'}.`); }
+      }
       setCustomers(prev => [newCustomer, ...prev]);
       setTotal(t => t + 1);
       setShowCreate(false);
       setCreateForm({ name: '', phone: '', email: '', notes: '' });
+      setCreateLimit('');
       setSelected(newCustomer);
     } catch (e: any) {
       setCreateError(e.message ?? 'Failed to create customer');
@@ -608,6 +630,7 @@ export default function CustomersPage({ currency }: Props) {
         })}
       </div>
 
+      {createNotice && <p className="mx-5 mb-2 px-3 py-2 rounded-lg text-xs bg-red-500/10 text-red-400">{createNotice}</p>}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-800 flex-shrink-0">
         <div className="flex-1 relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">🔍</span>
@@ -771,6 +794,17 @@ export default function CustomersPage({ currency }: Props) {
                   />
                 </div>
               ))}
+              {mayCredit && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Credit limit</label>
+                  <input
+                    type="number" min={0} value={createLimit} onChange={e => setCreateLimit(e.target.value)}
+                    placeholder="Optional — lets them buy on account"
+                    data-testid="new-customer-credit-limit"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
+                  />
+                </div>
+              )}
             </div>
             {createError && <p className="text-red-400 text-xs">{createError}</p>}
             <button

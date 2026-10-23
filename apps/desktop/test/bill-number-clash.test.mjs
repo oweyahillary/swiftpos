@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -114,7 +115,7 @@ console.log('\nA sale rung here keeps its number\n');
     /db\.transaction\(\(\) => \{\s*\/\/ A500[\s\S]{0,400}claimOrderNumberForOwnSale\(/.test(fs.readFileSync(path.join(here, '..', 'src', 'main', 'syncEngine.ts'), 'utf8')));
   ok('the bill-number IPC uses the guarded allocator',
     // A519: the number is handed out only to someone who may sell (sellGate), and noted as an open bill.
-    /orders:nextBillNumber[\s\S]{0,900}(return|const n =) nextBillNumber\(getLocalDb\(\)/.test(fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcHandlers.ts'), 'utf8')));
+    /orders:nextBillNumber[\s\S]{0,900}(return|const n =) nextBillNumber\(getLocalDb\(\)/.test(ipcHandlersSource()));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

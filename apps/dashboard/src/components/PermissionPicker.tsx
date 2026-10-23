@@ -11,14 +11,19 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PERMISSIONS, PERMISSION_GROUPS } from '../lib/permissions';
+import { permissionWords, permissionGroupWords } from '../lib/businessTerms';   // A573
 
 export interface CatalogueKey { key: string; label: string; description: string; group: string; surface: 'web' | 'till' | 'both' }
 export interface CatalogueGroup { id: string; label: string; description: string }
 
 interface Client { get: <T>(path: string) => Promise<T> }
 
-/** The catalogue's keys and groups from the cloud, or the local copy while the cloud has none. */
-export function usePermissionCatalogue(client: Client): { keys: CatalogueKey[]; groups: CatalogueGroup[]; loading: boolean } {
+/**
+ * The catalogue's keys and groups from the cloud, or the local copy while the cloud has none. A573: `businessType` — the
+ * words a shop reads in place of the catalogue's menu / kitchen / table words (lib/businessTerms.ts permissionWords; the
+ * catalogue's own words are frozen by migration 134). Not given, or a restaurant: the catalogue's words.
+ */
+export function usePermissionCatalogue(client: Client, businessType?: string | null): { keys: CatalogueKey[]; groups: CatalogueGroup[]; loading: boolean } {
   const [keys, setKeys] = useState<CatalogueKey[]>([]);
   const [groups, setGroups] = useState<CatalogueGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +42,11 @@ export function usePermissionCatalogue(client: Client): { keys: CatalogueKey[]; 
     });
     return () => { live = false; };
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps — the client is a new object every render (POSAuthContext)
-  return { keys, groups, loading };
+  const worded = useMemo(() => ({
+    keys: keys.map((k) => ({ ...k, ...permissionWords(businessType, k.key, k.label, k.description) })),
+    groups: groups.map((g) => ({ ...g, ...permissionGroupWords(businessType, g.id, g.label, g.description) })),
+  }), [keys, groups, businessType]);
+  return { ...worded, loading };
 }
 
 /** "4 of 14 reports" — the live line under a group. */

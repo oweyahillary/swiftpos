@@ -261,7 +261,8 @@ await ok('settings write config:<topic> (a branch setting at its branch); the fr
   assert.deepEqual(await since(s), []);
 });
 await ok('CHANGE_TABLES (shared/syncTopics.ts) names every table the triggers sit on', async () => {
-  const want = new Set(Object.values(CHANGE_TABLES).flatMap((t) => t.from));
+  // A535: a logical table with a trigger of its own (stock — migration 153) is checked by that migration's test.
+  const want = new Set(Object.values(CHANGE_TABLES).filter((t) => !t.trigger).flatMap((t) => t.from));
   const have = new Set((await q(`SELECT DISTINCT event_object_table AS t FROM information_schema.triggers WHERE trigger_name = 'trg_log_sync_change'`)).map((r) => r.t));
   for (const t of have) assert.ok(want.has(t), `${t} has the trigger but is not in CHANGE_TABLES`);
   for (const t of want) if ((await one(`SELECT to_regclass($1) AS r`, [`public.${t}`])).r) assert.ok(have.has(t), `${t} is in CHANGE_TABLES but has no trigger`);

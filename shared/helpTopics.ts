@@ -105,6 +105,20 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
 ];
 
+/**
+ * A575: the topics a business of this kind reads. The printer topic's kitchen-ticket step is a restaurant's or café's
+ * only — a shop, a petrol station or a car park sends nothing to a kitchen. `foodService` is businessTerms.ts
+ * isFoodService(type) (a type not known yet: true, every step, as before).
+ */
+export function helpTopicsFor(foodService: boolean): HelpTopic[] {
+  if (foodService) return HELP_TOPICS;
+  return HELP_TOPICS.map((t) => {
+    const k = t.steps.findIndex((x) => /kitchen ticket/i.test(x));
+    if (k < 0) return t;
+    return { ...t, steps: t.steps.filter((_, i) => i !== k), ...(t.images ? { images: t.images.filter((_, i) => i !== k) } : {}) };
+  });
+}
+
 /** The last topic, filled with who to call (shared/support.ts supportContact → name + display numbers). */
 export function whoToCallSteps(name: string, phones: string[]): string[] {
   return [

@@ -13,16 +13,17 @@ import { nodeChangeVersion } from './nodeClient';   // A448
 import { cleanOffer, type Offer } from './offers';   // A445
 import type { ChangeEntry } from './syncTopics';   // A531
 import { net } from 'electron';
-import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
+import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme, applyPulledBranchBranding } from './localDb';
 import { logLine, describeResponse, getLogPath, authLog } from './logFile';
 import { getMacAddressCached, identityHeaders } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, readDeviceSecret, writeDeviceSecret } from './tokenStore';
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
-import { storeBranchStaff, applyBranchStaffChanges, type BranchStaffRow } from './branchStaff';   // A531: one person at a time
+import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
+import { notePushOk } from './distributionLag';   // A534 (A23): the branch server's distribution lag
 import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeClock, refreshViaNode, ackViaNode, fetchReferenceFromNode, fetchNodeCursors, checkNodeHealth } from './nodeClient';
 import { tillPin, securityCode } from './lanTls';   // A501
@@ -30,6 +31,7 @@ import { followMovedServer } from './nodeFollow';   // A501
 import { nodeRefusal, cloudFetch } from './cloudGateway';
 import { setReceiptPay } from './receiptPay';   // A450   // A410
 import { readPending as readPendingWaste, pushPendingWastage, type WasteOutcome } from './tillWastage';   // A414
+import { readPending as readPendingCredit, pushPendingDecisions, type DecisionOutcome } from './creditConfirm';   // A545
 import { readPending as readPendingRouting, overlayPending as overlayPendingRouting, pushPendingRouting, type PushOutcome } from './stationRouting';   // A411
 // A275: reuse the SAME local close the branch-LAN central close uses, so remote
 // and on-prem closes run identical cash arithmetic. Called only at runtime (during
@@ -153,11 +155,52 @@ async function syncFetch(url: string, opts: any = {}): Promise<Response> {
       SYNC_FETCH_TIMEOUT_MS);
     const nullBody = [101, 204, 205, 304].includes(res.status);
     const body = nullBody ? null : await res.arrayBuffer();
+    noteCloudPlanAnswer(String(opts?.method ?? 'GET'), res.status, body);   // A581
     return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
   } finally {
     clearTimeout(timer);
   }
 }
+// ── A581: the business's ZapTill cloud plan has lapsed ──────────────────────────────────────────────────────────────
+// Owner, 2026-10-23: "if a client stops paying for the cloud … till continues to work, but the cloud stops syncing". The
+// cloud answers this business's till writes 503 CLOUD_SUBSCRIPTION_ENDED (apps/server/src/lib/cloudPlan.ts). A 503 is
+// already the cloud's passing state on every push stage (the record stays queued, never 'failed' or parked) — so selling
+// and the queue are untouched; this only (a) tells the manager in plain words (getSyncStatus → syncNotice) and (b) asks
+// at most every CLOUD_LAPSED_PROBE_MS instead of every pass. Any write the cloud then accepts (the payment was recorded)
+// clears it, and the queue drains in that same pass. In memory: a restart asks again at once.
+export const CLOUD_LAPSED_PROBE_MS = 5 * 60_000;
+let _cloudLapsed: { since: string; message: string } | null = null;
+let _cloudLapsedProbeAt = 0;
+function noteCloudPlanAnswer(method: string, status: number, body: ArrayBuffer | null): void {
+  if (status === 503 && body && body.byteLength < 4096) {
+    let code = ''; let message = '';
+    try { const j = JSON.parse(Buffer.from(body).toString('utf8')); code = String(j?.code ?? ''); message = String(j?.error ?? ''); } catch { /* not JSON */ }
+    if (code === 'CLOUD_SUBSCRIPTION_ENDED') {
+      if (!_cloudLapsed) logLine('sync', `the cloud refused this business's sync: ${message || code} - records stay queued on this till`);
+      _cloudLapsed = { since: _cloudLapsed?.since ?? new Date().toISOString(), message };
+      _cloudLapsedProbeAt = Date.now();
+      return;
+    }
+  }
+  if (_cloudLapsed && status >= 200 && status < 300 && method.toUpperCase() !== 'GET') {
+    logLine('sync', "the cloud accepts this business's sync again - sending what waited");
+    _cloudLapsed = null;
+  }
+}
+/** A581: the cloud refuses this business's sync (its plan lapsed), since when — null when it does not. */
+export function cloudLapsedNow(): { since: string; message: string } | null { return _cloudLapsed; }
+/** A581: lapsed and asked within CLOUD_LAPSED_PROBE_MS — this pass leaves the queue as it is. */
+function cloudLapsedHold(now = Date.now()): boolean {
+  if (!_cloudLapsed) return false;
+  if (now - _cloudLapsedProbeAt < CLOUD_LAPSED_PROBE_MS) return true;
+  _cloudLapsedProbeAt = now;   // this pass is the probe
+  return false;
+}
+/** Tests only. */
+export function _resetCloudLapsed(at: number | null = null): void {
+  if (at === null) { _cloudLapsed = null; _cloudLapsedProbeAt = 0; } else _cloudLapsedProbeAt = at;
+}
+
 // A20: last roster version this peer applied, in-memory. Skips re-wrapping an
 // unchanged roster every pull; on restart it re-applies once, which is harmless.
 
@@ -743,6 +786,8 @@ async function runPushStagesOnce(errors: string[]): Promise<number> {
   // A521 (#15): the cloud's test-data clears come down BEFORE anything goes up (asked at most every 90 s; the first push
   // after a start always asks). A till that was off during a clear pushed its unsent test sales and shifts back first.
   await stage('test-data clears', () => testClearsBeforePush());
+  // A581: the cloud refuses this business's sync (its plan lapsed) — the queue stays as it is until the next probe.
+  if (cloudLapsedHold()) return 0;
   // A338: first, give back to the queue what a sibling drawer's clash parked (0.6.10 and earlier), so it goes in this pass.
   // A363: then what a trading-day clash parked (an offline close-and-reopen), once.
   await stage('requeue', async () => { requeueAfterDayClash(); requeueTransientConflicts(); return requeueAfterDrawerClash(); });
@@ -752,6 +797,8 @@ async function runPushStagesOnce(errors: string[]): Promise<number> {
   await stage('station routing', async () => { await pushStationRoutingNow(); return 0; });
   // A414: wastage recorded on this till while the cloud could not be reached.
   await stage('wastage', async () => { await pushWastageNow(); return 0; });
+  // A545: a manager's confirmation / dispute of a credit sale made on this till while the cloud could not be reached.
+  await stage('credit decisions', async () => { await pushCreditDecisionsNow(); return 0; });
   orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
   // 0.6.30 (A336 stage 3): then the voids and refunds made while offline — after the order push, so the sale is there.
   // Till sync audit (F2): and BEFORE the shift close — a close that reached the cloud ahead of its drawer's offline voids
@@ -761,9 +808,58 @@ async function runPushStagesOnce(errors: string[]): Promise<number> {
   // A365: then a manager's confirmation of a shift whose close is on the cloud.
   await stage('confirm', () => pushShiftConfirmations(errors));
   await stage('node push', () => pushToNode(errors));
+  // A579: nothing left to send → an empty push at most every 15 min, so the cloud knows an idle till is up to date.
+  await stage('heartbeat', () => syncHeartbeat());
   // A363: the manager's "Last synced" — stamped only when this pass left nothing waiting for the cloud.
   await stage('last synced', async () => noteSyncedIfClear());
   return orders;
+}
+
+// ── A579: the idle heartbeat ───────────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-23, on critical emails about a till "on but not syncing" for 9 hours: "maybe its just that no trade is
+// taking place". The cloud's last_sync_at moves only on /api/sync/push, which a till sent only with drawer rows to send
+// (sales go through /api/orders) — an idle till looked exactly like a broken one. Now, when a sync pass leaves NOTHING
+// waiting for the cloud (sales, drawers, days, voids, confirmations — getSyncStatus().pendingCount), the till sends an
+// EMPTY push (`{}`, under activityTracker's SYNC_PUSH_MIN_BYTES, so a branch server never counts it as trade) at most
+// every 15 minutes, online and signed in only. Every push says what still waits (X-Sync-Pending) and what the cloud
+// refused and this till set aside (X-Sync-Failed: failed + parked) — those do not hold the heartbeat back: they are a
+// person's job, reported on their own, and the till's sales still reach the cloud. A peer till at a branch with a server
+// sends its own (to the cloud, through the server's gateway when it has one) under its own device id, exactly as its
+// drawer rows go; a branch server sends its own for itself.
+export const HEARTBEAT_EVERY_MS = 15 * 60_000;
+let _lastSyncPushAt = 0;
+/** Test seam. */
+export function _resetHeartbeat(at = 0): void { _lastSyncPushAt = at; }
+
+/** What still waits for the cloud, as the two headers every /api/sync/push carries. Never throws. */
+function syncQueueHeaders(s?: ReturnType<typeof getSyncStatus>): Record<string, string> {
+  try {
+    const st = s ?? getSyncStatus();
+    return { 'X-Sync-Pending': String(Math.max(0, st.pendingCount | 0)),
+      'X-Sync-Failed': String(Math.max(0, (st.failedCount | 0) + ((st.parkedCount ?? 0) | 0))) };
+  } catch { return {}; }
+}
+
+/** The empty push, when due. Returns whether the cloud took one. Never throws. */
+export async function syncHeartbeat(now = Date.now()): Promise<boolean> {
+  if (!_accessToken || !_serverUrl || !isOnline()) return false;
+  if (_lastSyncPushAt && now - _lastSyncPushAt < HEARTBEAT_EVERY_MS) return false;
+  let s: ReturnType<typeof getSyncStatus>;
+  try { s = getSyncStatus(); } catch { return false; }
+  if (s.pendingCount > 0) return false;   // something still waits: the push that sends it is the proof, not this
+  const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
+    method: 'POST', headers: { ...pushAuthHeaders(), ...syncQueueHeaders(s) }, body: '{}',
+  });
+  try {
+    let res = await doPost();
+    if (res.status === 401 && await refreshStaffToken()) res = await doPost();
+    if (!res.ok) { logLine('sync', `heartbeat refused (HTTP ${res.status}) - tried again at the next pass`); return false; }
+    _lastSyncPushAt = now;
+    return true;
+  } catch (err: any) {
+    logLine('sync', `heartbeat not sent: ${err?.message ?? err}`);
+    return false;
+  }
 }
 
 // A178: a REAL reachability probe the tech screen can run. Unlike the "ONLINE"
@@ -812,7 +908,8 @@ export function pushWastageNow(): Promise<Record<string, WasteOutcome>> {
       const post = () => syncFetch(`${_serverUrl}/api/wastage`, {
         method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ branch_id: rec.branch_id, reason: rec.reason, note: rec.note, items: rec.items,
-          client_id: rec.client_id, recorded_by_name: rec.recorded_by_name, recorded_at: rec.recorded_at }),
+          client_id: rec.client_id, recorded_by_name: rec.recorded_by_name, recorded_at: rec.recorded_at,
+          ...(rec.recorded_by ? { recorded_by: rec.recorded_by } : {}) }),   // A545: who recorded it
       });
       let res = await post();
       if (res.status === 401 && await refreshAccessToken()) res = await post();
@@ -826,6 +923,42 @@ export function pushWastageNow(): Promise<Record<string, WasteOutcome>> {
     return outcomes;
   })().finally(() => { _wastePushInFlight = null; });
   return _wastePushInFlight;
+}
+
+// ── A545: credit-sale decisions made on this till while offline (creditConfirm.ts) ─────────────────────────────────────
+export function creditDecisionsPending(): boolean {
+  try { return readPendingCredit(getLocalDb()).length > 0; } catch { return false; }
+}
+let _creditPushInFlight: Promise<Record<string, DecisionOutcome>> | null = null;
+/**
+ * Send what is waiting (single-flight). Under the till's OWN sign-in (authHeaders), naming who decided and when — the
+ * person may have signed out; POST /api/credit/sales/:id/replay checks THEY hold customers.credit at the sale's branch.
+ * Never throws.
+ */
+export function pushCreditDecisionsNow(): Promise<Record<string, DecisionOutcome>> {
+  if (_creditPushInFlight) return _creditPushInFlight;
+  _creditPushInFlight = (async () => {
+    const db = getLocalDb();
+    if (!readPendingCredit(db).length) return {};
+    if (!_accessToken || !_serverUrl || !isOnline()) return {};
+    const outcomes = await pushPendingDecisions(db, async (d) => {
+      const post = () => syncFetch(`${_serverUrl}/api/credit/sales/${encodeURIComponent(d.order_id)}/replay`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ decision: d.decision, by: d.by, at: d.at, ...(d.decision === 'dispute' ? { reason: d.reason } : {}) }),
+      });
+      let res = await post();
+      if (res.status === 401 && await refreshAccessToken()) res = await post();
+      const body = await res.json().catch(() => ({}));
+      return { status: res.status, body };
+    }, describeServerError);
+    for (const [id, o] of Object.entries(outcomes)) {
+      if (o.state === 'saved') logLine('sync', `credit sale ${id}: decision sent`);
+      else if (o.state === 'refused') logLine('sync', `credit sale ${id}: decision refused — ${o.message}`);
+    }
+    return outcomes;
+  })().catch((e: any) => { logLine('sync', `credit decisions: ${e?.message ?? e}`); return {}; })
+    .finally(() => { _creditPushInFlight = null; });
+  return _creditPushInFlight;
 }
 
 export function pushStationRoutingNow(): Promise<Record<string, PushOutcome>> {
@@ -1087,12 +1220,49 @@ let _remoteCloseRunning = false;
 export async function remoteCloseBeat(): Promise<void> {
   if (_remoteCloseRunning || !_accessToken || !_serverUrl || !isOnline()) return;
   _remoteCloseRunning = true;
+  // A535: at a branch with a server, the server already asked the cloud for the whole branch (branchDrawers.ts): this till
+  // asks its own day-close and log-request routes only when the server's answer names it (null: ask as before).
+  let hints: DrawerBeat | null = null;
   try {
     await testClearsBeforePush();
     // A523: the web's drawer closes first — a day close queued with them closes on this beat, not the next.
     try { await pullShiftCloses(); } catch { /* the 20 s beat */ }
-    await runDayCloseInstructions([]);
+    hints = await drawerBeatHints();
+    if (!hints || hints.day_close) await runDayCloseInstructions([]);
   } catch { /* the next beat */ } finally { _remoteCloseRunning = false; }
+  // A533: ZapTill support's log requests ride this beat — one GET (/api/support/log-requests/mine), so a till behind a
+  // branch server (no push channel of its own) or one whose channel is down hears within about 90 s. Not awaited: an
+  // upload never holds the next remote close; logPull is single-flight.
+  if (hints && !hints.log_request) return;   // A535: the branch server says none waits for this till
+  if (_logPullBeat) { try { void _logPullBeat('the 90 s beat').catch(() => { /* the next beat */ }); } catch { /* never */ } }
+}
+
+// ── A535: the drawer checks answered by the branch server (branchDrawers.ts hands this in; the engine never imports it) ─
+/** What the branch server knows for THIS till's 90 s beat. */
+export interface DrawerBeat { day_close: boolean; log_request: boolean; test_clear_latest: string | null }
+/** The web's sales on one of this till's drawers: 'unknown' = the cloud has no such drawer yet (as foreign-orders' 404). */
+export type DrawerWebSales = { orders: WebOrder[]; own_reversals: OwnReversal[] } | 'unknown';
+/**
+ * Owner, 2026-10-19: "for a setup like KRUNCH only the server does the communication to cloud, not all tills". Each call
+ * answers from the branch server's one branch-level poll — on a peer over the shop network (/node/drawers), on the server
+ * from what it holds — or null: ask the cloud as before (no branch server, an older server or cloud, its answer stale).
+ */
+export interface DrawerSource {
+  states(ids: string[]): Promise<CloudShiftState[] | null>;
+  webSales(shiftId: string, ownIds: string[]): Promise<DrawerWebSales | null>;
+  beat(): Promise<DrawerBeat | null>;
+}
+let _drawerSource: DrawerSource | null = null;
+export function setDrawerSource(s: DrawerSource | null): void { _drawerSource = s; _beatMemo = null; }
+let _beatMemo: { at: number; v: DrawerBeat | null } | null = null;
+/** The server's beat hints, remembered 5 s (the 90 s beat and the push before it ask once). */
+async function drawerBeatHints(): Promise<DrawerBeat | null> {
+  if (!_drawerSource) return null;
+  if (_beatMemo && Date.now() - _beatMemo.at < 5_000) return _beatMemo.v;
+  let v: DrawerBeat | null = null;
+  try { v = await _drawerSource.beat(); } catch { v = null; }
+  _beatMemo = { at: Date.now(), v };
+  return v;
 }
 
 // A275 — pull any remote day-close instruction and execute it LOCALLY, then ack.
@@ -1109,6 +1279,13 @@ async function runDayCloseInstructions(errors: string[]): Promise<void> {
 async function runDayCloseInstructionsOnce(errors: string[]): Promise<void> {
   const deviceId = getDeviceConfig()?.device_id ?? '';
   if (!deviceId) return;
+  // A547 (A535's leftover): EVERY day-close check — the 10-minute full sync, the start-up steps, the day gate's
+  // learnBeforeLock, the 90 s beat — asks the branch server first. Its copy (GET /api/pos/branch-drawers, one call for the
+  // whole branch) lists the devices with a pending day close (the same rows /api/day-close/pending reads: this device,
+  // status pending); when it says none waits for this till, no request goes through the gateway. It names this till →
+  // collect it from the cloud as before; no answer (no server, an older one, its copy stale) → as before.
+  const hints = await drawerBeatHints();
+  if (hints && !hints.day_close) return;
   let pending: Array<{ id: string; kind: string; payload: any }> = [];
   try {
     const res = await syncFetch(`${_serverUrl}/api/day-close/pending`, { headers: authHeaders() });
@@ -1179,6 +1356,13 @@ export async function pullWebSales(): Promise<number> {
   let failed = false;
   try {
     for (const shift of webSaleShifts()) {
+      // A535: the branch server's answer first (the shop network — it asked the cloud once for the whole branch).
+      let viaBranch: DrawerWebSales | null = null;
+      if (_drawerSource) { try { viaBranch = await _drawerSource.webSales(shift.id, ownOrderIds(shift.id)); } catch { viaBranch = null; } }
+      if (viaBranch === 'unknown') continue;   // not on the cloud yet — next pass
+      let body: { orders?: WebOrder[]; own_reversals?: OwnReversal[] };
+      if (viaBranch) body = viaBranch;
+      else {
       const doPull = () => syncFetch(`${_serverUrl}/api/shifts/${encodeURIComponent(shift.id)}/foreign-orders`, {
         method: 'POST',
         headers: pushAuthHeaders(),
@@ -1190,7 +1374,8 @@ export async function pullWebSales(): Promise<number> {
       if (res.status === 401 && await refreshStaffToken()) res = await doPull();
       if (res.status === 404) continue;   // not on the cloud yet (the shift push has not landed) — next pass
       if (!res.ok) { failed = true; noteInboundFailure('web-sales', `web sales pull failed: HTTP ${res.status}`); continue; }
-      const body = await res.json() as { orders?: WebOrder[]; own_reversals?: OwnReversal[] };
+      body = await res.json() as { orders?: WebOrder[]; own_reversals?: OwnReversal[] };
+      }
       changed += applyWebOrders(shift, body.orders ?? []);
       // 0.6.26 (A336 follow-up): a void or refund made on the web of a sale THIS till rang.
       changed += applyOwnReversals(body.own_reversals ?? [], undefined, (id, at, reason) =>
@@ -1227,12 +1412,18 @@ export async function pullShiftCloses(): Promise<number> {
       `SELECT id FROM shifts WHERE status = 'open' AND COALESCE(device_id,'') = COALESCE(?,'')`,
     ).all(getDeviceConfig()?.device_id ?? null) as Array<{ id: string }>;
     if (!open.length) return 0;
+    // A535: the branch server's answer first (null: ask the cloud as before).
+    let states: CloudShiftState[] | null = null;
+    if (_drawerSource) { try { states = await _drawerSource.states(open.map((r) => r.id)); } catch { states = null; } }
+    if (!states) {
     const url = `${_serverUrl}/api/shifts/state?ids=${encodeURIComponent(open.map((r) => r.id).join(','))}`;
     let res = await syncFetch(url, { headers: pushAuthHeaders() });
     if (res.status === 401 && await refreshStaffToken()) res = await syncFetch(url, { headers: pushAuthHeaders() });
     if (res.status === 404) return 0;   // an older cloud without the route — nothing to learn
     if (!res.ok) { noteInboundFailure('shift-state', `shift state check failed: HTTP ${res.status}`); return 0; }
-    const closes = closesToAdopt(open.map((r) => r.id), await res.json() as CloudShiftState[]);
+    states = await res.json() as CloudShiftState[];
+    }
+    const closes = closesToAdopt(open.map((r) => r.id), states);
     clearInboundFailure('shift-state');
     const apply = db.prepare(`
       UPDATE shifts SET status = @status, closed_at = @closed_at, close_method = @close_method, closed_by = @closed_by,
@@ -1284,13 +1475,19 @@ export async function pullShiftConfirmations(): Promise<number> {
          AND COALESCE(device_id,'') = COALESCE(?,'')
        ORDER BY closed_at DESC LIMIT 20`).all(dev) as Array<{ id: string }>;
     if (!waiting.length) return 0;
+    type ConfirmState = { id: string; confirmed_at?: string | null; confirmed_by?: string | null;
+      confirmed_methods?: unknown; expected_methods?: unknown; confirm_reasons?: unknown; confirm_self?: boolean | null;
+      confirmed_by_name?: string | null };
+    // A535: the branch server's answer first (null: ask the cloud as before).
+    let rows: ConfirmState[] | null = null;
+    if (_drawerSource) { try { rows = await _drawerSource.states(waiting.map((r) => r.id)) as unknown as ConfirmState[] | null; } catch { rows = null; } }
+    if (!rows) {
     const url = `${_serverUrl}/api/shifts/state?ids=${encodeURIComponent(waiting.map((r) => r.id).join(','))}`;
     let res = await syncFetch(url, { headers: pushAuthHeaders() });
     if (res.status === 401 && await refreshStaffToken()) res = await syncFetch(url, { headers: pushAuthHeaders() });
     if (!res.ok) return 0;   // an older cloud, or a hiccup — asked again on the next beat
-    const rows = await res.json() as Array<{ id: string; confirmed_at?: string | null; confirmed_by?: string | null;
-      confirmed_methods?: unknown; expected_methods?: unknown; confirm_reasons?: unknown; confirm_self?: boolean | null;
-      confirmed_by_name?: string | null }>;
+    rows = await res.json() as ConfirmState[];
+    }
     const json = (v: unknown) => (v == null ? null : typeof v === 'string' ? v : JSON.stringify(v));
     const apply = db.prepare(`
       UPDATE shifts SET confirmed_at = @at, confirmed_by = @by, confirmed_methods = @confirmed, expected_methods = @expected,
@@ -1323,6 +1520,13 @@ export const TEST_CLEAR_CHECK_MS = 90_000;
 /** A521 (#15): the clears, before a push — when not heard within TEST_CLEAR_CHECK_MS. Never throws. */
 export async function testClearsBeforePush(nowMs = Date.now()): Promise<number> {
   if (_testClearsHeardAt && nowMs - _testClearsHeardAt < TEST_CLEAR_CHECK_MS) return 0;
+  // A535: the branch server knows the newest clear (its one branch-level poll): the cloud is asked only for a newer one.
+  const hints = await drawerBeatHints();
+  if (hints) {
+    const seen = (getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(TEST_CLEAR_KEY) as { value?: string } | undefined)?.value ?? '';
+    const latest = hints.test_clear_latest ? Date.parse(hints.test_clear_latest) : NaN;
+    if (!Number.isFinite(latest) || (seen && Date.parse(seen) >= latest)) { _testClearsHeardAt = Date.now(); return 0; }
+  }
   try { return await runTestDataClears(); } catch { return 0; }
 }
 export async function runTestDataClears(): Promise<number> {
@@ -1448,6 +1652,19 @@ export async function liveCloudGet(path: string): Promise<Response> {
   }
   return res;
 }
+/** A533: POST a JSON body to a cloud path with this till's own session (through the branch server on a peer, A410) —
+ *  renewed ahead of expiry and once on a 401, as liveCloudGet. The log pull's upload (logPull.ts). */
+export async function liveCloudPost(path: string, body: unknown): Promise<Response> {
+  await refreshDeviceTokenIfExpiring();
+  const go = () => syncFetch(`${_serverUrl}${path}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+  let res = await go();
+  if (res.status === 401 && (_refreshToken || persistedRefresh()) && await refreshAccessToken()) res = await go();
+  return res;
+}
+/** A533: what the 90 s beat asks besides the remote closes — ZapTill support's log requests (logPull.ts hands it in; the
+ *  engine never imports it). */
+let _logPullBeat: ((why: string) => Promise<unknown>) | null = null;
+export function setLogPullBeat(fn: ((why: string) => Promise<unknown>) | null): void { _logPullBeat = fn; }
 /** Where the push channel is and the session to sign in with (null: not configured or offline). */
 export function liveSocketTarget(): { url: string; token: string } | null {
   if (!_serverUrl || !_accessToken || !isOnline()) return null;
@@ -1521,6 +1738,8 @@ export function getSyncStatus(): {
   nodeRefused?: { status: number; since: string } | null;
   /** A529: the cloud could not be reached on the last try (no answer, its 5xx, or another server's page), and since when. */
   cloudUnreachable?: { since: string; why: string } | null;
+  /** A581: the cloud refuses this business's sync — its ZapTill cloud plan lapsed. Records stay queued; sent when renewed. */
+  cloudLapsed?: { since: string; message: string } | null;
 } {
   const db = getLocalDb();
   // Till sync audit (F5): a sale whose drawer the cloud refused (shift parked 'conflict') is not sent until the drawer is
@@ -1603,6 +1822,7 @@ export function getSyncStatus(): {
     lastSyncedAt: lastSyncedAt(),
     nodeRefused: hasNode() ? nodeRefusal() : null,
     cloudUnreachable: cloudUnreachableNow(),   // A529
+    cloudLapsed: cloudLapsedNow(),   // A581
   };
 }
 
@@ -1837,10 +2057,14 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (c.branding && !brandingPushPending()) applyPulledBranding(c.branding);
   // A325: the effective action theme — its own field (see applyPulledTheme); undefined = older cloud → keep.
   if (c.themeId !== undefined) applyPulledTheme(c.themeId);
+  // A544: this branch's override of the theme, brand colour and receipt footer. undefined = not said (older cloud) → keep.
+  applyPulledBranchBranding(c.branchBranding);
   // A346: the web POS switch (decides the manager screen's Stock). undefined = not said → keep.
   setWebPosEnabled(c.webPosEnabled);
   // A367: the quick picks for order notes. undefined = not said → keep.
   setOrderNotePicks(c.noteQuickPicks);
+  // A577: the scale label layout. undefined = not said → keep.
+  setScaleBarcodes(c.scaleBarcodes);
   // 0.6.27: the per-client POS switches. undefined = not said → keep.
   setPosFeatures(c.posFeatures);
   // 0.6.30: the owner's void window and offline void/refund rules. undefined = not said → keep.
@@ -1886,9 +2110,12 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
       : null,
     // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
     themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
+    // A544: the branch's override; absent on a cloud before A544 (and on a money / look / setup change) → undefined (keep).
+    branchBranding: 'branchBranding' in _j ? (_j.branchBranding ?? null) : undefined,
     // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
     webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
     noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
+    scaleBarcodes: _j.scaleBarcodes && typeof _j.scaleBarcodes === 'object' ? _j.scaleBarcodes : undefined,   // A577
     posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
     reversalRules: _j.reversalRules && typeof _j.reversalRules === 'object' ? _j.reversalRules : undefined,   // 0.6.30
     // A450: the business's name and currency (a rename on the web), and the receipt's Buy Goods / Paybill line.
@@ -1941,6 +2168,7 @@ async function pullCatalogue(): Promise<boolean> {
   let comboItems: Record<string, any[]> | undefined;
   let paymentMethods: Array<{ code: string; name: string }> | null = null;
   let offers: any[] | null = null;   // A445: null = the source sent none — the till keeps its offers
+  let menus: any[] | null = null;    // A537: null = the source sent none (an older cloud / node) — the till keeps its menus
   let stations: any[] | null = null;
   let variantGroups: any[] = [], variantOptions: any[] = [];
   let modifierGroups: any[] = [], modifierOptions: any[] = [];
@@ -1963,7 +2191,7 @@ async function pullCatalogue(): Promise<boolean> {
   const nodeBundle = _preferCloudPull ? null : await fetchReferenceFromNode();   // A446
   if (nodeBundle) {
     const r: AcquiredReference = unpackNodeBundle(nodeBundle);
-    ({ products, categories, comboItems, paymentMethods, offers, stations,
+    ({ products, categories, menus, comboItems, paymentMethods, offers, stations,
        variantGroups, variantOptions, modifierGroups, modifierOptions,
        stockLevels, users, diningTables, tablesFetched, pumps, pumpsFetched } = r);
     stockFetched = Array.isArray(stockLevels);
@@ -2003,6 +2231,7 @@ async function pullCatalogue(): Promise<boolean> {
     products = _j.products; categories = _j.categories;
     comboItems = _j.comboItems; paymentMethods = _j.paymentMethods ?? null;
     offers = Array.isArray(_j.offers) ? _j.offers : null;   // A445 (an older cloud sends none: keep what the till has)
+    menus = Array.isArray(_j.menus) ? _j.menus : null;      // A537 (an older cloud sends none: keep what the till has)
     branchId = _j.branchId ?? null;
     effectiveBranchId = boundBranchId || branchId || null;
     // Business-wide config (VAT, CTL, discount ceiling, business type, receipt
@@ -2060,13 +2289,11 @@ async function pullCatalogue(): Promise<boolean> {
       }
     }
 
-    // Pull staff/users — reference data for offline cashier attribution (names on
-    // shift/EOD reports). PULL-DOWN, remote wins. Wrapped so a 403/offline here
-    // never aborts the catalogue sync that already succeeded above.
-    try {
-      const uRes = await syncFetch(`${_serverUrl}/api/staff`, { headers: authHeaders() });
-      if (uRes.ok) users = await uRes.json();
-    } catch { /* non-fatal — attribution falls back to id only */ }
+    // Staff/users — reference data for offline cashier attribution (names on shift/EOD reports). A534: from this till's
+    // own copy of its branch's staff list (branch_staff, A446 — kept by staffRoster from GET /api/pos/branch-staff, which
+    // the till's session may read), not GET /api/staff: that needs staff.view, which a till's own sign-in does not hold
+    // (Render, 2026-10-19: "[tillScope] DRY-RUN would refuse … staff.view on GET /api/staff"). Upserted, never cleared.
+    users = rosterAsUsers(db);
 
     // Pull dining tables — reference data for the restaurant table map.
     // PULL-DOWN, remote wins. Non-restaurant businesses simply get an empty
@@ -2139,6 +2366,7 @@ async function pullCatalogue(): Promise<boolean> {
   // /api/pos/changes — a row is stored the same way whichever way it came.
   db.transaction(() => {
     writeCategories(db, categories, now);
+    writeMenus(db, menus, now);   // A537
     writePaymentMethods(db, paymentMethods);
     writeStations(db, stations, now);
     writeOffers(db, offers);
@@ -2183,15 +2411,42 @@ async function pullCatalogue(): Promise<boolean> {
 type LocalDbT = ReturnType<typeof getLocalDb>;
 function writeCategories(db: LocalDbT, categories: any[], now: string): void {
   const upsertCat = db.prepare(`
-    INSERT INTO categories (id, name, color, icon, sort_order, status, is_kitchen, synced_at)
-    VALUES (@id, @name, @color, @icon, @sort_order, @status, @is_kitchen, @synced_at)
+    INSERT INTO categories (id, name, color, icon, sort_order, status, is_kitchen, menu_id, synced_at)
+    VALUES (@id, @name, @color, @icon, @sort_order, @status, @is_kitchen, @menu_id, @synced_at)
     ON CONFLICT(id) DO UPDATE SET
       name=excluded.name, color=excluded.color, icon=excluded.icon,
       sort_order=excluded.sort_order, status=excluded.status,
-      is_kitchen=excluded.is_kitchen, synced_at=excluded.synced_at
+      is_kitchen=excluded.is_kitchen, synced_at=excluded.synced_at,
+      menu_id=CASE WHEN @has_menu = 1 THEN excluded.menu_id ELSE categories.menu_id END
   `);
   for (const c of categories) {
-    upsertCat.run({ ...c, is_kitchen: c.is_kitchen ? 1 : 0, synced_at: now });
+    // A537: menu_id — the menu it is under. A source that does not say (an older cloud or branch server) keeps the till's.
+    const hasMenu = !!c && Object.prototype.hasOwnProperty.call(c, 'menu_id');
+    upsertCat.run({ ...c, is_kitchen: c.is_kitchen ? 1 : 0, menu_id: hasMenu ? (c.menu_id ?? null) : null, has_menu: hasMenu ? 1 : 0, synced_at: now });
+  }
+}
+/**
+ * A537: the business's menus (Food, Soft drinks …). A whole pull replaces them all (a menu deleted or switched off upstream
+ * goes); null = the source sent none (an older cloud / branch server) — the till keeps its own. `onlyIds`: a change from
+ * /api/pos/changes replaces only its own menu.
+ */
+/** A578: a menu's hours as the till keeps them — JSON text of the object the cloud sent (the sale screen reads it with
+ *  shared/menuHours.ts readAvailability), or NULL = always (none sent: an older cloud or branch server, or no hours). */
+export function menuAvailabilityText(v: unknown): string | null {
+  let o: unknown = v;
+  if (typeof o === 'string') { try { o = JSON.parse(o); } catch { return null; } }
+  return o && typeof o === 'object' && !Array.isArray(o) ? JSON.stringify(o) : null;
+}
+function writeMenus(db: LocalDbT, menus: any[] | null, now: string, onlyIds?: string[]): void {
+  if (!Array.isArray(menus)) return;
+  if (onlyIds) { const del = db.prepare(`DELETE FROM menus WHERE id = ?`); for (const id of onlyIds) del.run(id); }
+  else db.prepare(`DELETE FROM menus`).run();
+  const ins = db.prepare(`INSERT OR REPLACE INTO menus (id, name, sort_order, active, color, icon, availability, synced_at)
+    VALUES (@id, @name, @sort_order, @active, @color, @icon, @availability, @synced_at)`);
+  for (const m of menus) {
+    if (!m || typeof m.id !== 'string' || !m.id || m.active === false || m.active === 0 || m.deleted_at) continue;
+    ins.run({ id: m.id, name: String(m.name ?? ''), sort_order: Number(m.sort_order) || 0, active: 1,
+      color: m.color ?? null, icon: m.icon ?? null, availability: menuAvailabilityText(m.availability), synced_at: now });
   }
 }
 function writePaymentMethods(db: LocalDbT, paymentMethods: Array<{ code: string; name: string }> | null): void {
@@ -2277,8 +2532,8 @@ function writeComboItems(db: LocalDbT, comboItems: Record<string, any[]> | undef
 }
 function writeProducts(db: LocalDbT, products: any[], now: string): void {
   const upsertProd = db.prepare(`
-    INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, synced_at)
-    VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @synced_at)
+    INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, sold_by, unit_label, synced_at)
+    VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @sold_by, @unit_label, @synced_at)
     ON CONFLICT(id) DO UPDATE SET
       category_id=excluded.category_id, name=excluded.name, description=excluded.description,
       base_price=excluded.base_price, branch_price=excluded.branch_price, image_url=excluded.image_url,
@@ -2286,6 +2541,7 @@ function writeProducts(db: LocalDbT, products: any[], now: string): void {
       track_stock=excluded.track_stock, status=excluded.status,
       barcode=excluded.barcode, plu=excluded.plu, is_fuel=excluded.is_fuel,
       is_kitchen=excluded.is_kitchen, show_days=excluded.show_days,
+      sold_by=excluded.sold_by, unit_label=excluded.unit_label,
       synced_at=excluded.synced_at
   `);
   for (const p of products) {
@@ -2296,7 +2552,11 @@ function writeProducts(db: LocalDbT, products: any[], now: string): void {
       track_stock:   p.track_stock   ? 1 : 0,
       is_fuel:       (p as any).is_fuel ? 1 : 0,
       barcode:       (p as any).barcode ?? null,
-      plu:           (p as any).plu ?? null,
+      // A577: the cloud sends its column (plu_code); a branch server relays the till's (plu). Before A577 only plu was
+      // read, so a till never held a PLU from the cloud and a PLU never matched a scan.
+      plu:           (p as any).plu ?? (p as any).plu_code ?? null,
+      sold_by:       typeof (p as any).sold_by === 'string' ? (p as any).sold_by : null,         // A577
+      unit_label:    typeof (p as any).unit_label === 'string' ? (p as any).unit_label : null,   // A577
       branch_price:  (p as any).branch_price ?? null,
       // Preserve the tri-state: null must stay null, not become 0.
       is_kitchen:    typeof (p as any).is_kitchen === 'boolean' ? ((p as any).is_kitchen ? 1 : 0) : null,
@@ -2516,6 +2776,7 @@ export function applyChangeEntries(entries: ChangeEntry[]): AppliedChanges {
   const out: AppliedChanges = { rows: 0, byTable: {}, staff: 0, config: 0 };
   const configs: Array<Record<string, unknown>> = [];
   const staffUp: BranchStaffRow[] = []; const staffOff: string[] = [];
+  const stockUp: any[] = []; const stockOff: string[] = [];   // A535
   const count = (t: string) => { out.rows++; out.byTable[t] = (out.byTable[t] ?? 0) + 1; };
   db.transaction(() => {
     for (const e of entries) {
@@ -2540,6 +2801,9 @@ export function applyChangeEntries(entries: ChangeEntry[]): AppliedChanges {
           if (up) writeCategories(db, [row], now);
           else db.prepare(`UPDATE categories SET status = 'inactive', synced_at = ? WHERE id = ?`).run(now, e.id);
           count(e.table); break;
+        case 'menus':   // A537: a renamed menu, a new one, one switched off or deleted — that one row
+          writeMenus(db, up ? [row] : [], now, [e.id]);
+          count(e.table); break;
         case 'offers':
           if (!(up && putOffer(db, row))) db.prepare(`DELETE FROM offers WHERE id = ?`).run(e.id);
           count(e.table); break;
@@ -2561,6 +2825,9 @@ export function applyChangeEntries(entries: ChangeEntry[]): AppliedChanges {
         case 'branding':
           if (up) configs.push(row);
           count(e.table); break;
+        case 'branch_branding':   // A544: this branch's override ({ branchBranding }: a row, or null = none)
+          if (up) configs.push({ branchBranding: row.branchBranding ?? null });
+          count(e.table); break;
         case 'print_stations':
           if (up && Array.isArray(row.stations)) writeStations(db, row.stations, now);
           count(e.table); break;
@@ -2570,18 +2837,58 @@ export function applyChangeEntries(entries: ChangeEntry[]): AppliedChanges {
         case 'pumps':
           writePumps(db, up ? [row] : [], now, true, [e.id]);
           count(e.table); break;
+        case 'stock':
+          // A535: one stock level at this branch — stored, and this till's own sales still waiting for the cloud taken off
+          // again (A80). A counted level (a blind count, A394) carries no figures: the till keeps what it has.
+          if (up && !row.counting) stockUp.push(row);
+          else if (!up) stockOff.push(e.id);
+          count(e.table); break;
         default:
           break;   // a table a newer cloud sends and this till does not know: skipped (the daily whole pull has it)
       }
     }
+    if (stockUp.length || stockOff.length) writeStockRows(db, stockUp, stockOff, getDeviceConfig()?.branch_id ?? null, now);
     // A448: this till's own changes that still wait go back over what was written.
     overlayLocalChanges(db);
   })();
   for (const c of configs) { applyReferenceConfig(configFromInit(c, null)); out.config++; }
   const branch = getDeviceConfig()?.branch_id ?? null;
   if (branch && (staffUp.length || staffOff.length)) out.staff = applyBranchStaffChanges(branch, staffUp, staffOff);
-  if (out.rows) notifyCataloguePulled();
+  // A535: stock levels alone do not make the screens re-read the menu (a busy branch moves them on every sale) — the
+  // stock screens read the levels when they open.
+  if (out.rows > (out.byTable.stock ?? 0)) notifyCataloguePulled();
   return out;
+}
+
+/**
+ * A535: stock levels from the change log, one level at a time. Each is the cloud's level (the sales it has); this till's
+ * own sales still waiting for the cloud are taken off again for THOSE products only (A80's delta merge, as
+ * writeStockLevels does for a whole pull — re-applying every product's would take them off twice). A delete removes
+ * the level here.
+ */
+function writeStockRows(db: LocalDbT, rows: any[], gone: string[], branchId: string | null, now: string): void {
+  const upsert = db.prepare(`
+    INSERT INTO stock_levels (product_id, branch_id, quantity, low_stock_threshold, synced_at)
+    VALUES (@product_id, @branch_id, @quantity, @low_stock_threshold, @synced_at)
+    ON CONFLICT(product_id, branch_id) DO UPDATE SET
+      quantity=excluded.quantity, low_stock_threshold=excluded.low_stock_threshold, synced_at=excluded.synced_at`);
+  const deviceId = getDeviceConfig()?.device_id ?? null;
+  const pending = db.prepare(`
+    SELECT SUM(oi.quantity) AS deducted FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id JOIN products p ON p.id = oi.product_id
+     WHERE o.sync_status = 'pending' AND p.track_stock = 1 AND oi.product_id = @product_id
+       AND COALESCE(o.branch_id, @branch_id) = @branch_id AND COALESCE(o.device_id,'') = COALESCE(@device_id,'')`);
+  for (const s of rows) {
+    const pid = String(s.product_id ?? '');
+    const qty = Number(s.quantity);
+    if (!pid || !Number.isFinite(qty)) continue;
+    const branch = String(s.branch_id ?? branchId ?? '');
+    if (!branch || (branchId && branch !== branchId)) continue;   // never another branch's level
+    const deducted = Number((pending.get({ product_id: pid, branch_id: branch, device_id: deviceId }) as { deducted?: number } | undefined)?.deducted ?? 0) || 0;
+    upsert.run({ product_id: pid, branch_id: branch, quantity: qty - deducted,
+      low_stock_threshold: Number.isFinite(Number(s.low_stock_threshold)) ? Number(s.low_stock_threshold) : 5, synced_at: now });
+  }
+  if (gone.length && branchId) { const del = db.prepare(`DELETE FROM stock_levels WHERE product_id = ? AND branch_id = ?`); for (const id of gone) del.run(id, branchId); }
 }
 
 // ── Push pending orders to Express ──────────────────────────
@@ -2704,9 +3011,10 @@ export function isDataErrorCode(code: string | null | undefined): boolean {
 /** One request of pushLocalRecords. The number of rows sent, or -1 when the cloud did not take the request. */
 async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTables, errors: string[]): Promise<number> {
   const { shifts, floats, expenses, business_days, kitchen_voids } = batch;
+  const queue = syncQueueHeaders();   // A579: what still waits (this batch included)
   const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
     method: 'POST',
-    headers: pushAuthHeaders(),
+    headers: { ...pushAuthHeaders(), ...queue },
     body: JSON.stringify({ shifts, floats, expenses, business_days, kitchen_voids }),
   });
 
@@ -2731,6 +3039,8 @@ async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTable
       logLine('sync', `shift push: HTTP ${res.status} without the expected answer - nothing marked synced`);
       return -1;
     }
+    notePushOk(db);   // A534: the cloud took this batch (the Tech page's "last successful push")
+    _lastSyncPushAt = Date.now();   // A579: the cloud's last_sync_at just moved — no heartbeat needed for 15 min
 
     // Rows the server understood and refused on their merits — currently only a
     // cashier who already holds an open drawer elsewhere. Retrying cannot fix
@@ -3012,9 +3322,12 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   // per row; the same statements the two success branches ran inline before.
   const _markQueueSynced = db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1, drawer_wait_at=NULL WHERE id=?`);
   const _markOrderSynced = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
+  // A552: the sale's charge on a customer's account is now in the cloud's balance — from this moment (creditSale.ts).
+  const _markChargeSynced = db.prepare(`UPDATE customer_credit_transactions SET synced_at=? WHERE order_id=? AND synced_at IS NULL`);
   const markSynced = db.transaction((queueId: number, orderId: string) => {
     _markQueueSynced.run(queueId);
     _markOrderSynced.run(orderId);
+    _markChargeSynced.run(new Date().toISOString(), orderId);
   });
 
   // Every till pushes its OWN orders to the cloud, including tills that have a
@@ -3116,6 +3429,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         // so the local row is safely marked synced. A lost first response that
         // caused this retry therefore resolves correctly instead of duplicating.
         markSynced(row.id, row.order_id);
+        notePushOk(db);   // A534: the Tech page's "last successful push"
         pushed++;
       } else if (res.status === 409) {
         // A181: a 409 is the server refusing an order-NUMBER collision — a
@@ -3968,7 +4282,8 @@ export function createLocalOrder(orderPayload: any): string {
         // arrived and was sold before being received in the system). Clamping to
         // 0 here made the offline till disagree with the server until the next
         // pull and hid the oversell locally.
-        const newQty = currentQty - item.quantity;
+        // A577: to the gram — a weighed sale (0.452 kg) must not leave 9.548000000000002 behind.
+        const newQty = Math.round((currentQty - item.quantity) * 1000) / 1000;
 
         db.prepare(`
           INSERT INTO stock_levels (product_id, branch_id, quantity, low_stock_threshold)

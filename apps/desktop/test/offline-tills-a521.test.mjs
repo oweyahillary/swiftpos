@@ -25,6 +25,7 @@ import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A521_TS) {
@@ -115,7 +116,7 @@ peer('dev-T1', state({ terminal: { code: 'T1', name: 'Front' } }), 5_000);
     r.ok === true && !Dy.getOpenDay() && r.results.some((x) => x.device_id === 'dev-T1' && x.sent && !x.held), JSON.stringify(r));
   const t2 = pending('dev-T2');
   ok('#1 …and T2 is left a close that waits for its money (wait_for_till)', r.results.some((x) => x.device_id === 'dev-T2' && x.without) && JSON.parse(t2.payload).wait_for_till === true, t2?.payload);
-  ok('#1 …the manager who went past is logged with the warning', /A521 manager .* went past/.test(read('src/main/ipcHandlers.ts')));
+  ok('#1 …the manager who went past is logged with the warning', /A521 manager .* went past/.test(ipcHandlersSource()));
 
   // The till comes back with the drawer still open: "not yet", the close stays pending.
   asTill('dev-T2', 'T2', 'Center');

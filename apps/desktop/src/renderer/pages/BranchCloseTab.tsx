@@ -27,6 +27,7 @@ import { posApi, type BranchPeerShift, type ShiftMoneyView } from '../lib/posApi
 import { methodLabel } from '../../shared/paymentCatalogue';   // A465
 import { methodName, cashLines, type MethodOption } from '../../shared/shiftConfirm';
 import MethodDot from '../components/MethodDot';
+import { CreditAwaitingNotice } from '../components/CreditSalesTab';   // A545
 import ShiftPanel from './ShiftPanel';   // A520: the server's own drawer closes here, with the shift close everyone knows
 
 interface Props { currency: string; businessName?: string }
@@ -189,6 +190,8 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
           payment method — tick them and close: every till closes its day and starts the next.
         </p>
       </div>
+      {/* A545: credit sales still waiting for a manager — said, never a block on the close (the owner: no deadlocks). */}
+      <CreditAwaitingNotice />
 
       {/* A458: the day's totals for the whole branch, by payment method */}
       <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 space-y-2" data-testid="branch-totals">

@@ -9,6 +9,7 @@
 import { monoRasterFromString } from './escposRenderer';
 import { renderReceiptEscPos } from './escposRenderer';
 import { buildReceiptBusinessConfig } from './buildReceiptOrder';
+import { resolveBranchBranding, branchBrandingFromWire } from './branchBranding';   // A547
 import { getQZStatus, printBytesToServer } from './localPrintServer';
 import { api } from './api';
 import type { BranchPrinter } from './printKOT';
@@ -56,6 +57,12 @@ function toReceiptOrder(o: any) {
   };
 }
 
+/** A547: the footer a till of the order's branch prints — its branch override when themes are on, else the business's. */
+export function effectiveFooter(businessFooter: string, served: { themeId?: string | null; branchBranding?: unknown } | null | undefined): string {
+  return resolveBranchBranding({ themeId: served?.themeId ?? null, receiptFooter: businessFooter },
+    branchBrandingFromWire(served?.branchBranding)).receiptFooter;
+}
+
 export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolean; message: string }> {
   if (getQZStatus() !== 'connected') {
     return { ok: false, message: 'Print server not connected on this device — open the till to reprint.' };
@@ -65,7 +72,7 @@ export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolea
   try { order = await api.get<any>(`/api/orders/${orderId}`); }
   catch (e: any) { return { ok: false, message: e?.message ?? 'Could not load the order.' }; }
 
-  const [business, branding, settings, printers, flags] = await Promise.all([
+  const [business, branding, settings, printers, flags, served] = await Promise.all([
     api.get<any>('/api/business').catch(() => ({ name: 'Receipt' })),
     // A313: a duplicate must carry the same logo the original did — same gate as the live sale.
     api.get<{ logo_receipt: string | null; receipt_logo_enabled: boolean } | null>('/api/business/branding').catch(() => null),
@@ -73,6 +80,11 @@ export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolea
     api.get<BranchPrinter[]>(`/api/printers?branch_id=${order.branch_id}`).catch(() => [] as BranchPrinter[]),
     // A530: the client's switches ({ key: enabled }) — a duplicate keeps the classic receipt parts the admin portal set.
     api.get<Record<string, boolean>>('/api/flags').catch(() => null),
+    // A547 (A544's "not done" (a)): the order's branch as a till of it is served — the business's effective theme (null =
+    // themes off) and the branch's override. An older cloud or a refusal → null → the business footer, as before.
+    order.branch_id
+      ? api.get<{ themeId: string | null; branchBranding: unknown }>(`/api/business/branding/branches/${order.branch_id}/served`).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const receipt = (printers ?? []).find(p => p.enabled && !!p.printer_name && (p.is_default_receipt || p.type === 'receipt'));
@@ -83,7 +95,9 @@ export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolea
   const biz = buildReceiptBusinessConfig(business, undefined, 0, {
     branchName: order.branch_name ?? undefined,
     header:     map['receipt_header'] || undefined,
-    footerText: map['receipt_footer'] || undefined,
+    // A547: the branch's effective footer, as the till prints it — the branch's override → the business's (the shared
+    // resolver, lib/branchBranding.ts, the copy the web POS and the till use).
+    footerText: effectiveFooter(map['receipt_footer'] ?? '', served) || undefined,
     pay: { label: map['receipt_pay_label'] ?? '', number: map['receipt_pay_number'] ?? '' },   // A450
     logoRaster: branding?.receipt_logo_enabled && branding.logo_receipt ? monoRasterFromString(branding.logo_receipt) : null,
     posFeatures: flags,   // A530

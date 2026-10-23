@@ -12,12 +12,12 @@
  */
 
 import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, assertBranchAccess, branchScope, can } from '../middleware/rbac';
-import { guardBranch, idsOfBusiness } from '../lib/branchGuard';   // A494
+import { requirePermission, assertBranchAccess, branchScope, can, NO_BRANCH } from '../middleware/rbac';
+import { guardBranch, idsOfBusiness, branchOfBusiness } from '../lib/branchGuard';   // A494; A564: branchOfBusiness
 import { supabase } from '../lib/supabase';
 import { importKey } from '../lib/productImport';   // 2026-10-04
 import { chunkIn } from '../lib/pgQuery';
@@ -25,6 +25,7 @@ import { resolveStockNotifications } from '../jobs/lowStockChecker';
 import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A394
 import { recordReceivedBatch, wantsBatch } from '../lib/batchStore';   // A413
 import { actor } from '../lib/actor';
+import { searchTerm, lookupLimit, requestQuantity, cleanNote, actingBranch, nextStatus, decidedMessage, SEARCH_MIN } from '../lib/transferRequests';   // A564
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -826,20 +827,41 @@ router.post('/transfers', requirePermission('inventory.transfer'), async (req, r
     res.status(400).json({ error: 'An item is not in this business\'s catalogue.' }); return;
   }
 
-  const transfer_number = await nextRef('stock_transfers', 'TRF', req.businessId);
-  const { data: transfer, error: tErr } = await supabase.from('stock_transfers').insert({
-    business_id: req.businessId, from_branch_id, to_branch_id,
-    // 'pending'. Nothing has physically moved yet, so no stock is touched here.
-    transfer_number, status: 'pending', notes: notes || null, created_by: req.userId,
-  }).select().single();
-  if (tErr) { sendError(res, tErr); return; }
+  let created: Awaited<ReturnType<typeof insertTransfer>>;
+  try { created = await insertTransfer(req.businessId, from_branch_id, to_branch_id, notes || null, clean, req.userId); }
+  catch (e) { sendError(res, e as Error); return; }
 
-  const lineItems = clean.map((i: any) => ({ transfer_id: transfer.id, product_id: i.product_id, quantity: i.quantity }));
-  const { error: itemErr } = await supabase.from('stock_transfer_items').insert(lineItems);
-  if (itemErr) { sendError(res, itemErr); return; }
-
-  res.status(201).json({ ...transfer, stock_transfer_items: lineItems });
+  res.status(201).json(created);
 });
+
+/**
+ * A564: a transfer is created here and nowhere else — POST /transfers and an accepted request (POST
+ * /requests/:id/accept) share it. 'pending': nothing has physically moved yet, so no stock is touched here.
+ */
+async function insertTransfer(businessId: string, fromBranchId: string, toBranchId: string, notes: string | null,
+  items: Array<{ product_id: string; quantity: number }>, createdBy: string | null) {
+  const transfer_number = await nextRef('stock_transfers', 'TRF', businessId);
+  const { data: transfer, error: tErr } = await supabase.from('stock_transfers').insert({
+    business_id: businessId, from_branch_id: fromBranchId, to_branch_id: toBranchId,
+    transfer_number, status: 'pending', notes: notes || null, created_by: createdBy,
+  }).select().single();
+  if (tErr) throw tErr;
+  const lineItems = items.map((i) => ({ transfer_id: transfer.id, product_id: i.product_id, quantity: i.quantity }));
+  const { error: itemErr } = await supabase.from('stock_transfer_items').insert(lineItems);
+  if (itemErr) throw itemErr;
+  return { ...transfer, stock_transfer_items: lineItems };
+}
+
+/**
+ * The despatch edge: stock leaves the source now, not at creation. A564: the one place it does — PATCH
+ * /transfers/:id/status (in_transit) and an accepted request both come here. Returns the transfer's attribution.
+ */
+async function despatchStock(transfer: { from_branch_id: string; to_branch_id: string; transfer_number: string },
+  lines: Array<{ product_id: string; quantity: number }>, userId: string | null, now: string) {
+  await applyProductStockOut(lines, transfer.from_branch_id, userId as string, 'transfer_out',
+    `Transfer ${transfer.transfer_number} → ${transfer.to_branch_id}`);
+  return { despatched_by: userId, despatched_at: now };
+}
 
 router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), async (req, res) => {
   // A203: the whole handler is wrapped so a failure in the stock RPCs
@@ -895,11 +917,8 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
   const patch: Record<string, unknown> = { status, updated_at: now };
 
   if (status === 'in_transit') {
-    // Stock leaves the source now, not at creation.
-    await applyProductStockOut(lines, transfer.from_branch_id, req.userId, 'transfer_out',
-      `Transfer ${transfer.transfer_number} → ${transfer.to_branch_id}`);
-    patch.despatched_by = req.userId;
-    patch.despatched_at = now;
+    // Stock leaves the source now, not at creation (despatchStock — A564: shared with an accepted request).
+    Object.assign(patch, await despatchStock(transfer, lines, req.userId, now));
 
   } else if (status === 'received') {
     // Separation of duty. The point of a transfer is that two people agree the
@@ -1007,5 +1026,262 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
     sendError(res, err as Error);
   }
 });
+
+// =============================================================================
+// A564: ANOTHER BRANCH'S STOCK, AND ASKING THAT BRANCH FOR AN ITEM
+// =============================================================================
+//
+// Owner, 2026-10-22: "add a feature where employees can search if items are in an inventory of another branch and the
+// manager can request for them".
+//
+// GET  /other-branches?q=… | ?product_id=…   how much each OTHER branch of the business holds of the matching tracked
+//      products — the branch, the quantity, when the level last changed. inventory.view (the catalogue gives it to every
+//      selling role: cashier, waiter, supervisor, manager). Quantities only — never a cost. Capped (lookupLimit), no
+//      polling: asked when someone searches. An item a count at that branch is counting shows "being counted" to anyone
+//      who may not change stock (A394, as the branch's own stock screens).
+// A request (one product) is inventory.transfer — a manager asks FOR their own branch, and accepts or declines only
+// what is asked OF their own branch; the owner and a partner of every branch act for any branch. Accepting creates an
+// ordinary transfer (insertTransfer) and despatches it through the transfer's own despatch edge (despatchStock) — no
+// second way for stock to move. The asking branch receives it as any transfer (PATCH /transfers/:id/status).
+
+type RequestRow = {
+  id: string; business_id: string; from_branch_id: string; to_branch_id: string; product_id: string; quantity: number;
+  sent_quantity: number | null; note: string | null; status: string; requested_by: string | null; requested_by_name: string | null;
+  requested_at: string; decided_by: string | null; decided_by_name: string | null; decided_at: string | null;
+  decline_reason: string | null; transfer_id: string | null;
+};
+const REQUEST_COLUMNS = 'id, business_id, from_branch_id, to_branch_id, product_id, quantity, sent_quantity, note, status, '
+  + 'requested_by, requested_by_name, requested_at, decided_by, decided_by_name, decided_at, decline_reason, transfer_id';
+type Req = Parameters<typeof branchScope>[0];
+
+router.get('/other-branches', requirePermission('inventory.view'), async (req, res) => {
+  // A person's own branch; the owner's (or a partner's) picked branch, or null — every branch is "another" then.
+  const own = branchScope(req);
+  // A494: a non-owner with no branch sees nothing (they are not "every branch").
+  if (own === NO_BRANCH) { res.status(403).json({ error: 'You are not signed in at a branch.', code: 'NO_BRANCH' }); return; }
+  const productId = typeof req.query.product_id === 'string' ? req.query.product_id.trim() : '';
+  const q = searchTerm(req.query.q);
+  if (!productId && q.length < SEARCH_MIN) {
+    res.status(400).json({ error: `Type at least ${SEARCH_MIN} letters of the item.`, code: 'SEARCH_TOO_SHORT' }); return;
+  }
+  const limit = lookupLimit(req.query.limit);
+  // Explicit columns: a cost never leaves here (the router's strip is the second lock).
+  let pq = supabase.from('products').select('id, name, sold_by')
+    .eq('business_id', req.businessId).eq('status', 'active').eq('track_stock', true)
+    .order('name', { ascending: true }).limit(limit + 1);
+  pq = productId ? pq.eq('id', productId) : pq.ilike('name', `%${q}%`);
+  const { data: found, error: pErr } = await pq;
+  if (pErr) { sendError(res, pErr); return; }
+  const products = ((found ?? []) as Array<{ id: string; name: string; sold_by: string | null }>).slice(0, limit);
+  const truncated = (found ?? []).length > limit;
+
+  const { data: allBranches, error: bErr } = await supabase.from('branches').select('id, name, status')
+    .eq('business_id', req.businessId).order('name', { ascending: true });
+  if (bErr) { sendError(res, bErr); return; }
+  const others = ((allBranches ?? []) as Array<{ id: string; name: string; status: string | null }>)
+    .filter((b) => b.id !== own && b.status !== 'inactive');
+
+  const levels = new Map<string, { quantity: number; qty_pieces: number | null; updated_at: string | null }>();
+  if (products.length && others.length) {
+    const { data: rows, error: lErr } = await supabase.from('stock_levels')
+      .select('product_id, branch_id, quantity, qty_pieces, updated_at')
+      .in('product_id', products.map((p) => p.id)).in('branch_id', others.map((b) => b.id));
+    if (lErr) { sendError(res, lErr); return; }
+    for (const r of (rows ?? []) as Array<{ product_id: string; branch_id: string; quantity: number; qty_pieces: number | null; updated_at: string | null }>) {
+      levels.set(`${r.product_id}|${r.branch_id}`, { quantity: Number(r.quantity) || 0, qty_pieces: r.qty_pieces == null ? null : Number(r.qty_pieces), updated_at: r.updated_at ?? null });
+    }
+  }
+  // A394: the blind count at each of those branches.
+  const hidden = new Map<string, Set<string>>();
+  if (products.length) for (const b of others) hidden.set(b.id, await hiddenWhileCounting(req, b.id));
+
+  res.json({
+    branch_id: own,
+    truncated,
+    products: products.map((p) => ({
+      product_id: p.id, name: p.name, sold_by: p.sold_by ?? null,
+      branches: others.map((b) => {
+        const l = levels.get(`${p.id}|${b.id}`);
+        if (hidden.get(b.id)?.has(`p:${p.id}`)) return { branch_id: b.id, branch_name: b.name, quantity: null, qty_pieces: null, updated_at: null, counting: true };
+        return { branch_id: b.id, branch_name: b.name, quantity: l?.quantity ?? 0, qty_pieces: p.sold_by === 'piece' ? (l?.qty_pieces ?? 0) : null,
+          updated_at: l?.updated_at ?? null, counting: false };
+      }),
+    })),
+  });
+});
+
+/** Names for the list: each request's two branches and its product. */
+async function describeRequests(rows: RequestRow[]) {
+  if (!rows.length) return [];
+  const branchIds = [...new Set(rows.flatMap((r) => [r.from_branch_id, r.to_branch_id]))];
+  const branches = await chunkIn<{ id: string; name: string }>('branches', 'id', branchIds, (q) => q.select('id, name'));
+  const products = await chunkIn<{ id: string; name: string }>('products', 'id', [...new Set(rows.map((r) => r.product_id))], (q) => q.select('id, name'));
+  const bn = new Map((branches ?? []).map((b) => [b.id, b.name]));
+  const pn = new Map((products ?? []).map((p) => [p.id, p.name]));
+  return rows.map((r) => ({ ...r, quantity: Number(r.quantity), sent_quantity: r.sent_quantity == null ? null : Number(r.sent_quantity),
+    from_branch_name: bn.get(r.from_branch_id) ?? 'Unknown', to_branch_name: bn.get(r.to_branch_id) ?? 'Unknown', product_name: pn.get(r.product_id) ?? 'Item' }));
+}
+
+// The requests to and from the caller's branch (the owner: the branch picked, or every branch), newest first.
+router.get('/requests', requirePermission('inventory.transfer'), async (req, res) => {
+  const own = branchScope(req);
+  if (own === NO_BRANCH) { res.json({ branch_id: null, incoming_open: 0, requests: [] }); return; }
+  const status = typeof req.query.status === 'string' && req.query.status ? req.query.status : null;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+  let query = supabase.from('stock_transfer_requests').select(REQUEST_COLUMNS)
+    .eq('business_id', req.businessId).order('requested_at', { ascending: false }).limit(limit);
+  if (status) query = query.eq('status', status);
+  if (own) query = query.or(`from_branch_id.eq.${own},to_branch_id.eq.${own}`);
+  const { data, error } = await query;
+  if (error) { sendError(res, error); return; }
+  const rows = ((data ?? []) as unknown as RequestRow[]).filter((r) => !own || r.from_branch_id === own || r.to_branch_id === own);
+  const incoming = rows.filter((r) => r.status === 'requested' && (!own || r.from_branch_id === own)).length;
+  res.json({ branch_id: own, incoming_open: incoming, requests: await describeRequests(rows) });
+});
+
+// The badge: requests waiting for the caller's branch to answer (0 for anyone who does not handle transfers).
+router.get('/requests/count', async (req, res) => {
+  const own = branchScope(req);
+  if (!can(req, 'inventory.transfer') || own === NO_BRANCH) { res.json({ incoming: 0 }); return; }
+  let query = supabase.from('stock_transfer_requests').select('id', { count: 'exact', head: true })
+    .eq('business_id', req.businessId).eq('status', 'requested');
+  if (own) query = query.eq('from_branch_id', own);
+  const { count, error } = await query;
+  if (error) { res.json({ incoming: 0 }); return; }
+  res.json({ incoming: Number(count) || 0 });
+});
+
+// Ask another branch for an item — for the caller's OWN branch (the owner / a partner of every branch: any branch).
+router.post('/requests', requirePermission('inventory.transfer'), async (req, res) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const to = (typeof body.to_branch_id === 'string' && body.to_branch_id) || req.branchId || null;
+  const from = typeof body.from_branch_id === 'string' ? body.from_branch_id : '';
+  const productId = typeof body.product_id === 'string' ? body.product_id : '';
+  if (!to) { res.status(400).json({ error: 'Choose the branch the stock is for.', code: 'TO_BRANCH_REQUIRED' }); return; }
+  if (!from || !productId) { res.status(400).json({ error: 'from_branch_id and product_id are required' }); return; }
+  if (!assertBranchAccess(req, to)) {
+    res.status(403).json({ error: 'You can ask for stock only for your own branch.', code: 'NOT_YOUR_BRANCH' }); return;
+  }
+  if (from === to) { res.status(400).json({ error: 'Ask another branch — this is the branch the stock is for.', code: 'SAME_BRANCH' }); return; }
+  if (!(await branchOfBusiness(req.businessId, to)) || !(await branchOfBusiness(req.businessId, from))) {
+    res.status(404).json({ error: 'Branch not found in this business' }); return;
+  }
+  const quantity = requestQuantity(body.quantity);
+  if (quantity === null) { res.status(400).json({ error: 'Ask for a quantity above 0.', code: 'INVALID_QUANTITY' }); return; }
+  const { data: product } = await supabase.from('products').select('id, status')
+    .eq('id', productId).eq('business_id', req.businessId).maybeSingle();
+  if (!product) { res.status(404).json({ error: 'Product not found' }); return; }
+  const { data: open } = await supabase.from('stock_transfer_requests').select('id')
+    .eq('business_id', req.businessId).eq('from_branch_id', from).eq('to_branch_id', to).eq('product_id', productId)
+    .eq('status', 'requested').limit(1);
+  if ((open ?? []).length) {
+    res.status(409).json({ error: 'This branch already asked them for this item — wait for their answer, or cancel it first.', code: 'ALREADY_REQUESTED' });
+    return;
+  }
+  const who = await actor(req);
+  const { data, error } = await supabase.from('stock_transfer_requests').insert({
+    business_id: req.businessId, from_branch_id: from, to_branch_id: to, product_id: productId, quantity,
+    note: cleanNote(body.note), status: 'requested', requested_by: who.id, requested_by_name: who.name,
+    requested_at: new Date().toISOString(),
+  }).select(REQUEST_COLUMNS).single();
+  if (error) { sendError(res, error); return; }
+  res.status(201).json((await describeRequests([data as unknown as RequestRow]))[0]);
+});
+
+/** One request of this business, or a 404 answered. */
+async function requestOf(req: Req, res: Response): Promise<RequestRow | null> {
+  const { data, error } = await supabase.from('stock_transfer_requests').select(REQUEST_COLUMNS)
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error); return null; }
+  if (!data) { res.status(404).json({ error: 'Request not found' }); return null; }
+  return data as unknown as RequestRow;
+}
+
+/** Waiting → `status`, only while still waiting (two managers answering at once: one wins, the other gets 409). */
+async function decide(r: RequestRow, status: string, patch: Record<string, unknown>): Promise<RequestRow | null> {
+  const { data } = await supabase.from('stock_transfer_requests').update({ status, ...patch })
+    .eq('id', r.id).eq('business_id', r.business_id).eq('status', 'requested').select(REQUEST_COLUMNS);
+  return ((data ?? []) as unknown as RequestRow[])[0] ?? null;
+}
+
+for (const step of ['accept', 'decline', 'cancel'] as const) {
+  router.post(`/requests/:id/${step}`, requirePermission('inventory.transfer'), async (req, res) => {
+    try {
+      const r = await requestOf(req, res);
+      if (!r) return;
+      if (!assertBranchAccess(req, actingBranch(step, r))) {
+        res.status(403).json(step === 'cancel'
+          ? { error: 'Only the branch that asked can cancel this request.', code: 'NOT_REQUESTER' }
+          : { error: 'Only the branch that was asked can answer this request.', code: 'NOT_SENDER' });
+        return;
+      }
+      if (r.status !== 'requested') { res.status(409).json({ error: decidedMessage(r.status), code: 'ALREADY_DECIDED', status: r.status }); return; }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const who = await actor(req);
+      const now = new Date().toISOString();
+      const by = { decided_by: who.id, decided_by_name: who.name, decided_at: now };
+
+      if (step === 'decline') {
+        const reason = cleanNote(body.reason);
+        if (!reason) { res.status(400).json({ error: 'Say why it is declined.', code: 'REASON_REQUIRED' }); return; }
+        const done = await decide(r, nextStatus(step), { ...by, decline_reason: reason });
+        if (!done) { res.status(409).json({ error: decidedMessage('other'), code: 'ALREADY_DECIDED' }); return; }
+        res.json((await describeRequests([done]))[0]);
+        return;
+      }
+      if (step === 'cancel') {
+        const done = await decide(r, nextStatus(step), by);
+        if (!done) { res.status(409).json({ error: decidedMessage('other'), code: 'ALREADY_DECIDED' }); return; }
+        res.json((await describeRequests([done]))[0]);
+        return;
+      }
+
+      // Accept and send: what the sender sends — what was asked unless they change it (owner, 2026-10-22: fewer or more
+      // than asked; both are kept: quantity = asked, sent_quantity = sent) — and only what it holds.
+      const sent = body.quantity === undefined || body.quantity === null || body.quantity === '' ? Number(r.quantity) : requestQuantity(body.quantity);
+      if (sent === null) {
+        res.status(400).json({ error: 'Send a quantity above 0.', code: 'INVALID_QUANTITY' }); return;
+      }
+      const { data: level } = await supabase.from('stock_levels').select('quantity')
+        .eq('product_id', r.product_id).eq('branch_id', r.from_branch_id).maybeSingle();
+      const onHand = Number((level as { quantity?: number } | null)?.quantity ?? 0);
+      if (onHand < sent) {
+        res.status(409).json({ error: `This branch holds ${onHand} — send that or less, or decline.`, code: 'NOT_ENOUGH_STOCK', on_hand: onHand }); return;
+      }
+      const claimed = await decide(r, nextStatus(step), { ...by, sent_quantity: sent });
+      if (!claimed) { res.status(409).json({ error: decidedMessage('other'), code: 'ALREADY_DECIDED' }); return; }
+
+      // The existing transfer flow: created pending (insertTransfer), then despatched (despatchStock) — the stock leaves
+      // this branch now and arrives when the asking branch receives the transfer.
+      let transfer: Awaited<ReturnType<typeof insertTransfer>>;
+      try {
+        const asked = r.note ? `: ${r.note}` : '';
+        transfer = await insertTransfer(req.businessId, r.from_branch_id, r.to_branch_id,
+          `Asked for by ${r.requested_by_name ?? 'the other branch'}${asked}`, [{ product_id: r.product_id, quantity: sent }], req.userId);
+      } catch (e) {
+        // Nothing moved: the request waits again.
+        await supabase.from('stock_transfer_requests').update({ status: 'requested', decided_by: null, decided_by_name: null, decided_at: null, sent_quantity: null })
+          .eq('id', r.id).eq('business_id', r.business_id);
+        sendError(res, e as Error);
+        return;
+      }
+      await supabase.from('stock_transfer_requests').update({ transfer_id: transfer.id }).eq('id', r.id).eq('business_id', r.business_id);
+      let despatched = true;
+      try {
+        const edge = await despatchStock(transfer, [{ product_id: r.product_id, quantity: sent }], req.userId, now);
+        const { error: uErr } = await supabase.from('stock_transfers').update({ status: 'in_transit', updated_at: now, ...edge })
+          .eq('id', transfer.id).eq('business_id', req.businessId);
+        if (uErr) throw uErr;
+      } catch {
+        despatched = false;   // the transfer stays "not sent yet" — Despatch it from Transfers
+      }
+      const [row] = await describeRequests([{ ...claimed, transfer_id: transfer.id }]);
+      res.json({ ...row, transfer: { id: transfer.id, transfer_number: transfer.transfer_number, status: despatched ? 'in_transit' : 'pending' },
+        ...(despatched ? {} : { warning: 'The transfer was created but not despatched — Despatch it from Transfers.' }) });
+    } catch (err) {
+      sendError(res, err as Error);
+    }
+  });
+}
 
 export default router;

@@ -67,7 +67,10 @@ export const ENTITY_SPECS: Record<ChangeEntity, EntitySpec> = {
   },
   category: {
     table: 'categories', permissions: ['menu.edit'],
-    fields: { name: text(80, true), color: text(20), icon: text(40), sort_order: int, status: oneOf(['active', 'inactive']), is_kitchen: bool },
+    // A537: menu_id — the menu it is under (Food, Soft drinks …), set from Manager › Menu on the till; the cloud checks the
+    // menu is this business's (lib/changeApply.ts namesAreOurs).
+    fields: { name: text(80, true), color: text(20), icon: text(40), sort_order: int, status: oneOf(['active', 'inactive']), is_kitchen: bool,
+      menu_id: uuidOrNull },
     required: ['name'], sameBy: ['name'], defaults: { status: 'active', sort_order: 0, is_kitchen: false },
   },
   product: {

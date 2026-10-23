@@ -71,7 +71,17 @@
  *  it simply applies no offers (its sales carry none, so the cloud applies none to them). */
 /** 72 = the till sync audit (2026-10-14): sync_queue.drawer_wait_at, sync_error on the cash tables, an index — all local only.
  *  A till on 71 keeps syncing; it simply keeps the old order of its sale queue. */
-export const REQUIRED_DESKTOP_SCHEMA = 72;
+/** 73 = A537: menus and categories.menu_id (both pulled; migration 155). A till on 72 keeps syncing; its sale screen
+ *  simply shows no menus (the plain category list). */
+/** 74 = A544: branch_branding (pulled; migration 156). A till on 73 keeps syncing; it simply wears the business's
+ *  branding, not its branch's override. */
+/** 75 = A552: credit_customers (pulled — the customers a till sells to on account, GET /api/pos/credit-customers) and
+ *  customer_credit_transactions.synced_at (local). A till on 74 keeps syncing; it simply offers no On account. */
+/** 76 = A578: menus.availability (pulled — a menu's hours; migration 165). A till on 75 keeps syncing; it simply shows
+ *  every menu all day, as before. */
+/** 77 = A577: products.sold_by / unit_label and device_config.scale_barcodes (all pulled). A till on 76 keeps syncing; it
+ *  simply sells every item each (no weight keypad) and reads no scale labels. */
+export const REQUIRED_DESKTOP_SCHEMA = 77;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

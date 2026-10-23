@@ -15,6 +15,9 @@
 #   • sOmEsIgNaTuRe_value-123, c2lnbmF0dXJlLXg — the signatures of two made-up JWTs in the A519 log-redaction
 #                                               tests (apps/desktop/test/a519-till-items, tests/support-a519),
 #                                               fed in to prove a support log is redacted before it is sent/stored.
+#   • c2lnbmF0dXJlLXNlY3JldA                   — the signature ("signature-secret") of the made-up JWT
+#                                               {"sub":"dev-T1"} in apps/desktop/test/log-pull-a533.test.mjs (A533),
+#                                               fed in to prove a pulled log is redacted.
 # Matched on the exact benign strings (regexTarget = match), so real secrets are
 # untouched and the suppression survives line/commit changes.
 
@@ -32,4 +35,5 @@ regexes = [
   '''test-secret-for-a340-0123456789''',
   '''sOmEsIgNaTuRe_value-123''',
   '''c2lnbmF0dXJlLXg''',
+  '''c2lnbmF0dXJlLXNlY3JldA''',
 ]

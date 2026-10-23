@@ -6,7 +6,7 @@
 // role list the dashboard and the till draw their pickers from — so what a manager is offered and what the cloud accepts
 // cannot drift:
 //   - the OWNER ('*') may assign any role and grant any permission;
-//   - the owner's role (named owner / admin — lib/ownerRole.ts) is the owner's: nobody else assigns it;
+//   - the owner's role (named owner / admin — lib/ownerRole.ts) is the owner's: nobody assigns it (A562: not even the owner);
 //   - anyone else may assign a role, edit a role, grant a person a permission or manage a person only within what
 //     they hold themselves: keysBeyond(caller, those keys) must be empty (shared permissions.ts).
 // A490: this used to match role NAMES (owner, admin, manager, supervisor, branch_manager) — a role called "Shift lead"
@@ -24,12 +24,16 @@ export function callerHeld(req: { isOwner?: boolean; permissionKeys?: string[] |
 
 export const isOwnerHeld = (held: ReadonlySet<string>): boolean => held.has('*');
 
-/** May this caller give someone this role? The owner's role only by the owner; an unknown role (no name) never by
- *  anyone else — fail closed; any other role only when it holds nothing beyond the caller. */
+/** May this caller give someone this role? The owner's role by NOBODY (A562 — the owner included); an unknown role (no
+ *  name) never by anyone but the owner — fail closed; any other role only when it holds nothing beyond the caller.
+ *  A562: the owner's role is everything, every branch, by its name (lib/ownerRole.ts) — a second person on it was a
+ *  second owner (a business showed two "Owner" staff). The owner's own row gets it when the business is made (admin.ts,
+ *  onboarding.ts, auth.ts ensureOwnerUserRow); someone who needs the owner's rights gets a role holding them (A550's
+ *  General Manager, web dashboard access). */
 export function canAssignRole(held: ReadonlySet<string>, role: RoleLike | null | undefined): boolean {
+  if (role && isOwnerRoleName(role.name)) return false;
   if (isOwnerHeld(held)) return true;
   if (!role || role.name == null || String(role.name).trim() === '') return false;
-  if (isOwnerRoleName(role.name)) return false;
   return keysBeyond(held, role.keys).length === 0;
 }
 

@@ -1,0 +1,133 @@
+---
+import Logo from './Logo.astro';
+import WhatsAppButton from './WhatsAppButton.astro';
+import { NAV, SITE, telLink } from '../lib/site';
+
+interface Props { waMessage?: string }
+const { waMessage } = Astro.props;
+const here = Astro.url.pathname;
+const current = (href: string) => (here.startsWith(href) ? 'page' : undefined);
+---
+<header class="site-header">
+  <div class="wrap site-header__bar">
+    <Logo />
+
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        {NAV.map((item) => (
+          <li><a href={item.href} aria-current={current(item.href)}>{item.label}</a></li>
+        ))}
+      </ul>
+    </nav>
+
+    <div class="site-header__end">
+      <a class="site-header__phone" href={telLink}>{SITE.phoneDisplay}</a>
+      <a class="site-header__signin" href={SITE.signIn}>Sign in</a>
+      <WhatsAppButton small label="WhatsApp" message={waMessage} />
+    </div>
+
+    <!-- Phones and tablets: the same links in a disclosure, which works with no script. -->
+    <details class="mobile-nav">
+      <summary><span class="mobile-nav__bars" aria-hidden="true"></span>Menu</summary>
+      <div class="mobile-nav__panel">
+        <ul>
+          {NAV.map((item) => (
+            <li><a href={item.href} aria-current={current(item.href)}>{item.label}</a></li>
+          ))}
+          <li><a href="/contact/" aria-current={current('/contact/')}>Contact</a></li>
+          <li><a href={SITE.signIn}>Sign in</a></li>
+        </ul>
+        <p class="mobile-nav__phone">Call or WhatsApp <a href={telLink}>{SITE.phoneDisplay}</a></p>
+        <WhatsAppButton message={waMessage} />
+      </div>
+    </details>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(6, 26, 29, 0.96);
+    color: var(--night-text);
+    border-bottom: 1px solid var(--night-line);
+  }
+  .site-header__bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--s-5);
+    min-height: 68px;
+  }
+  .site-nav { display: none; }
+  .site-nav ul { display: flex; gap: var(--s-1); list-style: none; margin: 0; padding: 0; }
+  .site-nav a,
+  .site-header__signin {
+    color: var(--night-text);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.95rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--r-sm);
+    white-space: nowrap;
+  }
+  .site-nav a:hover,
+  .site-header__signin:hover { color: #fff; background: var(--night-2); }
+  .site-nav a[aria-current='page'] { color: var(--teal-light); }
+
+  .site-header__end { display: none; align-items: center; gap: var(--s-3); margin-left: auto; }
+  .site-header__phone { color: var(--night-muted); font-weight: 600; text-decoration: none; font-size: 0.95rem; white-space: nowrap; }
+  .site-header__phone:hover { color: #fff; }
+  .site-header__signin { border: 1px solid var(--night-line); }
+
+  .mobile-nav { margin-left: auto; }
+  .mobile-nav summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 44px;
+    padding: 0 0.95rem;
+    border: 1px solid #2f5357;
+    border-radius: var(--r-pill);
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .mobile-nav summary::-webkit-details-marker { display: none; }
+  .mobile-nav__bars,
+  .mobile-nav__bars::before,
+  .mobile-nav__bars::after {
+    display: block; width: 16px; height: 2px; background: currentColor; border-radius: 2px; position: relative;
+  }
+  .mobile-nav__bars::before,
+  .mobile-nav__bars::after { content: ''; position: absolute; left: 0; }
+  .mobile-nav__bars::before { top: -5px; }
+  .mobile-nav__bars::after { top: 5px; }
+  .mobile-nav__panel {
+    position: absolute;
+    left: 0; right: 0; top: 100%;
+    background: var(--night);
+    border-bottom: 1px solid var(--night-line);
+    padding: var(--s-3) var(--gutter) var(--s-5);
+    max-height: calc(100vh - 68px);
+    overflow-y: auto;
+  }
+  .mobile-nav__panel ul { list-style: none; margin: 0 0 var(--s-4); padding: 0; }
+  .mobile-nav__panel li a {
+    display: block; padding: 0.8rem 0; color: var(--night-text); text-decoration: none;
+    font: 600 1.15rem/1.2 var(--font-display); border-bottom: 1px solid var(--night-line);
+  }
+  .mobile-nav__panel li a[aria-current='page'] { color: var(--teal-light); }
+  .mobile-nav__phone { color: var(--night-muted); }
+  .mobile-nav__phone a { color: var(--teal-light); font-weight: 600; }
+
+  @media (min-width: 1100px) {
+    .site-nav,
+    .site-header__end { display: flex; }
+    .mobile-nav { display: none; }
+  }
+  @media (min-width: 1100px) and (max-width: 1259px) {
+    .site-header__phone { display: none; }
+  }
+</style>

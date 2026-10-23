@@ -29,6 +29,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 // fileURLToPath, not new URL(...).pathname — the latter yields /C:/... on
 // Windows and path.resolve then prepends the drive again (register A33).
@@ -49,7 +50,7 @@ const monitorRaw = readFileSync(R('main/idleMonitor.ts'), 'utf8');
 const monitor    = decomment(monitorRaw);
 const curtain    = decomment(readFileSync(R('renderer/components/LockCurtain.tsx'), 'utf8'));
 const app        = decomment(readFileSync(R('renderer/App.tsx'), 'utf8'));
-const handlers   = decomment(readFileSync(R('main/ipcHandlers.ts'), 'utf8'));
+const handlers   = decomment(ipcHandlersSource());
 
 let passed = 0, failed = 0;
 const ok = (name, cond, detail = '') => {

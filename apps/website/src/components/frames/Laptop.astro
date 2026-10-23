@@ -1,0 +1,36 @@
+---
+// A laptop: a 16:10 lid on a thin base. Holds the web dashboard.
+interface Props { label: string }
+const { label } = Astro.props;
+---
+<figure class="laptop" aria-label={label}>
+  <div class="laptop__lid">
+    <div class="laptop__screen device-screen"><slot /></div>
+  </div>
+  <div class="laptop__base" aria-hidden="true"></div>
+</figure>
+
+<style>
+  .laptop { margin: 0; width: 100%; }
+  .laptop__lid {
+    width: 86%;
+    margin: 0 auto;
+    background: #1a2629;
+    border-radius: 12px 12px 0 0;
+    padding: 2.4% 2.4% 3%;
+    box-shadow: inset 0 0 0 1px #33464b;
+  }
+  .laptop__screen { aspect-ratio: 16 / 10; border-radius: 3px; }
+  .laptop__base {
+    height: 14px;
+    border-radius: 0 0 14px 14px;
+    background: linear-gradient(#c9d3d4, #9fadaf);
+    position: relative;
+    box-shadow: 0 24px 40px -24px rgba(6, 26, 29, 0.6);
+  }
+  .laptop__base::before {
+    content: '';
+    position: absolute; left: 42%; right: 42%; top: 0; height: 5px;
+    border-radius: 0 0 6px 6px; background: #8a999b;
+  }
+</style>

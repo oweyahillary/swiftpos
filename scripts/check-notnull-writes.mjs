@@ -20,7 +20,7 @@
  * silent on a legitimate NULL into a nullable column, using the SAME analyzer
  * the real run uses (rule 24 — test the real thing, not a copy).
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -117,7 +117,10 @@ function lineOf(text, index) { return text.slice(0, index).split('\n').length; }
 
 function scanTree(notNull) {
   const found = [];
-  for (const file of readdirSync(SCAN_DIR).filter(f => f.endsWith('.ts'))) {
+  // D10: and src/main/ipc/*.ts — the IPC handlers moved there from ipcHandlers.ts, and their writes stay in the scan.
+  const ipcDir = path.join(SCAN_DIR, 'ipc');
+  const ipcFiles = existsSync(ipcDir) ? readdirSync(ipcDir).filter(f => f.endsWith('.ts')).map(f => `ipc/${f}`) : [];
+  for (const file of [...readdirSync(SCAN_DIR).filter(f => f.endsWith('.ts')), ...ipcFiles]) {
     const full = path.join(SCAN_DIR, file);
     const text = readFileSync(full, 'utf8');
     // Every backtick template literal (the SQL lives in db.prepare(`...`)).

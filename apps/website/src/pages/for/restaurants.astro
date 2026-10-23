@@ -1,0 +1,195 @@
+---
+import Industry from '../../layouts/Industry.astro';
+import Monitor from '../../components/frames/Monitor.astro';
+import Shot from '../../components/screens/Shot.astro';
+import Receipt from '../../components/screens/Receipt.astro';
+import KitchenDisplay from '../../components/screens/KitchenDisplay.astro';
+import DoThisNextCard from '../../components/screens/DoThisNextCard.astro';
+import { WA_MESSAGES } from '../../lib/site';
+import { RESTAURANT_FAQ } from '../../lib/faq';
+import { demoCard } from '../../lib/analyticsDemo';
+
+const problems = [
+  {
+    problem: 'The waiter shouts the order and the kitchen hears it wrong.',
+    fix: 'The order prints in the kitchen, or appears on the kitchen screen, the moment it is sent. The variant is on the dish\'s own line: "2 CHIPS MASALA - SPICY", and the extras and the cashier\'s notes print under it: "+ Extra Cheese", "** No onions". Nobody has to remember anything.',
+  },
+  {
+    problem: 'The grill gets the drinks, and the bar gets the chips.',
+    fix: 'Each part of your menu goes to its own station: the grill, the kitchen, the bar or dispatch. Drinks skip the kitchen and go straight to whoever packs the tray.',
+  },
+  {
+    problem: 'A takeaway goes out without its sauce.',
+    fix: 'The dispatch ticket lists every part of every combo, and counts the bags, so the packer checks the bag against the paper.',
+  },
+  {
+    problem: 'Table 7 has waited twenty minutes, and nobody noticed.',
+    fix: 'On the kitchen display every order is a card with a timer, moving from Pending to In progress to Ready. The late one is easy to see.',
+  },
+  {
+    problem: 'The day ends and the cash doesn\'t match.',
+    fix: 'Each cashier counts their own drawer. ZapTill shows what should be there, what was counted and the difference, by name, before anyone goes home.',
+  },
+];
+
+const tilapia = demoCard(6);
+---
+<Industry
+  title="ZapTill for restaurants and cafés: kitchen tickets, tables, M-Pesa | ZapTill"
+  description="ZapTill for restaurants and cafés in Kenya: orders straight to the kitchen printer or screen, variants and combos on one line, tables and dine-in, dispatch tickets, M-Pesa and a day close that shows who was short."
+  ogImage="/og/restaurants.png"
+  crumb="Restaurants and cafés"
+  heading="From the order to the plate, nothing gets lost."
+  sub="ZapTill sends every order to the right station as it's taken, keeps tables open while they eat, takes M-Pesa at the table, and closes the day by cashier."
+  waMessage={WA_MESSAGES.restaurant}
+  problems={problems}
+  faq={RESTAURANT_FAQ}
+  closing="See a lunch rush on ZapTill, with your own menu."
+>
+  <Fragment slot="hero">
+    <div class="r-hero">
+      <Monitor label="The ZapTill till with Table 4's order">
+        <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
+          alt="The real ZapTill till: menu buttons, and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
+      </Monitor>
+      <Receipt kind="kitchen" paper={58} class="r-hero__slip" />
+    </div>
+  </Fragment>
+
+  <!-- The kitchen flow -->
+  <section class="band" aria-labelledby="flow-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="flow-h">One order, three places, the same words</h2>
+        <p>
+          Table 4 orders. The kitchen sees the food, dispatch sees everything for the tray, and the customer's receipt
+          shows the same dishes with the M-Pesa number. These are the real tickets ZapTill prints, for a demo order.
+        </p>
+      </div>
+      <div class="flow">
+        <figure class="flow__item">
+          <Receipt kind="kitchen" />
+          <figcaption><b>Kitchen.</b> Food only, the variant on the line, and how many items to cook.</figcaption>
+        </figure>
+        <figure class="flow__item">
+          <Receipt kind="dispatch" />
+          <figcaption><b>Dispatch.</b> The food and the drinks, so the tray or the bag goes out complete.</figcaption>
+        </figure>
+        <figure class="flow__item">
+          <Receipt kind="sale" />
+          <figcaption><b>The customer.</b> Paid part M-Pesa, part cash, with your Buy Goods number printed large.</figcaption>
+        </figure>
+      </div>
+      <div class="extras">
+        <div class="extras__copy">
+          <h3>Extras and notes reach the cook</h3>
+          <p>
+            "Extra cheese, no onions" doesn't stay at the counter. Extras and the cashier's notes print on the kitchen
+            ticket, under the dish they belong to, and on the dispatch ticket too, so the packer checks them. Some
+            things only the chef can do.
+          </p>
+        </div>
+        <figure class="extras__slip">
+          <Receipt kind="extras" paper={58} />
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- Kitchen display -->
+  <section class="band band--night" aria-labelledby="kds-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="kds-h">A kitchen screen, if you'd rather not use paper</h2>
+        <p>
+          Each order arrives as a card with a timer. The cook taps it from Pending to In progress to Ready, and the
+          waiter knows when to collect. Variants and extras sit under the dish.
+        </p>
+        <p>Use a printer, a screen, or both: the grill on paper and the pass on a screen.</p>
+      </div>
+      <div class="split__visual">
+        <Monitor label="The kitchen display">
+          <KitchenDisplay />
+        </Monitor>
+      </div>
+    </div>
+  </section>
+
+  <!-- Combos, variants, tables, menus -->
+  <section class="band band--white" aria-labelledby="menu-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="menu-h">Built around how a restaurant sells</h2>
+      </div>
+      <div class="grid4">
+        <div>
+          <h3>Combos and variants</h3>
+          <p>"Chicken Burger - Spicy" is one line on the receipt and the ticket. A combo lists its parts, so the kitchen
+            cooks every piece and dispatch packs every piece.</p>
+        </div>
+        <div>
+          <h3>Tables and dine-in</h3>
+          <p>Open a table, send the first round to the kitchen, add to it later and take payment when they ask for the
+            bill. Takeaway and delivery from the same screen.</p>
+        </div>
+        <div>
+          <h3>Your menus, as big tabs</h3>
+          <p>Food, Drinks, Tea: your menus sit as big tabs across the top of the till, so the cashier changes menu in
+            one tap. Big buttons and, with ZapTill Online, pictures of your dishes.</p>
+          <!-- TODO(owner): menus by time of day (breakfast menu until 11:00…) are not built yet (A537: "no hours or days
+               for now"); add them here only when they ship. -->
+        </div>
+        <div>
+          <h3>Credit for your regulars</h3>
+          <p>The office that pays at the end of the month gets an account with a credit limit. The cashier puts the
+            bill on their account at the till, every sale on account is confirmed by a manager, and you see who owes
+            what.</p>
+        </div>
+      </div>
+      <p class="r-note">Variants, pictures and offers on the till come with ZapTill Online. <a href="/pricing/">See the packages</a></p>
+    </div>
+  </section>
+
+  <!-- Analytics -->
+  <section class="band" aria-labelledby="ran-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="ran-h">Then: which dishes earn, and when to push them</h2>
+        <p>
+          With Analytics, your menu is sorted into the dishes that earn and the ones that only keep the kitchen busy,
+          and you see what sells at lunch, what sells after six, and what to prepare each day of the week. The cards
+          tell you what to do about it, in plain words: what to order, what to have in for Saturday, which dish to
+          feature. They never tell you to raise your prices.
+        </p>
+        <p><a href="/analytics/">See Analytics</a></p>
+      </div>
+      <div class="split__visual">
+        <DoThisNextCard {...tilapia} />
+      </div>
+    </div>
+  </section>
+</Industry>
+
+<style>
+  .r-hero { position: relative; padding-bottom: var(--s-6); }
+  .r-hero :global(.r-hero__slip) { position: absolute; right: -3%; bottom: -12%; width: 40%; --slip-fs: 0.66rem; transform: rotate(2.5deg); }
+  @media (max-width: 600px) { .r-hero :global(.r-hero__slip) { width: 62%; bottom: -16%; } }
+
+  .flow { display: grid; gap: var(--s-6); align-items: start; }
+  .flow__item { margin: 0; display: grid; gap: var(--s-3); justify-items: center; }
+  .flow__item :global(.slip-wrap) { --slip-fs: 0.62rem; }
+  .flow__item figcaption { color: var(--ink-2); font-size: var(--fs-sm); max-width: 22rem; }
+  @media (min-width: 960px) { .flow { grid-template-columns: repeat(3, 1fr); } }
+
+  .extras { display: grid; gap: var(--s-5); align-items: center; margin-top: var(--s-7); padding-top: var(--s-6); border-top: 1px solid var(--line); }
+  .extras h3 { font-size: var(--fs-lg); }
+  .extras p { color: var(--ink-2); max-width: 34rem; }
+  .extras__slip { margin: 0; display: flex; justify-content: center; }
+  .extras__slip :global(.slip-wrap) { width: min(100%, 18rem); --slip-fs: 0.8rem; }
+  @media (min-width: 760px) { .extras { grid-template-columns: 1.4fr 1fr; } }
+  .grid4 { display: grid; gap: var(--s-6); }
+  .grid4 h3 { margin-bottom: var(--s-2); }
+  .grid4 p { color: var(--ink-2); margin: 0; }
+  @media (min-width: 760px) { .grid4 { grid-template-columns: repeat(2, 1fr); gap: var(--s-6) var(--s-8); } }
+  .r-note { margin-top: var(--s-6); font-size: var(--fs-sm); color: var(--muted); }
+</style>

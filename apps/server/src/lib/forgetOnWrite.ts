@@ -34,6 +34,9 @@ export function forgetOnWrite(what: ForgetWhat) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (READS.has(req.method)) { next(); return; }
     res.on('finish', () => {
+      // A533: a write that changes nothing a till reads (a support log request) says so — no cache forgotten, no socket
+      // made to sign in again.
+      if ((res as { locals?: { forgetNothing?: boolean } }).locals?.forgetNothing) return;
       const biz = what.everyBusiness ? null : ((req as { businessId?: string }).businessId ?? null);
       if (!biz && !what.everyBusiness) return;   // never signed in: nothing of a business was written
       if (what.catalogue) forgetTopic(biz, 'catalogue');

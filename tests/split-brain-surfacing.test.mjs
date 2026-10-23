@@ -9,16 +9,16 @@
  */
 import assert from 'node:assert';
 import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const r = p => fs.readFileSync(path.join(root, p), 'utf8');
-const IPC   = 'apps/desktop/src/main/ipcHandlers.ts';
 const DEV   = 'apps/server/src/routes/devices.ts';
 const FLEET = 'apps/dashboard/src/pages/FleetPage.tsx';
 let pass = 0, fail = 0;
 const ok = (n, f) => { try { f(); pass++; console.log('PASS ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n   ' + e.message); } };
 
 ok('A22: promotion refuses while the current node is still reachable', () => {
-  const s = r(IPC);
+  const s = ipcHandlersSource();
   const h = /handle\('tech:promoteToNode'[\s\S]*?saveDeviceConfig\(\{ device_role: 'node'/.exec(s);
   assert.ok(h, 'promoteToNode handler not found');
   const body = h[0];

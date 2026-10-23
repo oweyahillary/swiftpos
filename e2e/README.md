@@ -22,6 +22,12 @@ npm test                        # run everything
 via `PLAYWRIGHT_BASE_URL`. The API base can be overridden with `API_BASE_URL`
 (default `http://localhost:4000`), used by the seed script.
 
+**Nightly (A536):** `.github/workflows/nightly-e2e.yml` runs these specs and the API
+suites against the DEV environment every night — see `docs/E2E-NIGHTLY.md`. Every
+config refuses production (`lib/prod-guard.mjs`, exit 3), and the test browser cannot
+resolve a production host. `npm run seed:staff` is the browser-free staff seed (API
+only) the workflow uses; `npm run guard` checks the target by hand.
+
 ## What's covered (10 tests + 1 skipped)
 
 **Auth (all three surfaces)**

@@ -65,7 +65,7 @@ ok('a dine-in order opened from the web keeps its order note', () => {
 });
 ok('pos/init sends the quick picks (always a list)', () => {
   const pos = read('apps/server/src/routes/pos.ts');
-  assert.match(pos, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',(?: 'receipt_pay_label', 'receipt_pay_number',(?: 'receipt_pay_account',)?)?\s*\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // A492: + the Paybill account   // A450: + the receipt's M-Pesa line   // A429   // 0.6.37: + History methods   // 0.6.30: + the owner's void/refund rules
+  assert.match(pos, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?(?:'cashier_sees_shift_sales', )?(?:'cashier_history_totals', )?(?:'payment_methods_enabled', )?'order_note_picks',(?: 'receipt_pay_label', 'receipt_pay_number',(?: 'receipt_pay_account',)?)?\s*(?:SCALE_SETTINGS_KEY,[^\n]*\n\s*)?\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // A577: + the scale label layout   // A492: + the Paybill account   // A450: + the receipt's M-Pesa line   // A429   // 0.6.37: + History methods   // 0.6.30: + the owner's void/refund rules
   assert.match(pos, /\n\s+noteQuickPicks: parseNotePicks\(receiptTextRows\?\.find\(\(r: any\) => r\.key === 'order_note_picks'\)\?\.value\)/);
 });
 ok('the owner\'s list is readable by the settings page', () => {
@@ -113,7 +113,7 @@ ok('the web sale sends each line\'s note and the order\'s note', () => {
 });
 ok('a web tap never joins a line that carries a note', () => {
   assert.match(read('apps/dashboard/src/pages/pos/cashier/useCart.ts'),
-    /prev\.find\(i => i\.product\.id === product\.id && i\.selectedVariants\.length === 0 && !i\.notes\)/);
+    /prev\.find\(i => i\.product\.id === product\.id && i\.selectedVariants\.length === 0 && !i\.notes(?: && !i\.measureUnit)?\)/);   // A577: never a weighed line either
 });
 ok('the web cashier screen has the note editor on lines and on the order, with the owner\'s picks', () => {
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');

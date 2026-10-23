@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import { businessTerms } from '../../lib/businessTerms';   // A573
 import { money } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
@@ -23,7 +24,8 @@ interface Product {
 }
 
 export default function ManagerMenuTab({ currency }: { currency: string }) {
-  const { posApi } = usePOSAuth();
+  const { posApi, session } = usePOSAuth();
+  const words = businessTerms(session?.businessType);   // A573: Menu (a restaurant) / Products (a shop)
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -72,8 +74,8 @@ export default function ManagerMenuTab({ currency }: { currency: string }) {
   return (
     <div className="p-6 space-y-5">
       <div>
-        <h2 className="text-white text-lg font-semibold">Menu</h2>
-        <p className="text-gray-500 text-sm">View products, prices and availability. Menu changes are made by the owner.</p>
+        <h2 className="text-white text-lg font-semibold">{words.catalogue}</h2>
+        <p className="text-gray-500 text-sm">View products, prices and availability. {words.food ? 'Menu changes' : 'Changes to products'} are made by the owner.</p>
       </div>
 
       <input

@@ -29,6 +29,8 @@ import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
 import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton } from './cashier/CategoryPanel';   // A537; A566; A580
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
@@ -38,8 +40,16 @@ import { onGrid } from '../../lib/productDays';
 import { exactFirst } from '../../lib/paginate';   // A472
 import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreeze';   // A394
+import { useStockView } from '../../lib/useStockView';   // A563
+import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '../../lib/stockGate';   // A563
 import { useToast } from '../../hooks/useToast';
+import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
+import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '../../lib/menuHours';   // A578: menus by time of day; A580: Later
+import { useMenuHours } from '../../lib/useMenuHours';   // A578
+import { getWebDayCutoff } from '../../lib/webDayCutoff';   // A578: hours past midnight belong to the night before
 import Toast from '../../components/Toast';
+import WeightModal from './WeightModal';   // A577: items sold by weight
+import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, formatWeight } from '../../lib/scaleBarcode';   // A577
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -180,6 +190,7 @@ export default function CashierScreen() {
   const {
     products,
     categories,
+    menus,   // A537
     variantsByProduct,
     tables,
     pumps,
@@ -195,12 +206,14 @@ export default function CashierScreen() {
     receiptHeader,
     receiptFooter,
     receiptPay,   // A450
+    brandStrip,   // A547
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
     paymentMethods,
     paymentMethodsEnabled,   // A429
     offers: branchOffers,    // A445
+    scaleSettings,           // A577
     loading,
     error:         posDataError,
     reload:        reloadPOSData,
@@ -223,6 +236,8 @@ export default function CashierScreen() {
   const isPetrol       = businessMode === 'petrol_station';
   const isMinimart     = businessMode === 'minimart';
   const isRetailLike   = businessMode === 'retail' || isMinimart;
+  // A573: the business's words (Menus / Departments / Groups …) — lib/businessTerms.ts, the till reads the same file.
+  const words          = businessTerms(businessMode);
   // Modes that start on a "slot picker" screen instead of the product grid:
   const hasSlotPicker  = isRestaurant || isParking || isPetrol;
 
@@ -261,6 +276,7 @@ export default function CashierScreen() {
     minimartAddToCart,
     minimartUpdateQty,
     minimartRemoveItem,
+    addWeighedToCart,   // A577
     variantProduct,
     selectedVariants,
     openVariantModal,
@@ -273,20 +289,65 @@ export default function CashierScreen() {
     fuelLitresStr, setFuelLitresStr,
   } = useCart();
 
+  // A578 (owner, 2026-10-23: menus by time of day): a menu outside its hours leaves the top tabs, the panel, the grid,
+  // the All tab and search, by this browser's clock — one timer at the next change. Every mode (a restaurant's
+  // Breakfast, a shop's licensed-hours alcohol department, a petrol station's shop groups; MinimartPOS through its props).
+  // An item scanned or tapped anyway is refused in plain words (isFrozen below). "Show all" for the session: menu.edit.
+  const canShowAllMenus = hasPermission('menu.edit');
+  const [showAllMenus, setShowAllMenus] = useState(false);
+  // A580: "Later" — any staff member sees the closed menus greyed (view only, nothing sold); this session only, never stored.
+  const [laterMenus, setLaterMenus] = useState(false);
+  const hours = useMenuHours(menus, categories, { cutoff: getWebDayCutoff(), showAll: showAllMenus && canShowAllMenus, later: laterMenus });
+  const hoursRef = useRef<Pick<MenuHoursView<unknown, unknown>, 'asleep'>>(hours);
+  hoursRef.current = hours;   // the scanner's listener reads the latest, not the render it was made in
+  const menusNow = hours.menus, categoriesNow = hours.categories;
+
   // A394: an item frozen by a stock count is refused at the counter (the cloud refuses it at payment too).
   const countFreeze = useStockCountFreeze(posApi.get, session?.branchId);
   const { toast: freezeToast, showToast: showFreezeToast, hideToast: hideFreezeToast } = useToast(5000);
+  // A563: the owner's "When an item's stock reaches zero" — a tracked item the branch is known to be out of is greyed
+  // "Sold out" (or hidden) and refused here; the cloud refuses the sale too (409 SOLD_OUT). Unknown stock sells.
+  const { view: stockView, refresh: refreshStockView } = useStockView(posApi.get, session?.branchId);
   const isFrozen = useCallback((product: Product): boolean => {
-    if (!countFreeze.frozen.has(product.id)) return false;
-    showFreezeToast(frozenMessage(countFreeze.ref, product.name), 'warning');
-    return true;
-  }, [countFreeze, showFreezeToast]);
+    const outOfHours = hoursRefusal(product as any, hoursRef.current);   // A578: its menu is outside its hours
+    if (outOfHours) { showFreezeToast(outOfHours, 'warning'); return true; }
+    if (countFreeze.frozen.has(product.id)) {
+      showFreezeToast(frozenMessage(countFreeze.ref, product.name), 'warning');
+      return true;
+    }
+    if (stockView.mode !== 'sell' && !(product as any).is_fuel) {
+      const lines = [...cart.map((i) => ({ product_id: i.product.id, name: i.product.name, quantity: i.quantity })),
+        { product_id: product.id, name: product.name, quantity: 1 }];
+      const mine = stockRefusals(stockView.mode, stockView, lines).find((r) => r.index === lines.length - 1);
+      if (mine) { showFreezeToast(mine.message, 'warning'); return true; }
+    }
+    return false;
+  }, [countFreeze, showFreezeToast, stockView, cart]);
+
+  // A577: the item sold by weight whose weight is being typed (WeightModal). Every mode — the shop's grid, a
+  // restaurant's nyama choma by the kilo, a petrol station's shop.
+  const [weighFor, setWeighFor] = useState<Product | null>(null);
 
   // Adapter: addToCart needs variantsByProduct from usePOSData
   const addToCart = useCallback(
-    (product: Product) => { if (!isFrozen(product)) _addToCart(product, variantsByProduct); },
+    (product: Product) => {
+      if (isFrozen(product)) return;
+      if (isSoldByWeight(product as any) && !(product as any).is_fuel) { setWeighFor(product); return; }   // A577: the weight first
+      _addToCart(product, variantsByProduct);
+    },
     [_addToCart, variantsByProduct, isFrozen],
   );
+  /** A577: a scanned code that is a weighing scale's label of one of this business's items → its line; true = handled. */
+  const scaleScan = (code: string): boolean => {
+    const reading = parseScaleBarcode(code, scaleSettings);
+    if (!reading) return false;
+    const product = findScaleProduct(products as any[], reading.itemCode) as Product | undefined;
+    if (!product) { showFreezeToast(`No item has the scale code ${reading.itemCode}. Set it on the item (Products › Sold by weight).`, 'warning'); return true; }
+    if (!isFrozen(product)) addWeighedToCart(product, scaleLine(Number(product.base_price), reading));
+    return true;
+  };
+  const scaleScanRef = useRef(scaleScan);
+  scaleScanRef.current = scaleScan;
   const minimartAddToCartChecked = useCallback(
     (product: Product, qty?: number) => { if (!isFrozen(product)) minimartAddToCart(product, qty); },
     [minimartAddToCart, isFrozen],
@@ -420,14 +481,16 @@ export default function CashierScreen() {
   // ── Barcode scanner listener (plain retail only — NOT minimart) ────────────
   // MinimartPOS has its own full-featured scanner with PLU/EAN-13/weight decode.
   // Running both simultaneously would double-fire every scan.
+  // A577: a petrol station's shop scans too, while its grid is showing (never on the pumps).
   useEffect(() => {
-    if (!isRetailLike || isMinimart) return;
+    if (!((isRetailLike && !isMinimart) || (isPetrol && view === 'products'))) return;
     let buffer = '';
     let timer: ReturnType<typeof setTimeout>;
 
     const onKey = (e: KeyboardEvent) => {
       clearTimeout(timer);
       if (e.key === 'Enter' && buffer.length > 4) {
+        if (scaleScanRef.current(buffer)) { buffer = ''; return; }   // A577: a scale label (21–29) — never a 20 code
         const found = products.find(p => (p as any).barcode === buffer);
         if (found) addToCart(found);
         buffer = '';
@@ -440,7 +503,7 @@ export default function CashierScreen() {
 
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('keydown', onKey); clearTimeout(timer); };
-  }, [isRetailLike, products]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isRetailLike, isPetrol, view, products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load data ──────────────────────────────────────────────────────────────
   // Fully handled by usePOSData hook above. Products, categories, variants,
@@ -819,18 +882,42 @@ export default function CashierScreen() {
   }, [cart]);
   useEffect(() => () => { if (cartFlashTimer.current) clearTimeout(cartFlashTimer.current); }, []);
 
-  // A464: the category bar has more to the right (a phone shows a fade there until it is scrolled to the end).
-  const catRowRef = useRef<HTMLDivElement | null>(null);
-  const [catMore, setCatMore] = useState(false);
-  const checkCatMore = useCallback(() => {
-    const el = catRowRef.current;
-    setCatMore(!!el && el.scrollWidth - el.scrollLeft - el.clientWidth > 4);
-  }, []);
+  // A537 (owner, 2026-10-20: "the menu categories at the top, can we add them to the left like a hamburger, which can
+  // collapse, and it should start collapsed by default?"): the category bar (and A464's fade at its right edge) became a
+  // left panel behind ☰ — collapsed at start, pinned open if the cashier pins it, the business's menus as tabs on top.
+  const catPanel = useCategoryPanel();
+  const activeMenu = catPanel.prefs.menu;
+  const menuCats = useMemo(() => categoriesForMenu(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
+  const menuFilterScope = useMemo(() => menuScope(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
+  // A menu change can take the chosen category away: back to All.
   useEffect(() => {
-    checkCatMore();
-    window.addEventListener('resize', checkCatMore);
-    return () => window.removeEventListener('resize', checkCatMore);
-  }, [checkCatMore, categories.length, isPhone, activeKey]);
+    const keep = resolveCategory(activeCategory, menuCats);
+    if (keep !== activeCategory) setActiveCategory(keep);
+  }, [menuCats, activeCategory]);
+  const chosenMenuName = menuTabs(menusNow, categoriesNow).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
+  const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c) => c.id === activeCategory)?.name ?? null);
+  // A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
+  // categories used to appear so that cashiers can easily pick the menu"): with menus they are big tabs across the top
+  // of the grid (MenuBar) and the chip names only the chosen category; a tap on a menu shows its items (its category and
+  // any search start again). No menus: no bar, as before.
+  const menuBar = useMemo(() => menuBarTabs(menusNow, categoriesNow), [menusNow, categoriesNow]);
+  const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); setSearch(''); };
+  // A578: the manager's "Show all" at the end of the menu row — only with menu.edit, only while a menu is asleep.
+  // A580: amber with a key and "sell" — clearly not the grey, dashed "Later" (anyone's, view only) beside it.
+  const showAllButton = canShowAllMenus && hours.anyAsleep ? (
+    <button type="button" data-testid="menu-show-all" aria-pressed={showAllMenus} onClick={() => setShowAllMenus((v) => !v)}
+      title={`Manager: bring back every ${words.menu.toLowerCase()} and sell from them now`}
+      style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600,
+               border: '1px solid rgba(245,158,11,0.55)', background: showAllMenus ? 'rgba(245,158,11,0.18)' : 'var(--pos-surface, #1e293b)', color: '#f59e0b' }}>
+      <span aria-hidden style={{ marginRight: 4 }}>🔑</span>{showAllMenus ? `Showing all ${words.menus.toLowerCase()} ✕` : `Show all ${words.menus.toLowerCase()} · sell`}
+    </button>
+  ) : undefined;
+  // A580 (owner, 2026-10-23): "Later" for every staff member while a menu is closed — gone while a manager's Show all is on.
+  const laterButton = hours.anyAsleep && !(showAllMenus && canShowAllMenus)
+    ? <LaterButton on={laterMenus} onToggle={() => setLaterMenus((v) => !v)} label={words.menus} /> : undefined;
+  const menuBarTrailing = laterButton || showAllButton ? <>{laterButton}{showAllButton}</> : undefined;
+  const catChip = chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} ${words.menu.toLowerCase()}` : null);
+  const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
   function resumeParked(key: string) {
     const order = openOrders[key];
@@ -959,6 +1046,7 @@ export default function CashierScreen() {
           tableNumber: order.tableId ? order.tableName : undefined,
           comboItems, categories, kitchenExclusions,
           orderNote,   // A367
+          posFeatures,   // A543/A551: kitchen_font_b — the kitchen ticket's font
           kinds: ['kitchen', 'dispatch'],   // A253: food + packing fire at send, not at pay
         }).catch(err => console.error('[KOT]', err));
       }
@@ -987,6 +1075,7 @@ export default function CashierScreen() {
   };
   function changeQty(index: number, delta: number) {
     const it = cart[index];
+    if (delta > 0 && it && isFrozen(it.product)) return;   // A563 (and A394): not one more than the branch is known to have
     if (activeSentId && it?.order_item_id && delta < 0) {
       setKitchenVoid({ title: `Take back 1 × ${it.product.name}`,
         lines: [{ order_item_id: it.order_item_id, name: it.product.name, qty: 1, amount: lineAmount(it, 1) }],
@@ -1038,6 +1127,7 @@ export default function CashierScreen() {
         orderType: order?.orderType ?? (order?.tableId ? 'dine_in' : 'retail'),
         cashierName: session?.staffName ?? 'Cashier', total: kitchenVoid.lines.reduce((s, l) => s + l.amount, 0),
         tableNumber: order?.tableId ? order.tableName : undefined, comboItems, categories, kitchenExclusions,
+        posFeatures,   // A543/A551: kitchen_font_b — the VOID ticket in the kitchen's own font
         kinds: ['kitchen', 'dispatch'], voided: { by: r.approvedBy ?? '', reason: voidReasonLabel(v.reason) },
       }).catch(err => console.error('[KOT void]', err));
     }
@@ -1101,18 +1191,22 @@ export default function CashierScreen() {
   // ── Product filter ─────────────────────────────────────────────────────────
   const filtered = products.filter((p) => {
     const matchCat = activeCategory === 'all' || p.category_id === activeCategory;
+    const matchMenu = inMenuScope(p, gridMenuScope(menuFilterScope, search));   // A537: a menu chosen = its categories only; A566: a search looks through every menu
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     // For petrol stations, show only fuel products on the product grid
     const matchFuel = isPetrol ? (p as any).is_fuel === true : !(p as any).is_fuel;
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay = onGrid((p as any).show_days, search.trim() !== '');
-    return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
+    const matchStock = !hiddenOutOfStock(stockView.mode, stockView, p.id);   // A563: "Hide when out of stock"
+    const matchHours = !hiddenByHours(p as any, hours)   // A578: its menu outside its hours — off the grid, All and search
+      || laterPeek(p as any, hours, { menu: activeMenu, category: activeCategory, search });   // A580: Later — shown greyed in its own menu
+    return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock && matchHours;
   });
   // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000 at
   // once. A new category or search starts again at the top. An exact hit (a product's name or barcode typed in full) is
   // the first tile, so it is on screen at once.
   const gridList = exactFirst(filtered, search, (p) => [p.name, (p as any).barcode]);
-  const grid = useGridWindow(gridList.length, `${activeCategory}|${search}|${isPetrol}`);
+  const grid = useGridWindow(gridList.length, `${activeMenu}|${activeCategory}|${search}|${isPetrol}`);
 
   const currentOrderLabel = activeKey
     ? (openOrders[activeKey]?.tableName ?? 'Order')
@@ -1166,6 +1260,9 @@ export default function CashierScreen() {
 
   return (
     <div style={s.root} data-pos-theme={posTheme}>
+      {/* A547: the till's brand strip (A326) — the branch's colour, else the business's; only with themes on (usePOSData). */}
+      {brandStrip && <div aria-hidden data-testid="pos-brand-strip"
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 3, zIndex: 60, pointerEvents: 'none', background: brandStrip }} />}
       <Toast toast={freezeToast} onDismiss={hideFreezeToast} />
       <style>{posTheme === 'light' ? `
         [data-pos-theme="light"] {
@@ -1320,11 +1417,19 @@ export default function CashierScreen() {
         {/* Minimart: self-contained POS replacing both panels */}
         {isMinimart && (
           <MinimartPOS
-            products={products}
-            categories={categories}
+            products={products.filter((p) => !hiddenOutOfStock(stockView.mode, stockView, p.id))}   // A563
+            categories={categoriesNow}   // A578: a department outside its hours left out (a scan of its item is refused)
+            menus={menusNow}
+            menuHints={hours.hints}
+            menuBarTrailing={menuBarTrailing}   // A580: Later + Show all
+            menuLater={hours.later}
+            peekLater={(p: Product, scope: { menu: string; category: string; search: string }) => laterPeek(p as any, hours, scope)}
+            outOfHours={(p: Product) => hoursRefusal(p as any, hours)}
             cart={cart}
             currency={currency}
             onAddToCart={minimartAddToCartChecked}
+            scaleSettings={scaleSettings}   // A577
+            onAddWeighed={(p: Product, line) => { if (!isFrozen(p)) addWeighedToCart(p, line); }}
             onUpdateQty={minimartUpdateQty}
             onRemoveItem={minimartRemoveItem}
             onClearCart={() => setCart([])}
@@ -1573,49 +1678,27 @@ export default function CashierScreen() {
                 </div>
               )}
 
-              {/* Search */}
-              <div style={s.productHeader}>
+              {/* Search — A537: ☰ at its left opens the category panel; the chosen category shows by it ("Burgers ✕"). */}
+              <div style={{ ...s.productHeader, display: 'flex', gap: 8, alignItems: 'center', borderBottom: '1px solid var(--pos-border-l)' }}>
+                <PanelToggle panel={catPanel} />
                 <input
-                  style={s.searchInput}
+                  style={{ ...s.searchInput, flex: 1, minWidth: 0 }}
                   placeholder={isMinimart ? 'Search or scan barcode…' : 'Search products…'}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                <CategoryChip label={catChip} onClear={clearCatChip} />
               </div>
 
-              {/* Category tabs */}
-              {/* A464: on a phone a fade at the right edge says there are more categories; a tapped one scrolls into view. */}
-              <div style={{ position: 'relative', flexShrink: 0 }}>
-              {isPhone && catMore && (
-                <div data-testid="cat-more-fade" aria-hidden
-                  style={{ position: 'absolute', top: 0, right: 0, bottom: 1, width: 36, pointerEvents: 'none', zIndex: 1,
-                           background: 'linear-gradient(to right, transparent, var(--pos-panel))' }} />
-              )}
-              <div style={s.catRow} ref={catRowRef} onScroll={checkCatMore}>
-                {[{ id: 'all', name: 'All', color: null, icon: null }, ...categories].map((cat) => (
-                  <button
-                    key={cat.id}
-                    style={{
-                      ...s.catBtn,
-                      ...(activeCategory === cat.id
-                        ? {
-                            background: (cat as Category).color ?? 'rgb(var(--act-strong, 34 197 94))',
-                            color: '#fff',
-                            borderColor: 'transparent',
-                          }
-                        : {}),
-                    }}
-                    onClick={(e) => {
-                      setActiveCategory(cat.id);
-                      if (isPhone) e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                    }}
-                  >
-                    {(cat as Category).icon && <span>{(cat as Category).icon} </span>}
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-              </div>
+              {/* A566: the menus as big tabs across the top of the grid (none when the business has no menus). */}
+              <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={words.menus} hints={hours.hints} trailing={menuBarTrailing} greyed={hours.later} />
+
+              {/* A537: the category panel (collapsed at start) beside — or, on a phone, over — the product grid. */}
+              <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
+              <CategoryPanel panel={catPanel} categories={categoriesNow} menus={menusNow} products={products}
+                menusLabel={words.menus} allMenusLabel={words.allMenus}
+                activeMenu={activeMenu} activeCategory={activeCategory}
+                onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={isPhone} menuBar={menuBar.length > 0} />
 
               {/* Product grid */}
               <div ref={grid.rootRef} style={s.productGrid}>
@@ -1629,6 +1712,8 @@ export default function CashierScreen() {
                       .reduce((sum, i) => sum + i.quantity, 0);
                     const hasVariants =
                       product.has_variants && (variantsByProduct[product.id]?.length ?? 0) > 0;
+                    const soldOut = showsSoldOut(stockView.mode, stockView, product.id);   // A563
+                    const later = hours.later.size > 0 && itemAsleep(product as any, hours) !== null;   // A580: a closed menu's item, Later on
 
                     return (
                       <button
@@ -1636,9 +1721,14 @@ export default function CashierScreen() {
                         data-testid="product-card"
                         className="press"
                         data-has-variants={hasVariants ? 'true' : 'false'}
-                        style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}) }}
+                        data-sold-out={soldOut ? 'true' : undefined}
+                        data-later={later ? 'true' : undefined}
+                        aria-disabled={soldOut || later || undefined}
+                        style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}), ...(soldOut || later ? { opacity: 0.5, filter: 'grayscale(1)' } : {}) }}
                         onClick={() => addToCart(product)}
                       >
+                        {later && <span data-testid="tile-later" style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700, border: '1px dashed #6b7280' }}>LATER</span>}
+                        {soldOut && !later && <span style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700 }}>SOLD OUT</span>}
                         {inCart && <span key={cartQty} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{cartQty}</span>}
                         {hasVariants && <span style={s.variantBadge}>options</span>}
                         {(product as any).is_fuel && <span style={s.fuelBadge}>⛽</span>}
@@ -1676,6 +1766,7 @@ export default function CashierScreen() {
                 )}
                 {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden style={{ gridColumn: '1/-1', height: 1 }} />}
               </div>
+              </div>
             </>
           )}
         </div>
@@ -1693,7 +1784,7 @@ export default function CashierScreen() {
           {isPhone && (
             <button data-testid="pos-cart-back" onClick={() => setCartSheet(false)}
               style={{ margin: '10px 14px 0', alignSelf: 'flex-start', background: 'none', border: '1px solid var(--pos-border)', borderRadius: 8,
-                       padding: '6px 12px', color: 'var(--pos-text)', fontSize: 13, cursor: 'pointer' }}>← Back to the menu</button>
+                       padding: '6px 12px', color: 'var(--pos-text)', fontSize: 13, cursor: 'pointer' }}>← {words.backToGrid}</button>
           )}
           <div style={s.cartHeader}>
             <div>
@@ -1811,11 +1902,13 @@ export default function CashierScreen() {
                         {item.selectedVariants.map((v) => `${v.groupName}: ${v.optionName}`).join(' · ')}
                       </div>
                     )}
-                    <div style={s.cartItemPrice}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : 'each'}</div>
+                    <div style={s.cartItemPrice}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : item.measureUnit ? '/kg' : 'each'}</div>
                   </div>
                   <div style={s.cartItemControls}>
                     {item.isFuel ? (
                       <span style={s.qtyNum}>{item.quantity.toFixed(2)} L</span>
+                    ) : item.measureUnit ? (
+                      <span style={s.qtyNum} data-testid="weighed-qty">{formatWeight(item.quantity, item.measureUnit)}</span>
                     ) : (
                       <>
                         <button className="press" style={s.qtyBtn} onClick={() => changeQty(index, -1)}>−</button>
@@ -2404,6 +2497,12 @@ export default function CashierScreen() {
         </div>
       )}
 
+      {weighFor && (
+        <WeightModal product={weighFor as any} pricePerKg={Number(weighFor.base_price)} currency={currency}
+          onConfirm={(line) => { const p = weighFor; setWeighFor(null); addWeighedToCart(p, line); }}
+          onClose={() => setWeighFor(null)} />
+      )}
+
       {noteFor !== null && (noteFor === 'order' || cart[noteFor]) && (
         <NoteModal
           kind={noteFor === 'order' ? 'order' : 'item'}
@@ -2452,6 +2551,7 @@ export default function CashierScreen() {
           initialEvenSplit={paymentEvenSplit}
           onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {
+            refreshStockView();   // A563: this sale took its tracked items off the branch's stock
             // Free the table immediately on payment (independent of the receipt's
             // New Sale button), so a paid table never stays stuck "Occupied".
             if (activeKey) {
@@ -2475,6 +2575,7 @@ export default function CashierScreen() {
                   ? openOrders[activeKey].tableName : undefined,
                 comboItems, categories, kitchenExclusions,
                 orderNote,   // A367
+                posFeatures,   // A543/A551: kitchen_font_b — the kitchen ticket's font
                 kinds: ['kitchen', 'dispatch'],   // A253: pay-first has no send step
               }).catch(err => console.error('[KOT]', err));
             }
@@ -2609,12 +2710,12 @@ export default function CashierScreen() {
       {/* ── Split Bill by Items Modal ─────────────────────────────────────── */}
 
       {/* ── Room Charge Modal ─────────────────────────────────────────────── */}
-      {showRoomCharge && isRestaurant && (
+      {showRoomCharge && isRestaurant && foodAreas(businessMode).roomCharge && (
         <div style={s.overlay} className="animate-fade-in">
           <div className="animate-pop-in" style={{ ...s.modal, maxWidth: 380, textAlign: 'left' }}>
             <p style={{ ...s.modalTitle, textAlign: 'left', marginBottom: 4 }}>🏨 Post to Room</p>
             <p style={{ ...s.modalSubtitle, textAlign: 'left', marginBottom: 20 }}>
-              Charge {fmt(orderTotal, currency)} to a hotel room — guest settles at checkout.
+              Charge {fmt(orderTotal, currency)} to a guest's room — the guest settles at checkout.
             </p>
             <div style={{ marginBottom: 14 }}>
               <label style={{ ...s.inputLabel }}>Room number *</label>
@@ -2963,16 +3064,6 @@ const s: Record<string, React.CSSProperties> = {
     width: '100%', background: 'var(--pos-input)', border: '1px solid var(--pos-input-border)',
     borderRadius: 8, padding: '8px 14px', color: 'var(--pos-text)', fontSize: 13,
     outline: 'none', boxSizing: 'border-box' as const,
-  },
-  catRow: {
-    display: 'flex', gap: 6, padding: '8px 16px',
-    borderBottom: '1px solid var(--pos-border-l)', overflowX: 'auto' as const, flexShrink: 0,
-    background: 'var(--pos-panel)',
-  },
-  catBtn: {
-    padding: '5px 12px', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)',
-    borderRadius: 20, color: 'var(--pos-text3)', fontSize: 12, fontWeight: 500,
-    cursor: 'pointer', whiteSpace: 'nowrap' as const, flexShrink: 0,
   },
   productGrid: {
     flex: 1, overflowY: 'auto' as const, padding: 12,

@@ -1,0 +1,71 @@
+---
+import Logo from './Logo.astro';
+import WhatsAppButton from './WhatsAppButton.astro';
+import { NAV, INDUSTRIES, SITE, telLink } from '../lib/site';
+const year = new Date().getFullYear();
+---
+<footer class="site-footer">
+  <div class="wrap site-footer__grid">
+    <div class="site-footer__brand">
+      <Logo />
+      <p>The till, the kitchen and the day close for restaurants, bars and shops.</p>
+      <WhatsAppButton small />
+    </div>
+
+    <nav aria-label="Pages">
+      <h2 class="site-footer__title">Pages</h2>
+      <ul>
+        <li><a href="/">Home</a></li>
+        {NAV.map((item) => <li><a href={item.href}>{item.label}</a></li>)}
+        <li><a href="/contact/">Contact</a></li>
+      </ul>
+    </nav>
+
+    <nav aria-label="Who it's for">
+      <h2 class="site-footer__title">Who it's for</h2>
+      <ul>
+        {INDUSTRIES.map((i) => <li><a href={i.href}>{i.name}</a></li>)}
+        <li><a href="/who-its-for/#petrol">Petrol stations</a></li>
+      </ul>
+    </nav>
+
+    <div>
+      <h2 class="site-footer__title">Talk to us</h2>
+      <ul>
+        <li>Call or WhatsApp <a href={telLink}>{SITE.phoneDisplay}</a></li>
+        <li><a href="/contact/#visit">Book a visit</a></li>
+        <li><a href={SITE.signIn}>Sign in to your dashboard</a></li>
+        {/* TODO(owner): add the company email here once it exists. */}
+      </ul>
+    </div>
+
+    <div>
+      <h2 class="site-footer__title">The small print</h2>
+      <ul>
+        <li><a href="/privacy/">Privacy</a></li>
+        <li><a href="/terms/">Terms</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="wrap site-footer__base">
+    <span>&copy; {year} ZapTill</span>
+    <span>Built in Kenya</span>
+  </div>
+</footer>
+
+<style>
+  .site-footer { background: var(--night); color: var(--night-muted); padding-top: var(--s-8); font-size: var(--fs-sm); }
+  .site-footer__grid { display: grid; gap: var(--s-6); grid-template-columns: 1fr; }
+  .site-footer__brand { color: var(--night-text); }
+  .site-footer__brand p { color: var(--night-muted); max-width: 22rem; margin-top: var(--s-4); }
+  .site-footer__title { font: 600 1rem/1.3 var(--font-display); color: var(--night-text); margin-bottom: var(--s-3); letter-spacing: 0; }
+  .site-footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+  .site-footer a:not(.btn):not(.logo) { color: var(--night-text); text-decoration: none; }
+  .site-footer a:not(.btn):not(.logo):hover { color: #fff; text-decoration: underline; }
+  .site-footer__base {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s-3);
+    margin-top: var(--s-7); padding-block: var(--s-5); border-top: 1px solid var(--night-line);
+  }
+  @media (min-width: 640px) { .site-footer__grid { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 1000px) { .site-footer__grid { grid-template-columns: 1.5fr 1fr 1.2fr 1.2fr 1fr; } }
+</style>

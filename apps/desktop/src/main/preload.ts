@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     tlsRetrust:   ()                        => ipcRenderer.invoke('node:tlsRetrust'),     // A489
     syncHealth:   ()                        => ipcRenderer.invoke('node:syncHealth'),     // A501
     retryFailed:  ()                        => ipcRenderer.invoke('node:retryFailed'),    // A501
+    distribution: ()                        => ipcRenderer.invoke('node:distribution'),   // A534 (A23)
+    drawersStatus: ()                       => ipcRenderer.invoke('node:drawersStatus'),  // A542
   },
 
   pos: {
@@ -65,6 +67,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     notePicks: () => ipcRenderer.invoke('pos:notePicks'),   // A367
     features: () => ipcRenderer.invoke('pos:features'),     // 0.6.27
     stockCountFreeze: () => ipcRenderer.invoke('pos:stockCountFreeze'),   // A394
+    stockView: () => ipcRenderer.invoke('pos:stockView'),   // A563
     approveFrozenSale: (pin: string, product_id: string) => ipcRenderer.invoke('pos:approveFrozenSale', { pin, product_id }),   // A521
     history: () => ipcRenderer.invoke('pos:history'),       // 0.6.27
     reversalRules: () => ipcRenderer.invoke('pos:reversalRules'),   // 0.6.30
@@ -91,6 +94,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     detail: (orderId: string) => ipcRenderer.invoke('order:detail', orderId),
     refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) =>
               ipcRenderer.invoke('order:refund', { orderId, reason, override_pin, authorizer_id }),
+    // A552: On account — offered here?, may the person approve it themselves, the customers matching a name or phone.
+    creditCustomers: (search?: string) => ipcRenderer.invoke('credit:customers', { search }),
   },
 
   sync: {
@@ -144,6 +149,22 @@ contextBridge.exposeInMainWorld('swiftpos', {
     status:   (body: { id: string; status: 'in_transit' | 'received' | 'cancelled'; reason?: string;
                 received_items?: Array<{ product_id: string; quantity_received: number }>; receipt_note?: string; allow_same_user?: boolean }) =>
       ipcRenderer.invoke('transfers:status', body),
+  },
+  // A564: another branch's stock, and asking that branch for an item (online licence).
+  branchStock: {
+    find:     (q: string, product_id?: string) => ipcRenderer.invoke('branchStock:find', { q, product_id }),
+    requests: () => ipcRenderer.invoke('branchStock:requests'),
+    request:  (from_branch_id: string, product_id: string, quantity: number, note?: string) =>
+      ipcRenderer.invoke('branchStock:request', { from_branch_id, product_id, quantity, note }),
+    decide:   (id: string, step: 'accept' | 'decline' | 'cancel', extra?: { reason?: string; quantity?: number }) =>
+      ipcRenderer.invoke('branchStock:decide', { id, step, ...(extra ?? {}) }),
+  },
+  // A571: barcode labels on any printer and any label size.
+  labels: {
+    setup: () => ipcRenderer.invoke('labels:setup'),
+    save:  (body: { settings?: unknown; printer?: unknown }) => ipcRenderer.invoke('labels:save', body),
+    print: (body: { items: Array<{ product_id: string; copies: number }>; path?: string; settings?: unknown; generate?: boolean }) => ipcRenderer.invoke('labels:print', body),
+    numbering: (numbering: unknown) => ipcRenderer.invoke('labels:numbering', { numbering }),   // A574
   },
   // A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in.
   monthly: {
@@ -324,6 +345,11 @@ contextBridge.exposeInMainWorld('swiftpos', {
     recordWastage:  (payload: { reason: string; note?: string; items: any[] }) => ipcRenderer.invoke('wastage:record', payload),
     wastageState:   ()                                   => ipcRenderer.invoke('wastage:state'),
     dismissWastage: (clientId: string)                   => ipcRenderer.invoke('wastage:dismiss', clientId),
+    // A545: credit sales a manager confirms or disputes
+    creditSales:    ()                                   => ipcRenderer.invoke('credit:list'),
+    decideCredit:   (orderId: string, decision: 'confirm' | 'dispute', reason?: string) => ipcRenderer.invoke('credit:decide', { orderId, decision, reason }),
+    creditAwaiting: ()                                   => ipcRenderer.invoke('credit:awaiting'),
+    dismissCredit:  (orderId: string)                    => ipcRenderer.invoke('credit:dismiss', orderId),
     expiringBatches: ()                                  => ipcRenderer.invoke('batches:expiring'),
     deleteStation:        (id: string)                   => ipcRenderer.invoke('manage:deleteStation', id),
     listStaff:      ()                                   => ipcRenderer.invoke('manage:listStaff'),

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { HELP_TOPICS, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '../../shared/helpTopics';
+import { helpTopicsFor, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '../../shared/helpTopics';
+import { isFoodService } from '../../shared/businessTerms';
 import { displayPhone, DEFAULT_SUPPORT_NAME, DEFAULT_SUPPORT_PHONES } from '../../shared/support';
 
 /**
@@ -30,9 +31,13 @@ export default function HelpScreen({ businessName, onClose }: Props) {
   const [info, setInfo] = useState<HelpInfo>(FALLBACK);
   const [open, setOpen] = useState<string | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);   // A422 part 2: a step's picture, full size
+  // A575: a shop never reads the kitchen-ticket step (the till's own business type; not known yet: every step)
+  const [businessType, setBusinessType] = useState<string | null>(null);
+  const HELP_TOPICS = helpTopicsFor(isFoodService(businessType));
 
   useEffect(() => {
     posApi.pos.help().then((h) => h && setInfo(h)).catch(() => { /* ZapTill support's numbers stay */ });
+    posApi.config.get().then((c: any) => setBusinessType(c?.business_type ?? null)).catch(() => {});
   }, []);
 
   useEffect(() => {

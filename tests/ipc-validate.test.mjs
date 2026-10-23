@@ -20,6 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -192,7 +193,7 @@ ok('guard rejects an unregistered channel',
 ok('installValidatedHandle runs guardChannel before the handler',
    /guardChannel\(channel,[\s\S]*?listener\(event/.test(guardSrc));
 
-const handlersSrc = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
+const handlersSrc = ipcHandlersSource();
 ok('ipcHandlers installs the validating handle wrapper',
    /const handle = installValidatedHandle\(ipcMain\)/.test(handlersSrc));
 ok('ipcHandlers routes channels through handle, not raw ipcMain.handle',

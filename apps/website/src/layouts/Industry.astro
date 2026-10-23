@@ -1,0 +1,122 @@
+---
+// An industry page (/for/…): a hero with its own headline and visual, problem → fix blocks, the page's own sections,
+// a short FAQ (with FAQPage structured data) and a pre-filled WhatsApp call to action.
+import Base from './Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import VisitButton from '../components/VisitButton.astro';
+import Faq from '../components/Faq.astro';
+import { INDUSTRIES } from '../lib/site';
+import { faqPage } from '../lib/schema';
+import type { FaqItem } from '../lib/faq';
+
+interface Props {
+  title: string;
+  description: string;
+  ogImage?: string;
+  /** Short name in the trail ("Restaurants and cafés"). */
+  crumb: string;
+  heading: string;
+  sub: string;
+  waMessage: string;
+  problems: { problem: string; fix: string }[];
+  problemsTitle?: string;
+  faq: FaqItem[];
+  closing?: string;
+}
+const { title, description, ogImage, crumb, heading, sub, waMessage, problems, problemsTitle = 'What goes wrong, and what ZapTill does about it', faq, closing = 'See it running in a place like yours.' } = Astro.props;
+const here = Astro.url.pathname;
+const others = INDUSTRIES.filter((i) => !here.startsWith(i.href));
+---
+<Base title={title} description={description} waMessage={waMessage} ogImage={ogImage} jsonLd={[faqPage(faq)]}>
+  <section class="ind-hero">
+    <div class="wrap ind-hero__grid">
+      <div class="ind-hero__copy">
+        <p class="ind-hero__trail"><a href="/who-its-for/">Who it's for</a> <span aria-hidden="true">/</span> {crumb}</p>
+        <h1>{heading}</h1>
+        <p class="ind-hero__sub">{sub}</p>
+        <div class="actions">
+          <WhatsAppButton message={waMessage} />
+          <VisitButton />
+        </div>
+      </div>
+      <div class="ind-hero__visual"><slot name="hero" /></div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="pf-title">
+    <div class="wrap">
+      <div class="section-head"><h2 id="pf-title">{problemsTitle}</h2></div>
+      <ul class="pf">
+        {problems.map((p) => (
+          <li>
+            <p class="pf__problem">{p.problem}</p>
+            <p class="pf__fix" set:html={p.fix} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <slot />
+
+  <section class="band" aria-labelledby="ifaq-title">
+    <div class="wrap">
+      <div class="section-head"><h2 id="ifaq-title">Questions owners ask us</h2></div>
+      <Faq items={faq} />
+      <p class="ind-more"><a href="/pricing/#faq">Questions about price, contracts and hardware</a></p>
+    </div>
+  </section>
+
+  <section class="band band--night ind-final" aria-labelledby="ifinal-title">
+    <div class="wrap">
+      <h2 id="ifinal-title">{closing}</h2>
+      <p class="lede">We set it up on site, load your menu or stock, and train your team. Start with a message.</p>
+      <div class="actions">
+        <WhatsAppButton message={waMessage} />
+        <VisitButton />
+      </div>
+      <p class="ind-others">Also: {others.map((o, i) => <>{i > 0 && ', '}<a href={o.href}>{o.name.toLowerCase()}</a></>)}.</p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .ind-hero {
+    background:
+      radial-gradient(50rem 26rem at 90% 0%, rgba(20, 184, 166, 0.16), transparent 60%),
+      var(--night);
+    color: var(--night-text);
+    padding-block: var(--s-7) var(--s-8);
+    overflow: hidden;
+  }
+  .ind-hero__grid { display: grid; gap: var(--s-7); align-items: center; }
+  .ind-hero__trail { font-size: var(--fs-sm); color: var(--night-muted); margin-bottom: var(--s-4); }
+  .ind-hero__trail a { color: var(--teal-light); }
+  .ind-hero h1 { max-width: 16ch; }
+  .ind-hero__sub { font-size: var(--fs-md); line-height: 1.5; color: #c4d6d4; max-width: 34rem; margin-bottom: var(--s-6); }
+  .ind-hero__visual { min-width: 0; position: relative; }
+  @media (min-width: 960px) {
+    .ind-hero__grid { grid-template-columns: 1fr 1.05fr; gap: var(--s-8); }
+  }
+
+  /* Problem -> fix: the problem in the owner's words, the fix as the answer beside it. */
+  .pf { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line-strong); }
+  .pf li { display: grid; gap: var(--s-2); padding: var(--s-5) 0; border-bottom: 1px solid var(--line); }
+  .pf__problem {
+    margin: 0;
+    font: 700 var(--fs-lg)/1.25 var(--font-display);
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    padding-left: var(--s-4);
+    border-left: 3px solid var(--short);
+  }
+  .pf__fix { margin: 0; color: var(--ink-2); max-width: 40rem; padding-left: var(--s-4); border-left: 3px solid var(--teal); }
+  @media (min-width: 860px) {
+    .pf li { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: var(--s-7); align-items: start; }
+  }
+
+  .ind-more { margin-top: var(--s-5); }
+  .ind-final h2 { max-width: 20ch; font-size: var(--fs-2xl); }
+  .ind-final .lede { margin-bottom: var(--s-6); }
+  .ind-others { margin-top: var(--s-6); color: var(--night-muted); }
+</style>

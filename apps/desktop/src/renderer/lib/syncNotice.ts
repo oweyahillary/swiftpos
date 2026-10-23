@@ -31,6 +31,8 @@ export interface SyncStatusLike {
    *  Render service, a Cloudflare page, a captive portal). Sales left 'failed' by the line are counted as waiting
    *  (syncEngine getSyncStatus), so an outage is never red. */
   cloudUnreachable?: { since: string; why: string } | null;
+  /** A581: the cloud refuses this business's sync — its ZapTill cloud plan lapsed (records stay queued on the till). */
+  cloudLapsed?: { since: string; message?: string } | null;
 }
 
 /** A501: records waiting this long for the branch server are worth a manager's line (the beat sends every 15 s). */
@@ -74,6 +76,11 @@ export type SyncNotice =
 /** The manager's bottom notice, or null when nothing waits. Refusals first — they need a person; failures next. */
 export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotice | null {
   const last = `last synced ${lastSyncedLabel(s.lastSyncedAt, now)}`;
+  // A581: the business's cloud plan lapsed — the cloud refuses its sync until it is paid; nothing is lost.
+  if (s.cloudLapsed) {
+    return { tone: 'alert', action: 'sync',
+      text: `ZapTill cloud subscription ended — ${plural(s.pendingCount, 'record')} kept on this till, sent when renewed (ZapTill 0717 675 635) · ${last}` };
+  }
   // A448: first — it stops everything reaching the cloud, and only a person can fix it (before: the log alone said so).
   if (s.nodeRefused) {
     return { tone: 'alert', action: 'sync', text: `${nodeRefusalText(s.nodeRefused.reason)} · ${last}` };

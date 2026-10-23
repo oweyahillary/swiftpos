@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requireAnyPermission, requirePermission, can } from '../middleware/rbac';
+import { requireAnyPermission, requirePermission, can, assertBranchAccess } from '../middleware/rbac';
+import { accentWriteError, themeOverrideError, footerWriteError, cleanFooter, normaliseHex,
+  FOOTER_LINE_MAX, FOOTER_LINE_NARROW, FOOTER_MAX_LINES, FOOTER_MAX_CHARS } from '../lib/branchBranding';   // A544
+import { BRANCH_BRANDING_COLUMNS, type BranchBrandingRow, servedBranchBranding } from '../lib/branchBrandingStore';   // A544, A547
+import { effectiveThemeId } from '../lib/themeRules';   // A547
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 import { themesEnabled, themeWriteError } from '../lib/themeAccess';
@@ -16,7 +20,11 @@ import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
 import { cleanReportSchedule } from '../jobs/ownerAlertsDecision';   // A476
 import { isOwnerAlertJobKey } from '../jobs/ownerAlerts';             // A476
+import { LOSS_SETTINGS_KEY } from '../jobs/lossAlerts';               // A576
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
+import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
+import { readCloudFacts, cloudStanding, defaultAmount, CLOUD_MONTHLY_KES } from '../lib/cloudPlan';   // A581
+import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
 
 const router = safeRouter();
 
@@ -51,11 +59,12 @@ export const BUSINESS_SETTING_KEYS: ReadonlySet<string> = new Set([
   'service_charge_pct', 'table_turnover_alert_mins', 'turnover_alert_minutes',
   'period_breakfast', 'period_lunch', 'period_dinner', 'period_allday',
   'fuel_show_litres_dispensed', 'fuel_require_attendant_name', 'fuel_auto_print_receipt', 'fuel_unit_display',
-  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep', 'weight_unit',
+  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep',   // A580: 'weight_unit' gone (read by nothing; per-item kg / g, A577)
   'default_parking_rate', 'parking_min_hours', 'parking_billing_mode',
   'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
   'continuous_operation', BUSINESS_DAY_CUTOFF_KEY, CASHIER_HISTORY_METHODS_KEY,
   'cashier_sees_shift_sales', 'cashier_history_totals', 'kitchen_exclusions', 'order_note_picks',
+  SCALE_SETTINGS_KEY,   // A577: how the business's weighing scales print their labels
 ]);
 /** Families of settings.business keys whose suffix is the tenant's own (a vehicle type, a delivery platform). */
 const BUSINESS_SETTING_PREFIXES = ['parking_rate_', 'aggregator_commission_'];
@@ -124,7 +133,7 @@ const READABLE_SETTING_KEYS = new Set([
   'service_charge_pct', 'table_turnover_alert_mins', 'turnover_alert_minutes',
   'period_breakfast', 'period_lunch', 'period_dinner', 'period_allday',
   'fuel_show_litres_dispensed', 'fuel_require_attendant_name', 'fuel_auto_print_receipt', 'fuel_unit_display',
-  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep', 'weight_unit',
+  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep',   // A580: 'weight_unit' gone (read by nothing; per-item kg / g, A577)
   'default_parking_rate', 'parking_min_hours', 'parking_billing_mode',
   'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
   'loyalty_enabled', 'loyalty_earn_rate',
@@ -155,6 +164,8 @@ const READABLE_SETTING_KEYS = new Set([
   'kitchen_exclusions',
   // A367: the owner's quick picks for order notes ("No salt", "Extra cheese") — a JSON array of strings.
   'order_note_picks',
+  // A577: the scale label layout (shared/scaleBarcode.ts) — the settings screen shows and tests it.
+  SCALE_SETTINGS_KEY,
   // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules (lib/reversalRules.ts).
   'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales', 'delivery_free_allowed',
   // A505: saved (a REVERSAL_SETTING_KEYS key) but never read back — the Voids, refunds & delivery screen showed the
@@ -243,9 +254,39 @@ router.patch('/', requireAuth, requirePermission('settings.business'), async (re
 });
 
 // GET /api/business/support — 0.6.35 (A384): who this shop calls — its tech (admin portal), or null (SwiftPOS support).
-// Any signed-in member: the web's Help page shows it.
+// Any signed-in member: the web's Help page shows it. A575: and the business type (a shop's Help page leaves out the
+// kitchen-ticket step; shared/helpTopics.ts helpTopicsFor).
 router.get('/support', requireAuth, async (req, res) => {
-  res.json({ support: await getSupportContact(req.businessId) });
+  const [support, { data: biz }] = await Promise.all([
+    getSupportContact(req.businessId),
+    supabase.from('businesses').select('type').eq('id', req.businessId).maybeSingle(),
+  ]);
+  res.json({ support, businessType: (biz as { type?: string | null } | null)?.type ?? null });
+});
+
+// GET /api/business/cloud-trial — A569: the owner's cloud trial, for the dashboard's quiet notice in its last 7 days
+// (components/CloudTrialNotice.tsx). The owner only — a partner or a cashier gets { trial: null } (the notice is not
+// theirs). { trial: { ends_at, phase } | null }; phase is lib/cloudTrial.ts trialPhase.
+router.get('/cloud-trial', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!req.isOwner || req.isTill || req.webPartner === true) { res.json({ trial: null }); return; }
+  let trial;
+  try { trial = await readTrial(req.businessId); }
+  catch (e) { sendError(res, e); return; }
+  // A581: the cloud plan — paid-until, the amount and period, where it stands — for the owner's notice in the last 14
+  // days before paid-until and while lapsed (CloudTrialNotice). null when the business is not on the plan.
+  let plan = null;
+  try {
+    const f = (await readCloudFacts([req.businessId])).get(req.businessId);
+    const s = f ? cloudStanding(f) : null;
+    if (f && s && s.gated && s.paidUntil) {
+      const period = f.plan?.period ?? 'monthly';
+      plan = { paid_until: s.paidUntil, days_left: s.daysLeft, state: s.state, trial: s.trial, sync_stops_at: s.syncStopsAt,
+        sync_refused: s.syncRefused, amount: Number(f.plan?.amount ?? defaultAmount(period) ?? CLOUD_MONTHLY_KES), currency: f.plan?.currency ?? 'KES', period };
+      plan = { ...plan, amount_label: `${plan.currency} ${Math.round(plan.amount).toLocaleString('en-KE')}` };
+    }
+  } catch { plan = null; }
+  res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null, plan });
 });
 
 // GET /api/business/branding
@@ -345,6 +386,155 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     .single();
   if (error) { sendError(res, error); return; }
   res.json(data);
+});
+
+// ── A544: per-branch branding ─────────────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-21: "phase 2 branding — we need to do it before value add" … "yes start" (per-branch branding;
+// docs/SCOPE-A295-branding.md §14–15). A branch may override the business's action theme, brand colour and receipt
+// footer — each on its own (NULL = the business's). The till and the web POS resolve branch → business → ZapTill default
+// (lib/branchBranding.ts). Who: the owner, any branch; a manager with the Branding tab's permission (receipt.manage or
+// settings.business), their own branch only (assertBranchAccess, as the branch settings routes); a till's own session
+// never. Premium: the business's `themes` flag (A325) — off, the web hides the section, a write is refused, a stored
+// override is kept but never served. Validated as the business level is: a curated theme, a brand colour seen on the
+// dark till (3:1), a plain-text footer whose lines fit the paper. Every change in the business's audit log.
+const BRANCH_BRANDING_FIELDS = ['theme_id', 'accent_hex', 'receipt_footer'] as const;
+
+/** A branch of THIS business (never another tenant's — 404 either way). */
+async function businessBranch(businessId: string | undefined, branchId: string): Promise<{ id: string; name: string } | null> {
+  if (!businessId || !branchId) return null;
+  const { data } = await supabase.from('branches').select('id, name').eq('id', branchId).eq('business_id', businessId).maybeSingle();
+  return (data as { id: string; name: string } | null) ?? null;
+}
+
+/** The branch-branding gate a write passes before anything is read: a person (never a till's own session). */
+function branchBrandingCaller(req: any, res: any): boolean {
+  if (req.isTill) { res.status(403).json({ error: 'Branch branding is changed by a person on the web, not by a till.' }); return false; }
+  return true;
+}
+
+async function auditBranchBranding(req: any, action: string, branchId: string, before: unknown, after: unknown): Promise<void> {
+  try {
+    const { data: me } = req.userId ? await supabase.from('users').select('name').eq('id', req.userId).maybeSingle() : { data: null };
+    const { error } = await supabase.from('audit_log').insert({
+      business_id: req.businessId, branch_id: branchId, user_id: req.userId ?? null, user_name: (me as any)?.name ?? null,
+      action, table_name: 'branch_branding', record_id: branchId, before_data: before ?? null, after_data: after ?? null,
+    });
+    if (error) console.error('[branding] branch branding audit not written:', error.message);
+  } catch (e) { console.error('[branding] branch branding audit not written:', (e as Error)?.message ?? e); }
+}
+
+// GET /api/business/branding/branches — the branches the caller may brand (owner: every one; a manager: their own) and
+// each one's override (null fields = the business's), with whether the business has themes.
+router.get('/branding/branches', requireAuth, requireAnyPermission('receipt.manage', 'settings.business'), async (req, res) => {
+  if (!branchBrandingCaller(req, res)) return;
+  const [{ data: branches, error }, enabled] = await Promise.all([
+    supabase.from('branches').select('id, name, is_main').eq('business_id', req.businessId).order('name'),
+    themesEnabled(req.businessId),
+  ]);
+  if (error) { sendError(res, error); return; }
+  const mine = ((branches ?? []) as Array<{ id: string; name: string; is_main?: boolean }>).filter((b) => assertBranchAccess(req, b.id));
+  let rows: BranchBrandingRow[] = [];
+  if (mine.length) {
+    const r = await supabase.from('branch_branding').select(BRANCH_BRANDING_COLUMNS).in('branch_id', mine.map((b) => b.id));
+    if (r.error) { res.status(503).json({ error: 'Branch branding is not available yet on this server.', code: 'BRANCH_BRANDING_UNAVAILABLE' }); return; }
+    rows = (r.data ?? []) as BranchBrandingRow[];
+  }
+  const byBranch = new Map(rows.map((r) => [r.branch_id, r]));
+  res.json({
+    themes_enabled: enabled,
+    limits: { line_max: FOOTER_LINE_MAX, line_narrow: FOOTER_LINE_NARROW, max_lines: FOOTER_MAX_LINES, max_chars: FOOTER_MAX_CHARS },
+    branches: mine.map((b) => {
+      const r = byBranch.get(b.id);
+      return { branch_id: b.id, name: b.name, is_main: b.is_main === true, theme_id: r?.theme_id ?? null, accent_hex: r?.accent_hex ?? null,
+        receipt_footer: r?.receipt_footer ?? null, updated_at: r?.updated_at ?? null };
+    }),
+  });
+});
+
+// GET /api/business/branding/branches/:branchId/served — A547 (A544's "not done" (a)): what pos/init serves a till of
+// THIS branch — the business's effective theme (null = themes off) and the branch's override, or null — so the web's
+// reprint of an old receipt resolves the branch's footer with the till's rule (lib/branchBranding.ts) instead of
+// printing the business footer. Any signed-in member who may see the branch (a cashier their own, the owner every one);
+// another business's branch 404. Read only; nothing is served with themes off (servedBranchBranding).
+router.get('/branding/branches/:branchId/served', requireAuth, async (req, res) => {
+  const branch = await businessBranch(req.businessId, req.params.branchId);
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!assertBranchAccess(req, branch.id)) { res.status(403).json({ error: 'You can see your own branch only.' }); return; }
+  const [enabled, { data: biz }] = await Promise.all([
+    themesEnabled(req.businessId),
+    supabase.from('business_branding').select('theme_id').eq('business_id', req.businessId).maybeSingle(),
+  ]);
+  res.json({
+    themeId: effectiveThemeId(enabled, (biz as { theme_id?: unknown } | null)?.theme_id),
+    branchBranding: await servedBranchBranding(branch.id, enabled),
+  });
+});
+
+// PATCH /api/business/branding/branches/:branchId — set this branch's override. Omitted field = leave as-is; null = use the
+// business's. A row left with nothing in it is removed.
+router.patch('/branding/branches/:branchId', requireAuth, requireAnyPermission('receipt.manage', 'settings.business'), async (req, res) => {
+  if (!branchBrandingCaller(req, res)) return;
+  const branch = await businessBranch(req.businessId, req.params.branchId);
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!assertBranchAccess(req, branch.id)) { res.status(403).json({ error: 'You can change the branding of your own branch only.' }); return; }
+  if (!(await themesEnabled(req.businessId))) {
+    res.status(403).json({ error: 'Per-branch branding is part of Themes — ask ZapTill to turn it on.', code: 'THEMES_OFF' }); return;
+  }
+  const body = req.body ?? {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+  if (!BRANCH_BRANDING_FIELDS.some(has)) { res.status(400).json({ error: 'Send theme_id, accent_hex or receipt_footer.' }); return; }
+  const patch: Record<string, string | null> = {};
+  if (has('theme_id')) {
+    const err = themeOverrideError(body.theme_id);
+    if (err) { res.status(400).json({ error: err, field: 'theme_id' }); return; }
+    patch.theme_id = body.theme_id;
+  }
+  if (has('accent_hex')) {
+    const err = accentWriteError(body.accent_hex);
+    if (err) { res.status(400).json({ error: err, field: 'accent_hex' }); return; }
+    patch.accent_hex = body.accent_hex === null ? null : normaliseHex(body.accent_hex);
+  }
+  if (has('receipt_footer')) {
+    const err = footerWriteError(body.receipt_footer);
+    if (err) { res.status(400).json({ error: err, field: 'receipt_footer' }); return; }
+    patch.receipt_footer = cleanFooter(body.receipt_footer);
+  }
+  const { data: before, error: rErr } = await supabase.from('branch_branding').select(BRANCH_BRANDING_COLUMNS).eq('branch_id', branch.id).maybeSingle();
+  if (rErr) { res.status(503).json({ error: 'Branch branding is not available yet on this server.', code: 'BRANCH_BRANDING_UNAVAILABLE' }); return; }
+  const next = { theme_id: (before as any)?.theme_id ?? null, accent_hex: (before as any)?.accent_hex ?? null,
+    receipt_footer: (before as any)?.receipt_footer ?? null, ...patch };
+  if (next.theme_id === null && next.accent_hex === null && next.receipt_footer === null) {
+    if (before) {
+      const { error } = await supabase.from('branch_branding').delete().eq('branch_id', branch.id);
+      if (error) { sendError(res, error); return; }
+      await auditBranchBranding(req, 'branch_branding.clear', branch.id, before, null);
+    }
+    res.json({ branch_id: branch.id, theme_id: null, accent_hex: null, receipt_footer: null, updated_at: null });
+    return;
+  }
+  const { data, error } = await supabase.from('branch_branding')
+    .upsert({ branch_id: branch.id, ...next, updated_at: new Date().toISOString() }, { onConflict: 'branch_id' })
+    .select(BRANCH_BRANDING_COLUMNS).single();
+  if (error) { sendError(res, error); return; }
+  await auditBranchBranding(req, 'branch_branding.update', branch.id, before ?? null, data);
+  res.json(data);
+});
+
+// DELETE /api/business/branding/branches/:branchId — clear this branch's override (it follows the business again).
+// Allowed with themes off too: taking an override away is never premium.
+router.delete('/branding/branches/:branchId', requireAuth, requireAnyPermission('receipt.manage', 'settings.business'), async (req, res) => {
+  if (!branchBrandingCaller(req, res)) return;
+  const branch = await businessBranch(req.businessId, req.params.branchId);
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!assertBranchAccess(req, branch.id)) { res.status(403).json({ error: 'You can change the branding of your own branch only.' }); return; }
+  const { data: before, error: rErr } = await supabase.from('branch_branding').select(BRANCH_BRANDING_COLUMNS).eq('branch_id', branch.id).maybeSingle();
+  if (rErr) { res.status(503).json({ error: 'Branch branding is not available yet on this server.', code: 'BRANCH_BRANDING_UNAVAILABLE' }); return; }
+  if (before) {
+    const { error } = await supabase.from('branch_branding').delete().eq('branch_id', branch.id);
+    if (error) { sendError(res, error); return; }
+    await auditBranchBranding(req, 'branch_branding.clear', branch.id, before, null);
+  }
+  res.json({ branch_id: branch.id, cleared: true });
 });
 
 // GET /api/business/settings
@@ -460,7 +650,9 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // never written from here.
   // A550: web dashboard access is given and taken only through Staff (routes/staff.ts /:id/web-access), which also links
   // and unlinks the sign-in account and ends sessions — never written here.
-  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY) {
+  // A569: the cloud trial record (once per client, ever) is ZapTill's too.
+  // A576: the loss-prevention alerts' settings are the owner's, written only through PUT /api/loss-alerts/settings (cleaned).
+  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY || String(key) === CLOUD_TRIAL_KEY || String(key) === LOSS_SETTINGS_KEY) {
     res.status(403).json({ error: 'That setting is kept by ZapTill itself.', code: 'READ_ONLY_KEY' });
     return;
   }
@@ -564,6 +756,24 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
       : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
     if (hmErr) { sendError(res, hmErr); return; }
     invalidateHistoryMethods(req.businessId);
+    res.json({ key, value: clean });
+    return;
+  }
+
+  // ── A577: the scale label layout — only a layout that adds up to an EAN-13 is stored, as clean JSON ──
+  if (key === SCALE_SETTINGS_KEY) {
+    const c = cleanScaleSettings(value);
+    if ('error' in c) {
+      res.status(400).json({ error: c.error, code: 'INVALID_VALUE' });
+      return;
+    }
+    const clean = JSON.stringify(c.settings);
+    const { data: existingSc } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: scErr } = existingSc
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingSc.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (scErr) { sendError(res, scErr); return; }
     res.json({ key, value: clean });
     return;
   }

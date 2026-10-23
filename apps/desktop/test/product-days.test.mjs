@@ -14,6 +14,7 @@ import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -48,7 +49,7 @@ const eng = src('main/syncEngine.ts');
 ok('the pull stores the days (JSON array; an older cloud sends none → every day)',
   /show_days:\s+\(\(\) => \{ const d = cleanShowDays\(\(p as any\)\.show_days\); return d \? JSON\.stringify\(d\) : null; \}\)\(\),/.test(eng)
   && /is_kitchen=excluded\.is_kitchen, show_days=excluded\.show_days,/.test(eng));
-ok('the screen gets the days (pos:init)', /show_days: cleanShowDays\(p\.show_days\) \?\? null,/.test(src('main/ipcHandlers.ts')));
+ok('the screen gets the days (pos:init)', /show_days: cleanShowDays\(p\.show_days\) \?\? null,/.test(ipcHandlersSource()));
 ok('the grid: its days only, unless searching; barcode lookup unchanged (any day)',
   /const matchDay    = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);/.test(src('renderer/pages/POSPage.tsx')));
 

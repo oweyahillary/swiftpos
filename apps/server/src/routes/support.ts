@@ -8,6 +8,13 @@
  *     at most RATE_PER_HOUR per device per hour (429). The answer is a reference the client reads out on the phone.
  *     A technician token (X-Tech-Token, verified) names who sent it.
  *
+ *   A533: POST /api/support/logs with `request_id` — a till answering ZapTill support's pull (the admin portal's "Pull
+ *     logs", routes/logRequestsAdmin.ts): the request must be this business's, for THIS device, and still waiting (else
+ *     404 / 403 / 409 — another till can never answer it); the stored log is linked to it and it is marked delivered.
+ *     Not counted against RATE_PER_HOUR (each request is answered once; requests are limited per admin).
+ *   A533: GET /api/support/log-requests/mine — the waiting pulls for THIS device (the till's own session only): asked on
+ *     the push channel's doorbell and on the till's 90 s beat. Waiting ones past their 7 days expire first.
+ *
  *   GET /api/support/terminal-codes?branch_id=&code= — the terminal codes the branch's OTHER approved tills use, whether
  *     `code` is one of them, and the next free one (T1 → T2 …). The setup screen and the Tech page ask before a code is
  *     chosen or changed, so two tills at a branch never start as "T1" (A500 copes with the clash; this stops it at the
@@ -22,14 +29,16 @@ import { can } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { redactLog } from '../lib/logRedact';
 import { verifyTechToken } from '../lib/techToken';
+import { expireWaiting } from '../lib/logRequests';   // A533
 
 const router = safeRouter();
 
 /** The till packs to 900 kB; a little room for the JSON around it, never past express.json's 1 MB. */
 export const MAX_B64 = 950 * 1024;
-/** What a log may unpack to (the till sends 2 MB + 256 kB of text at most). */
+/** What a log may unpack to (the till sends 2 MB + 256 kB of text at most; A533's pull 3 MB + 256 kB + its diagnostics). */
 export const MAX_TEXT_BYTES = 4 * 1024 * 1024;
 export const RATE_PER_HOUR = 5;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O, 1/I — read out on the phone
 
 export function newReference(): string {
@@ -65,19 +74,36 @@ router.post('/logs', requireAuth, async (req: any, res) => {
   try { text = zlib.gunzipSync(Buffer.from(b64, 'base64'), { maxOutputLength: MAX_TEXT_BYTES }).toString('utf8'); }
   catch { res.status(400).json({ error: 'The log could not be read (gzip), or unpacks to more than 4 MB.', code: 'BAD_LOG' }); return; }
 
+  // A533: answering a pull — the request must be this business's, for this very device, and still waiting.
+  let pull: { id: string; requested_by_email?: string | null } | null = null;
+  const requestId = req.body?.request_id;
+  if (requestId !== undefined && requestId !== null) {
+    if (typeof requestId !== 'string' || !UUID.test(requestId)) { res.status(400).json({ error: 'request_id must be an id', code: 'BAD_REQUEST_ID' }); return; }
+    await expireWaiting(req.businessId, String(req.deviceId));
+    const { data: lr, error: lErr } = await supabase.from('log_requests').select('id, business_id, device_id, status, requested_by_email')
+      .eq('id', requestId).maybeSingle();
+    if (lErr) { res.status(503).json({ error: 'Log requests are not available right now (migration 152?).', code: 'LOG_REQUESTS_UNAVAILABLE' }); return; }
+    const r = lr as { id: string; business_id: string; device_id: string; status: string; requested_by_email?: string | null } | null;
+    if (!r || r.business_id !== req.businessId) { res.status(404).json({ error: 'No such log request.', code: 'NO_SUCH_REQUEST' }); return; }
+    if (r.device_id !== String(req.deviceId)) { res.status(403).json({ error: 'That log request is for another till.', code: 'NOT_YOUR_REQUEST' }); return; }
+    if (r.status !== 'waiting') { res.status(409).json({ error: `That log request is ${r.status}.`, code: 'REQUEST_CLOSED', status: r.status }); return; }
+    pull = r;
+  }
+
   // At most RATE_PER_HOUR per device per hour — counted in the table, so every cloud instance agrees.
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { count, error: cErr } = await supabase.from('support_logs').select('id', { count: 'exact', head: true })
     .eq('business_id', req.businessId).eq('device_id', req.deviceId).gte('created_at', since);
   if (cErr) { res.status(503).json({ error: 'Support logs are not available right now (migration 145?).', code: 'SUPPORT_LOGS_UNAVAILABLE' }); return; }
-  if ((count ?? 0) >= RATE_PER_HOUR) {
+  if (!pull && (count ?? 0) >= RATE_PER_HOUR) {
     res.status(429).json({ error: `Five logs were sent from this till in the last hour — wait a little, or save the log to a file.`, code: 'RATE_LIMITED' });
     return;
   }
 
   let sentBy = 'the till';
   const raw = req.header('x-tech-token');
-  if (raw) {
+  if (pull) sentBy = `pulled by ZapTill support${pull.requested_by_email ? ` (${pull.requested_by_email})` : ''}`;
+  else if (raw) {
     const p = verifyTechToken(String(raw));
     if (p && p.businessId === req.businessId && p.exp * 1000 > Date.now()) sentBy = `${p.techName} (technician)`;
   }
@@ -93,13 +119,38 @@ router.post('/logs', requireAuth, async (req: any, res) => {
   };
   for (let i = 0; i < 4; i++) {
     const reference = newReference();
-    const { error } = await supabase.from('support_logs').insert({ ...row, reference });
-    if (!error) { res.status(201).json({ reference }); return; }
+    const { data: stored, error } = await supabase.from('support_logs').insert({ ...row, reference }).select('id').maybeSingle();
+    if (!error) {
+      if (pull) {
+        // A533: linked and delivered — only while still waiting (a cancel a moment ago keeps its word; the log is kept).
+        const logId = (stored as { id?: string } | null)?.id ?? null;
+        const { error: uErr } = await supabase.from('log_requests').update({ status: 'delivered', delivered_at: new Date().toISOString(), support_log_id: logId })
+          .eq('id', pull.id).eq('status', 'waiting');
+        if (uErr) console.error(`[support-logs] request ${pull.id} not marked delivered: ${uErr.message}`);
+        console.log(`[support-logs] ${reference} answers log request ${pull.id} (${req.businessId}, ${req.deviceId})`);
+      }
+      res.status(201).json({ reference, ...(pull ? { request_id: pull.id } : {}) });
+      return;
+    }
     if ((error as { code?: string }).code !== '23505') {
       res.status(503).json({ error: 'The log could not be stored right now.', code: 'SUPPORT_LOGS_UNAVAILABLE' }); return;
     }
   }
   res.status(503).json({ error: 'The log could not be stored right now.', code: 'SUPPORT_LOGS_UNAVAILABLE' });
+});
+
+router.get('/log-requests/mine', requireAuth, async (req: any, res) => {
+  if (!req.isTill) { res.status(403).json({ error: 'Only a till asks for its own log requests (its own session).', code: 'TILL_ONLY' }); return; }
+  const deviceId = String(req.deviceId ?? '');
+  if (!deviceId) { res.json({ requests: [] }); return; }
+  await expireWaiting(req.businessId, deviceId);
+  const { data, error } = await supabase.from('log_requests').select('id, device_id, range_hours, include, requested_at, expires_at')
+    .eq('business_id', req.businessId).eq('device_id', deviceId).eq('status', 'waiting')
+    .order('requested_at', { ascending: true }).limit(5);
+  if (error) { res.status(503).json({ error: 'Log requests are not available right now (migration 152?).', code: 'LOG_REQUESTS_UNAVAILABLE' }); return; }
+  res.json({ requests: ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    id: r.id, range_hours: Number(r.range_hours) || 24, include: r.include ?? {}, requested_at: r.requested_at, expires_at: r.expires_at,
+  })) });
 });
 
 router.get('/terminal-codes', requireAuth, async (req: any, res) => {

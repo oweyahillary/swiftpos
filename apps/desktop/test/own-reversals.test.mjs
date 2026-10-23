@@ -20,6 +20,7 @@ import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -110,7 +111,7 @@ ok('the race, answer first: the till stores it, then the pull changes nothing',
   && W.applyOwnReversals([{ ...refundD, local_id: 'o-e', refunded_amount: 700 }], db) === 0
   && expected() === base - 1300 && order('o-e').refunded_amount === 700, String(expected()));
 ok('the till\'s refund handler mirrors through mirrorTillRefund (never its own insert)', (() => {
-  const ipc = fs.readFileSync(path.join(here, '..', 'src/main/ipcHandlers.ts'), 'utf8');
+  const ipc = ipcHandlersSource();
   const h = ipc.slice(ipc.indexOf("handle('order:refund'"), ipc.indexOf("// ── Tech access"));
   return /mirrorTillRefund\(String\(orderId\), legs, Number\(data\?\.refunded\) \|\| 0, String\(reason \?\? ''\)\);/.test(h)
     && !/INSERT INTO payments/.test(h);

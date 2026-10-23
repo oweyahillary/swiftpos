@@ -17,13 +17,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const DESKTOP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(DESKTOP, p), 'utf8').replace(/\r\n/g, '\n');
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`  FAIL ${name}`); } };
 
-const ipc = read('src/main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 const remote = ipc.slice(ipc.indexOf("handle('shift:remoteConfirm'"), ipc.indexOf("handle('shift:remoteConfirm'") + 1600);
 
 console.log('\nConfirming another till\'s shift\n');

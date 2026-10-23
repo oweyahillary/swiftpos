@@ -252,9 +252,9 @@ await ok('a cashier added on a till is on the cloud with a bcrypt PIN and the ti
     && db.user_branches.some((b) => b.user_id === id && b.branch_id === BR)
     && JSON.stringify(db.change_requests.find((x) => x.entity_id === id).proposed) === JSON.stringify({ name: 'Cora', role_id: R_CASH, pin_set: true }), JSON.stringify(r));
 });
-await ok('a manager cannot add an owner from a till', async () => {
+await ok('a manager cannot add an owner from a till (A562: nobody can — the owner\'s role is given to nobody)', async () => {
   const [r] = await send('till', change('staff', 'create', randomUUID(), { name: 'Boss', role_id: R_OWNER, pin: '5151' }));
-  assert(r.status === 'refused' && /only the owner/.test(r.message), JSON.stringify(r));
+  assert(r.status === 'refused' && /owner's role is given to nobody/.test(r.message), JSON.stringify(r));
 });
 
 console.log('\nA459: staff changed on a till (rename, role, deactivate)\n');

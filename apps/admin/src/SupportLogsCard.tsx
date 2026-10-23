@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { C, S } from "./theme";
+import PullLogs from "./PullLogsCard";   // A533: pull a till's or a branch server's log from here
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 
@@ -43,9 +44,20 @@ export default function SupportLogsCard({ clientId, req }: { clientId: string; r
     catch (e: any) { setError(e?.message ?? "Could not open that log."); }
     finally { setBusy(false); }
   };
-  const download = async (row: LogRow) => {
+  // A533: a pulled log opens and downloads as any other (by its id, from the Pull logs list).
+  const viewById = async (id: string) => {
+    setBusy(true); setError("");
+    try { const d = await req("GET", `/support-logs/${id}`); setOpen({ row: d as LogRow, text: String(d?.text ?? "") }); }
+    catch (e: any) { setError(e?.message ?? "Could not open that log."); }
+    finally { setBusy(false); }
+  };
+  const downloadById = async (id: string) => {
+    try { const d = await req("GET", `/support-logs/${id}`); await download(d as LogRow, String(d?.text ?? "")); }
+    catch (e: any) { setError(e?.message ?? "Could not download that log."); }
+  };
+  const download = async (row: LogRow, known?: string) => {
     try {
-      const d = open?.row.id === row.id ? { text: open.text } : await req("GET", `/support-logs/${row.id}`);
+      const d = known !== undefined ? { text: known } : open?.row.id === row.id ? { text: open.text } : await req("GET", `/support-logs/${row.id}`);
       const url = URL.createObjectURL(new Blob([String(d?.text ?? "")], { type: "text/plain;charset=utf-8" }));
       const a = document.createElement("a");
       a.href = url; a.download = `zaptill-${row.terminal_code ?? "till"}-${row.reference}.txt`;
@@ -56,10 +68,11 @@ export default function SupportLogsCard({ clientId, req }: { clientId: string; r
 
   return (
     <div style={S.card} data-testid="support-logs-card">
+      <PullLogs clientId={clientId} req={req} onView={viewById} onDownload={downloadById} onDelivered={() => { void load(); }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Support logs</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Sent from a till's Tech page — the last 24 hours of its log, secrets removed. The client reads out the reference.</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Sent from a till's Tech page (the last 24 hours, secrets removed — the client reads out the reference), or pulled above.</div>
         </div>
         <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Reference, e.g. K7Q2XM" maxLength={8}
           style={{ ...S.input, maxWidth: 190, textTransform: "uppercase" }} data-testid="support-log-ref" />

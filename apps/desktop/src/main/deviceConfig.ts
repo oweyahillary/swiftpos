@@ -24,6 +24,7 @@ import { supportContact, supportWire, type SupportContact } from './support';   
 import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
 import { parseStockCountFreeze, freezeExpired, NO_FREEZE, type StockCountFreeze } from './stockCountFreeze';   // A394, A521
 import { logLine } from './logFile';   // A521
+import { cleanScaleSettings, scaleSettingsOrDefault, type ScaleSettings } from './scaleBarcode';   // A577
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -459,6 +460,28 @@ export function getReversalRules(): ReversalRules {
 export function setOrderNotePicks(picks: string[] | null | undefined): void {
   if (!Array.isArray(picks)) return;
   getLocalDb().prepare(`UPDATE device_config SET order_note_picks = ? WHERE id = 1`).run(JSON.stringify(picks.map(String)));
+}
+
+/**
+ * A577: cache the business's scale label layout (the cloud's `scaleBarcodes`, shared/scaleBarcode.ts). undefined = not
+ * said (older cloud / node) → keep; a layout that does not clean (a newer cloud's shape) → keep. The ONLY writer.
+ */
+export function setScaleBarcodes(raw: unknown): void {
+  if (raw === undefined || raw === null) return;
+  const c = cleanScaleSettings(raw);
+  if (!('settings' in c)) return;
+  try { getLocalDb().prepare(`UPDATE device_config SET scale_barcodes = ? WHERE id = 1`).run(JSON.stringify(c.settings)); }
+  catch { /* a database before local schema 77 */ }
+}
+
+/** A577: the scale label layout this till reads labels with (the default until told). */
+export function getScaleSettings(): ScaleSettings {
+  try {
+    const r = getLocalDb().prepare(`SELECT scale_barcodes FROM device_config WHERE id = 1`).get() as { scale_barcodes?: string | null } | undefined;
+    return scaleSettingsOrDefault(r?.scale_barcodes ?? null);
+  } catch {
+    return scaleSettingsOrDefault(null);
+  }
 }
 
 /**

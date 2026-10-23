@@ -13,6 +13,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -41,7 +42,7 @@ await ok('renamed: the till (PIN logo, title, receipt credit, update banner, Hel
   assert.match(pin, /alt="ZapTill"/);
   assert.match(decodeURIComponent(pin.match(/const SWIFTPOS_LOGO = "([^"]+)"/)[1]), /ZapTill App Badge/);
   assert.match(read('apps/desktop/index.html'), /<title>ZapTill<\/title>/);
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /footerCredit:\s+'Powered by ZapTill'/);
+  assert.match(ipcHandlersSource(), /footerCredit:\s+'Powered by ZapTill'/);
   assert.match(read('apps/desktop/src/renderer/pages/UpdateBanner.tsx'), /Downloading ZapTill/);
   assert.match(read('shared/printing/src/shiftReport.ts'), /'Powered by ZapTill'/);
   assert.match(read('apps/dashboard/src/lib/escposRenderer.js'), /Powered by ZapTill/);
@@ -57,7 +58,8 @@ await ok('renamed: the web, the admin portal and the cloud\'s emails and message
 });
 await ok('no "SwiftPOS" left in what a person reads on the web sign-in, POS sign-in, receipts or emails', () => {
   for (const f of ['apps/dashboard/src/pages/LoginPage.tsx', 'apps/dashboard/src/pages/pos/POSLoginScreen.tsx',
-    'apps/dashboard/src/pages/pos/ReceiptView.tsx', 'apps/desktop/src/renderer/components/ReceiptView.tsx',
+    // A542: the desktop's components/ReceiptView.tsx is deleted (imported by nothing since 0.6.29).
+    'apps/dashboard/src/pages/pos/ReceiptView.tsx',
     'apps/server/src/jobs/lowStockChecker.ts', 'apps/server/src/routes/auth.ts']) {
     const visible = read(f).split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l) && !/storeSwiftPOSToken/.test(l));
     assert.ok(!visible.some((l) => l.includes('SwiftPOS')), `${f}: ${visible.find((l) => l.includes('SwiftPOS'))?.trim()}`);

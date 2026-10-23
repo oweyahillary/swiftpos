@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.PAY_CAT_TS) {
@@ -77,10 +78,13 @@ ok('only catalogue codes are stored (the cloud refuses anything else)', () => {
 });
 
 console.log('\nThe buttons');
-ok('the till: the switched-on methods, then the business\'s own; On account stays on the web', () => {
+ok('the till: the switched-on methods, then the business\'s own; On account too (A552)', () => {
   const b = C.paymentButtons(['cash', 'mpesa', 'credit', 'airtel_money'], [{ code: 'staff_meal', name: 'Staff meal' }, { code: 'mpesa', name: 'dup' }], 'till');
-  assert.deepEqual(b.map((x) => x.code), ['cash', 'mpesa', 'airtel_money', 'staff_meal']);
+  // A552: On account on the till too — its payment screen offers it only when the till holds a credit customer.
+  assert.deepEqual(b.map((x) => x.code), ['cash', 'mpesa', 'credit', 'airtel_money', 'staff_meal']);
   assert.ok(C.paymentButtons(['credit'], [], 'web').some((x) => x.code === 'credit'));
+  assert.ok(!C.PAYMENT_CATALOGUE.some((m) => m.webOnly), 'no method is the web POS\'s alone');
+  assert.ok(read('apps/desktop/src/renderer/components/PaymentModal.tsx').includes("b.code !== 'credit' || onAccount?.offered"), 'the till hides it unless offered');
 });
 ok('a method switched off is not offered — even as a business\'s own method with the same code', () => {
   assert.ok(!C.paymentButtons(['cash'], [{ code: 'glovo', name: 'Glovo' }], 'till').some((x) => x.code === 'glovo'));
@@ -132,7 +136,7 @@ ok('kept on the till (schema 69, the cloud requires it), pulled, relayed to the 
 ok('the payment screen shows the branch\'s methods (not a fixed list), starting on cash where taken', () => {
   const pm = read('apps/desktop/src/renderer/components/PaymentModal.tsx');
   assert.ok(pm.includes("const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);"));
-  assert.ok(pm.includes('{buttons.map(b => ({ code: b.code, label: b.name, icon: b.icon })).map(m => ('));
+  assert.ok(pm.includes('{methods.map(b => ({ code: b.code, label: b.name, icon: b.icon })).map(m => ('));   // A552: less On account unless offered
   assert.ok(!pm.includes('METHOD_META'));
   assert.ok(pm.includes("{ method: firstMethod, amount: '', tendered: '', reference: '' },"));
   assert.ok(read('apps/desktop/src/renderer/pages/POSPage.tsx').includes('enabledMethods={enabledMethods}'));
@@ -142,9 +146,9 @@ ok('Manager › Settings › Payment methods — a switch per method, saved for 
   assert.ok(read('apps/desktop/src/renderer/components/SettingsPanel.tsx').includes('<BranchPaymentMethodsPanel canEdit={canPayments} />'));
   assert.ok(/\{canPayments && <section className="border-t border-gray-800 pt-6">\s*<BranchPaymentMethodsPanel/.test(read('apps/desktop/src/renderer/components/SettingsPanel.tsx')));
   assert.ok(read('apps/desktop/src/renderer/pages/ManagerPage.tsx').includes("canPayments={has('settings.payments')}"));
-  assert.ok(read('apps/desktop/src/main/ipcHandlers.ts').includes("handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {\n    requireKey(['settings.payments'], PAYMENTS_REFUSED);"));
+  assert.ok(ipcHandlersSource().includes("handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {\n    requireKey(['settings.payments'], PAYMENTS_REFUSED);"));
   assert.ok(read('apps/desktop/src/renderer/components/BranchPaymentMethodsPanel.tsx').includes('await posApi.manage.setPaymentMethodsEnabled(enabledFromSetting(next));'));
-  assert.ok(read('apps/desktop/src/main/ipcHandlers.ts').includes("const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });"));
+  assert.ok(ipcHandlersSource().includes("const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });"));
 });
 
 console.log('\nThe web');

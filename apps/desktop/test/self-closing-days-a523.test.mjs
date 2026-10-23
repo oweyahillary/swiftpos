@@ -30,6 +30,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -237,7 +238,7 @@ console.log('\n#5 the wiring\n');
     /export async function remoteCloseBeat[\s\S]{0,600}pullShiftCloses\(\)[\s\S]{0,200}await runDayCloseInstructions\(\[\]\);/.test(se));
   ok('#5 learnCloudCloses: drawers, then confirmations, then the day closes',
     /export async function learnCloudCloses[\s\S]{0,300}pullShiftCloses\(\)[\s\S]{0,120}pullShiftConfirmations\(\)[\s\S]{0,120}runDayCloseInstructions\(\[\]\)/.test(se));
-  const ipc = read('src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   ok('#5 day:gate learns before it locks, then reads the gate again',
     /handle\('day:gate'[\s\S]{0,700}if \(gate\.needsManager && gate\.staleDay && await learnBeforeLock\(\)\) gate = checkDayGate\(\);/.test(ipc));
 }

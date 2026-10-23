@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const [maj, min] = process.versions.node.split('.').map(Number);
 if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_0618_TS) {
@@ -54,7 +55,8 @@ ok('A279: an empty grid says a filter is hiding things, so Clear is the fix', ()
 const pos = read('src/renderer/pages/POSPage.tsx');
 ok('A279: POSPage shows the line and one Clear that restores All and empties the search', () => {
   assert.match(pos, /const gridFilterSummary = filterSummary\(gridFilter\);/);
-  assert.match(pos, /const clearGridFilter = \(\) => \{ setActiveCategory\('all'\); setSearch\(''\); \};/);
+  // A537: Clear also goes back to All menus (the category panel's menu).
+  assert.match(pos, /const clearGridFilter = \(\) => \{ setActiveCategory\('all'\); setSearch\(''\); catPanel\.setMenu\(ALL_MENUS\); \};/);
   assert.match(pos, /\{gridFilterSummary && \(\s*<div data-testid="grid-filter"/);
   assert.match(pos, /\{emptyGridMessage\(gridFilter\)\}/);
 });
@@ -80,7 +82,7 @@ ok('A341: an existing type in other capitals is selected, never duplicated', () 
   assert.deepEqual(X.checkTypeName('gas REFILL', [{ id: 'c1', name: 'Gas Refill' }]), { ok: 'exists', id: 'c1', name: 'Gas Refill' });
 });
 ok('A341: the till saves it on the cloud through manageFetch (offline / role messages), validated IPC', () => {
-  const h = fs.readFileSync(path.join(DESKTOP, 'src/main/ipcHandlers.ts'), 'utf8');
+  const h = ipcHandlersSource();
   // A490: the till refuses anyone without expenses.manage before asking the cloud.
   assert.match(h, /handle\('expense:addCategory', async \(_e, \{ name \}: \{ name: string \}\) => \{\s+requireKey\(\['expenses\.manage'\], [^\n]+\n\s+return manageFetch\('\/api\/expenses\/categories', 'POST', \{ name: String\(name \?\? ''\)\.trim\(\) \}\);/);
   assert.match(fs.readFileSync(path.join(DESKTOP, 'src/main/ipcSchemas.ts'), 'utf8'), /'expense:addCategory': \{ name: \{ t: 'string', min: 1 \} \}/);

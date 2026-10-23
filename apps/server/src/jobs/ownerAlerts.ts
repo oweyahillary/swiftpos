@@ -26,6 +26,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 const tzFormat = (d: Date, fmt: string, o: { timeZone: string }) => formatInTimeZone(d, o.timeZone, fmt);
 import { supabase } from '../lib/supabase';
 import { sendEmail } from '../lib/mailer';
+import { standingFor } from '../lib/cloudPlan';   // A581
 import { getDayCutoff } from '../lib/dayCutoff';
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { readReportSchedule, gatherRecipients } from './dailySummary';
@@ -173,6 +174,9 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
     const trading = new Set(((open ?? []) as any[]).map((r) => r.branch_id).filter(Boolean) as string[]);
     let managers: Awaited<ReturnType<typeof branchManagerEmails>> | null = null;
     const next: Record<string, string> = {};
+    // A581: the cloud plan lapsed past its grace — the cloud refuses the tills' sync on purpose; the owner hears it from the
+    // plan's reminders, never as "till not syncing".
+    const planLapsed = (await standingFor(biz.id).catch(() => null))?.syncRefused === true;
     for (const d of devices) {
       // A477: the till's sign-in used from another computer — to the owner, once per incident.
       const sec = decideSecurityAlert(d, state.sent, now);
@@ -193,6 +197,7 @@ export async function alertsForBusiness(biz: Biz, schedule: any, now: Date): Pro
           }
         }
       }
+      if (planLapsed) continue;
       const prev = state.not_syncing[d.id];
       const dec = decideNotSyncing(d, now, s.not_syncing_hours, tillTrading(d, trading, now), prev);
       if (dec.next) next[d.id] = dec.next;

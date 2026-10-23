@@ -6,10 +6,10 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-10-19 (dk) — FILED + BUILT A531 (P1): change-triggered sync — the database writes which rows changed (migration 151 sync_changes), the cloud rings the till over one WebSocket and serves only those rows (GET /api/pos/changes: fries 100→150 = one product row, Eugene's PIN = one staff row), menu/staff/money at once, look/setup within 30 min when idle, a branch's tills take changes from its server only, JSON answers gzip-compressed, /init built once per version (till 1.0.20 + cloud)** · earlier: **2026-10-19 (dj) — FILED + BUILT A530 (P2): the compact receipt is the standard (5 rules, merged lines, ESC 3 26, a 15 mm logo, 1 line before the cut — ~44% less paper), four classic switches per client in the admin portal; all four on = the 1.0.19 receipt byte for byte (till 1.0.20 + web POS + admin)** · earlier: **2026-10-19 (di) — FILED + BUILT A529 (P1): a page that is not the cloud's (no X-ZapTill-Server — a suspended Render service, a Cloudflare page, a captive portal) is no connection on the till: sign-in falls back, sales stay pending and go again by themselves, the outage notice is quiet (till 1.0.20 + cloud)** · earlier: **2026-10-19 (dh) — FILED + BUILT A528 (P1): the cloud's polling cost — catalogue-version from one row (migration 150), branch-staff "unchanged" without a read, the sign-in check remembered 30 s, lighter headers, traffic on the System page (cloud only)** · earlier: **2026-10-17 (dg) — FILED + BUILT A527 (P2): the manager sees the cash in four lines when confirming a shift; desktop 1.0.19** · earlier: **2026-10-17 (df) — FILED + BUILT A526 (P2): dependency vulnerabilities in what ships fixed (Electron 43.7.7, server 0, admin 0; xlsx open); CLOSED A158** · earlier: **2026-10-17 (de) — FILED + BUILT A525 (P2): a failed deploy and known vulnerabilities are checked, recorded and shown in the admin portal System page (migration 149)** · earlier: **2026-10-17 (dd) — FILED + BUILT A522 (P1): nothing waits on a switched-off till (cloud and web side, migration 148)** · earlier: **2026-10-17 (dc) — FILED + BUILT A521 (P1): nothing waits on a switched-off till (till side)** · earlier: **2026-10-17 (db) — FILED + BUILT A520 (P1): Close Branch without deadlock, managers close the day again, Close the day / Close the branch (migrations 146, 147)** · earlier: **2026-10-16 (da) — FILED + BUILT A519 (P2): till Sell check, terminal codes, logs to support, screen boundary, one-tap update restart (migration 145). Desktop v1.0.18** · earlier: **2026-10-16 (cz) — FILED + BUILT A518 (P2): promotions charged on their products, read-only supplier bills, cloud gaps, web tidy-ups (migrations 143, 144)** · earlier: **2026-10-16 (cy) — FILED + BUILT A517 (P2): load less at start (lazy screens, exceljs and electron-updater on first use)** · earlier: **2026-10-16 (cx) — FILED + BUILT A514 (P2): counter roles, supervisor PIN retired, lock e-mail local time, built-in roles (migrations 141, 142)** · earlier: **2026-10-16 (cw) — FILED + BUILT A515 (P2) TLS reuse after a server restart, A516 (P3) graphics switch on the Tech page** · earlier: **2026-10-16 (cv) — FILED + BUILT A513 (P2): low-impact start for slow PCs, no taskbar peeping. Desktop v1.0.17** · earlier: **2026-10-16 (cu) — FILED + BUILT A512 (P3): one startup entry, no PowerShell at every start** · earlier: **2026-10-16 (ct) — FILED + BUILT A509 (P1): a safe elevated updater task — updates install with no Windows prompt** · earlier: **2026-10-16 (cs) — FILED + BUILT A510 (P0): cashiers can sell again — migration 139 gives back the selling right 134 left out** · earlier: **2026-10-16 (cr) — FILED + BUILT A508 (P1): usage-aware silent updates** · earlier: **2026-10-16 (cq) — FILED + BUILT A507 (P2): technician's address inside Find my server; agents change tax settings and super admins verify; sign-in pause e-mailed** · earlier: **2026-10-16 (cp) — FILED + BUILT A505 (P0) cloud audit: old tills never lose a sale** · earlier: **2026-10-16 (co) — FILED + BUILT A503 (P1) till/server setup audit, A504 (P1) desktop audit, A506 (P1) web/admin audit** · earlier: **2026-10-15 (cn) — FILED + BUILT A502 (P2): promotions / void-refund rules / count freeze as rights the owner gives (migration 138); no typed branch server address — Find my server only** · earlier: **2026-10-15 (cm) — FILED + BUILT A494 (P1) cloud and till hardening (migration 136), A495 (P1) admin portal and public routes (migration 137), A496 (P1) updates through the branch server, A497 (P3) orders by date, A498 (P2) receipt payment block, A499 (P1) cashiers land on the POS, A500 (P1) bill-number clashes, A501 (P1) branch sync self-heal. Desktop v1.0.16** · earlier: **2026-10-15 (cl) — FILED + BUILT A493 (P1): till update approval back under the admin portal (migration 135)** · earlier: **2026-10-15 (ck) — FILED + BUILT A492 (P2): each branch's M-Pesa number (Buy Goods, or Paybill + account) set on its till by its manager, the owner told of every change. Desktop v1.0.15** · earlier: **2026-10-15 (cj) — FILED + BUILT A490 (P1): one permission catalogue — every report, view and action its own permission, enforced on the cloud, the web and the till; A491 (P2): the owner sets roles, permissions and the till options in one place (migration 134). Desktop v1.0.15** · earlier: **2026-10-15 (ci) — FILED + BUILT A489 (P1): the branch server and its tills talk over TLS, the till pinning the server's own certificate. Desktop v1.0.15** · earlier: **2026-10-14 (ch) — FILED + BUILT A488 (P3): Clear test data names the trading days that block it, as the cloud holds them** · earlier: **2026-10-14 (cg) — FILED + BUILT A487 (P3): Clear test data no longer calls a till that synced a minute ago "not synced" (cloud)** · earlier: **2026-10-14 (cf) — FILED + BUILT A483 (P0) cloud sync audit, A484 (P1) till sync audit, A485 (P1) branch server audit, A486 (P0) security audit (migration 133). Desktop v1.0.14** · earlier: **2026-10-14 (ce) — FILED + BUILT A482 (P2): Clear test data can also delete the whole menu (migration 132; tills empty their menus). Desktop v1.0.13** · earlier: **2026-10-14 (cd) — FILED + BUILT A481 (P2): managers who keep the books see their branch's Monthly pack (cloud + till 1.0.13)** · earlier: **2026-10-14 (cc) — FILED + BUILT A480 (P1): a local sign-in names its branch (the update bar's restart), unlocking upgrades a local session, the branch server's line is calm. Desktop v1.0.13 (with A479)** · earlier: **2026-10-14 (cb) — FILED + BUILT A479 (P3): the till's lock screen fits any window, ⌫ takes back one digit, a wrong PIN shakes, OK shows it is checking** · earlier: **2026-10-14 (ca) — FILED + BUILT A478 (P2): the scheduled emails used the server's clock (3 h late on Render) — formatInTimeZone** · earlier: **2026-10-14 (bz) — FILED + BUILT A477 (P1): renewal as a handshake — the old key lives until the new one is saved and confirmed; the till's machine identity checked; a device secret for every till; no retry storms; 10 × 5 MB logs and auth.log (migration 131). Desktop v1.0.12 + cloud** · earlier: **2026-10-14 (by) — FILED + BUILT A474 (Expenses filters), A475 (every long list paginated), A476 (P1: owner alerts and sections — open tills, differences, voids, tills not syncing; branch managers always told of open tills)** · earlier: **2026-10-14 (bx) — FILED + BUILT A472 (P2: the menu paginated; POS grids draw as they scroll) and A473 (P1: the PIN pad no longer waits on a refused session or a slow cloud). Desktop v1.0.12** · earlier: **2026-10-13 (bw) — FILED + BUILT A468–A471 (P3): the till's Overview like the web's; taps answer and dialogs animate on the web and the till; the POS grid does less per tap; xlsx off every web page; one money / number / date format on the web** · earlier: **2026-10-13 (bv) — FILED + BUILT A467 (P2): Download Excel on every report tab, This week / Last week / Last month; the monthly pack builds without migration 130 and names a failing read** · earlier: **2026-10-13 (bu) — FILED + BUILT A466 (P2): the Monthly pack on the till (Record for the books too); the server's manager records an expense Not from a drawer. Desktop v1.0.12 + cloud** · earlier: **2026-10-13 (bt) — FILED + BUILT A465 (P2): a manager on the branch server puts cash in / out or an expense on any open drawer (the till records it on its own books); the desktop Overview cards lose their icons. Desktop v1.0.12** · earlier: **2026-10-13 (bs) — FILED + BUILT A464 (P2): View more on wide tables on a phone; the phone POS cart bar charges in one tap, names the order, shows the last item added; the category bar shows there are more** · earlier: **2026-10-13 (br) — FILED + BUILT A463 (P2): the dashboard, web POS, manager web and admin portal fit a phone (drawers, cart sheet, scrolling tables, stacking panels, dialogs that fit)** · earlier: **2026-10-13 (bq) — FILED + BUILT A462 (P1): managers and the owner confirm shifts on the web with the expected figures; Close with count (no force-close needed); a closed drawer reaches the web POS within 20 s and the cloud refuses web sales into it** · earlier: **2026-10-13 (bp) — FILED + BUILT A461 (P1): kitchen voids always need a manager (the switch was off for the client); new switch 'Eat now, pay later' (off) to end a shift with sent orders unpaid on hold; Clear no longer skips the void. Desktop v1.0.11** · earlier: **2026-10-13 (bo) — FILED + BUILT A459 (P1: Deactivate never worked; every partial staff edit wiped the person's branches — fixed; rename / role / deactivate on the till, offline too) and A460 (P2: premium screens only with the online licence); BUILT A380 (backup folder) and A197 (transfers on the till). Desktop v1.0.11** · earlier: **2026-10-13 (bn) — A451 BUILT further: the owner always signs in as a users row (found by email or owner_id, else created; an older owner session is mended at its renewal). A54 CLOSED (the owner's daily report email arrives)** · earlier: **2026-10-12 (bn) — BUILT A453–A458: only managers record expenses and cash in / out (switch); the cashier's Z-report is their own count, and the Z-report prints on a Windows receipt printer; the monthly pack (daily sales, expenses, cash and M-Pesa books — Excel and email on the 1st; migration 130); two receipt copies on a thermal printer; the Overview redesigned; Close Branch leads with the day's totals per payment method. Desktop v1.0.10** · earlier: **2026-10-12 (bm) — FILED + BUILT A452 (P1): Close Branch shows each till's shifts, confirms them on the server (expected beside the count), closes every till's day at once on the server's date (yesterday's too); the confirm screen shows a manager the expected figures; expenses by payment method and who paid, with subtotals. Desktop v1.0.9** · earlier: **2026-10-12 (bl) — FILED + BUILT A451 (P1): the owner's web void / refund no longer fails with a 500 (an owner sign-in without a users row); a manager-PIN check no longer crashes on an odd stored hash; the report shows Total Collected (incl. VAT) = sales + delivery + tips, what the payment methods add up to** · earlier: **2026-10-12 (bk) — FILED + BUILT A450 (P2): a rename on the web reaches every till within 20 s (name, currency); the receipt's Pay by M-Pesa line (Buy Goods / Paybill / Till No.) is a setting on the web; a count on Approvals. A381 BUILT: a logo reaches a branch's tills through the branch server. Desktop v1.0.8** · earlier: **2026-10-12 (bj) — FILED + BUILT A449 (P2): a sync answer that stalls mid-body no longer hangs the till's sync; a wrong branch access code is shown to the manager (sync notice), not only logged. Desktop v1.0.8** · earlier: **2026-10-12 (bi) — FILED + BUILT A448 (P1): a till works on its own — a print station, the menu, a cashier and a PIN changed on a till work at once, offline too, and reach the cloud later; the same thing made in two places is kept once; a clash waits for the owner (web › Approvals); a PIN set on a till wins unless someone else has it. Migration 129, local schema 71, desktop v1.0.8** · earlier: **2026-10-11 (bh) — FILED + BUILT A446 (P1): a new cashier was "not recognised" for ~20 min and the lock screen's only way out was closing the app — every till now keeps its branch's staff list (refreshed every 10–20 s and at once on a change), the branch server's "no" is no longer final (the cloud is asked), the lock screen checks the PIN without touching the session and has Sign out, "not bound to a branch" fixed, print stations follow the cloud at once; and the session audit's breaking points (sales left 'failed' by an outage, no time limit on the PIN check, a colleague's PIN switching the signed-in person, 429 locking a till, a late renewal or a queued sale credited to the wrong cashier). A447 (P2): a manager records an expense from Manager › Expenses. Desktop 1.0.7. · 2026-10-11 (bg) — FILED + BUILT A443 (P1): the branch server fetches an approved update once and its tills take it from the server (the gateway cut every download at 60 s); the server tells its tills and lists what each runs. A444 (P2): a manager sees the items in a past order, reprints it and voids / refunds it, on the till's History and Manager › Orders and on the web. A445 (P2): offers — % / amount off, special price, buy X get Y, spend over X, meal deals — by dates, days and hours, owner every branch, manager own branch; applied by themselves at the till and the web POS and checked by the cloud (migration 128, local schema 70). Desktop 1.0.6. · 2026-10-11 — A354 design revision 2 (docs only): one Android app with a Till mode and an Owner mode, the owner screens as a PWA for iPhone, staged plan (Owner A first); decided: direct APK, owner mode needs web access, managers may use it. · 2026-10-11 (bf) — FILED + BUILT A442 (P1): two cashiers on one shift — the drawer's figures were right but the report and the closing screen credited the whole shift to the person who opened it; the shift report now has SALES BY CASHIER (till screen, Z-report sheet, printed Z-report, the cloud's Z-report, the web POS close). · 2026-10-10 (be) — A429 BUILT: payment methods from Kenya's list, each a switch per branch (till schema 69, web POS, the cloud). · 2026-10-10 (bd) — BUILT: A424 the web sign-in page (the client's colour, a split layout, nothing cut off — seen in a browser); A422 part 2, 17 pictures of the real till screens in the guides (till offline + web). FILED + BUILT (owner's three asks): A439 web Reports › Staff Performance shows each cashier's money by payment method (and the report is now paged past 1,000 sales); A440 the till's Overview has Staff performance; A441 the till's Overview shows any day the manager picks. · 2026-10-10 (bc) — Owner's decisions recorded: A429 (every method a switch per branch; today's on, the new ones off), A424 (the client's colour, same fields, nothing running off the screen), A435 (a), A436, A437, A422 part 2 (we capture). BUILT: A435 (a) the server restarts itself within 5 minutes (a scheduled task; a tray Quit stays quit; auto sign-in steps for the technician); A436 a join request brings the server's window forward with a notification, the till says go and press Allow, a signed-out till can find the server; A437 a clean close on Windows shutdown. FILED + BUILT: A438 (P2) a manager filters the till's History by cashier, with each cashier's sales by payment method. · 2026-10-10 (bb) — A417 part 2 BUILT: ZapTill's own on-screen keyboard on every till (a finger or pen opens it; never over the field). FILED from checking the owner's three questions: A435 (P1) the branch server is a login item, not a Windows service — down after a power cut until someone logs in; A436 a join request to a hidden server is never seen; A437 Windows shutdown with a server running, untested. · 2026-10-10 (ba) — A422 part 1 BUILT (draft for review): step-by-step guides for opening and closing a shift, confirming a shift, closing the day and void / refund on the till's Help and the web's /help; screenshots are part 2. · 2026-10-10 (az) — BUILT, nothing committed: A418 a History total for what the filters show (a manager always; a cashier only while A416 and its own switch are on; the web totals every page); A428 the ⓘ on a product opens its description. · 2026-10-10 (ay) — BUILT, nothing committed: A434 a manager's close prints the Z-report (it never did); Shift report shows every running shift side by side; A416 the owner's switch (off by default) shows a cashier their sales at close, never expected cash (till schema 68). · 2026-10-10 (ax) — A433 BUILT, nothing committed: a signed-in manager confirms any till's shift (on the cloud, POST /api/shifts/:id/manager-confirm — a person's sign-in only); the till that holds it takes the confirmation (Close Day stops waiting — also for a web confirmation); Sales covers every till: Orders opens on all tills, Item Mix and Shift report (another till's Z-report from the cloud) read the branch. · 2026-10-10 (aw) — A431 + A432 BUILT, nothing committed: a manager on any till sees every till's sales and every shift on the Overview (the cloud's new GET /api/shifts/branch-report, with the manager's own sign-in; offline, what the till holds — and it says which), with a shift report on every Overview. · 2026-10-09 (av) — FILED: A431 (P1) a manager on one till cannot see the other tills' sales or shifts — every shift query on the till is this till's only, and the cloud never sends a till the others' sales; A432 a shift report on the Overview. · 2026-10-09 (au) — first batch BUILT, nothing committed: A421 a shift closed on the till signs the cashier out to the PIN screen at once (a manager's after Done); A423 Add staff no longer autofills the owner's email; A430 the selected payment method solid in its own colour with a ✓; A417 part 1 the Windows keyboard stays shut over the lock screen's keypad; A419 no server address on the admin sign-in; A420 no version on the client's web in production. · 2026-10-09 (at) — owner requests FILED, nothing built: A428 a cashier sees an item's description (ⓘ on the tile) to explain it; A429 payment methods from a fixed list of Kenya's common ones (money and delivery apps), switched on per branch by the manager — a new branch has Cash and M-Pesa only; A430 the selected payment method stands out. · 2026-10-09 — A427 BUILT (cloud + desktop 1.0.4): a new till finds the branch server on the network and joins when someone at the server presses Allow; the branch server starts with Windows, never sleeps and stays in the tray. · A426 BUILT (cloud): tills behind a branch server no longer say "no staff roster yet" — the roster and PIN sign-in now share one branch rule (no branch assigned = every branch). · A425 BUILT (desktop 1.0.4): a re-uploaded menu no longer leaves duplicate required choices on the till — the till's pull now drops the variant and add-on rows the cloud removed, so a pizza is never blocked by three "Size" groups. · 2026-10-09 (as) — owner requests FILED, nothing built: A416 a switch (off by default) to show a cashier their sales at shift close; A417 an on-screen keyboard that does not cover the field; A418 a total for the cashier's filtered History (owner switch); A419 no "Server address…" on the admin sign-in; A420 no version on the client's web in production; A421 closing a shift on the till signs the cashier out to the PIN screen (the web POS already does); A422 a step-by-step help guide with screenshots; A423 the owner's email filled into Add staff (browser autofill); A424 a new client/owner sign-in layout. Owner answers the same day: A417's image is the Windows keyboard over the lock screen's own keypad; A421 signs the cashier out the moment the close is saved; A418 only while A416 is on; A417 on every till. Asked, answered, no entry: void/refund on the till is POS › History › Void / Refund (managers). · 2026-10-06 (ar) — A415 BUILT (cloud + till 1.0.3, migration 127): the till signs in as itself — the till, the business, the branch, no person — and nothing of the owner is left on it; "Sign out / switch account" is gone; a technician rejoins a till from the tech console keeping everything on it; "too many attempts" after one web sign-in fixed (only failed attempts count; till renewals have their own counter). · 2026-10-06 (aq) — desktop 1.0.3 BUILT (migration 126). A413: batches and expiry dates — received stock records its expiry date and lot number; Stock › Expiry lists what has expired or expires soon (what is left in each batch is worked out oldest-expiry first from the stock level) and writes it off. A414: wastage recorded on the till — saved on the till first, sent to the cloud after, never twice. · 2026-10-06 (ap) — A412 BUILT (till, next build): Menu › Import has a template again, filled with the client's own menu (edit and upload back); headings only when there is no menu yet. · 2026-10-05 (ao) — desktop 1.0.2 BUILT. A409 (cloud): station categories would not save anywhere (till or web) — the cloud never sent business_id, which the table requires; fixed, and a CI gate now checks every insert into a business-scoped table carries it. A410 (till): at a branch with a server, only the server talks to the cloud — every other till's cloud calls (sales, menu, sign-in, manager edits, updates) go through it. A411 (till): station routing is saved on the till first and sent to the cloud after, so it works fully offline. · 2026-10-05 (an) — A408 BUILT (till, next build): a category tap on a station that the cloud refused now says why under the chips — before, the screen reloaded and erased the reason, so the chip looked untappable. · 2026-10-05 (am) — A407 BUILT (cloud + till 1.0.0, migration 125): a till's sign-in is never lost by accident — the owner's own PIN on a till no longer signs the till out (the likely main cause), no owner action touches a till's session, a refused till signs itself back in with its device secret (tills enrolled earlier get one on their next renewal), cashiers keep signing in on the till's own PIN check meanwhile, and ZapTill is emailed when a till could not sign back in. · 2026-10-05 (al) — A406 BUILT (cloud): an owner's password change or reset no longer signs out the business's tills, and an expired till token is answered as expired (not "Please sign in again."). · 2026-10-05 (ak) — desktop 1.0.0 BUILT, the first major release (owner: "we call that v1.0.0, that becomes our major release to run for 1 week"; tags continue on ZapTill's side, clients update only when approved per client in the admin portal): A404 test data cleared on the cloud is cleared on the tills too (a test day left open no longer locks a till); A405 "Close day now" on the till's day-lock banner. · 2026-10-05 (aj) — desktop 0.6.39 BUILT (A401): a drawer force-closed (or closed) on the web now closes on the till within ~20 s, and the cashier is told who closed it and why. A400 BUILT: a combo (set meal) sold takes its items out of stock and their recipes' ingredients; the food-cost report counts them. A402 BUILT (migration 124): an owner resets a forgotten password by an emailed code, and changes it when signed in. A403 BUILT: someone on an authenticator app can ask for the sign-in code by email instead. · 2026-10-05 (ai) — A398 BUILT: sign-in codes (OTP) are a per-client switch in the admin portal (Features › POS switches › Sign-in codes), off unless turned on — clients without real email addresses were locked out; the admin portal's own admins still always enter a code. A399 BUILT (migration 123): the wastage log — spoiled, expired or damaged stock written off with a reason and its value; the stock leaves at once (made-to-order items: value only); managers record, the owner voids; a period report by reason and item; clearing test data clears wastage too. · 2026-10-04 (ah) — desktop 0.6.38 BUILT (A397): printing to a Windows printer (`printer:` name) on a slow PC — 20 s instead of 8, the print helper built once and reused, a timed-out ticket retried (it was dropped) and the screen says "Windows took too long" instead of a command line. · 2026-10-04 (ag) — A396 BUILT (migration 122): clear a client's test data between two times chosen in the admin portal (start defaults to set-up, end to now), previewed first, one transaction, refusing anything that would cut into a real sale. · 2026-10-04 (af) — A395 BUILT (migration 121): what is owed to suppliers — bills (from a delivery or typed), payments (against a bill or on account), returns to supplier (stock out, credit), balances, overdue, ageing and a printable statement; the owner's by default. · 2026-10-04 (ae) — A394 BUILT (migration 120): stock take — blind counts (the system figure never shown to whoever counts), differences reviewed and posted by the owner, till sales that sync late allowed for, and the owner's freeze switch (an item being counted cannot be sold on the tills or the web until counted). · 2026-10-04 (ad) — A391 BUILT (migration 119): a sign-in code (email, or an authenticator app — each person picks) for every admin, owner and web manager; A392 BUILT: only critical alerts are emailed (repeated failed sign-ins, a till the cloud refuses, …), everything else on the admin portal's new Alerts page; A393 BUILT: the admin portal regrouped and the SwiftPOS name gone from it. · 2026-10-03 (ac) — desktop 0.6.36 BUILT (A386): the product is ZapTill — every name people see (till, web, admin, emails, receipts, icon); the Windows app identity kept. · 2026-10-03 (ab) — A385 BUILT: the domain is zaptill.co.ke (code fallbacks, print server, examples); the product name changes later. · 2026-10-03 (aa) — desktop 0.6.35 BUILT (A384, migration 117): "What to do when" Help on the till (offline, from the PIN pad), an A4 card and the web; who to call = the shop's own tech (allocated in the admin portal) or SwiftPOS support 0717 675 635 / 0782 972 023. · 2026-10-03 (z) — A383 BUILT (cloud + admin portal, migration 116): the watchdog — critical problems to the admin's Telegram and email at once, the rest in a 07:45 digest. · 2026-10-03 (y) — desktop 0.6.34 BUILT (A382): the business day ends at the owner's cut-off (00:00–06:00) — a bar is no longer locked at midnight. · 2026-10-03 (x) — A380 (backup folder on the server's own disk) and A381 (the server does not pass a logo change to the tills) filed OPEN for later (owner). · 2026-10-02 (w) — desktop 0.6.33 BUILT (A379): free delivery — the shop pays the rider, the customer pays no fee; switched by the owner (migration 115). · 2026-10-02 (v) — A378 BUILT: a client's own sign-in address (africanfries.<root>) with their logo; sign-in there admits only that client (migration 114; off until TENANT_ROOT_DOMAIN / VITE_TENANT_ROOT_DOMAIN are set). · 2026-10-02 (u) — A377: 0.6.32 RELEASED; the release run now stops on a tag that is not the desktop version and on a draft release. · 2026-10-02 (t) — desktop 0.6.32 BUILT (A377): one Windows installer for 64-bit and 32-bit tills (a client's Windows 10 32-bit till). · 2026-10-02 (s) — A376 CLOSED: the new client's till enrolled after the fix was deployed. · 2026-10-02 (r) — A376 BUILT (cloud + admin portal): a new client's till could not be enrolled (the owner was matched only on the business contact email); now by the owner's sign-in. · 2026-10-02 (q) — desktop 0.6.31 + cloud + migration 113 BUILT (A375): a product shown on the POS grid and QR menu only on chosen days, still found by search and sold any day. · 2026-10-02 (p) — A159 enforce-readiness: the flip would have broken the till's manager screens (31 writes) and day-close ack; fixed with a PIN-sign-in claim and one shared rule, tested against every cloud write in the till's source. · 2026-10-01 (o) — desktop 0.6.30 + cloud BUILT (A336 stage 3): the owner sets the void window (default 30 min) and which methods a till may refund offline (default cash), and whether it may reverse web sales offline; the till voids/refunds offline with a manager's PIN and replays to the cloud with the approver. · 2026-10-01 (n) — results: checklist v0.6.29 14/14 PASS on T1 → A369, A374 CLOSED; every item from 0.6.26–0.6.29 verified. · 2026-10-01 (m) — results: v0.6.28 23/23 PASS → A372, A373 CLOSED; v0.6.27 20 PASS, D2 FAIL, D4/D5 not run → A370, A371 CLOSED, A369 open; NEW A374 (History hid the delivery fee) and the owner's 0.6.29 asks BUILT: confirm table, blind close + cashier figures standard, success screen after payment (no print), History = today's sales. · 2026-10-01 (l) — results: checklist v0.6.26 all 8 PASS on T1 (v0.6.28 install) → the A336 follow-up verified; A336 open for stage 3. · 2026-10-01 (k) — release number on every website (dashboard, web POS, login, admin portal) and the cloud (`GET /api/version`), with a warning when the website and the cloud differ; ships in v0.6.28 (no new tag). · 2026-10-01 (j) — desktop 0.6.28 + cloud + migration 112 BUILT (A372): a sent order is paid or a recorded kitchen void — reason, made or not, a manager with the client's switch, a VOID ticket, the Z-report; End Shift refused while one is unpaid; 'pay before kitchen' switch. Found on the way: A373 (the kitchen cooked a sent dish twice). · 2026-09-30 (i) — desktop 0.6.27 + cloud + migration 111 BUILT (A369): a prospect's nine requests as per-client switches in the admin portal — delivery fee paid to the rider from the drawer, expense payment method, cashier-only History, no reprint, blind shift close, the manager's reasons; the Z-report shows the expense type. Found on the way: A370 (dashboard expenses refused), A371 (till on-screen receipt tip). · 2026-09-30 (h) — desktop 0.6.26 + cloud BUILT (A336 follow-up): a void or refund made on the web of a sale a TILL rang now reaches that till (Z-report, shift figures, day close, History); A359's known limit removed. A336 stays open for stage 3. · 2026-09-30 (g) — ALL of v0.6.24 and v0.6.25 PASS on T1 (N7, N8, P1, D1, D2 the last) → A367 CLOSED; nothing from 0.6.21–0.6.25 is open. · 2026-09-30 (f) — results: 0.6.25 B1, B2, G1–G3 PASS (P1, D1, D2 not yet run); 0.6.24 C1–C6 PASS, N1–N6 PASS (N7 path fixed in the docs, N8 pending) → A366, A368 CLOSED; A367 open for N7/N8. · 2026-09-30 (e) — 0.6.21 D2–D4 PASS → A364 CLOSED (the 29 Sep day: two cash-ups, 18,240 counted = expected). 0.6.25 released (Release desktop #41; CI #441 green after the CI-only fix `91cb590`), deployed, approved, on T1. · 2026-09-30 (d) — desktop 0.6.25 + cloud BUILT: a bigger client logo on the PIN and lock screens, the logo in the manager sidebar, a bigger printed logo, and A368 — a logo uploaded on the till no longer disappears (it is saved to the cloud too). 0.6.24 landed (`6b12bed`, CI #439 green, v0.6.24 pre-release). · 2026-09-30 (c) — results recorded: 0.6.23 F1–F7, F9 PASS; 0.6.22 M3–M9 PASS; S1–S4, O1, L1, X1–X5 PASS → A365, A363, A362, A361, A360 CLOSED. D2–D4 (A364) still to run; 0.6.24 held. · 2026-09-30 (b) — desktop 0.6.24 (schema 58) + cloud BUILT (A367): notes on an item and on the whole order — free text + the owner's quick picks, on the till, the web POS, the kitchen ticket, the receipt and the KDS. HELD with 0.6.24 (owner testing 0.6.23 first; no patch yet). · 2026-09-30 (a) — desktop 0.6.24 + cloud BUILT (A366): only the cashier who opened a shift, or a manager, can close it — till, web POS and the cloud. F8 PASS (the printed Shift Report). · 2026-09-29 (e) — Shift Reports print a REPORT, not the page (dashboard only): an A4 shift report and a list report from the data. · 2026-09-29 (d) — desktop 0.6.23 (A365 follow-ups from T1: M1 + M2 PASS): a method with nothing recorded is not asked; no mouse-wheel / spinner changes on number fields (till + web); "include the opening float"; a manager already signed in confirms without a PIN; NEW dashboard **Shift Reports** (every shift: running / awaiting / confirmed, the difference, View → the per-method table). · 2026-09-29 (c) — desktop 0.6.22 + cloud + migration 110 BUILT (A365): the cashier declares every payment method at End Shift; a manager confirms every shift with a blind recount (PIN; now or later; till, web POS, dashboard); Close Day waits for them; self-confirmation flagged. · 2026-09-29 (b) — desktop 0.6.21 BUILT (A364): a day close is a cash-up — a shift opened after today's day was closed reopens it (was "That record already exists." on T1); the next close counts only the shifts since, the row keeps the whole day. · 2026-09-29 (a) — desktop 0.6.20 BUILT (A363): an offline close-and-reopen never strands a drawer (cloud writes closing days first; the till re-sends a parked day/shift once — T1 unsticks on 0.6.20); refusals in the log; web-sales token renewal; sync status for managers only + bottom notice + "Last synced"; Z-report note. · 2026-09-28 (z) — NEW A362 (a cashier records an expense on the web POS: POST /api/shifts/:id/expense + 🧾 Expense), built as a patch (cloud + dashboard). · 2026-09-28 (y) — Migration 109 applied to prod (`recorded_by | uuid`). · 2026-09-28 (x) — Backlog checklist on target: 25 pass / 0 fail / 4 skip. CLOSED 27 (A129 A179 A267 A168 · A277 A209 A139 · A296 A258 A259 A262 A58 A211 A256 A257 A157 A141 · A298 A299 A306 · A331 A330 A329 · A273; A300 A305 A234 on code evidence). §N run on ONE till only — node items stay open. NEW A360 (cashier expense types, cloud) + A361 (expense recorded_by, migration 109), built as a patch. · 2026-09-28 (w) — Checklist v0.6.19 on target: 26 pass / 0 fail / 1 skip. CLOSED A355, A358, A359, A341, A349. · 2026-09-28 (v) — Checklists v0.6.17 + v0.6.18 recorded: CLOSED A348, A350, A351, A276, A279, A356, A357. NEW A358 (0.6.18 follow-ups) + A359 (web refund), built for 0.6.19 (patch, owner commits). · 2026-09-28 (u) — desktop 0.6.18 BUILT: A355 (refund from History any time; manager's own PIN approves), A336 stage 2, A276 (drinks off the kitchen ticket — cause found), A279, A341, A356, A357. · 2026-09-28 (t) — A353 OPENED (move sign-in from Supabase to our own auth — scoped, not started) and A354 OPENED (Android tablet app — design doc, not started). · 2026-09-28 (s) — A352 BUILT: email — Resend primary, SendGrid (HTTPS) then SMTP as backups. Cloud only. · 2026-09-28 (r) — A351 BUILT: the manager menu in groups (Sales, Close, Settings) for desktop 0.6.17. · 2026-09-28 (q) — Checklist v0.6.16 on target: 20 pass / 1 fail / 15 skip. CLOSED A345, A346, A347, A342, A335. U1's "fail" is R4 as designed (0.6.15 → 0.6.16 was meant to reach every till); A348, A349, A350 stay FIX BUILT for their skipped checks. · 2026-09-28 (p) — A350 BUILT: the release workflow creates each release before uploading (no more split releases) and verifies it; the cloud merges a split release and downloads by file id. · 2026-09-28 (o) — A349 BUILT (pre-release money review, in 0.6.16): discounted sales' receipts now print; tips on receipts; CTL in the Overview and Z-report; the till's reports refund-true (VAT/CTL reduced by refunds, as the cloud); local-time hours; web receipts with CTL; a failed ticket told to the cashier. · 2026-09-28 (n) — A348 BUILT (migration 108 + cloud + admin portal + desktop v0.6.16): desktop updates approved per business in the admin portal, held by default; tills ask the cloud, never GitHub; builds publish as pre-releases; the repository can go private once every till is on 0.6.16. · 2026-09-28 (m) — A347 BUILT: app icon in SwiftPOS teal (#14b8a6), next desktop version (no bump yet). · 2026-09-27 (l) — A346 BUILT (cloud + desktop v0.6.15): the till shows Stock only when the business has the web POS (web access active or grace). A345 BUILT (desktop v0.6.15): an offline sign-in's back office says "You signed in while offline…" instead of "This till is not signed in"; offline, Menu and Staff show what the till has saved, read-only; when the network returns the offline sign-in becomes a cloud sign-in by itself (PIN held in memory only). · 2026-09-27 (k) — Owner's v0.6.14 checklist: 24 PASS / 0 FAIL / 5 SKIP. CLOSED A343, A344, A339 (J1), A334 (B3, B6); A342 open for K4 only; A336 stage 1 fully verified (stages 2–3 open); A335 open (F5). NEW A345 (offline manager: cloud-owned back-office pages say "not signed in"). · 2026-09-27 (j) — A342, A343, A344 BUILT (desktop v0.6.14 + cloud + dashboard): closing on the till closes the web's shift on that till with one count; on the web a cashier who didn't open the running shift chooses to join it or start their own on "<Branch> Web Till"; payment methods in colour (buttons + reports). The till's read-only foreign-cash / foreign-orders added to the terminal-write allowlist. Delivery 2026-09-27-j. · 2026-09-27 (i) — Owner's v0.6.13 checklist: 31 PASS / 0 FAIL / 8 SKIP. CLOSED A338, A340, A337, A332, A333; A334 (B5 fix confirmed), A335, A336, A339 stay open for their skipped checks. NEW A342 (till close closes the web's drawer), A343 (a cashier's own web shift), A344 (payment method colours) — owner decisions. · 2026-09-27 (h) — Migration 107 APPLIED to prod (owner's pg_indexes output: `shifts_open_by_terminal` plain index, unique one gone). NEW `docs/checklists/VERIFY-CHECKLIST-v0.6.13.html` (+ .md): 39 checks, everything open from 0.6.9 → 0.6.13. NEW A341 (manager may add a "type" — future build, owner to confirm which list). · 2026-09-27 (g) — A339 + A340 BUILT (desktop v0.6.13 + cloud + dashboard): an offline manager sign-in lands on the manager screen (the offline answer now carries the role the PIN screen routes on); a manager can no longer invite an owner (the invite route had no role check), grant a permission they do not hold, or mint an "Owner" role, and neither role picker offers what the cloud would refuse. Delivery 2026-09-27-g. · 2026-09-27 (f) — A338 BUILT (desktop v0.6.12 + cloud + migration 107): a till's drawer no longer stops syncing while the web POS has a drawer open as that till — the cloud accepts it (migration 107: the one-open-per-terminal index is no longer unique), a sale whose drawer is not up yet waits (424) instead of failing, and the till re-queues what the clash had parked (drawer, floats, expenses, sales). Delivery 2026-09-27-f. · 2026-09-27 (e) — A337 BUILT (desktop v0.6.11): previous shift reports can be opened and printed; expenses shown on the shift report (screen and paper — the reconciliation now adds up) and on a NEW Expenses screen; the Daily Sales Report is colour-coded (title, sections, headings, totals, key figures, warnings). Delivery 2026-09-27-e. · 2026-09-27 (d) — Cross-sync stage 1 (A336) + A335 + the B5 fix: the web POS's sales on a till's drawer download onto that till (orders, shift panel, Z-report; never pushed back or relayed); the manager's Orders tab can show every till at the branch from the cloud; the till's void/refund now finds its own sales in the cloud (A335); the shared-drawer close no longer counts the till's own sales twice (owner's B5: 6,210 → 4,720); shift changes push at once, 30 s backstop. Desktop v0.6.10, local schema 55. Delivery 2026-09-27-d. · 2026-09-27 (c) — A332 BUILT: web POS light mode — action hover uses the theme's 400 fill (2.51 → 6.56), white labels stay white where white wins (action-600 2.51 → 5.36, red Delete 3.70 → 4.83), themed focus ring now compiles. Delivery 2026-09-27-c. · 2026-09-27 (b) — A333 BUILT: light mode for the dashboard's coloured and pale text and translucent gray lines (52 generated rules, ≥ 4.5 on white and on each colour's own tints); the always-dark sign-in screens keep their white text (was 1.10:1 in light mode). Delivery 2026-09-27-b. · 2026-09-27 (a) — A334 BUILT: the till joins a drawer the web POS opened as it (same id, its trading day; a different cashier is told whose drawer it is) and its close includes the web's cash on any shared drawer (NEW POST /api/shifts/:id/foreign-cash). Desktop v0.6.9. Delivery 2026-09-27-a. · 2026-09-26 (c) — A273 follow-up BUILT (web ↔ desktop shifts): tills send their real name (setup name wins), the web picker shows "T1 — Front Counter" and which drawers are open, joining an open drawer asks no float, the cashier's own open till is joined silently; NEW A334 (P1 — the desktop never learns of a web-opened drawer; owner decisions needed). Desktop v0.6.8 owed. Delivery 2026-09-26-c. · 2026-09-26 (b) — A329 step 3 BUILT: the back office's 619 actions/wordmark/accents → fixed SwiftPOS teal (`swift-*`), "SwiftPOS Teal" preset, favicon teal; light-mode white labels and focus ring fixed; NEW gate + test; NEW A332 (web POS light-mode labels/hover/focus) and A333 (status greens in light mode). Delivery 2026-09-26-b. · 2026-09-26 (a) — A329 step 3 CLASSIFIED (docs only): the back office's 1016 green + blue uses, 619 → SwiftPOS teal, 394 keep their colour; owner decisions (blue primaries too; admin portal out) recorded; document for owner review. Delivery 2026-09-26-a. · 2026-09-25 (f) — Session close: v0.6.7 released (Release #23); A329 step 3 swept (back office: 641 greens in 59 files) and planned for the next session; test labels corrected; handoff. Delivery 2026-09-25-f. · 2026-09-25 (e) — A329 step 2: SwiftPOS teal is the themes-OFF look on tills + web POS; NEW A331 (themed tills' white labels on 600) fixed; Tree row v0.6.7. Delivery 2026-09-25-e. · 2026-09-25 (d) — A330 FIX BUILT: 11 translucent grey panel classes get their light-mode rule (the tip panel and ~130 uses); guard test. Delivery 2026-09-25-d. · 2026-09-25 (c) — A328 CLOSED on target (themed, reset-to-Ocean and OFF all exact on the web POS). Decisions: 4b-2 back office stays SwiftPOS-branded; NEW A329 SwiftPOS colour green → teal (owner yes; plan + numbers); NEW A330 tip panel in light mode. Slice 5 checklist. Delivery 2026-09-25-c. · 2026-09-25 (b) — A328 part 2: the web POS's INLINE colours (181 classified, 94 themed, each falling back to its own original) — fixes the green Charge / pink Confirm the owner saw. Delivery 2026-09-25-b. · 2026-09-25 (a) — A326 + A327 CLOSED on target (brand strip, yellow sidebar, theme buttons on the till; dark-mode picker fix deployed). A328 FIX BUILT: web POS + shared components follow the theme (67 classified, label contrast proven for 7 themes × 2 modes). Delivery 2026-09-25-a. · 2026-09-24 (j) — A327: the owner's run proved web → cloud → till (Blossom on the PIN screen) and found the selected theme near-invisible in DARK mode; fixed (theme-coloured ring + tick) and re-verified in dark and light. WORKING-METHOD: check dashboard UI in dark mode (its default) and light. Delivery 2026-09-24-k (re-issue of -j: a Node-on-Windows exit crash after all checks passed; the new test uses process.exitCode). · 2026-09-24 (i) — Phase 2 slice 4: A327 FIX BUILT (web theme picker + live till preview + save; nothing changes without themes). A326 CLOSED on target (0.6.6 screenshots). Delivery 2026-09-24-i. · 2026-09-24 (h) — CI #394 red on slice 3 (`8f40e02`): A321's desktop test pinned the PIN-page line A326 changed; re-pinned to intent. All 26 desktop tests run on the tip; WORKING-METHOD: run every CI step's tests before hand-over. Delivery 2026-09-24-h. · 2026-09-24 (f) — Phase 2 slice 3: A326 FIX BUILT (the till's colours follow the theme only when themes are ON; 222 greens classified; gate). A325 CLOSED on target (ocean/null). Tree row → v0.6.6. Delivery 2026-09-24-g (re-issue of -f: the new test spawned a Windows `.cmd`; fixed). · 2026-09-24 (e) — Phase 2 slice 2: A325 FIX BUILT (`theme_id`, migration 106, the `themes` flag, cloud → till, schema 54, admin toggle; catalogue-version now watches feature_flags); A324 CLOSED (CI #392). Delivery 2026-09-24-e. · 2026-09-24 (d) — Phase 2 approved and started: NEW A323 (tracker: decisions + 5-slice plan) and A324 (slice 1, the theme registry `themes.ts`, FIX BUILT — no visible change). Delivery 2026-09-24-d. · 2026-09-24 (c) — Phase 2 proposal revised (two layers: brand + action; seven themes; brand-colour table; complementary pairing). Render: the `"env":"development"` seen on `swiftpos-20c2` is the DEVELOPMENT service — correct; production is a separate service; dev→main merge planned after Phase 2 with its own checklist. Delivery 2026-09-24-c. · 2026-09-24 (b) — A322 CLOSED on target (0.6.4 on mamangina: preview shows the till's own name + neutral sample; neutral placeholder; neutral template). v0.6.4 released (Release #20) and running. Delivery 2026-09-24-b. · 2026-09-24 (a) — A322 FIX BUILT (desktop 0.6.4): test print shows the till's own name; neutral sample data (the sample ticket also carried a reference business's till number, phones and a cashier's name); placeholders/template neutral; checklists renamed, reference menu spreadsheets removed; NEW gate `check-reference-names.mjs`. Tree row → v0.6.4 (paired with the owner's `npm version 0.6.4`). Delivery 2026-09-24-a. · 2026-09-23 (y) — session close: `docs/HANDOFF-2026-09-23-evening.md` + NEW `docs/WORKING-METHOD.md` (how sessions run — delivery loop, the three command blocks, confirming "landed", release sequence, session-start prompt). Next: A322. Delivery -y. · 2026-09-23 (x) — **Branding Phase 1 CLOSED on target** (0.6.3 on mamangina: A2, B1, A5, A315 all PASS). CLOSED: A295 (Phase 1), A278, A308, A315, A319, A321. v0.6.3 confirmed running on the till. Next: A322. Delivery -x. · 2026-09-23 (w) — Phase 2 theme proposal (docs, nothing built); NEW A322 (P2): the test print and two till screens show a reference business's name to every client. Delivery -w. · 2026-09-23 (v) — desktop v0.6.3: Tree row updated in the SAME commit as the owner's `npm version 0.6.3` (the v0.6.2 bump missed this pairing and went red — -j). Delivery -v. · 2026-09-23 (u) — A321 FIX BUILT (desktop, 0.6.3): every landed pull signals every window; the lock screen listens; the 20-s check refreshes on 401 and reports other failures. Delivery -u. · 2026-09-23 (t) — retest recorded (Eugene, mamangina, 0.6.2; 18 PASS / 0 FAIL / 2 not run): CLOSED on target A311 A312 A313 A316 A317 A318 A320; A295 §10 item 4 closed, A295 stays open (items 5, 7); A315/A308/A319 stay FIX BUILT (till half / A2 / A5 owed); A278 stays open; NEW A321 (P2) — the open screen never refreshes after a background pull. Log `docs/VERIFY-LOG-2026-09-23.md`. Delivery -t. · 2026-09-23 (s) — docs only: `docs/checklists/verify-branding-phase1.html`, the interactive retest checklist (house style of VERIFY-CHECKLIST-v0.6.0.html, content = VERIFY-BRANDING-PHASE1.md after -r, output = the first run's report format). Delivery -s. · 2026-09-23 (r) — docs only: VERIFY-BRANDING-PHASE1 updated for the retest (A5's rejected example was wrong: `#777777` IS legible to the till — now `#1e293b`; A1/B1 record "Saved." and Edit-form use; new §G for A315/A317/A318/A320; results template). Delivery -r. · 2026-09-23 (q) — A320 FIX BUILT: product names are trimmed before the non-empty check on create and update (PATCH could save an empty name). Siblings on branches/staff recorded, not fixed. Cloud deploy only. Delivery -q. · 2026-09-23 (p) — A318 FIX BUILT (products table scrolls, actions pinned right — Edit/Delete visible on every row; reproduced and verified in a real browser) · A319 FIX BUILT (web Branding page uses the till's contrast rule and lock surface via a synced copy; #F5B800 now accepted with black text, as on the till). Dashboard deploy only. Delivery -p. · 2026-09-23 (o) — builder Windows regression from -n fixed: -n quoted the command name (`"npx.cmd" …`) and cmd.exe then resolved npx.cmd's own folder to the repo (`Cannot find module C:\swiftpos\pos\node_modules\npm\bin\npx-cli.js`, owner's run); -o hands cmd.exe exactly -m's line (`npx.cmd "--yes" …`, which ran there) as one string (no DEP0190). -n itself landed: `b646b51`, all 9 files checksum-matched, CI #377 green. Delivery -o. · 2026-09-23 (n) — A316 FIX BUILT (web receipt-logo codec had no Buffer in a browser: Branding saves with a logo 400'd, web never printed a logo) · A317 FIX BUILT (product schemas accept a null description — web + till edits were 400ing) · A314 CLOSED (CI #376 on `74d29a1`) · new OPEN: A318 (products table clips Edit/Delete), A319 (web legibility rule drifted from the till's), A320 (update accepts a blank name) · tester's VERIFY-BRANDING-PHASE1 results recorded on A308/A278 · builder no longer trips DEP0190 on Node 24. Delivery -n. · 2026-09-23 (m) — delivery -l re-issued: commit `7a66044` carried only the -l manifest (the other 13 files were not extracted over the repo); -m ships them plus a Windows fix to `build-escpos-renderer.mjs` (`spawnSync npx ENOENT` on the owner's Git Bash — npx is npx.cmd and Node refuses a .cmd without a shell; pre-existing in the old builder too). · 2026-09-23 (l) — A315 + A314 FIX BUILT together: closing thank-you no longer duplicates the owner/delivery box (whole-line match, owner ruling; was live on every web receipt with no receipt_footer via the per-device default); SAMPLE-OUTPUT + out/*.bin refreshed; `npm test` now fails on artefact drift and CI fails on a stale web bundle (esbuild pinned 0.28.2). Counts unchanged (FIX BUILT stays open). Delivery -l. · 2026-09-23 (k) — v0.6.2 published; handoff written. · 2026-09-23 (j) — Tree row: v0.6.2, schema 53, migration 105 on prod (verify PASS). Fixes the CI red on `ea8416a`. · 2026-09-22 (i) — A310 CLOSED: the `GS v 0` raster printed perfectly on the client's XP-80 (owner photo 23:23). A315 opened (duplicate closing line seen on the same paper). VERIFY §F added; handoff `HANDOFF-2026-09-22.md`. Delivery -i. · 2026-09-22 (h) — A313 receipt-logo slice 4 (last) FIX BUILT: web Branding page gets the opt-in toggle + a receipt preview from the stored raster; bundle rebuilt (A310 in, raster helpers exported, reproducible); web live/routed/reprint receipts carry the logo under the same gate as the till. Receipt logo is now code-complete end-to-end; paper + browser + prod-migrate 105 owed. A-P3 →24. Delivery -h. · 2026-09-22 (g) — A312 receipt-logo slice 3 FIX BUILT: pixels over IPC, main thresholds via shared raster.ts into `logo_receipt`; print path gates on toggle + raster; tech editor gets toggle + WYSIWYG mono preview. 42/42 via real guard + real SQL; run-all 113/113. Two paper .bin artefacts for the printer. A-P3 →23. Delivery -g. · 2026-09-22 (f) — A311 receipt-logo slice 2 FIX BUILT: migration 105 `receipt_logo_enabled` (opt-in), local schema 53, `/pos/init` + pull carry `logo_receipt` + toggle (absent = keep local, null = clear), server CRUD validates the raster shape. Real SQL executed in test; run-all 113/113. PROD-MIGRATE 105 owed. A-P3 →22. Delivery -f. · 2026-09-22 (e) — A310 receipt-logo slice 1 FIX BUILT in shared/printing (raster.ts + image block + GS v 0; receipts only; malformed → dropped); A314 opened (reference artefacts stale). A-P3 →21. Delivery -e. · 2026-09-22 (d) — A306 main-side manager gate + A159 env docs; guard mutation-checked (one assertion re-pointed after it passed by reading a comment, rule 24); run-all 113/113. Delivery -d. · 2026-09-22 (b) — lead-dev housekeeping after the repo review: A309 CLOSED (CI doc-refs red, fixed in -a); A295 OPENED as the Phase 1 branding tracker (P1: receipt logo + receipt preview NOT built; A308/A278 target checks owed); A237 re-graded FIX BUILT (Go bridge is live, Node bridge retired); SCOPE-A295 status line corrected; §0 environment note corrected to Electron 43. A-P1 18→19. Gates: register-consistency, doc-refs, root-clean green. Delivery -b (docs-only, no zip). · 2026-09-21 (push-all) — consolidated delivery -q: A307 in-app menu template (Large-fries upgrade) + A278 live catalogue refresh (web→till, no restart) + A19 node→cloud relay RE-GRADED FIX BUILT (bench 28/28; 09-18 note was wrong) + A308 web Branding settings page (client-facing). Branding requirement met end-to-end. P3 →19. Bench: all suites + tsc + gates green. · 2026-09-21 (ctl) — A277 FIX BUILT: receipt already rendered CTL + sales compute it; real gap was ctl_rate not being settable. Wired ctl_rate into server EDITABLE (0..100) + dashboard Business Profile form. Bench: ctl-rate-editable 6/6, server+dashboard tsc 0. Owner: set a nonzero CTL, ring a sale, confirm the receipt line. Delivery -m. · 2026-09-21 (verify) — Branding chain A301–A304 CLOSED on target (Till 1): on-till pass §A–§F 25/25, 0 fail — lock-screen reflow/teal, tech feed, cloud store (migration 104 live), sync-down remote-wins, offline read, plus 0.6.0 regression. A306 update-banner check deferred to the next release. · 2026-09-21 (update-ux) — A306 auto-update UX FIX BUILT: update:status banner ("Downloading…"/"Update ready"), manager-PIN-gated "Restart & update now" → quitAndInstall(false,true) (visible progress, relaunch), install-on-quit kept, 2h gentle reminder. Fixes the silent-vanish the v0.6.0 update showed. Bench: wiring 13/13, ipc gates green. Delivery -j. · 2026-09-21 (ci) — A305 migration runner hardened: per-test timeout (SIGKILL a hang → named FAIL), bounded parallel pool (min(cpus,4)), --self-test wired into CI. Fixes the 30-min hang class. Bench: self-test 3/3. Delivery -i. · 2026-09-21 (sync) — A304 branding sync-down FIX BUILT: /pos/init serves branding + business_branding on the A291 version list; till pullCatalogue → applyPulledBranding writes the local mirror remote-wins (keyed by session business; null/node = keep local). Bench: sync-pull 12/12, server+desktop-main tsc 0, gates green. Target-only: e2e pull with migration 104 live + visual. Delivery -g. · 2026-09-21 (cloud) — A303 cloud branding store FIX BUILT: migration 104 business_branding (RLS + set_updated_at trigger) + server CRUD (GET/PUT /api/business/branding, persist-boundary validated) — the cloud half of A295 sync. Logo base64-in-row (SCOPE §3 asset_id deviation, noted). Bench: PGlite migration 8/8, server tsc 0, schema-drift/rls-coverage/api-routes green. NEXT A304: pos/init serve + desktop pull. Delivery -f. · 2026-09-21 (feed) — A302 tech-gated branding FEED FIX BUILT: BrandingEditor (accent picker + PNG/JPEG upload via prepareRasterLogo) mounted in TechPage, writes through A301 branding:set, audited. Bench: wiring guard 8/8 (2 mutations bite), renderer tsc 0, 19/19 gates. Target-only: the on-screen editor + lock-screen render (rule 16). Delivery -e. · 2026-09-21 — A301 (desktop branding WRITE path) FIX BUILT + merged to dev (PR #9, 35c7229): `branding:set` end-to-end + pure `brandingGuard` (accent / PNG-JPEG / 250 KB, SVG rejected) + renderer `prepareRasterLogo` (shrink-not-crop). Bench 18/18 + 19/19 static gates green; target-only per rule 16 (Electron test:desktop on the real ABI, prepareRasterLogo needs a DOM, visual lock-screen). CI caught a missed test-registration mid-flight — fixed (delivery -c). Deliveries: -a/-b/-c. · 2026-09-15 (verification session, one laptop + printer) — CLOSED on target: A265 A266 A260 A274 A275 A182 A235 A249 A251 A240 A245 A239 A241 A243 (14). A275 (remote day close) verified end-to-end. Spice/VAT path validated live on a real receipt. OPENED: A276 (P1, soda prints on kitchen ticket — web+desktop, cause pending), A277 (P2, receipt omits CTL line), A278 (P2, web→till changes need a restart; want instant push), A279 (P3, POS filter control). A273 kept open — picker renders but asks for a float even when the till already has an open drawer (should resume). NOT closed (tested on pre-Vercel-rebuild build, re-confirm): A259 A262 A257 A256 A179 A129 A157 D18. Group C (A160-A164, A19, A20, A24, D9, A22) blocked pending a 2nd enrolled till. See docs/VERIFY-LOG-2026-09-15.md. · 2026-09-14 (g) — CI FIX round 3 (delivery -g): test-migration-102 failed on its idempotency re-run — CREATE POLICY has no IF NOT EXISTS, so the second db.exec(SQL) errored "policy owner_all already exists". Fixed by adding DROP POLICY IF EXISTS before CREATE POLICY (payment_methods/86 pattern). This round is VERIFIED, not blind: installed @electric-sql/pglite on the bench and ran the migrations — all 26 migration test files pass (test-migration-102 6/6 incl. idempotency), check-rls-coverage OK, schema-audit total 0, check-schema-drift OK. tsc/Build/Server-suites unaffected (only migration SQL changed). Delivery: docs/MANIFEST-2026-09-13-g.md. · 2026-09-14 (f) — CI FIX round 2 (delivery -f): after -e, two jobs still red. (1) RLS coverage — migration 102 created day_close_instructions with no RLS statement; added ENABLE ROW LEVEL SECURITY + an owner_all policy (payment_methods/86 pattern; all real access is server-side service_role), and mirrored 86's auth.uid()+businesses bootstrap into test-migration-102.mjs so it runs in PGlite. (2) Root-clean (rule 19) — VERIFY-CLOSEOUT-2026-09-14.md was committed to the repo ROOT (my flat-file share); it belongs in docs/ (git mv, not in this zip). Verified locally: check-rls-coverage OK (102/102), schema-drift OK, schema-audit total 0, all doc/register gates green. Delivery: docs/MANIFEST-2026-09-13-f.md. · 2026-09-14 (e) — CI FIX (delivery -e): the -c commit (e2969da) turned CI red. Type-check ratchet + Build + Server-suites all failed on 5× TS2559 in day-close.ts (validation calls passed 400 where sendError's 3rd arg is SendErrorOptions); Schema-drift failed because schema-audit.py saw day_close_instructions referenced but not in scripts/schema-index.json. Fix: 5 validation calls → res.status(400).json({ error }) (matches sendError's documented intent for intentional 4xx); added day_close_instructions to schema-index.json. Verified locally: schema-audit.py total 0, check-schema-drift OK, day-close-relay 5/5, all doc/register gates green. tsc not runnable on the bench (no node_modules) — re-confirm on CI. No count change (A275 still FIX BUILT). Delivery: docs/MANIFEST-2026-09-13-e.md. · 2026-09-13 (d) — A22 → FIX BUILT (P2, delivery -d): promotion split-brain made loud. Rule-17: detection already existed (confirmServingRole/migration 74 records role_conflict_at + refuses credentials) but only console.warn'd — so the delta was surfacing. Till: tech:promoteToNode now probes the current node_url before the role flip and refuses (code node_reachable) if a live node still answers. Cloud: GET /fleet exposes servingConflict/conflictAt. Web: FleetPage shows a loud red split-brain badge (catches the reconnect-after-promote case). Guard: split-brain-surfacing.test.mjs (3, mutation-checked). Counts unchanged (FIX BUILT still open). NOT verified: live two-node scenario + tsc. Follow-up noted: node-local banner via sync response. Delivery: docs/MANIFEST-2026-09-13-d.md. · 2026-09-13 (c) — A275 → FIX BUILT (P1, delivery -c): remote day close (Option i-A). Migration 102 day_close_instructions (cloud mirror of node_instructions, one-pending-per-till-per-day). Cloud /api/day-close: manager instruct/overview (shifts.force_close|settings.manage), till pending/ack (device-scoped via X-Device-Id). Till syncAll pulls + runs executeCloseDay verbatim + acks (idempotent, best-effort). Web manager "Remote day close" panel in ManagerShiftTab. Never writes a business_days close on the cloud (closes flow up only). Guards: day-close-relay (5) + day-close-till (4) + day-close-web (4), all mutation-checked. Counts unchanged (FIX BUILT still open). NOT verified: full live loop + tsc + PGlite migration test (no node_modules/Postgres on bench). Cluster A273/A274/A275 now all FIX BUILT — the shift/day web-parity design is code-complete on the bench, pending target verification. Delivery: docs/MANIFEST-2026-09-13-c.md. · 2026-09-13 (b) — A273 → FIX BUILT (P1, delivery -b): web POS now adopts the covered till's identity (Option B). New branch-scoped GET /api/shifts/terminals; posTerminal.ts stores the covered till per tab; POSAuthContext sends x-device-id on every request incl. the 401-retry; ShiftModal picks the till, adopts before /open, folds into an existing drawer on 409, clears on close. No migration (cloud already keys on the header). Behaviour change: a web shift now requires covering an enrolled till. Guards: shift-terminals-endpoint.test.mjs (4) + web-terminal-identity.test.mjs (7), both mutation-checked. Counts unchanged (FIX BUILT still counts open). NOT verified: live two-surface + tsc (no node_modules on bench). Delivery: docs/MANIFEST-2026-09-13-b.md. · 2026-09-13 (a) — WEB SHIFT/DAY PARITY cluster opened per owner direction (desktop = main register, web = per-till backup); design locked in docs/SHIFT-DAY-WEB-PARITY-DESIGN.md. A273 OPENED (P1): web has no per-register identity — all web sales share one web:&lt;branch&gt; drawer and cannot fold into a till's drawer/day; chosen fix = Option B (web stands in for a chosen till). A274 OPENED+FIX BUILT (P1): web could ring a shift_id:null sale — no hard shift gate and the /current check swallowed failures; Charge/Send-to-Kitchen/Room-charge now disabled+guarded on currentShift and a failed check prompts open instead of falling through; web-only, additive; guard tests/web-shift-gate.test.mjs (5, mutation-checked); NOT verified on screen or dashboard tsc (rule 16). A275 OPENED (P1): no remote day close — chosen fix = Option i (cloud-relayed close_day instruction the till executes locally against a cashier-entered count; remote finalise, never a fabricated count). Counts: A-P1 18→21 (A273/A274/A275). check-register-consistency green (238 entries). Delivery: docs/MANIFEST-2026-09-13-a.md. · 2026-09-10 (D9-core) — D9 → FIX BUILT (core only). Built the node-authoritative held-order claim/lease/audit CORE per the owner's soft-lock model (docs/D9-decision-brief.md): nodeTabs.ts — atomic claimTab (409 on double-claim, D4 burn shape), 90s lease renewed on edit, holder-gated update/clear (423), clear + forced-steal audited. Proven: apps/desktop/test/node-tabs-claim.test.mjs (17 checks); desktop main tsc 0; wired into test:desktop. NOT built (deliberately): nodeServer routes + client + IPC/UI wiring, the audit→cloud-notifications hop, and — the whole point — the LIVE two-till behaviour (poll lag, offline mid-charge, real race), which only a two-till rig proves. Do not ship to a floor until that passes. Still P3. Delivery: docs/MANIFEST-2026-09-10-D9-core.md. · 2026-09-10 (D18) — D18 → FIX BUILT + guarded: the tech-token paste fix (PinPage onPaste routes an st2. token past the truncating reveal field) is present and now guarded by tech-token-paste.test.mjs (6, mutation-checked); pending an on-screen paste confirm on the amber build. A186 stays OPEN with NEW EVIDENCE: the db.close()-before-exit hypothesis was tested on the owner's Windows box and FALSIFIED — test-migration-47 crashed EVEN WITH the close added, so the libuv teardown crash is independent of closing the handle; the 6 edits were reverted (no dead non-fix code). Exact crashers: 47, 79, 41-42 (48/99 which never close do NOT crash). Next candidates: upgrade pglite, or subprocess-isolate each test. Still P3 (Ubuntu CI is the authoritative green). No count change. Delivery: docs/MANIFEST-2026-09-10-D18.md. · 2026-09-10 (D3) — auto-update WIRED (D3 OPEN→FIX BUILT), the last pure-build P1. Was a dormant scaffold; now electron-updater is a dep, autoUpdate.ts is built (tsconfig exclude removed) + called from index.ts (guarded), prod flavour publishes to GitHub Releases (oweyahillary/swiftpos), dev flavour publishes nowhere + is runtime-skipped by name, and a tag-triggered release.yml builds+publishes on Windows (closes A1 once a release is cut). Unsigned for now (SmartScreen on first install; cert = a secrets flip, not code). Guard: autoupdate-wiring.test.mjs (12, mutation-checked). Desktop tsc 0, 97/97 suites, gates green. NOT verified: the end-to-end update loop on a real Windows till (push a v* tag, install, bump+tag, watch it self-update) — owner-only. Delivery: docs/MANIFEST-2026-09-10-D3.md. · 2026-09-10 (combined) — four items in one delivery. D1 CLOSED (last open P0): the two-business owner-login dead-end was already resolved by the A158 enrolment work (desktop-login RETIRED→410; till uses enrolment codes, no picker); heading was never flipped; verified in source. A204 CLOSED (code): Stock Transfers Cancel now uses an in-app required-reason modal instead of a native window.confirm that sent no reason (server needs it, 400 reason_required); guard + mutation-check; dashboard tsc 0. A146 CLOSED (code): the webhooks UI was duplicated + diverged — BusinessPage had the full standalone WebhooksTab (test-send + delivery log) while SettingsPage had a stale inline subset; consolidated onto the shared component; guard + mutation-check. A18 re-graded P1 OPEN→P3 NOTE: nothing to fix (nodeServer.ts header already correct); it is a tracking marker for PHASE5 §3. Counts: A-P1 19→18, A-P2 22→21, D-P0 1→0 (ZERO open P0s). 96/96 suites, gates green. Delivery: docs/MANIFEST-2026-09-10-combined.md. · 2026-09-09 (g) — BROWSER VERIFICATION PASS (Claude-in-Chrome agent, owner+manager) + 3 fixes it surfaced. CLOSED 12 verified on screen: A212 A238 A207 A208 (manager portal), A216 A263 A261 A224 A229 A230 A217 (reports/receiving), A188 (POS table grid). Counts A-P2 29→22, A-P3 17→12. The agent found 3 real issues, now FIXED (bench: dashboard tsc 0, guards mutation-checked, need a visual confirm): A258 (owner Overview still stacked Top sellers/Payment methods — fix had only reached the manager view; owner grid swapped), A257 (empty category/product submit was a silent no-op — now shows "Name is required", Save enabled; both pages), A259 (owner Reports Staff Performance column BLANK — owner ReportsPage read stale s.name/s.cashier_id while the A259d server fix emits staff_name/staff_id; owner type+row corrected, phantom Branch column dropped). A262 could not be verified (shift report only prints — needs the till). Guards added to ui-reports-fixes.test.mjs (11 checks). Note: the A-P2 ID list undercounts the summary (pre-existing cosmetic drift, gate checks the summary only). Delivery: docs/MANIFEST-2026-09-09-g.md. · 2026-09-09 (f) — LIVE PRINT SESSION on the dev till (SwiftPOS Dev 0.5.39, real thermal printer): the owner verified the entire print-parity sweep + the P1 split-bill and 16 items CLOSED. P1: A242 (KOT prints), A254 (cut/margin/master-KOT), A268 (no double printing), A151 (by-item split collects the exact total). P2: A244 (test print), A248/A252/A250 (combo component routing + kitchen exclusions), A246/A255/A269 (Print Bill proforma vs receipt), A253 (send-vs-pay timing), A231 (Z report). P3: A247 (station order), A232 (doc logo), A233 (stock-take sheet). Counts A-P1 23→19, A-P2 38→29, A-P3 20→17. check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-f.md. · 2026-09-09 (e) — LIVE VERIFICATION on the dev flavour (SwiftPOS Dev 0.5.39): D17 CLOSED — dev build installs and runs, shows "SwiftPOS DEV" with the amber icon, and writes to %APPDATA%\SwiftPOS Dev separate from prod (data isolation confirmed); the dev/prod flavour is real and safe to trade on. A271/D7 order:create caveat CLEARED — a real sale went through the validated order:create boundary, saved to SQLite AND synced to the cloud, so D7 is fully closed with nothing outstanding. Register only: D17 FIX BUILT→CLOSED (D-P3 3→2), A271 live note added. check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-e.md. · 2026-09-09 (d) — A272 register hygiene (no code change): re-graded five items OPEN → FIX BUILT after a code-vs-register audit found them built but mislabelled — D17 (dev/prod flavour, all 4 artefacts built at v0.5.39), A151 (Split Bill under-collect claim is FALSE vs code — server rejects unbalanced legs via PAYMENT_MISMATCH; heading+desc corrected), A188 (hasLayout grid fallback in CashierScreen), A146 (WebhooksTab is a real mounted caller; flagged a duplicate inline copy), A139 (branch receipt migration+editor present). FIX BUILT still counts as open, so header counts unchanged; check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-d.md. · 2026-09-09 (c) — A271 CI follow-up: the desktop "Print resilience" job (test-print-resilience.mjs) went red after A271 — its body() helper string-searched ipcMain.handle('<channel>', which the rename to the validating handle() wrapper broke, failing the "station writes refresh ONLY the two station tables" guard. Stale guard, not a regression (station writes still call refreshStationsLocal only). Fixed body() to match either form (same fix as check-ipc-parity); mutation-checked; 55/55. Delivery: docs/MANIFEST-2026-09-09-c.md. · 2026-09-09 (b) — A271 CLOSED (P2) + D7 CLOSED: completed IPC payload validation across ALL 149 channels and added a coverage gate. Extended ipcValidate (nested object/array/enum/any + bare guards); central ipcSchemas.ts registry gives every channel an explicit schema/NO_PAYLOAD; ipcGuard.installValidatedHandle validates at the boundary (renamed 138+11 ipcMain.handle → handle). check-ipc-validation.mjs (in CI) fails on any unregistered or stale channel — mutation-checked. order:create validated against createLocalOrder but NEEDS_LIVE_TEST (one real sale on a dev till). Desktop main tsc 0; gates green; ipc-validate test 25→52; 96/96 offline suites. Delivery: docs/MANIFEST-2026-09-09-b.md. · 2026-09-09 (a) — A270 CLOSED (P2): CI was RED on `dev` (`1ab6121`) across 4 jobs and had been since ~A261/A266/A269 while entries claimed "gates green" (narrow local runs, not the full suite). Read all 4 CI logs verbatim, fixed each at source. REAL: dashboard `tsc` +6 (stale `escposRenderer.d.ts` vs its bundle across A252→A269 + a duplicate `branchName` from A255) — reproduced 6→0. TOOLING: `schema-index.json` missing `stock_transfer_items.quantity_received` (migration 101/A221) — regenerated additively; stale `schema-pending.json` entry for migration 77/A55 (its functions are live) — cleared per the gate's self-clearing rule (re-enables checks, does not silence). STALE GUARDS (rule 23/24, each mutation-checked): tiny-bridge A252/PaymentModal, ui-reports A261, print-documents ×4 docType (A234 moved them to documentSpecs.ts), reports-refunds Exports hub (was demanding the OLD window.open 401 bug — now asserts the authed downloadFile), mailer-transport (A200 contract), manager-receiving (premise made false by A221/A228 PO-create + transfer-initiate; replaced the "receive-only" blanket with the real no-stock-adjust invariant). All 96 test suites green under CI conditions; all gates green; additive/behaviour-preserving (no runtime path changed). No count change (opens+closes same session, bench-verifiable). Delivery: docs/MANIFEST-2026-09-09-a.md. · 2026-09-07 (ah) — A269 FIX BUILT (P2): owner chose to make Print Bill a proforma. Added a proforma flag through the renderer (BILL - NOT A RECEIPT header, no fiscal Bill No.), bundle, printRouted (receipt station only), and printGuestCheck (proforma:true, no number). Print Bill is now clearly a BILL, distinct from the payment receipt — resolves the receipt double. Bundle reproducible. Ships with A268. A-P2 37→38. Delivery: docs/MANIFEST-2026-09-07-af.md. · 2026-09-07 (ag) — A268 FIX BUILT (P1): POS double-printing. Kitchen/dispatcher fired twice when Send to Kitchen was used then payment (pay-first onSuccess re-fired unconditionally) — now skips if sentOrderIds set. Receipt double (Print Bill full receipt + payment fiscal receipt, different numbers) noted separately — needs owner call on making Print Bill a marked proforma (renderer flag). A-P1 22→23. POS smoke otherwise passed (Send to Kitchen, order type, Charge+auto-receipt with business name, extras open, docs, reports). Delivery: docs/MANIFEST-2026-09-07-ae.md. · 2026-09-07 (af) — A267 FIX BUILT (P1, ROOT): every POS api call 401d after the access token expired — getStoredRefreshToken was surface-keyed only (A260 fixed the access token fallback but not the refresh token), so a manager on the dashboard surface could not refresh (owner refresh key empty) → refresh failed → 401 cascade → business null (blank receipt A266, SwiftPOS docs A260). Fixed by falling back to any stored refresh token. This is the root cause; the earlier /api/business fetch fallbacks were symptom patches. A-P1 21→22. Delivery: docs/MANIFEST-2026-09-07-ad.md. · 2026-09-07 (ae) — A266 FIX BUILT (P1): after payment the receipt preview was a blank white box + no auto-print. ReceiptView returns empty when business is null, and useBusiness() is null on the POS surface for managers. PaymentModal now resolves business by fetching /api/business (POS token) when the prop is null (used for preview + print), and auto-prints once on success via the silent bridge path (desktop parity). A-P1 20→21. Delivery: docs/MANIFEST-2026-09-07-ac.md. · 2026-09-07 (ad) — A265 FIX BUILT (P1): the web POS Charge crashed (ReferenceError: receiptHeader is not defined) — A255 used receiptHeader/receiptFooter in CashierScreen (PaymentModal props + Print Bill) but never added them to the usePOSData() destructure; opening PaymentModal threw. Reached prod because the dashboard build is esbuild-only (no type-check), so an undeclared identifier only fails at runtime. Fixed by destructuring them. A264 extras were not the cause. A-P1 19→20. Delivery: docs/MANIFEST-2026-09-07-ab.md. · 2026-09-07 (ac) — A264 FIX BUILT (P2): web POS cart converges on the desktop shared core. Added the in-cart order-type selector (Dine in/Takeaway/Delivery) + surfaced Send to Kitchen · Hold in BOTH modes (was order_first-only); web-only extras (Print Bill/Transfer/Split/Room) moved below Charge. Read both carts fully; desktop has no coursing/extras (web-only, kept). Web-only; guard test 4. A-P2 36→37. Delivery: docs/MANIFEST-2026-09-07-aa.md. · 2026-09-07 (ab) — A262 FIX BUILT (P3, LAST of the 5 UI asks): shift report under Shifts, reusing the desktop shared renderShiftReport (bundled). GET /api/shifts/:id extended with by_method + cash reconciliation; new lib/printShiftReport.ts; "Shift report" button on ManagerShiftTab. Proven render: SHIFT REPORT (LIVE) / Eugene / cash recon = Expected 29,970 (matches Shifts page). Bundle reproducible; test ui-reports 7→8. Delivery: docs/MANIFEST-2026-09-07-z.md. · 2026-09-07 (aa) — A259d: THE Unknown fix. Owner ran the SQL: orders have a valid cashier_id (Eugene) resolving in users; the server computed the name into name/cashier_id but the frontend StaffRow reads staff_name/staff_id — a field-name mismatch was the whole bug (the A259/b/c attribution work was unnecessary for this, though harmless/robust). /staff now emits staff_id/staff_name/orders/revenue/avg_order_value/voids; traced to Eugene/3/13,600/4,533.33. Delivery: docs/MANIFEST-2026-09-07-y.md. · 2026-09-07 (z) — A259c: Staff still Unknown (avg fix confirmed live at KES 4,533.33). Root: those orders have null cashier_id AND null shift_id (offline/desktop-rung), no name snapshot. Now attributes an unresolved order to the shift whose TIME WINDOW covers it (branch + opened_at <= created_at <= closed_at/open); the open shift spans these orders. Guard updated. Diagnostic SQL provided if it persists. Delivery: docs/MANIFEST-2026-09-07-x.md. · 2026-09-07 (y) — A261b: the reprint button was added to OrdersPage.tsx (owner table view) but the manager Orders tab is POSOrderHistoryTab (card view) — added "Reprint receipt" there too (uses reprintOrderReceipt via the A260 token fallback). Guard extended to assert both views. Test 7 (still). Delivery: docs/MANIFEST-2026-09-07-w.md. · 2026-09-07 (x) — CONFIRM #2 (owner: Staff still Unknown + selector asks). Confirmed origin (HEAD 6e38865) all green. A259b: Staff "Unknown" persisted because those orders cashier_id do not match a users row — now attributes via the order shift (cashierOf = cashier_id ?? shift.cashier_id); also fixed Avg Order 0.00 (returns avg_order_value). A263 (P3): report selector — removed redundant Apply (auto-applies), fixed preset double-highlight via explicit active state, Today is the default on every tab. Test ui-reports 5→7. A-P3 19→20. Delivery: docs/MANIFEST-2026-09-07-v.md. · 2026-09-07 (w) — CONFIRM/RECONCILE. Pulled origin (HEAD d3895e9) and verified all recent work landed (A157/A248-A261). Found + fixed two drift items: (1) tiny-bridge A254 guard was stale — the A261 emit() change added a 4th param (reprint) so /function emit\(station, order, business\)/ no longer matched (code was correct, cut/feed/drawer still passed); relaxed the regex. (2) the A256 delivery (-q) files were skipped so check-doc-refs was RED — restored docs/A256-permission-backfill.sql + docs/MANIFEST-2026-09-07-q.md. All green now: print 29/29, validation 7/7, ui-reports 5/5, register/doc-refs/root/test-reg. Delivery: docs/MANIFEST-2026-09-07-u.md. · 2026-09-07 (v) — A260 + A261 FIXED. A260 (P2): documents printed "SwiftPOS" because accessKey() used the owner token on the dashboard where a manager only holds a POS token, so /api/business 401d and business stayed null — getStoredAccessToken() now falls back to any available token (one-line root fix; unblocks other manager-dashboard api calls too). A261 (P3): reprint receipt on Orders — renderReceiptEscPos takes a reprint marker; new reprintReceipt.ts re-renders the stored order as a "Duplicate Print" via the same renderer + bridge, wired to a button on the Orders row. A262 (shift report) still OPEN — next. Test +2 (5); bundle reproducible. Delivery: docs/MANIFEST-2026-09-07-t.md. · 2026-09-07 (u) — OWNER UI REVIEW (5 issues). BUILT: A258 (P3) Overview Top Items + Payment Methods side by side; A259 (P2) reports "Unknown" cashier (null name -> email fallback) + open shifts now appear in the period (was BETWEEN opened_at window excluding a 76h open shift). FILED for next build: A260 (P2) documents print "SwiftPOS" not client name (BusinessContext null for managers); A261 (P3) reprint-receipt action on Orders (renderer supports ctx.reprint; needs order-items fetch); A262 (P3) shift report under Shifts. Test +1 file (3). A-P2 34->36, A-P3 16->19. Delivery: docs/MANIFEST-2026-09-07-s.md. · 2026-09-07 (t) — A157 CLOSE TEST (owner UI): 1 login PASS, 3 edit-no-reset PASS, 4 category create PASS. Found + fixed A257 (P3): (a) rejected saves showed bare "Validation failed" — api client now surfaces the field-level errors array (field: message); (b) category placeholder was petrol-specific "e.g. Diesel" -> "e.g. Beverages". A157 itself: the create "failure" was a legit empty-name catch (no regression — payload sends null not "" for optional fields, base_price is parseFloat number). Test 5→7. A-P3 15→16. Delivery: docs/MANIFEST-2026-09-07-r.md. · 2026-09-07 (s) — CLOUD SWEEP finished (owner in a meeting; handled the remaining code). A256 FIX BUILT: review-first permission-backfill script docs/A256-permission-backfill.sql — grants only POST-onboarding default permissions (permissions.created_at > businesses.created_at, so it never undoes a deliberate removal) per the exact defaultRolePermissions.ts tiers, idempotent; STEP-1 preview then STEP-2 apply (not auto-run — security-sensitive + created_at unreliable on dump-seeded DBs). A54 reconciled: the false-confidence comment is ALREADY corrected in mailer.ts and the Resend HTTP path exists — remaining is owner action (set RESEND_API_KEY). So the cloud bucket code is done; A54/A146/A159/A141 remainders are owner-config/verify. No count change (A256/A54 stay open pending owner). Delivery: docs/MANIFEST-2026-09-07-q.md. · 2026-09-07 (r) — CLOUD SWEEP. A157 FIX BUILT: input-validation wired via new validateLoose (catchall passthrough — validates known fields, never strips device_id/tax fields) on /login, product create/update, category create; fixed a landmine where UpdateProductSchema kept CreateProductSchema.partial() defaults (would reset track_stock/variants on any update) — de-defaulted. Verified vs real schemas; guard test 5, mutation-checked. A141 reconciled: bulk ingredient import IS built (POST /api/stock/ingredients/bulk + BulkIngredientImport.tsx); remaining is an owner permission grant. A256 FILED (P2): systemic backfill of newly-added default permissions to pre-existing roles (A141 root cause). A50/A54 mail: code has the Resend path — owner must set RESEND_API_KEY; A146/A159 are verify/config. A-P2 33→34. Delivery: docs/MANIFEST-2026-09-07-p.md. · 2026-09-07 (q) — A255 FIX BUILT (P2): sweep after A254. (1) web receipts were missing branch name + owner address header + paybill/delivery footer + Powered by SwiftPOS (receiptHeader/receiptFooter not loaded; buildReceiptBusinessConfig did not set them; and the owner footer maps to thankYouMessage not the ignored footerText) — now fully wired, matches SAMPLE-OUTPUT.txt. (2) Print Bill proforma opened the cash drawer — routed receipt now openCashDrawer:false; drawer only on the payment receipt. Test 27→29. Ships with A254 as one morning deploy. A-P2 32→33. Delivery: docs/MANIFEST-2026-09-07-o.md. · 2026-09-07 (p) — A254 FIX BUILT (P1): hardware-reported print bugs fixed. (1) toEscPos cut/feed/drawer opts were never passed by any web renderer -> no paper cut (continuous) and no bottom margin on every ticket incl. the receipt; all renderers now go through emit() that passes them. (2) Master KOT (kot) rendered as a 2nd dispatch (kindOf mapped kot+expeditor both to dispatch) -> "2 dispatch, missing kitchen"; config now type-aware (kot = all-items KITCHEN copy, expeditor = dispatch). (3) blank routed tickets: printRouted now skips a kitchen/bar station with no matching items. Test 24->27; bundle reproducible. Web-only. A-P1 18->19. Delivery: docs/MANIFEST-2026-09-07-n.md. · 2026-09-07 (o) — A253 FIX BUILT (P2): print-parity Phase 4 (final) — send-vs-pay timing split. Send-to-Kitchen fires kitchen+dispatch, Charge fires the receipt, Print Bill is now a customer proforma (receipt only). All three triggers go through the one routed engine (printRoutedStations); printKOTs/buildKotEscPos/buildKOTHtml retired (printKOT.ts is types-only now) and the inert printBill.ts deleted. Bridge-only (old window.print kitchen fallback gone; errors never block the order). Test 24/24. Web-only. A-P2 31→32. Delivery: docs/MANIFEST-2026-09-07-m.md. · 2026-09-07 (n) — DOC-REFS FIX: origin cited the A250 and A251 delivery manifests (docs/MANIFEST-2026-09-07-h.md and docs/MANIFEST-2026-09-07-i.md) but the files were missing (their zips were skipped), so check-doc-refs was RED; added both. Also printBill.ts was still present (the A252 delete step was skipped) — remove it. After this, origin is fully green (print test 25/25, all gates). Delivery: docs/MANIFEST-2026-09-07-l.md. · 2026-09-07 (m) — DELIVERY RECONCILE (code caught up to the register). Confirmed origin/dev had A248+A249+A252 code but was MISSING A250 (kitchen exclusions: usePOSData/cashier-types/printKOT) and A251 (desktop escposBridge shared routing), and still had the retired printBill.ts — so the print test + dashboard tsc were RED (CashierScreen destructures kitchenExclusions that usePOSData did not expose). Earlier zips (-h/-i) were skipped when -j applied. This delivery ships the correct usePOSData.ts, cashier/types.ts, printKOT.ts, escposBridge.ts and deletes printBill.ts, bringing the tree to the consistent A252 state (test 25/25 green). No new finding — completes A250/A251/A252 already in the register. Delivery: docs/MANIFEST-2026-09-07-k.md. · 2026-09-07 (l) — A252 FIX BUILT (P2): print-parity Phase 3b (B-engine) — web now routes combo COMPONENTS by category via the shared engine (toUnits/stationsForCategory), fed from existing branch_printers (no migration, no UI change). New printRouted.ts + renderStationEscPos; Print Bill uses it; old all-items printBill.ts retired. Proven: combo Chicken(grill)+Soda(bar) → Chicken on GRILL ticket, Soda on BAR ticket. Chose B-engine over B-full (merging branch_printers onto print_stations/category_stations = migrate live config; deferred). Web-only. Test 25/25; bundle reproducible. printBill.ts DELETED (git rm in apply). A-P2 30→31. Delivery: docs/MANIFEST-2026-09-07-j.md. · 2026-09-07 (k) — A251 FIX BUILT (P3): print-parity Phase 2b — the desktop escposBridge now imports toUnits/stationsForCategory/idsByKind/isExcludedFromKitchen from @swiftpos/printing (A249) and builds CategoryRouting from its local DB (buildCategoryRouting = the same two SQL reads); private copies deleted. One copy, no drift. Behaviour-preserving (verbatim logic + identical SQL; characterization test pins it). Verified: escposBridge transpiles, no external consumer of the deleted symbols, unused imports dropped. NOT verified here: desktop tsc (CI on push) + runtime print (release gate: dev-flavour two-till trade before tills). Apply after -g/-h. A-P3 14→15. Delivery: docs/MANIFEST-2026-09-07-i.md. · 2026-09-07 (j) — A250 FIX BUILT (P2): print-parity Phase 3a — kitchen exclusions now applied. Reading the source corrected the plan (the web already routes by category via per-printer category_ids; the real gap was that /api/pos/init returns kitchenExclusions but the web ignored them). Bundled shared isExcludedFromKitchen; usePOSData exposes kitchenExclusions; printKOTs + printBill drop excluded items from kitchen-kind tickets only (receipt/dispatcher keep all). Verified: soda excluded → off the KITCHEN ticket, on the receipt. Component-level routing (combo component by own category) surfaced as a design fork, deferred. Web-only. Test 24→25. A-P2 29→30. Delivery: docs/MANIFEST-2026-09-07-h.md. · 2026-09-07 (i) — A249 FIX BUILT (P2): print-parity Phase 2a — extracted the desktop routing logic (toUnits/stationsForCategory/idsByKind/describeFromText/isExcludedFromKitchen) VERBATIM into shared/printing/src/routing.ts, DB-free (SQLite reads → a CategoryRouting arg). Characterization test (11) pins the behaviour; shared sample still reproduces SAMPLE-OUTPUT.txt (no drift). Unblocks Phase 3 (web bundles routing.ts directly). Phase 2b (desktop swaps its private copy — needs dist rebuild + desktop regression) deferred; no behaviour change anywhere yet. A-P2 28→29. Delivery: docs/MANIFEST-2026-09-07-g.md. · 2026-09-07 (h) — A248 FIX BUILT (P2): print-parity Phase 1 — the web now carries combo components (server /api/pos/init comboItems gains category_id; usePOSData consumes it; buildReceiptOrder expands combos into component units at print time, cart unchanged). Kitchen/dispatch tickets now show the combo breakdown (verified vs SAMPLE-OUTPUT.txt structure). Routing/exclusions/timing/spool are later phases (docs/PLAN-web-print-parity.md). Server needs deploy for category_id. Test 23→24. A-P2 27→28. Delivery: docs/MANIFEST-2026-09-07-f.md. · 2026-09-07 (g) — A247 FIX BUILT (P3): Print-Bill fanned tickets in arbitrary (API array) order; now sorts kitchen(kot)→customer(receipt)→dispatcher(expeditor). Studied the desktop print path fully (escposBridge printSale/toUnits/stationsForCategory + printWorker spool) and filed docs/PLAN-web-print-parity.md — a phased roadmap to close the real gaps (web cart has no combo components, no category routing, no kitchen exclusions, no send-vs-pay timing split, no persistent spool). Test 22→23. A-P3 13→14. Delivery: docs/MANIFEST-2026-09-07-e.md. · 2026-09-07 (f) — A246 FIX BUILT (P2): restaurant "Print Bill" was a browser dialog with an ad-hoc format that printed once; now renders Customer Receipt + KITCHEN + DISPATCH in the shared/printing format (matches SAMPLE-OUTPUT.txt) and fans them SILENTLY to the configured full-order printers via the bridge. Vendored the 3 station renderers into escposRenderer.js (byte-reproducible); buildReceiptOrder emits units from variants/modifiers; fixed buildReceiptBusinessConfig missing currencyCode (PAY: undefined, also on the live receipt). New printBill.ts; iframe/window.print deleted. Flat web cart → sub-items print as names, kitchen+dispatch print all items (matches the web full-order-printer model); 3 printouts needs all 3 printers configured. Test 18→22. A-P2 26→27. NOT verified: physical print. UI parity deferred. Delivery: docs/MANIFEST-2026-09-07-d.md. · 2026-09-07 (e) — A244 FIX BUILT (P2): "Send test receipt" and station test buttons failed with "connect XP-80:9100 ... no such host" — testPrint posted a BARE printer name as target, so the bridge dialed it as a network host instead of the Windows spooler. Fixed testPrint to send target: printer:<name>; real receipt/KOT paths were already correct. Dashboard-only, no exe rebuild. Test 17→18, mutation-checked. A-P2 25→26. · 2026-09-07 (d) — OFFLINE/NODE CLUSTER RECONCILE (docs-only, no code). Audited the cluster line-by-line against the tree and ran the pure-logic suites green on current dev: peer-relay 28/0, node-reference-bundle 25/0, node-reference-unpack 19/0, roster-snapshot 16/0, node-token-refresh + device-token 2/2. Confirmed BUILT ON BENCH + wired (endpoints /node/reference:305, /node/roster:320, /node/refresh:187 in nodeServer.ts; pullCatalogue node-first at syncEngine:751; promoteToNode roster pre-pull at ipcHandlers:2052): A19/A20/A24/A160/A161/A162/A163/A168/A179/A182 — retagged their headings OPEN->FIX BUILT so state is scannable (still OPEN in counts, rule 16; numbers unchanged). A164: SERVER half built (migration 92 + device-token 21/0) but DESKTOP cutover NOT built. A129: migration 90 in tree (prod-applied per 08-28), needs one delivery-sale confirm. Genuinely UNBUILT code: A22 (promotion split-brain), A23 (RPO/distribution-lag measurement). A18: doc reconcile pending. What is needed from the owner: two-till hardware verification per docs/OFFLINE-CLUSTER-verification-checklist.md — passing it closes A19/A20/A24/A160/A161/A162/A163 (+A168/A129). · 2026-09-07 (c) — A17 CLOSED (the only open P0): owner A101 offline-auth hardware checklist PASSED on two tills (dev flavour); Test 2 (cloud-down/node-up sign-in) + Test 4 (clock +30d, no expiry) prove the node-first offline-forever design, closing the day-15 lockout. dev→main release-checklist gate cleared. A19 (node→cloud sales relay) now unblocked; A160 (node-brokered refresh) likely covered — confirm. A-P0 1→0. · 2026-09-07 (b) — A245 FIX BUILT: removed the pairing-token copy-paste — the Go bridge (v4.1.0→v4.2.0) now authorises by trusted dashboard Origin OR token (token optional), added the Private Network Access preflight header so Chrome LNA does not silently block printing, and shipped a per-user logon installer (install-startup.bat). Origin allow-list is exact (swiftpos-dashboard/-three .vercel.app + loopback) with a safe subdomain matcher for a future owned domain — never wildcards vercel.app (proven: evil-x.vercel.app→403). Dashboard prints token-free from a trusted origin; token field now optional. Runtime-proven on the built binary; test 14→17 green + 4 new guards mutation-checked. Counts A-P2 24→25. Sits on top of A240–A243. NOT verified: real thermal print, Chrome LNA prompt on a till, full dashboard tsc. Delivery: docs/MANIFEST-2026-09-07-b.md. · 2026-09-07 — A239 PRINT AUDIT (pre-live). Read every A239 file before today's live test; it was not "done perfectly." Opened + FIX BUILT A240 (P1 security — the Go bridge was DNS-rebinding-exploitable and leaked printer names; added a Host allow-list on all handlers + token-gated /printers, bridge v4.0.0→v4.1.0, proven at runtime: rebound Host→403, no-token /printers→401, byte-forward intact), A241 (P2 — dashboard still read VITE_PRINT_SERVER_URL despite the "hard-coded, no env" claim, a silent-misroute trap; hard-coded the URL and corrected the test that asserted the opposite of its own name), A242 (P1 — "⚡ Print Server" kitchen tickets silently 400'd because printKOTs still spoke the old QZ contract; now renders KOT ESC/POS in-browser and forwards bytes like the receipt, with a browser fallback), A243 (P3 — retired dead printReceiptViaServer/printToQZ, honoured copies on the byte path, fixed the modifier field on receipts, refreshed docstrings). Counts A-P1 16→18, A-P2 23→24, A-P3 12→13. `tiny-bridge-printing.test.mjs` 5→14 assertions, all green + mutation-checked; retired the stale A235 `silent-receipt.test.mjs`; `go vet`/linux+win builds green; register/doc-refs/root-clean green. NOT verified here (rule 16): real thermal receipt+KOT print + Windows spooler RAW (owner's live test); full dashboard tsc/vite build (no node_modules — TS transpile-checked only). Owner action before A239 closes: confirm no VITE_PRINT_SERVER_URL on Vercel, rebuild+ship the .exe with this dashboard. Delivery: `docs/MANIFEST-2026-09-07-a.md`. · 2026-09-03 — A196 + A198 CLOSED (prod-verified). Root cause of both "not showing on prod" reports was a FAILED Render deploy that left the prod server on an old build — the same cause as the `/api/admin/migrations` 404 (A154 panel worked on dev, 404 on prod). Prod redeployed from `main`; `/api/admin/migrations` now 401 (present). A196: void pulls the KDS ticket, refund pulls it only if not yet started — all three cases confirmed on prod. A198: Branches-tab Enrol till shows the code card. Counts A-P2 21→19. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 (admin) — ADMIN PORTAL CLEARED (owner-run browser pass + one build): A69 (enrol-code mint, Overview path), A147 (web-access-expiry wiring; the other two endpoints were already-wired false positives), A70 (enrolled-device roster), A154 (DB-migrations panel — BUILT this session: `GET /api/admin/migrations` + `MigrationsPage` wired into `AdminPortal` + `schema_migration_runs` allowlisted in `check-api-schema-drift`; all gates green) — all CLOSED 2026-09-02 (rule 16). Opened A198 (Branches-tab "Enrol till" minted a single-use code with nowhere to display it — silently burned; P2) + FIX BUILT same session (code card now renders on the Branches tab). Counts A-P2 22→21, A-P3 8→6. Next free ID A199. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 (later) — PROD RETEST + CLOSE (swiftpos-prod-mype, owner-run, post dev→main merge PR #5): A187 void/refund (void no-500 confirms migration 96 applied on prod DB; refund keeps Completed + reversal line), A191 /kds-no-logout, A3 KDS delivery/advance, A144 stock-track+threshold slice — all PASS on prod → CLOSED 2026-09-02 (rule 16). Opened A195 (refunded orders show "Completed" with no visual distinction, P2), A196 (voided/refunded orders still shown on KDS — ticket not cancelled on void, P2), A197 (A144 remainder: transfer approve/complete + direct branch-stock set still UI-unwired, P2). Counts A-P1 20→17, A-P2 20→22. Next free ID A198. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 — DEV-BOX PASS (swiftpos-20c2 test box, browser test, cloud/dashboard): A187 void/refund, A191 /kds-no-logout, A3 KDS delivery, A144 stock-tracking all verified GREEN on dev with evidence (A187's successful `voided_by` write proves migration 96 is applied on that box); all four STAY OPEN pending the same retest on `main` post-merge + on the prod DB (rule 16). Opened A192 (KDS masks a 401 ticket-fetch as "all clear", P2), A193 (Refund has no audit-log view, P2), A194 (no customer-name field at POS, P3). Counts A-P2 18→20, A-P3 7→8. Next free ID A195. `check-register-consistency` + `check-doc-refs` green. · 2026-08-29 — REGISTER RECONCILED (docs-only, no code): A183 repo-debt CLOSED — reconstructed the proving test `tests/order-number-per-device.test.mjs` (6/6 real SQLite, mutation-checked) and its `-p` delivery manifest `docs/MANIFEST-2026-08-27-p.md`; `check-doc-refs` + `check-test-registration` green, the durable fix is now provable in-repo. Trued up the stale Tree line to the tree: desktop v0.5.35→**v0.5.38**, migrations →90→**→94** (93 & 94 live in prod), last pushed `d70fa0e`→`0000804`, post-A111→post-A184. No finding opened or closed by this edit; `check-register-consistency` green. · 2026-08-28 — VERIFIED ON A REAL WINDOWS TILL (SwiftPOS v0.5.38 · win32): the four live P0s are CLOSED — A181/A183 (online loop `T001--1` on the cloud DSR + offline sales drained to 0 on reconnect, no collision, migration 94 live), A167 (offline PIN sign-in, no NULL-token crash), A152 (offline auth fell through on a real Render 503 and still rejected a wrong PIN), A177 (queue drains on reconnect). A17 stays OPEN (a build task, not verifiable this session). Open P0 5→1, P1 20→19. Outstanding non-blocking: A183 in-repo test + its `-p` delivery manifest still missing (rule-14 debt); A181 historical `T2--%` recovery query un-run. SECURITY still open: rotate `DATABASE_URL` + the exposed GitHub PAT. · 2026-08-27 — A167 FIX BUILT (bench, OPEN P0 pending real-till test): offline PIN sign-in threw `NOT NULL constraint failed: staff_session.token` at its LAST step — `signInLocal` inserted `token=NULL` into a `token TEXT NOT NULL` column, so every offline/5xx fallback (A17/A152/A160) died on the write it routes to. Fix: write `''` not NULL (the reader already coerces it — `tokenStore.read: unwrap(token_enc) || token || ''` — and `configureStaffSession('','')` already means empty in memory); no migration (rule 13). Reproduced against the real schema, then greened; NEW `tests/offline-signin-write.test.mjs` runs the real INSERT (mutation-checked: NULL → red naming the column). Gap that hid it: `offline-auth-fallback.test.mjs` models the ROUTING only, never the write (rules 8, 24). · A168 FIX BUILT (bench, P2): order-push 401 refreshed `refreshStaffToken()` unconditionally, so an OFFLINE order (owner-token push) had nothing to refresh and sat pending. Now refreshes the token the push actually sends via new pure `selectPushRefresh` in authTransport.ts; NOT the price path's staff||owner fallthrough, which would reattribute a staff order. New real-function test. · A169 OPENED (P1, NOT fixed): offline sales attribute to the OWNER because the server sets `cashier_id = req.userId` and an offline shift pushes under the owner token — blocker named (needs A164 desktop cutover or a signed roster claim). Delivery: MANIFEST-2026-08-27-b.md (supersedes -a). · A170 CLOSED (gate, rule 6): new `check-notnull-writes.mjs` flags a literal NULL written into a NOT NULL local column — the A167 class. Sweep found A167 was the only instance; self-tested 6/6 + mutation-checked on the real file (`ipcHandlers.ts:415`), wired into CI + auto-discovered by run-all, green on the tree. Delivery: MANIFEST-2026-08-27-d.md. · A171/A172/A173 CLOSED (docs + hygiene gate, unattended-safe): A171 formalised rule 24 into §0 (it was cited by ID with no home); A172 added `check-root-clean.mjs` enforcing rule 19 (no stray docs/zips/patches in root, self-test 9/9, green, CI-wired); A173 removed the byte-identical dup `docs/MANIFEST-2026-08-20-a (1).md`. Delivery: MANIFEST-2026-08-27-e.md. · A169 FIX BUILT (bench, Option A — owner-approved): offline sales now credit the real cashier. Till sends the cashier in the SHARED cloud-order payload (peer push + node relay identical); server trusts it only under an owner/device token and only when it validates like verify-pin (active, in-business, branch access) — staff-PIN tokens stay authoritative. Pure `pickCashier` unit-tested 11/11 + payload 5/5; server+desktop tsc clean. STILL OPEN P1 pending live server + real-till verification. Desktop change → version bump due at build (rule 15). Delivery: MANIFEST-2026-08-27-f.md. · A174 CLOSED (fixes A172's own false positive): check-root-clean now respects `.gitignore` via `git check-ignore`, so it stops flagging gitignored `.patch`/`.zip` leftovers (rule 23 — a crying-wolf gate) while still catching a real committable stray. CI was already green (clean checkout has no ignored files). Delivery: MANIFEST-2026-08-27-g.md. · A175/A176 CLOSED (revived two rotted desktop suites): `test:pin` (8→17/0, was throwing "no such table: device_config" because A17 added a `getDeviceConfig` dependency the shim lacked — plus new A17 no-expiry coverage) and `test:sync` (18/11→29/0, was throwing before the cloud pull because A24 added `fetchReferenceFromNode` the shim lacked). Both stale-shim, test-only, no app code — rotted because desktop tests don't run in CI. Delivery: MANIFEST-2026-08-27-h.md. · A177 OPENED + FIX BUILT (P0, bench — root cause of the field "6 pending / 0 failed / Force sync does nothing"): sync fetches had NO timeout and `_isSyncing` clears only in `finally`, so one hung connection (black-holed socket / cold-start stall) wedged `_isSyncing=true` forever and every later sync incl. Force sync returned "Sync already in progress" — queue never drained, orders invisible (0 failed). Reproduced end-to-end in a sandbox on the real compiled engine (hang → wedge; fast-fail → correctly escalates to failed). Fix: `syncFetch()` AbortController timeout on all 15 calls + `_syncStartedAt` stale-guard + break-the-batch-on-timeout + push failures now hit the durable log. New `sync-timeout.test.mjs` 5/5 in the desktop chain; regressions sync 29/0 pin 17/0 peerrelay 28/0. Server verified healthy from the sandbox (POST /api/orders 401 in 0.2–0.6s, no cold-start). STILL OPEN pending real-till confirmation the queue drains. Desktop change → version bump + tag after build (rule 15). Delivery: MANIFEST-2026-08-27-i.md. Next free ID A178.** · A178 CLOSED (sync visibility + decouple, from reading the field till's DB — all orders were synced; the "6 pending" were shift/day/float/expense records the push code logged NOTHING about): `runPushStages()` decouples the five push stages so a throw in one (e.g. a shift-push SELECT on a missing column) no longer skips the order push; shift/price push failures + successes now hit the durable log; `getSyncStatus` gains a per-table `pendingBreakdown`; and the Technician menu gains a real **Test connection** (reaches the server, not just `net.isOnline()`) + **View log** (reads `swiftpos.log` on-device) + the pending breakdown. New `sync-decouple.test.mjs` 6/6; regressions green; main+renderer tsc clean. TechPage UI target-only (rule 16). Desktop change → version bump + tag after build (rule 15). Delivery: MANIFEST-2026-08-27-j.md. · A179 FIX BUILT + SELF-HEAL (P1 — the actual cause of the field "6 pending that never move," found from the log once A178 made the shift push visible): till-created expenses got a non-UUID id (`exp_<ts>_<rand>`) that 500s the cloud uuid column (22P02) and, batched with shifts/days/floats, blocks the whole cash push. Generator → `uuid()`; startup self-heal regenerates stuck non-UUID pending expense ids (safe — never synced, nothing references expenses.id; idempotent), so a stuck till unblocks on next start. `expense-id-repair.test.mjs` 5/5, verified against the real till DB. Follow-up: server should reject bad rows individually so one row can't strand the batch. Delivery: MANIFEST-2026-08-27-k.md. Next free ID A180.** · A180 CLOSED (server robustness — the general form of A179): `/api/sync/push` batched the expenses upsert and 500'd the WHOLE push on one bad row, so a single malformed expense stranded every shift/day/float behind it. Expenses now isolate per-row like floats/shifts/days — a non-UUID id is rejected with `invalid_id` (client parks it as conflict) and the rest land. Pure `partitionByValidId` guard 8/8 + mutation-checked; server tsc clean. Server-only, no desktop bump. Delivery: MANIFEST-2026-08-27-l.md. · A181 OPENED + PART-1 FIX (P0 — the ORIGINAL "synced on the till, absent from the cloud", root-caused from the cloud data): order numbers are `terminal_code--localSeq`, the cloud is UNIQUE(business,branch,order_number), so a reinstalled/second till reusing `T1` over an earlier till’s numbers gets 409’d — and the client wrongly marked 409 as `synced`, silently losing every colliding sale (cloud holds T1--1..T1--25 from the old till; the new till’s 26/27 Aug orders all collided and are absent, ~KES 12,510). Part 1 built: 409 now surfaces as `failed`+logged, never synced (`order-409-not-synced.test.mjs` 5/5). Mitigation: give each till a distinct terminal code. OPEN pending owner decision on robust uniqueness + recovery of the lost orders. Delivery: MANIFEST-2026-08-27-m.md. · A182 OPENED + BUILT (P2, overnight request — attacks the ROOT of A181): a reinstalled till gets a new device_id and is re-named "T1" by hand, colliding. Now the desktop reads a stable MAC (`machineFingerprint.ts`, deterministic; 8/8) and sends it; the cloud binds it (migration 93) and on re-enrol returns the machine’s previous terminal code/name (`findPriorTerminalByMac`/`pickPriorTerminal`, 7/7) which the till adopts — so a reinstall keeps its identity. Plus `docs/RESTORE-GUIDE.md` for session restore (2nd ask). server+desktop tsc clean; enrol-UI pre-fill + real-hardware MAC = target-only. Delivery: MANIFEST-2026-08-27-o.md. · A183 OPENED + BUILT (P1 — the DURABLE fix for A181): the cloud enforced order_number unique per (business,branch), but a number is a per-till value, so two tills/one reinstall colliding lost sales. Migration 94 makes it unique per (business,branch,COALESCE(device_id,''),order_number) — device_id is already on every till order, so identical numbers coexist by device; genuine re-push still dedupes by idempotency_key; NULL-device web/legacy orders stay branch-unique. No code change. `order-number-per-device.test.mjs` 6/6 on real SQLite. Target-only: applying the DDL on prod (safe/strictly-more-permissive; run in a txn, confirm row count). Delivery: MANIFEST-2026-08-27-p.md. · A184 OPENED (P2, end-of-saga UI request): the cloud Terminals/fleet screen shows every till as "SwiftPOS till" with no device name, terminal code, MAC, active cashier/shift, or role — indistinguishable rows, and the "not syncing" banner counts decommissioned ghosts. Needs identity columns + a retire/merge action; MAC populates once the A182 build has checked in. Delivery: TBD. Next free ID A185.** — 2026-08-24 (batch -i) — A160 Phase-b FIX BUILT: the branch node now BROKERS a session refresh for an offline peer. New POST /node/refresh (X-Node-Secret auth) proxies the peer's refresh token to the cloud; syncEngine falls back to the node when the cloud is unreachable/5xx (A152 pattern), never on a 401. Refresh token is the device credential — no new secret, no migration. New node-token-refresh.test.mjs (9, mutation-checked). OPEN P1 pending two-till verification. Delivery: MANIFEST-2026-08-24-i.md.** — 2026-08-24 (batch -h) — A159 DRY-RUN SHIPPED: terminal write guard in requireAuth denies a desktop-surface token from writing dashboard data (products/prices/users/settings) — closes the stolen-token gap left by A158's credential removal. Default-deny by surface + a 5-entry till allowlist. Log-only until TERMINAL_WRITE_ENFORCE=true, so it can't break sync. New terminal-write-guard.test.mjs (19, mutation-checked). OPEN P2 pending enforce-flip. Delivery: MANIFEST-2026-08-24-h.md.** — 2026-08-24 (batch -g) — A158 FIX BUILT (bench): owner email/password login on a till RETIRED at every layer (App.tsx enrol-state + EnrolPage, auth:login IPC/preload/posApi removed, /desktop-login tombstoned 410); enrolment code is the sole activation; sign-out clears staff only (device stays enrolled); web /login untouched. New terminal-activation.test.mjs (mutation-checked) + auth-surface repointed. OPEN P1 pending amber-build verification (rule 16); rollout = tills-first before the server tombstone. Delivery: MANIFEST-2026-08-24-g.md.** — 2026-08-24 (batch -f) — A157 reconciliation map (docs-only, no code per rule 18): confirmed at PAYLOAD level that force-wiring the four validation schemas would 400 currently-valid production requests — product create sends `description:null` + `image_url:''` which the schema rejects, and 13 handler fields would be stripped; `/login` also reads `device_id` (stripped → device binding breaks). NOT wired (the "nothing broken" instruction). Per-schema safe-wiring recipe recorded; lowest-risk first step = category POST with `.passthrough()` after a DB-column length check. Stays OPEN P2 (per-route reconciliation + target test to close). Delivery: MANIFEST-2026-08-24-f.md.** — 2026-08-24 (batch -e) — A20 + A24 source passes (docs-only, no code per rule 18): confirmed at source that the node replicates only the six sales tables (`REPLICATED_TABLES`, origin-device/seq fan-out) and serves NO reference data downstream (`nodeClient` pulls `/node/since` only) — so a promoted peer has no roster (A20) and an offline peer's catalogue/prices/staff/settings go stale (A24). Key finding: the filed "extend `collectDistribution`" one-liner is wrong at source — reference data is cloud-authoritative/mutable/no-seq and needs a distinct node-authoritative SNAPSHOT channel; A20 is a special case of it. Concrete change maps + the `business_settings.branch_id` / dual-exclusion sub-bugs recorded in each entry. Both stay OPEN P1 (target-only to build). Delivery: MANIFEST-2026-08-24-e.md.** — 2026-08-24 (batch -d) — A152 FIX BUILT (bench, still OPEN P0 pending real-till test): offline PIN sign-in now falls through to node/cache when the cloud is DOWN-but-answering (5xx), not only on a thrown error; node leg widened 503→all-5xx; owner login gives a clear cloud-outage message instead of "Login failed"/crash. New `apps/desktop/src/main/authTransport.ts` + mutation-checked `tests/offline-auth-fallback.test.mjs` (20 assertions). Desktop version bump due at build (rule 15). Delivery: MANIFEST-2026-08-24-d.md.** — 2026-08-24 (batch -c) — A156 CLOSED (retired 12 orphaned helper value-exports across dashboard/desktop/server; 2 doc-coupled ones — `getLocalSchemaVersion`, `isTerminalCodeTaken` — excluded and flagged; deletions-only, full suite 40/0) · A157 opened (P2, input-validation schemas written but unwired — NOT auto-wired because the strip-on-parse middleware would drop live fields incl. login `device_id`; safe path needs per-route reconciliation + live test). Delivery: MANIFEST-2026-08-24-c.md. Next free ID A158.** — 2026-08-24 (batch -b) — A155 CLOSED (greened `check-doc-refs` — reworded `HANDOFF-2026-08-23`'s two dangling references to the outputs-only live-test checklist; branch-tip gate suite now fully green) · A153 follow-up done (pruned the two orphaned `computeUnitPrice`/`computeLineTotal` exports from dashboard `lib/cart.ts`; desktop copy live, untouched). Delivery: MANIFEST-2026-08-24-b.md. Next free ID A156.** — 2026-08-24 (batch -a) — A153 CLOSED (retired four superseded/orphaned dashboard-POS prototypes — `OrderHistoryTab`, `VoidModal`, `BranchSelectScreen`, dashboard `VariantModal`; deletions-only, bench tsc+build+gates green, rule 9) · A154 opened (P3, build the admin DB-migrations panel — `MigrationsPage.tsx` front-end exists, `GET /api/admin/migrations` backend never built; kept-and-to-build per owner). Delivery: MANIFEST-2026-08-24-a.md. Next free ID A155.** — 2026-08-23 — A140-A148 opened (dashboard/admin, docs-only, no zip per rule 18).** A140/A141/A142 = feature gaps in the products area: product bulk CSV import exists but is reachable only for `minimart` (A140, one wire), no bulk ingredient import incl. opening stock (A141), no bulk product-image upload (A142). A143-A148 = an "endpoints live, UI unwired" sweep — a static cross-reference of all 309 server endpoints against every `/api/` caller in dashboard/admin/desktop (matcher fixed for query strings, the admin `fetch` wrapper, and `` `${BASE}/api/…` `` calls); 39 endpoints have no client caller, of which the genuine dashboard/admin gaps are grouped as A143 (report exports 1-of-7 + inventory report), A144 (inventory/stock write-actions), A145 (branch↔user assignment), A146 (notifications/webhook observability), A147 (admin-portal endpoints), A148 (misc: modifier-create, flags, qr settings, loyalty settings read). External/till/node/tech callers and the retired `/api/enrol/code` (410) excluded; three ambiguous endpoints held for a per-page check, not entered. All static/bench (rule 9); none browser-confirmed (rule 16). `check-register-consistency` re-run green. **A149 opened (2026-08-23, docs-only): `apps/admin` has no CI type-check or build — the ratchet is invoked `server dashboard` (admin dropped) and `typecheck-baseline.json` has no admin key, so 68 `tsc` errors accrued unseen; found during A147.** **A150 closed (2026-08-23): `apps/server/.env.example` refreshed from source — retired `TECH_HMAC_SECRET` removed, production-required + at-rest + M-Pesa/eTIMS/mail vars added; render.yaml stays the deploy source of truth.** **A145 re-scoped + raised P2→P1 (2026-08-23): not a UI gap — branch↔user assignment is already wired via the staff flow; the standalone `/branches/:id/assign-user` + `/remove-user` routes are a redundant AND under-guarded writer (requireAuth only, no `staff.manage`, no business scoping → within-tenant privilege escalation + cross-tenant write). Recommend retiring both; retirement patch held for owner go-ahead.** **A151 opened (2026-08-23, P1): restaurant Split Bill (by-guest) under-collects — the pay loop never advances past guest 1 (`splitPayingGuest` never incremented; `onSuccess` frees the table without looping), and there is no even-split mode. Money-critical; not fixed on the bench. Surfaced while evaluating A8.** **Next free ID A152.** — 2026-08-22 — register trueing-up (code↔register audit, bench/static, rule 9). **A68, A71, A72 CLOSED** — verified present and wired on dev: A68 `appFlavor.ts` called from both web apps' `main.tsx`; A71/A72 `DevicesTab.tsx` renders branch/role/last-active/version + rename + stale badge. **A69, A70, D18 confirmed code-complete on dev but kept OPEN** pending a browser pass (rule 16). Notes for the next reader: A73 records its nav link as *restored* (not re-confirmed on bench); A12 shows *FIX APPLIED pending live check*. No code changed — docs-only, no zip (rule 18). Still outstanding at the process level: no handoff covers A112→A139, `schema-index.json` is stale (missing `branch_settings`), and two migration files share number 90. — 2026-08-20 — A133 opened (owner dashboard Settings consolidated into a three-section Settings group — Users and access / Devices and printers / Business, each a tabbed page; Table Turnover→Finance, KDS→top level, Payment methods→Business; 6 new files + `App.tsx`/`DashboardLayout.tsx`, back-compat redirects for old deep links; dashboard `tsc` AND `npm run build` both green on-bench; manager parity = Slice 2, specified in MANIFEST-2026-08-20-a but not built; browser confirm + owner sign-off pending; nothing merged) · A134 opened (Business › Profile tab deferred — the one genuinely new page, needs its field list before build). · A135 opened (browser review of A133: KDS board renders blank + adding a table fails — two pre-existing runtime bugs A133 only made reachable/visible, need a live node+DB to diagnose; nav-highlight + KDS array-guard fixes shipped under A133 follow-up). A136 opened (server queries columns absent from schema — stock_movements.business_id, users.pin; + new gates check-api-routes.mjs & check-api-schema-drift.mjs wired into CI with self-tests). A137 closed (bulk-create tables "Add multiple" — typed count, T-numbered, empty-state + header; auto-seed-20 declined by design). A138 closed (catch-less mutation sweep — Parking/Minimart/Petrol settings now surface save/delete errors like Restaurant; 0 swallowers remain). A134 closed (Business Profile tab — Slice 1: owner-editable identity via PATCH /api/business + business-wide receipt header/footer + 24h; currency locked after sales) · A139 opened (per-branch franchise receipt/hours override — cross-stack incl. desktop till, PROD-MIGRATE). **Next free ID A140.** — 2026-08-19 — A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` in migration 58 while the feature stayed live and Zod-accepted; A128's twin; fix = migration 90 re-admits `delivery` + new gate `check-push-domain-parity` wired into CI; PGlite-verified 9/9, mutation-checked; **NEEDS PROD-MIGRATE 86→90**) · A130 opened (Aggregators report queries `order_type='aggregator'` which no path writes — a dead report; a wiring decision, not a widen) · A125/A126/A127 body+changelog rows added (rule-14 catch-up: admin purge Stage-2 preview, Phase-3 glass refresh, admin Branches tab — all shipped in git without an entry) · A131 closed (delivery orders now deduct packaging, uniform with takeaway — one-condition fix in `stockEffects.ts` + test source-pin; no prod-migrate, ships with the server) · A132 closed (dashboard nav UI: accordion + desktop SVG icons; menu labels left unchanged per owner review — presentation only, no logic). **Next free ID A133.** — 2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). (A125/A126/A127 rows now added — see the 2026-08-19 entry above.) — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
-| Tree | `dev`, post-A184 (last pushed `f89b8ff`; this edit commits on top), desktop **v1.0.19** (A527 the manager's four cash lines, A526 Electron 43.7.7) — before it **v1.0.18** (A517 lazy loading, A518 promotions charged, A519 Sell check, logs to support) — before it **v1.0.17** (A512 one startup entry, A513 low-impact start) — before it **v1.0.16** (A494–A496 security audit fixes and update delivery through the branch server, A499 cashiers land on the POS, A500 bill-number clashes, A501 branch sync self-heal, A498 receipt payment block) — before it **v1.0.15** (A489 TLS on the shop network, A490 one permission catalogue, A491 the owner sets it, A492 the branch M-Pesa number on the till) — before it **v1.0.14** (A483–A486 sync, branch server and security audit) — before it **v1.0.13** (A482 menu purge on the till, A481 managers' Monthly pack, A480 local sign-in branch + upgrade, A479 lock screen) — before it **v1.0.12** (A477 renewal handshake + machine identity; A472 menu pages, A473 fast PIN sign-in; A468 Overview like the web's, A470 till feel and POS grid speed; A466 the Monthly pack on the till, an expense Not from a drawer on the server; A465 cash in / out and expenses on any drawer from the branch server; Overview cards without icons) — before it **v1.0.11** (A459 staff edits offline + the branch-wipe fix; A460 premium screens with the online licence; A380 backup folder; A197 transfers; A461 kitchen voids always need a manager, 'Eat now, pay later' switch) — before it **v1.0.10** (A453 cashier money switch, A454 cashier's Z copy and Windows Z printing, A455 monthly pack — migration 130, A456 receipt copies, A457 Overview, A458 Close Branch totals) — before it v1.0.9 (A452 Close Branch with shifts and confirmations, the server's date final; expected figures at confirm; expenses filters) — before it v1.0.8 (A448 the till works on its own: stations, menu, staff and PINs changed offline; clashes to the owner — migration 129, local schema 71; A449 sync body time limit, a wrong branch access code shown; A450 business name follows the web, receipt M-Pesa line, Approvals count; A381 logo through the branch server) — before it v1.0.7 (A446 staff list on every till, PIN and session fixes, print stations follow the cloud; A447 a manager records an expense), v1.0.6 (A443 the branch server shares updates with its tills, A444 order items + reprint + void / refund for managers, A445 offers — migration 128, local schema 70) — before it v1.0.5 (A442 shift report by cashier, A429 payment methods per branch — local schema 69, A438–A441 cashier filter and staff performance, A435–A437 branch server join notice, restart and clean shutdown, A424 web sign-in, A422 help pictures) — before it v1.0.4 (A425 menu choices follow the cloud, A427 tills join the branch server by Allow) — before it v1.0.3 (A412 menu template, A413 batches and expiry, A414 wastage on the till, A415 the till signs in as itself; migrations 126–127) — before it v1.0.2 (A409 cloud fix, A410 branch server is the only cloud link, A411 station routing saved on the till first) — before it v1.0.1 (A408: station categories on the till say why a tap did not save) — before it v1.0.0 (A404, A405 — the first major release) — before it v0.6.39 (A401: a shift closed on the web closes on the till) — before it v0.6.38 (A397: printing to a Windows printer on a slow PC; also carries the A394 stock-count freeze on the till) — before it v0.6.37 (A387: what cashiers see in History, by payment method; A388: a manager approves pay outs and expenses; migration 118) — before it v0.6.36 (A386: the product is ZapTill — every name people see) — before it v0.6.35 (A384: Help — what to do when, and the shop's own tech to call) — before it v0.6.34 (A382: the business day ends at the owner's cut-off) — before it v0.6.33 (A379: free delivery — the shop pays the rider; migration 115) — before it v0.6.32 (A377: one installer for 64-bit and 32-bit Windows) — before it v0.6.31 (A375: products shown only on chosen days, migration 113) — before it v0.6.30 (A336 stage 3: offline void/refund by the owner's rules; owner-set void window) — before it v0.6.29 (owner's asks after testing 0.6.27/0.6.28: confirm table, blind close standard, success screen, History today; A374) — before it v0.6.28 (ONE release with 0.6.26 + 0.6.27 — owner: "one version bump i run one single update"; v0.6.26/v0.6.27 never tagged — A372: kitchen voids, two switches; 0.6.27 — A369: per-client switches (admin portal) for delivery fee + rider pay-out, blind close, cashier-only History, no reprint, the manager's reasons; expense payment method; migration 111. Previous: v0.6.26 (patch, not yet pushed) — A336 follow-up: a web void or refund of the till's OWN sale reaches the till with the ~20 s web-sales pull (cloud `own_reversals`, till `applyOwnReversals`). Previous: v0.6.25 tagged (pre-release, CI #441 green) — the PIN and lock screens show the client logo larger (160 × 240 / 150 × 240, a tighter white card); the manager sidebar shows it; a small logo fills the receipt box (up to 384 × 288 dots); every A4 document and the Z-reports carry it, and the A4 documents are restyled; A368: a logo uploaded on the till is saved to the cloud too. Previous: v0.6.24 tagged (pre-release, CI #439 green) — A366: only a shift's owner or a manager closes it; the update bar no longer covers the till's screens; the lock screen shows the client's logo and reads clearly; A367 order notes (local schema 58). Previous: v0.6.23 tagged (Release desktop #39, one pre-release; on T1) — A365 follow-ups: zero methods hidden, no wheel on numbers, float reminder, no PIN for a signed-in manager. Previous: v0.6.22 tagged (Release desktop #38, one pre-release; migration 110 applied) — A365: a manager confirms every shift, on every payment method; Close Day waits for them. Previous: v0.6.21 tagged (Release desktop #37, one pre-release — A364: a day close is a cash-up; a later shift reopens the day. Previous: v0.6.20 tagged (Release desktop #36, one pre-release — A363: an offline close-and-reopen never strands a drawer; sync status for managers only, "Last synced", the Z-report note; a truthful log. Previous: v0.6.19 tagged (Release desktop #35, one pre-release — A358: History for cashiers again, sauces off the kitchen ticket, "+ Add type" on the Expenses page; A359: refund on the web). Previous: v0.6.18 tagged on `5401208` (Release desktop #34, one pre-release — A355: refund from History any time, approved with the manager's own PIN; A336 stage 2; A276 drinks off the kitchen ticket; A279; A341; A356; A357. Previous: v0.6.17 tagged on `0199606` (Release desktop #33, one pre-release — A351: the manager menu in groups); v0.6.16 tagged on `2de98c7` (Release desktop #32; published as the Latest release, one copy — A349: money review (receipts, reports, CTL); A348: updates approved per business, held by default; A347: teal icon); v0.6.15 tagged on `cb3e315` (Release desktop #31, built as two drafts; publish state not confirmed — A346: Stock only with the web POS; A345: an offline sign-in says so, shows the till's saved menu and staff read-only, and becomes a cloud sign-in by itself. Previous: v0.6.14 tagged on `77a679f` (Release desktop #30 — A342 till close closes the web's shift; A343 web till; A344 payment colours); v0.6.13 tagged on `0e5e1b3` (Release desktop #29 — A339, A340); v0.6.12 tagged on `c7c24e5` (Release desktop #28 — A338: one drawer never blocks another's sync); v0.6.11 tagged on `b344c80` (Release desktop #27 — A337: previous shift reports, expenses, colour-coded Daily Sales Report); v0.6.10 tagged on `ecec08a` (Release desktop #26 — cross-sync stage 1 (A336), A335, the B5 double-count fix); v0.6.9 tagged 2026-09-27 (A334: the till joins a drawer the web opened as it, and its close includes the web's cash); v0.6.8 tagged on `7e00375` (A273 follow-up: the till sends its code + setup name); v0.6.7 tagged on `ba5aeef` (Release desktop #23 — A329 SwiftPOS teal defaults; A331); v0.6.6 tagged `bb31313`), `LOCAL_SCHEMA_VERSION` **55** (A336: orders.origin — the web's sales downloaded onto a till; 54 = A325 branding.theme_id), migrations **→ 109** (files up to 109; **109 applied to prod 2026-09-28** — owner's `information_schema` output: `recorded_by | uuid`; `scripts/schema-index.json` already carries it; **108 applied to prod 2026-09-28** — owner's `information_schema` output: `desktop_approved_version | text | YES`; `scripts/schema-index.json` updated to match; **107 applied to prod 2026-09-27** — owner's `pg_indexes`: `shifts_open_by_terminal` is a plain `CREATE INDEX … WHERE status = 'open'`, the unique index is gone; 106 applied with A325; **105 applied to prod 2026-09-22**, `verify-db-schema` PASS 103/103 tables, no drift — A311; 93 & 94 live in prod per the 2026-08-28 real-till verification; 90's A129 delivery still pending prod-migrate), web/cloud runtime **Node 24**, desktop **Electron 43** |
-| Open | **A: 4 P0 · 61 P1 · 94 P2 · 29 P3 — D: 0 P0 · 0 P1 · 0 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A510 A505 A486 A483 · A-P1: A532 A531 A529 A528 A522 A521 A520 A509 A508 A506 A504 A503 A501 A500 A499 A496 A495 A494 A493 A490 A489 A485 A484 A480 A477 A476 A473 A462 A461 A459 A454 A452 A451 A448 A446 A443 A442 A435 A431 A426 A425 A415 A410 A409 A407 A406 A401 A382 A336 A19 A20 A50 A24 A160 A161 A162 A163 A164 A240 A265 A266 A274 A275 · A-P2: A550 A530 A527 A526 A525 A519 A518 A517 A515 A514 A513 A507 A502 A498 A492 A491 A482 A481 A478 A475 A474 A472 A467 A466 A465 A464 A463 A460 A458 A456 A455 A453 A450 A449 A447 A445 A444 A441 A440 A439 A438 A436 A434 A433 A432 A430 A429 A427 A423 A422 A421 A418 A417 A416 A414 A413 A412 A411 A408 A405 A404 A403 A402 A400 A399 A398 A397 A396 A395 A394 A392 A391 A386 A385 A384 A383 A379 A378 A352 A323 A189 A182 A22 A23 A53 A159 A197 A241 A245 A249 · A-P3: A516 A512 A497 A488 A487 A479 A471 A470 A469 A468 A457 A437 A428 A424 A420 A419 A393 A381 A380 A354 A353 A186 A13 A148 A237 A243 A251 A18 A307 — D-P0: — · D-P1: — · D-P2: — · D-P3: D9 D10 |
+| Last updated | **2026-10-23 — FILED + BUILT A581 (P2): the cloud's payment plan per business — Monthly / 3 / 6 / 12 months / custom, an editable amount (KES 3,000 a month by default), Record payment (paid-until from the later of today and paid-until; M-Pesa code once; paid invoice; audited); a lapsed client (after the 21-day grace; a trial at its end) has its tills' sends refused (503 CLOUD_SUBSCRIPTION_ENDED — kept queued, the manager told) and no till joins until paid; reminders to the owner and ZapTill at 14/7/3/1 days, the day, weekly while lapsed; migration 170 (till 1.0.20 + cloud + admin + web).** · earlier: **2026-10-21 — FILED + BUILT A547 (P3): the leftovers of A535, A539, A543 and A544 — a wrapped kitchen dish name keeps the three spaces after its quantity and a wrapped component its indent (Font A and B; kitchen-58-font-a.bin regenerated: the switch now reproduces the FIXED Font A ticket); the browser-printed web receipt shows A539's payment block; the web reprint prints the branch's footer (new GET /api/business/branding/branches/:id/served); the web POS draws the brand strip (themes on); every day-close check on a till behind a server asks the server's copy first (till 1.0.20 + web). FILED + BUILT A546 (P1): a till installs a waiting approved update at Windows sign-in — quietly, through the updater task, no window, no relaunch (no task: no prompt, nothing tried) — and, as a backup, when it is opened by hand ("Updating ZapTill to 1.0.20 — about a minute", the task or the Windows prompt; once per version); the branch server unchanged; the admin line for a till without the task: "or it installs the next time ZapTill is opened (Windows will ask)" (till 1.0.20 + admin). FILED + BUILT A548 (P3): housekeeping — orphan audit IDs 21 → 0 (new §K traces C1–C6, H1–H14, M3, M8 to their July fix commits; the ratchet now holds 0) closing A53; A148 closed (modifier option add already wired; flags / QR / loyalty settings deferred with their role gates proved); A186 closed (Windows libuv teardown crash after a green summary is a pass with a note, win32 only); A13 and A18 closed; D10 at 4,433 lines, split scheduled next; the Counts row re-derived from the body (A537 added; closed entries dropped, unlisted FIX BUILT ones added). No client-visible change.** · earlier: **2026-10-21 — FILED + BUILT A544 (P2): per-branch branding — a branch overrides the business's action theme, brand colour and receipt footer (each on its own; branch → business → ZapTill default at the till and the web POS; premium behind the themes flag; owner any branch, a manager their own; migration 156, till schema 74; till 1.0.20 + cloud + web). FILED + BUILT A541 (P1): tills and branch servers stuck since the A513 autostart install their update — a start at Windows sign-in installs an approved, downloaded, newer update before serving (the updater task, else the installer; once per version), the branch server busy only for real trading (a gateway allowlist — a drawer's foreign-orders poll no longer holds it all night), the admin portal says why one has not installed, managers told after 3 days (till 1.0.20 + cloud + admin). FILED + BUILT A543 (P3): kitchen tickets in the printer's smaller Font B (64 / 42 a line, ESC 3 24 — about a third less paper on a long order); the admin portal's `kitchen_font_a` brings Font A back per client; dispatch and receipts unchanged. FILED + BUILT A542 (P3): small tidy-ups — an optional `menu` column on the Menu upload (a category put in a menu, created if new, DELETE takes it out, a clash refused), the branch server's drawer copy (A535) and the push line (A531) on the Tech page, the dead desktop ReceiptView.tsx deleted (till 1.0.20 + web + cloud)** · earlier: **2026-10-21 (dq) — FILED + BUILT A538 (P2): the receipt goes back to the classic (1.0.19) layout as the standard at ESC 3 30 (~3.75 mm; owner: "it feels congested everywhere" → "go back to the old layout", "line spacing in the middle"), keeping A530's small printed logo and 1-line feed; the compact layout is an opt-in per client (`receipt_compact_layout`), `receipt_classic_layout` retired (a stored row ignored, no migration); the web POS browser receipt the same; admin "Receipt options" (till 1.0.20 + web POS + admin; the web POS changes as soon as it reaches main)** · earlier: **2026-10-20 (dp) — FILED + BUILT A537 (P2): the POS categories in a collapsible left panel behind ☰ (collapsed at start, a pin remembered per till / per browser, the chosen category as a chip by the search) and menus above them — Food, Soft drinks, Alcohol, Tea as tabs at the panel's top narrowing the list and the grid, Menu › Menus and a Menu select per category in the back office (and on the till's Manager › Menu); migration 155 (menus, categories.menu_id, one change-log entry per menu), local schema 73 (till 1.0.20 + web + cloud)** · earlier: **2026-10-20 (do) — FILED + BUILT A535 (P2): at a branch only the server asks the cloud about the branch's drawers — one GET /api/pos/branch-drawers a minute for every drawer (web sales, web closes, confirmations, the 90 s beat's day closes / log requests / test clears), its tills ask it on the shop network (≈ 2,080 cloud requests an hour from a 4-till branch → 60), a drawer changed on the web rings it; stock levels travel on change (migration 153: one log entry per level, the older replaced; the 30-minute re-read stands down); the pull-logs bell reaches a till behind a server within one LAN beat (till 1.0.20 + cloud)** · earlier: **2026-10-20 (dn) — FILED + BUILT A534 (P2; A23 FIX BUILT): staff names from the till's own list (no GET /api/staff with its token), each till's update state on the admin Desktop updates card (migration 154), the compact web receipt in the browser, the branch server's distribution lag on its Tech page (till 1.0.20 + cloud + admin)** · earlier: **2026-10-20 (dm) — FILED + BUILT A536 (P3, closes A189): the end-to-end suites run every night against DEV (.github/workflows/nightly-e2e.yml — API suites + Playwright, report as an artifact) behind a production guard that refuses every production address and a /health without env=development (CI only)** · earlier: **2026-10-20 (dl) — FILED + BUILT A533 (P2): support pulls a till's or a branch server's log from the admin portal — Pull logs in the Support logs card (a device, 24 h / 3 days / 7 days, the sign-in history, a reason), the till hears it on the push channel or its 90 s beat and sends A519's redacted bundle with a diagnostics block (migration 152 log_requests; till 1.0.20 + cloud + admin)** · earlier: **2026-10-19 (dk) — FILED + BUILT A531 (P1): change-triggered sync — the database writes which rows changed (migration 151 sync_changes), the cloud rings the till over one WebSocket and serves only those rows (GET /api/pos/changes: fries 100→150 = one product row, Eugene's PIN = one staff row), menu/staff/money at once, look/setup within 30 min when idle, a branch's tills take changes from its server only, JSON answers gzip-compressed, /init built once per version (till 1.0.20 + cloud)** · earlier: **2026-10-19 (dj) — FILED + BUILT A530 (P2): the compact receipt is the standard (5 rules, merged lines, ESC 3 26, a 15 mm logo, 1 line before the cut — ~44% less paper), four classic switches per client in the admin portal; all four on = the 1.0.19 receipt byte for byte (till 1.0.20 + web POS + admin)** · earlier: **2026-10-19 (di) — FILED + BUILT A529 (P1): a page that is not the cloud's (no X-ZapTill-Server — a suspended Render service, a Cloudflare page, a captive portal) is no connection on the till: sign-in falls back, sales stay pending and go again by themselves, the outage notice is quiet (till 1.0.20 + cloud)** · earlier: **2026-10-19 (dh) — FILED + BUILT A528 (P1): the cloud's polling cost — catalogue-version from one row (migration 150), branch-staff "unchanged" without a read, the sign-in check remembered 30 s, lighter headers, traffic on the System page (cloud only)** · earlier: **2026-10-17 (dg) — FILED + BUILT A527 (P2): the manager sees the cash in four lines when confirming a shift; desktop 1.0.19** · earlier: **2026-10-17 (df) — FILED + BUILT A526 (P2): dependency vulnerabilities in what ships fixed (Electron 43.7.7, server 0, admin 0; xlsx open); CLOSED A158** · earlier: **2026-10-17 (de) — FILED + BUILT A525 (P2): a failed deploy and known vulnerabilities are checked, recorded and shown in the admin portal System page (migration 149)** · earlier: **2026-10-17 (dd) — FILED + BUILT A522 (P1): nothing waits on a switched-off till (cloud and web side, migration 148)** · earlier: **2026-10-17 (dc) — FILED + BUILT A521 (P1): nothing waits on a switched-off till (till side)** · earlier: **2026-10-17 (db) — FILED + BUILT A520 (P1): Close Branch without deadlock, managers close the day again, Close the day / Close the branch (migrations 146, 147)** · earlier: **2026-10-16 (da) — FILED + BUILT A519 (P2): till Sell check, terminal codes, logs to support, screen boundary, one-tap update restart (migration 145). Desktop v1.0.18** · earlier: **2026-10-16 (cz) — FILED + BUILT A518 (P2): promotions charged on their products, read-only supplier bills, cloud gaps, web tidy-ups (migrations 143, 144)** · earlier: **2026-10-16 (cy) — FILED + BUILT A517 (P2): load less at start (lazy screens, exceljs and electron-updater on first use)** · earlier: **2026-10-16 (cx) — FILED + BUILT A514 (P2): counter roles, supervisor PIN retired, lock e-mail local time, built-in roles (migrations 141, 142)** · earlier: **2026-10-16 (cw) — FILED + BUILT A515 (P2) TLS reuse after a server restart, A516 (P3) graphics switch on the Tech page** · earlier: **2026-10-16 (cv) — FILED + BUILT A513 (P2): low-impact start for slow PCs, no taskbar peeping. Desktop v1.0.17** · earlier: **2026-10-16 (cu) — FILED + BUILT A512 (P3): one startup entry, no PowerShell at every start** · earlier: **2026-10-16 (ct) — FILED + BUILT A509 (P1): a safe elevated updater task — updates install with no Windows prompt** · earlier: **2026-10-16 (cs) — FILED + BUILT A510 (P0): cashiers can sell again — migration 139 gives back the selling right 134 left out** · earlier: **2026-10-16 (cr) — FILED + BUILT A508 (P1): usage-aware silent updates** · earlier: **2026-10-16 (cq) — FILED + BUILT A507 (P2): technician's address inside Find my server; agents change tax settings and super admins verify; sign-in pause e-mailed** · earlier: **2026-10-16 (cp) — FILED + BUILT A505 (P0) cloud audit: old tills never lose a sale** · earlier: **2026-10-16 (co) — FILED + BUILT A503 (P1) till/server setup audit, A504 (P1) desktop audit, A506 (P1) web/admin audit** · earlier: **2026-10-15 (cn) — FILED + BUILT A502 (P2): promotions / void-refund rules / count freeze as rights the owner gives (migration 138); no typed branch server address — Find my server only** · earlier: **2026-10-15 (cm) — FILED + BUILT A494 (P1) cloud and till hardening (migration 136), A495 (P1) admin portal and public routes (migration 137), A496 (P1) updates through the branch server, A497 (P3) orders by date, A498 (P2) receipt payment block, A499 (P1) cashiers land on the POS, A500 (P1) bill-number clashes, A501 (P1) branch sync self-heal. Desktop v1.0.16** · earlier: **2026-10-15 (cl) — FILED + BUILT A493 (P1): till update approval back under the admin portal (migration 135)** · earlier: **2026-10-15 (ck) — FILED + BUILT A492 (P2): each branch's M-Pesa number (Buy Goods, or Paybill + account) set on its till by its manager, the owner told of every change. Desktop v1.0.15** · earlier: **2026-10-15 (cj) — FILED + BUILT A490 (P1): one permission catalogue — every report, view and action its own permission, enforced on the cloud, the web and the till; A491 (P2): the owner sets roles, permissions and the till options in one place (migration 134). Desktop v1.0.15** · earlier: **2026-10-15 (ci) — FILED + BUILT A489 (P1): the branch server and its tills talk over TLS, the till pinning the server's own certificate. Desktop v1.0.15** · earlier: **2026-10-14 (ch) — FILED + BUILT A488 (P3): Clear test data names the trading days that block it, as the cloud holds them** · earlier: **2026-10-14 (cg) — FILED + BUILT A487 (P3): Clear test data no longer calls a till that synced a minute ago "not synced" (cloud)** · earlier: **2026-10-14 (cf) — FILED + BUILT A483 (P0) cloud sync audit, A484 (P1) till sync audit, A485 (P1) branch server audit, A486 (P0) security audit (migration 133). Desktop v1.0.14** · earlier: **2026-10-14 (ce) — FILED + BUILT A482 (P2): Clear test data can also delete the whole menu (migration 132; tills empty their menus). Desktop v1.0.13** · earlier: **2026-10-14 (cd) — FILED + BUILT A481 (P2): managers who keep the books see their branch's Monthly pack (cloud + till 1.0.13)** · earlier: **2026-10-14 (cc) — FILED + BUILT A480 (P1): a local sign-in names its branch (the update bar's restart), unlocking upgrades a local session, the branch server's line is calm. Desktop v1.0.13 (with A479)** · earlier: **2026-10-14 (cb) — FILED + BUILT A479 (P3): the till's lock screen fits any window, ⌫ takes back one digit, a wrong PIN shakes, OK shows it is checking** · earlier: **2026-10-14 (ca) — FILED + BUILT A478 (P2): the scheduled emails used the server's clock (3 h late on Render) — formatInTimeZone** · earlier: **2026-10-14 (bz) — FILED + BUILT A477 (P1): renewal as a handshake — the old key lives until the new one is saved and confirmed; the till's machine identity checked; a device secret for every till; no retry storms; 10 × 5 MB logs and auth.log (migration 131). Desktop v1.0.12 + cloud** · earlier: **2026-10-14 (by) — FILED + BUILT A474 (Expenses filters), A475 (every long list paginated), A476 (P1: owner alerts and sections — open tills, differences, voids, tills not syncing; branch managers always told of open tills)** · earlier: **2026-10-14 (bx) — FILED + BUILT A472 (P2: the menu paginated; POS grids draw as they scroll) and A473 (P1: the PIN pad no longer waits on a refused session or a slow cloud). Desktop v1.0.12** · earlier: **2026-10-13 (bw) — FILED + BUILT A468–A471 (P3): the till's Overview like the web's; taps answer and dialogs animate on the web and the till; the POS grid does less per tap; xlsx off every web page; one money / number / date format on the web** · earlier: **2026-10-13 (bv) — FILED + BUILT A467 (P2): Download Excel on every report tab, This week / Last week / Last month; the monthly pack builds without migration 130 and names a failing read** · earlier: **2026-10-13 (bu) — FILED + BUILT A466 (P2): the Monthly pack on the till (Record for the books too); the server's manager records an expense Not from a drawer. Desktop v1.0.12 + cloud** · earlier: **2026-10-13 (bt) — FILED + BUILT A465 (P2): a manager on the branch server puts cash in / out or an expense on any open drawer (the till records it on its own books); the desktop Overview cards lose their icons. Desktop v1.0.12** · earlier: **2026-10-13 (bs) — FILED + BUILT A464 (P2): View more on wide tables on a phone; the phone POS cart bar charges in one tap, names the order, shows the last item added; the category bar shows there are more** · earlier: **2026-10-13 (br) — FILED + BUILT A463 (P2): the dashboard, web POS, manager web and admin portal fit a phone (drawers, cart sheet, scrolling tables, stacking panels, dialogs that fit)** · earlier: **2026-10-13 (bq) — FILED + BUILT A462 (P1): managers and the owner confirm shifts on the web with the expected figures; Close with count (no force-close needed); a closed drawer reaches the web POS within 20 s and the cloud refuses web sales into it** · earlier: **2026-10-13 (bp) — FILED + BUILT A461 (P1): kitchen voids always need a manager (the switch was off for the client); new switch 'Eat now, pay later' (off) to end a shift with sent orders unpaid on hold; Clear no longer skips the void. Desktop v1.0.11** · earlier: **2026-10-13 (bo) — FILED + BUILT A459 (P1: Deactivate never worked; every partial staff edit wiped the person's branches — fixed; rename / role / deactivate on the till, offline too) and A460 (P2: premium screens only with the online licence); BUILT A380 (backup folder) and A197 (transfers on the till). Desktop v1.0.11** · earlier: **2026-10-13 (bn) — A451 BUILT further: the owner always signs in as a users row (found by email or owner_id, else created; an older owner session is mended at its renewal). A54 CLOSED (the owner's daily report email arrives)** · earlier: **2026-10-12 (bn) — BUILT A453–A458: only managers record expenses and cash in / out (switch); the cashier's Z-report is their own count, and the Z-report prints on a Windows receipt printer; the monthly pack (daily sales, expenses, cash and M-Pesa books — Excel and email on the 1st; migration 130); two receipt copies on a thermal printer; the Overview redesigned; Close Branch leads with the day's totals per payment method. Desktop v1.0.10** · earlier: **2026-10-12 (bm) — FILED + BUILT A452 (P1): Close Branch shows each till's shifts, confirms them on the server (expected beside the count), closes every till's day at once on the server's date (yesterday's too); the confirm screen shows a manager the expected figures; expenses by payment method and who paid, with subtotals. Desktop v1.0.9** · earlier: **2026-10-12 (bl) — FILED + BUILT A451 (P1): the owner's web void / refund no longer fails with a 500 (an owner sign-in without a users row); a manager-PIN check no longer crashes on an odd stored hash; the report shows Total Collected (incl. VAT) = sales + delivery + tips, what the payment methods add up to** · earlier: **2026-10-12 (bk) — FILED + BUILT A450 (P2): a rename on the web reaches every till within 20 s (name, currency); the receipt's Pay by M-Pesa line (Buy Goods / Paybill / Till No.) is a setting on the web; a count on Approvals. A381 BUILT: a logo reaches a branch's tills through the branch server. Desktop v1.0.8** · earlier: **2026-10-12 (bj) — FILED + BUILT A449 (P2): a sync answer that stalls mid-body no longer hangs the till's sync; a wrong branch access code is shown to the manager (sync notice), not only logged. Desktop v1.0.8** · earlier: **2026-10-12 (bi) — FILED + BUILT A448 (P1): a till works on its own — a print station, the menu, a cashier and a PIN changed on a till work at once, offline too, and reach the cloud later; the same thing made in two places is kept once; a clash waits for the owner (web › Approvals); a PIN set on a till wins unless someone else has it. Migration 129, local schema 71, desktop v1.0.8** · earlier: **2026-10-11 (bh) — FILED + BUILT A446 (P1): a new cashier was "not recognised" for ~20 min and the lock screen's only way out was closing the app — every till now keeps its branch's staff list (refreshed every 10–20 s and at once on a change), the branch server's "no" is no longer final (the cloud is asked), the lock screen checks the PIN without touching the session and has Sign out, "not bound to a branch" fixed, print stations follow the cloud at once; and the session audit's breaking points (sales left 'failed' by an outage, no time limit on the PIN check, a colleague's PIN switching the signed-in person, 429 locking a till, a late renewal or a queued sale credited to the wrong cashier). A447 (P2): a manager records an expense from Manager › Expenses. Desktop 1.0.7. · 2026-10-11 (bg) — FILED + BUILT A443 (P1): the branch server fetches an approved update once and its tills take it from the server (the gateway cut every download at 60 s); the server tells its tills and lists what each runs. A444 (P2): a manager sees the items in a past order, reprints it and voids / refunds it, on the till's History and Manager › Orders and on the web. A445 (P2): offers — % / amount off, special price, buy X get Y, spend over X, meal deals — by dates, days and hours, owner every branch, manager own branch; applied by themselves at the till and the web POS and checked by the cloud (migration 128, local schema 70). Desktop 1.0.6. · 2026-10-11 — A354 design revision 2 (docs only): one Android app with a Till mode and an Owner mode, the owner screens as a PWA for iPhone, staged plan (Owner A first); decided: direct APK, owner mode needs web access, managers may use it. · 2026-10-11 (bf) — FILED + BUILT A442 (P1): two cashiers on one shift — the drawer's figures were right but the report and the closing screen credited the whole shift to the person who opened it; the shift report now has SALES BY CASHIER (till screen, Z-report sheet, printed Z-report, the cloud's Z-report, the web POS close). · 2026-10-10 (be) — A429 BUILT: payment methods from Kenya's list, each a switch per branch (till schema 69, web POS, the cloud). · 2026-10-10 (bd) — BUILT: A424 the web sign-in page (the client's colour, a split layout, nothing cut off — seen in a browser); A422 part 2, 17 pictures of the real till screens in the guides (till offline + web). FILED + BUILT (owner's three asks): A439 web Reports › Staff Performance shows each cashier's money by payment method (and the report is now paged past 1,000 sales); A440 the till's Overview has Staff performance; A441 the till's Overview shows any day the manager picks. · 2026-10-10 (bc) — Owner's decisions recorded: A429 (every method a switch per branch; today's on, the new ones off), A424 (the client's colour, same fields, nothing running off the screen), A435 (a), A436, A437, A422 part 2 (we capture). BUILT: A435 (a) the server restarts itself within 5 minutes (a scheduled task; a tray Quit stays quit; auto sign-in steps for the technician); A436 a join request brings the server's window forward with a notification, the till says go and press Allow, a signed-out till can find the server; A437 a clean close on Windows shutdown. FILED + BUILT: A438 (P2) a manager filters the till's History by cashier, with each cashier's sales by payment method. · 2026-10-10 (bb) — A417 part 2 BUILT: ZapTill's own on-screen keyboard on every till (a finger or pen opens it; never over the field). FILED from checking the owner's three questions: A435 (P1) the branch server is a login item, not a Windows service — down after a power cut until someone logs in; A436 a join request to a hidden server is never seen; A437 Windows shutdown with a server running, untested. · 2026-10-10 (ba) — A422 part 1 BUILT (draft for review): step-by-step guides for opening and closing a shift, confirming a shift, closing the day and void / refund on the till's Help and the web's /help; screenshots are part 2. · 2026-10-10 (az) — BUILT, nothing committed: A418 a History total for what the filters show (a manager always; a cashier only while A416 and its own switch are on; the web totals every page); A428 the ⓘ on a product opens its description. · 2026-10-10 (ay) — BUILT, nothing committed: A434 a manager's close prints the Z-report (it never did); Shift report shows every running shift side by side; A416 the owner's switch (off by default) shows a cashier their sales at close, never expected cash (till schema 68). · 2026-10-10 (ax) — A433 BUILT, nothing committed: a signed-in manager confirms any till's shift (on the cloud, POST /api/shifts/:id/manager-confirm — a person's sign-in only); the till that holds it takes the confirmation (Close Day stops waiting — also for a web confirmation); Sales covers every till: Orders opens on all tills, Item Mix and Shift report (another till's Z-report from the cloud) read the branch. · 2026-10-10 (aw) — A431 + A432 BUILT, nothing committed: a manager on any till sees every till's sales and every shift on the Overview (the cloud's new GET /api/shifts/branch-report, with the manager's own sign-in; offline, what the till holds — and it says which), with a shift report on every Overview. · 2026-10-09 (av) — FILED: A431 (P1) a manager on one till cannot see the other tills' sales or shifts — every shift query on the till is this till's only, and the cloud never sends a till the others' sales; A432 a shift report on the Overview. · 2026-10-09 (au) — first batch BUILT, nothing committed: A421 a shift closed on the till signs the cashier out to the PIN screen at once (a manager's after Done); A423 Add staff no longer autofills the owner's email; A430 the selected payment method solid in its own colour with a ✓; A417 part 1 the Windows keyboard stays shut over the lock screen's keypad; A419 no server address on the admin sign-in; A420 no version on the client's web in production. · 2026-10-09 (at) — owner requests FILED, nothing built: A428 a cashier sees an item's description (ⓘ on the tile) to explain it; A429 payment methods from a fixed list of Kenya's common ones (money and delivery apps), switched on per branch by the manager — a new branch has Cash and M-Pesa only; A430 the selected payment method stands out. · 2026-10-09 — A427 BUILT (cloud + desktop 1.0.4): a new till finds the branch server on the network and joins when someone at the server presses Allow; the branch server starts with Windows, never sleeps and stays in the tray. · A426 BUILT (cloud): tills behind a branch server no longer say "no staff roster yet" — the roster and PIN sign-in now share one branch rule (no branch assigned = every branch). · A425 BUILT (desktop 1.0.4): a re-uploaded menu no longer leaves duplicate required choices on the till — the till's pull now drops the variant and add-on rows the cloud removed, so a pizza is never blocked by three "Size" groups. · 2026-10-09 (as) — owner requests FILED, nothing built: A416 a switch (off by default) to show a cashier their sales at shift close; A417 an on-screen keyboard that does not cover the field; A418 a total for the cashier's filtered History (owner switch); A419 no "Server address…" on the admin sign-in; A420 no version on the client's web in production; A421 closing a shift on the till signs the cashier out to the PIN screen (the web POS already does); A422 a step-by-step help guide with screenshots; A423 the owner's email filled into Add staff (browser autofill); A424 a new client/owner sign-in layout. Owner answers the same day: A417's image is the Windows keyboard over the lock screen's own keypad; A421 signs the cashier out the moment the close is saved; A418 only while A416 is on; A417 on every till. Asked, answered, no entry: void/refund on the till is POS › History › Void / Refund (managers). · 2026-10-06 (ar) — A415 BUILT (cloud + till 1.0.3, migration 127): the till signs in as itself — the till, the business, the branch, no person — and nothing of the owner is left on it; "Sign out / switch account" is gone; a technician rejoins a till from the tech console keeping everything on it; "too many attempts" after one web sign-in fixed (only failed attempts count; till renewals have their own counter). · 2026-10-06 (aq) — desktop 1.0.3 BUILT (migration 126). A413: batches and expiry dates — received stock records its expiry date and lot number; Stock › Expiry lists what has expired or expires soon (what is left in each batch is worked out oldest-expiry first from the stock level) and writes it off. A414: wastage recorded on the till — saved on the till first, sent to the cloud after, never twice. · 2026-10-06 (ap) — A412 BUILT (till, next build): Menu › Import has a template again, filled with the client's own menu (edit and upload back); headings only when there is no menu yet. · 2026-10-05 (ao) — desktop 1.0.2 BUILT. A409 (cloud): station categories would not save anywhere (till or web) — the cloud never sent business_id, which the table requires; fixed, and a CI gate now checks every insert into a business-scoped table carries it. A410 (till): at a branch with a server, only the server talks to the cloud — every other till's cloud calls (sales, menu, sign-in, manager edits, updates) go through it. A411 (till): station routing is saved on the till first and sent to the cloud after, so it works fully offline. · 2026-10-05 (an) — A408 BUILT (till, next build): a category tap on a station that the cloud refused now says why under the chips — before, the screen reloaded and erased the reason, so the chip looked untappable. · 2026-10-05 (am) — A407 BUILT (cloud + till 1.0.0, migration 125): a till's sign-in is never lost by accident — the owner's own PIN on a till no longer signs the till out (the likely main cause), no owner action touches a till's session, a refused till signs itself back in with its device secret (tills enrolled earlier get one on their next renewal), cashiers keep signing in on the till's own PIN check meanwhile, and ZapTill is emailed when a till could not sign back in. · 2026-10-05 (al) — A406 BUILT (cloud): an owner's password change or reset no longer signs out the business's tills, and an expired till token is answered as expired (not "Please sign in again."). · 2026-10-05 (ak) — desktop 1.0.0 BUILT, the first major release (owner: "we call that v1.0.0, that becomes our major release to run for 1 week"; tags continue on ZapTill's side, clients update only when approved per client in the admin portal): A404 test data cleared on the cloud is cleared on the tills too (a test day left open no longer locks a till); A405 "Close day now" on the till's day-lock banner. · 2026-10-05 (aj) — desktop 0.6.39 BUILT (A401): a drawer force-closed (or closed) on the web now closes on the till within ~20 s, and the cashier is told who closed it and why. A400 BUILT: a combo (set meal) sold takes its items out of stock and their recipes' ingredients; the food-cost report counts them. A402 BUILT (migration 124): an owner resets a forgotten password by an emailed code, and changes it when signed in. A403 BUILT: someone on an authenticator app can ask for the sign-in code by email instead. · 2026-10-05 (ai) — A398 BUILT: sign-in codes (OTP) are a per-client switch in the admin portal (Features › POS switches › Sign-in codes), off unless turned on — clients without real email addresses were locked out; the admin portal's own admins still always enter a code. A399 BUILT (migration 123): the wastage log — spoiled, expired or damaged stock written off with a reason and its value; the stock leaves at once (made-to-order items: value only); managers record, the owner voids; a period report by reason and item; clearing test data clears wastage too. · 2026-10-04 (ah) — desktop 0.6.38 BUILT (A397): printing to a Windows printer (`printer:` name) on a slow PC — 20 s instead of 8, the print helper built once and reused, a timed-out ticket retried (it was dropped) and the screen says "Windows took too long" instead of a command line. · 2026-10-04 (ag) — A396 BUILT (migration 122): clear a client's test data between two times chosen in the admin portal (start defaults to set-up, end to now), previewed first, one transaction, refusing anything that would cut into a real sale. · 2026-10-04 (af) — A395 BUILT (migration 121): what is owed to suppliers — bills (from a delivery or typed), payments (against a bill or on account), returns to supplier (stock out, credit), balances, overdue, ageing and a printable statement; the owner's by default. · 2026-10-04 (ae) — A394 BUILT (migration 120): stock take — blind counts (the system figure never shown to whoever counts), differences reviewed and posted by the owner, till sales that sync late allowed for, and the owner's freeze switch (an item being counted cannot be sold on the tills or the web until counted). · 2026-10-04 (ad) — A391 BUILT (migration 119): a sign-in code (email, or an authenticator app — each person picks) for every admin, owner and web manager; A392 BUILT: only critical alerts are emailed (repeated failed sign-ins, a till the cloud refuses, …), everything else on the admin portal's new Alerts page; A393 BUILT: the admin portal regrouped and the SwiftPOS name gone from it. · 2026-10-03 (ac) — desktop 0.6.36 BUILT (A386): the product is ZapTill — every name people see (till, web, admin, emails, receipts, icon); the Windows app identity kept. · 2026-10-03 (ab) — A385 BUILT: the domain is zaptill.co.ke (code fallbacks, print server, examples); the product name changes later. · 2026-10-03 (aa) — desktop 0.6.35 BUILT (A384, migration 117): "What to do when" Help on the till (offline, from the PIN pad), an A4 card and the web; who to call = the shop's own tech (allocated in the admin portal) or SwiftPOS support 0717 675 635 / 0782 972 023. · 2026-10-03 (z) — A383 BUILT (cloud + admin portal, migration 116): the watchdog — critical problems to the admin's Telegram and email at once, the rest in a 07:45 digest. · 2026-10-03 (y) — desktop 0.6.34 BUILT (A382): the business day ends at the owner's cut-off (00:00–06:00) — a bar is no longer locked at midnight. · 2026-10-03 (x) — A380 (backup folder on the server's own disk) and A381 (the server does not pass a logo change to the tills) filed OPEN for later (owner). · 2026-10-02 (w) — desktop 0.6.33 BUILT (A379): free delivery — the shop pays the rider, the customer pays no fee; switched by the owner (migration 115). · 2026-10-02 (v) — A378 BUILT: a client's own sign-in address (africanfries.<root>) with their logo; sign-in there admits only that client (migration 114; off until TENANT_ROOT_DOMAIN / VITE_TENANT_ROOT_DOMAIN are set). · 2026-10-02 (u) — A377: 0.6.32 RELEASED; the release run now stops on a tag that is not the desktop version and on a draft release. · 2026-10-02 (t) — desktop 0.6.32 BUILT (A377): one Windows installer for 64-bit and 32-bit tills (a client's Windows 10 32-bit till). · 2026-10-02 (s) — A376 CLOSED: the new client's till enrolled after the fix was deployed. · 2026-10-02 (r) — A376 BUILT (cloud + admin portal): a new client's till could not be enrolled (the owner was matched only on the business contact email); now by the owner's sign-in. · 2026-10-02 (q) — desktop 0.6.31 + cloud + migration 113 BUILT (A375): a product shown on the POS grid and QR menu only on chosen days, still found by search and sold any day. · 2026-10-02 (p) — A159 enforce-readiness: the flip would have broken the till's manager screens (31 writes) and day-close ack; fixed with a PIN-sign-in claim and one shared rule, tested against every cloud write in the till's source. · 2026-10-01 (o) — desktop 0.6.30 + cloud BUILT (A336 stage 3): the owner sets the void window (default 30 min) and which methods a till may refund offline (default cash), and whether it may reverse web sales offline; the till voids/refunds offline with a manager's PIN and replays to the cloud with the approver. · 2026-10-01 (n) — results: checklist v0.6.29 14/14 PASS on T1 → A369, A374 CLOSED; every item from 0.6.26–0.6.29 verified. · 2026-10-01 (m) — results: v0.6.28 23/23 PASS → A372, A373 CLOSED; v0.6.27 20 PASS, D2 FAIL, D4/D5 not run → A370, A371 CLOSED, A369 open; NEW A374 (History hid the delivery fee) and the owner's 0.6.29 asks BUILT: confirm table, blind close + cashier figures standard, success screen after payment (no print), History = today's sales. · 2026-10-01 (l) — results: checklist v0.6.26 all 8 PASS on T1 (v0.6.28 install) → the A336 follow-up verified; A336 open for stage 3. · 2026-10-01 (k) — release number on every website (dashboard, web POS, login, admin portal) and the cloud (`GET /api/version`), with a warning when the website and the cloud differ; ships in v0.6.28 (no new tag). · 2026-10-01 (j) — desktop 0.6.28 + cloud + migration 112 BUILT (A372): a sent order is paid or a recorded kitchen void — reason, made or not, a manager with the client's switch, a VOID ticket, the Z-report; End Shift refused while one is unpaid; 'pay before kitchen' switch. Found on the way: A373 (the kitchen cooked a sent dish twice). · 2026-09-30 (i) — desktop 0.6.27 + cloud + migration 111 BUILT (A369): a prospect's nine requests as per-client switches in the admin portal — delivery fee paid to the rider from the drawer, expense payment method, cashier-only History, no reprint, blind shift close, the manager's reasons; the Z-report shows the expense type. Found on the way: A370 (dashboard expenses refused), A371 (till on-screen receipt tip). · 2026-09-30 (h) — desktop 0.6.26 + cloud BUILT (A336 follow-up): a void or refund made on the web of a sale a TILL rang now reaches that till (Z-report, shift figures, day close, History); A359's known limit removed. A336 stays open for stage 3. · 2026-09-30 (g) — ALL of v0.6.24 and v0.6.25 PASS on T1 (N7, N8, P1, D1, D2 the last) → A367 CLOSED; nothing from 0.6.21–0.6.25 is open. · 2026-09-30 (f) — results: 0.6.25 B1, B2, G1–G3 PASS (P1, D1, D2 not yet run); 0.6.24 C1–C6 PASS, N1–N6 PASS (N7 path fixed in the docs, N8 pending) → A366, A368 CLOSED; A367 open for N7/N8. · 2026-09-30 (e) — 0.6.21 D2–D4 PASS → A364 CLOSED (the 29 Sep day: two cash-ups, 18,240 counted = expected). 0.6.25 released (Release desktop #41; CI #441 green after the CI-only fix `91cb590`), deployed, approved, on T1. · 2026-09-30 (d) — desktop 0.6.25 + cloud BUILT: a bigger client logo on the PIN and lock screens, the logo in the manager sidebar, a bigger printed logo, and A368 — a logo uploaded on the till no longer disappears (it is saved to the cloud too). 0.6.24 landed (`6b12bed`, CI #439 green, v0.6.24 pre-release). · 2026-09-30 (c) — results recorded: 0.6.23 F1–F7, F9 PASS; 0.6.22 M3–M9 PASS; S1–S4, O1, L1, X1–X5 PASS → A365, A363, A362, A361, A360 CLOSED. D2–D4 (A364) still to run; 0.6.24 held. · 2026-09-30 (b) — desktop 0.6.24 (schema 58) + cloud BUILT (A367): notes on an item and on the whole order — free text + the owner's quick picks, on the till, the web POS, the kitchen ticket, the receipt and the KDS. HELD with 0.6.24 (owner testing 0.6.23 first; no patch yet). · 2026-09-30 (a) — desktop 0.6.24 + cloud BUILT (A366): only the cashier who opened a shift, or a manager, can close it — till, web POS and the cloud. F8 PASS (the printed Shift Report). · 2026-09-29 (e) — Shift Reports print a REPORT, not the page (dashboard only): an A4 shift report and a list report from the data. · 2026-09-29 (d) — desktop 0.6.23 (A365 follow-ups from T1: M1 + M2 PASS): a method with nothing recorded is not asked; no mouse-wheel / spinner changes on number fields (till + web); "include the opening float"; a manager already signed in confirms without a PIN; NEW dashboard **Shift Reports** (every shift: running / awaiting / confirmed, the difference, View → the per-method table). · 2026-09-29 (c) — desktop 0.6.22 + cloud + migration 110 BUILT (A365): the cashier declares every payment method at End Shift; a manager confirms every shift with a blind recount (PIN; now or later; till, web POS, dashboard); Close Day waits for them; self-confirmation flagged. · 2026-09-29 (b) — desktop 0.6.21 BUILT (A364): a day close is a cash-up — a shift opened after today's day was closed reopens it (was "That record already exists." on T1); the next close counts only the shifts since, the row keeps the whole day. · 2026-09-29 (a) — desktop 0.6.20 BUILT (A363): an offline close-and-reopen never strands a drawer (cloud writes closing days first; the till re-sends a parked day/shift once — T1 unsticks on 0.6.20); refusals in the log; web-sales token renewal; sync status for managers only + bottom notice + "Last synced"; Z-report note. · 2026-09-28 (z) — NEW A362 (a cashier records an expense on the web POS: POST /api/shifts/:id/expense + 🧾 Expense), built as a patch (cloud + dashboard). · 2026-09-28 (y) — Migration 109 applied to prod (`recorded_by | uuid`). · 2026-09-28 (x) — Backlog checklist on target: 25 pass / 0 fail / 4 skip. CLOSED 27 (A129 A179 A267 A168 · A277 A209 A139 · A296 A258 A259 A262 A58 A211 A256 A257 A157 A141 · A298 A299 A306 · A331 A330 A329 · A273; A300 A305 A234 on code evidence). §N run on ONE till only — node items stay open. NEW A360 (cashier expense types, cloud) + A361 (expense recorded_by, migration 109), built as a patch. · 2026-09-28 (w) — Checklist v0.6.19 on target: 26 pass / 0 fail / 1 skip. CLOSED A355, A358, A359, A341, A349. · 2026-09-28 (v) — Checklists v0.6.17 + v0.6.18 recorded: CLOSED A348, A350, A351, A276, A279, A356, A357. NEW A358 (0.6.18 follow-ups) + A359 (web refund), built for 0.6.19 (patch, owner commits). · 2026-09-28 (u) — desktop 0.6.18 BUILT: A355 (refund from History any time; manager's own PIN approves), A336 stage 2, A276 (drinks off the kitchen ticket — cause found), A279, A341, A356, A357. · 2026-09-28 (t) — A353 OPENED (move sign-in from Supabase to our own auth — scoped, not started) and A354 OPENED (Android tablet app — design doc, not started). · 2026-09-28 (s) — A352 BUILT: email — Resend primary, SendGrid (HTTPS) then SMTP as backups. Cloud only. · 2026-09-28 (r) — A351 BUILT: the manager menu in groups (Sales, Close, Settings) for desktop 0.6.17. · 2026-09-28 (q) — Checklist v0.6.16 on target: 20 pass / 1 fail / 15 skip. CLOSED A345, A346, A347, A342, A335. U1's "fail" is R4 as designed (0.6.15 → 0.6.16 was meant to reach every till); A348, A349, A350 stay FIX BUILT for their skipped checks. · 2026-09-28 (p) — A350 BUILT: the release workflow creates each release before uploading (no more split releases) and verifies it; the cloud merges a split release and downloads by file id. · 2026-09-28 (o) — A349 BUILT (pre-release money review, in 0.6.16): discounted sales' receipts now print; tips on receipts; CTL in the Overview and Z-report; the till's reports refund-true (VAT/CTL reduced by refunds, as the cloud); local-time hours; web receipts with CTL; a failed ticket told to the cashier. · 2026-09-28 (n) — A348 BUILT (migration 108 + cloud + admin portal + desktop v0.6.16): desktop updates approved per business in the admin portal, held by default; tills ask the cloud, never GitHub; builds publish as pre-releases; the repository can go private once every till is on 0.6.16. · 2026-09-28 (m) — A347 BUILT: app icon in SwiftPOS teal (#14b8a6), next desktop version (no bump yet). · 2026-09-27 (l) — A346 BUILT (cloud + desktop v0.6.15): the till shows Stock only when the business has the web POS (web access active or grace). A345 BUILT (desktop v0.6.15): an offline sign-in's back office says "You signed in while offline…" instead of "This till is not signed in"; offline, Menu and Staff show what the till has saved, read-only; when the network returns the offline sign-in becomes a cloud sign-in by itself (PIN held in memory only). · 2026-09-27 (k) — Owner's v0.6.14 checklist: 24 PASS / 0 FAIL / 5 SKIP. CLOSED A343, A344, A339 (J1), A334 (B3, B6); A342 open for K4 only; A336 stage 1 fully verified (stages 2–3 open); A335 open (F5). NEW A345 (offline manager: cloud-owned back-office pages say "not signed in"). · 2026-09-27 (j) — A342, A343, A344 BUILT (desktop v0.6.14 + cloud + dashboard): closing on the till closes the web's shift on that till with one count; on the web a cashier who didn't open the running shift chooses to join it or start their own on "<Branch> Web Till"; payment methods in colour (buttons + reports). The till's read-only foreign-cash / foreign-orders added to the terminal-write allowlist. Delivery 2026-09-27-j. · 2026-09-27 (i) — Owner's v0.6.13 checklist: 31 PASS / 0 FAIL / 8 SKIP. CLOSED A338, A340, A337, A332, A333; A334 (B5 fix confirmed), A335, A336, A339 stay open for their skipped checks. NEW A342 (till close closes the web's drawer), A343 (a cashier's own web shift), A344 (payment method colours) — owner decisions. · 2026-09-27 (h) — Migration 107 APPLIED to prod (owner's pg_indexes output: `shifts_open_by_terminal` plain index, unique one gone). NEW `docs/checklists/VERIFY-CHECKLIST-v0.6.13.html` (+ .md): 39 checks, everything open from 0.6.9 → 0.6.13. NEW A341 (manager may add a "type" — future build, owner to confirm which list). · 2026-09-27 (g) — A339 + A340 BUILT (desktop v0.6.13 + cloud + dashboard): an offline manager sign-in lands on the manager screen (the offline answer now carries the role the PIN screen routes on); a manager can no longer invite an owner (the invite route had no role check), grant a permission they do not hold, or mint an "Owner" role, and neither role picker offers what the cloud would refuse. Delivery 2026-09-27-g. · 2026-09-27 (f) — A338 BUILT (desktop v0.6.12 + cloud + migration 107): a till's drawer no longer stops syncing while the web POS has a drawer open as that till — the cloud accepts it (migration 107: the one-open-per-terminal index is no longer unique), a sale whose drawer is not up yet waits (424) instead of failing, and the till re-queues what the clash had parked (drawer, floats, expenses, sales). Delivery 2026-09-27-f. · 2026-09-27 (e) — A337 BUILT (desktop v0.6.11): previous shift reports can be opened and printed; expenses shown on the shift report (screen and paper — the reconciliation now adds up) and on a NEW Expenses screen; the Daily Sales Report is colour-coded (title, sections, headings, totals, key figures, warnings). Delivery 2026-09-27-e. · 2026-09-27 (d) — Cross-sync stage 1 (A336) + A335 + the B5 fix: the web POS's sales on a till's drawer download onto that till (orders, shift panel, Z-report; never pushed back or relayed); the manager's Orders tab can show every till at the branch from the cloud; the till's void/refund now finds its own sales in the cloud (A335); the shared-drawer close no longer counts the till's own sales twice (owner's B5: 6,210 → 4,720); shift changes push at once, 30 s backstop. Desktop v0.6.10, local schema 55. Delivery 2026-09-27-d. · 2026-09-27 (c) — A332 BUILT: web POS light mode — action hover uses the theme's 400 fill (2.51 → 6.56), white labels stay white where white wins (action-600 2.51 → 5.36, red Delete 3.70 → 4.83), themed focus ring now compiles. Delivery 2026-09-27-c. · 2026-09-27 (b) — A333 BUILT: light mode for the dashboard's coloured and pale text and translucent gray lines (52 generated rules, ≥ 4.5 on white and on each colour's own tints); the always-dark sign-in screens keep their white text (was 1.10:1 in light mode). Delivery 2026-09-27-b. · 2026-09-27 (a) — A334 BUILT: the till joins a drawer the web POS opened as it (same id, its trading day; a different cashier is told whose drawer it is) and its close includes the web's cash on any shared drawer (NEW POST /api/shifts/:id/foreign-cash). Desktop v0.6.9. Delivery 2026-09-27-a. · 2026-09-26 (c) — A273 follow-up BUILT (web ↔ desktop shifts): tills send their real name (setup name wins), the web picker shows "T1 — Front Counter" and which drawers are open, joining an open drawer asks no float, the cashier's own open till is joined silently; NEW A334 (P1 — the desktop never learns of a web-opened drawer; owner decisions needed). Desktop v0.6.8 owed. Delivery 2026-09-26-c. · 2026-09-26 (b) — A329 step 3 BUILT: the back office's 619 actions/wordmark/accents → fixed SwiftPOS teal (`swift-*`), "SwiftPOS Teal" preset, favicon teal; light-mode white labels and focus ring fixed; NEW gate + test; NEW A332 (web POS light-mode labels/hover/focus) and A333 (status greens in light mode). Delivery 2026-09-26-b. · 2026-09-26 (a) — A329 step 3 CLASSIFIED (docs only): the back office's 1016 green + blue uses, 619 → SwiftPOS teal, 394 keep their colour; owner decisions (blue primaries too; admin portal out) recorded; document for owner review. Delivery 2026-09-26-a. · 2026-09-25 (f) — Session close: v0.6.7 released (Release #23); A329 step 3 swept (back office: 641 greens in 59 files) and planned for the next session; test labels corrected; handoff. Delivery 2026-09-25-f. · 2026-09-25 (e) — A329 step 2: SwiftPOS teal is the themes-OFF look on tills + web POS; NEW A331 (themed tills' white labels on 600) fixed; Tree row v0.6.7. Delivery 2026-09-25-e. · 2026-09-25 (d) — A330 FIX BUILT: 11 translucent grey panel classes get their light-mode rule (the tip panel and ~130 uses); guard test. Delivery 2026-09-25-d. · 2026-09-25 (c) — A328 CLOSED on target (themed, reset-to-Ocean and OFF all exact on the web POS). Decisions: 4b-2 back office stays SwiftPOS-branded; NEW A329 SwiftPOS colour green → teal (owner yes; plan + numbers); NEW A330 tip panel in light mode. Slice 5 checklist. Delivery 2026-09-25-c. · 2026-09-25 (b) — A328 part 2: the web POS's INLINE colours (181 classified, 94 themed, each falling back to its own original) — fixes the green Charge / pink Confirm the owner saw. Delivery 2026-09-25-b. · 2026-09-25 (a) — A326 + A327 CLOSED on target (brand strip, yellow sidebar, theme buttons on the till; dark-mode picker fix deployed). A328 FIX BUILT: web POS + shared components follow the theme (67 classified, label contrast proven for 7 themes × 2 modes). Delivery 2026-09-25-a. · 2026-09-24 (j) — A327: the owner's run proved web → cloud → till (Blossom on the PIN screen) and found the selected theme near-invisible in DARK mode; fixed (theme-coloured ring + tick) and re-verified in dark and light. WORKING-METHOD: check dashboard UI in dark mode (its default) and light. Delivery 2026-09-24-k (re-issue of -j: a Node-on-Windows exit crash after all checks passed; the new test uses process.exitCode). · 2026-09-24 (i) — Phase 2 slice 4: A327 FIX BUILT (web theme picker + live till preview + save; nothing changes without themes). A326 CLOSED on target (0.6.6 screenshots). Delivery 2026-09-24-i. · 2026-09-24 (h) — CI #394 red on slice 3 (`8f40e02`): A321's desktop test pinned the PIN-page line A326 changed; re-pinned to intent. All 26 desktop tests run on the tip; WORKING-METHOD: run every CI step's tests before hand-over. Delivery 2026-09-24-h. · 2026-09-24 (f) — Phase 2 slice 3: A326 FIX BUILT (the till's colours follow the theme only when themes are ON; 222 greens classified; gate). A325 CLOSED on target (ocean/null). Tree row → v0.6.6. Delivery 2026-09-24-g (re-issue of -f: the new test spawned a Windows `.cmd`; fixed). · 2026-09-24 (e) — Phase 2 slice 2: A325 FIX BUILT (`theme_id`, migration 106, the `themes` flag, cloud → till, schema 54, admin toggle; catalogue-version now watches feature_flags); A324 CLOSED (CI #392). Delivery 2026-09-24-e. · 2026-09-24 (d) — Phase 2 approved and started: NEW A323 (tracker: decisions + 5-slice plan) and A324 (slice 1, the theme registry `themes.ts`, FIX BUILT — no visible change). Delivery 2026-09-24-d. · 2026-09-24 (c) — Phase 2 proposal revised (two layers: brand + action; seven themes; brand-colour table; complementary pairing). Render: the `"env":"development"` seen on `swiftpos-20c2` is the DEVELOPMENT service — correct; production is a separate service; dev→main merge planned after Phase 2 with its own checklist. Delivery 2026-09-24-c. · 2026-09-24 (b) — A322 CLOSED on target (0.6.4 on mamangina: preview shows the till's own name + neutral sample; neutral placeholder; neutral template). v0.6.4 released (Release #20) and running. Delivery 2026-09-24-b. · 2026-09-24 (a) — A322 FIX BUILT (desktop 0.6.4): test print shows the till's own name; neutral sample data (the sample ticket also carried a reference business's till number, phones and a cashier's name); placeholders/template neutral; checklists renamed, reference menu spreadsheets removed; NEW gate `check-reference-names.mjs`. Tree row → v0.6.4 (paired with the owner's `npm version 0.6.4`). Delivery 2026-09-24-a. · 2026-09-23 (y) — session close: `docs/HANDOFF-2026-09-23-evening.md` + NEW `docs/WORKING-METHOD.md` (how sessions run — delivery loop, the three command blocks, confirming "landed", release sequence, session-start prompt). Next: A322. Delivery -y. · 2026-09-23 (x) — **Branding Phase 1 CLOSED on target** (0.6.3 on mamangina: A2, B1, A5, A315 all PASS). CLOSED: A295 (Phase 1), A278, A308, A315, A319, A321. v0.6.3 confirmed running on the till. Next: A322. Delivery -x. · 2026-09-23 (w) — Phase 2 theme proposal (docs, nothing built); NEW A322 (P2): the test print and two till screens show a reference business's name to every client. Delivery -w. · 2026-09-23 (v) — desktop v0.6.3: Tree row updated in the SAME commit as the owner's `npm version 0.6.3` (the v0.6.2 bump missed this pairing and went red — -j). Delivery -v. · 2026-09-23 (u) — A321 FIX BUILT (desktop, 0.6.3): every landed pull signals every window; the lock screen listens; the 20-s check refreshes on 401 and reports other failures. Delivery -u. · 2026-09-23 (t) — retest recorded (Eugene, mamangina, 0.6.2; 18 PASS / 0 FAIL / 2 not run): CLOSED on target A311 A312 A313 A316 A317 A318 A320; A295 §10 item 4 closed, A295 stays open (items 5, 7); A315/A308/A319 stay FIX BUILT (till half / A2 / A5 owed); A278 stays open; NEW A321 (P2) — the open screen never refreshes after a background pull. Log `docs/VERIFY-LOG-2026-09-23.md`. Delivery -t. · 2026-09-23 (s) — docs only: `docs/checklists/verify-branding-phase1.html`, the interactive retest checklist (house style of VERIFY-CHECKLIST-v0.6.0.html, content = VERIFY-BRANDING-PHASE1.md after -r, output = the first run's report format). Delivery -s. · 2026-09-23 (r) — docs only: VERIFY-BRANDING-PHASE1 updated for the retest (A5's rejected example was wrong: `#777777` IS legible to the till — now `#1e293b`; A1/B1 record "Saved." and Edit-form use; new §G for A315/A317/A318/A320; results template). Delivery -r. · 2026-09-23 (q) — A320 FIX BUILT: product names are trimmed before the non-empty check on create and update (PATCH could save an empty name). Siblings on branches/staff recorded, not fixed. Cloud deploy only. Delivery -q. · 2026-09-23 (p) — A318 FIX BUILT (products table scrolls, actions pinned right — Edit/Delete visible on every row; reproduced and verified in a real browser) · A319 FIX BUILT (web Branding page uses the till's contrast rule and lock surface via a synced copy; #F5B800 now accepted with black text, as on the till). Dashboard deploy only. Delivery -p. · 2026-09-23 (o) — builder Windows regression from -n fixed: -n quoted the command name (`"npx.cmd" …`) and cmd.exe then resolved npx.cmd's own folder to the repo (`Cannot find module C:\swiftpos\pos\node_modules\npm\bin\npx-cli.js`, owner's run); -o hands cmd.exe exactly -m's line (`npx.cmd "--yes" …`, which ran there) as one string (no DEP0190). -n itself landed: `b646b51`, all 9 files checksum-matched, CI #377 green. Delivery -o. · 2026-09-23 (n) — A316 FIX BUILT (web receipt-logo codec had no Buffer in a browser: Branding saves with a logo 400'd, web never printed a logo) · A317 FIX BUILT (product schemas accept a null description — web + till edits were 400ing) · A314 CLOSED (CI #376 on `74d29a1`) · new OPEN: A318 (products table clips Edit/Delete), A319 (web legibility rule drifted from the till's), A320 (update accepts a blank name) · tester's VERIFY-BRANDING-PHASE1 results recorded on A308/A278 · builder no longer trips DEP0190 on Node 24. Delivery -n. · 2026-09-23 (m) — delivery -l re-issued: commit `7a66044` carried only the -l manifest (the other 13 files were not extracted over the repo); -m ships them plus a Windows fix to `build-escpos-renderer.mjs` (`spawnSync npx ENOENT` on the owner's Git Bash — npx is npx.cmd and Node refuses a .cmd without a shell; pre-existing in the old builder too). · 2026-09-23 (l) — A315 + A314 FIX BUILT together: closing thank-you no longer duplicates the owner/delivery box (whole-line match, owner ruling; was live on every web receipt with no receipt_footer via the per-device default); SAMPLE-OUTPUT + out/*.bin refreshed; `npm test` now fails on artefact drift and CI fails on a stale web bundle (esbuild pinned 0.28.2). Counts unchanged (FIX BUILT stays open). Delivery -l. · 2026-09-23 (k) — v0.6.2 published; handoff written. · 2026-09-23 (j) — Tree row: v0.6.2, schema 53, migration 105 on prod (verify PASS). Fixes the CI red on `ea8416a`. · 2026-09-22 (i) — A310 CLOSED: the `GS v 0` raster printed perfectly on the client's XP-80 (owner photo 23:23). A315 opened (duplicate closing line seen on the same paper). VERIFY §F added; handoff `HANDOFF-2026-09-22.md`. Delivery -i. · 2026-09-22 (h) — A313 receipt-logo slice 4 (last) FIX BUILT: web Branding page gets the opt-in toggle + a receipt preview from the stored raster; bundle rebuilt (A310 in, raster helpers exported, reproducible); web live/routed/reprint receipts carry the logo under the same gate as the till. Receipt logo is now code-complete end-to-end; paper + browser + prod-migrate 105 owed. A-P3 →24. Delivery -h. · 2026-09-22 (g) — A312 receipt-logo slice 3 FIX BUILT: pixels over IPC, main thresholds via shared raster.ts into `logo_receipt`; print path gates on toggle + raster; tech editor gets toggle + WYSIWYG mono preview. 42/42 via real guard + real SQL; run-all 113/113. Two paper .bin artefacts for the printer. A-P3 →23. Delivery -g. · 2026-09-22 (f) — A311 receipt-logo slice 2 FIX BUILT: migration 105 `receipt_logo_enabled` (opt-in), local schema 53, `/pos/init` + pull carry `logo_receipt` + toggle (absent = keep local, null = clear), server CRUD validates the raster shape. Real SQL executed in test; run-all 113/113. PROD-MIGRATE 105 owed. A-P3 →22. Delivery -f. · 2026-09-22 (e) — A310 receipt-logo slice 1 FIX BUILT in shared/printing (raster.ts + image block + GS v 0; receipts only; malformed → dropped); A314 opened (reference artefacts stale). A-P3 →21. Delivery -e. · 2026-09-22 (d) — A306 main-side manager gate + A159 env docs; guard mutation-checked (one assertion re-pointed after it passed by reading a comment, rule 24); run-all 113/113. Delivery -d. · 2026-09-22 (b) — lead-dev housekeeping after the repo review: A309 CLOSED (CI doc-refs red, fixed in -a); A295 OPENED as the Phase 1 branding tracker (P1: receipt logo + receipt preview NOT built; A308/A278 target checks owed); A237 re-graded FIX BUILT (Go bridge is live, Node bridge retired); SCOPE-A295 status line corrected; §0 environment note corrected to Electron 43. A-P1 18→19. Gates: register-consistency, doc-refs, root-clean green. Delivery -b (docs-only, no zip). · 2026-09-21 (push-all) — consolidated delivery -q: A307 in-app menu template (Large-fries upgrade) + A278 live catalogue refresh (web→till, no restart) + A19 node→cloud relay RE-GRADED FIX BUILT (bench 28/28; 09-18 note was wrong) + A308 web Branding settings page (client-facing). Branding requirement met end-to-end. P3 →19. Bench: all suites + tsc + gates green. · 2026-09-21 (ctl) — A277 FIX BUILT: receipt already rendered CTL + sales compute it; real gap was ctl_rate not being settable. Wired ctl_rate into server EDITABLE (0..100) + dashboard Business Profile form. Bench: ctl-rate-editable 6/6, server+dashboard tsc 0. Owner: set a nonzero CTL, ring a sale, confirm the receipt line. Delivery -m. · 2026-09-21 (verify) — Branding chain A301–A304 CLOSED on target (Till 1): on-till pass §A–§F 25/25, 0 fail — lock-screen reflow/teal, tech feed, cloud store (migration 104 live), sync-down remote-wins, offline read, plus 0.6.0 regression. A306 update-banner check deferred to the next release. · 2026-09-21 (update-ux) — A306 auto-update UX FIX BUILT: update:status banner ("Downloading…"/"Update ready"), manager-PIN-gated "Restart & update now" → quitAndInstall(false,true) (visible progress, relaunch), install-on-quit kept, 2h gentle reminder. Fixes the silent-vanish the v0.6.0 update showed. Bench: wiring 13/13, ipc gates green. Delivery -j. · 2026-09-21 (ci) — A305 migration runner hardened: per-test timeout (SIGKILL a hang → named FAIL), bounded parallel pool (min(cpus,4)), --self-test wired into CI. Fixes the 30-min hang class. Bench: self-test 3/3. Delivery -i. · 2026-09-21 (sync) — A304 branding sync-down FIX BUILT: /pos/init serves branding + business_branding on the A291 version list; till pullCatalogue → applyPulledBranding writes the local mirror remote-wins (keyed by session business; null/node = keep local). Bench: sync-pull 12/12, server+desktop-main tsc 0, gates green. Target-only: e2e pull with migration 104 live + visual. Delivery -g. · 2026-09-21 (cloud) — A303 cloud branding store FIX BUILT: migration 104 business_branding (RLS + set_updated_at trigger) + server CRUD (GET/PUT /api/business/branding, persist-boundary validated) — the cloud half of A295 sync. Logo base64-in-row (SCOPE §3 asset_id deviation, noted). Bench: PGlite migration 8/8, server tsc 0, schema-drift/rls-coverage/api-routes green. NEXT A304: pos/init serve + desktop pull. Delivery -f. · 2026-09-21 (feed) — A302 tech-gated branding FEED FIX BUILT: BrandingEditor (accent picker + PNG/JPEG upload via prepareRasterLogo) mounted in TechPage, writes through A301 branding:set, audited. Bench: wiring guard 8/8 (2 mutations bite), renderer tsc 0, 19/19 gates. Target-only: the on-screen editor + lock-screen render (rule 16). Delivery -e. · 2026-09-21 — A301 (desktop branding WRITE path) FIX BUILT + merged to dev (PR #9, 35c7229): `branding:set` end-to-end + pure `brandingGuard` (accent / PNG-JPEG / 250 KB, SVG rejected) + renderer `prepareRasterLogo` (shrink-not-crop). Bench 18/18 + 19/19 static gates green; target-only per rule 16 (Electron test:desktop on the real ABI, prepareRasterLogo needs a DOM, visual lock-screen). CI caught a missed test-registration mid-flight — fixed (delivery -c). Deliveries: -a/-b/-c. · 2026-09-15 (verification session, one laptop + printer) — CLOSED on target: A265 A266 A260 A274 A275 A182 A235 A249 A251 A240 A245 A239 A241 A243 (14). A275 (remote day close) verified end-to-end. Spice/VAT path validated live on a real receipt. OPENED: A276 (P1, soda prints on kitchen ticket — web+desktop, cause pending), A277 (P2, receipt omits CTL line), A278 (P2, web→till changes need a restart; want instant push), A279 (P3, POS filter control). A273 kept open — picker renders but asks for a float even when the till already has an open drawer (should resume). NOT closed (tested on pre-Vercel-rebuild build, re-confirm): A259 A262 A257 A256 A179 A129 A157 D18. Group C (A160-A164, A19, A20, A24, D9, A22) blocked pending a 2nd enrolled till. See docs/VERIFY-LOG-2026-09-15.md. · 2026-09-14 (g) — CI FIX round 3 (delivery -g): test-migration-102 failed on its idempotency re-run — CREATE POLICY has no IF NOT EXISTS, so the second db.exec(SQL) errored "policy owner_all already exists". Fixed by adding DROP POLICY IF EXISTS before CREATE POLICY (payment_methods/86 pattern). This round is VERIFIED, not blind: installed @electric-sql/pglite on the bench and ran the migrations — all 26 migration test files pass (test-migration-102 6/6 incl. idempotency), check-rls-coverage OK, schema-audit total 0, check-schema-drift OK. tsc/Build/Server-suites unaffected (only migration SQL changed). Delivery: docs/MANIFEST-2026-09-13-g.md. · 2026-09-14 (f) — CI FIX round 2 (delivery -f): after -e, two jobs still red. (1) RLS coverage — migration 102 created day_close_instructions with no RLS statement; added ENABLE ROW LEVEL SECURITY + an owner_all policy (payment_methods/86 pattern; all real access is server-side service_role), and mirrored 86's auth.uid()+businesses bootstrap into test-migration-102.mjs so it runs in PGlite. (2) Root-clean (rule 19) — VERIFY-CLOSEOUT-2026-09-14.md was committed to the repo ROOT (my flat-file share); it belongs in docs/ (git mv, not in this zip). Verified locally: check-rls-coverage OK (102/102), schema-drift OK, schema-audit total 0, all doc/register gates green. Delivery: docs/MANIFEST-2026-09-13-f.md. · 2026-09-14 (e) — CI FIX (delivery -e): the -c commit (e2969da) turned CI red. Type-check ratchet + Build + Server-suites all failed on 5× TS2559 in day-close.ts (validation calls passed 400 where sendError's 3rd arg is SendErrorOptions); Schema-drift failed because schema-audit.py saw day_close_instructions referenced but not in scripts/schema-index.json. Fix: 5 validation calls → res.status(400).json({ error }) (matches sendError's documented intent for intentional 4xx); added day_close_instructions to schema-index.json. Verified locally: schema-audit.py total 0, check-schema-drift OK, day-close-relay 5/5, all doc/register gates green. tsc not runnable on the bench (no node_modules) — re-confirm on CI. No count change (A275 still FIX BUILT). Delivery: docs/MANIFEST-2026-09-13-e.md. · 2026-09-13 (d) — A22 → FIX BUILT (P2, delivery -d): promotion split-brain made loud. Rule-17: detection already existed (confirmServingRole/migration 74 records role_conflict_at + refuses credentials) but only console.warn'd — so the delta was surfacing. Till: tech:promoteToNode now probes the current node_url before the role flip and refuses (code node_reachable) if a live node still answers. Cloud: GET /fleet exposes servingConflict/conflictAt. Web: FleetPage shows a loud red split-brain badge (catches the reconnect-after-promote case). Guard: split-brain-surfacing.test.mjs (3, mutation-checked). Counts unchanged (FIX BUILT still open). NOT verified: live two-node scenario + tsc. Follow-up noted: node-local banner via sync response. Delivery: docs/MANIFEST-2026-09-13-d.md. · 2026-09-13 (c) — A275 → FIX BUILT (P1, delivery -c): remote day close (Option i-A). Migration 102 day_close_instructions (cloud mirror of node_instructions, one-pending-per-till-per-day). Cloud /api/day-close: manager instruct/overview (shifts.force_close|settings.manage), till pending/ack (device-scoped via X-Device-Id). Till syncAll pulls + runs executeCloseDay verbatim + acks (idempotent, best-effort). Web manager "Remote day close" panel in ManagerShiftTab. Never writes a business_days close on the cloud (closes flow up only). Guards: day-close-relay (5) + day-close-till (4) + day-close-web (4), all mutation-checked. Counts unchanged (FIX BUILT still open). NOT verified: full live loop + tsc + PGlite migration test (no node_modules/Postgres on bench). Cluster A273/A274/A275 now all FIX BUILT — the shift/day web-parity design is code-complete on the bench, pending target verification. Delivery: docs/MANIFEST-2026-09-13-c.md. · 2026-09-13 (b) — A273 → FIX BUILT (P1, delivery -b): web POS now adopts the covered till's identity (Option B). New branch-scoped GET /api/shifts/terminals; posTerminal.ts stores the covered till per tab; POSAuthContext sends x-device-id on every request incl. the 401-retry; ShiftModal picks the till, adopts before /open, folds into an existing drawer on 409, clears on close. No migration (cloud already keys on the header). Behaviour change: a web shift now requires covering an enrolled till. Guards: shift-terminals-endpoint.test.mjs (4) + web-terminal-identity.test.mjs (7), both mutation-checked. Counts unchanged (FIX BUILT still counts open). NOT verified: live two-surface + tsc (no node_modules on bench). Delivery: docs/MANIFEST-2026-09-13-b.md. · 2026-09-13 (a) — WEB SHIFT/DAY PARITY cluster opened per owner direction (desktop = main register, web = per-till backup); design locked in docs/SHIFT-DAY-WEB-PARITY-DESIGN.md. A273 OPENED (P1): web has no per-register identity — all web sales share one web:&lt;branch&gt; drawer and cannot fold into a till's drawer/day; chosen fix = Option B (web stands in for a chosen till). A274 OPENED+FIX BUILT (P1): web could ring a shift_id:null sale — no hard shift gate and the /current check swallowed failures; Charge/Send-to-Kitchen/Room-charge now disabled+guarded on currentShift and a failed check prompts open instead of falling through; web-only, additive; guard tests/web-shift-gate.test.mjs (5, mutation-checked); NOT verified on screen or dashboard tsc (rule 16). A275 OPENED (P1): no remote day close — chosen fix = Option i (cloud-relayed close_day instruction the till executes locally against a cashier-entered count; remote finalise, never a fabricated count). Counts: A-P1 18→21 (A273/A274/A275). check-register-consistency green (238 entries). Delivery: docs/MANIFEST-2026-09-13-a.md. · 2026-09-10 (D9-core) — D9 → FIX BUILT (core only). Built the node-authoritative held-order claim/lease/audit CORE per the owner's soft-lock model (docs/D9-decision-brief.md): nodeTabs.ts — atomic claimTab (409 on double-claim, D4 burn shape), 90s lease renewed on edit, holder-gated update/clear (423), clear + forced-steal audited. Proven: apps/desktop/test/node-tabs-claim.test.mjs (17 checks); desktop main tsc 0; wired into test:desktop. NOT built (deliberately): nodeServer routes + client + IPC/UI wiring, the audit→cloud-notifications hop, and — the whole point — the LIVE two-till behaviour (poll lag, offline mid-charge, real race), which only a two-till rig proves. Do not ship to a floor until that passes. Still P3. Delivery: docs/MANIFEST-2026-09-10-D9-core.md. · 2026-09-10 (D18) — D18 → FIX BUILT + guarded: the tech-token paste fix (PinPage onPaste routes an st2. token past the truncating reveal field) is present and now guarded by tech-token-paste.test.mjs (6, mutation-checked); pending an on-screen paste confirm on the amber build. A186 stays OPEN with NEW EVIDENCE: the db.close()-before-exit hypothesis was tested on the owner's Windows box and FALSIFIED — test-migration-47 crashed EVEN WITH the close added, so the libuv teardown crash is independent of closing the handle; the 6 edits were reverted (no dead non-fix code). Exact crashers: 47, 79, 41-42 (48/99 which never close do NOT crash). Next candidates: upgrade pglite, or subprocess-isolate each test. Still P3 (Ubuntu CI is the authoritative green). No count change. Delivery: docs/MANIFEST-2026-09-10-D18.md. · 2026-09-10 (D3) — auto-update WIRED (D3 OPEN→FIX BUILT), the last pure-build P1. Was a dormant scaffold; now electron-updater is a dep, autoUpdate.ts is built (tsconfig exclude removed) + called from index.ts (guarded), prod flavour publishes to GitHub Releases (oweyahillary/swiftpos), dev flavour publishes nowhere + is runtime-skipped by name, and a tag-triggered release.yml builds+publishes on Windows (closes A1 once a release is cut). Unsigned for now (SmartScreen on first install; cert = a secrets flip, not code). Guard: autoupdate-wiring.test.mjs (12, mutation-checked). Desktop tsc 0, 97/97 suites, gates green. NOT verified: the end-to-end update loop on a real Windows till (push a v* tag, install, bump+tag, watch it self-update) — owner-only. Delivery: docs/MANIFEST-2026-09-10-D3.md. · 2026-09-10 (combined) — four items in one delivery. D1 CLOSED (last open P0): the two-business owner-login dead-end was already resolved by the A158 enrolment work (desktop-login RETIRED→410; till uses enrolment codes, no picker); heading was never flipped; verified in source. A204 CLOSED (code): Stock Transfers Cancel now uses an in-app required-reason modal instead of a native window.confirm that sent no reason (server needs it, 400 reason_required); guard + mutation-check; dashboard tsc 0. A146 CLOSED (code): the webhooks UI was duplicated + diverged — BusinessPage had the full standalone WebhooksTab (test-send + delivery log) while SettingsPage had a stale inline subset; consolidated onto the shared component; guard + mutation-check. A18 re-graded P1 OPEN→P3 NOTE: nothing to fix (nodeServer.ts header already correct); it is a tracking marker for PHASE5 §3. Counts: A-P1 19→18, A-P2 22→21, D-P0 1→0 (ZERO open P0s). 96/96 suites, gates green. Delivery: docs/MANIFEST-2026-09-10-combined.md. · 2026-09-09 (g) — BROWSER VERIFICATION PASS (Claude-in-Chrome agent, owner+manager) + 3 fixes it surfaced. CLOSED 12 verified on screen: A212 A238 A207 A208 (manager portal), A216 A263 A261 A224 A229 A230 A217 (reports/receiving), A188 (POS table grid). Counts A-P2 29→22, A-P3 17→12. The agent found 3 real issues, now FIXED (bench: dashboard tsc 0, guards mutation-checked, need a visual confirm): A258 (owner Overview still stacked Top sellers/Payment methods — fix had only reached the manager view; owner grid swapped), A257 (empty category/product submit was a silent no-op — now shows "Name is required", Save enabled; both pages), A259 (owner Reports Staff Performance column BLANK — owner ReportsPage read stale s.name/s.cashier_id while the A259d server fix emits staff_name/staff_id; owner type+row corrected, phantom Branch column dropped). A262 could not be verified (shift report only prints — needs the till). Guards added to ui-reports-fixes.test.mjs (11 checks). Note: the A-P2 ID list undercounts the summary (pre-existing cosmetic drift, gate checks the summary only). Delivery: docs/MANIFEST-2026-09-09-g.md. · 2026-09-09 (f) — LIVE PRINT SESSION on the dev till (SwiftPOS Dev 0.5.39, real thermal printer): the owner verified the entire print-parity sweep + the P1 split-bill and 16 items CLOSED. P1: A242 (KOT prints), A254 (cut/margin/master-KOT), A268 (no double printing), A151 (by-item split collects the exact total). P2: A244 (test print), A248/A252/A250 (combo component routing + kitchen exclusions), A246/A255/A269 (Print Bill proforma vs receipt), A253 (send-vs-pay timing), A231 (Z report). P3: A247 (station order), A232 (doc logo), A233 (stock-take sheet). Counts A-P1 23→19, A-P2 38→29, A-P3 20→17. check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-f.md. · 2026-09-09 (e) — LIVE VERIFICATION on the dev flavour (SwiftPOS Dev 0.5.39): D17 CLOSED — dev build installs and runs, shows "SwiftPOS DEV" with the amber icon, and writes to %APPDATA%\SwiftPOS Dev separate from prod (data isolation confirmed); the dev/prod flavour is real and safe to trade on. A271/D7 order:create caveat CLEARED — a real sale went through the validated order:create boundary, saved to SQLite AND synced to the cloud, so D7 is fully closed with nothing outstanding. Register only: D17 FIX BUILT→CLOSED (D-P3 3→2), A271 live note added. check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-e.md. · 2026-09-09 (d) — A272 register hygiene (no code change): re-graded five items OPEN → FIX BUILT after a code-vs-register audit found them built but mislabelled — D17 (dev/prod flavour, all 4 artefacts built at v0.5.39), A151 (Split Bill under-collect claim is FALSE vs code — server rejects unbalanced legs via PAYMENT_MISMATCH; heading+desc corrected), A188 (hasLayout grid fallback in CashierScreen), A146 (WebhooksTab is a real mounted caller; flagged a duplicate inline copy), A139 (branch receipt migration+editor present). FIX BUILT still counts as open, so header counts unchanged; check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-d.md. · 2026-09-09 (c) — A271 CI follow-up: the desktop "Print resilience" job (test-print-resilience.mjs) went red after A271 — its body() helper string-searched ipcMain.handle('<channel>', which the rename to the validating handle() wrapper broke, failing the "station writes refresh ONLY the two station tables" guard. Stale guard, not a regression (station writes still call refreshStationsLocal only). Fixed body() to match either form (same fix as check-ipc-parity); mutation-checked; 55/55. Delivery: docs/MANIFEST-2026-09-09-c.md. · 2026-09-09 (b) — A271 CLOSED (P2) + D7 CLOSED: completed IPC payload validation across ALL 149 channels and added a coverage gate. Extended ipcValidate (nested object/array/enum/any + bare guards); central ipcSchemas.ts registry gives every channel an explicit schema/NO_PAYLOAD; ipcGuard.installValidatedHandle validates at the boundary (renamed 138+11 ipcMain.handle → handle). check-ipc-validation.mjs (in CI) fails on any unregistered or stale channel — mutation-checked. order:create validated against createLocalOrder but NEEDS_LIVE_TEST (one real sale on a dev till). Desktop main tsc 0; gates green; ipc-validate test 25→52; 96/96 offline suites. Delivery: docs/MANIFEST-2026-09-09-b.md. · 2026-09-09 (a) — A270 CLOSED (P2): CI was RED on `dev` (`1ab6121`) across 4 jobs and had been since ~A261/A266/A269 while entries claimed "gates green" (narrow local runs, not the full suite). Read all 4 CI logs verbatim, fixed each at source. REAL: dashboard `tsc` +6 (stale `escposRenderer.d.ts` vs its bundle across A252→A269 + a duplicate `branchName` from A255) — reproduced 6→0. TOOLING: `schema-index.json` missing `stock_transfer_items.quantity_received` (migration 101/A221) — regenerated additively; stale `schema-pending.json` entry for migration 77/A55 (its functions are live) — cleared per the gate's self-clearing rule (re-enables checks, does not silence). STALE GUARDS (rule 23/24, each mutation-checked): tiny-bridge A252/PaymentModal, ui-reports A261, print-documents ×4 docType (A234 moved them to documentSpecs.ts), reports-refunds Exports hub (was demanding the OLD window.open 401 bug — now asserts the authed downloadFile), mailer-transport (A200 contract), manager-receiving (premise made false by A221/A228 PO-create + transfer-initiate; replaced the "receive-only" blanket with the real no-stock-adjust invariant). All 96 test suites green under CI conditions; all gates green; additive/behaviour-preserving (no runtime path changed). No count change (opens+closes same session, bench-verifiable). Delivery: docs/MANIFEST-2026-09-09-a.md. · 2026-09-07 (ah) — A269 FIX BUILT (P2): owner chose to make Print Bill a proforma. Added a proforma flag through the renderer (BILL - NOT A RECEIPT header, no fiscal Bill No.), bundle, printRouted (receipt station only), and printGuestCheck (proforma:true, no number). Print Bill is now clearly a BILL, distinct from the payment receipt — resolves the receipt double. Bundle reproducible. Ships with A268. A-P2 37→38. Delivery: docs/MANIFEST-2026-09-07-af.md. · 2026-09-07 (ag) — A268 FIX BUILT (P1): POS double-printing. Kitchen/dispatcher fired twice when Send to Kitchen was used then payment (pay-first onSuccess re-fired unconditionally) — now skips if sentOrderIds set. Receipt double (Print Bill full receipt + payment fiscal receipt, different numbers) noted separately — needs owner call on making Print Bill a marked proforma (renderer flag). A-P1 22→23. POS smoke otherwise passed (Send to Kitchen, order type, Charge+auto-receipt with business name, extras open, docs, reports). Delivery: docs/MANIFEST-2026-09-07-ae.md. · 2026-09-07 (af) — A267 FIX BUILT (P1, ROOT): every POS api call 401d after the access token expired — getStoredRefreshToken was surface-keyed only (A260 fixed the access token fallback but not the refresh token), so a manager on the dashboard surface could not refresh (owner refresh key empty) → refresh failed → 401 cascade → business null (blank receipt A266, SwiftPOS docs A260). Fixed by falling back to any stored refresh token. This is the root cause; the earlier /api/business fetch fallbacks were symptom patches. A-P1 21→22. Delivery: docs/MANIFEST-2026-09-07-ad.md. · 2026-09-07 (ae) — A266 FIX BUILT (P1): after payment the receipt preview was a blank white box + no auto-print. ReceiptView returns empty when business is null, and useBusiness() is null on the POS surface for managers. PaymentModal now resolves business by fetching /api/business (POS token) when the prop is null (used for preview + print), and auto-prints once on success via the silent bridge path (desktop parity). A-P1 20→21. Delivery: docs/MANIFEST-2026-09-07-ac.md. · 2026-09-07 (ad) — A265 FIX BUILT (P1): the web POS Charge crashed (ReferenceError: receiptHeader is not defined) — A255 used receiptHeader/receiptFooter in CashierScreen (PaymentModal props + Print Bill) but never added them to the usePOSData() destructure; opening PaymentModal threw. Reached prod because the dashboard build is esbuild-only (no type-check), so an undeclared identifier only fails at runtime. Fixed by destructuring them. A264 extras were not the cause. A-P1 19→20. Delivery: docs/MANIFEST-2026-09-07-ab.md. · 2026-09-07 (ac) — A264 FIX BUILT (P2): web POS cart converges on the desktop shared core. Added the in-cart order-type selector (Dine in/Takeaway/Delivery) + surfaced Send to Kitchen · Hold in BOTH modes (was order_first-only); web-only extras (Print Bill/Transfer/Split/Room) moved below Charge. Read both carts fully; desktop has no coursing/extras (web-only, kept). Web-only; guard test 4. A-P2 36→37. Delivery: docs/MANIFEST-2026-09-07-aa.md. · 2026-09-07 (ab) — A262 FIX BUILT (P3, LAST of the 5 UI asks): shift report under Shifts, reusing the desktop shared renderShiftReport (bundled). GET /api/shifts/:id extended with by_method + cash reconciliation; new lib/printShiftReport.ts; "Shift report" button on ManagerShiftTab. Proven render: SHIFT REPORT (LIVE) / Eugene / cash recon = Expected 29,970 (matches Shifts page). Bundle reproducible; test ui-reports 7→8. Delivery: docs/MANIFEST-2026-09-07-z.md. · 2026-09-07 (aa) — A259d: THE Unknown fix. Owner ran the SQL: orders have a valid cashier_id (Eugene) resolving in users; the server computed the name into name/cashier_id but the frontend StaffRow reads staff_name/staff_id — a field-name mismatch was the whole bug (the A259/b/c attribution work was unnecessary for this, though harmless/robust). /staff now emits staff_id/staff_name/orders/revenue/avg_order_value/voids; traced to Eugene/3/13,600/4,533.33. Delivery: docs/MANIFEST-2026-09-07-y.md. · 2026-09-07 (z) — A259c: Staff still Unknown (avg fix confirmed live at KES 4,533.33). Root: those orders have null cashier_id AND null shift_id (offline/desktop-rung), no name snapshot. Now attributes an unresolved order to the shift whose TIME WINDOW covers it (branch + opened_at <= created_at <= closed_at/open); the open shift spans these orders. Guard updated. Diagnostic SQL provided if it persists. Delivery: docs/MANIFEST-2026-09-07-x.md. · 2026-09-07 (y) — A261b: the reprint button was added to OrdersPage.tsx (owner table view) but the manager Orders tab is POSOrderHistoryTab (card view) — added "Reprint receipt" there too (uses reprintOrderReceipt via the A260 token fallback). Guard extended to assert both views. Test 7 (still). Delivery: docs/MANIFEST-2026-09-07-w.md. · 2026-09-07 (x) — CONFIRM #2 (owner: Staff still Unknown + selector asks). Confirmed origin (HEAD 6e38865) all green. A259b: Staff "Unknown" persisted because those orders cashier_id do not match a users row — now attributes via the order shift (cashierOf = cashier_id ?? shift.cashier_id); also fixed Avg Order 0.00 (returns avg_order_value). A263 (P3): report selector — removed redundant Apply (auto-applies), fixed preset double-highlight via explicit active state, Today is the default on every tab. Test ui-reports 5→7. A-P3 19→20. Delivery: docs/MANIFEST-2026-09-07-v.md. · 2026-09-07 (w) — CONFIRM/RECONCILE. Pulled origin (HEAD d3895e9) and verified all recent work landed (A157/A248-A261). Found + fixed two drift items: (1) tiny-bridge A254 guard was stale — the A261 emit() change added a 4th param (reprint) so /function emit\(station, order, business\)/ no longer matched (code was correct, cut/feed/drawer still passed); relaxed the regex. (2) the A256 delivery (-q) files were skipped so check-doc-refs was RED — restored docs/A256-permission-backfill.sql + docs/MANIFEST-2026-09-07-q.md. All green now: print 29/29, validation 7/7, ui-reports 5/5, register/doc-refs/root/test-reg. Delivery: docs/MANIFEST-2026-09-07-u.md. · 2026-09-07 (v) — A260 + A261 FIXED. A260 (P2): documents printed "SwiftPOS" because accessKey() used the owner token on the dashboard where a manager only holds a POS token, so /api/business 401d and business stayed null — getStoredAccessToken() now falls back to any available token (one-line root fix; unblocks other manager-dashboard api calls too). A261 (P3): reprint receipt on Orders — renderReceiptEscPos takes a reprint marker; new reprintReceipt.ts re-renders the stored order as a "Duplicate Print" via the same renderer + bridge, wired to a button on the Orders row. A262 (shift report) still OPEN — next. Test +2 (5); bundle reproducible. Delivery: docs/MANIFEST-2026-09-07-t.md. · 2026-09-07 (u) — OWNER UI REVIEW (5 issues). BUILT: A258 (P3) Overview Top Items + Payment Methods side by side; A259 (P2) reports "Unknown" cashier (null name -> email fallback) + open shifts now appear in the period (was BETWEEN opened_at window excluding a 76h open shift). FILED for next build: A260 (P2) documents print "SwiftPOS" not client name (BusinessContext null for managers); A261 (P3) reprint-receipt action on Orders (renderer supports ctx.reprint; needs order-items fetch); A262 (P3) shift report under Shifts. Test +1 file (3). A-P2 34->36, A-P3 16->19. Delivery: docs/MANIFEST-2026-09-07-s.md. · 2026-09-07 (t) — A157 CLOSE TEST (owner UI): 1 login PASS, 3 edit-no-reset PASS, 4 category create PASS. Found + fixed A257 (P3): (a) rejected saves showed bare "Validation failed" — api client now surfaces the field-level errors array (field: message); (b) category placeholder was petrol-specific "e.g. Diesel" -> "e.g. Beverages". A157 itself: the create "failure" was a legit empty-name catch (no regression — payload sends null not "" for optional fields, base_price is parseFloat number). Test 5→7. A-P3 15→16. Delivery: docs/MANIFEST-2026-09-07-r.md. · 2026-09-07 (s) — CLOUD SWEEP finished (owner in a meeting; handled the remaining code). A256 FIX BUILT: review-first permission-backfill script docs/A256-permission-backfill.sql — grants only POST-onboarding default permissions (permissions.created_at > businesses.created_at, so it never undoes a deliberate removal) per the exact defaultRolePermissions.ts tiers, idempotent; STEP-1 preview then STEP-2 apply (not auto-run — security-sensitive + created_at unreliable on dump-seeded DBs). A54 reconciled: the false-confidence comment is ALREADY corrected in mailer.ts and the Resend HTTP path exists — remaining is owner action (set RESEND_API_KEY). So the cloud bucket code is done; A54/A146/A159/A141 remainders are owner-config/verify. No count change (A256/A54 stay open pending owner). Delivery: docs/MANIFEST-2026-09-07-q.md. · 2026-09-07 (r) — CLOUD SWEEP. A157 FIX BUILT: input-validation wired via new validateLoose (catchall passthrough — validates known fields, never strips device_id/tax fields) on /login, product create/update, category create; fixed a landmine where UpdateProductSchema kept CreateProductSchema.partial() defaults (would reset track_stock/variants on any update) — de-defaulted. Verified vs real schemas; guard test 5, mutation-checked. A141 reconciled: bulk ingredient import IS built (POST /api/stock/ingredients/bulk + BulkIngredientImport.tsx); remaining is an owner permission grant. A256 FILED (P2): systemic backfill of newly-added default permissions to pre-existing roles (A141 root cause). A50/A54 mail: code has the Resend path — owner must set RESEND_API_KEY; A146/A159 are verify/config. A-P2 33→34. Delivery: docs/MANIFEST-2026-09-07-p.md. · 2026-09-07 (q) — A255 FIX BUILT (P2): sweep after A254. (1) web receipts were missing branch name + owner address header + paybill/delivery footer + Powered by SwiftPOS (receiptHeader/receiptFooter not loaded; buildReceiptBusinessConfig did not set them; and the owner footer maps to thankYouMessage not the ignored footerText) — now fully wired, matches SAMPLE-OUTPUT.txt. (2) Print Bill proforma opened the cash drawer — routed receipt now openCashDrawer:false; drawer only on the payment receipt. Test 27→29. Ships with A254 as one morning deploy. A-P2 32→33. Delivery: docs/MANIFEST-2026-09-07-o.md. · 2026-09-07 (p) — A254 FIX BUILT (P1): hardware-reported print bugs fixed. (1) toEscPos cut/feed/drawer opts were never passed by any web renderer -> no paper cut (continuous) and no bottom margin on every ticket incl. the receipt; all renderers now go through emit() that passes them. (2) Master KOT (kot) rendered as a 2nd dispatch (kindOf mapped kot+expeditor both to dispatch) -> "2 dispatch, missing kitchen"; config now type-aware (kot = all-items KITCHEN copy, expeditor = dispatch). (3) blank routed tickets: printRouted now skips a kitchen/bar station with no matching items. Test 24->27; bundle reproducible. Web-only. A-P1 18->19. Delivery: docs/MANIFEST-2026-09-07-n.md. · 2026-09-07 (o) — A253 FIX BUILT (P2): print-parity Phase 4 (final) — send-vs-pay timing split. Send-to-Kitchen fires kitchen+dispatch, Charge fires the receipt, Print Bill is now a customer proforma (receipt only). All three triggers go through the one routed engine (printRoutedStations); printKOTs/buildKotEscPos/buildKOTHtml retired (printKOT.ts is types-only now) and the inert printBill.ts deleted. Bridge-only (old window.print kitchen fallback gone; errors never block the order). Test 24/24. Web-only. A-P2 31→32. Delivery: docs/MANIFEST-2026-09-07-m.md. · 2026-09-07 (n) — DOC-REFS FIX: origin cited the A250 and A251 delivery manifests (docs/MANIFEST-2026-09-07-h.md and docs/MANIFEST-2026-09-07-i.md) but the files were missing (their zips were skipped), so check-doc-refs was RED; added both. Also printBill.ts was still present (the A252 delete step was skipped) — remove it. After this, origin is fully green (print test 25/25, all gates). Delivery: docs/MANIFEST-2026-09-07-l.md. · 2026-09-07 (m) — DELIVERY RECONCILE (code caught up to the register). Confirmed origin/dev had A248+A249+A252 code but was MISSING A250 (kitchen exclusions: usePOSData/cashier-types/printKOT) and A251 (desktop escposBridge shared routing), and still had the retired printBill.ts — so the print test + dashboard tsc were RED (CashierScreen destructures kitchenExclusions that usePOSData did not expose). Earlier zips (-h/-i) were skipped when -j applied. This delivery ships the correct usePOSData.ts, cashier/types.ts, printKOT.ts, escposBridge.ts and deletes printBill.ts, bringing the tree to the consistent A252 state (test 25/25 green). No new finding — completes A250/A251/A252 already in the register. Delivery: docs/MANIFEST-2026-09-07-k.md. · 2026-09-07 (l) — A252 FIX BUILT (P2): print-parity Phase 3b (B-engine) — web now routes combo COMPONENTS by category via the shared engine (toUnits/stationsForCategory), fed from existing branch_printers (no migration, no UI change). New printRouted.ts + renderStationEscPos; Print Bill uses it; old all-items printBill.ts retired. Proven: combo Chicken(grill)+Soda(bar) → Chicken on GRILL ticket, Soda on BAR ticket. Chose B-engine over B-full (merging branch_printers onto print_stations/category_stations = migrate live config; deferred). Web-only. Test 25/25; bundle reproducible. printBill.ts DELETED (git rm in apply). A-P2 30→31. Delivery: docs/MANIFEST-2026-09-07-j.md. · 2026-09-07 (k) — A251 FIX BUILT (P3): print-parity Phase 2b — the desktop escposBridge now imports toUnits/stationsForCategory/idsByKind/isExcludedFromKitchen from @swiftpos/printing (A249) and builds CategoryRouting from its local DB (buildCategoryRouting = the same two SQL reads); private copies deleted. One copy, no drift. Behaviour-preserving (verbatim logic + identical SQL; characterization test pins it). Verified: escposBridge transpiles, no external consumer of the deleted symbols, unused imports dropped. NOT verified here: desktop tsc (CI on push) + runtime print (release gate: dev-flavour two-till trade before tills). Apply after -g/-h. A-P3 14→15. Delivery: docs/MANIFEST-2026-09-07-i.md. · 2026-09-07 (j) — A250 FIX BUILT (P2): print-parity Phase 3a — kitchen exclusions now applied. Reading the source corrected the plan (the web already routes by category via per-printer category_ids; the real gap was that /api/pos/init returns kitchenExclusions but the web ignored them). Bundled shared isExcludedFromKitchen; usePOSData exposes kitchenExclusions; printKOTs + printBill drop excluded items from kitchen-kind tickets only (receipt/dispatcher keep all). Verified: soda excluded → off the KITCHEN ticket, on the receipt. Component-level routing (combo component by own category) surfaced as a design fork, deferred. Web-only. Test 24→25. A-P2 29→30. Delivery: docs/MANIFEST-2026-09-07-h.md. · 2026-09-07 (i) — A249 FIX BUILT (P2): print-parity Phase 2a — extracted the desktop routing logic (toUnits/stationsForCategory/idsByKind/describeFromText/isExcludedFromKitchen) VERBATIM into shared/printing/src/routing.ts, DB-free (SQLite reads → a CategoryRouting arg). Characterization test (11) pins the behaviour; shared sample still reproduces SAMPLE-OUTPUT.txt (no drift). Unblocks Phase 3 (web bundles routing.ts directly). Phase 2b (desktop swaps its private copy — needs dist rebuild + desktop regression) deferred; no behaviour change anywhere yet. A-P2 28→29. Delivery: docs/MANIFEST-2026-09-07-g.md. · 2026-09-07 (h) — A248 FIX BUILT (P2): print-parity Phase 1 — the web now carries combo components (server /api/pos/init comboItems gains category_id; usePOSData consumes it; buildReceiptOrder expands combos into component units at print time, cart unchanged). Kitchen/dispatch tickets now show the combo breakdown (verified vs SAMPLE-OUTPUT.txt structure). Routing/exclusions/timing/spool are later phases (docs/PLAN-web-print-parity.md). Server needs deploy for category_id. Test 23→24. A-P2 27→28. Delivery: docs/MANIFEST-2026-09-07-f.md. · 2026-09-07 (g) — A247 FIX BUILT (P3): Print-Bill fanned tickets in arbitrary (API array) order; now sorts kitchen(kot)→customer(receipt)→dispatcher(expeditor). Studied the desktop print path fully (escposBridge printSale/toUnits/stationsForCategory + printWorker spool) and filed docs/PLAN-web-print-parity.md — a phased roadmap to close the real gaps (web cart has no combo components, no category routing, no kitchen exclusions, no send-vs-pay timing split, no persistent spool). Test 22→23. A-P3 13→14. Delivery: docs/MANIFEST-2026-09-07-e.md. · 2026-09-07 (f) — A246 FIX BUILT (P2): restaurant "Print Bill" was a browser dialog with an ad-hoc format that printed once; now renders Customer Receipt + KITCHEN + DISPATCH in the shared/printing format (matches SAMPLE-OUTPUT.txt) and fans them SILENTLY to the configured full-order printers via the bridge. Vendored the 3 station renderers into escposRenderer.js (byte-reproducible); buildReceiptOrder emits units from variants/modifiers; fixed buildReceiptBusinessConfig missing currencyCode (PAY: undefined, also on the live receipt). New printBill.ts; iframe/window.print deleted. Flat web cart → sub-items print as names, kitchen+dispatch print all items (matches the web full-order-printer model); 3 printouts needs all 3 printers configured. Test 18→22. A-P2 26→27. NOT verified: physical print. UI parity deferred. Delivery: docs/MANIFEST-2026-09-07-d.md. · 2026-09-07 (e) — A244 FIX BUILT (P2): "Send test receipt" and station test buttons failed with "connect XP-80:9100 ... no such host" — testPrint posted a BARE printer name as target, so the bridge dialed it as a network host instead of the Windows spooler. Fixed testPrint to send target: printer:<name>; real receipt/KOT paths were already correct. Dashboard-only, no exe rebuild. Test 17→18, mutation-checked. A-P2 25→26. · 2026-09-07 (d) — OFFLINE/NODE CLUSTER RECONCILE (docs-only, no code). Audited the cluster line-by-line against the tree and ran the pure-logic suites green on current dev: peer-relay 28/0, node-reference-bundle 25/0, node-reference-unpack 19/0, roster-snapshot 16/0, node-token-refresh + device-token 2/2. Confirmed BUILT ON BENCH + wired (endpoints /node/reference:305, /node/roster:320, /node/refresh:187 in nodeServer.ts; pullCatalogue node-first at syncEngine:751; promoteToNode roster pre-pull at ipcHandlers:2052): A19/A20/A24/A160/A161/A162/A163/A168/A179/A182 — retagged their headings OPEN->FIX BUILT so state is scannable (still OPEN in counts, rule 16; numbers unchanged). A164: SERVER half built (migration 92 + device-token 21/0) but DESKTOP cutover NOT built. A129: migration 90 in tree (prod-applied per 08-28), needs one delivery-sale confirm. Genuinely UNBUILT code: A22 (promotion split-brain), A23 (RPO/distribution-lag measurement). A18: doc reconcile pending. What is needed from the owner: two-till hardware verification per docs/OFFLINE-CLUSTER-verification-checklist.md — passing it closes A19/A20/A24/A160/A161/A162/A163 (+A168/A129). · 2026-09-07 (c) — A17 CLOSED (the only open P0): owner A101 offline-auth hardware checklist PASSED on two tills (dev flavour); Test 2 (cloud-down/node-up sign-in) + Test 4 (clock +30d, no expiry) prove the node-first offline-forever design, closing the day-15 lockout. dev→main release-checklist gate cleared. A19 (node→cloud sales relay) now unblocked; A160 (node-brokered refresh) likely covered — confirm. A-P0 1→0. · 2026-09-07 (b) — A245 FIX BUILT: removed the pairing-token copy-paste — the Go bridge (v4.1.0→v4.2.0) now authorises by trusted dashboard Origin OR token (token optional), added the Private Network Access preflight header so Chrome LNA does not silently block printing, and shipped a per-user logon installer (install-startup.bat). Origin allow-list is exact (swiftpos-dashboard/-three .vercel.app + loopback) with a safe subdomain matcher for a future owned domain — never wildcards vercel.app (proven: evil-x.vercel.app→403). Dashboard prints token-free from a trusted origin; token field now optional. Runtime-proven on the built binary; test 14→17 green + 4 new guards mutation-checked. Counts A-P2 24→25. Sits on top of A240–A243. NOT verified: real thermal print, Chrome LNA prompt on a till, full dashboard tsc. Delivery: docs/MANIFEST-2026-09-07-b.md. · 2026-09-07 — A239 PRINT AUDIT (pre-live). Read every A239 file before today's live test; it was not "done perfectly." Opened + FIX BUILT A240 (P1 security — the Go bridge was DNS-rebinding-exploitable and leaked printer names; added a Host allow-list on all handlers + token-gated /printers, bridge v4.0.0→v4.1.0, proven at runtime: rebound Host→403, no-token /printers→401, byte-forward intact), A241 (P2 — dashboard still read VITE_PRINT_SERVER_URL despite the "hard-coded, no env" claim, a silent-misroute trap; hard-coded the URL and corrected the test that asserted the opposite of its own name), A242 (P1 — "⚡ Print Server" kitchen tickets silently 400'd because printKOTs still spoke the old QZ contract; now renders KOT ESC/POS in-browser and forwards bytes like the receipt, with a browser fallback), A243 (P3 — retired dead printReceiptViaServer/printToQZ, honoured copies on the byte path, fixed the modifier field on receipts, refreshed docstrings). Counts A-P1 16→18, A-P2 23→24, A-P3 12→13. `tiny-bridge-printing.test.mjs` 5→14 assertions, all green + mutation-checked; retired the stale A235 `silent-receipt.test.mjs`; `go vet`/linux+win builds green; register/doc-refs/root-clean green. NOT verified here (rule 16): real thermal receipt+KOT print + Windows spooler RAW (owner's live test); full dashboard tsc/vite build (no node_modules — TS transpile-checked only). Owner action before A239 closes: confirm no VITE_PRINT_SERVER_URL on Vercel, rebuild+ship the .exe with this dashboard. Delivery: `docs/MANIFEST-2026-09-07-a.md`. · 2026-09-03 — A196 + A198 CLOSED (prod-verified). Root cause of both "not showing on prod" reports was a FAILED Render deploy that left the prod server on an old build — the same cause as the `/api/admin/migrations` 404 (A154 panel worked on dev, 404 on prod). Prod redeployed from `main`; `/api/admin/migrations` now 401 (present). A196: void pulls the KDS ticket, refund pulls it only if not yet started — all three cases confirmed on prod. A198: Branches-tab Enrol till shows the code card. Counts A-P2 21→19. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 (admin) — ADMIN PORTAL CLEARED (owner-run browser pass + one build): A69 (enrol-code mint, Overview path), A147 (web-access-expiry wiring; the other two endpoints were already-wired false positives), A70 (enrolled-device roster), A154 (DB-migrations panel — BUILT this session: `GET /api/admin/migrations` + `MigrationsPage` wired into `AdminPortal` + `schema_migration_runs` allowlisted in `check-api-schema-drift`; all gates green) — all CLOSED 2026-09-02 (rule 16). Opened A198 (Branches-tab "Enrol till" minted a single-use code with nowhere to display it — silently burned; P2) + FIX BUILT same session (code card now renders on the Branches tab). Counts A-P2 22→21, A-P3 8→6. Next free ID A199. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 (later) — PROD RETEST + CLOSE (swiftpos-prod-mype, owner-run, post dev→main merge PR #5): A187 void/refund (void no-500 confirms migration 96 applied on prod DB; refund keeps Completed + reversal line), A191 /kds-no-logout, A3 KDS delivery/advance, A144 stock-track+threshold slice — all PASS on prod → CLOSED 2026-09-02 (rule 16). Opened A195 (refunded orders show "Completed" with no visual distinction, P2), A196 (voided/refunded orders still shown on KDS — ticket not cancelled on void, P2), A197 (A144 remainder: transfer approve/complete + direct branch-stock set still UI-unwired, P2). Counts A-P1 20→17, A-P2 20→22. Next free ID A198. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 — DEV-BOX PASS (swiftpos-20c2 test box, browser test, cloud/dashboard): A187 void/refund, A191 /kds-no-logout, A3 KDS delivery, A144 stock-tracking all verified GREEN on dev with evidence (A187's successful `voided_by` write proves migration 96 is applied on that box); all four STAY OPEN pending the same retest on `main` post-merge + on the prod DB (rule 16). Opened A192 (KDS masks a 401 ticket-fetch as "all clear", P2), A193 (Refund has no audit-log view, P2), A194 (no customer-name field at POS, P3). Counts A-P2 18→20, A-P3 7→8. Next free ID A195. `check-register-consistency` + `check-doc-refs` green. · 2026-08-29 — REGISTER RECONCILED (docs-only, no code): A183 repo-debt CLOSED — reconstructed the proving test `tests/order-number-per-device.test.mjs` (6/6 real SQLite, mutation-checked) and its `-p` delivery manifest `docs/MANIFEST-2026-08-27-p.md`; `check-doc-refs` + `check-test-registration` green, the durable fix is now provable in-repo. Trued up the stale Tree line to the tree: desktop v0.5.35→**v0.5.38**, migrations →90→**→94** (93 & 94 live in prod), last pushed `d70fa0e`→`0000804`, post-A111→post-A184. No finding opened or closed by this edit; `check-register-consistency` green. · 2026-08-28 — VERIFIED ON A REAL WINDOWS TILL (SwiftPOS v0.5.38 · win32): the four live P0s are CLOSED — A181/A183 (online loop `T001--1` on the cloud DSR + offline sales drained to 0 on reconnect, no collision, migration 94 live), A167 (offline PIN sign-in, no NULL-token crash), A152 (offline auth fell through on a real Render 503 and still rejected a wrong PIN), A177 (queue drains on reconnect). A17 stays OPEN (a build task, not verifiable this session). Open P0 5→1, P1 20→19. Outstanding non-blocking: A183 in-repo test + its `-p` delivery manifest still missing (rule-14 debt); A181 historical `T2--%` recovery query un-run. SECURITY still open: rotate `DATABASE_URL` + the exposed GitHub PAT. · 2026-08-27 — A167 FIX BUILT (bench, OPEN P0 pending real-till test): offline PIN sign-in threw `NOT NULL constraint failed: staff_session.token` at its LAST step — `signInLocal` inserted `token=NULL` into a `token TEXT NOT NULL` column, so every offline/5xx fallback (A17/A152/A160) died on the write it routes to. Fix: write `''` not NULL (the reader already coerces it — `tokenStore.read: unwrap(token_enc) || token || ''` — and `configureStaffSession('','')` already means empty in memory); no migration (rule 13). Reproduced against the real schema, then greened; NEW `tests/offline-signin-write.test.mjs` runs the real INSERT (mutation-checked: NULL → red naming the column). Gap that hid it: `offline-auth-fallback.test.mjs` models the ROUTING only, never the write (rules 8, 24). · A168 FIX BUILT (bench, P2): order-push 401 refreshed `refreshStaffToken()` unconditionally, so an OFFLINE order (owner-token push) had nothing to refresh and sat pending. Now refreshes the token the push actually sends via new pure `selectPushRefresh` in authTransport.ts; NOT the price path's staff||owner fallthrough, which would reattribute a staff order. New real-function test. · A169 OPENED (P1, NOT fixed): offline sales attribute to the OWNER because the server sets `cashier_id = req.userId` and an offline shift pushes under the owner token — blocker named (needs A164 desktop cutover or a signed roster claim). Delivery: MANIFEST-2026-08-27-b.md (supersedes -a). · A170 CLOSED (gate, rule 6): new `check-notnull-writes.mjs` flags a literal NULL written into a NOT NULL local column — the A167 class. Sweep found A167 was the only instance; self-tested 6/6 + mutation-checked on the real file (`ipcHandlers.ts:415`), wired into CI + auto-discovered by run-all, green on the tree. Delivery: MANIFEST-2026-08-27-d.md. · A171/A172/A173 CLOSED (docs + hygiene gate, unattended-safe): A171 formalised rule 24 into §0 (it was cited by ID with no home); A172 added `check-root-clean.mjs` enforcing rule 19 (no stray docs/zips/patches in root, self-test 9/9, green, CI-wired); A173 removed the byte-identical dup `docs/MANIFEST-2026-08-20-a (1).md`. Delivery: MANIFEST-2026-08-27-e.md. · A169 FIX BUILT (bench, Option A — owner-approved): offline sales now credit the real cashier. Till sends the cashier in the SHARED cloud-order payload (peer push + node relay identical); server trusts it only under an owner/device token and only when it validates like verify-pin (active, in-business, branch access) — staff-PIN tokens stay authoritative. Pure `pickCashier` unit-tested 11/11 + payload 5/5; server+desktop tsc clean. STILL OPEN P1 pending live server + real-till verification. Desktop change → version bump due at build (rule 15). Delivery: MANIFEST-2026-08-27-f.md. · A174 CLOSED (fixes A172's own false positive): check-root-clean now respects `.gitignore` via `git check-ignore`, so it stops flagging gitignored `.patch`/`.zip` leftovers (rule 23 — a crying-wolf gate) while still catching a real committable stray. CI was already green (clean checkout has no ignored files). Delivery: MANIFEST-2026-08-27-g.md. · A175/A176 CLOSED (revived two rotted desktop suites): `test:pin` (8→17/0, was throwing "no such table: device_config" because A17 added a `getDeviceConfig` dependency the shim lacked — plus new A17 no-expiry coverage) and `test:sync` (18/11→29/0, was throwing before the cloud pull because A24 added `fetchReferenceFromNode` the shim lacked). Both stale-shim, test-only, no app code — rotted because desktop tests don't run in CI. Delivery: MANIFEST-2026-08-27-h.md. · A177 OPENED + FIX BUILT (P0, bench — root cause of the field "6 pending / 0 failed / Force sync does nothing"): sync fetches had NO timeout and `_isSyncing` clears only in `finally`, so one hung connection (black-holed socket / cold-start stall) wedged `_isSyncing=true` forever and every later sync incl. Force sync returned "Sync already in progress" — queue never drained, orders invisible (0 failed). Reproduced end-to-end in a sandbox on the real compiled engine (hang → wedge; fast-fail → correctly escalates to failed). Fix: `syncFetch()` AbortController timeout on all 15 calls + `_syncStartedAt` stale-guard + break-the-batch-on-timeout + push failures now hit the durable log. New `sync-timeout.test.mjs` 5/5 in the desktop chain; regressions sync 29/0 pin 17/0 peerrelay 28/0. Server verified healthy from the sandbox (POST /api/orders 401 in 0.2–0.6s, no cold-start). STILL OPEN pending real-till confirmation the queue drains. Desktop change → version bump + tag after build (rule 15). Delivery: MANIFEST-2026-08-27-i.md. Next free ID A178.** · A178 CLOSED (sync visibility + decouple, from reading the field till's DB — all orders were synced; the "6 pending" were shift/day/float/expense records the push code logged NOTHING about): `runPushStages()` decouples the five push stages so a throw in one (e.g. a shift-push SELECT on a missing column) no longer skips the order push; shift/price push failures + successes now hit the durable log; `getSyncStatus` gains a per-table `pendingBreakdown`; and the Technician menu gains a real **Test connection** (reaches the server, not just `net.isOnline()`) + **View log** (reads `swiftpos.log` on-device) + the pending breakdown. New `sync-decouple.test.mjs` 6/6; regressions green; main+renderer tsc clean. TechPage UI target-only (rule 16). Desktop change → version bump + tag after build (rule 15). Delivery: MANIFEST-2026-08-27-j.md. · A179 FIX BUILT + SELF-HEAL (P1 — the actual cause of the field "6 pending that never move," found from the log once A178 made the shift push visible): till-created expenses got a non-UUID id (`exp_<ts>_<rand>`) that 500s the cloud uuid column (22P02) and, batched with shifts/days/floats, blocks the whole cash push. Generator → `uuid()`; startup self-heal regenerates stuck non-UUID pending expense ids (safe — never synced, nothing references expenses.id; idempotent), so a stuck till unblocks on next start. `expense-id-repair.test.mjs` 5/5, verified against the real till DB. Follow-up: server should reject bad rows individually so one row can't strand the batch. Delivery: MANIFEST-2026-08-27-k.md. Next free ID A180.** · A180 CLOSED (server robustness — the general form of A179): `/api/sync/push` batched the expenses upsert and 500'd the WHOLE push on one bad row, so a single malformed expense stranded every shift/day/float behind it. Expenses now isolate per-row like floats/shifts/days — a non-UUID id is rejected with `invalid_id` (client parks it as conflict) and the rest land. Pure `partitionByValidId` guard 8/8 + mutation-checked; server tsc clean. Server-only, no desktop bump. Delivery: MANIFEST-2026-08-27-l.md. · A181 OPENED + PART-1 FIX (P0 — the ORIGINAL "synced on the till, absent from the cloud", root-caused from the cloud data): order numbers are `terminal_code--localSeq`, the cloud is UNIQUE(business,branch,order_number), so a reinstalled/second till reusing `T1` over an earlier till’s numbers gets 409’d — and the client wrongly marked 409 as `synced`, silently losing every colliding sale (cloud holds T1--1..T1--25 from the old till; the new till’s 26/27 Aug orders all collided and are absent, ~KES 12,510). Part 1 built: 409 now surfaces as `failed`+logged, never synced (`order-409-not-synced.test.mjs` 5/5). Mitigation: give each till a distinct terminal code. OPEN pending owner decision on robust uniqueness + recovery of the lost orders. Delivery: MANIFEST-2026-08-27-m.md. · A182 OPENED + BUILT (P2, overnight request — attacks the ROOT of A181): a reinstalled till gets a new device_id and is re-named "T1" by hand, colliding. Now the desktop reads a stable MAC (`machineFingerprint.ts`, deterministic; 8/8) and sends it; the cloud binds it (migration 93) and on re-enrol returns the machine’s previous terminal code/name (`findPriorTerminalByMac`/`pickPriorTerminal`, 7/7) which the till adopts — so a reinstall keeps its identity. Plus `docs/RESTORE-GUIDE.md` for session restore (2nd ask). server+desktop tsc clean; enrol-UI pre-fill + real-hardware MAC = target-only. Delivery: MANIFEST-2026-08-27-o.md. · A183 OPENED + BUILT (P1 — the DURABLE fix for A181): the cloud enforced order_number unique per (business,branch), but a number is a per-till value, so two tills/one reinstall colliding lost sales. Migration 94 makes it unique per (business,branch,COALESCE(device_id,''),order_number) — device_id is already on every till order, so identical numbers coexist by device; genuine re-push still dedupes by idempotency_key; NULL-device web/legacy orders stay branch-unique. No code change. `order-number-per-device.test.mjs` 6/6 on real SQLite. Target-only: applying the DDL on prod (safe/strictly-more-permissive; run in a txn, confirm row count). Delivery: MANIFEST-2026-08-27-p.md. · A184 OPENED (P2, end-of-saga UI request): the cloud Terminals/fleet screen shows every till as "SwiftPOS till" with no device name, terminal code, MAC, active cashier/shift, or role — indistinguishable rows, and the "not syncing" banner counts decommissioned ghosts. Needs identity columns + a retire/merge action; MAC populates once the A182 build has checked in. Delivery: TBD. Next free ID A185.** — 2026-08-24 (batch -i) — A160 Phase-b FIX BUILT: the branch node now BROKERS a session refresh for an offline peer. New POST /node/refresh (X-Node-Secret auth) proxies the peer's refresh token to the cloud; syncEngine falls back to the node when the cloud is unreachable/5xx (A152 pattern), never on a 401. Refresh token is the device credential — no new secret, no migration. New node-token-refresh.test.mjs (9, mutation-checked). OPEN P1 pending two-till verification. Delivery: MANIFEST-2026-08-24-i.md.** — 2026-08-24 (batch -h) — A159 DRY-RUN SHIPPED: terminal write guard in requireAuth denies a desktop-surface token from writing dashboard data (products/prices/users/settings) — closes the stolen-token gap left by A158's credential removal. Default-deny by surface + a 5-entry till allowlist. Log-only until TERMINAL_WRITE_ENFORCE=true, so it can't break sync. New terminal-write-guard.test.mjs (19, mutation-checked). OPEN P2 pending enforce-flip. Delivery: MANIFEST-2026-08-24-h.md.** — 2026-08-24 (batch -g) — A158 FIX BUILT (bench): owner email/password login on a till RETIRED at every layer (App.tsx enrol-state + EnrolPage, auth:login IPC/preload/posApi removed, /desktop-login tombstoned 410); enrolment code is the sole activation; sign-out clears staff only (device stays enrolled); web /login untouched. New terminal-activation.test.mjs (mutation-checked) + auth-surface repointed. OPEN P1 pending amber-build verification (rule 16); rollout = tills-first before the server tombstone. Delivery: MANIFEST-2026-08-24-g.md.** — 2026-08-24 (batch -f) — A157 reconciliation map (docs-only, no code per rule 18): confirmed at PAYLOAD level that force-wiring the four validation schemas would 400 currently-valid production requests — product create sends `description:null` + `image_url:''` which the schema rejects, and 13 handler fields would be stripped; `/login` also reads `device_id` (stripped → device binding breaks). NOT wired (the "nothing broken" instruction). Per-schema safe-wiring recipe recorded; lowest-risk first step = category POST with `.passthrough()` after a DB-column length check. Stays OPEN P2 (per-route reconciliation + target test to close). Delivery: MANIFEST-2026-08-24-f.md.** — 2026-08-24 (batch -e) — A20 + A24 source passes (docs-only, no code per rule 18): confirmed at source that the node replicates only the six sales tables (`REPLICATED_TABLES`, origin-device/seq fan-out) and serves NO reference data downstream (`nodeClient` pulls `/node/since` only) — so a promoted peer has no roster (A20) and an offline peer's catalogue/prices/staff/settings go stale (A24). Key finding: the filed "extend `collectDistribution`" one-liner is wrong at source — reference data is cloud-authoritative/mutable/no-seq and needs a distinct node-authoritative SNAPSHOT channel; A20 is a special case of it. Concrete change maps + the `business_settings.branch_id` / dual-exclusion sub-bugs recorded in each entry. Both stay OPEN P1 (target-only to build). Delivery: MANIFEST-2026-08-24-e.md.** — 2026-08-24 (batch -d) — A152 FIX BUILT (bench, still OPEN P0 pending real-till test): offline PIN sign-in now falls through to node/cache when the cloud is DOWN-but-answering (5xx), not only on a thrown error; node leg widened 503→all-5xx; owner login gives a clear cloud-outage message instead of "Login failed"/crash. New `apps/desktop/src/main/authTransport.ts` + mutation-checked `tests/offline-auth-fallback.test.mjs` (20 assertions). Desktop version bump due at build (rule 15). Delivery: MANIFEST-2026-08-24-d.md.** — 2026-08-24 (batch -c) — A156 CLOSED (retired 12 orphaned helper value-exports across dashboard/desktop/server; 2 doc-coupled ones — `getLocalSchemaVersion`, `isTerminalCodeTaken` — excluded and flagged; deletions-only, full suite 40/0) · A157 opened (P2, input-validation schemas written but unwired — NOT auto-wired because the strip-on-parse middleware would drop live fields incl. login `device_id`; safe path needs per-route reconciliation + live test). Delivery: MANIFEST-2026-08-24-c.md. Next free ID A158.** — 2026-08-24 (batch -b) — A155 CLOSED (greened `check-doc-refs` — reworded `HANDOFF-2026-08-23`'s two dangling references to the outputs-only live-test checklist; branch-tip gate suite now fully green) · A153 follow-up done (pruned the two orphaned `computeUnitPrice`/`computeLineTotal` exports from dashboard `lib/cart.ts`; desktop copy live, untouched). Delivery: MANIFEST-2026-08-24-b.md. Next free ID A156.** — 2026-08-24 (batch -a) — A153 CLOSED (retired four superseded/orphaned dashboard-POS prototypes — `OrderHistoryTab`, `VoidModal`, `BranchSelectScreen`, dashboard `VariantModal`; deletions-only, bench tsc+build+gates green, rule 9) · A154 opened (P3, build the admin DB-migrations panel — `MigrationsPage.tsx` front-end exists, `GET /api/admin/migrations` backend never built; kept-and-to-build per owner). Delivery: MANIFEST-2026-08-24-a.md. Next free ID A155.** — 2026-08-23 — A140-A148 opened (dashboard/admin, docs-only, no zip per rule 18).** A140/A141/A142 = feature gaps in the products area: product bulk CSV import exists but is reachable only for `minimart` (A140, one wire), no bulk ingredient import incl. opening stock (A141), no bulk product-image upload (A142). A143-A148 = an "endpoints live, UI unwired" sweep — a static cross-reference of all 309 server endpoints against every `/api/` caller in dashboard/admin/desktop (matcher fixed for query strings, the admin `fetch` wrapper, and `` `${BASE}/api/…` `` calls); 39 endpoints have no client caller, of which the genuine dashboard/admin gaps are grouped as A143 (report exports 1-of-7 + inventory report), A144 (inventory/stock write-actions), A145 (branch↔user assignment), A146 (notifications/webhook observability), A147 (admin-portal endpoints), A148 (misc: modifier-create, flags, qr settings, loyalty settings read). External/till/node/tech callers and the retired `/api/enrol/code` (410) excluded; three ambiguous endpoints held for a per-page check, not entered. All static/bench (rule 9); none browser-confirmed (rule 16). `check-register-consistency` re-run green. **A149 opened (2026-08-23, docs-only): `apps/admin` has no CI type-check or build — the ratchet is invoked `server dashboard` (admin dropped) and `typecheck-baseline.json` has no admin key, so 68 `tsc` errors accrued unseen; found during A147.** **A150 closed (2026-08-23): `apps/server/.env.example` refreshed from source — retired `TECH_HMAC_SECRET` removed, production-required + at-rest + M-Pesa/eTIMS/mail vars added; render.yaml stays the deploy source of truth.** **A145 re-scoped + raised P2→P1 (2026-08-23): not a UI gap — branch↔user assignment is already wired via the staff flow; the standalone `/branches/:id/assign-user` + `/remove-user` routes are a redundant AND under-guarded writer (requireAuth only, no `staff.manage`, no business scoping → within-tenant privilege escalation + cross-tenant write). Recommend retiring both; retirement patch held for owner go-ahead.** **A151 opened (2026-08-23, P1): restaurant Split Bill (by-guest) under-collects — the pay loop never advances past guest 1 (`splitPayingGuest` never incremented; `onSuccess` frees the table without looping), and there is no even-split mode. Money-critical; not fixed on the bench. Surfaced while evaluating A8.** **Next free ID A152.** — 2026-08-22 — register trueing-up (code↔register audit, bench/static, rule 9). **A68, A71, A72 CLOSED** — verified present and wired on dev: A68 `appFlavor.ts` called from both web apps' `main.tsx`; A71/A72 `DevicesTab.tsx` renders branch/role/last-active/version + rename + stale badge. **A69, A70, D18 confirmed code-complete on dev but kept OPEN** pending a browser pass (rule 16). Notes for the next reader: A73 records its nav link as *restored* (not re-confirmed on bench); A12 shows *FIX APPLIED pending live check*. No code changed — docs-only, no zip (rule 18). Still outstanding at the process level: no handoff covers A112→A139, `schema-index.json` is stale (missing `branch_settings`), and two migration files share number 90. — 2026-08-20 — A133 opened (owner dashboard Settings consolidated into a three-section Settings group — Users and access / Devices and printers / Business, each a tabbed page; Table Turnover→Finance, KDS→top level, Payment methods→Business; 6 new files + `App.tsx`/`DashboardLayout.tsx`, back-compat redirects for old deep links; dashboard `tsc` AND `npm run build` both green on-bench; manager parity = Slice 2, specified in MANIFEST-2026-08-20-a but not built; browser confirm + owner sign-off pending; nothing merged) · A134 opened (Business › Profile tab deferred — the one genuinely new page, needs its field list before build). · A135 opened (browser review of A133: KDS board renders blank + adding a table fails — two pre-existing runtime bugs A133 only made reachable/visible, need a live node+DB to diagnose; nav-highlight + KDS array-guard fixes shipped under A133 follow-up). A136 opened (server queries columns absent from schema — stock_movements.business_id, users.pin; + new gates check-api-routes.mjs & check-api-schema-drift.mjs wired into CI with self-tests). A137 closed (bulk-create tables "Add multiple" — typed count, T-numbered, empty-state + header; auto-seed-20 declined by design). A138 closed (catch-less mutation sweep — Parking/Minimart/Petrol settings now surface save/delete errors like Restaurant; 0 swallowers remain). A134 closed (Business Profile tab — Slice 1: owner-editable identity via PATCH /api/business + business-wide receipt header/footer + 24h; currency locked after sales) · A139 opened (per-branch franchise receipt/hours override — cross-stack incl. desktop till, PROD-MIGRATE). **Next free ID A140.** — 2026-08-19 — A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` in migration 58 while the feature stayed live and Zod-accepted; A128's twin; fix = migration 90 re-admits `delivery` + new gate `check-push-domain-parity` wired into CI; PGlite-verified 9/9, mutation-checked; **NEEDS PROD-MIGRATE 86→90**) · A130 opened (Aggregators report queries `order_type='aggregator'` which no path writes — a dead report; a wiring decision, not a widen) · A125/A126/A127 body+changelog rows added (rule-14 catch-up: admin purge Stage-2 preview, Phase-3 glass refresh, admin Branches tab — all shipped in git without an entry) · A131 closed (delivery orders now deduct packaging, uniform with takeaway — one-condition fix in `stockEffects.ts` + test source-pin; no prod-migrate, ships with the server) · A132 closed (dashboard nav UI: accordion + desktop SVG icons; menu labels left unchanged per owner review — presentation only, no logic). **Next free ID A133.** — 2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). (A125/A126/A127 rows now added — see the 2026-08-19 entry above.) — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
+| Tree | `dev`, post-A184 (last pushed `f89b8ff`; this edit commits on top), desktop **v1.0.20** (A551–A571: kitchen and receipt print fixes, sales on account, analytics decisions, zero-stock setting, other branches' stock and requests, credit limits, forced password change, cloud trial, installer download, menus as top tabs, barcodes and labels) — before it **v1.0.19** (A527 the manager's four cash lines, A526 Electron 43.7.7) — before it **v1.0.18** (A517 lazy loading, A518 promotions charged, A519 Sell check, logs to support) — before it **v1.0.17** (A512 one startup entry, A513 low-impact start) — before it **v1.0.16** (A494–A496 security audit fixes and update delivery through the branch server, A499 cashiers land on the POS, A500 bill-number clashes, A501 branch sync self-heal, A498 receipt payment block) — before it **v1.0.15** (A489 TLS on the shop network, A490 one permission catalogue, A491 the owner sets it, A492 the branch M-Pesa number on the till) — before it **v1.0.14** (A483–A486 sync, branch server and security audit) — before it **v1.0.13** (A482 menu purge on the till, A481 managers' Monthly pack, A480 local sign-in branch + upgrade, A479 lock screen) — before it **v1.0.12** (A477 renewal handshake + machine identity; A472 menu pages, A473 fast PIN sign-in; A468 Overview like the web's, A470 till feel and POS grid speed; A466 the Monthly pack on the till, an expense Not from a drawer on the server; A465 cash in / out and expenses on any drawer from the branch server; Overview cards without icons) — before it **v1.0.11** (A459 staff edits offline + the branch-wipe fix; A460 premium screens with the online licence; A380 backup folder; A197 transfers; A461 kitchen voids always need a manager, 'Eat now, pay later' switch) — before it **v1.0.10** (A453 cashier money switch, A454 cashier's Z copy and Windows Z printing, A455 monthly pack — migration 130, A456 receipt copies, A457 Overview, A458 Close Branch totals) — before it v1.0.9 (A452 Close Branch with shifts and confirmations, the server's date final; expected figures at confirm; expenses filters) — before it v1.0.8 (A448 the till works on its own: stations, menu, staff and PINs changed offline; clashes to the owner — migration 129, local schema 71; A449 sync body time limit, a wrong branch access code shown; A450 business name follows the web, receipt M-Pesa line, Approvals count; A381 logo through the branch server) — before it v1.0.7 (A446 staff list on every till, PIN and session fixes, print stations follow the cloud; A447 a manager records an expense), v1.0.6 (A443 the branch server shares updates with its tills, A444 order items + reprint + void / refund for managers, A445 offers — migration 128, local schema 70) — before it v1.0.5 (A442 shift report by cashier, A429 payment methods per branch — local schema 69, A438–A441 cashier filter and staff performance, A435–A437 branch server join notice, restart and clean shutdown, A424 web sign-in, A422 help pictures) — before it v1.0.4 (A425 menu choices follow the cloud, A427 tills join the branch server by Allow) — before it v1.0.3 (A412 menu template, A413 batches and expiry, A414 wastage on the till, A415 the till signs in as itself; migrations 126–127) — before it v1.0.2 (A409 cloud fix, A410 branch server is the only cloud link, A411 station routing saved on the till first) — before it v1.0.1 (A408: station categories on the till say why a tap did not save) — before it v1.0.0 (A404, A405 — the first major release) — before it v0.6.39 (A401: a shift closed on the web closes on the till) — before it v0.6.38 (A397: printing to a Windows printer on a slow PC; also carries the A394 stock-count freeze on the till) — before it v0.6.37 (A387: what cashiers see in History, by payment method; A388: a manager approves pay outs and expenses; migration 118) — before it v0.6.36 (A386: the product is ZapTill — every name people see) — before it v0.6.35 (A384: Help — what to do when, and the shop's own tech to call) — before it v0.6.34 (A382: the business day ends at the owner's cut-off) — before it v0.6.33 (A379: free delivery — the shop pays the rider; migration 115) — before it v0.6.32 (A377: one installer for 64-bit and 32-bit Windows) — before it v0.6.31 (A375: products shown only on chosen days, migration 113) — before it v0.6.30 (A336 stage 3: offline void/refund by the owner's rules; owner-set void window) — before it v0.6.29 (owner's asks after testing 0.6.27/0.6.28: confirm table, blind close standard, success screen, History today; A374) — before it v0.6.28 (ONE release with 0.6.26 + 0.6.27 — owner: "one version bump i run one single update"; v0.6.26/v0.6.27 never tagged — A372: kitchen voids, two switches; 0.6.27 — A369: per-client switches (admin portal) for delivery fee + rider pay-out, blind close, cashier-only History, no reprint, the manager's reasons; expense payment method; migration 111. Previous: v0.6.26 (patch, not yet pushed) — A336 follow-up: a web void or refund of the till's OWN sale reaches the till with the ~20 s web-sales pull (cloud `own_reversals`, till `applyOwnReversals`). Previous: v0.6.25 tagged (pre-release, CI #441 green) — the PIN and lock screens show the client logo larger (160 × 240 / 150 × 240, a tighter white card); the manager sidebar shows it; a small logo fills the receipt box (up to 384 × 288 dots); every A4 document and the Z-reports carry it, and the A4 documents are restyled; A368: a logo uploaded on the till is saved to the cloud too. Previous: v0.6.24 tagged (pre-release, CI #439 green) — A366: only a shift's owner or a manager closes it; the update bar no longer covers the till's screens; the lock screen shows the client's logo and reads clearly; A367 order notes (local schema 58). Previous: v0.6.23 tagged (Release desktop #39, one pre-release; on T1) — A365 follow-ups: zero methods hidden, no wheel on numbers, float reminder, no PIN for a signed-in manager. Previous: v0.6.22 tagged (Release desktop #38, one pre-release; migration 110 applied) — A365: a manager confirms every shift, on every payment method; Close Day waits for them. Previous: v0.6.21 tagged (Release desktop #37, one pre-release — A364: a day close is a cash-up; a later shift reopens the day. Previous: v0.6.20 tagged (Release desktop #36, one pre-release — A363: an offline close-and-reopen never strands a drawer; sync status for managers only, "Last synced", the Z-report note; a truthful log. Previous: v0.6.19 tagged (Release desktop #35, one pre-release — A358: History for cashiers again, sauces off the kitchen ticket, "+ Add type" on the Expenses page; A359: refund on the web). Previous: v0.6.18 tagged on `5401208` (Release desktop #34, one pre-release — A355: refund from History any time, approved with the manager's own PIN; A336 stage 2; A276 drinks off the kitchen ticket; A279; A341; A356; A357. Previous: v0.6.17 tagged on `0199606` (Release desktop #33, one pre-release — A351: the manager menu in groups); v0.6.16 tagged on `2de98c7` (Release desktop #32; published as the Latest release, one copy — A349: money review (receipts, reports, CTL); A348: updates approved per business, held by default; A347: teal icon); v0.6.15 tagged on `cb3e315` (Release desktop #31, built as two drafts; publish state not confirmed — A346: Stock only with the web POS; A345: an offline sign-in says so, shows the till's saved menu and staff read-only, and becomes a cloud sign-in by itself. Previous: v0.6.14 tagged on `77a679f` (Release desktop #30 — A342 till close closes the web's shift; A343 web till; A344 payment colours); v0.6.13 tagged on `0e5e1b3` (Release desktop #29 — A339, A340); v0.6.12 tagged on `c7c24e5` (Release desktop #28 — A338: one drawer never blocks another's sync); v0.6.11 tagged on `b344c80` (Release desktop #27 — A337: previous shift reports, expenses, colour-coded Daily Sales Report); v0.6.10 tagged on `ecec08a` (Release desktop #26 — cross-sync stage 1 (A336), A335, the B5 double-count fix); v0.6.9 tagged 2026-09-27 (A334: the till joins a drawer the web opened as it, and its close includes the web's cash); v0.6.8 tagged on `7e00375` (A273 follow-up: the till sends its code + setup name); v0.6.7 tagged on `ba5aeef` (Release desktop #23 — A329 SwiftPOS teal defaults; A331); v0.6.6 tagged `bb31313`), `LOCAL_SCHEMA_VERSION` **55** (A336: orders.origin — the web's sales downloaded onto a till; 54 = A325 branding.theme_id), migrations **→ 109** (files up to 109; **109 applied to prod 2026-09-28** — owner's `information_schema` output: `recorded_by | uuid`; `scripts/schema-index.json` already carries it; **108 applied to prod 2026-09-28** — owner's `information_schema` output: `desktop_approved_version | text | YES`; `scripts/schema-index.json` updated to match; **107 applied to prod 2026-09-27** — owner's `pg_indexes`: `shifts_open_by_terminal` is a plain `CREATE INDEX … WHERE status = 'open'`, the unique index is gone; 106 applied with A325; **105 applied to prod 2026-09-22**, `verify-db-schema` PASS 103/103 tables, no drift — A311; 93 & 94 live in prod per the 2026-08-28 real-till verification; 90's A129 delivery still pending prod-migrate), web/cloud runtime **Node 24**, desktop **Electron 43** |
+| Open | **A: 4 P0 · 67 P1 · 122 P2 · 38 P3 — D: 0 P0 · 0 P1 · 0 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A510 A505 A486 A483 · A-P1: A579 A568 A552 A546 A545 A541 A532 A531 A529 A528 A523 A522 A521 A520 A511 A509 A508 A506 A504 A503 A501 A500 A499 A496 A495 A494 A493 A490 A489 A485 A484 A480 A477 A476 A473 A462 A461 A459 A454 A452 A451 A448 A446 A443 A442 A435 A431 A426 A425 A415 A410 A409 A407 A406 A401 A382 A336 A280 A19 A20 A50 A24 A160 A161 A162 A163 A164 · A-P2: A581 A580 A577 A578 A576 A574 A573 A571 A570 A569 A567 A565 A564 A563 A562 A561 A560 A558 A556 A555 A554 A553 A550 A549 A544 A538 A537 A535 A534 A533 A530 A527 A526 A525 A519 A518 A517 A515 A514 A513 A507 A502 A498 A492 A491 A482 A481 A478 A475 A474 A472 A467 A466 A465 A464 A463 A460 A458 A456 A455 A453 A450 A449 A447 A445 A444 A441 A440 A439 A438 A436 A434 A433 A432 A430 A429 A427 A423 A422 A421 A418 A417 A416 A414 A413 A412 A411 A408 A405 A404 A403 A402 A400 A399 A398 A397 A396 A395 A394 A392 A391 A389 A388 A387 A386 A385 A384 A383 A379 A378 A377 A375 A352 A323 A281 A264 A236 A189 A22 A23 A159 A197 · A-P3: A575 A572 A566 A559 A557 A551 A547 A548 A543 A542 A540 A539 A536 A524 A516 A512 A497 A488 A487 A479 A471 A470 A469 A468 A457 A437 A428 A424 A420 A419 A393 A390 A381 A380 A354 A353 A237 A307 — D-P0: — · D-P1: — · D-P2: — · D-P3: D9 D10 |
 | Reconciliation 2026-08-17 (A99–A111) | The **Open** and **Counts** rows derive from the §A/§D open-item sections (A1–A73 + D-items) and remain accurate: **A74–A111 are recorded in the Changelog and were near-all closures**, so they add no open items. The current authoritative open list is `HANDOFF-2026-08-17.md` §7. Specifics: the open **P0 A17** (offline-auth day-15 lockout) is now carried by its built-but-**hardware-pending** fix **A99–A101** (two-till sign-off per PHASE5 §8) — so the P0 is a *fix awaiting verification*, not an unstarted finding; **A19/A20/A24** stay P1, blocked on that sign-off. **A108/A110/A111** moved the web/cloud runtime Node 20→22→24 and brought all five apps to **0 npm vulnerabilities** (shipped, CI green); the **desktop Electron 35→43** upgrade is merged but pending the same two-till build before any prod till. |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
@@ -102,6 +102,1972 @@ Agreed plan, in order:
 
 ---
 ## A. OPEN — carried into tomorrow
+
+### A581 · P2 · FIX BUILT 2026-10-23 (till 1.0.20 + cloud + admin + web; migration 170) · The cloud's payment plan per business: month on month (or 3 / 6 / 12 months, or a custom date), Record payment, the cloud stops syncing a lapsed client, reminders to the owner and ZapTill
+Owner, 2026-10-23: "if a client stops paying for the cloud … yes till continues to work, but the cloud stops syncing and the
+till cannot be re-registered until the client pays again. add payment plan option such that i can select month on month and
+always remind me on email about expiry and also the client". Pricing decided the same day: the desktop setup is a one-off
+per branch; the CLOUD (web dashboard, online features, sync) is month to month, charged PER BUSINESS; 3 / 6 / 12 months ahead
+recommended, no discount for paying ahead (for now).
+
+**What the KES 10,000 was.** The legacy *web access licence*: "Enable web access" (A147/A495) switched `web_hosting` on and
+the portal raised a hard-coded "Web Portal Hosting — Annual Access" invoice of KES 10,000; A569's "Convert to paid" reused that
+flow (a year from the day, KES 10,000). It predates the KES 3,000 a month (36,000 a year) cloud price. A581: **Convert to paid
+now scrolls to the Cloud plan's Record payment** (amount and period editable, default KES 3,000 × months) — no fixed 10,000.
+The plain "Enable web access" switch for a client never on a trial is **left as it was** (still raises its KES 10,000 invoice)
+— an owner decision (below).
+
+**One clock.** Paid-until IS `businesses.web_access_expires_at` (the date A147's ladder and A569's trial already use).
+`lib/cloudPlan.ts`: `addMonthsClamped` (Nairobi calendar, held to the month's end: 31 Jan → 28 Feb, 29 in a leap year; 31 Mar
+→ 30 Apr), `nextPaidUntil` (one period from the LATER of now and the current paid-until — paying early never loses a day; a
+lapsed client starts today; a custom period runs to the date typed, which must be after that), `defaultAmount` (KES 3,000 ×
+months; custom typed).
+
+**Who is on the plan.** A business with a `cloud_plans` row (the admin saved a plan or recorded a payment) or an A569 trial
+record. Every other business (the clients from before: the legacy switch, an undated or old expiry) is **not gated** — its
+tills sync as before until ZapTill puts it on a plan (an owner decision below). Every business type the same (the fee is per
+business).
+
+**The lapse (the existing ladder, unchanged and shown).** Paid client: paid-until → **21 days' grace** (everything works; the
+admin card and the reminders say "in grace until …") → 7 days reports only → locked. Trial: no grace — reports only the day
+after it ends. Sync and enrolment stop when the dashboard leaves full access (after the grace; a trial at its end; "End trial"
+at once):
+- Tills keep selling exactly as now (nothing on a till checks the plan).
+- `middleware/auth.ts` `cloudLapseBlocked`: a desktop-surface WRITE (sales, drawers, days, expenses, changes, the heartbeat,
+  a manager's edits on the till, the branch server's join code) → **503 CLOUD_SUBSCRIPTION_ENDED**, `Retry-After: 900`, plain
+  words with ZapTill's number. 503 because every till version (1.0.19 and older too) already keeps a 5xx record pending — never
+  failed, never parked. Open while lapsed: `/api/auth/*` (sign-in, renewals), `/api/tech/*`, support logs, the update state;
+  every read. A web write is the dashboard ladder's, not this gate's. The standing is remembered a minute per business; a
+  failed read never refuses. The 503 is not a server error or a "refused till" for the watchdog (`res.locals.cloudLapsed`,
+  index.ts); the watchdog and the owner's alerts leave a lapsed business's tills out of "not syncing".
+- **No till joins**: `/api/auth/enrol/redeem` (new or rejoin) answers 403 CLOUD_SUBSCRIPTION_ENDED *before* the code is spent
+  ("…a till cannot be joined (or rejoined) until it is renewed. Ask the owner to pay, or call ZapTill on 0717 675 635");
+  the admin's "Enrolment code" answers 409 "Record the payment on Plan & billing first".
+- Till 1.0.20 (`syncEngine.ts`): reads the code (`cloudLapsedNow`, `getSyncStatus().cloudLapsed`), asks at most every 5 minutes
+  while lapsed, and the manager's bottom notice (syncNotice, `canSeeSync` — never a cashier) reads "ZapTill cloud subscription
+  ended — N records kept on this till, sent when renewed (ZapTill 0717 675 635)". There was no till handling of
+  CLOUD_TRIAL_ENDED to reuse (that code is the dashboard's sign-in only). Any write the cloud accepts clears it and the queue
+  drains in that pass.
+
+**Record payment** (`routes/cloudPlanAdmin.ts`, super admin; GET for any admin): amount, method (M-Pesa / bank / cash /
+other), the M-Pesa code (required for M-Pesa; once only on any client — 409 DUPLICATE_REFERENCE), paid on, period (custom: the
+paid-until date), note. Paid-until moves conditionally (two payments at once never lose one: 409 PAID_UNTIL_CHANGED); a first
+payment saves the plan; web access switched on; an unconverted trial marked converted; a **paid invoice** raised (the
+invoices list and totals stay whole); `admin_audit_log` `cloud_plan.payment` with who, amount, reference, before and after;
+the lapse gate opens at once. Payment detection is manual (Daraja later); a monthly plan does not renew by itself.
+
+**Reminders** (`jobs/cloudPlanReminders.ts`, hourly, 07:00–20:00 Nairobi): 14, 7, 3 and 1 day(s) before, the day it lapses,
+then every 7 days while lapsed (at most 8) — to the **owner** (sign-in email, else the business email; HTML,
+`lib/cloudPlanEmail.ts`) AND **ZapTill** (`notifyAdmin`: ADMIN_ALERT_EMAIL and Telegram when set). Once per (business,
+paid-until, milestone) — `cloud_plan_reminders` checked and claimed (unique) before sending; a new paid-until starts afresh. The
+words: the amount and period, the paid-until date, what happens and when, how to pay ("WhatsApp or call ZapTill on 0717 675
+635"), "your tills keep selling". No email provider (SendGrid pending): logged, recorded, skipped — never a crash. Suspended
+businesses and businesses not on the plan: none.
+
+**Shown.** Admin › client › Plan & billing › **Cloud plan** card: the standing ("Paid until 23 Nov 2026 — 31 days left" /
+"Lapsed 3 days — in grace until …" / "Lapsed — sync stopped"), the plan editor (period, amount per period — editable, default
+KES 3,000 a month), Record payment, the payments (paid-until before → after, by whom) and the reminders sent. The client list:
+a **Cloud expiry** column ("Expires in 5 days" / "Expires today" / "Lapsed 3 days — sync stopped" / "Paid to …") and an
+"Expiring (14 days) / Lapsed" filter. The owner's dashboard: CloudTrialNotice also shows the plan's line in the last 14 days and
+while lapsed (`GET /api/business/cloud-trial` carries `plan`, the owner only).
+
+**Data — migration 170** (`170_cloud_plans.sql`): `cloud_plans` (period, amount, custom_until, notes, updated_by),
+`cloud_payments` (amount, method, reference — M-Pesa code unique case-blind, paid_at, paid_until_before/after (must move
+forward), invoice_id, recorded_by / _email), `cloud_plan_reminders` (unique per business, paid-until, milestone; owner_sent,
+admin_sent, error). RLS: the owner reads their plan and payments; nobody but the server the reminders; writes through the
+server. `scripts/schema-index.json` updated.
+
+**Tests.** `tests/cloud-plan-a581.test.mjs` (35, real middleware / admin / cloud-plan / auth / business routers over HTTP):
+month maths, no lost days, custom, defaults, standing and grace, milestones, the gate's scope; lapsed till write 503 (reads,
+support logs, web writes, a client in grace and one not on the plan untouched); a lapsed trial; enrolment refused before the
+code is spent; the admin's code refused; agent refused; Record payment (from today, invoice, web access, audit), sync resumes
+at once, the code redeems, a code twice refused, early payment adds on, the plan editable, a trial converted; reminders to
+both (once, next milestone, a new paid-until, lapse day and weekly, cap, no provider, not on plan / suspended), the words; the
+owner's notice; the client list and filter; the watchdog / owner alerts skip; no cashier surface.
+`apps/desktop/test/cloud-lapsed-a581.test.mjs` (13, real dist/main on SQLite): the sale kept, never failed or parked, selling
+goes on, at most every 5 minutes, the status and the manager's notice, no cashier surface, drains after payment and the notice
+goes. `scripts/test-migration-170.mjs` (10, PGlite). `tests/cloud-trial-a569.test.mjs` updated (Convert to paid = Record
+payment). Mutations (each made, seen to fail, reverted): no month-end clamp; extend from now always; refusing in the grace;
+no `cloudLapseBlocked`; the enrolment check skipped; the reminder claim check skipped; `forgetStanding` dropped from Record
+payment; syncFetch not reading the code; no 5-minute hold; the clear on an accepted write; the notice's branch; the M-Pesa code
+index; the reminders' unique key; recorded_by CASCADE.
+
+**Owner decisions needed.** (1) Clients from before A569 with no plan are not gated — put each on a plan (Record payment)
+when ready, or say "gate every dated client" and it is one line. (2) The plain "Enable web access" (a client never on a trial)
+still raises KES 10,000 a year — retire it in favour of the plan, or keep it? (3) Lapsed reminders stop after 8 weeks — keep?
+(4) A lapsed client's till still PULLS (menu, prices) — only its sends are refused; say if pulls should stop too.
+
+### A580 · P2 · FIX BUILT 2026-10-23 (till 1.0.20 + cloud + web; migration 169) · The owner's decisions on the 1.0.20 batch: "Later" for closed menus, loss alerts premium, no weight-unit setting, no waiter / kitchen roles or "Kots" at a shop
+Owner, 2026-10-23, answering the questions left in A578, A576, A577 and A573. Every change works on the till and the web for
+every business type, in its own words (shared/businessTerms.ts).
+
+**1. Menu hours (A578).** Owner: *"let it remain as built, but add a 'Later' button to the menu list to show closed menus in
+greyed-out form."* Closed menus stay hidden by default. `shared/menuHours.ts` (+ 3 copies) `menuHoursView(…, { later })`:
+the closed menus come back on the bar GREYED, with when they open ("from 17:00 (Mon–Sat)", "from 06:00", or the days when
+more than a day away); their categories join the ☰ panel; `laterPeek` shows their items (greyed tiles, a "Later" badge)
+only when that menu or one of its categories is opened — never on the All tab, never in a search. Nothing is sold: the
+asleep map stays full, so a tap or a scan is refused with A578's words, word for word (till: handleTap's first check; web:
+isFrozen; MinimartPOS: `pick` refuses before asking a weight). **Later** (`LaterButton`, 🕒, grey, dashed; "Later ✕" when
+on) sits at the end of the menu bar on the till (POSPage) and the web (CashierScreen, MinimartPOS), for ANY staff member
+(view only), only while a menu is closed now, this session only (component state, never stored). The manager's **Show
+all** (menu.edit) is kept and made clearly different: amber, 🔑, "Show all menus · sell" with "Manager: bring back every
+menu and sell from them now"; Show all wins over Later (Later is hidden while it is on). Words: Menus / Departments /
+Groups ("See the departments that open later (view only)"). Per mode: restaurant / café (Breakfast, Happy hour, the table
+order's grid), retail / minimart (a licensed-hours Alcohol department, the scan refused), petrol station (the shop's
+groups; the pumps' fuel never touched), parking / other (Groups).
+
+**2. Loss alerts (A576).** Owner: *"Yes let them be premium."* The same switch as Analytics (A549 / A558: the per-business
+`feature_flags` key `analytics`, set in the admin portal). Off: every `/api/loss-alerts` route (the watch list, "looked
+into", the owner's settings) answers 403 `LOSS_ALERTS_OFF` "The Watch list is part of ZapTill Premium — contact ZapTill to
+enable it." (the shape of ANALYTICS_OFF); the hourly job reads the premium businesses only (one feature_flags read) and
+`runLossAlertsForBusiness` checks again — nothing stored, no bell notification; the daily email has no "Worth a look"
+block (`lossEmailHtml`). The dashboard's Watch list, the manager portal's Finance › Watch list (the same panel) and
+Settings › Business › Loss prevention show the existing premium note (`WatchListLocked`, as AnalyticsLocked: "ZapTill
+Premium" and the cloud's words, no new copy). The settings stay the OWNER's only (a partner or manager is refused before the
+note). Notifications already in a bell are not deleted.
+
+**3. Offers skip weighed items (A577).** Owner accepted, 2026-10-23 — no change (noted in A577).
+
+**4. Retail setup's unused "Default weight unit".** Owner: *"remove"*. The kg / g / lb control is gone from Settings ›
+Business › Retail setup (MinimartSettingsPage); `weight_unit` left the settings route's writable and readable key lists
+(routes/business.ts) — nothing else read it (each weighed item has its own kg or g, A577). A stored value is left,
+harmless; no migration.
+
+**5. Shops and restaurant roles (A573).** Owner: *"how can shops have waiter and kitchen roles unless requested keep them off
+we only have cashier and other roles"*. `shared/permissions.ts` (+ 5 copies) `FOOD_BUSINESS_TYPES = ['restaurant', 'cafe']`
+and `types` on the built-in Waiter, Kitchen and Kitchen Manager (keys unchanged; the frozen PERMISSIONS catalogue untouched):
+a new retail, minimart, petrol station, car park or "other" business is seeded without them (onboarding, admin portal —
+`seededRoleRows`); a business that becomes a restaurant or café is given them (`addTypeRoles`). **Migration 169**
+(`169_shop_kitchen_roles.sql`, once, guarded) deletes the built-in (`is_default`) Waiter / Kitchen / Kitchen Manager roles
+of every business that is not a restaurant or café WHERE NOBODY IS ON THEM (no user row, active or inactive); a role with
+staff stays; a role the owner made by hand is never touched; its keys cascade; the staff sync triggers (150 / 151) tell the
+tills, which read the roles from the cloud. It reports "N removed; M kept (staff on them)" as a NOTICE, and its header has
+the read-only SELECT to preview it. On request a shop adds one under Settings › Roles and permissions › New role (named and
+ticked by hand, or copied from another role — it is not refilled with the built-in keys automatically).
+**"Kots: 0" on shop receipts:** `shared/printing` `BusinessConfig.kitchenTickets` — false for retail, minimart,
+petrol_station, parking, other (till: `kitchenBusiness(device_config.business_type)` in ipc/shared.ts; web:
+`buildReceiptBusinessConfig` from the business's type) leaves the Kots line out; absent / true (restaurant, café, a type not
+known yet) prints it byte for byte as before — every golden byte stream unchanged (bytes.js --check, SAMPLE-OUTPUT). Web
+bundle rebuilt (`escposRenderer.js`). **Item Mix** stays restaurant-only (owner: no change).
+
+**Tests.** `tests/owner-decisions-a580.test.mjs` (23, CI "Owner decisions (A580) and migration 169"): L — the later view,
+the hints, nothing sold (A578's words), laterPeek only in its own menu / category, Show all wins, the copies; the web bar and
+LaterButton rendered (every type's word); CashierScreen / MinimartPOS wiring. P — the job, the tick and the email skip a
+non-premium business (an alert already stored stays out of the email); every route 403 LOSS_ALERTS_OFF over HTTP; premium as
+A576 with the settings owner-only; the locked note rendered. U — the page and the key lists. R — builtInRolesFor and
+seededRoleRows for all seven types; typeRolesMissing. K — the receipt config per type and the web bundle's bytes (shop: no
+Kots; restaurant: unchanged). `apps/desktop/test/owner-decisions-a580.test.mjs` (17, CI "Desktop owner decisions (A580)"):
+the till's MenuBar and LaterButton rendered, POSPage wiring, per mode (restaurant, café, retail, minimart, petrol — fuel
+never — parking, other), kitchenBusiness from compiled main and the printing package's bytes. `scripts/test-migration-169.mjs`
+(7, PGlite, every migration): every non-food type loses the unused roles (any case / spaces / underscores) and their keys;
+staff (active or inactive) keep theirs; hand-made and other roles untouched; restaurant and café keep theirs; runs once.
+`shared/printing/test/receipt-kots-shop.test.ts` (13, in `npm test`). Pins moved for the deliberate changes:
+`tests/menu-hours-a578`, `tests/menus-top-a566`, `tests/loss-alerts-a576` (its fixture has the Analytics switch on),
+`tests/partner-roles-a550`, `tests/a518-cloud-gaps`, `tests/product-days` (the grid line is longer), `scripts/test-migration-142`, `-159` ("fuel-only" is the petrol typing),
+`apps/desktop/test/menu-hours-a578`, `menus-top-a566`, `till-feel`.
+**Mutations, 20 of 20 bite** (each made, seen to fail, reverted): menuHoursView without the later branch; laterPeek without
+the search check (bit once a search inside the greyed menu was asserted); the later view's asleep map emptied (selling
+allowed); CashierScreen's and POSPage's Later gated on menu.edit; the till MenuBar ignoring `greyed`; laterPeek allowing
+the All tab; the loss-alerts router without the premium middleware; runLossAlertsForBusiness, lossEmailHtml and the tick
+without it; Waiter for every type; the web's and the till's kitchenTickets always true; the printing check dropped and
+inverted; in 169: the staff check dropped, `is_default` dropped, café left out, the guard removed.
+Screenshots: `docs/screenshots/menu-later-a580-till.webp` (the real till renderer, the demo grill on Friday 08:00: a
+cashier's bar with Later; Later on — Grill greyed "from 11:00"; Grill opened — greyed tiles with "Later", a tap refused in
+words; a manager's Later beside the amber Show all · sell) and `menu-later-a580-web.webp` (the real web POS bar for a shop:
+Departments, Bakery and Alcohol closed; Later on; Alcohol opened; a manager's two switches).
+
+**For the owner.** Run **migration 169** (`migrations/169_shop_kitchen_roles.sql`; 168 is unused — A579 needed none; 170 is
+another change's). The preview SELECT in its header lists, per shop, each Waiter / Kitchen / Kitchen Manager role and how many
+staff are on it (0 → removed, more → kept). Loss alerts now need the Analytics switch per client (admin portal); a client
+without it sees the premium note where the Watch list was. The till needs 1.0.20 for Later and the receipt change. The
+till's main chunk reads 449.5 kB against lazy-load-a517's 450 kB (passes, half a kB to spare — the next sale-screen addition
+should load lazily).
+
+### A579 · P1 · FIX BUILT 2026-10-23 (till 1.0.20 + cloud; no migration) · "On but not syncing" emails for a till that is simply idle
+Owner, 2026-10-23, with two admin alert emails — "ZapTill ALERT — TJS PIZZA CHIKEN AND FRIES: T1 is on but not syncing.
+Last sync 7 h 31 min ago (seen 7 min ago). Its sales are not reaching the cloud." and at 22:00 "Last sync 9 h 1 min ago (seen
+0 min ago)": "This emails of not syncing maybe its just that no trade is taking place". P1: a false critical alert, repeated
+every 3 hours, teaches the reader to ignore the real ones.
+
+**Cause.** The watchdog's `tillsNotSyncing` (lib/watchdogRules.ts) called a till critical when seen in the last 30 min
+(`last_seen_at`, stamped at sign-in and every token renewal) but `last_sync_at` older than 2 h. `last_sync_at` moves only on
+`POST /api/sync/push`, and a till sends that only with drawer rows to send (shift open/close, float, expense, the day, a
+kitchen void — `pushLocalRecords` returns early otherwise); its sales go through `/api/orders`. So an idle till — or one
+selling for 2 h with no drawer change — looked exactly like a broken one. The owner alerts (`tillTrading`) had the same
+fault: "seen after its last sync within the hour" counted as the branch trading.
+
+**Till (1.0.20).** `syncHeartbeat` (syncEngine.ts), a stage of every push pass: when the pass leaves nothing waiting for the
+cloud (`getSyncStatus().pendingCount` = 0 — sales, drawers, days, voids/refunds, confirmations, prices, wastage), it sends an
+empty push (`{}`) at most every 15 min, online and signed in only; a drawer push the cloud took resets the 15 min. Every
+`/api/sync/push` now carries `X-Sync-Pending` and `X-Sync-Failed` (failed + parked). Failed/parked rows do not hold the
+heartbeat back (a person's job, reported on their own; the till's sales still arrive). The 10-min full sync runs the pass,
+so an idle till checks in about every 20 min. Each till — a peer behind a branch server included (through its gateway,
+which passes the headers) — sends its own under its own device id, as its drawer rows go; the branch server sends its own.
+The body is 2 bytes, under activityTracker's `SYNC_PUSH_MIN_BYTES`, so a branch server never counts it as trade.
+
+**Cloud.** An empty push is accepted and cheap (last_sync_at is stamped before any arm; every arm is skipped on an empty
+list). `X-Sync-Pending/Failed` are kept in memory (lib/watchdogCounters.ts `recordSyncQueue`, only for a push the cloud
+took) — no new column. The rule:
+- a till that sends the heartbeat (app_version ≥ 1.0.20, or a push that reported its queue): stale while seen = CRITICAL as
+  before, with "N sales and records waiting on the till when it last reported";
+- an older till: its own sales since its last sync on the cloud → nothing (they arrive through /api/orders); a drawer open on
+  it AND the branch's other tills (or the web POS) sold since its last sync → CRITICAL; otherwise a WARNING "T1 quiet for 9 h
+  — no sales sent … if it was trading, check it" (digest and admin portal, never emailed, never reminded). Evidence is read
+  only for these tills (`quietCandidates`): one shifts read, one orders read per till (a day back at most, capped); a failed
+  read gives a warning, never a false critical. Same alert key, so an open critical settles to a warning with no "resolved".
+- WARNING `till_parked`: a till reporting records the cloud refused (fresh report).
+- Owner alerts: `tillTrading`'s "seen after its last sync" only for a heartbeat till; a drawer open at the branch still counts.
+
+**Not changed (reported).** Day-close abandon / silent-confirm (`mayAbandon`, `isSilent`) keep using last_sync_at as they
+were — the heartbeat only makes it fresher, and only when nothing waits on the till, which is the safe direction. The owner's
+daily email section "tills not syncing" still lists an old till by hours since its last push (informational, no instant mail).
+
+**Tests.** `tests/till-heartbeat-a579.test.mjs` (12; mutation-checked: sendsHeartbeat always true, the evidence branch, the
+own-sales check, pendingSince, planRun reminding warnings); `apps/desktop/test/sync-heartbeat-a579.test.mjs` (16; mutation-
+checked: the 15-min gate, the pending check, the online check, the stage, SYNC_PUSH_MIN_BYTES); watchdog.test.mjs and
+owner-alerts.test.mjs updated. Both registered in ci.yml.
+
+**TJ's T1 today (before it updates).** On 1.0.5 it sends no heartbeat. From this cloud deploy: idle → a warning in the digest
+and the portal, no email; the open critical settles to a warning (no reminder, no "resolved"); an email again only if a drawer
+is open on T1 while the branch's other tills sell and none of T1's sales arrive.
+
+### A577 · P2 · FIX BUILT 2026-10-23 (till 1.0.20 + cloud + web; migration 167, local schema 77) · Items sold by weight: weighing-scale labels scanned (0.452 kg at the label's price), a weight keypad in every mode
+Owner, 2026-10-23 (approved tonight): items sold by weight with weighing-scale barcodes. Then: "let us not forget other
+business in the tills all this changes should also be taking shape on them based on how they operate". A571 left EAN-13
+prefixes 21–29 free for scale labels. What was there before: `products.sold_by` ('weight' allowed), `plu_code` and
+`unit_label` existed since the baseline, but (1) the till never held a PLU — the cloud sends `plu_code`, the till read only
+`plu`, so a PLU never matched a scan; (2) MinimartPOS's decoder read ANY 13-digit code starting "2" as "2 + PLU5 + grams5",
+so A571's own in-store codes (prefix 20) were taken for weighed items; (3) `order_items.quantity`, `stock_levels.quantity`
+and `stock_movements` held 2 decimals — 0.452 kg was stored as 0.45 (stock drifted up to 5 g a sale); (4) the receipt put
+"0.452" in the 4-character Qty column and added it to Total Qty; (5) the product form had no way to set sold by weight.
+
+**The rules — ONE pure file, `shared/scaleBarcode.ts`** (copies: `apps/server/src/lib`, `apps/dashboard/src/lib`,
+`apps/desktop/src/shared`, `apps/desktop/src/main`; check-shared-sync). EAN-13: prefix (21–29, or the single "2" + a 6-digit
+code) + item code + [GS1 price check digit] + price or weight + check digit; the layout must add up to 13. A code starting
+**20 is never a scale label**, whatever the settings. The EAN check digit and (DIGI-style) the value check digit are checked
+(GS1 General Specifications 7.9.3: 2-,2-,3,5- / 5+,2-,5-,5+,2-). Presets: Standard price, Standard weight, CAS (CL5000 / CL3000
+/ LP-1000, price 5), DIGI (SM-100 / SM-120 / SM-5300, price check digit + price 4), Ishida (Uni-3 / Uni-5 / BC-4000, weight in
+grams 5), six-digit item code. The line: a weight label or the keypad → kg × price per kg rounded to the cent (round2); a price
+label → the label's price IS the amount, the weight worked back to the gram. The item is found by its scale code (leading zeros
+ignored; the till's `plu` or the cloud's `plu_code`; active only).
+
+**Cloud.** Business setting `scale_barcodes` (Settings › Business › Scale labels; settings.business; cleaned or refused 400 in
+plain words) → pos/init `scaleBarcodes` (always sent, the default when unset; topic setup). A weighed web / till line keeps
+the till's amount when it is within half a gram's worth (+1 cent) of price per kg × quantity — the price label's price; any
+further is re-priced as before; a product not sold by weight is re-priced as before. `CreateOrderSchema` (illustrative) takes
+a fractional quantity. **Migration 167** widens order_items.quantity, stock_levels.quantity, stock_movements (both),
+stock_adjustments.quantity, stock_take_lines (counted / expected) and grn_items.quantity_received to numeric(12,3) (no product
+columns needed). eTIMS still sends qtyUnitCd 'U' for every line (parked).
+
+**Till (local schema 77, REQUIRED 77).** products.sold_by / unit_label and device_config.scale_barcodes pulled (an older cloud
+or a layout that does not clean keeps the till's), relayed by the branch server; the cloud's `plu_code` now lands in `plu`.
+The sale screen: a scan tries the scale label first; a weighed item tapped (or scanned by its own barcode) opens the weight
+keypad (kg to the gram, the amount live; loads on first use); a weighed line is its own line, shown "0.452 kg" / "452 g", not
+stepped (✕ and weigh again), sent with its unit; stock taken off to the gram (no float dust). **Per mode:** shop / minimart /
+parking / other — scan and tap; restaurant / café — tap → keypad, the kitchen ticket "0.750 kg   GOAT MEAT" (the kitchen
+ledger keeps 0.75); petrol station — the scanner now also listens on the SHOP grid (never the pumps), fuel unchanged (its
+litres path untouched; a fuel line gets no weight unit).
+
+**Web POS.** CashierScreen: a weighed tap asks for the weight in every mode; the plain-retail scanner (and a petrol station's
+shop grid) reads labels. MinimartPOS: the old decoder removed; labels through the shared parser; a weighed tap / search pick /
+own barcode → the weight; weighed lines keyed per line. The product form: "⚖️ Sold by weight (price per kg)", kg or g, Scale
+code (PLU). Settings › Business › Scale labels: the preset, the layout by hand, and a **Test a label** box.
+
+**Receipt / kitchen (shared/printing).** `OrderLine.measureUnit`: a weighed line prints as ONE item with "0.452 kg @ 650/kg"
+(or "125 g @ 800/kg") under it; Total Qty counts it once; a fractional quantity without a unit (fuel, older lines) prints
+"20.5 @ 180" the same way (it used to overflow the Qty column — a visible change on fuel receipts); the kitchen heading
+"0.750 kg   GOAT MEAT". Whole-number lines byte-identical (golden bytes unchanged). The till's reprint reads the unit from
+the product. Web bundle rebuilt (`escposRenderer.js`).
+
+**Tests.** `tests/scale-barcode-a577.test.mjs` (26: parser per preset and config, GS1 examples, 20 never a label, price vs
+weight, rounding, settings, the routes over HTTP, a weighed web and till sale, the web wiring),
+`apps/desktop/test/weighed-items-a577.test.mjs` (36: schema 77, the pull and relay, RETAIL scan → sale → stock 9.548 /
+9.248 → receipt and reprint, RESTAURANT keypad → kitchen ledger and ticket, PETROL fuel + weighed in one sale, the scanner per
+mode), `scripts/test-migration-167.mjs` (9), `shared/printing/test/weighed-line.test.ts` (12). **Mutations, 20 of 20 bite:**
+no 20 refusal; EAN check unchecked; 5- as 2-; no round3; the tolerance ×10 (shared and server); orders keeping any product's
+amount; business.ts storing uncleaned; order_items / stock_levels / stock_movements left at 2 decimals; isMeasured false;
+measureText ignoring g; the pull reading only plu; no stock rounding; measureOf not reading the product; setScaleBarcodes
+uncleaned; the petrol scan gate. The till's main chunk stays under lazy-load-a517's 450 kB (the keypad lazy, the presets
+off the screen's import).
+Screenshots: `docs/screenshots/weighed-a577-till.webp` (the real till renderer: a minimart scanning two labels, a 20 code and
+sweets in grams; a restaurant's keypad and order), `-settings.webp` (Scale labels with a label tested; a 20 code refused),
+`-receipt.webp` (58 mm receipt, 80 mm kitchen ticket). Manual: `docs/Manuals/WEIGHED-ITEMS.md` (+ .docx / .html) and §9 of
+BARCODE-LABELS.
+
+**Owner to know / decide.** Run migration 167; the tills need 1.0.20 (schema 77) for the keypad and labels. Presets are each
+scale's usual set-up — test one real label before relying on it. No scale is read by cable (no serial drivers). Printing scale
+labels from ZapTill is not built (labels come from the scale). The till's own Menu screen does not edit sold by weight / PLU
+(web only). Offers count whole items, so they skip weighed lines — **owner accepted 2026-10-23 (A580): no change.** The
+existing Retail setup "Default weight unit" (kg / g / lb) setting was read by nothing — per-item kg / g is used instead;
+**owner, 2026-10-23: "remove" — removed in A580.**
+
+### A575 · P3 · FIX BUILT 2026-10-23 (cloud + web + till words; migration 164) · Analytics in each business type's words; "What sells together" (the product pairs bought in one order)
+**Part 1 — A573's leftovers.** A shop (retail, minimart, petrol station, parking, other) still read restaurant words in
+Analytics ("Menu engineering", "items on your menu with no cost", "Food cost", "the food bill", "kitchen items", "the cost
+of one serving", "what to prep"), on the Help card ("A kitchen ticket that failed …" in the printing topic), in the upload
+template ("MENU (optional): e.g. Food …") and in the till's unused old Manager › Menu screen ("No menu").
+**Part 2 — the owner's backlog:** "What sells together" — which products end up in the same order, in plain words, with
+advice that is about stocking, placement, combos and the cashier's prompt — never a price ("prices should be
+competitive"), every table at most 10 rows. Owner, 2026-10-23, on the batch: "let us not forget other business in the
+tills all this changes should also be taking shape on them based on how they operate" — the advice in each type's own way
+of selling.
+
+**BUILT — the words.** `shared/analyticsTerms.ts` (NEW; copies `apps/dashboard/src/lib/`, `apps/server/src/lib/`;
+check-shared-sync — kept out of the till, which has no Analytics; it imports `businessTerms.ts`, now copied to the cloud
+too): `analyticsWords(type)` and `togetherAdvice(type, a, b)`. A restaurant or café (or a type not known yet) keeps every
+word it had.
+- **Analytics (web, owner and manager portal):** the tile and tab "Product performance" with its own line, the matrix
+  title, "items you sell with no cost", "Cost of sales", "what your stock costs", "the cost of the goods", the margin's
+  definition, "Check what you pay for the top ones", "items removed" and the voids note, "what to push and stock" / "what
+  to stock each day"; the cloud's cards and tiles (the food-cost card, the slow-items card's assumption, the Costs tile's
+  "Cost of sales 31%") from `businesses.type`. The manager portal passes `session.businessType`.
+- **Help:** `helpTopicsFor(isFoodService(type))` (shared/helpTopics.ts) leaves the kitchen-ticket step out for a shop — the
+  web Help page (GET /api/business/support now also sends `businessType`) and the till's Help screen (its own config).
+- **Upload template:** a shop's MENU line reads its own word ("the product's department, e.g. Groceries …"; Groups
+  elsewhere); the column stays `menu` (the API's). MenuUpload.tsx only — A574's ProductsPage untouched.
+- **The till's old MenuTab / CategoryBlock** (ManageTabs.tsx) is still imported by ManagerPage (never rendered), so not
+  deleted: its "No menu", "(a menu that is off)", the select's label, "Loading menu…" and "back on the menu" now come from
+  businessTerms. The till's reports were checked: the Z report's "KITCHEN VOIDS" and the shift close's "Sent to the
+  kitchen" show only when such rows exist (never at a shop); Item Mix gating unchanged (owner).
+
+**BUILT — What sells together.**
+- **Migration 164** `analytics_together(business, branch, from, to, limit)` (STABLE, SECURITY DEFINER, service role only):
+  completed orders of the period and branch scope, product lines with a price (subtotal > 0; add-ons are
+  order_item_modifiers, never lines; a product rung twice counts once): a total row (orders; orders with two or more
+  products) and the pairs found together in 2+ orders with each item's own order count, the 100 most together. An order
+  of more than 25 different products gives no pair (bounded work). Fuel flagged (a pump sale is an order line).
+- **Cloud** (`analyticsRules.ts` summariseTogether / recTogether; `GET /api/analytics/together`, same gates as every
+  Analytics route — reports.sales, the premium flag, the branch scope; kept 5 minutes): under 30 orders with two or more
+  items → nothing and "Not enough orders … (12 of the 30 needed) — try a longer period"; a pair listed when in 5+ orders
+  and 1.2× as often as chance; turned so the item with fewer orders comes first ("People who buy Chicken Wrap often add
+  Soda 500ml (38 of 120 orders with Chicken Wrap)"; usually / often / sometimes); ranked by orders together × lift (capped
+  at 5×), the top 10 and the total. `/recommendations` adds at most 2 cards (10+ orders, 15% of the first item's orders,
+  1.5×; no product in both; no KES, evidence "What sells together"), softly — before 164 runs, none.
+- **Advice per type:** restaurant / café "Offer Soda with Wrap — make them a combo, or remind cashiers and waiters";
+  retail / minimart "Put Milk next to Bread — the same shelf or near the till"; petrol station "Offer Water 1L at the
+  pumps" when one is fuel, else "side by side in the forecourt shop"; parking / other "Offer them together".
+- **Web:** the "What sells together" section after What sells when (`pages/analytics/together.tsx`): each pair, how often
+  as a bar, what to do; the cap note; the explanation; the friendly empty state. "See why" on a card scrolls there.
+
+**For the owner: run migration 164 on dev** (`migrations/164_analytics_together.sql`; declared in
+scripts/schema-pending.json). Until then /api/analytics/together answers 503 ANALYTICS_NOT_READY, the page leaves the
+section out and /recommendations answers without the cards.
+
+**Not done:** small sets (three items) — pairs only; the till has no Analytics, so What sells together is web only (the
+advice is shared, ready).
+
+**Tests.** `tests/analytics-together-a575.test.mjs` (18, CI step "Analytics what sells together (A575) and migration
+164"): the rules (too few, direction and sentence, thresholds, ranking and the cap at 10, the cards), every type's advice
+and Analytics words, a scan for price words in every wording, Help per type, the template and the till's words; the route
+over HTTP on the REAL function in PGlite (flag, shape — no internal list, a shop's and a petrol station's words, a manager
+held to their branch, too few at Kilimani, the cards, before 164, the cache); the section and the Costs area rendered.
+`scripts/test-migration-164.mjs` (6): idempotent, service role only, STABLE, pending; totals, pairs, a twice-rung item,
+a free line, a void, another period and business, the big basket, branch scope, fuel, the limit.
+`tests/analytics-a558.test.mjs` pins the one more aggregate /recommendations asks for. Mutations (each made, seen to
+fail, reverted — 11 of 11 bite): SQL without the price filter, the 25-product cap, the completed filter, the branch
+filter; the rules without the 30-basket floor, the cap at 10, the turn, the one-card-per-product rule; the route sending
+its internal list; a shop given the combo words; a shop's tile "Menu engineering".
+Screenshots (static render, dark, demo data): `docs/screenshots/analytics-together-a575-restaurant-1600.webp`,
+`-restaurant-375.webp`, `-retail-1600.webp`, `-retail-empty-375.webp`.
+
+### A578 · P2 · FIX BUILT 2026-10-23 (till 1.0.20 + cloud + web; migration 165, local schema 76) · Menus by time of day: Breakfast 06:00–11:00, Lunch 11:00–16:00, a shop's alcohol department only in licensed hours
+Owner, 2026-10-23 (approved tonight): each menu may carry optional availability — days of the week and one or more time
+windows; no schedule = always available (everyone's default). Then: "let us not forget other business in the tills all this
+changes should also be taking shape on them based on how they operate". A537 had built menus with "no hours or days for now";
+Settings › Business › Dine-in had a dead "Menu periods" tab (four free-text fields, "coming in a future update", read by
+nothing).
+
+**The rules — ONE pure file, `shared/menuHours.ts`** (copies: `apps/desktop/src/shared/`, `apps/dashboard/src/lib/`,
+`apps/server/src/lib/`; check-shared-sync): `menus.availability` = `{ days: [0–6] | null, windows: [{ start, end }] }`, null =
+always. The machine's own clock (the till offline too; the browser on the web) — as offers and the business day. A window's
+end is not included (11:00 is Lunch's); a window that ends before it starts runs past midnight and belongs to the day it
+STARTED (Fri 22:00–02:00 is open Saturday 01:00, not Friday 01:00); the business day's cut-off (`business_day_cutoff`) decides
+which day a moment after midnight belongs to (with the day ending at 04:00, Sunday 01:30 is Saturday night: a Sunday-only menu
+is shut). A stored value that cannot be read = always (never hide a menu by mistake). `checkAvailability` cleans and refuses in
+words (no day at all, a day 7, 25:00, from = to, more than 6 times); `nextMenuChange` = the next REAL opening or closing;
+`menuTimerDelay` clamps the wait to ¼ s … 1 h; `menuHoursView` = what the POS shows now; `hoursRefusal` = the words.
+
+**POS (till POSPage, web CashierScreen and MinimartPOS) — every business type.** A menu outside its hours is HIDDEN from the
+top tabs (chosen over greyed "Later" tabs: nothing in one can be sold, so a tab there would only be tapped and refused), its
+categories leave the ☰ panel, its items leave the grid, the All tab and search. An item in no menu, in a menu without hours,
+or fuel is never touched (a product has one category, a category one menu — so "also in an always-on menu" is exactly "its
+menu has no hours"). An item **scanned or tapped anyway is refused in plain words** — "Tusker 500ml is not sold at this time
+— Alcohol is Mon–Sat, 17:00–23:00." (till: `refuseOutOfHours` first in addSimple — the scanner's path — handleTap and A577's
+weighed items; web: first in `isFrozen`, which every add goes through; MinimartPOS's scan says it instead of "found" or "not
+found", A577's scale label too). The bar changes by itself: ONE timeout at the next change (`useMenuHours`, the till's and the
+web's — never a poll; at most an hour; again on focus). An open menu with hours carries a small hint on its tab ("until
+11:00"); no banners. **Show all** (`menu.edit` — the existing menu permission; shared/permissions.ts untouched) at the end of
+the row for the session only, never stored: every menu back, nothing refused, an asleep menu's tab says "from 11:00". A till
+that remembered an asleep menu (A554) shows All until it opens again. Per mode: restaurant / café — Breakfast, Lunch, Happy
+hour (the tables → order flow opens the same grid); retail / minimart — Departments with hours, the scan refused; petrol — the
+shop's groups (the pumps' fuel never); parking / other — Groups.
+
+**Back office.** Menu › Menus (Departments at a shop, Groups elsewhere — A573's words): an **Hours** button per menu opens
+`MenuHoursEditor` — Always available / Only at set times; Every day, Mon–Fri, Weekends or each day; up to six from–to times
+(none = all day); past midnight explained; the schedule in words as it is built and the refusal before saving (the same
+checkAvailability the cloud runs); each menu shows its hours ("Mon–Fri, 06:00–11:00" or "Always available"). The dead Menu
+periods tab now points to Menus › Hours.
+
+**Cloud — migration 165** (`menus.availability jsonb NULL`, CHECK object-or-NULL; nothing else — 155's trigger already writes
+one sync entry per changed menu row and moves the catalogue version; 155's RLS covers the column). PATCH / POST `/api/menus`
+take `availability` (400 in words; hours sent before 165 is run → 409 "Menu hours need migration 165", never a 500).
+`/api/pos/init` sends each menu's hours (and still sends the menus before 165 — read again without the column); `/pos/changes`
+carries them. `scripts/schema-index.json` gains the column (test-migration-155 compares only its own columns now).
+**Till — local schema 76** (`menus.availability` TEXT; REQUIRED_DESKTOP_SCHEMA 76 — A577 then took 77): the whole pull, a
+change and the branch server's bundle carry the hours (an older cloud or server sends none: always); pos:init hands the sale
+screen the hours and `businessDayCutoff`.
+
+**Tests.** `tests/menu-hours-a578.test.mjs` (36, CI "Menus by time of day (A578) and migration 165": the rules incl. midnight
+crossing and the cut-off, days, no schedule = always, the next change and the timer, the cloud's check, the view — hidden from
+tabs / panel / All / search, items in no menu / always-on / fuel untouched, hints, Show all, the words — the web bar rendered,
+CashierScreen / MinimartPOS wiring, the hours editor rendered per type, the routes and sync); `scripts/test-migration-165.mjs`
+(7, PGlite, every migration); `apps/desktop/test/menu-hours-a578.test.mjs` (30, CI "Desktop menus by time of day (A578)": real
+compiled main on real SQLite — local schema 76, the pull / a change / a cleared schedule / an older cloud, pos:init, the
+branch server's bundle; the till's MenuBar rendered at 08:00 vs 13:00 and with Show all; the timer; per mode: restaurant
+17:30 Happy hour, retail 10:00 a scanned Tusker refused and 18:00 sold, Sunday refused, Show all lets it through, petrol 23:00
+the shop closed and diesel never, parking's Car wash group). Pins moved for the deliberate change: `tests/menus-a537`,
+`tests/menus-top-a566`, `tests/product-days`, `tests/stock-take` (till), `apps/desktop/test/menus-a537`, `menus-top-a566`,
+`business-terms-a573`, `till-feel`, `a519-till-items`, `stock-zero-a563`. **Mutations, 19 of 19 bite:** the end included;
+no yesterday half of an overnight window; the cut-off ignored; a bad value hiding; the next change = the first boundary;
+hoursRefusal passing all; an empty day list accepted; the asleep menu kept on the bar; fuel not excused; the hook polling;
+addSimple without the refusal; CashierScreen's isFrozen without it; MinimartPOS's scan without it; writeMenus, pos:init and
+the bundle dropping the hours; the CHECK removed; `DEFAULT '{}'`; schema-index without the column.
+Screenshots: `docs/screenshots/menu-hours-a578-pos.webp` (the real till renderer, demo grill: 08:00 Breakfast "until 11:00"
+and the Grill hidden; 13:00 Breakfast gone, Grill "until 23:00"; a manager's Show all) and `-editor.webp` (the real Menus page:
+a restaurant's Happy hour Thu, Fri 17:00–19:00 and 22:00–02:00; a shop's Alcohol department Mon–Sat 17:00–23:00).
+
+**Owner to know / decide.** Run migration 165 (then refresh schema-index from the live database as usual). Hidden, not greyed
+(say if you want "Later" tabs) — **owner, 2026-10-23: keep hidden, add a "Later" button: built in A580.** Barcode / PLU scans are refused too (unlike 0.6.31's show-days, which only hides) — the alcohol
+use needs it; a manager's Show all is the way round it. Items already on an order or a held bill stay (+ works) when their menu
+closes. The customer QR menu and reports are unchanged (no hours there). The till's main-chunk budget (lazy-load-a517, 450 kB)
+reads 452.8 kB with A577's and A578's code together — each alone fits; to be settled for the batch, the gate not loosened.
+
+### A576 · P2 · FIX BUILT 2026-10-23 (cloud + web; migration 166) · Loss-prevention alerts: a Watch list of unusual voids, discounts and cash differences, per business type
+Owner, 2026-10-23 (approved tonight): unusual patterns per branch and per staff member, over a day and a rolling period —
+voids after payment, many voids or refunds by one person against the others, big or frequent discounts, cash short or over
+at close, price overrides, items deleted from a sent order. Rules: voids and discounts are a WARNING ONLY, for
+investigation — never accuse, never "KES to recover"; decisions in plain words; at most 10; alerts to the owner and
+managers, never on the cashier's screen. Then (relayed): "let us not forget other business in the tills … based on how they
+operate" — each business type gets what its data records, in its own words; the rest listed as "needs data".
+
+**Before.** The owner's emails (A476) had a big void/refund email (one void over an amount) and a big cash difference email
+(one shift over an amount). Nothing compared a person with the others, nothing looked at discounts, comps, prices below the
+list, the kitchen's taken-back items or a car park's voided sessions, and nothing gathered them in one place.
+
+**The rules** (`apps/server/src/lib/lossAlertRules.ts`, pure). Per branch and per person, for today and yesterday (a till may
+sync late) and for the last 7 business days (the rolling alert needs twice the day's count, and is dropped beside a day
+alert of that kind for that person):
+- **paid_voids** — orders voided after a payment was taken (a `completed` payment leg above 0), at least 2 in a day and more
+  than anyone else at the branch: "Mary voided 6 paid orders today (others: 0–1). Worth a look." (The plain "voided 6
+  orders" line is folded into it.)
+- **many_voids / many_refunds / frequent_discounts / kitchen_removed** — the peer rule: at least the minimum (3 / 2 / 5 / 3),
+  above every other person who worked at that branch in the period (their shifts; a shift open across midnight counts on
+  both days) AND at least 3× their median (at least 1); nobody else working: twice the minimum, and the words say so ("no
+  one else worked at Westlands today"). Everyone voiding a lot (a busy night, a till fault) singles nobody out.
+- **big_discounts** — typed-in discounts (no preset `discount_id`; the automatic offers' part left out, A445) of 20% of the
+  bill or KES 1,000 or more, at least 2 in a day. **free_sales** — a bill brought to nothing by a typed-in discount ("comps"
+  at a restaurant or café), at least 2.
+- **cash_short** — a drawer counted short or over by KES 500 or more at the manager's confirm (the A365 count, else the
+  till's figure); a person short (KES 100 or more each time) 3 times in 7 days; a branch's day closed short or over.
+- **price_below_list** — a till's sale priced below the list (`order_price_variances`, migration 133), at least 2 by one
+  person: "… Often an old price on the till — worth a look."
+- **kitchen_removed** — items taken off an order after they went to the kitchen (`kitchen_voids`), with how many were
+  already made. Restaurants and cafés only.
+- **parking_no_charge** — parking sessions voided (the vehicle left with no charge), at least 3 at a branch in a day and
+  more than any of its other days that week. Car parks only; per branch (a session does not record who closed it).
+Ranking (most worth a look first), the cap of 10 (`LOSS_TOP`), the words per business type (`lossWords`: orders at a
+restaurant or café, sales at a shop or petrol station, tickets at a car park; a petrol attendant's "cash", a shop's
+"drawer"), and a banned-words list (`LOSS_BANNED`: theft, fraud, suspicious, recover, loss … — none in any message).
+
+**Per business type** (`kindsFor`, from `lib/businessTerms.ts`): restaurant / café — every general detector plus
+kitchen_removed (comps worded as comps); retail / minimart / other — the general ones (no kitchen, no parking); petrol — the
+general ones, an attendant's cash short or over; parking — the general ones plus parking_no_charge.
+**Not built — the data does not record it** (shown to the owner on the settings page, `lossNeedsData`): a drawer opened with
+no sale; sales outside opening hours (none stored); a void after the receipt printed (prints not recorded); a table closed
+unpaid (indistinguishable in the cloud from a credit or room-charge sale, or payments still syncing); an item removed from a
+retail basket before payment (only whole voided sales are recorded); fuel sold against the pump meters (no meter readings);
+who let a vehicle out of the car park (`parking_sessions` has no closed-by on a void); a refund without its original sale
+(not possible: every refund is recorded on its sale). No till change: every event used already reaches the cloud (orders,
+payments, shifts, business_days, order_price_variances, kitchen_voids; parking sessions are the cloud's own).
+
+**The job** (`jobs/lossAlerts.ts`, every hour at :20, `LOSS_ALERTS_CRON`; and fresh before the daily email). Per business,
+bounded reads of the last 7 business days (only the columns used, paged; indexes added in 166 for voided orders by
+`voided_at`, confirmed shifts by `confirmed_at`, voided parking sessions); upsert on `(business_id, alert_key)` — the same
+alert again is an update (the count grows during the day), never a second row; `notified_at` set once its notifications are
+written; a dismissed alert stays dismissed. Told once: a day alert only for today or yesterday (the first run does not ring
+for a week of history), a rolling alert not again within 7 days, at most 10 per run. One business failing never stops the
+others; before migration 166 it logs and does nothing.
+
+**Who is told** (the bell — no new channels): the owner (their own copy, type `loss_alert`); partners (A550, their branches)
+and managers holding `reports.voids` at the alert's branch (copies addressed to each, type `loss_alert_team`) — each the
+owner's choice. NEVER the person the alert is about (a manager's own pattern goes to the owner and partners), never a
+cashier (no `reports.voids`). The owner's bell hides the team copies (no doubles; "mark all read" leaves the managers'
+copies unread): `routes/notifications.ts`. The daily email (when on, and the owner's "also in the daily email"): "Worth a
+look" with each line's link, at most 10, none about a person the email goes to (branch managers are among its recipients).
+
+**Where.** Dashboard › **Watch list** (`/dashboard/watch-list`, under Analytics; `reports.voids`): the ten most worth a look
+of the last 7 days, numbered, "See the list →" (Reports › Voids / Refunds / the master report for that day, branch and
+person — ReportsPage now reads `?tab=&from=&to=&branch=&staff=`, and the voids / refunds reports' person filter also matches
+who voided / refunded; a cash difference opens Shift Reports on that day) and **Looked into** (off the list, who and when
+kept, an optional note). A manager sees their branch's only and never one about themselves. The **manager portal** (`/manager`, a
+manager's own sign-in — where most managers work, with no bell for these) has the same list as **Finance › Watch list**
+(`reports.voids`; its links point to the portal's Reports instead of the owner dashboard's). Settings › Business › **Loss
+prevention** (owner only): watch on/off, each kind that fits the business on/off with its amounts, "well above the others"
+(3×), who is told, the daily email, and what is not watched yet. API: `GET /api/loss-alerts`, `PATCH /:id/dismiss`
+(reports.voids, `requireWebSurface` — a till's sign-in and a manager's PIN at the till are refused), `GET|PUT
+/api/loss-alerts/settings` (owner only, cleaned). The settings live in `business_settings` `loss_alerts`; the generic
+settings route refuses that key (`READ_ONLY_KEY`).
+
+**Defaults.** On; paid voids 2/day; voids 3; refunds 2; peer multiple 3×; discount 20% or KES 1,000, 2/day; typed-in
+discounts 5; comps 2; cash KES 500, short 3 times in 7 days; below the list 2; kitchen 3; parking 3; owner, partners and
+managers told; in the daily email.
+
+**Migration 166** (`166_loss_alerts.sql`, the owner runs it): `public.loss_alerts` (one row per alert; unique
+`(business_id, alert_key)`; kind and period checked; `staff_id` ON DELETE SET NULL, branch / business CASCADE;
+`notified_at`, `dismissed_at/_by/_note`); RLS — only the business's OWNER may read rows directly (a staff sign-in reads none),
+writes through the server; three indexes. `scripts/test-migration-166.mjs` (8, PGlite): idempotent, the columns against
+`schema-index.json`, the upsert keeping notified/dismissed, the checks, the cascades, RLS.
+
+**Tests.** `tests/loss-alerts-a576.test.mjs` (34): settings and bounds; kinds and words per type; each detector on fixtures
+per type (restaurant, café, retail, minimart, petrol, parking, other) with the exact sentences; thresholds and the peer rule;
+on/off; wording over every type and detector (no banned word, "Worth a look."); the cap of 10; recipients (never the subject,
+never a cashier, the branch, the owner's choices); once / today-or-yesterday / 7 days; the email lines; the job on the
+in-memory database (stored once, the owner's and team copies, idempotent with the count growing, a manager's own pattern,
+off, no table); the routes over HTTP (owner every branch, ≤10; manager own branch and never about themselves; cashier, till
+and PIN-at-till refused; dismiss; settings owner only and cleaned; the generic route refusing the key; the owner's bell); no
+`/api/loss-alerts` or loss alert anywhere in the till or the web POS (the manager portal's page behind `reports.voids`); the Watch list
+(dashboard and portal) and the settings rendered; a comp is one line, not also a big discount.
+Mutations (each made, seen to fail, reverted): the peer rule without "above every other"; recipients without the subject
+skip; toNotify without "already told"; detectors without the per-type filter; the cap at 11; "KES to recover" wording; the
+watch list without the "about the reader" filter; the owner's bell without hiding team copies; and in 166: the unique key
+removed, the policy open to any member, `staff_id` CASCADE.
+Screenshots: `docs/screenshots/loss-alerts-a576-*.webp`.
+**Owner, 2026-10-23 (A580): "Yes let them be premium"** — the Watch list, its settings, the bell alerts and the daily-email
+block now need the Analytics switch (feature_flags `analytics`); see A580.
+
+### A574 · P2 · FIX BUILT 2026-10-23 (till 1.0.20 + cloud + web) · Every label carries a barcode; missing ones generated when you print; barcode numbering (format, prefix, start, digits)
+Owner, 2026-10-22, after testing A571: "label should contain barcodes". Then: "i should also be able to set barcode start
+sequence, number of digits i need etc".
+
+**Before (A571).** `showBarcode` was a switch on both settings screens, and an item with no barcode printed a label WITHOUT
+bars (layoutLabel warned "No barcode to print for this item"; the ESC/POS slip skipped the bars). Generated codes were
+always EAN-13 `20` + 10-digit item number + check digit, from 1.
+
+**Every label has bars.**
+- `shared/labels.ts` (+ 4 copies): `cleanLabelSettings` forces `showBarcode: true` (the field is kept so stored settings
+  still read); the Barcode switch is gone from the web Print labels page and the till Labels tab ("Digits under the bars"
+  stays a choice). `layoutLabel` throws `NO_BARCODE` when there are no bars; `layoutLabels` leaves such a row out and says
+  why (`onSkip`: "it has no barcode yet", or "its barcode "…" cannot be drawn"); `labelSvg`, `labelsHtml` (roll and sheet),
+  `tsplLabel`, `zplLabel` refuse a layout without bars (`assertLabelBars`); `escposLabel` throws without bars. A stored code
+  that is not a valid EAN / UPC still prints as Code 128 (unchanged); one Code 128 cannot carry (e.g. "Café") is left out
+  and named.
+- **Web** (`LabelsPage.tsx`): on Print, chosen items without a barcode → "N items have no barcode yet — generate them and
+  print?" → `POST /api/products/barcodes/generate { product_ids }` for exactly those → the products re-read (the rows refreshed
+  with the codes) → print. Cancel prints nothing. Without `menu.edit` those items are left out ("ask a manager to generate
+  barcodes for: …") and the rest print. The preview of an item without a code shows the next code as an example.
+- **Till** (`main/ipc/labels.ts`, `LabelsTab.tsx`): the tab asks the same question (only for a person with menu.edit) and
+  sends `generate: true`; main's `generateMissingBarcodes` calls the cloud route through `manageFetch` (the person's PIN
+  sign-in) for exactly those items and writes the codes into the local `products` table (`barcode` only where still empty).
+  Offline ("barcodes could not be generated - No connection…"), without menu.edit ("ask a manager…"), or not asked: those
+  items are left out and named in `notice`/`skipped`, the others print; only such items → nothing is sent, the answer says
+  why. `terminalWrites.ts` MANAGER_WRITES gains `/api/products/barcodes/(generate|settings)` (PIN sign-in only; the device
+  token stays denied).
+
+**Barcode numbering** (`shared/barcode.ts` + 4 copies; business_settings `barcode_settings`):
+- format **EAN-13** (default = A571 exactly), **EAN-8** (new encoder `encodeEan8`; TSPL "EAN8", ZPL ^B8, ESC/POS GS k m 68;
+  a valid 8-digit GTIN on file now prints as EAN-8), **UPC-A**, or **Code 128 numeric** of 4–20 digits with an optional GS1
+  mod-10 check digit; prefix (digits only, cut to leave one sequence digit); start number. Code = prefix + zero-padded
+  sequence + check digit; next = max(start − 1, highest sequence already used with this prefix and length) + 1, so the first
+  code is the start number. Ranges are capped at 2^53 (a 20-digit range counts no further than a JS number).
+- Warnings, never a refusal: EAN prefix not starting with 2 (GS1 in-store 20–29), UPC-A not 2 / 4, Code 128 with a check
+  digit at 8/12/13 digits (prints as EAN/UPC), a range under 1000 codes, and `SCALE_CLASH_WARNING` whenever the codes would
+  print as EAN-13 21–29 or UPC-A 2… (`clashesWithScaleCodes`, a one-digit prefix "2" included) — the weighing-scale ranges
+  A577's `shared/scaleBarcode.ts` reads. The default stays 20.
+- `GET /api/products/barcodes/settings` (any signed-in person) · `PUT` (menu.edit, stored cleaned). The generate route uses
+  it; existing codes never change; uniqueness still the unique index + 23505 retry. **A range that cannot give every chosen
+  product a code refuses before anything is written** (409 `barcode_range_full`, "Only N new codes are left … Change the
+  prefix or the number of digits in Barcode numbering"); the dry run carries the same error, and Generate barcodes disables
+  its button and shows it.
+- UI: a "Barcode numbering" section on the web Print labels page and the till Labels tab (format, prefix, start, digits —
+  fixed and explained for EAN/UPC, chosen for Code 128 with "Add a check digit"; the next 3 codes, codes left, warnings;
+  editable with menu.edit, read-only otherwise). The till reads it on setup and keeps it (`label_numbering` table) for
+  offline display; `labels:numbering` saves it through the cloud (refused without menu.edit; offline "Not saved").
+
+**Tests.** `tests/barcode-labels-a571.test.mjs` 28 → 46: the deliberate changes (four A571 cases that laid out an item with
+no bars now give it one; the roll case now expects Bread left out and said why; the page pin follows `toRows(list)`), and
+new sections B (no toggle), N (never bar-less on all four paths: browser HTML/SVG, sheet, TSPL/ZPL, ESC/POS; Code 128
+fallback; EAN-8 decoded back by the published tables), M (each format/length/prefix/start/check digit, the range used up,
+the warnings), W (the web page asks → generates → refreshes → prints; without menu.edit names and prints the rest), and
+over HTTP the numbering settings, generate following the numbering, a range used up. `apps/desktop/test/labels-a571.test.mjs`
+26 → 67 (real compiled main, real SQLite): without menu.edit / offline / not asked → left out and named, the rest print;
+online with menu.edit → the cloud generates for exactly those ids, the till keeps the codes, all print with bars; the
+numbering from the cloud, saved, kept offline, refused without menu.edit. `tests/terminal-write-guard` +2 (the two routes:
+PIN sign-in allowed, device token denied). **Mutations, each bites:** cleanLabelSettings keeping a stored showBarcode false;
+layoutLabel without its throw; assertLabelBars a no-op; escposLabel without its throw; nextNumberedCodes starting after the
+start; numberedCode without the check digit; the route without the range-full refusal; LabelsPage printing without
+generating; generateMissingBarcodes ignoring canEdit; printLabels without the skip; the generated codes not written into the
+till's products; the MANAGER_WRITES entry removed.
+
+**Every business type** (owner, 2026-10-23: "let us not forget other business in the tills all this changes should also be
+taking shape on them based on how they operate"). The till's Stock › Labels tab was already type-independent (online licence
++ menu.edit or inventory.view); now `labels:setup` returns the business type (device_config), the tab words its intro and
+search for it (`renderer/lib/labelsWords.ts`: grab-and-go / packaged items at a restaurant or café, the shop at a petrol
+station, extras at a car park, the shelf at a shop; `businessTerms(...).products`), and `labelProducts` leaves out pump fuel
+(`is_fuel`) — a petrol station's shop items are listed. The desktop test runs all seven types (restaurant, cafe, retail,
+minimart, parking, petrol_station, other): the tab shows under A573's relabelled nav, setup knows the type, an item prints
+with its bars; mutations (pump fuel listed; Labels only for shops; the scale clash never flagged) each bite.
+
+**Manual.** `docs/Manuals/BARCODE-LABELS.md` (+ .docx / .html rebuilt): every label has a barcode; missing ones are generated
+when you print (and what happens without the right or offline); the Barcode numbering section.
+
+**Owner to know.** Generating on the till needs the internet and a person with menu.edit (the codes come from the cloud, so
+two tills can never hand out the same code). Changing the numbering never renumbers existing codes. A valid 8-digit code
+already on file now prints as EAN-8 rather than Code 128 (the same digits scan the same).
+
+### A573 · P2 · FIX BUILT 2026-10-22 (till 1.0.20 + web) · Each business type in its own words: Departments for a shop, Menus for a restaurant; no "hotel" left
+Owner, 2026-10-22, with a screenshot of the dashboard for **Magas Limited, a Retail business** (CATALOGUE › Menus,
+"Group your categories into menus — Food, Soft drinks, Alcohol, Tea … The POS shows the menus as tabs in its category
+panel"): "the items in the navigation bar, strangley enough in retail businness their is a menu item i dont know if this
+is replicated across all businesses please read all business menu and name items correctly ensure hotel references hav
+been removed everywere and correct items replace them even if it means creating new tables in the db". ("Hotel" = an
+eatery: food-service words and features showing for a shop.)
+
+**Found (every type, every surface — the full inventory is `docs/BUSINESS-TYPE-WORDING.md`).** A537's menus showed as
+"Menus" with restaurant examples to every type, on the web sidebar, the Menus and Categories pages, the web POS and the
+till. Worse: Settings › Business › Setup sent a **retail** (and "other") business to the restaurant's page (Dine-in
+Settings: tables, floor plan, waiters, menu periods); the **Kitchen display** tab, the **Eat now, pay later / Pay before
+kitchen** switches and the manager portal's **Turnover** (live dine-in tables) showed to every type; a shop's stock section
+was called "Purchasing"; the roles screen read "See the menu", "send orders to the kitchen", "table turnover"; the till's
+Manager said "Menu"; the web POS said "to a hotel room".
+
+**Decided (common practice; defaults of the brief, no reason in the code to differ).**
+
+| | restaurant, cafe | retail, minimart | petrol_station | parking, other |
+|---|---|---|---|---|
+| A group of categories | Menus (Food, Soft drinks, Alcohol, Tea) | **Departments** (Groceries, Beverages, Household, Personal care) | Departments (Lubricants, Shop, Gas, Car wash) | **Groups** (parking: Parking, Car wash, Permits; other: Services, Products, Accessories) |
+| Web sidebar sections | Menu · Inventory | Catalogue · **Stock** | Catalogue · Stock | Catalogue · Stock |
+| Till Manager / manager portal catalogue | Menu | **Products** | Products | Products |
+| Food-service areas (KDS, reservations, combo meals, ingredients, table turnover, tables, room charge, kitchen switches) | shown | hidden | hidden | hidden |
+
+Parking keeps its Groups (not hidden — a car park may sell washes or permits, and groups may exist).
+
+**BUILT.** ONE pure helper, `shared/businessTerms.ts` (copies `apps/dashboard/src/lib/`, `apps/desktop/src/shared/`;
+check-shared-sync): `businessTerms(type)` (the words), `foodAreas(type)` (what a type sees), `permissionWords` /
+`permissionGroupWords` (a shop's words for the frozen permission catalogue, at display time — migration 134's words are
+untouched). Wording and visibility only: no table, column or route renamed, **no migration**.
+- **Web:** the sidebar (Departments / Groups, the hint's examples, Stock), the Menus page (title, intro — now "as tabs
+  across the top", A566 — placeholder, icon, button, empty state, delete dialog, errors), the Categories select, the
+  Products page's "Product upload" (modal, toast, template title), the Promotions hint, Settings › Business (the shop's
+  setup for retail and other, its title from the type), Devices and printers (Kitchen display for restaurant / café),
+  POS options (the two kitchen switches for restaurant / café, or wherever already on), Roles and permissions and a staff
+  card (the shop's words), the manager portal (Products; Turnover for restaurant / café), the web POS (MenuBar and panel
+  labels, the chip, "Back to the items"; Post to Room: "a guest's room", no "hotel").
+- **Till:** Manager sidebar and page (Products [Products · Offers]; `relabelCatalogue` in lib/managerNav.ts), the import
+  ("Import products …"), the sale screen's top tabs, panel and chip (Departments / All departments), the Labels note.
+- `tests/menus-a537`, `tests/menus-top-a566`, `tests/permissions-web-a490`, `apps/desktop/test/menus-top-a566` and
+  `manager-nav` pins follow the deliberate renames (A566's and A563's behaviour unchanged; their tests pass).
+
+**Left for the owner** (in the doc): the built-in Waiter / Kitchen / Kitchen Manager roles exist at every business
+(A514; migrations 142 / 159 and their tests) — **decided 2026-10-23, A580: restaurant / café only, migration 169**; "Kots: 0"
+on a shop's standard receipt (a paper change) — **A580: gone at a shop**; Analytics' "Menu
+engineering" (A572's folder, not edited); the Help card's kitchen-ticket line; /api/menus error words; the upload
+template's MENU help line; the till's Item Mix restaurant-only.
+
+**Tests.** `tests/business-terms-a573.test.mjs` (23, CI step "Business-type words (A573)"): the helper per type; the
+REAL web sidebar, Menus page and Settings › Business rendered per type (esbuild + react-dom/server, contexts stubbed);
+the roles words; the web POS bar and panel; pins on the manager portal, POS options and Devices; no user-visible "hotel"
+in apps/ or shared/. `apps/desktop/test/business-terms-a573.test.mjs` (9, CI step "Desktop business-type words (A573)"):
+the till's Manager sidebar, its MenuBar and panel rendered, the POSPage / ManagerPage wiring. Mutations (each made, seen
+to fail, reverted — 15 of 15 bite): retail back to Menus (helper and till copy); the sidebar's relabel dropped;
+FOOD_VERTICALS widened; the shop's setup back to the restaurant's; Kitchen display to every type; permissionWords
+passing the catalogue through; "hotel room" back; the Menus title hard-coded; MenuBar ignoring its label (web, till);
+food areas on for every type; relabelCatalogue a no-op; POSPage not passing the words; the till panel's "All menus".
+Screenshots (real sidebar and Menus page, demo data): `docs/screenshots/business-terms-a573-retail-before.webp`,
+`-retail-after.webp`, `-restaurant-before.webp`, `-restaurant-after.webp`.
+
+### A572 · P3 · FIX BUILT 2026-10-22 (web only) · Analytics: the Payment mix legend overlaps; the week-at-a-glance cards are hard to read
+Owner, 2026-10-22, with screenshots of the dev dashboard (dark mode): "this pie chart looks off" — in the **Payment mix**
+legend the method name and the amount were drawn over each other ("CaKES 95,340"; "M-" above "Pesa"; Card and Other the
+same) and the % sat cut off at the card's right edge. And "the cards are small reading them is abit hard" — **Your week at
+a glance**: seven small day tiles, the items in 12 px text cut to one line ("12PCS Tender F…", "5PC Chicken Co…").
+
+**Cause.** The donut put its legend beside the chart from the `sm` SCREEN width up, but on a wide screen Payment mix is a
+third of the row (~370 px inside): the legend got ~180 px, and each row was a flex row whose name (`flex-1 min-w-0`, no
+truncate) shrank to nothing while its text still painted under the amount, and the amount could wrap. The week tiles were
+`text-xs` and `truncate`, 7 across from `xl`.
+
+**BUILT (web; `apps/dashboard/src/pages/analytics/charts.tsx` Donut, `AnalyticsPage.tsx` the week block).**
+- **Donut legend:** the donut and its legend sit in a wrapping row — the legend has a 15rem basis, so the CARD's width
+  decides: beside the donut when there is room, below it when not (Payment mix at 1600 px and 1024 px, the leak split, a
+  phone). Each row is a fixed grid — swatch | name (truncates, the full name on hover) | amount (right-aligned,
+  tabular, never wraps) | % (fixed column). Nothing overlaps or leaves the card at 1600, 1024 or 375 px (before: the page
+  scrolled sideways at 1024).
+- **Week at a glance:** body-size text (`text-sm`) for the day, the items and the counts; the whole item name on up to
+  two lines (`line-clamp-2`, full name on hover) with the count in its own column; 1 column on a phone, then 2 / 3 / 4,
+  7 across only from 1800 px; today's card ringed in the back office teal with "Today".
+
+**Tests.** `tests/analytics-visuals-a572.test.mjs` (4, CI step "Analytics legend and week cards (A572)"): the wrapping
+row and the legend basis, the legend's grid row (truncating name, no-wrap amount and %), the week's text size, two-line
+names and no truncate, the grid and today's ring. Mutations (each made, seen to fail, reverted): the legend row back to
+the flex row; the wrapper back to `flex-col sm:flex-row`; the week name back to `truncate` at `text-xs`; the grid back
+to `xl:grid-cols-7`; both files back to HEAD (4 of 4 fail). Rendered with demo data at 1600, 1024 and 375 px:
+`docs/screenshots/analytics-a572-*.webp` (`before-*` the old cards at 1600 px).
+
+### A571 · P2 · FIX BUILT 2026-10-22 (till 1.0.20 + cloud + web) · Generate barcodes; print labels on any printer and any label size
+Owner (2026-10-22): "we do not have barcode generation mechanism, what does it entail can we add it?" Then, asked which label
+printer and which size: "for now i cant tell what my clients will use as their printer or the label size can we do all?"
+
+**Before.** Products had a `barcode` field (and `plu_code`), the till scanned (POSPage's keyboard-wedge listener: barcode,
+then PLU), the menu upload had a barcode column, but nothing made a barcode and nothing printed a label.
+
+**Generating barcodes.** `POST /api/products/barcodes/generate` (`menu.edit`; `{ product_ids?, dry_run? }`) gives every
+chosen product WITHOUT a barcode (none chosen: every active one) an **in-store EAN-13**: `20` + a 10-digit item number + the
+GS1 check digit (`2000000000015`, `2000000000022` …), the next numbers after the business's highest.
+- **The prefix decision:** GS1 keeps 20–29 for restricted (in-store) circulation; no manufacturer's product carries one.
+  ZapTill uses **only `20`** for item codes; **21–29 stay free** for weighing-scale codes with an embedded price or weight
+  (2 + PLU + price/weight + check), so a generated code is never read as one (`shared/barcode.ts` `IN_STORE_PREFIX`).
+- **Never overwrites:** the write is conditional on the field still being empty (`is('barcode', null)`, or the same empty
+  string); a code typed meanwhile is kept and reported as `kept`.
+- **No duplicates, no migration:** the unique index `products_barcode_business_idx (business_id, barcode)` already exists
+  (baseline); a clash with a concurrent generate (23505) re-reads the business's codes and takes the next free number.
+- **Web:** Products › **Generate barcodes** (the ticked products, or all; the count and the first codes first, a dry run,
+  then the confirm), and in the product form a **Barcode** field (scan or type any format) with **Generate** (an existing
+  product from the cloud at once; a new one the next free code, checked again on save). A scanned or typed barcode of any
+  format keeps working; manufacturer EAN-13, UPC-A and Code 128 codes print as they are.
+
+**Encoders** (`shared/barcode.ts`, pure; copies in server lib, dashboard lib, desktop shared and main, kept identical by
+`check-shared-sync`): EAN-13 (12 digits: the check digit added; 13: checked), UPC-A (the EAN-13 bars of 0 + the code),
+Code 128 with subsets B and C chosen automatically (C for 4+ leading digits, 6+ inside, 4+ at the end; an odd run gives a
+digit to B); anything printable that is not a valid EAN/UPC prints as Code 128. Output: a module string (`1` bar, `0`
+space), the quiet zones, and for Code 128 the symbol values and the subset runs (for ESC/POS and ZPL).
+
+**Labels** (`shared/labels.ts`, pure, same copies). Settings per business (`business_settings` key `label_settings`,
+`GET|PUT /api/products/labels/settings`, PUT `menu.edit`, stored cleaned): size presets 30×20, 38×25, 40×30, 50×25, 50×30,
+58×40, 60×40 mm or custom; item name, price, barcode, its digits, business name, an optional "per kg" text; the gap; 203 or
+300 dpi; the sticker sheet. Fonts auto-fit (the name on up to two lines; on a small label the business name goes first, then
+the name keeps one line, each said as a warning). The layout is in printer dots, the bar module a whole number of dots,
+centred with its quiet zones. Print paths, chosen at print time:
+- **(a) any printer with a driver.** Web: Menu › **Print labels** (`/dashboard/products/labels`), the browser's print window,
+  one label per page, `@page { size: Wmm Hmm; margin: 0 }`, SVG bars. Till: the Windows printer chosen
+  (`printService.printLabelsHtml`, the page the label's size, silent).
+- **(b) A4 / Letter sticker sheets** (web): 3×7, 3×8, 4×10, 5×13 (A4) or custom rows × columns with margins and gaps
+  (Letter too), "start at label N" for a part-used sheet. A PDF: "Save as PDF" in the print window (no PDF library added).
+- **(c) raw label languages** (till): **TSPL** (TSC, most Xprinter label models) and **ZPL** (Zebra), to the printer's
+  `IP[:9100]` or a USB printer raw (`printer:<Windows name>`), through `@swiftpos/printing`'s `sendToPrinter`, as the
+  ESC/POS stations do.
+- **(d) the receipt printer** (till): ESC/POS GS k (EAN-13 m 67, UPC-A m 65, CODE128 m 73 with `{B`/`{C`) or the bars as a
+  GS v 0 raster; this till's Till-station printer unless another is named.
+Choosing what to print: search, a category, every generated code, the ticked products (web), and **"items in this
+delivery"** on the web: `GET /api/products/labels/restocked?since=` (`inventory.view`), the products restocked since that day
+and how many (a goods-received note receives INGREDIENTS, never products, so a product delivery is its restock movements);
+a quantity for each (at most 2000 labels a run).
+
+**Till.** Manager › Stock › **Labels** (`components/LabelsTab.tsx`; `managerNav` tab `labels`), shown with the online
+licence (as the other Stock pages, A460) and `menu.edit` or `inventory.view`. `main/ipc/labels.ts`: `labels:setup` (this
+till's active products at this branch's price, `branch_price` over `base_price`; the business's label settings from the
+cloud, kept in a local `label_setup` row for offline), `labels:save` (the printer is this till's; the business's settings go
+to the cloud only with `menu.edit`), `labels:print`. A PIN sign-in on the till may write the label settings (`lib/terminalWrites.ts` MANAGER_WRITES); the till's own sign-in may not. The label printer is a separate per-till setting (like
+`station_printers`), not a new station kind: the print stations and the A557/A559 routing are untouched.
+
+**Price on labels:** the item's current price; both screens say labels must be reprinted when a price changes. "Reprint
+labels for items whose price changed since <date>" was **skipped**: there is no price history (products keep only the
+current price).
+
+**Scanning:** a generated code is 13 digits, matched by the till's rule (`barcode === scanned || plu === scanned` in
+POSPage, read, not edited: A566 owns it) and the web POS's; tested.
+
+**Tests.** `tests/barcode-labels-a571.test.mjs` (28): check digits, and EAN-13 / UPC-A decoded back with the published
+L/G/R tables and parity; the Code 128 table (107 distinct, 11 modules, even bar sums, published start/stop patterns), known
+values and checksums, subset switching; in-store codes; the layout on every preset and custom size at 203 and 300 dpi
+(inside the label, no overlap, whole dots, quiet zones); auto-fit; the sheet grid and "start at N"; TSPL, ZPL and ESC/POS
+golden output; the web page (one SVG per label, `@page`); scanning; the cloud routes over HTTP (menu.edit, the dry run,
+prefix 20 and unique, never over a barcode set between the read and the write, two generates at once against the unique
+index, this business only, the settings). `apps/desktop/test/labels-a571.test.mjs` (24): the real labels IPC on SQLite with
+the printers stubbed: TSPL / ZPL bytes to the address, ESC/POS to the Till station, the Windows page at the label's size,
+a printer fault answered, the keys, the licence, offline settings, the tab.
+Mutations (each made, seen to fail, reverted): check digit weighted from the left; an EAN parity row swapped; Code C on 4
+digits mid-text; prefix 21; the module width not floored; `startAt` ignored; the update without the empty-field condition;
+no retry on 23505; the route without `menu.edit`; `labels:print` without its key check; no Till-station fallback;
+`base_price` instead of the branch price; the Labels tab without the online licence.
+Manual: `docs/Manuals/BARCODE-LABELS.md` (with `.docx` and `.html`).
+
+### A566 · P3 · FIX BUILT 2026-10-22 (till 1.0.20 + web) · Menus as tabs across the top again; check other branches from the selling screen
+Owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way categories used to
+appear so that cashiers can easily pick the menu". Before A537 the categories were a row of tabs across the top of the
+product grid; A537 moved them into the ☰ left panel with the menus as small tabs inside it, and A554 made the panel start
+collapsed every time — so a cashier had to open the panel to change menu.
+
+**BUILT — menus across the top (till POSPage, web CashierScreen and MinimartPOS).** When the business HAS menus (A537: at
+least one active menu that holds a category) a row of big tabs sits under the search, above the grid: "All", each menu in
+the owner's order, "Other" when some category has no menu — styled as the old category tabs, larger (till 48 px high,
+88 px+ wide, `action-500` on the chosen one; web 46 px, the theme's `--act-strong`, the POS's `--pos-*` light / dark
+tokens elsewhere). A tap shows that menu's items (its category and any search start again). The ☰ panel stays collapsed
+at start (A554) and, opened, lists only the chosen menu's categories for drilling further ("All Food", Burgers, Fast
+foods) — its own menu tabs drop out (`menuBar`). The chosen menu is remembered per till / per browser as A554 decided
+(`zaptill.categoryPanel.v1`, the menu only; the pin stays the session's). The chip by the search and the A279 filter line
+name only the chosen category (the bar shows the menu). Many menus: the row scrolls sideways (swipe, wheel) with ‹ ›
+arrows and a fade on the side that hides more (`menuBarEdges`), and the chosen tab is kept in view. **No menus: unchanged**
+— no bar, the ☰ panel with A537's plain list (categories as top tabs for a business with few categories and no menus was
+considered and NOT built: today's behaviour kept, as asked). **A search looks through every menu** (`gridMenuScope`: while
+the cashier types, the menu does not narrow the grid; a category picked in the panel still does, shown as its chip).
+A563's hidden / sold-out items apply inside a menu as everywhere (matchStock, the soldOut tile untouched). Helpers in
+`shared/menuFilter.ts` (+ the two copies, check-shared-sync): `menuBarTabs`, `menuBarLabel`, `gridMenuScope`,
+`menuBarEdges`; components `MenuBar` in both CategoryPanel files.
+
+**BUILT — "Check other branches" on the till's selling screen** (A564 left `FindInBranches` unwired). Offered only with
+A564's two locks: `inventory.view` (from the session, `can`) AND the online licence (`useOnlineLicence`) —
+`lib/branchCheck.ts mayCheckOtherBranches` (the till's own file — lib/branchStock.ts stays one text with the web's). Two ways in: (1) a search that finds an item sold out or hidden HERE (A563;
+fuel never) shows a strip under the search — "Coke is out here." — with **Check other branches**
+(`outHereMatches`, 2+ letters, active items, at most 3); (2) a long press (550 ms, touch) or a right-click (mouse) on a
+product tile — the click that ends a long press adds nothing; the tiles get the handler only when allowed (a stable
+callback, so A470's memoised tiles hold). Both open a dialog with `FindInBranches` (new `autoSearch`: it looks at once for
+the item named) — exact counts, never a cost, "Needs a connection" offline, through the branch server on a peer — all
+A564's (`branchStock:find` in main). Read only: no Request button there; asking stays a manager's (inventory.transfer,
+Manager › Stock › Other branches), and the dialog says so. A cashier without inventory.view, or a till without the online
+licence, sees neither the strip nor the long-press offer.
+
+**Tests.** `apps/desktop/test/menus-top-a566.test.mjs` (26: the till's MenuBar and CategoryPanel bundled with esbuild and
+rendered — menus → top tabs, no menus → nothing; a menu narrows the grid and the panel; the panel drops its tabs under the
+bar; no menus → A537's plain list; a search looks through every menu; A563's hide inside a menu; the scroll edges; the
+locks — inventory.view through lib/access and the licence; the search offer; the tile long press only when allowed; the
+read-only view) and `tests/menus-top-a566.test.mjs` (10: the web MenuBar and panel rendered, the theme token, CashierScreen
+and MinimartPOS wiring). Pins moved for the deliberate change: `apps/desktop/test/menus-a537` (the panel's `menuBar`, the
+menu ignored while searching), `tests/menus-a537` (same, both web screens), `tests/web-mobile` (the panel's props),
+`apps/desktop/test/till-feel` (the tile's long-press prop — a stable callback). **Mutations, each bites:** menuBarTabs
+returning []; gridMenuScope keeping the scope while searching; the till's and the web's panel showing their own tabs under
+the bar; mayCheckOtherBranches ignoring the licence; the tiles given the long press unconditionally; the dialog not gated;
+POSPage / CashierScreen without the bar; the web bar's chosen tab in a raw colour. CI: "Desktop menus as top tabs and check
+other branches (A566)", "Web POS menus as top tabs (A566)".
+
+**Not done.** The web POS gets the menu bar only — its Stock tab already has A564's Other branches for a cashier, so no
+long press there. The long press opens the lookup for that one item; there is no "out here" badge on tiles in "Sell as
+normal" (nothing is out by the owner's rule). Screenshots (a made-up demo business): `docs/screenshots/pos-menus-a566-till.webp`
+(the real till renderer through the till-shots harness, before and after, Fast foods chosen, the panel open) and
+`docs/screenshots/pos-menus-a566-web.webp` (the web POS's real MenuBar and CategoryPanel with CashierScreen's dark and
+light tokens, rendered on their own — the whole web POS needs a signed-in session and was not driven).
+
+### A570 · P2 · FIX BUILT 2026-10-22 (cloud + admin) · Download the ZapTill installer from the admin portal (GitHub today, own server later)
+Owner (2026-10-22): "yes this is something i have wanted since in future we will get a vps which will hold our apps and move
+away from github and make the repo private". Found by the technician guide (`docs/setup/TECHNICIAN-SETUP-NOTES.md` Step 7;
+"Facts I'm unsure about" 5): a technician had to find the installer on GitHub's release page.
+
+**Built.** Admin portal › a client's **Desktop updates** tab › "Download ZapTill" (the version APPROVED for that client first,
+then the latest release), and **Download ZapTill** in the menu (Money & support; the latest). A super admin also gets a picker
+of every downloadable version (complete, never a draft). Beside each: the file name, size, SHA-256 (GitHub's own digest of
+the asset, when it records one) and SHA-512 (from the release's latest.yml, shown as hex) with the PowerShell
+`Get-FileHash` line, so the technician can check the file on the PC.
+- `GET /api/admin/desktop/installer?client=` (the offer), `GET …/installer/:version/info`, `POST …/installer/:version/ticket`
+  (a one-use link valid 2 minutes, so the BROWSER saves the file itself, with its own progress, and no admin token sits in a
+  URL), `GET …/installer/:version` (Bearer admin token or `?ticket=`) — `routes/adminInstaller.ts`, mounted before `/admin`.
+- Any active admin; an AGENT may download only the latest release or the version approved for the client named, any other
+  version is a super admin's (403 SUPER_ADMIN_REQUIRED). Every download is audited in `admin_audit_log`
+  (`desktop.installer.download`: who, which version, file, source, size, the client, token or link).
+- The file is STREAMED (`pipeline(Readable.fromWeb(body), res)`), never held in memory; Content-Disposition (attachment;
+  `ZapTill-<version>.exe`), Content-Length when the source gives it, `Cache-Control: no-store`.
+
+**The source — `lib/installerSource.ts`, one module, both sources.**
+- `DESKTOP_DOWNLOAD_BASE_URL` (the future VPS or object storage): when set it WINS. Layout `{base}/ZapTill-{version}.exe`
+  (required) and `{base}/latest-{version}.yml` (optional — the release's latest.yml, for the SHA-512).
+- Else GitHub Releases (`DESKTOP_RELEASES_REPO`, default `oweyahillary/swiftpos`, as `release.yml` publishes them:
+  `ZapTill-<version>.exe`, its `.blockmap`, `latest.yml`) read with `GITHUB_RELEASES_TOKEN`: the asset's API url with
+  `Authorization: Bearer` and `Accept: application/octet-stream` (what a PRIVATE repository requires), `redirect: manual`;
+  the short-lived signed link it answers with is fetched WITHOUT the token (another host).
+- Neither → 503 `INSTALLER_SOURCE_NOT_CONFIGURED` naming both. Anonymous GitHub is deliberately not a source: it stops the
+  day the repository goes private, and Render's shared addresses hit GitHub's anonymous limit (A356).
+- The token never reaches the browser (tested: no answer, header or link carries it). Env NAMES in `render.yaml` (no values):
+  `GITHUB_RELEASES_TOKEN` (was read but never declared there) and `DESKTOP_DOWNLOAD_BASE_URL`; `lib/env.ts`'s boot warning
+  names the download too.
+
+**NEXT STEP — not built (the owner's move off GitHub).** The TILLS' own updates still come from GitHub: electron-updater on
+0.6.16+ asks `GET /api/desktop-update/v/:version/:file`, which redirects to GitHub's signed link (`assetDownloadUrl`).
+- Going PRIVATE: keeps working as long as `GITHUB_RELEASES_TOKEN` is set on the cloud (the cloud asks GitHub with it; the
+  till only follows the signed link). Tills on 0.6.15 and older poll GitHub directly and stop updating — they are long gone.
+- Moving to the VPS: `routes/desktopUpdate.ts` must resolve its files through `lib/installerSource.ts` (redirect to, or
+  stream from, `{base}/…`) — e.g. a `/api/desktop/update/latest.yml` style proxy per approved version using the same source
+  module; and the version LIST (the admin's approvals, today GitHub's release list) needs a manifest on the VPS
+  (`{base}/versions.json` or a directory listing).
+- The release workflow (`.github/workflows/release.yml`) would then also upload `ZapTill-<version>.exe`, its `.blockmap` and
+  the version's `latest.yml` (as `latest-<version>.yml`) to the VPS (rsync/scp or the storage's CLI, with a deploy key as a
+  repository secret), and keep its "one release, latest.yml + installer" check against the VPS copy.
+
+**Tests.** `tests/installer-download-a570.test.mjs` (15): the source order, the 503, admin only (no token, a shop's token, a
+bad link → 401), the agent's limits and the super admin's picker, one-use links, streaming (the stubbed source holds its
+second chunk until the admin has received the first — a buffering server never answers), the headers, GitHub asked with the
+token and octet-stream and the signed link without it, the token never in an answer, the audit row, 404 for an unknown
+version and a draft (both sources), 400 for a non-version, the checksums (GitHub digest; latest.yml as hex; the VPS's yml),
+the portal's offer order. Mutations (each made, seen to fail, reverted): GitHub before the VPS URL; GitHub without a token;
+no Authorization header; no used-ticket memory; an agent allowed any version; no audit; the body buffered whole.
+
+### A569 · P2 · FIX BUILT 2026-10-22 (cloud + admin + web) · A one-month cloud trial starts with the first desktop licence
+Owner (2026-10-22): "they should get a 1 month trial plan for cloud if they have subscribed on the desktop platform". Found by
+the technician guide (`docs/setup/TECHNICIAN-SETUP-NOTES.md` Steps 1–2; "Facts I'm unsure about" 2): a new client read
+"Plan: None"; create-client promised "A trial subscription is automatically applied" but applied one only when a plan named
+like "trial" existed, and none does.
+
+**The rule (`lib/cloudTrial.ts`).** When a branch's desktop licence is activated (admin › Branches & tills › "Activate
+licence", any branch) and the client has NO other licensed branch, has never had web access (no `web_hosting` flag row — on
+or off — and no dated `web_access_expires_at`) and never had a trial: web access is switched on, `web_access_expires_at` =
+activation + 30 days, the trial is recorded in `business_settings` `cloud_trial` {started_at, ends_at, branch_id,
+started_by, converted_at}, audited (`web_access.trial_start`), and NO invoice is raised (a licence fee typed at activation
+raises only its own invoice, as before). Once per client, ever: the record is never deleted and (business_id, key) is unique,
+so two activations at the same moment start one; a second licence, a revoked-and-reactivated one, or any later one never
+restarts it; a client that had web access is never given one. A trial that cannot be read never starts, and never undoes
+the licence. The owner cannot write or reset the record (`POST /api/business/settings` answers READ_ONLY_KEY).
+
+**When the trial ends (`lib/webAccess.ts`).** No 21-day grace for a trial: the day after it ends, "reports only" for 7 days
+(sign-in works, the web POS is off — the same as a paid client's reports-only week), then sign-in is refused: "Your cloud trial
+has ended. Contact ZapTill to keep the web dashboard — your tills keep working." (`CLOUD_TRIAL_ENDED`; the login page shows
+it as its own screen). `auth.ts` answers every web-access refusal from `webAccessRefusal` (both sign-in paths). Tills are
+never affected — they sell on the desktop licence. "End trial" (web access switched off during the trial) ends it at once.
+
+**Convert to paid.** Plan & billing shows "Cloud trial — ends {date}" (or "ended … — reports only" / "ended") with
+**Convert to paid** = the existing Enable web access flow and its KES 10,000 invoice: `PATCH …/features/web_hosting
+{enabled:true}` on a client in or after its trial marks it converted and sets web access to one year from that day
+(`web_access.trial_convert`); from then on it is an ordinary paid term.
+
+**Shown.** Admin header: "Web portal" reads "Cloud trial — ends {date}" (amber) / "Trial ended …"; "Plan" reads the plan in
+words — Desktop / Cloud trial / Cloud trial ended / Cloud / No licence yet (`plan_label` on `GET /clients` and
+`/clients/:id`), never "None" for a desktop client. The client list has a Plan column. Activating the first licence says the
+trial started. Create-client's subtitle now reads "The one-month cloud trial starts when the first desktop licence is
+activated." The owner's dashboard (`GET /api/business/cloud-trial`, the owner only) shows one quiet line in the trial's last
+7 days — "Your cloud trial ends on {date} — contact ZapTill to keep the dashboard" — and during the reports-only week that it
+ended; nothing for partners or cashiers, nothing on a till.
+
+**Plans model checked.** `plans`/`subscriptions` are the legacy plan model (no rows in use; create-client's step 8 still
+inserts a "trial" subscription only when such a plan exists — left as it was, commented). The cloud trial is not a plan: the
+web-access fields already carry the clock, so no plan row and **no migration** (166 not used).
+
+**Tests.** `tests/cloud-trial-a569.test.mjs` (29): eligibility (first licence; never twice; not with another licensed branch;
+not after web access was on, off or dated), phases, the plan words, the trial ladder beside the paid one; over HTTP the first
+licence starts it with no invoice (and a licence fee raises only its own), a second licence and a re-activated one do not
+restart it, a paid client is untouched, a failed read starts nothing, Convert to paid, the list and detail labels; the lapse
+stages (active, reports only at 3 days, CLOUD_TRIAL_ENDED at 8 days — a paid term 8 days past is still in grace), "End
+trial", a converted trial; the owner-only endpoint and READ_ONLY_KEY; the dashboard notice in the last 7 days only; the admin
+header, Plan & billing and create-client words. Mutations (each made, seen to fail, reverted): no had-trial check; no
+other-licensed-branch check; no web-flag check; a trial given the 21-day grace; no trial branch in the refusal; the notice at
+8 days; the trial raising an invoice.
+
+### A564 · P2 · FIX BUILT 2026-10-22 (till 1.0.20 + cloud + web; migration 163) · Find an item in another branch's stock and request it
+Owner, 2026-10-22: "add a feature where employees can search if items are in an inventory of another branch and the manager
+can request for them". Decisions the same day: exact counts at other branches are fine for staff ("Westlands: 24"),
+quantities only, never costs; the SENDING manager may change the quantity when accepting (fewer or more than asked) with both
+kept and shown ("asked 30 · sent 20"); decline needs a reason; a request carries the quantity the requester types — a form
+may open with it blank (A565's links), so a blank one is never sent.
+
+**What existed.** Stock transfers (A197/A218/A221/A494, `routes/stock.ts`): `inventory.transfer`; created `pending` (no stock),
+despatched `in_transit` (stock leaves the source: `applyProductStockOut`), `received` (stock arrives:
+`applyProductStockIn`, sent vs received per line), `cancelled` (with a reason; stock put back if it had left). No "request"
+concept, and no way to see another branch's stock except the owner's all-branch Inventory page.
+
+**Find (cloud).** `GET /api/stock/other-branches?q=… | ?product_id=…` — `inventory.view` (the catalogue gives it to Cashier,
+Waiter, Supervisor, Manager, Storekeeper…; Kitchen and Fuel attendant, products.view only, are refused). The business's
+active, stock-tracked products whose name matches (the search cleaned of LIKE / filter characters, at least 2 letters,
+20 products by default, 50 at most, `truncated` when more match), and for each EVERY other active branch with its
+quantity (no level row → 0), pieces for a by-the-piece item, and `updated_at`. Never the caller's own branch (a person's;
+the owner's / an A550 partner's picked branch; with "All branches" every branch is listed); never a closed branch; never
+a cost (explicit columns, the router's cost strip as the second lock). A count at that branch hides the figure ("being
+counted") from anyone who may not adjust stock (A394, `hiddenWhileCounting` per branch). A non-owner with no branch 403.
+Asked when someone searches — no polling.
+
+**Request (cloud; migration 163 `stock_transfer_requests`).** One product per request. `inventory.transfer` throughout (the
+existing key — no new one).
+- `POST /api/stock/requests` {from_branch_id, product_id, quantity, note, to_branch_id?} — FOR the caller's own branch
+  (`assertBranchAccess(to)`; 403 NOT_YOUR_BRANCH otherwise; the owner / a partner of every branch names `to_branch_id`,
+  400 TO_BRANCH_REQUIRED without one); both branches and the product this business's (404); a quantity above 0 (blank / 0
+  → 400 INVALID_QUANTITY); not the branch itself (SAME_BRANCH); one open ask per branch pair and product (409
+  ALREADY_REQUESTED). Records requested_by / _name / _at (`actor`).
+- `GET /api/stock/requests` — to and from the caller's branch (the owner: the picked branch, or all), names filled in,
+  `incoming_open` (waiting for this branch's answer). `GET /api/stock/requests/count` → `{ incoming }` for the badges (0 for
+  anyone without inventory.transfer).
+- `POST /api/stock/requests/:id/accept` {quantity?} — the branch ASKED (`actingBranch`: from_branch_id; 403 NOT_SENDER for the
+  asking branch). Sends what was asked unless the sender changes it — fewer or more (owner) — never more than it holds (409
+  NOT_ENOUGH_STOCK with `on_hand`). The request is claimed conditionally (`.eq('status','requested')`: two managers at once →
+  one transfer, the other 409), then the EXISTING flow: `insertTransfer` (the creation POST /transfers now shares) and
+  `despatchStock` (the despatch edge PATCH /transfers/:id/status now shares) — an ordinary transfer, `in_transit`, the SENT
+  quantity left the sender, "Asked for by Max: <note>" on it, `transfer_id` and `sent_quantity` on the request. The asking
+  branch receives it under Transfers as any transfer (stock arrives there). A failed creation puts the request back to
+  waiting; a failed despatch leaves the transfer "not sent yet" with a warning.
+- `/decline` {reason} — the branch asked; a reason required (400 REASON_REQUIRED). `/cancel` — the asking branch (403
+  NOT_REQUESTER for the other). A decided request is final (409 ALREADY_DECIDED). Another business's request 404.
+- Who and when on every step: decided_by / _name / _at, decline_reason; the transfer keeps its own despatch / receipt
+  attribution. Migration 163: the table (FKs: branches and products cascade, the transfer and people SET NULL), checks
+  (quantity / sent > 0, two different branches, decided needs decided_at, a decline needs a reason, ≤ 300-character note and
+  reason), the updated_at trigger, RLS (business members read; writes through the server). No function — so no
+  schema-pending entry; `scripts/schema-index.json` carries the table. **The owner runs 163.** Before it: the lookup works;
+  the request routes fail (no table).
+
+**Till (1.0.20).** Manager › Stock › **Other branches** (`BranchStockTab`; managerNav `branchstock`): with the online licence
+and `inventory.view` — search, "Kilimani: 24 · Karen: 0", and (inventory.transfer) "Request from Kilimani" → how many (blank,
+required) and a note → sent FOR this branch; "Requests from other branches" with **Accept and send** (the quantity asked,
+editable) / **Decline** (a reason); "Asked by this branch" with Cancel request; earlier ones with "asked 30 · sent 20". The tab
+reads "Other branches (2)" while two wait (read once when the manager screen opens; no timer). IPC `branchStock:find |
+requests | request | decide` (`ipc/branchStock.ts`, schemas, preload, posApi): the person's own sign-in through `manageFetch`
+— on a till with a branch server that is the server's gateway (A410/A535: only the server talks to the cloud); no
+connection, the server's uplink down or an offline sign-in → "Needs a connection — other branches' stock is on the cloud…",
+never an old figure; a refusal keeps the cloud's words and code. Accepting pulls the till's stock at once.
+MANAGER_WRITES: `/api/stock/requests` and `/api/stock/requests/:id/(accept|decline|cancel)` — a PIN sign-in only; the till's
+own sign-in refused (terminal-write guard), and TILL_KEYS unchanged (the till scope refuses it the reads too).
+
+**Web.** Dashboard **Stock › Other branches** (`OtherBranchesPage` + `components/OtherBranchesPanel`; gated inventory.view or
+inventory.transfer; a nav badge of requests waiting, `/api/stock/requests/count` every 2 minutes like Approvals and Credit).
+The owner with "All branches" sees and answers every request (and can cancel); asking needs a branch picked. The web POS's
+Stock tab and the manager portal (`POSInventoryTab`) gain "This branch | Other branches" — a cashier looks, a manager also asks
+and answers. `lib/branchStock.ts` (the same text on the till: `quantityProblem`, `askedSent`). A565's "Start a transfer →"
+(`/dashboard/stock/transfers?from=&to=&products=`) now opens New Transfer with the two branches and the items filled in and
+the quantities blank. Permission descriptions unchanged: migration 134 registers the catalogue's exact words and its
+test fails on any edit (a rewording was tried and reverted after CI caught it).
+
+**Tests.** `tests/branch-stock-a564.test.mjs` (34, the real routers over HTTP, the terminal-write guard and till scope
+ENFORCED, in-memory database): the rules; the lookup (cashier yes, kitchen 403, this business only, tracked active only, every
+other active branch, never a cost even for the owner, the owner's picked branch, the blind count, the cap, the till's own
+sign-in 403); the lifecycle (ask for your own branch only, once, 404s across businesses, NOT_SENDER / NOT_REQUESTER, 0 /
+nonsense / more than held refused, accept → an in_transit transfer with the stock out of Kilimani through the transfer's own
+movement, received through PATCH /transfers/:id/status into Westlands, final after, two managers at once → one transfer,
+the sender sends MORE (asked 6, sent 20 → the transfer and the stock move 20) and fewer, a blank quantity 400, decline with a
+reason, cancel, the owner and a partner for any branch); the till's PIN sign-in vs its own sign-in; the web wiring, the
+quantity rules and the A565 prefill. `apps/desktop/test/branch-stock-a564.test.mjs` (27, the real handlers through
+registerIpcHandlers on a till WITH a branch server): the call goes to the server's gateway with the branch code and the
+person's token; the uplink down / server unreachable → "Needs a connection"; refusals keep the cloud's words; the keys and the
+licence; the request is always for this branch; accept with a changed quantity; the nav rule and the count; the forms.
+`scripts/test-migration-163.mjs` (9, PGlite). `tests/terminal-write-guard.test.mjs` (+5) and
+`tests/till-scope-enforce-a545.test.mjs` (+1). `tests/lib-memdb.mjs`: `ilike` with `%` matches as LIKE does.
+**Mutations, each bites:** products without the business filter; the own branch kept; every product field sent (`...p` — selecting cost_price alone does not leak: the answer is built from named fields); ask without
+assertBranchAccess(to); answer without the acting-branch check; accept without the on-hand check; despatch by writing the level
+directly; the claim without `.eq('status','requested')`; the transfer created with the asked (not sent) quantity; MANAGER_WRITES
+without /requests (cloud); cloudAnswer calling every failure offline / passing the raw error through; find without
+inventory.view; the nav without the licence (till); 163 without the reason / two-branch checks, transfer_id CASCADE, the policy
+USING (true). CI: "Other branches' stock and requests (A564) and migration 163", "Desktop other branches' stock (A564)".
+
+**Not done / to decide.** The till's POS screen (product search / long-press "Find in other branches") is NOT wired: POSPage
+and the product grid are A563's files this session — `FindInBranches` (BranchStockTab.tsx) is ready to drop into it, and a
+cashier meanwhile looks on the web POS's Stock tab (a cashier does not open the till's manager screens). One product per
+request. No push to the other branch's till (it sees the request when its manager opens Manager › Stock; the web badge
+refreshes every 2 minutes). A request made offline is not kept for later (the other branch must see it now). An ingredient
+cannot be asked for (transfers move products).
+
+### A568 · P1 · FIX BUILT 2026-10-22 (cloud + web) · The owner's first-sign-in password change is enforced
+Owner (2026-10-22): "the password change on first log in is not enforced please check". Found by the technician guide
+(`docs/setup/TECHNICIAN-SETUP-NOTES.md`, Step 1 gotchas; "Facts I'm unsure about" 3) on a real local run.
+**Root cause (confirmed).** Admin create-client sets `users.must_change_password = true` on the owner's row, but POST
+/api/auth/login cleared it whenever the sign-in account's `updated_at` was later than its `created_at` ("the password was
+updated"). GoTrue moves `auth.users.updated_at` on EVERY password sign-in: the grant calls `UpdateLastSignInAt`, which is
+`tx.UpdateOnly(u, "last_sign_in_at")`, and gobuffalo/pop stamps `updated_at` on every update (supabase/auth
+`internal/storage/dial.go` skips `updated_at` in UpdateOnly's exclusions for exactly that reason). So the server's own
+`signInWithPassword` a few lines earlier made the test true on the very first sign-in: the flag was wiped and the owner was
+never sent to /change-password. The admin portal's "Reset password" moved `updated_at` too (`updateUserById`), so its "must
+choose a new password at their next sign-in" never held either. And PATCH /api/auth/me cleared the flag with no password set,
+which the forced page called after setting the password in the browser.
+**Fix.** (1) `routes/auth.ts` login: the row's flag as it is — no timestamp inference. (2) The flag is cleared ONLY where a
+new password is actually set: `/password/change` (the forced page and Settings) and `/password/reset` (Forgot password), both
+through `setOwnerPassword`, which already cleared it — so an owner who reset by emailed code is not forced. (3) PATCH
+/api/auth/me no longer clears anything (200, `changed: false`, so an older page does not break). (4) GET /api/auth/session
+carries `mustChangePassword` (the owner only; a partner, A550, set their own password through the invite and is never forced).
+(5) Dashboard: `PermissionsContext` reads it and `ProtectedRoute` sends a flagged owner to /change-password from every
+dashboard page (the login response already did, once); `ForcePasswordChangePage` now asks for the password they were given
+and posts `/api/auth/password/change` (it used Supabase `updateUser` + PATCH /me), then opens a fresh Supabase session with
+the new password and lets them in. The admin reset still sets the flag after `setOwnerPassword`, so it forces again.
+**Tests.** `tests/owner-password-a568.test.mjs` (12; the compiled auth + admin routers over HTTP, a GoTrue stand-in that moves
+`updated_at` on each sign-in and admin update): forced at the first and the second sign-in; the session says so; PATCH /me
+clears nothing; a wrong or same password refused; after /password/change not forced; the admin reset forces again (twice);
+a Forgot-password reset clears it; a partner is never forced; source pins (no inference, ProtectedRoute, the forced page).
+`tests/auth-hardening.test.mjs` §14 now pins that PATCH /me clears no flag. **Mutations:** the timestamp inference put back →
+6 fail (first sign-in, second, session, …, admin reset); PATCH /me clearing again → 2 fail; /session without the field → 3 fail.
+**Not done:** the cloud does not refuse other API calls while the flag is set (the gate is the dashboard's); the owner is
+the only one it protects, from an agent-chosen password.
+
+### A567 · P2 · FIX BUILT 2026-10-22 (web + cloud) · Give an existing customer a credit limit
+Owner (2026-10-22): "yes they should be existing customers added in the system with an account and approved credit limit".
+Found by the technician guide (`docs/setup/TECHNICIAN-SETUP-NOTES.md`, Step 6; "Facts I'm unsure about" 1).
+**Before.** Customers › "+ New Customer" had Name, Phone, Email and Notes only, and Credit Accounts lists only customers whose
+limit or balance is above 0 — no screen gave a customer their FIRST limit; only PATCH /api/credit/customer/:id/limit by hand.
+**Built** (no migration). (a) Credit Accounts › **"+ Give credit"** (`components/GiveCreditPicker.tsx`): search the business's
+active customers by name or phone (new GET /api/credit/candidates, `customers.credit`, 20 rows, the typed text stripped of
+PostgREST's `,()` and LIKE wildcards), pick one, set the limit, confirm — the list reloads and they appear. (b) The customer's
+profile (Customers › a customer) has a **Credit limit** box (`components/CreditLimitEditor.tsx`) for someone with
+`customers.credit`; without it the limit is shown, never a box. (c) **New Customer** has an optional Credit limit, shown only
+with `customers.credit`; the limit is set right after the customer is created, through the same PATCH (a failure says so; the
+customer stays). Shared rules in `lib/creditLimit.ts`. **Permission**: PATCH /limit keeps `requirePermission('customers.credit')`
+(as before) and now refuses a till's own session (PERSON_ONLY — a person approves a limit). **Approved by whoever sets it**:
+each change writes `audit_log` (user_id, user_name, created_at; `customer.credit_limit.granted` from 0, else `.changed`;
+before/after limits). The ledger (`customer_credit_transactions`) is for money only (charge/payment/adjustment) and is not used.
+**The till**: GET /api/pos/credit-customers reads limits live (limit or balance above 0), so a newly limited customer is on
+the till's list at its next pull — no change needed. **Tests.** `tests/credit-limit-a567.test.mjs` (14; the compiled credit and
+pos routers over HTTP, `lib/creditLimit.ts` imported as it is): not listed before; found by name and by phone (not another
+business's); a cashier refused the picker and the limit (nothing audited); a till's session refused; a manager gives the
+first limit (audited: who, when, 0 → 5000); then in Credit Accounts and the till's list; the owner changes it (audited as a
+change, no row for an unchanged value); 400/404s; the input rules; the screens' wiring. **Mutations:** requirePermission
+removed from PATCH /limit → 3 fail; from GET /candidates → 1 fails.
+
+### A565 · P2 · FIX BUILT 2026-10-22 (web + cloud) · Analytics suggests moving stock between branches and flags a branch that underperforms
+Owner (2026-10-22): "also under analytics if there are several branches it can suggest items movement since branch A is not
+performing"; then, on the first cut: "it should be a recommendation so it should not show number something like product x
+sells well in shop b than A, or items in shop c are moving slow unlike in shop d which sells 10 items in a day and their stock
+levels are low you can move some items to the shop etc". **BUILT** (`lib/analyticsRules.ts`, `routes/analytics.ts`,
+`pages/analytics/{AnalyticsPage.tsx, areas.tsx, chartMath.ts}`; **no migration** — it reuses 158/160/161/162):
+**Who sees it.** A viewer who sees every branch (`allBranchAccess`: the owner, an A550 partner of every branch) when the
+business has **2 or more active branches** (`branches.status` not inactive; the first **10** by name). A manager or a partner
+of one branch: GET /branches 403 BRANCH_SCOPE (nothing run), no branch card, the tile hidden, no other branch read.
+**The work** (kept 5 minutes, no polling; each part is the per-branch answer that branch's own view uses, so it is shared):
+per branch 162's `analytics_stock_use` (sold + wasted, on hand), 160's `analytics_daily_sales` (both periods), 158's menu
+(costs only — the margin); 161's item times for every branch (the average price that ranks moves); and two plain reads of
+`stock_levels` / `ingredient_stock_levels` at every branch for the items short somewhere (an item a branch never used is not
+in its 162 rows — a shelf of it there is exactly the surplus). Before 162 runs: no moves, the comparison stands.
+1. **Stock moves** (`stockMoves`, products and ingredients). Per item and branch: a day = (sold + wasted) ÷ the period's days;
+cover = on hand ÷ a day (a negative level is unknown). **Short**: used ≥ **10** and cover < **3** days, or < **7** while it
+sells ≥ **2×** the other branches' median a day. **Plenty**: ≥ **10** on hand and cover > **30** days, or > **3×** the median
+cover of the branches that sell it (a branch that sold none counts). Internally the quantity = min(7 × a day − on hand at the
+short branch, rounded UP to a step; on hand − **14** × a day at the source, rounded DOWN) — the source never goes under two
+weeks of its own sales; under **3**: no move; each short branch takes from the branch that can spare most. Score = the units
+that would run short × the average price (products), else the units — **used only to choose and rank; never sent**. ≥ **14**
+days of data. **Shown as words** (the owner's correction): the same two branches the same way are ONE suggestion naming up to
+**3** items, e.g. "Consider moving some Tusker lager from Westlands to Ngong Road" · "Tusker lager sells well at Ngong Road
+(about 18 a day) and is about to run out there, but sells slowly at Westlands, where you hold plenty — consider moving some to
+Ngong Road." / "Consider moving some stock from Kilimani to Ngong Road" · "Chips, Soda and Mandazi are moving slowly at
+Kilimani but sell fast at Ngong Road, where they are running low — consider moving some across." No quantity, stock count or
+KES (an "about N a day" rate at most), no estimate; the assumption: "A suggestion, not an order: how much to move is your call
+or your manager's …". At most **3** move cards, ranked with the stock-out risks (group 0, by the internal score). With a
+branch in view only moves touching it; a move INTO it replaces its A560/A561 running-low / run-out card for that item, merged
+("… If Westlands cannot spare enough, order the rest."). The value line counts them, never values them: "… 3 stock moves
+between branches to consider …" (`found.moves`); the internal `score` is stripped before the answer.
+2. **Branch performance** (`compareBranches`): per branch sales, the change on its OWN previous period, a day (sales ÷ the
+days it traded), the average bill, the share of all sales and (costs only) the gross margin; top 10 by sales.
+**Underperforming**: ≥ 14 days, ≥ **30** bills before, sales down ≥ **20%** AND ≥ **10 points** worse than the other branches
+together — "a small branch is never flagged for being small, and a quiet month for everyone flags no branch" (said on the
+area). Card (`recBranchDrop`, at most 2, the branch in view or all, no KES): "Sales at Kilimani fell 95% against the previous
+21 days" · "Sales fell 95% against the previous 21 days, while the other branches together sold 461% more. Its stock is moving
+slowly — some of it may sell faster at Westlands. Look at what sells when at Kilimani …"; the card's "What sells when at
+Kilimani →" switches the dashboard's branch and scrolls there.
+3. **Placement.** A **Branches** tile after Stock (hook "3 stock moves to consider" / "Westlands down 28%" / "3 branches
+compared"; "To do" when a card points there), shown only when the cloud sends its hook (`visibleAreas`). The area: amber
+call-outs for a falling branch, "Your branches side by side" (≤ 10 rows) and "Stock to move between branches" — the
+suggestions (items, from → to, why in words; no quantity column) — each with **"Start a transfer →"** to
+`/dashboard/stock/transfers?from=&to=&products=` (the items and both branches, the quantity left blank; products only).
+A564 reads exactly these parameters on the transfers page: a new transfer opens with both branches and the items filled
+in and every quantity blank (no transfer logic here).
+**GET /api/analytics/branches** (reports.sales + the analytics flag + allBranchAccess): `compare`, `moves` (top 10, no score),
+`movesTotal`, `movesNote` (before 162), `available` / `note` (one active branch), `limited`.
+**Tests.** `tests/analytics-rules-a565.test.mjs` (11 — short and plenty thresholds, the internal 14-day floor and steps, the
+minimum data, grouping, no digits but an "about N a day" rate in any move title or reason and no quantity field on a card,
+the ranking and the value line, the run-out de-dupe and merge, the comparison and the 10-point gap, the falling card, the tile,
+the page's `visibleAreas` / `?tab=branches`); `tests/analytics-a565.test.mjs` (8, HTTP on the REAL 158/160/161/162 functions
+in PGlite: the flag off; scope — manager and one-branch partner 403 with nothing run and no Kilimani read, all-branch partner
+200 without the margin; /branches — Kilimani flagged, one suggestion Kilimani → Westlands naming Tusker lager and Mandazi (the
+latter only through the plain level read), no qty / score / on hand sent; /recommendations — the move first, the falling card,
+the hook, the value line, no score; Westlands in view — the run-out card replaced and merged; one active branch; before 162;
+the cache shared per branch). `tests/analytics-rules-a558.test.mjs`: `found` now carries `moves`.
+**13 mutations, each bites**: no 14-day floor; no 10-used floor; no grouping; the why naming the quantity; no run-out de-dupe;
+kindGroup without stock_move; no 10-point gap; Branches shown without the hook; /branches without allBranchAccess;
+branchWork for every viewer; the score sent to the page; the level read skipped; an inactive branch kept.
+CI step "Analytics between branches (A565)". Screenshot (demo data): `docs/website/screenshots/app-analytics-branches.webp`.
+**Not done / to decide.** A560's busy-day horizon per branch (it needs item times per branch: N more calls) — "short" uses
+days of cover only. More than 10 branches: the first 10 by name. Ingredients get suggestions but no transfer link. The
+per-branch day cut-off: the business's is used for every branch.
+
+### A563 · P2 · FIX BUILT 2026-10-22 (till 1.0.20 + cloud + web) · When stock hits zero: sell as normal, show as sold out, or hide
+Owner, 2026-10-22: "add a feature where an owner can enable not to prevent items with zero stock from appearing in the
+inventory or if they do they cannot be sold".
+
+**Read as ONE owner setting with three choices**, for products that TRACK stock (`track_stock`); an item that does not
+track stock is never affected. Settings › Business › POS options › **"When an item's stock reaches zero"** (a radio,
+owner or `settings.pos` like the other POS options; `PUT /api/controls/stock-zero { mode }`, read back by
+`GET /api/controls` → `stock.when_zero`):
+- **Sell as normal** (the default — every till's behaviour before): zero or negative stock is still sold.
+- **Show as sold out**: the item stays on the till menu and the web POS, greyed with a "Sold out" badge, and cannot be
+  added; the till (main, `order:create`) and the cloud (web sales) refuse it — "Chips is sold out." / "Only 2 of Soda left."
+- **Hide when out of stock**: the item is off the till menu, the web POS and their search while its stock at the branch is
+  0 or less, and comes back by itself when stock comes in; it is refused at Charge the same way.
+
+**OFF for every client** (owner, confirmed 2026-10-22): "Sell as normal" is the default for every business, new and
+existing, and only the owner turns it on. No row = off (`parsePosFeatures`); nothing that creates a business (onboarding,
+admin create-client, enrolment, migrations, seed scripts) writes either switch — pinned by the cloud test, which also reads
+a freshly created business as "Sell as normal"; a till that has heard no switch sells as normal.
+
+**Stored as two POS switches** (`feature_flags` `stock_zero_sold_out`, `stock_zero_hide`; hide wins; neither = sell —
+`shared/posFeatures.ts`, the choice's rules in the new shared `stockGate.ts`, five copies under check-shared-sync), so it
+reaches the tills, a branch server's tills and the web POS exactly as every POS switch does (pos/init `posFeatures`; a
+`feature_flags` change is the critical `money` topic of the change log, migration 151) — **no migration, cloud or local**.
+Both switches are the owner's: the admin portal shows them read-only and the cloud refuses its write (OWNER_SETS).
+
+**Source of truth on a till:** its own copy of its branch's levels (`stock_levels`: the cloud's level, kept current by the
+change log, A535, and every pull; less this till's own sales not yet in the cloud — `createLocalOrder` takes each tracked
+line off at once and A80's delta merge keeps it off). Only a level heard from the cloud or the branch server counts
+(`synced_at` set); a row the till made up itself (the first sale of an item with no level writes 0 − qty) is unknown.
+**Unknown stock always sells** — no level, a blind count hiding it, a read that fails: the till and the cloud never block
+what they cannot verify. **The race:** two tills selling the last item while offline both see 1 and both sell it — a till
+knows only what it has synced; the level goes to -1 and the next sync shows it; neither sale is lost.
+
+**Till** (`main/stockGateLocal.ts`, new IPC `pos:stockView`): `order:create` refuses, before anything is saved, any line
+its branch's known levels do not cover (summed over the whole sale; a combo uses its items) — main is the authority; the
+sale screen (`POSPage.tsx`) keeps in step: hidden items leave the grid and search; a sold-out tile is greyed with "Sold
+out"; a tap, a scan and "+" on the order are refused with the same message; the levels are read again after every sale,
+every pull and every 20 s. **Held / open / sent orders are never broken**: they are checked only at Charge, and only the
+lines known to be out are named. Fuel from a pump is never gated (its stock is the tank's).
+
+**Cloud** (`lib/stockGateStore.ts`): a LIVE web sale (`POST /api/orders` with no `X-Device-Id` and no till time) and an
+open bill charged on the web (`POST /orders/:id/pay`) are refused 409 `SOLD_OUT` for the lines known to be out. **A till's
+pushed sale is NEVER refused for stock** — it already happened. New `GET /api/pos/stock-view?branch_id=` (branch-guarded)
+gives the web POS the choice and the branch's levels (tracked, not fuel, not sold by the piece); the web POS
+(`CashierScreen.tsx`, `lib/useStockView.ts`, every 30 s and after each sale) greys or hides the same way, the minimart
+screen too (hidden items left out, a sold-out item refused).
+
+**Combos:** modelled (A400: a combo sold uses up its items) — a combo is unavailable when a tracked item in it is out (its
+own level too when it tracks stock). **Variants:** not per variant — an option's linked product (`linked_product_id`) is not
+on the till, so a variant is judged by its product. **Not done:** a sold-out badge on the dashboard's Products list (it is
+"All branches" with no branch picker — not cheap; the stock pages already show each branch's level). **Known limits:** on a
+till offline, a combo's items are judged on their last synced levels (the till takes off the combo line only, as before);
+a product sold by the piece is judged on its units on the till (the till does not hold `sold_by`; the cloud skips it).
+
+Tests: `apps/desktop/test/stock-zero-a563.test.mjs` (32 — the real compiled main on a real SQLite file and the real
+`order:create`: the three modes, grid hide, sold-out badge, main's refusal, unknown sells, untracked never affected, a
+held order refused only for its out line, the setting synced) and `tests/stock-zero-a563.test.mjs` (23 — the compiled
+controls, pos and orders routers over HTTP on the in-memory database: the owner's setting and its sync, a web sale refused
+in sold-out and hide, a till push never refused, the web POS's view, a freshly created business reading "Sell as normal"). Mutations listed in each file's header, each seen
+to fail and reverted.
+
+### A562 · P2 · FIX BUILT 2026-10-22 (web + cloud + admin + till) · The staff form shows the real role; the approval PIN is a per-client feature
+Owner, 2026-10-22, with two screenshots (the "Edit Staff Member" form of "fnicksawa" showing Role = **Accountant**, an
+"Approval PIN (optional)" field and "Remove the approval PIN"; the Staff list of "Magas Limmited" showing "fnicksawa" and
+"Mr Daniel Mc'Coy" both with an **Owner** badge): "then streamline this section we remove approval pin and add it as a
+feature we can turn on or off in the admin panel, the user role should reflect the exact role the user is assigned when
+editing, make sure the page and feature works properly".
+
+**Finding 1 — the role shown was not the person's.** The edit form's role list was the roles THIS user may give
+(`assignable`, never the owner's role — A340/A490). The owner's role (or one beyond the user) had no option, so the
+browser showed the first one ("Accountant") — and touching the select really changed the role. **Fixed**
+(`pages/settings/StaffTab.tsx`): `rolePicker` always shows the person's own role — locked with "Owner — the owner's role
+can't be changed here" on the owner's own account, locked with "You can't change this person's role" for a role this
+user may not give; a SECOND account on the owner's role is shown as it is and the owner may move it to another role. A new
+person starts on Cashier (`defaultRoleId`), never the owner's role. An unchanged role is never sent (A506 kept). The till's
+staff screen (`ManageTabs.tsx`) the same: the add list never offers the owner's role; the edit select shows the person's
+role, locked for the owner's or one not theirs to give.
+
+**Finding 2 — why two people were "Owner".** Not queried (code only). The badge is the role's NAME (`owner` — the admin
+portal's create-client names the owner's role "owner", onboarding "Admin"; `capitalize` shows "Owner"), so both rows are
+really on the owner's role, and under A490 (`lib/ownerRole.ts`) that is everything, every branch. Paths found that make a
+second row on it:
+1. **Most likely: the owner's sign-in email changed, the owner's staff row did not.** `POST /admin/clients/:id/change-owner-email`
+changed the auth e-mail and the business e-mail only; at the next sign-in `ensureOwnerUserRow` (A451) found no users row
+with the new address, `businesses.owner_id` is the auth id (not a users row), so it CREATED one on the owner's role named
+from the address's local part — "fnicksawa" fits exactly; "Mr Daniel Mc'Coy" is then the row create-client made from the
+owner's name. The same happens when the owner edits their OWN e-mail on this form ("— used for POS login").
+2. **The owner could give the owner's role.** `canAssignRole` let '*' give any role, the owner's included: the cloud's
+create and invite (the owner path skipped the guard), the owner's PATCH (no role guard at all for the owner), a till's
+staff change made by the owner (`changeApply`), and the till's add list (it filtered `assignable` only, which was true for
+the owner).
+**Fixed**: `lib/roleCeiling.ts canAssignRole` refuses the owner's role for EVERYONE, the owner included ("The owner's role
+belongs to the owner alone — choose another role (for full rights, a role such as General Manager)"); `routes/staff.ts`
+checks it on create, invite (owner too) and edit (owner too, when the role changes); `lib/changeApply.ts` refuses a till's
+new person or role change onto it, whoever made it; GET /roles marks it `assignable: false` for the owner too.
+`change-owner-email` now moves the owner's own row to the new address (`moveOwnerRowEmail`: exact case-insensitive match,
+only one row, never onto an address another row has; answered `owner_row_moved`). PATCH refuses the owner changing their
+own sign-in e-mail (`OWNER_SIGNIN_EMAIL` — ZapTill support changes it), their own role (`OWN_ROLE`) and deactivating
+themselves; nobody deactivates themselves (`SELF_DEACTIVATE`, PATCH and DELETE, a till's change and the till's own screen).
+**Not changed (security-relevant, described only):** A490's rule that ANY role named owner/admin is the owner (every
+right, every branch, untouchable by non-owners) stands. The existing duplicate is left as it is — the list now marks an
+owner-role row that is not the signed-in owner "Not your sign-in account" (with how to fix it: Edit › another role, or
+Deactivate); the badge still shows the role's actual name. To clean up production: find businesses with more than one
+active user on the owner's role and ask the owner which is theirs (no migration — whose row is whose is not knowable from
+the data alone).
+**The row buttons.** The list now carries `is_self` (the caller's own row). Reset sign-in code is not shown on your own row
+(your code is under My sign-in); Deactivate on your own row is disabled with "You cannot deactivate yourself"; non-owners
+never receive the owner's rows (unchanged, A490 GET /api/staff), and `refuseIfProprietor` / `OWN_ACCESS` are unchanged.
+
+**The approval PIN — a per-client switch.** New POS feature `approval_pin` ("Separate approval PIN for managers" — "A
+separate approval PIN for managers (instead of their sign-in PIN) …") in `shared/posFeatures.ts` and its five copies, with
+`STAFF_OPTION_KEYS` and `approvalPinOn`; set in the admin portal's client › Features under a new "Staff options" toggle (not
+an owner POS option; the till receives it with pos/init like every switch). **Off (the default):** the web form and the
+till's add form show no approval PIN; the cloud refuses a NEW one on create or edit (`APPROVAL_PIN_OFF`, 403); removing
+one (`override_pin: ''`) is always allowed. **On:** the field as before, the help text shorter ("A second PIN for approving,
+so they need not type their sign-in PIN in front of cashiers.").
+**Decision on approval PINs already set: they keep approving, whatever the switch** (`lib/approver.ts` reads no switch; no
+migration, no backfill). Why: the switch defaults off for every client; making it decide approvals would have stopped every
+existing approval PIN the day this shipped — a manager who learned only that PIN could not approve a void at the till
+tomorrow. A backfill (switch on wherever someone has a PIN) would need a migration and still be guessing. Keeping them
+working is safe: such a PIN was set by the owner or a manager for someone who may approve (A494), and still approves only
+what its holder's keys allow. With the switch off, the edit form of someone who has one says "They still have an approval
+PIN from before …" with "Remove it". The till's offline chain never used approval PINs (A496: never served to a till; the
+till approves offline with sign-in PINs only) — unchanged.
+
+**The form, streamlined** (layout only; every behaviour and test kept): name and role on one row (with the role's note);
+email with "— used for sign-in" (read-only on the owner's own row); PIN (leave blank to keep) — with the phone when adding;
+the approval PIN only when switched on; branch access; hourly rate (no longer hidden when the business has no branches);
+the person's permissions (A490); web dashboard access (A550, owner only: status and Give / Resend / Revoke, as in the list).
+
+**Tests.** New `tests/staff-a562.test.mjs` (24 — the owner's role refused on create / invite / edit and `assignable: false`;
+the owner's own role, e-mail and status kept, the name editable; a manager cannot deactivate themselves; `is_self`, no hash
+in the list, a second owner account moved to another role and deactivated; a till's change onto the owner's role and a
+till's self-deactivation refused; the owner's row follows the e-mail change, not onto a taken address, not with two
+matches; the edit form's `rolePicker` and `defaultRoleId` RUN from StaffTab.tsx (owner's own, a second owner account, a
+role not givable, a givable one, a new person); the form and list pinned; the till screen pinned; switch off — a new PIN
+refused on edit and create, an existing one still approves a void, a sign-in PIN approves, removing allowed; switch on —
+set on edit and create; the offline chain never served; the shared switch, the admin toggle, the web and till forms).
+Updated: `staff-role-ceiling` (the owner gives every role but the owner's), `prospect-features` (web and desktop: the new
+key), `supervisor-pin-retired-a514` and `auth-hardening` (setting an approval PIN turns the switch on first),
+`till-changes-cloud` (a till's new owner is refused with the new reason). CI: new step
+"Staff form role and the approval PIN switch (A562)".
+**9 mutations, each bites**: canAssignRole letting '*' give the owner's role; OWN_ROLE removed; SELF_DEACTIVATE removed from
+DELETE; approvalPinAllowed always true; findApprover skipping approval PINs; rolePicker listing only the givable roles (the
+old picker); moveOwnerRowEmail returning before the update; defaultRoleId taking the first role; changeApply's owner-role
+refusal removed.
+**Not done / to decide.** The duplicate owner rows already in production (see above). `ensureOwnerUserRow` still creates a
+row when none matches (A451's fix) — with the e-mail kept in step that should no longer happen. A partner (A550) editing
+their own e-mail is not refused (their sign-in is the partner account, not the owner's).
+
+### A561 · P2 · FIX BUILT 2026-10-22 (web + cloud; migration 162) · Analytics: stock consumption, customer trends, costs and margins, items without a cost
+Owner (2026-10-22): "the idea is basically what is in the analytics page, stock consumption analysis, customer trends, cost
+benefits infact add a section for items without costs so that the owner knows"; and, on A558's tab row (with a screenshot):
+"this menu here its hidden it looks like all item in the page what can we do to it". **BUILT** (`migrations/162_analytics_stock_customers_costs.sql`,
+`lib/analyticsRules.ts`, `routes/analytics.ts`, `pages/analytics/{AnalyticsPage.tsx, areas.tsx (new), charts.tsx, chartMath.ts, chartPalette.ts}`,
+`pages/products/ProductsPage.tsx`; the A561 seed in `scripts/lib/analytics-pg.mjs`):
+**What data exists.** The cloud deducts stock itself when a sale lands (POST /orders → lib/stockEffects, tills included):
+`stock_movements` 'sale' per tracked product (a variant's stock factor, a combo's items, linked SKUs; pieces for a product sold
+by the piece) and `ingredient_stock_movements` 'sale' per ingredient (recipes, variant-linked ingredients, takeaway packaging);
+a void or refund of a PAID order puts product stock back as 'correction' "Void of Order …" / "Refund of Order …" (in units —
+so not netted for by-the-piece products) and never puts ingredients back; `wastage_entries` (voided_at); levels in
+`stock_levels` / `ingredient_stock_levels` per branch. Customers: `orders.customer_id` (account, loyalty, credit sales),
+`customers`. Cost history: `ingredient_cost_history` (an edit of an ingredient's unit_cost) and `grn_items.unit_cost` (a
+delivery, by `goods_received_notes.received_date`); a delivery through stock.ts updates unit_cost WITHOUT a history row (the
+GRN line is the record). **No history** for `products.cost_price` (overwritten) — a product's own cost change is not seen.
+**Migration 162** (STABLE, SECURITY DEFINER, service role only, no table; idempotent): `analytics_stock_use` (per item used in
+the period or the one before: sold, wasted, both periods, on hand at ONE branch, the 300 used most; tracked products only,
+never fuel or a recipe item, plus ingredients), `analytics_customers` (per period: orders, sales, orders and sales with a
+customer, customers, NEW customers — first completed order ever in that period; per business day × order type; per customer —
+only with p_with_customers — visits (distinct business days), spend, visits in the 90 days to the period's end, the first of
+those and the last visit; the 200 best by spend plus the 200 most regular), `analytics_cost_watch` (each ingredient whose cost
+moved: the cost at the start — the last price point before, else the first change's old cost — and the end; per recipe
+product × moved ingredient the change a serving (never a product with its own cost); each recipe's costliest ingredient; the
+count and first names of ACTIVE products with no cost — no cost price, no costed recipe line, no costed combo item — that did
+not sell). New routes (the A549 gates, 5-minute cache, no polling): **GET /api/analytics/stock** (reports.sales — quantities
+only, as A560's stock cards), **/customers** (the customers themselves only with customers.view / customers.credit; without,
+the SQL reads no customer and the page gets the order-type mix and average bill only), **/costs** (seesCosts, else 403
+COSTS_HIDDEN, nothing run). /overview adds `noCost` (the share of item sales with no cost; costs only). /recommendations adds
+the new cards and `hooks`; its A561 parts are soft — before 162 runs they are left out (the "not there" kept 5 minutes), never
+a 503; the three routes answer 503 ANALYTICS_NOT_READY.
+1. **Stock — "How fast your stock goes".** Used = sold + wasted (the unit the stock is kept in); a day = used ÷ the period's
+days; days left = on hand ÷ a day (one branch: the one in view, or the only one; every branch with more than one: none, and
+"Pick a branch to see how many days your stock lasts — stock is counted per branch."; a negative level is unknown); wastage
+share = wasted ÷ used; the change on the previous period. Tables: "What runs out soonest" (top 10 by days left; red under 3,
+amber under 7) — or "What you use most" with every branch — and "What you throw away most" (top 10 by share). The covered /
+not covered line is on the tab. Cards: *run out* (`recRunOut`) — days left **< 3**, used **≥ 5**, **≥ 7** days of data, at most
+**2**; "Cooking oil runs out in about 2 days at your current rate — order now" · "You have 6 litres left and use about 3.2 a
+day (95 in 30 days, 3 of it thrown away)." · "Order: ≈ 19 more to have 25 for a week" (7 days of use + 10%, rounded up as
+stockQty); no KES; never an item A560's running-low card already names (one card per item, A560's wins); ranked with the
+stock-out risks; the value line counts it as an item running low. *Wastage* (`recWastage`) — share **≥ 15%** and **≥ 5**
+thrown away, one card: "You throw away 20% of your Milk — order less at a time or check how it is stored"; no KES.
+2. **Customers — "Who comes back".** Coverage = orders with a customer ÷ completed orders; under **20%**: "Only 16% of your
+sales are linked to a customer, so these trends cover your account and loyalty customers only." Tiles: customers who came (and
+the change), new (first visit ever), came back, average bill with a customer against walk-ins. "Regulars gone quiet" — a
+regular: **≥ 4** visits in the 90 days to the period's end, usual gap (first to last of those ÷ visits − 1) **≤ 15** days
+(about 2 a month); gone quiet: no visit for **> 2×** the gap and **≥ 14** days (to the period's end, or today) — top 10, the most
+regular first. "Your best customers" — top 10 by spend (visits, spend, last visit). Charts: the order-type mix (dine-in,
+takeaway, delivery, counter and other — per day up to 31 days, else per 7-day block; categorical slots 1–4, validated with the
+dataviz script: adjacent CVD ΔE ≥ 8.4, light-mode contrast WARN → legend with shares plus the counts listed) and the average
+bill (one line). Card (`recLapsed`, customer keys only): "Wanjiku, a regular, has not been back in 28 days — call or message
+them" / "5 regulars have not been back in over 4 weeks — call or message them", three names with their gap, then "N more"; no KES.
+3. **Costs — "What each sale really earns"** (seesCosts only). Food cost = the cost of what sold ÷ what it sold for, over the
+items with a cost (1 − A553's gross margin), now and the period before (both at today's costs — said on the tab); the movers
+(items whose cost took a bigger share of the food bill). "The thinnest margins" — items with a cost sold **≥ 5**, top 10 by
+margin % with their costliest ingredient. "Costs that went up" — ingredient rises, from → to, %, and the extra a month (Σ
+change a serving × quantity sold, × 30 ÷ days). Cards: *food cost* (`recFoodCost`) rise **≥ 2 points**: "Your food cost rose
+from 31% to 35% — check the biggest movers", ≈ the rise × the costed sales a month "to recover", assumption said;
+*thin margin* (`recThinMargin`) the best seller under **20%**, sold **≥ 10**: "Chips masala earns 12% — check the portion or the
+cooking oil cost" (no KES); *cost rise* (`recCostRise`) **≥ 5%** with an extra a month: "Compare suppliers for Cooking oil: its
+cost rose 25%" · "… went from KES 0.40 to KES 0.50 a ml this period; Chips masala now costs more to make." ≈ extra a month "to
+recover" (`costText` keeps cents under KES 100). A558/A560 menu rules unchanged; the A558 missing-cost card now opens Costs.
+4. **Items without a cost — "Set these costs to see your real margins"** (top of Costs when any): every product sold with no
+cost, by sales (name, category, sold, sales), top 10 and "— and N more", "Plus 23 items on your menu with no cost that did not
+sell this period.", "18% of your sales have no cost set, so margins are partly blind." Owner: a "Set costs" button
+(`/dashboard/products?costs=1` opens the Products page's Set costs editor) and "Set cost" per row (`?q=<name>` searches for it —
+ProductsPage now reads both); the manager portal: "Ask the owner to set them on the Products page." Call-out under the summary
+when the share is **≥ 5%**: "6 items have no cost — 5% of your sales, so your margins are partly blind. See which and set them →".
+5. **The tab row is now tiles** (the owner's screenshot): "Dig into the details — Pick an area — each one ends in what to do."
+Seven tiles (Menu engineering, Busy times, Money leaks, Credit ageing, Stock, Customers, Costs), each an icon, the name and ONE
+live figure from `tileHooks` ("4 stars · 2 dogs", "Busiest: Sat 20:00", "2 cashiers to check", "KES 87,400 over 60 days",
+"4 items run out this week", "5 regulars gone quiet", "6 items have no cost"), an amber "To do" badge when any card the rules
+give (before the cap of 7) points there; credit hidden without the customer keys, costs without seesCosts (a ?tab= link to one
+falls back). The open tile: teal border, raised. Desktop 4 across, wrapping; a phone: one sideways row, the next tile partly in
+view and an edge fade. role=tablist / tab / tabpanel, arrows + Home / End, a visible focus ring. A compact copy sticks (the one
+sticky element; `top-12` on a phone under the dashboard's own sticky header, `top-0` in the manager portal) only once the tiles
+have scrolled up out of view. `?tab=stock` opens an area (the owner's page keeps it in the address); "See why" opens the tile
+and scrolls to it. No new hue; index.css light-colours block current (A562's note: no new translucent classes).
+**Ranking**: stock-out risks (running low, run out) first, then stock-ups, then the rest; at most 7 (A560).
+**Tests.** `tests/analytics-a561.test.mjs` (10, HTTP on the REAL 158/160/161/162 functions in PGlite: flag off; stock — one
+call, days left at the branch in view, every branch → none and the note, scope, another business 404; customers — new /
+returning / gone quiet / coverage; customers withheld (p_with_customers false, no name, the mix stays, the cache keeps the two
+apart); costs withheld (403, nothing run) and the no-cost list, the rise, the unsold count; the new cards, hooks and no price
+words in /recommendations; the cut-off; the cache; before 162: the routes 503 and /recommendations 200). `tests/analytics-rules-a561.test.mjs`
+(15 — every rule's thresholds and wording, the de-dupe with A560's card, the value line, the 10-row caps, the hooks, A560's
+no-price scan extended to every new text, and the page's tile helpers read as TypeScript). `scripts/test-migration-162.mjs` (7).
+`tests/analytics-a558.test.mjs` cache case updated (/recommendations now also asks for the three A561 aggregates, softly).
+**18 mutations, each bites**: run out without the 5-used floor; a negative on-hand kept; lapsed without the two-week minimum;
+thin margin without the 10-sold floor; runOut not capped at 10; the thin-margin card saying "raise the price"; no run-out /
+running-low de-dupe; the value line not counting run-out cards; stockUse with p_branch null; p_with_customers true for everyone;
+/costs without seesCosts; /recommendations without soft(); the customers cache key without with/mix; SQL every correction
+netted; SQL voided wastage counted; SQL every branch's movements; SQL customer rows without p_with_customers; ?tab= not checked.
+CI step "Analytics stock, customers and costs (A561) and migration 162". Screenshots (demo data): `docs/website/screenshots/app-analytics-{dark,light,phone}.webp`
+replaced; `app-analytics-{stock,customers,costs,tabs}.webp` added.
+**Owner actions.** Run migration **162** on dev first (after 158, 160, 161); until then Stock, Customers and Costs say Analytics
+is being set up and the rest of the page works. Then refresh `scripts/functions-index.json` and delete 162 from `scripts/schema-pending.json`.
+**Not done / to decide.** A product's own cost change (no history kept — a `product_cost_history` would be needed). Food cost of
+the previous period at its own costs (today's costs for both). A voided sale's ingredients (the cloud never puts them back) and
+a by-the-piece product's void (put back in units) — both counted as used. The 90-day regular window and the 2× rule are
+judgement, said on the tab. The website demo (`apps/website`) does not show these areas yet.
+
+### A560 · P2 · FIX BUILT 2026-10-22 (web + cloud) · Analytics suggests what to stock, never a price rise; voids a warning only
+Owner, after testing A558's "Do this next" (2026-10-22): "works perfectly - but i have a suggestion. let it not suggest price
+increase let it give suggestions on which items to stock, best selling on specific days and what to stock etc, since prices
+should be competitive with other businesses price increase means selling expensive than competitors"; on cashier voids:
+"warning only for investigation". **BUILT** (`lib/analyticsRules.ts`, `routes/analytics.ts`, `pages/analytics/AnalyticsPage.tsx`; no migration):
+1. **No price rise anywhere.** `recPriceRise` / `suggestedRise` / the PRICE_* constants are gone. The Plowhorse insight
+(A549) now reads "… below average – check the recipe cost or portion, or pair it with a higher-margin item"; the menu tab's
+line "keep the Stars, check the recipe or portion of the Plowhorses, …"; the Plowhorse chip/tooltip "Popular but earns
+little — check the recipe cost or portion, or pair it with a higher-margin item"; "cost price" in the generated texts is
+now "a cost or a recipe". Promoting a Puzzle at its best daypart stays (promotion, not price).
+2. **What to stock** — from A558's item × time (migration 161: business weekday × hour, the cut-off honoured); a weekday's
+"typical" sales = its quantity in the period ÷ how many of that weekday the period holds (per-date figures are not in
+the aggregate, so an average, not a percentile — said on each card):
+- *Stock up for Friday* (`recStockUp`) — an item's typical Friday ≥ **1.5×** its average day (the mean over the weekdays
+the business traded) and ≥ **10** units, with ≥ **2** of that weekday and ≥ **14** days in the period. One card per
+weekday, the **2** weekdays with the most extra sales (extra units × what each sells for), naming its top **3**. Units, not
+KES: `stockQty` = typical × 1.1 rounded UP (to 1 under 20, to 5 under 100, else to 10). "Stock up for Friday: 55 Tusker
+lager" · "Fridays: you sell about 49 Tusker lager (vs 30 on an average day)." · "Have in for Friday: 55 Tusker lager" ·
+"The average Friday in this period (4 of them), plus 10% so a busier one does not run you out, rounded up."
+- *Running low* (`recRunningLow`) — the cloud HAS current on-hand per product and branch (`stock_levels`, kept live by
+A535); the route reads it for the items in item × time at ONE branch (the one in view; every branch in view with a single
+branch: that one; more than one: no read and `stockNote` "Pick a branch to see what is running low — stock is counted per
+branch."), tracked products only (`track_stock`), none sold through a recipe, no negative level (nobody counting); a failed
+read is no card. Expected = typical sales from today to the end of the item's next busy day (the rule above, within the
+week; none: today and tomorrow); a card when on hand < expected and the order (stockQty(expected) − on hand) ≥ **3**;
+the **2** with the most at risk. Estimate: units to order, plus "≈ KES X of sales at risk if it runs out" = (expected − on
+hand) × what it sells for on average — never called profit. "Order about 70 more Tusker lager before Friday" · "You have
+30 Tusker lager; a normal Friday sells about 49, and from today to the end of Friday about 91." **Ingredients skipped**:
+`ingredient_stock_levels` exists per branch, but a dish's variants (stock_factor), combos and shared ingredients do not
+map one to one, so recipe items get no running-low card (said here; the page never claims to check them).
+- *Your week at a glance — what to prepare each day* (`weekPlan`, on /item-times as `week`) — each weekday's top **3** by
+quantity with its typical sales ("Friday: Tusker lager 49, Chips masala 25, Chapati 24"); drawn in What sells when, under
+the dayparts, as a 7-column list (no chart).
+- *Slow movers* (`recSlowMovers`) — items sold under **2 a week** over ≥ **28** days, from the menu's full list (costs
+shown) or what sells when when it holds every product; none when half the list or more is slow; never a Dog the rework
+card already names; up to 3 named. "Stock less of 2 slow sellers" · "Soup (3) and Fish (7) sold in 28 days — under 2 a week
+each. Consider stocking less, or dropping them." No estimate.
+3. **Voids a warning** — `recLeaks`: "Check Otieno's voids" · "47 voids (KES 42,050) in 30 days — 5.0× the branch median
+rate. Worth a look; a void before payment is not always a loss." No estimate (`warning: true`), drawn with an amber border
+and "Warning · worth a look"; the same for discounts ("… some discounts are offers you approved."). Because a card without
+an estimate sorts last, the strongest warning keeps the last slot of "the rest" (never in place of a stock card). The Money
+leaks tab is unchanged.
+4. **Ranking** — stock-out risks first, then stock up for a day, then the rest by the KES at stake (A558); at most 7.
+5. **The value line** — no longer one KES total: "This period: 7 things to act on — stock up for 2 busy days, 1 item running
+low (about KES 18,255 of sales at risk if it runs out), KES 87,400 of old credit to collect, about KES 38,900 a month from the
+other ideas and 1 warning to look into. Estimates; each card says what it assumes." The monthly part counts only gains and
+recoveries (promote, staffing, quiet slot, day close) — no price rise, no void, no sales at risk. `found` adds `atRisk`,
+`actions`, `stockDays`, `lowItems`, `warnings`, `line`.
+Cost visibility unchanged: stock cards use quantities and sales only (anyone with reports.sales); the menu is still never
+worked out without costs (the slow movers then use what sells when). A550 `allBranchAccess` unchanged.
+**Tests.** `tests/analytics-rules-a560.test.mjs` (11 — weekday counts, `stockQty`, the busy-day threshold and minimum
+volume, stock up, running low with and without stock levels and today/later/no busy day, the week, slow movers and their
+minimum days, voids and discounts without an estimate and out of the value line, the value line, the ranking and the
+warning's slot, and a scan of every generated title, reason, assumption, value line, insight and summary for price / raise
+/ re-price); `tests/analytics-a558.test.mjs` +3 HTTP (the week; stock levels at the branch in view, recipe items left out,
+stock cards first; every branch in view → no read and the note); A558 and A549 rule and HTTP tests updated (no price card,
+the warning, the value line). CI: new step "Analytics what to stock (A560) rules". Screenshots
+`docs/website/screenshots/app-analytics-{dark,light,phone}.webp` replaced (demo data).
+**15 mutations, each bites**: isBusyDay without the 10-unit floor; without the 1.5× uplift; stockQty without the 10%
+buffer; running low ignoring what is on hand; running low without the stock-level guard; slow movers without the 28-day
+minimum; the value line counting a warning; the void card with an estimate again; the ranking without the stock groups; the
+Plowhorse insight back to "consider a small price rise" (the no-price scan); the stock read for every branch; a recipe
+product kept; track_stock ignored; /item-times without `week`.
+**Not done / to decide.** Running low by ingredient (recipes). Delivery days are unknown: the horizon is the next busy day
+or two days. Combos: a component sold inside a combo is not in its own quantity (item × time counts the line sold). The
+website (`apps/website/src/lib/analyticsDemo.ts`, `DoThisNextCard.astro`) still shows A558's "Raise the price of Tusker
+lager by KES 40" demo card and the void card's KES estimate — to change in the next website session.
+
+### A559 · P3 · FIX BUILT 2026-10-22 (till 1.0.20 + web) · Extras on the kitchen ticket; the till's credit search needs customers.view
+Owner, after testing the 1.0.20 build (2026-10-22): extras — "yes let it print in the kitchen receipt too, and notes also
+since some can only be done by the chef"; the till's On account customer search — "yes they need the permission".
+(1) Extras. `toUnits` (shared/printing/src/routing.ts) sent every modifier to dispatch only (A555 made the till's
+`{ optionName }` extras print at all). A modifier now goes to the stations its LINE goes to (`lineStationIds`: the kitchen
+for a kitchen dish; a combo's follow the combo line's routing, not a component's) AND to dispatch, and is marked
+`modifier` (OrderUnit, types.ts). render.ts prints it under its dish as "+ Extra Cheese" on kitchen and dispatch tickets
+(the receipt is unchanged: a priced sub-row, no "+"). An extra is not a dish: `lineEarnsPlace` never lets one put a line on
+a ticket (a line whose only units are extras routes on its own, already-stripped stationIds — so a soda's "Ice" never takes
+the soda to the kitchen), and "items to cook" counts the dish once whatever its extras. Found on the way: before, a kitchen
+dish sold with an extra had ONE unit — the extra, dispatch only — and the whole dish left the kitchen ticket; fixed by the
+same rule. Sauce extras ("BBQ Sauce") still leave the kitchen per unit (A358). Notes: verified end to end, nothing dropped —
+a till sale through queueThermal → printSale prints the order's NOTE before the first dish and each line's `** note` under
+it (after its extras). The web (printRouted) builds units with the same toUnits; bundle rebuilt (`--check` OK).
+SAMPLE-OUTPUT.txt refreshed (the "+ Extra Cheese" row now on the kitchen ticket too); the byte fixture has no extra, so the
+.bin streams and BYTE-CHECK.txt are unchanged.
+(2) The till's credit customers. `credit:customers` (apps/desktop/src/main/ipc/credit.ts) answers not offered, no list,
+unless the person signed in holds customers.view or customers.credit (creditSale.ts `mayFindCreditCustomers`; the owner
+always) — the web POS's rule exactly (GET /api/credit/customers and /customer/:id are requireAnyPermission('customers.view',
+'customers.credit')). The payment screen then shows no On account button, as for any key the person lacks (it re-asks each
+time Pay opens). order:create refuses a sale on account by such a person too (prepareCreditSale: "You need permission to sell
+on account — ask a manager."), even with a manager's PIN. `/node/credit-customers` stays device-proven only: no /node route
+checks a person (they prove the till — /node/report, /node/roster alike); the till pulls the list with its catalogue into
+its own copy, and who may SEE it is decided on the till in main. The built-in cashier role holds customers.view.
+Tests: shared/printing `kitchen-extras.test.ts` (new, 9: the till's extra under the dish, a variant and two extras, a
+combo's extra, a soda's extra not on the kitchen, the notes, 3 items to cook, a dish with only an extra kept, dispatch, the
+receipt unchanged), `routing.test.ts` ("the line's stations + dispatch"; a combo's), `variant-line.test.ts` and
+`bridge-sim.ts` (routing as the bridge, with the per-unit strip); `tests/kitchen-drinks.test.mjs` (the committed web bundle
+prints "+ Extra Cheese", the notes); desktop `kitchen-extras-a559.test.mjs` (new, 9, CI step: a POSPage-shaped sale through
+the real queueThermal → printSale) and `credit-sale-a552.test.mjs` (+8: refused without the key in the real IPC handler and
+in order:create; allowed with customers.view (PIN) and with customers.credit (self)). Mutations, each seen red then
+reverted: the modifier on ids.dispatch only; the old earn rule; extras counted; the "+" dropped; queueThermal's order note
+nulled; printSale's line note dropped; the IPC check removed; the order:create check removed; the rule on customers.view only.
+
+### A558 · P2 · FIX BUILT 2026-10-21 (web + cloud; migration 161) · Analytics: decisions made easy — a plain verdict, "Do this next" with KES estimates, what sells when, every table capped at 10
+Owner, 2026-10-21: "on the analytics can we put it below overview i dont understand the cards at the top, can we add
+recommendations on the analytics page, what is sold more at what time make it fine to grain level if i charge 10Gs a month
+for it the owner/manager needs to feel the value not just numbers on the screen let it scream decisions made easy. any table
+cap it to 10 rows they should not be long only decisions are needed here". **BUILT:**
+1. **Navigation** — owner sidebar: **Analytics** directly below Overview (out of Finance), shown to a partner (A550) only
+with `reports.sales` (the cloud's own gate; NAV_KEYS). Manager portal: the Analytics tab first in Finance (same key).
+2. **The page, top to bottom** — (1) **How was this period?** one or two sentences from the numbers, the good news first
+("You sold KES 2,719,071 in the last 30 days — 9.5% more than the 30 days before."), then the biggest worry (sales down,
+money at risk up ≥ 10%, else the top recommendation); (2) **Do this next**; (3) the KPI tiles in plain words; (4) **What
+sells when**; (5) daily sales and the payment mix; (6) the tabs, each opening with one line of what it tells you. The A549
+insight strip is no longer drawn (/insights stays for compatibility; the recommendations replace it).
+3. **KPI tiles** — each change as words ("▲ 9.5% more than the 30 days before", "2.1 points higher …", "about the same as …",
+"no earlier figure to compare with"), coloured good / bad AND said; one line under each number: Sales "Everything you rang
+up in the period, before refunds" · Bills "How many sales were paid" · Average bill "What one customer spends per visit" ·
+Gross margin "Of every KES 100 sold, KES 55 is left after the cost of the food" · Money at risk "Voids, refunds, discounts
+and wastage — money that left without a sale". Only the Sales tile keeps a (smaller) sparkline.
+4. **Do this next** — GET `/api/analytics/recommendations` (the A549 gates): 3–7 ranked cards (fewer when the data does not
+support more — never invented), each: a verb-first title, why in one sentence with the numbers, the **estimate** (≈ KES a
+month, or once for credit) labelled "more profit / to recover / to collect", the **assumption** in small text, a confidence
+marker (three bars + "Strong evidence / Good evidence / Worth a try") and "See why" opening the tab with the evidence. Above
+them: "In this period's figures Analytics found about KES X a month you could gain or recover, plus KES Y of old credit to
+collect — estimates; each card says what it assumes." Pure rules in `lib/analyticsRules.ts` (a month = 30 days; `days` the
+period's length):
+- *price* — a Plowhorse sold ≥ 20: rise = half its margin gap to the weighted average, rounded to KES 10, at least 10, at
+most 15% of its price; impact = rise × quantity a month; top 2. "Raise the price of Tusker lager by KES 40";
+- *promote* — the best Puzzle sold ≥ 3: "Feature Tilapia whole at lunch" (its best daypart from item × time; none known →
+"Have staff suggest …"); impact = unit margin × 20% more a month;
+- *rework* — the Dogs (≥ 14 days of data), up to 3 named, the margin they bring a month; no KES estimate;
+- *staffing* — the busiest 3-hour block (weekday × hour, trading hours) when it takes ≥ 2× an even share, with what sells
+then; impact = 5% of that block's sales a month;
+- *quiet* — the quietest two hours when ≤ half a typical (median) two hours: a happy-hour offer; impact = a quarter of the
+gap a month (sales, before the offer's cost);
+- *leak* — each A549-flagged cashier (≥ 2× the median, ≥ 5 events): "Talk to Otieno about voids"; impact = the value above
+the median rate (value × (1 − median / rate)) a month; up to 3;
+- *day close* — day closes ≥ KES 500 short in all; impact = the shortfall a month;
+- *credit* — ≥ KES 1,000 over 60 days (customers.view / customers.credit only): the top 3 names; impact = the amount, once;
+- *cost* — items sold ≥ 5 with no cost set; no KES estimate. *Upsell* from what sells together: not built (it needs baskets;
+no cheap aggregate gives them).
+Menu rules need costs (A490 seesCosts), ≥ 50 items sold and ≥ 7 days; timing rules ≥ 100 orders and ≥ 7 days. Ranked by the
+KES at stake (once or a month), no estimate last, then confidence; at most 7. Without costs the menu aggregate is never run
+for this route, and no card names a margin or wastage.
+5. **What sells when** — GET `/api/analytics/item-times` (the same gates and 5-minute cache) on **migration 161**
+`analytics_item_times(business, branch, from, to, cutoff, limit)`: per product sold (completed orders; order_items as the
+matrix) the quantity and revenue by **business weekday** (the owner's cut-off moves a Saturday 01:30 sale to Friday) ×
+**clock hour** (East Africa Time) as one JSON array per product, the 100 best sellers by quantity plus ONE total row (every
+product) so shares stay right when the tail is cut. STABLE, SECURITY DEFINER, service role only, no table. The page: (a)
+**dayparts** Morning (05:00, or the cut-off if later – 11) · Lunch 11–15 · Afternoon 15–18 · Evening 18–22 · Late 22–05,
+each "What sells at lunch" with its top 5 and their shares as thin bars; (b) **When does Tusker lager sell?** — pick any of
+the 100, its own weekday × hour grid (the Busy times ramp) and "Most on Saturday 20:00–21:00; 65% of it sells in the
+evening"; (c) **the top 3 at every hour** ("18:00 Tusker lager · Nyama choma 1kg · Chicken wings"); (d) the promote and
+staffing cards use it.
+6. **Ten rows, everywhere** — menu engineering (top 10 by total margin, else revenue; the headers still sort; "Showing the
+top 10 of 17, by total margin"), money leaks per cashier (flagged first, then the money through their hands) and per day
+(now "The days that lost the most", by voids + refunds + discounts + wastage + a short close), credit ageing per customer
+(oldest debt first); the cashier stack chart 12 → 10; no paging anywhere.
+7. Kept: light and dark, phone width (500 px headless: no page overflow), no polling (the overview, recommendations and item
+times once per period; the server shares the work — after /overview and /item-times, /recommendations runs only the heatmap
+and credit aggregates), the premium-off panel, cost visibility, branch scope (A550 `allBranchAccess` unchanged). No new hue:
+the share bars and the item grid use the existing accent and ramp (chartPalette.ts untouched; check-back-office-colour and
+check-web-pos-green unchanged). Dashboard chunks: AnalyticsPage 61.5 kB (17.4 kB gzip; was 48.1 / 13.8), `charts` 437.6 kB
+unchanged, the entry 99.3 kB.
+Files: `migrations/161_analytics_item_times.sql`, `scripts/schema-pending.json`, `apps/server/src/lib/analyticsRules.ts`,
+`apps/server/src/routes/analytics.ts`, `apps/dashboard/src/pages/analytics/{AnalyticsPage.tsx, charts.tsx, chartMath.ts}`,
+`apps/dashboard/src/components/DashboardLayout.tsx`, `apps/dashboard/src/pages/manager/ManagerDashboard.tsx`, `.github/workflows/ci.yml`.
+**Tests.** `tests/analytics-a558.test.mjs` (8, HTTP — the A553 harness on the REAL migration-158/160/161 functions in
+PGlite: the flag off, one aggregate call, the dayparts at the EAT boundary (07:59Z morning, 08:00Z lunch, 12:00Z afternoon),
+the cut-off (the range and a Saturday 01:30 sale on Friday), a manager held to their branch / the owner all or one / another
+business 404, the ranked recommendations with estimates and the summary, costs withheld (no menu aggregate, no menu card,
+no margin) and no credit aggregate without customers.view, the cache, the range cap and 503 before 161).
+`tests/analytics-rules-a558.test.mjs` (22 — every rule's thresholds, minimum data, impact maths and sentence, the ranking and
+the cap, costs hidden, the value found, the summary's four shapes, the page's plain words, the 10-row cap and the item grid).
+`scripts/test-migration-161.mjs` (6 — idempotent, service role only, STABLE, completed only, the branch and business, EAT, the
+business weekday, the limit and the total row). **16 mutations, each bites** (lunch from 12, shares against the items sent,
+no 20-sold floor, the period's quantity as a month's, costs ignored, no cap of 7, the whole void value, capRows not capping,
+/item-times without the cut-off, the menu run without costs, item times for every branch, the cache key without the period,
+the SQL hour in UTC, the weekday without the cut-off, voided orders in, the total row over the sent products only). CI
+step "Analytics decisions (A558) item times, recommendations and migration 161". A549 / A553 tests unchanged and green.
+
+**Owner actions.** (1) Run migration **161** on dev first (`161_analytics_item_times.sql`, after 158 and 160); until it runs,
+/item-times and /recommendations answer 503 ANALYTICS_NOT_READY and the page shows the KPI row, the trend and the tabs. Then
+refresh `scripts/functions-index.json` and delete 161 from `scripts/schema-pending.json`. (2) Look at the page on a client
+with Analytics on and judge the wording of the cards — every estimate says what it assumes.
+
+**Not done / to decide.** The dayparts are fixed (configurable later). Upsell / "what sells together" (needs a basket
+aggregate). The weekday in What sells when is the BUSINESS day (the cut-off), while Busy times (A549's heatmap) still uses
+the clock day — the same only when the day ends at midnight. The assumed uplifts (20% for a featured Puzzle, 5% for quicker
+service, a quarter of the quiet gap) are judgement, stated on each card.
+
+### A557 · P3 · FIX BUILT 2026-10-21 (till 1.0.20 + web) · Kitchen dish names the dispatch ticket's size; the Paybill/Buy Goods number one step smaller
+Owner, on paper (2026-10-21), after A551: "kitchen receipt font are not the same as the packaging receipt, they are bold
+and big i want exactly as the packaging/dispatcher receipt EXACT FONT SIZE AND FONT, also reduce the font size of paybill
+a bit by 3 points".
+Fix: (1) `kitchenPreset` (shared/printing/src/index.ts) and the web's kitchen station (scripts/escpos-renderer/entry.ts):
+`emphasizeParent: false`. A kitchen dish name is bold at normal size (GS ! 0x00) — the dispatch ticket's row, byte for byte;
+it was 'tall' (GS ! 0x01) and bold. The banner stays the one double-height line. Font B tickets (`kitchen_font_b`) share the
+preset, so their dish names are normal size too. (2) The classic receipt's payment block (render.ts, A551): the
+"BUY GOODS:" / "PAYBILL:" label and the number are ALWAYS double HEIGHT only (GS ! 0x01), centred, bold — A551 printed them
+double size (GS ! 0x11) with a fallback to tall when too long; the fallback is removed and a long value wraps at the full
+line (48 / 32). ESC/POS has no size in between, so this is the step down. (3) The web's browser receipt (ReceiptView.tsx):
+the label and the number 13 px / 15 px, 3 px under A551's 16 / 18 px, still bold and above the receipt's 12 px.
+On paper (SAMPLE-OUTPUT.txt): the kitchen ticket's lines are unchanged in text ("1   3PC CHICKEN COMBO", now normal size);
+the payment block reads "BUY GOODS:" / "000000" centred (the preview no longer spaces out the letters of a double-width line).
+Artefacts: out/kitchen-{80,58}.bin, kitchen-{80,58}-font-b.bin, receipt-{80,58}.bin, SAMPLE-OUTPUT.txt, BYTE-CHECK.txt
+refreshed; web bundle rebuilt (`build-escpos-renderer --check` OK).
+Tests: shared/printing `kitchen-font.test.ts` §4 (every kitchen dish row is the dispatch row, size, weight and bytes; one
+GS ! 0x01, the banner; emphasizeParent on still wraps the same), §9 (the pre-A551 goldens with the dish names put back at
+'tall' as the one other, asserted, difference); `receipt-pay-block.test.ts` (GS ! 0x01, centred, bold; no GS ! 0x11; §3
+always tall, a 40-digit number and a 49-character label wrap at the full line); root `tests/receipt-payment-block.test.mjs`
+(the sample and the web bundle: tall, GS ! 0x01), `tests/a534-update-state-receipt.test.mjs` (13 / 15 px); desktop
+`test/test-print-business-name.test.mjs` (the sample's "BUY GOODS:" / "000000" unspaced). MUTATION-CHECKED, each red on its
+own: kitchenPreset's emphasizeParent back to true (kitchen-font 27 red, receipt-compact 2, bytes --check 4); the payment
+block back to 'large' (receipt-pay-block 24 red, kitchen-font 2).
+**Owner checks on paper:** a kitchen ticket next to a dispatch ticket — the dish names the same size and weight; the
+receipt's "BUY GOODS:" / "PAYBILL:" block on 80 and 58 mm — tall, normal width.
+
+### A556 · P2 · FIX BUILT 2026-10-21 (till 1.0.20 + web bundle) · The receipt still printed two rows for a variant on a combo or on a product with a description
+Owner, on paper after A551: "YOU DID NOT DO THIS ON THE RECEIPT WE STILL HAVE TWO LINES OF THE SAME". A551 folded the variant
+only for the unit toUnits makes for a PLAIN product. Read from the test till's own database: the till's burgers carry a
+description ("Crispy fillet, lettuce, house sauce") and its combos components, so toUnits hung the variant on the first
+description part or component and the receipt printed "Crispy Chicken Burger" / "  Crispy fillet  Spicy" and
+"5PC Chicken Combo" / "  5PC Chicken  Normal". A551's tests used only the plain-product shape.
+Fix: (1) `receiptHeading` (render.ts) — on the CUSTOMER RECEIPT every unit of one, a single portion, whose choices cost
+nothing gives its choices to the item's row ("Crispy Chicken Burger - Spicy", "5PC Chicken Combo - Normal"); the unit prints
+no row unless it has a price of its own (then its price row stays, without the choice). Split portions and priced choices
+print as before. (2) `toUnits` (routing.ts) — a variant goes on the first component only for a REAL combo; a product whose
+parts come from its description gets its own variant unit, so the kitchen ticket also reads
+"1   CRISPY CHICKEN BURGER - SPICY" with the parts beneath. A combo on the kitchen ticket keeps the choice on its component.
+The web's on-screen ReceiptView already used selectedVariants for every product.
+Tests: `shared/printing/test/variant-line.test.ts` §7 (80 and 58 mm, described product, combo, a priced component, kitchen
+both shapes) — mutation-checked (receiptHeading folding nothing; the variant on the first description part). Web bundle
+rebuilt (`build-escpos-renderer --check` OK).
+
+### A555 · P2 · FIX BUILT 2026-10-21 (till 1.0.20 + web bundle) · A till's extras (modifiers) never printed on any ticket or receipt
+Found while building A551. The till's VariantModal stores a chosen extra as `{ groupId, groupName, optionId, optionName, price }`
+and POSPage hands `selectedModifiers` to the print bridge as is; the shared renderer's `toUnits` (shared/printing/src/routing.ts)
+read only `m.name`, skipped every entry without one — so on the till "Extra Cheese" was charged but printed nowhere (the web
+sends `{ name }` and was fine). Fix: `toUnits` reads `name ?? optionName` (trimmed; blank still prints nothing); the bridge's
+line type names both. Routing unchanged: an extra still prints on the dispatch station only, as before.
+Test: `shared/printing/test/routing.test.ts` "A555" (a till-shaped modifier prints with its price; a blank one does not). Web
+bundle rebuilt (`build-escpos-renderer --check` OK).
+
+### A553 · P2 · FIX BUILT 2026-10-21 (web + cloud; migration 160) · Analytics v2 — the Analytics page drawn: KPI row against the previous period, the daily sales trend, payment mix, tinted menu matrix, busy times, leak and credit charts
+Owner, 2026-10-21: "analytics are there i was hoping it could be more graphical beautiful graphs colors you know such are
+the things that please the management". A549's figures, now drawn (the tables stay below every chart). **BUILT:**
+1. **Overview (new, top of the page)** — GET `/api/analytics/overview?from&to&branch` (the A549 gates: web, reports.sales,
+the premium flag, the 366-day cap, owner all branches or one / anyone else their own branch). **KPI row**: Sales, Orders,
+Average bill, Gross margin % (only with costs — A490 seesCosts) and Money at risk (voids + kitchen voids + refunds +
+discounts + wastage; wastage only with costs), each with ▲/▼ and its change against the **previous period of the same
+length** (the days ending the day before `from`; the margin's change in percentage points; nothing before → "no earlier
+figure"), coloured good / bad by whether up is good (money at risk: up is bad), and a sparkline of its own daily figure.
+**Daily sales** — an area chart of this period with the previous period as a faint line (day i against day i). **Payment
+mix** — a donut of the period's completed payments: Cash · M-Pesa · Card · On account (method `credit`) · Other.
+2. **Cheap** — ONE new aggregate, **migration 160** `analytics_daily_sales(business, branch, from, to, cutoff)`: per business
+day (the owner's cut-off, East Africa Time) the completed orders' total and count, plus per day and method the completed
+payments of those orders; the cloud asks for the previous period AND this one in ONE call (≤ 2 × 366 days → a few hundred
+rows). STABLE, SECURITY DEFINER, service role only, no table. The other KPI parts come from A549's money-leaks and menu
+answers for each period (the current ones shared with the tabs through the 5-minute cache; the previous ones cached the
+same way) — /overview costs at most 5 aggregate calls, a repeat none. No existing function could give a daily value (the
+heatmap is weekday × hour; money leaks per day counts orders, not their value), and /reports/sales pulls raw orders.
+Without costs the menu aggregate is never run for the overview. Pure rules in `lib/analyticsRules.ts`: `previousPeriod`,
+`pctChange`, `methodGroup`, `grossMarginPct` (margin over the revenue of the items with a cost), `moneyAtRisk`, `buildOverview`.
+3. **Menu engineering** — the scatter with the four quadrants tinted (Stars · Plowhorses · Puzzles · Dogs), a legend, each
+class its own marker shape as well as colour, bubbles sized by revenue, hover: name, class, quantity, margin, revenue; plus
+**Top 10 items by revenue** (horizontal bars in their class colour; the accent when costs are hidden).
+4. **Busy times** (was "Sales heatmap") — the heatmap on a one-hue blue ramp with a Less → More legend and a hover readout;
+**Sales by hour** (columns) and **Sales by weekday** (bars), folded from the heatmap answer on the page.
+5. **Money leaks** — a stacked bar per cashier (voids · refunds · discounts · wastage; flagged cashiers first, with a red flag
+mark and bold name) and a **donut** of the leak types; the cashier and day tables below.
+6. **Credit ageing** — the four buckets as one bar coloured green → red (0–30 · 31–60 · 61–90 · 90+, each labelled with its
+amount and share) and the **top 10 debtors** as bars split by age; the table below.
+7. **Insights** — cards with a stripe and an icon in the severity's colour (high red, medium amber, low blue), the type and the
+severity in words ("Act now" · "Worth a look" · "Good to know").
+8. **Print** button (window.print). No polling: the overview and insights once per period, each tab once per period.
+9. **Library and bundle** — **recharts 3.10.1** (exact pin, 2026-07-25) with its peer `react-is 18.3.1`; vite puts it and
+what only it uses in its own `charts` chunk (437.6 kB, 124.1 kB gzip) fetched only with the Analytics page (the owner's
+route was already lazy; the manager portal's Analytics tab is now `lazy` + `Suspense` too). AnalyticsPage chunk 48.1 kB
+(13.8 kB gzip). The entry chunk and `vendor` do not import it.
+10. **Colours** — every chart colour from `pages/analytics/chartPalette.ts` for the dashboard's mode (ThemeContext; light
+surface white, dark gray-900): the dataviz reference categorical slots in a fixed order (validated adjacent-pairs in both
+modes, incl. the donut's wrap-around; the four menu classes validated all-pairs, CVD in the 6–8 band → the shapes are the
+secondary encoding), the status colours for the credit buckets and severities, a one-hue ramp for the heatmap. Text stays
+in the gray classes; the page's buttons and tabs stay `swift-*`. The palette's 26 green/blue hexes are data colours:
+`scripts/back-office-colour-baseline.json` `pages/analytics/chartPalette.ts: 26` and an addendum in
+docs/A329-back-office-colour-classification.md. check-web-pos-green and build-light-colours unchanged.
+11. **Phone** — the KPI row 2-up, charts full width and stacked, the heatmap scrolls inside its card (rendered at the narrowest
+headless width, 500 px: no page overflow).
+Files: `migrations/160_analytics_daily.sql`, `scripts/schema-pending.json`, `apps/server/src/lib/analyticsRules.ts`,
+`apps/server/src/routes/analytics.ts`, `apps/dashboard/src/pages/analytics/{AnalyticsPage.tsx, charts.tsx, chartMath.ts,
+chartPalette.ts}`, `apps/dashboard/src/pages/manager/ManagerDashboard.tsx` (lazy tab), `apps/dashboard/vite.config.ts`,
+`apps/dashboard/package.json` + lock.
+**Tests.** `tests/analytics-a553.test.mjs` (9, HTTP — the compiled router behind the real requireAuth, its rpc answered by
+the REAL migration-158/160 functions in PGlite on the A549 seed plus payments and a previous period: the flag off, the
+previous period and ONE daily call covering both, the daily series day by day (EAT boundary, empty days at 0), the five
+KPIs and their changes, the payment mix (not a failed payment, not another branch, not the previous period), costs
+withheld (no margin, no menu aggregate, wastage out of money at risk), a manager held to their branch / the owner all or
+one / another business's branch 404, the range cap, the cache). `tests/analytics-rules-a553.test.mjs` (10 — the server's
+pure rules and the page's chartMath.ts / chartPalette.ts read as TypeScript: the change badge, the heatmap folds, top
+items, leak parts, the palette mapping in both modes). `scripts/test-migration-160.mjs` (6, PGlite — idempotent, service
+role only, completed only, EAT, the cut-off, payments by method). **11 mutations, each bites** (previousPeriod ending on
+`from`, the mix over both periods, costs always on, the daily call for every branch, pctChange over `now`, the badge
+ignoring up-is-good, two methods sharing a colour, the SQL without EAT / with voided orders / with failed payments / without
+the cut-off). CI step "Analytics v2 (A553) overview, chart transforms and migration 160".
+
+**Owner actions.** (1) Run migration **160** on dev first (`160_analytics_daily.sql`); until it runs, /overview answers 503
+ANALYTICS_NOT_READY and the page shows the tabs and insights without the KPI row's figures. (2) Look at the page in light and
+dark mode on a client with Analytics on.
+
+**Not done / to decide.** "Download PNG" (Print only — a PNG export needs another library). The margin tile has no
+sparkline (no daily margin aggregate; it would need recipe costs per day). Sales are gross when rung (as the heatmap and
+/reports/sales' daily series), not refund-adjusted — refunds are in money at risk.
+
+### A551 · P3 · FIX BUILT 2026-10-21 (till 1.0.20 + web) · Printing changes from the owner's paper test of the 1.0.20 build: kitchen tickets back in Font A, a thin gap between items, a 1-line feed before the cut, a variant on the item's own line, and the large payment block
+**A557 (2026-10-21) changed two sizes set here:** kitchen dish names now print bold at normal size, as dispatch (emphasizeParent off), and the payment block is double height only (GS ! 0x01) — no double size, no fallback — 13 / 15 px on the web receipt.
+The owner printed the 1.0.20 build on paper and asked for five things (verbatim): "kitchen receipt use the same font as
+the despatcher" / "reduce the spacing between item in the kitchen printer; spacing between content is okay but items i
+feel its too big" / "spacing at the end of packaging and kitchen receipt" / "on items with variants assume chicken burger
+instead of writing `Chicken burger` then `  Chicken burger spicy` why not write `Chicken burger - Spicy` we avoid 2 lines
+of the same item" / "change in the payment details we just write `PAY BILL/BUY GOODS:` newline `123445` and we center it
+and increase the font size and thickness, We remove the wordings payment details". All in shared/printing (the till and,
+through the rebuilt bundle, the web POS) plus the web's browser receipt.
+
+**1. Kitchen tickets in Font A again.** A543 made the kitchen ticket Font B with `kitchen_font_a` to opt back out. Now the
+kitchen ticket is Font A — the dispatch ticket's font, size and columns (48 / 32), ESC 2 — and Font B (A543's ticket,
+64 / 42, ESC M 1, ESC 3 24) is the opt-in **`kitchen_font_b`** ("Kitchen tickets in the small font", admin portal only,
+`KITCHEN_OPTION_KEYS`, `kitchenFontBFrom`, `BusinessConfig.kitchenFontB`). `kitchen_font_a` is retired
+(`RETIRED_POS_FEATURE_KEYS`): a stored row is dropped by parsePosFeatures, never asked for by the cloud, not listed under
+"Other flags" — a client that had it on gets Font A, which is what it asked for; every other client gets Font A by default.
+No migration. Threaded as before: the till's business config (ipc/shared.ts) and test print (printWorker.ts), the web
+mapper (buildReceiptOrder.ts), CashierScreen's three kitchen calls; the six posFeatures.ts copies identical.
+
+**2. A thin gap between items, not a blank line.** Kitchen and dispatch tickets put ESC J 10 (~1.25 mm, `ITEM_GAP_DOTS`,
+the receipt's A540 gap) between one item and the next, where a blank line (ESC 2, ~4.2 mm) was. An item's own rows (its
+name, components, attributes, notes), the header and the footer are spaced as before.
+
+**3. One line fed before the cut.** Kitchen and dispatch documents carry `cutFeed` 1 (`PRODUCTION_CUT_FEED`), as the
+receipt has since A530/A538 — GS V 66 0 carries the last line to the blade. Where the feed comes from: the desktop builds
+every station from the presets (`kitchenPreset` / `dispatchPreset`, printWorker.ts and ipc/shared.ts; `station_printers`
+stores only the target and the paper width), the web bundle hard-codes 3 — no client can set a station's feed by hand, so
+there is no hand-set value to keep. The presets' `feedBeforeCut: 3` stays as the tear-off (no cut) feed, exactly as the
+receipt preset's 3 does.
+
+**4. A variant on the item's own line.** toUnits (routing.ts; the till and the web's routed tickets) gives a product sold
+with a variant and no components ONE unit of itself carrying the options as attributes — it printed as a second row with
+the product's name again ("CHICKEN BURGER" / "Chicken Burger" / "Spicy" on the kitchen ticket, "Chicken Burger (Spicy)"
+on dispatch, "  Chicken Burger  Spicy" on the receipt). The renderer now recognises that unit (the line's own name, one of
+it, one portion, no price of its own — `variantUnit`) and prints its options on the line's row: **`Chicken Burger -
+Spicy`** (layout.ts `nameWithVariant` / `variantLabel`: a leading whole-word repeat of the product's name stripped,
+case-insensitive, with the separators after it; "Large" kept as it is; two groups "Beef Burger - Large, Spicy"). It still
+routes the line and counts as an item to cook. A combo's variant (on its first component), modifiers and a split ("1
+spicy, 2 normal") print as before. Long combined names use the A547 hanging wrap. With it: the double-height dish name
+('tall', GS ! 0x01 — double HEIGHT, single width) is wrapped at the whole line, not at half as if it were double width
+(A543/A547 halved it) — otherwise "1   CHICKEN BURGER - SPICY" (26) split over two rows on 80 mm. The web mapper
+(buildReceiptOrder.ts) now gives variants the same shape as toUnits (was one "Group: Option" unit each), and the browser
+receipt (ReceiptView.tsx) prints "Chicken Burger - Spicy x1" with no variant rows (`nameWithVariants`, the same rule). The
+desktop has no on-screen receipt any more (A542); its old HTML print path (renderer/lib/printReceipt.ts) is not touched.
+
+**5. The payment block.** On the standard (classic) receipt, A539's bold "Payment Details: Buy Goods - 777111" is replaced
+by the label alone — "BUY GOODS:" / "PAYBILL:" (business.tillLabel, upper case, a colon) — then the number, each centred
+(ESC a 1), double size (GS ! 0x11) and bold; a Paybill's account (A492's ", Account " split) on a third line, centred,
+normal size: "Account: WEST1"; then the rule, the payments and CHANGE as before. The words "Payment Details" are gone. No
+till number: no heading, and no rule of its own (the one under PAY is there). Double width halves the line (24 on 80 mm,
+16 on 58 mm): a label or number that does not fit prints both double height only (GS ! 0x01). The compact opt-in keeps
+A530's block. Same in the web's browser receipt (centred, bold, 16 / 18 px). Receipt header and footer fonts untouched.
+
+On paper (SAMPLE-OUTPUT.txt), the 80 mm kitchen ticket and the payment block:
+```
+|                * * KITCHEN * *                 |      |PAY: KES 3,300.00                               |
+|                                                |      |------------------------------------------------|
+|Order  T1--5718                         TAKEAWAY|      |              B U Y   G O O D S :               |
+|Wed 05 Aug 19:42                  Cashier  Amina|      |                  0 0 0 0 0 0                   |
+|------------------------------------------------|      |------------------------------------------------|
+|1   3PC CHICKEN COMBO                           |      |CASH                                    3,500.00|
+|      3PC Chicken                               |      |CHANGE                                    200.00|
+|        all spicy                               |      |------------------------------------------------|
+|      Fries large                               |
+|      Popcorn chicken                           |      (the item gap is ESC J 10 — under a line, so the
+|2   WINGS COMBO 8PC                             |       text preview shows no row for it)
+|      8PC Hot Wings                             |
+|        all spicy                               |
+|      Fries medium                              |
+|------------------------------------------------|
+|                5 items to cook                 |
+```
+Bytes: kitchen-80.bin 488 (was 582 in Font B; A543's Font A ticket was 486), kitchen-58.bin 416, dispatch-80.bin 553,
+receipt-80.bin 1799, receipt-58.bin 1335; `kitchen-*-font-a.bin` retired, `kitchen-80-font-b.bin` 584 / `kitchen-58-font-b.bin`
+485 added. BYTE-CHECK.txt, SAMPLE-OUTPUT.txt and the web bundle (`--check` OK) refreshed.
+
+**Tests.** shared/printing: `kitchen-font.test` rewritten for the new standard (104 checks; section 9 proves each ticket
+is its pre-A551 bytes — test/golden/a551-pre.json, the committed bins before this change — with only the gap, the feed
+and, on 58 mm, the whole-line dish name); new `variant-line.test` (50) and `receipt-pay-block.test` (31);
+`receipt-compact.test` section 1 compares the 1.0.19 golden before the block and after its closing rule, and the same
+payment lines inside; bridge-sim's plain-product check now asks for "1   CHICKEN BURGER - LARGE" and the name once.
+Root: `kitchen-font-a543`, `receipt-payment-block`, `receipt-compact-a530`, `a534-update-state-receipt` (the browser
+receipt's block and a variant), `prospect-features`; desktop `test-print-business-name`, `business-identity`,
+`prospect-features`. MUTATION-CHECKED, each red on its own: the kitchen default back to Font B; the gap back to a blank
+line; no 1-line feed; the dish name at half width; no fold; a fold on any unit with attributes; the folded unit not
+counted; the repeat not stripped; the whole-word check dropped; the pay block 'tall', left, not bold, with "Payment
+Details", the account not split, a heading with no number, no 58 mm fallback; the web mapper `!== false`; ReceiptView's
+variant rows / "Payment Details" / account split; `kitchen_font_a` not retired.
+
+**Owner checks on paper:** a kitchen ticket (Font A, items closer, 1 line after); a Chicken Burger with a variant on the
+kitchen, dispatch and receipt; the large "BUY GOODS:" block on 80 and 58 mm (if a 58 mm printer's double width looks too
+big, say so — the fallback to double height is by length only).
+
+### A552 · P1 · FIX BUILT 2026-10-21 (till 1.0.20 + cloud; no migration) · Sales on account (credit) at the desktop till: the customer, the limit, the manager's approval, offline, born confirmed when approved at the sale
+Owner, 2026-10-21: "for credit sales we need them on desktop app since its the one used by most clients". The web POS sold
+"On account" (A511: a cashier without customers.credit needs a manager's PIN; the limit enforced on a live sale) and the
+cloud recorded a till's pushed credit sale (A545: awaiting a manager, flagged over_limit) — but the till never offered it
+(the catalogue's `webOnly`), and held no customers, limits or balances. **BUILT — till** (`main/creditSale.ts`):
+**Offered** only when the branch takes On account (`payment_methods_enabled`, on by default, A429) AND the till holds a
+customer with a credit account (a limit or a balance) — a business that keeps no credit accounts never sees it; checked
+again in order:create (`NO_ON_ACCOUNT`). Not gated on the online licence: credit accounts are not in the premium list
+(online-licence memory) — but they are opened and limits set only on the web (Customers › Credit), so a desktop-only
+client has none and never sees the button. **The customer** (required, `CUSTOMER_NEEDED`): searched by name or phone in
+`credit_customers` (local schema 75, pulled: new cloud route `GET /api/pos/credit-customers` — desktop only, the till's own
+session or a person on a till, no permission key (tillScope: the till's token holds none of the customer keys), every
+customer of the business with a limit or a balance, and `at`); the payment screen shows limit, owed now and what is left.
+**Owed** = the cloud's balance + this till's own sales on account the cloud had not taken when the list was read
+(`customer_credit_transactions.synced_at`, stamped in the push's markSynced, after `pulled_at`, or not synced; a voided
+sale's charge not owed) — so a second sale sees the first offline; the next pull corrects it (cloud authoritative).
+Read with every catalogue pull, when the payment screen opens and the list is over a minute old (≤ 4 s waited), and 15 s
+after a sale on account. **The limit** exactly as the web POS: never past what is left, no override (the web has none);
+a customer with no limit is refused and told why. **Approval (A511 at the till)**: the person signed in holding
+customers.credit (the owner too) approves it themselves — no PIN; anyone else enters the PIN of someone at THIS branch
+holding customers.credit, checked by the chain the till's offline voids and refunds use (the branch server, its roster,
+this till's saved sign-ins — each this branch only), behind the till's PIN limiter; never the asker (`SELF_APPROVAL`, not a
+strike); a supervisor who voids but lacks customers.credit, a cashier, another branch's manager: "not recognised" (a
+strike). The PIN never leaves order:create; the screen's credit fields are dropped and re-derived there. **Split**: part
+on account, part cash / M-Pesa / card (the web's split allows it) — one leg on account per sale, one customer.
+**The push** (peerRelay.buildCloudOrderPayload, the one builder for the till's push and the server's relay) carries
+`customer_id` and `credit_approved_by`; never `credit_pin` or the receipt's `on_account`. **Receipt**: the leg prints
+"ON ACCOUNT: <customer>" with its amount and a "BALANCE OWED" line after the sale — built on the till's side
+(`escposBridge.receiptPaymentRows`, from the renderer's own label + amount lines); `shared/printing`'s render.ts is
+unchanged (A551 is editing it). **Day close**: on account is its own method line (byMethod `credit`); expected cash is
+`method = 'cash'` only, so it is never expected in the drawer — tested; the cashier declares it at End Shift like M-Pesa or
+card (A365's rule for every non-cash method, unchanged). **Branch server and its tills (A535 pattern)**: a till behind a
+server asks `GET /node/credit-customers` (a proven till only; the server's copy, read again when over a minute old, with
+its age — the till dates the list that much earlier, 2 s margin); an older server (404): the cloud through the gateway,
+not asked again for an hour. Its sales push as every sale does. **BUILT — cloud** (`routes/orders.ts creditApproval`,
+`tillCreditApprover`): a till's sale (isTillOwnSalePush / tillMadeSale) naming `credit_approved_by` is BORN CONFIRMED by
+that person when they hold customers.credit (or are the owner) and work at the sale's branch (the A545 replay's `by`
+check); anyone else named, junk or no one → awaiting a manager, as A545; never refused; past the limit still recorded and
+flagged; a live web sale is never approved by the field (still needs the PIN). terminalWrites unchanged (POST /api/orders
+is a TILL_WRITE); the new read passes TILL_SCOPE_ENFORCE (added to `till-scope-enforce-a545`'s reads). **Shared**:
+`paymentCatalogue.ts` (4 copies) — On account no longer `webOnly` (the web's "web POS only" label goes; the till screens
+filter it themselves). REQUIRED_DESKTOP_SCHEMA 75.
+Tests: `apps/desktop/test/credit-sale-a552.test.mjs` (43, ci step "Desktop sales on account (A552)": real localDb,
+createLocalOrder, syncPush, shiftService, saved sign-ins checked for real), `tests/credit-till-a552.test.mjs` (12, HTTP,
+TILL_SCOPE_ENFORCE=true, the payload built by the till's compiled peerRelay); `payment-catalogue`, `credit-approval-a511`,
+`till-scope-enforce-a545` updated. Mutation-checked, each seen to fail and reverted: the offered gate, the customer check,
+selfApproves, the self-approval check, the limit, the pending charges, the synced_at stamp, the relay keeping the PIN, the
+Z-report counting credit as cash, the saved sign-ins' branch filter; cloud: the named approver ignored, mayApprove,
+worksAtBranch, the desktop-surface check. **Owner action:** none (no migration); deploy the cloud with the 1.0.20 till.
+**Limits (said):** another till's offline credit sale is not seen until it reaches the cloud (the cloud then flags
+over_limit); a server's own unsynced credit sales are not in the copy it hands its tills; the till shows no statement.
+
+### A554 · P2 · FIX BUILT 2026-10-21 (till 1.0.20 + cloud + admin) · Fixes from the first pulled till log and the owner's test: the push channel dropping every 13 minutes, a branch server asking itself about updates, two ZapTills at once, a wrong PIN logged as an error, the Pull logs card, the categories panel opening
+The owner pulled a log (A533) from his test branch server — B Foods, T1 "Left Till", role node, no other tills, "Branch
+sync: (no branch server)", running the local 1.0.20 test build labelled 1.0.19 — and tested the till. Six things, each
+found from the code, fixed, tested and mutation-checked (desktop `test/a554-log-fixes.test.mjs`, 41 checks; cloud
+`tests/sync-changes-a531.test.mjs` W A554 and `tests/log-requests-a533.test.mjs` A554).
+
+**1. The push channel dropped about every 13 minutes, all day.**
+```
+[sync] A531: push channel closed (1006) — checking every 20 s until it is back
+[sync] A531: the cloud will ring when something changes (push channel open)
+```
+Root cause: not a proxy idle timeout (the cloud already pings every 45 s) — the token. The cloud ends each socket when the
+token it signed in with expires, +60 s (liveHub.ts: `expiryTimer` → close 4001), and the till renews its 15-minute token 2
+minutes before it runs out ("device token expires in 120s — refreshing ahead of the 401"), i.e. every 13 minutes. The
+socket kept the old token, so it was closed 3 minutes after every renewal → a drop every ~13 minutes, a 5–20 s gap, a
+reconnect. The close was sent as 4001; the till saw 1006 (no close frame reached it through Render's proxy / the runtime's
+WebSocket — not confirmed which). Fix, compatible both ways:
+- cloud (liveHub.ts): after the hello a till may send `{ type: 'reauth', token }` — checked by the same requireAuth, and
+  only for the SAME business and till (another till's, another business's, a person's or a bad token → 4001, never
+  adopted) → `reauthed`, and the expiry moves to the new token's; and `{ type: 'ping' }` → `pong`. `ready` lists
+  `features: ['ping', 'reauth']`. A till before A554 sends neither: unchanged.
+- till (liveSync.ts `socketKeepalive`, every 5 s): a renewed token on an A554 cloud → reauth on the OPEN socket (nothing
+  closes); not confirmed in 15 s, or an older cloud → a planned reconnect (closed by the till with 1000, opened again at
+  once with the new token — before the old one runs out; not logged as a drop, no fallback polling). Keepalive: a ping
+  25 s after the last message (an A554 cloud only); no answer in 20 s → the socket is dead and replaced at once.
+
+**2. A branch server asked "the branch server" about updates, every hour.**
+```
+[update] approved 1.0.19, this machine runs 1.0.19 — nothing to download
+[update] the branch server did not answer the update question (it is asked again every 2 minutes)
+```
+Root cause: the A443 2-minute question ran on every machine; askBranchServer returned null for a node (no server to
+ask), which the loop read as "no answer" and logged once in 30 asks (hourly). Fix (autoUpdate.ts): `asksBranchServer(cfg)`
+— only a till with a server configured (never a node or office PC, never a till with no node_url); the loop's ask()
+returns at once otherwise (`behindServer`, read on every ask — a till joined later starts asking). No spin: nothing is
+asked or logged.
+
+**3. Two ZapTills at once.**
+```
+16:55:01 [startup] ... started by the restart task as the branch server — in the tray
+16:55:45 [startup] ZapTill 1.0.19 build 0d25b43 ...
+16:55:45 [console.warn] [node] port 4100 in use, trying 4101
+```
+Root cause (index.ts): a launch that did not get the single-instance lock called `app.quit()` — which, before Electron is
+ready, does not stop the start-up — and the `app.whenReady()` handler was registered for every launch, not only the one
+with the lock. So a second launch (by hand, 44 s after the restart task's) ran the whole start-up beside the tray one:
+the same database, its own sync, a second branch server on 4101. (startGate.ts's restart-task and sign-in checks always
+used process.exit and were not affected.) Fix: new `singleInstance.ts` — without the lock the launch ends at once
+(`process.exit(0)`, after Windows handed its arguments to the running ZapTill, which shows its window for a launch by
+hand), and whenReady returns first thing without the lock; the relaunch after an update (`--updated`, A509) instead
+waits for the lock while the old ZapTill closes (asked every 0.5 s, at most 30 s, then ends). The port: a peer that
+pinned the server's certificate follows it to 4101 (A501 nodeFollow), any other waits for a technician — so the branch
+server now waits for 4100 (every 2 s for 20 s, `nextListenStep`) before 4101–4103; the fallback stays for an unrelated
+program holding 4100 for good (a server on another port beats none).
+
+**4. A wrong PIN logged as an error with a stack trace.**
+```
+[console.error] Error occurred in handler for 'auth:verifyPin': Error: Invalid PIN at ...\dist\main\ipc\signIn.js:268:19 ...
+```
+Electron prints that line for any handler that throws. The renderer was checked first: PinPage shows `e.message`, posApi
+turns "…'auth:verifyPin': Error: Invalid PIN" into "That PIN was not recognised", and the lockout counts in main
+(recordPinFailure). So the handler keeps throwing the same Error (its toString unchanged) — no renderer change — marked
+`expectedRefusal` (signIn.ts: the cloud's 401, the till's own check, the lockout), and logFile's console capture prints no
+"Error occurred in handler" line for a marked error, one short `[ipc] auth:verifyPin: Invalid PIN (an expected answer …)`
+line instead. Any other handler error is printed as before.
+
+**5. Admin portal, Pull logs card (the owner's screenshot).** (a) The version warning showed twice — orange under the
+device, then green as the request's notice: now one warning, in the warning colour (the request's note replaces the
+device's, same words). (b) It warned about a till that then delivered (the test build labelled 1.0.19): the cloud now
+decides from what the device says or did, not its version alone — `log_pull: true` in the till's A534 update report
+(new, cleanUpdateState keeps it; an older cloud ignores it), or a pull it answered before (log_requests delivered) —
+`canAnswerPull`; and the words are softer: "The request may wait until it updates (kept 7 days)". (c) The device list cut
+the version ("Mama Ngina · v1.0"): the version now comes straight after the name and the list is wider (flex, no 320 px cap).
+
+**6. The till's categories panel did not start collapsed (A537).** Root cause: the pin was remembered in localStorage
+and `panelStartsOpen` returned the pin — once anybody pinned it, every launch and sign-in began with it open. Now
+(shared/menuFilter.ts and its two copies, both POSes): it starts collapsed at every start and sign-in, pinned or not; the
+pin lasts for the session only (the panel's own state) and is never stored; a pin an older build stored is not honoured.
+Only the chosen menu is remembered.
+
+Files: apps/desktop/src/main/{liveSync,autoUpdate,singleInstance (new),index,nodeServer,logFile,updateReport}.ts,
+ipc/signIn.ts, renderer/components/CategoryPanel.tsx, src/shared/menuFilter.ts; apps/server/src/lib/{liveHub,logRequests,
+updateState}.ts, routes/logRequestsAdmin.ts; apps/admin/src/PullLogsCard.tsx; apps/dashboard/src/lib/menuFilter.ts,
+pages/pos/cashier/CategoryPanel.tsx; shared/menuFilter.ts. Tests: apps/desktop/test/a554-log-fixes.test.mjs (new, ci.yml),
+menus-a537 (desktop and tests/) updated to the new rule.
+
+Mutation-checked (each broken once, a test failed, reverted): the renewed-token check, the reauthed adoption, the dead-socket
+check (till); reauth token adoption, the same-till check, the pong (cloud); the node's ask skip; the relaunch's wait,
+index.ts back to app.quit(), the 4100 wait; the console filter, the 401 marked; the pin stored again, the panel opening
+when pinned; the capability check, the green duplicate.
+
+**Owner checks.** On the next test build: a pulled log over a few hours shows no "push channel closed" lines (a renewal
+shows nothing on an A554 cloud; on an older cloud one "A554: push channel signed in again (the till renewed its sign-in)"
+every 13 minutes); a branch server's log has no "did not answer the update question"; double-click ZapTill while the
+server runs in the tray → its window comes up, no second ZapTill in Task Manager; a wrong PIN shows the same message;
+the categories panel is closed after every sign-in; the Pull logs card warns once (and not at all for a 1.0.20 till).
 
 ### A550 · P2 · FIX BUILT 2026-10-21 (cloud + web) · Partner login — someone on the staff signs in to the full web dashboard with a password, never as the owner; five more built-in roles (migration 159)
 Owner, 2026-10-21: "I want to create a user, full rights like an owner but not the owner, they should be able to log in
@@ -223,6 +2189,732 @@ staff the General Manager role, "Give web access", follow the invitation on anot
 **Not done / to decide.** The admin portal does not show which clients have partners (optional; it needs a new admin route).
 A partner on the dashboard POS cannot self-authorise a void or refund (another approver's PIN) — say if partners should.
 The old staff invite (`/api/staff/invite`) still sends Supabase's link that nothing handles (left as it is).
+
+### A549 · P2 · FIX BUILT 2026-10-21 (cloud + web + admin; migration 158) · Analytics v1 — a premium Analytics page: menu engineering, sales heatmap, money leaks, credit ageing and rule-based insights
+Asked 2026-10-21: a deep sales-analytics page on the web dashboard, switched on per client from the admin portal as a
+premium feature, and cheap to run (the Render / Supabase quotas ran out once — A528, A531). **BUILT:**
+1. **The switch** — feature_flags key `analytics`, OFF unless set, ZapTill's only (as `themes`, A325 — not a POS switch,
+so shared/posFeatures.ts and the till are untouched): admin portal › client › Features › **Analytics** (`toggleAnalytics`,
+PATCH /api/admin/clients/:id/features/analytics, audited as every feature; not listed again under "Other flags"); the
+client cannot set it (PUT /api/flags refuses every key — `CLIENT_SETTABLE_FLAGS` empty). Off: every /api/analytics route
+answers 403 `{ error, code: 'ANALYTICS_OFF' }` (the THEMES_OFF shape) before any aggregate runs, and the page shows the
+"Analytics is part of ZapTill Premium — contact ZapTill to enable it" panel.
+2. **Who sees what** — `requireWebSurface` + `reports.sales` (the sales report key, A490; no new key). Owner: every branch
+or one of theirs (`?branch=`, else the dashboard's X-Branch-Id; `branch=` empty = all; another business's branch 404
+BRANCH_NOT_FOUND). Anyone else: their own sign-in branch only (another named: 403 BRANCH_SCOPE; the header never moves
+them). Everything by `req.businessId`. Costs (A490 `seesCosts`: menu.costs / reports.costs / owner): without them the
+menu answer carries no cost, margin or class (a class tells the margin), the wastage value is withheld (count kept) and no
+margin / wastage insight is written. Credit ageing (and its insights) also needs customers.view or customers.credit (A494).
+3. **Routes** (`routes/analytics.ts`, mounted at /api/analytics), each `?from&to` (business dates, the owner's day cut-off,
+default the last 30 days; at most **366 days** — 400 RANGE_TOO_LONG; a non-date or backwards — 400 BAD_RANGE) and
+`?branch`: GET `/menu-engineering` · `/heatmap` · `/money-leaks` · `/credit-ageing` (as of now — balances are current, the
+period does not apply) · `/insights`. Before migration 158 runs: 503 ANALYTICS_NOT_READY (not a 500).
+4. **Cheap** — every figure is ONE aggregate function of **migration 158** (`analytics_menu_engineering`,
+`analytics_sales_heatmap`, `analytics_money_leaks` — GROUPING SETS per cashier and per day — `analytics_credit_ageing`;
+STABLE, SECURITY DEFINER, service role only; no table, no trigger, existing indexes): a few hundred grouped rows, never
+a period of raw orders in Node. Each answer is kept **5 minutes** per business, branch, period and cut-off (credit: per
+business and branch), a request in flight is shared, a failure never kept, at most 500 kept. /insights fills the four, so
+opening each tab afterwards runs nothing. The page asks once per tab and period and never polls.
+5. **The figures — where each comes from:**
+- *Menu engineering:* completed orders' `order_items` (quantity, `subtotal` = revenue). Cost of one serving =
+`products.cost_price` when > 0, else the recipe (`recipes` × `ingredients.unit_cost`, the lines with a cost — as the
+food-cost report), else for a combo its items (one level, each at its own cost price or recipe — as `servingCost`); none
+= "no cost set", listed, not classified (still in N and the shares). Unit margin = average selling price − serving cost.
+Popular when the share of items sold ≥ 0.7 / N; high margin when ≥ the quantity-weighted average unit margin. Star /
+Plowhorse / Puzzle / Dog.
+- *Heatmap:* completed `orders.total` (gross, as /reports/hourly — demand timing) and order count by ISO weekday × hour in
+**Africa/Nairobi** (the zone every cloud report uses; no daylight saving). Busiest / quietest = the 2-hour slot inside the
+trading hours (first to last hour with a sale) on the days that traded (a closed day is never "quiet").
+- *Money leaks* (per cashier and per business day): orders rung (completed + voided, `orders.cashier_id`); voids =
+`orders` status voided (value = total, dated by the sale, as /reports/voids) + `kitchen_voids` (items removed after
+sending); refunds = `orders.refunded_amount`, dated by `refunded_at`, against the sale's cashier (as /reports/refunds);
+discounts = completed orders with `discount_amount` > 0 (automatic offers, `offer_discount`, are not counted); wastage =
+`wastage_entries` not voided, by `recorded_by`, `value` at cost; drawer over/short = `shifts.cash_variance` (closed in the
+period, per cashier); day-close over/short = `business_days.cash_variance` by `business_date` (per day). Over +, short −.
+A cashier is **flagged** when their void rate (voids + kitchen voids over orders rung) or discount rate (discounted over
+completed orders) is ≥ 2× the median of the named cashiers in view, with ≥ 5 such events and a rate above 0 (a median of
+0 flags any such cashier, shown as "flagged" rather than a multiple). For the owner's all-branches view the median is
+over every cashier in the business.
+- *Credit ageing:* the balance is the ledger's own (`customers.credit_balance`, kept by `apply_credit_transaction` — not
+recomputed). The ledger has no per-sale paid flag, so repayments are allocated **oldest first (FIFO)**: what is still owed
+is the newest debits (ledger lines > 0 — sales on account, positive adjustments), walked newest → oldest until the
+balance is used up, each part aged by its own date (0–30, 31–60, 61–90, 90+). A balance larger than every debit the
+ledger holds (accounts from before the ledger) is "older than the ledger" and counted 90+. For one branch: only the open
+parts of that branch's debits (the unaged rest has no branch). Disputed = `credit_confirmations` (A545, migration 157)
+in state disputed, per customer — still owed until voided / refunded.
+6. **Insights** (`lib/analyticsRules.ts buildInsights`, rules only, no AI): a Plowhorse in the top 3 sellers ("… margin
+KES 40 below average – consider a small price rise"), the best Puzzle, the Dogs, items with no cost, the quietest and
+busiest slots, each flagged cashier ("Cashier X voided 3.1× the branch median this period"), day closes short, wastage as
+a share of sales, credit over 60 days ("KES 42,000 is over 60 days old on credit (4 customers)"), disputed credit sales.
+Each has a `type` (leaks · credit · menu · timing) and a `severity` (high · medium · low); they come sorted, at most 12.
+7. **Page** — `pages/analytics/AnalyticsPage.tsx`: owner nav Finance › **Analytics** (/dashboard/analytics) and the
+manager portal's Finance › **Analytics** (reports.sales; their branch, no filter). Period presets 7 days · 30 days · This
+month · Last month · Custom (two dates, ≤ 366 days checked before asking); the owner's branch filter is the dashboard's
+own branch selection. Insights strip on top; tabs: **Menu engineering** (class counts, a plain-SVG scatter of popularity
+against unit margin with the two threshold lines and the four quadrants labelled, a sortable table), **Sales heatmap**
+(7 × trading-hours grid shaded in the SwiftPOS teal, busiest / quietest cards), **Money leaks** (per cashier with flagged
+rows and "N× median" tags, per day with the day-close ±), **Credit ageing** (bucket totals, per customer, disputed). No
+chart library added (the dashboard has none); swift-* and status colours only (check-back-office-colour 440 ≤ 443,
+check-web-pos-green unchanged, build-light-colours current); minor columns hidden under `sm` (DESK) and tables scroll
+inside their card at phone width; KES through lib/format `money`.
+Tests: `tests/analytics-a549.test.mjs` (14, HTTP — the compiled router behind the real requireAuth, its supabase.rpc
+answered by the REAL migration-158 functions in PGlite: flag off, the client cannot set it, reports.sales /
+customers.view, a manager held to their branch, another business 404 / sees nothing, the 366-day cap, the matrix classes,
+the heatmap in EAT, the void-rate flag (5-event floor), the ageing buckets, costs withheld, the cache, 503 before 158),
+`tests/analytics-rules-a549.test.mjs` (18 — every rule at its edges and every insight sentence),
+`scripts/test-migration-158.mjs` (8 — idempotent, service role only, each function on the seed incl. the cut-off and
+FIFO); the shared seed `scripts/lib/analytics-pg.mjs`. Mutation-checked (13, each failed then reverted): the flag check,
+the manager branch check, the owner's branch-by-business lookup, the range cap, the cache, popularity at 1/N, an
+unweighted margin line, the 5-event floor, the severity sort, the heatmap without the time zone, FIFO reversed, menu
+without status completed, money leaks without the cut-off. `scripts/schema-pending.json` declares 158 (functions only —
+no table, so schema-index.json is unchanged).
+**Owner action:** (1) run **migration 158** (until then the page answers "Analytics is being set up", 503); then refresh
+`scripts/functions-index.json` (build-functions-index.sql) and delete 158 from `scripts/schema-pending.json`. (2) Turn
+**Analytics** on per client in the admin portal (client › Features) — off by default; price not decided, no invoice is
+raised. (3) Deploy the cloud and the web together (the page needs the routes).
+
+### A545 · P1 · FIX BUILT 2026-10-21 (till 1.0.20 + cloud + web; migration 157) · Credit (on-account) sales: always recorded, every one confirmed by a manager; the till-scope guard (A415) made safe to enforce
+Owner, 2026-10-21: "for credit I think the manager has to know which sale is on credit and they have to confirm that it was
+done." A534's audit: under `TILL_SCOPE_ENFORCE=true` a credit sale a till pushed under its OWN sign-in (rung by someone else,
+no cashier session live, replayed after an outage) reached `creditApproval` → `can(customers.credit)` → 403
+CREDIT_APPROVAL_REQUIRED (the till never sends `credit_pin`) — the sale lost; two more only logged "would refuse":
+`POST /api/wastage` asked menu.costs, and a void / refund under the till's session fell to `sales.void` / `sales.refund`.
+**BUILT — never lose a credit sale:** a sale the till already took — its own sign-in pushing POST /api/orders with the till's
+time (`tillScope.isTillOwnSalePush`), or a person's sign-in on that till (A505 `tillMadeSale`) — is RECORDED without a PIN,
+awaiting a manager (ledger note "— awaiting a manager's confirmation"); past the customer's limit it is still recorded
+(the goods are gone: `p_enforce_limit` false, flagged `over_limit`). The live web POS / cloud sale is A511 as it was (the
+manager's PIN at the moment of sale; a live sale past the limit still refused). **tillScope:** `TILL_EXEMPTIONS` — one
+precise exemption (customers.credit, only on that request shape; never a blanket key, never /:id/pay, never managing
+credit). **Wastage:** the till's sign-in is never asked for menu.costs; a typed cost is kept only when the person the
+till names (`recorded_by`, now sent with each recording) holds menu.costs, else the catalogue's cost (a 1.0.19/1.0.20
+till types none) — the entry is never refused for it. **Void / refund:** every offline replay carries
+`offline_approved_by` (pending_reversals.approved_by NOT NULL — checked); the call that logged was the till's LIVE void /
+refund falling back to the till's session (no person's cloud sign-in) — it now goes to the handler's own approval: the
+approver's PIN (approverByPin: sales.void / sales.refund at the sale's branch, never the asker) for money, and for an
+unpaid void only the till that holds the sale (`tillHoldsOrder`, NOT_THIS_TILL otherwise).
+**BUILT — a manager confirms every credit sale:** `credit_confirmations` (migration 157; one row per sale, by the order):
+`awaiting` → `confirmed` (by whom, when) or `disputed` (by whom, when, reason — required, ≤ 300). A sale approved AT the
+sale (a manager's PIN, or the seller holding customers.credit, or the owner) is BORN confirmed by that person — they
+already knew and said yes; a till's sale is born awaiting (whoever is signed in at the push is not who approved it).
+Who acts: customers.credit (A511's key — no new key); a manager their own branch, the owner every branch; a decided sale is
+changed only by the owner (409 ALREADY_DECIDED otherwise). Routes (`routes/credit.ts`): GET `/api/credit/sales`
+(open = awaiting + disputed, with names), GET `/api/credit/sales/count` (also for shifts.close_day / shifts.close_branch),
+POST `/:orderId/confirm` · `/:orderId/dispute` (a person's sign-in — MANAGER_WRITES; a till's token 403
+TILL_SENDS_REPLAY), POST `/:orderId/replay` (the till's own sign-in only — TILL_WRITES; `by` must hold customers.credit
+at the sale's branch; a replay never overturns). **Till:** Manager › Sales › **Credit sales** (customers.credit):
+customer, amount, cashier, time, the approver at sale, over-limit flag; Confirm / Dispute (reason) as the signed-in
+manager (A433); offline the decision is kept (`maintenance_state credit_confirm_pending`, shown at once) and the sync
+sends it each pass (`pushCreditDecisionsNow`), a refusal shown with the reason; the last list kept for offline
+(`creditConfirm.ts`). **Web:** the owner's Credit Accounts and the manager portal's Credit tab list them (owner: all
+branches; manager: own), with a count badge on the nav. **Day close never blocked:** Close Day / Close Branch (till) and
+Tills & days / Remote day close (web) say "N credit sales await a manager's confirmation … The day still closes"; the
+daily e-mail adds the waiting count and lists the disputed ones. **Ledger:** a disputed sale stays on the balance (owed
+until voided / refunded the normal way) and is marked "Disputed: <reason>" on the web statements (owner and manager portal; the till shows no statement).
+No backfill: sales on account before 157 are not listed.
+Tests: `tests/credit-confirm-a545.test.mjs` (12, HTTP, enforce on), `tests/till-scope-enforce-a545.test.mjs` (6 — every
+TILL_WRITES pattern and every till write in src/main + 15 own-token reads, through the real API router, under
+TILL_SCOPE_ENFORCE=true: no refusal), `scripts/test-migration-157.mjs` (9), `apps/desktop/test/credit-confirm-a545.test.mjs`
+(20); `credit-approval-a511`, `reversal-rules`, `manager-nav`, `update-stuck-a541` updated. All mutation-checked.
+**Owner action:** apply migration 157 (before it the sale still records; the list is empty). Then `TILL_SCOPE_ENFORCE`
+can be turned on — first check Render's log for a week with the cloud deployed: no `[tillScope] DRY-RUN would refuse`
+line from a till on 1.0.19 / 1.0.20 (an older till may still send what this test does not cover).
+
+### A547 · P3 · FIX BUILT 2026-10-21 (till 1.0.20 + web) · Leftovers from A535, A539, A543 and A544: the kitchen ticket's wrap quirks, the browser receipt's payment block, the web reprint's branch footer and brand strip, the peers' day-close checks
+Owner, 2026-10-21: "you can also finish the leftovers, we have a clean app". **BUILT:**
+1. **Kitchen ticket wrap quirks (A543's "seen, not changed")** — shared/printing `layout.ts`: `hangingWrap` keeps the
+prefix ("2   ") as written and wraps only the dish name, in `width - 4` — a wrapped name keeps the three spaces after its
+quantity, and a continuation no longer runs 4 past the half width of a tall name; new `indentedWrap` (production tickets
+only: components 6, attributes 8, the dish note 6, the order NOTE 0) keeps the indent on EVERY row, the first of a wrapped
+one included, wrapped in `cols - indent`. Both fonts (A and B), kitchen and dispatch (dispatch-80.bin unchanged — the sample
+wraps nothing). The receipt's `subRow` is untouched (receipt-80/58.bin unchanged). **Intended byte change:** the
+`kitchen_font_a` switch now reproduces the FIXED Font A ticket — `out/kitchen-58-font-a.bin` regenerated (418 → 422 bytes:
+"1   3PC CHICKEN" / "2   WINGS COMBO", nothing else); kitchen-80-font-a.bin still the pre-A543 bytes; SAMPLE-OUTPUT.txt and
+BYTE-CHECK.txt refreshed; web bundle rebuilt (`--check` OK).
+2. **The browser-printed web receipt (A539 / A540)** — `apps/dashboard/src/pages/pos/ReceiptView.tsx`, classic (standard)
+layout: "Payment Details: <Buy Goods|Paybill> - <number>" (bold; "Payment Details:" with no number), a rule, each payment
+(a lone cash payment carries the tendered; a split lists each with its Ref — the "Split payment" heading is gone), CHANGE
+when there is some; no "Payment" / "Tendered" lines and no till line after them. PaymentModal passes `pay={receiptPay}`
+(A450). A `roundOff` prop shows "Round Off" only when it is not 0.00 — the browser receipt is tax-inclusive and the web POS
+passes none, so it never prints "Round Off 0.00". The compact opt-in keeps its own block.
+3. **A544's "not done" (a) and (b):** (a) the web reprint (`lib/reprintReceipt.ts`) asks the new
+`GET /api/business/branding/branches/:branchId/served` (routes/business.ts — what pos/init serves a till of that branch:
+the business's effective theme, null with themes off, and the branch's override; any signed-in member who may see the
+branch — `assertBranchAccess`, a cashier their own; another business's branch 404) and resolves the footer with the shared
+`resolveBranchBranding` (`effectiveFooter`): branch → business; themes off, no branch footer, an older cloud (refused) →
+the business footer as before. (b) the web POS draws the till's A326 **brand strip** (3 px across the top): `themeVars.ts
+posBrandStrip` — the RESOLVED colour (branch → business, usePOSData with lib/branchBranding.ts), only while themes are on,
+only when `resolveBrandLayer` says it can be seen (3:1); CashierScreen renders it. The till's other brand places (the lock
+curtain's dots / Enter, the sidebar tint) have no web POS counterpart — no lock curtain, no sidebar.
+4. **A535's leftover — the peers' day-close checks:** `syncEngine runDayCloseInstructionsOnce` asks the branch server's
+copy first for EVERY day-close check — the 10-minute full sync, the start-up steps, the day gate's learnBeforeLock, the
+remote-instructions step (A535 did only the 90 s beat). The copy's `day_close_devices` are the same rows
+`/api/day-close/pending` reads (this device, status pending): none named → no gateway call; named → its own /pending once;
+no answer (no server, an older one, a stale copy) → through the gateway as before. A peer's day-close calls through the
+gateway: 6 an hour (the full sync) + the day gate's → 0 unless one waits. A web day-close write rings the server's drawers
+bell (A535), so the copy lags seconds, at most one beat (60 s). **Left (said):** the 10-minute pushes (writes) still go
+through the gateway; **tech config** (`/api/tech/branch-config/:branch`) stays — it is fetched once per 10-minute full sync
+(not a fast poll) and answering it from the server would hand the branch's technician reveal code to tills over the shop
+network, a security change for its own decision. **2026-10-21: left on the cloud (recommended to the owner)** — 6 calls an hour
+per till is noise next to the A528/A531 savings, and the till keeps its last copy offline. If it is ever moved, the server
+serves the config without the code (a salted hash for the till to check against), never the code itself.
+**Tests:** shared/printing `kitchen-font.test` (+21, section 8: both fonts, 80 / 58, flat and tall — every dish heading
+"<qty>   <NAME>", the wrapped name's continuation under the name and within the width, a wrapped component 6 in on both
+rows with every word, the note 6 in, no row past the paper; the committed kitchen-58-font-a.bin = the fixed layout; section
+4's expectations updated); `tests/a534-update-state-receipt` (+4: the classic block, a split, Round Off, compact keeps its
+block; the pin for `pay`); `tests/branch-branding-a544` (+5: the served route — owner, cashier own / other 403, other
+business 404, no token 401, themes off; the REAL reprint bundled with the API / print server / renderer stubbed prints the
+branch footer, and the business footer for no override / themes off / a refusal; posBrandStrip; the wiring);
+`apps/desktop/test/branch-drawers-a535` (+3: named → learnCloudCloses collects; none named → learnCloudCloses and the
+remote-instructions step make no day-close gateway call; an older server → through the gateway). **Mutations (each red on
+its own):** hangingWrap back to wrap(text); its width not less the prefix; indentedWrap as subRow; indentedWrap at cols;
+the heading without the number; the rule under it removed; Round Off at 0 shown; the old split path; PaymentModal without
+`pay`; the served route without assertBranchAccess; with the themes flag ignored; the reprint back to the business footer;
+posBrandStrip without the themes gate; without resolveBrandLayer; runDayCloseInstructionsOnce without the hint; a missing
+hint taken as "skip". **Owner to verify on 1.0.20:** a long dish name on a 58 mm kitchen printer keeps "2   " before it;
+a browser-printed receipt shows "Payment Details: Buy Goods - <till>" over a rule; with themes on and a Kilimani footer,
+reprinting a Kilimani order from the web prints Kilimani's footer, and the web POS at Kilimani shows its colour as a thin
+strip across the top.
+
+### A546 · P1 · FIX BUILT 2026-10-21 (till 1.0.20) · A till installs a waiting approved update at Windows sign-in (quietly, no window) and, as a backup, when it is opened by hand
+Owner, 2026-10-21, asked whether a till should also install a waiting update when it is opened by hand: "yes, but what if
+it auto starts like a server — what happens?" **Before:** A541 installs at a SIGN-IN start, but a till's sign-in launch
+(A513) ended in startGate before anything loaded — so only branch servers got it; a till installed only on close or when
+idle (A508). Decided: (1) a till's sign-in launch installs a waiting update quietly and ends; (2) a till opened by hand
+with an update waiting installs it first, as a backup. The branch server is unchanged (A541).
+**BUILT (lowImpactStart.ts, startGate.ts, autoUpdate.ts, index.ts; admin desktopVersions.ts; Tech page text):**
+1. **The gate decides from one small file.** The kept download (`maintenance_state.update_staged`, A541) is mirrored to
+`update-waiting.json` in the data folder (`mirrorWaiting`: on every download, every approval answer, every start). A
+till's `--at-login` launch reads it (`tillSignInInstallDue`: newer than what runs, still approved, not tried at sign-in
+for this version) → `gateDecision` 'till-install' and it goes on; otherwise it ends at once as before (no database, no
+window). The restart task on a till and the `--updated` relaunch still end at once.
+2. **Quiet install at sign-in** (index.ts, right after the database opens — before IPC, printing, sync or any window):
+`installAtStartIfDue({ quiet: true })` — A541's plan (staged, newer, approved: the cloud asked, 10 s; no answer → the last
+answer stands; a hold → withdrawn; installer on disk; once per version, recorded before the install) — through the
+updater task with **`relaunch: false`** (the updater script starts nothing after; nobody opened ZapTill, the next open runs
+the new version). **No updater task → nothing is tried, no Windows prompt** (nobody may be at the till): logged "not
+installed at Windows sign-in … it installs the next time ZapTill is opened (Windows will ask)". A refusal by the task →
+no installer either. Whatever happened, the version is marked tried at sign-in in the file (the next sign-ins end at
+once) and the launch ends (`app.exit`); somebody opening ZapTill during the check → it starts as usual.
+3. **Backup when opened by hand** (no `--at-login` / `--watchdog` / `--updated`; never a branch server): an approved, newer
+update waiting and not yet tried at an open → a small screen "Updating ZapTill to 1.0.20 — about a minute" (a frameless
+window, before the PIN screen — the start of ZapTill, not a cashier banner), a sync push under way waited for (A508's
+rule, at most 30 s — at this point of the start none usually is; sales are in SQLite either way), then the updater task
+(silent, relaunch) or, without it, electron-updater's installer with the Windows prompt (somebody is at the till). Once
+per version in its own record (`update_open_install`), so a quiet sign-in try that did not take does not stop it; a
+failure closes the screen and the till opens normally; the try counts toward `startup_failed` in the A534/A541 report.
+4. **Wording.** Admin portal, a till without the updater task: "Downloaded 1.0.21 — can't install silently on this PC (no
+ZapTill Updater task): run the installer once as administrator, or it installs the next time ZapTill is opened (Windows
+will ask)"; the Tech page's Update section likewise.
+**What the owner sees at a till each morning:** with the updater task — Windows signs in, 45 s later the update installs
+in the background with no window; the cashier opens ZapTill and it is already the new version. Without the task — nothing
+at sign-in; the cashier opens ZapTill, sees "Updating ZapTill to 1.0.20 — about a minute", Windows asks for permission,
+ZapTill comes back on the PIN screen. Tills still on 1.0.19 get none of this until they install 1.0.20 once (A541's note).
+**Tests:** test/update-open-a546.test.mjs (real dist/main, REAL SQLite; ci.yml "Desktop till installs at sign-in and when
+opened (A546)") — the gate, the file, quiet install (relaunch false, no task → no install and no prompt, refused, not
+approved, older, hold, once), opened by hand (screen, task with relaunch, quitAndInstall, failure → normal open, once,
+`--updated`, the sync wait and its 30 s cap), a branch server unchanged, the wiring; tests/a541-update-blockers.test.mjs
+(the new admin line). Mutations listed in the file's header, each checked.
+
+### A548 · P3 · FIX BUILT 2026-10-21 (scripts + register only; one comment in nodeServer.ts; no client-visible change) · Housekeeping: the register's small open items closed — orphan audit IDs 21 → 0, A148, A186, A13, A18; D10 updated; the Counts row re-derived
+Owner, 2026-10-21: "we can do housekeeping now … we have a clean app". What was closed, each with the evidence in its
+own entry:
+- **A53 (P2) CLOSED — orphan audit citations 21 → 0.** The pre-08-08 IDs the code cites (C1 C2 C4 C5 C6, H1 H2 H6 H8 H9
+  H10 H11 H13 H14, M3 M8) are traced to the fix commits that first cited them (2026-07-25 → 08-01) and recorded in a new
+  **§K "Legacy audit IDs cited in code"** table, marked reconstructed from the code on 2026-10-21; B1 B2 B5 B6 and the
+  08-08 meanings of C1 C2 C4 C7 were already §B rows. §K names the C1/C2/C4/C5 collision between the July and 08-08
+  audits. `check-register-consistency.mjs` counts a table row whose first cell is the ID as its entry;
+  `scripts/register-orphan-baseline.json` 21 → **0** (mutation-checked: a new `audit Q7` comment fails it). No comment
+  was a typo for an existing entry, so no code comment changed for this.
+- **A148 (P3) CLOSED.** `POST /api/modifiers/options` was already wired (VariantsDrawer "+ Add option", 2026-09-04,
+  `menu.edit` + business-scoped, test green). `PUT /api/flags/:key` (refuses every key — empty `CLIENT_SETTABLE_FLAGS`),
+  `GET`/`PATCH /api/qr/settings` (write behind `settings.integrations`) and `GET /api/loyalty/settings` (read-only)
+  recorded as deferred with reasons; the two write routes' role gates are proved by `tests/route-permission-gates.test.mjs`.
+- **A186 (P3) CLOSED.** New `scripts/lib/windows-teardown.mjs`; `run-migration-tests.mjs` and `run-all.mjs` count a
+  file that printed "N passed, 0 failed" and then exited 127 / 3221226505 (0xC0000409) as a pass **with a note**, on
+  win32 only; everything else stays red. The runner's `--self-test` (run in CI) grows 3 → 11 cases. CI (ubuntu) is
+  unaffected.
+- **A13 (P3 NOTE) CLOSED** — both suites now prefer the app's better-sqlite3 via `scripts/lib/sqlite-open.mjs` (50 and
+  18 passed on it today). **A18 (P3 NOTE) CLOSED** — A410 made the server the branch's only cloud link and the header
+  already says so; the one pre-A410 paragraph in `nodeServer.ts` now points at that section (comment only).
+- **D10 (P3) stays OPEN, updated:** `ipcHandlers.ts` is 4,433 lines / 224 handlers; the split is scheduled next, after
+  A545–A547 land.
+- **Header:** the Counts row re-derived from the body — A537 (P2) added (A538 noted it was missing), and the lists had
+  drifted beyond that: entries closed since 09-15 still listed (A240 A265 A266 A274 A275, A182 A241 A245 A249, A243
+  A251) and open FIX BUILT entries never listed (A523 A511 A280; A389 A388 A387 A377 A375 A281 A236 A264; A524 A390)
+  are now right. Every A528–A544 entry is in its P-list.
+
+### A544 · P2 · FIX BUILT 2026-10-21 (till 1.0.20 + cloud + web; migration 156) · Per-branch branding: a branch can override the business's action theme, brand colour and receipt footer
+Owner, 2026-10-21: "phase 2 branding — we need to do it before value add"; shown what remains of A323, said **"yes start"**
+to per-branch branding. The design was already approved (docs/SCOPE-A295-branding.md §14–15, A323's "per-branch overrides
+after slice 5, as their own slice"). **Resolution, per field, at the till and the web POS: the branch's override → the
+business branding → the ZapTill default** (a branch may override only its colour, only its theme, only its footer).
+**Premium:** only while the business's `themes` flag (A325) is on — off, the cloud serves no override (`branchBranding:
+null`, and the till's effective theme is null so its resolver ignores any it holds), a change is refused
+(`THEMES_OFF`, "Per-branch branding is part of Themes — ask ZapTill"), the web hides the section behind that note; a
+stored row is kept, never applied; clearing an override is always allowed. **Who edits:** the owner, every branch; a
+manager with the Branding tab's permission (`receipt.manage` or `settings.business`), their own branch only
+(`assertBranchAccess`, as the branch settings routes); a cashier 403; a till's own session 403; another business's
+branch 404.
+**BUILT:**
+1. **Migration 156** `branch_branding` (branch_id PK/FK → branches ON DELETE CASCADE, theme_id, accent_hex `#rrggbb`
+CHECK, receipt_footer ≤ 300 CHECK, created_at, updated_at + set_updated_at); RLS as business_branding (a member reads
+its business's branches' rows); `log_branch_branding_sync_change` — ONE sync_changes entry per change (table
+`branch_branding`, row = the branch, topic `look`, AT that branch so only its tills are told; once per transaction; an
+updated_at-only update writes nothing; never fails the write); the catalogue-version trigger (A528). Declared in
+schema-pending.json; schema-index.json updated.
+2. **Shared rule** `shared/branchBranding.ts` (+ copies: server lib, desktop main + shared, dashboard lib — check-shared-sync;
+desktop main gets a `themes.ts` copy for it): `resolveBranchBranding`, `accentWriteError` (the Phase 1 brand rule —
+`resolveBrandLayer`, seen 3:1 on the dark till), `themeOverrideError` (curated registry), `footerWriteError` (plain text:
+no `<`/`>`, no control characters — a printer obeys ESC; ≤ 6 lines, ≤ 300 chars, each line ≤ 48 = 80 mm Font A; the
+author's line breaks kept — P-15), `branchBrandingFromWire`.
+3. **Cloud** (routes/business.ts): `GET /api/business/branding/branches` (the caller's branches + each override + themes on
++ the paper limits), `PATCH …/branches/:branchId` (omitted = keep, null = the business's; a row emptied is removed),
+`DELETE …/branches/:branchId` (clear). Every change in the business's `audit_log` (`branch_branding.update` / `.clear`,
+before / after). `/api/pos/init` carries `branchBranding` — the till's operating branch's row only, null with themes off
+or before 156 (lib/branchBrandingStore.ts). `/api/pos/changes`: a `branch_branding` entry is answered with THIS branch's
+override (another branch's entry never answered, even if the log hands it over); the themes switch's `branding` entry
+carries it too. syncTopics `CHANGE_TABLES.branch_branding` (topic look, its own trigger).
+4. **Till** (schema 74 — `branch_branding`; REQUIRED_DESKTOP_SCHEMA 74): the whole pull, a change, the themes switch and a
+branch server's bundle store this branch's override (undefined = not said → keep; null → none; another branch's never
+kept). `getBranding()` keeps the business's values (the till's branding editor edits those) and adds `branch` +
+`effective` (resolved); App's theme layer (A326) and the lock screen wear `effective`. The receipt: `effectiveReceiptFooter`
+— the branch's footer, when set, replaces the business's footer box text (the sale print path and pos:init); the closing
+thank-you, TAX RECEIPT and "Powered by ZapTill" still print after it, in the receipt's own Font A (A540 / A543). A branch
+server relays its theme and its branch's override to its tills (they had no theme from a server before — now they do).
+5. **Web:** Settings › Branding › **Per branch** (owner: every branch) and the manager portal's **Branch branding**
+(their branch, under their own sign-in): per branch the theme picker (A327's tiles + "Use the business's"), the brand
+colour (the palette + hex, the 3:1 check), the receipt footer (multi-line, each line's width against 48 / 32 for 58 mm),
+A327's till preview of the resolved look, a footer preview, Save / Clear override. The **web POS** resolves its branch
+with the same rule: the receipt footer, and the theme (applied while the POS is open; ThemeLayer defers to it; leaving
+gives the business's back).
+**Tests:** `scripts/test-migration-156.mjs` 12/12 (PGlite, every migration); `tests/branch-branding-a544.test.mjs` 20/20
+(the compiled server over HTTP: CRUD, validation, permissions, themes off, init / changes branch-only, the web pins);
+`apps/desktop/test/branch-branding-a544.test.mjs` 22/22 (real SQLite + the real printing package; CI step "Desktop
+per-branch branding (A544)", `npm run test:a544`). **Mutations (each bites):** server — no assertBranchAccess, no themes
+check, hex-only colour check, init ignoring the flag, changes without the branch check, footer without the width check,
+resolver without the themes gate; desktop — keep-on-undefined removed, the change case removed, effective = the raw
+branch row, the print path back to the business footer, the bundle without the override; migration — no CASCADE, the
+entry at every branch, no updated_at-only check, no per-transaction flag, no catalogue trigger, RAISE, a policy of true.
+**Not done / for the owner:** (a) the web's reprint of an old receipt (lib/reprintReceipt.ts) still prints the business
+footer; (b) the web POS has no brand-colour layer (as today), so a branch's colour shows on its tills and lock screen,
+not on the web POS; (c) the A139 per-branch `receipt_footer` in branch_settings still applies underneath (resolution:
+branch_branding footer → the branch_settings override → the business's). **Owner to verify on 1.0.20** (with themes on
+for a test business): set Kilimani's theme to Violet and its footer on the web → a Kilimani till wears Violet within
+30 minutes (or at once when idle) and its receipt prints the new footer above the thank-you and the credit; a Westlands
+till is unchanged; switch themes off → both back to today's look and footer. Run migration 156.
+
+### A541 · P1 · FIX BUILT 2026-10-21 (till 1.0.20) · Tills and branch servers stuck on an old version since the A513 autostart (1.0.17) install their approved update
+Owner, 2026-10-20: "Something I have noticed since we added the autostart feature most apps are not updating, they are
+stuck in the old version." Shown the diagnosis and plan; "build things that do not need [my] input". **Confirmed in the
+code:** an approved update installs (a) when ZapTill is closed (autoInstallOnAppQuit / A509's updater task on close), or
+(b) by itself when idle (A508 `installVerdict`). Since A513 a branch server starts itself after sign-in, lives in the tray
+and is never closed (`window-all-closed` keeps it serving) — (a) never comes; (b) is refused by `silentInstallBlocker` on
+a PC without the "ZapTill Updater" task (installed before 1.0.16, or its registration failed) and an administrator's UAC
+prompt; and on a server that has the task, `noteGatewayCall` counted EVERY non-GET a till sent through the gateway as
+trading — a 1.0.18/1.0.19 till posts `POST /api/shifts/:id/foreign-orders` every 20 s while a drawer is open (plus PIN
+checks, its changes queue, log uploads, the tech audit), so a drawer left open overnight kept the server "in use" all
+night. A server that does not install holds back its tills (they take the update from its copy, A443/A496). A till is
+never started by Windows (A513's sign-in launch ends at once on a till): it installs on close or idle as before.
+**BUILT (autoUpdate.ts, activityTracker.ts, lowImpactStart.ts, startGate.ts, index.ts, updateReport.ts):**
+1. **Install at start-up.** electron-updater's download is now kept across restarts (`maintenance_state.update_staged`:
+version, installer path, A503's last approval — `recordStaged` on `update-downloaded`, `noteStagedApproval` at every
+answered check). A start at Windows sign-in — `--at-login`, or the restart task's `--watchdog` launch the sign-in start
+handed over to (startGate leaves `signin-start.flag`; `consumeSignInStart` reads it once, at most 5 min old) — runs
+`installAtStartIfDue` in index.ts after the database opens and BEFORE the branch server serves or any window: when the
+kept version is newer than what runs, still approved (the cloud asked, 10 s; no answer → the last answer stands; a hold or
+an older approval → withdrawn, not installed), its installer still on disk, and (a server) the branch's copy ready for the
+tills — the try is recorded (`update_startup_install`) BEFORE anything is installed (once per version: one that does not
+take is never tried at every start), then the updater task (no prompt, relaunch), else electron-updater (latest.yml from
+the cloud, the cached file's checksum, `quitAndInstall(false, true)` — the progress shows; Windows may ask: somebody has
+just signed in). An open drawer is logged and kept (the local database — tested across a close/reopen). Never on a start
+by hand, never on the `--updated` relaunch (and the new version is not newer — no loop). After the restart the log and
+the Tech page say "updated … at Windows sign-in".
+2. **Busy only for real trading** — `classifyGatewayCall`, an explicit allowlist: a sale, a void / refund, `/api/sync/push`
+(not counted when its body is under 100 bytes — too small for a row), a drawer close / confirm, wastage, a day-close ack;
+and a manager's edit at a till (menu, staff, prices, offers, settings — somebody is there). Everything else — every
+read-only POST, sign-ins, support, telemetry, the update report, any route not listed — is background. The test lists
+all 100 routes a 1.0.19/1.0.20 till sends, classified, and fails when src/main names an `/api/` route not in the table.
+3. **The admin portal says why.** The A534 report adds `blocker` (silentInstallBlocker's phrase or a task refusal), `server`,
+`waiting_server`, `downloaded_at`, `startup_failed` (an A534 cloud ignores them; cleanUpdateState keeps them, checked;
+an A534 till sends none and its line reads as before). Lines: "Downloaded 1.0.20 — can't install silently on this PC (no
+ZapTill Updater task): run the installer once as administrator, or it installs at the next Windows sign-in" (a till: "…or
+close ZapTill (tray icon → Quit) and accept the Windows prompt"), "Downloaded 1.0.20 — waiting: in use 3 min ago (a till
+was trading) …", "the install at Windows sign-in did not take", "· ready for n days", "Waiting for the branch server's
+copy of 1.0.20".
+4. **Managers after 3 days** (renderer/lib/updateNotice.ts, UpdateBanner): downloaded ≥ 72 h and still not installed → the
+signed-in back-office person (A519's `canRestart`) sees "ZapTill 1.0.20 is ready — close ZapTill tonight (tray icon →
+Quit) or restart Windows to install it." with **Restart now and install** (A519's restart; main still checks back
+office). A cashier's bar is unchanged — never this notice.
+5. **No updater task:** ZapTill cannot add it (it needs an administrator) and never asks for that silently — reported (3)
+and said on the Tech page's Update section ("run the ZapTill installer once as administrator to add it").
+**Machines ALREADY stuck** get none of this until they install 1.0.20 once: a till — close ZapTill fully (tray icon →
+Quit, or close the window), open it again, accept the Windows prompt; a branch server — tray icon → Quit (it installs on
+close; accept the prompt), or restart Windows; no updater task — run the 1.0.20 installer once as administrator (it
+registers the task). **Tests:** test/update-stuck-a541.test.mjs (real dist/main, REAL SQLite; ci.yml "Desktop stuck
+updates install (A541)"), tests/a541-update-blockers.test.mjs (cloud + admin lines). Mutations listed in each file's
+header, each checked.
+
+### A543 · P3 · FIX BUILT 2026-10-21 (till 1.0.20 + web POS + admin) · Kitchen tickets print in the printer's smaller Font B (more per line, less paper); a per-client switch brings Font A back
+Owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "Smaller / condensed font — the
+printer's smaller Font B so long orders fit on less paper"; and "if the manager/owner adds address and social media on the
+footer it should be the same font like the others". **BUILT (shared/printing):** a document-level font (`Document.font =
+'B'`, `DocBuilder.fontB()`, like A530's lineSpacing/cutFeed) and `columnsFor(width, font)` — Font B (9x17 dots) is 64
+characters a line on 80 mm, 42 on 58 mm (Font A 12x24: 48 / 32). `renderProduction` lays a KITCHEN ticket (`kind:
+'kitchen'` — the till's kitchen stations; the web's kitchen, bar and master KOT) out at the Font B width, the
+double-height dish names at half of it as before, and the footer count centred on it. The stream starts ESC @, ESC t 0,
+ESC 3 24, **ESC M 1**, and the end reset adds **ESC M 0** (after alignment / size / bold / ESC 2), so the receipt or another
+program printing next starts in Font A (each of our jobs starts ESC @ anyway). **Line spacing:** at ESC 2 (1/6") Font
+B's 17-dot glyph gets the same line height as Font A's 24 — the only saving would be fewer wrapped lines, almost none on
+a kitchen ticket — so its normal lines are **ESC 3 24** (~3.0 mm; 7 dots between lines, more air for its glyph than the
+receipt's standard 30 gives Font A's 24); double-height names keep ESC 2 (34-dot glyph), as on the receipt. **Paper**
+(SAMPLE-OUTPUT.txt, estimate at 203 dpi): the sample sale 90 → 68 mm (-25%, 80 mm) and 102 → 68 mm (-34%, 58 mm); a long
+dine-in order (test/a543-cases.ts) 44 → 41 lines, 224 → 151 mm (-33%, 80 mm) and 54 → 47 lines, 276 → 173 mm (-37%, 58 mm).
+Dispatch (packing), receipts, Print Bill and the Z-report are Font A, no ESC M byte, their committed bytes unchanged
+(dispatch-80.bin, receipt-80/58.bin) — the receipt's header box (address, phone) and footer box (social media, messages),
+the closing block and the credit stay in the receipt's font and normal size like every other line. **Switch:**
+`kitchen_font_a` in shared/posFeatures.ts (+ copies) — "Kitchen tickets in the normal font": "Kitchen tickets print in the
+printer's normal font (Font A, 48 characters a line on 80 mm) instead of the smaller Font B (64 a line), which fits long
+orders on less paper." Off = Font B (the new standard); on = the kitchen ticket byte for byte as before A543
+(`out/kitchen-80-font-a.bin` / `kitchen-58-font-a.bin`, copied from the pre-A543 kitchen-80/58.bin, checked by
+`bytes.js --check`). `KITCHEN_OPTION_KEYS`, `kitchenFontAFrom()`; `BusinessConfig.kitchenFontA`. Threaded: the till's
+print path (`ipcHandlers.ts` → `printSale` → `queueTickets`, sale / Send to kitchen / kitchen VOID) and its test print and
+preview (`printWorker.ts sampleBusinessForThisTill`); the web POS (`buildReceiptOrder.buildReceiptBusinessConfig`
+`kitchenFontA`, and CashierScreen's three kitchen calls — Send to kitchen, the kitchen VOID, pay-first — now pass
+`posFeatures` to `printRoutedStations`); web bundle rebuilt. Admin portal: a "Kitchen ticket options" section under
+"Receipt options" (Features tab), switched by ZapTill; not an owner option (`OWNER_POS_KEYS`), and the client's PUT
+/api/flags refuses it (a POS_FEATURE_KEYS key). The text preview shows a kitchen ticket at 64 / 42. Tests:
+shared/printing `kitchen-font.test` (42: ESC M 1 / ESC M 0 and where, 64 / 42 columns, dispatch / receipts / Z-report no
+ESC M and their committed bytes, the switch = the old bytes, long dish names at Font B width and the half-width tall
+names, ESC 3 24 with ESC 2 around tall lines, less paper on the long order, the receipt's address / IG / web lines plain
+text + LF with no ESC M, a kitchen ticket then a receipt — ESC M 0 before the cut, the receipt never Font B);
+`receipt-compact.test` (kitchen cases now with the switch, against the -font-a bins); `tests/kitchen-font-a543` (the
+switch, the web mapper = kitchenFontAFrom, the web bundle's kitchen / bar / KOT in Font B and Font A with the switch,
+dispatch and Print Bill Font A, the till and web paths, the admin section, not the owner's); desktop
+`test-print-business-name` (+2: the kitchen preview at 64 / 42, dispatch and receipt at 48); `prospect-features` (both:
+the key list). Mutations checked (each red on its own): Font B on dispatch too; the switch ignored; Font B at 48 columns;
+the ESC M 0 reset dropped; ESC M 1 on every document; the tall-name width not halved; no ESC 3 24; the web mapper `!==
+false`; kitchenFontA dropped from the till's config or the test print; posFeatures dropped from the VOID call; the admin
+section's list emptied; the key made an owner option; a header line bold or a footer line tall. Seen, not changed (Font
+A tickets print them the same): a wrapped dish name loses the three spaces after its quantity (`wrap()` joins words with
+one), and a component sub-line that wraps loses its 6-space indent on the first row (`subRow` wraps the indented text) —
+a follow-up for the kitchen layout, not the font. **Open:** paper on each client's kitchen printer — ESC M is standard
+ESC/POS and the XP-80 class supports it; a printer without Font B ignores ESC M and prints Font A at 64 columns, which
+wraps every long line (turn `kitchen_font_a` on for that client). Some printers' Font B is 9x24 or 10x24 (fewer columns,
+e.g. 57 / 576) — check the order line reaches the right margin on the test print.
+
+### A542 · P3 · FIX BUILT 2026-10-21 (till 1.0.20 + web + cloud) · Small tidy-ups: a `menu` column on the Menu upload, the branch server's drawer copy and the push line on the Tech page, a dead receipt deleted
+No owner decision needed. **1 — the Menu upload's `menu` column** (web dashboard `MenuUpload.tsx`, cloud
+`POST /api/products/bulk`): an optional `menu` column on the Products tab (A537 — a menu holds categories, one menu per
+category). The row's CATEGORY (with no category in the row: the matched product's own) is put in the menu named; a menu
+not there yet is created (this business's, a clean name ≤ 60 — `lib/menus.ts cleanMenuName`, sort order after the last;
+the route is `menu.edit`, as the menus routes); names compared as products are (case, hidden and double spaces); a
+deleted menu is never reused. Blank = the category's menu left alone; `DELETE` = the category taken out of its menu; a
+category already in that menu is not written again (no sync entry). Two rows of one category naming different menus: the
+first wins, the later row is refused (a per-row error, the row skipped) — the preview flags the same clash before
+anything is written. A menu with no category anywhere is a row error. The answer adds `menus_created`,
+`categories_moved`, `menu_errors` (a menu it could not create or apply — e.g. a cloud before migration 155); the screen
+lists them and the first row errors. Template: the `menu` column (example "Food") and a Read me line. **2 — the branch
+server's drawer copy (A535) on its Tech page** (`components/DrawersCopyPanel.tsx`, next to A534's distribution panel;
+`node:drawersStatus` — technician or settings.business, a branch server only; preload, posApi, check-ipc-parity):
+the last ask of the cloud (time, ok / failed, the error), the drawers held (open / waiting for a manager's confirmation),
+how many tills asked it in the last hour, the push line (A531), and the fallback path (the cloud does not answer for the
+branch in one call — each till asks, and when it is tried again) or a copy too old to answer from. `drawersStatus()`
+gained those fields (`lastPollAt`, `lastPollOk`, `open`, `awaitingConfirmation`, `peersLastHour`, `channel`,
+`fallback`, `fallbackUntil`, `fresh`). **3 — dead code:** the desktop's `components/ReceiptView.tsx` (the HTML
+on-screen receipt) was imported by nothing since 0.6.29 (grep: no import, no dynamic import) — deleted; the three source
+pins that read it now pin the receipt that prints (shared/printing `render.ts`, read only): `test/money-reports` (PAY =
+total + tip + delivery fee), `tests/ctl-rate-editable` (the CTL line), `scripts/test-print-resilience` (its HTML-only
+footer / header / inline-style pins dropped, the lock on the two formats still printing kept, the file's absence pinned).
+**4 — the push line at a glance** (Tech › Sync, A531): `liveStatus().push` — connected since …, the cloud's last ring,
+and while it is down the fallback check interval and when the line is tried again; one line under "Changes:".
+Tests: `tests/menu-import-menus-a542` (the compiled products router over HTTP: create, match an existing menu, blank,
+unchanged, DELETE, a clash, the product's own category, a long name, another business's menu and category, a deleted menu,
+403 without menu.edit; the screen's template and clash check), `tests/a542-tech-page` (the IPC gate, the bridge, the
+panel mounted, the push line, the receipt gone), `test/branch-drawers-a535` (+6: the copy's figures, the hour window,
+the push line and its last ring, a till's and a server's fallback), `test/live-sync-a531` (+1: the line down, 20 s).
+Mutations checked by hand (each fails its case): the menus read without business_id, the clash check off, DELETE read as
+a name, the unchanged skip off, the product's category not used; awaiting / peer asks / poll ok / fallback / last ring /
+connected since / fallback interval each dropped; the IPC gate, the panel, the push line removed, ReceiptView restored.
+
+### A540 · P3 · FIX BUILT 2026-10-21 (till 1.0.20 + web POS) · The standard receipt: a thin gap between the info lines; no "Round Off: 0.00"
+Owner, 2026-10-21, on paper after A538: "the receipt looks perfect, maybe add a small space between bill no, cashier, date,
+kot … if round off is 0.00 hide it". **BUILT (shared/printing):** a `gap` document block — ESC J n, a feed of n printer
+dots — and `INFO_GAP_DOTS = 10` (about 1.25 mm at 203 dpi, not a blank line) between the order's info lines on the
+standard layout (Bill No., Delivery Boy, Table, Cashier, Date, RePrint, Voided, Kots); the compact opt-in has none. The
+text preview ignores the gap. "Round Off" prints only when the cent is really there, on the standard receipt too (A530
+did so for the compact one). Tests: receipt-compact.test (three gaps for the four lines, sent as ESC J 10; no zero
+round-off; a real round-off still prints; the 1.0.19 byte proof now takes out exactly the gaps and the zero round-off line,
+and the rest before the payment block is still 1.0.19's bytes), receipt-money.test, tests/receipt-compact-a530 (the web
+bundle), tests/pos-cart-parity (the Bill No. line goes through `info()`); the byte decoder (test/bytes.ts) knows ESC J.
+**Open:** prove the gap on paper per printer model (ESC J counts in the printer's motion unit, as ESC 3 does).
+
+### A539 · P3 · FIX BUILT 2026-10-21 (till 1.0.20 + web POS) · The receipt's payment block names the till number in its heading, a rule, then the payments
+Owner, 2026-10-21: "on the receipt add a line between payment method and payment details, it should read: payment
+details: Pay bill/buygood - 892984 / ------ / mpesa/cash/card/etc". **BUILT (shared/printing render.ts):** on the standard
+layout the block is `Payment Details: <Buy Goods|Paybill> - <number>` (bold), a rule, the payments and CHANGE, the block's
+closing rule — the separate "Buy Goods: …" line under the payments is gone. Wider than the paper: a Paybill's ", Account
+…" goes on the next line (A492's split); otherwise "Payment Details:" alone and the number wrapped under it (58 mm:
+"Payment Details:" / "Buy Goods - 000000"). No till number: "Payment Details:". The compact opt-in (A530/A538) keeps its
+block. Supersedes A498's arrangement (heading straight above the payments, the number after them) at the owner's request.
+Tests: tests/receipt-payment-block (rewritten for A539: heading with the number, rule, CASH, CHANGE, rule; no separate
+Buy Goods line; the web bundle prints the same), receipt-compact.test (80 mm one line, 58 mm two; 12 rules; the 1.0.19
+byte proof holds before and after the block), desktop business-identity ("Payment Details: Paybill - 4098201", "Buy Goods
+- 777111", offline too) and test-print-business-name.
+
+### A538 · P2 · FIX BUILT 2026-10-21 (till 1.0.20 + web POS + admin) · The receipt goes back to the classic (1.0.19) layout as the standard, at 3.75 mm line spacing; the compact layout becomes an opt-in per client
+Owner, 2026-10-21, after printing the A530 compact receipt on a real printer: "I don't like how the print out looks, it
+feels congested everywhere — qty, subtotal, ctl, vat, roundoff — top arrangement totally off." Shown a balanced
+alternative, the owner chose: **"go back to the old layout"**, and **"line spacing in the middle, about 3.75 mm"**.
+**BUILT** (shared/printing, so the till and the web POS print the same; kitchen, dispatch and the Z-report untouched):
+- **Layout** (`render.ts` renderReceipt): the classic (1.0.19) lines are the standard again — Type, Bill No., Cashier,
+  Date each on their own line, Kots, the 11 separate rules, Round Off (0.00 too), Total above PAY, the "Payment Detail:"
+  heading. A530's compact lines stay in the code as an opt-in: `full = classic.compactLayout !== true`.
+- **Spacing**: `RECEIPT_LINE_SPACING_DOTS = 30` — ESC 3 30, 30 dots at 203 dpi ≈ 3.76 mm (A530: 26 ≈ 3.25 mm; ESC 2 ≈ 4.23
+  mm), on the classic and the compact layout alike; a tall/double-height line (PAY, a banner) still at the printer
+  default, ESC 2 restored at the end. `receipt_classic_spacing` still gives ESC 2 throughout.
+- **Kept from A530**: the logo printed at ≤ 120 dots (15 mm) unless `receipt_full_logo`; 1 line fed before a cut (3
+  without a cutter; `receipt_extra_feed` for 3 always).
+- **Switches** (`shared/posFeatures.ts`, every copy; all OFF by default; `RECEIPT_OPTION_KEYS`, was RECEIPT_CLASSIC_KEYS):
+  `receipt_compact_layout` — "Compact receipt layout": "Fewer lines: Type and Bill No. on one line, Cashier and time on
+  one line, no Kots line, Round Off only when not zero, Total only with a tip or delivery fee, no Payment Detail heading.
+  Saves more paper; some find it crowded." (NEW, opt-in); `receipt_classic_spacing` "Classic line spacing (4.23 mm)" —
+  "… instead of the standard 3.75 mm"; `receipt_full_logo`; `receipt_extra_feed` (wording unchanged).
+  `receiptClassicFrom` / the web mapper (`buildReceiptOrder.ts`) give `{ spacing, fullLogo, compactLayout, extraFeed }`.
+- **`receipt_classic_layout` retired** (`RETIRED_POS_FEATURE_KEYS`). A business that had it ON in production simply gets
+  the standard — which is the layout it asked for. **No migration**: its `feature_flags` row is an unknown key —
+  `parsePosFeatures` drops it, the cloud's pos/init and `posFeatureFlags` select `.in('key', POS_FEATURE_KEYS)` only, a
+  till that cached it drops it on read, the client's PUT /api/flags refuses it (not on CLIENT_SETTABLE_FLAGS), and the admin
+  portal does not list it under "Other flags".
+- **Web POS browser receipt** (`ReceiptView.tsx`, A534): the classic layout is the default again; `compact` (from
+  `receipt_compact_layout`, PaymentModal) gives A534's compact lines. A534's `classic` prop is gone.
+- **Admin** (AdminPortal Features): "Receipt (classic switches)" is now **"Receipt options"** — Compact receipt layout,
+  Classic line spacing (4.23 mm), Full-size receipt logo, Extra paper before the cut — with "All off = the standard receipt:
+  the classic layout at 3.75 mm line spacing with a small logo."
+- **Paper** (SAMPLE-OUTPUT.txt, the A538 section: 1.0.19 | standard | compact side by side; the sample sale, 46 lines
+  standard, 34 compact): 1.0.19 210 mm (246 with a 288-dot logo) → **standard 179 mm (−15%) / 194 mm with logo (−21%)** →
+  compact opt-in 134 mm (−36%) / 149 mm (−39%); A530's compact at 3.25 mm was 118 / 133 mm (−44/−46%). Same on 80 and 58 mm.
+  out/receipt-80.bin 1789 bytes, receipt-58.bin 1325 (BYTE-CHECK.txt).
+- **Proofs**: classic spacing + full logo + extra feed ON (compact off) = the 1.0.19 receipt byte for byte, all 26 cases
+  (`test/golden/a530-classic.json`, unchanged); the compact opt-in = A530's own compact bytes for all 26 cases with only
+  ESC 3 26 → 30 (`test/golden/a530-compact.json`, written by the A530 renderer before this change); the standard's lines =
+  the 1.0.19 lines in every case; the old `layout` key changes nothing. Tests: `shared/printing/test/receipt-compact.test.ts`
+  (242), `receipt-money.test.ts` (8), `tests/receipt-compact-a530.test.mjs` (7), `tests/a534-update-state-receipt.test.mjs`
+  (13), `tests/prospect-features.test.mjs`, `apps/desktop/test/prospect-features.test.mjs` — each mutation-checked
+  (default back to compact, spacing back to 26, the compact switch ignored, the old key read again, the heading kept, the
+  web mapper reading the old key, the admin listing a retired key).
+**Ships to the web POS as soon as it reaches main** — the cloud side of A530 has been live since 2026-10-19, so a web
+POS client's receipt changes back to the classic layout (at 3.75 mm) on that deploy; the till changes with 1.0.20.
+**Open (why P2 stays open):** prove 3.75 mm on paper on each printer model (A530's ESC 3 caveat: a 1/360" motion unit
+would make 30 ≈ 2.1 mm — `receipt_classic_spacing` is that client's way back). On 58 mm the classic "Voided: … by …" line
+is wider than the paper, as in 1.0.19 (the printer wraps it); only the compact layout wraps it itself.
+
+### A537 · P2 · FIX BUILT 2026-10-20 (till 1.0.20 + web + cloud; migration 155) · The POS categories in a collapsible left panel (collapsed at start), and menus (Food, Soft drinks, Alcohol, Tea …) above the categories
+Owner, 2026-10-20: "the menu categories at the top, can we add them to the left like a hamburger, which can collapse, and
+it should start collapsed by default? … some restaurants have different menus — food menu, non-alcoholic drinks menu,
+alcoholic drinks menu, tea menu etc, can we include such?" Decisions: both the desktop till and the web POS; plain menus
+(no hours or days for now); one menu per category. **BUILT — the panel** (till `components/CategoryPanel.tsx`, web
+`pages/pos/cashier/CategoryPanel.tsx`; what it lists and which products a menu shows is ONE pure helper,
+`shared/menuFilter.ts`, copied verbatim to `apps/desktop/src/shared/` and `apps/dashboard/src/lib/` — check-shared-sync):
+the sideways category row is gone (till POSPage, web CashierScreen and MinimartPOS; A464's fade with it); ☰ at the left
+of the search opens a left panel — "All", then each category (colour dot, icon, name, product count); it starts
+COLLAPSED; picking a category closes it unless pinned (📌) and the chosen category shows by the search as a chip
+("Burgers ✕" — a tap clears it); pinned it stays open and pushes the grid aside, in a narrow window (till < 1100 px, a
+phone on the web) it lies over the grid with a backdrop. The pin and the chosen menu are remembered per till / per
+browser (`zaptill.categoryPanel.v1` in the renderer's own store — every access in try/catch; junk reads as the default).
+48 px rows, 40 px+ buttons, nothing on hover only; the till's dark styling and `action-*` colours, the web POS's
+`--pos-*` / `--act-strong` tokens. **Menus:** with at least one active menu that holds a category, the panel's top is a
+row of tabs — "All menus", each menu (sort order, then name), "Other" when some category has no menu or names one that
+is off; a menu narrows the category list AND the grid to its categories ("Other" also takes products with no category);
+"All menus" lists every category under its menu's heading, Other last; a menu change that hides the chosen category goes
+back to All. With no menus the panel is exactly the plain category list. Petrol / parking keep their own grids (no
+category row there). **Cloud — migration 155:** `public.menus` (id, business_id, name 1–60 chars unique per business
+among the not deleted, sort_order, active, color, icon, created_at, updated_at, deleted_at — a soft delete), RLS on with
+the owner policy categories have; `categories.menu_id` (FK, ON DELETE SET NULL); `log_menu_sync_change()` (its own
+function and trigger `trg_log_menu_sync_change` — 151's log_sync_change untouched): ONE sync_changes entry per changed
+menu (table `menus`, topic `menu`, upsert / delete; an updated_at-only update writes nothing; once per transaction; never
+fails the write); the catalogue version (A528) moves on a menu; a category moved between menus is 151's own categories
+entry. `scripts/schema-pending.json` declares 155. **Routes** (`routes/menus.ts`, `lib/menus.ts`): GET /api/menus (each
+with its category count; [] before 155), POST / PATCH / POST reorder / DELETE (soft; its categories left with no menu) —
+`menu.edit`, by business as categories; a duplicate name 409. PATCH / POST /api/categories take `menu_id` (this
+business's menu not deleted, or null — another business's: "Menu not found"). `/api/pos/init` carries `menus` (on, not
+deleted; built once per catalogue version), `/api/pos/changes` serves `menus` rows (the menu as init sends it; off /
+deleted / not this business's → a delete marker); `CHANGE_TABLES.menus` in `shared/syncTopics.ts` (+ copies).
+**Back office (web):** Menu › **Menus** next to Categories (add, rename, reorder ▲▼, switch off, delete, "n categories");
+on Categories a **Menu** select per category card and in the edit form ("No menu" allowed; shown once a menu exists).
+**Till:** local schema **73** (`menus`, `categories.menu_id`; REQUIRED_DESKTOP_SCHEMA 73); the whole pull and a change
+store them with the same helpers (`writeMenus`, `writeCategories` — a source that sends no menus / no menu_id, an older
+cloud or branch server, leaves the till's own); the branch server relays both to its tills (reference bundle);
+pos:init gives the sale screen the menus. **Manager › Menu on the till** gets a Menu select per category (a till change,
+A448 — `shared/tillChanges.ts` category fields + `menu_id`; the cloud refuses another business's or a deleted menu for
+good, `MENU_GONE`, never resent). Tests: `scripts/test-migration-155.mjs` (10), `tests/menus-a537.test.mjs` (15),
+`apps/desktop/test/menus-a537.test.mjs` (26, ci step "Desktop category panel and menus (A537)") — each mutation-checked;
+pins moved in `tests/paginate.test.mjs`, `tests/web-mobile.test.mjs` (A464's fade retired), `tests/product-days`,
+`tests/web-pos-theme` (93 → 89 themed inline uses: the row's 4 went, the panel takes --act-strong),
+`apps/desktop/test/menu-pages`, `till-feel` and `till-extras-0618` (the menu in the grid's filter, reset key, memo and Clear). **Left as they are (said):** no reports by menu; menus have
+no hours or days; a menu with no categories shows no tab on the POS; the till's A279 filter line stays under the search
+(it now says "Showing Food menu …" too).
+
+### A535 · P2 · FIX BUILT 2026-10-20 (till 1.0.20 + cloud; migration 153) · At a branch only the server talks to the cloud for drawer checks too; stock levels travel on change; the pull-logs bell reaches tills behind a server
+Owner, 2026-10-19: "for a setup like KRUNCH only the server does the communication to cloud, not all tills" and "this
+should only happen when there is a change, no need to keep asking for the same item". Left by A531 (its report): each
+peer's drawer polls — web sales on its drawer (`POST /api/shifts/:id/foreign-orders`, 20 s), the web's closes
+(`GET /api/shifts/state`, 20 s + the 90 s beat), confirmations (20 s) — and the 90 s beat (test-data clears, day-close
+pending, A533's log-requests/mine) went through the server's gateway to the cloud one by one; stock levels were re-read
+every 30 min (the log did not carry them). Left by A533: the `log_request` doorbell reached the server's socket but not the
+peer it named (it heard on its 90 s beat). **BUILT — cloud:** `GET /api/pos/branch-drawers?since=` (`lib/branchDrawers.ts`,
+`routes/branchDrawers.ts`, mounted before /pos): only a confirmed branch server's own session (user_devices role
+node/office, `role_confirmed_at`, approved, not retired — a person, an ordinary till, an unconfirmed server: 403), the
+DEVICE's branch on the cloud (never one it names), by business everywhere. One answer: every drawer of the branch that is
+open, closed in 7 days, or closed and awaiting a confirmation (any age, 50 newest) with /state's fields and names; the sales
+on its drawers open or closed in 24 h changed after the cursor (120 s overlap, 2,000 a page + `more`) with foreign-orders'
+lines and payments (pending payments out); `beat` = the branch's devices with a remote day close or a log request waiting,
+and the business's newest test-data clear. A failed read → 503. **The drawers doorbell** (`lib/drawerBell.ts`,
+`liveHub.ringDrawers`): a 2xx write on /shifts (not the read-only foreign-cash / foreign-orders / confirmer /
+confirm-view), and a web (non-desktop) write on /orders or /day-close → `{type:'changed', topics:['drawers']}` to the
+business's sockets ~1 s later (one ring per burst). **Stock — migration 153** `log_sync_stock_change()` on stock_levels
+(AFTER, per row, SECURITY DEFINER, never fails the write): topic `stock`, table `stock`, row = product, branch = the level's;
+an update of updated_at alone writes nothing; once per level per transaction; and the OLDER entry of the same level is
+removed when a newer one is written (/changes serves the level as it is now) — the log holds at most one stock entry per
+product and branch. **Measured (PGlite): a 10-line sale (10 tracked products, one transaction per line as stockEffects
+does) = 10 entries; the next sale of the same 10 replaces them (still 10); one product on three lines in one transaction =
+1.** `sync_changes_heads_by_branch` (the 5 s read per business and branch) and `sync_stock_ready` (the cloud tells tills
+`serves: ['stock']` only once 153 ran — asked once per 10 min); `scripts/schema-pending.json` declares 153.
+`/api/pos/changes` serves `stock` rows `{product_id, branch_id, quantity, low_stock_threshold, qty_pieces}` at the till's
+branch only (the product must be the business's); a level a blind count is counting (A394) comes as `{counting: true}`
+without figures to anyone without inventory.adjust (a till's own session never). `liveHub`: a change that is ONLY stock
+rings the sockets of ITS branch, at most once per 5 min per branch (STOCK_RING_MS — the levels also ride every other ring);
+a stock write on the web (/inventory, /stock, /wastage) nudges at once; anything else rings the whole business at once,
+as A531. **BUILT — till** (`branchDrawers.ts`, syncEngine `DrawerSource`): the **branch server** asks branch-drawers every
+60 s while its push channel is up (and at once on a drawers ring), 20 s while it is down and a drawer is open or a till
+asked in 2 min, else 60 s; the sales by cursor, the whole window every 30 min; kept in memory. Its OWN drawer checks are
+answered from that copy (no cloud call of its own); its tills ask `POST /node/drawers` (a proven till, about ITS OWN drawers
+only — the device on the cloud's row; another till's drawer is "unknown"): states, web sales + own reversals (picked with
+the till's own ids exactly as the cloud's foreignCash does), beat hints. The 90 s beat asks `/api/day-close/pending` and
+`/api/support/log-requests/mine` only when the server names this till, the test-data clears only when the server knows a
+newer one (also before a push). Fallback, each call: no server, an older server or a server whose cloud lacks the route
+(404 — not asked again for an hour), a stale copy (503 — older than 2.5 beats) → the old route through the gateway.
+**Stock**: a `stock` entry is stored at once (critical; never touches a cart) with this till's own pending sales of THAT
+product taken off again (A80 — not every product's); a delete removes the level; stock-only changes do not make the screens
+re-read the menu; the 30-min re-read stands down while the cloud (or, on a peer, the server's /node/live) says
+`serves: ['stock']` — an older cloud keeps it. **Log bell**: a `log_request` the server's socket hears for one of ITS tills
+(or newly listed by branch-drawers) is passed on once with that till's next `/node/live` (`log_request: true`, kept 10
+min); the till asks /mine through the gateway at once (A533's path unchanged) — within one LAN beat (20 s). Shared topic
+map (`shared/syncTopics.ts` + copies): `stock` (critical), `DRAWERS_TOPIC` / `DOORBELL_TOPICS`, `CHANGE_TABLES.stock`
+(its own trigger name — test-migration-151 skips it), `ChangesAnswer.serves` / `log_request`.
+**Cloud calls an hour, drawer checks, a 4-till branch (server + 3 tills) with every drawer open:** before ≈ 520 per till
+(web sales 180 + shift state 180 + the 90 s beat 160; +180 with a confirmation waiting) ≈ **2,080 from the branch**;
+after **60** (the server's one call a minute, push channel up — 180 with it down) + one per drawer change on the web, the
+tills **0** (LAN). **Stock:** one /changes per ring per direct machine; while a branch sells non-stop at most 12 stock-only
+rings an hour (≤ 5 min stale, was 30); idle: none — before, 2 whole-list re-reads an hour per till. Tests:
+`scripts/test-migration-153.mjs` (12), `tests/branch-drawers-a535.test.mjs` (12), `apps/desktop/test/branch-drawers-a535.test.mjs`
+(17, ci step "Desktop drawer checks through the branch server, stock on change (A535)") — each mutation-checked.
+**Left as they are (said):** the 10-minute pushes / tech config checks on peers still go through the gateway; a direct till
+with no server keeps its own drawer polls (the route is for a confirmed server); a web M-Pesa payment completing later
+without touching its order's updated_at waits for the 30-min whole window; one server instance (WEB_CONCURRENCY=1) holds
+the rings in memory, as A531.
+
+### A534 · P2 · FIX BUILT 2026-10-20 (till 1.0.20 + cloud + admin; migration 154) · Four small items: staff names from the till's own list, "why isn't this till updating?", the compact receipt in the browser, the branch server's distribution lag
+Owner, 2026-10-20: "add all of them since effort is small". **BUILT:**
+**1 — staff names without GET /api/staff.** Render, 2026-10-19: `[tillScope] DRY-RUN would refuse: a till's own sign-in
+(device …) asked for staff.view on GET /api/staff` — the whole catalogue pull asked for the whole staff list with the
+till's own token only to name cashiers on shift and day reports. The names now come from the till's own branch list
+(branch_staff, A446, kept from `/api/pos/branch-staff`, which the till's session may read): `branchStaff.rosterAsUsers`
+in the pull, and every stored list mirrors its names into `users` at once (upserted, never cleared — a person who left
+keeps their name on old reports). A manager's own sign-in (Manager › Staff, `manageFetch`) is untouched. Audit of every
+call the till makes with its own token, against `TILL_KEYS`: with `TILL_SCOPE_ENFORCE=true` the one REFUSAL left is a
+credit sale pushed under the till's token (`POST /api/orders` → `creditApproval` → `can(customers.credit)`, 403
+CREDIT_APPROVAL_REQUIRED — the till never sends `credit_pin`; it goes under the till's token when the cashier's session is
+not live or the sale was rung by someone else); two more only log (`POST /api/wastage` → `can(menu.costs)`: a typed cost
+is dropped; an offline void/refund replay without `offline_approved_by` would fall to `sales.void`/`sales.refund`). Not
+fixed here (a security decision: add `customers.credit` to TILL_KEYS, or skip the approval for a till's own replay of a
+sale the till already took) — **open before enforcing.**
+**2 — "why isn't this till updating?"** (TJ'S PIZZA T1 on 1.0.5 while 1.0.19 was approved). A 1.0.20 till reports its
+updater's state (`updateReport.ts`: state, version, percent, since when, last check, approved, the error in its own words
+cut to 160, why the idle install waits, the updater task) to `POST /api/desktop-update/state` (its own session, its own
+`user_devices` row — a TILL write in `terminalWrites.ts`), only once the status answer says `reportsState: true` (an older
+cloud: nothing sent), on a change (a download in 25 % steps) and at least every 30 min; a 404/501 rests it 6 h. Stored in
+`user_devices.update_state` / `update_state_at` (migration 154, cleaned by `lib/updateState.ts`), returned only by the
+admin route `GET /api/admin/clients/:id/devices` (requireAdmin: super admin and agent — a second read, so the list never
+fails before 154). The Desktop updates card shows one line per till (`desktopVersions.tillUpdateLine`): "Up to date",
+"Downloading 1.0.20 (45%)", "Downloaded — installs when ZapTill is next closed (waiting since 14:02)", "Update failed:
+<error> (at 14:10)", "Last seen 3 days ago" for a silent till, and for a till older than 1.0.20 a hint from its version
+(before 1.0.16: "Not checking — … close ZapTill fully and reopen it; accept the Windows prompt"; 1.0.16–1.0.19: "Installs
+itself when idle — if stuck, close and reopen ZapTill").
+**3 — the compact receipt in the browser.** The till prints every customer receipt (Windows printers included: the
+`printer:` spooler target, RAW) through shared/printing, so A530's compact layout already applies there — its HTML
+`ReceiptView.tsx` has been imported by nothing since 0.6.29 (left as it is). The HTML receipt still printed is the web
+POS's browser-dialog receipt (`apps/dashboard/src/pages/pos/ReceiptView.tsx`): now compact by default — date and order
+on one line, phone and PIN on one line, no Subtotal when it equals the total, no "Split payment" heading, the cash line
+carries the tendered and Change only when there is some, no PIN repeated in the footer, no doubled rule (4 rules, was 5);
+`receipt_classic_layout` keeps every line as before (PaymentModal passes the client's switch). shared/printing untouched.
+**2026-10-21 — A538 changed the standard:** the classic layout is the default again here too (owner: "go back to the old
+layout"); the compact lines come only with the client's new `receipt_compact_layout` switch (ReceiptView `compact`);
+`receipt_classic_layout` and the `classic` prop are retired.
+**4 — the branch server's distribution lag (A23).** Tech page › Sync on a branch server (`ServerDistributionPanel`,
+`node:distribution`, a technician or settings.business): how many records wait for the cloud by table (sales — and how
+many of them its tills' — drawers, days, pay-ins/outs, expenses, kitchen voids, offline voids/refunds), the age of the
+oldest, the last push the cloud took (`distributionLag.notePushOk`, stamped by the order and cash pushes), and the runbook
+line "If this server fails, do not wipe or reinstall it until a technician has copied its swiftpos.db — sales not yet on
+the cloud live only on its disk." A till behind a server: "Not yet confirmed by the branch server: N of this till's
+records" (A501 nodeQueueDepth). Tests: `apps/desktop/test/a534-small-items.test.mjs` (30, CI step + `test:a534`),
+`tests/a534-update-state-receipt.test.mjs` (13, the real web ReceiptView rendered), `scripts/test-migration-154.mjs` (5);
+all mutation-checked.
+
+### A536 · P3 · FIX BUILT 2026-10-20 (CI only) · The end-to-end suites run every night against DEV, and never against production
+Closes A189 (the suites existed and ran nowhere). **BUILT:** `.github/workflows/nightly-e2e.yml` — 23:30 UTC (02:30
+Nairobi) and on demand (choose the API suites, Playwright on/off); a separate workflow, ci.yml untouched, so it never
+blocks a push or a pull request; the run goes red when a suite fails. Steps: the production guard + a wait of up to 3 min
+for the dev API's `/health` (Render sleeps) → `tests/runner.mjs` (auth, data, orders, reports, security, permissions,
+restaurant) → `e2e/seed/seed-staff-api.mjs` (new: the Waiter role and the manager / supervisor / cashier / waiter test
+staff through the owner API only — no browser, no database, idempotent; logins to `$GITHUB_ENV`) → `npx playwright test`
+(Chromium) with the HTML report and failure traces as an artifact (14 days); the run's summary lists each part.
+**The guard** — `e2e/lib/prod-guard.mjs`, called by every entry point (the runner, both Playwright configs, the staff
+seed, the workflow's first step); no override; exit 3: refuses `zaptill.co.ke` and every host under it (production and
+every client's address) unless the label next to the domain is `dev`/`staging` (`dev.zaptill.co.ke`, `dev-api.…`,
+`app.dev.…`), the production Render (`swiftpos-server`, `swiftpos-prod-mype`) and Vercel (`swiftpos-dashboard`,
+`swiftpos-admin`, `swiftpos-admin-eta`) hosts, `E2E_EXTRA_PROD_HOSTS`, an address that does not parse; then refuses a
+`/health` without `env` or with `env: production` (production hides env); and the test browser starts with
+`--host-resolver-rules` that make every production host unresolvable, so a dashboard built with a production API cannot
+sell into a live business. **Configurable:** variables `E2E_API_URL` (default the dev API `swiftpos-20c2.onrender.com`),
+`E2E_WEB_URL` (the dev dashboard — Playwright is skipped with a warning until it is set), `E2E_ADMIN_URL` (guarded, no
+admin specs yet), `E2E_EXTRA_PROD_HOSTS`; secrets `E2E_OWNER_EMAIL`, `E2E_OWNER_PASSWORD` (the owner of a dedicated test
+business on DEV). The runner also reads `E2E_API_URL` / `E2E_OWNER_EMAIL` / `E2E_OWNER_PASSWORD`, the Playwright configs
+`E2E_WEB_URL` / `E2E_API_URL`. Not posted to the admin System page: ops events accept only `deploy_check` / `vuln_scan`.
+**Owner, once:** a dedicated restaurant test business on DEV (web access on, sign-in codes off), the dev dashboard built
+against the dev API, the two secrets and `E2E_WEB_URL` — `docs/E2E-NIGHTLY.md`. Tests:
+`tests/e2e-prod-guard-a536.test.mjs` (35; production refused / dev passes, /health, the command line's exit 3, the wiring;
+mutation-checked). The guard was run by hand: the production API, dashboard and admin refused (exit 3) by the guard, the
+runner and the seed; the dev API passed and answered `env: development`.
+
+### A533 · P2 · FIX BUILT 2026-10-20 (till 1.0.20 + cloud + admin; migration 152) · Pull a till's or a branch server's log from the admin portal
+Owner, 2026-10-19/20: "add a feature where we can pull local logs of a server or a till to cloud so that we can be
+investigating such issues" — and, on the admin portal's Desktop updates tab: "how do I pull logs". Until now (A519) a log
+reached support only when someone at the shop pressed "Send logs to support" on the till's Tech page. **BUILT:**
+**Cloud** — migration 152 `log_requests` (device, reason, range 24/72/168 h, include `{auth}`, status
+waiting/delivered/expired/cancelled, the linked `support_logs` row, expires 7 days on; RLS on, service role only).
+`routes/logRequestsAdmin.ts` (mounted at /admin/clients before /admin; any active admin — super admins and agents):
+`GET/POST /api/admin/clients/:id/log-requests` and `…/:id/cancel` — the reason required and cleaned, a device of another
+business refused (404), retired or not approved (409), 20 per admin per hour (counted in the table), audited in
+`admin_audit_log`, a till older than 1.0.20 noted ("this till runs 1.0.5 — it can only send logs from its Tech page from
+1.0.18, and answer a pull from 1.0.20"); no owner notice (a support action, as A519). The /admin write hook no longer makes
+every till socket sign in again for it (`res.locals.forgetNothing`). `routes/support.ts`: `GET /api/support/log-requests/mine`
+(the till's own session, its own waiting requests only) and `POST /api/support/logs` + `request_id` (this business's, THIS
+device's, still waiting — else 404/403/409; linked and marked delivered; not counted against A519's 5 an hour). Expiry on
+every read (`lib/logRequests.ts expireWaiting`) — no job. **How the till learns:** the doorbell — `liveHub.ringLogRequest`
+sends `{type:'log_request', device_id}` to that business's push-channel sockets (A531; the till named asks /mine, others
+ignore it) — and the 90 s remote-close beat (A521 `remoteCloseBeat`) asks /mine once, so a till behind a branch server (no
+socket of its own; its calls go through the server's gateway, A410, unchanged) or one whose socket is down hears within
+~90 s. An older cloud (its 404) is not asked again for an hour. **Till** — `logPull.ts`: A519's bundle (`supportLogs.ts`:
+the same redaction, gzip, 900 kB cap) for the request's window, read lazily across the rolled files (`lazyLogFiles`: a file
+last written before the window is never opened), up to 3 MB of log text, auth.log only when asked, and a diagnostics block
+(version, role, branch, terminal, sync state with what waits per table, failed / parked, cloud reachability, A531 mode /
+channel / last change / topics, printer errors in the window, disk free). One upload at a time; a failing upload tried 3
+times then left (the request stays waiting); a closed request never again. The shop's log says "logs pulled by ZapTill
+support (request …)". **Admin** — `PullLogsCard.tsx` inside the Support logs card (Desktop updates tab): device (label,
+role, branch, version, last seen), 24 h / 3 days / 7 days, include sign-in history, reason → Request; the list (waiting with
+"till last seen 14:02" and Cancel, delivered with View / Download, expired, cancelled), refreshed every 15 s while one waits.
+Tests: `tests/log-requests-a533.test.mjs` (30), `apps/desktop/test/log-pull-a533.test.mjs` (23, a ci.yml step),
+`scripts/test-migration-152.mjs` (9) — mutation-checked.
 
 ### A532 · P1 · FIX BUILT 2026-10-19 (cloud only) · Owner alerts and summaries to more than one person were refused by Resend
 Render log, 2026-10-19 (pasted by the owner): `[mailer] Resend error … Invalid \`to\` field` then `[ownerAlerts] not-syncing
@@ -385,6 +3077,11 @@ free delivery, offer, dine-in, proforma, duplicate, void, a 288-dot logo, round-
 (XP-80 class), but some Epson models use 1/360", where 26 would be ~1.8 mm and the lines would overlap: prove on paper on
 each printer model; `receipt_classic_spacing` is that client's way back. The till's HTML receipt (a Windows printer, not
 thermal ESC/POS) is unchanged. A logo shrunk from its stored 1-bit form is a shade bolder than one fitted from colour.
+**2026-10-21 — A538 changed the standard** (owner, on paper: "it feels congested everywhere … top arrangement totally
+off"; chose "go back to the old layout", "line spacing in the middle, about 3.75 mm"): the classic layout is the standard
+again at ESC 3 30 (~3.75 mm), keeping this item's small printed logo and 1-line feed; the compact layout above is an
+opt-in (`receipt_compact_layout`); `receipt_classic_layout` is retired (a stored row is ignored, no migration). The
+golden promise now reads: classic spacing + full logo + extra feed on = 1.0.19 byte for byte. See A538.
 
 ### A529 · P1 · FIX BUILT 2026-10-19 (till 1.0.20 + cloud) · A cloud that answers with someone else's page is UNREACHABLE (sign-in falls back, sales never 'failed')
 During the Render suspension (A528) the owner reported: "some users were not able to log in … and I thought we had said
@@ -4402,7 +7099,8 @@ till mirrors branding locally, `feature_flags` has a precedent (`web_hosting`).
 | 3 | Till: CSS-variable tokens; classify the till's green uses (action vs status); brand layer; a raw-green gate | desktop | **A326** CLOSED |
 | 4 | Web: picker + live preview (**A327** CLOSED); 4b-1 web POS + shared components (**A328** CLOSED); 4b-2 back office — **decided: stays SwiftPOS-branded** (its greens → teal under A329) | dashboard | done |
 | 5 | Real-till walk of every theme (Teal, Blossom especially), then close | — | — |
-Per-branch overrides after slice 5, as their own slice.
+| — | Per-branch overrides (theme, brand colour, receipt footer; migration 156) | cloud + desktop + web | **A544** built (owner: "yes start", 2026-10-21) |
+Per-branch overrides were planned after slice 5 as their own slice; the owner asked for them first (A544). A323 stays OPEN until slice 5 (the real-till theme walk) is done.
 **Decision 2026-09-25 (lead dev, delegated by the owner): 4b-2 — the back-office pages stay SwiftPOS-branded** — they do not take the client's theme. The client's colour belongs where staff and customers see it (tills, web POS, lock screens, receipts); the management tool stays consistent for every owner, support and screenshots stay uniform, and the largest, riskiest part of the work is avoided. The back office's greens are still converted — to SwiftPOS teal — under A329. Remaining: slice 5 (on-till walk, `docs/VERIFY-BRANDING-PHASE2.md`).
 
 ### A322 · P2 · CLOSED 2026-09-24 (verified on target, mamangina, 0.6.4) · Shipped screens and the test print show two reference businesses' names to every client
@@ -6993,7 +9691,13 @@ only, values-only, no logic. `vite build` exit 0. Browser-confirm count + legibi
 
 **CLOSED 2026-09-03 (browser-verified):** POS floor tiles render evenly sized, several per row (T1–T10).
 
-### A189 · P2 · OPEN · E2E / integration suites exist but run nowhere — no CI-reachable environment
+### A189 · P2 · FIX BUILT 2026-10-20 (via A536) · E2E / integration suites exist but run nowhere — no CI-reachable environment
+
+**FIX BUILT 2026-10-20 via A536 (CI only).** The reachable target is the DEV environment (the dev API on Render from
+`dev`, its own development Supabase, the dev dashboard on Vercel) instead of the Supabase local stack (Option A below —
+not needed now that a disposable dev stack exists). `.github/workflows/nightly-e2e.yml` runs the API suites and
+Playwright against it every night, behind a production guard. Verified when the first nightly run on GitHub is green
+(after the owner sets the secrets and `E2E_WEB_URL` — `docs/E2E-NIGHTLY.md`).
 
 **Reassessed 2026-08-31.** The test pyramid is largely built and CI is comprehensive
 (typecheck ratchet, builds for all three apps, secret scan, schema-drift, server suites
@@ -7155,7 +9859,18 @@ line (e.g. ORD-MTKAOJNI-002269). CLOSED per rule 16. New findings from this run:
 orders show "Completed" with no visual distinction) and A196 (voided/refunded orders still appear
 on the KDS); A193 (no refund audit-log view) still stands.
 
-### A186 · P3 · OPEN · run-all migration suite reports a false FAIL on Windows — libuv teardown crash after the assertions pass
+### A186 · P3 · CLOSED 2026-10-21 (A548) · run-all migration suite reports a false FAIL on Windows — libuv teardown crash after the assertions pass
+**CLOSED 2026-10-21 (A548) — the runner tells the crash from a failure.** `scripts/lib/windows-teardown.mjs`
+(`isWindowsTeardownPass`) is used by `scripts/run-migration-tests.mjs` (per test file) and `scripts/run-all.mjs` (per
+unit-test file): a file counts as passed **with a printed note** ("Windows libuv teardown crash after the summary
+ignored (A186)", plus the exit code) only when ALL hold — the platform is win32; the exit code is 127 or 3221226505
+(0xC0000409; -1073740791 signed); it did not time out; its last "N passed, M failed" summary has N > 0 and M = 0; and no
+line starts with FAIL. Anything else stays red. `run-migration-tests.mjs --self-test` (CI runs it) now proves 11 cases,
+including that the same crash on linux, an exit 1 after a green summary, "28 passed, 1 failed" + crash, a crash with no
+summary, and a timed-out run all stay FAIL. **CI is unaffected:** `ci.yml` runs the migration suite and the
+`tests/*.test.mjs` loop on ubuntu-latest, where the allowance never applies. The underlying PGlite/libuv teardown crash
+itself is not fixed (upstream); it is now visible as a note rather than a false red.
+
 **2026-09-10 — `db.close()` hypothesis TESTED ON WINDOWS AND FALSIFIED; new evidence.** Tried
 closing the PGlite handle before `process.exit` in the 6 single-`db` migration tests
 (47/50/51/52/100/101), on the theory it would give libuv's Windows async-close nothing to crash
@@ -9131,7 +11846,23 @@ Overview's "Web access expiry" row shows and sets `businesses.web_access_expires
 `/tech/tokens`) were already-wired false positives (query-string call literals). All three admin
 endpoints now have working callers.
 
-### A148 · P3 · OPEN · Miscellaneous live-but-unwired endpoints
+### A148 · P3 · CLOSED 2026-10-21 (A548) · Miscellaneous live-but-unwired endpoints
+**CLOSED 2026-10-21 (A548) — one wired, three deferred on purpose, each write route checked for who can reach it.**
+- `POST /api/modifiers/options` — **wired** (2026-09-04, `39ff357`, on `main`): VariantsDrawer's per-group "+ Add option"
+  calls it; the route is `requirePermission('menu.edit')` + business-scoped (`modifierGroupOwned`, 404 for another
+  business's group); `tests/modifier-option-add.test.mjs` green 2026-10-21. The 09-04 "did not render" was deploy lag —
+  the commit has shipped in every web deploy since.
+- `PUT /api/flags/:key` — **deferred, and refuses every key.** Clients must not switch features: POS keys answer 403
+  `ADMIN_ONLY_FEATURE`, and so does every other key because `CLIENT_SETTABLE_FLAGS` is empty (audit 2026-10-14); ZapTill
+  sets features in the admin portal (`PATCH /clients/:id/features/:key`), owners set POS options at `/api/controls`
+  (A490). `GET /api/flags` stays — the web reprint reads it. Proved by `tests/route-permission-gates.test.mjs` §3 (manager
+  and owner both refused, no flag row written).
+- `GET`/`PATCH /api/qr/settings` — **deferred** (QR ordering has no settings screen; building one is a feature, not a
+  wire). The write is `requirePermission('settings.integrations')` (audit 2026-10-14); the same test proves a cashier
+  gets 403. The read returns only `menu_slug, qr_ordering` of the caller's business.
+- `GET /api/loyalty/settings` — **deferred** (read-only `{ earnRate }`, behind auth and the loyalty licence; nothing to
+  restrict). Revisit any of the three if QR-ordering or loyalty tuning is asked for — it becomes a scoped build.
+
 
 Lower-value tail of the same sweep: `POST /api/modifiers/options` (create a
 modifier option — `VariantsDrawer.tsx` wires DELETE but not create),
@@ -10608,7 +13339,12 @@ so the last-resort cache is populated only by cloud verifies (fine while the nod
 is the daily authority). TO CLOSE: ship to tills + a live two-till offline test.
 Delivery of this correction: MANIFEST-2026-08-23-s.md.
 
-### A18 · P3 · NOTE · `nodeServer.ts` header is a tracking marker until PHASE5 §3 lands (no defect today)
+### A18 · P3 · CLOSED 2026-10-21 (A548) · `nodeServer.ts` header is a tracking marker until PHASE5 §3 lands (no defect today)
+**CLOSED 2026-10-21 (A548).** The trigger happened: A410 (2026-10-05) made the branch server the branch's only link to
+the cloud, and the header already carries an "A410 — THE NODE IS NOW THE BRANCH'S ONLY LINK TO THE CLOUD" section
+describing it (alongside the A19 peer relay and A489 TLS). The one paragraph that still read as before A410 (the
+"CONSEQUENCE … open as register A19" note) now says it predates A410 and points at that section. Nothing left to track.
+
 **Re-graded 2026-09-10 (P1 OPEN → P3 NOTE):** nothing to fix — the header was already corrected (08-09) and accurately describes the current tree. It is a reminder to revert the header when PHASE5-NODE-AUTHORITY §3 lands (node becomes the sole cloud uplink again). Kept as a NOTE (like A13) so it stops reading as a live P1 defect while the reminder survives. Delivery: docs/MANIFEST-2026-09-10-combined.md.
 
 **Original finding (context):**
@@ -10836,7 +13572,10 @@ Optional follow-up (noted, not built): a node-LOCAL banner (surface the conflict
 sync response so the conflicted node itself warns on-screen, not just the owner's fleet).
 Delivery: `docs/MANIFEST-2026-09-13-d.md`.
 
-### A23 · P2 · OPEN · Distribution lag is the real RPO and is not measured
+### A23 · P2 · FIX BUILT 2026-10-20 (A534, till 1.0.20) · Distribution lag is the real RPO and is not measured
+**BUILT (A534):** the branch server's Tech page shows what waits for the cloud by table, the oldest's age, the last
+successful push, and the runbook line below (`distributionLag.ts`, `ServerDistributionPanel`); a till behind a server
+shows how many of its records the server has not yet confirmed (A501). See A534.
 Promotion cannot recover rows the dead node originated but never distributed —
 its own sales live only on its disk. So the recovery point is however far behind
 distribution was, and **nothing measures or displays that**. Wanted: a "last
@@ -12077,7 +14816,18 @@ it: make the curtain clear the staff session → the cart-loss guard fires; remo
 the identity check → the wrong-cashier guard fires; render the curtain INSTEAD of
 the screen rather than alongside → the unmount guard fires.
 
-### A53 · P2 · RATCHETED 2026-08-11 (was OPEN) · Twenty-one audit IDs are cited in code with no entry anywhere
+### A53 · P2 · CLOSED 2026-10-21 (A548; was RATCHETED 2026-08-11) · Twenty-one audit IDs are cited in code with no entry anywhere
+**CLOSED 2026-10-21 (A548) — orphan count 21 → 0, ratchet held at 0.** The write-ups were never in the repository, but
+the fix commits that first cited each ID are (`git log -S 'audit H10'` → `fbb2527`, 2026-08-01, whose message lists
+C4 / H2 / H10 / H11 / H14; `ce8a513` C2, `a353d42` C5, `4202e7f` C6, `d250120` H6, `86cb560` H13 — all 2026-07-25;
+`2bb6485` H1, `dc54d4a` M3 / M8 — 2026-07-28; `3e3a277` C1 / H8, `afc9898` H9 — 2026-07-29). **§K** records each one from
+those commits and the comments beside the citations, marked "reconstructed from the code on 2026-10-21" — nothing
+invented. Nine more (B1 B2 B5 B6 and the 08-08 meanings of C1 C2 C4 C7) were already rows in §B's table. §K also names
+the collision the 08-07 note missed: the July audit and the 08-08 audit both used C1 / C2 / C4 / C5 (read a citation
+by its file). `check-register-consistency.mjs` now counts a table row whose first cell is the ID as its entry, and
+`scripts/register-orphan-baseline.json` is **0** — a new citation of an undefined ID fails the gate (mutation-checked:
+an `audit Q7` comment → "ROSE: 0 -> 1"). No code comment needed changing — no typo'd IDs were found.
+
 This register records being opened on 2026-08-07 with sections
 `A1, B1-B5, C1-C6, D1-D3, E1-E4, F, G1-G2, H1-H2, I`. The 08-08 restructure kept
 **only A and D**. The code still cites the rest — `// Audit H10` in `render.yaml`,
@@ -12736,7 +15486,13 @@ migration 98 applied to prod + index refreshed. Both owner-side.
 
 **CLOSED 2026-09-04 (browser-verified):** created "Flour", set 42 kg on Main Branch, added to a recipe; the Recipe drawer shows the LIVE figure ("42 in stock") matching Ingredients, never a frozen red "0". Per-branch verified (Westlands 0; All-Branches summed 42). Migration 98 applied cleanly; the class is now guarded by schema-audit.
 
-### A13 · P3 · NOTE · Two suites run on `node:sqlite`, not the app's driver
+### A13 · P3 · CLOSED 2026-10-21 (A548) · Two suites run on `node:sqlite`, not the app's driver
+**CLOSED 2026-10-21 (A548) — no longer true.** Both suites open SQLite through `scripts/lib/sqlite-open.mjs`, which
+tries the app's own `better-sqlite3` first (repo root, then apps/desktop), falls back to `node:sqlite` only where that
+cannot load, and prints which driver ran. Run 2026-10-21 on the owner's Windows box: `test-node-ingest` "50 passed, 0
+failed — against the app's own driver", `test-sync-rejection-routing` "18 passed, 0 failed — against the app's own
+driver" (better-sqlite3, apps/desktop). Both run in CI (`ci.yml` "Sync rejection routing", "Branch replication ingest").
+
 `test-node-ingest`, `test-sync-rejection-routing`. They say so themselves. A
 local green is not hardware-equivalent.
 
@@ -13203,7 +15959,60 @@ enrolment burn), so there is no peer-to-peer race to reconcile and delete
 propagates for free. The claim is benchable; the multi-till behaviour is not.
 **P3, on the worst-failure path, owner-decision-gated — should NOT ride the client
 rollout.** Left unbuilt on purpose: a double-charged table is worse than the gap.
-### D10 · P3 · `ipcHandlers.ts` at 2,214 lines
+### D10 · P3 · FIX BUILT 2026-10-21 (desktop main + checks/tests; no behaviour change) · `ipcHandlers.ts` at 2,214 lines
+**2026-10-21 (A548): 4,433 lines today, 224 `handle(` registrations** — double the size this entry was filed at. Still
+one file; nothing is broken by it, but every batch touches it and parallel work collides there. **The split is
+scheduled next, as its own job once the A545–A547 work in flight has landed** (not done in A548 on purpose — a split
+under parallel edits would conflict with all of them). Stays OPEN until then.
+
+**FIX BUILT 2026-10-21 — split, no behaviour change.** At the split the file was 4,500 lines and registered 231
+channels (228 `handle` + 3 `ipcMain.on`). `ipcHandlers.ts` (80 lines) is now the entry point: it builds the validating
+`handle` and `createIpcShared()` once, then calls 25 register functions in `src/main/ipc/` **in the order the channels
+always registered** (a module with two runs of channels has two register functions, called where each run was). Every
+statement of the old function body is in the new files **verbatim, exactly once** (334 of 334, checked by script);
+the code only moved. The helpers more than one module uses, and the state behind them, are in `ipc/shared.ts`, built
+once per `registerIpcHandlers()` call as before (the closure, now a factory) — `lastManageFailure` stays one live
+variable read only there (`creditOffline` and `manageOfflineReason` moved in with it; handing a module a `let` would
+hand it a snapshot), and the A345 offline-upgrade timer is created once, there. State one module uses stays a local of
+its register function (the join request, the last order for reprint, the idle tokens, the tech reveal time).
+
+| Module (`src/main/ipc/`) | Lines | Channels | |
+|---|---:|---:|---|
+| `shared.ts` | 716 | 0 | the shared helpers + module-level state (`openBills`, join codes, `clearCatalogue`, receipt logo) |
+| `join.ts` | 369 | 14 | joining, the branch server's join requests and health (`node:*`), `auth:getSession` |
+| `held.ts` | 160 | 5 | held orders |
+| `signIn.ts` | 408 | 10 | PIN sign-in, unlock, sign-out, the idle lock |
+| `catalogue.ts` | 221 | 9 | the sale screen's data (`pos:*`) |
+| `sale.ts` | 240 | 7 | `order:create`, kitchen exclusions, reprints |
+| `printers.ts` | 55 | 6 | `print:*` |
+| `device.ts` | 369 | 21 | sync, `config:*`, branding, updates, bill numbers, device reset (and the 3 `ipcMain.on`) |
+| `dayClose.ts` | 327 | 18 | the open shift/day, the day gate, `branchClose:*`, `day:*` |
+| `shifts.ts` | 153 | 15 | open / cash in-out / close / confirm, other tills' shifts, Z-report, history (2 functions) |
+| `credit.ts` | 77 | 4 | A545 credit sales |
+| `kitchen.ts` | 70 | 3 | sends and kitchen voids |
+| `menu.ts` | 413 | 36 | products, categories, stations, payment methods, combos, variants, modifiers (2 functions) |
+| `stock.ts` | 121 | 9 | wastage, expiring batches, transfers (2 functions) |
+| `staff.ts` | 85 | 5 | staff and roles (2 functions) |
+| `monthly.ts` | 90 | 5 | the monthly pack |
+| `branchSettings.ts` | 166 | 16 | receipt text, continuous operation, reversal rules, offers, payment methods, M-Pesa, cashier history |
+| `reports.ts` | 161 | 19 | manager reports, history, order detail, branch prices, the branch report (2 functions) |
+| `expenses.ts` | 89 | 5 | expenses |
+| `reversals.ts` | 254 | 5 | void / refund (online and offline), frozen sales, reversal rules, help |
+| `tech.ts` | 315 | 19 | tech access, promote, backups, GPU mode, console, status, logs |
+
+**Proof.** The real compiled `registerIpcHandlers()` (electron shimmed) registers the same 231 channels **in the same
+order** before and after (diff empty); `check-ipc-parity` and `check-ipc-validation` still report 239 bridged / 239
+handled / 239 with a schema (the extra 8 are printWorker's); both tsc configs and `build:all` pass.
+**The checks and tests that read the handlers as text** now read all of them: `scripts/lib/ipc-handler-files.mjs`
+(`ipcHandlerFiles()` / `ipcHandlersSource()` — the entry, the modules in registration order, then `shared.ts`, then any
+other `ipc/*.ts`) is used by check-ipc-parity, check-ipc-validation and the 64 test files that pinned `ipcHandlers.ts` (4 of them `scripts/test-*.mjs`); the
+directory scanners that did not recurse (check-own-rows, check-row-attribution, check-sql-binds, check-notnull-writes,
+and the branch-gateway, low-impact-start, desktop-writes-allowed, terminal-write-guard and till-scope-enforce tests) now
+include `src/main/ipc/` — same findings as before (194 own-row queries, 9 attributed inserts, 600 bound statements).
+No assertion was loosened; one regex accepts `'../posFeatures'` as well as `'./posFeatures'` (kitchen-font-a543).
+check-auth-retry now sees 2 fetch builders, not 3: the third was the old 4,400-line `registerIpcHandlers` itself (it
+had a bearer, a raw `fetch(` and a `401` somewhere in its body — a pass by size); each module is now checked on its own.
+
 ### D11 · P1 · CLOSED 08-13 · `/api/pos/init` licensed the till from the wrong branch, and 500'd on zero main branches
 `pos.ts` fetched only the `is_main` branch with `.single()` and gated the desktop
 licence on **that** branch's `desktop_licensed` — regardless of which branch the
@@ -13519,6 +16328,40 @@ print the SQLSTATE (A15).
 | BUG-22 | `device_hint` stored a fleet-identical User-Agent | `device_id` first. Also fixes revocation. |
 | — | `release:patch` built before bumping | Reordered. |
 | — | `api.ts` stripped every error field but `code`/`status` | Preserved, so 409 payloads are usable. |
+
+---
+
+## K. Legacy audit IDs cited in code — reconstructed 2026-10-21 (A548)
+
+The code cites IDs from audits that predate this register's 08-08 restructure (A53). Their original write-ups never
+reached the repository, but **git still holds the fix commit that first cited each ID**, and the comment beside each
+citation says what was fixed. These rows were **reconstructed from the code and `git log -S` on 2026-10-21** — they
+record what the code and those commits show, nothing more; no original finding text is invented. `B1 B2 B5 B6` and the
+pgQuery / auth / numeric meanings of `C1 C2 C4 C7` are the 08-08 rows in §B above.
+
+**Two numbering schemes collide.** The July audit (fix commits 2026-07-25 → 2026-08-01) and the 08-08 audit (§B) both
+used `C1`, `C2`, `C4` and `C5`. Read a citation by its file: `pgQuery.ts` C1/C2, `auth.ts` C4 and `jobs/*` C7 are §B's;
+the migration, settings, seeded-admin and credit-sale citations are the July rows below. The register's
+`check-register-consistency` counts a table row whose first cell is the ID as its entry (A548), so the orphan ratchet is 0.
+
+| ID | Status | What it was — from the code and the first commit citing it | First cited | Where the code says so |
+|---|---|---|---|---|
+| C1 | CLOSED 2026-07-29 | (July) Only 14 tables had row-level security; every other public table (orders, payments, …) was open to a tenant's key. RLS enabled on all of them; `verify_rls_coverage.sql` is the coverage check. | `3e3a277` | `migrations/29_enable_rls_all_tables.sql`, `scripts/verify_rls_coverage.sql` |
+| C2 | CLOSED 2026-07-25 | (July) Business settings: writes gated (`settings.manage`, now its sub-permissions) and the generic `GET /settings` made default-deny — only allowlisted keys are returned. | `ce8a513` | `apps/server/src/routes/business.ts` |
+| C4 | CLOSED 2026-08-01 | (July) A seeded super-admin whose bcrypt hash was published in the repository could sign in to the admin portal. Migration 48 disabled and scrambled it with a CHECK so it cannot return; `adminSeedGuard` refuses it at login; no default admin is seeded (migration 56). | `fbb2527` | `migrations/48_retire_seeded_admin.sql`, `apps/server/src/lib/adminSeedGuard.ts`, `routes/admin.ts`, `index.ts`, `render.yaml` |
+| C5 | CLOSED 2026-07-25 | (July) A credit sale did not write the customer's debt, and a void did not reverse it — now recorded on sale (and on `/pay`) and reversed for every credit leg on void, with a pre-check. | `a353d42` | `apps/server/src/routes/orders.ts` |
+| C6 | CLOSED 2026-07-25 | `/api/sync/push` trusted an offline till's `expected_cash` / `cash_variance` / `status='closed'`. It now writes only open-shift fields; the close is reconciled server-side. | `4202e7f` | `apps/server/src/routes/sync.ts`, `apps/desktop/src/main/syncEngine.ts` |
+| H1 | CLOSED 2026-07-28 (detection) | Nothing checked that an order's payment legs sum to its total. A detection-only integrity check logs a mismatch. | `2bb6485` | `apps/server/src/routes/orders.ts` |
+| H2 | CLOSED 2026-08-01 | `/pay` left VAT at the pre-discount figure — VAT overstated on every discounted sale. `/pay` recomputes discount, total, VAT and CTL as one set; shared money code is held identical between server and till by `check-shared-sync`. | `fbb2527` | `routes/orders.ts`, `shared/parkingTariff.ts` (both copies), `scripts/check-shared-sync.mjs` |
+| H6 | CLOSED 2026-07-25 | Every report and export endpoint was reachable by any signed-in user. Gated by `reports.view` / `reports.financial` (migration 27); managers denied the financial set by default (migration 82). | `d250120` | `migrations/27_report_permissions.sql`, `migrations/82_manager_deny_reconcile.sql` |
+| H8 | CLOSED 2026-07-29 | M-Pesa callback amount mismatches were only `console.error`. Persisted to `payment_exceptions` (migration 30), with a read endpoint. | `3e3a277` | `migrations/30_payment_exceptions.sql`, `apps/server/src/routes/mpesa.ts` |
+| H9 | CLOSED 2026-07-29 | M-Pesa consumer secret / passkey stored in plaintext. Encrypted at rest; a one-time backfill encrypts old rows. | `afc9898` | `scripts/encrypt_mpesa_secrets.mjs` |
+| H10 | CLOSED 2026-08-01 | 19 environment variables missing from `render.yaml`; no boot-time validation; the M-Pesa callback IP allowlist failed OPEN when `MPESA_ENVIRONMENT` was unset. Env manifest, `lib/env.ts` validation at boot, allowlist fails closed. | `fbb2527` | `render.yaml`, `apps/server/src/lib/env.ts`, `index.ts`, `routes/mpesa.ts` |
+| H11 | CLOSED 2026-08-01 | Stock transfers had no state machine or permission gate. Migration 49: despatch / receipt / cancel attribution, `inventory.transfer`, separation of duty, enforced transitions. | `fbb2527` | `migrations/49_stock_transfer_control.sql`, `apps/server/src/routes/stock.ts` |
+| H13 | CLOSED 2026-07-25 | Ingredient cost edits and supplier / PO endpoints were ungated and a PO delete was a real DELETE. Gated, cost changes audited, POs soft-deleted (migration 28). | `86cb560` | `migrations/28_ingredient_cost_audit.sql`, `apps/server/src/routes/stock.ts` |
+| H14 | CLOSED 2026-08-01 | `orders.idempotency_key` could be null (replay on a mode switch) and cloud-made orders sat at `sync_status='pending'` forever. Migration 50: key NOT NULL with a default; cloud orders written `synced`. | `fbb2527` | `migrations/50_order_sync_status_and_idempotency.sql`, `apps/server/src/routes/orders.ts` |
+| M3 | CLOSED 2026-07-28 | Desktop: a refund of a completed sale is money leaving the drawer — it needs a manager's authorisation, and the sale stands with the reversal recorded against it (VoidModal's refund mode). | `dc54d4a` | `apps/desktop/src/main/ipcHandlers.ts` (`order:refund`), `renderer/components/VoidModal.tsx` |
+| M8 | CLOSED 2026-07-28 | Desktop: a refund was not mirrored on the till, so the Z-report's expected cash read short by the refunded amount. Negative payment legs are written locally. | `dc54d4a` | `apps/desktop/src/main/ipcHandlers.ts` |
 
 ---
 

@@ -1,0 +1,15 @@
+---
+// Questions and answers as native <details>, so they open with the keyboard and need no script.
+// Answers are HTML strings we write ourselves (never visitor input).
+import type { FaqItem } from '../lib/faq';
+interface Props { items: FaqItem[] }
+const { items } = Astro.props;
+---
+<div class="faq">
+  {items.map((item) => (
+    <details>
+      <summary>{item.q}</summary>
+      <div class="answer" set:html={item.a} />
+    </details>
+  ))}
+</div>

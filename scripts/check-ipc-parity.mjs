@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlerFiles } from './lib/ipc-handler-files.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pre = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/preload.ts'), 'utf8');
@@ -25,8 +26,9 @@ const pre = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/preload.ts'),
 // channels for the thermal spool; reading only ipcHandlers.ts reported all
 // seven as unhandled, which is a false alarm in exactly the direction this
 // check exists to prevent — a real gap and a miscount look identical.
+// D10: ipcHandlers.ts is the entry point; the handlers themselves are in src/main/ipc/*.ts (ipcHandlerFiles).
 const HANDLER_FILES = [
-  'apps/desktop/src/main/ipcHandlers.ts',
+  ...ipcHandlerFiles(),
   'apps/desktop/src/main/print/printWorker.ts',
 ];
 const ih  = HANDLER_FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');

@@ -1,0 +1,113 @@
+---
+// One "Do this next" card, styled like the Analytics page in the app. The words and figures are the seeded demo
+// restaurant's (src/lib/analyticsDemo.ts, from the app's own cards), never a client's. The label says so.
+// Analytics never suggests a price rise, and a cashier's voids are a warning with no estimate (owner, 2026-10-22).
+// Default: card 4, "Stock up for Saturday" (WORKPLAN §5.4).
+import { demoCard, type DemoCard } from '../../lib/analyticsDemo';
+
+interface Props extends Partial<DemoCard> {
+  showPayback?: boolean;
+  /** Hide the "Example from a demo restaurant" label (when a group of cards carries one label). */
+  bare?: boolean;
+}
+const props = Astro.props;
+const { showPayback = false, bare = false } = props;
+const c: DemoCard = props.title ? (props as DemoCard) : demoCard(props.n ?? 4);
+const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a try' }[c.evidence];
+---
+<figure class:list={['dtn', { 'dtn--bare': bare }]}>
+  {!bare && <figcaption class="dtn__label">Example from a demo restaurant</figcaption>}
+  <div class:list={['dtn__card', { 'dtn__card--warn': c.warning }]}>
+    <div class="dtn__head">
+      {c.warning
+        ? <span class="dtn__warn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3 2 21h20L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+        : <span class="dtn__num" aria-hidden="true">{c.n}</span>}
+      <div>
+        {c.warning && <p class="dtn__warn">Warning &middot; worth a look</p>}
+        <h3 class="dtn__title">{c.title}</h3>
+      </div>
+    </div>
+    <p class="dtn__body">{c.body}</p>
+    <div class="dtn__bottom">
+      {c.plan && (
+        <p class:list={['dtn__plan', { 'dtn__plan--list': c.plan.strong.includes('·') }]}><span>{c.plan.label}</span> <strong>{c.plan.strong}</strong>{c.plan.rest && <span> {c.plan.rest}</span>}</p>
+      )}
+      {c.estimate && (
+        <p class:list={['dtn__estimate', { 'dtn__estimate--small': c.plan }]}>
+          <span>Estimate:</span> <strong>&asymp; {c.estimate}</strong> <span>{c.unit}</span>
+        </p>
+      )}
+      {!c.estimate && c.instead && <p class="dtn__instead">{c.instead}</p>}
+      <p class="dtn__if">{c.assumes}</p>
+    </div>
+    <div class="dtn__foot">
+      <span class="dtn__evidence" data-level={c.evidence}><i></i><i></i><i></i> {evidenceLabel}</span>
+      <span class="dtn__why">See why &middot; {c.tab}</span>
+    </div>
+  </div>
+  {showPayback && (
+    <p class="dtn__payback">
+      Analytics is planned at about KES 10,000 a month. A busy day without running out of your best seller, one old debt
+      collected, or a leak caught early can each cover that. Every card says what it assumes, so you can judge it yourself.
+    </p>
+  )}
+</figure>
+
+<style>
+  .dtn { margin: 0; max-width: 30rem; }
+  .dtn--bare { max-width: none; height: 100%; }
+  .dtn--bare .dtn__card { height: 100%; display: flex; flex-direction: column; }
+  .dtn--bare .dtn__bottom { margin-top: auto; }
+  .dtn__label {
+    display: inline-block;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+    background: var(--teal-wash);
+    border: 1px solid #b7e4de;
+    padding: 0.2rem 0.65rem;
+    border-radius: var(--r-pill);
+    margin-bottom: var(--s-3);
+  }
+  .dtn__card {
+    background: #111a1c;
+    color: #e3ecec;
+    border: 1px solid #24353a;
+    border-radius: var(--r-md);
+    padding: 1.15rem 1.2rem 1rem;
+    box-shadow: var(--shadow-object);
+  }
+  .dtn__head { display: flex; gap: 0.7rem; align-items: flex-start; margin-bottom: 0.6rem; }
+  .dtn__num {
+    flex: none; display: grid; place-items: center;
+    width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    background: #e3ecec; color: #111a1c; font-weight: 700; font-size: 0.9rem;
+  }
+  .dtn__title { font: 700 1.1rem/1.3 var(--font-text); letter-spacing: 0; margin: 0.1rem 0 0; color: #fff; }
+  .dtn__body { font-size: 0.95rem; color: #cbd8d8; margin-bottom: 0.9rem; }
+  .dtn__card--warn { border-color: rgba(245, 158, 11, 0.45); }
+  .dtn__warn-icon {
+    flex: none; display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    background: rgba(245, 158, 11, 0.14); color: #fbbf24;
+  }
+  .dtn__warn { margin: 0 0 0.1rem; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #fbbf24; }
+  .dtn__plan { margin: 0 0 0.2rem; color: #9fb2b2; }
+  .dtn__plan strong { font: 800 1.2rem/1.25 var(--font-text); color: #fff; }
+  .dtn__plan--list strong { font-size: 0.98rem; font-weight: 700; }
+  .dtn__instead { margin: 0; color: #9fb2b2; }
+  .dtn__estimate--small strong { font-size: 1rem; }
+  .dtn__estimate { margin: 0; color: #9fb2b2; }
+  .dtn__estimate strong { font: 800 1.35rem/1.2 var(--font-text); color: #fff; }
+  .dtn__if { font-size: 0.82rem; color: #8da2a2; margin: 0.15rem 0 0.9rem; }
+  .dtn__foot {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem;
+    border-top: 1px solid #24353a; padding-top: 0.7rem; font-size: 0.85rem;
+  }
+  .dtn__evidence { display: inline-flex; align-items: center; gap: 3px; color: #cbd8d8; }
+  .dtn__evidence i { width: 4px; height: 12px; background: #e3ecec; border-radius: 1px; }
+  .dtn__evidence[data-level='2'] i:nth-of-type(3),
+  .dtn__evidence[data-level='1'] i:nth-of-type(n + 2) { background: #3a4b4f; }
+  .dtn__evidence i:last-of-type { margin-right: 0.4rem; }
+  .dtn__why { color: #5eead4; }
+  .dtn__payback { margin-top: var(--s-4); color: var(--ink-2); font-size: var(--fs-sm); max-width: 28rem; }
+</style>

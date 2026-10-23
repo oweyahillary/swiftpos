@@ -34,6 +34,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -421,7 +422,7 @@ console.log('\nThe till side, and wiring\n');
   const se = read('src/main/syncEngine.ts');
   ok('F10: the sync pass and the beat share one single-flight run', /export function replicateToNode\(\)/.test(se) && /if \(_nodePushInFlight\) return _nodePushInFlight;/.test(se));
   ok('F15: the till compares time zones and says so', /tzMismatch/.test(se) && /time zone/.test(se));
-  const ipc = read('src/main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   ok('F2: a rejoin re-arms the outbox; the join keeps the till\'s key', /rearmNodeOutbox\(\);/.test(ipc) && /setNodeDeviceToken\(String\(g\.device_token\)\)/.test(ipc));
   ok('Network note on the Tech page and the setup screen', /not the customer Wi-Fi/.test(read('src/renderer/pages/TechPage.tsx')) && /not the customer Wi-Fi/.test(read('src/renderer/pages/InstallPage.tsx')));
   // A521: with { freshStaff: true } — the list just stored is the cloud's (a relayed staff change it shows is done).

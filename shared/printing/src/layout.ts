@@ -6,13 +6,21 @@
  * produce a receipt with a wrapped, ragged Amt column is to lay it out for one
  * width and print it on the other.
  *
- * COLUMN COUNTS are for the printer's Font A, which is what this package uses
- * throughout. Font B is narrower and fits more, but it is noticeably harder to
- * read across a counter and under a heat lamp, and legibility matters more on
- * these documents than saving paper.
+ * COLUMN COUNTS are for the printer's Font A (12x24 dots) unless Font B is asked
+ * for. Font A is what receipts, dispatch and the Z-report use: it reads across a
+ * counter. A543 (owner, 2026-10-21: "change the font of the kitchen printer,
+ * packing is okay" — chose "the printer's smaller Font B so long orders fit on
+ * less paper") put KITCHEN tickets in Font B (9x17 dots). A551 (owner, on paper:
+ * "kitchen receipt use the same font as the despatcher"): Font A again; Font B
+ * only with the client's 'kitchen_font_b' switch.
  */
 
-export function columnsFor(paperWidthMm: 58 | 80): number {
+export type PrinterFont = 'A' | 'B';
+
+/** Characters a line: Font A 12 dots wide → 48 on 80 mm (576 dots), 32 on 58 mm (384); A543: Font B 9 dots wide →
+ *  64 on 80 mm, 42 on 58 mm (384 / 9 = 42.7, rounded down). */
+export function columnsFor(paperWidthMm: 58 | 80, font: PrinterFont = 'A'): number {
+  if (font === 'B') return paperWidthMm === 80 ? 64 : 42;
   return paperWidthMm === 80 ? 48 : 32;
 }
 
@@ -68,10 +76,59 @@ export function pairOrStack(cols: number, left: string, right: string): string[]
 }
 
 /** Wrap with a hanging indent, so continuation lines sit under the text rather
- *  than under the quantity that opened the line. */
+ *  than under the quantity that opened the line.
+ *
+ *  The first `indent` characters of `text` are its prefix (a kitchen ticket's "2   "). A547: the prefix is kept as
+ *  written and only the rest is wrapped, in `width - indent` — before, the whole text went through wrap(), which
+ *  split on runs of spaces and joined with one, so a wrapped dish name lost the three spaces after its quantity
+ *  ("2 CHICKEN ..."), and a continuation row could run `indent` past the paper. A line that fits is unchanged. */
 export function hangingWrap(text: string, width: number, indent: number): string[] {
-  const segs = wrap(text, width);
-  return segs.map((s, i) => (i === 0 ? s : ' '.repeat(indent) + s));
+  const prefix = sanitize(text.slice(0, indent));
+  const rest = text.slice(indent);
+  const segs = wrap(rest, Math.max(1, width - indent));
+  return segs.map((s, i) => (i === 0 ? prefix : ' '.repeat(indent)) + s);
+}
+
+/** A547: an indented row on a production ticket (a component, its attributes, a note) — every row of it, the first
+ *  included, `indent` spaces in, the text wrapped in `cols - indent` so no row runs past the paper. subRow (the
+ *  receipt's) wraps the already-indented text, which drops the indent on the first row of a line that wraps and can
+ *  push a continuation past the margin; the receipt's committed bytes keep subRow as it is. */
+export function indentedWrap(cols: number, text: string, indent: number): string[] {
+  const pad = ' '.repeat(indent);
+  return wrap(text, Math.max(1, cols - indent)).map(l => pad + l);
+}
+
+/**
+ * A551: a variant option without a leading repeat of the product's name — "Chicken Burger Spicy" on "Chicken Burger" is
+ * "Spicy" (case aside, the separators after the name dropped: spaces, "-", ":", ",", "/", "|"). Only a whole-word repeat:
+ * "Chicken Burgers" is not "Chicken Burger" + "s". An option that does not start with the name ("Large") is kept as it is.
+ */
+export function variantLabel(product: string, option: string): string {
+  const p = sanitize(product).trim();
+  const v = sanitize(option).trim();
+  const head = v.slice(0, p.length);
+  if (p && head.toLowerCase() === p.toLowerCase() && !/[A-Za-z0-9]/.test(v.charAt(p.length))) {
+    return v.slice(p.length).replace(/^[\s\-:,/|]+/, '').trim();
+  }
+  return v;
+}
+
+/**
+ * A551 (owner, 2026-10-21: "why not write `Chicken burger - Spicy` we avoid 2 lines of the same item"): the product's
+ * name and its variant on one line — "Chicken Burger - Spicy", "Chicken Burger - Large"; two variant groups
+ * "Chicken Burger - Large, Spicy". An option that only repeats the name adds nothing ("Chicken Burger"). The caller wraps
+ * it as any other name (the kitchen ticket's hanging wrap keeps the quantity column, A547).
+ */
+export function nameWithVariant(product: string, options: string[]): string {
+  const name = sanitize(product).trim();
+  const seen = new Set<string>();
+  const parts = options.map(o => variantLabel(name, o)).filter(o => {
+    const k = o.toLowerCase();
+    if (!o || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return parts.length ? `${name} - ${parts.join(', ')}` : name;
 }
 
 export interface ItemColumns {

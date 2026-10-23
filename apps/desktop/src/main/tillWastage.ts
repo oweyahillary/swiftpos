@@ -23,6 +23,8 @@ export interface WasteItem { kind: 'product' | 'ingredient'; id: string; name: s
 export interface WasteRecording {
   client_id: string; branch_id: string; reason: string; note: string;
   items: WasteItem[]; recorded_by_name: string; recorded_at: string;
+  /** A545: who recorded it (their staff id) — the cloud keeps a typed cost only if THEY hold menu.costs. */
+  recorded_by?: string | null;
 }
 export interface Refused extends WasteRecording { refused_at: string; message: string }
 

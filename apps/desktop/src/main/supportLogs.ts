@@ -15,6 +15,11 @@
  *   - gzip, base64 — under the cloud's 1 MB request limit (MAX_ENCODED_BYTES); a log that still does not fit loses its
  *     oldest lines until it does.
  *
+ * A533: the same bundle answers ZapTill support's pull from the admin portal (logPull.ts) — the window is the request's
+ * (24 hours, 3 days or 7 days: windowMs), read across the rolled files lazily (lazyLogFiles: an older file is not even
+ * opened once the window is filled, or when its last write is older than the window), auth.log only when asked, and a
+ * short diagnostics block under the header (BuildOptions.diagnostics) plus the printer errors in the window.
+ *
  * Pure apart from reading the log files (the caller hands the paths), so the tests run it on real files.
  */
 import fs from 'fs';
@@ -34,7 +39,7 @@ const TS = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s/;
  * first, at most `cap` bytes — when there is more, the OLDEST are dropped (the newest are what support needs). A line
  * without a time (a stack trace's continuation) belongs to the line before it.
  */
-export function windowOfLog(texts: string[], nowMs: number, windowMs = WINDOW_MS, cap = LOG_CAP_BYTES): { text: string; dropped: number } {
+export function windowOfLog(texts: Iterable<string>, nowMs: number, windowMs = WINDOW_MS, cap = LOG_CAP_BYTES): { text: string; dropped: number } {
   const since = nowMs - windowMs;
   const kept: string[] = [];   // newest first while collecting
   let bytes = 0, dropped = 0, full = false;
@@ -68,6 +73,36 @@ export function readLogFiles(paths: string[]): string[] {
   const out: string[] = [];
   for (const p of paths) { try { if (fs.existsSync(p)) out.push(fs.readFileSync(p, 'utf8')); } catch { /* skipped */ } }
   return out;
+}
+
+/**
+ * A533: the files one at a time, newest first — a file is read only when the window still needs it: one last written
+ * before `sinceMs` holds nothing in the window (and the files after it are older still), so reading stops there. A
+ * 7-day pull on a till with ten 5 MB files reads what it sends, not 50 MB.
+ */
+export function* lazyLogFiles(paths: string[], sinceMs: number): Generator<string> {
+  for (const p of paths) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      if (fs.statSync(p).mtimeMs < sinceMs) return;
+    } catch { continue; }
+    let text: string | null = null;
+    try { text = fs.readFileSync(p, 'utf8'); } catch { text = null; }
+    if (text !== null) yield text;
+  }
+}
+
+/** A533: "24 hours" / "3 days" / "7 days" — what the section rules say. */
+export function rangeLabel(windowMs: number): string {
+  const h = Math.round(windowMs / 3_600_000);
+  return h % 24 === 0 && h > 24 ? `${h / 24} days` : `${h} hours`;
+}
+
+/** A533: the printer's trouble in the window (a support case is often "the printer stopped") — the last `max` lines. */
+export function printerErrorLines(logText: string, max = 20): { count: number; lines: string[] } {
+  const hits = String(logText ?? '').split(/\r?\n/)
+    .filter((l) => /print|escpos|receipt|kitchen ticket/i.test(l) && /fail|error|offline|refused|not found|timed? ?out|unreachable|ECONN/i.test(l));
+  return { count: hits.length, lines: hits.slice(-max).map((l) => l.slice(0, 300)) };
 }
 
 /** swiftpos.log, swiftpos.log.1 … — newest first. */
@@ -104,14 +139,36 @@ export function syncSummary(channels: Array<{ channel: string; lastOkAt: string 
     : `${c.channel}: ok${c.lastOkAt ? ` ${c.lastOkAt.slice(11, 16)}Z` : ' (not yet)'}`);
 }
 
+/** A533: a pull's window, caps and parts (the Tech page's button keeps the defaults: 24 hours, 2 MB, auth.log). */
+export interface BuildOptions {
+  windowMs?: number; logCap?: number; authCap?: number;
+  /** auth.log (the sign-in history) — false leaves it out entirely. */
+  includeAuth?: boolean;
+  /** Lines under the header (version, sync, push channel, disk …) — kept when the pack trims the oldest log lines. */
+  diagnostics?: string[];
+}
+
 /** The whole file: header, the log, auth.log — every secret removed. */
-export function buildSupportText(header: SupportHeader, logTexts: string[], authTexts: string[], nowMs: number): { text: string; droppedOld: boolean } {
-  const log = windowOfLog(logTexts, nowMs, WINDOW_MS, LOG_CAP_BYTES);
-  const auth = windowOfLog(authTexts, nowMs, WINDOW_MS, AUTH_CAP_BYTES);
+export function buildSupportText(header: SupportHeader, logTexts: Iterable<string>, authTexts: Iterable<string>, nowMs: number,
+  opts: BuildOptions = {}): { text: string; droppedOld: boolean } {
+  const windowMs = opts.windowMs ?? WINDOW_MS;
+  const logCap = opts.logCap ?? LOG_CAP_BYTES;
+  const range = rangeLabel(windowMs);
+  const log = windowOfLog(logTexts, nowMs, windowMs, logCap);
+  const withAuth = opts.includeAuth !== false;
+  const auth = withAuth ? windowOfLog(authTexts, nowMs, windowMs, opts.authCap ?? AUTH_CAP_BYTES) : { text: '', dropped: 0 };
+  const diag: string[] = [];
+  if (opts.diagnostics) {
+    // Plain lines, no section rule: packSupportText keeps everything above the first rule when it trims.
+    const pe = printerErrorLines(log.text);
+    diag.push('Diagnostics:', ...opts.diagnostics.map((l) => `  ${l}`),
+      `  Printer errors in the window: ${pe.count}${pe.count > pe.lines.length ? ` (the last ${pe.lines.length})` : ''}`,
+      ...pe.lines.map((l) => `    ${l}`), '');
+  }
   const text = [
-    headerText(header), '',
-    `── swiftpos.log, last 24 hours${log.dropped ? ' (older lines left out: over 2 MB)' : ''} ──`, log.text, '',
-    `── auth.log, last 24 hours${auth.dropped ? ' (older lines left out)' : ''} ──`, auth.text, '',
+    headerText(header), '', ...diag,
+    `── swiftpos.log, last ${range}${log.dropped ? ` (older lines left out: over ${Math.round(logCap / 1048576)} MB)` : ''} ──`, log.text, '',
+    ...(withAuth ? [`── auth.log, last ${range}${auth.dropped ? ' (older lines left out)' : ''} ──`, auth.text, ''] : []),
   ].join('\n');
   return { text: redactLog(text), droppedOld: log.dropped > 0 || auth.dropped > 0 };
 }

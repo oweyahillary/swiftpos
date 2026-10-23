@@ -55,6 +55,8 @@ export interface ReferenceBundle {
   posInit: {
     products: any[];
     categories: any[];
+    /** A537: the business's menus (Food, Soft drinks …) as the cloud sent them. Absent from an older node. */
+    menus?: any[];
     branchId: string | null;
     vatRate: number | null;
     ctlRate: number | null;
@@ -86,6 +88,8 @@ export interface ReferenceBundle {
     webPosEnabled?: boolean | null;
     /** A367: the owner's quick picks for order notes; null = the node has not been told. */
     noteQuickPicks?: string[] | null;
+    /** A577: the scale label layout (shared/scaleBarcode.ts); null = the node has not been told. */
+    scaleBarcodes?: unknown;
     /** 0.6.27: the per-client POS switches; null = the node has not been told. */
     posFeatures?: Record<string, boolean> | null;
     /** 0.6.30: the owner's void window and offline void/refund rules; null = the node has not been told. */
@@ -99,6 +103,10 @@ export interface ReferenceBundle {
     /** A381: the business's branding (logo, accent) as the server holds it — a logo changed with no internet reaches
      *  every till of the branch. Absent = none on the server. */
     branding?: PulledBranding;
+    /** A544: the effective action theme as the server holds it (null = themes off) and its branch's override of the
+     *  theme, brand colour and receipt footer (null = none). Absent = an older server (the peer keeps its own). */
+    themeId?: string | null;
+    branchBranding?: unknown;
   };
   // The pieces pullCatalogue fetches separately (per-product loops + branch GETs).
   // Served flat here so a peer makes ONE node call instead of the cloud's 7 + N.
@@ -118,6 +126,7 @@ export interface ReferenceBundle {
 export interface ReferenceRows {
   products: any[];
   categories: any[];
+  menus?: any[];            // A537: menus rows (id, name, sort_order, active, color, icon)
   comboItems: any[];        // combo_items rows
   paymentMethods: any[];    // payment_methods rows (code, name, sort_order)
   offers?: any[];           // A445: offers rows (id, data JSON)
@@ -150,12 +159,15 @@ export interface ReferenceRows {
     paymentMethodsEnabled?: string[];     // A429
     webPosEnabled?: boolean | null;   // A346
     noteQuickPicks?: string[] | null; // A367
+    scaleBarcodes?: unknown;          // A577
     posFeatures?: Record<string, boolean> | null; // 0.6.27
     reversalRules?: ReversalRules | null;         // 0.6.30
     businessName?: string | null;                 // A450
     currency?: string | null;                     // A450
     receiptPay?: ReceiptPay | null;               // A450: undefined = the node has not been told
     branding?: PulledBranding | null;             // A381
+    themeId?: string | null;                      // A544: undefined = the server has no branding row
+    branchBranding?: unknown;                     // A544: undefined = an older local DB
   };
 }
 
@@ -217,6 +229,8 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
     status: p.status ?? 'active',
     barcode: p.barcode ?? null,
     plu: p.plu ?? null,
+    sold_by: p.sold_by ?? null,         // A577: relayed so a peer sells weighed items by weight
+    unit_label: p.unit_label ?? null,   // A577
     is_fuel: asBool(p.is_fuel),
     is_kitchen: asTriBool(p.is_kitchen),   // tri-state — see asTriBool
     show_days: cleanShowDays(p.show_days) ?? null,   // 0.6.31: relayed so a peer shows the same products each day
@@ -230,6 +244,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
     sort_order: Number(c.sort_order) || 0,
     status: c.status ?? 'active',
     is_kitchen: asBool(c.is_kitchen),
+    menu_id: c.menu_id ?? null,   // A537: relayed so a peer shows the same menus
   }));
 
   // Users: local {id,name,role_name,status} -> cloud {id,name,roles:{name},status}.
@@ -247,6 +262,10 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
     posInit: {
       products,
       categories,
+      // A537: relayed so a peer's category panel shows the same menus.
+      // A578: and each menu's hours (the JSON text → the object; null = always), so a peer opens and closes them too.
+      menus: (rows.menus ?? []).map((m: any) => ({ id: m.id, name: m.name, sort_order: Number(m.sort_order) || 0, active: true, color: m.color ?? null, icon: m.icon ?? null,
+        availability: (() => { try { return m.availability ? JSON.parse(m.availability) : null; } catch { return null; } })() })),
       branchId: rows.config.branchId,
       vatRate: rows.config.vatRate,
       ctlRate: rows.config.ctlRate,
@@ -269,6 +288,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       paymentMethodsEnabled: rows.config.paymentMethodsEnabled,   // A429: relayed so a peer shows the branch's methods
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
+      scaleBarcodes: rows.config.scaleBarcodes ?? null,   // A577: relayed so a peer reads the same scale labels
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
       reversalRules: rows.config.reversalRules ?? null,   // 0.6.30: relayed so a peer applies the owner's rules offline
       // A450: the business's name and currency, and the receipt's Buy Goods / Paybill line — relayed so a peer prints them.
@@ -277,6 +297,9 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       ...(rows.config.receiptPay === undefined ? {}
         : { receiptPayLabel: rows.config.receiptPay?.label ?? '', receiptPayNumber: rows.config.receiptPay?.number ?? '' }),
       ...(rows.config.branding ? { branding: rows.config.branding } : {}),   // A381
+      // A544: relayed so a peer wears its branch's look and prints its branch's footer, as the server does.
+      ...(rows.config.themeId === undefined ? {} : { themeId: rows.config.themeId }),
+      ...(rows.config.branchBranding === undefined ? {} : { branchBranding: rows.config.branchBranding }),
     },
     variantGroups: rows.variantGroups,
     variantOptions: rows.variantOptions,
@@ -297,11 +320,18 @@ interface RefDb { prepare(sql: string): { all(...a: any[]): any[] }; }
 
 /** A450 + A381: what the server itself holds of the business — its name and currency, the receipt's pay line, its
  *  branding. Each read on its own: a missing table (an older local DB) leaves that field out, never the bundle. */
-function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config'], 'businessName' | 'currency' | 'receiptPay' | 'branding'> {
+function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config'], 'businessName' | 'currency' | 'receiptPay' | 'branding' | 'themeId' | 'branchBranding'> {
   const one = (sql: string): any => { try { return all(sql)[0]; } catch { return undefined; } };
   const sess = one(`SELECT business_name, currency FROM session WHERE id = 1`);
   const pay = one(`SELECT value FROM maintenance_state WHERE key = 'receipt_pay'`);
-  const b = one(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding LIMIT 1`);
+  const b = one(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`);
+  // A544: the server's own branch's override (the server and its tills are one branch). A database before 74 → not said.
+  let branchBranding: unknown;
+  try {
+    const bb = all(`SELECT bb.branch_id, bb.theme_id, bb.accent_hex, bb.receipt_footer FROM branch_branding bb
+                      JOIN device_config dc ON dc.id = 1 AND dc.branch_id = bb.branch_id LIMIT 1`)[0];
+    branchBranding = bb ? { branchId: bb.branch_id, themeId: bb.theme_id ?? null, accentHex: bb.accent_hex ?? null, receiptFooter: bb.receipt_footer ?? null } : null;
+  } catch { branchBranding = undefined; }
   let receiptPay: ReceiptPay | null | undefined;
   if (pay?.value) { try { const v = JSON.parse(pay.value); receiptPay = v ? cleanReceiptPay(v.label, v.number) : null; } catch { receiptPay = undefined; } }
   return {
@@ -310,6 +340,8 @@ function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config']
     receiptPay,
     branding: b ? { accentHex: b.accent_hex ?? null, logoPng: b.logo_png ?? null, logoReceipt: b.logo_receipt ?? null,
       receiptLogoEnabled: b.receipt_logo_enabled === 1 || b.receipt_logo_enabled === true } : null,
+    themeId: b ? (typeof b.theme_id === 'string' && b.theme_id ? b.theme_id : null) : undefined,   // A544
+    branchBranding,                                                                               // A544
   };
 }
 
@@ -332,9 +364,11 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
 
   const rows: ReferenceRows = {
     products: all(`SELECT id, category_id, name, description, base_price, branch_price, image_url,
-                          has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days
+                          has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days,
+                          sold_by, unit_label
                    FROM products`),
-    categories: all(`SELECT id, name, color, icon, sort_order, status, is_kitchen FROM categories`),
+    categories: all(`SELECT id, name, color, icon, sort_order, status, is_kitchen, menu_id FROM categories`),
+    menus: all(`SELECT id, name, sort_order, active, color, icon, availability FROM menus WHERE active = 1 ORDER BY sort_order, name`),   // A537; A578 hours
     comboItems: all(`SELECT combo_id, product_id, name, quantity, sort_order, is_kitchen FROM combo_items ORDER BY combo_id, sort_order`),
     paymentMethods: all(`SELECT code, name, sort_order FROM payment_methods ORDER BY sort_order`),
     offers: all(`SELECT id, data FROM offers`),   // A445
@@ -386,6 +420,14 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         if (typeof cfg?.order_note_picks !== 'string') return null;
         try { const p = JSON.parse(cfg.order_note_picks); return Array.isArray(p) ? p.map(String) : null; } catch { return null; }
       })(),
+      // A577: null until the node itself has heard from the cloud (a peer then keeps its own value).
+      // (read from the table: getDeviceConfig's shape does not carry it)
+      scaleBarcodes: (() => {
+        try {
+          const raw = all(`SELECT scale_barcodes FROM device_config WHERE id = 1`)[0]?.scale_barcodes;
+          return typeof raw === 'string' && raw ? JSON.parse(raw) : null;
+        } catch { return null; }   // a database before local schema 77
+      })(),
       // 0.6.27: null until the node itself has heard from the cloud (a peer then keeps its own value).
       posFeatures: typeof cfg?.pos_features === 'string' ? parsePosFeatures(cfg.pos_features) : null,
       // 0.6.30: likewise null until the node has heard the owner's rules from the cloud.
@@ -411,6 +453,7 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
 export interface AcquiredReference {
   products: any[];
   categories: any[];
+  menus: any[] | null;       // A537: null = the source sent none (an older node) — leave the till's menus
   comboItems: Record<string, any[]>;
   paymentMethods: Array<{ code: string; name: string }> | null; // null = leave tenders
   offers: any[] | null;      // A445: null = the source sent none (an older node) — leave the till's offers
@@ -455,13 +498,17 @@ export interface AcquiredReference {
     currency?: string;
     /** A450: the receipt's Buy Goods / Paybill line. undefined = not said → keep; null = none. */
     receiptPay?: ReceiptPay | null;
-    /** A325: the effective action theme (cloud /pos/init only). undefined = not sent (older cloud, or a node bundle,
-     *  which relays no branding today) → the till keeps its local value. */
+    /** A325: the effective action theme. undefined = not sent (an older cloud, or a branch server before A544, which
+     *  relayed no theme) → the till keeps its local value. A544: a branch server relays its own. */
     themeId?: string | null;
+    /** A544: the branch's override of the theme, brand colour and receipt footer. undefined = not said → keep; null = none. */
+    branchBranding?: unknown;
     /** A346: does the business have the web POS? undefined = not said (older cloud / older node) → keep the local value. */
     webPosEnabled?: boolean;
     /** A367: the owner's quick picks for order notes. undefined = not said (older cloud / older node) → keep. */
     noteQuickPicks?: string[];
+    /** A577: the scale label layout. undefined = not said (older cloud / older node) → keep. */
+    scaleBarcodes?: unknown;
     /** 0.6.27: the per-client POS switches. undefined = not said (older cloud / older node) → keep. */
     posFeatures?: Record<string, boolean>;
     /** 0.6.30: the owner's void/refund rules. undefined = not said (older cloud / older node) → keep. */
@@ -483,6 +530,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
   return {
     products: arr(pi.products),
     categories: arr(pi.categories),
+    menus: Array.isArray(pi.menus) ? pi.menus : null,   // A537
     comboItems: pi.comboItems && typeof pi.comboItems === 'object' && !Array.isArray(pi.comboItems) ? pi.comboItems : {},
     paymentMethods: Array.isArray(pi.paymentMethods) ? pi.paymentMethods : null,
     offers: Array.isArray(pi.offers) ? pi.offers : null,   // A445
@@ -517,9 +565,13 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
+      scaleBarcodes: pi.scaleBarcodes && typeof pi.scaleBarcodes === 'object' ? pi.scaleBarcodes : undefined,   // A577
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27
       reversalRules: pi.reversalRules && typeof pi.reversalRules === 'object' ? rulesFromWire(pi.reversalRules) : undefined,   // 0.6.30
       ...identityFromWire(pi),   // A450 + A381
+      // A544: the server's theme and its branch's override (an older server sends neither → the peer keeps its own).
+      themeId: pi && typeof pi === 'object' && 'themeId' in pi ? (typeof pi.themeId === 'string' ? pi.themeId : null) : undefined,
+      branchBranding: pi && typeof pi === 'object' && 'branchBranding' in pi ? (pi.branchBranding ?? null) : undefined,
     },
   };
 }

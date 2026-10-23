@@ -6,11 +6,14 @@
  * Once `loading` is false the decision is instant.
  */
 
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth }  from '../context/AuthContext';
+import { usePermissions } from '../context/PermissionsContext';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
+  const { mustChangePassword } = usePermissions();
+  const { pathname } = useLocation();
 
   // Cold-boot only (Supabase reads from its in-memory cache — typically <50ms).
   // We show a minimal skeleton rather than a full-page spinner so the layout
@@ -24,6 +27,10 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }
 
   if (!session) return <Navigate to="/login" replace />;
+
+  // A568: the owner still has the password the ZapTill agent (or an admin reset) gave them — nothing else until they
+  // set their own. The cloud says so on GET /api/auth/session; only a new password clears it.
+  if (mustChangePassword && pathname !== '/change-password') return <Navigate to="/change-password" replace />;
 
   return <>{children}</>;
 }

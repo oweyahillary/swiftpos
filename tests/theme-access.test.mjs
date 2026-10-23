@@ -46,9 +46,10 @@ ok('a non-curated id is refused — even with the flag (Emerald was rejected for
 const src = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const pos = src('apps/server/src/routes/pos.ts');
 ok('/pos/init computes themeId with effectiveThemeId + the flag',
-  /const themeId = effectiveThemeId\(await themesEnabled\(req\.businessId\), branding\?\.theme_id\);/.test(pos));
+  // A544: the flag is read once into themesOn — the branch override (branchBranding) is served by the same answer.
+  /const themesOn = await themesEnabled\(req\.businessId\);\s*const themeId = effectiveThemeId\(themesOn, branding\?\.theme_id\);/.test(pos));
 ok('…served top-level, NOT inside `branding` (a business may have themes without a branding row)',
-  /\n    themeId,\n    receiptHeader:/.test(pos) && !/branding: branding \? \{[^}]*themeId/.test(pos));
+  /\n    themeId,\n(?:\s*\/\/[^\n]*\n)*\s*branchBranding,\n    receiptHeader:/.test(pos) && !/branding: branding \? \{[^}]*themeId/.test(pos));
 ok('…and theme_id is selected with the branding row', /select\('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id'\)/.test(pos));
 ok('a flag flip moves the catalogue version (tills see it within the 20-s check)',
   /latest\('business_branding', 'business_id', biz\),[\s\S]{0,300}latest\('feature_flags', 'business_id', biz\),/.test(pos));

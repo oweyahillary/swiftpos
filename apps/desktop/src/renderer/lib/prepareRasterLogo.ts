@@ -115,7 +115,7 @@ export async function prepareRasterLogo(file: File): Promise<PreparedLogo> {
 
 /** A312: the receipt-raster input — RGBA pixels of the logo scaled (never cropped) to fit 384×288, the 58 mm head.
  *  0.6.25: a small logo is now scaled UP to fill that box (it printed at its own tiny size), and the height is 288. A530:
- *  stored at this size; the compact receipt prints it at 120 dots unless 'receipt_full_logo'. Main thresholds these into `logo_receipt`;
+ *  stored at this size; the receipt (A538: classic or compact) prints it at 120 dots unless 'receipt_full_logo'. Main thresholds these into `logo_receipt`;
  *  thresholding is deliberately NOT done here so there is one rule (shared/printing raster.ts). */
 export const RECEIPT_MAX_W = 384;
 export const RECEIPT_MAX_H = 288;

@@ -24,7 +24,9 @@ const ok = (label, cond, detail = '') => { if (cond) { pass++; console.log(`PASS
 
 const biz  = r('apps/server/src/routes/business.ts');
 const form = r('apps/dashboard/src/pages/settings/BusinessProfileTab.tsx');
-const rcpt = r('apps/desktop/src/renderer/components/ReceiptView.tsx');
+// A542: the desktop's on-screen HTML receipt (ReceiptView.tsx) is deleted (imported by nothing since 0.6.29) — the CTL
+// line is pinned on the receipt that prints.
+const rcpt = r('shared/printing/src/render.ts');
 
 ok('server EDITABLE includes ctl_rate',
    /const EDITABLE = \[[^\]]*'ctl_rate'[^\]]*\]/.test(biz));
@@ -37,7 +39,7 @@ ok('Business Profile form exposes a ctl_rate field',
 ok('Business Profile save payload sends ctl_rate',
    /ctl_rate:\s*record\.ctl_rate/.test(form));
 ok('receipt already renders the CTL line (downstream present)',
-   /ctlRate\s*>\s*0\s*&&\s*row\(`CTL/.test(rcpt));
+   /business\.ctlRate\s*>\s*0\s*\|\|\s*tax\.ctl\s*!==\s*0\)\s*d\.line\(pair\(cols,\s*`CTL/.test(rcpt));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

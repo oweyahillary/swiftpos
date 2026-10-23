@@ -41,6 +41,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isWindowsTeardownPass, TEARDOWN_NOTE } from './lib/windows-teardown.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -88,6 +89,12 @@ async function runPool(dir, files, { timeoutMs = TIMEOUT_MS, concurrency = CONCU
       const file = files[idx++];
       const r = await runOne(dir, file, timeoutMs);
       const label = r.timedOut ? `TIMED OUT after ${Math.round(timeoutMs / 1000)}s` : summaryOf(r.out);
+      // A548 (A186): on Windows only, a file that printed its own all-passed summary and then died in libuv teardown
+      // (exit 127 / 0xC0000409) is a pass WITH a note. Anything else non-zero stays a failure.
+      if (r.status !== 0 && isWindowsTeardownPass(r)) {
+        console.log(`  ok   ${file.padEnd(34)} ${label}  (note: ${TEARDOWN_NOTE}; exit ${r.status})`);
+        continue;
+      }
       console.log(`  ${r.status === 0 ? 'ok  ' : 'FAIL'} ${file.padEnd(34)} ${label}`);
       if (r.status !== 0) failed.push(r);
     }
@@ -109,10 +116,21 @@ async function selfTest() {
   const hang = await runOne(tmp, 'test-migration-hang.mjs', 1500);
   fs.rmSync(tmp, { recursive: true, force: true });
 
+  // A548 (A186): the Windows teardown allowance — pure checks, so both platforms are proved on either.
+  const green = '29 passed, 0 failed\nAssertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c, line 94';
+  const td = (o) => isWindowsTeardownPass(o, 'win32');
   const checks = [
     ['a passing test is reported ok',            pass.status === 0 && !pass.timedOut],
     ['a failing (exit 1) test is reported FAIL',  fail.status === 1 && !fail.timedOut],
     ['a hanging test is KILLED and reported FAIL', hang.status === 1 && hang.timedOut === true],
+    ['win32: all-passed summary + exit 3221226505 is a teardown pass', td({ status: 3221226505, out: green })],
+    ['win32: all-passed summary + exit 127 is a teardown pass',        td({ status: 127, out: green })],
+    ['linux: the same crash stays a FAIL',          !isWindowsTeardownPass({ status: 3221226505, out: green }, 'linux')],
+    ['win32: exit 1 after an all-passed summary stays a FAIL', !td({ status: 1, out: green })],
+    ['win32: a crash after "28 passed, 1 failed" stays a FAIL', !td({ status: 127, out: '28 passed, 1 failed' })],
+    ['win32: a crash with no summary stays a FAIL', !td({ status: 3221226505, out: 'Assertion failed' })],
+    ['win32: a crash with a FAIL line stays a FAIL', !td({ status: 127, out: `FAIL x\n${green}` })],
+    ['win32: a timed-out run stays a FAIL',         !td({ status: 127, out: green, timedOut: true })],
   ];
   let ok = true;
   for (const [name, cond] of checks) { console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${name}`); if (!cond) ok = false; }

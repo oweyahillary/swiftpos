@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
 import { monoRasterFromRGBA, monoRasterToString } from '@swiftpos/printing';
 import { validateBrandingWrite } from './brandingGuard';
+import { branchBrandingFromWire, resolveBranchBranding, type BranchBranding } from './branchBranding';   // A544
 
 // Resolved lazily, NOT at import time.
 //
@@ -407,6 +408,19 @@ function initSchema(db: Database.Database) {
       amount        REAL NOT NULL,
       created_at    TEXT NOT NULL,
       sync_status   TEXT DEFAULT 'pending'
+    );
+
+    -- A552: the customers this till may sell to on account (pulled: GET /api/pos/credit-customers, or the branch server's
+    -- copy). credit_balance is the cloud's; the till adds its own sales on account the cloud had not taken when it was
+    -- read (pulled_at, this till's clock — creditSale.ts). Replaced on every pull.
+    CREATE TABLE IF NOT EXISTS credit_customers (
+      id             TEXT PRIMARY KEY,
+      name           TEXT NOT NULL,
+      phone          TEXT,
+      status         TEXT DEFAULT 'active',
+      credit_limit   REAL NOT NULL DEFAULT 0,
+      credit_balance REAL NOT NULL DEFAULT 0,
+      pulled_at      TEXT NOT NULL
     );
 
     -- ════════════════════════════════════════════════════════
@@ -822,7 +836,25 @@ function initSchema(db: Database.Database) {
   migrateColumns(db, 'categories', [
     // Drives kitchen ticket routing — see migrations/34_kitchen_categories.sql
     ['is_kitchen', 'INTEGER DEFAULT 0'],
+    // A537 (73): the menu it is under (Food, Soft drinks …; migration 155) — the sale screen's category panel. NULL = none.
+    ['menu_id', 'TEXT'],
   ]);
+  // A537 (73): menus — the business's menus (pos/init `menus`, GET /api/pos/changes table menus), the tabs at the top of
+  // the sale screen's category panel. Owner, 2026-10-20: "some restaurants have different menus — food menu,
+  // non-alcoholic drinks menu, alcoholic drinks menu, tea menu etc". Pulled, never pushed; replaced wholesale on a pull.
+  db.exec(`CREATE TABLE IF NOT EXISTS menus (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, sort_order INTEGER DEFAULT 0, active INTEGER DEFAULT 1,
+    color TEXT, icon TEXT, synced_at TEXT
+  )`);
+  // A578 (76): the menu's hours — days of the week and time windows as JSON text (shared/menuHours.ts; migration 165).
+  // NULL = always (every menu before 76, and an older cloud or branch server that sends none). Pulled, never pushed.
+  migrateColumns(db, 'menus', [['availability', 'TEXT']]);
+  // A544 (74): this till's branch's override of the business branding (pos/init `branchBranding`, GET /api/pos/changes
+  // table branch_branding; migration 156). Owner, 2026-10-21: "phase 2 branding — we need to do it before value add" …
+  // "yes start". Pulled, never pushed; only this till's own branch's row is kept. NULL column = the business's.
+  db.exec(`CREATE TABLE IF NOT EXISTS branch_branding (
+    branch_id TEXT PRIMARY KEY, theme_id TEXT, accent_hex TEXT, receipt_footer TEXT, synced_at TEXT
+  )`);
 
   // ── Branch replication: which terminal created this row? ──────────────────
   // orders, shifts and business_days already carry device_id. expenses and
@@ -1170,6 +1202,9 @@ function initSchema(db: Database.Database) {
     // A429 (69): the payment methods this branch takes — a JSON list of codes. Pulled (paymentMethodsEnabled), never
     // pushed. NULL = not told yet = the catalogue's defaults (shared/paymentCatalogue.ts).
     ['payment_methods_enabled', 'TEXT'],
+    // A577 (77): how the business's weighing scales print their labels — JSON (shared/scaleBarcode.ts). Pulled
+    // (scaleBarcodes), never pushed. NULL = not told yet = the default layout (21–29, item 5, price 5).
+    ['scale_barcodes', 'TEXT'],
   ]);
 
   // A445 (70): offers — the branch's offers, pulled with the menu (pos/init `offers`) and applied to the cart by the till's
@@ -1195,6 +1230,9 @@ function initSchema(db: Database.Database) {
   //     for a passing reason by an older cloud can be told from one refused for its data (requeueTransientConflicts);
   //   an index on sync_queue (status) — every pass and every badge read filters on it, and synced rows are now pruned.
   migrateColumns(db, 'sync_queue', [['drawer_wait_at', 'TEXT']]);
+  // A552 (75): when the sale's order reached the cloud — a charge synced before a credit list was read is in that list's
+  // balance; one synced later (or not yet) is added on top (creditSale.ts).
+  migrateColumns(db, 'customer_credit_transactions', [['synced_at', 'TEXT']]);
   migrateColumns(db, 'expenses', [['sync_error', 'TEXT']]);
   migrateColumns(db, 'float_transactions', [['sync_error', 'TEXT']]);
   migrateColumns(db, 'kitchen_voids', [['sync_error', 'TEXT']]);
@@ -1239,6 +1277,10 @@ function initSchema(db: Database.Database) {
     // 0.6.31 (62): the days the product is on the POS grid, a JSON array (0 = Sunday … 6 = Saturday). Pulled, never
     // pushed. NULL = every day. Off the grid on other days but still found by search and sold (shared/productDays.ts).
     ['show_days', 'TEXT'],
+    // A577 (77): how the item is sold — 'weight' = its quantity is kilograms (a scale label, the weight keypad) — and its
+    // unit ('kg', or 'g' for an item shown in grams). Pulled, never pushed. NULL = sold each (every till before 77).
+    ['sold_by', 'TEXT'],
+    ['unit_label', 'TEXT'],
   ]);
 }
 
@@ -1307,7 +1349,15 @@ function initSchema(db: Database.Database) {
 // 71 adds A448: local_changes (local only — a manager's change made on this till, queued for the cloud). REQUIRED moves.
 // 72 adds the till sync audit's local columns: sync_queue.drawer_wait_at, sync_error on expenses / float_transactions /
 // kitchen_voids, and an index on sync_queue (status). Local only. REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 72;
+// 73 adds A537: menus (pulled — the business's menus) and categories.menu_id (pulled; migration 155). REQUIRED moves.
+// 74 adds A544: branch_branding (pulled — this branch's override of the theme, brand colour and receipt footer; migration
+// 156). REQUIRED moves.
+// 75 adds A552: credit_customers (pulled — the customers this till sells to on account, their limit and balance) and
+// customer_credit_transactions.synced_at (local — when the sale's order reached the cloud). REQUIRED moves.
+// 76 adds A578: menus.availability (pulled — a menu's hours, days and time windows; migration 165). REQUIRED moves.
+// 77 adds A577: products.sold_by + products.unit_label (pulled — items sold by weight) and device_config.scale_barcodes
+// (pulled — the scale label layout). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 77;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {
@@ -1347,6 +1397,24 @@ export interface BrandingRow {
   /** A325: the effective action theme id from the cloud, or null (themes off → today's look). Resolved against the
    *  registry (themes.ts) by the screens, so an id from a newer cloud degrades to the default, never to nothing. */
   themeId: string | null;
+  /** A544: this till's branch's override, as pulled (null = none, or themes off). accentHex / themeId above stay the
+   *  BUSINESS's (the till's branding editor edits those); `effective` is what the screens wear. */
+  branch?: BranchBranding | null;
+  /** A544: resolved per field — the branch's override → the business's → the ZapTill default (branchBranding.ts). */
+  effective?: { themeId: string | null; accentHex: string | null };
+}
+
+/** A544: the override of THIS till's branch (device_config.branch_id), or null. Fail-soft (a database before 74 → null). */
+export function getBranchBranding(): BranchBranding | null {
+  try {
+    const row = getLocalDb().prepare(
+      `SELECT bb.branch_id, bb.theme_id, bb.accent_hex, bb.receipt_footer FROM branch_branding bb
+         JOIN device_config dc ON dc.id = 1 AND dc.branch_id = bb.branch_id LIMIT 1`).get() as
+      { branch_id: string; theme_id: string | null; accent_hex: string | null; receipt_footer: string | null } | undefined;
+    return row ? branchBrandingFromWire({ branchId: row.branch_id, themeId: row.theme_id, accentHex: row.accent_hex, receiptFooter: row.receipt_footer }) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function getBranding(): BrandingRow | null {
@@ -1355,16 +1423,55 @@ export function getBranding(): BrandingRow | null {
       `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`).get() as
       { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null; theme_id: string | null } | undefined;
     if (!row) return null;
+    const branch = getBranchBranding();
+    const eff = resolveBranchBranding({ themeId: row.theme_id ?? null, accentHex: row.accent_hex ?? null }, branch);
     return {
       accentHex: row.accent_hex ?? null,
       logoPng: row.logo_png ?? null,
       logoReceipt: row.logo_receipt ?? null,
       receiptLogoEnabled: row.receipt_logo_enabled === 1,
       themeId: row.theme_id ?? null,
+      branch,
+      effective: { themeId: eff.themeId, accentHex: eff.accentHex },
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * A544: the receipt footer this till prints — its branch's own (when set, and the business has themes: the stored
+ * effective theme is not null) instead of the business's footer box text (`businessFooter`, device_config.receipt_footer).
+ * Only the owner's box: the closing block, TAX RECEIPT and the credit stay (shared/printing — client copy can add, never
+ * replace). Fail-soft: any read error → the business's.
+ */
+export function effectiveReceiptFooter(businessFooter: string | null | undefined): string {
+  try {
+    const t = getLocalDb().prepare(`SELECT theme_id FROM branding LIMIT 1`).get() as { theme_id: string | null } | undefined;
+    return resolveBranchBranding({ themeId: t?.theme_id ?? null, receiptFooter: businessFooter ?? '' }, getBranchBranding()).receiptFooter;
+  } catch {
+    return businessFooter ?? '';
+  }
+}
+
+/**
+ * A544: store the branch override a pull carried (pos/init `branchBranding`, a `branding` / `branch_branding` change, a
+ * branch server's bundle). undefined = not said (an older cloud or server) → keep; null = none (or themes off) → this
+ * till holds none; a row → this till's branch's only (any other branch's row is dropped). Remote wins; never pushed.
+ */
+export function applyPulledBranchBranding(v: unknown): void {
+  if (v === undefined) return;
+  const db = getLocalDb();
+  const clean = branchBrandingFromWire(v);
+  const own = (db.prepare(`SELECT branch_id FROM device_config WHERE id = 1`).get() as { branch_id?: string | null } | undefined)?.branch_id ?? null;
+  db.transaction(() => {
+    if (!clean || (own && clean.branchId !== own)) { db.prepare(`DELETE FROM branch_branding`).run(); return; }
+    db.prepare(`DELETE FROM branch_branding WHERE branch_id <> ?`).run(clean.branchId);
+    db.prepare(`INSERT INTO branch_branding (branch_id, theme_id, accent_hex, receipt_footer, synced_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(branch_id) DO UPDATE SET theme_id = excluded.theme_id, accent_hex = excluded.accent_hex,
+        receipt_footer = excluded.receipt_footer, synced_at = excluded.synced_at`)
+      .run(clean.branchId, clean.themeId, clean.accentHex, clean.receiptFooter, new Date().toISOString());
+  })();
 }
 
 /**

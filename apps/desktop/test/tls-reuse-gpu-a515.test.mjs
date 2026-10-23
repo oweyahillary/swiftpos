@@ -12,6 +12,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -31,7 +32,7 @@ ok('A515: identity and certificate refusals come BEFORE the retry (never retried
   const r = t.indexOf('if (!retried && (req as any).reusedSocket');
   assert.ok(i > 0 && r > i, `identity check at ${i}, retry at ${r}`);
 });
-const h = src('src/main/ipcHandlers.ts');
+const h = ipcHandlersSource();
 ok('A516: the graphics mode is read and set only with a technician session, as auto / on / off', () => {
   assert.match(h, /handle\('tech:getGpuMode'[\s\S]{0,120}if \(!getActiveSession\(\)\) throw/);
   assert.match(h, /handle\('tech:setGpuMode'[\s\S]{0,260}if \(!getActiveSession\(\)\) throw[\s\S]{0,200}mode !== 'auto' && mode !== 'on' && mode !== 'off'/);

@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { ipcHandlersSource } from './lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require_ = createRequire(path.join(ROOT, 'package.json'));
@@ -74,7 +75,7 @@ console.log('\n0. Harness matches techService.ts');
   ok('same row cap', src.includes('MAX_ROWS = 500'));
   ok('connection opened READONLY', src.includes('{ readonly: true, fileMustExist: true }'));
   ok('statement allowlist matches', src.includes('^(select|with|explain)\\b'));
-  const ipc = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
+  const ipc = ipcHandlersSource();
   ok('IPC gated on an active tech session in MAIN',
      /tech:query[\s\S]{0,200}getActiveSession\(\)\) return \{ ok: false/.test(ipc));
   ok('query audited BEFORE it runs',
@@ -136,7 +137,7 @@ console.log('\n3. The console is actually useful');
 // ── 4. The wipes are gated and audited ───────────────────────────────────────
 console.log('\n4. Wipes require a tech session and leave a record');
 {
-  const ipc = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
+  const ipc = ipcHandlersSource();
   ok('config:clear refuses without a session',
      /config:clear[\s\S]{0,900}getActiveSession\(\)\) \{\s*throw/.test(ipc));
   ok('config:clear is audited', /config:clear[\s\S]{0,1200}logTechAction\('device.config_clear'/.test(ipc));

@@ -23,7 +23,22 @@ export interface Category {
   sort_order: number;
   status: 'active' | 'inactive';
   is_kitchen?: boolean;   // A252: routing fallback when a category has no station config
+  menu_id?: string | null;   // A537: the menu it is under (Food, Soft drinks …); null = none
   created_at: string;
+}
+
+/** A537: a menu of the business (Food, Soft drinks, Alcohol, Tea …) — one per category (categories.menu_id). */
+export interface Menu {
+  id: string;
+  name: string;
+  sort_order: number;
+  active: boolean;
+  color?: string | null;
+  icon?: string | null;
+  /** A578: the menu's hours (days of the week and time windows, lib/menuHours.ts); null / absent = always. */
+  availability?: { days: number[] | null; windows: Array<{ start: string; end: string }> } | null;
+  /** GET /api/menus only: how many categories it holds. */
+  category_count?: number;
 }
 
 export interface Product {

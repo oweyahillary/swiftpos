@@ -13,6 +13,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { assetDownloadUrl, assetFor, isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
+import { cleanUpdateState } from '../lib/updateState';   // A534
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -32,7 +33,34 @@ router.get('/status', async (req, res) => {
   const { version, error } = await approvedVersion(req.businessId);
   if (error) { sendError(res, error); return; }
   res.set('Cache-Control', 'no-store');
-  res.json({ approvedVersion: version, held: version === null });
+  // A534: reportsState — this cloud takes a till's update state (POST /state below); a till sends none without it.
+  res.json({ approvedVersion: version, held: version === null, reportsState: true });
+});
+
+// A534 (owner, 2026-10-20: "add all of them since effort is small"): a till's update state — downloading, downloaded and
+// waiting to be closed, failed and why — for the admin portal's Desktop updates card ("why isn't this till updating?").
+// A till's OWN session only, for itself (its id from its sign-in, never a header); its own business's row only. No
+// permission key (lib/tillScope.ts: nothing a till's sign-in would be refused). Stored on user_devices (migration 154);
+// before 154 the cloud answers 501 and the till rests its reports for 6 hours. Read only by the admin portal.
+let stateColumnWarned = false;
+router.post('/state', async (req, res) => {
+  if (!req.isTill || !req.deviceId) { res.status(403).json({ error: "Only a till's own session reports its update state.", code: 'TILL_ONLY' }); return; }
+  const clean = cleanUpdateState(req.body);
+  if (!clean) { res.status(400).json({ error: 'not an update state', code: 'INVALID' }); return; }
+  const { error } = await supabase
+    .from('user_devices')
+    .update({ update_state: clean, update_state_at: new Date().toISOString() })
+    .eq('business_id', req.businessId)
+    .eq('device_id', req.deviceId);
+  if (error) {
+    if ((error as { code?: string }).code === '42703' || /update_state/.test(String(error.message ?? ''))) {
+      if (!stateColumnWarned) { stateColumnWarned = true; console.warn('[desktop-update] update state not stored — is migration 154 applied?', error.message); }
+      res.status(501).json({ error: 'not stored yet (migration 154)', code: 'NOT_READY' });
+      return;
+    }
+    sendError(res, error); return;
+  }
+  res.status(204).end();
 });
 
 // The generic feed for ONE version: /v/0.6.16/latest.yml, /v/0.6.16/SwiftPOS-0.6.16-x64.exe (+ .blockmap); from 0.6.32

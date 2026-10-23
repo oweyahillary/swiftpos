@@ -118,8 +118,12 @@ await ok('an existing fuel attendant (any case and spaces) is kept; a change awa
   assert.deepEqual(await seeder.addTypeRoles(BZ, 'petrol_station'), []);
   assert.equal(mem.db.roles.length, 1);
   mem.db = { permissions: seedPerms(), roles: [{ id: 'r1', business_id: BZ, name: 'Fuel attendant' }], role_permissions: [] };
-  assert.deepEqual(await seeder.addTypeRoles(BZ, 'restaurant'), []);
-  assert.equal(mem.db.roles.length, 1, 'never removed on a change away');
+  // A580: a business that becomes a restaurant now gets the food-only built-in roles (Waiter, Kitchen, Kitchen Manager)
+  assert.deepEqual(await seeder.addTypeRoles(BZ, 'restaurant'), ['Waiter', 'Kitchen', 'Kitchen Manager']);
+  assert.ok(mem.db.roles.some((r) => r.name === 'Fuel attendant'), 'never removed on a change away');
+  mem.db = { permissions: seedPerms(), roles: [{ id: 'r1', business_id: BZ, name: 'Fuel attendant' }], role_permissions: [] };
+  assert.deepEqual(await seeder.addTypeRoles(BZ, 'minimart'), []);
+  assert.equal(mem.db.roles.length, 1, 'a change to a shop adds nothing, removes nothing');
   assert.deepEqual(seeder.typeRolesMissing('retail', []), []);
   assert.deepEqual(seeder.typeRolesMissing('Petrol_Station', ['Owner']).map((r) => r.name), ['Fuel attendant']);
 });

@@ -21,6 +21,7 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -244,7 +245,7 @@ console.log('\nThe logs\n');
 console.log('\nWired (source)\n');
 {
   const src = (p) => fs.readFileSync(path.join(here, '..', 'src', p), 'utf8');
-  const ipc = src('main/ipcHandlers.ts');
+  const ipc = ipcHandlersSource();
   ok('enrolment / rejoin sends the machine and opens the gate (a technician\'s action)',
     /enrol\/redeem`, \{[\s\S]{0,400}\.\.\.\(await identityHeaders\(\)/.test(ipc) && /resetRenewalGate\(rejoin \?/.test(ipc));
   ok('the sign-in source goes to auth.log (cloud, branch server, the till itself)',

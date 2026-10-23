@@ -14,6 +14,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
@@ -23,7 +24,7 @@ const ok = (name, fn) => { try { fn(); pass++; console.log(`PASS  ${name}`); } c
 
 const APP     = read('apps/desktop/src/renderer/App.tsx');
 const PRELOAD = read('apps/desktop/src/main/preload.ts');
-const IPC     = read('apps/desktop/src/main/ipcHandlers.ts');
+const IPC     = ipcHandlersSource();
 const POSAPI  = read('apps/desktop/src/renderer/lib/posApi.ts');
 const AUTH    = read('apps/server/src/routes/auth.ts');
 

@@ -78,14 +78,16 @@ await ok('cloud: create and edit validate show_days; the QR menu shows a product
   assert.match(q, /products:   menuProducts,/);
 });
 await ok('till and web POS grids: on the grid on its days, found by a search any day', () => {
-  assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /const matchDay    = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);\s*return p\.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;/);
-  assert.match(read('apps/dashboard/src/pages/pos/CashierScreen.tsx'), /const matchDay = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);\s*return p\.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;/);
+  // A563: the grid's filter also leaves out an item hidden for stock (matchStock) — the day rule is unchanged.
+  // A578: + the menu hours (matchHours) at the end — the day rule is unchanged.
+  assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /const matchDay    = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);[\s\S]{0,800}return p\.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock(?: && matchHours)?;/);   // A580: + the Later peek line (0,500 → 0,800)
+  assert.match(read('apps/dashboard/src/pages/pos/CashierScreen.tsx'), /const matchDay = onGrid\(\(p as any\)\.show_days, search\.trim\(\) !== ''\);[\s\S]{0,800}return p\.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock(?: && matchHours)?;/);
 });
 await ok('dashboard: the product form sets the days; the upload template documents the column', () => {
   const f = read('apps/dashboard/src/pages/products/ProductsPage.tsx');
   assert.match(f, /data-testid="show-days"/);
   assert.match(f, /show_days: cleanShowDays\(form\.show_days\) \?\? null,/);
-  assert.match(read('apps/dashboard/src/pages/products/MenuUpload.tsx'), /'status', 'show_days'\]/);
+  assert.match(read('apps/dashboard/src/pages/products/MenuUpload.tsx'), /'status', 'show_days', 'menu'\]/);   // A542: the optional menu column follows show_days
 });
 await ok('migration 113 and the schema index carry products.show_days', () => {
   assert.match(read('migrations/113_product_show_days.sql'), /ADD COLUMN IF NOT EXISTS show_days smallint\[\];/);

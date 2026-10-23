@@ -1,8 +1,10 @@
-PASS  kitchen-80     486 bytes  22 commands  17 lines  widest 48/48
-PASS  dispatch-80    549 bytes  20 commands  21 lines  widest 48/48
-PASS  receipt-80    1384 bytes  20 commands  34 lines  widest 48/48
-PASS  kitchen-58     418 bytes  22 commands  19 lines  widest 32/32
-PASS  receipt-58    1016 bytes  20 commands  34 lines  widest 32/32
+PASS  kitchen-80     476 bytes  19 commands  16 lines  widest 48/48
+PASS  dispatch-80    553 bytes  22 commands  19 lines  widest 48/48
+PASS  receipt-80    1799 bytes  33 commands  46 lines  widest 48/48
+PASS  kitchen-58     404 bytes  19 commands  16 lines  widest 32/32
+PASS  receipt-58    1335 bytes  33 commands  46 lines  widest 32/32
+PASS  kitchen-80-font-b   562 bytes  24 commands  16 lines  widest 64/64
+PASS  kitchen-58-font-b   463 bytes  24 commands  16 lines  widest 42/42
 
 Raw streams written to shared/printing/out
 Byte stream valid.

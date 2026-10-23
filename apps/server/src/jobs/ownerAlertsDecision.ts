@@ -18,6 +18,7 @@
  *   decideWeeklySend            Monday 08:00 EAT, once per week
  */
 import { businessDateEAT } from '../lib/businessDay';
+import { sendsHeartbeat } from '../lib/watchdogRules';   // A579
 
 // ── settings ─────────────────────────────────────────────────────────────────
 
@@ -248,6 +249,8 @@ export interface DeviceLite {
   retired_at?: string | null;
   last_seen_at?: string | null;
   last_sync_at?: string | null;
+  /** A579: a till from 1.0.20 sends an idle heartbeat (lib/watchdogRules.ts sendsHeartbeat). */
+  app_version?: string | null;
   session_lost_at?: string | null;
   /** A477 (migration 131): another computer seems to hold this till's data. */
   security_alert_at?: string | null;
@@ -273,9 +276,13 @@ const hoursSince = (now: Date, iso: string | null | undefined): number | null =>
 /**
  * Is the till's branch trading now? The branch has a drawer open in the cloud, or this till itself was seen after its
  * last sync within the hour (it is on and talking, but its sales are not arriving).
+ * A579: the second only for a till that sends the idle heartbeat (1.0.20+). An older till pushes only when it has drawer
+ * rows, so "on, and nothing pushed since" is what an idle till looks like — it is no sign of trade (owner, 2026-10-23:
+ * "maybe its just that no trade is taking place").
  */
 export function tillTrading(d: DeviceLite, branchesWithOpenShift: Set<string>, now: Date): boolean {
   if (d.branch_id && branchesWithOpenShift.has(d.branch_id)) return true;
+  if (!sendsHeartbeat(d)) return false;
   const seen = hoursSince(now, d.last_seen_at);
   const sync = d.last_sync_at ? Date.parse(d.last_sync_at) : 0;
   return seen !== null && seen <= 1 && Date.parse(d.last_seen_at as string) > sync;

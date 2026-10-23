@@ -16,13 +16,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (p) => fs.readFileSync(path.join(here, '..', 'src', p), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } else { console.log(`  FAIL ${n}  ${d}`); fail++; } };
 
-const ipc = src('main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 const pin = src('renderer/pages/PinPage.tsx');
 const mgr = src('renderer/pages/ManagerPage.tsx');
 const app = src('renderer/App.tsx');

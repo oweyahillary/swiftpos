@@ -30,8 +30,8 @@
  * FEATURES
  * ────────
  *  • EAN-13 / Code128 barcode scanner listener (keystroke timing < 80 ms)
- *  • EAN-13 weighed-item decoder (digit[0] === '2' → PLU + grams)
- *  • Weight confirmation modal with manual override
+ *  • A577: weighing-scale labels (lib/scaleBarcode.ts — prefixes 21–29 as the business set its scales up, the item's scale
+ *    code and its price or weight inside; a 20 code is never one) and the weight of an item sold by weight typed on a tap
  *  • Product-not-found modal: search by name | quick-add | skip
  *  • PLU lookup via /api/products/plu/:code
  *  • Scan search bar (separate from catalogue filter)
@@ -47,13 +47,22 @@ import {
   useRef,
   useState,
   useCallback,
+  useMemo,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from 'react';
 import type { CartItem } from '../../lib/cart';
 import { cartSubtotal, extractTaxes } from '../../lib/cart';
 import { useBusiness } from '../../context/BusinessContext';
-import type { Product, Category } from '../../types';
+import type { Product, Category, Menu } from '../../types';
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar } from './cashier/CategoryPanel';   // A537; A566
+import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
 import { exactFirst } from '../../lib/paginate';   // A472
+import { parseScaleBarcode, findScaleProduct, scaleLine, weighedLine, isSoldByWeight, weightUnitOf, formatWeight, scaleSettingsOrDefault, type ScaleSettings, type WeighedLine } from '../../lib/scaleBarcode';   // A577
+import { businessTerms } from '../../lib/businessTerms';   // A573
+
+/** A573: this screen is the minimart's (CashierScreen opens it for a minimart only) — Departments, not Menus. */
+const WORDS = businessTerms('minimart');
 import { useGridWindow } from '../../hooks/useGridWindow';   // A472
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -64,11 +73,6 @@ interface ParkedOrder {
   itemCount: number;
 }
 
-interface WeighedItem {
-  pluCode: string;
-  weightKg: number;
-  rawBarcode: string;
-}
 
 type ScanResult =
   | { type: 'product'; product: Product }
@@ -79,9 +83,25 @@ type ScanResult =
 interface Props {
   products: Product[];
   categories: Category[];
+  /** A537: the business's menus (Food, Soft drinks …); [] = none — the plain category list. */
+  menus?: Menu[];
+  /** A578: the small hint on a department's tab ("until 11:00"), by menu id. */
+  menuHints?: Record<string, string>;
+  /** A578: the manager's "Show all" at the end of the department row (CashierScreen's — menu.edit only). */
+  menuBarTrailing?: ReactNode;
+  /** A578: why an item is not sold now (its department outside its hours), or null — off the catalogue; a scan is refused. */
+  outOfHours?: (p: Product) => string | null;
+  /** A580: the closed departments "Later" shows greyed on the bar (CashierScreen's — any staff member, view only). */
+  menuLater?: ReadonlySet<string>;
+  /** A580: with Later on, a closed department's item shows (greyed, never sold) in its own department — else false. */
+  peekLater?: (p: Product, scope: { menu: string; category: string; search: string }) => boolean;
   cart: CartItem[];
   currency: string;
   onAddToCart: (product: Product, qty?: number) => void;
+  /** A577: the scale label layout (pos/init); the default until it says. */
+  scaleSettings?: ScaleSettings;
+  /** A577: a weighed line (a scale label or the typed weight) — always a line of its own. */
+  onAddWeighed?: (product: Product, line: WeighedLine) => void;
   onUpdateQty: (productId: string, delta: number) => void;
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
@@ -93,26 +113,10 @@ interface Props {
   posApi: { get: <T>(url: string) => Promise<T> };
 }
 
-// ── EAN-13 decoder ────────────────────────────────────────────────────────────
-
-/**
- * Returns a WeighedItem if this is a scale-printed EAN-13 (starts with '2'),
- * otherwise null (treat as regular barcode lookup).
- *
- * Scale EAN-13 format:
- *   digit[0]   = '2'                  → weighed item flag
- *   digits[1–5] = PLU code (5 digits)
- *   digits[6–10] = weight in grams    (e.g. "00750" → 750 g → 0.750 kg)
- *   digit[11]  = check digit
- */
-function decodeEan13Weight(barcode: string): WeighedItem | null {
-  if (barcode.length !== 13) return null;
-  if (barcode[0] !== '2') return null;
-  const pluCode = barcode.slice(1, 6);          // digits 1–5
-  const grams   = parseInt(barcode.slice(6, 11), 10); // digits 6–10
-  if (isNaN(grams)) return null;
-  return { pluCode, weightKg: grams / 1000, rawBarcode: barcode };
-}
+// ── A577: scale labels ────────────────────────────────────────────────────────
+// The decoder that was here read ANY 13-digit code starting "2" as "2 + PLU 5 + grams 5" — so ZapTill's own in-store
+// codes (prefix 20, A571) were taken for weighed items. lib/scaleBarcode.ts reads only the business's scale prefixes
+// (21–29 by default), checks the check digits, and knows price labels from weight labels.
 
 // ── VAT_RATE ──────────────────────────────────────────────────────────────────
 
@@ -136,9 +140,17 @@ function clamp(n: number, min: number, max: number) {
 export default function MinimartPOS({
   products,
   categories,
+  menus = [],
+  menuHints,
+  menuBarTrailing,
+  outOfHours,
+  menuLater,
+  peekLater,
   cart,
   currency,
   onAddToCart,
+  scaleSettings,
+  onAddWeighed,
   onUpdateQty,
   onRemoveItem,
   onClearCart,
@@ -153,6 +165,25 @@ export default function MinimartPOS({
   const [showCatalogue, setShowCatalogue]     = useState(false);
   const [activeCategory, setActiveCategory]   = useState('all');
   const [catalogueSearch, setCatalogueSearch] = useState('');
+  // A537: the categories in a left panel behind ☰ (collapsed at start, pinned open if pinned), menus as tabs on top.
+  const catPanel = useCategoryPanel();
+  const activeMenu = catPanel.prefs.menu;
+  const menuCats = useMemo(() => categoriesForMenu(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  const menuFilterScope = useMemo(() => menuScope(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  useEffect(() => {
+    const keep = resolveCategory(activeCategory, menuCats);
+    if (keep !== activeCategory) setActiveCategory(keep);
+  }, [menuCats, activeCategory]);
+  const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c) => c.id === activeCategory)?.name ?? null);
+  const chosenMenuName = menuTabs(menus, categories).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
+  // A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
+  // categories used to appear so that cashiers can easily pick the menu"): with menus they are big tabs across the top
+  // of the grid (MenuBar) and the chip names only the chosen category; a tap on a menu shows its items (its category and
+  // any search start again). No menus: no bar, as before.
+  const menuBar = useMemo(() => menuBarTabs(menus, categories), [menus, categories]);
+  const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); setCatalogueSearch(''); };
+  const catChip = chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} ${WORDS.menu.toLowerCase()}` : null);
+  const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
   // ── Scan bar ───────────────────────────────────────────────────────────────
   const scanInputRef  = useRef<HTMLInputElement>(null);
@@ -161,7 +192,7 @@ export default function MinimartPOS({
   const [scanMessage, setScanMessage] = useState('');
 
   // ── Modals ─────────────────────────────────────────────────────────────────
-  const [weightModal, setWeightModal]               = useState<WeighedItem & { product: Product } | null>(null);
+  const [weightModal, setWeightModal]               = useState<{ product: Product } | null>(null);   // A577: the typed weight
   const [weightInput, setWeightInput]               = useState('');
   const [notFoundModal, setNotFoundModal]           = useState<{ barcode: string } | null>(null);
   const [notFoundSearch, setNotFoundSearch]         = useState('');
@@ -241,28 +272,26 @@ export default function MinimartPOS({
     setScanMessage('Looking up…');
 
     try {
-      // 1. Check for weighed EAN-13
-      const weighed = decodeEan13Weight(barcode);
-
-      if (weighed) {
-        // Look up by PLU code
-        let product: Product | undefined;
-        try {
-          product = await posApi.get<Product>(`/api/products/plu/${weighed.pluCode}`);
-        } catch {
-          product = products.find(p => (p as { plu_code?: string }).plu_code === weighed.pluCode);
-        }
-
-        if (product) {
-          setScanStatus('found');
-          setScanMessage(`${product.name} — ${weighed.weightKg.toFixed(3)} kg`);
-          setWeightModal({ ...weighed, product });
-          setWeightInput(weighed.weightKg.toFixed(3));
-        } else {
+      // 1. A577: a weighing scale's label — the item by its scale code, the line from the label's price or weight
+      const reading = parseScaleBarcode(barcode, scaleSettings ?? scaleSettingsOrDefault(null));
+      if (reading) {
+        const product = findScaleProduct(products, reading.itemCode);
+        const notNow = product && outOfHours ? outOfHours(product) : null;
+        if (!product) {
           setScanStatus('error');
-          setScanMessage(`PLU ${weighed.pluCode} not found`);
+          setScanMessage(`No item has the scale code ${reading.itemCode}`);
           setNotFoundModal({ barcode });
           setNotFoundSearch('');
+          setNotFoundResults([]);
+        } else if (notNow) {
+          setScanStatus('error');
+          setScanMessage(notNow);
+        } else {
+          const line = scaleLine(Number(product.base_price), reading);
+          onAddWeighed?.(product, line);
+          setScanStatus('found');
+          setScanMessage(`${product.name} — ${formatWeight(line.quantity, weightUnitOf(product as any))} · ${fmt(line.lineTotal, currency)}`);
+          setTimeout(() => { setScanStatus('idle'); setScanMessage(''); setScanValue(''); }, 2000);
         }
         return;
       }
@@ -272,7 +301,16 @@ export default function MinimartPOS({
         p => (p as { barcode?: string }).barcode === barcode
       );
 
-      if (product) {
+      // A578: its department is outside its hours (alcohol before licensed hours …) — refused, said why, not "not found"
+      const notNow = product && outOfHours ? outOfHours(product) : null;
+      if (product && notNow) {
+        setScanStatus('error');
+        setScanMessage(notNow);
+      } else if (product && isSoldByWeight(product as any)) {
+        pick(product);   // A577: its own barcode — the weight is typed
+        setScanStatus('found');
+        setScanMessage(product.name);
+      } else if (product) {
         onAddToCart(product);
         setScanStatus('found');
         setScanMessage(product.name);
@@ -293,7 +331,7 @@ export default function MinimartPOS({
       setScanStatus('error');
       setScanMessage('Lookup failed — check connection');
     }
-  }, [products, posApi, onAddToCart]);
+  }, [products, posApi, onAddToCart, outOfHours, scaleSettings, onAddWeighed, currency]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Scan bar submit ────────────────────────────────────────────────────────
   function onScanSubmit(e: React.FormEvent) {
@@ -301,13 +339,20 @@ export default function MinimartPOS({
     if (scanValue.trim().length > 0) processScan(scanValue.trim());
   }
 
+  // ── A577: a tap (or a search pick) on an item sold by weight asks for the weight; anything else is added ──
+  function pick(product: Product) {
+    if (outOfHours?.(product)) { onAddToCart(product); return; }   // A580: a greyed (Later) item — refused in A578's words, no weight asked
+    if (isSoldByWeight(product as any) && !(product as any).is_fuel) { setWeightModal({ product }); setWeightInput(''); return; }
+    onAddToCart(product);
+  }
+
   // ── Weight modal confirm ───────────────────────────────────────────────────
   function confirmWeight() {
     if (!weightModal) return;
     const kg = parseFloat(weightInput);
     if (isNaN(kg) || kg <= 0) return;
-    // Add to cart with qty = weight, unit price = price_per_kg (base_price)
-    onAddToCart(weightModal.product, kg);
+    // A577: qty = the weight in kg, unit price = the price per kg, the amount rounded to the cent (weighedLine)
+    onAddWeighed?.(weightModal.product, weighedLine(Number(weightModal.product.base_price), kg));
     setWeightModal(null);
     setScanStatus('found');
     setScanMessage(`${weightModal.product.name} ${kg.toFixed(3)} kg added`);
@@ -360,6 +405,9 @@ export default function MinimartPOS({
   // ── Filtered catalogue ─────────────────────────────────────────────────────
   const filteredProducts = products.filter(p => {
     if (activeCategory !== 'all' && p.category_id !== activeCategory) return false;
+    if (!inMenuScope(p, gridMenuScope(menuFilterScope, catalogueSearch))) return false;   // A537: a menu chosen = its categories only; A566: a search looks through every menu
+    // A578: its department outside its hours — off the catalogue and its search; A580: Later shows it greyed in its own department
+    if (outOfHours?.(p) && !peekLater?.(p, { menu: activeMenu, category: activeCategory, search: catalogueSearch })) return false;
     if (catalogueSearch) {
       const q = catalogueSearch.toLowerCase();
       return (
@@ -374,7 +422,7 @@ export default function MinimartPOS({
   // PLU is the first tile.
   const gridList = exactFirst(filteredProducts, catalogueSearch,
     (p) => [p.name, (p as { barcode?: string }).barcode, (p as { plu_code?: string }).plu_code]);
-  const grid = useGridWindow(gridList.length, `${activeCategory}|${catalogueSearch}`);
+  const grid = useGridWindow(gridList.length, `${activeMenu}|${activeCategory}|${catalogueSearch}`);
 
   // ── Cart totals ────────────────────────────────────────────────────────────
   const subtotal = cartSubtotal(cart);
@@ -492,31 +540,25 @@ export default function MinimartPOS({
         {/* ── Product catalogue (hidden by default) ──────────────────────── */}
         {showCatalogue && (
           <div style={s.catalogue}>
-            {/* Category tabs */}
-            <div style={s.catRow}>
-              {[{ id: 'all', name: 'All' }, ...categories].map(cat => (
-                <button
-                  key={cat.id}
-                  style={{
-                    ...s.catBtn,
-                    ...(activeCategory === cat.id ? s.catBtnActive : {}),
-                  }}
-                  onClick={() => setActiveCategory(cat.id)}
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Catalogue search */}
-            <div style={s.catSearchWrap}>
+            {/* Catalogue search — A537: ☰ at its left opens the category panel (it replaced the category tabs). */}
+            <div style={{ ...s.catSearchWrap, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <PanelToggle panel={catPanel} />
               <input
-                style={s.catSearchInput}
+                style={{ ...s.catSearchInput, flex: 1, minWidth: 0 }}
                 placeholder="Filter by name, barcode or PLU…"
                 value={catalogueSearch}
                 onChange={e => setCatalogueSearch(e.target.value)}
               />
+              <CategoryChip label={catChip} onClear={clearCatChip} />
             </div>
+            {/* A566: the menus as big tabs across the top of the catalogue (none when the business has no menus). */}
+            <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={WORDS.menus} hints={menuHints} trailing={menuBarTrailing} greyed={menuLater} />
+
+            <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
+            <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}
+              menusLabel={WORDS.menus} allMenusLabel={WORDS.allMenus}
+              activeMenu={activeMenu} activeCategory={activeCategory}
+              onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={isPhone} menuBar={menuBar.length > 0} />
 
             {/* Product grid */}
             <div ref={grid.rootRef} style={s.productGrid}>
@@ -524,12 +566,15 @@ export default function MinimartPOS({
                 <div style={s.emptyGrid}>No products match</div>
               ) : gridList.slice(0, grid.count).map(product => {
                 const inCart = cart.find(i => i.product.id === product.id);
+                const later = !!outOfHours?.(product);   // A580: shown only because Later is on — greyed, never sold
                 return (
                   <button
                     key={product.id}
                     className="press"
-                    style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}) }}
-                    onClick={() => onAddToCart(product)}
+                    data-later={later ? 'true' : undefined}
+                    aria-disabled={later || undefined}
+                    style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}), ...(later ? { opacity: 0.5, filter: 'grayscale(1)' } : {}) }}
+                    onClick={() => pick(product)}
                   >
                     {inCart && <span key={inCart.quantity} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{inCart.quantity}</span>}
                     <div style={s.productThumb}>
@@ -545,6 +590,7 @@ export default function MinimartPOS({
                 );
               })}
               {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden style={{ gridColumn: '1/-1', height: 1 }} />}
+            </div>
             </div>
           </div>
         )}
@@ -580,22 +626,22 @@ export default function MinimartPOS({
                 <div style={s.emptyCartText}>Scan a barcode or tap a product to begin</div>
               </div>
             ) : (
-              cart.map((item) => {
-                const isSoldByWeight = (item.product as { sold_by?: string }).sold_by === 'weight';
+              cart.map((item, idx) => {
+                const weighed = !!item.measureUnit;   // A577: a weighed line (its own line; the weight, not a stepper)
                 return (
-                  <div key={item.product.id} className="animate-line-in" style={s.cartRow}>
+                  <div key={weighed ? `${item.product.id}:${idx}` : item.product.id} className="animate-line-in" style={s.cartRow}>
                     <div style={s.cartRowInfo}>
                       <div style={s.cartItemName}>{item.product.name}</div>
                       <div style={s.cartItemMeta}>
                         {fmt(item.unitPrice, currency)}
-                        {isSoldByWeight ? ' / kg' : ' each'}
+                        {weighed ? ' / kg' : ' each'}
                       </div>
                     </div>
 
                     <div style={s.cartRowControls}>
                       {/* Qty controls — show as label for weighed items */}
-                      {isSoldByWeight ? (
-                        <span style={s.weightDisplay}>{item.quantity.toFixed(3)} kg</span>
+                      {weighed ? (
+                        <span style={s.weightDisplay} data-testid="weighed-qty">{formatWeight(item.quantity, item.measureUnit)}</span>
                       ) : (
                         <div style={s.qtyControl}>
                           <button
@@ -672,10 +718,7 @@ export default function MinimartPOS({
             <div style={s.modalIcon}>⚖️</div>
             <h2 style={s.modalTitle}>Confirm weight</h2>
             <p style={s.modalSub}>{weightModal.product.name}</p>
-            <p style={s.modalSub}>
-              PLU {weightModal.pluCode} &nbsp;·&nbsp;
-              Scanned: {weightModal.weightKg.toFixed(3)} kg
-            </p>
+            <p style={s.modalSub}>Read the scale and type the weight in kg (0.452 = 452 g)</p>
 
             <div style={s.modalFieldWrap}>
               <label style={s.modalFieldLabel}>Weight (kg)</label>
@@ -700,7 +743,7 @@ export default function MinimartPOS({
 
             {weightInput && !isNaN(parseFloat(weightInput)) && (
               <div style={s.modalTotal}>
-                Line total: {fmt(weightModal.product.base_price * parseFloat(weightInput), currency)}
+                Line total: {fmt(weighedLine(Number(weightModal.product.base_price), parseFloat(weightInput)).lineTotal, currency)}
               </div>
             )}
 
@@ -744,7 +787,7 @@ export default function MinimartPOS({
                       key={p.id}
                       style={s.notFoundResultRow}
                       onClick={() => {
-                        onAddToCart(p);
+                        pick(p);   // A577
                         setNotFoundModal(null);
                         setScanStatus('found');
                         setScanMessage(p.name);
@@ -1035,32 +1078,6 @@ const s: Record<string, React.CSSProperties> = {
     borderRight: '1px solid #1e293b',
     overflow: 'hidden',
     minWidth: 0,
-  },
-  catRow: {
-    display: 'flex',
-    gap: 6,
-    padding: '10px 14px 8px',
-    borderBottom: '1px solid #1e293b',
-    overflowX: 'auto',
-    flexShrink: 0,
-  },
-  catBtn: {
-    padding: '5px 12px',
-    background: '#1e293b',
-    border: '1px solid #334155',
-    borderRadius: 20,
-    color: '#64748b',
-    fontSize: 12,
-    fontWeight: 500,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-    flexShrink: 0,
-    fontFamily: "'DM Sans','Segoe UI',sans-serif",
-  },
-  catBtnActive: {
-    background: 'rgb(var(--act-fill, 59 130 246) / 0.15)',
-    borderColor: 'rgb(var(--act-fill, 59 130 246) / 0.4)',
-    color: 'rgb(var(--act-text, 96 165 250))',
   },
   catSearchWrap: {
     padding: '8px 14px',

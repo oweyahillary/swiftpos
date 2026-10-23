@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';   // A576: the watch list's links open a filtered tab
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { ReportsSkeleton } from './pos/cashier/POSSkeletons';
 import { api, downloadFile } from '../lib/api';
@@ -25,7 +26,7 @@ import { paginate } from '../lib/paginate';
 interface DateRange { from: string; to: string }
 /** A467: what the About sheet of a tab's Excel names. */
 interface ReportMeta { businessName: string; branchName: string }
-interface TabProps { range: DateRange; branchId: string; currency: string; meta: ReportMeta }
+interface TabProps { range: DateRange; branchId: string; currency: string; meta: ReportMeta; /** A576: one staff member (the watch list's link). */ staffId?: string }
 
 interface MasterReport {
   period: { from: string; to: string };
@@ -241,7 +242,7 @@ function DateRangeBar({ range, onChange, branches, branchId, onBranchChange }: {
 
 // ── Tab: Master / DSR ─────────────────────────────────────────────────────────
 
-function MasterTab({ range, branchId, currency, meta }: TabProps) {
+function MasterTab({ range, branchId, currency, meta, staffId }: TabProps) {
   const [data, setData]     = useState<MasterReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState('');
@@ -252,10 +253,11 @@ function MasterTab({ range, branchId, currency, meta }: TabProps) {
     try {
       const p = new URLSearchParams({ from: range.from, to: range.to });
       if (branchId) p.set('branch_id', branchId);
+      if (staffId) p.set('cashier_id', staffId);   // A576
       setData(await api.get<MasterReport>(`/api/reports/master?${p}`));
     } catch (e: any) { setError(e.message ?? 'Failed to load'); }
     finally { setLoading(false); }
-  }, [range.from, range.to, branchId]);
+  }, [range.from, range.to, branchId, staffId]);
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <Spinner />;
@@ -707,7 +709,7 @@ function ItemMixTab({ range, branchId, currency, meta }: TabProps) {
 
 // ── Tab: Voids & Exceptions ───────────────────────────────────────────────────
 
-function VoidsTab({ range, branchId, currency, meta }: TabProps) {
+function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
   const [data, setData]       = useState<VoidsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -718,10 +720,11 @@ function VoidsTab({ range, branchId, currency, meta }: TabProps) {
     try {
       const p = new URLSearchParams({ from: range.from, to: range.to });
       if (branchId) p.set('branch_id', branchId);
+      if (staffId) p.set('cashier_id', staffId);   // A576
       setData(await api.get<VoidsReport>(`/api/reports/voids?${p}`));
     } catch (e: any) { setError(e.message ?? 'Failed'); }
     finally { setLoading(false); }
-  }, [range.from, range.to, branchId]);
+  }, [range.from, range.to, branchId, staffId]);
   useEffect(() => { load(); }, [load]);
   // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
   const [voidPage, setVoidPage] = useState(1);
@@ -901,7 +904,7 @@ function VoidsTab({ range, branchId, currency, meta }: TabProps) {
 // ── Tab: Refunds ──────────────────────────────────────────────────────────────
 // A193: standalone refund log — sibling of Voids & Exceptions. A refund keeps the
 // sale 'completed', so it never shows in the Void Log; this is its audit surface.
-function RefundsTab({ range, branchId, currency, meta }: TabProps) {
+function RefundsTab({ range, branchId, currency, meta, staffId }: TabProps) {
   const [data, setData]       = useState<RefundsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -912,10 +915,11 @@ function RefundsTab({ range, branchId, currency, meta }: TabProps) {
     try {
       const p = new URLSearchParams({ from: range.from, to: range.to });
       if (branchId) p.set('branch_id', branchId);
+      if (staffId) p.set('cashier_id', staffId);   // A576
       setData(await api.get<RefundsReport>(`/api/reports/refunds?${p}`));
     } catch (e: any) { setError(e.message ?? 'Failed'); }
     finally { setLoading(false); }
-  }, [range.from, range.to, branchId]);
+  }, [range.from, range.to, branchId, staffId]);
   useEffect(() => { load(); }, [load]);
   // A475: the list in pages (25 / 50 / 100, remembered in this browser); a new search / filter / period → page 1, an edit keeps the page (clamped).
   const [refundPage, setRefundPage] = useState(1);
@@ -2523,16 +2527,23 @@ export default function ReportsPage() {
     return true;
   });
   const { branches, activeBranchId } = useBranch();
-  const [activeTab, setActiveTab] = useState('master');
-  const [range, setRange]         = useState<DateRange>({ from: today(), to: today() });
-  const [branchId, setBranchId]   = useState(activeBranchId ?? '');
+  // A576: ?tab=&from=&to=&branch=&staff= — a watch-list alert opens the list behind it (that day, branch and person).
+  const [params] = useSearchParams();
+  const isDay = (d: string | null): d is string => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  const [activeTab, setActiveTab] = useState(() => { const t = params.get('tab'); return t && TAB_LIST.some(x => x.id === t) ? t : 'master'; });
+  const [range, setRange]         = useState<DateRange>(() => {
+    const f = params.get('from'), t = params.get('to');
+    return isDay(f) && isDay(t) ? { from: f, to: t } : { from: today(), to: today() };
+  });
+  const [branchId, setBranchId]   = useState(params.get('branch') || activeBranchId || '');
+  const [staffId, setStaffId]     = useState(params.get('staff') || '');
   const currency = business?.currency ?? 'KES';
   // A467: the About sheet of every tab's Excel — the business, and the branch picked (blank = All branches).
   const meta: ReportMeta = {
     businessName: business?.name ?? '',
     branchName: branchId ? ((branches ?? []).find(b => b.id === branchId)?.name ?? '') : '',
   };
-  const tabProps: TabProps = { range, branchId, currency, meta };
+  const tabProps: TabProps = { range, branchId, currency, meta, staffId };
 
   return (
     <div className="p-4 sm:p-6 w-full">
@@ -2542,6 +2553,12 @@ export default function ReportsPage() {
       </div>
 
       <DateRangeBar range={range} onChange={setRange} branches={branches ?? []} branchId={branchId} onBranchChange={setBranchId} />
+      {staffId && (
+        <div className="mb-3 flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300" data-testid="reports-one-person">
+          <span>Showing one staff member's sales (from the Watch list).</span>
+          <button type="button" onClick={() => setStaffId('')} className="text-swift-text hover:underline">Show everyone</button>
+        </div>
+      )}
 
       {/* Tab bar */}
       <div className="flex gap-0 overflow-x-auto border-b border-gray-200 dark:border-gray-700 mb-5">

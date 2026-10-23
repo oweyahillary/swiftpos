@@ -11,7 +11,9 @@ import { branchScope } from "../middleware/rbac";
  * theirs, nor another branch's. The owner sees everything, as before (narrowed only by an explicit ?branch).
  */
 function forCaller(req: any, q: any): any {
-  if (req.isOwner) return q;
+  // A576: a loss-prevention alert's team copy (addressed to a partner or a manager) is theirs — the owner has their own
+  // copy (type loss_alert), so the owner's bell neither shows it twice nor marks a manager's copy as read.
+  if (req.isOwner) return q.neq("type", "loss_alert_team");
   const me = req.userId ? String(req.userId) : null;
   // A550: a partner of every branch reads every branch's (or the one picked) — still only rows addressed to nobody or to
   // them, never the owner's own.

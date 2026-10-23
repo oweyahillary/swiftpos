@@ -58,8 +58,9 @@ const roleNameKey = (name: string | null | undefined): string => String(name ?? 
 
 /**
  * A518: the built-in roles that belong to a business TYPE (Fuel attendant at petrol_station) and that a business moving to
- * that type does not have yet — by name, case and spaces aside (migration 142's rule). Roles of every type (Supervisor,
- * Waiter …) are not this function's: 142 gave them to every business and sign-up seeds them. Pure.
+ * that type does not have yet — by name, case and spaces aside (migration 142's rule). A580: Waiter, Kitchen and Kitchen
+ * Manager are now typed (restaurant / café only), so a business that becomes a restaurant gets them. Roles of every type (Supervisor,
+ * Storekeeper …) are not this function's: 142 gave them to every business and sign-up seeds them. Pure.
  */
 export function typeRolesMissing(businessType: string | null | undefined, existingNames: ReadonlyArray<string | null | undefined>) {
   const have = new Set(existingNames.map(roleNameKey));

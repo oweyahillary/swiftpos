@@ -1,0 +1,23 @@
+{
+  "name": "zaptill-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ZapTill marketing website (static, Astro)",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"test/**/*.test.mjs\"",
+    "check": "node scripts/check-dist.mjs",
+    "slips": "node scripts/render-slips.mjs",
+    "labels": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/render-labels.mjs"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "3.7.4",
+    "astro": "7.3.5"
+  }
+}

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
-import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
-import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_CLASSIC_KEYS } from "./lib/posFeatures";
+import { visibleVersions, RECENT_VERSIONS, tillUpdateLine } from "./desktopVersions";   // A534: tillUpdateLine
+import { POS_FEATURES, POS_FEATURE_KEYS, RECEIPT_OPTION_KEYS, KITCHEN_OPTION_KEYS, STAFF_OPTION_KEYS, RETIRED_POS_FEATURE_KEYS } from "./lib/posFeatures";   // A538; A543; A562
 // A491: the POS options, the cashier switches and till updates moved to the owner (A490) — shown here read-only.
 import { PER_ROLE_SWITCHES, OWNER_POS_OPTIONS_WHERE, PER_ROLE_WHERE, adminSwitches, ownerSetsMessage } from "./ownerSettings";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
@@ -15,6 +15,9 @@ import SignInCodeCard from "./SignInCodeCard";   // A391
 import TestDataCard from "./TestDataCard";   // A396
 import SupportLogsCard from "./SupportLogsCard";   // A519
 import TillsDaysCard from "./TillsDaysCard";   // A523
+import DownloadZapTill from "./DownloadZapTill";   // A570: the installer, through our own server
+import { webPortalTile, planTile, trialBillingLine, unpaidTrial, planTone, expiryText } from "./cloudPlan";   // A569; A581 expiryText
+import CloudPlanCard from "./CloudPlanCard";   // A581: the cloud payment plan
 import AdminPager, { usePageSize } from "./AdminPager";   // A475
 import { paginate } from "./lib/paginate";
 
@@ -115,6 +118,9 @@ function timeAgo(iso) {
   if (d < 604800) return `${Math.floor(d/86400)}d ago`;
   return new Date(iso).toLocaleDateString("en-KE");
 }
+
+// A569: the colours of the cloud plan words (cloudPlan.ts).
+const TONE = { ok: "#34e5a0", warn: "#f59e0b", bad: C.danger, muted: C.muted };
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -383,6 +389,7 @@ const NAV_GROUPS = [
   { title: "Money & support", items: [
     { id: "billing", icon: "◉", label: "Billing" },
     { id: "tech",    icon: "⌘", label: "Tech access" },
+    { id: "download", icon: "⤓", label: "Download ZapTill" },   // A570
   ] },
   { title: "System", items: [
     { id: "team",       icon: "◎", label: "Team", superOnly: true },
@@ -652,12 +659,13 @@ function ClientsPage({ req, onSelectClient }) {
   const [search, setSearch]   = useState("");
   const [status, setStatus]   = useState("");
   const [type, setType]       = useState("");
+  const [expiry, setExpiry]   = useState("");   // A581: "" | "expiring" | "lapsed"
   const [loading, setLoading] = useState(false);
   // A475 (owner, 2026-10-14: "proceed and build"): every client reachable, a page at a time — the list asked for the first
   // 50 only, so client 51 on could be found only by search. The server pages (limit / offset); the pager drives it.
   const [page, setPage]       = useState(1);
   const [pageSize, setPageSize] = usePageSize("swiftpos.admin.pageSize.clients");
-  useEffect(() => { setPage(1); }, [search, status, type, pageSize]);
+  useEffect(() => { setPage(1); }, [search, status, type, expiry, pageSize]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -666,11 +674,12 @@ function ClientsPage({ req, onSelectClient }) {
       if (search) params.set("search", search);
       if (status) params.set("status", status);
       if (type)   params.set("type", type);
+      if (expiry) params.set("expiry", expiry);
       const data = await req("GET", `/clients?${params}`);
       setClients(data.clients); setTotal(data.total);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
-  }, [search, status, type, page, pageSize]);
+  }, [search, status, type, expiry, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
   const pages = Math.max(1, Math.ceil(total / pageSize));
@@ -698,16 +707,22 @@ function ClientsPage({ req, onSelectClient }) {
           <option value="">All types</option>
           {Object.entries(TYPE_META).map(([v, m]) => <option key={v} value={v}>{m.label}</option>)}
         </select>
+        {/* A581: the clients whose cloud plan is near its paid-until, or past it */}
+        <select data-testid="client-expiry-filter" style={{ ...S.input, width: "auto" }} value={expiry} onChange={e => setExpiry(e.target.value)}>
+          <option value="">Any cloud expiry</option>
+          <option value="expiring">Expiring (14 days)</option>
+          <option value="lapsed">Lapsed</option>
+        </select>
       </div>
 
       <div style={S.card}>
         <div className="sp-table-wrap"><table style={S.table}>
           <thead>
-            <tr>{["Client","Type","Status","Currency","Phone","Joined",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+            <tr>{["Client","Type","Status","Plan","Cloud expiry","Currency","Phone","Joined",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ ...S.td, textAlign: "center", color: C.muted, padding: 40 }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ ...S.td, textAlign: "center", color: C.muted, padding: 40 }}>Loading…</td></tr>
             ) : clients.map(b => (
               <tr key={b.id} style={{ cursor: "pointer" }} onClick={() => onSelectClient(b)}>
                 <td style={S.td}>
@@ -716,6 +731,10 @@ function ClientsPage({ req, onSelectClient }) {
                 </td>
                 <td style={S.td}><TypeIcon type={b.type} size={16} style={{ marginRight: 4, verticalAlign: "middle" }} /> <span style={{ fontSize: 12, color: TYPE_META[b.type]?.color }}>{TYPE_META[b.type]?.label}</span></td>
                 <td style={S.td}><StatusBadge status={b.status} />{isPurgeDue(b) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 20, padding: "2px 7px" }}>purge-due</span>}</td>
+                {/* A569: Desktop / Cloud trial / Cloud trial ended / Cloud / No licence yet */}
+                <td data-testid="client-plan" style={{ ...S.td, fontSize: 12, color: TONE[planTone(b.plan_label)] }}>{b.plan_label || "—"}</td>
+                {/* A581: "Expires in 5 days" / "Lapsed 3 days" / "Paid to …" for a client on the cloud plan */}
+                {(() => { const x = expiryText(b.cloud); return <td data-testid="client-expiry" style={{ ...S.td, fontSize: 12, color: x ? TONE[x.tone] : C.muted, whiteSpace: "nowrap" }}>{x ? x.text : "—"}</td>; })()}
                 <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{b.currency}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{b.phone || "—"}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(b.created_at)}</td>
@@ -732,7 +751,7 @@ function ClientsPage({ req, onSelectClient }) {
 }
 
 // ─── CLIENT DETAIL ────────────────────────────────────────────────────────────
-function ClientDetailPage({ client, req, onBack, isSuper = false }) {
+function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false }) {
   const [tab, setTab]     = useState("overview");
   const [detail, setDetail] = useState(null);
   const [features, setFeatures] = useState([]);
@@ -865,6 +884,10 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
   // A325: client branding Phase 2 — curated action themes (premium; off by default). While off, the client's
   // tills keep today's look and the web hides the theme picker. Price not decided: no invoice is raised here.
   const hasThemes = features.find(f => f.key === 'themes')?.enabled === true;
+  // A549: Analytics v1 — the web dashboard's Analytics page (menu engineering, heatmap, money leaks, credit ageing,
+  // insights). Premium; off by default. While off the page shows "part of ZapTill Premium" and the cloud refuses
+  // /api/analytics (ANALYTICS_OFF). Price not decided: no invoice is raised here.
+  const hasAnalytics = features.find(f => f.key === 'analytics')?.enabled === true;
 
   // A147: set businesses.web_access_expires_at — the date the renewal ladder is
   // measured against (distinct from the legacy web_hosting on/off boolean above).
@@ -893,10 +916,18 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     finally { setSavingDesktop(false); }
   }
 
-  async function toggleWebHosting(enable) {
-    const confirmMsg = enable
+  // A569: the client's detail again (the cloud trial and the plan in words change with web access and licences).
+  async function reloadDetail() {
+    try {
+      const [d2, f2] = await Promise.all([req("GET", `/clients/${client.id}`), req("GET", `/clients/${client.id}/features`)]);
+      setDetail(d2); setFeatures(f2);
+    } catch { /* the page keeps what it shows */ }
+  }
+
+  async function toggleWebHosting(enable, confirmOverride = null) {
+    const confirmMsg = confirmOverride ?? (enable
       ? 'Enable web portal access? This will allow the client to log into the dashboard. Ensure payment of KES 10,000 has been received.'
-      : 'Disable web portal access? The client will be locked out of the dashboard immediately.';
+      : 'Disable web portal access? The client will be locked out of the dashboard immediately.');
     if (!(await askConfirm(confirmMsg))) return;
 
     try {
@@ -922,7 +953,10 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
             currency:    'KES',
           });
         } catch(e) { /* Invoice creation is non-fatal */ }
+        // A569: a cloud trial converted to paid — web access now runs a year; the invoices list shows the new one.
+        req("GET", `/clients/${client.id}/billing`).then(setInvoices).catch(() => {});
       }
+      await reloadDetail();
     } catch(e) { setError(e.message); }
   }
 
@@ -944,6 +978,24 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
     } catch(e) { setError(e.message); }
   }
 
+  async function toggleAnalytics(enable) {
+    const msg = enable
+      ? 'Enable Analytics? The owner (and managers with the sales report) see the Analytics page on the web dashboard at once.'
+      : 'Disable Analytics? The Analytics page shows "part of ZapTill Premium" again at once.';
+    if (!(await askConfirm(msg))) return;
+    try {
+      await req("PATCH", `/clients/${client.id}/features/analytics`, {
+        enabled: enable,
+        notes:   enable ? 'Analytics enabled (A549, premium)' : 'Analytics disabled',
+      });
+      setFeatures(prev => {
+        const existing = prev.find(f => f.key === 'analytics');
+        if (existing) return prev.map(f => f.key === 'analytics' ? { ...f, enabled: enable } : f);
+        return [...prev, { key: 'analytics', enabled: enable }];
+      });
+    } catch(e) { setError(e.message); }
+  }
+
   async function toggleBranchLicence(branch, licensed) {
     // Revoking is destructive (blocks the desktop app) — confirm first.
     if (!licensed && !(await askConfirm(`Revoke the desktop licence for "${branch.name}"? The desktop app on this branch will be blocked on its next sync.`))) return;
@@ -953,7 +1005,7 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
 
     setLicencingBranch(branch.id);
     try {
-      await req("POST", `/clients/${client.id}/branches/${branch.id}/licence`, {
+      const r = await req("POST", `/clients/${client.id}/branches/${branch.id}/licence`, {
         licensed,
         invoice_amount: price ? parseInt(price as string) : null,
         invoice_ref:    ref || null,
@@ -963,6 +1015,11 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           ? { ...b, desktop_licensed: licensed, desktop_licensed_at: licensed ? new Date().toISOString() : null }
           : b
       ));
+      // A569: the first desktop licence started the client's one-month cloud trial (no invoice).
+      await reloadDetail();
+      if (r?.cloud_trial?.ends_at) {
+        await askConfirm(`Licence activated. ${detail?.name ?? "The client"} also gets a one-month cloud trial — the web dashboard until ${fmtDate(r.cloud_trial.ends_at)}. No invoice was raised for it.`);
+      }
     } catch(e) { setError(e.message); }
     finally { setLicencingBranch(null); }
   }
@@ -1215,8 +1272,9 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           <button onClick={() => { setEditForm({ name: d.name ?? "", type: d.type ?? "", currency: d.currency ?? "" }); setEditing(true); }} style={{ ...S.btn, ...S.btnGhost }}>Edit details</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 16 }}>
-          {fact("Web portal", hasWebHosting ? "Active" : "Not enabled", hasWebHosting ? "#34e5a0" : C.danger, () => setTab("billing"))}
-          {fact("Plan", activeSub ? `${activeSub.plans?.name || "Active"} · to ${fmtDate(activeSub.expires_at)}` : "None", activeSub ? C.text : C.muted, () => setTab("billing"))}
+          {/* A569: a cloud trial shows its end; "Plan" reads Desktop / Cloud trial / Cloud, never "None" for a desktop client */}
+          {(() => { const w = webPortalTile(d.cloud_trial, hasWebHosting); return fact("Web portal", w.text, TONE[w.tone], () => setTab("billing")); })()}
+          {(() => { const p = planTile(activeSub, d.plan_label); return fact("Plan", p.text, p.tone === "ok" ? C.text : TONE[p.tone], () => setTab("billing")); })()}
           {fact("Branches", `${branches.length} · ${licensedCount} licensed`, C.text, () => setTab("branches"))}
           {fact("Tills", `${devices.length} enrolled`, C.text, () => setTab("branches"))}
           {fact("Desktop version", d.desktop_approved_version ? `v${d.desktop_approved_version}` : "Held", d.desktop_approved_version ? C.text : "#f59e0b", () => setTab("updates"))}
@@ -1499,7 +1557,23 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
         <>
           <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Web portal access</div>
-            {settingRow(
+            {/* A569: a cloud trial (started with the first desktop licence) — its end, and Convert to paid (A581: Record payment below) */}
+            {unpaidTrial(d.cloud_trial) ? settingRow(
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <IconGlobe size={18} color={d.cloud_trial.phase === "active" ? "#f59e0b" : C.danger} />
+                {trialBillingLine(d.cloud_trial).title}
+              </span>,
+              trialBillingLine(d.cloud_trial).text,
+              superOnly(<>
+                {/* A581: converting is recording the first payment on the cloud plan (amount and period editable) — no fixed KES 10,000 a year */}
+                <button onClick={() => document.querySelector('[data-testid="pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                  style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }} data-testid="trial-convert">Convert to paid</button>
+                {d.cloud_trial.phase === "active" && hasWebHosting && (
+                  <button onClick={() => toggleWebHosting(false, `End ${d.name}'s cloud trial now? The owner is locked out of the web dashboard at once. Tills are not affected.`)}
+                    style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>End trial</button>
+                )}
+              </>),
+              "cloud-trial") : settingRow(
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 {hasWebHosting ? <IconGlobe size={18} color="#22c55e" /> : <IconLock size={18} color={C.danger} />}
                 Web portal {hasWebHosting ? "active" : "not enabled"}
@@ -1512,9 +1586,9 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
               </button>),
               "web-access")}
             {/* A147: the date the renewal ladder is measured against */}
-            {settingRow("Web access expiry",
+            {settingRow("Web access expiry (the cloud plan's paid-until)",
               detail?.web_access_expires_at
-                ? `Renewal is measured against ${fmtDate(detail.web_access_expires_at)}.`
+                ? `Renewal is measured against ${fmtDate(detail.web_access_expires_at)}. Record payment (below) moves it on; set it here only to correct it.`
                 : "No expiry set — the renewal reminders have no date to measure against.",
               superOnly(<>
                 <input type="date" value={expiryDraft} onChange={e => setExpiryDraft(e.target.value)} style={{ ...S.input, width: "auto" }} />
@@ -1527,6 +1601,9 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
                 )}
               </>))}
           </div>
+
+          {/* A581: the cloud payment plan — period, amount, Record payment, the payments and the reminders */}
+          <CloudPlanCard clientId={client.id} clientName={d.name} req={req} isSuper={isSuper} onChanged={reloadDetail} />
 
           <div className="sp-two-col" style={{ alignItems: "start" }}>
             <div style={S.card}>
@@ -1620,12 +1697,18 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           {settingRow("App themes",
             hasThemes ? "The client picks an app theme on the Branding page; tills follow it." : "Tills keep the standard look. Turn on to let the client pick an app theme.",
             toggle(hasThemes, () => toggleThemes(!hasThemes), "App themes"))}
+          {/* A549: Analytics v1 (premium; off by default) — the web dashboard's Analytics page. */}
+          {settingRow("Analytics",
+            hasAnalytics ? "The Analytics page is open: menu engineering, sales heatmap, money leaks, credit ageing and insights." : "The Analytics page shows “part of ZapTill Premium”. Turn on when the client has paid for it.",
+            toggle(hasAnalytics, () => toggleAnalytics(!hasAnalytics), "Analytics"), "feature-analytics")}
           {/* 0.6.27: the POS switches — always listed (off until set), named and explained.
               A491: the owner sets them now (A490) — shown read-only with where the owner sets each. */}
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
           <div data-testid="pos-options-owner-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{OWNER_POS_OPTIONS_WHERE}.</div>
           {POS_FEATURES.map(pf => {
-            if ((RECEIPT_CLASSIC_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
+            if ((RECEIPT_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A530: switched below
+            if ((KITCHEN_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A543: switched below
+            if ((STAFF_OPTION_KEYS as readonly string[]).includes(pf.key)) return null;   // A562: switched below
             const on = features.some(f => f.key === pf.key && f.enabled);
             const perRole = PER_ROLE_SWITCHES[pf.key];
             return (
@@ -1645,11 +1728,12 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
               </div>
             );
           })}
-          {/* A530 (owner, 2026-10-19: "the switch settings … should be in the admin per client"): the compact receipt is the
-              standard; each switch puts one part of the old receipt back for this client. ZapTill sets them, here. */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Receipt (classic switches)</div>
-          <div data-testid="receipt-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Off = the compact receipt (the standard since 1.0.20). Thermal receipts on the tills and the web POS; kitchen tickets never change.</div>
-          {RECEIPT_CLASSIC_KEYS.map(key => {
+          {/* A530 (owner, 2026-10-19: "the switch settings … should be in the admin per client"); A538 (owner, 2026-10-21:
+              "go back to the old layout", "line spacing in the middle, about 3.75 mm"): the standard is the classic layout
+              at 3.75 mm with a small logo; each switch changes one part for this client. ZapTill sets them, here. */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Receipt options</div>
+          <div data-testid="receipt-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>All off = the standard receipt: the classic layout at 3.75 mm line spacing with a small logo. Thermal receipts on the tills and the web POS; kitchen tickets never change.</div>
+          {RECEIPT_OPTION_KEYS.map(key => {
             const rf = POS_FEATURES.find(x => x.key === key);
             const on = features.some(f => f.key === key && f.enabled);
             return (
@@ -1662,10 +1746,44 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
               </div>
             );
           })}
-          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").length > 0 && (
+          {/* A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "the printer's smaller
+              Font B so long orders fit on less paper"): kitchen tickets are Font B; this client's switch brings Font A back. */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Kitchen ticket options</div>
+          <div data-testid="kitchen-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Off = the standard kitchen ticket: the printer’s smaller Font B, 64 characters a line on 80 mm. Kitchen tickets on the tills and the web POS; dispatch (packing) tickets and receipts are always in the normal font.</div>
+          {KITCHEN_OPTION_KEYS.map(key => {
+            const kf = POS_FEATURES.find(x => x.key === key);
+            const on = features.some(f => f.key === key && f.enabled);
+            return (
+              <div key={key} data-testid={`kitchen-feature-${key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{kf?.label ?? key}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{kf?.description}</div>
+                </div>
+                {toggle(on, () => toggleFeature(key, !on), kf?.label ?? key)}
+              </div>
+            );
+          })}
+          {/* A562 (owner, 2026-10-22: "we remove approval pin and add it as a feature we can turn on or off in the admin
+              panel"): off = managers approve with their sign-in PIN and the staff form offers no approval PIN. */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Staff options</div>
+          {STAFF_OPTION_KEYS.map(key => {
+            const sf = POS_FEATURES.find(x => x.key === key);
+            const on = features.some(f => f.key === key && f.enabled);
+            return (
+              <div key={key} data-testid={`staff-feature-${key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{sf?.label ?? key}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{sf?.description}</div>
+                </div>
+                {toggle(on, () => toggleFeature(key, !on), sf?.label ?? key)}
+              </div>
+            );
+          })}
+          {/* A538: a retired switch's stored row (receipt_classic_layout) is read by nothing — not listed here either. */}
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "analytics" && f.key !== "web_hosting").length > 0 && (
             <>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
-              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").map(f => (
+              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && !(RETIRED_POS_FEATURE_KEYS as readonly string[]).includes(f.key) && f.key !== "themes" && f.key !== "analytics" && f.key !== "web_hosting").map(f => (
                 <div key={f.key} data-testid={`other-flag-${f.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, gap: 12 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>
@@ -1722,17 +1840,27 @@ function ClientDetailPage({ client, req, onBack, isSuper = false }) {
           {devices.length > 0 && (
             <div style={{ marginTop: 18 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Tills now</div>
-              {devices.map(dv => (
-                <div key={dv.id} style={{ display: "flex", gap: 10, fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
-                  <span style={{ flex: 1 }}>{dv.label} <span style={{ color: C.muted }}>· {dv.branch}</span></span>
-                  <span style={{ color: dv.appVersion && detail?.desktop_approved_version && dv.appVersion !== detail.desktop_approved_version ? "#f59e0b" : C.muted }}>{dv.appVersion ? `v${dv.appVersion}` : "—"}</span>
-                </div>
-              ))}
+              {devices.map(dv => {
+                // A534: why a till is (not) updating — its own report from 1.0.20, a hint from its version before that.
+                const u = tillUpdateLine(dv, detail?.desktop_approved_version);
+                const tone = { ok: "#22c55e", busy: "#38bdf8", warn: "#f59e0b", bad: C.danger, muted: C.muted }[u.tone];
+                return (
+                  <div key={dv.id} style={{ fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <span style={{ flex: 1 }}>{dv.label} <span style={{ color: C.muted }}>· {dv.branch}</span></span>
+                      <span style={{ color: dv.appVersion && detail?.desktop_approved_version && dv.appVersion !== detail.desktop_approved_version ? "#f59e0b" : C.muted }}>{dv.appVersion ? `v${dv.appVersion}` : "—"}</span>
+                    </div>
+                    <div data-testid="till-update-line" style={{ fontSize: 11, color: tone, marginTop: 2 }}>{u.text}</div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       )}
       {/* A519: the logs this client's tills sent to support (Tech page › Send logs to support) */}
+      {/* A570: the installer for this client's new till — the version approved for it first, through our own server */}
+      {tab === "updates" && <DownloadZapTill req={req} apiUrl={apiUrl} clientId={client.id} />}
       {tab === "updates" && <SupportLogsCard clientId={client.id} req={req} />}
       {/* A523: every till's open day and drawers — close them for the client (any admin: super admin or agent) */}
       {tab === "tills" && <TillsDaysCard clientId={client.id} req={req} />}
@@ -2526,7 +2654,7 @@ function NewClientPage({ req, onCreated }) {
     <div style={S.content}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>New Client</h1>
-        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0" }}>Create a new business account. A trial subscription is automatically applied.</p>
+        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0" }}>Create a new business account. The one-month cloud trial starts when the first desktop licence is activated.</p>
       </div>
 
       <div style={{ maxWidth: 680 }}>
@@ -2700,7 +2828,7 @@ export default function AdminPortal() {
 
   const pageEl = (() => {
     if (page === "client_detail" && selectedClient)
-      return <ClientDetailPage client={selectedClient} req={req} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} />;
+      return <ClientDetailPage client={selectedClient} req={req} apiUrl={apiUrl} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} />;
     if (page === "new_client") return <NewClientPage req={req} onCreated={(biz) => { setSelectedClient(biz); setPage("client_detail"); }} />;
     if (page === "clients")   return <ClientsPage req={req} onSelectClient={handleSelectClient} />;
     if (page === "billing")   return <BillingPage req={req} />;
@@ -2709,6 +2837,8 @@ export default function AdminPortal() {
     if (page === "account")   return <AccountPage req={req} apiUrl={apiUrl} setApiUrl={setApiUrl} />;
     if (page === "alerts")    return <AlertsPage req={req} isSuper={admin?.role === "super_admin"} />;
     if (page === "tech")      return <TechPage req={req} admin={admin} />;
+    // A570: the latest installer (a super admin can pick any version), streamed through the cloud.
+    if (page === "download")  return <div style={S.content}><DownloadZapTill req={req} apiUrl={apiUrl} /></div>;
     if (page === "migrations") return <MigrationsPage req={(p: string) => req("GET", p, undefined)} />;
     // A525: super admins only — the menu hides it from agents and the cloud refuses them.
     if (page === "system" && admin?.role === "super_admin") return <SystemPage req={req} />;

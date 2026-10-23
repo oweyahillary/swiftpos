@@ -92,7 +92,8 @@ function AppScreens() {
     const load = () => {
       posApi.branding.get().then((b) => {
         if (cancelled) return;
-        const t = computeThemeVars(b ? { themeId: b.themeId ?? null, accentHex: b.accentHex } : null);
+        // A544: what this till's branch wears — its override per field, else the business's (main resolves it).
+        const t = computeThemeVars(b ? { themeId: b.effective?.themeId ?? b.themeId ?? null, accentHex: b.effective ? b.effective.accentHex : b.accentHex } : null);
         applyThemeVars(t);
         setBrandStrip(t?.strip ?? null);
       }).catch(() => { /* keep what is applied; the defaults are today's look */ });

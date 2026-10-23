@@ -123,6 +123,7 @@ const call = async (method, p, token, body, headers = {}) => {
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   return { status: r.status, body: await r.json().catch(() => null) };
 };
+const approvalPinSwitch = () => mem.db.feature_flags.push({ business_id: B, key: 'approval_pin', enabled: true });   // A562
 const storedUntouched = () => assert.deepEqual(mem.db.business_settings.filter((s) => /supervisor/.test(s.key)).map((s) => s.key).sort(),
   ['supervisor_pin', 'supervisor_pin_hash'], 'the stored supervisor PIN rows are left as they are');
 
@@ -211,20 +212,20 @@ try {
   });
 
   console.log('\n5. The owner or a manager gives an approval PIN in Staff\n');
-  reset();
+  reset(); approvalPinSwitch();   // A562: a new approval PIN only while the admin portal's switch is on
   await ok('the owner gives an approval PIN to someone who may approve sales on account (customers.credit) — A514 widened it', async () => {
     const r = await call('PATCH', `/api/staff/${SUP}`, T.owner, { override_pin: '1357' });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const sue = mem.db.users.find((u) => u.id === SUP);
     assert.ok(sue.override_pin_hash && await bcrypt.compare('1357', sue.override_pin_hash));
   });
-  reset();
+  reset(); approvalPinSwitch();   // A562: a new approval PIN only while the admin portal's switch is on
   await ok('a manager (sales.void + staff.edit) gives one to an approver at their branch', async () => {
     const r = await call('PATCH', `/api/staff/${SUP}`, T.mgr, { override_pin: '1357' });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.ok(mem.db.users.find((u) => u.id === SUP).override_pin_hash);
   });
-  reset();
+  reset(); approvalPinSwitch();   // A562: a new approval PIN only while the admin portal's switch is on
   await ok('…never to a plain seller (OVERRIDE_PIN_NO_AUTHORITY), and a cashier gives none', async () => {
     let r = await call('PATCH', `/api/staff/${CASH}`, T.owner, { override_pin: '1357' });
     assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'OVERRIDE_PIN_NO_AUTHORITY');

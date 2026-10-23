@@ -64,6 +64,26 @@ for (const [m, p] of [['POST','/api/products'],['PATCH','/api/products/123'],['P
   ok(`PIN sign-in: ${m} ${p} is allowed (manager screens; the route checks the person's permission)`,
     () => assert.equal(denied('desktop', m, p, true), false));
 }
+// A564: Manager › Stock › Other branches — ask another branch for an item, accept and send / decline / cancel.
+for (const [m, p] of [['POST','/api/stock/requests'],['POST','/api/stock/requests/r1/accept'],['POST','/api/stock/requests/r1/decline'],
+                      ['POST','/api/stock/requests/r1/cancel']]) {
+  ok(`A564 PIN sign-in: ${m} ${p} is allowed; the device token: DENIED`, () => {
+    assert.equal(denied('desktop', m, p, true), false);
+    assert.equal(denied('desktop', m, p, false), true);
+  });
+}
+// A574: Manager › Stock › Labels — generate the missing barcodes before printing, save the barcode numbering.
+for (const [m, p] of [['POST','/api/products/barcodes/generate'],['PUT','/api/products/barcodes/settings']]) {
+  ok(`A574 PIN sign-in: ${m} ${p} is allowed; the device token: DENIED`, () => {
+    assert.equal(denied('desktop', m, p, true), false);
+    assert.equal(denied('desktop', m, p, false), true);
+  });
+}
+ok('A564: no other step on a request (a delete, an unknown step, a deeper path) — DENIED even for a PIN sign-in', () => {
+  assert.equal(denied('desktop','DELETE','/api/stock/requests/r1', true), true);
+  assert.equal(denied('desktop','POST','/api/stock/requests/r1/approve', true), true);
+  assert.equal(denied('desktop','POST','/api/stock/requests/r1/accept/x', true), true);
+});
 ok('PIN sign-in: everything else stays DENIED (branches, discounts, roles, deeper paths)', () => {
   assert.equal(denied('desktop','DELETE','/api/branches/2', true), true);
   assert.equal(denied('desktop','PATCH','/api/discounts/1', true), true);
@@ -84,7 +104,9 @@ ok('reads, the web and a token without a surface are never gated', () => {
 // takes the next method within 30 lines.
 const DIR = path.join(root, 'apps/desktop/src/main');
 const writes = [];
-for (const f of fs.readdirSync(DIR).filter((f) => f.endsWith('.ts'))) {
+// D10: and src/main/ipc/*.ts — the IPC handlers moved there from ipcHandlers.ts.
+const IPC_TS = fs.readdirSync(path.join(DIR, 'ipc')).filter((f) => f.endsWith('.ts')).map((f) => `ipc/${f}`);
+for (const f of [...fs.readdirSync(DIR).filter((f) => f.endsWith('.ts')), ...IPC_TS]) {
   const lines = fs.readFileSync(path.join(DIR, f), 'utf8').split('\n');
   lines.forEach((ln, i) => {
     if (/^\s*(\/\/|\*)/.test(ln)) return;

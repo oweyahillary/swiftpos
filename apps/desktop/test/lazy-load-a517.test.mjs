@@ -32,6 +32,7 @@ import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.join(here, '..');
@@ -155,7 +156,7 @@ console.log('\n2. The manager screens fetched in the background — once the til
     && L.preloadAnswer({ settled: true, totalBytes: 8 * GB, freeBytes: 2 * GB }).ok === true);
   ok('bridged: idle:mayPreload (preload, schema, handler)', read('src/main/preload.ts').includes("mayPreload: ()                                  => ipcRenderer.invoke('idle:mayPreload'),")
     && read('src/main/ipcSchemas.ts').includes("'idle:mayPreload': NO_PAYLOAD,")
-    && read('src/main/ipcHandlers.ts').includes("handle('idle:mayPreload', async () => preloadAnswer({ settled: startupSettled(), totalBytes: os.totalmem(), freeBytes: os.freemem() }));"));
+    && ipcHandlersSource().includes("handle('idle:mayPreload', async () => preloadAnswer({ settled: startupSettled(), totalBytes: os.totalmem(), freeBytes: os.freemem() }));"));
 }
 
 // ── 3. Main: the start requires neither exceljs nor electron-updater ────────────────────────────────────────────────

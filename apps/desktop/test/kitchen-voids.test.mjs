@@ -24,6 +24,7 @@ import path from 'node:path';
 import Module from 'node:module';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main');
@@ -112,7 +113,7 @@ ok('a line sent before 0.6.28 (no ledger row) is voided and recorded, nothing le
 K.recordKitchenSend('T1-101', [line('c', 1)], { order_type: 'dine_in', table_number: '4' });
 ok('a sent dine-in order is open until paid', K.openKitchenOrders(shiftId).some((o) => o.order_number === 'T1-101' && o.table_number === '4'));
 ok('the sale marks its sent lines paid', K.markKitchenPaid('T1-101') === 1 && K.openKitchenOrders(shiftId).length === 0);
-ok('order:create calls it (source)', /const orderId = createLocalOrder\(orderPayload\);\s*markKitchenPaid\(orderPayload\?\.order_number\);/.test(src('main/ipcHandlers.ts')));
+ok('order:create calls it (source)', /const orderId = createLocalOrder\(orderPayload\);\s*markKitchenPaid\(orderPayload\?\.order_number\);/.test(ipcHandlersSource()));
 
 // ── The Z-report ─────────────────────────────────────────────────────────────
 const z = S.computeZReport(shiftId);
@@ -146,7 +147,7 @@ await E.syncPush();
 ok('a cloud that takes them: marked synced', pending() === 0, String(pending()));
 
 // ── The wiring (source) ──────────────────────────────────────────────────────
-const ipc = src('main/ipcHandlers.ts');
+const ipc = ipcHandlersSource();
 ok('with the switch a manager approves: signed in as themselves, or a manager\'s PIN',
   /if \(getPosFeatures\(\)\.kitchen_void_approval\) \{\s*const signedIn = signedInConfirmer\(\);\s*if \(!signedIn && !String\(p\.pin \?\? ''\)\.trim\(\)\) throw new Error\(/.test(ipc)
   && /approver = signedIn && !String\(p\.pin \?\? ''\)\.trim\(\) \? signedIn : await identifyConfirmer\(String\(p\.pin\)\);/.test(ipc));

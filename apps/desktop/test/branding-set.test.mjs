@@ -35,6 +35,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ipcHandlersSource } from '../../../scripts/lib/ipc-handler-files.mjs';   // D10: ipcHandlers.ts + ipc/*.ts
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist', 'main', 'brandingGuard.js');
@@ -175,7 +176,7 @@ if (sqlM && createM && sq) {
 }
 
 // ── A312: the print path gates on the toggle AND the raster ────────────────────────────────
-const ih = fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcHandlers.ts'), 'utf8');
+const ih = ipcHandlersSource();
 ok('A312: print config passes logoRaster via resolveReceiptLogo()', /logoRaster:\s*resolveReceiptLogo\(\)/.test(ih));
 const rr = /function resolveReceiptLogo\(\)[\s\S]*?\n\}/.exec(ih)?.[0] ?? '';
 ok('A312: resolveReceiptLogo requires the toggle ON', /!b\.receiptLogoEnabled/.test(rr));

@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBusiness } from '../../context/BusinessContext';
@@ -101,6 +102,23 @@ export default function StockTransfersPage() {
   }, [activeBranchId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // A564: opened from Analytics' "Start a transfer →" (A565: ?from=&to=&products=) — the new transfer opens with the two
+  // branches and the items filled in and the quantities LEFT BLANK (the owner's call). Once, after the lists load.
+  const [params] = useSearchParams();
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (prefilled.current || loading) return;
+    const from = params.get('from') ?? '', to = params.get('to') ?? '';
+    if (!from || !to || from === to) return;
+    prefilled.current = true;
+    const known = new Set(products.map(p => p.id));
+    const picked = (params.get('products') ?? '').split(',').filter(id => known.has(id)).slice(0, 20);
+    setForm({ from_branch_id: branches.some(b => b.id === from) ? from : '', to_branch_id: branches.some(b => b.id === to) ? to : '', notes: '' });
+    setLines(picked.length ? picked.map(id => ({ product_id: id, quantity: '' })) : [{ product_id: '', quantity: '' }]);
+    setCreateError('');
+    setShowCreate(true);
+  }, [loading, params, products, branches]);
 
   // Advance a transfer along its state machine (pending → in_transit → received,
   // or → cancelled). The server owns the allowed transitions and the stock

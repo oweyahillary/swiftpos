@@ -1,0 +1,6 @@
+---
+// The secondary call to action: "Book a visit" is explained on the Contact page.
+interface Props { label?: string }
+const { label = 'Book a visit' } = Astro.props;
+---
+<a class="btn btn--visit" href="/contact/#visit">{label}</a>

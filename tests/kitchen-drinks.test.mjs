@@ -8,7 +8,8 @@
  *
  *   node tests/kitchen-drinks.test.mjs
  *
- * MUTATION TO CONFIRM BITE: either caller back to `stationIds: lineStationIds` → its pin fails.
+ * MUTATION TO CONFIRM BITE: either caller back to `stationIds: lineStationIds` → its pin fails. A559: the bundle rebuilt with
+ * the modifier on ids.dispatch only → "the committed web bundle prints an extra on the KITCHEN ticket" fails.
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -41,6 +42,24 @@ ok('the committed web bundle ships the rule: a soda loses the kitchen, BBQ-sauce
   // A358: a standalone sauce leaves the kitchen on the web too.
   assert.deepEqual(E.stripKitchenIfExcluded('Honey Mustard Sauce', ['k', 'd'], ids, terms), ['d']);
   assert.deepEqual(E.stripKitchenIfExcluded('Chocolate Shake', ['k', 'd'], ids, E.kitchenExclusionTerms(['shake'])), ['d']);
+});
+ok('A559: the committed web bundle prints an extra on the KITCHEN ticket ("+ Extra Cheese"), with the notes', () => {
+  // As printRouted builds a line: toUnits, then each unit and the line stripped by the exclusions.
+  const ids = { kitchen: ['k'], dispatch: ['d'] };
+  const routing = { byCategory: { food: ['k'] }, kitchenCategories: new Set() };
+  const terms = E.kitchenExclusionTerms([]);
+  const lineIds = E.stationsForCategory('food', ids, routing);
+  const routable = { product: { id: 'p', name: 'Wings', category_id: 'food' }, selectedModifiers: [{ name: 'Extra Cheese', price: 50 }] };
+  const units = E.toUnits(routable, ids, lineIds, routing).map((u) => ({ ...u, stationIds: E.stripKitchenIfExcluded(u.name, u.stationIds, ids, terms) }));
+  assert.deepEqual(units[0].stationIds, ['k', 'd']);
+  const order = { billNumber: 'W-1', orderType: 'takeaway', cashierName: 'Cate', soldAt: new Date().toISOString(), payments: [], changeGiven: 0,
+    total: 60000, kotCount: 0, note: 'Allergy: nuts',
+    lines: [{ name: 'Wings', quantity: 1, unitPrice: 60000, lineTotal: 60000, stationIds: E.stripKitchenIfExcluded('Wings', lineIds, ids, terms), units, note: 'Well done' }] };
+  const biz = { name: 'B FOODS', currencyCode: 'KES', vatRate: 16, ctlRate: 0 };
+  const station = { id: 'k', type: 'kitchen', paperWidthMm: 80 };
+  assert.equal(E.stationHasContent(order, biz, station), true);
+  const text = Buffer.from(E.renderStationEscPos(order, biz, station)).toString('latin1');
+  for (const want of ['WINGS', '+ Extra Cheese', '** Well done', 'NOTE: Allergy: nuts', '1 items to cook']) assert.ok(text.includes(want), want);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -20,7 +20,8 @@
 
 export type TabKey =
   | 'overview' | 'orders' | 'items' | 'shift' | 'zreport' | 'expenses' | 'dayclose' | 'branchclose'
-  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers' | 'monthly';
+  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage' | 'transfers' | 'monthly'
+  | 'credit' | 'branchstock' | 'labels';
 
 export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 'settings' | 'stock';
 
@@ -43,6 +44,8 @@ export interface NavAccess {
   canShifts: boolean;
   /** A466 / A481: reports.monthly_pack or expenses.manage — the monthly pack (A455), from the cloud. */
   canMonthly?: boolean;
+  /** A545: customers.credit — Credit sales (every sale on account, confirmed or disputed by a manager). */
+  canCredit?: boolean;
   /** expenses.view or expenses.manage — Expenses. */
   canExpenses: boolean;
   /** shifts.close_day — Close Day (dayService mayCloseDay's rule). */
@@ -71,6 +74,12 @@ export interface NavAccess {
   online?: boolean;
   /** A197: inventory.transfer — send and receive stock between branches (online licence). */
   canTransfer?: boolean;
+  /** A564: inventory.view — Other branches: another branch's stock (and, with inventory.transfer, asking for it). */
+  canBranchStock?: boolean;
+  /** A564: requests from other branches waiting for this branch's answer — shown on the tab (none: the plain label). */
+  branchRequests?: number;
+  /** A571: menu.edit or inventory.view — Labels: barcode labels on any printer (online licence, as the other Stock pages). */
+  canLabels?: boolean;
 }
 
 /** Pages opened from inside a group's page, not tabs of their own. */
@@ -84,6 +93,7 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
       ...(a.isRestaurant && a.canItems ? [{ key: 'items' as TabKey, label: 'Item Mix' }] : []),   // restaurant only (A105)
       ...(a.canShifts ? [{ key: 'shift' as TabKey, label: 'Current shift' }, { key: 'zreport' as TabKey, label: 'Shift report' }] : []),
       ...(a.canMonthly ? [{ key: 'monthly' as TabKey, label: 'Monthly pack' }] : []),   // A466: the web's Monthly pack (A455)
+      ...(a.canCredit ? [{ key: 'credit' as TabKey, label: 'Credit sales' }] : []),   // A545: a manager confirms every sale on account
     ] },
     { key: 'expenses', label: 'Expenses', tabs: a.canExpenses ? [{ key: 'expenses', label: 'Expenses' }] : [] },   // 0.6.11
     // Close Day is the escape route for the trading-day gate — shifts.close_day.
@@ -106,9 +116,24 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
       ...(a.showStock ? [{ key: 'stock' as TabKey, label: 'Stock' }] : []),
       ...(a.online && a.canWaste ? [{ key: 'wastage' as TabKey, label: 'Wastage' }] : []),   // A414; A460: online licence
       ...(a.online && a.canTransfer ? [{ key: 'transfers' as TabKey, label: 'Transfers' }] : []),   // A197 (A460: online licence)
+      // A564: another branch's stock, and requests from other branches (online licence) — the count waiting on the tab.
+      ...(a.online && a.canBranchStock ? [{ key: 'branchstock' as TabKey,
+        label: a.branchRequests && a.branchRequests > 0 ? `Other branches (${a.branchRequests})` : 'Other branches' }] : []),
+      // A571: barcode labels — any label printer (driver, TSPL, ZPL) or the receipt printer (online licence).
+      ...(a.online && a.canLabels ? [{ key: 'labels' as TabKey, label: 'Labels' }] : []),
     ] },
   ];
   return groups.filter((g) => g.tabs.length > 0);
+}
+
+/**
+ * A573: the catalogue's name in the sidebar and on its tab — "Menu" at a restaurant or café, "Products" at a shop
+ * (shared/businessTerms.ts `catalogue`). Only the words change; the keys (and so groupOf, openGroup) stay 'menu'.
+ */
+export function relabelCatalogue(nav: NavGroup[], label: string): NavGroup[] {
+  return nav.map((g) => (g.key !== 'menu' ? g : {
+    ...g, label, tabs: g.tabs.map((t) => (t.key === 'menu' ? { ...t, label } : t)),
+  }));
 }
 
 /** The group a page belongs to (its sidebar item), or null when no visible group holds it. */

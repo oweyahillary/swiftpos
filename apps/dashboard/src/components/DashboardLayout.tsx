@@ -9,6 +9,8 @@ import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
 import { usePermissions } from '../context/PermissionsContext';   // A550
 import { relative } from '../lib/format';
+import CloudTrialNotice from './CloudTrialNotice';   // A569: the owner's notice in the trial's last 7 days
+import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '../lib/businessTerms';   // A573
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
 // One curated stroke path per nav concept, in place of the mixed emoji the web
@@ -106,11 +108,16 @@ function isGroup(e: NavEntry): e is NavGroup { return 'items' in e; }
 
 // Verticals that use restaurant/café features (table service, kitchen, recipes).
 // Items/groups tagged with `verticals` only show for those business types; an
-// untagged entry shows for every vertical.
-const FOOD_VERTICALS = ['restaurant', 'cafe'];
+// untagged entry shows for every vertical. A573: the list is lib/businessTerms.ts's (shared with the till).
+const FOOD_VERTICALS: string[] = [...FOOD_SERVICE_TYPES];
 
 const NAV: NavEntry[] = [
   { to: '/dashboard',          label: 'Overview',  icon: 'overview', end: true },
+  // A549 · A558: Analytics (premium — the admin portal's 'analytics' switch; off, the page says so), right below Overview:
+  // the owner's decisions page, not a finance tool.
+  { to: '/dashboard/analytics', label: 'Analytics', icon: 'summary' },
+  // A576: loss-prevention alerts — unusual voids, discounts, cash differences … for the owner and managers (never the till).
+  { to: '/dashboard/watch-list', label: 'Watch list', icon: 'warning' },
   { to: '/dashboard/pos',      label: 'POS',      icon: 'till' },
   // KDS moved out of Settings — it is a live operational screen, not a setting.
   { to: '/kds',                label: 'KDS',      icon: 'kds', verticals: FOOD_VERTICALS },
@@ -121,8 +128,12 @@ const NAV: NavEntry[] = [
   {
     label: 'Menu', icon: 'menu',
     items: [
+      // A537: menus (Food, Soft drinks, Alcohol, Tea …) above the categories — next to them.
+      { to: '/dashboard/menus',      label: 'Menus',      icon: 'menu' },
       { to: '/dashboard/categories', label: 'Categories', icon: 'categories' },
       { to: '/dashboard/products',   label: 'Products',   icon: 'products' },
+      // A571: barcode labels on any printer and any label size (in-store barcodes are generated on Products).
+      { to: '/dashboard/products/labels', label: 'Print labels', icon: 'products' },
       { to: '/dashboard/discounts',  label: 'Discounts',  icon: 'discounts' },
       // Payment methods moved to Settings › Business › Payments (it is tender
       // configuration, not catalogue).
@@ -138,6 +149,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/stock/purchase-orders', label: 'Purchase Orders', icon: 'purchase_orders' },
       { to: '/dashboard/stock/suppliers',       label: 'Suppliers',       icon: 'suppliers' },
       { to: '/dashboard/stock/transfers',       label: 'Transfers',       icon: 'transfers' },
+      // A564: another branch's stock, and the requests between branches (the count waiting for an answer).
+      { to: '/dashboard/stock/other-branches',  label: 'Other branches',  icon: 'transfers', badgeKey: 'branchRequests' },
       // A394: stock take — blind counts, reviewed before stock changes.
       { to: '/dashboard/stock/counts',          label: 'Stock Counts',    icon: 'counts' },
       // A399: wastage — spoiled, expired or damaged, with the reason and what it cost.
@@ -167,7 +180,7 @@ const NAV: NavEntry[] = [
     label: 'Customers', icon: 'customers',
     items: [
       { to: '/dashboard/customers', label: 'Customers', icon: 'customers' },
-      { to: '/dashboard/customers/credit', label: 'Credit Accounts', icon: 'credit' },
+      { to: '/dashboard/customers/credit', label: 'Credit Accounts', icon: 'credit', badgeKey: 'credit' },   // A545: sales to confirm
     ],
   },
   {
@@ -197,6 +210,7 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/reservations':          ['reservations.manage'],
   '/dashboard/categories':            ['products.view', 'menu.edit'],
   '/dashboard/products':              ['products.view', 'menu.edit'],
+  '/dashboard/products/labels':       ['products.view', 'menu.edit', 'inventory.view'],   // A571
   '/dashboard/discounts':             ['menu.offers'],
   '/dashboard/offers':                ['menu.offers'],
   '/dashboard/combos':                ['menu.edit'],
@@ -204,12 +218,15 @@ const NAV_KEYS: Record<string, string[]> = {
   '/dashboard/stock/purchase-orders': ['inventory.receive'],
   '/dashboard/stock/suppliers':       ['inventory.receive', 'payables.view', 'payables.manage'],
   '/dashboard/stock/transfers':       ['inventory.transfer'],
+  '/dashboard/stock/other-branches':  ['inventory.view', 'inventory.transfer'],   // A564
   '/dashboard/stock/counts':          ['inventory.count', 'inventory.adjust'],
   '/dashboard/stock/wastage':         ['inventory.waste', 'reports.inventory'],
   '/dashboard/stock/expiry':          ['inventory.view'],
   '/dashboard/orders':                ['orders.view_all'],
   '/dashboard/expenses':              ['expenses.view', 'expenses.manage'],
   '/dashboard/reports':               REPORT_KEYS,
+  '/dashboard/analytics':             ['reports.sales'],   // A558: the cloud's own gate for every /api/analytics route
+  '/dashboard/watch-list':            ['reports.voids'],   // A576: the cloud's own gate for /api/loss-alerts
   '/dashboard/shift-reports':         ['reports.shifts', 'shifts.confirm'],
   '/dashboard/turnover':              ['orders.view_all'],
   '/dashboard/open-drawers':          ['shifts.force_close', 'shifts.confirm'],
@@ -222,7 +239,7 @@ const NAV_KEYS: Record<string, string[]> = {
 };
 
 const TYPE_ICON: Record<string, string> = {
-  low_stock: 'warning', daily_summary: 'summary', default: 'bell',
+  low_stock: 'warning', daily_summary: 'summary', loss_alert: 'warning', loss_alert_team: 'warning', default: 'bell',
 };
 
 
@@ -294,7 +311,9 @@ export default function DashboardLayout() {
   const vertical = business?.type ?? '';
   const known = vertical !== '';
   const allowed = (v?: string[]) => !v || !known || v.includes(vertical);
-  const isFood = !known || FOOD_VERTICALS.includes(vertical);
+  // A573: the words (Menus / Departments / Groups, Catalogue, Stock …) and the food-service areas from ONE helper.
+  const words = businessTerms(vertical);
+  const isFood = foodAreas(vertical).kds;
 
   // Restaurant-friendly item relabels (food verticals only). Retail keeps the
   // generic terms (Products, Categories) that a minimart owner expects.
@@ -312,11 +331,13 @@ export default function DashboardLayout() {
   const hintFor = (to: string): string | undefined => {
     switch (to) {
       case '/dashboard/products':          return 'The items you sell';
+      case '/dashboard/menus':             return `${words.menuExamples.join(', ')} — each holds some of your categories`;
       case '/dashboard/categories':        return isFood ? 'Groups menu items into sections' : 'Groups products into categories';
       case '/dashboard/stock/ingredients': return 'Raw materials that deplete automatically when a dish is sold';
       case '/dashboard/stock/counts':      return 'Count the shelf (blind); differences are reviewed before stock changes';
       case '/dashboard/stock/wastage':     return 'What spoiled, expired or was damaged — the reason and what it cost';
       case '/dashboard/stock/expiry':      return 'Batches and expiry dates — what expires soon, what has expired';
+      case '/dashboard/stock/other-branches': return 'How much another branch holds of an item, and asking it for some';
       case '/dashboard/inventory':         return isFood
         ? 'Countable packaged goods sold as-is (bottled drinks, snacks)'
         : 'Stock on hand for each product';
@@ -334,7 +355,8 @@ export default function DashboardLayout() {
     }
   };
   const relabel = (it: NavItem): NavItem => {
-    const label = isFood && foodItemLabel[it.to] ? foodItemLabel[it.to] : it.label;
+    // A573: Menus is a restaurant's word — a shop has Departments, anything else Groups (the same page, A537).
+    const label = it.to === '/dashboard/menus' ? words.menus : isFood && foodItemLabel[it.to] ? foodItemLabel[it.to] : it.label;
     const out: NavItem = { ...it, label };
     const hint = hintFor(it.to); if (hint) out.hint = hint;
     const sub  = subFor(it.to);  if (sub)  out.sub  = sub;
@@ -362,8 +384,8 @@ export default function DashboardLayout() {
         return item;
       }
       let label = e.label;
-      if (e.label === 'Menu')  label = isFood ? 'Menu' : 'Catalogue';
-      if (e.label === 'Stock') label = isFood ? 'Inventory' : 'Purchasing';
+      if (e.label === 'Menu')  label = words.catalogueGroup;   // Menu / Catalogue
+      if (e.label === 'Stock') label = words.stockGroup;       // Inventory / Stock (A573: was "Purchasing" for a shop)
       let items = e.items.filter(it => allowed(it.verticals)).map(relabel);
       if (isFood && e.label === 'Stock') {
         const idx = items.findIndex(i => i.to === '/dashboard/stock/ingredients');
@@ -441,7 +463,23 @@ export default function DashboardLayout() {
     const interval = setInterval(check, 60_000);
     return () => clearInterval(interval);
   }, []);
-  const badges: Record<string, number> = { approvals: approvalsCount };
+  // ── A545: credit sales waiting for a manager's confirmation (0 for anyone who may not see them) ──
+  const [creditCount, setCreditCount] = useState(0);
+  useEffect(() => {
+    const check = () => { api.get<{ awaiting: number }>('/api/credit/sales/count').then((r) => setCreditCount(Number(r?.awaiting) || 0)).catch(() => {}); };
+    check();
+    const interval = setInterval(check, 120_000);
+    return () => clearInterval(interval);
+  }, []);
+  // ── A564: requests from other branches waiting for an answer (0 for anyone who does not handle transfers) ──
+  const [branchRequestsCount, setBranchRequestsCount] = useState(0);
+  useEffect(() => {
+    const check = () => { api.get<{ incoming: number }>('/api/stock/requests/count').then((r) => setBranchRequestsCount(Number(r?.incoming) || 0)).catch(() => {}); };
+    check();
+    const interval = setInterval(check, 120_000);
+    return () => clearInterval(interval);
+  }, []);
+  const badges: Record<string, number> = { approvals: approvalsCount, credit: creditCount, branchRequests: branchRequestsCount };
 
   // ── Low-stock badge ─────────────────────────────────────────────────────────
   const [lowStockCount, setLowStockCount] = useState(0);
@@ -607,6 +645,7 @@ export default function DashboardLayout() {
               className="min-w-[1.5rem] h-6 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold">{unreadCount > 99 ? '99+' : unreadCount}</button>
           )}
         </div>
+        <CloudTrialNotice />
         <Outlet key={activeBranchId ?? 'all'} />
       </main>
     </div>

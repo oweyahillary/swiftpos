@@ -31,7 +31,7 @@ import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@s
 import { printHtmlSilent } from '../printService';   // A454: the Z-report on the Windows receipt printer
 import { getBranding } from '../localDb';
 import { getPosFeatures } from '../deviceConfig';   // A530
-import { receiptClassicFrom } from '../posFeatures';   // A530
+import { receiptClassicFrom, kitchenFontBFrom } from '../posFeatures';   // A530; A543/A551
 import { noteActivity, setPrintPendingProbe } from '../activityTracker';   // A508
 import { signedInCan } from '../tillAccess';   // A490
 import { getActiveSession } from '../techService';   // A490: a technician sets printers up before anyone signs in
@@ -65,10 +65,14 @@ function sampleBusinessForThisTill(): typeof sampleBusiness {
     name = (db?.prepare(`SELECT business_name FROM session WHERE id = 1`).get() as { business_name?: string } | undefined)
       ?.business_name ?? null;
   } catch { /* not enrolled yet / no session row: fall back */ }
-  // A530: and this client's classic-receipt switches, so the test print and the preview are the receipt the till prints.
+  // A530: and this client's receipt switches, so the test print and the preview are the receipt the till prints.
   let receiptClassic: ReturnType<typeof receiptClassicFrom> | undefined;
-  try { receiptClassic = receiptClassicFrom(getPosFeatures()); } catch { /* no device_config yet: the compact standard */ }
-  return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name, ...(receiptClassic ? { receiptClassic } : {}) };
+  try { receiptClassic = receiptClassicFrom(getPosFeatures()); } catch { /* no device_config yet: the standard (A538: classic layout, 3.75 mm) */ }
+  // A543/A551: and its kitchen font, so a kitchen test print is the kitchen ticket the till prints (Font A unless 'kitchen_font_b').
+  let kitchenFontB = false;
+  try { kitchenFontB = kitchenFontBFrom(getPosFeatures()); } catch { /* no device_config yet: the standard, Font A */ }
+  return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name, ...(receiptClassic ? { receiptClassic } : {}),
+    ...(kitchenFontB ? { kitchenFontB } : {}) };
 }
 
 export function initPrinting(database: Database.Database, win: () => BrowserWindow | null): void {
