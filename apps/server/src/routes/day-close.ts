@@ -18,7 +18,7 @@
 //       GET  /pending    — collect this till's pending instructions (marks delivered)
 //       POST /ack        — record this till's verdict, retiring the instruction
 
-import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess, branchScope, branchFilter, byBranch } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -196,12 +196,17 @@ router.get('/overview', MANAGER, async (req: any, res) => {
   const branchId = req.isOwner ? (String(req.query.branch_id ?? '').trim() || branchScope(req) || '')
     : req.allBranches ? (branchScope(req) || '') : String(branchScope(req) ?? '');
 
+  // A582: a partner's "All my branches" — their branches combined (branchScope is NO_BRANCH there: never every branch)
+  const bf = branchFilter(req);
+  const setIds = bf.kind === 'set' ? bf.ids : null;
+  const narrow = <Q>(q: Q): Q => (setIds ? byBranch(q, bf) : branchId ? (q as any).eq('branch_id', branchId) : q);
+
   let daysQ = supabase
     .from('business_days')
     .select('device_id, business_date, branch_id, status, opened_at')
     .eq('business_id', req.businessId)
     .eq('status', 'open');
-  if (branchId) daysQ = daysQ.eq('branch_id', branchId);
+  daysQ = narrow(daysQ);
   const { data: days, error: daysErr } = await daysQ;
   if (daysErr) { sendError(res, daysErr); return; }
 
@@ -211,7 +216,7 @@ router.get('/overview', MANAGER, async (req: any, res) => {
     .from('user_devices')
     .select('device_id, device_label, terminal_code, branch_id, status, last_sync_at, retired_at')
     .eq('business_id', req.businessId);
-  if (branchId) devQ = devQ.eq('branch_id', branchId);
+  devQ = narrow(devQ);
   const { data: devRows } = await devQ;
   const devById = new Map<string, any>();
   for (const d of (devRows ?? []) as any[]) if (d.device_id) devById.set(d.device_id, d);
@@ -268,7 +273,7 @@ router.get('/overview', MANAGER, async (req: any, res) => {
       open_day:     openDayOf.get(d.device_id) ?? null,
       delivered_at: pendingByDevice[d.device_id]?.delivered_at ?? null,
     }));
-  res.json({ branch_id: branchId || null, tills, retired_open_days, devices, abandon_after_hours: ABANDON_SILENT_HOURS });
+  res.json({ branch_id: setIds ? null : branchId || null, tills, retired_open_days, devices, abandon_after_hours: ABANDON_SILENT_HOURS });
 });
 
 /** A522: a row in the business's audit log for a remote day-close decision (best-effort — never fails the action). */

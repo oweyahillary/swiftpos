@@ -19,7 +19,7 @@
 import ExcelJS from 'exceljs';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { branchScope, assertBranchAccess, requirePermission, requireAnyPermission } from '../middleware/rbac';
+import { branchScope, assertBranchAccess, requirePermission, requireAnyPermission, branchFilter, inBranchSet, PICK_ONE_BRANCH_BODY } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { supabase } from '../lib/supabase';
 import { recorderId } from '../lib/expenseRecorder';
@@ -40,6 +40,12 @@ function tillPersonOrWeb(req: any, res: any, next: any): void {
 
 /** The branch the pack is for: the owner's pick (header / query), a manager's own. */
 function packBranch(req: any, res: any): string | null {
+  // A582: "All my branches" — the pack is one branch: ?branch_id= one of theirs, else "Pick one of your branches".
+  if (inBranchSet(req)) {
+    const f = branchFilter(req);
+    if (f.kind === 'one') return f.id;
+    res.status(400).json({ ...PICK_ONE_BRANCH_BODY, error: 'Pick one of your branches — the monthly pack is one branch at a time.' }); return null;
+  }
   const asked = typeof req.query.branch_id === 'string' && req.query.branch_id ? req.query.branch_id : null;
   const branch = asked ?? branchScope(req);
   if (!branch) { res.status(400).json({ error: 'Pick a branch — the monthly pack is one branch at a time.' }); return null; }

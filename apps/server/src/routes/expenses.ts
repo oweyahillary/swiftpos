@@ -15,7 +15,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, branchScope, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess, branchFilter, byBranch } from '../middleware/rbac';
 import { guardBranch, idsOfBusiness } from '../lib/branchGuard';   // A494
 
 /** A494: the category and the payer an expense names must be this business's. Answers itself; false = stop. */
@@ -134,7 +134,7 @@ router.delete('/categories/:id', requirePermission('expenses.manage'), async (re
 router.get('/', requirePermission('expenses.view'), async (req, res) => {
   const { from, to, category_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('expenses')
@@ -152,7 +152,7 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
     .order('expense_date', { ascending: false })
     .order('created_at', { ascending: false });
 
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
   if (category_id) query = query.eq('expense_category_id', category_id as string);
 
   const { data, error } = await query;
@@ -185,7 +185,7 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
 // GET /api/expenses/summary — totals by category for a period (used by reports)
 router.get('/summary', requirePermission('expenses.view'), async (req, res) => {
   const { from, to } = req.query;
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582
 
   let query = supabase
     .from('expenses')
@@ -197,7 +197,7 @@ router.get('/summary', requirePermission('expenses.view'), async (req, res) => {
 
   if (from) query = query.gte('expense_date', from as string);
   if (to)   query = query.lte('expense_date', to as string);
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
 
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }

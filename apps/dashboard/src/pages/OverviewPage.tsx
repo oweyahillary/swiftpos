@@ -163,7 +163,7 @@ function HourlySparkline({ orders60 }: { orders60: { ts: number; total: number }
 
 export default function OverviewPage() {
   const { business, loading: businessLoading } = useBusiness();
-  const { activeBranch, activeBranchId, branches } = useBranch();
+  const { activeBranch, activeBranchId, branches, allLabel } = useBranch();   // A582: allLabel
   const currency = business?.currency ?? 'KES';
 
   const [sales, setSales]             = useState<SalesSummary | null>(null);
@@ -304,7 +304,7 @@ export default function OverviewPage() {
             </span>
           </div>
           <p className="text-gray-500 text-sm mt-0.5">
-            {activeBranch?.name ?? 'All branches'} · {todayLabel}
+            {activeBranch?.name ?? allLabel} · {todayLabel}
           </p>
         </div>
         <div className="flex items-center gap-3">

@@ -18,7 +18,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { can } from '../middleware/rbac';
+import { can, inBranchSet, assertBranchAccess } from '../middleware/rbac';
 import { verifyTechToken as verifyEd25519Token, PUBLIC_KEY_PEM, generateRevealCode } from '../lib/techToken';
 import crypto        from 'crypto';
 import os            from 'os';
@@ -147,6 +147,7 @@ export function branchConfigAllowed(req: any, branchId: string): boolean {
   if (req.isOwner) return true;
   if (!can(req, 'devices.approve')) return false;
   if (req.allBranches) return (req.partnerBranches ?? []).includes(branchId);   // A550: a partner of every branch
+  if (inBranchSet(req)) return assertBranchAccess(req, branchId);   // A582: a partner's set — one of theirs
   return !req.branchId || req.branchId === branchId;
 }
 

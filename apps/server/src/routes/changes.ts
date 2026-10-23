@@ -10,7 +10,7 @@
  */
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { can } from '../middleware/rbac';
+import { can, branchFilter, rowInBranches, type BranchFilter } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { cleanChange, describeChange } from '../lib/tillChanges';
@@ -19,6 +19,14 @@ import { isNodeRole } from '../lib/deviceRegistry';   // A522
 
 const router = safeRouter();
 router.use(requireAuth);
+
+/** A582: whose changes a reader sees — a partner of some branches: theirs (a set), whatever branch is picked; else all. */
+function partnerChangeScope(req: any): BranchFilter {
+  const f = branchFilter(req);
+  if (f.kind === 'set') return f;
+  if (req.webPartner === true && !req.allBranches) return { kind: 'set', ids: [...(req.partnerBranches ?? [])] };
+  return { kind: 'all' };
+}
 
 /** The owner, or a person holding changes.approve (A490) — never a till's own session (it is no person). */
 const mayDecide = (req: any) => !req.isTill && can(req, 'changes.approve');
@@ -93,6 +101,16 @@ router.get('/state', async (req, res) => {
 /** How many wait for the owner — the badge on the web's Approvals link. 0 (not 403) for anyone who does not decide. */
 router.get('/count', async (req, res) => {
   if (!mayDecide(req)) { res.json({ count: 0 }); return; }
+  // A582: a partner of some branches (in a set, or at one of theirs) — the changes made at their branches (and the
+  // business-wide ones), never another branch's
+  const f = partnerChangeScope(req);
+  if (f.kind === 'set') {
+    const { data, error } = await supabase.from('change_requests').select('id, branch_id')
+      .eq('business_id', req.businessId).eq('status', 'awaiting').limit(5000);
+    if (error) { sendError(res, error); return; }
+    res.json({ count: ((data ?? []) as Array<{ branch_id: string | null }>).filter((r) => rowInBranches(f, r.branch_id, true)).length });
+    return;
+  }
   const { count, error } = await supabase.from('change_requests').select('id', { count: 'exact', head: true })
     .eq('business_id', req.businessId).eq('status', 'awaiting');
   if (error) { sendError(res, error); return; }
@@ -106,7 +124,8 @@ router.get('/', async (req, res) => {
     .select('id, entity, entity_id, op, base, proposed, cloud_value, status, message, canonical_id, made_by_name, made_at, device_id, branch_id, received_at, decided_by_name, decided_at')
     .eq('business_id', req.businessId).eq('status', status).order('received_at', { ascending: false }).limit(200);
   if (error) { sendError(res, error); return; }
-  res.json((data ?? []).map((r: any) => ({ ...r, summary: describeChange({ entity: r.entity, op: r.op, data: r.proposed ?? {} }, r.proposed?.name ?? r.cloud_value?.name) })));
+  const f = partnerChangeScope(req);   // A582: a partner of some branches — their branches' changes and the business-wide ones
+  res.json((data ?? []).filter((r: any) => f.kind !== 'set' || rowInBranches(f, r.branch_id, true)).map((r: any) => ({ ...r, summary: describeChange({ entity: r.entity, op: r.op, data: r.proposed ?? {} }, r.proposed?.name ?? r.cloud_value?.name) })));
 });
 
 router.post('/:id/decide', async (req, res) => {

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { branchScope, requirePermission, can, assertBranchAccess } from '../middleware/rbac';
+import { branchScope, requirePermission, can, assertBranchAccess, branchFilter, byBranch, inBranchSet, oneBranchOnly, NO_BRANCH } from '../middleware/rbac';
 import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } from '../lib/pinAttempts';   // A494
 import { mayMoveMoney } from '../lib/historyScope';   // A490
 import { sendError } from '../lib/sendError';
@@ -61,6 +61,17 @@ const withoutFigures = (row: Record<string, any>): Record<string, any> => {
   for (const k of DRAWER_FIGURES) delete out[k];
   return out;
 };
+/** A582: a partner (lib/webPartners.ts) reads a branch's tills and drawers only when it is theirs — a branch named in the
+ *  query was taken as it came (a partner of X, Y and Z could name W). Everyone else exactly as before. */
+const partnerOutside = (req: Request, branchId: string | null | undefined): boolean =>
+  req.webPartner === true && !assertBranchAccess(req, branchId ?? null);
+// A582: the tills and drawers of a branch named in the query (/terminals, /terminals/open, /web-till) — a partner's own
+// branches only; everyone else as before.
+router.use(['/terminals', '/web-till'], (req, res, next) => {
+  const asked = typeof req.query.branch_id === 'string' ? req.query.branch_id.trim() : '';
+  if (asked && partnerOutside(req, asked)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  next();
+});
 const ownDrawer = (req: Request, s: { cashier_id?: string | null; opened_by?: string | null }): boolean =>
   !!req.userId && (s.cashier_id === req.userId || s.opened_by === req.userId);
 
@@ -202,10 +213,12 @@ router.get('/state', async (req, res) => {
   if (!ids.length) { res.json([]); return; }
   const { data, error } = await supabase.from('shifts')
     // A433: and the confirmation — a shift confirmed on the web or another till is confirmed on the till that holds it.
-    .select('id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes, confirmed_at, confirmed_by, confirmed_methods, expected_methods, confirm_reasons, confirm_self')
+    .select('id, branch_id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes, confirmed_at, confirmed_by, confirmed_methods, expected_methods, confirm_reasons, confirm_self')
     .eq('business_id', req.businessId).in('id', ids);
   if (error) { sendError(res, error); return; }
-  const rows = (data ?? []) as Array<{ id: string; status: string; closed_by: string | null; [k: string]: unknown }>;
+  // A582: a partner gets only the drawers of their branches (the ids came from the caller)
+  const rows = ((data ?? []) as Array<{ id: string; branch_id?: string | null; status: string; closed_by: string | null; [k: string]: unknown }>)
+    .filter((r) => !partnerOutside(req, r.branch_id));
   const closerIds = [...new Set(rows.flatMap((r) => [r.closed_by, r.confirmed_by as string | null]).filter((x): x is string => !!x))];
   const names = new Map<string, string>();
   if (closerIds.length) {
@@ -815,8 +828,9 @@ router.post('/:id/manager-confirm', async (req, res) => {
 // holds the screen for the confirming manager may read it.
 router.get('/:id/confirm-view', async (req, res) => {
   const showCashier = (await businessPosFeatures(req.businessId)).confirm_shows_cashier_figures;
-  const { data: shift } = await supabase.from('shifts').select('id, declared_methods, expected_cash, opening_float, closing_float')
+  const { data: found } = await supabase.from('shifts').select('id, branch_id, declared_methods, expected_cash, opening_float, closing_float')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  const shift = found && !partnerOutside(req, (found as any).branch_id) ? found : null;   // A582: another branch's: nothing
   // A452 (owner, 2026-10-12): "while confirming a shift let the manager see what the system holds … so that he can get
   // the variance before confirming". The expected figures go to a person who may confirm (a manager, the owner) only —
   // never to a cashier holding the screen.
@@ -1339,6 +1353,7 @@ function toBranchOrder(o: any): BranchOrder {
 router.get('/branch-report', async (req, res) => {
   // A490: reports.shifts or shifts.confirm (never the till's own sign-in — a manager signs in).
   if (req.isTill || !can(req, 'reports.shifts', 'shifts.confirm')) { res.status(403).json({ error: 'A manager signs in to see the branch.', code: 'MANAGER_ONLY' }); return; }
+  if (oneBranchOnly(req, res)) return;   // A582: one branch's report at a time
   const branchId = branchScope(req);
   if (!branchId) { res.status(400).json({ error: 'Which branch? (branch_id)' }); return; }
   const from = String(req.query.from ?? ''), to = String(req.query.to ?? '');
@@ -1442,7 +1457,9 @@ router.get('/:id/zreport', async (req, res) => {
   const { data: shift, error } = await supabase.from('shifts').select('*')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (error) { sendError(res, error); return; }
-  const branchId = branchScope(req);
+  // A582: in a partner's set, the shift's branch when it is one of theirs (else none); everyone else as before
+  const f = branchFilter(req);
+  const branchId = f.kind === 'set' ? (shift && f.ids.includes(shift.branch_id) ? shift.branch_id : NO_BRANCH) : branchScope(req);
   if (!shift || (branchId && shift.branch_id !== branchId)) { res.status(404).json({ error: 'Shift not found' }); return; }
 
   const [orders, voids, floats, exps, biz] = await Promise.all([
@@ -1504,7 +1521,7 @@ router.get('/:id/zreport', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   const { status, from, to, limit = '50' } = req.query as Record<string, string>;
-  const branch_id = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('shifts')
@@ -1513,7 +1530,7 @@ router.get('/', async (req, res) => {
     .order('opened_at', { ascending: false })
     .limit(Math.min(Number(limit), 200));
 
-  if (branch_id) query = query.eq('branch_id', branch_id);
+  query = byBranch(query, bf);
   if (status)    query = query.eq('status', status);
   if (from)      query = query.gte('opened_at', from);
   if (to)        query = query.lte('opened_at', to);
@@ -1606,7 +1623,7 @@ router.get('/:id', async (req, res) => {
   // Audit 2026-10-14: a non-owner reads only shifts of the branch they are signed in at (the business was already checked
   // above). A person with no branch (works at every branch, A426) keeps the business-wide view GET /api/shifts gives them.
   // A550: a partner of every branch reads any of their branches' shifts (as the owner any).
-  if (!req.isOwner && (req.allBranches ? !req.partnerBranches.includes(shift.branch_id) : (req.branchId && shift.branch_id !== req.branchId))) { res.status(404).json({ error: 'Shift not found' }); return; }
+  if (!req.isOwner && (req.allBranches || inBranchSet(req) ? !assertBranchAccess(req, shift.branch_id) : (req.branchId && shift.branch_id !== req.branchId))) { res.status(404).json({ error: 'Shift not found' }); return; }
 
   // Previously this query selected orders.payment_method, which is not a column.
   // The error was not destructured, so a failed query left `orders` null and the

@@ -45,7 +45,7 @@ import { Router }    from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requirePermission, oneBranchOnly } from '../middleware/rbac';
 import { decryptSecret } from '../lib/crypto';
 import { sendError }   from '../lib/sendError';
 
@@ -602,6 +602,7 @@ router.get('/config', requireAuth, async (req, res) => {
 // not built here). Same permission tier as the other financial-sensitive
 // report reads (H6).
 router.get('/exceptions', requireAuth, requirePermission('reports.payments'), async (req, res) => {
+  if (oneBranchOnly(req, res)) return;   // A582: the exceptions name no branch — never combined for a partner's set
   const { resolved } = req.query as Record<string, string>;
   let query = supabase
     .from('payment_exceptions')

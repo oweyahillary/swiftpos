@@ -26,7 +26,7 @@ import { chunkIn } from '../lib/pgQuery';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { branchScope, requirePermission } from '../middleware/rbac';
+import { requirePermission, branchFilter, byBranch } from '../middleware/rbac';
 import { csvCell } from '../lib/csvSafe';   // A494
 import ExcelJS       from 'exceljs';
 
@@ -111,7 +111,7 @@ function sendCsv(res: any, headers: string[], rows: (string | number)[][], filen
 router.get('/sales', requirePermission('reports.sales'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('orders')
@@ -127,7 +127,7 @@ router.get('/sales', requirePermission('reports.sales'), async (req, res) => {
     .lte('created_at', end)
     .order('created_at', { ascending: true });
 
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
 
   const { data: orders, error } = await query;
   if (error) { sendError(res, error); return; }
@@ -228,12 +228,12 @@ router.get('/sales', requirePermission('reports.sales'), async (req, res) => {
 router.get('/products', requirePermission('reports.items'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let ordersQ = supabase.from('orders').select('id')
     .eq('business_id', req.businessId).eq('status', 'completed')
     .gte('created_at', start).lte('created_at', end);
-  if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
+  ordersQ = byBranch(ordersQ, bf);
   const { data: orders } = await ordersQ;
   const ids = (orders ?? []).map((o: any) => o.id);
 
@@ -302,14 +302,14 @@ router.get('/products', requirePermission('reports.items'), async (req, res) => 
 router.get('/pnl', requirePermission('reports.costs'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   // Revenue
   // A494: `id` — without it every order's id was undefined, no order items were read and COGS was always 0.
   let ordersQ = supabase.from('orders').select('id, total, subtotal, vat_amount')
     .eq('business_id', req.businessId).eq('status', 'completed')
     .gte('created_at', start).lte('created_at', end);
-  if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
+  ordersQ = byBranch(ordersQ, bf);
   const { data: orders } = await ordersQ;
 
   // COGS — join order_items → products(cost_price)
@@ -326,7 +326,7 @@ router.get('/pnl', requirePermission('reports.costs'), async (req, res) => {
     .select('amount, description, expense_categories ( name )')
     .eq('business_id', req.businessId)
     .gte('expense_date', start.slice(0, 10)).lte('expense_date', end.slice(0, 10));
-  if (scopedBranch) expQ = expQ.eq('branch_id', scopedBranch);
+  expQ = byBranch(expQ, bf);
   const { data: expenses } = await expQ;
 
   const totalRevenue = (orders ?? []).reduce((s: number, o: any) => s + Number(o.total), 0);
@@ -422,7 +422,7 @@ router.get('/pnl', requirePermission('reports.costs'), async (req, res) => {
 router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
-  const scopedBranch = branchScope(req);   // A494: was every branch's drawers for anyone with reports.shifts
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set   // A494: was every branch's drawers for anyone with reports.shifts
 
   let shiftsQ = supabase
     .from('shifts')
@@ -435,7 +435,7 @@ router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
     .gte('opened_at', start)
     .lte('opened_at', end)
     .order('opened_at', { ascending: false });
-  if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
+  shiftsQ = byBranch(shiftsQ, bf);
   const { data: shifts, error } = await shiftsQ;
 
   if (error) { sendError(res, error); return; }
@@ -499,7 +499,7 @@ router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
 router.get('/expenses', requirePermission('expenses.view'), async (req, res) => {
   const { from, to, format = 'xlsx' } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   // expense_date is a DATE; category is a FK to expense_categories (see /pnl).
   let expQ = supabase.from('expenses')
@@ -508,7 +508,7 @@ router.get('/expenses', requirePermission('expenses.view'), async (req, res) => 
     .gte('expense_date', start.slice(0, 10))
     .lte('expense_date', end.slice(0, 10))
     .order('expense_date', { ascending: false });
-  if (scopedBranch) expQ = expQ.eq('branch_id', scopedBranch);
+  expQ = byBranch(expQ, bf);
 
   const { data: expenses, error } = await expQ;
   if (error) { sendError(res, error); return; }

@@ -381,7 +381,7 @@ function NoCostList({ n, ownerView, currency, w }: { n: CostsAnswer['noCost']; o
       <div className="overflow-x-auto mt-2"><table className="w-full text-sm">
         <thead><tr className="text-gray-500 text-left text-xs border-y border-gray-800">
           <th className={th}>Item</th><th className={`${th} ${DESK}`}>Category</th><th className={`${th} text-right`}>Sold</th><th className={`${th} text-right`}>Sales</th>
-          {ownerView && <th className={`${th} print:hidden`}><span className="sr-only">Set its cost</span></th>}
+          {ownerView && <th className={`${th} relative print:hidden`}><span className="sr-only">Set its cost</span></th>}
         </tr></thead>
         <tbody>
           {n.items.map((x) => (

@@ -10,8 +10,23 @@ import { expandKeys } from '../lib/permissions';                 // A490
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
 import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
-import { partnerRequestBranch } from '../lib/webPartners';    // A550
+import { partnerRequestBranch, partnerBranchSet } from '../lib/webPartners';    // A550, A582
+import { NO_BRANCH, PICK_ONE_BRANCH_BODY } from './rbac';        // A582
 import { lapseRefusal } from '../lib/cloudPlan';                // A581
+
+/**
+ * A582: in "All my branches" a write is refused before any route — a set of branches is never where a sale, a count, a
+ * setting or a staff change lands. The partner picks one of their branches for it. Sign-in housekeeping (/api/auth: renew,
+ * sign out, their own password) and marking their own notifications read (checked against the set by the route) still go.
+ */
+function setModeWriteRefused(req: Request, res: Response): boolean {
+  const m = String(req.method).toUpperCase();
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return false;
+  const p = String(req.originalUrl ?? '').split('?')[0];
+  if (p.startsWith('/api/auth/') || /^\/api\/notifications\/(read-all|[^/]+\/read)$/.test(p)) return false;
+  res.status(400).json(PICK_ONE_BRANCH_BODY);
+  return true;
+}
 
 /**
  * A494: a session from the owner's password sign-in (/auth/login — only the account that owns the business can make
@@ -48,6 +63,12 @@ declare global {
       partnerBranches:    string[];
       /** A550: a partner who works at EVERY branch — the owner's branch picker ("All branches" = branchId null). */
       allBranches:        boolean;
+      /**
+       * A582: "All my branches" — a partner of some branches reading them combined (X-Branch-Id 'mine'): exactly their
+       * list. null (or absent) for everyone else. While set, branchId is NO_BRANCH (a read not taught the set finds
+       * nothing; a write is refused before any route — a set is never a write target). Read it through rbac.branchFilter.
+       */
+      branchSet?:         string[] | null;
     }
   }
 }
@@ -153,10 +174,17 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.webPartner         = pc.webPartner === true && !req.isOwner && !req.isTill;
     req.partnerBranches    = req.webPartner && Array.isArray(pc.partnerBranches) ? pc.partnerBranches.filter((b): b is string => typeof b === 'string') : [];
     req.allBranches        = req.webPartner && pc.allBranches === true;
+    req.branchSet          = null;
     if (req.webPartner) {
       req.branchId = partnerRequestBranch(
         { branchIds: req.partnerBranches, allBranches: req.allBranches, sessionBranch: payload.branchId ?? null },
         req.headers['x-branch-id']);
+      // A582: "All my branches" — their list, combined; branchId a branch that matches nothing (fail closed).
+      req.branchSet = partnerBranchSet({ branchIds: req.partnerBranches, allBranches: req.allBranches }, req.headers['x-branch-id']);
+      if (req.branchSet) {
+        req.branchId = NO_BRANCH;
+        if (setModeWriteRefused(req, res)) return;
+      }
     }
 
     // A KDS display token (surface:'kds') is a long-lived, branch-scoped capability
@@ -344,6 +372,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.webPartner         = false;   // A550: a Supabase session is only ever the owner's (resolveOwnerBusinesses above)
   req.partnerBranches    = [];
   req.allBranches        = false;
+  req.branchSet          = null;    // A582
 
   if (supabaseEmail) {
     const { data: userRow } = await supabase

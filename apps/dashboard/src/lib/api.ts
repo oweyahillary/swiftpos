@@ -193,6 +193,8 @@ async function getAuthHeader(): Promise<Record<string, string>> {
 // to it via branchScope(). 'all' (owner viewing all branches) sends no header,
 // so the server returns business-wide data. Staff are branch-locked server-side
 // regardless, so this header is only meaningful for owners.
+// A582: a partner of some branches who picked "All my branches" sends 'mine' — the cloud reads exactly their branches
+// (never every branch), and refuses any write until one branch is picked (400 PICK_ONE_BRANCH).
 function activeBranchHeader(): Record<string, string> {
   const b = localStorage.getItem(TOKEN_KEYS.activeBranch);
   return b && b !== 'all' ? { 'X-Branch-Id': b } : {};

@@ -18,7 +18,7 @@ import { may, hiddenWhileCounting } from '../lib/stockTakeAccess';   // A494: ca
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope, can } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope, can, branchFilter, byBranch, oneBranchOnly } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { actor } from '../lib/actor';
@@ -74,8 +74,7 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), asy
     .eq('business_id', req.businessId)
     .gte('created_at', `${from}T00:00:00`).lt('created_at', `${addDays(to, 1)}T00:00:00`)
     .order('created_at', { ascending: false }).limit(2000);
-  const scoped = branchScope(req);
-  if (scoped) q = q.eq('branch_id', scoped);
+  q = byBranch(q, branchFilter(req));   // A582: one branch, all, or a partner's set
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
   const rows = (data ?? []) as Entry[];
@@ -83,6 +82,7 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), asy
 });
 
 router.get('/items', requireAnyPermission('inventory.waste', 'inventory.adjust'), async (req, res) => {
+  if (oneBranchOnly(req, res, 'Pick one of your branches to record wastage.')) return;   // A582: one branch's stock
   const branchId = branchScope(req) ?? (typeof req.query.branch_id === 'string' ? req.query.branch_id : null) ?? req.branchId;
   if (!branchId) { res.status(400).json({ error: 'Choose the branch.' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'That is another branch.' }); return; }

@@ -25,7 +25,7 @@ import zlib from 'zlib';
 import crypto from 'crypto';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { can } from '../middleware/rbac';
+import { can, inBranchSet, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { redactLog } from '../lib/logRedact';
 import { verifyTechToken } from '../lib/techToken';
@@ -157,7 +157,7 @@ router.get('/terminal-codes', requireAuth, async (req: any, res) => {
   const branchId = String(req.query.branch_id ?? '');
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   const allowed = req.isTill ? (!req.branchId || req.branchId === branchId)
-    : (req.isOwner || (can(req, 'devices.approve') && (req.allBranches ? req.partnerBranches.includes(branchId) : (!req.branchId || req.branchId === branchId))));   // A550
+    : (req.isOwner || (can(req, 'devices.approve') && (req.allBranches || inBranchSet(req) ? assertBranchAccess(req, branchId) : (!req.branchId || req.branchId === branchId))));   // A550, A582: a partner's set
   if (!allowed) { res.status(403).json({ error: 'Only this branch\'s own till, the owner or someone who approves devices can see this.', code: 'FORBIDDEN' }); return; }
   const { data: branch } = await supabase.from('branches').select('id, business_id').eq('id', branchId).maybeSingle();
   if (!branch || (branch as { business_id?: string }).business_id !== req.businessId) { res.status(404).json({ error: 'Branch not found' }); return; }

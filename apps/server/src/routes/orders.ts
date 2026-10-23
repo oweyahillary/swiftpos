@@ -12,7 +12,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { fireWebhook } from '../lib/webhooks';
 import { requireAuth } from '../middleware/auth';
-import { branchScope, requirePermission, assertBranchAccess, can } from '../middleware/rbac';
+import { branchScope, requirePermission, assertBranchAccess, can, branchFilter, byBranch, oneBranchOnly } from '../middleware/rbac';
 
 /** A490: the answer when someone without sales.discount gives a manual discount on a live web sale. */
 const DISCOUNT_REFUSED = { error: 'You may not give a discount — ask a manager.', code: 'DISCOUNT_NOT_ALLOWED', detail: 'Missing permission: sales.discount' };
@@ -1349,12 +1349,13 @@ router.get('/', async (req, res) => {
   const { status, date_from, date_to, search, limit = '50', offset = '0', order_type, method } = req.query;
 
   // Owner: may filter by any branch_id or get all. Staff: locked to their branch.
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
+  const scopedBranch = bf.kind === 'one' ? bf.id : bf.kind === 'set' ? null : branchScope(req);
   // 0.6.37 (A387): a cashier sees only the payment methods the manager chose ([] = every; a manager always every). The
   // filter is in the query, so the count and the pages are right; the split sales are trimmed below.
   const manager = callerMayConfirm(req);
   // A490: History's methods narrowing is the cashier's view — anyone who sees every cashier's sales sees every method.
-  const historyMethods = manager ? [] : await getHistoryMethods(req.businessId, scopedBranch ?? (req as any).branchId ?? null);
+  const historyMethods = manager ? [] : await getHistoryMethods(req.businessId, scopedBranch ?? (bf.kind === 'set' ? null : (req as any).branchId ?? null));
   const joinPm = !!method || historyMethods.length > 0;
 
   let query = supabase
@@ -1375,7 +1376,7 @@ router.get('/', async (req, res) => {
   const ownOnly = ownHistoryOnly(req, features);
   // The filters, once — the page below and A418's total of every page use the same ones.
   const filtered = (q: any) => {
-    if (scopedBranch) q = q.eq('branch_id', scopedBranch);
+    q = byBranch(q, bf);
     if (status)       q = q.eq('status', status as string);
     if (date_from)    q = q.gte('created_at', date_from as string);
     if (date_to)      q = q.lte('created_at', date_to as string);
@@ -1398,7 +1399,7 @@ router.get('/', async (req, res) => {
   // History), for a manager, or a cashier while the owner's two switches are on ("one should be on for the other").
   let totals: { orders: number; sales: number } | undefined;
   if (req.query.with_totals === '1'
-      && (manager || await cashierHistoryTotals(req.businessId!, scopedBranch ?? (req as any).branchId ?? null))) {
+      && (manager || await cashierHistoryTotals(req.businessId!, scopedBranch ?? (bf.kind === 'set' ? null : (req as any).branchId ?? null)))) {
     const rows: any[] = [];
     for (let at = 0; ; at += 500) {
       const { data: page, error: tErr } = await filtered(supabase.from('orders')
@@ -1440,8 +1441,9 @@ router.get('/:id', async (req, res, next) => {
     .eq('business_id', req.businessId);
 
   // Non-owners can only fetch orders from their branch
-  const scopedBranch = branchScope(req);
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  const bf = branchFilter(req);   // A582: a partner's set reads a sale of any of theirs, never another branch's
+  const scopedBranch = bf.kind === 'one' ? bf.id : null;
+  query = byBranch(query, bf);
 
   const { data, error } = await query.single();
   if (error) { res.status(404).json({ error: 'Order not found' }); return; }
@@ -2866,6 +2868,7 @@ router.post('/:id/fire-course', sells, async (req, res) => {
 // Returns each open dine-in order with minutes seated and an `over` flag against
 // the business's turnover_alert_minutes setting.
 router.get('/turnover', requirePermission('orders.view_all'), async (req, res) => {   // A490
+  if (oneBranchOnly(req, res)) return;   // A582: one branch's tables at a time
   const branchId = (req.query.branch_id as string) || branchScope(req);
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
@@ -2900,6 +2903,7 @@ router.get('/turnover', requirePermission('orders.view_all'), async (req, res) =
 
 // GET /api/orders/turnover/report?branch_id=&from=&to=  — avg dwell per table.
 router.get('/turnover/report', requirePermission('reports.sales'), async (req, res) => {
+  if (oneBranchOnly(req, res)) return;   // A582: one branch's tables at a time
   const branchId = (req.query.branch_id as string) || branchScope(req);
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }

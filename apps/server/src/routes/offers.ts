@@ -18,7 +18,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, allBranchAccess } from '../middleware/rbac';   // A550: allBranchAccess
+import { requirePermission, allBranchAccess, branchFilter } from '../middleware/rbac';   // A550: allBranchAccess
 import { cleanOffer, type Offer } from '../lib/offers';
 
 const router = safeRouter();
@@ -66,7 +66,10 @@ router.get('/', async (req, res) => {
   const { data, error } = await supabase.from('offers').select(COLS)
     .eq('business_id', req.businessId).is('deleted_at', null).order('created_at', { ascending: false });
   if (error) { sendError(res, error); return; }
-  const rows = ((data ?? []) as Row[]).filter((r) => allBranchAccess(req) || !r.branch_ids || (req.branchId && r.branch_ids.includes(req.branchId)));
+  // A582: a partner's "All my branches" — the business-wide offers and those for any of their branches
+  const f = branchFilter(req);
+  const rows = ((data ?? []) as Row[]).filter((r) => allBranchAccess(req) || !r.branch_ids
+    || (f.kind === 'set' ? (r.branch_ids as string[]).some((b) => f.ids.includes(b)) : (req.branchId && r.branch_ids.includes(req.branchId))));
   res.json(rows.map((r) => ({ ...r, editable: mayEdit(req, r) })));
 });
 

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess, branchFilter } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { actor } from '../lib/actor';
 import { confirmerRows } from '../lib/confirmerLookup';
@@ -232,7 +232,8 @@ router.get('/sales', creditKey, async (req, res) => {
   const asked = String(req.query.state ?? 'open');
   const states: CreditState[] = asked === 'all' ? [...CREDIT_STATES]
     : (CREDIT_STATES as readonly string[]).includes(asked) ? [asked as CreditState] : ['awaiting', 'disputed'];
-  const branch = branchScope(req);
+  const f = branchFilter(req);   // A582: a partner's "All my branches" — their branches' credit sales
+  const branch = f.kind === 'set' ? f.ids : branchScope(req);
   const [rows, counts] = await Promise.all([
     listCreditSales(req.businessId!, branch, states, Number(req.query.limit) || 200),
     creditCounts(req.businessId!, branch),
@@ -243,7 +244,8 @@ router.get('/sales', creditKey, async (req, res) => {
 // GET /api/credit/sales/count — the badge, and the Close Day / Close Branch notice (whoever closes the day reads it too).
 // NEVER blocks a close (the owner: no deadlocks) — it only says how many wait.
 router.get('/sales/count', requireAnyPermission('customers.credit', 'shifts.close_day', 'shifts.close_branch'), async (req, res) => {
-  const counts = await creditCounts(req.businessId!, branchScope(req));
+  const f = branchFilter(req);   // A582
+  const counts = await creditCounts(req.businessId!, f.kind === 'set' ? f.ids : branchScope(req));
   res.json({ ...counts, notice: awaitingSentence(counts.awaiting) });
 });
 

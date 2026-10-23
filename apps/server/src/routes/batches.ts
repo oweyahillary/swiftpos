@@ -14,11 +14,11 @@
  * A manager sees their own branch only.
  */
 import { stripCostsUnlessAllowed } from '../lib/costAccess';   // A490
-import { may, hiddenWhileCounting } from '../lib/stockTakeAccess';   // A494: can(), not holds() — and the blind count
+import { may, hiddenWhileCountingIn } from '../lib/stockTakeAccess';   // A494: can(), not holds() — and the blind count
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope, branchFilter, byBranch, type BranchFilter } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { actor } from '../lib/actor';
@@ -39,13 +39,16 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust', 'inv
   const today = new Date().toISOString().slice(0, 10);
   const soonDays = Math.min(90, Math.max(0, Number(req.query.soon_days ?? 7) || 7));
   const showAll = req.query.all === '1';
+  // A582: a partner's "All my branches" — the batches of their branches, combined (never another branch's)
+  const set = branchFilter(req);
   const scoped = branchScope(req) ?? (typeof req.query.branch_id === 'string' && req.query.branch_id ? req.query.branch_id : null);
-  if (scoped && !assertBranchAccess(req, scoped)) { res.status(403).json({ error: 'That is another branch.' }); return; }
+  if (set.kind !== 'set') { if (scoped && !assertBranchAccess(req, scoped)) { res.status(403).json({ error: 'That is another branch.' }); return; } }
+  const bf: BranchFilter = set.kind === 'set' ? set : scoped ? { kind: 'one', id: scoped } : { kind: 'all' };
 
   let q = supabase.from('stock_batches')
     .select('id, branch_id, item_kind, product_id, ingredient_id, batch_no, expiry_date, quantity_received, received_at, source, source_ref, created_by_name')
     .eq('business_id', req.businessId).is('closed_at', null).order('received_at', { ascending: true }).limit(5000);
-  if (scoped) q = q.eq('branch_id', scoped);
+  q = byBranch(q, bf);
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
   const batches = (data ?? []) as BatchRow[];
@@ -82,7 +85,7 @@ router.get('/', requireAnyPermission('inventory.waste', 'inventory.adjust', 'inv
   const unbatched: any[] = [];
   // A494: blind count — what is left in each batch is worked out from the stock level, so for an item being counted it
   // gives the level away: not sent (null) to someone who may not change stock, and no "unbatched" line either.
-  const hide = scoped ? await hiddenWhileCounting(req, scoped) : new Set<string>();
+  const hide = bf.kind !== 'all' ? await hiddenWhileCountingIn(req, bf) : new Set<string>();
   for (const [key, group] of groups) {
     const { batches: alloc, unbatched: extra } = allocateBatches(held.get(key) ?? 0, group);
     const first = group[0];

@@ -26,6 +26,10 @@ const router = safeRouter();
 export const BRANCH_PUBLIC_COLUMNS = 'id, business_id, name, address, phone, city, country, is_main, status, created_at, updated_at, '
   + 'desktop_licensed, deploy_mode, web_sync_enabled';
 
+/** A582: a partner (lib/webPartners.ts) reads a branch named in the path only when it is theirs — another branch of the
+ *  business is "not found" to them (its name, address, staff and settings). The owner and managers as before. */
+const partnerOutside = (req: any, branchId: string): boolean => req.webPartner === true && !assertBranchAccess(req, branchId);
+
 // GET /api/branches — list all branches for this business
 router.get('/', requireAuth, async (req, res) => {
   const { data, error } = await supabase
@@ -46,6 +50,7 @@ router.get('/', requireAuth, async (req, res) => {
 
 // GET /api/branches/:id
 router.get('/:id', requireAuth, async (req, res) => {
+  if (partnerOutside(req, req.params.id)) { res.status(404).json({ error: 'Branch not found' }); return; }   // A582
   const { data, error } = await supabase
     .from('branches')
     .select(BRANCH_PUBLIC_COLUMNS)   // A494
@@ -148,6 +153,7 @@ router.delete('/:id', requireAuth, requirePermission('settings.branches'), async
 
 // GET /api/branches/:id/staff
 router.get('/:id/staff', requireAuth, requirePermission('staff.view'), async (req, res) => {   // A490: staff.view
+  if (partnerOutside(req, req.params.id)) { res.status(404).json({ error: 'Branch not found' }); return; }   // A582
   // Audit 2026-10-14: user_branches has no business_id — without this, any signed-in user read another tenant's staff
   // (names, emails, phones) by branch id.
   if (!(await assertOwnBranch(req.businessId, req.params.id))) { res.status(404).json({ error: 'Branch not found' }); return; }
@@ -281,6 +287,7 @@ async function assertOwnBranch(businessId: string | undefined, branchId: string)
 
 // GET /api/branches/:id/settings — this branch's overrides as a { key: value } map.
 router.get('/:id/settings', requireAuth, async (req, res) => {
+  if (partnerOutside(req, req.params.id)) { res.status(404).json({ error: 'Branch not found' }); return; }   // A582
   if (!(await assertOwnBranch(req.businessId, req.params.id))) {
     res.status(404).json({ error: 'Branch not found' });
     return;

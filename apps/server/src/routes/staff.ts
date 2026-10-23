@@ -3,7 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { verifyPin } from './auth';
-import { requirePermission, allBranchAccess } from '../middleware/rbac';   // A550: allBranchAccess
+import { requirePermission, allBranchAccess, branchFilter, oneBranchOnly } from '../middleware/rbac';   // A550: allBranchAccess
 import { supabase } from '../lib/supabase';
 import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
@@ -318,6 +318,34 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
     return;
   }
 
+  // A582: a partner's "All my branches" — the staff of their branches (each once), and of each person only the branches
+  // in the set: never a name of another branch.
+  const f = branchFilter(req);
+  if (f.kind === 'set') {
+    const { data, error } = await supabase
+      .from('user_branches')
+      .select(`
+        branch_id,
+        users (
+          id, name, email, phone, status, created_at, updated_at, override_pin_hash,
+          roles ( id, name, description ),
+          user_branches ( branch_id, branches ( id, name ) ),
+          user_permissions ( permission_id, granted, permissions ( key ) )
+        )
+      `)
+      .in('branch_id', f.ids)
+      .eq('users.business_id', req.businessId);
+    if (error) { sendError(res, error); return; }
+    const seen = new Map<string, any>();
+    for (const row of (data ?? []) as any[]) {
+      const u = row?.users;
+      if (!u?.id || !f.ids.includes(row.branch_id) || seen.has(u.id)) continue;
+      seen.set(u.id, { ...u, user_branches: (u.user_branches ?? []).filter((b: any) => f.ids.includes(b?.branch_id)) });
+    }
+    res.json(shapeStaff([...seen.values()].filter((u: any) => !isOwnerRoleName(u?.roles?.name)), req.userId));
+    return;
+  }
+
   // Non-owner: only staff that have an entry in user_branches for this branch
   const { data, error } = await supabase
     .from('user_branches')
@@ -358,6 +386,7 @@ router.get('/', requirePermission('staff.view'), async (req, res) => {
 // confirm with their override PIN. Returns only id/name/role — never the hash.
 // Any authenticated user on this business may read it (names only).
 router.get('/authorizers', async (req, res) => {
+  if (oneBranchOnly(req, res)) return;   // A582: an approver is picked at one branch (a void, a refund — never in a set)
   const { data, error } = await supabase
     .from('users')
     .select('id, name, roles ( name )')

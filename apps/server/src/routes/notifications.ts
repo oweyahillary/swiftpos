@@ -3,7 +3,7 @@ import { sendError } from '../lib/sendError';
 import { requireAuth } from "../middleware/auth";
 import { supabase } from "../lib/supabase";
 import { sendEmailChecked } from "../lib/mailer";
-import { branchScope } from "../middleware/rbac";
+import { branchScope, branchFilter } from "../middleware/rbac";
 
 /**
  * A494: what a non-owner may see and mark — their branch's notifications that are addressed to nobody in particular or
@@ -17,14 +17,21 @@ function forCaller(req: any, q: any): any {
   const me = req.userId ? String(req.userId) : null;
   // A550: a partner of every branch reads every branch's (or the one picked) — still only rows addressed to nobody or to
   // them, never the owner's own.
-  const scope = branchScope(req);
-  if (!(req.allBranches && scope === null)) q = q.eq("branch_id", scope);
+  // A582: a partner's "All my branches" — exactly their branches' rows
+  const f = branchFilter(req);
+  if (f.kind === "set") q = q.in("branch_id", f.ids);
+  else {
+    const scope = branchScope(req);
+    if (!(req.allBranches && scope === null)) q = q.eq("branch_id", scope);
+  }
   return me ? q.or(`user_id.is.null,user_id.eq.${me}`) : q.is("user_id", null);
 }
 const mayRead = (req: any, row: { branch_id?: string | null; user_id?: string | null }): boolean => {
   if (req.isOwner) return true;
   const scope = branchScope(req);
-  const inScope = req.allBranches && scope === null
+  const f = branchFilter(req);   // A582
+  const inScope = f.kind === "set" ? (!!row.branch_id && f.ids.includes(row.branch_id))
+    : req.allBranches && scope === null
     ? (row.branch_id == null || (req.partnerBranches ?? []).includes(row.branch_id))
     : row.branch_id === scope;
   return inScope && (row.user_id == null || row.user_id === req.userId);

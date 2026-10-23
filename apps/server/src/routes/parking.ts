@@ -21,7 +21,7 @@
 import { safeRouter }        from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth }       from '../middleware/auth';
-import { branchScope, assertBranchAccess, requirePermission } from '../middleware/rbac';
+import { assertBranchAccess, requirePermission, branchFilter, byBranch } from '../middleware/rbac';
 import { guardBranch } from '../lib/branchGuard';   // A494
 import { supabase }          from '../lib/supabase';
 
@@ -127,7 +127,7 @@ router.get('/', async (req, res) => {
   // A494: was `?branch_id || branchScope` — a staff member read any branch by naming it. branchScope already takes
   // the owner's ?branch_id / X-Branch-Id and locks everyone else to their own.
   void branch_id;
-  const queryBranch  = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let q = supabase
     .from('parking_sessions')
@@ -136,7 +136,7 @@ router.get('/', async (req, res) => {
     .order('started_at', { ascending: false })
     .limit(limit);
 
-  if (queryBranch) q = q.eq('branch_id', queryBranch);
+  q = byBranch(q, bf);
   if (status)      q = q.eq('status',    status as string);
   if (from)        q = q.gte('started_at', from as string);
   if (to)          q = q.lte('started_at', to   as string);

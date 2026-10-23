@@ -3,12 +3,13 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { branchScope, assertBranchAccess, requirePermission } from '../middleware/rbac';
+import { branchScope, assertBranchAccess, requirePermission, oneBranchOnly } from '../middleware/rbac';
 
 const router = safeRouter();
 
 // GET /api/tables?branch_id= — list active tables for a branch
 router.get('/', requireAuth, async (req, res) => {
+  if (!req.query.branch_id && oneBranchOnly(req, res)) return;   // A582: one branch's floor at a time
   const scopedBranchId = branchScope(req);
   const queryBranchId = (req.query.branch_id as string) || scopedBranchId;
 

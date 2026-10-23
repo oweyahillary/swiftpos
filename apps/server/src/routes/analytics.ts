@@ -50,7 +50,7 @@
 import type { Request, Response } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { requirePermission, can, allBranchAccess } from '../middleware/rbac';
+import { requirePermission, can, allBranchAccess, inBranchSet } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { seesCosts } from '../lib/costAccess';
 import { getDayCutoff } from '../lib/dayCutoff';
@@ -96,7 +96,11 @@ export function _analyticsCache() { return { clear: () => cache.clear(), size: (
 class NotReady extends Error {}
 async function aggregate<T>(fn: string, args: Record<string, unknown>): Promise<T[]> {
   rpcCalls += 1;
-  const { data, error } = await supabase.rpc(fn, args);
+  // A582: a partner's set → the function's _set twin (migration 171: p_branches, no "every branch" case); else as before
+  const set = Array.isArray(args.p_branches);
+  const rest: Record<string, unknown> = { ...args };
+  delete rest.p_branch;
+  const { data, error } = set ? await supabase.rpc(`${fn}_set`, rest) : await supabase.rpc(fn, args);
   if (error) {
     // before migration 158 runs the function is not there (PostgREST PGRST202 / Postgres 42883)
     if (error.code === 'PGRST202' || error.code === '42883') throw new NotReady(error.message);
@@ -106,7 +110,12 @@ async function aggregate<T>(fn: string, args: Record<string, unknown>): Promise<
 }
 
 // ── The request: flag, period, branch ──────────────────────────────────────────────────────────────────────────────
-interface Ctx { businessId: string; branch: string | null; from: string; to: string; start: string; end: string; cutoff: number; costs: boolean }
+/**
+ * A582: `branches` — a partner's "All my branches" (X-Branch-Id 'mine', two or more branches, never every one): the
+ * aggregates run over exactly those (migration 171's <name>_set functions, p_branches; branch null). Absent / null for
+ * everyone else, so the owner's calls are exactly as before.
+ */
+interface Ctx { businessId: string; branch: string | null; branches?: string[] | null; from: string; to: string; start: string; end: string; cutoff: number; costs: boolean }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function context(req: Request, res: Response): Promise<Ctx | null> {
@@ -118,9 +127,17 @@ async function context(req: Request, res: Response): Promise<Ctx | null> {
   // anyone else is held to their own
   const q = req.query.branch ?? req.query.branch_id;
   let branch: string | null;
-  if (allBranchAccess(req)) {
+  let branches: string[] | null = null;
+  if (inBranchSet(req)) {
+    // A582: one of their branches named (?branch=), or every one of theirs — another branch: refused, never shown
+    const mine = [...(req.branchSet as string[])];
+    const asked = typeof q === 'string' ? q.trim() : '';
+    if (asked && asked !== 'all' && asked !== 'mine' && !mine.includes(asked)) { res.status(403).json({ error: 'You can see your own branches only.', code: 'BRANCH_SCOPE' }); return null; }
+    branch = asked && mine.includes(asked) ? asked : null;
+    if (!branch) branches = mine;
+  } else if (allBranchAccess(req)) {
     const asked = typeof q === 'string' ? q.trim() : String(req.headers['x-branch-id'] ?? '').trim();
-    branch = asked && asked !== 'all' ? asked : null;
+    branch = asked && asked !== 'all' && asked !== 'mine' ? asked : null;   // A582: 'mine' is a partner's set — never a branch
     if (branch) {
       const { data: b } = UUID.test(branch)
         ? await supabase.from('branches').select('id').eq('id', branch).eq('business_id', businessId).maybeSingle()
@@ -142,12 +159,18 @@ async function context(req: Request, res: Response): Promise<Ctx | null> {
   const bad = rangeError(from, to);
   if (bad) { res.status(400).json(bad); return null; }
   const { start, end } = businessRangeEAT(from, to, cutoff);
-  return { businessId, branch, from, to, start, end, cutoff, costs: seesCosts(req) };
+  return { businessId, branch, branches, from, to, start, end, cutoff, costs: seesCosts(req) };
 }
 
-const key = (what: string, c: Ctx) => `${what}|${c.businessId}|${c.branch ?? 'all'}|${c.from}|${c.to}|${c.cutoff}`;
+/** A582: what the answer covers, in a cache key: one branch, a partner's set (sorted), or every branch. */
+const scopeKey = (c: Ctx) => (c.branch ? c.branch : c.branches?.length ? `set:${[...c.branches].sort().join('+')}` : 'all');
+/** A582: the branch arguments of an aggregate: one branch (p_branch), a partner's set (p_branches — aggregate() calls the
+ *  function's _set twin of migration 171), or none (every branch). */
+const scopeArgs = (c: Ctx): Record<string, unknown> => (c.branch ? { p_branch: c.branch }
+  : c.branches?.length ? { p_branches: c.branches } : { p_branch: null });
+const key = (what: string, c: Ctx) => `${what}|${c.businessId}|${scopeKey(c)}|${c.from}|${c.to}|${c.cutoff}`;
 const period = (c: Ctx) => ({ from: c.from, to: c.to, start: c.start, end: c.end });
-const span = (c: Ctx) => ({ p_business: c.businessId, p_branch: c.branch, p_from: c.start, p_to: c.end });
+const span = (c: Ctx) => ({ p_business: c.businessId, ...scopeArgs(c), p_from: c.start, p_to: c.end });
 
 function menu(c: Ctx): Promise<MenuResult> {
   return cached(key('menu', c), async () => classifyMenu(await aggregate<MenuRow>('analytics_menu_engineering', span(c))));
@@ -169,9 +192,9 @@ function leaks(c: Ctx): Promise<LeaksResult> {
 }
 // credit ageing is as of NOW (balances are current) — the period does not apply; kept per business and branch.
 function credit(c: Ctx): Promise<CreditResult & { asOf: string }> {
-  return cached(`credit|${c.businessId}|${c.branch ?? 'all'}`, async () => {
+  return cached(`credit|${c.businessId}|${scopeKey(c)}`, async () => {
     const asOf = new Date().toISOString();
-    return { asOf, ...summariseCredit(await aggregate<CreditRow>('analytics_credit_ageing', { p_business: c.businessId, p_branch: c.branch, p_as_of: asOf })) };
+    return { asOf, ...summariseCredit(await aggregate<CreditRow>('analytics_credit_ageing', { p_business: c.businessId, ...scopeArgs(c), p_as_of: asOf })) };
   });
 }
 // A553: the previous period of the same length, as its own context (its own cache keys)
@@ -182,8 +205,8 @@ function before(c: Ctx): Ctx {
 }
 // A553: sales per business day for the previous period AND this one, in one aggregate call
 function daily(c: Ctx, prev: Ctx): Promise<DailyRow[]> {
-  return cached(`daily|${c.businessId}|${c.branch ?? 'all'}|${prev.from}|${c.to}|${c.cutoff}`,
-    () => aggregate<DailyRow>('analytics_daily_sales', { p_business: c.businessId, p_branch: c.branch, p_from: prev.start, p_to: c.end, p_cutoff: c.cutoff }));
+  return cached(`daily|${c.businessId}|${scopeKey(c)}|${prev.from}|${c.to}|${c.cutoff}`,
+    () => aggregate<DailyRow>('analytics_daily_sales', { p_business: c.businessId, ...scopeArgs(c), p_from: prev.start, p_to: c.end, p_cutoff: c.cutoff }));
 }
 // A558: what sells when — each product by business weekday × hour (the best ITEM_TIMES_LIMIT sellers + a total row)
 function itemTimes(c: Ctx): Promise<ItemTimesResult> {
@@ -198,6 +221,8 @@ function itemTimes(c: Ctx): Promise<ItemTimesResult> {
 function stockLevels(c: Ctx, t: ItemTimesResult): Promise<{ levels: StockLevel[] | null; note: string | null }> {
   return cached(key('stock', c), async () => {
     let branch = c.branch;
+    // A582: a partner's set is several branches — stock is counted per branch (never another branch's levels)
+    if (!branch && c.branches?.length) return { levels: null, note: 'Pick a branch to see what is running low — stock is counted per branch.' };
     if (!branch) {
       const { data: bs } = await supabase.from('branches').select('id').eq('business_id', c.businessId);
       const list = (bs ?? []) as Array<{ id: string }>;
@@ -234,14 +259,14 @@ const daysOf = (c: Ctx) => rangeDays(c.from, c.to) ?? 1;
 function stockUse(c: Ctx): Promise<StockUseResult> {
   return cached(key('stockuse', c), async () => {
     let onHandBranch = c.branch;
-    if (!onHandBranch) {
+    if (!onHandBranch && !c.branches?.length) {   // A582: a partner's set — several branches, no level
       const { data: bs } = await supabase.from('branches').select('id').eq('business_id', c.businessId);
       const list = (bs ?? []) as Array<{ id: string }>;
       if (list.length === 1) onHandBranch = list[0].id;
     }
     const p = before(c);
     const rows = await aggregate<StockUseRow>('analytics_stock_use', {
-      p_business: c.businessId, p_branch: onHandBranch, p_from: c.start, p_to: c.end, p_prev_from: p.start, p_limit: 300,
+      p_business: c.businessId, ...(onHandBranch ? { p_branch: onHandBranch } : scopeArgs(c)), p_from: c.start, p_to: c.end, p_prev_from: p.start, p_limit: 300,
     });
     return summariseStockUse(rows, daysOf(c), !!onHandBranch, onHandBranch ? null : STOCK_NOTE_ALL);
   });
@@ -251,7 +276,7 @@ function customers(c: Ctx, withCustomers: boolean): Promise<CustomersResult> {
   return cached(`${key('customers', c)}|${withCustomers ? 'with' : 'mix'}`, async () => {
     const p = before(c);
     const rows = await aggregate<CustomerAggRow>('analytics_customers', {
-      p_business: c.businessId, p_branch: c.branch, p_from: c.start, p_to: c.end, p_prev_from: p.start, p_cutoff: c.cutoff,
+      p_business: c.businessId, ...scopeArgs(c), p_from: c.start, p_to: c.end, p_prev_from: p.start, p_cutoff: c.cutoff,
       p_with_customers: withCustomers, p_limit: 200,
     });
     const today = businessDateEAT(new Date(), c.cutoff);
@@ -263,7 +288,7 @@ function costs(c: Ctx): Promise<CostsResult> {
   return cached(key('costs', c), async () => {
     const [m, mPrev, watch] = await Promise.all([
       menu(c), menu(before(c)),
-      aggregate<CostWatchRow>('analytics_cost_watch', { p_business: c.businessId, p_branch: c.branch, p_from: c.start, p_to: c.end }),
+      aggregate<CostWatchRow>('analytics_cost_watch', { p_business: c.businessId, ...scopeArgs(c), p_from: c.start, p_to: c.end }),
     ]);
     return buildCosts({ menu: m, menuPrev: mPrev, watch, days: daysOf(c) });
   });
@@ -311,25 +336,36 @@ async function branchLevels(c: Ctx, list: BranchInfo[], want: { kind: 'product' 
   return out;
 }
 interface BranchWork { available: boolean; count: number; limited: boolean; compare: BranchCompare | null; moves: StockMove[] | null }
-const branchKey = (c: Ctx) => `branchwork|${c.businessId}|${c.from}|${c.to}|${c.cutoff}|${c.costs ? 'costs' : 'plain'}`;
+const branchKey = (c: Ctx, within: string[] | null = null) =>
+  `branchwork|${c.businessId}|${within ? `set:${[...within].sort().join('+')}` : 'all'}|${c.from}|${c.to}|${c.cutoff}|${c.costs ? 'costs' : 'plain'}`;
+/**
+ * A582: whose branches the Branches comparison covers — every branch (null) for the owner and a partner of every branch;
+ * a partner of some branches (two or more): exactly theirs, whichever is in view; anyone else: undefined (not offered).
+ */
+function compareWithin(req: Request): string[] | null | undefined {
+  if (allBranchAccess(req)) return null;
+  if (req.webPartner === true && !req.allBranches && (req.partnerBranches ?? []).length >= 2) return [...req.partnerBranches];
+  return undefined;
+}
 /**
  * Every branch's figures for the period (the first MAX_BRANCHES by name), whatever branch is in view: each branch's daily
  * sales (160), stock use with its levels (162 — before 162: no moves, the comparison still stands), menu (costs only, the
  * margin) and the business's item times (the average price that ranks the moves). Each is the per-branch answer the
  * branch's own view uses, so it is shared through the cache.
  */
-function branchWork(c: Ctx): Promise<BranchWork> {
-  return cached(branchKey(c), async () => {
-    const all = await activeBranches(c);
+function branchWork(c: Ctx, within: string[] | null = null): Promise<BranchWork> {
+  return cached(branchKey(c, within), async () => {
+    // A582: a partner of some branches compares theirs only — never another branch's figures, name or stock
+    const all = (await activeBranches(c)).filter((b) => !within || within.includes(b.id));
     if (all.length < 2) return { available: false, count: all.length, limited: false, compare: null, moves: null };
     const list = all.slice(0, MAX_BRANCHES);
-    const per = list.map((b) => ({ ...c, branch: b.id }));
+    const per = list.map((b) => ({ ...c, branch: b.id, branches: null }));
     const missing = <T>(p: Promise<T>) => p.catch((e) => { if (e instanceof NotReady) return null; throw e; });
     const [dailies, uses, menus, t] = await Promise.all([
       Promise.all(per.map((cb) => daily(cb, before(cb)))),
       Promise.all(per.map((cb) => missing(stockUse(cb)))),
       c.costs ? Promise.all(per.map((cb) => menu(cb))) : Promise.resolve(null),
-      missing(itemTimes({ ...c, branch: null })),
+      missing(itemTimes({ ...c, branch: null, branches: within })),
     ]);
     const days = daysOf(c);
     let moves: StockMove[] | null = null;
@@ -455,7 +491,8 @@ router.get('/recommendations', async (req, res) => {
     const overview = buildOverview({ from: c.from, to: c.to, daily: rows, leaksNow: l, leaksPrev: lPrev, menuNow: m, menuPrev: mPrev, costs: c.costs });
     const withCustomers = seesCredit(req);
     // A565: between branches — only for a viewer who sees every branch; softly (a failure leaves the cards out)
-    const bw = allBranchAccess(req) ? await soft(branchKey(c), () => branchWork(c)) : null;
+    const within = compareWithin(req);   // A582: a partner of some branches — theirs
+    const bw = within !== undefined ? await soft(branchKey(c, within), () => branchWork(c, within)) : null;
     const branches = bw && bw.available ? bw : null;
     const [stock, su, cu, cw, tg, btype] = await Promise.all([
       stockLevels(c, t), soft(key('stockuse', c), () => stockUse(c)),
@@ -514,9 +551,11 @@ router.get('/costs', async (req, res) => {
 // quantity is sent). Every branch whatever the one in view; the owner or a partner of every branch only.
 router.get('/branches', async (req, res) => {
   const c = await context(req, res); if (!c) return;
-  if (!allBranchAccess(req)) { res.status(403).json({ error: 'Comparing branches is for the owner and partners of every branch.', code: 'BRANCH_SCOPE' }); return; }
+  // A582: and a partner of two or more branches — their branches only
+  const within = compareWithin(req);
+  if (within === undefined) { res.status(403).json({ error: 'Comparing branches is for the owner and partners of two or more branches.', code: 'BRANCH_SCOPE' }); return; }
   await answer(res, async () => {
-    const w = await branchWork(c);
+    const w = await branchWork(c, within);
     const suggestions = w.moves ? moveSuggestions(w.moves) : null;
     return {
       period: period(c), branchId: c.branch, available: w.available, branchCount: w.count, limited: w.limited,

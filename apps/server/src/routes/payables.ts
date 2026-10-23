@@ -20,7 +20,7 @@
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, assertBranchAccess, branchScope, can } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, assertBranchAccess, can, branchFilter, byBranch, oneBranchOnly } from '../middleware/rbac';
 import { seesCosts, stripFields } from '../lib/costAccess';   // A494
 import { branchOfBusiness, guardBranch, idsOfBusiness } from '../lib/branchGuard';   // A494
 import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A494
@@ -82,6 +82,8 @@ async function nextRef(table: 'supplier_bills' | 'supplier_returns', prefix: 'BI
 // ─── Balances ─────────────────────────────────────────────────────────────────
 
 router.get('/summary', requireAnyPermission('payables.view', 'payables.manage'), async (req, res) => {
+  // A582: supplier balances are the business's (a payment names no branch) — never combined for a partner's set
+  if (oneBranchOnly(req, res)) return;
   const [{ data: sup }, { data: bills, error: bErr }, { data: pays }, { data: rets }] = await Promise.all([
     supabase.from('suppliers').select('id, name, status').eq('business_id', req.businessId).order('name'),
     supabase.from('supplier_bills').select('id, supplier_id, amount, status, bill_date, due_date').eq('business_id', req.businessId).limit(20000),
@@ -100,6 +102,7 @@ router.get('/summary', requireAnyPermission('payables.view', 'payables.manage'),
 });
 
 router.get('/suppliers/:id', requireAnyPermission('payables.view', 'payables.manage'), async (req, res) => {
+  if (oneBranchOnly(req, res)) return;   // A582: as /summary
   const supplier = await supplierOf(req.businessId, req.params.id);
   if (!supplier) { res.status(404).json({ error: 'Supplier not found' }); return; }
   const [{ data: bills, error }, { data: pays }, { data: rets }, deliveries] = await Promise.all([
@@ -223,11 +226,11 @@ router.post('/payments/:id/void', requirePermission('payables.manage'), async (r
 // ─── Returns to supplier ──────────────────────────────────────────────────────
 
 router.get('/returns', requireAnyPermission('inventory.receive', 'payables.manage', 'payables.view'), async (req, res) => {
-  const scoped = branchScope(req);
+  const bf = branchFilter(req);   // A582
   let q = supabase.from('supplier_returns')
     .select('*, suppliers ( name ), supplier_return_items ( name, quantity, unit_cost, item_kind )')
     .eq('business_id', req.businessId).order('created_at', { ascending: false }).limit(100);
-  if (scoped) q = q.eq('branch_id', scoped);
+  q = byBranch(q, bf);
   if (typeof req.query.supplier_id === 'string') q = q.eq('supplier_id', req.query.supplier_id);
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }

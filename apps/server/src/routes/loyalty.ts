@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, branchFilter, byBranch } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -121,7 +121,7 @@ router.get('/customer/:id/transactions', canViewCustomers, async (req, res) => {
 // monthly spend trend. Business-wide (a customer's whole relationship, across
 // branches) — customer analytics is about the person, not one till.
 router.get('/customer/:id/insights', canViewCustomers, async (req, res) => {
-  const { data, error } = await supabase
+  let q = supabase
     .from('orders')
     .select('id, total, created_at, order_items ( product_name, quantity, subtotal )')
     .eq('business_id', req.businessId)
@@ -129,6 +129,10 @@ router.get('/customer/:id/insights', canViewCustomers, async (req, res) => {
     .eq('status', 'completed')
     .order('created_at', { ascending: false })
     .limit(500);
+  // A582: a partner's "All my branches" — the customer's purchases at their branches only (business-wide for everyone else)
+  const f = branchFilter(req);
+  if (f.kind === 'set') q = byBranch(q, f);
+  const { data, error } = await q;
 
   if (error) { sendError(res, error); return; }
 

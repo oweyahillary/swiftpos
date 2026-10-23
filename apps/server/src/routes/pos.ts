@@ -47,6 +47,13 @@ async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | n
 const router = safeRouter();
 
 router.use(requireAuth);
+// A582: a partner (lib/webPartners.ts) names only their own branches here (?branch_id= — the catalogue's prices, the change
+// log, the stock view): another branch of the business was answered as asked. Tills and everyone else as before.
+router.use((req, res, next) => {
+  const asked = typeof req.query.branch_id === 'string' ? req.query.branch_id : '';
+  if (req.webPartner && asked && !assertBranchAccess(req, asked)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+  next();
+});
 
 // GET /api/pos/catalogue-version
 // A291: a CHEAP freshness signal so a till can pull the moment a web edit lands

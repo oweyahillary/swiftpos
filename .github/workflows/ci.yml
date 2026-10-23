@@ -413,6 +413,12 @@ jobs:
       - name: Analytics legend and week cards (A572)
         run: node --no-warnings tests/analytics-visuals-a572.test.mjs
 
+      # A583 — Analytics > Costs scrolled into an empty band: an sr-only header (position:absolute) escaped the dashboard's
+      # 100dvh layout and made the WINDOW scroll. <main> is `relative` (the containing block of what a page places
+      # absolutely), the Costs table's sr-only cell is too; plus the per-area error panel with Retry. Source pins.
+      - name: Analytics Costs layout (A583)
+        run: node --no-warnings tests/analytics-costs-layout-a583.test.mjs
+
       # A575 — "What sells together" (the product pairs bought in the same order; migration 164's analytics_together):
       # the rules (too few orders, the direction and the plain sentence, the ranking and the cap at 10, at most two cards,
       # no price and no KES, each business type's advice — a combo, the same shelf, at the pumps) and Analytics, Help and
@@ -454,6 +460,22 @@ jobs:
         run: |
           node --no-warnings tests/partner-login-a550.test.mjs
           node --no-warnings tests/partner-roles-a550.test.mjs
+
+      # A582 — "All my branches": a partner of SOME branches (two or more) reads them combined, never another branch. The
+      # whole cloud (routes/index.js behind the real requireAuth) over HTTP: X-Branch-Id 'mine' → exactly their list (never
+      # null / every branch), forged values (another branch, 'all', '', NO_BRANCH) never reach it; ~120 reads (reports and
+      # CSV exports, orders and search, shifts, day close, stock, money, notifications, the watch list, staff, branches,
+      # devices, every analytics area on the REAL SQL through migration 171 in PGlite) never carry a row, total, count or
+      # name of the other branch, in a set and with it forged in ?branch_id= / ?branch=; totals are theirs combined;
+      # one-branch reads say "Pick one of your branches"; a write in a set is refused before any route. The dashboard's
+      # picker ("All my branches (3)" first, never "All Branches") rendered, and what it remembers. Migration 171 on its
+      # own (every function as before without p_branches; a set never carries the other branch). Need the server build
+      # and PGlite.
+      - name: Partner "All my branches" (A582) and migration 171
+        run: |
+          node --no-warnings tests/partner-my-branches-a582.test.mjs
+          node --no-warnings tests/partner-my-branches-picker-a582.test.mjs
+          node --no-warnings scripts/test-migration-171.mjs
 
       # A562: the Staff page's edit form shows the person's real role (the owner's role given to nobody, the owner's own
       # account kept); the approval PIN is a per-client switch in the admin portal (off: a new one refused, one already set

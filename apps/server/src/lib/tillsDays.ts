@@ -115,14 +115,17 @@ export interface TillCard {
 }
 
 /** One answer with everything the page needs, per till, per branch. Figures (expected so far) only when `seesFigures`. */
-export async function tillsOverview(businessId: string, o: { branchId: string | null; seesFigures: boolean; now?: Date }): Promise<{
+export async function tillsOverview(businessId: string, o: { branchId: string | null; branchIds?: string[] | null; seesFigures: boolean; now?: Date }): Promise<{
   branches: Array<{ id: string; name: string }>; tills: TillCard[]; abandon_after_hours: number; silent_after_minutes: number; generated_at: string;
 }> {
   const now = o.now ?? new Date();
-  const scoped = <T>(q: T): T => (o.branchId ? (q as any).eq('branch_id', o.branchId) : q);
+  // A582: a partner's "All my branches" — exactly their branches (branchIds), never every branch
+  const set = Array.isArray(o.branchIds) && o.branchIds.length ? o.branchIds : null;
+  const scoped = <T>(q: T): T => (set ? (q as any).in('branch_id', set) : o.branchId ? (q as any).eq('branch_id', o.branchId) : q);
 
   let brQ = supabase.from('branches').select('id, name').eq('business_id', businessId);
-  if (o.branchId) brQ = brQ.eq('id', o.branchId);   // branches key on id, not branch_id
+  if (set) brQ = brQ.in('id', set);
+  else if (o.branchId) brQ = brQ.eq('id', o.branchId);   // branches key on id, not branch_id
   const { data: brs, error: bErr } = await brQ;
   if (bErr) throw new Error(`branches: ${bErr.message}`);
   const branches = (brs ?? []) as Array<{ id: string; name: string }>;

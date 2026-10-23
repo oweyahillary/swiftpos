@@ -22,7 +22,7 @@ import type { Request } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess, branchFilter, byBranch } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { actor } from '../lib/actor';
@@ -156,11 +156,11 @@ function shape(take: TakeRow, lines: LineRow[], full: boolean) {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 router.get('/', requireAnyPermission('inventory.count', 'inventory.adjust'), async (req, res) => {
-  const scoped = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
   let q = supabase.from('stock_takes')
     .select('id, branch_id, ref, status, freeze_sales, note, started_at, started_by_name, submitted_at, posted_at, posted_by_name, cancelled_at, summary, branches ( name )')
     .eq('business_id', req.businessId).order('started_at', { ascending: false }).limit(60);
-  if (scoped) q = q.eq('branch_id', scoped);
+  q = byBranch(q, bf);
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
   const full = may(req, 'inventory.adjust');

@@ -20,7 +20,7 @@ import { Router }    from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, can, branchScope } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, can, branchFilter, byBranch } from '../middleware/rbac';
 import { lacksBarcode, cleanBarcodeNumbering, nextNumberedCodes, rangeFullMessage, BARCODE_SETTINGS_KEY, type BarcodeNumbering } from '../lib/barcode';   // A571, A574
 import { cleanLabelSettings, LABEL_SETTINGS_KEY } from '../lib/labels';           // A571
 import { stripCostsUnlessAllowed } from '../lib/costAccess';
@@ -236,11 +236,11 @@ router.put('/labels/settings', requirePermission('menu.edit'), async (req, res) 
 router.get('/labels/restocked', requirePermission('inventory.view'), async (req, res) => {
   const since = String(req.query.since ?? '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) { res.status(400).json({ error: 'since must be a date (YYYY-MM-DD)' }); return; }
-  const scoped = branchScope(req);
+  const bf = branchFilter(req);   // A582
   let q = supabase.from('stock_movements').select('product_id, quantity_change, products!inner ( business_id )')
     .eq('products.business_id', req.businessId).eq('movement_type', 'restock').gte('created_at', `${since}T00:00:00Z`)
     .limit(5000);
-  if (scoped) q = q.eq('branch_id', scoped);
+  q = byBranch(q, bf);
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
   const qty = new Map<string, number>();

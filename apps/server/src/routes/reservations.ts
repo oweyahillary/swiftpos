@@ -16,7 +16,7 @@
  */
 
 import { Router } from 'express';
-import { branchScope, requirePermission } from '../middleware/rbac';
+import { requirePermission, branchFilter, byBranch } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
@@ -31,7 +31,7 @@ router.use(requirePermission('reservations.manage'));
 
 router.get('/', async (req, res) => {
   const { date } = req.query;
-  const branch_id = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
   const today = new Date().toISOString().slice(0, 10);
 
   let query = supabase
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
     .eq('business_id', req.businessId)
     .order('reserved_time');
 
-  if (branch_id) query = query.eq('branch_id', branch_id as string);
+  query = byBranch(query, bf);
   if (date)      query = query.eq('reserved_date', date as string);
   else           query = query.eq('reserved_date', today);
 
@@ -110,7 +110,7 @@ router.delete('/:id', async (req, res) => {
 // ── Waitlist ──────────────────────────────────────────────────────────────────
 
 router.get('/waitlist', async (req, res) => {
-  const branch_id = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('waitlist')
@@ -119,7 +119,7 @@ router.get('/waitlist', async (req, res) => {
     .eq('status', 'waiting')
     .order('added_at');
 
-  if (branch_id) query = query.eq('branch_id', branch_id as string);
+  query = byBranch(query, bf);
 
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
