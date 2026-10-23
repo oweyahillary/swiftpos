@@ -17,6 +17,7 @@ import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { api } from '../../lib/api';
 import { useBranch } from '../../context/BranchContext';
+import { useTerm } from '../../lib/terminology';   // A573
 
 type Tab = 'ingredients' | 'products' | 'upgrades' | 'recipe';
 const ORDER: Tab[] = ['ingredients', 'products', 'upgrades', 'recipe'];
@@ -112,6 +113,9 @@ export default function MenuUpload({
   onToast?: (m: string) => void;
 }) {
   const { activeBranchId } = useBranch();
+  const { isFood, terms } = useTerm();   // A573: "Menu upload" at a restaurant, "Product upload" at a shop
+  const group = terms.menu.toLowerCase();   // A575: "menu" / "department" / "group" in the template's help
+  const uploadName = isFood ? 'Menu upload' : 'Product upload';
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [preview, setPreview] = useState<Record<Tab, TabPreview> | null>(null);
   const [fileName, setFileName] = useState('');
@@ -123,7 +127,7 @@ export default function MenuUpload({
   function downloadTemplate() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['ZapTill — Restaurant menu upload template'],
+      [isFood ? 'ZapTill — Restaurant menu upload template' : 'ZapTill — Product upload template'],
       [''],
       ['ONE upload for everything: products, upgrades & spices, recipes, ingredients. Fill any tabs.'],
       ['• Matched by NAME and UPDATED — never duplicated. Add plu_code for a stable key so you can rename freely.'],
@@ -135,7 +139,10 @@ export default function MenuUpload({
       ['COST: purchased items set cost_price; central_kitchen items leave it blank (worked out from Recipe × ingredient unit_cost).'],
       ['SHOW_DAYS (optional): e.g. Tue, Thu — the item is on the POS grid and QR menu only those days; any day a search still finds and sells it. Blank = every day.'],
       // A542: the optional menu column (A537 menus — Food, Soft drinks, Alcohol, Tea … above the categories).
-      ['MENU (optional): e.g. Food — puts the product\'s CATEGORY in that menu (a menu holds whole categories, one menu per category); a menu not there yet is created. Blank = leave the category\'s menu alone; DELETE = take the category out of its menu. Two rows of one category naming different menus: the first row wins, the other is refused.'],
+      // A575: a shop reads its own word (a Department, e.g. Groceries; a Group elsewhere) — the column stays `menu` (the API's)
+      isFood
+        ? ['MENU (optional): e.g. Food — puts the product\'s CATEGORY in that menu (a menu holds whole categories, one menu per category); a menu not there yet is created. Blank = leave the category\'s menu alone; DELETE = take the category out of its menu. Two rows of one category naming different menus: the first row wins, the other is refused.']
+        : [`MENU (optional): the product's ${group}, e.g. ${terms.menuExamples[0]} — puts the product's CATEGORY in that ${group} (a ${group} holds whole categories, one ${group} per category); a ${group} not there yet is created. Blank = leave the category's ${group} alone; DELETE = take the category out of its ${group}. Two rows of one category naming different ${terms.menus.toLowerCase()}: the first row wins, the other is refused.`],
     ]), 'Read me');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['name', 'category', 'price', 'cost_price', 'description', 'sold_by', 'unit_label', 'pieces_per_unit',
@@ -204,7 +211,7 @@ export default function MenuUpload({
         else if (t === 'recipe')   res[t] = await api.post('/api/recipes/bulk', { rows });
       }
       setResults(res);
-      onToast?.('Menu upload applied');
+      onToast?.(`${uploadName} applied`);
       onDone?.();
     } catch (e: any) { setMsg(e?.message ?? 'Upload failed'); }
     finally { setBusy(false); }
@@ -215,7 +222,7 @@ export default function MenuUpload({
       <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="p-5 border-b border-gray-800 flex items-start justify-between">
           <div>
-            <h2 className="text-base font-bold text-white">Menu upload</h2>
+            <h2 className="text-base font-bold text-white">{uploadName}</h2>
             <p className="text-sm text-gray-500">One workbook — products, upgrades, recipes and ingredients.</p>
           </div>
           <button onClick={downloadTemplate} className="text-sm text-swift-text hover:text-swift-text-hover whitespace-nowrap">↓ Template</button>

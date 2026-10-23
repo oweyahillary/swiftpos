@@ -12,17 +12,40 @@
  *
  * The layout and the bars are lib/labels.ts and lib/barcode.ts (copies of shared/, the till runs the same).
  * The price on a label is the item's price NOW — labels are reprinted when a price changes.
+ *
+ * A574 — every label carries a barcode (owner, 2026-10-22: "label should contain barcodes"). The barcode is no longer a
+ * choice; chosen items without one are given one before printing: "N items have no barcode yet — generate them and
+ * print?", then POST /api/products/barcodes/generate for exactly those items, the rows refreshed with the new codes, then
+ * the print. Without menu.edit those items are left out and named ("ask a manager to generate barcodes for: …"), the
+ * rest print. lib/labels.ts refuses a label without bars in any case. Barcode numbering (format, prefix, start number,
+ * digits — owner: "i should also be able to set barcode start sequence, number of digits i need etc") is set here too.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
+import { usePermissions } from '../../context/PermissionsContext';
 import type { Product, Category } from '../../types';
-import { encodeBarcode, isInStoreCode, lacksBarcode } from '../../lib/barcode';
+import {
+  encodeBarcode, isGeneratedCode, lacksBarcode, cleanBarcodeNumbering, numberingPreview, DEFAULT_BARCODE_NUMBERING,
+  CODE128N_MIN_LENGTH, CODE128N_MAX_LENGTH, type BarcodeNumbering, type NumberingFormat,
+} from '../../lib/barcode';
 import {
   cleanLabelSettings, DEFAULT_LABEL_SETTINGS, LABEL_SIZE_PRESETS, SHEET_PRESETS, labelSvg, labelsHtml, layoutLabels,
   sheetGrid, MAX_LABELS_PER_RUN, type LabelSettings, type LabelRow, type SheetPresetId,
 } from '../../lib/labels';
+
+const FORMAT_LABEL: Record<NumberingFormat, string> = {
+  EAN13: 'EAN-13 (13 digits, most scanners)', EAN8: 'EAN-8 (8 digits, small items)', UPCA: 'UPC-A (12 digits)', CODE128N: 'Code 128, digits only (choose the length)',
+};
+
+/** A574: what a print run must do first — the chosen items without a barcode, and those whose code cannot be drawn. */
+export function planPrint(picked: Product[]): { missing: Product[]; undrawable: Product[] } {
+  return {
+    missing: picked.filter((p) => lacksBarcode(p.barcode)),
+    undrawable: picked.filter((p) => !lacksBarcode(p.barcode) && !encodeBarcode(p.barcode)),
+  };
+}
 
 /** Print an HTML document from a hidden frame (the browser's own print window: any installed printer, or PDF). */
 export function printHtml(html: string): void {
@@ -56,14 +79,22 @@ export default function LabelsPage() {
   const [startAt, setStartAt] = useState(1);
   const [msg, setMsg] = useState('');
   const [saved, setSaved] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [numbering, setNumbering] = useState<BarcodeNumbering>(DEFAULT_BARCODE_NUMBERING);
+  const [numSaved, setNumSaved] = useState('');
+  const [allCodes, setAllCodes] = useState<string[]>([]);
+  const canGenerate = usePermissions().can('menu.edit');
 
   useEffect(() => {
     Promise.all([
       api.get<Product[]>('/api/products'),
       api.get<Category[]>('/api/categories').catch(() => [] as Category[]),
       api.get<LabelSettings>('/api/products/labels/settings').catch(() => DEFAULT_LABEL_SETTINGS),
-    ]).then(([p, c, s]) => {
+      api.get<BarcodeNumbering>('/api/products/barcodes/settings').catch(() => DEFAULT_BARCODE_NUMBERING),
+    ]).then(([p, c, s, n]) => {
       setProducts((p ?? []).filter((x) => x.status === 'active'));
+      setAllCodes((p ?? []).map((x) => String(x.barcode ?? '')).filter(Boolean));
+      setNumbering(cleanBarcodeNumbering(n));
       setCategories(c ?? []);
       setSettings(cleanLabelSettings(s));
       const ids = (params.get('ids') ?? '').split(',').filter(Boolean);
@@ -81,15 +112,21 @@ export default function LabelsPage() {
       && (!q || p.name.toLowerCase().includes(q) || String(p.barcode ?? '').includes(q)));
   }, [products, search, category]);
   const picked = useMemo(() => products.filter((p) => (qty[p.id] ?? 0) > 0), [products, qty]);
-  const noCode = picked.filter((p) => lacksBarcode(p.barcode) || !encodeBarcode(p.barcode));
-  const rows: LabelRow[] = picked.map((p) => ({
+  const { missing, undrawable } = planPrint(picked);
+  const toRows = (list: Product[]): LabelRow[] => list.map((p) => ({
     item: { name: p.name, price: Number(p.base_price), currency: business?.currency || 'KES', business: business?.name ?? '' },
     barcode: p.barcode ?? null, copies: qty[p.id] ?? 0,
   }));
+  const rows = toRows(picked);
   const total = rows.reduce((s, r) => s + r.copies, 0);
-  const sample = useMemo(() => (rows.length ? layoutLabels([{ ...rows[0], copies: 1 }], settings, encodeBarcode)[0] : null),
+  const numPreview = useMemo(() => numberingPreview(numbering, allCodes), [numbering, allCodes]);
+  // A574: an item without a barcode is previewed with the next code it would get (an example) — never without bars.
+  const sampleNeedsExample = !!picked[0] && !encodeBarcode(picked[0].barcode);
+  const sample = useMemo(() => (rows.length
+    ? layoutLabels([{ ...rows[0], barcode: sampleNeedsExample ? (numPreview.next[0] ?? '2000000000015') : rows[0].barcode, copies: 1 }], settings, encodeBarcode)[0] ?? null
+    : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [settings, picked[0]?.id, picked[0]?.barcode, picked[0]?.base_price]);
+    [settings, picked[0]?.id, picked[0]?.barcode, picked[0]?.base_price, numPreview.next[0]]);
   const grid = sheetGrid(settings.sheet);
 
   const addAll = (list: Product[], n = 1) => setQty((q) => ({ ...q, ...Object.fromEntries(list.map((p) => [p.id, Math.max(q[p.id] ?? 0, n)])) }));
@@ -106,10 +143,53 @@ export default function LabelsPage() {
     try { setSettings(cleanLabelSettings(await api.put<LabelSettings>('/api/products/labels/settings', settings))); setSaved('Saved for every till and the web.'); }
     catch (e: any) { setSaved(e?.message ?? 'Could not save'); }
   };
-  const print = (mode: 'roll' | 'sheet') => {
+  const setNum = (patch: Partial<BarcodeNumbering>) => { setNumbering((n) => cleanBarcodeNumbering({ ...n, ...patch })); setNumSaved(''); };
+  const saveNumbering = async () => {
+    try { setNumbering(cleanBarcodeNumbering(await api.put<BarcodeNumbering>('/api/products/barcodes/settings', numbering))); setNumSaved('Saved: new barcodes follow this numbering, on the web and every till. Existing barcodes are not changed.'); }
+    catch (e: any) { setNumSaved(e?.message ?? 'Could not save'); }
+  };
+  /**
+   * A574: never a label without bars. Items with no barcode get one first (asked, then generated for exactly those ids,
+   * the rows refreshed with the codes the cloud gave); without menu.edit they are left out and named. An item whose
+   * code cannot be drawn is left out and named. The rest print.
+   */
+  const print = async (mode: 'roll' | 'sheet') => {
     if (!total) { setMsg('Choose the items and how many labels of each.'); return; }
+    const notes: string[] = [];
+    let list = picked;
+    if (missing.length) {
+      if (!canGenerate) {
+        notes.push(`Not printed: ask a manager to generate barcodes for: ${missing.map((p) => p.name).join(', ')}.`);
+        list = list.filter((p) => !missing.includes(p));
+      } else {
+        const n = missing.length;
+        if (!window.confirm(`${n} item${n === 1 ? ' has' : 's have'} no barcode yet — generate ${n === 1 ? 'it' : 'them'} and print?`)) return;
+        setBusy(true);
+        try {
+          const r = await api.post<{ assigned: Array<{ id: string; barcode: string }>; kept: string[] }>('/api/products/barcodes/generate',
+            { product_ids: missing.map((p) => p.id) });
+          // The rows refreshed with the codes generated (and any typed meanwhile, which were kept): the products re-read.
+          const fresh: Product[] | null = await api.get<Product[]>('/api/products').catch(() => null);
+          const got = new Map<string, string>((r.assigned ?? []).map((a) => [a.id, a.barcode]));
+          const next: Product[] = fresh ? fresh.filter((x) => x.status === 'active') : products.map((p) => (got.has(p.id) ? { ...p, barcode: got.get(p.id) ?? p.barcode } : p));
+          setProducts(next);
+          if (fresh) setAllCodes(fresh.map((x) => String(x.barcode ?? '')).filter(Boolean));
+          else setAllCodes((c) => [...c, ...got.values()]);
+          const byId = new Map(next.map((p) => [p.id, p]));
+          list = list.map((p) => byId.get(p.id) ?? p);
+          if (got.size) notes.push(`${got.size} barcode${got.size === 1 ? '' : 's'} generated.`);
+        } catch (e: any) {
+          notes.push(`Not printed: ${missing.map((p) => p.name).join(', ')} — ${e?.message ?? 'the barcodes could not be generated'}.`);
+          list = list.filter((p) => !missing.includes(p));
+        } finally { setBusy(false); }
+      }
+    }
+    const skipped: string[] = [];
     const size = mode === 'sheet' ? { widthMm: grid.cells[0].w, heightMm: grid.cells[0].h } : {};
-    const labels = layoutLabels(rows, settings, encodeBarcode, size);
+    const labels = layoutLabels(toRows(list), settings, encodeBarcode, { ...size, onSkip: (row, why) => skipped.push(`${row.item.name} (${why})`) });
+    if (skipped.length) notes.push(`Not printed: ${skipped.join('; ')}.`);
+    setMsg(notes.join(' '));
+    if (!labels.length) return;
     printHtml(labelsHtml(labels, { mode, sheet: settings.sheet, startAt, title: 'Labels' }));
   };
 
@@ -139,7 +219,7 @@ export default function LabelsPage() {
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             <button className={btn} onClick={() => addAll(shown)}>Add all shown ({shown.length})</button>
-            <button className={btn} onClick={() => addAll(products.filter((p) => isInStoreCode(p.barcode)))}>Add every generated code</button>
+            <button className={btn} onClick={() => addAll(products.filter((p) => isGeneratedCode(p.barcode, numbering)))}>Add every generated code</button>
             <span className="text-xs text-gray-500">Delivery since</span>
             <input type="date" value={since} onChange={(e) => setSince(e.target.value)} className={field} />
             <button className={btn} onClick={fromDelivery}>Add the items restocked</button>
@@ -164,9 +244,13 @@ export default function LabelsPage() {
           </div>
           <p className="text-sm text-gray-400">{picked.length} item{picked.length === 1 ? '' : 's'}, {total} label{total === 1 ? '' : 's'}
             {total > MAX_LABELS_PER_RUN && <span className="text-amber-400"> — only the first {MAX_LABELS_PER_RUN} print in one go</span>}</p>
-          {noCode.length > 0 && (
-            <p className="text-sm text-amber-400">{noCode.length} chosen item{noCode.length === 1 ? ' has' : 's have'} no barcode: the label prints without bars.
-              Use <Link to="/dashboard/products" className="underline">Generate barcodes</Link> on the Products page first.</p>
+          {missing.length > 0 && (
+            <p className="text-sm text-amber-400" data-testid="labels-missing">{missing.length} chosen item{missing.length === 1 ? ' has' : 's have'} no barcode yet: {canGenerate
+              ? 'one is generated when you print (you are asked first).' : 'ask a manager to generate them — the others print.'}</p>
+          )}
+          {undrawable.length > 0 && (
+            <p className="text-sm text-amber-400">{undrawable.map((p) => p.name).join(', ')}: the barcode cannot be drawn (only letters, digits and plain punctuation can) and is left out.
+              Change it on the <Link to="/dashboard/products" className="underline">Products</Link> page.</p>
           )}
         </section>
 
@@ -186,7 +270,8 @@ export default function LabelsPage() {
             <span className="text-gray-500 text-sm">mm</span>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-300">
-            {([['showName', 'Item name'], ['showPrice', 'Price'], ['showBarcode', 'Barcode'], ['showDigits', 'Digits under the bars'], ['showBusiness', 'Business name']] as const).map(([k, label]) => (
+            {/* A574: no Barcode switch — every label carries one. */}
+            {([['showName', 'Item name'], ['showPrice', 'Price'], ['showDigits', 'Digits under the bars'], ['showBusiness', 'Business name']] as const).map(([k, label]) => (
               <label key={k} className="flex items-center gap-1.5"><input type="checkbox" checked={settings[k]} onChange={(e) => set({ [k]: e.target.checked } as Partial<LabelSettings>)} />{label}</label>
             ))}
           </div>
@@ -201,6 +286,7 @@ export default function LabelsPage() {
           <div className="bg-white rounded-lg p-3 grid place-items-center min-h-[8rem]">
             {sample ? <div dangerouslySetInnerHTML={{ __html: labelSvg(sample) }} /> : <p className="text-gray-500 text-sm">Choose an item to see its label.</p>}
           </div>
+          {sampleNeedsExample && <p className="text-xs text-gray-400">{picked[0]?.name} has no barcode yet: the preview shows the next code as an example.</p>}
           {sample?.warnings.map((w) => <p key={w} className="text-xs text-amber-400">{w}</p>)}
           <div className="flex items-center gap-3">
             <button className={btn} onClick={saveSettings}>Save as the business's label</button>
@@ -208,6 +294,38 @@ export default function LabelsPage() {
           </div>
         </section>
       </div>
+
+      {/* A574: Barcode numbering — how new barcodes are made. */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3" data-testid="barcode-numbering">
+        <h2 className="text-white font-semibold">Barcode numbering</h2>
+        <p className="text-xs text-gray-500">How new barcodes are made — when you print an item that has none, or use Generate barcodes on the Products page. Existing barcodes never change.</p>
+        <div className="flex flex-wrap gap-2 items-center text-sm text-gray-300">
+          <select className={field} aria-label="Barcode format" value={numbering.format} disabled={!canGenerate} onChange={(e) => setNum({ format: e.target.value as NumberingFormat })}>
+            {(Object.keys(FORMAT_LABEL) as NumberingFormat[]).map((k) => <option key={k} value={k}>{FORMAT_LABEL[k]}</option>)}
+          </select>
+          <label className="flex items-center gap-1.5">Prefix <input className={`${field} w-24 font-mono`} inputMode="numeric" aria-label="Prefix" value={numbering.prefix}
+            disabled={!canGenerate} onChange={(e) => setNum({ prefix: e.target.value })} /></label>
+          <label className="flex items-center gap-1.5">Start at <input type="number" min={1} className={`${field} w-32`} aria-label="Start number" value={numbering.start}
+            disabled={!canGenerate} onChange={(e) => setNum({ start: Number(e.target.value) })} /></label>
+          {numbering.format === 'CODE128N' ? (
+            <>
+              <label className="flex items-center gap-1.5">Digits <input type="number" min={CODE128N_MIN_LENGTH} max={CODE128N_MAX_LENGTH} className={`${field} w-20`} aria-label="Number of digits"
+                value={numbering.length} disabled={!canGenerate} onChange={(e) => setNum({ length: Number(e.target.value) })} /></label>
+              <label className="flex items-center gap-1.5"><input type="checkbox" checked={numbering.checkDigit} disabled={!canGenerate}
+                onChange={(e) => setNum({ checkDigit: e.target.checked })} />Add a check digit</label>
+            </>
+          ) : <span className="text-gray-500">Digits: {numbering.length} — fixed by the format; the last one is a check digit the scanner uses to catch a misread.</span>}
+        </div>
+        <div className="text-xs space-y-0.5">
+          <p className="text-gray-500">{numPreview.describe}</p>
+          <p className="text-gray-300">Next: <span className="font-mono">{numPreview.next.join(', ') || '—'}</span> · {numPreview.remaining.toLocaleString()} code{numPreview.remaining === 1 ? '' : 's'} left in this range</p>
+          {numPreview.exhausted && <p className="text-red-400">This range is used up: change the prefix or the number of digits.</p>}
+          {numPreview.warnings.map((w) => <p key={w} className="text-amber-400">{w}</p>)}
+        </div>
+        {canGenerate
+          ? <div className="flex items-center gap-3"><button className={btn} onClick={saveNumbering}>Save numbering</button>{numSaved && <span className="text-xs text-gray-400">{numSaved}</span>}</div>
+          : <p className="text-xs text-gray-500">Changing the numbering needs the right to edit products.</p>}
+      </section>
 
       {/* Print */}
       <section className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-4">
@@ -218,7 +336,7 @@ export default function LabelsPage() {
             <h3 className="text-sm font-semibold text-gray-200">On a label printer (or any printer)</h3>
             <p className="text-xs text-gray-500">One label per page, {settings.widthMm} × {settings.heightMm} mm. In the print window pick the label printer;
               its driver's paper size must be the label's size (see the manual). Margins: none. "Save as PDF" makes a PDF.</p>
-            <button onClick={() => print('roll')} disabled={!total} data-testid="print-roll"
+            <button onClick={() => print('roll')} disabled={!total || busy} data-testid="print-roll"
               className="bg-swift hover:bg-swift-light text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm disabled:opacity-40">Print {total} label{total === 1 ? '' : 's'}</button>
           </div>
           <div className="space-y-2">
@@ -250,7 +368,7 @@ export default function LabelsPage() {
             )}
             <p className="text-xs text-gray-500">Each label {grid.cells[0]?.w} × {grid.cells[0]?.h} mm, {grid.cells.length} a sheet{!grid.fits && <span className="text-amber-400"> — this grid runs off the page</span>}.
               Print at 100% ("Actual size"), margins none.</p>
-            <button onClick={() => print('sheet')} disabled={!total} data-testid="print-sheet"
+            <button onClick={() => print('sheet')} disabled={!total || busy} data-testid="print-sheet"
               className="bg-swift hover:bg-swift-light text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm disabled:opacity-40">Print on sheets</button>
           </div>
         </div>

@@ -15,6 +15,7 @@
  * cloud recorded per method). The rules are shared/shiftConfirm.ts, the same file the till and the web POS use.
  */
 import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';   // A576
 import { DESK, useRowMore, ViewMore, MoreRow } from '../components/RowMore';   // A464
 import { api } from '../lib/api';
 import { localDateStr } from '../lib/localDate';
@@ -74,8 +75,11 @@ export default function ShiftReportsPage() {
   const currency = business?.currency ?? 'KES';
   const more = useRowMore();    // A464: a phone shows Cashier, Status, View
   const moreV = useRowMore();   // A464: the shift's table shows Method, Variance
-  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return localDateStr(d); });
-  const [to, setTo] = useState(() => localDateStr());
+  // A576: a watch-list alert (a drawer short or over) opens the shifts of that day: ?from=&to=.
+  const [params] = useSearchParams();
+  const asked = (k: string) => { const v = params.get(k); return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; };
+  const [from, setFrom] = useState(() => { const a = asked('from'); if (a) return a; const d = new Date(); d.setDate(d.getDate() - 6); return localDateStr(d); });
+  const [to, setTo] = useState(() => asked('to') ?? localDateStr());
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [rows, setRows] = useState<ShiftRow[]>([]);
   const [loading, setLoading] = useState(true);

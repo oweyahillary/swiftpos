@@ -129,8 +129,8 @@ try {
   // ── the sale screen's wiring ──
   const pos = src('renderer/pages/POSPage.tsx');
   ok('the sale screen: the bar under the search, before the grid, fed by menuBarTabs; the panel told the bar is there',
-    /const menuBar = useMemo\(\(\) => menuBarTabs\(menus, categories\), \[menus, categories\]\);/.test(pos)
-    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} \/>/.test(pos)
+    /const menuBar = useMemo\(\(\) => menuBarTabs\(menusNow, categoriesNow\), \[menusNow, categoriesNow\]\);/.test(pos)   // A578: the menus open now
+    && /<CategoryChip label=\{gridFilter\.categoryName\} onClear=\{clearCatChip\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} label=\{words\.menus\} hints=\{hours\.hints\}[\s\S]*?\) : undefined\} \/>/.test(pos)   // A578: + hints and Show all
     && /overlay=\{narrowWindow\} menuBar=\{menuBar\.length > 0\} \/>/.test(pos));
   ok('…a tap on a menu shows its items: the menu remembered (A554), its category and any search start again',
     /const pickMenu = \(id: string\) => \{ catPanel\.setMenu\(id\); setActiveCategory\('all'\); setSearch\(''\); \};/.test(pos));
@@ -138,9 +138,9 @@ try {
     /const matchMenu\s+= inMenuScope\(p, gridMenuScope\(menuFilterScope, search\)\);/.test(pos)
     && /const matchStock\s+= !hiddenOutOfStock\(stockView\.mode, stockView, p\.id\);/.test(pos)
     && /soldOut=\{showsSoldOut\(stockView\.mode, stockView, product\.id\)\}/.test(pos)
-    && pos.includes('}), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView]);'));
+    && pos.includes('}), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);'));   // A578: + hours
   ok('…with the bar, the chip names only the category (the bar shows the menu); with no menus, as before',
-    /categoryName: chosenCategoryName \?\? \(chosenMenuName && menuBar\.length === 0 \? `\$\{chosenMenuName\} menu` : null\),/.test(pos));
+    /categoryName: chosenCategoryName \?\? \(chosenMenuName && menuBar\.length === 0 \? `\$\{chosenMenuName\} \$\{words\.menu\.toLowerCase\(\)\}` : null\),/.test(pos));   // A573: the business's word
 
   // ── 5 ──
   ok('"Check other branches" needs inventory.view AND the online licence (A564\'s two locks)',

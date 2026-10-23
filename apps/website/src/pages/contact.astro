@@ -2,10 +2,13 @@
 import Base from '../layouts/Base.astro';
 import WhatsAppButton from '../components/WhatsAppButton.astro';
 import WaIcon from '../components/WaIcon.astro';
+import DemoForm from '../components/DemoForm.astro';
 import { SITE, WA_MESSAGES, telLink, waLink } from '../lib/site';
 
+const isDev = import.meta.env.DEV;
 /*
- * No form in Phase 1, on purpose. The demo request form arrives in Phase 3 with its spam protection
+ * Night 2: the Phase 3 form's front end exists (src/components/DemoForm.astro) and shows in `npm run dev` only, until
+ * its cloud route is built. Below: no form in the build, on purpose. The demo request form arrives in Phase 3 with its spam protection
  * (Turnstile, a honeypot, a time check, rate limits, Kenyan phone validation; WEBSITE-BRIEF §7) and a cloud route.
  * Until then WhatsApp and the phone are the way in. Never put anything a visitor types into a URL.
  */
@@ -67,7 +70,7 @@ import { SITE, WA_MESSAGES, telLink, waLink } from '../lib/site';
         </li>
         <li>
           <h3>You leave with a clear quote.</h3>
-          <p>The setup, the monthly fee and any hardware you need, in writing.</p>
+          <p>The one-off branch setup, the monthly cloud fee and any hardware you need, in writing.</p>
           <!-- TODO(owner): if the visit is free, say so here. -->
         </li>
       </ul>
@@ -78,6 +81,11 @@ import { SITE, WA_MESSAGES, telLink, waLink } from '../lib/site';
       <!-- TODO(owner): the city and areas we visit. -->
     </div>
   </section>
+  {isDev && (
+    <section class="band" aria-label="Demo request form (dev preview)">
+      <div class="wrap"><DemoForm /></div>
+    </section>
+  )}
 </Base>
 
 <style>

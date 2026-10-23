@@ -14,6 +14,8 @@
  * says so; no text here ever suggests a price rise (A560).
  * A565: Branches (the owner or a partner of every branch, two or more branches) — the branches side by side (a report:
  * numbers) and the stock moves to consider (recommendations in words: no quantity, no KES — the owner decides how much).
+ * A575: each business type's words (lib/analyticsTerms.ts analyticsWords) — a shop's tile reads "Product performance" and
+ * its Costs area "Cost of sales", "items you sell"; a restaurant or café keeps "Menu engineering" and "Food cost".
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -22,6 +24,7 @@ import { DESK } from '../../components/RowMore';
 import { ORDER_TYPE_LABEL, type ChartPalette, type OrderTypeKey } from './chartPalette';
 import { capRows, changeCell, daysLeftWords, nextArea, type AreaHook, type AreaKey } from './chartMath';
 import { ChartCard, Legend, OrderMixBars, AvgBillLine, type MixBucket } from './charts';
+import { analyticsWords, type AnalyticsWords } from '../../lib/analyticsTerms';
 
 const TOP = 10;
 const pc = (x: number | null | undefined) => (x === null || x === undefined ? '—' : `${Math.round(x * 100)}%`);
@@ -51,8 +54,10 @@ function AreaIcon({ d, active }: { d: string; active: boolean }) {
  * The "Dig into the details" tiles. `areas` is the order shown (visibleAreas), `hooks` the cloud's figure per area (none
  * yet: the tile shows its name only). A compact copy sticks while the owner scrolls inside the open area (`children`).
  */
-export function AreaTiles({ areas, hooks, active, onPick, stickyTop, children }: {
+export function AreaTiles({ areas, hooks, active, onPick, stickyTop, children, labels }: {
   areas: AreaKey[]; hooks: Partial<Record<AreaKey, AreaHook>> | null; active: AreaKey; onPick: (a: AreaKey) => void;
+  /** A575: a tile's name in the business type's words ("Product performance" at a shop) */
+  labels?: Partial<Record<AreaKey, string>>;
   /** the sticky bar's top: below the dashboard's own sticky header on a phone */
   stickyTop: string; children: ReactNode;
 }) {
@@ -101,7 +106,7 @@ export function AreaTiles({ areas, hooks, active, onPick, stickyTop, children }:
                   <AreaIcon d={AREA_META[a].icon} active={on} />
                   {h?.alert && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-500/15 text-amber-400" data-testid="area-alert">To do</span>}
                 </span>
-                <span className={`text-sm font-semibold leading-tight ${on ? 'text-white' : 'text-gray-200'}`}>{AREA_META[a].label}</span>
+                <span className={`text-sm font-semibold leading-tight ${on ? 'text-white' : 'text-gray-200'}`}>{labels?.[a] ?? AREA_META[a].label}</span>
                 <span className="text-xs text-gray-400 leading-snug min-h-[2rem]" data-testid="area-hook">{h?.text ?? ' '}</span>
               </button>
             );
@@ -120,7 +125,7 @@ export function AreaTiles({ areas, hooks, active, onPick, stickyTop, children }:
               <button key={a} onClick={() => quick(a)} aria-pressed={a === active}
                 className={`px-2.5 py-1 rounded-full text-xs whitespace-nowrap border focus:outline-none focus-visible:ring-2 focus-visible:ring-swift
                   ${a === active ? 'border-swift bg-swift-strong text-white' : 'border-gray-700 text-gray-300 hover:text-white'}`}>
-                {AREA_META[a].label}{hooks?.[a]?.alert ? ' •' : ''}
+                {labels?.[a] ?? AREA_META[a].label}{hooks?.[a]?.alert ? ' •' : ''}
               </button>
             ))}
           </div>
@@ -358,7 +363,7 @@ const SET_COSTS = '/dashboard/products?costs=1';
 const fine = (n: number, currency: string) => fmt.money(n, currency, { decimals: Math.abs(n) < 100 && Math.round(n * 100) % 100 !== 0 ? 2 : 0 });
 
 /** "Set these costs to see your real margins" — every item sold with no cost, the most sold first (owner: links to set it). */
-function NoCostList({ n, ownerView, currency }: { n: CostsAnswer['noCost']; ownerView: boolean; currency: string }) {
+function NoCostList({ n, ownerView, currency, w }: { n: CostsAnswer['noCost']; ownerView: boolean; currency: string; w: AnalyticsWords }) {
   const more = n.total - n.items.length;
   return (
     <section className="bg-gray-900 border border-amber-500/40 rounded-xl overflow-hidden" aria-label="Items without a cost" data-testid="analytics-no-cost">
@@ -392,29 +397,31 @@ function NoCostList({ n, ownerView, currency }: { n: CostsAnswer['noCost']; owne
       </table></div>
       <p className="px-3 py-2 text-[11px] text-gray-500 border-t border-gray-800" data-testid="analytics-no-cost-more">
         {more > 0 ? `Showing the top ${n.items.length} of ${n.total}, by sales — and ${more} more. ` : ''}
-        {n.unsold > 0 ? `Plus ${n.unsold} item${n.unsold === 1 ? '' : 's'} on your menu with no cost that did not sell this period.` : ''}
-        {' '}A cost is the item's own cost, its recipe (ingredients with a cost) or, for a combo, its items.
+        {n.unsold > 0 ? `Plus ${n.unsold} item${n.unsold === 1 ? '' : 's'} ${w.onYourList} with no cost that did not sell this period.` : ''}
+        {' '}{w.costOfSales === 'Food cost' ? "A cost is the item's own cost, its recipe (ingredients with a cost) or, for a combo, its items." : "A cost is the item's own cost price or, for a combo, its items'."}
       </p>
     </section>
   );
 }
 
-export function CostsSection({ c, ownerView, currency }: { c: CostsAnswer; ownerView: boolean; currency: string }) {
+export function CostsSection({ c, ownerView, currency, words }: { c: CostsAnswer; ownerView: boolean; currency: string; words?: AnalyticsWords }) {
   const f = c.foodCost;
+  const w = words ?? analyticsWords(null);   // A575: a shop's "Cost of sales"; a restaurant's "Food cost"
+  const what = w.costOfSales === 'Food cost' ? 'what the food costs' : 'what the goods cost';
   const pts = f.change === null ? null : Math.round(f.change * 1000) / 10;
   return (
     <div className="space-y-4" data-testid="analytics-costs">
-      {c.noCost.total > 0 && <NoCostList n={c.noCost} ownerView={ownerView} currency={currency} />}
+      {c.noCost.total > 0 && <NoCostList n={c.noCost} ownerView={ownerView} currency={currency} w={w} />}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <Stat label="Food cost" value={pc(f.now)} testId="analytics-food-cost"
-          sub={pts === null ? `Of every ${currency} 100 these items sell for, what the food costs` : pts === 0 ? `The same as the period before (${pc(f.prev)})`
+        <Stat label={w.costOfSales} value={pc(f.now)} testId="analytics-food-cost"
+          sub={pts === null ? `Of every ${currency} 100 these items sell for, ${what}` : pts === 0 ? `The same as the period before (${pc(f.prev)})`
             : `${pts > 0 ? 'Up' : 'Down'} ${Math.abs(pts)} ${Math.abs(pts) === 1 ? 'point' : 'points'} from ${pc(f.prev)} the period before`} />
-        <Stat label="Sales with a cost set" value={pc(f.costedShare)} sub="Food cost covers these; set the rest below" />
-        <Stat label="Biggest movers" value={f.movers.length ? f.movers[0].name : 'None'} sub={f.movers.length > 1 ? `Then ${f.movers.slice(1).map((x) => x.name).join(', ')} — a bigger share of the food bill than before`
-          : f.movers.length ? 'A bigger share of the food bill than before' : 'No item takes a bigger share of the food bill than before'} />
+        <Stat label="Sales with a cost set" value={pc(f.costedShare)} sub={`${w.costOfSales} covers these; set the rest below`} />
+        <Stat label="Biggest movers" value={f.movers.length ? f.movers[0].name : 'None'} sub={f.movers.length > 1 ? `Then ${f.movers.slice(1).map((x) => x.name).join(', ')} — a bigger share of ${w.costBill} than before`
+          : f.movers.length ? `A bigger share of ${w.costBill} than before` : `No item takes a bigger share of ${w.costBill} than before`} />
       </div>
       <div className="grid gap-4 xl:grid-cols-2">
-        <Table title="The thinnest margins" sub="Check the portion or what goes into the top ones" testId="analytics-thin">
+        <Table title="The thinnest margins" sub={w.thinCheck} testId="analytics-thin">
           {c.thin.length === 0 ? <p className="p-3 text-sm text-gray-500">No item with a cost sold 5 or more.</p> : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800">
@@ -438,7 +445,7 @@ export function CostsSection({ c, ownerView, currency }: { c: CostsAnswer; owner
           <CapNote shown={c.thin.length} total={c.thinTotal} by="the thinnest margin first" />
         </Table>
         <Table title="Costs that went up" sub="Compare suppliers for these" testId="analytics-rises">
-          {c.rises.length === 0 ? <p className="p-3 text-sm text-gray-500">No ingredient cost went up in this period.</p> : (
+          {c.rises.length === 0 ? <p className="p-3 text-sm text-gray-500">{w.costOfSales === 'Food cost' ? 'No ingredient cost went up in this period.' : 'No cost went up in this period (costs are followed for ingredients only).'}</p> : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="text-gray-500 text-left text-xs border-b border-gray-800">
                 <th className={th}>Ingredient</th><th className={`${th} text-right`}>From → to</th><th className={`${th} text-right`}>Up</th><th className={`${th} text-right ${DESK}`}>Extra a month</th>
@@ -458,7 +465,7 @@ export function CostsSection({ c, ownerView, currency }: { c: CostsAnswer; owner
           <CapNote shown={c.rises.length} total={c.risesTotal} by="the biggest rise first" />
         </Table>
       </div>
-      <p className="text-xs text-gray-500">Food cost = the cost of what was sold ÷ what it sold for, over the items with a cost; both periods at today's costs. {c.historyNote}</p>
+      <p className="text-xs text-gray-500">{w.costOfSales} = the cost of what was sold ÷ what it sold for, over the items with a cost; both periods at today's costs. {c.historyNote}</p>
     </div>
   );
 }

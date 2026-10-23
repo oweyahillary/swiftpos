@@ -7,7 +7,10 @@
  *
  *   GET    /api/menus           the business's menus (not deleted), in order, each with how many categories it holds
  *   POST   /api/menus           { name, color?, icon?, sort_order? }                      menu.edit
- *   PATCH  /api/menus/:id       { name?, color?, icon?, sort_order?, active? }            menu.edit
+ *   PATCH  /api/menus/:id       { name?, color?, icon?, sort_order?, active?, availability? }   menu.edit
+ *
+ * A578: availability — the menu's hours (days of the week and time windows, shared/menuHours.ts; null = always). POST
+ * takes it too. Before migration 165 a write that carries hours answers 409 "run migration 165"; one without hours works.
  *   POST   /api/menus/reorder   { ids: [...] } — the new order (ids not this business's are ignored)   menu.edit
  *   DELETE /api/menus/:id       soft delete (deleted_at, off); its categories are left with no menu      menu.edit
  *
@@ -20,12 +23,14 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
-import { cleanMenuName, cleanMenuColor, cleanMenuIcon, isDuplicateName, menusMissing } from '../lib/menus';
+import { cleanMenuName, cleanMenuColor, cleanMenuIcon, cleanMenuAvailability, isDuplicateName, menusMissing } from '../lib/menus';
 
 const router = safeRouter();
 router.use(requireAuth);
 
 const DUP = (name: string) => `A menu called "${name}" already exists`;
+/** A578: hours sent before migration 165 is run — said, never a 500. */
+const NO_HOURS_YET = 'Menu hours need migration 165 on the database first';
 
 // GET /api/menus
 router.get('/', async (req, res) => {
@@ -49,6 +54,8 @@ router.post('/', requirePermission('menu.edit'), async (req, res) => {
   if (!color.ok) { res.status(400).json({ error: color.error }); return; }
   const icon = cleanMenuIcon(req.body?.icon);
   if (!icon.ok) { res.status(400).json({ error: icon.error }); return; }
+  const hours = cleanMenuAvailability(req.body?.availability);   // A578
+  if (!hours.ok) { res.status(400).json({ error: hours.error }); return; }
   let sort = Number.isInteger(req.body?.sort_order) && req.body.sort_order >= 0 ? Number(req.body.sort_order) : null;
   if (sort === null) {
     const { data: last } = await supabase.from('menus').select('sort_order').eq('business_id', req.businessId)
@@ -56,9 +63,11 @@ router.post('/', requirePermission('menu.edit'), async (req, res) => {
     sort = (Number((last as { sort_order?: number } | null)?.sort_order) || 0) + 1;
   }
   const { data, error } = await supabase.from('menus')
-    .insert({ business_id: req.businessId, name: name.value, color: color.value, icon: icon.value, sort_order: sort, active: true })
+    .insert({ business_id: req.businessId, name: name.value, color: color.value, icon: icon.value, sort_order: sort, active: true,
+      ...(hours.value ? { availability: hours.value } : {}) })
     .select().single();
   if (error) {
+    if (hours.value && menusMissing(error)) { res.status(409).json({ error: NO_HOURS_YET }); return; }
     if (isDuplicateName(error)) { res.status(409).json({ error: DUP(name.value) }); return; }
     sendError(res, error); return;
   }
@@ -97,10 +106,14 @@ router.patch('/:id', requirePermission('menu.edit'), async (req, res) => {
     if (typeof b.active !== 'boolean') { res.status(400).json({ error: 'active must be true or false' }); return; }
     patch.active = b.active;
   }
+  if (b.availability !== undefined) {   // A578: null clears the hours (always)
+    const v = cleanMenuAvailability(b.availability); if (!v.ok) { res.status(400).json({ error: v.error }); return; } patch.availability = v.value;
+  }
   if (Object.keys(patch).length === 0) { res.status(400).json({ error: 'Nothing to change' }); return; }
   const { data, error } = await supabase.from('menus').update(patch)
     .eq('id', req.params.id).eq('business_id', req.businessId).is('deleted_at', null).select().maybeSingle();
   if (error) {
+    if ('availability' in patch && menusMissing(error)) { res.status(409).json({ error: NO_HOURS_YET }); return; }
     if (isDuplicateName(error)) { res.status(409).json({ error: DUP(String(patch.name ?? '')) }); return; }
     sendError(res, error); return;
   }

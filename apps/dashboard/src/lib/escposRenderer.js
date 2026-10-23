@@ -424,6 +424,26 @@ function describeAttributes(unit) {
   }
   return unit.attributes.filter((a) => a.count > 0).map((a) => total === unit.portions ? `${a.count} ${a.option}` : `${a.count} x ${a.option}`).join(", ");
 }
+function isMeasured(line) {
+  return !!line.measureUnit || !Number.isInteger(line.quantity);
+}
+function measureQty(q) {
+  if (Number.isInteger(q)) return String(q);
+  return String(Math.round(q * 1e3) / 1e3);
+}
+function measureText(line) {
+  const unit = line.measureUnit;
+  if (unit === "g") return `${Math.round(line.quantity * 1e3)} g`;
+  if (unit === "kg") return `${(Math.round(line.quantity * 1e3) / 1e3).toFixed(3)} kg`;
+  return unit ? `${measureQty(line.quantity)} ${unit}` : measureQty(line.quantity);
+}
+function perUnitPrice(cents) {
+  return cents % 100 === 0 ? String(cents / 100) : formatCents(cents);
+}
+function measureRow(line) {
+  const per = line.measureUnit === "g" ? "kg" : line.measureUnit;
+  return `${measureText(line)} @ ${perUnitPrice(line.unitPrice)}${per ? `/${per}` : ""}`;
+}
 function visibleUnits(line, ctx) {
   const { station } = ctx;
   if (station.includeUnits === "none") return [];
@@ -499,7 +519,7 @@ function renderProduction(ctx) {
     if (printedLines > 0) d.gap(ITEM_GAP_DOTS);
     printedLines++;
     const { name, folded } = lineHeading(line);
-    const qtyPrefix = `${line.quantity}   `;
+    const qtyPrefix = `${isMeasured(line) ? measureText(line) : line.quantity}   `;
     const headingWidth = cols;
     d.lines(
       hangingWrap(`${qtyPrefix}${name.toUpperCase()}`, headingWidth, qtyPrefix.length),
@@ -623,14 +643,16 @@ function renderReceipt(ctx) {
   let totalQty = 0;
   let lastHadSubLines = false;
   order.lines.forEach((line, i) => {
-    totalQty += line.quantity;
+    const measured = isMeasured(line);
+    totalQty += measured ? 1 : line.quantity;
     if (lastHadSubLines) d.blank();
     const deltas = line.units.reduce((a, u) => a + u.priceDelta * u.quantity, 0);
     const baseNet = tax.lineNets[i] - netOf(deltas * line.quantity, business.vatRate, business.ctlRate);
     const { name, hidden, moved } = receiptHeading(line);
-    d.lines(itemRow(cols, name, String(line.quantity), formatCents(baseNet)));
+    d.lines(itemRow(cols, name, measured ? "1" : String(line.quantity), formatCents(baseNet)));
     const units = visibleUnits(line, ctx).filter((u) => !hidden.has(u)).map((u) => moved.has(u) ? { ...u, attributes: [] } : u);
     const before = d.length;
+    if (measured) d.lines(subRow(cols, measureRow(line), void 0, 2));
     const plain = [];
     for (const u of units) {
       const attrs = describeAttributes(u);

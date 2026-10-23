@@ -10,8 +10,138 @@ The newest entry is at the top.
 | `WORKPLAN.md` | How the site will be built, page by page, phase by phase (written after the research) |
 
 Standing rules: the site is never deployed, published or committed by Claude; the owner reviews and commits. Prices are
-a draft (KES 30,000 setup, about KES 3,000 a month; Analytics planned at about KES 10,000 a month). Contact:
-0717 675 635, no company email yet.
+a draft: KES 30,000 once per branch for the tills; the cloud KES 3,000 a month per branch, month to month, first month
+free; Analytics about KES 10,000 a month. Contact: 0717 675 635, no company email yet.
+
+---
+
+## 2026-10-22: Night 2
+
+Local only: nothing committed, deployed or published. Worked only in `apps/website/**` and `docs/website/**`; read (never
+edited) `apps/server/src/lib/analyticsRules.ts`, the dashboard's Analytics page, `shared/labels.ts`, `shared/barcode.ts`,
+`shared/printing` and `docs/AUDIT-REGISTER.md` (A559–A574).
+
+**Asked**
+- Reflect the owner's commercial model: per branch (2 computers), desktop one-off, cloud month to month with 6 or 12
+  months ahead recommended, a one-month cloud trial, Analytics as an add-on, 24-hour support for priority clients only,
+  a UPS recommended. No extra-PC price, no discount figure, Online price "Ask us".
+- Remove every price-rise example from Analytics; voids are a warning, never money "to recover"; show the app's real
+  card types (stock, week at a glance, items without costs, branch moves in words).
+- Add the 1.0.20 features where they fit, with the right trade words (shops: departments, products, barcodes, labels,
+  stock; restaurants: menus, kitchen tickets, tables). Then Phase 3's form front end, a barcode and labels section with a
+  label drawn by the real label code, and other no-owner-input items.
+
+**Done**
+- **Pricing model** (`src/pages/pricing.astro`, `src/lib/site.ts`, `src/lib/faq.ts`, Home's price band):
+  - "Pay once for the tills. About KES 100 a day for the cloud."
+  - Two groups: **Pay once**: "ZapTill for one branch", KES 30,000 once, "A branch is two computers: the branch server
+    and a till". **Month to month**: ZapTill Cloud (KES 3,000 a month, per branch, "First month free", 6 or 12 months
+    ahead recommended), ZapTill Online ("Ask us", price coming soon), ZapTill Analytics (about KES 10,000 a month, an
+    add-on to the cloud).
+  - "More tills or a kitchen screen are quoted separately": no extra-PC figure anywhere.
+  - "No surprises" now opens with "The tills are paid for once" and "The cloud is month to month".
+  - New pricing FAQ answers: Do I pay for the tills every month? Is there a free trial? Can I pay for the cloud for a
+    year? What is a branch, and can I have more tills? What support do I get? (24 hours for priority clients). Reworked:
+    What happens if I stop paying for the cloud? Can I add a branch later? Is there a contract? The hardware answer is
+    now a list per branch with a UPS; the power-cut answer says the UPS is on the recommended list.
+  - The leak calculator compares against "ZapTill Cloud, a month". The Open Graph card for Pricing was redrawn.
+- **Analytics without price rises** (`src/lib/analyticsDemo.ts`, `DoThisNextCard.astro`, Analytics, Home, Features,
+  Pricing, Bars, Restaurants, How it works, WORKPLAN §3, §5.4):
+  - The demo cards are now the app's own A560 cards, from the real capture
+    (`docs/website/screenshots/app-analytics-dark.webp`): order about 70 more Tusker before Friday (≈ KES 18,255 of
+    sales at risk), cooking oil runs out in about 2 days, stock up for Friday, stock up for Saturday, chase KES 87,400
+    owed, feature Tilapia at lunch, and **"Check Otieno's voids" as an amber warning with no estimate**.
+  - The card component draws stock plans ("Order: ≈ 70 more to have 100 by Friday"), warnings, and cards with no figure.
+  - Analytics page: a new hero screenshot (re-cropped from the A560 capture: no price-rise card in it), the found line in
+    plain words, the "6 items have no cost" note, **Your week at a glance: what to prepare each day**, a new **Stock
+    between branches, in plain words** section (A565's two suggestions, no quantity, no KES), money leaks as warnings, and
+    a payback table that shows each card's real kind of figure.
+  - Home teaser: "what to have in for Saturday … Your prices stay yours: it never tells you to charge more."
+  - Bars: "Then: what to have in, and when to staff up". How it works, 07:30: the voids warning, with no shilling figure.
+  - `grep` finds no "raise", "to recover", "24/7" or "hotel" in the site's copy.
+- **1.0.20 features, worded as shipped**:
+  - Features: menus as big tabs (departments in a shop), barcode scanning, credit limits, the zero-stock choice, extras
+    and notes on the kitchen ticket (the slip pair now shows them), other branches' stock and requests, 24-hour priority
+    support, the owner's first-sign-in password, and a new **Barcodes and labels** group.
+  - Retail (rewritten in shop words): barcodes and labels first, then departments as tabs, the zero-stock choice, other
+    branches' shelves and customers on account. New FAQ answers: products without a barcode, which label printer, when
+    an item runs out, checking the other shop.
+  - Restaurants: extras and notes on the kitchen ticket with a real slip (Table 6: "+ Extra Cheese", "** No onions",
+    "** Well done"), menus as big tabs, credit limits at the till.
+  - How it works: the kitchen moment mentions extras and notes.
+  - Premium labels kept: stock, labels and checking other branches **from the till** say "with ZapTill Online" (A460,
+    A564, A566, A571).
+- **Real labels**: `scripts/render-labels.mjs` (`npm run labels`) lays out three demo-shop items through
+  `shared/labels.ts` and `shared/barcode.ts` (imported read only; Node 24 strips the types) into
+  `src/lib/labels.generated.json`. `LabelSamples.astro` draws 50 × 30, 58 × 40 (with the shop name) and 38 × 25 mm
+  labels at true proportions, plus an A4 3 × 8 sticker sheet with two rows printed. The codes are ZapTill's own in-store
+  EAN-13s (2000000000015, …022, …039). `test/labels.test.mjs` checks the file against the label code and every check
+  digit.
+- **Kitchen ticket with extras**: `render-slips.mjs` renders a second demo order's kitchen ticket (`extras58`/`extras80`)
+  through `shared/printing`; the other slips are unchanged. A new slip test checks the extra and the notes sit under the
+  dish.
+- **Phase 3 front end**: `src/components/DemoForm.astro` and `src/lib/demoForm.ts` (name, business, kind, branches,
+  Kenyan phone, optional email, town, message; a honeypot; a 4-second time check; a Turnstile TODO). It shows on Contact
+  in `npm run dev` only and is **not in the build**: no route receives it yet. It would post JSON in the body, never in a
+  URL. `test/demo-form.test.mjs` covers the checks.
+- WORKPLAN §3, §5, §6, §9 and §10 updated; `apps/website/README.md` lists the new scripts and files.
+
+**Decisions**
+- **The cloud fee is shown per branch**, following "pricing is per branch". If the owner meant per business, change
+  `pricing.astro` ("per branch") and the FAQ "Can I add a branch later?".
+- **"Pay once" is worded as the owner said it**: "Once paid, it's a done deal. No monthly fee for the tills." The
+  stop-paying answer says the tills stay yours and the cloud features stop; exactly what a lapsed cloud does to the tills
+  is a TODO(owner).
+- **Card wording is the app's**, with its long dashes written as colons, as the site does elsewhere. The found line is in
+  the site's words (the app's capture counts one item running low where two cards are stock warnings).
+- **Analytics says, once per page where it fits, that it never suggests raising prices**: it turns the owner's rule into
+  a selling point ("your prices stay competitive").
+- **The week at a glance and the branch moves are CSS** from the real figures, not crops: the crops were unreadable at
+  390 px.
+- **Labels and stock from the till are labelled "with ZapTill Online"**; generating barcodes and printing labels from
+  the web is listed under the cloud.
+- **No weighed items**: in-store codes 21–29 are reserved for scale barcodes (A571), but weighing is not built. The TODO
+  stays on the retail page.
+- **The demo form stays out of the build** until the server route exists, so a deployed site never shows a form that
+  goes nowhere.
+
+**Placeholders and TODO(owner)**
+- The extra-computer price; a reward for paying ahead; the ZapTill Online price; the notice period beyond "month to
+  month"; support hours for clients who are not priority clients.
+- What the tills do if the cloud lapses (the stop-paying answer).
+- The demo form's route, Turnstile key and endpoint (server work).
+- Earlier ones still open: the company email, the setup time, the visit being free, the area served, petrol, logos,
+  the first-month money-leak report.
+
+**Checked**
+- `npm run build` (14 pages), `npm test` (23 of 23: leak, slips, labels, schema, demo form) and `npm run check` (links,
+  headings, alt text, JSON-LD, weights; heaviest page Analytics at 192 KB) all pass.
+- The repo's `scripts/check-*.mjs`: all pass except `check-schema-drift`, which reports migration
+  `164_analytics_together.sql` not yet applied to the database: another agent's work in progress, nothing in the website.
+- No CRLF in any changed or new file under `apps/website` or `docs/website`.
+- Full-page screenshots at 1440, 390 and 360 px of Home, Pricing, Analytics, Features, Retail, Restaurants, Bars, How it
+  works and Contact, looked at: no horizontal overflow at any width. (The first pass found the Analytics payback table
+  overflowing; fixed.) The dev-only form was clicked through in Chromium: too fast → refused; filled → "not connected".
+- Review shots saved over night 1's in `docs/website/screenshots/site-*-desktop.webp` and `-phone.webp`.
+
+**Note for whoever runs the tests next**
+- `shared/labels.ts` and `shared/barcode.ts` were being changed by another agent tonight (A574). If `npm test` reports
+  that the labels drifted, run `npm run labels` and look at the labels again; it means the label code changed, not that
+  the site is wrong.
+
+**Next**
+- Phase 3's server side: the route, the migration, the admin list, the Telegram notice; then point `ENDPOINT` at it and
+  show the form in the build.
+- Capture a real till screenshot with the menus as top tabs (A566) and a shop's departments, for Features and Retail.
+- Phase 4: proof (quotes, logos, case studies with permission).
+
+**Open questions for the owner (new)**
+17. Is the cloud fee per branch (as the site now says) or per business?
+18. When a client stops paying for the cloud, do the tills carry on exactly as before, including the ZapTill Online extras?
+19. Support hours for clients who are not priority clients, and what makes a client "priority" (a paid tier?). The site
+    only says "24-hour support for priority clients".
+20. Is there a reward for paying 6 or 12 months ahead? The site says "recommended" with no figure.
+21. The extra-computer price, when decided (the site says "quoted separately").
 
 ---
 

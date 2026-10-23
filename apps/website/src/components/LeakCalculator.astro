@@ -46,10 +46,10 @@ const r = leak(d, PRICES.monthly);
     <dl class="calc__split">
       <div><dt>Short drawers</dt><dd>KES <span data-out="cashLeak">{kes(r.cashLeak)}</span></dd></div>
       <div><dt>Wastage</dt><dd>KES <span data-out="wastage">{kes(r.wastage)}</span></dd></div>
-      <div class="calc__price"><dt>ZapTill, a month</dt><dd>KES {kes(PRICES.monthly)}</dd></div>
+      <div class="calc__price"><dt>ZapTill Cloud, a month</dt><dd>KES {kes(PRICES.monthly)}</dd></div>
     </dl>
     <p class="calc__verdict" data-out="verdict">
-      That is about {r.timesPrice} times what ZapTill costs in a month.
+      That is about {r.timesPrice} times what the ZapTill cloud costs in a month.
     </p>
     <p class="calc__note">
       An estimate based only on your own numbers, over {DAYS_PER_MONTH} days. Nothing you type here is saved or sent.
@@ -83,8 +83,8 @@ const r = leak(d, PRICES.monthly);
       out('wastage')!.textContent = kes(r.wastage);
       let verdict: string;
       if (r.monthlyLeak === 0) verdict = 'Put in your own numbers to see an estimate.';
-      else if (r.difference >= 0) verdict = `That is about ${r.timesPrice} times what ZapTill costs in a month.`;
-      else verdict = `On these numbers your leak is less than ZapTill's monthly price. The day close and the daily summary are how you would know for sure.`;
+      else if (r.difference >= 0) verdict = `That is about ${r.timesPrice} times what the ZapTill cloud costs in a month.`;
+      else verdict = `On these numbers your leak is less than the cloud's monthly price. The day close and the daily summary are how you would know for sure.`;
       out('verdict')!.textContent = verdict;
     };
 

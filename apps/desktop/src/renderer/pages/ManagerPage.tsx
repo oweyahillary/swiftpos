@@ -29,7 +29,7 @@ import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
 import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
 import { can, canAny, isOwner as isOwnerSession, mayMoveMoney, mayMpesa, SELL_REFUSAL } from '../lib/access';   // A490: the one rule (+ A492)
-import { buildManagerNav, groupOf, openGroup, firstTab, type TabKey, type GroupKey } from '../lib/managerNav';
+import { buildManagerNav, relabelCatalogue, groupOf, openGroup, firstTab, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
 import TillWastage from '../components/TillWastage';   // A414
 import Pager, { usePageSize } from '../components/Pager';   // A475
@@ -77,6 +77,7 @@ import OffersScreen from '../screens/OffersScreen';   // A445
 import RecordExpenseForm from '../components/RecordExpenseForm';   // A447
 import TillChangesNotice from '../components/TillChangesNotice';   // A448
 import { VOID_WINDOW_MIN, type ReverseRights } from '../lib/voidRefund';
+import { businessTerms } from '../../shared/businessTerms';   // A573: Menu (a restaurant) / Products (a shop)
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
 function Icon({ d, size = 18, cls = '' }: { d: string; size?: number; cls?: string }) {
@@ -2037,7 +2038,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
   //    settings.payments (each panel by its own) · Printing stations.manage or receipt.manage (A59/A90) · Staff staff.view.
   //  - Stock inventory.view (web POS on and something stock-tracked, A346) · Wastage inventory.waste · Transfers
   //    inventory.transfer (both with the online licence, A460).
-  const nav = buildManagerNav({
+  const words = businessTerms(flags.mode);   // A573
+  const nav = relabelCatalogue(buildManagerNav({
     isRestaurant: flags.isRestaurant,
     canOverview: has('reports.overview'),
     canOrders: has('orders.view_all'),
@@ -2061,7 +2063,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
     canBranchStock: has('inventory.view'),   // A564: another branch's stock (asking for it: inventory.transfer)
     branchRequests,   // A564
     canLabels: hasAny('menu.edit', 'inventory.view'),   // A571: barcode labels
-  });
+  }), words.catalogue);   // A573: "Menu" / "Products"
   const GROUP_ICON: Record<GroupKey, string> = {
     overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,
     menu: I.menu, settings: I.receipt, stock: I.stock,
@@ -2110,11 +2112,11 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
-      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => openTab('import')} canEdit={has('menu.edit')} canPrices={has('menu.prices')} />;
+      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => openTab('import')} canEdit={has('menu.edit')} canPrices={has('menu.prices')} title={words.catalogue} />;
       // A445: the owner sets offers for every branch or this one; anyone else for this branch (the cloud enforces it).
       case 'offers':  return online ? <OffersScreen currency={currency} isOwner={isOwnerSession(staff)} /> : <RetailOverview currency={currency} />;   // A460
       case 'combos':  return online ? <CombosTab  currency={currency} /> : <RetailOverview currency={currency} />;   // A460
-      case 'import':  return <ImportTab  currency={currency} />;
+      case 'import':  return <ImportTab  currency={currency} what={words.importWhat} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} canEdit={has('staff.edit')} />;   // A490
       case 'settings': return <SettingsPanel canBusiness={has('settings.business')} canPayments={has('settings.payments')}
                                              canMpesa={mayMpesa(staff)} isOwner={isOwnerSession(staff)} />;   // 0.6.30; A490: each panel by its key

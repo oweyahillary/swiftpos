@@ -10,6 +10,7 @@
 
 import { useState, useCallback } from 'react';
 import type { CartItem, Product, VariantGroup, VariantOption } from './types';
+import { weightUnitOf, type WeighedLine } from '../../../lib/scaleBarcode';   // A577
 
 export interface CartActions {
   // Cart contents
@@ -25,6 +26,8 @@ export interface CartActions {
 
   // Minimart adapters
   minimartAddToCart:   (product: Product, qty?: number) => void;
+  /** A577: a weighed line (the keypad's or a scale label's) — always a line of its own. */
+  addWeighedToCart:    (product: Product, line: WeighedLine) => void;
   minimartUpdateQty:   (productId: string, delta: number) => void;
   minimartRemoveItem:  (productId: string) => void;
 
@@ -80,7 +83,7 @@ export function useCart(): CartActions {
     }
     setCart(prev => {
       // A367: never into a line that carries a note — a tap after "2 spicy" is a new, plain line.
-      const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.notes);
+      const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.notes && !i.measureUnit);
       if (existing) {
         return prev.map(i => i === existing
           ? { ...i, quantity: i.quantity + 1, lineTotal: i.unitPrice * (i.quantity + 1) }
@@ -111,11 +114,20 @@ export function useCart(): CartActions {
     setFuelEntry(null);
   }, []);
 
+  const addWeighedToCart = useCallback((product: Product, line: WeighedLine) => {
+    if (!(line.quantity > 0)) return;
+    setCart(prev => [...prev, {
+      product, quantity: line.quantity, selectedVariants: [], selectedModifiers: [],
+      unitPrice: line.unitPrice, lineTotal: line.lineTotal, measureUnit: weightUnitOf(product as any),
+    }]);
+  }, []);
+
   const updateQty = useCallback((index: number, delta: number) => {
     setCart(prev =>
       prev
         .map((item, i) => {
           if (i !== index) return item;
+          if (item.measureUnit) return delta < 0 ? { ...item, quantity: 0 } : item;   // A577: a weight is not stepped
           const newQty = item.quantity + delta;
           return { ...item, quantity: newQty, lineTotal: item.unitPrice * newQty };
         })
@@ -201,7 +213,7 @@ export function useCart(): CartActions {
   const minimartAddToCart = useCallback((product: Product, qty?: number) => {
     if (qty !== undefined) {
       setCart(prev => {
-        const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0);
+        const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.measureUnit);
         if (existing) {
           const newQty = existing.quantity + qty;
           return prev.map(i => i === existing
@@ -222,9 +234,9 @@ export function useCart(): CartActions {
   const minimartUpdateQty = useCallback((productId: string, delta: number) => {
     setCart(prev =>
       prev
-        .map(item => item.product.id === productId
-          ? { ...item, quantity: item.quantity + delta, lineTotal: item.unitPrice * (item.quantity + delta) }
-          : item)
+        .map(item => item.product.id !== productId ? item
+          : item.measureUnit ? (delta < 0 ? { ...item, quantity: 0 } : item)   // A577: a weight is not stepped
+          : { ...item, quantity: item.quantity + delta, lineTotal: item.unitPrice * (item.quantity + delta) })
         .filter(item => item.quantity > 0)
     );
   }, []);
@@ -238,6 +250,7 @@ export function useCart(): CartActions {
     addToCart, addFuelToCart, updateQty, removeItem,
     setItemCourse, toggleItemHold, clearCart,
     minimartAddToCart, minimartUpdateQty, minimartRemoveItem,
+    addWeighedToCart,   // A577
     variantProduct, selectedVariants,
     openVariantModal, closeVariantModal, toggleVariantOption, confirmVariants,
     fuelEntry, setFuelEntry, fuelEdited, setFuelEdited,

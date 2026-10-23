@@ -603,6 +603,29 @@
     "consumed_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "loss_alerts": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "staff_id": "\"uuid\"",
+    "alert_key": "\"text\" NOT NULL",
+    "kind": "\"text\" NOT NULL",
+    "period": "\"text\" NOT NULL",
+    "business_date": "\"date\" NOT NULL",
+    "count": "\"integer\" NOT NULL",
+    "amount": "\"numeric\"",
+    "peer_low": "\"integer\"",
+    "peer_high": "\"integer\"",
+    "score": "\"numeric\" NOT NULL",
+    "message": "\"text\" NOT NULL",
+    "link": "\"text\"",
+    "notified_at": "\"timestamp with time zone\"",
+    "dismissed_at": "\"timestamp with time zone\"",
+    "dismissed_by": "\"uuid\"",
+    "dismiss_note": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "loyalty_transactions": {
     "id": "\"uuid\" NOT NULL",
     "customer_id": "\"uuid\" NOT NULL",
@@ -623,7 +646,8 @@
     "icon": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
-    "deleted_at": "\"timestamp with time zone\""
+    "deleted_at": "\"timestamp with time zone\"",
+    "availability": "\"jsonb\""
   },
   "mode_switch_requests": {
     "id": "\"uuid\" NOT NULL",

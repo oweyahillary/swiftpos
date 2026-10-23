@@ -48,6 +48,7 @@ import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY } fr
 import { isTillOwnSalePush } from '../lib/tillScope';   // A545
 import { webSaleStockRefusal } from '../lib/stockGateStore';   // A563
 import { recordCreditSale } from '../lib/creditConfirm';   // A545
+import { isSoldByWeight, weighedAmountAccepted } from '../lib/scaleBarcode';   // A577
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -400,13 +401,15 @@ async function recomputeOrderTotals(
   const variantAdjById = new Map<string, number>();
   const modifierPriceMap = new Map<string, number>();
   const categoryMap = new Map<string, string | null>();   // A445
+  const weighedIds = new Set<string>();   // A577: products sold by weight (their quantity is kg)
 
   if (lineProductIds.length) {
     const { data: bizProducts } = await supabase
-      .from('products').select('id, base_price, category_id')
+      .from('products').select('id, base_price, category_id, sold_by')
       .eq('business_id', businessId).in('id', lineProductIds);
     (bizProducts ?? [] as Pick<DbProduct, 'id' | 'base_price'>[]).forEach(p => basePriceMap.set(p.id, Number(p.base_price)));
     (bizProducts ?? []).forEach((p: any) => categoryMap.set(p.id, p.category_id ?? null));   // A445: offers by category
+    (bizProducts ?? []).forEach((p: any) => { if (isSoldByWeight(p)) weighedIds.add(p.id); });   // A577
 
     // Per-branch pricing: overlay this branch's price overrides on top of the
     // base prices. Still authoritative (server-resolved, not client-trusted) —
@@ -488,7 +491,14 @@ async function recomputeOrderTotals(
       (item.selectedVariants ?? []).forEach((v, i) => { v.priceAdjustment = adjs[i]; unit += adjs[i]; });
       let modifierTotal = 0;
       (item.selectedModifiers ?? []).forEach((m, i) => { m.price = mprices[i]; modifierTotal += mprices[i]; });
-      lines.push({ unitPrice: round2(unit), lineTotal: round2((unit + modifierTotal) * qty) });
+      // A577: a weighed line keeps the amount the till charged when it is what the weight gives to within half a gram
+      // (a scale's PRICE label: the label's price is the amount, the weight worked back to the gram). Anything further is
+      // re-priced as before.
+      const priced = round2((unit + modifierTotal) * qty);
+      const asked = Number(item.lineTotal);
+      const keep = weighedIds.has(pid) && modifierTotal === 0 && item.lineTotal !== undefined && item.lineTotal !== null
+        && item.lineTotal !== '' && weighedAmountAccepted(unit, qty, asked);
+      lines.push({ unitPrice: round2(unit), lineTotal: keep ? round2(asked) : priced });
     } else {
       // Non-catalogue charge (parking/fuel/quick-add) — trust client price, clamped >= 0.
       const unit = Math.max(0, Number(item.unitPrice) || 0);

@@ -263,7 +263,8 @@ try {
     assert.equal(read('apps/dashboard/src/lib/menuFilter.ts'), read('shared/menuFilter.ts'));
     for (const [n, s] of [['CashierScreen', cashier], ['MinimartPOS', mini]]) {
       assert.match(s, /from '\.\.\/\.\.\/lib\/menuFilter'/, n);
-      assert.match(s, /const menuFilterScope = useMemo\(\(\) => menuScope\(categories, menus, activeMenu\)/, n);
+      // A578: CashierScreen scopes by the menus open now (categoriesNow / menusNow — useMenuHours)
+      assert.match(s, /const menuFilterScope = useMemo\(\(\) => menuScope\(categories(?:Now)?, menus(?:Now)?, activeMenu\)/, n);
       // A566: the menu does not narrow a search (gridMenuScope); the panel is told when the menus are across the top.
       assert.match(s, /inMenuScope\(p, gridMenuScope\(menuFilterScope, (?:search|catalogueSearch)\)\)/, n);
       assert.match(s, /<PanelToggle panel=\{catPanel\} \/>/, n);
@@ -271,7 +272,7 @@ try {
       assert.match(s, /<CategoryChip label=\{catChip\} onClear=\{clearCatChip\} \/>/, n);
       assert.doesNotMatch(s, /s\.catRow|s\.catBtn/, `${n}: the old category row is gone`);
     }
-    assert.match(cashier, /menus=\{menus\}/);
+    assert.match(cashier, /menus=\{menus(?:Now)?\}/);   // A578: the menus open now
   });
   await ok('the panel starts collapsed (A554: at every sign-in, pinned or not) and remembers the menu in this browser, in try/catch', async () => {
     assert.match(panel, /useState<boolean>\(\(\) => panelStartsOpen\(\)\)/);
@@ -288,7 +289,7 @@ try {
     assert.match(layout, /\{ to: '\/dashboard\/menus',\s+label: 'Menus',\s+icon: 'menu' \},\s*\{ to: '\/dashboard\/categories'/);
     assert.match(read('apps/dashboard/src/App.tsx'), /<Route path="menus"\s+element=\{<MenusPage \/>\} \/>/);
     const cats = read('apps/dashboard/src/pages/products/CategoriesPage.tsx');
-    assert.match(cats, /<option value="">No menu<\/option>/);
+    assert.match(cats, /<option value="">\{terms\.noMenu\}<\/option>/);   // A573: "No menu" / "No department" / "No group"
     assert.match(cats, /api\.patch\(`\/api\/categories\/\$\{cat\.id\}`, \{ menu_id: menuId \|\| null \}\)/);
     const page = read('apps/dashboard/src/pages/products/MenusPage.tsx');
     for (const call of [`api.post('/api/menus'`, 'api.patch(`/api/menus/${m.id}`', `api.post('/api/menus/reorder'`, 'api.delete(`/api/menus/${m.id}`)']) assert.ok(page.includes(call), call);

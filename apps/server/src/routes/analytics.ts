@@ -41,6 +41,11 @@
  * moves) — plus two plain reads of the levels elsewhere of the items short somewhere. /recommendations adds the movement
  * cards (at most 3, with the stock-out risks; a move into the branch in view replaces its run-out card) and the
  * underperforming-branch card, softly; the Branches tile's hook. Anyone else: 403 BRANCH_SCOPE, nothing run.
+ * A575: GET /together — what sells together (migration 164's analytics_together, ONE call, kept 5 minutes): the pairs in
+ * plain words, the top 10, in the business's own way of selling (businesses.type, read once and kept); fewer than 30
+ * orders with two or more items: enough false and a note. Quantities only (no cost), for anyone with reports.sales.
+ * /recommendations adds one or two together cards, softly (before 164 runs: none, never a 503 there), and every card
+ * and tile in the business type's words (a shop's "cost of sales").
  */
 import type { Request, Response } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -59,6 +64,7 @@ import {
   type StockUseRow, type StockUseResult, type CustomerAggRow, type CustomersResult, type CostWatchRow, type CostsResult,
   type StockLevel, type MenuRow, type HeatRow, type LeakRow, type CreditRow, type DailyRow, type MenuResult, type LeaksResult, type CreditResult,
   type ItemTimeRow, type ItemTimesResult,
+  summariseTogether, TOGETHER_LIMIT, type TogetherRow, type TogetherResult,
   MAX_BRANCHES, TABLE_TOP, grossMarginPct, moveCandidates, stockMoves, moveSuggestions, compareBranches,
   type BranchInfo, type BranchLevel, type BranchCompare, type StockMove, type Recommendation,
 } from '../lib/analyticsRules';
@@ -344,6 +350,26 @@ function branchWork(c: Ctx): Promise<BranchWork> {
     return { available: true, count: all.length, limited: all.length > list.length, compare, moves };
   });
 }
+// ── A575: what sells together ─────────────────────────────────────────────────────────────────────────────────────
+/** The business's type (restaurant, retail …) — the words of the cards. Kept 5 minutes; a failed read: none (food words). */
+function businessType(c: Ctx): Promise<string | null> {
+  return cached(`btype|${c.businessId}`, async () => {
+    try {
+      const { data } = await supabase.from('businesses').select('type').eq('id', c.businessId).maybeSingle();
+      return ((data as { type?: string | null } | null)?.type ?? null) || null;
+    } catch { return null; }
+  });
+}
+/** The product pairs bought together (ONE aggregate call), in the business type's words. */
+function together(c: Ctx): Promise<TogetherResult> {
+  return cached(key('together', c), async () => {
+    const [rows, type] = await Promise.all([
+      aggregate<TogetherRow>('analytics_together', { ...span(c), p_limit: TOGETHER_LIMIT }), businessType(c),
+    ]);
+    return summariseTogether(rows, type);
+  });
+}
+
 /** A card as the page gets it: the internal ranking score stays here. */
 const forPage = (r: Recommendation): Recommendation => { const { score: _score, ...rest } = r; return rest; };
 
@@ -431,10 +457,11 @@ router.get('/recommendations', async (req, res) => {
     // A565: between branches — only for a viewer who sees every branch; softly (a failure leaves the cards out)
     const bw = allBranchAccess(req) ? await soft(branchKey(c), () => branchWork(c)) : null;
     const branches = bw && bw.available ? bw : null;
-    const [stock, su, cu, cw] = await Promise.all([
+    const [stock, su, cu, cw, tg, btype] = await Promise.all([
       stockLevels(c, t), soft(key('stockuse', c), () => stockUse(c)),
       soft(`${key('customers', c)}|${withCustomers ? 'with' : 'mix'}`, () => customers(c, withCustomers)),
       c.costs ? soft(key('costs', c), () => costs(c)) : Promise.resolve(null),
+      soft(key('together', c), () => together(c)), businessType(c),   // A575
     ]);
     const today = businessDateEAT(new Date(), c.cutoff);
     const every = allRecommendations({
@@ -442,6 +469,7 @@ router.get('/recommendations', async (req, res) => {
       leaks: c.costs ? l : leaksWithoutWastageValue(l), credit: cr, times: t,
       from: c.from, to: c.to, today, stock: stock.levels, stockUse: su, customers: cu, costWatch: cw,
       moves: branches?.moves ?? null, branchCompare: branches?.compare ?? null, branchInView: c.branch,
+      together: tg, businessType: btype,
     });
     const recommendations = rankRecommendations(every);
     return {
@@ -451,7 +479,7 @@ router.get('/recommendations', async (req, res) => {
       // A561: one live figure per tile, and whether a card points there
       hooks: tileHooks({
         costs: c.costs, seesCredit: withCustomers, menu: m, heatmap: h, leaks: l, credit: cr, stockUse: su, customers: cu,
-        costWatch: cw, recommendations: every, itemsSold: t.items.length,
+        costWatch: cw, recommendations: every, itemsSold: t.items.length, businessType: btype,
         branches: branches ? {
           count: branches.count, moves: moveSuggestions(branches.moves, c.branch).length,
           underperforming: (branches.compare?.underperforming ?? []).filter((u) => !c.branch || u.id === c.branch).map((u) => ({ name: u.name, change: u.change })),
@@ -499,6 +527,16 @@ router.get('/branches', async (req, res) => {
       movesTotal: suggestions ? suggestions.length : 0,
       movesNote: w.available && !w.moves ? 'Stock moves appear once stock use is set up (Analytics is being set up).' : null,
     };
+  });
+});
+
+// GET /api/analytics/together?from&to&branch — A575: what sells together. Quantities only (no cost), for anyone with
+// reports.sales; the cards' internal list (strong) stays here.
+router.get('/together', async (req, res) => {
+  const c = await context(req, res); if (!c) return;
+  await answer(res, async () => {
+    const { strong: _strong, ...t } = await together(c);
+    return { period: period(c), branchId: c.branch, businessType: await businessType(c), ...t };
   });
 });
 

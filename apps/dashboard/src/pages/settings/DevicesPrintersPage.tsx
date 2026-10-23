@@ -1,5 +1,7 @@
 import SettingsSection from './SettingsSection';
 import DevicesTab from './DevicesTab';
+import { useBusiness } from '../../context/BusinessContext';
+import { foodAreas } from '../../lib/businessTerms';   // A573
 
 // Settings › Devices and printers (register A133).
 // Terminals (fleet health) and Devices (enrolment) are two views of the same
@@ -19,7 +21,9 @@ const TABS = [
 ];
 
 export default function DevicesPrintersPage() {
-  return <SettingsSection title="Devices and printers" tabs={TABS} />;
+  // A573: the kitchen display is a restaurant's or café's (the sidebar's KDS entry already was) — a shop has no kitchen.
+  const kds = foodAreas(useBusiness().business?.type).kds;
+  return <SettingsSection title="Devices and printers" tabs={kds ? TABS : TABS.filter((t) => t.to !== 'kitchen-display')} />;
 }
 
 export function DevicesRoute() {

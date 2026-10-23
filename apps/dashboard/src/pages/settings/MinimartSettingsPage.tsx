@@ -11,6 +11,7 @@ import { money } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
 import { useBusiness } from '../../context/BusinessContext';
+import { businessTerms } from '../../lib/businessTerms';   // A573: the setup tab of every shop (retail, minimart, other)
 
 interface Product {
   id: string; name: string; base_price: number;
@@ -58,7 +59,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 export default function MinimartSettingsPage() {
-  const currency = useBusiness().business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
+  const { business } = useBusiness();
+  const currency = business?.currency ?? 'KES';   // A471: the business currency, not a hard-coded KES
   const [tab, setTab]             = useState<Tab>('scan');
   const [products, setProducts]   = useState<Product[]>([]);
   const [settings, setSettings]   = useState<Record<string, string>>({});
@@ -139,8 +141,8 @@ export default function MinimartSettingsPage() {
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Minimart Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Configure your minimart POS behaviour, products and barcode scanner</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-white">{businessTerms(business?.type).setupLabel}</h1>
+        <p className="text-sm text-gray-500 mt-1">Configure your POS behaviour, products and barcode scanner</p>
       </div>
 
       {/* Tabs */}

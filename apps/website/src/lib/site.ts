@@ -16,11 +16,20 @@ export const SITE = {
   email: null as string | null,
 };
 
-/** The draft prices (WORKPLAN §6). Change them here only. */
+/**
+ * The draft prices (WORKPLAN §6, owner's model of 2026-10-22). Change them here only.
+ * - setup: the desktop app for ONE BRANCH, paid once ("once paid it's a done deal"). A branch is a two-computer setup:
+ *   the branch server and a till. Extra computers cost extra: TODO(owner) no figure is published until decided.
+ * - monthly: the cloud (web dashboard, daily email, online features), month to month, per branch; paying for six or
+ *   twelve months at once is recommended, with no discount figure until the owner sets one. TODO(owner).
+ * - The first month of the cloud is free with the desktop setup (A569).
+ * - analyticsMonthly: the Analytics add-on, about this much a month.
+ */
 export const PRICES = {
   setup: 30000,
   monthly: 3000,
   yearly: 36000,
+  trialMonths: 1,
   analyticsMonthly: 10000,
 };
 

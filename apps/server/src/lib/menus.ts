@@ -8,6 +8,7 @@
  * under is this business's own (another business's menu id is refused as not found — nothing says it exists).
  */
 import { supabase } from './supabase';
+import { checkAvailability, readAvailability, type MenuAvailability } from './menuHours';   // A578
 
 export const MENU_NAME_MAX = 60;
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -54,10 +55,25 @@ export async function menuIdForCategory(businessId: string, v: unknown): Promise
   return yes<string | null>(v);
 }
 
-/** The business's menus for a POS: on and not deleted, in the owner's order. Before migration 155: none. */
+/**
+ * The business's menus for a POS: on and not deleted, in the owner's order. Before migration 155: none.
+ * A578: each with its hours (availability — null = always). Before migration 165 the column is not there: the menus
+ * still go, without hours (a POS reads a missing availability as always).
+ */
 export async function menusForPos(businessId: string): Promise<Array<Record<string, unknown>>> {
-  const { data, error } = await supabase.from('menus').select('id, name, sort_order, active, color, icon')
+  const read = (cols: string) => supabase.from('menus').select(cols)
     .eq('business_id', businessId).eq('active', true).is('deleted_at', null).order('sort_order', { ascending: true });
+  let { data, error } = await read('id, name, sort_order, active, color, icon, availability');
+  if (error && menusMissing(error)) ({ data, error } = await read('id, name, sort_order, active, color, icon'));
   if (error) return [];
-  return (data ?? []) as Array<Record<string, unknown>>;
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((m) => ({ ...m, availability: readAvailability(m.availability) }));
+}
+
+/**
+ * A578: the hours an owner sends for a menu → what to store (null = always), or the words of why not
+ * (shared/menuHours.ts — the POS reads the same shape).
+ */
+export function cleanMenuAvailability(v: unknown): Clean<MenuAvailability | null> {
+  const r = checkAvailability(v);
+  return r.ok ? yes<MenuAvailability | null>(r.value) : no(r.error);
 }

@@ -464,6 +464,56 @@
       }
     ]
   },
+  "extras80": {
+    "cols": 48,
+    "lines": [
+      {
+        "t": "                * * KITCHEN * *",
+        "s": "tall",
+        "b": 1
+      },
+      {
+        "t": ""
+      },
+      {
+        "t": "Order  T1-1047                           DINE IN"
+      },
+      {
+        "t": "Wed 21 Oct 12:52                Cashier  Wanjiru"
+      },
+      {
+        "t": "Table  6"
+      },
+      {
+        "t": "------------------------------------------------"
+      },
+      {
+        "t": "1   CHICKEN BURGER",
+        "b": 1
+      },
+      {
+        "t": "      + Extra Cheese"
+      },
+      {
+        "t": "      ** No onions",
+        "b": 1
+      },
+      {
+        "t": "1   CHIPS MASALA",
+        "b": 1
+      },
+      {
+        "t": "      ** Well done",
+        "b": 1
+      },
+      {
+        "t": "------------------------------------------------"
+      },
+      {
+        "t": "                2 items to cook"
+      }
+    ]
+  },
   "sale58": {
     "cols": 32,
     "lines": [
@@ -937,6 +987,59 @@
       },
       {
         "t": "       Powered by ZapTill"
+      }
+    ]
+  },
+  "extras58": {
+    "cols": 32,
+    "lines": [
+      {
+        "t": "        * * KITCHEN * *",
+        "s": "tall",
+        "b": 1
+      },
+      {
+        "t": ""
+      },
+      {
+        "t": "Order  T1-1047           DINE IN"
+      },
+      {
+        "t": "Wed 21 Oct 12:52"
+      },
+      {
+        "t": "                Cashier  Wanjiru"
+      },
+      {
+        "t": "Table  6"
+      },
+      {
+        "t": "--------------------------------"
+      },
+      {
+        "t": "1   CHICKEN BURGER",
+        "b": 1
+      },
+      {
+        "t": "      + Extra Cheese"
+      },
+      {
+        "t": "      ** No onions",
+        "b": 1
+      },
+      {
+        "t": "1   CHIPS MASALA",
+        "b": 1
+      },
+      {
+        "t": "      ** Well done",
+        "b": 1
+      },
+      {
+        "t": "--------------------------------"
+      },
+      {
+        "t": "        2 items to cook"
       }
     ]
   }

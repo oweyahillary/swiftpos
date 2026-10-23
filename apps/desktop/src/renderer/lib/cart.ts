@@ -40,6 +40,9 @@ export interface CartItem {
   // A367: the cashier's note on this line ("3 normal, 2 spicy", "No salt"). Free — never changes the price. Travels
   // to the kitchen ticket, the receipt, the till's order_items.notes and the cloud's.
   notes?: string | null;
+  // A577: a line sold by weight — its quantity is kilograms (0.452), its unitPrice the price per kg; 'g' = the item is
+  // shown in grams. Not stepped with +/− (weighed again instead); printed "0.452 kg @ 650/kg".
+  measureUnit?: 'kg' | 'g';
 }
 
 // The price this till charges for a product: the per-branch override if one was

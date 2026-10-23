@@ -16,9 +16,10 @@ npm install          # once
 npm run dev          # http://localhost:4321, reloads as you edit; shows the "Coming in phase 2" notes
 npm run build        # writes the static site to dist/
 npm run preview      # serves dist/ at http://localhost:4321, exactly as it will be deployed
-npm test             # the leak calculator's maths, the slips against the print renderer, the structured data
+npm test             # the leak calculator, the slips and labels against the real renderers, the structured data, the demo form's checks
 npm run check        # after a build: links, anchors, titles, headings, alt text, JSON-LD and page weights in dist/
 npm run slips        # re-render the receipts through shared/printing (build shared/printing first)
+npm run labels       # re-render the barcode labels through shared/labels.ts and shared/barcode.ts (read only)
 ```
 
 Astro asks to send anonymous usage data; turn it off with `npx astro telemetry disable` (or set
@@ -33,6 +34,8 @@ Nothing here deploys anything. Deploying (Vercel, its own project) is the owner'
 | Pages (one file per URL) | `src/pages/` (`index`, `pricing`, `contact`, `how-it-works`, `features`, `who-its-for`, `for/restaurants`, `for/bars`, `for/quick-service`, `for/retail`, `analytics`, `privacy`, `terms`, `404`) |
 | Industry page layout (hero, problem → fix, FAQ with FAQPage data) | `src/layouts/Industry.astro` |
 | Receipts and tickets (the real printer text) | `scripts/render-slips.mjs` → `src/lib/slips.generated.json` → `src/components/screens/Receipt.astro` |
+| Barcode labels (the real label code) | `scripts/render-labels.mjs` → `src/lib/labels.generated.json` → `src/components/screens/LabelSamples.astro` |
+| Demo request form (Phase 3, front end only, `npm run dev` only) | `src/components/DemoForm.astro`, checks in `src/lib/demoForm.ts` |
 | Real screenshots (till, Analytics) | `public/screens/*.webp`, made by `scripts/make-screens.mjs` from captures of the demo business |
 | Analytics demo cards, dayparts, top 3 | `src/lib/analyticsDemo.ts` (the demo restaurant's own words) |
 | Staff roles | `src/lib/roles.ts` (keep in step with `BUILT_IN_ROLES` in apps/server/src/lib/permissions.ts) |

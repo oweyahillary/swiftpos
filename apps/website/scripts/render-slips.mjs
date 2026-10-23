@@ -116,6 +116,25 @@ const shop = {
   },
 };
 
+// A559: extras and notes on the kitchen ticket. A second demo order (Table 6): a burger with Extra Cheese and the
+// cashier's note "No onions", and a Chips Masala "well done". Only its kitchen ticket is shown on the site.
+const extrasCart = [
+  { product: { id: 'p-burger', name: 'Chicken Burger', category_id: 'cat-burgers' }, quantity: 1, lineTotal: 720,
+    selectedModifiers: [{ optionName: 'Extra Cheese', price: 70 }], note: 'No onions' },
+  { product: { id: 'p-chips', name: 'Chips Masala', category_id: 'cat-sides' }, quantity: 1, lineTotal: 300, note: 'Well done' },
+];
+const extrasLines = extrasCart.map((l) => {
+  const lineStationIds = stationsForCategory(l.product.category_id, ids, routing);
+  const cents = Math.round(l.lineTotal * 100);
+  return { name: l.product.name, quantity: l.quantity, stationIds: lineStationIds, note: l.note,
+    unitPrice: Math.round(cents / l.quantity), lineTotal: cents, units: toUnits(l, ids, lineStationIds, routing) };
+});
+const extrasOrder = {
+  billNumber: 'T1-1047', orderType: 'dine_in', tableNumber: '6', cashierName: 'Wanjiru',
+  soldAt: new Date(2026, 9, 21, 12, 52, 30), kotCount: 1, lines: extrasLines,
+  total: extrasLines.reduce((a, l) => a + l.lineTotal, 0), payments: [], changeGiven: 0,
+};
+
 const k = (s) => Math.round(s * 100);
 const shift = {
   businessName: 'Mama Lishe Grill',
@@ -154,6 +173,7 @@ export function renderSlips() {
     out[`dispatch${mm}`] = text(renderTicket({ order, business, station: dispatchPreset(DISPATCH, 'Dispatch', mm) }));
     out[`close${mm}`] = text(renderShiftReport(shift, mm));
     out[`shop${mm}`] = text(renderTicket({ order: shop.order, business: shop.business, station: receiptPreset('st-till', 'Till', mm) }));
+    out[`extras${mm}`] = text(renderTicket({ order: extrasOrder, business, station: kitchenPreset(KITCHEN, 'Kitchen', mm) }));
   }
   return out;
 }

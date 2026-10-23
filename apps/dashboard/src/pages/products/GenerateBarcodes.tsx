@@ -7,9 +7,15 @@
  * number + the check digit (lib/barcode.ts — GS1 keeps 20–29 for a shop's own numbers; 21–29 are left for weighing-scale
  * codes). A product with a barcode is never changed. First the count (POST /api/products/barcodes/generate, dry_run),
  * then the confirm.
+ *
+ * A574: the codes follow the business's Barcode numbering (Print labels page: format, prefix, start number, digits);
+ * the count answer carries it, and says when the range cannot give every product a code (nothing is then generated).
  */
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { describeNumbering, type BarcodeNumbering } from '../../lib/barcode';
+
+type Preview = { count: number; already: number; sample: string[]; remaining?: number; numbering?: BarcodeNumbering; error?: string };
 
 export default function GenerateBarcodes({ ids, onClose, onDone }: {
   /** The ticked products; null = every active product. */
@@ -17,14 +23,14 @@ export default function GenerateBarcodes({ ids, onClose, onDone }: {
   onClose: () => void;
   onDone: (generated: number) => void;
 }) {
-  const [preview, setPreview] = useState<{ count: number; already: number; sample: string[] } | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const body = ids ? { product_ids: ids } : {};
 
   useEffect(() => {
     let live = true;
-    api.post<{ count: number; already: number; sample: string[] }>('/api/products/barcodes/generate', { ...body, dry_run: true })
+    api.post<Preview>('/api/products/barcodes/generate', { ...body, dry_run: true })
       .then((r) => { if (live) setPreview(r); })
       .catch((e: any) => { if (live) setMsg(e?.message ?? 'Could not count the products'); });
     return () => { live = false; };
@@ -56,15 +62,16 @@ export default function GenerateBarcodes({ ids, onClose, onDone }: {
               {preview.sample.length > 0 && (
                 <p className="text-gray-500">The first: <span className="font-mono text-gray-300">{preview.sample.join(', ')}</span></p>
               )}
-              <p className="text-xs text-gray-500">In-store EAN-13 codes starting with 20 — your own numbers, which no manufacturer uses.
+              <p className="text-xs text-gray-500">{preview.numbering ? `${describeNumbering(preview.numbering)}. ` : ''}Your own numbers, set under Barcode numbering on the Print labels page.
                 The tills scan them as soon as they next refresh the menu. Print them with Print labels.</p>
+              {preview.error && <p className="text-red-400" data-testid="range-full">{preview.error}</p>}
             </>
           )}
           {msg && <p className="text-amber-400">{msg}</p>}
         </div>
         <div className="p-5 border-t border-gray-800 flex justify-end gap-2">
           <button onClick={onClose} disabled={busy} className="px-4 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800">Cancel</button>
-          <button onClick={generate} disabled={busy || !preview || preview.count === 0}
+          <button onClick={generate} disabled={busy || !preview || preview.count === 0 || !!preview.error}
             className="px-4 py-2 rounded-lg text-sm font-semibold bg-swift hover:bg-swift-light text-gray-950 disabled:opacity-50">
             {busy ? 'Generating…' : `Generate ${preview?.count ?? ''}`}
           </button>

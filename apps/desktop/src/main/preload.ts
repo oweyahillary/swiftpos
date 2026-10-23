@@ -163,7 +163,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
   labels: {
     setup: () => ipcRenderer.invoke('labels:setup'),
     save:  (body: { settings?: unknown; printer?: unknown }) => ipcRenderer.invoke('labels:save', body),
-    print: (body: { items: Array<{ product_id: string; copies: number }>; path?: string; settings?: unknown }) => ipcRenderer.invoke('labels:print', body),
+    print: (body: { items: Array<{ product_id: string; copies: number }>; path?: string; settings?: unknown; generate?: boolean }) => ipcRenderer.invoke('labels:print', body),
+    numbering: (numbering: unknown) => ipcRenderer.invoke('labels:numbering', { numbering }),   // A574
   },
   // A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in.
   monthly: {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo, memo, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, memo, lazy, Suspense, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { applyOffers, type Offer } from '../../shared/offers';   // A445
 import { posApi } from '../lib/posApi';
 import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
@@ -49,6 +49,12 @@ import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, 
 import { FindInBranches } from '../components/BranchStockTab';   // A566: A564's lookup, from the selling screen
 import { mayCheckOtherBranches, outHereMatches, outHereNote } from '../lib/branchCheck';   // A566
 import { useOnlineLicence } from '../lib/onlineLicence';   // A566 (A460)
+import { businessTerms } from '../../shared/businessTerms';   // A573: Menus / Departments / Groups
+import { hiddenByHours, hoursRefusal, type MenuHoursView } from '../../shared/menuHours';   // A578: menus by time of day
+import { useMenuHours } from '../lib/useMenuHours';   // A578
+// A577: items sold by weight — the keypad loads on its first use (the main chunk's budget, lazy-load-a517).
+const WeightModal = lazy(() => import('../components/WeightModal'));
+import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, weightUnitOf, formatWeight, type ScaleSettings, type WeighedLine } from '../../shared/scaleBarcode';   // A577
 
 interface Props {
   business: { id: string; name: string; currency: string };
@@ -249,6 +255,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // A367: the note on the whole order, and which note the editor has open (a line index, or 'order').
   const [orderNote, setOrderNote] = useState('');
   const [noteFor, setNoteFor] = useState<number | 'order' | null>(null);
+  // A577: the item sold by weight whose weight is being typed (the keypad), and the scale label layout (pos:init).
+  const [weighFor, setWeighFor] = useState<any | null>(null);
+  // Main sends it already cleaned (getScaleSettings: the default until the cloud says); null = a main before A577.
+  const [scaleSettings, setScaleSettings] = useState<ScaleSettings | null>(null);
   const [notePicks, setNotePicks] = useState<string[]>([]);
   useEffect(() => { posApi.pos.notePicks().then(setNotePicks).catch(() => setNotePicks([])); }, []);
   // 0.6.27: the client's POS switches (admin portal) — read at start and after every catalogue pull.
@@ -480,6 +490,20 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // A566: "Check other branches" from the selling screen — A564's lookup (inventory.view + the online licence; a cashier
   // only looks, asking stays a manager's, inventory.transfer). The item it opened for, or null.
   const [canViewStock, setCanViewStock] = useState(false);
+  // A578: menus by time of day — when the business day ends (pos:init), the manager's "Show all" for this session
+  // (menu.edit, the menu permission), and the latest view for the scanner's listener (a ref, as A563's stock view).
+  const [menuDayCutoff, setMenuDayCutoff] = useState(0);
+  const [canShowAllMenus, setCanShowAllMenus] = useState(false);
+  const [showAllMenus, setShowAllMenus] = useState(false);
+  const hoursRef = useRef<Pick<MenuHoursView<unknown, unknown>, 'asleep'>>({ asleep: new Map() });
+  /** A578: an item whose menu is outside its hours — scanned, searched for by its code, or tapped — is not sold; say why. */
+  const refuseOutOfHours = (product: any): boolean => {
+    const why = hoursRefusal(product, hoursRef.current);
+    if (!why) return false;
+    setFrozenFor(null);
+    setFrozenNote(why);
+    return true;
+  };
   const onlineLicence = useOnlineLicence();
   const mayCheckBranches = mayCheckOtherBranches(onlineLicence, canViewStock);
   const [branchCheck, setBranchCheck] = useState<string | null>(null);
@@ -516,10 +540,12 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // shows on the till without a restart. Cart lines are snapshots, so an in-progress sale is
   // unaffected — only the product grid and rates-for-new-items refresh.
   const loadCatalogue = useCallback(() => {
-    posApi.pos.init().then(({ products, categories, menus: mn, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }: any) => {
+    posApi.pos.init().then(({ products, categories, menus: mn, businessDayCutoff: bdc, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf, scaleBarcodes: sb }: any) => {
       setProducts(products);
+      setScaleSettings(sb && typeof sb === 'object' ? sb as ScaleSettings : null);   // A577
       setCategories(categories);
       setMenus(Array.isArray(mn) ? mn : []);   // A537 (a till before the menus pull: none)
+      setMenuDayCutoff(Number(bdc) || 0);   // A578: a menu's hours past midnight belong to the night before
       setBranchId(branchId);
       if (typeof vatRate === 'number') setVatRateFromServer(vatRate);
       if (typeof ctlRate === 'number') setCtlRateFromServer(ctlRate);
@@ -546,6 +572,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
       // one rule (lib/access.ts) — shifts.force_close; the main process checks the same key (shift:forceClose).
       setCanForceClose(can(ss, 'shifts.force_close'));
       setCanViewStock(can(ss, 'inventory.view'));   // A566: "Check other branches" (A564's key)
+      setCanShowAllMenus(can(ss, 'menu.edit'));     // A578: "Show all" menus outside their hours (the menu permission)
     }).catch(() => {});
     posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});
     posApi.pos.paymentMethodsEnabled().then((r) => setEnabledMethods(r?.enabled ?? null)).catch(() => {});   // A429
@@ -620,8 +647,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // Matches on product.barcode; falls back to PLU code search on the name.
   // Only active when the product grid is visible (not tables or pumps view)
   // and no modal is open that might consume keystrokes.
+  // A577: a petrol station's shop sells scanned goods too — the scanner listens there while the shop's grid is showing
+  // (never on the pump grid). A restaurant still taps (its weighed dishes ask for the weight).
   useEffect(() => {
-    if (flags.isRestaurant || flags.isPetrol) return; // these verticals use tap UI
+    if (flags.isRestaurant || (flags.isPetrol && view !== 'products')) return; // these verticals use tap UI
     let buffer = '';
     let timer: ReturnType<typeof setTimeout>;
 
@@ -634,6 +663,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         const scanned = buffer.trim();
         buffer = '';
         clearTimeout(timer);
+        // A577: a weighing scale's label (21–29, the item's scale code and its price or weight inside) first — a code
+        // starting 20 (ZapTill's own in-store codes) never is one. The newest handler, through a ref (this listener is
+        // only renewed when the products change).
+        if (scaleScanRef.current(scanned)) { setSearch(''); return; }
         // Match by barcode field first, then by PLU prefix in name
         const found = products.find(p =>
           (p as any).barcode === scanned ||
@@ -658,7 +691,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('keydown', onKey); clearTimeout(timer); };
-  }, [products, flags.isRestaurant, flags.isPetrol]);
+  }, [products, flags.isRestaurant, flags.isPetrol, view]);
 
   // A519: a NEW sale (an empty cart with no open bill) needs "Sell" — a bill already open is finished whatever changed.
   const refuseNewSale = (): boolean => {
@@ -667,7 +700,33 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     return true;
   };
 
+  // ── A577: items sold by weight ──────────────────────────────────────────────────────────────────────────────────
+  // A weighed line is always a line of its own (two bags of beef are two weights, never "2"); its quantity is the weight
+  // in kg, its price the price per kg, its amount from the keypad or the scale's label (shared/scaleBarcode.ts).
+  const addWeighed = (product: any, line: WeighedLine) => {
+    if (refuseOutOfHours(product)) return;
+    if (refuseFrozen(product)) return;
+    if (refuseNewSale()) return;
+    if (refuseOutOfStock(product)) return;
+    if (!(line.quantity > 0)) return;
+    setCart(prev => [...prev, { product, quantity: line.quantity, selectedVariants: [], selectedModifiers: [], unitPrice: line.unitPrice,
+      lineTotal: line.lineTotal, kotSent: false, sentQty: 0, lineId: newLineId(), measureUnit: weightUnitOf(product) }]);
+  };
+  /** A scanned code that is a scale label of one of this business's items → its line added; true = handled. */
+  const scaleScan = (code: string): boolean => {
+    const reading = scaleSettings ? parseScaleBarcode(code, scaleSettings) : null;
+    if (!reading) return false;
+    const product = findScaleProduct(products as any[], reading.itemCode);
+    if (!product) { setSearch(code); setFrozenNote(`No item has the scale code ${reading.itemCode}. Set it on the item (Products › Sold by weight).`); return true; }
+    addWeighed(product, scaleLine(effectivePrice(product), reading));
+    return true;
+  };
+  const scaleScanRef = useRef(scaleScan);
+  scaleScanRef.current = scaleScan;
+
   const addSimple = (product: any) => {
+    if (isSoldByWeight(product)) { if (!refuseOutOfHours(product) && !refuseFrozen(product) && !refuseNewSale()) setWeighFor(product); return; }   // A577: the weight first
+    if (refuseOutOfHours(product)) return;   // A578: the scanner comes here — an asleep menu's item is refused, said why
     if (refuseFrozen(product)) return;
     if (refuseNewSale()) return;   // A519
     if (refuseOutOfStock(product)) return;   // A563
@@ -718,6 +777,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   };
 
   const handleTap = (product: any) => {
+    if (refuseOutOfHours(product)) return;   // A578
     if (refuseFrozen(product)) return;
     if (refuseNewSale()) return;   // A519
     if (refuseOutOfStock(product)) return;   // A563
@@ -782,6 +842,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const updateQty = (index: number, delta: number) => {
     const item = cart[index];
     if (!item || item.isFuel) return;   // fuel qty is litres — re-enter via pump, not stepper
+    if (item.measureUnit) return;   // A577: a weight is weighed again (✕ and add it again), not stepped
     if (delta > 0 && refuseOutOfStock(item.product)) return;   // A563: one more than the branch is known to have
     const newQty = item.quantity + delta;
     const back = voidQtyFor(item, newQty);
@@ -1234,6 +1295,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           unitPrice: item.unitPrice,
           quantity: item.quantity,
           lineTotal: item.lineTotal,
+          ...(item.measureUnit ? { measureUnit: item.measureUnit } : {}),   // A577: the receipt's "0.452 kg @ 650/kg"
           selectedVariants: item.selectedVariants,
           selectedModifiers: item.selectedModifiers,
           // What a combo is actually made of. Without these a combo reaches the
@@ -1293,8 +1355,15 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const catPanel = useCategoryPanel();
   const narrowWindow = useNarrowWindow();   // a narrow till window: the panel lies over the grid, not beside it
   const activeMenu = catPanel.prefs.menu;
-  const menuCats = useMemo(() => categoriesForMenu(categories, menus, activeMenu), [categories, menus, activeMenu]);
-  const menuFilterScope = useMemo(() => menuScope(categories, menus, activeMenu), [categories, menus, activeMenu]);
+  // A578 (owner, 2026-10-23: menus by time of day): a menu outside its hours leaves the top tabs, the panel, the grid,
+  // the All tab and search, by this till's clock (offline too); one timer at the next change. In every mode — a
+  // restaurant's Breakfast / Lunch, a shop's licensed-hours alcohol department, a petrol station's shop groups. An item
+  // in no menu, or in a menu without hours, is never touched; fuel never. "Show all" (menu.edit) brings them back.
+  const hours = useMenuHours(menus, categories, { cutoff: menuDayCutoff, showAll: showAllMenus && canShowAllMenus });
+  hoursRef.current = hours;
+  const menusNow = hours.menus, categoriesNow = hours.categories;
+  const menuCats = useMemo(() => categoriesForMenu(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
+  const menuFilterScope = useMemo(() => menuScope(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
   useEffect(() => {   // a menu change can take the chosen category away: back to All
     const keep = resolveCategory(activeCategory, menuCats);
     if (keep !== activeCategory) setActiveCategory(keep);
@@ -1313,8 +1382,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     const matchDay    = onGrid((p as any).show_days, search.trim() !== '');
     // A563: "Hide when out of stock" — a tracked item this branch is known to be out of is off the grid and out of search.
     const matchStock  = !hiddenOutOfStock(stockView.mode, stockView, p.id);
-    return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock;
-  }), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView]);
+    // A578: an item whose menu is outside its hours is off the grid, the All tab and search (Show all: back).
+    const matchHours  = !hiddenByHours(p, hours);
+    return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock && matchHours;
+  }), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);
   // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000
   // tiles at once. A new category or search starts again at the top. The tiles stay memoised (ProductTile). An exact
   // hit (a product's name, barcode or PLU typed in full) is the first tile, so it is on screen at once.
@@ -1325,7 +1396,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // whole cart twice (some + filter), products × lines on every render.
   const cartCounts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const i of cart) m.set(i.product.id, (m.get(i.product.id) ?? 0) + i.quantity);
+    for (const i of cart) m.set(i.product.id, (m.get(i.product.id) ?? 0) + (i.measureUnit ? 1 : i.quantity));   // A577: a weight counts once
     return m;
   }, [cart]);
   // A470 (speed): the tiles get one tap handler that never changes (it calls the current handleTap through a ref), so
@@ -1342,15 +1413,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // A279: which filter the grid is showing, and one Clear back to everything.
   // A537: the chosen category, else the chosen menu ("Food menu") — the chip by the search and this line both say it.
   const chosenCategoryName = activeCategory === 'all' ? null : (categories.find((c: any) => c.id === activeCategory)?.name ?? null);
-  const chosenMenuName = menuTabs(menus, categories).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
+  const chosenMenuName = menuTabs(menusNow, categoriesNow).find((t) => t.id === activeMenu && t.id !== ALL_MENUS)?.name ?? null;
   // A566 (owner, 2026-10-22: "if a client has larger categories eg drinks, fast foods etc they should appear the way
   // categories used to appear so that cashiers can easily pick the menu"): with menus they are big tabs across the top
   // of the grid (MenuBar) — the chip and the filter line then name only the chosen category (the bar shows the menu).
   // A tap on a menu shows its items: its category and any search start again. No menus: no bar, as before.
-  const menuBar = useMemo(() => menuBarTabs(menus, categories), [menus, categories]);
+  const menuBar = useMemo(() => menuBarTabs(menusNow, categoriesNow), [menusNow, categoriesNow]);
   const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); setSearch(''); };
+  const words = businessTerms(flags.mode);   // A573: the business's word for its menus (a shop's Departments)
   const gridFilter = {
-    categoryName: chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} menu` : null),
+    categoryName: chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} ${words.menu.toLowerCase()}` : null),
     search, count: filtered.length,
   };
   const gridFilterSummary = filterSummary(gridFilter);
@@ -1749,7 +1821,15 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           </div>
 
           {/* A566: the menus as big tabs across the top of the grid (none when the business has no menus). */}
-          <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} />
+          <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={words.menus} hints={hours.hints}
+            trailing={canShowAllMenus && hours.anyAsleep ? (
+              // A578: the manager's "Show all" — this session only; no banner, the button says what it does
+              <button type="button" data-testid="menu-show-all" aria-pressed={showAllMenus} onClick={() => setShowAllMenus((v) => !v)}
+                className={`min-h-[40px] px-3 rounded-lg text-sm font-semibold whitespace-nowrap border transition-colors ${showAllMenus
+                  ? 'bg-amber-500/15 border-amber-500/50 text-amber-200' : 'bg-gray-900 border-gray-700 text-gray-300 hover:text-white'}`}>
+                {showAllMenus ? `Showing all ${words.menus.toLowerCase()} ✕` : `Show all ${words.menus.toLowerCase()}`}
+              </button>
+            ) : undefined} />
 
           {/* A566: the search found an item that is out HERE — look at the other branches (inventory.view + online licence). */}
           {outHere.length > 0 && (
@@ -1775,7 +1855,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
           {/* A537: the category panel (collapsed at start) beside — or, in a narrow window, over — the product grid. */}
           <div className="flex-1 flex min-h-0 relative">
-          <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}
+          <CategoryPanel panel={catPanel} categories={categoriesNow} menus={menusNow} products={products}
+            menusLabel={words.menus} allMenusLabel={words.allMenus}
             activeMenu={activeMenu} activeCategory={activeCategory}
             onMenu={catPanel.setMenu} onCategory={setActiveCategory} overlay={narrowWindow} menuBar={menuBar.length > 0} />
           <div ref={grid.rootRef} className="flex-1 overflow-y-auto p-4">
@@ -1953,12 +2034,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                     <p className="text-gray-300 text-xs">
                       {item.isFuel
                         ? `${currency} ${item.unitPrice.toLocaleString()}/L`
-                        : `${currency} ${item.unitPrice.toLocaleString()} each`}
+                        : item.measureUnit
+                          ? `${currency} ${item.unitPrice.toLocaleString()}/kg`   /* A577 */
+                          : `${currency} ${item.unitPrice.toLocaleString()} each`}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {item.isFuel ? (
                       <span className="text-white text-sm tabular-nums">{item.quantity.toFixed(2)} L</span>
+                    ) : item.measureUnit ? (
+                      <span className="text-white text-sm tabular-nums" data-testid="weighed-qty">{formatWeight(item.quantity, item.measureUnit)}</span>
                     ) : (
                       <>
                         <button onClick={() => updateQty(index, -1)} className="w-6 h-6 bg-gray-800 hover:bg-gray-700 text-white rounded-md text-sm flex items-center justify-center transition-colors">−</button>
@@ -2069,6 +2154,13 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             refreshLostKitchen();
           }}
         />
+      )}
+
+      {/* A577: the weight of an item sold by weight */}
+      {weighFor && (
+        <Suspense fallback={null}><WeightModal product={weighFor} pricePerKg={effectivePrice(weighFor)} currency={currency}
+          onConfirm={(line) => { const p = weighFor; setWeighFor(null); addWeighed(p, line); }}
+          onClose={() => setWeighFor(null)} /></Suspense>
       )}
 
       {/* A367: the note editor — one line, or the whole order */}

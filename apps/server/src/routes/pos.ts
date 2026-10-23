@@ -37,6 +37,7 @@ import { menusForPos } from '../lib/menus';                                    /
 import { servedBranchBranding } from '../lib/branchBrandingStore';             // A544
 import { businessOutOfStockMode, branchStockView } from '../lib/stockGateStore';  // A563
 import { assertBranchAccess } from '../middleware/rbac';                        // A563
+import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -402,6 +403,7 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
       .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account',
+        SCALE_SETTINGS_KEY,   // A577: the business's scale label layout
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -647,6 +649,9 @@ export async function buildInit(req: InitCaller, requestedBranchId: string | nul
     // A367: the quick picks for order notes, owner-set per business. Unset → the defaults; a saved empty list → none.
     // Always a list, so a till never has to guess (shared/orderNotes.ts parseNotePicks).
     noteQuickPicks: parseNotePicks(receiptTextRows?.find((r: any) => r.key === 'order_note_picks')?.value),
+    // A577: how this business's weighing scales print their labels (shared/scaleBarcode.ts) — always sent, the default
+    // when unset or unreadable, so the till and the web POS read scale labels offline. Older tills ignore it.
+    scaleBarcodes: scaleSettingsOrDefault(receiptTextRows?.find((r: any) => r.key === SCALE_SETTINGS_KEY)?.value ?? null),
     // 0.6.27: the per-client switches the admin portal sets (feature_flags). Always every key, true or false — an unset
     // switch is off. Older tills ignore it.
     posFeatures: await (async () => {

@@ -10,12 +10,12 @@ const CARDS = [
   { slug: 'how-it-works', kicker: 'How it works', lines: ['A day with ZapTill,', 'from PIN to phone.'], sub: 'The morning float, the lunch rush, the kitchen, the close, the email at night.' },
   { slug: 'features', kicker: 'Features', lines: ['Everything it does,', 'grouped by job.'], sub: 'Sell, kitchen, day close, stock, staff, branches, Analytics, offline.' },
   { slug: 'who-its-for', kicker: "Who it's for", lines: ['Made for the way', 'your place works.'], sub: 'Restaurants, bars, quick service and shops in Kenya.' },
-  { slug: 'restaurants', kicker: 'For restaurants and cafés', lines: ['From the order to the plate,', 'nothing gets lost.'], sub: 'Kitchen tickets, a kitchen display, tables, M-Pesa, the day close.' },
+  { slug: 'restaurants', kicker: 'For restaurants and cafés', lines: ['From the order to the plate,', 'nothing gets lost.'], sub: 'Kitchen tickets with extras and notes, tables, M-Pesa, the day close.' },
   { slug: 'bars', kicker: 'For bars and lounges', lines: ["Know whose drawer is short", 'before the lights go off.'], sub: 'Over and short by name, voids with a manager PIN, credit for regulars.' },
   { slug: 'quick-service', kicker: 'For quick service', lines: ['Faster at the counter.', 'Right in the bag.'], sub: 'Combos on one line, dispatch tickets that count the bags, offers.' },
-  { slug: 'retail', kicker: 'For shops', lines: ['Stock that adds up.', 'A till that never stops.'], sub: 'Deliveries, counts, transfers, wastage and drawers by cashier.' },
-  { slug: 'analytics', kicker: 'ZapTill Analytics', lines: ['Know what to change next,', 'in shillings.'], sub: 'Ranked "Do this next" cards, each with an estimate and what it assumes.' },
-  { slug: 'pricing', kicker: 'Pricing', lines: ['About KES 100 a day.', 'No percentage of sales.'], sub: 'What the setup buys, and a calculator for what leaks cost you.' },
+  { slug: 'retail', kicker: 'For shops', lines: ['Stock that adds up.', 'A till that never stops.'], sub: 'Departments, barcodes and labels, stock, transfers and drawers by cashier.' },
+  { slug: 'analytics', kicker: 'ZapTill Analytics', lines: ['Know what to do next,', 'in plain words.'], sub: 'What to order, what to prepare each day, which branch needs stock.' },
+  { slug: 'pricing', kicker: 'Pricing', lines: ['Pay once for the tills.', 'About KES 100 a day for the cloud.'], sub: 'Per branch, the first month of the cloud free. No percentage of sales.' },
   { slug: 'contact', kicker: 'Contact', lines: ['Talk to a person,', 'on WhatsApp.'], sub: 'Call or WhatsApp 0717 675 635, or book a visit.' },
 ];
 

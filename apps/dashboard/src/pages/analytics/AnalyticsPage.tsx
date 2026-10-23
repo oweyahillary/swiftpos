@@ -20,6 +20,10 @@
  * the branches side by side and the stock moves to consider; "Do this next" gains the movement cards (words only — no
  * quantity, no KES; "Start a transfer" opens the transfer page with the items and both branches filled in, the quantity
  * blank) and the falling-branch card ("What sells when at Westlands" switches the branch and scrolls there).
+ * A575: "What sells together" after What sells when (the product pairs bought in the same order, the top 10, together.tsx)
+ * with one or two "Do this next" cards (a combo, the same shelf, at the pumps — never a price, no KES). And each business
+ * type's own words (lib/analyticsTerms.ts analyticsWords): a shop reads "Product performance", "cost of sales", "items
+ * removed" — never "Menu engineering", "food cost" or "kitchen items"; a restaurant or café keeps its words.
  *
  * The cloud works every figure out in SQL and keeps it a few minutes (routes/analytics.ts); this page asks once per
  * period for the overview, the recommendations and what sells when, once per tab and period for a tab, and NEVER polls.
@@ -35,6 +39,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
+import { analyticsWords, type AnalyticsWords } from '../../lib/analyticsTerms';
 import { useBranch } from '../../context/BranchContext';
 import { useTheme } from '../../context/ThemeContext';
 import { localDateStr } from '../../lib/localDate';
@@ -50,6 +55,7 @@ import {
   ChartCard, Legend, KpiTile, RevenueTrend, Donut, MenuScatter, TopItemsBar, Heatmap, HourColumns, WeekdayBars, LeakStack,
   AgeingBar, TopDebtors, ItemHeatmap, ShareList, classLegend, leakLegend,
 } from './charts';
+import { TogetherSection, type TogetherAnswer } from './together';
 
 // ── Types (the cloud's answers) ───────────────────────────────────────────────
 
@@ -100,7 +106,7 @@ interface OverviewAnswer {
   /** A561: the share of sales with no cost (costs only) */
   noCost?: { share: number | null; items: number; revenue: number } | null;
 }
-type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times' | 'stock' | 'customers' | 'costs' | 'branches';
+type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times' | 'stock' | 'customers' | 'costs' | 'branches' | 'together';
 interface Recommendation {
   id: string; kind: string; title: string; why: string;
   impact: number | null; impactPer: 'month' | 'once' | null; impactKind: 'gain' | 'recover' | 'collect' | 'at_risk' | null;
@@ -240,11 +246,16 @@ export function AnalyticsLocked() {
 
 /** The owner's route: every branch or one (the dashboard's branch selection), through the dashboard's api client. */
 export default function AnalyticsRoute() {
-  const currency = useBusiness().business?.currency ?? 'KES';
-  return <Analytics client={api} ownerView currency={currency} />;
+  const business = useBusiness().business;
+  return <Analytics client={api} ownerView currency={business?.currency ?? 'KES'} businessType={business?.type ?? null} />;
 }
 
-export function Analytics({ client, ownerView, currency, branchName }: { client: AnalyticsClient; ownerView: boolean; currency: string; branchName?: string }) {
+export function Analytics({ client, ownerView, currency, branchName, businessType }: {
+  client: AnalyticsClient; ownerView: boolean; currency: string; branchName?: string;
+  /** A575: the business type (the owner's BusinessContext, the manager portal's session) — the page's words */
+  businessType?: string | null;
+}) {
+  const words = analyticsWords(businessType);
   const branchCtx = useBranch();
   const p = chartPalette(useTheme().theme === 'light' ? 'light' : 'dark');
   const [preset, setPreset] = useState<PresetKey>('30d');
@@ -256,11 +267,13 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   const [recs, setRecs] = useState<RecAnswer | null>(null);
   const [overview, setOverview] = useState<OverviewAnswer | null>(null);
   const [times, setTimes] = useState<TimesAnswer | null>(null);
+  const [together, setTogether] = useState<TogetherAnswer | null>(null);   // A575
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
   const timesRef = useRef<HTMLElement>(null);
+  const togetherRef = useRef<HTMLElement>(null);
 
   // the owner's branch filter is the dashboard's branch selection (the api client sends it as X-Branch-Id too)
   const branch = ownerView ? (branchCtx.activeBranchId ?? '') : '';
@@ -279,7 +292,7 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   // the overview, the recommendations and what sells when: once per period and branch (the cloud shares the work)
   useEffect(() => {
     let live = true;
-    setRecs(null); setOverview(null); setTimes(null); setError(null);
+    setRecs(null); setOverview(null); setTimes(null); setTogether(null); setError(null);
     client.get<OverviewAnswer>(`/api/analytics/overview?${qs}`)
       .then((r) => { if (live) { setLocked(false); setOverview(r); } })
       .catch((e) => { if (live) fail(e); });
@@ -289,6 +302,10 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
     client.get<TimesAnswer>(`/api/analytics/item-times?${qs}`)
       .then((r) => { if (live) { setLocked(false); setTimes(r); } })
       .catch((e) => { if (live) fail(e); });
+    // A575: what sells together — before migration 164 runs the cloud answers 503; the section is simply left out
+    client.get<TogetherAnswer>(`/api/analytics/together?${qs}`)
+      .then((r) => { if (live) setTogether(r); })
+      .catch((e) => { if (live && (e as { code?: string })?.code === 'ANALYTICS_OFF') fail(e); });
     return () => { live = false; };
   }, [qs]); // eslint-disable-line react-hooks/exhaustive-deps -- posApi is a new object every render (ManagerDashboard note)
 
@@ -333,6 +350,7 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   /** A card's "See why": the tile with the evidence (or What sells when), scrolled into view. */
   function evidence(e: Evidence) {
     if (e === 'times') { timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (e === 'together') { togetherRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     pick(e);
     tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -359,6 +377,7 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
   const current = data[tabKey];
   const days = daysBetween(range.from, range.to);
   const openTab = TABS.find((t) => t.key === tab)!;
+  const tells = tab === 'menu' ? words.itemsTells : openTab.tells;   // A575: a shop's own words
   const costsHidden = recs?.costsHidden ?? overview?.marginHidden ?? false;
   const areas = visibleAreas(recs?.hooks, costsHidden);
   const forbidden = current && typeof current === 'object' && 'forbidden' in (current as object) ? (current as Forbidden).forbidden : null;
@@ -422,35 +441,42 @@ export function Analytics({ client, ownerView, currency, branchName }: { client:
           {noCost && noCost.share !== null && noCost.share >= 0.05 && (
             <NoCostBanner share={noCost.share} items={noCost.items} onOpen={() => evidence('costs')} />
           )}
-          <DoThisNext r={recs} p={p} currency={currency} onEvidence={evidence} ownerView={ownerView} onBranchTimes={branchTimes}
+          <DoThisNext r={recs} p={p} currency={currency} onEvidence={evidence} ownerView={ownerView} onBranchTimes={branchTimes} words={words}
             branchName={(id) => branchCtx.branches.find((b) => b.id === id)?.name ?? null} />
         </>
       ) : <p className="text-sm text-gray-500">Working out what to do next…</p>}
 
       {/* 3 · 5 — the KPI tiles; the trend and the payment mix come after What sells when */}
-      {overview ? <KpiRow o={overview} p={p} currency={currency} />
+      {overview ? <KpiRow o={overview} p={p} currency={currency} words={words} />
         : <p className="text-sm text-gray-500">Working out the figures…</p>}
 
       {/* 4 — what sells when */}
       <section ref={timesRef} aria-label="What sells when" className="scroll-mt-4">
-        {times ? <WhatSellsWhen t={times} p={p} /> : <p className="text-sm text-gray-500">Working out what sells when…</p>}
+        {times ? <WhatSellsWhen t={times} p={p} words={words} /> : <p className="text-sm text-gray-500">Working out what sells when…</p>}
       </section>
+
+      {/* A575 — what sells together */}
+      {together && (
+        <section ref={togetherRef} aria-label="What sells together" className="scroll-mt-4">
+          <TogetherSection t={together} p={p} />
+        </section>
+      )}
 
       {overview && <TrendAndMix o={overview} p={p} currency={currency} />}
 
       {/* 6 — dig into the details: the area tiles (A561) */}
       <div ref={tabsRef} className="scroll-mt-4">
-        <AreaTiles areas={areas} hooks={recs?.hooks ?? null} active={tab} onPick={pick}
+        <AreaTiles areas={areas} hooks={recs?.hooks ?? null} active={tab} onPick={pick} labels={{ menu: words.itemsArea }}
           stickyTop={ownerView ? 'top-12 md:top-0' : 'top-0'}>
-          <p className="text-sm text-gray-300" data-testid="analytics-tab-tells">{openTab.tells}</p>
+          <p className="text-sm text-gray-300" data-testid="analytics-tab-tells">{tells}</p>
           {!current ? <p className="text-sm text-gray-500">{busy ? 'Loading…' : ''}</p>
             : forbidden ? <p className="text-sm text-gray-400" data-testid="analytics-area-forbidden">{forbidden}</p>
-            : tab === 'menu' ? <MenuSection m={current as MenuAnswer} p={p} currency={currency} />
+            : tab === 'menu' ? <MenuSection m={current as MenuAnswer} p={p} currency={currency} words={words} />
             : tab === 'heatmap' ? <HeatmapSection h={current as HeatAnswer} p={p} currency={currency} />
-            : tab === 'leaks' ? <LeaksSection l={current as LeaksAnswer} p={p} currency={currency} />
+            : tab === 'leaks' ? <LeaksSection l={current as LeaksAnswer} p={p} currency={currency} words={words} />
             : tab === 'stock' ? <StockSection s={current as StockAnswer} />
             : tab === 'customers' ? <CustomersSection c={current as CustomersAnswer} p={p} currency={currency} />
-            : tab === 'costs' ? <CostsSection c={current as CostsAnswer} ownerView={ownerView} currency={currency} />
+            : tab === 'costs' ? <CostsSection c={current as CostsAnswer} ownerView={ownerView} currency={currency} words={words} />
             : tab === 'branches' ? <BranchesSection b={current as BranchesAnswer} currency={currency} ownerView={ownerView} inView={branch || null} onBranchTimes={branchTimes} />
             : <CreditSection c={current as CreditAnswer} p={p} currency={currency} />}
         </AreaTiles>
@@ -506,11 +532,11 @@ const IMPACT_LABEL: Record<NonNullable<Recommendation['impactKind']>, string> = 
 };
 const EVIDENCE_LABEL: Record<Evidence, string> = {
   menu: 'Menu engineering', heatmap: 'Busy times', leaks: 'Money leaks', credit: 'Credit ageing', times: 'What sells when',
-  stock: 'Stock', customers: 'Customers', costs: 'Costs', branches: 'Branches',
+  stock: 'Stock', customers: 'Customers', costs: 'Costs', branches: 'Branches', together: 'What sells together',
 };
 
-function DoThisNext({ r, p, currency, onEvidence, ownerView, onBranchTimes, branchName }: {
-  r: RecAnswer; p: ChartPalette; currency: string; onEvidence: (e: Evidence) => void;
+function DoThisNext({ r, p, currency, onEvidence, ownerView, onBranchTimes, branchName, words }: {
+  r: RecAnswer; p: ChartPalette; currency: string; onEvidence: (e: Evidence) => void; words: AnalyticsWords;
   ownerView: boolean; onBranchTimes: (branchId: string) => void; branchName: (id: string) => string | null;
 }) {
   const money0 = (n: number) => fmt.money(n, currency, { decimals: 0 });
@@ -595,7 +621,7 @@ function DoThisNext({ r, p, currency, onEvidence, ownerView, onBranchTimes, bran
                     {c.label}
                   </span>
                   <button onClick={() => onEvidence(x.evidence)} className="text-xs text-swift-text hover:underline print:hidden">
-                    See why · {EVIDENCE_LABEL[x.evidence]}
+                    See why · {x.evidence === 'menu' ? words.itemsArea : EVIDENCE_LABEL[x.evidence]}
                   </button>
                 </div>
               </li>
@@ -609,7 +635,7 @@ function DoThisNext({ r, p, currency, onEvidence, ownerView, onBranchTimes, bran
 
 // ── 3 · The KPI tiles, in plain words ─────────────────────────────────────────
 
-function KpiRow({ o, p, currency }: { o: OverviewAnswer; p: ChartPalette; currency: string }) {
+function KpiRow({ o, p, currency, words }: { o: OverviewAnswer; p: ChartPalette; currency: string; words: AnalyticsWords }) {
   const compare = compareWords(o.days.length);
   const money0 = (n: number | null) => fmt.money(n, currency, { decimals: 0, blank: '—' });
   const k = o.kpis;
@@ -625,8 +651,8 @@ function KpiRow({ o, p, currency }: { o: OverviewAnswer; p: ChartPalette; curren
         explain="What one customer spends per visit, on average." p={p} testId="kpi-avg-bill" />
       {k.margin && (
         <KpiTile label="Gross margin" value={pct(k.margin.value)} change={k.margin.change} upIsGood points compare={compare}
-          explain={left === null ? 'Set costs on your items to see what is left after the cost of the food.'
-            : `Of every ${cur} 100 sold, ${cur} ${left} is left after the cost of the food (items with a cost set).`} p={p} testId="kpi-margin" />
+          explain={left === null ? `Set costs on your items to see what is left after ${words.costOf}.`
+            : `Of every ${cur} 100 sold, ${cur} ${left} is left after ${words.costOf} (items with a cost set).`} p={p} testId="kpi-margin" />
       )}
       <KpiTile label="Money at risk" value={money0(k.atRisk.value)} change={k.atRisk.change} upIsGood={false} compare={compare}
         explain={`${o.wastageHidden ? 'Voids, refunds and discounts' : 'Voids, refunds, discounts and wastage'} — money that left without a sale.`} p={p} testId="kpi-at-risk" />
@@ -638,17 +664,19 @@ function KpiRow({ o, p, currency }: { o: OverviewAnswer; p: ChartPalette; curren
 
 const PART_WORD: Record<DaypartKey, string> = { morning: 'in the morning', lunch: 'at lunch', afternoon: 'in the afternoon', evening: 'in the evening', late: 'late at night' };
 
-function WhatSellsWhen({ t, p }: { t: TimesAnswer; p: ChartPalette }) {
+function WhatSellsWhen({ t, p, words }: { t: TimesAnswer; p: ChartPalette; words: AnalyticsWords }) {
+  const food = words.costOfSales === 'Food cost';   // A575: a shop stocks, it does not prep
   const [pick, setPick] = useState<string>('');
   if (!t.items.length) return null;
   const chosen = t.items.find((i) => (i.productId ?? `name:${i.name}`) === pick) ?? t.items[0];
   const parts = t.dayparts.filter((d) => d.qty > 0);
   const best = chosen.bestDaypart ? t.dayparts.find((d) => d.key === chosen.bestDaypart) : null;
+  const todayName = new Date().toLocaleDateString('en-GB', { weekday: 'long' });   // A572: today's card is ringed
   return (
     <div className="space-y-4" data-testid="analytics-times">
       <div>
         <h2 className="text-lg font-bold text-white">What sells when</h2>
-        <p className="text-sm text-gray-400">By the hour it was rung, every day of the period added together — so you know what to prep, push and stock for each part of the day.</p>
+        <p className="text-sm text-gray-400">By the hour it was rung, every day of the period added together — so you know what to {food ? 'prep, push and stock' : 'push and stock'} for each part of the day.</p>
       </div>
 
       {/* (a) the dayparts' top 5 */}
@@ -665,24 +693,29 @@ function WhatSellsWhen({ t, p }: { t: TimesAnswer; p: ChartPalette }) {
       {/* A560: the week at a glance — each weekday's top 3 with its typical sales */}
       {t.week && t.week.some((d) => d.top.length > 0) && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 sm:p-4" data-testid="analytics-week">
-          <p className="text-sm font-semibold text-white">Your week at a glance — what to prepare each day</p>
-          <p className="text-[11px] text-gray-500 mb-2">The top 3 on each day of the week, with what a typical one sells</p>
-          <ol className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
-            {t.week.map((d) => (
-              <li key={d.dow} className="bg-gray-800/60 rounded-lg p-2 min-w-0" data-day={d.day}>
-                <p className="text-xs font-bold text-white">{d.day}</p>
-                {d.top.length === 0 ? <p className="text-xs text-gray-500">No sales</p> : (
-                  <ul className="mt-1 space-y-0.5">
-                    {d.top.map((x) => (
-                      <li key={x.productId ?? x.name} className="flex justify-between gap-2 text-xs">
-                        <span className="text-gray-300 truncate" title={x.name}>{x.name}</span>
-                        <span className="text-white font-semibold tabular-nums flex-shrink-0">{fmt.qty(x.qty)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
+          <p className="text-sm font-semibold text-white">Your week at a glance — what to {food ? 'prepare' : 'stock'} each day</p>
+          <p className="text-xs text-gray-500 mb-3">The top 3 on each day of the week, with what a typical one sells</p>
+          {/* A572 (owner: "the cards are small, reading them is a bit hard"): body-size text, the whole item name (two
+              lines before it clips), the count in its own column; 7 across only on a very wide screen, stacked on a phone */}
+          <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1800px]:grid-cols-7 gap-3">
+            {t.week.map((d) => {
+              const today = d.day === todayName;
+              return (
+                <li key={d.dow} className={`bg-gray-800/60 rounded-lg p-3 min-w-0 ${today ? 'ring-1 ring-swift' : ''}`} data-day={d.day} data-today={today || undefined}>
+                  <p className="text-sm font-bold text-white">{d.day}{today && <span className="ml-2 text-xs font-semibold text-swift-text">Today</span>}</p>
+                  {d.top.length === 0 ? <p className="text-sm text-gray-500 mt-1">No sales</p> : (
+                    <ul className="mt-2 space-y-2">
+                      {d.top.map((x) => (
+                        <li key={x.productId ?? x.name} className="flex items-start justify-between gap-3 text-sm leading-snug">
+                          <span className="text-gray-200 min-w-0 line-clamp-2 break-words" title={x.name}>{x.name}</span>
+                          <span className="text-white font-semibold tabular-nums flex-shrink-0">{fmt.qty(x.qty)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         </div>
       )}
@@ -757,7 +790,7 @@ const SORT_WORD: Record<SortKey, string> = {
   totalMargin: 'by total margin', share: 'by share', class: 'by class',
 };
 
-function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; currency: string }) {
+function MenuSection({ m, p, currency, words }: { m: MenuAnswer; p: ChartPalette; currency: string; words: AnalyticsWords }) {
   // A558: the top 10 by the column that matters for the decision — what the item brings in (total margin with costs,
   // else revenue); the headers still sort, the cap stays 10
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: m.costsHidden ? 'revenue' : 'totalMargin', desc: true });
@@ -791,7 +824,7 @@ function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; curre
       <div className="grid gap-4 xl:grid-cols-5">
         {hasMatrix ? (
           <div className="xl:col-span-3 min-w-0">
-            <ChartCard title="Menu engineering matrix" sub="Popularity across, margin a unit up; bubble size = revenue"
+            <ChartCard title={words.matrix} sub="Popularity across, margin a unit up; bubble size = revenue"
               legend={<ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
                 {(['star', 'plowhorse', 'puzzle', 'dog'] as MenuClass[]).map((k) => (
                   <li key={k} className="flex items-center gap-1.5"><ClassMark k={k} p={p} />{CLASS_META[k].label}s</li>
@@ -813,8 +846,7 @@ function MenuSection({ m, p, currency }: { m: MenuAnswer; p: ChartPalette; curre
       {!m.costsHidden && (
         <p className="text-xs text-gray-500">
           Popular = at least {pct(m.popularityThreshold)} of the items sold (70% of an even share). High margin = at least the
-          average margin per item sold, {fmt.money(m.avgUnitMargin ?? 0, currency)}. Margin = average selling price − the cost of one
-          serving (the cost price, else the recipe).
+          average margin per item sold, {fmt.money(m.avgUnitMargin ?? 0, currency)}. Margin = average selling price − {words.unitCost}.
         </p>
       )}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden" data-testid="analytics-menu-table">
@@ -885,7 +917,7 @@ function HeatmapSection({ h, p, currency }: { h: HeatAnswer; p: ChartPalette; cu
 
 const dayLeak = (d: DayLeak) => d.voidValue + d.itemVoidValue + d.refundValue + d.discountValue + (d.wastageValue ?? 0) + Math.max(0, -d.dayCloseVariance);
 
-function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; currency: string }) {
+function LeaksSection({ l, p, currency, words }: { l: LeaksAnswer; p: ChartPalette; currency: string; words: AnalyticsWords }) {
   const m = (n: number | null) => fmt.money(n, currency, { blank: '—' });
   const variance = (n: number) => <span className={n < 0 ? 'text-red-400' : n > 0 ? 'text-amber-400' : 'text-gray-500'}>{fmt.money(n, currency, { sign: true })}</span>;
   const flagged = l.cashiers.filter((c) => c.flags.length);
@@ -902,7 +934,7 @@ function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; cur
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Card label="Voids" value={m(l.totals.voidValue + l.totals.itemVoidValue)} sub={`${l.totals.voids} orders · ${l.totals.itemVoids} kitchen items`} />
+        <Card label="Voids" value={m(l.totals.voidValue + l.totals.itemVoidValue)} sub={`${l.totals.voids} orders · ${l.totals.itemVoids} ${words.removedItems}`} />
         <Card label="Refunds" value={m(l.totals.refundValue)} sub={`${l.totals.refunds} refunds`} />
         <Card label="Discounts" value={m(l.totals.discountValue)} sub={`${l.totals.discounts} orders`} />
         <Card label="Day close short" value={m(-l.totals.dayCloseShort)} sub={l.wastageHidden ? `Wastage: ${l.totals.wastage} entries` : `Wastage ${m(l.totals.wastageValue)}`}
@@ -985,7 +1017,7 @@ function LeaksSection({ l, p, currency }: { l: LeaksAnswer; p: ChartPalette; cur
         )}
         <CapNote shown={days.rows.length} total={days.total} by="by what the day lost" />
       </div>
-      <p className="text-xs text-gray-500">Voids are voided orders plus kitchen items removed after they were sent. Refunds count on the day they were given, against the cashier of the sale. Drawer ± is the cashier's shift count; day close ± the till's day close (over +, short −).</p>
+      <p className="text-xs text-gray-500">{words.voidsNote} Refunds count on the day they were given, against the cashier of the sale. Drawer ± is the cashier's shift count; day close ± the till's day close (over +, short −).</p>
     </div>
   );
 }

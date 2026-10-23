@@ -407,6 +407,23 @@ jobs:
           node --no-warnings tests/analytics-a565.test.mjs
           node --no-warnings tests/analytics-rules-a565.test.mjs
 
+      # A572 — Analytics cards readable at every width: the Payment mix legend (name, amount and % never overlap or clip;
+      # it wraps below the donut in a narrow card) and the week at a glance (body-size text, whole item names on two
+      # lines, 7 across only from 1800px, stacked on a phone, today ringed). Source pins on charts.tsx and AnalyticsPage.tsx.
+      - name: Analytics legend and week cards (A572)
+        run: node --no-warnings tests/analytics-visuals-a572.test.mjs
+
+      # A575 — "What sells together" (the product pairs bought in the same order; migration 164's analytics_together):
+      # the rules (too few orders, the direction and the plain sentence, the ranking and the cap at 10, at most two cards,
+      # no price and no KES, each business type's advice — a combo, the same shelf, at the pumps) and Analytics, Help and
+      # the upload template in each business type's words; GET /api/analytics/together and its cards over HTTP on the REAL
+      # function in PGlite (the flag, a manager's branch, before 164, the cache); the section and the Costs area rendered;
+      # migration 164 on its own. Needs the server build and PGlite.
+      - name: Analytics what sells together (A575) and migration 164
+        run: |
+          TZ=UTC node --no-warnings tests/analytics-together-a575.test.mjs
+          node --no-warnings scripts/test-migration-164.mjs
+
       # A569 — a one-month cloud trial starts with the client's first desktop licence: the real admin and business routers
       # over HTTP (the trial starts with no invoice, once per client, never for a paid client; Convert to paid), the lapse
       # (a week of reports only, then CLOUD_TRIAL_ENDED), the owner's notice in the last 7 days, the admin portal's words.
@@ -449,6 +466,23 @@ jobs:
       - name: Web POS menus as top tabs (A566)
         run: node --no-warnings tests/menus-top-a566.test.mjs
 
+      # A578: menus by time of day — a menu's days and time windows (shared/menuHours.ts: no schedule = always, a window
+      # past midnight belongs to the day it started, the business day's cut-off), hidden from the web POS's tabs, panel,
+      # All and search outside its hours, a scan or tap refused in words (MinimartPOS too), the manager's Show all
+      # (menu.edit), one timer at the next change; the Menus page's hours editor; the cloud's routes and sync; migration
+      # 165 (menus.availability) replayed into PGlite.
+      - name: Menus by time of day (A578) and migration 165
+        run: |
+          node --no-warnings tests/menu-hours-a578.test.mjs
+          node --no-warnings scripts/test-migration-165.mjs
+
+      # A573: each business type reads its own words — Menus at a restaurant or café, Departments at a shop, minimart or
+      # petrol station, Groups anywhere else (shared/businessTerms.ts) — and food-service areas (KDS, reservations, combos,
+      # ingredients, table turnover, tables, room charge, kitchen switches) only at a restaurant or café. The sidebar, the
+      # Menus page and Settings › Business rendered per type (react-dom/server); no user-visible "hotel" in any app.
+      - name: Business-type words (A573)
+        run: node --no-warnings tests/business-terms-a573.test.mjs
+
       # A563: when an item's stock reaches zero — sell as normal, show as sold out, or hide (the owner's choice, two POS
       # switches). The real controls / pos / orders routers over HTTP: the owner's setting and its sync, a live web sale of
       # a sold-out item refused (409 SOLD_OUT), a till's pushed sale never refused, the web POS's view. Runs in the loop
@@ -471,6 +505,27 @@ jobs:
       # the label settings over HTTP (menu.edit, never over a barcode, two at once never duplicate). Runs in the loop too.
       - name: Barcodes and labels (A571)
         run: TZ=UTC node --no-warnings tests/barcode-labels-a571.test.mjs
+
+      # A576: loss-prevention alerts (the Watch list) — every detector on fixtures per business type (restaurant, café,
+      # retail, minimart, petrol, parking, other), the thresholds and the peer rule, on/off, plain words (never an
+      # accusation, never "to recover"), at most 10, who is told (never the person it is about, never a cashier) and when
+      # (once); the job on an in-memory database (idempotent); the routes over HTTP (reports.voids, the web only, the
+      # owner's settings); no cashier surface; migration 166 (loss_alerts) replayed into PGlite. Runs in the loop too.
+      - name: Loss-prevention alerts (A576) and migration 166
+        run: |
+          node --no-warnings tests/loss-alerts-a576.test.mjs
+          node --no-warnings scripts/test-migration-166.mjs
+
+      # A577: items sold by weight — the scale label parser (shared/scaleBarcode.ts) on every preset (standard price and
+      # weight, CAS, DIGI with its price check digit, Ishida, a six-digit item) against GS1's published check digits;
+      # prefix 20 (ZapTill's own codes) never a label; the weighed line (kg x price per kg to the cent, a price label's
+      # price as the amount); the settings, pos/init and a weighed web / till sale over HTTP (half a gram's tolerance, a
+      # product not sold by weight re-priced as before); migration 167 (quantities to the gram) replayed into PGlite.
+      # Runs in the loop too; named here so a failure says what broke.
+      - name: Items sold by weight (A577) and migration 167
+        run: |
+          TZ=UTC node --no-warnings tests/scale-barcode-a577.test.mjs
+          node --no-warnings scripts/test-migration-167.mjs
 
       - name: Run offline suites
         run: |
@@ -1300,6 +1355,20 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/menus-top-a566.test.mjs
 
+      # A578 — menus by time of day on the till: local schema 76 (menus.availability), the pull / a change / the branch
+      # server carry the hours, pos:init hands them to the sale screen; the bar at 08:00 vs 13:00 (an out-of-window menu
+      # hidden, "until 11:00"), Show all, one timer; per mode — restaurant, retail (a scan refused), petrol (fuel never),
+      # parking / other.
+      - name: Desktop menus by time of day (A578)
+        working-directory: apps/desktop
+        run: node --no-warnings test/menu-hours-a578.test.mjs
+
+      # A573 — the till in the business's words: the Manager sidebar's catalogue (Menu / Products), the sale screen's top
+      # tabs and panel (Menus / Departments / Groups), the import; src/shared/businessTerms.ts is the web's file.
+      - name: Desktop business-type words (A573)
+        working-directory: apps/desktop
+        run: node --no-warnings test/business-terms-a573.test.mjs
+
       # A544 — per-branch branding: local schema 74 (branch_branding); the whole pull, a change and the themes switch store
       # this branch's override (an older cloud leaves it, another branch's never kept); the resolver (branch → business →
       # default per field; themes off → ignored); the receipt prints the branch's footer in the owner's box, the closing
@@ -1323,6 +1392,17 @@ jobs:
       - name: Desktop barcode labels (A571)
         working-directory: apps/desktop
         run: node --no-warnings test/labels-a571.test.mjs
+
+      # A577 — items sold by weight on the till, in every mode: local schema 77; the cloud's plu_code reaching the till's
+      # plu at last, sold_by / unit_label and the scale label layout pulled and relayed by the branch server; a shop scans
+      # a label (0.452 kg at KES 294 — stock to the gram, the receipt "0.452 kg @ 650/kg", a reprint too); a restaurant
+      # weighs nyama choma on the keypad and the kitchen ticket reads "0.750 kg   GOAT MEAT"; a petrol station sells
+      # litres from a pump and a weighed item from its shop in one sale, the fuel untouched.
+      - name: Desktop items sold by weight (A577)
+        working-directory: apps/desktop
+        env:
+          TZ: UTC
+        run: node --no-warnings test/weighed-items-a577.test.mjs
 
       # A541 — tills and branch servers stuck on an old version since the A513 autostart install their update: a start at
       # Windows sign-in installs an approved, newer, downloaded update before serving (the updater task, else the

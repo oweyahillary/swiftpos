@@ -1015,7 +1015,8 @@ router.get('/voids', requirePermission('reports.voids'), async (req, res) => {
     .order('created_at', { ascending: false });
 
   if (scopedBranch)  query = query.eq('branch_id', scopedBranch);
-  if (cashier_id)    query = query.eq('cashier_id', cashier_id as string);
+  // A576: one person (the watch list's link) — the sales they rang up, or the ones they voided.
+  if (cashier_id)    query = /^[0-9a-f-]{36}$/i.test(String(cashier_id)) ? query.or(`cashier_id.eq.${cashier_id},voided_by.eq.${cashier_id}`) : query.eq('cashier_id', cashier_id as string);
 
   const { data: voids, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
@@ -1110,7 +1111,8 @@ router.get('/refunds', requirePermission('reports.voids'), async (req, res) => {
     .order('refunded_at', { ascending: false });
 
   if (scopedBranch)  query = query.eq('branch_id', scopedBranch);
-  if (cashier_id)    query = query.eq('cashier_id', cashier_id as string);
+  // A576: one person (the watch list's link) — the sales they rang up, or the ones they refunded.
+  if (cashier_id)    query = /^[0-9a-f-]{36}$/i.test(String(cashier_id)) ? query.or(`cashier_id.eq.${cashier_id},refunded_by.eq.${cashier_id}`) : query.eq('cashier_id', cashier_id as string);
 
   const { data: refunds, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }

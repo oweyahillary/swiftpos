@@ -83,6 +83,36 @@ const SHARED = [
     ],
   },
   {
+    // A578: menus by time of day — which menus are open now, the next change, the refusal words, the schedule's check.
+    name: 'menuHours.ts',
+    copies: [
+      'shared/menuHours.ts',
+      'apps/desktop/src/shared/menuHours.ts',   // the till's sale screen (the bar, the grid, a scan refused)
+      'apps/dashboard/src/lib/menuHours.ts',    // the web POS (CashierScreen, MinimartPOS) and the Menus page's editor
+      'apps/server/src/lib/menuHours.ts',       // the cloud checks a menu's hours before storing them
+    ],
+  },
+  {
+    // A573: what each business type calls things (Menus / Departments / Groups …) and which food-service areas it sees.
+    name: 'businessTerms.ts',
+    copies: [
+      'shared/businessTerms.ts',
+      'apps/dashboard/src/lib/businessTerms.ts',   // the sidebar, Menus page, web POS, manager portal, roles screen
+      'apps/desktop/src/shared/businessTerms.ts',  // the till's Manager screen and sale screen
+      'apps/server/src/lib/businessTerms.ts',      // A575: analyticsTerms.ts builds on it in the cloud
+    ],
+  },
+  {
+    // A575: Analytics in each business type's words, and what to do about two products bought together. Imports
+    // businessTerms.ts (beside each copy); not on the till (it has no Analytics).
+    name: 'analyticsTerms.ts',
+    copies: [
+      'shared/analyticsTerms.ts',
+      'apps/dashboard/src/lib/analyticsTerms.ts',   // the Analytics page
+      'apps/server/src/lib/analyticsTerms.ts',      // the cards (/api/analytics/together, /recommendations)
+    ],
+  },
+  {
     // A571: barcodes — EAN-13 / UPC-A / Code 128 bars and the in-store codes the cloud assigns (prefix 20).
     name: 'barcode.ts',
     copies: [
@@ -91,6 +121,17 @@ const SHARED = [
       'apps/dashboard/src/lib/barcode.ts',      // Products (Generate) and Print labels
       'apps/desktop/src/shared/barcode.ts',     // the till's Labels screen (preview)
       'apps/desktop/src/main/barcode.ts',       // the till's label printing
+    ],
+  },
+  {
+    // A577: items sold by weight — scale label barcodes (21–29, price or weight inside), the weighed line, its amount.
+    name: 'scaleBarcode.ts',
+    copies: [
+      'shared/scaleBarcode.ts',
+      'apps/server/src/lib/scaleBarcode.ts',        // the scale settings cleaned; a weighed line's amount checked
+      'apps/dashboard/src/lib/scaleBarcode.ts',     // the web POS (CashierScreen, MinimartPOS) and the settings' test box
+      'apps/desktop/src/shared/scaleBarcode.ts',    // the till's sale screen
+      'apps/desktop/src/main/scaleBarcode.ts',      // the till's main process (the receipt's weighed lines)
     ],
   },
   {

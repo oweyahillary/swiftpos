@@ -9,6 +9,8 @@ ZapTill gives your products barcodes and prints labels for them on almost any pr
 
 > A label shows the item's price on the day you print it. When you change a price, reprint that item's labels.
 
+> **Every label has a barcode.** You cannot print a label without one. If an item you choose has no barcode yet, ZapTill gives it one when you print (section 3).
+
 ## 1. Barcodes
 
 ### Products that already have a barcode
@@ -26,13 +28,35 @@ Things you pack or make yourself (bread, cut vegetables, own-brand items) have n
 
 To do one product at a time, open the product and click **Generate** beside **Barcode**.
 
-**About the codes.** They are 13-digit EAN-13 codes that start with **20**, for example `2000000000015`. GS1, the body that issues barcodes, keeps codes starting with 20 to 29 for a shop's own use: no manufacturer's product carries one, so your codes never clash with a real product's. ZapTill uses only **20**. Codes starting with 21 to 29 are left free for weighing scales that print the price or weight inside the barcode.
+**About the codes.** Unless you change the numbering (below), they are 13-digit EAN-13 codes that start with **20**, for example `2000000000015`. GS1, the body that issues barcodes, keeps codes starting with 20 to 29 for a shop's own use: no manufacturer's product carries one, so your codes never clash with a real product's. Codes starting with 21 to 29 are often used by weighing scales that print the price or weight inside the barcode, so **20** is the safe choice.
 
 - A product that already has a barcode is never changed.
 - Two products in your business never get the same code.
 - These codes work in your own shops only. To sell your products in other shops (a supermarket chain, for example), you need GS1 Kenya codes; type those into **Barcode** instead.
 
+### Barcode numbering: format, prefix, start number, digits
+
+You choose how new barcodes are made. On the web it is the **Barcode numbering** section of **Menu › Print labels**; on the till it is the same section on **Manager › Stock › Labels**. Changing it needs the right to edit the menu, and the till needs the internet to save it. Everyone else sees it but cannot change it.
+
+| Setting | What it does |
+|---|---|
+| Format | **EAN-13** (13 digits, read by every scanner; the default), **EAN-8** (8 digits, for small items), **UPC-A** (12 digits), or **Code 128, digits only** (any length from 4 to 20 digits). |
+| Prefix | The digits every new code starts with, for example `20`. |
+| Start at | The first item number to use, for example `1000`. The next code always comes after the highest one already used with the same prefix and length, so you never get a duplicate. |
+| Digits | Fixed for EAN-13 (13), EAN-8 (8) and UPC-A (12). For Code 128 you choose the length, and you can add a check digit. |
+
+**What the digits are made of.** A code is the prefix, then the item number (filled with zeros), then a **check digit** worked out from the other digits. The scanner uses the check digit to catch a misread. For example, EAN-13 with prefix 20: `20` + `0000000001` + `5` = `2000000000015`. The screen spells this out ("13 digits: prefix 20 (2) + item number (10) + check digit (1)").
+
+**The preview** under the settings shows the next three codes and how many codes are left in the range.
+
+- **Prefix warnings.** For EAN-13 and EAN-8, use a prefix that starts with **20**. For UPC-A, start it with **4**. Any other prefix could match a manufacturer's barcode, so ZapTill warns you. It still lets you save, in case you have your own reason.
+- **Weighing scales.** EAN-13 codes starting with **21 to 29**, and UPC-A codes starting with **2**, are the ones weighing scales print with the weight or price inside. If your prefix would make codes like these, ZapTill warns you: a scale label could be read as one of your items, or one of your codes as a weighed item. Keep **20** for EAN-13.
+- **When the range is used up**, for example a short Code 128 length with a long prefix, ZapTill generates no codes and says so. It does not give some items a code and skip the rest. Choose a shorter prefix or more digits.
+- **Changing the numbering never changes existing barcodes.** Only codes made from then on follow it.
+
 ## 2. The label
+
+Labels work the same for every kind of business: a shop's shelf labels, a restaurant's or café's grab-and-go and packaged items (bottled drinks, take-away packs), a petrol station's shop items (lubricants, gas, snacks; pump fuel is sold at the pump and is not listed), and anything a car park sells besides parking.
 
 On the web the label is set on **Menu › Print labels**. On the till it is set on **Manager › Stock › Labels**. Both screens use the same settings. When someone allowed to edit the menu clicks **Save**, every till and the web use the new settings.
 
@@ -41,7 +65,8 @@ On the web the label is set on **Menu › Print labels**. On the till it is set 
 | Size | 30×20, 38×25, 40×30, 50×25, 50×30, 58×40 or 60×40 mm, or type any width × height. Measure one label on the roll, without the gap. |
 | Item name | The product's name, on up to two lines. |
 | Price | Today's price at this branch (on the till) or the main price (on the web). |
-| Barcode / Digits | The bars and the digits under them. |
+| Barcode | Always printed. There is no setting to turn it off. |
+| Digits under the bars | The barcode's digits printed under the bars. On by default; turn it off for a cleaner label. |
 | Business name | Your business's name at the top. On a small label it is the first thing left off. |
 | After the price | Optional text, for example "per kg". |
 | Printer dpi | 203 dpi (most label printers) or 300 dpi. Check the printer's box or its test page. |
@@ -53,9 +78,18 @@ The text sizes itself to fit the label. A preview shows the first label. When so
 
 - Search by name or barcode, or pick a category, then type how many labels you want of each item.
 - **Add all shown** adds one label for each item in the list.
-- **Add every generated code** adds every product that has a ZapTill code (starting with 20).
+- **Add every generated code** adds every product that has a code ZapTill generated (by your barcode numbering, or starting with 20).
 - On the web, **Delivery since**: pick the day a delivery came in and click **Add the items restocked**. Each product restocked since that day is added, with one label for each unit received.
 - On the web, tick products on **Menu › Products** and click **Print labels**. The ticked products are already chosen.
+
+### Items without a barcode
+
+A label is never printed without a barcode. If some of the items you chose have none, the screen says so. When you click **Print**:
+
+- **If you may edit the menu**, ZapTill asks: "3 items have no barcode yet — generate them and print?" Click **OK**. ZapTill gives those items, and only those items, a barcode using your numbering. Then it prints every label. Click **Cancel** to print nothing. The new barcodes are saved to the products, and the tills can scan them after their next menu refresh.
+- **If you may not edit the menu**, those items are left out. The other items print, and the screen lists the items left out: "ask a manager to generate barcodes for: Bread, Eggs".
+- **On the till without internet**, barcodes cannot be made, because the codes come from the cloud. Those items are left out and named, and the others print. Print them again when the till is back online.
+- **A barcode that cannot be printed.** A code with letters outside A to Z, such as "Café", cannot be drawn. That item is left out and named. Change its barcode on **Menu › Products**. Any other code you typed prints, as Code 128 if it is not a valid EAN or UPC.
 
 ## 4. Printing on a label printer (with its driver)
 
@@ -131,6 +165,18 @@ Only sticker sheets (section 5). Choose **A4**, **Margins: None** and **100%** i
 | A blank label between printed ones, or one label printed over two | The driver's paper size or the gap does not match the roll. Set the size (section 7) and calibrate. |
 | The label is printed too small, in a corner | The driver's paper is bigger than the label. Set it to the label's size. Scale must be 100%. |
 | The scanner does not read the code | Print larger (a wider label), turn on **Digits** and check them, raise the print darkness in the driver, and keep a white margin each side of the bars. |
-| "No barcode" next to an item | Give it one: **Menu › Products › Generate barcodes**. |
+| "No barcode yet" next to an item | Nothing to do if you may edit the menu: it gets a barcode when you print. Otherwise ask a manager, or use **Menu › Products › Generate barcodes**. |
+| "Not printed: ask a manager to generate barcodes for: …" | You may not create barcodes. Someone who may edit the menu prints those items, or generates their barcodes first. |
+| "The barcode numbering range is used up" | Change **Barcode numbering**: a shorter prefix or more digits. |
 | The till says the label printer did not answer | Check the IP address (print the printer's self-test page to see it), that the printer is on the same network, and that it is switched on. |
 | The price on the shelf is wrong | Labels show the price on the day they were printed. Reprint them after a price change. |
+
+## 9. Items sold by weight (scale labels)
+
+Meat, fruit and vegetables, loose sweets and nyama choma can be sold **by the kilo**: the weight is the quantity (0.452 kg) and the amount is the price per kg × the weight. The full guide is **Items sold by weight** (`WEIGHED-ITEMS`); in short:
+
+1. On the web, edit the item: price **per kg**, switch on **Sold by weight**, and give it its **Scale code (PLU)** — the number it has on your weighing scale.
+2. At any till, tapping the item asks for the weight (a keypad in kg).
+3. With a **label scale**, scan the sticker the scale prints: the item is added with its weight and amount. Choose your scale (CAS, DIGI, Ishida or standard) and test one label in **Settings › Business › Scale labels**.
+
+> Scale labels start with **21–29**. The codes ZapTill generates for your products start with **20** and are never read as scale labels, so the two never clash.

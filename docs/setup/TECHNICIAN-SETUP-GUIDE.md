@@ -1,8 +1,10 @@
 # ZapTill Technician Setup Guide
 
-*Version 1.0 · 22 October 2026 · for ZapTill field technicians*
+*Version 1.1 · 23 October 2026 · ZapTill 1.0.20 · for ZapTill field technicians*
 
 This guide takes a ZapTill technician from an empty account to a client selling on a working till, then to the technician access used for support afterwards. Follow the steps in order; each one depends on the one before.
+
+**New in 1.0.20:** the installer is downloaded from the admin portal (Step 7a); the first desktop licence starts a one-month cloud trial, so the licence now comes before web access (Step 2); the owner must change the temporary password at the first sign-in (Step 3); a customer gets a credit limit from **+ Give credit** (Step 6); the business type now decides the wording, such as Menus or Departments (Step 1); plus the zero-stock setting, menus as tabs on the till, other branches' stock, barcodes and labels, and the approval PIN as a feature switch.
 
 ## Before you go
 
@@ -10,7 +12,7 @@ Collect these from the client before the visit. Most setup delays come from a mi
 
 | What | Why you need it | Example |
 | --- | --- | --- |
-| Business name and type | Creates the account and picks the right features (restaurant, retail, petrol station) | Mama Lishe Grill, restaurant |
+| Business name and type | Creates the account, picks the right features and sets the words the screens use (restaurant, retail, petrol station) | Mama Lishe Grill, restaurant |
 | Owner's full name, email and phone | The owner's sign-in to the web dashboard; the email must be one they can open on the day | Jane Wanjiru, jane@example.com |
 | Branches | One per physical shop; each gets its own tills, printers and stock | Ngong Road, Westlands |
 | M-Pesa Buy Goods or Paybill number (and account) | Printed large on every receipt | Buy Goods 777111 |
@@ -25,7 +27,7 @@ Bring or confirm on site:
 - [ ] A cash drawer connected to the receipt printer, if used
 - [ ] Internet for the setup day (the tills keep selling offline afterwards)
 - [ ] A small UPS for the till PC: the till needs power to keep selling during a power cut
-- [ ] Your ZapTill admin portal sign-in, and the ZapTill installer
+- [ ] Your ZapTill admin portal sign-in, and the ZapTill installer (download it from the admin portal before you leave: Step 7a)
 
 The three places you will work in:
 
@@ -41,7 +43,7 @@ One form creates the business, its first branch, the owner's sign-in and every b
 
 1. Sign in at **admin.zaptill.co.ke** with your email and password, then enter the 6-digit sign-in code (emailed, or from your authenticator app). Tick **Remember this browser for 30 days** on your own laptop only.
 2. In the sidebar, under **Clients**, click **New client**.
-3. **Business Type**: click the right tile — Restaurant, Café, Retail, Minimart, Parking, Petrol Station or Other. The default is **Minimart**, so always click the tile.
+3. **Business Type**: click the right tile — Restaurant, Café, Retail, Minimart, Parking, Petrol Station or Other. The default is **Minimart**, so always click the tile. The type decides the words and the screens the client sees (table below), so get it right now.
 4. **Business Details**: **Business Name** (required), **Phone**, **Currency** (default KES) and **VAT Rate (%)** (default 16).
 5. **Main Branch**: **Branch Name** (required) and **Address**.
 6. **Owner Login Account**: **Owner Name**, **Email** (required) and **Temporary Password** (at least 8 characters). The password field shows what you type, so type it with the owner beside you.
@@ -52,6 +54,18 @@ One form creates the business, its first branch, the owner's sign-in and every b
 The success panel shows the Business ID, branch, owner login and temporary password. Write the temporary password down for the owner, then click **View client →**.
 
 ![Client created, with the Business ID and temporary password](screenshots/01d-admin-client-created.png)
+
+**Why the business type matters.** The same features carry different names, and kitchen features show only where there is a kitchen:
+
+| Type | Groups of categories | Kitchen features |
+| --- | --- | --- |
+| Restaurant, Café | **Menus** (Food, Soft drinks) | Shown |
+| Retail, Minimart, Petrol Station | **Departments** (Groceries, Household) | Hidden |
+| Parking, Other | **Groups** (Parking, Car wash) | Hidden |
+
+Kitchen features are the kitchen display, combo meals, ingredients, tables and the kitchen switches. A restaurant's web sidebar says **Menu** and **Inventory**; a shop's says **Catalogue** and **Stock**.
+
+A shop created as a restaurant sees "Menus", tables and the kitchen display; a restaurant created as a minimart loses its kitchen features. If you picked the wrong type, change it at once under **Edit details** on the client, before the menu is loaded.
 
 **What was created:** the business, the main branch (not yet licensed for tills), the owner's sign-in, the owner's staff record on the owner's role, and these built-in roles: Manager, Cashier, Supervisor, Waiter, Kitchen, Storekeeper, Accountant, General Manager, Operations Manager, Finance Manager, Auditor, Kitchen Manager (plus Fuel attendant for a petrol station). No email is sent to the owner.
 
@@ -65,7 +79,7 @@ The success panel shows the Business ID, branch, owner login and temporary passw
 | --- | --- |
 | Auth creation failed | That email is already a ZapTill sign-in. Use another email or ask the owner which one they use. |
 | Temporary password must be at least 8 characters. | Make it longer. |
-| Plan shows **None** after creating | No trial plan exists on that system. Set the plan on **Plan & billing** if the client is not paying yet. |
+| Plan shows **No licence yet** after creating | Normal. It changes to **Cloud trial** when you activate the first desktop licence (Step 2a). |
 
 **Changing the owner's email later:** only from **Owner & account › Change email**, and only on purpose. This also moves the owner's staff record. Never ask the owner to sign up again with a new email: that creates a second "Owner" record.
 
@@ -73,15 +87,33 @@ The success panel shows the Business ID, branch, owner login and temporary passw
 
 A new client can do nothing yet: the owner cannot sign in to the web dashboard and no till can join. Two licences fix that; the Features tab sets the rest. These buttons need a **super admin**; others see "Super admin only".
 
-**2a. Web access (the dashboard and the online features).** On the client, open **Plan & billing › Web portal access** and click **Enable web access**. Confirm only when payment is agreed: it raises an invoice "Web Portal Hosting — Annual Access". Set **Web access expiry** to the paid-up date so renewal reminders work.
+**Do them in this order: the desktop licence first, then web access.** The first desktop licence gives the client a free one-month cloud trial, but only if the client has never had web access. Enabling web access first, even for a minute, uses up the trial.
+
+**2a. Desktop licence, per branch.** Open **Branches & tills**. Each branch shows "✗ Not licensed — desktop POS blocked" until you click **Activate licence**. Enter the one-off fee (or leave it blank to invoice later) and the M-Pesa or bank reference if paid. A desktop licence has no expiry. Repeat for every branch.
+
+![A branch before its desktop licence](screenshots/02f-admin-branch-not-licensed.png)
+
+**The one-month cloud trial.** When you activate the client's **first** desktop licence, ZapTill switches web access on for 30 days and says so: "Licence activated. {Business} also gets a one-month cloud trial — the web dashboard until {date}. No invoice was raised for it."
+
+![The first licence starts the cloud trial](screenshots/02g-admin-licence-cloud-trial.png)
+
+- **Once per client, ever.** A second branch's licence, or a licence revoked and activated again, never starts another trial. A client that ever had web access (switched on or off, or with an expiry date set) gets none.
+- **No invoice** is raised for the trial. A licence fee you type raises only its own invoice.
+- **What the admin portal shows:** the header's **Web portal** reads "Cloud trial — ends {date}" (amber) and **Plan** reads "Cloud trial". **Plan & billing** shows the trial with **Convert to paid** and **End trial**.
+- **The owner's notice:** in the trial's last 7 days the owner (only the owner, never staff or a till) sees a line at the top of the dashboard: "Your cloud trial ends on {date} — contact ZapTill to keep the dashboard."
+- **When it ends:** there is no 21-day grace as for a paid client. For 7 days the owner can still sign in and read reports, but the web POS is off ("Your cloud trial ended on {date}. Reports stay open for a few more days…"). After that, sign-in is refused with **Your cloud trial has ended** (code `CLOUD_TRIAL_ENDED`; screenshot in Step 3). **Tills keep selling throughout**: they run on the desktop licence.
+- **End trial** stops it at once (the owner is locked out of the dashboard at once; tills are not affected).
+
+![Plan & billing during the cloud trial](screenshots/02h-admin-plan-billing-cloud-trial.png)
+
+**2b. Web access (the dashboard and the online features), when the client pays.** On **Plan & billing › Web portal access**:
+
+- **During or after the trial:** click **Convert to paid**. Confirm only when payment is agreed: web access then runs one year from today, and an invoice of KES 10,000 is raised.
+- **A client with no trial** (web access was on before, or the trial was used up): click **Enable web access**. It raises an invoice "Web Portal Hosting — Annual Access". Set **Web access expiry** to the paid-up date so renewal reminders work.
 
 ![Plan & billing with web access enabled](screenshots/02b-admin-plan-billing-web-access.png)
 
-Without web access the owner sees "Web portal access not enabled" when signing in. Web access also unlocks the online-licence features on the till (offers, wastage, transfers, pictures and variants). After the expiry date there are 21 days of full access, then 7 days of reports only, then the owner is refused. Tills keep selling throughout.
-
-**2b. Desktop licence, per branch.** Open **Branches & tills**. Each branch shows "✗ Not licensed — desktop POS blocked" until you click **Activate licence**. Enter the one-off fee (or leave it blank to invoice later) and the M-Pesa or bank reference if paid. A desktop licence has no expiry. Repeat for every branch.
-
-![A branch before its desktop licence](screenshots/02f-admin-branch-not-licensed.png)
+Without web access (and outside a trial) the owner sees "Web portal access not enabled" when signing in. Web access also unlocks the online-licence features on the till (offers, wastage, transfers, other branches' stock, labels, pictures and variants). After a paid expiry date there are 21 days of full access, then 7 days of reports only, then the owner is refused. Tills keep selling throughout.
 
 **2c. Features.** Open the **Features** tab. Changes take effect at once; tills pick them up at their next sync.
 
@@ -94,7 +126,9 @@ Without web access the owner sees "Web portal access not enabled" when signing i
 | Full-size receipt logo | The client wants a big logo (up to 36 mm) |
 | Extra paper before the cut | The printer's cutter clips the last line |
 | Kitchen tickets in the small font | Long kitchen orders need less paper (harder to read at a distance) |
-| Separate approval PIN for managers | Managers prefer a different PIN for approvals than for signing in |
+| Separate approval PIN for managers (under **Staff options**) | Managers prefer a different PIN for approvals than for signing in |
+
+**The approval PIN is off for every client by default.** Off, managers approve voids, refunds, sales on account and drawers with their own sign-in PIN, and the staff form has no approval PIN field. Switch it on only when the client asks: the staff forms on the dashboard and the till then show **Approval PIN**. An approval PIN set before 1.0.20 keeps working until someone removes it, whatever the switch.
 
 The **POS switches** on this tab (delivery fee, cashiers see only their own sales, pay before kitchen and others) are read-only here. The owner sets them in the dashboard under **Settings › Business › POS options**.
 
@@ -105,10 +139,18 @@ The **POS switches** on this tab (delivery fee, cashiers see only their own sale
 The owner signs in on the web dashboard with the temporary password, chooses a private one, and you fill in the business details together.
 
 1. Open **app.zaptill.co.ke** (or the client's own address) and sign in with the owner's email and temporary password.
-2. Have the owner change the password straight away: **Settings › Users and access › My sign-in › Password**. Don't rely on the automatic prompt; it does not always appear.
+2. ZapTill sends the owner straight to **Set your password** ("Your password was set by ZapTill. Please choose a new private password before continuing."). The owner types the **Password you were given**, then a **New password** (at least 8 characters, not the same as the old one) twice, and clicks **Save password & continue →**. Every dashboard page leads back here until the password is changed.
 3. The owner lands on **Overview**. There is no setup wizard; the rest is done in **Settings › Business**.
 
 ![The dashboard sign-in page](screenshots/03a-dashboard-sign-in.png)
+
+![The forced password change at the owner's first sign-in](screenshots/03i-dashboard-forced-password-change.png)
+
+**What to tell the owner:** "The password I gave you was only for today. Choose your own now, one that I don't see, and keep it to yourself. ZapTill staff will never ask for it." Look away while they type it. The page asks again whenever ZapTill resets the owner's password from the admin portal (**Owner & account › Reset password**); after a reset through **Forgot password?** (an emailed code) the owner has already chosen their own, so it does not ask. Partners and accountants given web access set their own password from their invitation email and are never asked.
+
+**When the cloud trial ends** (Step 2a) and no one has converted it to paid, the owner's sign-in shows this screen instead of the dashboard. **Contact ZapTill** opens WhatsApp to support; the fix is **Convert to paid** in the admin portal.
+
+![Sign-in after the cloud trial has ended](screenshots/03j-dashboard-cloud-trial-ended.png)
 
 **Settings › Business › Profile**
 
@@ -118,19 +160,32 @@ The owner signs in on the web dashboard with the temporary password, chooses a p
 
 ![Business profile with receipt text and the day cut-off](screenshots/03d-dashboard-business-profile.png)
 
-**Branches**: the owner can rename and edit branches, set the main one and deactivate one, but **cannot add a branch**. Add branches yourself in the admin portal (**Branches & tills › + Add branch**) and license each one (Step 2b). Each branch's detail page can override the receipt text, hours and payment methods for that branch.
+**Branches**: the owner can rename and edit branches, set the main one and deactivate one, but **cannot add a branch**. Add branches yourself in the admin portal (**Branches & tills › + Add branch**) and license each one (Step 2a). Each branch's detail page can override the receipt text, hours and payment methods for that branch.
 
 ![Branches in the dashboard](screenshots/03f-dashboard-branches.png)
 
 **Branding**: pick the accent colour, upload the logo (PNG or JPEG, shrunk to 250 KB or less, no SVG), and tick **Print logo on customer receipts** if wanted. Tills pick it up within about 20 seconds. With App themes on (Step 2c), the page also offers an app theme and **Per branch** colours and receipt footers (at most 6 lines, 48 characters a line on 80 mm).
 
-**POS options**: delivery fee and rider, eat now pay later, pay before kitchen, loyalty points, and **Sign-in codes (OTP)**. With sign-in codes on, the owner gets a 6-digit code by email at every sign-in (10 minutes, 5 tries). Partners and accountants always get a code.
+**POS options**: delivery fee and rider, eat now pay later, pay before kitchen (these two only for a restaurant or café), loyalty points, and **Sign-in codes (OTP)**. With sign-in codes on, the owner gets a 6-digit code by email at every sign-in (10 minutes, 5 tries). Partners and accountants always get a code.
+
+**When an item's stock reaches zero** (also on POS options). Ask the owner which they want. It applies only to items that track stock (Step 4), at each branch:
+
+| Choice | What the till and the web POS do at zero stock |
+| --- | --- |
+| **Sell as normal** (the default for every client) | Sell anyway; the stock goes negative. As before 1.0.20. |
+| **Show as sold out** | The item stays on the menu, greyed with a "Sold out" badge, and cannot be sold ("Chips is sold out." / "Only 2 of Soda left.") |
+| **Hide when out of stock** | The item leaves the till menu and the web POS until stock comes in |
+
+A till judges only stock it has heard from the cloud or the branch server: an item whose stock it does not know is always sold. Orders already sent to the kitchen are checked only at Charge. Only the owner (or someone with the POS settings right) changes it; tills follow at their next sync.
+
+![When an item's stock reaches zero](screenshots/03k-dashboard-pos-options-zero-stock.png)
 
 **If sign-in fails**
 
 | Message | Meaning |
 | --- | --- |
-| Web portal access not enabled | Step 2a was not done |
+| Web portal access not enabled | No trial and no web access: Step 2b |
+| Your cloud trial has ended | The trial and its reports-only week are over: **Convert to paid** (Step 2b) |
 | Invalid email or password | Wrong password; check caps and the temporary password |
 | Too many failed sign-ins for this account | Locked for 15 minutes |
 | This sign-in address belongs to another business | Wrong client address; use the main address |
@@ -138,7 +193,7 @@ The owner signs in on the web dashboard with the temporary password, chooses a p
 
 ## Step 4 — Load the menu
 
-Load the whole menu from one Excel workbook, then add variants, extras and costs. For a restaurant or café the dashboard calls products **Menu Items** and categories **Menu Sections**.
+Load the whole menu from one Excel workbook, then add variants, extras and costs. For a restaurant or café the dashboard calls products **Menu Items** and categories **Menu Sections**. For a shop the same screens are the **Catalogue** (products and **Departments**); the steps are the same, and the upload is called **Product upload**.
 
 1. Go to **Menu › Menu Items** and click **Menu upload**.
 2. Click **↓ Template** and fill the workbook. Its sheets are **Products**, **Upgrades & Spices**, **Recipe** and **Ingredients**, plus a **Read me**.
@@ -170,7 +225,13 @@ The sheet's rules: a row matching an existing item updates it and never duplicat
 
 ![Set cost prices](screenshots/04f-dashboard-set-costs.png)
 
-**Also on this page:** **Menus** (group categories into tabs on the till: one menu per category), **Combo Meals** (combo name, price, items), **Bulk images** (matched by barcode, then PLU, then exact name), and **Track stock** per item.
+**Also on this page:** **Menus** (group categories into tabs on the till: one menu per category), **Combo Meals** (combo name, price, items; restaurant and café only), **Bulk images** (matched by barcode, then PLU, then exact name), and **Track stock** per item. Turn on **Track stock** only for items the client really counts: the zero-stock setting (Step 3) and other branches' stock work only on those.
+
+**Menus (Departments in a shop) become tabs across the top of the till.** When the business has at least one menu with a category in it, the till and the web POS show a row of large tabs above the products: **All**, each menu in the owner's order, and **Other** for categories in no menu. A cashier taps a tab to see that menu; the ☰ panel then lists only that menu's categories. A search always looks through every menu. With no menus, the till keeps the ☰ category panel. So set up menus that make sense to a cashier (Food, Soft drinks, Alcohol; or Groceries, Beverages, Household), and check them on the till in Step 10.
+
+**Barcodes and labels.** For a shop, or anything sold by scanning: **Menu › Products › Generate barcodes** gives every product without a barcode an in-store code (EAN-13 starting with 20 unless the numbering is changed), never touching one it already has. **Menu › Print labels** (on the till: **Manager › Stock › Labels**) sets the label size and prints on a label printer, A4 sticker sheets or the receipt printer; every label carries a barcode. The full steps, sizes and printer drivers (Xprinter, TSC, Zebra) are in the separate manual **Barcodes and labels** (`docs/Manuals/BARCODE-LABELS.html`, also as Word). Labels on the till need web access (the online licence).
+
+**Stock at other branches (clients with more than one branch).** Anyone with the stock-view right (Cashier, Waiter, Supervisor, Manager, Storekeeper by default) can look up an item at the other branches: on the web **Inventory › Other branches** (**Stock › Other branches** for a shop), on the till **Manager › Stock › Other branches**. It shows quantities only, never costs. A manager with the stock transfer right can **Ask** another branch for an item (how many, an optional note, **Send request**). The other branch sees it under **Requests from other branches** and clicks **Accept and send** (it may send fewer or more) or **Decline** with a reason. An accepted request becomes an ordinary transfer: the stock leaves the sending branch at once and is received under **Transfers** at the asking branch. On the till's sale screen, a search for an item that is sold out here offers **Check other branches** (a long press or right-click on a tile does the same), read only. All of this needs web access and an internet connection.
 
 **Upload problems**
 
@@ -208,7 +269,7 @@ Every person gets a role and a 4–6 digit PIN; the role decides what they can d
 | Books and reports only | Accountant (reads) or Finance Manager (acts) |
 | Receives and counts stock | Storekeeper |
 
-Nobody can be given the owner's role, not even by the owner. A cashier has no Void button: a supervisor or manager does voids. A supervisor or manager lands on the Manager screen after their PIN and presses **Open POS** to sell.
+Nobody can be given the owner's role, not even by the owner: for full rights use **General Manager**. Editing someone shows their real role; the owner's own role is locked ("Owner — the owner's role can't be changed here"), and the owner cannot change their own sign-in email or deactivate themselves (ZapTill support changes the owner's email: Step 1). A row marked **Not your sign-in account** is a second account on the owner's role: ask the owner, then move it to another role or deactivate it. There is no **Approval PIN** field unless you switched it on for the client (Step 2c). A cashier has no Void button: a supervisor or manager does voids. A supervisor or manager lands on the Manager screen after their PIN and presses **Open POS** to sell.
 
 **Web dashboard access for a partner or accountant.** Add the person with **PIN Login** first. Then, on their row, click **Give web access** and confirm. They receive an email titled "You can now sign in to {Business} on ZapTill", set their own password, and enter a one-time code at every sign-in. Use **Revoke web access** to remove it.
 
@@ -232,13 +293,37 @@ The dashboard sets which payment methods the business takes; the M-Pesa number i
 
 **Credit accounts (sales on account).** **Customers › Credit Accounts** lists customers who buy on account, with Limit, Owed and Available, and **Manage →** for limits, repayments, adjustments and statements. A manager confirms or disputes every credit sale under **Credit sales to confirm**; this never blocks the day close. On the till, **On account** appears only when the branch takes it, at least one customer has a credit account, and the cashier may view customers.
 
-> **Known gap:** a brand-new customer cannot be given a first credit limit from the dashboard yet (**+ New Customer** has no limit field, and Credit Accounts lists only customers who already have one). Ask ZapTill support to set the first limit until this is fixed.
+**Giving a customer credit.** Credit goes only to a customer already in the system. Three ways, all on the web dashboard:
+
+1. **An existing customer:** **Customers › Credit Accounts › + Give credit**. Search by name or phone, pick the customer (each shows "No credit yet", or "Limit KES … already — this changes it"), type the **Credit limit (KES)** and click **Confirm credit limit**. The customer then appears in Credit Accounts.
+2. **On the customer's profile:** **Customers**, open the customer, and set **Credit limit** (0 removes it), then **Save**. "Credit limit set to KES … They now show in Credit Accounts and at the tills."
+3. **A new customer:** **Customers › + New Customer** has an optional **Credit limit**. If the customer is saved but the limit is not, the screen says so; set it on the profile.
+
+![+ Give credit: find an existing customer](screenshots/06g-dashboard-give-credit-search.png)
+
+![+ Give credit: set and confirm the limit](screenshots/06h-dashboard-give-credit-limit.png)
+
+**Who may give credit:** anyone with the **Customer credit** right: the owner, and by default **Manager**, **Supervisor**, **General Manager** and **Finance Manager**. A cashier does not see **+ Give credit** or the limit box (only the limit, read only). A till cannot set a limit: a person approves it, on the web. **The person who saves the limit approves it**: every grant or change is recorded in the client's audit log in the cloud with who, when, and the old and new limit. No screen shows that log yet, in the dashboard or the admin portal. Tills pick up a new credit customer at their next sync.
 
 ## Step 7 — Install ZapTill on the till PC and join it
 
 A till joins with the **Business ID** plus a **single-use enrolment code** that expires 15 minutes after you create it, so create codes on site.
 
-**7a. Install.** Run the approved ZapTill installer (`ZapTill-<version>.exe`) on the till PC as an administrator. It is not code-signed: if Windows SmartScreen appears, click **More info › Run anyway**. The installer:
+**7a. Download the installer (admin portal).** Download it before the visit, on your own laptop, and bring it on a USB stick:
+
+- **For this client:** client › **Desktop updates** › **Download ZapTill**. The version approved for that client comes first ("Approved for this client"), then the latest release. Use the approved one.
+- **Without a client:** sidebar › **Money & support › Download ZapTill** (the latest release).
+- A super admin also gets **Another version:** to pick any complete release. Other admins may download only the latest release or the version approved for the client named.
+
+Click **Download**: the browser saves `ZapTill-<version>.exe` itself. Each click gets a one-use link valid for 2 minutes, so click again if a download did not start. Every download is recorded in the admin audit log (who, which version, which client).
+
+Beside each version are its size and checksum, with the PowerShell line to check the file on the PC, e.g. `Get-FileHash .\ZapTill-1.0.20.exe -Algorithm SHA256`. The hash it prints must match the one shown.
+
+![Download ZapTill on the client's Desktop updates tab](screenshots/07a2-admin-download-zaptill.png)
+
+If the card says **Installer downloads are not set up on this server**, the cloud has no installer source. A ZapTill developer sets one of two settings on the cloud: `DESKTOP_DOWNLOAD_BASE_URL` (ZapTill's own download server; used first when set) or `GITHUB_RELEASES_TOKEN` (GitHub releases, which also works once the repository is private). The installer always comes through the ZapTill cloud; the source address and any token never reach your browser.
+
+**7b. Install.** Run the approved ZapTill installer (`ZapTill-<version>.exe`) on the till PC as an administrator. It is not code-signed: if Windows SmartScreen appears, click **More info › Run anyway**. The installer:
 
 - adds firewall rules for the branch server (TCP 4100–4103) and server discovery (UDP 4199);
 - registers **ZapTill start at sign-in** (starts 45 seconds after Windows sign-in) and **ZapTill Updater** (installs approved updates without a Windows prompt);
@@ -246,19 +331,19 @@ A till joins with the **Business ID** plus a **single-use enrolment code** that 
 
 Updates are approved per client in the admin portal (**Desktop updates › Choose a version… › Approve**). Until then tills stay on the version they run.
 
-**7b. Create the enrolment code.** In the admin portal, on the client's **Branches & tills** tab, click **Enrol till** next to the licensed branch and enter how many tills (1–20). Copy the **Business ID** and one **Code** per till. Codes are 10 characters, single-use and tied to that branch.
+**7c. Create the enrolment code.** In the admin portal, on the client's **Branches & tills** tab, click **Enrol till** next to the licensed branch and enter how many tills (1–20). Copy the **Business ID** and one **Code** per till. Codes are 10 characters, single-use and tied to that branch.
 
 ![Enrolment codes with the Business ID](screenshots/07b-admin-enrolment-codes.png)
 
-**7c. First run on the till.** Open ZapTill. The **Device setup** has three steps:
+**7d. First run on the till.** Open ZapTill. The **Device setup** has three steps:
 
 1. **Find the server.** ZapTill looks for a branch server on the network. For the **first or only till**, or for the PC that will **be** the branch server, click **Set up without a server**. For an extra till, choose the server (Step 8) — and check the business and server name first: the search lists every ZapTill server on the network, including other businesses'.
-2. **Server address.** Leave the ZapTill cloud address (`https://api.zaptill.co.ke`), click **Test connection** until it says "Connected — ZapTill server responded", then **Continue**.
+2. **Server address.** Type the ZapTill cloud address `https://api.zaptill.co.ke`. The box is empty: the grey address in it is only a hint, so type it in full. Click **Test connection** until it says "Connected — ZapTill server responded", then **Continue**.
 3. **Activate this device.** Enter the **Business ID** and the **Enrolment code**, then click **Activate**. This step needs internet.
 
 ![Activate this device](screenshots/07e-till-setup-activate.png)
 
-**7d. Branch and role.** After "Activated for {business}":
+**7e. Branch and role.** After "Activated for {business}":
 
 - **Branch** is fixed by the enrolment code.
 - **Device role**: **Till** (sells), **Branch server** (sells, and other tills sync to it) or **Office** (a branch server that cannot sell: reports and day close only).
@@ -276,11 +361,11 @@ Click **Complete setup**. The screen locks; changing it later needs a technician
 | Message | Fix |
 | --- | --- |
 | The server did not accept that enrolment / Invalid, expired or already-used code | Create a new code (15-minute expiry, single use) |
-| Could not issue an enrolment code — Assign a desktop licence to this branch | Step 2b |
+| Could not issue an enrolment code — Assign a desktop licence to this branch | Step 2a |
 | That looks like a branch server address. Port 4100… | Put the cloud address here, not the branch server's |
 | Something answered but it is not the ZapTill server (HTTP 404) | Remove any path after the address |
 | This till is already joined to its business | Rejoin from the Tech page (Step 11) |
-| This branch has no desktop licence (PIN screen) | Step 2b |
+| This branch has no desktop licence (PIN screen) | Step 2a |
 
 ## Step 8 — Branch server and extra tills
 
@@ -376,6 +461,7 @@ Run one full trading day in ten minutes with the client watching: sell, print, p
 
 - [ ] **PIN sign-in.** A cashier enters their PIN and presses **Enter**.
 - [ ] **Opening float.** **Open your drawer**: count the cash in the drawer, enter it (0 if empty), **Start selling**.
+- [ ] **Menu tabs.** If the business has menus (departments), the sale screen shows them as large tabs across the top (**All**, each menu, **Other**). Tap each one and check the right items appear; a search finds items in every menu.
 - [ ] **Sell with a variant and an extra.** A restaurant opens on **Tables**; press **Takeaway** for the menu. Tap an item with a variant, pick it (e.g. Spicy) and an extra (e.g. Extra Cheese), then **Add to order**.
 - [ ] **Kitchen ticket.** Press **Send to kitchen**. Check the kitchen ticket shows "CHICKEN BURGER - SPICY" on one line and "+ Extra Cheese" under it, and that the dispatch ticket prints.
 - [ ] **Split payment.** Press **Charge KES {total}** (there is no "Pay" button). Pay part in Cash, press **+ Split payment**, put the rest on M-Pesa with its reference, then **Charge**. Check the receipt: items, the BUY GOODS number, and the cash drawer opening.
@@ -476,12 +562,12 @@ A second super admin confirms each token. Click **Rotate** to end a technician's
 
 Tick every line before you leave the site.
 
-- [ ] **Admin portal:** web access on with its expiry date; every branch desktop-licensed; Analytics and receipt options as sold; a desktop version approved
-- [ ] **Owner:** signed in on the dashboard and set a private password; sign-in codes on or off as agreed
+- [ ] **Admin portal:** every branch desktop-licensed (the first licence before web access, so the cloud trial starts); web access paid (**Convert to paid**, or on with its expiry date) or the trial's end date told to the owner; Analytics, receipt options and the approval PIN switch as sold; a desktop version approved
+- [ ] **Owner:** signed in on the dashboard and chose a private password on **Set your password** (you did not see it); sign-in codes on or off as agreed; **When an item's stock reaches zero** chosen; told when the cloud trial ends, if on one
 - [ ] **Business profile:** address, KRA PIN, receipt header and footer; **Business day ends at** matches the closing time
 - [ ] **Menu:** uploaded, with costs or recipes, variants and extras checked, menus making sense on the till
 - [ ] **Staff:** everyone has their own PIN (no two the same); each manager has signed in once on each till; web access given to partners and accountants
-- [ ] **Payments:** the methods the shop takes are on; the M-Pesa number is set on each branch's till; credit customers have limits
+- [ ] **Payments:** the methods the shop takes are on; the M-Pesa number is set on each branch's till; credit customers have limits (**+ Give credit**), given by the owner or a manager, not by you
 - [ ] **Every till:** right branch, unique terminal code, device name; **Updater task: installed** on Tech › Updates
 - [ ] **Printers:** **Print through these printers** ON; every station has a printer (or another till handles it); paper width matches the roll; test print OK; the drawer opens on a cash sale
 - [ ] **Branch server** (if any): keep-running settings done; every till joined and "Encrypted"; Close Branch visible on it
@@ -511,14 +597,22 @@ Tick every line before you leave the site.
 | Trading day {date} was never closed on this till | A manager closes it (Manager › Close › Close Day), or close it remotely in Tills & days |
 | This till's clock is {n} min ahead of/behind the server | Fix Windows time and time zone (Nairobi); turn on automatic time |
 | Late-night sales land on the wrong day | Profile › **Business day ends at** (e.g. 02:00) |
-| This is part of the online licence | Admin › enable web access |
+| This is part of the online licence | Admin › enable web access (or **Convert to paid** after a trial) |
+| Your cloud trial has ended | Admin › Plan & billing › **Convert to paid**; tills are not affected |
+| Installer downloads are not set up on this server | A developer sets `DESKTOP_DOWNLOAD_BASE_URL` or `GITHUB_RELEASES_TOKEN` on the cloud (Step 7a) |
+| The owner's role belongs to the owner alone | Give the person another role, e.g. General Manager |
+| {Item} is sold out. / Only {n} of {item} left. | The zero-stock setting is on (Step 3) and the branch's stock is at zero: receive stock, or ask the owner to choose **Sell as normal** |
+| A cashier cannot see **+ Give credit** | By design: a manager or the owner gives credit (Step 6) |
+| A shop's screens say Menus, tables or kitchen | Wrong business type: Admin › client › **Edit details** › type (Step 1) |
 | Pull logs stays Waiting | Use Tech › **Send logs to support** and ask for the reference |
 
-**Open questions for ZapTill** (to settle before the guide is final):
+**Settled in 1.0.20** (the open questions of version 1.0 of this guide):
 
-- Where technicians download the installer, and whether the server address is pre-filled in the production build.
-- A first credit limit for a new customer (no screen yet; see Step 6).
-- Whether the owner is reliably forced to change the temporary password (Step 3 tells the technician to do it by hand).
-- Whether a "trial" plan exists, since new clients may show Plan: None.
+- **Where to get the installer:** the admin portal's **Download ZapTill** (Step 7a). The till's server address is not pre-filled; type `https://api.zaptill.co.ke` (Step 7d).
+- **A first credit limit for a customer:** **+ Give credit**, the customer's profile, or **+ New Customer** (Step 6).
+- **The owner's forced password change:** now enforced at the first sign-in and after an admin password reset (Step 3).
+- **Plan: None for a new client:** there is no trial plan; the first desktop licence starts a one-month cloud trial, and **Plan** reads No licence yet, Desktop, Cloud trial, Cloud trial ended or Cloud (Step 2).
 
-*Screenshots show the real ZapTill apps running a made-up demo business (Mama Lishe Grill). The branch-server Allow prompts are mock-ups.*
+**Still open:** who approved a credit limit is recorded but no screen shows it yet (Step 6).
+
+*Screenshots show the real ZapTill apps running a made-up demo business (Mama Lishe Grill). The branch-server Allow prompts are mock-ups. The 1.0.20 screens (02g, 02h, 03i, 03j, 03k, 06g, 06h, 07a2) are the real admin portal and dashboard screens fed made-up demo data, without a live backend; the business ID, dates and checksum in them are made up.*

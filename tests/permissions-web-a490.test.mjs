@@ -139,6 +139,8 @@ const EXPECTED_NAV = {
   bills: "['payables.view', 'payables.manage']",
   // A544: their branch's own theme, colour and receipt footer — the Branding tab's keys (the cloud: own branch only).
   branding: "['receipt.manage', 'settings.business']",
+  // A576: the watch list (loss-prevention alerts) — the voids & exceptions report's key, as the cloud's GET /api/loss-alerts.
+  watch: "'reports.voids'",
 };
 await ok('every manager page has its fine key (and only "My sign-in" is open)', () => {
   const md = read('pages/manager/ManagerDashboard.tsx');
@@ -147,7 +149,7 @@ await ok('every manager page has its fine key (and only "My sign-in" is open)', 
   const got = Object.fromEntries(items.map((m) => [m[1], m[2]]));
   assert.deepEqual(got, EXPECTED_NAV);
   for (const v of Object.values(got)) for (const k of v.matchAll(/'([a-z_.]+)'/g)) assert.ok(KEYS.has(k[1]), k[1]);
-  assert.match(md, /const visibleNav\s+= NAV_ITEMS\.filter\(i => navAllowed\(i, held, isPetrol\)\);/);
+  assert.match(md, /const visibleNav\s+= NAV_ITEMS\.filter\(i => navAllowed\(i, held, isPetrol\)(?: && managerItemShown\(i\.key, session\.businessType\))?\);/);   // A573: a restaurant's pages only at a restaurant
   assert.match(md, /if \(item\.key === 'reports'\) return hasAnyPermission\(held, tabsForBusiness\(isPetrol\)\.map\(t => t\.permission\)\);/);
 });
 await ok('every manager report tab has its key; the page shows only the ones held', () => {

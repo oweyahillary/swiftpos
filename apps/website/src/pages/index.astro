@@ -217,21 +217,23 @@ const description = 'ZapTill runs your tills, kitchen and M-Pesa through interne
       <div class="teaser__copy">
         <h2 id="dtn-title">Then it tells you what to change.</h2>
         <p class="lede">
-          ZapTill Analytics reads your sales and ranks what to do next, each with a shilling estimate and what it
-          assumes. Which dish to push, which price to raise, which drawer keeps coming up short.
+          ZapTill Analytics reads your sales and ranks what to do next, in plain words: what to have in for Saturday,
+          what is about to run out, which dish to push at lunch, and whose voids are worth a look. Your prices stay
+          yours: it never tells you to charge more.
         </p>
         <p><a href="/analytics/">How Analytics works</a></p>
       </div>
-      <DoThisNextCard />
+      <DoThisNextCard n={4} />
     </div>
   </section>
 
   <!-- The price in one line -->
   <section class="price-line" aria-labelledby="price-title">
     <div class="wrap price-line__inner">
-      <h2 id="price-title">From about KES 100 a day.</h2>
+      <h2 id="price-title">Pay once for the tills.</h2>
       <p>
-        KES {kes(PRICES.setup)} to set up, then KES {kes(PRICES.monthly)} a month. Less than one short drawer.
+        KES {kes(PRICES.setup)} sets up a branch, once, and the tills are yours. The cloud is KES {kes(PRICES.monthly)} a
+        month, about KES 100 a day, and the first month is free. Less than one short drawer.
         <a href="/pricing/">See pricing and work out your own leak</a>
       </p>
     </div>

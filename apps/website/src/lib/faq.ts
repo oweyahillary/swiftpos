@@ -13,14 +13,22 @@ till in the shop in step. When the internet comes back, everything catches up by
 
 export const FAQ_POWER: FaqItem = {
   q: 'What about power cuts?',
-  a: `<p>The till is a Windows PC, so it needs power like any computer. A small UPS keeps it and the printer going
-through a short cut. Ask us what to get when we visit.</p>`,
+  a: `<p>The till is a Windows PC, so it needs power like any computer. That is why a UPS is on our recommended hardware
+list: it keeps the computers and the receipt printer going through a short cut, so the cashier keeps selling. Ask us
+what size to get when we visit.</p>`,
 };
 
 export const FAQ_HARDWARE: FaqItem = {
   q: 'What hardware do I need, and can I use my own?',
-  a: `<p>A Windows PC or POS terminal and a receipt printer. A cash drawer, a kitchen printer or a kitchen screen if you
-want them. If you already have hardware, we'll check it and use what fits. Anything new is quoted separately.</p>`,
+  a: `<p>For each branch:</p>
+<ul>
+<li>Two Windows computers: the branch server and the till (a POS terminal works as the till)</li>
+<li>A receipt printer</li>
+<li>A UPS, recommended, so a short power cut doesn't stop the counter</li>
+</ul>
+<p>If you want them: a cash drawer, a kitchen printer or a kitchen screen, a barcode scanner, and a label printer (or
+use A4 sticker sheets on an office printer). If you already have hardware, we'll check it and use what fits. Anything
+new is quoted separately.</p>`,
 };
 
 export const FAQ_MPESA: FaqItem = {
@@ -35,10 +43,11 @@ export const FAQ_DATA: FaqItem = {
 };
 
 export const FAQ_STOP: FaqItem = {
-  q: 'What happens if I stop paying?',
-  // TODO(owner): say exactly what happens to the tills and the dashboard, then replace this answer.
-  a: `<p>Your records stay yours, and you can download your reports. Ask us how the tills and the dashboard are handled;
-we'll explain it plainly before you sign anything.</p>`,
+  q: 'What happens if I stop paying for the cloud?',
+  // TODO(owner): confirm exactly what the tills and the dashboard do when the cloud lapses, then tighten this answer.
+  a: `<p>The tills were paid for once, so they stay yours. The cloud is month to month: stop paying and the web
+dashboard, the daily email and the online extras stop. Your records are yours, so download your reports first. We'll
+go through exactly how it works before you sign anything.</p>`,
 };
 
 export const FAQ_ETIMS: FaqItem = {
@@ -49,28 +58,68 @@ export const FAQ_ETIMS: FaqItem = {
 export const FAQ_SETUP_TIME: FaqItem = {
   q: 'How long does setup take?',
   // TODO(owner): give a typical number of days from the first visit to the first day of selling.
-  a: `<p>It depends on the size of your menu and how many tills you have. We load your menu and stock, set up the
-printers and screens, and train your staff on site. We'll give you a date at the first visit.</p>`,
+  a: `<p>It depends on the size of your menu or product list and how many tills you have. We load your items and stock,
+set up the printers and screens, and train your staff on site. We'll give you a date at the first visit.</p>`,
+};
+
+export const FAQ_ONCE: FaqItem = {
+  q: 'Do I pay for the tills every month?',
+  a: `<p>No. Setting up a branch is paid once, and the tills are yours: once paid, it's a done deal. The monthly fee is
+for the cloud: your dashboard on the web and on your phone, the daily email, and the online features.</p>`,
+};
+
+export const FAQ_TRIAL: FaqItem = {
+  q: 'Is there a free trial?',
+  a: `<p>Yes, for the cloud. When your first branch is set up, the cloud is free for the first month, so you can see
+your numbers on your phone and get the daily email before you pay a shilling for it.</p>`,
+};
+
+export const FAQ_PAY_AHEAD: FaqItem = {
+  q: 'Can I pay for the cloud for a year?',
+  // TODO(owner): if paying ahead earns a reward (a month free, a lower price), say it here. No figure until then.
+  a: `<p>Yes. The cloud is month to month, but we recommend paying for six months or a year at once: one payment, and
+nothing to remember every month. Ask us about it when we quote.</p>`,
+};
+
+export const FAQ_TILLS: FaqItem = {
+  q: 'What is a branch, and can I have more tills?',
+  // TODO(owner): the price of an extra computer is not published yet (owner deciding). Keep "quoted separately".
+  a: `<p>A branch is a two-computer setup: the branch server and a till. A busy place can add more tills or a kitchen
+screen; each extra computer is quoted separately.</p>`,
+};
+
+export const FAQ_SUPPORT: FaqItem = {
+  q: 'What support do I get?',
+  // TODO(owner): the support hours for clients who are not on priority support.
+  a: `<p>Call or WhatsApp us on 0717 675 635. Priority clients get support 24 hours a day. Many problems are fixed
+without anyone driving to your shop: support can pull a till's log remotely to see what went wrong, and updates
+install themselves.</p>`,
 };
 
 export const FAQ_BRANCH: FaqItem = {
   q: 'Can I add a branch later?',
-  a: `<p>Yes. A new branch gets its own tills and shows up on the same web dashboard as the others, so you see every
-branch side by side. We'll quote the new branch's setup.</p>`,
+  a: `<p>Yes. A new branch is set up the same way, paid once, and shows up on the same web dashboard as the others, so
+you see every branch side by side. Its cloud fee is added to your monthly fee.</p>`,
 };
 
 export const FAQ_CONTRACT: FaqItem = {
   q: 'Is there a contract?',
-  // TODO(owner): state the contract length and the notice period, then replace this answer.
-  a: `<p>We'll go through the terms with you before you pay anything. There is no percentage of your sales, ever.</p>`,
+  // TODO(owner): state the notice period (beyond "month to month"), then replace this answer.
+  a: `<p>The tills are a one-off purchase. The cloud is month to month. We'll go through the terms with you before you
+pay anything. There is no percentage of your sales, ever.</p>`,
 };
 
-export const HOME_FAQ: FaqItem[] = [FAQ_INTERNET, FAQ_MPESA, FAQ_HARDWARE, FAQ_DATA];
+export const HOME_FAQ: FaqItem[] = [FAQ_INTERNET, FAQ_ONCE, FAQ_MPESA, FAQ_HARDWARE, FAQ_DATA];
 
 export const PRICING_FAQ: FaqItem[] = [
+  FAQ_ONCE,
+  FAQ_TRIAL,
+  FAQ_PAY_AHEAD,
+  FAQ_TILLS,
   FAQ_INTERNET,
   FAQ_POWER,
   FAQ_HARDWARE,
+  FAQ_SUPPORT,
   FAQ_STOP,
   FAQ_ETIMS,
   FAQ_SETUP_TIME,
@@ -100,7 +149,8 @@ the bill. An order can also be held and picked up again.</p>`,
 
 export const FAQ_CREDIT: FaqItem = {
   q: 'Can regulars pay later?',
-  a: `<p>Yes. Give a customer an account with a limit. Every sale on account is confirmed by a manager, and the
+  a: `<p>Yes. Give a customer an account with a credit limit, including customers already in your list. At the till,
+the cashier puts the bill on their account, within the limit; every sale on account is confirmed by a manager, and the
 dashboard shows who owes you and for how long.</p>`,
 };
 
@@ -140,6 +190,34 @@ export const FAQ_STOCK_TILL: FaqItem = {
 till.</p>`,
 };
 
+export const FAQ_BARCODES: FaqItem = {
+  q: 'Some of my products have no barcode. What then?',
+  a: `<p>ZapTill makes one. It gives every product without a barcode its own in-store code, in your own numbering, and
+never changes a code you already have. The manufacturer's barcodes keep working as they are, and a scanner reads both at
+the till.</p>`,
+};
+
+export const FAQ_LABELS: FaqItem = {
+  q: 'Which label printer do I need?',
+  a: `<p>Any. Print labels on a label printer (TSC, Xprinter, Zebra and others, in the common sizes or your own), on A4
+sticker sheets from an office printer, or on the receipt printer. Every label carries the item's barcode, and its name
+and price if you want them.</p>`,
+};
+
+export const FAQ_ZERO_STOCK: FaqItem = {
+  q: 'What happens when an item runs out?',
+  a: `<p>You choose, once, for the whole business, for the items you keep stock of: keep selling as normal, show it as
+sold out so the cashier can't add it, or hide it from the till until stock comes in. It is back on sale by itself once
+the delivery is in.</p>`,
+};
+
+export const FAQ_OTHER_BRANCH: FaqItem = {
+  q: 'A customer wants something we have run out of. Can we check the other shop?',
+  a: `<p>Yes, with ZapTill Online. Staff who can see stock look up the item at your other branches from the till, and a
+manager asks that branch to send some. The other branch accepts it (or says why not), and the transfer keeps both stock
+levels right.</p>`,
+};
+
 export const FAQ_TRANSFERS: FaqItem = {
   q: 'I have two shops. Can I move stock between them?',
   a: `<p>Yes. Send a transfer from one branch, and the other branch receives it, so both stock levels stay right.</p>`,
@@ -148,4 +226,4 @@ export const FAQ_TRANSFERS: FaqItem = {
 export const RESTAURANT_FAQ: FaqItem[] = [FAQ_KITCHEN_PRINTERS, FAQ_KDS, FAQ_TABLES, FAQ_COMBOS, FAQ_INTERNET];
 export const BAR_FAQ: FaqItem[] = [FAQ_VOIDS, FAQ_CREDIT, FAQ_NIGHT_CLOSE, FAQ_TABLES, FAQ_INTERNET];
 export const QUICK_FAQ: FaqItem[] = [FAQ_COMBOS, FAQ_OFFERS, FAQ_DELIVERY, FAQ_KITCHEN_PRINTERS, FAQ_INTERNET];
-export const RETAIL_FAQ: FaqItem[] = [FAQ_STOCK_TILL, FAQ_TRANSFERS, FAQ_MPESA, FAQ_HARDWARE, FAQ_INTERNET];
+export const RETAIL_FAQ: FaqItem[] = [FAQ_BARCODES, FAQ_LABELS, FAQ_ZERO_STOCK, FAQ_OTHER_BRANCH, FAQ_STOCK_TILL, FAQ_MPESA, FAQ_HARDWARE, FAQ_INTERNET];

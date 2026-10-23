@@ -259,8 +259,9 @@ try {
     await call(IT(), T.mgr);
     const before = rpcs.length;
     await call(REC(), T.mgr);
-    // A561: plus its own three (stock use, customers, cost watch) — not in this schema (through 161), so left out softly
-    assert.deepEqual(rpcs.slice(before).map((x) => x.name).sort(), ['analytics_cost_watch', 'analytics_credit_ageing', 'analytics_customers', 'analytics_sales_heatmap', 'analytics_stock_use']);
+    // A561: plus its own three (stock use, customers, cost watch) and A575's what sells together — not in this schema
+    // (through 161), so left out softly
+    assert.deepEqual(rpcs.slice(before).map((x) => x.name).sort(), ['analytics_cost_watch', 'analytics_credit_ageing', 'analytics_customers', 'analytics_sales_heatmap', 'analytics_stock_use', 'analytics_together']);
     const n = ROUTE._analyticsCache().rpcCalls();
     await call(REC(), T.mgr);
     await call(IT(), T.mgr);

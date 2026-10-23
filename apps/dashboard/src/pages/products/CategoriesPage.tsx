@@ -13,7 +13,7 @@ const EMPTY = { name: '', color: COLORS[0], menu_id: '' };
 
 export default function CategoriesPage() {
   const { business } = useBusiness();
-  const { term, lower } = useTerm();
+  const { term, lower, terms } = useTerm();   // A573: terms.menu — Menu / Department / Group
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   // A537: the business's menus (Food, Soft drinks …) — a category is under one of them, or none.
@@ -160,12 +160,12 @@ export default function CategoriesPage() {
               {/* A537: the menu this category is under — shown once the business has a menu. */}
               {(menus.length > 0 || cat.menu_id) && (
                 <label className="flex items-center gap-2 mt-3 text-xs text-gray-400">
-                  Menu
+                  {terms.menu}
                   <select data-testid="category-menu" value={cat.menu_id ?? ''} onChange={e => void setMenu(cat, e.target.value)}
                     className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-swift">
-                    <option value="">No menu</option>
+                    <option value="">{terms.noMenu}</option>
                     {menus.map(m => <option key={m.id} value={m.id}>{m.name}{m.active ? '' : ' (off)'}</option>)}
-                    {cat.menu_id && !menuName(cat.menu_id) && <option value={cat.menu_id}>(a deleted menu)</option>}
+                    {cat.menu_id && !menuName(cat.menu_id) && <option value={cat.menu_id}>(a deleted {terms.menu.toLowerCase()})</option>}
                   </select>
                 </label>
               )}
@@ -219,10 +219,10 @@ export default function CategoriesPage() {
 
             {menus.length > 0 && (
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Menu</label>
+                <label className="block text-sm text-gray-400 mb-1.5">{terms.menu}</label>
                 <select value={form.menu_id} onChange={e => setForm(f => ({ ...f, menu_id: e.target.value }))}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-swift transition-colors">
-                  <option value="">No menu</option>
+                  <option value="">{terms.noMenu}</option>
                   {menus.map(m => <option key={m.id} value={m.id}>{m.name}{m.active ? '' : ' (off)'}</option>)}
                 </select>
               </div>

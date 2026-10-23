@@ -1096,3 +1096,31 @@ Headed "Technician mode", "{tech} · session ends in 3h 59m", with "End session"
 13. **The firewall prompt.** A second branch server and the firewall prompt were not run live. Steps 8b, 8c and Close Branch are stubbed.
 14. **The bill number format.** It shows as "T1--2" (two dashes), as in the setup help text "T1--1042". The guide should show the same.
 15. **Admin portal sign-in code for new admins.** Every admin got an emailed code on each fresh browser, so OTP is always on for admins. I did not confirm whether that can be switched off.
+
+---
+
+## 1.0.20 update (2026-10-23)
+
+The guide was brought up to the 1.0.20 batch (version 1.1). What changed, and where each fact comes from:
+
+| Guide | Feature | Source |
+|---|---|---|
+| Step 1 | Business type decides the wording (Menus / Departments / Groups) and the food-service screens | A573, `shared/businessTerms.ts` |
+| Step 2 | Desktop licence first; the first licence starts a 30-day cloud trial (once per client, no invoice; none if web access was ever on); reports only for 7 days after it, then `CLOUD_TRIAL_ENDED`; Convert to paid / End trial; the owner's notice in the last 7 days | A569, `apps/server/src/lib/cloudTrial.ts`, `lib/webAccess.ts`, `apps/admin/src/cloudPlan.ts`, `apps/dashboard/src/lib/cloudTrialNotice.ts`, `LoginPage.tsx` |
+| Step 2c, Step 5 | Approval PIN is the "Staff options" feature switch, off by default; old approval PINs keep working; the staff form shows the real role; the owner's role cannot be given | A562, `shared/posFeatures.ts`, `StaffTab.tsx` |
+| Step 3 | Forced password change at the owner's first sign-in and after an admin reset; not after Forgot password; partners never | A568, `ForcePasswordChangePage.tsx`, `routes/auth.ts` |
+| Step 3 | "When an item's stock reaches zero": Sell as normal (default) / Show as sold out / Hide | A563, `OwnerControls.tsx`, `lib/stockGate.ts` |
+| Step 4 | Menus as top tabs on the till and web POS; Check other branches from the sale screen | A566 |
+| Step 4 | Other branches' stock and transfer requests (inventory.view / inventory.transfer; online licence) | A564, `OtherBranchesPanel.tsx`, `managerNav.ts` |
+| Step 4 | Barcodes and labels, pointing to `docs/Manuals/BARCODE-LABELS.html` | A571, A574 |
+| Step 6 | + Give credit (`GiveCreditPicker`), the profile's Credit limit (`CreditLimitEditor`), New Customer's limit; `customers.credit` (owner, Manager, Supervisor, General Manager, Finance Manager by default); a till session refused; audit_log rows with who/when/before/after; no screen shows them | A567, `lib/creditLimit.ts`, migrations 134/140/142/159 |
+| Step 7a | Download ZapTill (client's Desktop updates tab, and the menu); one-use 2-minute links; agents limited to latest/approved; audited; `DESKTOP_DOWNLOAD_BASE_URL` wins over `GITHUB_RELEASES_TOKEN` | A570, `DownloadZapTill.tsx`, `lib/installerSource.ts` |
+| Step 7d | Server address is NOT pre-filled: `InstallPage.tsx` starts `serverUrl` empty and shows `https://api.zaptill.co.ke` only as the placeholder | code read |
+
+**Facts above now settled:** 1 (forced password change: fixed by A568), 2 (trial plan: replaced by the A569 cloud trial), 3 (first credit limit: A567), 5 (installer: A570; the server address is a placeholder only).
+
+**How the 1.0.20 screenshots were made.** Docker Desktop was not running on this PC, and starting it could have started the owner's other containers, so the local Supabase stack was not used this time. Instead:
+
+- **Admin portal** (02g, 02h, 07a2): the real `apps/admin` vite dev server, pointed at a small mock API in the scratchpad that answers the admin routes with made-up data (Mama Lishe Grill, a made-up business ID, a made-up SHA-256). The licence activation was clicked through the real screens (the prompts, then the trial confirmation).
+- **Dashboard** (03i, 03j, 03k, 06g, 06h): the real page components (`ForcePasswordChangePage`, `LoginPage`, `OwnerControls` › POS options, `CreditAccountsPage` with `GiveCreditPicker`) built by vite with the dashboard's Tailwind config, with `lib/api`, `lib/supabase` and the contexts stubbed; the forms were filled and submitted through the DOM. The trial-ended screen is the login page answering a stubbed `CLOUD_TRIAL_ENDED`.
+- Captured with headless Edge over CDP. No production, no dev cloud, no real client data.

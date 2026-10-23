@@ -20,7 +20,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setScaleBarcodes, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
 import { selectPushRefresh, lastCloudAnswerAt, cloudUnreachableNow } from './authTransport';   // A529
 import { storeBranchStaff, applyBranchStaffChanges, rosterAsUsers, type BranchStaffRow } from './branchStaff';   // A531: one person at a time; A534: names
 import { notePushOk } from './distributionLag';   // A534 (A23): the branch server's distribution lag
@@ -1968,6 +1968,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setWebPosEnabled(c.webPosEnabled);
   // A367: the quick picks for order notes. undefined = not said → keep.
   setOrderNotePicks(c.noteQuickPicks);
+  // A577: the scale label layout. undefined = not said → keep.
+  setScaleBarcodes(c.scaleBarcodes);
   // 0.6.27: the per-client POS switches. undefined = not said → keep.
   setPosFeatures(c.posFeatures);
   // 0.6.30: the owner's void window and offline void/refund rules. undefined = not said → keep.
@@ -2018,6 +2020,7 @@ function configFromInit(_j: any, branchId: string | null): AcquiredReference['co
     // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
     webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
     noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
+    scaleBarcodes: _j.scaleBarcodes && typeof _j.scaleBarcodes === 'object' ? _j.scaleBarcodes : undefined,   // A577
     posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
     reversalRules: _j.reversalRules && typeof _j.reversalRules === 'object' ? _j.reversalRules : undefined,   // 0.6.30
     // A450: the business's name and currency (a rename on the web), and the receipt's Buy Goods / Paybill line.
@@ -2332,16 +2335,23 @@ function writeCategories(db: LocalDbT, categories: any[], now: string): void {
  * goes); null = the source sent none (an older cloud / branch server) — the till keeps its own. `onlyIds`: a change from
  * /api/pos/changes replaces only its own menu.
  */
+/** A578: a menu's hours as the till keeps them — JSON text of the object the cloud sent (the sale screen reads it with
+ *  shared/menuHours.ts readAvailability), or NULL = always (none sent: an older cloud or branch server, or no hours). */
+export function menuAvailabilityText(v: unknown): string | null {
+  let o: unknown = v;
+  if (typeof o === 'string') { try { o = JSON.parse(o); } catch { return null; } }
+  return o && typeof o === 'object' && !Array.isArray(o) ? JSON.stringify(o) : null;
+}
 function writeMenus(db: LocalDbT, menus: any[] | null, now: string, onlyIds?: string[]): void {
   if (!Array.isArray(menus)) return;
   if (onlyIds) { const del = db.prepare(`DELETE FROM menus WHERE id = ?`); for (const id of onlyIds) del.run(id); }
   else db.prepare(`DELETE FROM menus`).run();
-  const ins = db.prepare(`INSERT OR REPLACE INTO menus (id, name, sort_order, active, color, icon, synced_at)
-    VALUES (@id, @name, @sort_order, @active, @color, @icon, @synced_at)`);
+  const ins = db.prepare(`INSERT OR REPLACE INTO menus (id, name, sort_order, active, color, icon, availability, synced_at)
+    VALUES (@id, @name, @sort_order, @active, @color, @icon, @availability, @synced_at)`);
   for (const m of menus) {
     if (!m || typeof m.id !== 'string' || !m.id || m.active === false || m.active === 0 || m.deleted_at) continue;
     ins.run({ id: m.id, name: String(m.name ?? ''), sort_order: Number(m.sort_order) || 0, active: 1,
-      color: m.color ?? null, icon: m.icon ?? null, synced_at: now });
+      color: m.color ?? null, icon: m.icon ?? null, availability: menuAvailabilityText(m.availability), synced_at: now });
   }
 }
 function writePaymentMethods(db: LocalDbT, paymentMethods: Array<{ code: string; name: string }> | null): void {
@@ -2427,8 +2437,8 @@ function writeComboItems(db: LocalDbT, comboItems: Record<string, any[]> | undef
 }
 function writeProducts(db: LocalDbT, products: any[], now: string): void {
   const upsertProd = db.prepare(`
-    INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, synced_at)
-    VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @synced_at)
+    INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, sold_by, unit_label, synced_at)
+    VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @sold_by, @unit_label, @synced_at)
     ON CONFLICT(id) DO UPDATE SET
       category_id=excluded.category_id, name=excluded.name, description=excluded.description,
       base_price=excluded.base_price, branch_price=excluded.branch_price, image_url=excluded.image_url,
@@ -2436,6 +2446,7 @@ function writeProducts(db: LocalDbT, products: any[], now: string): void {
       track_stock=excluded.track_stock, status=excluded.status,
       barcode=excluded.barcode, plu=excluded.plu, is_fuel=excluded.is_fuel,
       is_kitchen=excluded.is_kitchen, show_days=excluded.show_days,
+      sold_by=excluded.sold_by, unit_label=excluded.unit_label,
       synced_at=excluded.synced_at
   `);
   for (const p of products) {
@@ -2446,7 +2457,11 @@ function writeProducts(db: LocalDbT, products: any[], now: string): void {
       track_stock:   p.track_stock   ? 1 : 0,
       is_fuel:       (p as any).is_fuel ? 1 : 0,
       barcode:       (p as any).barcode ?? null,
-      plu:           (p as any).plu ?? null,
+      // A577: the cloud sends its column (plu_code); a branch server relays the till's (plu). Before A577 only plu was
+      // read, so a till never held a PLU from the cloud and a PLU never matched a scan.
+      plu:           (p as any).plu ?? (p as any).plu_code ?? null,
+      sold_by:       typeof (p as any).sold_by === 'string' ? (p as any).sold_by : null,         // A577
+      unit_label:    typeof (p as any).unit_label === 'string' ? (p as any).unit_label : null,   // A577
       branch_price:  (p as any).branch_price ?? null,
       // Preserve the tri-state: null must stay null, not become 0.
       is_kitchen:    typeof (p as any).is_kitchen === 'boolean' ? ((p as any).is_kitchen ? 1 : 0) : null,
@@ -4170,7 +4185,8 @@ export function createLocalOrder(orderPayload: any): string {
         // arrived and was sold before being received in the system). Clamping to
         // 0 here made the offline till disagree with the server until the next
         // pull and hid the oversell locally.
-        const newQty = currentQty - item.quantity;
+        // A577: to the gram — a weighed sale (0.452 kg) must not leave 9.548000000000002 behind.
+        const newQty = Math.round((currentQty - item.quantity) * 1000) / 1000;
 
         db.prepare(`
           INSERT INTO stock_levels (product_id, branch_id, quantity, low_stock_threshold)

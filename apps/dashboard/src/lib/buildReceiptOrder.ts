@@ -16,7 +16,7 @@ import type { Business, ComboComponent } from '../types';
 export type ReceiptOrderType = 'takeaway' | 'dine_in' | 'delivery' | 'counter';
 export interface ReceiptUnitAttribute { group: string; option: string; count: number; priceDelta: number }
 export interface ReceiptOrderUnit { name: string; quantity: number; portions: number; priceDelta: number; chosen: boolean; stationIds: []; attributes: ReceiptUnitAttribute[] }
-export interface ReceiptOrderLine { name: string; quantity: number; unitPrice: number; lineTotal: number; units: ReceiptOrderUnit[]; stationIds: []; note?: string }
+export interface ReceiptOrderLine { name: string; quantity: number; unitPrice: number; lineTotal: number; units: ReceiptOrderUnit[]; stationIds: []; note?: string; measureUnit?: string }
 export interface ReceiptPaymentLeg { label: string; amount: number }
 export interface ReceiptOrder {
   billNumber: string;
@@ -123,6 +123,7 @@ export function buildReceiptOrder(a: {
       return {
         name,
         quantity:  c.quantity,
+        ...(c.measureUnit ? { measureUnit: c.measureUnit } : {}),   // A577: "0.452 kg @ 650/kg"
         unitPrice: toCents(c.unitPrice),
         lineTotal: toCents(c.lineTotal),
         units,

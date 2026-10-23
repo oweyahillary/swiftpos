@@ -7,12 +7,12 @@ import KitchenDisplay from '../../components/screens/KitchenDisplay.astro';
 import DoThisNextCard from '../../components/screens/DoThisNextCard.astro';
 import { WA_MESSAGES } from '../../lib/site';
 import { RESTAURANT_FAQ } from '../../lib/faq';
-import { DEMO_CARDS } from '../../lib/analyticsDemo';
+import { demoCard } from '../../lib/analyticsDemo';
 
 const problems = [
   {
     problem: 'The waiter shouts the order and the kitchen hears it wrong.',
-    fix: 'The order prints in the kitchen, or appears on the kitchen screen, the moment it is sent. The variant is on the dish\'s own line: "2 CHIPS MASALA - SPICY". Nobody has to remember anything.',
+    fix: 'The order prints in the kitchen, or appears on the kitchen screen, the moment it is sent. The variant is on the dish\'s own line: "2 CHIPS MASALA - SPICY", and the extras and the cashier\'s notes print under it: "+ Extra Cheese", "** No onions". Nobody has to remember anything.',
   },
   {
     problem: 'The grill gets the drinks, and the bar gets the chips.',
@@ -32,7 +32,7 @@ const problems = [
   },
 ];
 
-const tilapia = DEMO_CARDS.find((c) => c.n === 4)!;
+const tilapia = demoCard(6);
 ---
 <Industry
   title="ZapTill for restaurants and cafés: kitchen tickets, tables, M-Pesa | ZapTill"
@@ -80,6 +80,19 @@ const tilapia = DEMO_CARDS.find((c) => c.n === 4)!;
           <figcaption><b>The customer.</b> Paid part M-Pesa, part cash, with your Buy Goods number printed large.</figcaption>
         </figure>
       </div>
+      <div class="extras">
+        <div class="extras__copy">
+          <h3>Extras and notes reach the cook</h3>
+          <p>
+            "Extra cheese, no onions" doesn't stay at the counter. Extras and the cashier's notes print on the kitchen
+            ticket, under the dish they belong to, and on the dispatch ticket too, so the packer checks them. Some
+            things only the chef can do.
+          </p>
+        </div>
+        <figure class="extras__slip">
+          <Receipt kind="extras" paper={58} />
+        </figure>
+      </div>
     </div>
   </section>
 
@@ -120,16 +133,17 @@ const tilapia = DEMO_CARDS.find((c) => c.n === 4)!;
             bill. Takeaway and delivery from the same screen.</p>
         </div>
         <div>
-          <h3>Your menu, grouped your way</h3>
-          <p>Food, drinks, tea: the till shows your menu in the groups you sell from, with big buttons and, with
-            ZapTill Online, pictures of your dishes.</p>
+          <h3>Your menus, as big tabs</h3>
+          <p>Food, Drinks, Tea: your menus sit as big tabs across the top of the till, so the cashier changes menu in
+            one tap. Big buttons and, with ZapTill Online, pictures of your dishes.</p>
           <!-- TODO(owner): menus by time of day (breakfast menu until 11:00…) are not built yet (A537: "no hours or days
                for now"); add them here only when they ship. -->
         </div>
         <div>
           <h3>Credit for your regulars</h3>
-          <p>The office that pays at the end of the month gets an account with a limit. Every sale on account is
-            confirmed by a manager, and you see who owes what.</p>
+          <p>The office that pays at the end of the month gets an account with a credit limit. The cashier puts the
+            bill on their account at the till, every sale on account is confirmed by a manager, and you see who owes
+            what.</p>
         </div>
       </div>
       <p class="r-note">Variants, pictures and offers on the till come with ZapTill Online. <a href="/pricing/">See the packages</a></p>
@@ -142,8 +156,10 @@ const tilapia = DEMO_CARDS.find((c) => c.n === 4)!;
       <div class="split__copy">
         <h2 id="ran-h">Then: which dishes earn, and when to push them</h2>
         <p>
-          With Analytics, your menu is sorted into the dishes that earn and the ones that only keep the kitchen busy, and
-          you see what sells at lunch and what sells after six. The cards tell you what to do about it.
+          With Analytics, your menu is sorted into the dishes that earn and the ones that only keep the kitchen busy,
+          and you see what sells at lunch, what sells after six, and what to prepare each day of the week. The cards
+          tell you what to do about it, in plain words: what to order, what to have in for Saturday, which dish to
+          feature. They never tell you to raise your prices.
         </p>
         <p><a href="/analytics/">See Analytics</a></p>
       </div>
@@ -165,6 +181,12 @@ const tilapia = DEMO_CARDS.find((c) => c.n === 4)!;
   .flow__item figcaption { color: var(--ink-2); font-size: var(--fs-sm); max-width: 22rem; }
   @media (min-width: 960px) { .flow { grid-template-columns: repeat(3, 1fr); } }
 
+  .extras { display: grid; gap: var(--s-5); align-items: center; margin-top: var(--s-7); padding-top: var(--s-6); border-top: 1px solid var(--line); }
+  .extras h3 { font-size: var(--fs-lg); }
+  .extras p { color: var(--ink-2); max-width: 34rem; }
+  .extras__slip { margin: 0; display: flex; justify-content: center; }
+  .extras__slip :global(.slip-wrap) { width: min(100%, 18rem); --slip-fs: 0.8rem; }
+  @media (min-width: 760px) { .extras { grid-template-columns: 1.4fr 1fr; } }
   .grid4 { display: grid; gap: var(--s-6); }
   .grid4 h3 { margin-bottom: var(--s-2); }
   .grid4 p { color: var(--ink-2); margin: 0; }

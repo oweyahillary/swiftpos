@@ -53,9 +53,11 @@ interface Props {
   canEdit?: boolean;
   /** A490: menu.prices — the inline price. Without it the price is read-only. Absent: allowed. */
   canPrices?: boolean;
+  /** A573: the page's name — "Menu" at a restaurant or café, "Products" at a shop (shared/businessTerms.ts). */
+  title?: string;
 }
 
-export default function MenuWorkbench({ currency, onOpenImport, canEdit = true, canPrices = true }: Props) {
+export default function MenuWorkbench({ currency, onOpenImport, canEdit = true, canPrices = true, title = 'Menu' }: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [comboItems, setComboItems] = useState<Record<string, any[]>>({});
@@ -211,7 +213,7 @@ export default function MenuWorkbench({ currency, onOpenImport, canEdit = true, 
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-white">Menu</h2>
+          <h2 className="text-lg font-bold text-white">{title}</h2>
           <p className="text-gray-400 text-sm">
             Every item in one place — prices, contents, choices and extras.
           </p>

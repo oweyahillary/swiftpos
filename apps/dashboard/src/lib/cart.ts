@@ -26,6 +26,10 @@ export interface CartItem {
   // A367: the cashier's note on this line ("3 normal, 2 spicy", "No salt"). Free — never changes the price. Sent as
   // order_items.notes; printed on the kitchen ticket and the receipt.
   notes?: string | null;
+
+  // A577: a line sold by weight — quantity = kilograms (0.452), unitPrice = the price per kg; 'g' = the item is shown in
+  // grams. Never merged with another line, never stepped (weighed again); printed "0.452 kg @ 650/kg".
+  measureUnit?: 'kg' | 'g';
 }
 
 export function cartSubtotal(items: CartItem[]): number {

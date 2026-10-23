@@ -121,7 +121,7 @@ export const CONFIG_KEYS = {
     'currency', 'maxDiscountPct', 'loyaltyEnabled', 'posFeatures', 'reversalRules', 'webPosEnabled', 'continuousOperation',
     'businessDayCutoff', 'cashierHistoryMethods', 'cashierSeesShiftSales', 'cashierHistoryTotals'],
   look: ['receiptHeader', 'receiptFooter', 'businessName'],
-  setup: ['kitchenExclusions', 'noteQuickPicks', 'businessType', 'support', 'branchId', 'pricingBranchId'],
+  setup: ['kitchenExclusions', 'noteQuickPicks', 'businessType', 'support', 'branchId', 'pricingBranchId', 'scaleBarcodes'],
 } as const;
 
 /** One entry of GET /api/pos/changes. `row` is absent on a delete (and on an upsert whose row is no longer the till's). */

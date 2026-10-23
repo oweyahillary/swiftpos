@@ -7,6 +7,7 @@ import RestaurantSettingsPage from './RestaurantSettingsPage';
 import MinimartSettingsPage from './MinimartSettingsPage';
 import ParkingSettingsPage from './ParkingSettingsPage';
 import PetrolSettingsPage from './PetrolSettingsPage';
+import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
 
 // Settings › Business (register A133).
 // One vertical-neutral home for company-level settings. The vertical-specific
@@ -20,18 +21,10 @@ import PetrolSettingsPage from './PetrolSettingsPage';
 // whose decision isn't made yet). Branches/Tax/Payments/Setup/Integrations are
 // pure regroupings of existing pages and ship now.
 
-const SETUP_LABELS: Record<string, string> = {
-  restaurant: 'Restaurant setup',
-  cafe: 'Café setup',
-  minimart: 'Minimart setup',
-  parking: 'Parking setup',
-  petrol_station: 'Petrol setup',
-};
-
 export function useBusinessTabs() {
   const { business } = useBusiness();
-  const { can } = usePermissions();   // A550: a partner sees the POS options only with settings.pos (the owner holds '*')
-  const setupLabel = SETUP_LABELS[business?.type ?? ''] ?? 'Setup';
+  const { can, isOwner } = usePermissions();   // A550: a partner sees the POS options only with settings.pos (the owner holds '*')
+  const setupLabel = businessTerms(business?.type).setupLabel;   // A573: Restaurant setup / Retail setup / … (lib/businessTerms.ts)
   return [
     { to: 'profile',      label: 'Profile' },
     { to: 'branding',     label: 'Branding' },
@@ -40,6 +33,8 @@ export function useBusinessTabs() {
     { to: 'payments',     label: 'Payments' },
     { to: 'voids-refunds', label: 'Voids, refunds & delivery' },   // 0.6.30 (A336 stage 3): the owner's rules; 0.6.33 + free delivery
     ...(can('settings.pos') ? [{ to: 'pos-options',  label: 'POS options' }] : []),    // A491: the owner's now (was the admin portal's)
+    ...(isOwner ? [{ to: 'loss-alerts',  label: 'Loss prevention' }] : []),   // A576: the watch list's switches — the owner's
+    ...(can('settings.business') ? [{ to: 'scale-labels', label: 'Scale labels' }] : []),   // A577: weighing-scale barcodes
     { to: 'setup',        label: setupLabel },
     { to: 'integrations', label: 'Integrations' },
   ];
@@ -52,6 +47,10 @@ export default function BusinessPage() {
 
 // Vertical setup tab — renders the right settings page for the business type.
 // These pages already own their full chrome, so they render as-is.
+// A573 (owner, 2026-10-22, on a retail business: "ensure hotel references hav been removed everywere"): a retail shop and
+// "other" fell through to the restaurant's page (Dine-in Settings: tables, floor plan, waiters, menu periods). Tables are a
+// restaurant's or café's only (foodAreas); every other shop gets the shop's setup (scanner, products and barcodes, bulk
+// import). A type not known yet (loading) keeps the restaurant's, as before.
 export function VerticalSetupRoute() {
   const { business } = useBusiness();
   switch (business?.type) {
@@ -59,8 +58,8 @@ export function VerticalSetupRoute() {
     case 'parking':        return <ParkingSettingsPage />;
     case 'petrol_station': return <PetrolSettingsPage />;
     case 'restaurant':
-    case 'cafe':
-    default:               return <RestaurantSettingsPage />;
+    case 'cafe':           return <RestaurantSettingsPage />;
+    default:               return foodAreas(business?.type).tables ? <RestaurantSettingsPage /> : <MinimartSettingsPage />;
   }
 }
 

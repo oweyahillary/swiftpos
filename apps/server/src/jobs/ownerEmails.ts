@@ -359,3 +359,18 @@ export function weeklySummaryEmail(opts: {
       bannerSub: `Sales ${c} ${money(cur.sales)} (${prev.sales ? `${Math.round(((cur.sales - prev.sales) / Math.abs(prev.sales)) * 100)}% on the week before` : 'no sales the week before'}).`, body }),
   };
 }
+
+// ── A576: loss-prevention alerts in the daily email ──────────────────────────
+
+/**
+ * The day's "worth a look" lines (already ranked and capped at 10 by lib/lossAlertRules.ts emailLines), each with its
+ * link to the list behind it. Plain words — a warning for investigation, never an accusation. '' when there are none.
+ */
+export function lossAlertsSection(lines: Array<{ message: string; link: string | null }>): string {
+  if (!lines.length) return '';
+  const rows = lines.map((l) => [
+    `${esc(l.message)}${l.link ? `<br><a href="${esc(DASH() + l.link)}" style="font-size:11px;color:#22c55e;text-decoration:none;">See the list →</a>` : ''}`,
+  ]);
+  return sectionHeader('Worth a look') + card(table([{ label: 'FOR INVESTIGATION — NOT A FINDING' }], rows))
+    + `<tr><td style="padding:8px 0 0;font-size:11px;color:#6b7280;">More on the dashboard's Watch list. Switch these off or change the amounts in Settings › Business › Loss prevention.</td></tr>`;
+}

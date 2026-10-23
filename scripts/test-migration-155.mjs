@@ -94,7 +94,9 @@ await ok('the columns match scripts/schema-index.json (menus, categories.menu_id
   const idx = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts/schema-index.json'), 'utf8'));
   assert.ok(idx.menus, 'menus missing from schema-index.json');
   const cols = (await q(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'menus'`)).map((r) => r.column_name).sort();
-  assert.deepEqual(Object.keys(idx.menus).sort(), cols);
+  // A578: menus.availability is migration 165's (this test replays up to 155 only) — test-migration-165 checks it.
+  const LATER = new Set(['availability']);
+  assert.deepEqual(Object.keys(idx.menus).filter((c) => !LATER.has(c)).sort(), cols);
   assert.ok(idx.categories.menu_id, 'categories.menu_id missing from schema-index.json');
 });
 await ok('RLS on menus with the owner policy; log_menu_sync_change not callable by anon or authenticated', async () => {

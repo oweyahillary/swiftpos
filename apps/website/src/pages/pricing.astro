@@ -9,36 +9,58 @@ import { WA_MESSAGES, PRICES, kes } from '../lib/site';
 import { PRICING_FAQ } from '../lib/faq';
 import { faqPage } from '../lib/schema';
 
-// TODO(owner): per branch or per business? How many tills are included? A reward for paying yearly? (WORKPLAN §6)
-const packages = [
+// The owner's model (2026-10-22): the desktop app is a ONE-OFF purchase per branch (a branch = the branch server and a
+// till, two computers); the cloud is month to month, per branch, with six or twelve months ahead recommended; the first
+// month of the cloud is free with the setup (A569); Analytics is an add-on.
+// TODO(owner): the price of an extra computer (not published), a reward for paying ahead (no figure), the ZapTill Online
+// price, and the notice period beyond "month to month".
+const once = {
+  name: 'ZapTill for one branch',
+  price: `KES ${kes(PRICES.setup)}`,
+  per: 'once',
+  alt: 'Paid once. The tills are yours: no monthly fee for them.',
+  intro: 'A branch is two computers: the branch server and a till. Everything you need to sell, cook and close the day.',
+  items: [
+    'Tills that keep selling with no internet',
+    'M-Pesa Buy Goods and Paybill on every receipt, split payments',
+    'Kitchen and dispatch tickets, a kitchen display',
+    'Day close: drawer counts, over and short by cashier',
+    'Staff roles and PINs',
+    'Scan barcodes at the till',
+    'Sales on account for regulars, within their limit',
+    'Set up on site, your items loaded, your staff trained',
+  ],
+};
+
+const monthly = [
   {
-    name: 'ZapTill',
+    name: 'ZapTill Cloud',
+    tag: 'First month free',
     price: `KES ${kes(PRICES.monthly)}`,
     per: 'a month',
-    alt: `or KES ${kes(PRICES.yearly)} a year, plus KES ${kes(PRICES.setup)} setup`,
-    intro: 'Everything you need to sell, cook and close the day.',
+    alt: 'Per branch, month to month. We recommend paying for 6 or 12 months at once.',
+    intro: 'Your business on the web and on your phone, wherever you are.',
     items: [
-      'Tills that keep selling with no internet',
-      'M-Pesa Buy Goods and Paybill on every receipt, split payments',
-      'Kitchen and dispatch tickets, a kitchen display',
-      'Day close: drawer counts, over and short by cashier',
-      'Staff roles and PINs, partner and accountant logins',
-      'Every branch on the web dashboard, a daily summary by email',
-      'Updates that install themselves, and support',
+      'Every branch on one web dashboard, on any phone',
+      'A daily summary by email, at the time you choose',
+      'Close a branch\'s day from the web',
+      'Partner and accountant logins, never yours',
+      'Generate barcodes and print labels on any printer',
+      'Reports to Excel whenever you want them',
     ],
   },
   {
     name: 'ZapTill Online',
-    tag: 'Recommended',
     price: 'Ask us',
     per: '',
     alt: 'Price coming soon. We can quote you today.',
-    intro: 'Everything in ZapTill, with the extras that make the till look and work like your menu.',
+    intro: 'The extras that make the till look and work like your menu or your shop.',
     items: [
-      'Pictures of your dishes on the till',
+      'Pictures of your items on the till',
       'Variants: sizes, flavours, "Normal" or "Spicy"',
       'Offers',
-      'Stock levels on the till',
+      'Stock at the till, and labels printed from the till',
+      'Check other branches\' stock and ask them for some',
     ],
   },
   {
@@ -46,21 +68,21 @@ const packages = [
     pre: 'About',
     price: `KES ${kes(PRICES.analyticsMonthly)}`,
     per: 'a month',
-    alt: 'Added to either package',
-    intro: 'What to change next, in plain sentences and shillings.',
+    alt: 'An add-on to the cloud',
+    intro: 'What to do next, in plain words.',
     items: [
-      '"Do this next": ranked actions with KES estimates',
-      'What sells when, by hour and part of the day',
-      'Menu engineering: which dishes earn and which only keep the kitchen busy',
-      'Money leaks by cashier',
-      'Credit ageing: who owes you, and for how long',
+      '"Do this next": what to order, what to have in for a busy day, credit to chase',
+      'Your week at a glance: what to prepare each day',
+      'Stock to move between branches, in a sentence',
+      'Money leaks by cashier, as warnings to look into',
+      'Menu engineering and credit ageing',
     ],
   },
 ];
 
 const setupItems = [
-  { t: 'We install it at your place', d: 'Tills, the branch server and printers, set up on site.' },
-  { t: 'Your menu and stock, loaded for you', d: 'Send us your menu in Excel or on paper. We do the typing.' },
+  { t: 'We install it at your place', d: 'The branch server, the till and the printers, set up on site.' },
+  { t: 'Your items and stock, loaded for you', d: 'Send us your menu or product list in Excel or on paper. We do the typing.' },
   { t: 'Printers and kitchen screens', d: 'Receipts at the counter, tickets in the kitchen and at dispatch.' },
   { t: 'Staff roles and PINs', d: 'Cashiers, supervisors, managers and the rest, each seeing only what they should.' },
   { t: 'Training', d: 'For your cashiers and managers, on your own menu.' },
@@ -69,8 +91,8 @@ const setupItems = [
 ];
 ---
 <Base
-  title="Pricing: about KES 100 a day | ZapTill"
-  description="ZapTill costs KES 30,000 to set up, then KES 3,000 a month: about KES 100 a day. See what the setup buys, and work out what leaks are costing you."
+  title="Pricing: pay once for the tills, about KES 100 a day for the cloud | ZapTill"
+  description="ZapTill costs KES 30,000 once per branch for the tills, then KES 3,000 a month for the cloud, with the first month free. See what the setup buys, and work out what leaks are costing you." "
   waMessage={WA_MESSAGES.pricing}
   ogImage="/og/pricing.png"
   jsonLd={[faqPage(PRICING_FAQ)]}
@@ -79,9 +101,11 @@ const setupItems = [
     <div class="wrap">
       <!-- OWNER: remove this banner once the prices are final. -->
       <p class="draft-banner">Draft — prices being finalised</p>
-      <h1>About KES 100 a day.</h1>
+      <h1>Pay once for the tills. About KES 100 a day for the cloud.</h1>
       <p class="lede">
-        One setup fee, then a small monthly fee. No percentage of your sales. Here is exactly what you get for it.
+        Each branch is set up once, for KES {kes(PRICES.setup)}, and the tills are yours. The cloud, your business on
+        the web and your phone, is KES {kes(PRICES.monthly)} a month, and the first month is free. No percentage of your
+        sales. Here is exactly what you get.
       </p>
       <div class="actions">
         <WhatsAppButton message={WA_MESSAGES.pricing} label="Get a quote on WhatsApp" />
@@ -94,22 +118,42 @@ const setupItems = [
   <section class="band band--tight" aria-labelledby="packages-title">
     <div class="wrap">
       <h2 id="packages-title" class="visually-hidden">Packages</h2>
-      <div class="packages">
-        {packages.map((p) => (
-          <article class:list={['pkg', { 'pkg--pick': p.tag }]}>
-            {p.tag && <p class="pkg__tag">{p.tag}</p>}
-            <h3 class="pkg__name">{p.name}</h3>
-            <p class="pkg__intro">{p.intro}</p>
-            <p class="pkg__price">{p.pre && <span>{p.pre} </span>}<strong>{p.price}</strong> {p.per && <span>{p.per}</span>}</p>
-            <p class="pkg__alt">{p.alt}</p>
+      <div class="pricing-grid">
+        <div class="pricing-col">
+          <h3 class="pricing-col__h">Pay once</h3>
+          <article class="pkg pkg--once">
+            <div class="pkg--once__head">
+              <h4 class="pkg__name">{once.name}</h4>
+              <p class="pkg__intro">{once.intro}</p>
+              <p class="pkg__price"><strong>{once.price}</strong> <span>{once.per}</span></p>
+              <p class="pkg__alt">{once.alt}</p>
+            </div>
             <ul class="pkg__list">
-              {p.items.map((i) => <li>{i}</li>)}
+              {once.items.map((i) => <li>{i}</li>)}
             </ul>
           </article>
-        ))}
+        </div>
+        <div class="pricing-col">
+          <h3 class="pricing-col__h">Month to month</h3>
+          <div class="packages">
+            {monthly.map((p) => (
+              <article class:list={['pkg', { 'pkg--pick': p.tag }]}>
+                {p.tag && <p class="pkg__tag">{p.tag}</p>}
+                <h4 class="pkg__name">{p.name}</h4>
+                <p class="pkg__intro">{p.intro}</p>
+                <p class="pkg__price">{p.pre && <span>{p.pre} </span>}<strong>{p.price}</strong> {p.per && <span>{p.per}</span>}</p>
+                <p class="pkg__alt">{p.alt}</p>
+                <ul class="pkg__list">
+                  {p.items.map((i) => <li>{i}</li>)}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
       </div>
       <p class="small muted packages__note">
-        Hardware is quoted separately, or bring your own. Prices are in Kenyan shillings.
+        A branch is two computers. More tills or a kitchen screen are quoted separately, as is any hardware you need, or
+        bring your own. Prices are in Kenyan shillings.
       </p>
     </div>
   </section>
@@ -118,8 +162,8 @@ const setupItems = [
   <section class="band band--white" aria-labelledby="setup-title">
     <div class="wrap setup">
       <div class="section-head">
-        <h2 id="setup-title">What the KES {kes(PRICES.setup)} setup buys</h2>
-        <p>Not a download and a password. We come to you and get you selling, in this order.</p>
+        <h2 id="setup-title">What the KES {kes(PRICES.setup)} branch setup buys</h2>
+        <p>Not a download and a password. We come to you and get you selling, in this order. You pay it once.</p>
       </div>
       <ol class="setup__list">
         {setupItems.map((s) => (
@@ -133,15 +177,19 @@ const setupItems = [
   <section class="band" aria-labelledby="day-title">
     <div class="wrap perday">
       <div>
-        <h2 id="day-title">KES 3,000 a month is about KES 100 a day.</h2>
+        <h2 id="day-title">The cloud is about KES 100 a day.</h2>
         <p class="lede">
-          Less than one short drawer. If one cashier is KES 200 short a day, that is KES 6,000 a month: twice what
-          ZapTill costs. ZapTill shows you that shortage at every day close, by name.
+          Less than one short drawer. If one cashier is KES 200 short a day, that is KES 6,000 a month: twice what the
+          cloud costs. ZapTill shows you that shortage at every day close, by name, and the cloud puts it on your phone.
+        </p>
+        <p>
+          It is month to month. We recommend paying for six months or a year at once: one payment, and nothing to
+          remember every month. <!-- TODO(owner): a reward for paying ahead, if any. No figure until decided. -->
         </p>
       </div>
       <dl class="perday__sum" aria-label="The sum">
         <div><dt>One cashier short KES 200 a day</dt><dd>KES 6,000 a month</dd></div>
-        <div><dt>ZapTill</dt><dd>KES 3,000 a month</dd></div>
+        <div><dt>ZapTill Cloud</dt><dd>KES {kes(PRICES.monthly)} a month</dd></div>
       </dl>
     </div>
   </section>
@@ -163,10 +211,11 @@ const setupItems = [
       <div>
         <h2 id="payback-title">Analytics pays for itself, or you'll see that it doesn't.</h2>
         <p class="lede">
-          Every recommendation comes with a shilling estimate and the assumption behind it. You decide whether to act.
+          Every card says what to do, why, and what it rests on. Where there is an honest shilling figure, it shows it;
+          a stock card says how many to have in, and a warning says what to look into. You decide whether to act.
         </p>
       </div>
-      <DoThisNextCard showPayback />
+      <DoThisNextCard n={1} showPayback />
     </div>
   </section>
 
@@ -177,7 +226,9 @@ const setupItems = [
         <h2 id="nosurprise-title">No surprises</h2>
       </div>
       <ul class="nosurprise">
+        <li><h3>The tills are paid for once.</h3><p>Once paid, it's a done deal. No monthly fee for the tills.</p></li>
         <li><h3>No percentage of your sales.</h3><p>Sell more and the price stays the same.</p></li>
+        <li><h3>The cloud is month to month.</h3><p>The first month is free, so you see it working before you pay.</p></li>
         <li><h3>M-Pesa charges are Safaricom's.</h3><p>We don't add anything on top.</p></li>
         <li><h3>Hardware is separate.</h3><p>We quote it, or you bring your own and we check it.</p></li>
         <li><h3>Your data is yours.</h3><p>Download your reports whenever you want them.</p></li>
@@ -212,6 +263,17 @@ const setupItems = [
   .pricing-head h1 { margin-top: var(--s-5); }
   .pricing-head .lede { margin-bottom: var(--s-5); }
 
+  .pricing-grid { display: grid; gap: var(--s-6); align-items: start; }
+  .pricing-col__h {
+    font: 700 var(--fs-sm)/1.2 var(--font-text); letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--teal-deep); margin: 0 0 var(--s-3);
+  }
+  .pkg--once { border: 2px solid var(--ink); }
+  @media (min-width: 900px) {
+    .pkg--once { display: grid; grid-template-columns: 1fr 1.6fr; gap: var(--s-6); align-items: start; }
+    .pkg--once .pkg__alt { border-bottom: 0; padding-bottom: 0; }
+    .pkg--once .pkg__list { grid-template-columns: 1fr 1fr; column-gap: var(--s-5); padding-top: var(--s-2); }
+  }
   .packages { display: grid; gap: var(--s-5); align-items: start; }
   .pkg {
     background: var(--card);
@@ -240,7 +302,7 @@ const setupItems = [
     transform: rotate(-45deg);
   }
   .packages__note { margin-top: var(--s-5); }
-  @media (min-width: 960px) { .packages { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 760px) { .packages { grid-template-columns: repeat(3, 1fr); } }
 
   .setup__list { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; gap: var(--s-1); max-width: 52rem; }
   .setup__list li {
@@ -275,7 +337,7 @@ const setupItems = [
   .nosurprise h3 { color: #fff; margin-bottom: var(--s-2); }
   .nosurprise p { color: var(--night-muted); margin: 0; }
   @media (min-width: 760px) { .nosurprise { grid-template-columns: repeat(2, 1fr); } }
-  @media (min-width: 1100px) { .nosurprise { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1100px) { .nosurprise { grid-template-columns: repeat(3, 1fr); } }
 
   .final h2 { max-width: 24ch; }
 </style>

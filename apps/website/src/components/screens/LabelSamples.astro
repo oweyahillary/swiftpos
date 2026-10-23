@@ -1,0 +1,76 @@
+---
+// Barcode labels exactly as ZapTill prints them. The SVGs are not drawn here: scripts/render-labels.mjs lays out a
+// made-up shop's items ("Demo Mini Mart") through the real label code (shared/labels.ts, shared/barcode.ts) and writes
+// src/lib/labels.generated.json. test/labels.test.mjs fails if that file drifts from the label code.
+//
+//   show="rolls"  three labels from a label printer, at their real proportions (50 × 30, 58 × 40, 38 × 25 mm)
+//   show="sheet"  an A4 sheet of 3 × 8 stickers from an office printer, the first two rows printed
+//   show="both"   the two side by side
+import data from '../../lib/labels.generated.json';
+import { kes } from '../../lib/site';
+
+interface Props { show?: 'rolls' | 'sheet' | 'both'; class?: string }
+const { show = 'both', class: extra } = Astro.props;
+const prices: Record<string, number> = { 'Cooking Oil 1L': 340, 'Bar Soap 800g': 240, 'Biscuits 200g': 120 };
+const sheet = data.sheet;
+const pct = (v: number, of: number) => `${((v / of) * 100).toFixed(3)}%`;
+---
+<div class:list={['labels', `labels--${show}`, extra]}>
+  {show !== 'sheet' && (
+    <figure class="labels__rolls">
+      <ul>
+        {data.rolls.map((r) => (
+          <li>
+            <div class="labels__label" style={`--w:${r.widthMm}`} role="img"
+              aria-label={`A ${r.widthMm} by ${r.heightMm} mm label: ${r.name}, KES ${kes(prices[r.name] ?? 0)}, barcode ${r.code}.`}>
+              <Fragment set:html={r.svg.replace('<svg ', '<svg aria-hidden="true" focusable="false" ')} />
+            </div>
+            <span class="labels__cap">{r.printer}</span>
+          </li>
+        ))}
+      </ul>
+      <figcaption class="labels__fig">On a label printer: any size</figcaption>
+    </figure>
+  )}
+  {show !== 'rolls' && (
+    <figure class="labels__sheet-fig">
+      <div class="labels__sheet" style={`aspect-ratio:${sheet.pageWidthMm} / ${sheet.pageHeightMm}`} role="img"
+        aria-label="An A4 sheet of 24 stickers (3 across, 8 down) with the first six printed: Cooking Oil 1L, Bar Soap 800g and Biscuits 200g, each with its price and barcode.">
+        {sheet.cells.map((c, i) => (
+          <div class:list={['labels__cell', { 'labels__cell--used': i < sheet.svgs.length }]}
+            style={`left:${pct(c.x, sheet.pageWidthMm)};top:${pct(c.y, sheet.pageHeightMm)};width:${pct(c.w, sheet.pageWidthMm)};height:${pct(c.h, sheet.pageHeightMm)}`}>
+            {i < sheet.svgs.length && <Fragment set:html={sheet.svgs[i].replace('<svg ', '<svg aria-hidden="true" focusable="false" ')} />}
+          </div>
+        ))}
+      </div>
+      <figcaption class="labels__fig">On A4 sticker sheets: any office printer</figcaption>
+    </figure>
+  )}
+</div>
+
+<style>
+  .labels { display: grid; gap: var(--s-6); align-items: start; }
+  .labels--both { grid-template-columns: 1fr; }
+  @media (min-width: 760px) { .labels--both { grid-template-columns: 1.5fr 1fr; } }
+  .labels figure { margin: 0; }
+  .labels__rolls ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s-4); align-items: flex-end; }
+  .labels__rolls li { display: grid; gap: var(--s-2); justify-items: start; }
+  .labels__label {
+    /* 1 mm of label = 0.3rem on screen, so the three keep their real proportions */
+    width: calc(var(--w) * 0.3rem); max-width: 100%;
+    background: #fff; border-radius: 4px; padding: 0;
+    box-shadow: 0 0 0 1px #d9dfe0, 0 6px 16px -8px rgba(6, 26, 29, 0.35);
+    overflow: hidden;
+  }
+  .labels__label :global(svg) { display: block; width: 100%; height: auto; }
+  .labels__cap { font-size: var(--fs-xs, 0.8rem); color: var(--muted); max-width: 16rem; }
+  .labels__fig { margin-top: var(--s-3); font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+
+  .labels__sheet {
+    position: relative; width: 100%; max-width: 20rem; background: #fff; border-radius: 3px;
+    box-shadow: 0 0 0 1px #d9dfe0, 0 12px 28px -14px rgba(6, 26, 29, 0.45);
+  }
+  .labels__cell { position: absolute; border-radius: 3px; outline: 1px dashed #d4dadb; outline-offset: -1px; overflow: hidden; }
+  .labels__cell--used { outline-color: transparent; }
+  .labels__cell :global(svg) { display: block; width: 100%; height: 100%; }
+</style>

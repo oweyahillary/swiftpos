@@ -15,4 +15,4 @@ data ("Mama Lishe Grill"). They are taken after each build session and saved as 
 | `app-analytics-branches.webp` | A565: the Branches area (three branches, demo data) — a falling branch flagged, the branches side by side, the stock moves to consider in words (no quantity) |
 
 Pages: home, how-it-works, features, who-its-for, for-restaurants, for-bars, for-quick-service, for-retail,
-analytics, pricing, contact. Latest: 2026-10-22 (night 1, phase 2).
+analytics, pricing, contact. Latest: 2026-10-23 (night 2: pricing model, Analytics without price rises, barcodes and labels; home, pricing, analytics, features, retail, restaurants, bars, how-it-works and contact re-taken; quick service and who-its-for are from night 1).

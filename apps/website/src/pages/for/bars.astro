@@ -5,7 +5,7 @@ import Receipt from '../../components/screens/Receipt.astro';
 import DoThisNextCard from '../../components/screens/DoThisNextCard.astro';
 import { WA_MESSAGES } from '../../lib/site';
 import { BAR_FAQ } from '../../lib/faq';
-import { DEMO_CARDS, DEMO_DAYPARTS } from '../../lib/analyticsDemo';
+import { demoCard, DEMO_DAYPARTS } from '../../lib/analyticsDemo';
 
 const problems = [
   {
@@ -30,7 +30,7 @@ const problems = [
   },
 ];
 
-const tusker = DEMO_CARDS.find((c) => c.n === 2)!;
+const saturday = demoCard(4);
 const late = DEMO_DAYPARTS.find((d) => d.name === 'Late at night')!;
 const evening = DEMO_DAYPARTS.find((d) => d.name === 'Evening')!;
 ---
@@ -81,10 +81,11 @@ const evening = DEMO_DAYPARTS.find((d) => d.name === 'Evening')!;
   <section class="band band--night" aria-labelledby="bwhen-h">
     <div class="wrap split split--flip">
       <div class="split__copy">
-        <h2 id="bwhen-h">Then: what to charge, and when to staff up</h2>
+        <h2 id="bwhen-h">Then: what to have in, and when to staff up</h2>
         <p>
-          Analytics shows what sells in the evening and late at night, which drinks earn and which only sell, and when an
-          extra pair of hands pays for itself. In the demo, Tusker is {late.items[0][1]}% of everything sold after ten.
+          Analytics shows what sells in the evening and late at night, what to have in before a busy Friday or Saturday,
+          and when an extra pair of hands pays for itself. In the demo, Tusker is {late.items[0][1]}% of everything sold
+          after ten, and a Saturday sells nearly twice as much of it as an average day.
         </p>
         <ul class="b-parts" aria-label="What sells in the evening and late at night, from a demo business">
           {[evening, late].map((d) => (
@@ -97,7 +98,7 @@ const evening = DEMO_DAYPARTS.find((d) => d.name === 'Evening')!;
         <p><a href="/analytics/">See Analytics</a></p>
       </div>
       <div class="split__visual">
-        <DoThisNextCard {...tusker} />
+        <DoThisNextCard {...saturday} />
       </div>
     </div>
   </section>

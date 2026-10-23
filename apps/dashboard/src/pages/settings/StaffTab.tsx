@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBranch } from '../../context/BranchContext';
+import { useBusiness } from '../../context/BusinessContext';   // A573
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
@@ -83,7 +84,7 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);        // the roles this user may give (assignable)
   const [allRoles, setAllRoles] = useState<Role[]>([]);  // every role — to read a person's keys
-  const catalogue = usePermissionCatalogue(api);
+  const catalogue = usePermissionCatalogue(api, useBusiness().business?.type);   // A573: a shop's words
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState('');   // A506: a refused load / deactivate / activate is said
   const [showModal, setShowModal] = useState(false);

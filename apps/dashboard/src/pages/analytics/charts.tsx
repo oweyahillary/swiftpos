@@ -147,8 +147,11 @@ export interface Slice { key: string; label: string; value: number; colour: stri
 export function Donut({ slices, p, currency, centre, testId }: { slices: Slice[]; p: ChartPalette; currency: string; centre: string; testId?: string }) {
   const s = shares(slices);
   if (!s.length) return <p className="text-sm text-gray-500 py-6 text-center">Nothing in this period.</p>;
+  // A572: the legend sits beside the donut only when the card has room for both (a 15rem legend basis), else it wraps
+  // below — the card's width decides, not the screen's (Payment mix is a third of the row on a wide screen). Each row is
+  // a fixed grid: the name truncates (its full text on hover), the amount and the % never wrap, shrink or overlap.
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-4" data-testid={testId}>
+    <div className="flex flex-wrap items-center justify-center gap-4" data-testid={testId}>
       <div className="relative w-44 h-44 flex-shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -167,13 +170,13 @@ export function Donut({ slices, p, currency, centre, testId }: { slices: Slice[]
           <span className="text-sm font-semibold text-white leading-tight">{centre}</span>
         </div>
       </div>
-      <ul className="w-full space-y-1.5 text-sm">
+      <ul className="grow basis-60 min-w-0 space-y-1.5 text-sm" data-testid="donut-legend">
         {s.map((x) => (
-          <li key={x.key} className="flex items-center gap-2">
-            <span aria-hidden className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: x.colour }} />
-            <span className="text-gray-300 flex-1 min-w-0">{x.label}</span>
-            <span className="text-white font-medium tabular-nums">{fmt.money(x.value, currency, { decimals: 0 })}</span>
-            <span className="text-gray-500 tabular-nums w-12 text-right">{(x.share * 100).toFixed(0)}%</span>
+          <li key={x.key} className="grid grid-cols-[0.625rem_minmax(0,1fr)_auto_2.75rem] items-center gap-x-2">
+            <span aria-hidden className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: x.colour }} />
+            <span className="text-gray-300 truncate" title={x.label}>{x.label}</span>
+            <span className="text-white font-medium tabular-nums text-right whitespace-nowrap">{fmt.money(x.value, currency, { decimals: 0 })}</span>
+            <span className="text-gray-500 tabular-nums text-right whitespace-nowrap">{(x.share * 100).toFixed(0)}%</span>
           </li>
         ))}
       </ul>

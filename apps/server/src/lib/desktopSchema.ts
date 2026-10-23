@@ -77,7 +77,11 @@
  *  branding, not its branch's override. */
 /** 75 = A552: credit_customers (pulled — the customers a till sells to on account, GET /api/pos/credit-customers) and
  *  customer_credit_transactions.synced_at (local). A till on 74 keeps syncing; it simply offers no On account. */
-export const REQUIRED_DESKTOP_SCHEMA = 75;
+/** 76 = A578: menus.availability (pulled — a menu's hours; migration 165). A till on 75 keeps syncing; it simply shows
+ *  every menu all day, as before. */
+/** 77 = A577: products.sold_by / unit_label and device_config.scale_barcodes (all pulled). A till on 76 keeps syncing; it
+ *  simply sells every item each (no weight keypad) and reads no scale labels. */
+export const REQUIRED_DESKTOP_SCHEMA = 77;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

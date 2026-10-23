@@ -1,7 +1,7 @@
 // IPC: the sale screen's data from SQLite (products, categories, variants, modifiers, tables, pumps).
 // Registered from ipcHandlers.ts (D10).
 import { getLocalDb, effectiveReceiptFooter } from '../localDb';
-import { getDeviceConfig, getPosFeatures, getStockCountFreeze } from '../deviceConfig';
+import { getDeviceConfig, getPosFeatures, getStockCountFreeze, getScaleSettings } from '../deviceConfig';
 import { parseNotePicks } from '../orderNotes';
 import { cleanShowDays } from '../productDays';
 import { tillStockView } from '../stockGateLocal';   // A563
@@ -80,7 +80,11 @@ export function registerCatalogueHandlers(ctx: IpcShared) {
 
     // A537: the business's menus (Food, Soft drinks …) — on, in order; the panel's tabs (none = the plain list).
     let menus: unknown[] = [];
-    try { menus = db.prepare(`SELECT id, name, sort_order, color, icon FROM menus WHERE active = 1 ORDER BY sort_order, name`).all(); }
+    try {
+      // A578: each menu's hours (JSON text → the object; NULL = always) — the sale screen decides what is open by its clock.
+      menus = (db.prepare(`SELECT id, name, sort_order, color, icon, availability FROM menus WHERE active = 1 ORDER BY sort_order, name`).all() as any[])
+        .map((m) => { let availability: unknown = null; try { availability = m.availability ? JSON.parse(m.availability) : null; } catch { availability = null; } return { ...m, availability }; });
+    }
     catch { menus = []; }   // a database before local schema 73
 
     return {
@@ -89,6 +93,8 @@ export function registerCatalogueHandlers(ctx: IpcShared) {
       categories,
       menus,
       branchId: branch?.id ?? null,
+      // A578: when the business day ends (minutes after midnight) — a menu's hours past midnight belong to the night before.
+      businessDayCutoff: getDeviceConfig()?.business_day_cutoff ?? 0,
       // Real business rate, refreshed by every catalogue pull. Null until the
       // first successful sync — POSPage falls back to 16 in that window only.
       vatRate: getDeviceConfig()?.vat_rate ?? null,
@@ -98,6 +104,9 @@ export function registerCatalogueHandlers(ctx: IpcShared) {
       maxDiscountPct: getDeviceConfig()?.max_discount_pct ?? null,
       receiptHeader: getDeviceConfig()?.receipt_header ?? '',
       receiptFooter: effectiveReceiptFooter(getDeviceConfig()?.receipt_footer),   // A544: the branch's own when set
+      // A577: how this business's scales print their labels (the default until the cloud says) — the sale screen reads
+      // scale labels with it, offline too.
+      scaleBarcodes: getScaleSettings(),
       // combo_id -> components, for dispatcher/kitchen ticket expansion. Sent
       // whole because a busy till should never hit SQLite mid-print.
       comboItems: (() => {

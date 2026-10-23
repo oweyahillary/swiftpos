@@ -8,6 +8,7 @@
  *   POST /api/products                 — create (extended: barcode, PLU, sold_by, is_fuel)
  *   PATCH /api/products/:id            — update (extended fields)
  *   POST /api/products/barcodes/generate — A571: in-store EAN-13s for products without a barcode
+ *   GET/PUT /api/products/barcodes/settings — A574: the business's barcode numbering (format, prefix, start, digits)
  *   GET|PUT /api/products/labels/settings — A571: the label designer; GET …/labels/restocked — items in a delivery
  *
  * DROP-IN: this file replaces apps/server/src/routes/products.ts entirely.
@@ -20,7 +21,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, requireAnyPermission, can, branchScope } from '../middleware/rbac';
-import { lacksBarcode, nextInStoreCodes } from '../lib/barcode';                  // A571
+import { lacksBarcode, cleanBarcodeNumbering, nextNumberedCodes, rangeFullMessage, BARCODE_SETTINGS_KEY, type BarcodeNumbering } from '../lib/barcode';   // A571, A574
 import { cleanLabelSettings, LABEL_SETTINGS_KEY } from '../lib/labels';           // A571
 import { stripCostsUnlessAllowed } from '../lib/costAccess';
 import { idsOfBusiness } from '../lib/branchGuard';   // A494   // A490
@@ -117,8 +118,16 @@ async function businessBarcodes(businessId: string): Promise<{ rows: Array<{ id:
   return { rows: (data ?? []) as Array<{ id: string; name: string; barcode: string | null; status: string }>, error };
 }
 
+/** A574: the business's barcode numbering (business_settings 'barcode_settings'), defaults filled in. */
+async function barcodeNumbering(businessId: string): Promise<{ numbering: BarcodeNumbering; error: unknown }> {
+  const { data, error } = await supabase.from('business_settings').select('value')
+    .eq('business_id', businessId).eq('key', BARCODE_SETTINGS_KEY).maybeSingle();
+  return { numbering: cleanBarcodeNumbering((data as { value?: unknown } | null)?.value ?? null), error };
+}
+
 // POST /api/products/barcodes/generate  { product_ids?: string[], dry_run?: boolean }
-// Gives every chosen product WITHOUT a barcode an in-store EAN-13 ("20" + item number + check digit, lib/barcode.ts);
+// Gives every chosen product WITHOUT a barcode a code by the business's barcode numbering (A574: format, prefix, start,
+// digits — the default is A571's in-store EAN-13, "20" + item number + check digit, lib/barcode.ts);
 // none chosen = every active product without one. A product that has a barcode is never touched — the write is
 // conditional on the field still being empty, so one typed (or generated) meanwhile is kept. The unique index
 // products_barcode_business_idx (business_id, barcode) makes a duplicate impossible: a clash with a concurrent
@@ -135,9 +144,18 @@ router.post('/barcodes/generate', requirePermission('menu.edit'), async (req, re
   if (read.error) { sendError(res, read.error); return; }
   const chosen = read.rows.filter((p) => (wanted ? wanted.has(p.id) : p.status === 'active'));
   const targets = chosen.filter((p) => lacksBarcode(p.barcode));
+  const num = await barcodeNumbering(req.businessId);
+  if (num.error) { sendError(res, num.error); return; }
+  const plan = nextNumberedCodes(num.numbering, read.rows.map((p) => p.barcode), Math.min(3, targets.length));
   if (body.dry_run === true) {
-    res.json({ count: targets.length, already: chosen.length - targets.length,
-      sample: nextInStoreCodes(read.rows.map((p) => p.barcode), Math.min(3, targets.length)) });
+    res.json({ count: targets.length, already: chosen.length - targets.length, sample: plan.codes,
+      remaining: plan.remaining, numbering: num.numbering,
+      ...(plan.remaining < targets.length ? { error: rangeFullMessage(plan.remaining, targets.length), code: 'barcode_range_full' } : {}) });
+    return;
+  }
+  // A574: a range that cannot give every chosen product a code refuses before any is written — never half a run.
+  if (plan.remaining < targets.length) {
+    res.status(409).json({ error: rangeFullMessage(plan.remaining, targets.length), code: 'barcode_range_full', remaining: plan.remaining, assigned: [], kept: [] });
     return;
   }
   const taken = new Set(read.rows.map((p) => String(p.barcode ?? '').trim()).filter(Boolean));
@@ -146,7 +164,11 @@ router.post('/barcodes/generate', requirePermission('menu.edit'), async (req, re
   for (const p of targets) {
     let settled = false;
     for (let attempt = 0; attempt < 30 && !settled; attempt++) {
-      const [code] = nextInStoreCodes(taken, 1);
+      const next = nextNumberedCodes(num.numbering, taken, 1);
+      if (next.exhausted) {   // the range ran out meanwhile (another request took the last codes)
+        res.status(409).json({ error: rangeFullMessage(0, 1), code: 'barcode_range_full', remaining: 0, assigned, kept }); return;
+      }
+      const [code] = next.codes;
       taken.add(code);
       let q = supabase.from('products').update({ barcode: code }).eq('id', p.id).eq('business_id', req.businessId);
       q = p.barcode == null ? q.is('barcode', null) : q.eq('barcode', p.barcode);   // still empty — never overwrite
@@ -165,6 +187,27 @@ router.post('/barcodes/generate', requirePermission('menu.edit'), async (req, re
     if (!settled) { res.status(409).json({ error: 'Could not find a free barcode — try again', assigned, kept }); return; }
   }
   res.json({ assigned, kept, count: assigned.length });
+});
+
+// GET /api/products/barcodes/settings — A574: the business's barcode numbering (format, prefix, start, digits), cleaned.
+// Owner, 2026-10-22: "i should also be able to set barcode start sequence, number of digits i need etc".
+router.get('/barcodes/settings', async (req, res) => {
+  const num = await barcodeNumbering(req.businessId);
+  if (num.error) { sendError(res, num.error); return; }
+  res.json(num.numbering);
+});
+
+// PUT /api/products/barcodes/settings — menu.edit; stored cleaned (lib/barcode.ts). Existing codes are never changed:
+// only the codes generated from now on follow it.
+router.put('/barcodes/settings', requirePermission('menu.edit'), async (req, res) => {
+  const clean = cleanBarcodeNumbering(req.body ?? {});
+  const { data: existing } = await supabase.from('business_settings').select('id')
+    .eq('business_id', req.businessId).eq('key', BARCODE_SETTINGS_KEY).maybeSingle();
+  const { error } = existing
+    ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', (existing as { id: string }).id)
+    : await supabase.from('business_settings').insert({ business_id: req.businessId, key: BARCODE_SETTINGS_KEY, value: clean });
+  if (error) { sendError(res, error); return; }
+  res.json(clean);
 });
 
 // GET /api/products/labels/settings — the label designer (size, what is printed, the sheet), defaults filled in.

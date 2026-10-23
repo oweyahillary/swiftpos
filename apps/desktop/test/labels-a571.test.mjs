@@ -21,6 +21,21 @@
 //   - printLabels ignoring the receipt station (no fallback)  → "the receipt printer by default" fails
 //   - labelProducts using base_price only                     → "this branch's price" fails
 //   - managerNav showing Labels without the online licence    → "only with the online licence" fails
+//
+// A574 (owner, 2026-10-22: "label should contain barcodes"; "i should also be able to set barcode start sequence, number
+// of digits i need etc"): an item with no barcode is never printed bar-less. With menu.edit and online, labels:print
+// (generate) asks the cloud for exactly those items' codes, writes them into this till's products and prints them; offline
+// or without menu.edit those items are left out and named, the rest print. labels:numbering saves the business's
+// numbering (menu.edit, through the cloud) and setup shows it.
+// A574 mutations (each made, seen to fail, reverted — listed in the A574 register entry):
+//   - generateMissingBarcodes ignoring canEdit                  → "without menu.edit: … no cloud call" fails
+//   - printLabels without the labelBarcodeProblem skip          → "never bar-less" fails
+//   - the generated codes not written into this till's products → "the new codes are this till's" fails
+//   - labelProducts listing pump fuel                           → "petrol_station: … fuel is not listed" fails
+//   - managerNav showing Labels only to shops                   → "every business type: Stock › Labels" fails
+// A574, every business type (owner, 2026-10-23: "let us not forget other business in the tills all this changes should
+// also be taking shape on them based on how they operate"): the tab shows, sets up and prints with bars at a restaurant,
+// a cafe, a shop, a minimart, a car park, a petrol station (its shop items; pump fuel gets no label) and "other".
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -69,14 +84,21 @@ LB._setLabelHtmlPrinter(async (o) => { pages.push(o); return { ok: true }; });
 
 // The context ipc/shared.ts would hand it: the person's keys, the licence, the cloud.
 const who = { keys: ['inventory.view'], online: true };
-const cloud = { settings: { widthMm: 40, heightMm: 30, gapMm: 3 }, up: true, puts: [] };
+const cloud = { settings: { widthMm: 40, heightMm: 30, gapMm: 3 }, up: true, puts: [], posts: [], numbering: { format: 'EAN13', prefix: '20', start: 1 }, next: ['2000000000039', '2000000000046', '2000000000053'] };
 const handlers = {};
 LB.registerLabelHandlers({
   handle: (ch, fn) => { handlers[ch] = fn; },
   requireKey: (keys, refusal) => { if (!keys.some((k) => who.keys.includes(k))) throw new Error(refusal); },
   requireOnlineLicence: () => { if (!who.online) throw new Error('This is part of the online licence — ask ZapTill to turn it on for your business.'); },
   manageFetch: async (p, method, body) => {
-    if (!cloud.up) throw new Error('No connection');
+    if (!cloud.up) throw new Error('No connection to the cloud.');
+    // A574: the numbering and the generate route.
+    if (p === '/api/products/barcodes/settings') { if (method === 'PUT') { cloud.numPuts = [...(cloud.numPuts ?? []), body]; cloud.numbering = body; } return cloud.numbering; }
+    if (p === '/api/products/barcodes/generate') {
+      cloud.posts.push({ p, method, body });
+      const assigned = body.product_ids.map((id) => { const b = cloud.next.shift(); return { id, name: id, barcode: b }; });
+      return { assigned, kept: [], count: assigned.length };
+    }
     if (method === 'PUT') { cloud.puts.push(body); return body; }
     return cloud.settings;
   },
@@ -149,6 +171,78 @@ ok('the IPC channels are validated (ipcSchemas) and registered (ipcHandlers), th
   read('src/main/ipcSchemas.ts').includes("'labels:print':") && read('src/main/ipcHandlers.ts').includes('registerLabelHandlers(ctx)')
   && read('src/main/preload.ts').includes("ipcRenderer.invoke('labels:print', body)"));
 
+// ── A574: every label carries a barcode ──────────────────────────────────────
+console.log('\nA574 — never a label without bars; missing codes generated first\n');
+addProduct('p-bread', 'Bread', 60, null, null);
+addProduct('p-eggs', 'Eggs', 15, null, '  ');
+addProduct('p-cafe', 'Cafe latte', 300, null, 'Caf\u00e9');
+LB._setLabelTransport(async (target, bytes) => { sent.push({ target, text: Buffer.from(bytes).toString('latin1'), bytes: [...bytes] }); });
+await call('labels:save', { printer: { path: 'tspl', rawTarget: '192.168.1.50' } });
+const programs = (txt) => (txt.match(/SIZE /g) ?? []).length;
+const barcodeOf = (id) => db.prepare(`SELECT barcode FROM products WHERE id = ?`).get(id).barcode;
+
+// Without menu.edit (nobody signed in with it): those items are left out and named; the rest print; no cloud call.
+who.keys = ['inventory.view'];
+sent.length = 0; cloud.posts.length = 0;
+r = await call('labels:print', { items: [{ product_id: 'p-milk', copies: 1 }, { product_id: 'p-bread', copies: 2 }, { product_id: 'p-cafe', copies: 1 }], generate: true });
+ok('without menu.edit: Milk prints, Bread is left out (ask a manager), no cloud call', r.ok && r.labels === 1 && cloud.posts.length === 0
+  && r.skipped?.some((s) => s.id === 'p-bread' && /ask a manager/.test(s.reason)), JSON.stringify(r));
+ok('…and a barcode that cannot be drawn is left out too, said why', r.skipped?.some((s) => s.id === 'p-cafe' && /cannot be drawn/.test(s.reason)));
+ok('…the notice names them in plain words', /ask a manager to generate barcodes for these\): Bread\./.test(r.notice ?? '') && /Cafe latte/.test(r.notice ?? ''), r.notice);
+ok('never bar-less: one TSPL program, with its BARCODE', sent.length === 1 && programs(sent[0].text) === 1 && (sent[0].text.match(/BARCODE /g) ?? []).length === 1, sent[0]?.text);
+
+// Signed in with menu.edit, but offline: left out with the reason; the rest print.
+db.prepare(`INSERT INTO staff_session (id, staff_id, staff_name, role_name, branch_id, permissions, token, logged_in_at)
+  VALUES (1, 's1', 'Max', 'Manager', 'b1', '{"menu.edit":true,"inventory.view":true}', 'tok', '2026-10-22T00:00:00Z')`).run();
+who.keys = ['menu.edit', 'inventory.view'];
+cloud.up = false; sent.length = 0;
+r = await call('labels:print', { items: [{ product_id: 'p-milk', copies: 1 }, { product_id: 'p-bread', copies: 1 }], generate: true });
+ok('offline: Bread left out (barcodes could not be generated - no connection), Milk prints', r.ok && r.labels === 1
+  && r.skipped?.length === 1 && /could not be generated - No connection to the cloud/.test(r.skipped[0].reason) && barcodeOf('p-bread') === null, JSON.stringify(r));
+r = await call('labels:print', { items: [{ product_id: 'p-bread', copies: 1 }], generate: true, path: 'escpos' });
+ok('offline, only items without a barcode: nothing sent, the answer says why', r.ok === false && r.labels === 0 && /No labels printed/.test(r.error ?? '') && sent.length === 1, JSON.stringify(r));
+pages.length = 0;
+r = await call('labels:print', { items: [{ product_id: 'p-eggs', copies: 1 }], generate: true, path: 'windows' });
+ok('…the Windows-driver way too: no page printed', r.ok === false && pages.length === 0, JSON.stringify(r));
+cloud.up = true;
+
+// Online, menu.edit, not asked to generate (the screen asks first): left out.
+r = await call('labels:print', { items: [{ product_id: 'p-bread', copies: 1 }] });
+ok('not asked to generate: left out (no barcode yet), no cloud call', r.ok === false && cloud.posts.length === 0 && /no barcode yet/.test(r.notice ?? ''), JSON.stringify(r));
+
+// Online, menu.edit, asked: the cloud generates for exactly those items, the till keeps the codes, all print.
+sent.length = 0;
+r = await call('labels:print', { items: [{ product_id: 'p-milk', copies: 1 }, { product_id: 'p-bread', copies: 2 }, { product_id: 'p-eggs', copies: 1 }, { product_id: 'p-cafe', copies: 1 }], generate: true });
+ok('generate via the cloud for exactly the items without a barcode (not Milk, not the undrawable one)', cloud.posts.length === 1
+  && cloud.posts[0].method === 'POST' && JSON.stringify(cloud.posts[0].body) === JSON.stringify({ product_ids: ['p-bread', 'p-eggs'] }), JSON.stringify(cloud.posts));
+ok('the new codes are this till\'s products now, and in the answer', barcodeOf('p-bread') === '2000000000039' && barcodeOf('p-eggs') === '2000000000046'
+  && JSON.stringify(r.generated) === JSON.stringify([{ id: 'p-bread', barcode: '2000000000039' }, { id: 'p-eggs', barcode: '2000000000046' }]), JSON.stringify(r));
+ok('they print with their bars: Milk, Bread ×2, Eggs (Cafe latte still left out)', r.ok && r.labels === 4 && programs(sent[0]?.text ?? '') === 3
+  && (sent[0]?.text.match(/BARCODE /g) ?? []).length === 3 && sent[0].text.includes('"200000000003"') && sent[0].text.includes('"200000000004"') && r.skipped?.length === 1, JSON.stringify(r));
+const again = await call('labels:setup');
+ok('setup lists them with their codes (offline-ready)', again.products.find((p) => p.id === 'p-bread')?.barcode === '2000000000039' && again.barcodes.includes('2000000000046'));
+
+// The numbering: from the cloud on setup; saved with menu.edit; refused without; offline not saved.
+cloud.numbering = { format: 'CODE128N', prefix: '77', length: 8, start: 5, checkDigit: false };
+const s2 = await call('labels:setup');
+ok('setup: the business\'s numbering from the cloud, and whether this person may generate', s2.numbering.format === 'CODE128N' && s2.numbering.prefix === '77' && s2.canGenerate === true);
+r = await call('labels:numbering', { numbering: { format: 'EAN8', prefix: '2x9', start: 3 } });
+ok('labels:numbering: saved cleaned through the cloud (PUT /api/products/barcodes/settings)', r.ok && JSON.stringify(cloud.numPuts?.at(-1)) === JSON.stringify({ format: 'EAN8', prefix: '29', start: 3, length: 8, checkDigit: true }), JSON.stringify(r));
+cloud.up = false;
+const kept = await call('labels:setup');
+ok('offline: the numbering kept from the last time', kept.numbering.format === 'EAN8' && kept.numbering.prefix === '29');
+r = await call('labels:numbering', { numbering: { format: 'UPCA', prefix: '4' } });
+ok('offline: the numbering is not saved, said so', r.ok === false && /Not saved/.test(r.error ?? '') && r.numbering.format === 'EAN8');
+cloud.up = true;
+who.keys = ['inventory.view'];
+ok('without menu.edit: the numbering cannot be changed', /right to edit products/.test(await rejects(call('labels:numbering', { numbering: { prefix: '21' } })) ?? ''));
+who.keys = ['inventory.view'];
+const tab = read('src/renderer/components/LabelsTab.tsx');
+ok('the Labels tab asks before generating, sends generate, and has no Barcode switch', tab.includes("no barcode yet — generate ${n === 1 ? 'it' : 'them'} and print?")
+  && tab.includes('settings, generate });') && !tab.includes("['showBarcode',") && tab.includes('data-testid="barcode-numbering"'));
+ok('the channel is validated and exposed', read('src/main/ipcSchemas.ts').includes("'labels:numbering':") && read('src/main/preload.ts').includes("ipcRenderer.invoke('labels:numbering'")
+  && read('src/main/ipcSchemas.ts').includes("generate: { t: 'boolean', optional: true }"));
+
 // The tab
 const N = await import(pathToFileURL(path.join(here, '..', 'src', 'renderer', 'lib', 'managerNav.ts')).href);
 const base = { isRestaurant: false, canOverview: true, canOrders: true, canItems: true, canShifts: true, canExpenses: true, canCloseDay: true,
@@ -159,6 +253,41 @@ ok('only with the online licence', !tabs({ online: false, canLabels: true }).inc
 ok('only with a key', !tabs({ online: true, canLabels: false }).includes('stock/labels'));
 ok('ManagerPage shows the tab (menu.edit or inventory.view)', read('src/renderer/pages/ManagerPage.tsx').includes("canLabels: hasAny('menu.edit', 'inventory.view')")
   && read('src/renderer/pages/ManagerPage.tsx').includes("case 'labels': return online ? <LabelsTab />"));
+
+// ── A574: every business type ────────────────────────────────────────────────
+console.log('\nA574 — the Labels tab at every business type\n');
+const T = await import(pathToFileURL(path.join(here, '..', 'src', 'shared', 'businessTerms.ts')).href);
+const W = await import(pathToFileURL(path.join(here, '..', 'src', 'renderer', 'lib', 'labelsWords.ts')).href);
+db.prepare(`INSERT INTO device_config (id, deploy_mode, server_url, business_type, configured, created_at, updated_at)
+  VALUES (1, 'cloud', 'http://x', 'retail', 1, '2026-10-23', '2026-10-23')
+  ON CONFLICT(id) DO UPDATE SET business_type = excluded.business_type`).run();
+addProduct('p-fuel', 'Diesel', 180, null, null);
+db.prepare(`UPDATE products SET is_fuel = 1 WHERE id = 'p-fuel'`).run();
+addProduct('p-oil', 'Engine oil 1L', 950, null, '5901234123457');
+addProduct('p-soda', 'Soda 500ml (take-away)', 80, null, '036000291452');
+who.keys = ['menu.edit', 'inventory.view']; who.online = true; cloud.up = true;
+await call('labels:save', { printer: { path: 'zpl', rawTarget: '192.168.1.60' } });
+for (const mode of T.BUSINESS_TYPE_KEYS) {
+  db.prepare(`UPDATE device_config SET business_type = ? WHERE id = 1`).run(mode);
+  const words = T.businessTerms(mode);
+  const nav = N.relabelCatalogue(N.buildManagerNav({ ...base, isRestaurant: words.food, online: true, canLabels: true, showStock: mode !== 'parking' }), words.catalogue);
+  const shown = nav.flatMap((g) => g.tabs.map((x) => `${g.key}/${x.key}`)).includes('stock/labels');
+  const s = await call('labels:setup');
+  sent.length = 0;
+  const item = mode === 'petrol_station' ? 'p-oil' : words.food ? 'p-soda' : 'p-milk';
+  const pr = await call('labels:print', { items: [{ product_id: item, copies: 2 }] });
+  ok(`${mode}: every business type: Stock › Labels shows (the catalogue called "${words.catalogue}")`, shown && nav.some((g) => g.key === 'menu' && g.label === words.catalogue));
+  ok(`${mode}: setup knows the type, prints ${item} with its bars (ZPL ^B…)`, s.business.type === mode && pr.ok && pr.labels === 2
+    && /\^B(E|U)N/.test(sent[0]?.text ?? ''), JSON.stringify(pr));
+  ok(`${mode}: the tab says what labels are for here`, typeof W.labelsIntro(mode) === 'string' && W.labelsIntro(mode).length > 20);
+}
+db.prepare(`UPDATE device_config SET business_type = 'petrol_station' WHERE id = 1`).run();
+const petrol = await call('labels:setup');
+ok('petrol_station: the shop items are listed, pump fuel is not listed (no label at the pump)', petrol.products.some((p) => p.id === 'p-oil') && !petrol.products.some((p) => p.id === 'p-fuel'));
+ok('petrol_station / restaurant / shop / parking: the intro is in their words', /Pump fuel/.test(W.labelsIntro('petrol_station')) && /grab-and-go/.test(W.labelsIntro('restaurant'))
+  && /grab-and-go/.test(W.labelsIntro('cafe')) && /shelf/.test(W.labelsIntro('retail')) && /parking/.test(W.labelsIntro('parking')));
+ok('the tab reads the type for its words (intro, search)', read('src/renderer/components/LabelsTab.tsx').includes('{labelsIntro(setup.business.type)}')
+  && read('src/renderer/components/LabelsTab.tsx').includes('businessTerms(setup.business.type).products'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

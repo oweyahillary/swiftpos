@@ -72,6 +72,13 @@ for (const [m, p] of [['POST','/api/stock/requests'],['POST','/api/stock/request
     assert.equal(denied('desktop', m, p, false), true);
   });
 }
+// A574: Manager › Stock › Labels — generate the missing barcodes before printing, save the barcode numbering.
+for (const [m, p] of [['POST','/api/products/barcodes/generate'],['PUT','/api/products/barcodes/settings']]) {
+  ok(`A574 PIN sign-in: ${m} ${p} is allowed; the device token: DENIED`, () => {
+    assert.equal(denied('desktop', m, p, true), false);
+    assert.equal(denied('desktop', m, p, false), true);
+  });
+}
 ok('A564: no other step on a request (a delete, an unknown step, a deeper path) — DENIED even for a PIN sign-in', () => {
   assert.equal(denied('desktop','DELETE','/api/stock/requests/r1', true), true);
   assert.equal(denied('desktop','POST','/api/stock/requests/r1/approve', true), true);

@@ -36,6 +36,8 @@ const EMPTY_FORM = {
   fuel_unit: 'L',
   show_days: [] as number[],   // 0.6.31: [] = every day
   barcode: '',   // A571: any format a scanner reads; "Generate" gives an in-store EAN-13
+  plu_code: '',     // A577: the item's code on a weighing scale's label (its PLU)
+  unit_label: 'kg', // A577: a weighed item shown in kg or g (priced per kg either way)
 };
 
 export default function ProductsPage() {
@@ -188,6 +190,8 @@ export default function ProductsPage() {
       fuel_unit: (p as any).fuel_unit ?? 'L',
       show_days: cleanShowDays((p as any).show_days) ?? [],
       barcode: p.barcode ?? '',
+      plu_code: (p as any).plu_code ?? '',                              // A577
+      unit_label: (p as any).unit_label === 'g' ? 'g' : 'kg',          // A577
     });
     setImageFile(null);
     setImagePreview(p.image_url);
@@ -259,6 +263,8 @@ export default function ProductsPage() {
       fuel_unit: form.is_fuel ? (form.fuel_unit || 'L') : null,
       show_days: cleanShowDays(form.show_days) ?? null,   // 0.6.31: none or all seven = every day
       barcode: form.barcode.trim() || null,   // A571
+      plu_code: form.plu_code.trim() || null,   // A577: the scale code (any item may have one)
+      ...(form.sold_by === 'weight' && !form.is_fuel ? { unit_label: form.unit_label === 'g' ? 'g' : 'kg' } : {}),   // A577
     };
 
     try {
@@ -356,7 +362,7 @@ export default function ProductsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setShowMenuUpload(true)} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
-            Menu upload
+            {isFood ? 'Menu upload' : 'Product upload'}
           </button>
           <button onClick={() => setShowBulkImages(true)} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
             Bulk images
@@ -658,7 +664,7 @@ export default function ProductsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">
-                  {form.is_fuel ? `Price per ${form.fuel_unit || 'L'} (${currency})` : `Price (${currency})`}
+                  {form.is_fuel ? `Price per ${form.fuel_unit || 'L'} (${currency})` : form.sold_by === 'weight' ? `Price per kg (${currency})` : `Price (${currency})`}
                 </label>
                 <input
                   type="number"
@@ -780,6 +786,53 @@ export default function ProductsPage() {
                 still finds it and it sells at its normal price. Pick none (or all) for every day.
               </p>
             </div>
+
+            {/* A577: sold by weight — every business type (a shop's loose goods, a butchery, a restaurant's meat by the kilo,
+                a petrol station's shop). The price above is then per kg; the scale code is what its scale prints on a label. */}
+            {!form.is_fuel && (
+              <div className="border border-gray-800 rounded-lg p-3 space-y-3" data-testid="sold-by-weight">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    aria-label="Sold by weight"
+                    onClick={() => setForm(f => ({ ...f, sold_by: f.sold_by === 'weight' ? 'each' : 'weight' }))}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${form.sold_by === 'weight' ? 'bg-swift-strong' : 'bg-gray-700'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${form.sold_by === 'weight' ? 'left-5' : 'left-0.5'}`} />
+                  </button>
+                  <label className="text-sm text-gray-300">⚖️ Sold by weight (price per kg)</label>
+                </div>
+                {form.sold_by === 'weight' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1.5">Show the weight in</label>
+                      <select
+                        value={form.unit_label}
+                        onChange={e => setForm(f => ({ ...f, unit_label: e.target.value }))}
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-swift transition-colors"
+                      >
+                        <option value="kg">Kilograms (0.452 kg)</option>
+                        <option value="g">Grams (452 g)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1.5">Scale code (PLU)</label>
+                      <input
+                        value={form.plu_code}
+                        onChange={e => setForm(f => ({ ...f, plu_code: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
+                        placeholder="e.g. 1234"
+                        inputMode="numeric"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-swift transition-colors"
+                      />
+                    </div>
+                    <p className="col-span-2 text-gray-600 text-xs">
+                      Tapped on the till it asks for the weight. Give it the same code as on your weighing scale and the
+                      scale's labels scan straight in (0.452 kg, the right amount). Label layout: Settings › Scale labels.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Fuel product — petrol stations only. Marks the product as a fuel
                 grade sold by volume; its price above is the price per litre, and

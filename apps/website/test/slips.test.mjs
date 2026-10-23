@@ -32,6 +32,15 @@ test('the kitchen ticket is food only, with the variant on the line', () => {
   assert.ok(fresh.dispatch80.lines.some((l) => /PASSION JUICE/.test(l.t)));
 });
 
+test('the kitchen ticket prints the extra and the notes under the dish (A559)', () => {
+  const lines = fresh.extras80.lines.map((l) => l.t);
+  const burger = lines.findIndex((t) => /CHICKEN BURGER/.test(t));
+  assert.ok(burger >= 0);
+  assert.match(lines[burger + 1], /\+ Extra Cheese/);
+  assert.match(lines[burger + 2], /\*\* No onions/);
+  assert.ok(lines.some((t) => /\*\* Well done/.test(t)));
+});
+
 test('the shift close shows the KES 350 short', () => {
   const v = fresh.close80.lines.find((l) => /Variance/.test(l.t));
   assert.match(v.t, /short.*-350\.00/);

@@ -23,6 +23,7 @@ import PrintersPage       from '../settings/PrintersPage';
 import ManagerReportsPage, { MANAGER_REPORT_KEYS, tabsForBusiness } from './ManagerReportsPage';
 import ManagerReceivingTab from './ManagerReceivingTab';
 import ManagerHistoryTab   from './ManagerHistoryTab';
+import { WatchListPanel } from '../WatchListPage';   // A576
 import ManagerShiftTab from './ManagerShiftTab';
 import ManagerMenuTab from './ManagerMenuTab';
 import SignInSecurity from '../../components/SignInSecurity';   // A391
@@ -40,6 +41,7 @@ import { money, compactMoney, litres, dateShort } from '../../lib/format';
 import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
 import { hasAnyPermission } from '../../lib/permissions';   // A490
+import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
 // A549 · A553: the Analytics tab loads its own chunk (and the chart library) only when it is opened
 const Analytics = lazy(() => import('../analytics/AnalyticsPage').then((m) => ({ default: m.Analytics })));
 
@@ -107,6 +109,8 @@ const NAV_ITEMS: NavItem[] = [
   // A549: Analytics (premium) — this branch only; off for the business, the page says it is part of ZapTill Premium.
   // A558: first in Finance — the decisions page.
   { key: 'analytics', label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Analytics</span></>, title: 'Analytics', permission: 'reports.sales', group: 'Finance' },
+  // A576: the watch list — unusual voids, discounts, cash differences at this branch (reports.voids); never about the reader.
+  { key: 'watch',     label: <><Icon d={I.warning}   className="flex-shrink-0" /><span className="truncate">Watch list</span></>, title: 'Watch list', permission: 'reports.voids', group: 'Finance' },
   // A518: supplier bills — read with payables.view (the Accountant's), recorded and paid with payables.manage.
   { key: 'bills',     label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Supplier bills</span></>, title: 'Supplier bills', permission: ['payables.view', 'payables.manage'], group: 'Finance' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
@@ -1340,6 +1344,12 @@ function ManagerTurnoverTab() {
 // ── Main component ────────────────────────────────────────────────────────────
 
 /** A490: may this person open this page? Its key(s) — any one; Reports: any report its tabs show for this business. */
+/** A573: a page that is a restaurant's or café's only (Table Turnover) is not in a shop's sidebar (lib/businessTerms.ts). */
+export function managerItemShown(key: string, businessType: string | null | undefined): boolean {
+  if (key === 'turnover') return foodAreas(businessType).tableTurnover;
+  return true;
+}
+
 export function navAllowed(item: NavItem, held: ReadonlySet<string>, isPetrol: boolean): boolean {
   if (item.permission === null) return true;
   if (item.key === 'reports') return hasAnyPermission(held, tabsForBusiness(isPetrol).map(t => t.permission));
@@ -1392,7 +1402,8 @@ export default function ManagerDashboard() {
   // A490: every page by the fine key matching what it shows (navAllowed). Reports opens with any report its tabs show
   // for this business type. The first page is the first one this person may open (Overview needs reports.overview).
   const isPetrol      = session.businessType === 'petrol_station';
-  const visibleNav    = NAV_ITEMS.filter(i => navAllowed(i, held, isPetrol));
+  const visibleNav    = NAV_ITEMS.filter(i => navAllowed(i, held, isPetrol) && managerItemShown(i.key, session.businessType));
+  const words         = businessTerms(session.businessType);   // A573: "Menu" at a restaurant, "Products" at a shop
   const current       = active && visibleNav.some(n => n.key === active) ? active : (visibleNav[0]?.key ?? 'security');
   // A490: cost prices and values at cost (wastage, expiry, deliveries) — menu.costs or reports.costs.
   const seesCosts     = hasAnyPermission(held, ['menu.costs', 'reports.costs']);
@@ -1411,7 +1422,8 @@ export default function ManagerDashboard() {
         if (session.businessType === 'parking')         return <ParkingOverviewTab />;
         return <OverviewTab />;
       case 'reports':   return <ManagerReportsPage />;
-      case 'analytics': return <Suspense fallback={<p className="p-6 text-sm text-gray-500">Loading…</p>}><Analytics client={posApi} ownerView={false} currency={currency} branchName={session.branchName} /></Suspense>;   // A549 · A553
+      case 'watch':     return <WatchListPanel client={posApi} isOwner={false} portal />;   // A576
+      case 'analytics': return <Suspense fallback={<p className="p-6 text-sm text-gray-500">Loading…</p>}><Analytics client={posApi} ownerView={false} currency={currency} branchName={session.branchName} businessType={session.businessType} /></Suspense>;   // A549 · A553
       case 'orders':    return <POSOrderHistoryTab currency={currency} />;
       case 'inventory': return <POSInventoryTab />;
       case 'receiving': return <ManagerReceivingTab currency={currency} />;
@@ -1497,13 +1509,15 @@ export default function ManagerDashboard() {
                 )}
                 {items.map(item => (
                   <button key={item.key} onClick={() => { setActive(item.key); if (isPhone) setSidebarOpen(false); }}
-                    title={!sidebarOpen ? item.title : undefined}
+                    title={!sidebarOpen ? (item.key === 'menu' ? words.catalogue : item.title) : undefined}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                       current === item.key
                         ? 'bg-swift/20 text-swift-text border border-swift/30'
                         : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                     }`}>
-                    <span className="flex items-center gap-3 min-w-0">{item.label}</span>
+                    <span className="flex items-center gap-3 min-w-0">{item.key === 'menu'
+                      ? <><Icon d={I.overview} className="flex-shrink-0" /><span className="truncate">{words.catalogue}</span></>
+                      : item.label}</span>
                     {item.key === 'credit' && creditWaiting > 0 && (
                       <span data-testid="nav-badge-credit" className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-black">{creditWaiting}</span>
                     )}

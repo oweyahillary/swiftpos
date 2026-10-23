@@ -22,6 +22,7 @@ import { parseCsvRows, csvBool } from '../lib/csv';
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '../../shared/paginate';
 import { approvalPinOn } from '../../shared/posFeatures';   // A562
+import { businessTerms } from '../../shared/businessTerms';   // A575
 import type { CsvRow } from '../lib/csv';
 
 const input =
@@ -52,6 +53,17 @@ function Banner({ kind, text }: { kind: 'ok' | 'err'; text: string }) {
 
 /** 2026-10-04: how the menu import compares names (the cloud's importKey): case, non-breaking / zero-width and double
  *  spaces never make "Drink size" a different group from "drink  size". */
+/** A575: this till's business type in its words (src/shared/businessTerms.ts); not read yet: a restaurant's. */
+function useTillTerms() {
+  const [businessType, setBusinessType] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    posApi.config.get().then((c: any) => { if (live) setBusinessType(c?.business_type ?? null); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  return businessTerms(businessType);
+}
+
 function importNameKey(raw: unknown): string {
   return String(raw ?? '').normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
@@ -65,6 +77,7 @@ export function MenuTab({ currency }: { currency: string }) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<any | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const terms = useTillTerms();   // A575
 
   const blank = { name: '', base_price: '', category_id: '', description: '' };
   const [form, setForm] = useState<any>(blank);
@@ -77,7 +90,7 @@ export function MenuTab({ currency }: { currency: string }) {
       setCategories(Array.isArray(c) ? c : []);
       setErr('');
     } catch (e: any) {
-      setErr(e?.message ?? 'Could not load the menu.');
+      setErr(e?.message ?? `Could not load the ${terms.importWhat}.`);
     } finally {
       setLoading(false);
     }
@@ -149,7 +162,7 @@ export function MenuTab({ currency }: { currency: string }) {
     try {
       const next = p.status === 'active' ? 'inactive' : 'active';
       await posApi.manage.updateProduct(p.id, { status: next });
-      flash(next === 'active' ? `${p.name} back on the menu` : `${p.name} hidden from the till`);
+      flash(next === 'active' ? `${p.name} ${terms.backOnSale}` : `${p.name} hidden from the till`);
       await load();
     } catch (e: any) {
       setErr(e?.message ?? 'Could not update.');
@@ -161,7 +174,7 @@ export function MenuTab({ currency }: { currency: string }) {
   const shown = products.filter(p =>
     !search.trim() || p.name?.toLowerCase().includes(search.trim().toLowerCase()));
 
-  if (loading) return <p className="text-gray-300 p-4">Loading menu…</p>;
+  if (loading) return <p className="text-gray-300 p-4">Loading {terms.importWhat}…</p>;
 
   return (
     <div className="p-4 max-w-3xl">
@@ -306,6 +319,7 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
   // A537: the business's menus (Food, Soft drinks …, made on the web) as this till holds them — a category is put under
   // one here too, saved on the till first and sent to the cloud like any category change (A448). No menus: no select.
   const [menus, setMenus] = useState<any[]>([]);
+  const terms = useTillTerms();   // A575: "No department" at a shop, "No menu" at a restaurant
   useEffect(() => {
     let live = true;
     posApi.pos.init().then((r: any) => { if (live) setMenus(Array.isArray(r?.menus) ? r.menus : []); }).catch(() => {});
@@ -345,12 +359,12 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
           <div key={c.id} className="flex items-center gap-3 px-4 py-2">
             <span className="flex-1 text-gray-200 truncate">{c.name}</span>
             {(menus.length > 0 || c.menu_id) && (
-              <select data-testid="category-menu" value={c.menu_id ?? ''} disabled={busy} aria-label={`Menu of ${c.name}`}
+              <select data-testid="category-menu" value={c.menu_id ?? ''} disabled={busy} aria-label={`${terms.menu} of ${c.name}`}
                 onChange={e => void setMenu(c, e.target.value)}
                 className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-action-500">
-                <option value="">No menu</option>
+                <option value="">{terms.noMenu}</option>
                 {menus.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                {c.menu_id && !menus.some((m: any) => m.id === c.menu_id) && <option value={c.menu_id}>(a menu that is off)</option>}
+                {c.menu_id && !menus.some((m: any) => m.id === c.menu_id) && <option value={c.menu_id}>{`(a ${terms.menu.toLowerCase()} that is off)`}</option>}
               </select>
             )}
             <button onClick={() => toggleKitchen(c)} disabled={busy}
@@ -1353,7 +1367,8 @@ function readItemKitchen(row: CsvRow): boolean | undefined {
   return undefined;
 }
 
-export function ImportTab({ currency, onDone }: { currency: string; onDone?: () => void }) {
+// A573: `what` — "menu" at a restaurant or café, "products" at a shop (src/shared/businessTerms.ts importWhat).
+export function ImportTab({ currency, onDone, what = 'menu' }: { currency: string; onDone?: () => void; what?: string }) {
   const online = useOnlineLicence();   // A460: variants and add-ons from a file only with the online licence
   const [rows, setRows] = useState<CsvRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -1617,7 +1632,7 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
       )}
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4">
-        <p className="text-white font-semibold mb-1">Import menu from a spreadsheet</p>
+        <p className="text-white font-semibold mb-1">Import {what} from a spreadsheet</p>
         <p className="text-xs text-gray-300 mb-3">
           In Excel or Google Sheets choose <span className="text-gray-300">Save As → CSV</span>, then pick the file here.
         </p>
@@ -1629,7 +1644,7 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
         {/* A412: a template filled with this client's own menu (headings only when there is none yet). */}
         <button onClick={() => { void downloadTemplate(); }} disabled={templateBusy}
           className="mt-3 text-xs text-action-400 hover:text-action-300 disabled:opacity-50 transition-colors">
-          {templateBusy ? 'Preparing your menu…' : '↓ Download a template with your menu'}
+          {templateBusy ? `Preparing your ${what}…` : `↓ Download a template with your ${what}`}
         </button>
         <p className="mt-1 text-[11px] text-gray-500">
           Your current items, ready to edit and upload back — changed items are updated, new rows are added.

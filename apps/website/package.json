@@ -8,9 +8,10 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "test": "node --test \"test/**/*.test.mjs\"",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"test/**/*.test.mjs\"",
     "check": "node scripts/check-dist.mjs",
-    "slips": "node scripts/render-slips.mjs"
+    "slips": "node scripts/render-slips.mjs",
+    "labels": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/render-labels.mjs"
   },
   "engines": {
     "node": ">=22.12.0"

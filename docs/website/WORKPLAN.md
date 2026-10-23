@@ -35,13 +35,14 @@ The research suggests some lines that go beyond today's product. The site uses t
 | M-Pesa | Buy Goods and Paybill on every receipt, split payments, M-Pesa totals per cashier at day close | "M-Pesa matched to your statement automatically": reconciliation is not built (value-add item 3) |
 | Day close | Drawer counts, over/short by cashier, shift confirmation, close a branch from the till or the web | — |
 | Owner away | Every branch on one web dashboard; a daily summary by email; partner and accountant logins | Telegram or WhatsApp summaries, until those channels are set up |
-| Analytics | Menu engineering, what sells when, money leaks by cashier, credit ageing, ranked "Do this next" with KES estimates (marked as estimates) | Guaranteed savings; AI |
-| Kitchen | Kitchen and dispatch tickets, a kitchen display, variants and combos on one line | — |
-| Credit | Customer accounts with limits; every credit sale confirmed by a manager | — |
-| Stock | Stock levels, deliveries, transfers between branches, counts, wastage, recipes and costs | Purchase orders sent to suppliers automatically |
+| Analytics | "Do this next" in plain words: what to order, what to have in for a busy day ("your week at a glance"), stock to move between branches (words only, no quantity or KES), credit to chase, a dish to feature, items without a cost; KES estimates only where honest, marked as estimates; voids and discounts as a **warning to look into**; tables capped at the top 10 | Guaranteed savings; AI; **any price-rise suggestion** (owner: prices should be competitive); voids as money "to recover" |
+| Kitchen | Kitchen and dispatch tickets, a kitchen display, variants and combos on one line; extras and the cashier's notes printed under the dish (A559) | Menus by time of day |
+| Credit | Customer accounts with limits (existing customers too, A567); sales on account at the till within the limit; every credit sale confirmed by a manager | — |
+| Stock | Stock levels, deliveries, transfers between branches, counts, wastage, recipes and costs; see other branches' stock and request a transfer (A564; at the till with ZapTill Online); when stock hits zero: sell as normal, show sold out, or hide (A563) | Purchase orders sent to suppliers automatically |
+| Barcodes and labels | Scan at the till; generate in-store EAN-13 codes for products without one (prefix 20, never overwrites); labels on any printer and size: label printers (TSPL/ZPL), A4 sticker sheets, the receipt printer; every label carries a barcode (A571, A574) | Weighed items / scale barcodes (21–29 are reserved, not built) |
 | Staff | Ready-made roles (General Manager to Cashier), PINs, partner logins | — |
 | Brand | Your logo and colours on the till and receipt, per branch | — |
-| Support | Updates install themselves; support can pull a till's log remotely | "24/7 support" until it is staffed so |
+| Support | Updates install themselves; support can pull a till's log remotely; 24-hour support for **priority clients** | "24/7 support" for everyone |
 | Platforms | Windows till; web dashboard on any phone | Android or iPad till |
 | eTIMS | One honest FAQ line: clients handle eTIMS with their own provider today | eTIMS built in |
 
@@ -67,28 +68,33 @@ The **Sign in** button in the header goes to `app.zaptill.co.ke`.
 
 ## 5. Value for money: how the site makes the sum
 
-1. **Cost per day:** "About KES 100 a day — less than one short drawer."
+1. **Cost per day:** "The cloud is about KES 100 a day — less than one short drawer." The tills are a one-off purchase per
+   branch.
 2. **Leak calculator** (Pricing and Home):
    - **Inputs:** daily sales, number of cashiers, an estimated shortage per cashier per day, wastage percentage.
    - **Output:** the monthly leak in KES, against ZapTill's monthly price.
    - Labelled as an estimate built only on the visitor's numbers; nothing stored or sent.
 3. **What the setup buys,** item by item: on-site install, menu and stock loaded, printers and kitchen screens set up,
    staff roles and PINs, training, branding, the first day close together.
-4. **Analytics payback:** one real card ("Raise Tusker by KES 40 ≈ KES 35,200 a month, if the same 880 still sell"),
-   with KES 10,000 a month shown against it.
+4. **Analytics payback:** the app's real cards (A560): "Order about 70 more Tusker lager before Friday" (≈ KES 18,255 of
+   sales at risk), "Stock up for Saturday", "Chase KES 87,400 owed for over 60 days", "Feature Tilapia whole at lunch",
+   and "Check Otieno's voids" as a warning with no figure, with KES 10,000 a month shown against them. **Never a price
+   rise** (owner, 2026-10-22: prices should be competitive).
 5. **"No surprises":** no percentage of your sales; M-Pesa charges are Safaricom's; hardware is quoted separately or
    bring your own; your data is yours to export.
 
-## 6. Packages (a draft for the owner to decide)
+## 6. Packages (the owner's model, 2026-10-22; prices still a draft)
 
 | Package | Price (draft) | Includes |
 |---|---|---|
-| **ZapTill** | KES 30,000 setup + KES 3,000 a month (KES 36,000 a year) | Tills, M-Pesa, kitchen, day close, staff and roles, dashboard, daily email, updates and support |
-| **ZapTill Online** *(Most chosen)* | Owner to price | Above + menu images, variants, offers, stock on the till (the existing online licence) |
-| **ZapTill Analytics** | about KES 10,000 a month | "Do this next", what sells when, menu engineering, money leaks, credit ageing |
+| **ZapTill for one branch** (pay once) | KES 30,000, one-off ("once paid it's a done deal") | A branch = 2 computers (branch server + till). Tills, M-Pesa, kitchen, day close, staff and roles, barcode scanning, sales on account, setup on site and training |
+| **ZapTill Cloud** (month to month) | KES 3,000 a month per branch; first month free with the setup (A569); 6 or 12 months ahead recommended | Web dashboard on any phone, daily email, close a branch from the web, partner and accountant logins, barcodes and labels from the web |
+| **ZapTill Online** | Ask us / price coming soon | Pictures, variants, offers, stock and labels at the till, other branches' stock from the till (the online licence) |
+| **ZapTill Analytics** | about KES 10,000 a month | "Do this next" in plain words, week at a glance, stock moves between branches, money-leak warnings, menu engineering, credit ageing |
 
-**Open for the owner:** is the price per branch or per business, and how many tills are included? Is there a reward for
-paying yearly (a month free, or a lower setup fee)? Should prices be published or shown as "from"?
+**Still open for the owner:** the price of an extra computer at a branch (not published); a reward for paying ahead (no
+figure published); the ZapTill Online price; the notice period beyond "month to month"; whether the cloud fee is per
+branch (the site says so) or per business.
 
 ## 7. Look and feel
 
@@ -116,16 +122,16 @@ paying yearly (a month free, or a lower setup fee)? Should prices be published o
 |---|---|---|
 | **1. Foundation** | Scaffold `apps/website`; the design system (colours, type, spacing, buttons, cards); header and footer; **Home** with full copy and placeholder screens; **Pricing** with the calculator; **Contact** with WhatsApp; FAQ | **Built on night 1 (2026-10-22), local only**, for the owner to review (WEBSITE-LOG). Placeholder screens; real ones in Phase 2 |
 | **2. Depth** | Features, How it works, the industry pages, the Analytics page; real screenshots from a demo business; device frames | **Built on night 1 (2026-10-22), local only** (WEBSITE-LOG "Night 1 — Phase 2"): real till screens, receipts from the print renderer, four industry pages, JSON-LD, Open Graph cards per page, `npm run check` |
-| **3. Conversion** | Demo request form and cloud route with spam protection; the admin list of demo requests; Telegram notice | Needs a migration |
+| **3. Conversion** | Demo request form and cloud route with spam protection; the admin list of demo requests; Telegram notice | Front-end form built on night 2, shown in `npm run dev` only (not in the build) until the route exists. The route needs a migration (server work, not started) |
 | **4. Proof** | Case studies (multi-branch, bar, outage café); testimonials; client logos (with permission); Google Business Profile | Owner collects (analysis §8) |
 | **5. Launch** | Domain switch (`zaptill.co.ke` → the site; the dashboard stays on `app.`); SEO checks; site analytics; privacy and terms reviewed | Owner deploys |
 
 ## 10. Needed from the owner
 
 - [ ] Choose the homepage headline (B recommended; A and C are in the analysis, §6)
-- [ ] Pricing decisions (§6)
+- [x] Pricing model (§6): per branch, desktop one-off, cloud monthly, one-month trial (2026-10-22). Still open: the extra-PC price, a pay-ahead reward, the Online price
 - [ ] A company email address
-- [ ] The city and area served, and support hours
+- [ ] The city and area served, and support hours for clients who are not priority clients (priority: 24 hours)
 - [ ] Permission from 2–3 clients for a quote and a number (the analysis §8 lists what to capture)
 - [ ] The eTIMS FAQ wording
-- [ ] Whether a UPS is part of the recommended hardware (it makes the outage story fully honest)
+- [x] A UPS is recommended hardware (2026-10-22): in the hardware FAQ and the power-cut answer

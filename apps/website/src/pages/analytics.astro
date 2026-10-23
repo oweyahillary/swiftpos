@@ -5,17 +5,24 @@ import Laptop from '../components/frames/Laptop.astro';
 import Shot from '../components/screens/Shot.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
 import { WA_MESSAGES, PRICES, kes } from '../lib/site';
-import { DEMO_CARDS, DEMO_FOUND, DEMO_DAYPARTS, DEMO_TOP3 } from '../lib/analyticsDemo';
+import { DEMO_CARDS, DEMO_FOUND, DEMO_DAYPARTS, DEMO_TOP3, DEMO_WEEK, DEMO_MOVES, DEMO_NO_COST, demoCard } from '../lib/analyticsDemo';
 import { softwareApplication } from '../lib/schema';
 
 const description =
-  'ZapTill Analytics turns your own sales into a ranked list of what to do next, each with a shilling estimate: prices to raise, dishes to push, what sells when, money leaks by cashier and who owes you.';
+  'ZapTill Analytics turns your own sales into a short list of what to do next, in plain words: what to order, what to have in for each day, stock to move between branches, credit to chase and cashiers worth a look. It never suggests raising your prices.';
 
-const toNum = (s: string) => Number(s.replace(/[^\d]/g, ''));
-const payback = DEMO_CARDS.map((c) => ({ title: c.title, kes: toNum(c.estimate), evidence: c.evidence }));
-const strong = payback.filter((p) => p.evidence === 3);
-const strongTotal = strong.reduce((a, p) => a + p.kes, 0);
 const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a try' } as const;
+// The payback table: every demo card, with its estimate where it has an honest one (a stock card says how many to have
+// in; a warning has no figure at all).
+const payback = DEMO_CARDS.map((c) => ({
+  title: c.title,
+  evidence: c.evidence,
+  value: c.estimate ? `≈ ${c.estimate}` : c.warning ? 'No figure' : c.plan ? `${c.plan.label} ${c.plan.strong}` : '-',
+  unit: c.estimate ? c.unit : c.warning ? 'a warning to look into' : c.plan?.rest ?? '',
+  plain: !c.estimate,
+}));
+const credit = demoCard(5);
+const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
 ---
 <Base
   title="Analytics: know what to change next, in shillings | ZapTill"
@@ -29,8 +36,9 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
       <div>
         <h1>Run your business properly, even when you're not there.</h1>
         <p class="an-hero__sub">
-          ZapTill Analytics reads your own sales and tells you what to change next, each step with an estimate in
-          shillings and the assumption behind it.
+          ZapTill Analytics reads your own sales and tells you what to do next, in plain words: what to order before
+          Friday, what to prepare each day, which branch needs stock from another, and who owes you. Your prices stay
+          competitive: it never tells you to charge more.
         </p>
         <p class="an-hero__price">An add-on, planned at about KES {kes(PRICES.analyticsMonthly)} a month.</p>
         <div class="actions">
@@ -40,7 +48,7 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
       <div class="an-hero__visual">
         <Laptop label="The Analytics page in the web dashboard, from a demo restaurant">
           <Shot src="/screens/analytics-demo.webp" eager width={1400} height={875}
-            alt="The Analytics page from a demo restaurant: a plain summary of the last 30 days and seven ranked 'Do this next' cards with shilling estimates." />
+            alt="The Analytics page from a demo restaurant: a plain summary of the last 30 days, a note that 6 items have no cost, and the first 'Do this next' cards: order about 70 more Tusker lager before Friday, cooking oil runs out in about 2 days, stock up for Friday." />
         </Laptop>
         <p class="an-hero__cap">The real Analytics page, on a made-up restaurant.</p>
       </div>
@@ -51,17 +59,23 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
   <section class="band" aria-labelledby="dtn-h">
     <div class="wrap">
       <div class="section-head">
-        <h2 id="dtn-h">"Do this next": a short list, ranked by what it's worth</h2>
+        <h2 id="dtn-h">"Do this next": a short list, in plain words</h2>
         <p>
-          Each card names one thing to do, why, what it could be worth in a month, and what has to be true for that. Some
-          rest on strong evidence, some are worth a try, and the card says which. A card appears only when your figures
-          support it.
+          Each card names one thing to do and why. A stock card says how many to have in, and by when. A money card gives
+          an estimate in shillings and what has to be true for it. A warning says what to look into, with no figure at
+          all. Some cards rest on strong evidence, some are worth a try, and each says which. A card appears only when
+          your figures support it.
         </p>
       </div>
       <p class="demo-tag">Example from a demo restaurant</p>
       <p class="an-found">
-        In this period's figures Analytics found about <b>{DEMO_FOUND.monthly} a month</b> you could gain or recover,
-        plus <b>{DEMO_FOUND.credit}</b> of old credit to collect. These are estimates; each card says what it assumes.
+        This period: <b>{DEMO_FOUND.things} things to act on</b>. Two busy days to stock for, two items running low
+        (about {DEMO_FOUND.atRisk} of sales at risk if the beer runs out), <b>{DEMO_FOUND.credit}</b> of old credit to
+        collect, a dish worth featuring, and one warning to look into. Each card says what it assumes.
+      </p>
+      <p class="an-nocost">
+        <b>{DEMO_NO_COST.items} items have no cost</b>: {DEMO_NO_COST.share} of your sales, so your margins are partly
+        blind. Analytics lists them, so you can set a cost and see every margin.
       </p>
       <ul class="an-cards">
         {DEMO_CARDS.map((c) => <li><DoThisNextCard bare {...c} /></li>)}
@@ -97,6 +111,19 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
         ))}
       </ul>
 
+      <div class="week">
+        <h3 id="week-h">Your week at a glance: what to prepare each day</h3>
+        <p class="week__sub">The top 3 on each day of the week, with what a typical one sells.</p>
+        <ol class="week__days" aria-labelledby="week-h">
+          {DEMO_WEEK.map((d) => (
+            <li>
+              <b>{d.day}</b>
+              <ul>{d.top.map(([name, qty]) => <li><span>{name}</span><b>{qty}</b></li>)}</ul>
+            </li>
+          ))}
+        </ol>
+      </div>
+
       <div class="top3">
         <div class="top3__copy">
           <h3>The top 3 at every hour</h3>
@@ -117,9 +144,10 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
         <h2 id="leaks-h">Money leaks, by name</h2>
         <p>
           Voids, refunds, discounts, wastage and short drawers: money that left without a sale. Analytics adds them up
-          for each cashier, and flags anyone whose void or discount rate is at least twice the typical cashier's.
+          for each cashier, and flags anyone whose void or discount rate is well above the typical cashier's.
         </p>
-        <p>A flag is a reason to ask, not proof. The card says what to ask about, and what it could be worth.</p>
+        <p>A flag is a reason to ask, not proof: a void before payment is not always a loss. So it comes up as a warning
+          to look into, with no shilling figure, never as money to "recover".</p>
       </div>
       <div class="leaks__visual">
         <figure class="screen-crop">
@@ -127,6 +155,39 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
             alt="Money leaks by cashier from a demo restaurant: Otieno and Achieng flagged, Otieno mostly voids. Where it goes: voids 63%, refunds 15%, discounts 13%, wastage 9%, of KES 147.9K." />
         </figure>
         <p class="caption">The Money leaks tab, from the demo restaurant.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Branches -->
+  <section class="band band--white" aria-labelledby="branches-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="branches-h">Stock between branches, in plain words</h2>
+        <p>
+          With more than one branch, Analytics compares what each one sells with what it holds. When an item sits at one
+          branch while another runs low, it says so in a sentence. No quantities and no shilling figures: how much to
+          move is your call, or your manager's.
+        </p>
+        <p>It also flags a branch whose sales fall well behind the others, and shows what sells when at that branch.</p>
+      </div>
+      <div class="split__visual">
+        <figure class="moves">
+          <figcaption class="demo-tag">Example from a demo restaurant with three branches</figcaption>
+          <div class="moves__card">
+            <p class="moves__title">Stock to move between branches</p>
+            <p class="moves__sub">Where stock sits at one branch and runs low at another: how much to move is your call</p>
+            <ul>
+              {DEMO_MOVES.map((m) => (
+                <li>
+                  <p class="moves__head"><b>{m.items}</b> &middot; {m.route}</p>
+                  <p>{m.text}</p>
+                  <span class="moves__link">Start a transfer &rarr;</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </figure>
       </div>
     </div>
   </section>
@@ -157,28 +218,28 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
       <div>
         <h2 id="pay-h">Does it pay for itself? Do the sum yourself.</h2>
         <p class="lede">
-          Analytics is planned at about KES {kes(PRICES.analyticsMonthly)} a month. Here are the demo restaurant's four
-          cards above, as estimates. They are not promises: your cards depend on your own sales, and some of the steps
-          will work better than others.
+          Analytics is planned at about KES {kes(PRICES.analyticsMonthly)} a month. Here are the demo restaurant's cards
+          above. Not every card has a shilling figure, on purpose: a stock card tells you how many to have in, and a
+          warning tells you what to look into. Where there is a figure, it is an estimate, not a promise.
         </p>
         <p>
-          The two with strong evidence add up to about KES {kes(strongTotal)} a month: about {Math.floor(strongTotal / PRICES.analyticsMonthly)} times
-          the price, if they hold.
+          The old credit alone, if it is paid, is about {Math.floor(creditKes / PRICES.analyticsMonthly)} months of
+          Analytics. A Friday without running out of the best-selling beer keeps about {demoCard(1).estimate} of sales.
         </p>
       </div>
       <table class="payback__table">
         <caption class="visually-hidden">The demo restaurant's estimates against the price of Analytics</caption>
-        <thead><tr><th scope="col">Card (demo restaurant)</th><th scope="col">Estimate a month</th></tr></thead>
+        <thead><tr><th scope="col">Card (demo restaurant)</th><th scope="col">What it says</th></tr></thead>
         <tbody>
           {payback.map((p) => (
             <tr>
               <td>{p.title}<small>{evidenceLabel[p.evidence]}</small></td>
-              <td>&asymp; KES {kes(p.kes)}</td>
+              <td class:list={{ plain: p.plain }}>{p.value}{p.unit && <small>{p.unit}</small>}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
-          <tr><th scope="row">Analytics</th><td>about KES {kes(PRICES.analyticsMonthly)}</td></tr>
+          <tr><th scope="row">Analytics</th><td>about KES {kes(PRICES.analyticsMonthly)}<small>a month</small></td></tr>
         </tfoot>
       </table>
     </div>
@@ -217,7 +278,32 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
   .an-hero__cap { font-size: var(--fs-sm); color: var(--night-muted); text-align: center; margin-top: var(--s-3); }
   @media (min-width: 960px) { .an-hero__grid { grid-template-columns: 1fr 1.2fr; gap: var(--s-8); } }
 
-  .an-found { max-width: 46rem; color: var(--ink-2); margin-bottom: var(--s-5); }
+  .an-found { max-width: 46rem; color: var(--ink-2); margin-bottom: var(--s-3); }
+  .an-nocost {
+    max-width: 46rem; margin-bottom: var(--s-5); padding: var(--s-3) var(--s-4); font-size: var(--fs-sm);
+    background: #fff8eb; border: 1px solid #f3d9a4; border-radius: var(--r-md); color: var(--ink-2);
+  }
+
+  .week { background: #111a1c; color: #e3ecec; border: 1px solid #24353a; border-radius: var(--r-md); padding: var(--s-4); margin-bottom: var(--s-7); }
+  .week h3 { font: 700 1rem/1.3 var(--font-text); letter-spacing: 0; color: #fff; margin: 0; }
+  .week__sub { font-size: 0.8rem; color: #8da2a2; margin: 0.1rem 0 var(--s-3); }
+  .week__days { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+  .week__days > li { background: #1a2629; border-radius: 8px; padding: var(--s-3); min-width: 0; }
+  .week__days > li > b { color: #fff; font-size: 0.92rem; }
+  .week__days ul { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.3rem; }
+  .week__days ul li { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.88rem; color: #cbd8d8; }
+  .week__days ul b { color: #fff; font-variant-numeric: tabular-nums; }
+
+  .moves { margin: 0; }
+  .moves__card { background: #111a1c; color: #e3ecec; border: 1px solid #24353a; border-radius: var(--r-md); padding: var(--s-4); box-shadow: var(--shadow-object); }
+  .moves__title { font-weight: 700; color: #fff; margin: 0; }
+  .moves__sub { font-size: 0.8rem; color: #8da2a2; margin: 0.1rem 0 var(--s-2); }
+  .moves ul { list-style: none; margin: 0; padding: 0; }
+  .moves ul li { padding: var(--s-3) 0 var(--s-2); border-top: 1px solid #24353a; }
+  .moves ul li p { margin: 0 0 0.3rem; font-size: 0.95rem; }
+  .moves .moves__head { font-size: 0.85rem; color: #9fb2b2; }
+  .moves__head b { color: #fff; }
+  .moves__link { color: #5eead4; font-size: 0.85rem; }
   .an-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-4); }
   @media (min-width: 760px) { .an-cards { grid-template-columns: repeat(2, 1fr); } }
 
@@ -249,7 +335,10 @@ const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a tr
   .payback__table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
   .payback__table th, .payback__table td { text-align: left; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); vertical-align: top; }
   .payback__table thead th { font-size: var(--fs-sm); color: var(--muted); font-weight: 600; }
-  .payback__table td:last-child, .payback__table th:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .payback__table td:last-child, .payback__table th:last-child { text-align: right; width: 42%; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .an-cards { align-items: stretch; }
+  @media (min-width: 1100px) { .an-cards { grid-template-columns: repeat(3, 1fr); } }
+  .payback__table td.plain { font-weight: 500; color: var(--ink-2); }
   .payback__table small { display: block; color: var(--muted); font-weight: 400; font-size: var(--fs-xs); }
   .payback__table tfoot th, .payback__table tfoot td { border-bottom: 0; background: var(--teal-wash); color: var(--teal-deep); }
   @media (min-width: 900px) { .payback { grid-template-columns: 1fr 1fr; gap: var(--s-8); } }

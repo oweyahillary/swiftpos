@@ -175,9 +175,10 @@ const RA = await bundle('src/renderer/lib/access.ts', 'access.mjs');
   const pos = read('src/renderer/pages/POSPage.tsx');
   ok('POS: a NEW sale (empty cart, no open bill) refused on every way in — tap, simple, configured, fuel',
     /const refuseNewSale = \(\): boolean => \{\s*if \(canSell \|\| cart\.length > 0 \|\| orderNumber\) return false;/.test(pos)
-    && ['const addSimple = (product: any) => {\n    if (refuseFrozen(product)) return;\n    if (refuseNewSale()) return;   // A519',
-      'const handleTap = (product: any) => {\n    if (refuseFrozen(product)) return;\n    if (refuseNewSale()) return;   // A519',
-      'if (refuseNewSale()) { setVariantProduct(null); return; }'].every((s) => pos.includes(s))
+    // A578: the menu-hours refusal (and A577's weighed-item line) may come before the freeze check.
+    && /const addSimple = \(product: any\) => \{\n(?:[^\n]*\n){0,2}?    if \(refuseFrozen\(product\)\) return;\n    if \(refuseNewSale\(\)\) return;   \/\/ A519/.test(pos)
+    && /const handleTap = \(product: any\) => \{\n(?:[^\n]*\n){0,2}?    if \(refuseFrozen\(product\)\) return;\n    if \(refuseNewSale\(\)\) return;   \/\/ A519/.test(pos)
+    && pos.includes('if (refuseNewSale()) { setVariantProduct(null); return; }')
     && /addFuelLine[\s\S]{0,140}refuseNewSale\(\)/.test(pos));
 }
 

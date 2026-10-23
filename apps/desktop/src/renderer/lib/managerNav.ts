@@ -126,6 +126,16 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
   return groups.filter((g) => g.tabs.length > 0);
 }
 
+/**
+ * A573: the catalogue's name in the sidebar and on its tab — "Menu" at a restaurant or café, "Products" at a shop
+ * (shared/businessTerms.ts `catalogue`). Only the words change; the keys (and so groupOf, openGroup) stay 'menu'.
+ */
+export function relabelCatalogue(nav: NavGroup[], label: string): NavGroup[] {
+  return nav.map((g) => (g.key !== 'menu' ? g : {
+    ...g, label, tabs: g.tabs.map((t) => (t.key === 'menu' ? { ...t, label } : t)),
+  }));
+}
+
 /** The group a page belongs to (its sidebar item), or null when no visible group holds it. */
 export function groupOf(nav: NavGroup[], tab: TabKey): NavGroup | null {
   const owner = HIDDEN_MEMBERS[tab];

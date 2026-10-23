@@ -18,7 +18,7 @@
  *   of the grid as big tabs (as the categories were before A537) and the panel lists only the chosen menu's categories
  *   (`menuBar` — its own tabs drop out). No menus: no bar, the panel alone as before.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ALL_CATEGORIES, ALL_MENUS, PANEL_PREFS_KEY, categoryGroups, menuBarEdges, menuBarLabel, menuTabs, parsePanelPrefs,
   panelPrefsText, panelStartsOpen, panelOpenAfterPick, productCounts, resolveMenu, type MenuTab, type PanelPrefs,
@@ -85,7 +85,10 @@ export function CategoryChip({ label, onClear }: { label: string | null; onClear
  * A537. Many menus: the row scrolls sideways (a swipe, the wheel, or the ‹ › arrows that show, with a fade, on the side
  * that hides more); the chosen tab is kept in view. Nothing when the business has no menus.
  */
-export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void }) {
+// A573: `label` is the business's word for the menus — "Menus", "Departments", "Groups" (src/shared/businessTerms.ts).
+/** A578: `hints` — a tab's small "until 11:00" (a menu with hours); `trailing` — the manager's "Show all" at the row's end
+ *  (shown even when every menu is asleep, so it can bring them back). */
+export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void; label?: string; hints?: Record<string, string>; trailing?: ReactNode }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   const measure = useCallback(() => {
@@ -103,15 +106,16 @@ export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: str
   useEffect(() => {   // the chosen menu stays in view (a remembered one far along the row)
     try { (rowRef.current?.querySelector('[aria-selected="true"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); } catch { /* fine */ }
   }, [shown]);
-  if (tabs.length === 0) return null;
+  if (tabs.length === 0 && !trailing) return null;
   const nudge = (dir: 1 | -1) => {
     const el = rowRef.current;
     if (el) el.scrollBy({ left: dir * Math.max(160, el.clientWidth * 0.6), behavior: 'smooth' });
   };
   const arrow = 'absolute inset-y-0 z-10 w-14 flex items-center text-2xl font-bold text-gray-100 from-gray-950 via-gray-950/90 to-transparent';
   return (
-    <div data-testid="menu-bar" className="relative flex-shrink-0 border-b border-gray-800">
-      <div ref={rowRef} role="tablist" aria-label="Menus" onScroll={measure}
+    <div data-testid="menu-bar" className="relative flex-shrink-0 border-b border-gray-800 flex items-center">
+      <div className="relative flex-1 min-w-0">
+      <div ref={rowRef} role="tablist" aria-label={label} onScroll={measure}
         className="flex gap-2 px-4 py-2.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((t) => {
           const on = t.id === shown;
@@ -120,18 +124,21 @@ export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: str
               className={`flex-shrink-0 min-h-[48px] min-w-[88px] px-5 rounded-xl text-base font-semibold whitespace-nowrap border transition-colors ${
                 on ? 'bg-action-500 border-action-500 text-gray-950' : 'bg-gray-800 border-gray-700 text-gray-200 hover:text-white hover:border-gray-600'}`}>
               {t.icon && <span aria-hidden className="mr-1.5">{t.icon}</span>}{menuBarLabel(t)}
+              {hints?.[t.id] && <span data-testid="menu-bar-hint" className={`ml-2 text-xs font-medium ${on ? 'text-gray-900/80' : 'text-gray-400'}`}>{hints[t.id]}</span>}
             </button>
           );
         })}
       </div>
       {edges.left && (
-        <button type="button" data-testid="menu-bar-left" aria-label="More menus to the left" onClick={() => nudge(-1)}
+        <button type="button" data-testid="menu-bar-left" aria-label={`More ${label.toLowerCase()} to the left`} onClick={() => nudge(-1)}
           className={`${arrow} left-0 justify-start pl-2 bg-gradient-to-r`}>‹</button>
       )}
       {edges.right && (
-        <button type="button" data-testid="menu-bar-right" aria-label="More menus to the right" onClick={() => nudge(1)}
+        <button type="button" data-testid="menu-bar-right" aria-label={`More ${label.toLowerCase()} to the right`} onClick={() => nudge(1)}
           className={`${arrow} right-0 justify-end pr-2 bg-gradient-to-l`}>›</button>
       )}
+      </div>
+      {trailing && <div className="flex-shrink-0 pr-3">{trailing}</div>}
     </div>
   );
 }
@@ -149,9 +156,13 @@ interface Props {
   overlay: boolean;
   /** A566: the menus are across the top of the grid (MenuBar) — the panel lists the chosen menu's categories, no tabs of its own. */
   menuBar?: boolean;
+  /** A573: the business's words — "Menus" / "All menus", "Departments" / "All departments", "Groups" / "All groups". */
+  menusLabel?: string;
+  allMenusLabel?: string;
 }
 
-export default function CategoryPanel({ panel, categories, menus, products, activeMenu, activeCategory, onMenu, onCategory, overlay, menuBar = false }: Props) {
+export default function CategoryPanel({ panel, categories, menus, products, activeMenu, activeCategory, onMenu, onCategory, overlay, menuBar = false,
+  menusLabel = 'Menus', allMenusLabel = 'All menus' }: Props) {
   const tabs = useMemo(() => menuTabs(menus, categories), [menus, categories]);
   const groups = useMemo(() => categoryGroups(categories, menus, activeMenu), [categories, menus, activeMenu]);
   const counts = useMemo(() => productCounts(products.filter((p: any) => p.status === 'active')), [products]);
@@ -178,12 +189,12 @@ export default function CategoryPanel({ panel, categories, menus, products, acti
       </div>
 
       {tabs.length > 0 && !menuBar && (
-        <div data-testid="menu-tabs" role="tablist" aria-label="Menus" className="flex gap-1.5 px-3 pb-2 overflow-x-auto flex-shrink-0">
+        <div data-testid="menu-tabs" role="tablist" aria-label={menusLabel} className="flex gap-1.5 px-3 pb-2 overflow-x-auto flex-shrink-0">
           {tabs.map((t) => (
             <button key={t.id} type="button" role="tab" aria-selected={t.id === shownMenu} onClick={() => onMenu(t.id)}
               className={`flex-shrink-0 min-h-[40px] px-3 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors ${
                 t.id === shownMenu ? 'bg-action-500 border-transparent text-gray-950' : 'bg-gray-800 border-gray-700 text-gray-300'}`}>
-              {t.icon && <span className="mr-1">{t.icon}</span>}{t.name}
+              {t.icon && <span className="mr-1">{t.icon}</span>}{t.id === ALL_MENUS ? allMenusLabel : t.name}
             </button>
           ))}
         </div>

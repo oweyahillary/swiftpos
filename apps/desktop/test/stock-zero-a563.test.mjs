@@ -160,10 +160,11 @@ console.log('\nThe sale screen keeps in step (main is the authority)');
 {
   const pos = fs.readFileSync(path.join(srcDir, 'renderer', 'pages', 'POSPage.tsx'), 'utf8');
   ok('the grid and search leave out an item hidden for stock', /const matchStock\s+= !hiddenOutOfStock\(stockView\.mode, stockView, p\.id\);/.test(pos)
-    && /matchDay && matchStock;/.test(pos));
+    && /matchDay && matchStock(?: && matchHours)?;/.test(pos));   // A578: + the menu hours
   ok('a sold-out tile is greyed with a badge', pos.includes('soldOut={showsSoldOut(stockView.mode, stockView, product.id)}') && pos.includes('Sold out'));
-  ok('a tap, a scan or + on the order is refused on the same rules', /const addSimple = \(product: any\) => \{\n\s+if \(refuseFrozen\(product\)\) return;\n\s+if \(refuseNewSale\(\)\) return;   \/\/ A519\n\s+if \(refuseOutOfStock\(product\)\) return;/.test(pos)
-    && /const handleTap = \(product: any\) => \{\n\s+if \(refuseFrozen\(product\)\) return;\n\s+if \(refuseNewSale\(\)\) return;   \/\/ A519\n\s+if \(refuseOutOfStock\(product\)\) return;/.test(pos)
+  // A578: the menu-hours refusal (and A577's weighed-item line) may come first.
+  ok('a tap, a scan or + on the order is refused on the same rules', /const addSimple = \(product: any\) => \{\n(?:[^\n]*\n){0,2}?\s+if \(refuseFrozen\(product\)\) return;\n\s+if \(refuseNewSale\(\)\) return;   \/\/ A519\n\s+if \(refuseOutOfStock\(product\)\) return;/.test(pos)
+    && /const handleTap = \(product: any\) => \{\n(?:[^\n]*\n){0,2}?\s+if \(refuseFrozen\(product\)\) return;\n\s+if \(refuseNewSale\(\)\) return;   \/\/ A519\n\s+if \(refuseOutOfStock\(product\)\) return;/.test(pos)
     && pos.includes('if (delta > 0 && refuseOutOfStock(item.product)) return;'));
   ok('the levels are read again after a sale, after a pull and every 20 s', pos.includes('loadStockView();   // A563') && pos.includes('setInterval(loadStockView, 20_000)'));
   const sale = fs.readFileSync(path.join(srcDir, 'main', 'ipc', 'sale.ts'), 'utf8');

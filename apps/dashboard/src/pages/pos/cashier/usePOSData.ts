@@ -11,6 +11,7 @@
 import { cleanOffer, type Offer } from '../../../lib/offers';   // A445
 import { parseNotePicks } from '../../../lib/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
+import { scaleSettingsOrDefault, type ScaleSettings } from '../../../lib/scaleBarcode';   // A577
 import { rulesFromWire } from '../../../lib/reversalRules';
 import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
@@ -70,6 +71,8 @@ export interface POSData {
   paymentMethodsEnabled: string[] | null;
   /** A445: the branch's offers, cleaned (shared/offers.ts). */
   offers: Offer[];
+  /** A577: how the business's weighing scales print their labels (the default until pos/init says). */
+  scaleSettings: ScaleSettings;
   orderMode:         'pay_first' | 'order_first';
   loading:           boolean;
   error:             string | null;
@@ -85,6 +88,7 @@ export function usePOSData(): POSData {
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [paymentMethodsEnabled, setPaymentMethodsEnabled] = useState<string[] | null>(null);   // A429
   const [offers, setOffers] = useState<Offer[]>([]);   // A445
+  const [scaleSettings, setScaleSettings] = useState<ScaleSettings>(() => scaleSettingsOrDefault(null));   // A577
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
   const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
@@ -131,6 +135,7 @@ export function usePOSData(): POSData {
       setComboItems(init.comboItems ?? {});
       setKitchenExclusions(init.kitchenExclusions ?? []);
       setNotePicks(parseNotePicks(init.noteQuickPicks ?? null));   // A367 (an older cloud sends none → the defaults)
+      setScaleSettings(scaleSettingsOrDefault((init as any).scaleBarcodes ?? null));   // A577 (an older cloud: the default)
       setPosFeatures(parsePosFeatures(init.posFeatures ?? null));   // 0.6.27 (an older cloud sends none → all off)
       setWebDayCutoff((init as any).businessDayCutoff);   // 0.6.34: History's "today" follows the business day
       setFreeDeliveryAllowed(rulesFromWire(init.reversalRules ?? null).freeDeliveryAllowed);   // 0.6.33 (none → not offered)
@@ -228,6 +233,7 @@ export function usePOSData(): POSData {
     brandStrip,   // A547
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
+    scaleSettings,   // A577
     loading, error,
     reload: () => setTick(t => t + 1),
   };

@@ -20,6 +20,17 @@
 //      between the read and the write included); two at once never duplicate (the unique index, simulated); this
 //      business only; GET/PUT /api/products/labels/settings — cleaned, PUT menu.edit only.
 //
+// A574 (owner, 2026-10-22, after testing: "label should contain barcodes"; then "i should also be able to set barcode
+// start sequence, number of digits i need etc") — the deliberate changes to the cases above (a label is never made
+// without bars, so the A571 cases that laid out an item with no barcode now give it one), and:
+//   B  no barcode toggle: cleanLabelSettings forces showBarcode true; neither settings screen offers the switch.
+//   N  a row without a barcode is never rendered bar-less, on all four paths — the browser page (HTML/SVG, roll), the
+//      sheet, TSPL / ZPL, ESC/POS; a code that cannot be encoded as EAN / UPC still prints as Code 128; EAN-8 drawn.
+//   M  barcode numbering (shared/barcode.ts): each format, length, prefix, start, check digit, the range used up.
+//   W  the web page generates the missing codes before printing (source), and prints the rest without menu.edit.
+//   C+ the cloud: GET/PUT /api/products/barcodes/settings (cleaned, PUT menu.edit only); generate follows the numbering
+//      (format, prefix, start, after the highest used); a range used up refuses before anything is written.
+//
 // MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted — listed in the A571 register entry):
 //   - gs1CheckDigit weighting from the left instead of the right             → E "check digits" fails
 //   - EAN_PARITY row 5 swapped                                               → E "EAN-13 decodes" fails
@@ -30,6 +41,16 @@
 //   - the generate route's update without the is('barcode', null) condition → C "never over a barcode" fails
 //   - the generate route not retrying on 23505                               → C "two at once" fails
 //   - the generate route without requirePermission('menu.edit')              → C "a cashier is refused" fails
+// A574 mutations (each made, seen to fail, reverted — listed in the A574 register entry):
+//   - cleanLabelSettings keeping a stored showBarcode: false                  → B "no barcode toggle" fails
+//   - layoutLabel without its NO_BARCODE throw (bars optional again)          → N "never bar-less" fails
+//   - labelSvg / tsplLabel / zplLabel without assertLabelBars                 → N "a hand-made layout without bars" fails
+//   - escposLabel without its NO_BARCODE throw                                → N "ESC/POS refuses" fails
+//   - nextNumberedCodes starting at `start` + 1 (top = start)                → M "start number" fails
+//   - numberedCode without the check digit                                    → M "each format" fails
+//   - the generate route without the range-full refusal                       → C+ "a range used up" fails
+//   - LabelsPage printing without generating first                            → W "generates before printing" fails
+//   - clashesWithScaleCodes never true for EAN-13                             → M "prefix warnings" fails
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -192,7 +213,7 @@ try {
     assert.ok(tiny.texts.some((t) => t.kind === 'name') && tiny.texts.some((t) => t.kind === 'price'), 'the name and the price stay');
     const noPrice = LB.layoutLabel(LB.cleanLabelSettings({ showPrice: false }), SAMPLE, BC.encodeBarcode('2000000000015'));
     assert.ok(!noPrice.texts.some((t) => t.kind === 'price'));
-    const unit = LB.layoutLabel(LB.cleanLabelSettings({ unitText: 'per kg' }), { name: 'Sukuma', price: 80 }, null);
+    const unit = LB.layoutLabel(LB.cleanLabelSettings({ unitText: 'per kg' }), { name: 'Sukuma', price: 80 }, BC.encodeBarcode('2000000000015'));   // A574: never without bars
     assert.equal(unit.texts.find((t) => t.kind === 'price').text, 'KES 80 per kg');
     assert.equal(LB.formatLabelPrice(1250.5), 'KES 1,250.50');
   });
@@ -232,7 +253,7 @@ try {
       'SIZE 50 mm, 25 mm\r\nGAP 2 mm, 0 mm\r\nDIRECTION 1\r\nREFERENCE 0,0\r\nCLS\r\n'
       + 'TEXT 192,20,"1",0,2,2,"Sugar 1kg"\r\nTEXT 140,72,"4",0,1,1,"KES 189.50"\r\nTEXT 180,250,"3",0,1,1,"AB-1234567"\r\n'
       + 'BARCODE 54,125,"128",118,0,0,4,4,"AB-1234567"\r\nPRINT 1,1\r\n');
-    const q = LB.tsplLabel(LB.layoutLabel(s4030, { name: 'Say "hi" …', price: null }, null), 0);
+    const q = LB.tsplLabel(LB.layoutLabel(s4030, { name: 'Say "hi" …', price: null }, BC.encodeBarcode('2000000000015')), 0);
     assert.ok(q.includes('"Say \\["]hi\\["] ..."') || q.includes('\\["]'), 'a quote escaped, … as dots');
   });
   await ok('ZPL (Zebra): golden programs (^BE EAN-13, ^BC with the B/C invocation codes, ^FH escapes)', () => {
@@ -244,7 +265,7 @@ try {
       '^XA\n^CI28\n^PW600\n^LL300\n^LH0,0\n^FO18,18^A0N,42^FB564,1,0,C,0^FH^FDSugar 1kg^FS\n'
       + '^FO18,65^A0N,55^FB564,1,0,C,0^FH^FDKES 189.50^FS\n^FO18,248^A0N,34^FB564,1,0,C,0^FH^FDAB-1234567^FS\n'
       + '^FO54,125^BY4^BCN,118,N,N,N,N^FH^FD>:AB-1>5234567^FS\n^PQ1\n^XZ\n');
-    const z = LB.zplLabel(LB.layoutLabel(s4030, { name: 'A^B~C_D', price: null }, null));
+    const z = LB.zplLabel(LB.layoutLabel(s4030, { name: 'A^B~C_D', price: null }, BC.encodeBarcode('2000000000015')));
     assert.ok(z.includes('^FDA_5EB_7EC_5FD^FS'), 'a ^ ~ _ in a name cannot start a command');
     assert.equal(LB.zplCode128Data([{ set: 'C', text: '12' }, { set: 'B', text: 'a>b' }]), '>;12>6a><b');
   });
@@ -266,16 +287,19 @@ try {
   console.log('\nH. the web\'s print page\n');
   await ok('roll: one page per label, @page the label\'s size, margin 0, an SVG each (sized in mm)', () => {
     const rows = [{ item: { name: 'Milk', price: 65 }, barcode: '2000000000015', copies: 2 }, { item: { name: 'Bread', price: 60 }, barcode: null, copies: 1 }];
-    const labels = LB.layoutLabels(rows, LB.cleanLabelSettings({ widthMm: 38, heightMm: 25 }), BC.encodeBarcode);
-    assert.equal(labels.length, 3);
+    // A574: Bread (no barcode) is left out — never a page without bars — and said why.
+    const left = [];
+    const labels = LB.layoutLabels(rows, LB.cleanLabelSettings({ widthMm: 38, heightMm: 25 }), BC.encodeBarcode, { onSkip: (r, why) => left.push([r.item.name, why]) });
+    assert.equal(labels.length, 2);
+    assert.deepEqual(left, [['Bread', 'it has no barcode yet']]);
     const html = LB.labelsHtml(labels, { mode: 'roll' });
     assert.ok(html.includes('@page{size:38mm 25mm;margin:0}'));
-    assert.equal(html.split('<svg').length - 1, 3);
-    assert.equal(html.split('class="zt-page"').length - 1, 3);
+    assert.equal(html.split('<svg').length - 1, 2);
+    assert.equal(html.split('class="zt-page"').length - 1, 2);
     assert.ok(html.includes('width="38mm" height="25mm"'));
     assert.ok(/<rect x="\d+" y="\d+" width="\d+" height="\d+"\/>/.test(html), 'bars drawn');
     assert.ok(html.includes('>2000000000015</text>'));
-    assert.ok(!LB.labelSvg(LB.layoutLabel(LB.DEFAULT_LABEL_SETTINGS, { name: '<script>x', price: 1 }, null)).includes('<script>'), 'names escaped');
+    assert.ok(!LB.labelSvg(LB.layoutLabel(LB.DEFAULT_LABEL_SETTINGS, { name: '<script>x', price: 1 }, BC.encodeBarcode('2000000000015'))).includes('<script>'), 'names escaped');
   });
   await ok('sheet: A4 pages, each label in its cell, "start at label N"', () => {
     const sheet = LB.SHEET_PRESETS['3x7'];
@@ -289,7 +313,7 @@ try {
   });
   await ok('the page and the Products page are wired (route, nav, generate, print)', () => {
     const page = read('apps/dashboard/src/pages/products/LabelsPage.tsx');
-    for (const pin of ['layoutLabels(rows, settings, encodeBarcode', 'labelsHtml(labels, { mode, sheet: settings.sheet, startAt', 'printHtml(',
+    for (const pin of ['layoutLabels(toRows(list), settings, encodeBarcode', 'labelsHtml(labels, { mode, sheet: settings.sheet, startAt', 'printHtml(',
       "'/api/products/labels/settings'", '/api/products/labels/restocked', 'reprint']) assert.ok(page.includes(pin), pin);
     assert.ok(read('apps/dashboard/src/App.tsx').includes('path="products/labels"'));
     assert.ok(read('apps/dashboard/src/components/DashboardLayout.tsx').includes("'/dashboard/products/labels'"));
@@ -297,6 +321,195 @@ try {
     assert.ok(prod.includes("'/api/products/barcodes/generate', { product_ids: [editing.id] }") && prod.includes('Generate barcodes') && prod.includes('barcode: form.barcode.trim() || null'));
     const gen = read('apps/dashboard/src/pages/products/GenerateBarcodes.tsx');
     assert.ok(gen.includes('dry_run: true'), 'a count before the confirm');
+  });
+
+  // ── A574 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+  console.log('\nB. A574: no barcode toggle\n');
+  await ok('no barcode toggle: a stored showBarcode false reads as true; neither settings screen offers the switch', () => {
+    assert.equal(LB.cleanLabelSettings({ showBarcode: false }).showBarcode, true);
+    assert.equal(LB.cleanLabelSettings('{"showBarcode":false}').showBarcode, true);
+    assert.equal(LB.DEFAULT_LABEL_SETTINGS.showBarcode, true);
+    for (const f of ['apps/dashboard/src/pages/products/LabelsPage.tsx', 'apps/desktop/src/renderer/components/LabelsTab.tsx']) {
+      const src = read(f);
+      assert.ok(!/\['showBarcode',/.test(src), `${f}: the Barcode switch is gone`);
+      assert.ok(/\['showDigits', 'Digits under the bars'\]/.test(src), `${f}: the digits under the bars stay a choice`);
+    }
+  });
+
+  console.log('\nN. A574: never a label without bars (all four paths)\n');
+  const NB = /No barcode: a label is never printed without one/;
+  const milk2 = LB.layoutLabel(LB.cleanLabelSettings({ widthMm: 40, heightMm: 30 }), { name: 'Milk', price: 65 }, BC.encodeBarcode('2000000000015'));
+  const noBars = { ...milk2, bars: null, barsBox: null };
+  await ok('layout: an item without a barcode has no layout (NO_BARCODE); layoutLabels leaves it out and says why', () => {
+    assert.throws(() => LB.layoutLabel(LB.DEFAULT_LABEL_SETTINGS, { name: 'Bread', price: 60 }, null), NB);
+    const why = [];
+    const out = LB.layoutLabels([
+      { item: { name: 'Bread', price: 60 }, barcode: null, copies: 2 },
+      { item: { name: 'Eggs', price: 15 }, barcode: '   ', copies: 1 },
+      { item: { name: 'Café', price: 300 }, barcode: 'Café', copies: 1 },
+      { item: { name: 'Milk', price: 65 }, barcode: '2000000000015', copies: 1 },
+    ], LB.DEFAULT_LABEL_SETTINGS, BC.encodeBarcode, { onSkip: (r, w) => why.push(`${r.item.name}: ${w}`) });
+    assert.equal(out.length, 1);
+    assert.ok(out.every((l) => l.bars && l.barsBox && l.bars.modules.length > 0));
+    assert.deepEqual(why.map((w) => w.split(':')[0]), ['Bread', 'Eggs', 'Café']);
+    assert.ok(/cannot be drawn/.test(why[2]));
+  });
+  await ok('the browser page (roll, HTML/SVG): every label has bars; a layout without bars is refused, not drawn', () => {
+    const html = LB.labelsHtml(LB.layoutLabels([{ item: { name: 'Milk', price: 65 }, barcode: '2000000000015', copies: 3 },
+      { item: { name: 'Bread', price: 60 }, barcode: null, copies: 4 }], LB.DEFAULT_LABEL_SETTINGS, BC.encodeBarcode), { mode: 'roll' });
+    assert.equal(html.split('<svg').length - 1, 3);
+    assert.equal(html.split('<g fill="#000" shape-rendering="crispEdges"><rect').length - 1, 3, 'each SVG has its bars');
+    assert.throws(() => LB.labelSvg(noBars), NB);
+    assert.throws(() => LB.labelsHtml([milk2, noBars], { mode: 'roll' }), NB);
+  });
+  await ok('the sticker sheet: a row without a barcode never reaches the sheet; a layout without bars is refused', () => {
+    const sheet = LB.SHEET_PRESETS['3x8'];
+    const size = { widthMm: sheet.labelWidthMm, heightMm: sheet.labelHeightMm };
+    const labels = LB.layoutLabels([{ item: { name: 'Bread', price: 60 }, barcode: null, copies: 5 },
+      { item: { name: 'Milk', price: 65 }, barcode: '2000000000015', copies: 2 }], LB.DEFAULT_LABEL_SETTINGS, BC.encodeBarcode, size);
+    const html = LB.labelsHtml(labels, { mode: 'sheet', sheet });
+    assert.equal(html.split('class="zt-cell"').length - 1, 2);
+    assert.equal(html.split('<g fill="#000"').length - 1, 2);
+    assert.throws(() => LB.labelsHtml([noBars], { mode: 'sheet', sheet }), NB);
+  });
+  await ok('TSPL / ZPL: a layout without bars is refused (no program without BARCODE / ^B)', () => {
+    assert.throws(() => LB.tsplLabel(noBars, 2), NB);
+    assert.throws(() => LB.zplLabel(noBars), NB);
+    assert.ok(LB.tsplLabel(milk2, 2).includes('BARCODE ') && LB.zplLabel(milk2).includes('^BEN'));
+  });
+  await ok('ESC/POS refuses an item without bars (no slip without a barcode)', () => {
+    assert.throws(() => LB.escposLabel(LB.DEFAULT_LABEL_SETTINGS, { name: 'Bread', price: 60 }, null, { paperWidthMm: 80, mode: 'gsk' }), NB);
+    assert.throws(() => LB.escposLabel(LB.DEFAULT_LABEL_SETTINGS, { name: 'Bread', price: 60 }, null, { paperWidthMm: 58, mode: 'raster' }), NB);
+    const off = LB.escposLabel(LB.cleanLabelSettings({ showBarcode: false }), { name: 'Milk', price: 65 }, BC.encodeBarcode('2000000000015'), { paperWidthMm: 80, mode: 'gsk' });
+    assert.ok(off.some((b, i) => b === 0x1d && off[i + 1] === 0x6b), 'GS k sent even when a stored setting said no barcode');
+  });
+  await ok('a stored code that is not EAN / UPC still prints, as Code 128 (kept from A571)', () => {
+    const l = LB.layoutLabels([{ item: { name: 'Soap', price: 99 }, barcode: '5901234123458', copies: 1 }], LB.DEFAULT_LABEL_SETTINGS, BC.encodeBarcode)[0];
+    assert.equal(l.bars.symbology, 'CODE128');
+  });
+  await ok('EAN-8: decodes back by the published tables; TSPL "EAN8", ZPL ^B8, ESC/POS GS k m 68', () => {
+    const e = BC.encodeEan8('9638507');
+    assert.deepEqual([e.symbology, e.data, e.modules.length], ['EAN8', '96385074', 67]);
+    const m = e.modules;
+    assert.equal(m.slice(0, 3) + m.slice(31, 36) + m.slice(64), '10101010101');
+    let digits = '';
+    for (let i = 0; i < 4; i++) digits += L_CODES.indexOf(m.slice(3 + i * 7, 10 + i * 7));
+    for (let i = 0; i < 4; i++) digits += R_CODES.indexOf(m.slice(36 + i * 7, 43 + i * 7));
+    assert.equal(digits, '96385074');
+    assert.equal(BC.symbologyFor('96385074'), 'EAN8');
+    assert.throws(() => BC.encodeEan8('96385075'), /check digit/);
+    const l = LB.layoutLabel(LB.DEFAULT_LABEL_SETTINGS, { name: 'Gum', price: 10 }, e);
+    assert.ok(LB.tsplLabel(l, 2).includes('"EAN8",') && LB.tsplLabel(l, 2).includes('"9638507"'));
+    assert.ok(LB.zplLabel(l).includes('^B8N,') && LB.zplLabel(l).includes('^FD9638507^FS'));
+    assert.deepEqual(LB.escposBarcodeCommand(e).slice(0, 4), [0x1d, 0x6b, 68, 7]);
+  });
+
+  console.log('\nM. A574: barcode numbering\n');
+  const NUM = (o) => BC.cleanBarcodeNumbering(o);
+  await ok('the default is A571\'s numbering exactly (EAN-13, prefix 20, from 1)', () => {
+    assert.deepEqual(BC.DEFAULT_BARCODE_NUMBERING, { format: 'EAN13', prefix: '20', start: 1, length: 13, checkDigit: true });
+    assert.deepEqual(NUM(null), BC.DEFAULT_BARCODE_NUMBERING);
+    for (const n of [1, 2, 1234567, 9_999_999_999]) assert.equal(BC.numberedCode(BC.DEFAULT_BARCODE_NUMBERING, n), BC.inStoreEan13(n));
+    const taken = ['2000000000015', '2000000000039', '2100001002508', '5901234123457'];
+    assert.deepEqual(BC.nextNumberedCodes(BC.DEFAULT_BARCODE_NUMBERING, taken, 2).codes, BC.nextInStoreCodes(taken, 2));
+  });
+  await ok('each format: its length, prefix, zero-padded number and check digit; each prints in its own symbology', () => {
+    const e13 = NUM({ format: 'EAN13', prefix: '29', start: 500 });
+    assert.equal(BC.numberedCode(e13, 500), '290000000500' + BC.gs1CheckDigit('290000000500'));
+    assert.equal(BC.symbologyFor(BC.numberedCode(e13, 500)), 'EAN13');
+    const e8 = NUM({ format: 'EAN8', prefix: '20', length: 99 });
+    assert.deepEqual([e8.length, e8.checkDigit, BC.sequenceDigits(e8)], [8, true, 5], 'EAN-8: 8 digits fixed');
+    const c8 = BC.numberedCode(e8, 1);
+    assert.equal(c8, '2000001' + BC.gs1CheckDigit('2000001'));
+    assert.ok(BC.isValidGtin(c8)); assert.equal(BC.encodeBarcode(c8).symbology, 'EAN8');
+    const up = NUM({ format: 'UPCA', prefix: '4', start: 7, checkDigit: false });
+    assert.deepEqual([up.length, up.checkDigit], [12, true], 'UPC-A: 12 digits, always a check digit');
+    const cu = BC.numberedCode(up, 7);
+    assert.equal(cu, '40000000007' + BC.gs1CheckDigit('40000000007'));
+    assert.equal(BC.encodeBarcode(cu).symbology, 'UPCA');
+    const c128 = NUM({ format: 'CODE128N', prefix: '9', length: 6, checkDigit: false });
+    assert.equal(BC.numberedCode(c128, 1), '900001');
+    assert.equal(BC.encodeBarcode('900001').symbology, 'CODE128');
+    const c128k = NUM({ format: 'CODE128N', prefix: '9', length: 6, checkDigit: true });
+    assert.equal(BC.numberedCode(c128k, 1), '90001' + BC.gs1CheckDigit('90001'));
+    assert.equal(BC.sequenceOf(c128k, '900015'.slice(0, 5) + ((BC.gs1CheckDigit('90001') + 1) % 10)), null, 'a wrong check digit is not ours');
+    assert.equal(BC.sequenceOf(c128k, BC.numberedCode(c128k, 42)), 42);
+  });
+  await ok('number of digits: Code 128 numeric 4–20 (clamped); the prefix digits only, leaving one sequence digit', () => {
+    assert.equal(NUM({ format: 'CODE128N', length: 2 }).length, 4);
+    assert.equal(NUM({ format: 'CODE128N', length: 50 }).length, 20);
+    assert.equal(NUM({ format: 'CODE128N', length: 20 }).length, 20);
+    assert.equal(NUM({ prefix: 'a1-b2' }).prefix, '12');
+    assert.equal(NUM({ prefix: '1234567890123' }).prefix, '12345678901', 'EAN-13: 11 prefix digits at most (1 number + 1 check)');
+    assert.equal(NUM({ prefix: '' }).prefix, '');
+    assert.equal(BC.describeNumbering(BC.DEFAULT_BARCODE_NUMBERING), '13 digits: prefix 20 (2) + item number (10) + check digit (1)');
+    const twenty = NUM({ format: 'CODE128N', length: 20, prefix: '' });
+    assert.equal(BC.maxSequence(twenty), Number.MAX_SAFE_INTEGER, 'a 20-digit range counts no further than a number can');
+    assert.equal(BC.numberedCode(twenty, 5), '00000000000000000005');
+  });
+  await ok('start number: the first code is the start; after it, the highest already used + 1 (codes below the start ignored)', () => {
+    const s = NUM({ format: 'CODE128N', prefix: '5', length: 6, start: 100 });
+    assert.deepEqual(BC.nextNumberedCodes(s, [], 2).codes, ['500100', '500101']);
+    assert.deepEqual(BC.nextNumberedCodes(s, ['500050'], 1).codes, ['500100'], 'below the start: ignored');
+    assert.deepEqual(BC.nextNumberedCodes(s, ['500150', '600999', 'X'], 1).codes, ['500151'], 'after the highest used');
+    assert.deepEqual(BC.nextNumberedCodes(s, ['500100'], 1).codes, ['500101']);
+    assert.equal(NUM({ format: 'CODE128N', prefix: '5', length: 4, start: 5000 }).start, 999, 'the start clamped to the range');
+    assert.equal(NUM({ start: -3 }).start, 1);
+  });
+  await ok('the range used up: no code past the top, remaining counted, a plain message', () => {
+    const s = NUM({ format: 'CODE128N', prefix: '99', length: 4, checkDigit: false, start: 97 });
+    assert.equal(BC.maxSequence(s), 99);
+    const r = BC.nextNumberedCodes(s, [], 5);
+    assert.deepEqual([r.codes, r.remaining, r.exhausted], [['9997', '9998', '9999'], 3, true]);
+    const full = BC.nextNumberedCodes(s, ['9999'], 1);
+    assert.deepEqual([full.codes, full.remaining, full.exhausted], [[], 0, true]);
+    assert.ok(/used up/.test(BC.rangeFullMessage(0, 1)) && /Only 3 new codes are left/.test(BC.rangeFullMessage(3, 5)));
+    const p = BC.numberingPreview(s, ['9999']);
+    assert.ok(p.exhausted && p.next.length === 0 && p.remaining === 0);
+    assert.ok(p.warnings.some((w) => /only 99 codes/.test(w)));
+  });
+  await ok('prefix warnings (never a refusal): GS1 in-store 20–29 for EAN, 2 / 4 for UPC, scales on 21–29', () => {
+    const w = (o) => BC.numberingWarnings(NUM(o)).join(' | ');
+    assert.equal(w({}), '');
+    assert.ok(/outside GS1's in-store range/.test(w({ prefix: '59' })));
+    assert.ok(/outside GS1's in-store range/.test(w({ format: 'EAN8', prefix: '60' })));
+    // A574 (owner, 2026-10-23, via A577's scale barcodes): 21–29 and UPC 2 are the scales' — any way the codes land there.
+    for (const o of [{ prefix: '23' }, { prefix: '2' }, { prefix: '291' }, { format: 'UPCA', prefix: '2' }, { format: 'UPCA', prefix: '27' },
+      { format: 'CODE128N', length: 13, checkDigit: true, prefix: '25' }, { format: 'CODE128N', length: 12, checkDigit: true, prefix: '2' }]) {
+      assert.ok(w(o).includes(BC.SCALE_CLASH_WARNING), JSON.stringify(o));
+    }
+    for (const o of [{}, { prefix: '20' }, { prefix: '2050' }, { format: 'EAN8', prefix: '25' }, { format: 'UPCA', prefix: '4' },
+      { format: 'CODE128N', length: 13, checkDigit: false, prefix: '25' }]) {
+      assert.ok(!w(o).includes(BC.SCALE_CLASH_WARNING), JSON.stringify(o));
+    }
+    assert.ok(/number systems \(2 or 4\)/.test(w({ format: 'UPCA', prefix: '0' })));
+    assert.equal(w({ format: 'UPCA', prefix: '4' }), '');
+    assert.ok(/print as EAN-13/.test(w({ format: 'CODE128N', length: 13, checkDigit: true })));
+    assert.equal(BC.numberedCode(NUM({ prefix: '59' }), 1).length, 13, 'warned, still made');
+  });
+
+  console.log('\nW. A574: the web page generates the missing codes before printing\n');
+  await ok('Print labels: asks, generates for exactly the items without one, refreshes the rows, then prints; without menu.edit names them and prints the rest', () => {
+    const page = read('apps/dashboard/src/pages/products/LabelsPage.tsx');
+    const fn = page.slice(page.indexOf('const print = async'), page.indexOf('return (', page.indexOf('const print = async')));
+    assert.ok(fn.length > 100, 'the print function is found');
+    const at = (s) => { const i = fn.indexOf(s); assert.ok(i >= 0, `print: ${s}`); return i; };
+    const ask = at("window.confirm(`${n} item${n === 1 ? ' has' : 's have'} no barcode yet — generate ${n === 1 ? 'it' : 'them'} and print?`)");
+    const gen = at("api.post<{ assigned: Array<{ id: string; barcode: string }>; kept: string[] }>('/api/products/barcodes/generate',");
+    at('{ product_ids: missing.map((p) => p.id) }');
+    const refresh = at("api.get<Product[]>('/api/products')");
+    const lay = at('layoutLabels(toRows(list), settings, encodeBarcode');
+    const out = at('printHtml(labelsHtml(labels');
+    assert.ok(ask < gen && gen < refresh && refresh < lay && lay < out, 'ask → generate → refresh → lay out → print');
+    const noRight = at('if (!canGenerate) {');
+    at('ask a manager to generate barcodes for: ${missing.map((p) => p.name).join');
+    at('list = list.filter((p) => !missing.includes(p));');
+    assert.ok(noRight < gen);
+    assert.ok(page.includes("const canGenerate = usePermissions().can('menu.edit');"));
+    assert.ok(page.includes('missing: picked.filter((p) => lacksBarcode(p.barcode))'));
+    assert.ok(page.includes("api.put<BarcodeNumbering>('/api/products/barcodes/settings', numbering)") && page.includes('numberingPreview(numbering, allCodes)'),
+      'the Barcode numbering section saves and previews');
+    assert.ok(!/prints without bars/.test(page), 'the old "the label prints without bars" note is gone');
   });
 
   console.log('\nS. scanning\n');
@@ -458,6 +671,52 @@ try {
       const row = mem.db.business_settings.find((r) => r.key === LB.LABEL_SETTINGS_KEY && r.business_id === B);
       assert.ok(row && row.value.widthMm === 38);
       assert.equal((await call('GET', '/api/products/labels/settings', T.cate)).body.heightMm, 25);
+    });
+    // ── A574: barcode numbering in the cloud ──
+    const NUMS = '/api/products/barcodes/settings';
+    await ok('A574 numbering settings: the default; saved cleaned (menu.edit); a cashier reads but cannot save', async () => {
+      reset();
+      const d = await call('GET', NUMS, T.cate);
+      assert.equal(d.status, 200); assert.deepEqual(d.body, BC.DEFAULT_BARCODE_NUMBERING);
+      assert.equal((await call('PUT', NUMS, T.cate, { prefix: '77' })).status, 403);
+      const put = await call('PUT', NUMS, T.max, { format: 'CODE128N', prefix: '7x7', length: 8, start: 5, checkDigit: false, junk: 1 });
+      assert.equal(put.status, 200, JSON.stringify(put.body));
+      assert.deepEqual(put.body, { format: 'CODE128N', prefix: '77', start: 5, length: 8, checkDigit: false });
+      assert.deepEqual(mem.db.business_settings.find((r) => r.key === BC.BARCODE_SETTINGS_KEY && r.business_id === B).value, put.body);
+      assert.deepEqual((await call('GET', NUMS, T.cate)).body, put.body);
+    });
+    await ok('A574 generate follows the numbering: format, prefix, the start, after the highest used; codes there kept', async () => {
+      reset();
+      await call('PUT', NUMS, T.max, { format: 'CODE128N', prefix: '77', length: 8, start: 5 });
+      const dry = await call('POST', GEN, T.max, { dry_run: true });
+      assert.deepEqual([dry.body.sample, dry.body.remaining], [['77000005', '77000006', '77000007'], 999995]);
+      const r = await call('POST', GEN, T.max, {});
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.deepEqual([code(P(2)), code(P(3)), code(P(6))].sort(), ['77000005', '77000006', '77000007']);
+      assert.equal(code(P(1)), '5901234123457'); assert.equal(code(P(4)), '2000000000015', 'existing codes never change');
+      mem.db.products.push({ id: P(40), business_id: B, name: 'Typed', status: 'active', barcode: '77000050' }, { id: P(41), business_id: B, name: 'New', status: 'active', barcode: null });
+      await call('POST', GEN, T.max, { product_ids: [P(41)] });
+      assert.equal(code(P(41)), '77000051', 'after the highest used');
+      await call('PUT', NUMS, T.owner, { format: 'EAN8', prefix: '20' });
+      mem.db.products.push({ id: P(42), business_id: B, name: 'Gum', status: 'active', barcode: null });
+      await call('POST', GEN, T.max, { product_ids: [P(42)] });
+      assert.ok(BC.isValidGtin(code(P(42))) && code(P(42)).length === 8 && code(P(42)).startsWith('20'), code(P(42)));
+    });
+    await ok('A574 a range used up: refused with a plain message before anything is written (dry run says so too)', async () => {
+      reset();
+      await call('PUT', NUMS, T.max, { format: 'CODE128N', prefix: '99', length: 4, start: 98 });
+      const dry = await call('POST', GEN, T.max, { dry_run: true });
+      assert.equal(dry.body.code, 'barcode_range_full'); assert.ok(/Only 2 new codes are left/.test(dry.body.error), dry.body.error);
+      const r = await call('POST', GEN, T.max, {});
+      assert.equal(r.status, 409, JSON.stringify(r.body));
+      assert.equal(r.body.code, 'barcode_range_full');
+      assert.ok(/Barcode numbering/.test(r.body.error));
+      assert.deepEqual([code(P(2)), code(P(3)), code(P(6))], [null, '', null], 'nothing written');
+      const two = await call('POST', GEN, T.max, { product_ids: [P(2), P(6)] });
+      assert.equal(two.status, 200, 'two codes left, two asked: fine');
+      assert.deepEqual([code(P(2)), code(P(6))].sort(), ['9998', '9999']);
+      const none = await call('POST', GEN, T.max, { product_ids: [P(3)] });
+      assert.equal(none.status, 409); assert.ok(/used up/.test(none.body.error));
     });
   } finally {
     console.warn = warn; console.error = errLog;

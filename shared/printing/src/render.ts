@@ -20,7 +20,7 @@
  * paper that came out then, not what today's menu would produce.
  */
 
-import type { PrintContext, OrderLine, OrderUnit, OrderType } from './types';
+import type { PrintContext, OrderLine, OrderUnit, OrderType, Cents } from './types';
 import { DocBuilder, type Document } from './document';
 import { splitTax, netOf, formatCents } from './money';
 import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, indentedWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns, sanitize,
@@ -118,6 +118,38 @@ function describeAttributes(unit: OrderUnit): string {
     .filter(a => a.count > 0)
     .map(a => (total === unit.portions ? `${a.count} ${a.option}` : `${a.count} x ${a.option}`))
     .join(', ');
+}
+
+// ── A577: lines sold by measure (weighed goods, litres) ─────────────────────────────────────────────────────────────
+
+/** A line whose quantity is a measure: it says so (measureUnit), or its quantity is not a whole number. */
+export function isMeasured(line: OrderLine): boolean {
+  return !!line.measureUnit || !Number.isInteger(line.quantity);
+}
+
+/** A quantity to at most 3 decimals, no trailing zeros: 0.452 → "0.452", 1.5 → "1.5". */
+function measureQty(q: number): string {
+  if (Number.isInteger(q)) return String(q);
+  return String(Math.round(q * 1000) / 1000);
+}
+
+/** The measure as read on paper: "0.452 kg", "452 g" (an item shown in grams; the quantity is kg), "20.5 L", "0.75". */
+export function measureText(line: OrderLine): string {
+  const unit = line.measureUnit;
+  if (unit === 'g') return `${Math.round(line.quantity * 1000)} g`;
+  if (unit === 'kg') return `${(Math.round(line.quantity * 1000) / 1000).toFixed(3)} kg`;
+  return unit ? `${measureQty(line.quantity)} ${unit}` : measureQty(line.quantity);
+}
+
+/** A price per unit without empty cents: 65000 → "650", 65050 → "650.50". */
+function perUnitPrice(cents: Cents): string {
+  return cents % 100 === 0 ? String(cents / 100) : formatCents(cents);
+}
+
+/** "0.452 kg @ 650/kg" — a gram-shown item is still priced per kg ("452 g @ 650/kg"); no unit: "0.75 @ 650". */
+export function measureRow(line: OrderLine): string {
+  const per = line.measureUnit === 'g' ? 'kg' : line.measureUnit;
+  return `${measureText(line)} @ ${perUnitPrice(line.unitPrice)}${per ? `/${per}` : ''}`;
 }
 
 function visibleUnits(line: OrderLine, ctx: PrintContext): OrderUnit[] {
@@ -253,7 +285,8 @@ function renderProduction(ctx: PrintContext): Document {
     // A551: an emphasized heading is 'tall' — GS ! 0x01, double HEIGHT only, its glyphs one column wide — so it has the
     // whole line. It used to be wrapped at half the line as if it were double width, which split "1   CHICKEN BURGER -
     // SPICY" (26 characters) over two rows on 80 mm and wasted the right half of every long dish name.
-    const qtyPrefix = `${line.quantity}   `;
+    // A577: a weighed line reads "0.750 kg   GOAT MEAT" — the cook weighs nothing, the ticket says how much.
+    const qtyPrefix = `${isMeasured(line) ? measureText(line) : line.quantity}   `;
     const headingWidth = cols;
     d.lines(
       hangingWrap(`${qtyPrefix}${name.toUpperCase()}`, headingWidth, qtyPrefix.length),
@@ -434,7 +467,9 @@ function renderReceipt(ctx: PrintContext): Document {
   let lastHadSubLines = false;
 
   order.lines.forEach((line, i) => {
-    totalQty += line.quantity;
+    // A577: a weighed line is one item (0.452 kg of beef is not 0.452 items); its weight prints under it.
+    const measured = isMeasured(line);
+    totalQty += measured ? 1 : line.quantity;
 
     // A blank line only where the previous item carried detail beneath it.
     // Between two bare lines it is wasted paper; after a block of options it is
@@ -447,10 +482,11 @@ function renderReceipt(ctx: PrintContext): Document {
     const baseNet = tax.lineNets[i] - netOf(deltas * line.quantity, business.vatRate, business.ctlRate);
 
     const { name, hidden, moved } = receiptHeading(line);   // A551/A556: "Chicken Burger - Spicy" on the item's own row
-    d.lines(itemRow(cols, name, String(line.quantity), formatCents(baseNet)));
+    d.lines(itemRow(cols, name, measured ? '1' : String(line.quantity), formatCents(baseNet)));
 
     const units = visibleUnits(line, ctx).filter(u => !hidden.has(u)).map(u => (moved.has(u) ? { ...u, attributes: [] } : u));
     const before = d.length;
+    if (measured) d.lines(subRow(cols, measureRow(line), undefined, 2));   // A577: "0.452 kg @ 650/kg"
 
     // Chosen units that cost nothing and carry no choice detail are collapsed
     // onto one wrapped line — four sauces should not be four rows of paper.

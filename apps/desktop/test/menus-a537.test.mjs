@@ -203,12 +203,12 @@ try {
   // (gridMenuScope) — apps/desktop/test/menus-top-a566.test.mjs pins the rest.
   ok('…the panel beside the grid (over it in a narrow window), and the menu narrows the grid (the shared helper)',
     /<CategoryPanel panel=\{catPanel\}[\s\S]{0,300}overlay=\{narrowWindow\} menuBar=\{menuBar\.length > 0\} \/>\s*<div ref=\{grid\.rootRef\} className="flex-1 overflow-y-auto p-4">/.test(pos)
-    && /const menuFilterScope = useMemo\(\(\) => menuScope\(categories, menus, activeMenu\)/.test(pos)
+    && /const menuFilterScope = useMemo\(\(\) => menuScope\(categoriesNow, menusNow, activeMenu\)/.test(pos)   // A578: the menus open now
     && /const matchMenu\s+= inMenuScope\(p, gridMenuScope\(menuFilterScope, search\)\);/.test(pos) && /&& matchCat && matchMenu && matchSearch/.test(pos)
     && /from '\.\.\/\.\.\/shared\/menuFilter'/.test(pos));
   ok('pos:init gives the sale screen the menus (on, in order; none before schema 73)',
-    /SELECT id, name, sort_order, color, icon FROM menus WHERE active = 1 ORDER BY sort_order, name/.test(ipcHandlersSource())
-    && /menus: mn, branchId/.test(pos));
+    /SELECT id, name, sort_order, color, icon, availability FROM menus WHERE active = 1 ORDER BY sort_order, name/.test(ipcHandlersSource())   // A578: + the hours
+    && /menus: mn, businessDayCutoff: bdc, branchId/.test(pos));
   const manage = src('renderer/pages/ManageTabs.tsx');
   const TC = await import(pathToFileURL(path.join(here, '..', 'src', 'shared', 'tillChanges.ts')).href);
   const good = TC.cleanChange({ id: '11111111-1111-4111-8111-111111111111', entity: 'category', op: 'update', entity_id: '22222222-2222-4222-8222-222222222222',

@@ -53,6 +53,9 @@ const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').t
 const PosOptionsTab       = lazy(() => import('./pages/settings/OwnerControls').then(m => ({ default: m.PosOptionsTab })));     // A491
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
 const AnalyticsPage           = lazy(() => import('./pages/analytics/AnalyticsPage'));   // A549
+const WatchListPage           = lazy(() => import('./pages/WatchListPage'));   // A576
+const LossAlertsTab           = lazy(() => import('./pages/settings/LossAlertsTab'));   // A576
+const ScaleLabelsTab          = lazy(() => import('./pages/settings/ScaleLabelsTab'));   // A577
 const ShiftReportsPage        = lazy(() => import('./pages/ShiftReportsPage'));
 const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
 const KDSPage                 = lazy(() => import('./pages/kds/KDSPage'));
@@ -148,6 +151,7 @@ export default function App() {
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
                       <Route path="analytics"                 element={<AnalyticsPage />} />
+                      <Route path="watch-list"                element={<WatchListPage />} />
                       <Route path="shift-reports"             element={<ShiftReportsPage />} />
                       <Route path="orders"                    element={<OrdersPage />} />
                       <Route path="open-drawers"              element={<OpenShiftsPage />} />
@@ -194,6 +198,8 @@ export default function App() {
                         <Route path="payments"     element={<PaymentMethodsPage />} />
                         <Route path="voids-refunds" element={<VoidRefundRulesTab />} />
                         <Route path="pos-options"  element={<PosOptionsTab />} />
+                        <Route path="loss-alerts"  element={<LossAlertsTab />} />
+                        <Route path="scale-labels" element={<ScaleLabelsTab />} />
                         <Route path="setup"        element={<VerticalSetupRoute />} />
                         <Route path="integrations" element={<IntegrationsRoute />} />
                       </Route>

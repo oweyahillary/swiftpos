@@ -20,6 +20,12 @@
  *
  * Layout is worked out in printer DOTS at the chosen dpi (8 dots/mm at 203 dpi, 12 at 300), so the bars land on whole
  * dots on a label printer, and the SVG / HTML page is the same picture scaled to millimetres.
+ *
+ * A574 — every label carries a barcode. Owner, 2026-10-22, after testing: "label should contain barcodes". The barcode
+ * can no longer be switched off (showBarcode is kept for stored settings but is always true), and no renderer draws a
+ * label without bars: layoutLabel throws NO_BARCODE for an item without one, layoutLabels leaves such a row out and
+ * says why (onSkip), and labelSvg / tsplLabel / zplLabel / escposLabel refuse a layout without bars. The screens
+ * generate the missing codes first (the web's Print labels page, the till's Labels tab).
  */
 
 // ── Settings ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -49,8 +55,9 @@ export interface LabelSettings {
   gapMm: number;
   showName: boolean;
   showPrice: boolean;
+  /** A574: always true — every label carries a barcode (kept so stored settings still read; cleanLabelSettings forces it). */
   showBarcode: boolean;
-  /** The human-readable digits under the bars. */
+  /** The human-readable digits under the bars (still a choice). */
   showDigits: boolean;
   showBusiness: boolean;
   /** Printed after the price, e.g. "per kg" (empty: nothing). */
@@ -119,7 +126,7 @@ export function cleanLabelSettings(raw: unknown): LabelSettings {
     gapMm: num(r.gapMm, 0, 20, d.gapMm),
     showName: bool(r.showName, d.showName),
     showPrice: bool(r.showPrice, d.showPrice),
-    showBarcode: bool(r.showBarcode, d.showBarcode),
+    showBarcode: true,   // A574: never off, whatever was stored
     showDigits: bool(r.showDigits, d.showDigits),
     showBusiness: bool(r.showBusiness, d.showBusiness),
     unitText: typeof r.unitText === 'string' ? r.unitText.replace(/[\x00-\x1f]/g, '').trim().slice(0, 20) : d.unitText,
@@ -178,7 +185,7 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /** The bars to draw (barcode.ts's EncodedBarcode — only what layout and the renderers read). */
 export interface LabelBars {
-  symbology: 'EAN13' | 'UPCA' | 'CODE128';
+  symbology: 'EAN13' | 'EAN8' | 'UPCA' | 'CODE128';
   data: string;
   text: string;
   modules: string;
@@ -208,9 +215,18 @@ export interface LabelLayout {
   widthDots: number;
   heightDots: number;
   texts: LabelText[];
-  bars: LabelBars | null;
-  barsBox: LabelBarsBox | null;
+  /** A574: never null — a label without bars is not made. */
+  bars: LabelBars;
+  barsBox: LabelBarsBox;
   warnings: string[];
+}
+
+/** A574: why an item gets no label — the screens generate its barcode first. */
+export const NO_BARCODE = 'No barcode: a label is never printed without one. Generate the barcode first.';
+
+/** A574: refuses a layout without bars (one built by hand, or read back from somewhere) — never a bar-less label. */
+export function assertLabelBars(l: Pick<LabelLayout, 'bars' | 'barsBox'>): void {
+  if (!l || !l.bars || !l.barsBox || !l.bars.modules) throw new Error(NO_BARCODE);
 }
 
 /** Dots per mm: 8 at 203 dpi, 12 at 300 dpi (what TSC, Xprinter and Zebra print with). */
@@ -265,6 +281,7 @@ export interface LayoutOptions {
  * quiet zones. Text shrinks first; then the business name goes; then the name keeps one line — each step a warning.
  */
 export function layoutLabel(settings: LabelSettings, item: LabelItem, bars: LabelBars | null, opts: LayoutOptions = {}): LabelLayout {
+  if (!bars) throw new Error(NO_BARCODE);   // A574: every label carries a barcode
   const widthMm = opts.widthMm ?? settings.widthMm;
   const heightMm = opts.heightMm ?? settings.heightMm;
   const dpmm = dotsPerMm(settings.dpi);
@@ -279,8 +296,7 @@ export function layoutLabel(settings: LabelSettings, item: LabelItem, bars: Labe
   const maxFont = Math.round(6 * dpmm);
   const warnings: string[] = [];
 
-  const wantBars = settings.showBarcode && !!bars;
-  if (settings.showBarcode && !bars) warnings.push('No barcode to print for this item');
+  // A574: the bars are always drawn (settings.showBarcode is always true).
   const priceText = settings.showPrice && item.price != null && Number.isFinite(item.price)
     ? formatLabelPrice(item.price, item.currency ?? 'KES') + (settings.unitText ? ` ${settings.unitText}` : '')
     : (settings.unitText && settings.showPrice ? settings.unitText : '');
@@ -291,7 +307,7 @@ export function layoutLabel(settings: LabelSettings, item: LabelItem, bars: Labe
   let barsBox: LabelBarsBox | null = null;
   let barsW = 0;
   let moduleDots = 0;
-  if (wantBars && bars) {
+  {
     const total = bars.modules.length + bars.quietLeft + bars.quietRight;
     const avail = W - 2 * Math.round(0.5 * dpmm);   // the quiet zones may use the label's padding
     moduleDots = Math.max(1, Math.min(Math.round(0.4 * dpmm), Math.floor(avail / total)));
@@ -299,7 +315,7 @@ export function layoutLabel(settings: LabelSettings, item: LabelItem, bars: Labe
     if (total * moduleDots > W) warnings.push('The barcode is wider than the label: use a wider label or a shorter code');
     else if (moduleDots / dpmm < 0.2) warnings.push('The bars are very thin on this label: test-scan one, or use a wider label');
   }
-  const minBars = wantBars ? Math.max(Math.round(innerH * 0.28), Math.round(4 * dpmm)) : 0;
+  const minBars = Math.max(Math.round(innerH * 0.28), Math.round(4 * dpmm));
   const maxBars = Math.round(Math.max(minBars, innerH * 0.55));
 
   type Row = { kind: LabelTextKind; text: string; h: number; bold: boolean };
@@ -318,11 +334,11 @@ export function layoutLabel(settings: LabelSettings, item: LabelItem, bars: Labe
       const fitted = fitH(priceText, h);
       rows.push({ kind: 'price', text: wrapText(priceText, Math.floor(innerW / (fitted * ratio)), 1)[0] ?? '', h: fitted, bold: true });
     }
-    if (wantBars && bars && settings.showDigits) {
+    if (settings.showDigits) {
       const h = Math.max(Math.round(minFont * 0.8), Math.min(Math.round(b * 0.8), Math.floor(barsW / Math.max(1, bars.text.length * ratio))));
       rows.push({ kind: 'digits', text: bars.text, h, bold: false });
     }
-    const textH = rows.reduce((s, r) => s + r.h, 0) + gap * Math.max(0, rows.length - 1 + (wantBars ? 1 : 0));
+    const textH = rows.reduce((s, r) => s + r.h, 0) + gap * Math.max(0, rows.length);
     return { rows, textH };
   };
 
@@ -341,22 +357,22 @@ export function layoutLabel(settings: LabelSettings, item: LabelItem, bars: Labe
   }
   warnings.push(...notes);
 
-  const barsH = wantBars ? Math.max(Math.round(2 * dpmm), Math.min(maxBars, innerH - chosen.textH)) : 0;
+  const barsH = Math.max(Math.round(2 * dpmm), Math.min(maxBars, innerH - chosen.textH));
   const total = chosen.textH + barsH;
   let y = pad + Math.max(0, Math.floor((innerH - total) / 2));
   const texts: LabelText[] = [];
   for (const r of chosen.rows) {
-    if (r.kind === 'digits' && barsBox === null && wantBars) {
+    if (r.kind === 'digits' && barsBox === null) {
       barsBox = { x: Math.round((W - barsW) / 2), y, h: barsH, moduleDots, widthDots: barsW };
       y += barsH + gap;
     }
     texts.push({ kind: r.kind, text: r.text, x: pad, y, w: innerW, h: r.h, bold: r.bold });
     y += r.h + gap;
   }
-  if (wantBars && barsBox === null) barsBox = { x: Math.round((W - barsW) / 2), y, h: barsH, moduleDots, widthDots: barsW };
+  const box: LabelBarsBox = barsBox ?? { x: Math.round((W - barsW) / 2), y, h: barsH, moduleDots, widthDots: barsW };
 
   return { widthMm, heightMm, dpi: settings.dpi, dotsPerMm: dpmm, widthDots: W, heightDots: H, texts,
-    bars: wantBars ? bars : null, barsBox, warnings };
+    bars, barsBox: box, warnings };
 }
 
 /** What to print: an item, its stored barcode, how many labels. */
@@ -364,14 +380,29 @@ export interface LabelRow { item: LabelItem; barcode: string | null; copies: num
 /** The most labels one print run makes (a mistyped quantity must not send 100 000 pages to a printer). */
 export const MAX_LABELS_PER_RUN = 2000;
 
-/** One layout per label (each row's copies), its bars drawn by `encode` (barcode.ts's encodeBarcode). */
+export interface LayoutLabelsOptions extends LayoutOptions {
+  /** A574: a row left out (no barcode, or one that cannot be drawn) and why — it is never printed without bars. */
+  onSkip?: (row: LabelRow, reason: string) => void;
+}
+
+/** A574: why a row's barcode cannot go on a label, or null when it can (`encode`: barcode.ts's encodeBarcode). */
+export function labelBarcodeProblem(code: string | null | undefined, encode: (code: string | null) => LabelBars | null): string | null {
+  const c = String(code ?? '').trim();
+  if (!c) return 'it has no barcode yet';
+  return encode(c) ? null : `its barcode "${c}" cannot be drawn (only letters, digits and plain punctuation can) - change it on the Products page`;
+}
+
+/** One layout per label (each row's copies), its bars drawn by `encode` (barcode.ts's encodeBarcode). A574: a row
+ *  without a barcode that can be drawn is left out (onSkip says which and why) — never a label without bars. */
 export function layoutLabels(rows: LabelRow[], settings: LabelSettings, encode: (code: string | null) => LabelBars | null,
-  opts: LayoutOptions = {}): LabelLayout[] {
+  opts: LayoutLabelsOptions = {}): LabelLayout[] {
   const out: LabelLayout[] = [];
   for (const r of rows) {
     const n = Math.max(0, Math.floor(Number(r.copies) || 0));
     if (n === 0) continue;
-    const l = layoutLabel(settings, r.item, encode(r.barcode), opts);
+    const bars = String(r.barcode ?? '').trim() ? encode(r.barcode) : null;
+    if (!bars) { opts.onSkip?.(r, labelBarcodeProblem(r.barcode, encode) ?? NO_BARCODE); continue; }
+    const l = layoutLabel(settings, r.item, bars, opts);
     for (let k = 0; k < n && out.length < MAX_LABELS_PER_RUN; k++) out.push(l);
   }
   return out;
@@ -393,10 +424,11 @@ export function barRuns(modules: string): Array<[number, number]> {
 
 /** One label as an SVG sized in millimetres (viewBox in the printer's dots, so the bars sit on its dot grid). */
 export function labelSvg(l: LabelLayout): string {
+  assertLabelBars(l);   // A574
   const parts: string[] = [];
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${l.widthMm}mm" height="${l.heightMm}mm" viewBox="0 0 ${l.widthDots} ${l.heightDots}" class="zt-label">`);
   parts.push(`<rect width="${l.widthDots}" height="${l.heightDots}" fill="#fff"/>`);
-  if (l.bars && l.barsBox) {
+  {
     const b = l.barsBox;
     const rects = barRuns(l.bars.modules).map(([s, n]) => `<rect x="${b.x + s * b.moduleDots}" y="${b.y}" width="${n * b.moduleDots}" height="${b.h}"/>`);
     parts.push(`<g fill="#000" shape-rendering="crispEdges">${rects.join('')}</g>`);
@@ -421,6 +453,7 @@ export interface LabelsHtmlOptions {
 
 /** A print-ready page: every label an SVG, `@page` the label's size (roll) or the sheet's paper (sheet). */
 export function labelsHtml(labels: LabelLayout[], o: LabelsHtmlOptions): string {
+  labels.forEach(assertLabelBars);   // A574: the whole page is refused before any of it is made
   const title = xml(o.title ?? 'Labels');
   const head = (css: string) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>`
     + `*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff}svg{display:block}${css}</style></head><body>`;
@@ -475,6 +508,7 @@ const tsplQuote = (s: string): string => asciiText(s).replace(/"/g, '\\["]');
 
 /** One label in TSPL (TSC, most Xprinter label models): SIZE / GAP / CLS / TEXT / BARCODE / PRINT, CRLF-ended. */
 export function tsplLabel(l: LabelLayout, gapMm: number, copies = 1): string {
+  assertLabelBars(l);   // A574
   const out: string[] = [
     `SIZE ${l.widthMm} mm, ${l.heightMm} mm`,
     `GAP ${gapMm} mm, 0 mm`,
@@ -491,9 +525,10 @@ export function tsplLabel(l: LabelLayout, gapMm: number, copies = 1): string {
     const y = t.y + Math.max(0, t.h - f.ch);
     out.push(`TEXT ${x},${y},"${f.id}",0,${f.mul},${f.mul},"${tsplQuote(text)}"`);
   }
-  if (l.bars && l.barsBox) {
+  {
     const b = l.barsBox, m = b.moduleDots;
     const [type, data] = l.bars.symbology === 'EAN13' ? ['EAN13', l.bars.data.slice(0, 12)]
+      : l.bars.symbology === 'EAN8' ? ['EAN8', l.bars.data.slice(0, 7)]
       : l.bars.symbology === 'UPCA' ? ['UPCA', l.bars.data.slice(0, 11)] : ['128', l.bars.data];
     out.push(`BARCODE ${b.x},${b.y},"${type}",${b.h},0,0,${m},${m},"${tsplQuote(data)}"`);
   }
@@ -512,13 +547,15 @@ export function zplCode128Data(segments: Array<{ set: 'B' | 'C'; text: string }>
 
 /** One label in ZPL II (Zebra): ^PW/^LL the label, ^A0 scalable text centred in a field block, ^BE/^BU/^BC the bars. */
 export function zplLabel(l: LabelLayout, copies = 1): string {
+  assertLabelBars(l);   // A574
   const out: string[] = ['^XA', '^CI28', `^PW${l.widthDots}`, `^LL${l.heightDots}`, '^LH0,0'];
   for (const t of l.texts) {
     out.push(`^FO${t.x},${t.y}^A0N,${t.h}^FB${t.w},1,0,C,0^FH^FD${zplField(t.text)}^FS`);
   }
-  if (l.bars && l.barsBox) {
+  {
     const b = l.barsBox;
     const sym = l.bars.symbology === 'EAN13' ? `^BEN,${b.h},N,N^FD${l.bars.data.slice(0, 12)}`
+      : l.bars.symbology === 'EAN8' ? `^B8N,${b.h},N,N^FD${l.bars.data.slice(0, 7)}`
       : l.bars.symbology === 'UPCA' ? `^BUN,${b.h},N,N,N^FD${l.bars.data.slice(0, 11)}`
       : `^BCN,${b.h},N,N,N,N^FH^FD${zplField(zplCode128Data(l.bars.segments ?? [{ set: 'B', text: l.bars.data }]))}`;
     out.push(`^FO${b.x},${b.y}^BY${b.moduleDots}${sym}^FS`);
@@ -555,9 +592,11 @@ export interface EscposLabelOptions {
 /** The receipt printer's printable dots: 384 on 58 mm paper, 576 on 80 mm. */
 export const escposDots = (paperWidthMm: 58 | 80): number => (paperWidthMm === 58 ? 384 : 576);
 
-/** GS k data for the bars: EAN-13 12 digits (m 67), UPC-A 11 (m 65), CODE128 with its {B / {C subset codes (m 73). */
+/** GS k data for the bars: EAN-13 12 digits (m 67), EAN-8 7 (m 68), UPC-A 11 (m 65), CODE128 with its {B / {C subset
+ *  codes (m 73). */
 export function escposBarcodeCommand(bars: LabelBars): number[] {
   if (bars.symbology === 'EAN13') { const d = textBytes(bars.data.slice(0, 12)); return [0x1d, 0x6b, 67, d.length, ...d]; }
+  if (bars.symbology === 'EAN8') { const d = textBytes(bars.data.slice(0, 7)); return [0x1d, 0x6b, 68, d.length, ...d]; }
   if (bars.symbology === 'UPCA') { const d = textBytes(bars.data.slice(0, 11)); return [0x1d, 0x6b, 65, d.length, ...d]; }
   const data: number[] = [];
   for (const s of bars.segments ?? [{ set: 'B' as const, text: bars.data }]) {
@@ -585,8 +624,10 @@ export function escposBarsRaster(bars: LabelBars, paperWidthMm: 58 | 80, heightD
   return out;
 }
 
-/** A label on the receipt roll: business, name, price, the bars and their digits, then a cut. One per copy. */
+/** A label on the receipt roll: business, name, price, the bars and their digits, then a cut. One per copy.
+ *  A574: no bars, no label — it throws NO_BARCODE rather than print a slip without a barcode. */
 export function escposLabel(settings: LabelSettings, item: LabelItem, bars: LabelBars | null, o: EscposLabelOptions): number[] {
+  if (!bars || !bars.modules) throw new Error(NO_BARCODE);
   const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
   const out: number[] = [ESC, 0x40];   // ESC @ — initialise
   const line = (s: string) => { out.push(...textBytes(asciiText(s)), LF); };
@@ -600,7 +641,7 @@ export function escposLabel(settings: LabelSettings, item: LabelItem, bars: Labe
       out.push(GS, 0x21, 0x11); line(formatLabelPrice(item.price, item.currency ?? 'KES')); out.push(GS, 0x21, 0x00);   // double size
       if (settings.unitText) line(settings.unitText);
     } else if (settings.showPrice && settings.unitText) line(settings.unitText);
-    if (settings.showBarcode && bars) {
+    {
       if (o.mode === 'gsk') {
         const total = bars.modules.length + bars.quietLeft + bars.quietRight;
         const w = Math.max(2, Math.min(6, Math.floor(escposDots(o.paperWidthMm) / total)));

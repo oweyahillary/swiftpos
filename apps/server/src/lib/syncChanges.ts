@@ -41,6 +41,7 @@ import { worksAtBranch } from './branchAccess';
 import { effectiveKeysForRow, clientPermissionMap } from './effectivePermissions';
 import { promotionAsOfferRow, type PromotionRow } from './promotionOffers';
 import { frozenAtBranch, openTake } from './stockTakeAccess';
+import { readAvailability } from './menuHours';   // A578
 import { chunkPaged } from './pgQuery';
 
 export const CHANGES_PAGE = 500;
@@ -248,12 +249,14 @@ async function rowsFor(c: ChangesCaller, branch: string | null, entries: RawEntr
   // A537: menus — the row as /init sends it (on, not deleted), else a delete (switched off, deleted, or not this business's)
   const menuEntries = by('menus');
   if (menuEntries.length) {
-    const rows = await inChunks<any>(menuEntries.map((e) => e.row_id), (chunk) => supabase.from('menus').select('id, name, sort_order, active, color, icon, deleted_at').eq('business_id', biz).in('id', chunk));
+    // A578: select('*') carries the menu's hours (availability, migration 165) — and works before 165 (no column, none sent).
+    const rows = await inChunks<any>(menuEntries.map((e) => e.row_id), (chunk) => supabase.from('menus').select('*').eq('business_id', biz).in('id', chunk));
     const byId = new Map(rows.map((r) => [String(r.id), r]));
     for (const e of menuEntries) {
       const r = byId.get(e.row_id);
       if (r && r.active === true && !r.deleted_at) {
-        out.push(entry(e, 'menus', e.row_id, 'upsert', { id: r.id, name: r.name, sort_order: r.sort_order, active: true, color: r.color ?? null, icon: r.icon ?? null }));
+        out.push(entry(e, 'menus', e.row_id, 'upsert', { id: r.id, name: r.name, sort_order: r.sort_order, active: true, color: r.color ?? null, icon: r.icon ?? null,
+          availability: readAvailability(r.availability) }));
       } else out.push(entry(e, 'menus', e.row_id, 'delete'));
     }
   }

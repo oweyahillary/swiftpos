@@ -106,10 +106,10 @@ ok(`Pay, open / close shift, start selling, void / refund, kitchen void and conf
 // ── speed (measured; see the header) ──────────────────────────────────────────────────────────────────────────────────
 ok('speed: the grid\'s list is memoised on what it depends on (catalogue, category, search, petrol, the day), not rebuilt each render',
   /const filtered = useMemo\(\(\) => products\.filter\(p => \{/.test(pos)
-  && pos.includes('}), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView]);')   // A537: + the menu; A563: + the stock view (set only when it changed)
+  && pos.includes('}), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);')   // A537: + the menu; A563: + the stock view (set only when it changed); A578: + the menu hours (a new view only when the clock crosses a change)
   && pos.includes('const gridDay = offerClock.toDateString();'));
 ok('speed: each product\'s count on the order is one Map built per cart change — no per-tile scan of the cart',
-  /const cartCounts = useMemo\(\(\) => \{\s*const m = new Map<string, number>\(\);\s*for \(const i of cart\) m\.set\(i\.product\.id, \(m\.get\(i\.product\.id\) \?\? 0\) \+ i\.quantity\);\s*return m;\s*\}, \[cart\]\);/.test(pos)
+  /const cartCounts = useMemo\(\(\) => \{\s*const m = new Map<string, number>\(\);\s*for \(const i of cart\) m\.set\(i\.product\.id, \(m\.get\(i\.product\.id\) \?\? 0\) \+ \(i\.measureUnit \? 1 : i\.quantity\)\);[^\n]*\s*return m;\s*\}, \[cart\]\);/.test(pos)
   && !/cart\.some\(i => i\.product\.id === product\.id\)/.test(pos) && !/cart\.filter\(i => i\.product\.id === product\.id\)/.test(pos)
   && pos.includes('cartCount={cartCounts.get(product.id) ?? 0}'));
 ok('speed: tiles are memoised with one stable tap handler (the current handleTap through a ref), so a tap redraws one tile',

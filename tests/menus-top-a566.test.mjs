@@ -83,12 +83,13 @@ try {
     ['MinimartPOS', 'apps/dashboard/src/pages/pos/MinimartPOS.tsx', 'catalogueSearch', 'setCatalogueSearch']]) {
     const s = read(f);
     ok(`${n}: the screens wire the bar under the search, pickMenu (category and search start again), the panel told`,
-      /<CategoryChip label=\{catChip\} onClear=\{clearCatChip\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} \/>/.test(s)
+      /<CategoryChip label=\{catChip\} onClear=\{clearCatChip\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} label=\{(?:words|WORDS)\.menus\}(?: hints=\{[^}]+\} trailing=\{[^}]+\})? \/>/.test(s)   // A573: the business's word; A578: the hours' hints and Show all
       && s.includes(`const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); ${setter}(''); };`)
-      && s.includes('const menuBar = useMemo(() => menuBarTabs(menus, categories), [menus, categories]);')
+      // A578: CashierScreen gives the bar the menus open now (menusNow / categoriesNow — useMenuHours)
+      && /const menuBar = useMemo\(\(\) => menuBarTabs\((menus|menusNow), (categories|categoriesNow)\), \[\1, \2\]\);/.test(s)
       && /menuBar=\{menuBar\.length > 0\} \/>/.test(s)
       && s.includes(`inMenuScope(p, gridMenuScope(menuFilterScope, ${searchVar}))`)
-      && s.includes('const catChip = chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} menu` : null);'));
+      && /const catChip = chosenCategoryName \?\? \(chosenMenuName && menuBar\.length === 0 \? `\$\{chosenMenuName\} \$\{(?:words|WORDS)\.menu\.toLowerCase\(\)\}` : null\);/.test(s));   // A573
   }
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   ok('CashierScreen keeps A563 (the hidden filter and the sold-out card)',

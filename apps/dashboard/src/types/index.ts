@@ -35,6 +35,8 @@ export interface Menu {
   active: boolean;
   color?: string | null;
   icon?: string | null;
+  /** A578: the menu's hours (days of the week and time windows, lib/menuHours.ts); null / absent = always. */
+  availability?: { days: number[] | null; windows: Array<{ start: string; end: string }> } | null;
   /** GET /api/menus only: how many categories it holds. */
   category_count?: number;
 }

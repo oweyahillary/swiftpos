@@ -94,7 +94,7 @@ ok('quantity − / + press', /<button className="press" style=\{s\.qtyBtn\} onCl
   && /<button className="press" style=\{s\.qtyBtn\} onClick=\{\(\) => updateQty\(index, 1\)\}>/.test(pos));
 ok('minimart: the tile presses, its badge bumps, a new line is tinted, the steppers press',
   /key=\{product\.id\}\s*className="press"/.test(mini) && /<span key=\{inCart\.quantity\} data-testid="cart-badge" className="animate-bump"/.test(mini)
-  && /<div key=\{item\.product\.id\} className="animate-line-in" style=\{s\.cartRow\}>/.test(mini) && (mini.match(/className="press"\s*style=\{s\.qtyBtn\}/g) || []).length === 2);
+  && /<div key=\{(?:item\.product\.id|weighed \? \x60\$\{item\.product\.id\}:\$\{idx\}\x60 : item\.product\.id)\} className="animate-line-in" style=\{s\.cartRow\}>/.test(mini) && (mini.match(/className="press"\s*style=\{s\.qtyBtn\}/g) || []).length === 2);
 
 // ── waiting is shown ──
 ok('the spinner is a CSS class in the current text colour', /\.spin-dot \{[^}]*border: 2px solid currentColor;[^}]*animation: spin-dot/.test(css));

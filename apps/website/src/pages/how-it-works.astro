@@ -12,9 +12,9 @@ import StockScreen from '../components/screens/StockScreen.astro';
 import PhoneSummary from '../components/screens/PhoneSummary.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
 import { WA_MESSAGES } from '../lib/site';
-import { DEMO_CARDS } from '../lib/analyticsDemo';
+import { demoCard } from '../lib/analyticsDemo';
 
-const voids = DEMO_CARDS.find((c) => c.n === 3)!;
+const voids = demoCard(7);
 ---
 <Base
   title="How it works: a day with ZapTill | ZapTill"
@@ -92,7 +92,8 @@ const voids = DEMO_CARDS.find((c) => c.n === 3)!;
           <h2 id="kitchen-h">The kitchen reads "Chips Masala - Spicy" and gets cooking.</h2>
           <p>
             The order goes straight to the kitchen printer, or to a kitchen screen where each order is a card with a
-            timer. The variant sits on the dish's own line, so nobody reads the same dish twice.
+            timer. The variant sits on the dish's own line, so nobody reads the same dish twice, and an extra or the
+            cashier's note ("+ Extra Cheese", "** No onions") prints right under the dish it belongs to.
           </p>
           <p>Drinks skip the kitchen and go to dispatch, where the ticket lists everything for the tray.</p>
         </div>
@@ -172,10 +173,11 @@ const voids = DEMO_CARDS.find((c) => c.n === 3)!;
       <div class="wrap split">
         <div class="split__copy">
           <p class="moment__time"><time>07:30</time> Next morning</p>
-          <h2 id="morning-h">Analytics says what to do next, and what it is worth.</h2>
+          <h2 id="morning-h">Analytics says what to do next, in plain words.</h2>
           <p>
-            With ZapTill Analytics, the month's sales become a short, ranked list of things to do, each with an estimate
-            in shillings and the assumption behind it. This one comes from the voids at the counter.
+            With ZapTill Analytics, the month's sales become a short, ranked list of things to do: what to order before
+            Friday, what to have in for Saturday, who owes you. This one is a warning from the voids at the counter. It
+            carries no shilling figure, because a void before payment is not always a loss: it is something to look into.
           </p>
           <p><a href="/analytics/">How Analytics works</a></p>
         </div>

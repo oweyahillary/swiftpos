@@ -127,6 +127,7 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
     return {
       name: item.product?.name ?? 'Item',
       quantity: item.quantity,
+      ...(item.measureUnit ? { measureUnit: item.measureUnit } : {}),   // A577: "0.750 kg   GOAT MEAT" on the kitchen ticket
       unitPrice: toCents(item.unitPrice),
       lineTotal: toCents(item.lineTotal),
       stationIds: stripKitchenIfExcluded(item.product?.name ?? 'Item', lineStationIds, ids, exc),

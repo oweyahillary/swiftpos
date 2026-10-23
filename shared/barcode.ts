@@ -9,6 +9,7 @@
  *
  * ── SYMBOLOGIES ──────────────────────────────────────────────────────────────────────────────────────────────────────
  *   EAN-13   13 digits, the last a GS1 mod-10 check digit (12 given: the check digit is added).
+ *   EAN-8    8 digits, the same check digit (7 given: added) — A574, for short in-store numbers.
  *   UPC-A    12 digits — an EAN-13 whose first digit is 0, shown as 12 (11 given: the check digit is added).
  *   Code 128 anything else in printable ASCII (letters, odd lengths, a manufacturer's internal code); subsets B and C
  *            chosen automatically (C packs digit pairs, so a long number stays short).
@@ -21,22 +22,30 @@
  * e.g. 2000000000015, 2000000000022 … unique per business (the database's unique index on (business_id, barcode)).
  * Prefixes 21–29 are left alone: weighing scales print price- or weight-embedded codes there (2 + PLU + price/weight +
  * check), and a generated item code must never be read as one.
+ *
+ * ── BARCODE NUMBERING (A574) ────────────────────────────────────────────────────────────────────────────────────────
+ * Owner, 2026-10-22: "i should also be able to set barcode start sequence, number of digits i need etc". Each business
+ * chooses (business_settings 'barcode_settings', cleanBarcodeNumbering): the format (EAN-13 — the default, the codes
+ * above —, EAN-8, UPC-A, or Code 128 numeric of a chosen length with or without a check digit), the prefix, and the
+ * first sequence number. A code is  prefix + the sequence number (zero-padded) + the check digit;  the next one is the
+ * highest sequence already used with this prefix and length (or start - 1, if higher) + 1. Existing codes are never
+ * changed. A prefix outside GS1's in-store ranges is warned about, never refused (numberingWarnings).
  */
 
-export type Symbology = 'EAN13' | 'UPCA' | 'CODE128';
+export type Symbology = 'EAN13' | 'EAN8' | 'UPCA' | 'CODE128';
 
 /** A Code 128 run in one subset: B carries the characters themselves, C the digit pairs. */
 export interface Code128Segment { set: 'B' | 'C'; text: string }
 
 export interface EncodedBarcode {
   symbology: Symbology;
-  /** What the printer is given: EAN-13 13 digits, UPC-A 12, Code 128 the text. */
+  /** What the printer is given: EAN-13 13 digits, EAN-8 8, UPC-A 12, Code 128 the text. */
   data: string;
   /** The human-readable line under the bars. */
   text: string;
   /** One character per module, left to right: '1' a bar, '0' a space. Quiet zones NOT included. */
   modules: string;
-  /** The light margin each side needs, in modules (EAN-13 11 left and 7 right, UPC-A 9 and 9, Code 128 10 and 10). */
+  /** The light margin each side needs, in modules (EAN-13 11 left and 7 right, EAN-8 7 and 7, UPC-A 9 and 9, Code 128 10 and 10). */
   quietLeft: number;
   quietRight: number;
   /** Code 128 only: the symbol values (start, data, check, stop) and the subset runs (ESC/POS and ZPL need them). */
@@ -86,6 +95,20 @@ export function encodeEan13(code: string): EncodedBarcode {
   for (let i = 7; i <= 12; i++) m += EAN_R[Number(full[i])];
   m += '101';
   return { symbology: 'EAN13', data: full, text: full, modules: m, quietLeft: 11, quietRight: 7 };
+}
+
+/** EAN-8 from 7 digits (the check digit is added) or 8 (the check digit must be right): 4 L-codes, the centre, 4 R-codes. */
+export function encodeEan8(code: string): EncodedBarcode {
+  const c = String(code ?? '').trim();
+  if (!/^\d{7,8}$/.test(c)) throw new Error('EAN-8 needs 7 or 8 digits');
+  const full = c.length === 7 ? c + gs1CheckDigit(c) : c;
+  if (c.length === 8 && !isValidGtin(full)) throw new Error(`${c} has a wrong check digit (should end in ${gs1CheckDigit(c.slice(0, 7))})`);
+  let m = '101';
+  for (let i = 0; i < 4; i++) m += EAN_L[Number(full[i])];
+  m += '01010';
+  for (let i = 4; i < 8; i++) m += EAN_R[Number(full[i])];
+  m += '101';
+  return { symbology: 'EAN8', data: full, text: full, modules: m, quietLeft: 7, quietRight: 7 };
 }
 
 /** UPC-A from 11 digits (the check digit is added) or 12: the bars of the EAN-13 "0" + the code, shown as 12 digits. */
@@ -179,12 +202,14 @@ export function encodeCode128(text: string): EncodedBarcode {
 
 // ── Choosing ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The symbology a stored code prints in: a valid EAN-13 as EAN-13, a valid UPC-A as UPC-A, anything else Code 128. */
+/** The symbology a stored code prints in: a valid EAN-13 as EAN-13, a valid UPC-A as UPC-A, a valid EAN-8 as EAN-8 (A574),
+ *  anything else Code 128 — a code that cannot be drawn as EAN / UPC always falls back to Code 128. */
 export function symbologyFor(code: string): Symbology | null {
   const c = String(code ?? '').trim();
   if (!c) return null;
   if (/^\d{13}$/.test(c) && isValidGtin(c)) return 'EAN13';
   if (/^\d{12}$/.test(c) && isValidGtin(c)) return 'UPCA';
+  if (/^\d{8}$/.test(c) && isValidGtin(c)) return 'EAN8';
   return code128Can(c) ? 'CODE128' : null;
 }
 
@@ -194,6 +219,7 @@ export function encodeBarcode(code: string | null | undefined): EncodedBarcode |
   const s = symbologyFor(c);
   if (s === 'EAN13') return encodeEan13(c);
   if (s === 'UPCA') return encodeUpcA(c);
+  if (s === 'EAN8') return encodeEan8(c);
   if (s === 'CODE128') return encodeCode128(c);
   return null;
 }
@@ -249,4 +275,168 @@ export function nextInStoreCodes(taken: Iterable<string | null | undefined>, cou
 /** A product "has no barcode" when the field is empty or only spaces. */
 export function lacksBarcode(code: string | null | undefined): boolean {
   return String(code ?? '').trim() === '';
+}
+
+// ── Barcode numbering (A574) ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** The formats a business can number its own codes in. CODE128N: digits only, printed as Code 128, a chosen length. */
+export type NumberingFormat = 'EAN13' | 'EAN8' | 'UPCA' | 'CODE128N';
+export const NUMBERING_FORMATS: readonly NumberingFormat[] = ['EAN13', 'EAN8', 'UPCA', 'CODE128N'];
+
+export interface BarcodeNumbering {
+  format: NumberingFormat;
+  /** Digits every code starts with ('' allowed). */
+  prefix: string;
+  /** The first sequence number (1 or more). */
+  start: number;
+  /** The whole code's digits, the check digit included: EAN-13 13, EAN-8 8, UPC-A 12; Code 128 numeric 4–20. */
+  length: number;
+  /** A GS1 mod-10 check digit at the end — always for EAN / UPC; a choice for Code 128 numeric. */
+  checkDigit: boolean;
+}
+
+/** The business setting the numbering is kept under (business_settings). */
+export const BARCODE_SETTINGS_KEY = 'barcode_settings';
+export const CODE128N_MIN_LENGTH = 4;
+export const CODE128N_MAX_LENGTH = 20;
+const FIXED_LENGTH: Readonly<Record<Exclude<NumberingFormat, 'CODE128N'>, number>> = { EAN13: 13, EAN8: 8, UPCA: 12 };
+
+/** Today's behaviour (A571): EAN-13, prefix 20, from 1 — 2000000000015, 2000000000022 … */
+export const DEFAULT_BARCODE_NUMBERING: BarcodeNumbering = { format: 'EAN13', prefix: IN_STORE_PREFIX, start: 1, length: 13, checkDigit: true };
+
+/** How many digits the sequence number has (the length less the prefix and the check digit). */
+export function sequenceDigits(s: BarcodeNumbering): number {
+  return s.length - s.prefix.length - (s.checkDigit ? 1 : 0);
+}
+
+/** The highest sequence number the range holds (never beyond what a JavaScript number counts exactly). */
+export function maxSequence(s: BarcodeNumbering): number {
+  const d = sequenceDigits(s);
+  return d >= 16 ? Number.MAX_SAFE_INTEGER : Math.min(Number.MAX_SAFE_INTEGER, 10 ** d - 1);
+}
+
+/** Whatever was stored or sent, as numbering every generator can use: the length fixed by the format (Code 128 numeric
+ *  4–20), the prefix digits only and short enough to leave one sequence digit, the start 1 … the range's top. */
+export function cleanBarcodeNumbering(raw: unknown): BarcodeNumbering {
+  let r: any = raw;
+  if (typeof r === 'string') { try { r = JSON.parse(r); } catch { r = null; } }
+  if (!r || typeof r !== 'object') r = {};
+  const d = DEFAULT_BARCODE_NUMBERING;
+  const format: NumberingFormat = (NUMBERING_FORMATS as readonly string[]).includes(r.format) ? r.format : d.format;
+  const lenRaw = Math.floor(Number(r.length));
+  const length = format !== 'CODE128N' ? FIXED_LENGTH[format]
+    : Number.isFinite(lenRaw) ? Math.min(CODE128N_MAX_LENGTH, Math.max(CODE128N_MIN_LENGTH, lenRaw)) : 12;
+  const checkDigit = format !== 'CODE128N' ? true : r.checkDigit === true;
+  const prefixRaw = typeof r.prefix === 'string' || typeof r.prefix === 'number' ? String(r.prefix) : d.prefix;
+  const prefix = prefixRaw.replace(/\D/g, '').slice(0, Math.max(0, length - (checkDigit ? 1 : 0) - 1));
+  const s: BarcodeNumbering = { format, prefix, start: 1, length, checkDigit };
+  const startRaw = Math.floor(Number(r.start));
+  s.start = Number.isFinite(startRaw) ? Math.min(maxSequence(s), Math.max(1, startRaw)) : 1;
+  return s;
+}
+
+/** The code for sequence number n: prefix + n zero-padded + the check digit (when the format has one). */
+export function numberedCode(s: BarcodeNumbering, n: number): string {
+  if (!Number.isInteger(n) || n < 1 || n > maxSequence(s)) throw new Error(`A sequence number here is 1 to ${maxSequence(s)}`);
+  const body = s.prefix + String(n).padStart(sequenceDigits(s), '0');
+  return s.checkDigit ? body + gs1CheckDigit(body) : body;
+}
+
+/** The sequence number of a code made by this numbering (its length, prefix and check digit), else null. */
+export function sequenceOf(s: BarcodeNumbering, code: string | null | undefined): number | null {
+  const c = String(code ?? '').trim();
+  if (c.length !== s.length || !/^\d+$/.test(c) || !c.startsWith(s.prefix)) return null;
+  const body = s.checkDigit ? c.slice(0, -1) : c;
+  if (s.checkDigit && gs1CheckDigit(body) !== Number(c[c.length - 1])) return null;
+  const n = Number(body.slice(s.prefix.length));
+  return Number.isSafeInteger(n) && n >= 1 && n <= maxSequence(s) ? n : null;
+}
+
+/** True for a code ZapTill generated: by this numbering, or an A571 in-store EAN-13. */
+export function isGeneratedCode(code: string | null | undefined, s: BarcodeNumbering = DEFAULT_BARCODE_NUMBERING): boolean {
+  return sequenceOf(s, code) !== null || isInStoreCode(code);
+}
+
+export interface NumberedCodes {
+  codes: string[];
+  /** How many codes are left after the highest one used (before these). */
+  remaining: number;
+  /** Fewer codes than asked: the range is used up. */
+  exhausted: boolean;
+}
+
+/** The next `count` codes: after max(start − 1, the highest sequence already used with this prefix and length) — so the
+ *  first code is the start number; a code in `taken` (any barcode the business has) is skipped. Never past the top. */
+export function nextNumberedCodes(s: BarcodeNumbering, taken: Iterable<string | null | undefined>, count: number): NumberedCodes {
+  const used = new Set<string>();
+  const max = maxSequence(s);
+  let top = Math.max(0, s.start - 1);
+  for (const t of taken) {
+    const c = String(t ?? '').trim();
+    if (!c) continue;
+    used.add(c);
+    const n = sequenceOf(s, c);
+    if (n !== null && n > top) top = n;
+  }
+  const codes: string[] = [];
+  let n = top;
+  while (codes.length < count && n < max) {
+    n++;
+    const code = numberedCode(s, n);
+    if (!used.has(code)) codes.push(code);
+  }
+  return { codes, remaining: Math.max(0, max - top), exhausted: codes.length < count };
+}
+
+/** The message when a range cannot give the codes asked for. */
+export function rangeFullMessage(remaining: number, wanted: number): string {
+  return remaining === 0
+    ? 'The barcode numbering range is used up: no new codes are left. Change the prefix or the number of digits in Barcode numbering.'
+    : `Only ${remaining} new code${remaining === 1 ? ' is' : 's are'} left in the barcode numbering range, and ${wanted} item${wanted === 1 ? ' needs' : 's need'} one. Change the prefix or the number of digits in Barcode numbering.`;
+}
+
+/** The warning when generated codes would fall among weighing-scale codes (A577's shared/scaleBarcode.ts reads EAN-13s
+ *  starting 21–29, and UPC-A number system 2, as a weighed item with its price or weight inside). */
+export const SCALE_CLASH_WARNING = 'This prefix collides with weighing-scale barcodes (EAN-13 21–29, UPC-A starting with 2): a scale label could be read as one of these items, or one of these codes as a weighed item. Keep 20 (EAN-13) or 4 (UPC-A).';
+
+/** True when codes made by this numbering print as EAN-13 starting 21–29 or UPC-A starting 2 — the scales' ranges. A
+ *  one-digit prefix "2" counts: its codes run through 20–29. */
+export function clashesWithScaleCodes(s: BarcodeNumbering): boolean {
+  const asEan13 = s.format === 'EAN13' || (s.format === 'CODE128N' && s.checkDigit && s.length === 13);
+  const asUpcA = s.format === 'UPCA' || (s.format === 'CODE128N' && s.checkDigit && s.length === 12);
+  if (asEan13) return s.prefix[0] === '2' && (s.prefix.length < 2 || s.prefix[1] !== '0');
+  if (asUpcA) return s.prefix[0] === '2';
+  return false;
+}
+
+/** Plain warnings about a numbering — never a refusal. */
+export function numberingWarnings(s: BarcodeNumbering): string[] {
+  const w: string[] = [];
+  if ((s.format === 'EAN13' || s.format === 'EAN8') && s.prefix[0] !== '2') {
+    w.push(`Prefix "${s.prefix}" is outside GS1's in-store range (20–29): a code could be the same as a manufacturer's barcode. Use a prefix starting with 20.`);
+  }
+  if (s.format === 'UPCA' && s.prefix[0] !== '2' && s.prefix[0] !== '4') {
+    w.push(`Prefix "${s.prefix}" is outside UPC's in-store number systems (2 or 4): a code could be the same as a manufacturer's barcode. Start the prefix with 4.`);
+  }
+  if (clashesWithScaleCodes(s)) w.push(SCALE_CLASH_WARNING);
+  if (s.format === 'CODE128N' && s.checkDigit && (s.length === 13 || s.length === 12 || s.length === 8)) {
+    w.push(`${s.length} digits with a check digit print as ${s.length === 13 ? 'EAN-13' : s.length === 12 ? 'UPC-A' : 'EAN-8'}, not Code 128.`);
+  }
+  if (maxSequence(s) < 1000) w.push(`This range holds only ${maxSequence(s)} codes.`);
+  return w;
+}
+
+/** "13 digits: prefix 20 (2) + item number (10) + check digit (1)". */
+export function describeNumbering(s: BarcodeNumbering): string {
+  const parts = [`prefix ${s.prefix || '(none)'} (${s.prefix.length})`, `item number (${sequenceDigits(s)})`];
+  if (s.checkDigit) parts.push('check digit (1)');
+  return `${s.length} digits: ${parts.join(' + ')}`;
+}
+
+export interface NumberingPreview { next: string[]; remaining: number; exhausted: boolean; warnings: string[]; describe: string }
+
+/** What the settings screens show: the next three codes, how many are left, the warnings. */
+export function numberingPreview(s: BarcodeNumbering, taken: Iterable<string | null | undefined>): NumberingPreview {
+  const r = nextNumberedCodes(s, taken, 3);
+  return { next: r.codes, remaining: r.remaining, exhausted: r.remaining === 0, warnings: numberingWarnings(s), describe: describeNumbering(s) };
 }

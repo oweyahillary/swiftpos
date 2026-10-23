@@ -80,6 +80,13 @@ export interface OrderLine {
   units: OrderUnit[];
   /** Free-text kitchen note the cashier typed ("3 normal, 2 spicy", "No salt"). One printed row per typed line (A367). */
   note?: string;
+  /**
+   * A577: a line sold by MEASURE — weighed goods ("kg", or "g" for an item shown in grams) or litres — whose `quantity`
+   * is that measure (kilograms for both kg and g). The receipt prints it as one item with "0.452 kg @ 650/kg" under it,
+   * the kitchen ticket as "0.452 kg  GOAT MEAT". Omitted: a whole-number quantity prints as before; a fractional one
+   * (a line from before A577, fuel) is still printed as a measure, without a unit.
+   */
+  measureUnit?: string;
 }
 
 export type OrderType = 'takeaway' | 'dine_in' | 'delivery' | 'counter';

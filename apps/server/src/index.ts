@@ -20,6 +20,7 @@ import { startEtimsRetryJob }   from './jobs/etimsRetry';
 import { startWatchdogJob }     from './jobs/watchdog';          // A383
 import { startMonthlyPackJob }  from './jobs/monthlyPack';       // A455
 import { startOwnerAlertsJob }  from './jobs/ownerAlerts';       // A476
+import { startLossAlertsJob }   from './jobs/lossAlerts';        // A576
 import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt } from './lib/watchdogCounters';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
@@ -336,6 +337,7 @@ const httpServer = app.listen(PORT, () => {
   startWatchdogJob();
   startMonthlyPackJob();   // A455: the monthly pack by email on the 1st
   startOwnerAlertsJob();   // A476: branch managers' open tills (always), the owner's alerts, the weekly summary
+  startLossAlertsJob();    // A576: loss-prevention alerts every hour (the watch list, the bell)
 
   // A525: the start, in the admin portal's System page (public.ops_events). Never awaited, never throws — a missing
   // table (migration 149 not run) is a warning in the log.

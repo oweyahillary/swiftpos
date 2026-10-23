@@ -2,6 +2,7 @@ import type { PosFeatures } from '../../shared/posFeatures';
 import type { StockCountFreeze } from '../../shared/stockCountFreeze';
 import type { StockView, OutOfStockMode } from '../../shared/stockGate';   // A563
 import type { LabelSettings } from '../../shared/labels';   // A571
+import type { BarcodeNumbering } from '../../shared/barcode';   // A574
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
@@ -259,7 +260,14 @@ export interface LabelPrinter {
 export interface LabelProduct { id: string; name: string; barcode: string | null; price: number; category_id: string | null; category: string | null }
 export interface LabelSetup {
   settings: LabelSettings; from: 'cloud' | 'saved' | 'default'; printer: LabelPrinter; products: LabelProduct[];
-  business: { name: string; currency: string }; receiptPrinter: { target: string; paperWidthMm: 58 | 80 } | null; canSaveForBusiness: boolean;
+  business: { name: string; currency: string; type?: string | null }; receiptPrinter: { target: string; paperWidthMm: 58 | 80 } | null; canSaveForBusiness: boolean;
+  /** A574: the business's barcode numbering, every barcode this till knows (the preview), and whether this person may generate. */
+  numbering: BarcodeNumbering; barcodes: string[]; canGenerate: boolean;
+}
+/** A574: a print run's answer — the items left out (never printed without a barcode) and the codes generated for it. */
+export interface LabelPrintAnswer {
+  ok: boolean; labels: number; bytes?: number; error?: string; warnings?: string[];
+  skipped?: Array<{ id: string; name: string; reason: string }>; notice?: string; generated?: Array<{ id: string; barcode: string }>;
 }
 export interface BranchStockAnswer<T> { ok: boolean; data?: T; offline?: boolean; error?: string; code?: string | null }
 /** A564: how much each OTHER branch holds of the items found (GET /api/stock/other-branches) — quantities only. */
@@ -699,8 +707,10 @@ declare global {
         setup: () => Promise<LabelSetup>;
         save: (body: { settings?: LabelSettings; printer?: LabelPrinter }) =>
           Promise<{ ok: boolean; settings: LabelSettings; printer: LabelPrinter; cloud: 'saved' | 'offline' | 'not-allowed' | null }>;
-        print: (body: { items: Array<{ product_id: string; copies: number }>; path?: LabelPath; settings?: LabelSettings }) =>
-          Promise<{ ok: boolean; labels: number; bytes?: number; error?: string; warnings?: string[] }>;
+        print: (body: { items: Array<{ product_id: string; copies: number }>; path?: LabelPath; settings?: LabelSettings; generate?: boolean }) =>
+          Promise<LabelPrintAnswer>;
+        /** A574: save the business's barcode numbering (menu.edit, online). */
+        numbering: (numbering: BarcodeNumbering) => Promise<{ ok: boolean; numbering: BarcodeNumbering; error?: string }>;
       };
       /** A466: the monthly pack (A455) — from the cloud, with the manager's own sign-in; online only. */
       monthly: {

@@ -80,6 +80,7 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/reports\/monthly\/movements(\/[^/]+)?$/,          // A466: Manager › Monthly pack › Record for the books (expenses.manage; own branch)
   /^\/api\/credit\/sales\/[^/]+\/(confirm|dispute)$/,         // A545: Manager › Credit sales — confirm / dispute as themselves (customers.credit)
   /^\/api\/products\/labels\/settings$/,                    // A571: Manager › Stock › Labels — the business's label (menu.edit)
+  /^\/api\/products\/barcodes\/(generate|settings)$/,       // A574: Labels — generate missing codes before printing, the numbering (menu.edit)
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';

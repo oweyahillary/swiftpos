@@ -94,7 +94,8 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      setBusinessDayCutoff: () => {}, setSupportContact: () => {},   // 0.6.34, 0.6.35
                      setCashierHistoryMethods: () => {},   // 0.6.37
                      setStockCountFreeze: () => {}, setCashierSeesShiftSales: () => {}, setCashierHistoryTotals: () => {},   // A394
-                     setPaymentMethodsEnabled: () => {} };   // A429`);
+                     setPaymentMethodsEnabled: () => {},   // A429
+                     setScaleBarcodes: () => {} };   // A577`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

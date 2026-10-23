@@ -88,6 +88,8 @@ export interface ReferenceBundle {
     webPosEnabled?: boolean | null;
     /** A367: the owner's quick picks for order notes; null = the node has not been told. */
     noteQuickPicks?: string[] | null;
+    /** A577: the scale label layout (shared/scaleBarcode.ts); null = the node has not been told. */
+    scaleBarcodes?: unknown;
     /** 0.6.27: the per-client POS switches; null = the node has not been told. */
     posFeatures?: Record<string, boolean> | null;
     /** 0.6.30: the owner's void window and offline void/refund rules; null = the node has not been told. */
@@ -157,6 +159,7 @@ export interface ReferenceRows {
     paymentMethodsEnabled?: string[];     // A429
     webPosEnabled?: boolean | null;   // A346
     noteQuickPicks?: string[] | null; // A367
+    scaleBarcodes?: unknown;          // A577
     posFeatures?: Record<string, boolean> | null; // 0.6.27
     reversalRules?: ReversalRules | null;         // 0.6.30
     businessName?: string | null;                 // A450
@@ -226,6 +229,8 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
     status: p.status ?? 'active',
     barcode: p.barcode ?? null,
     plu: p.plu ?? null,
+    sold_by: p.sold_by ?? null,         // A577: relayed so a peer sells weighed items by weight
+    unit_label: p.unit_label ?? null,   // A577
     is_fuel: asBool(p.is_fuel),
     is_kitchen: asTriBool(p.is_kitchen),   // tri-state — see asTriBool
     show_days: cleanShowDays(p.show_days) ?? null,   // 0.6.31: relayed so a peer shows the same products each day
@@ -258,7 +263,9 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       products,
       categories,
       // A537: relayed so a peer's category panel shows the same menus.
-      menus: (rows.menus ?? []).map((m: any) => ({ id: m.id, name: m.name, sort_order: Number(m.sort_order) || 0, active: true, color: m.color ?? null, icon: m.icon ?? null })),
+      // A578: and each menu's hours (the JSON text → the object; null = always), so a peer opens and closes them too.
+      menus: (rows.menus ?? []).map((m: any) => ({ id: m.id, name: m.name, sort_order: Number(m.sort_order) || 0, active: true, color: m.color ?? null, icon: m.icon ?? null,
+        availability: (() => { try { return m.availability ? JSON.parse(m.availability) : null; } catch { return null; } })() })),
       branchId: rows.config.branchId,
       vatRate: rows.config.vatRate,
       ctlRate: rows.config.ctlRate,
@@ -281,6 +288,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       paymentMethodsEnabled: rows.config.paymentMethodsEnabled,   // A429: relayed so a peer shows the branch's methods
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
+      scaleBarcodes: rows.config.scaleBarcodes ?? null,   // A577: relayed so a peer reads the same scale labels
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
       reversalRules: rows.config.reversalRules ?? null,   // 0.6.30: relayed so a peer applies the owner's rules offline
       // A450: the business's name and currency, and the receipt's Buy Goods / Paybill line — relayed so a peer prints them.
@@ -356,10 +364,11 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
 
   const rows: ReferenceRows = {
     products: all(`SELECT id, category_id, name, description, base_price, branch_price, image_url,
-                          has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days
+                          has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days,
+                          sold_by, unit_label
                    FROM products`),
     categories: all(`SELECT id, name, color, icon, sort_order, status, is_kitchen, menu_id FROM categories`),
-    menus: all(`SELECT id, name, sort_order, active, color, icon FROM menus WHERE active = 1 ORDER BY sort_order, name`),   // A537
+    menus: all(`SELECT id, name, sort_order, active, color, icon, availability FROM menus WHERE active = 1 ORDER BY sort_order, name`),   // A537; A578 hours
     comboItems: all(`SELECT combo_id, product_id, name, quantity, sort_order, is_kitchen FROM combo_items ORDER BY combo_id, sort_order`),
     paymentMethods: all(`SELECT code, name, sort_order FROM payment_methods ORDER BY sort_order`),
     offers: all(`SELECT id, data FROM offers`),   // A445
@@ -410,6 +419,14 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
       noteQuickPicks: (() => {   // A367
         if (typeof cfg?.order_note_picks !== 'string') return null;
         try { const p = JSON.parse(cfg.order_note_picks); return Array.isArray(p) ? p.map(String) : null; } catch { return null; }
+      })(),
+      // A577: null until the node itself has heard from the cloud (a peer then keeps its own value).
+      // (read from the table: getDeviceConfig's shape does not carry it)
+      scaleBarcodes: (() => {
+        try {
+          const raw = all(`SELECT scale_barcodes FROM device_config WHERE id = 1`)[0]?.scale_barcodes;
+          return typeof raw === 'string' && raw ? JSON.parse(raw) : null;
+        } catch { return null; }   // a database before local schema 77
       })(),
       // 0.6.27: null until the node itself has heard from the cloud (a peer then keeps its own value).
       posFeatures: typeof cfg?.pos_features === 'string' ? parsePosFeatures(cfg.pos_features) : null,
@@ -490,6 +507,8 @@ export interface AcquiredReference {
     webPosEnabled?: boolean;
     /** A367: the owner's quick picks for order notes. undefined = not said (older cloud / older node) → keep. */
     noteQuickPicks?: string[];
+    /** A577: the scale label layout. undefined = not said (older cloud / older node) → keep. */
+    scaleBarcodes?: unknown;
     /** 0.6.27: the per-client POS switches. undefined = not said (older cloud / older node) → keep. */
     posFeatures?: Record<string, boolean>;
     /** 0.6.30: the owner's void/refund rules. undefined = not said (older cloud / older node) → keep. */
@@ -546,6 +565,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
+      scaleBarcodes: pi.scaleBarcodes && typeof pi.scaleBarcodes === 'object' ? pi.scaleBarcodes : undefined,   // A577
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27
       reversalRules: pi.reversalRules && typeof pi.reversalRules === 'object' ? rulesFromWire(pi.reversalRules) : undefined,   // 0.6.30
       ...identityFromWire(pi),   // A450 + A381

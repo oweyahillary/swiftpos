@@ -20,6 +20,7 @@ import { POS_FEATURES } from '../../lib/posFeatures';
 import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../../lib/paymentCatalogue';
 import { OUT_OF_STOCK_MODES, type OutOfStockMode } from '../../lib/stockGate';   // A563
 import { dateShort } from '../../lib/format';
+import { foodAreas } from '../../lib/businessTerms';   // A573
 import BranchPaymentMethods from './BranchPaymentMethods';
 
 /** The four switches the owner sets here (the admin portal shows them read-only). */
@@ -31,6 +32,17 @@ export interface Controls {
   loyalty?: { enabled: boolean; earn_rate: number };
   payments?: { enabled: string[] };
   stock?: { when_zero: OutOfStockMode };   // A563
+}
+
+/** A573: the switches about orders sent to a kitchen — a restaurant's or café's (lib/businessTerms.ts). */
+export const KITCHEN_POS_OPTION_KEYS: readonly PosOptionKey[] = ['pay_later_tabs', 'pay_before_kitchen'];
+
+/**
+ * A573: is this switch listed for this business? A kitchen switch only at a restaurant or café — or anywhere it is already
+ * ON (a shop that had it turned on keeps the way to turn it off).
+ */
+export function posOptionShown(key: PosOptionKey, businessType: string | null | undefined, on: boolean): boolean {
+  return on || !KITCHEN_POS_OPTION_KEYS.includes(key) || foodAreas(businessType).kitchenOptions;
 }
 
 /** The words for a switch — shared/posFeatures.ts (the same the admin portal shows). */
@@ -114,7 +126,7 @@ export function PosOptionsTab() {
 
       {data?.pos && (
         <div className={`${card} divide-y divide-gray-800`}>
-          {POS_OPTION_KEYS.map((key) => {
+          {POS_OPTION_KEYS.filter((key) => posOptionShown(key, business?.type, !!data.pos![key])).map((key) => {
             const w = posOptionWords(key);
             return (
               <div key={key} className="flex items-start justify-between gap-4 px-4 py-3">

@@ -846,6 +846,9 @@ function initSchema(db: Database.Database) {
     id TEXT PRIMARY KEY, name TEXT NOT NULL, sort_order INTEGER DEFAULT 0, active INTEGER DEFAULT 1,
     color TEXT, icon TEXT, synced_at TEXT
   )`);
+  // A578 (76): the menu's hours — days of the week and time windows as JSON text (shared/menuHours.ts; migration 165).
+  // NULL = always (every menu before 76, and an older cloud or branch server that sends none). Pulled, never pushed.
+  migrateColumns(db, 'menus', [['availability', 'TEXT']]);
   // A544 (74): this till's branch's override of the business branding (pos/init `branchBranding`, GET /api/pos/changes
   // table branch_branding; migration 156). Owner, 2026-10-21: "phase 2 branding — we need to do it before value add" …
   // "yes start". Pulled, never pushed; only this till's own branch's row is kept. NULL column = the business's.
@@ -1199,6 +1202,9 @@ function initSchema(db: Database.Database) {
     // A429 (69): the payment methods this branch takes — a JSON list of codes. Pulled (paymentMethodsEnabled), never
     // pushed. NULL = not told yet = the catalogue's defaults (shared/paymentCatalogue.ts).
     ['payment_methods_enabled', 'TEXT'],
+    // A577 (77): how the business's weighing scales print their labels — JSON (shared/scaleBarcode.ts). Pulled
+    // (scaleBarcodes), never pushed. NULL = not told yet = the default layout (21–29, item 5, price 5).
+    ['scale_barcodes', 'TEXT'],
   ]);
 
   // A445 (70): offers — the branch's offers, pulled with the menu (pos/init `offers`) and applied to the cart by the till's
@@ -1271,6 +1277,10 @@ function initSchema(db: Database.Database) {
     // 0.6.31 (62): the days the product is on the POS grid, a JSON array (0 = Sunday … 6 = Saturday). Pulled, never
     // pushed. NULL = every day. Off the grid on other days but still found by search and sold (shared/productDays.ts).
     ['show_days', 'TEXT'],
+    // A577 (77): how the item is sold — 'weight' = its quantity is kilograms (a scale label, the weight keypad) — and its
+    // unit ('kg', or 'g' for an item shown in grams). Pulled, never pushed. NULL = sold each (every till before 77).
+    ['sold_by', 'TEXT'],
+    ['unit_label', 'TEXT'],
   ]);
 }
 
@@ -1344,7 +1354,10 @@ function initSchema(db: Database.Database) {
 // 156). REQUIRED moves.
 // 75 adds A552: credit_customers (pulled — the customers this till sells to on account, their limit and balance) and
 // customer_credit_transactions.synced_at (local — when the sale's order reached the cloud). REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 75;
+// 76 adds A578: menus.availability (pulled — a menu's hours, days and time windows; migration 165). REQUIRED moves.
+// 77 adds A577: products.sold_by + products.unit_label (pulled — items sold by weight) and device_config.scale_barcodes
+// (pulled — the scale label layout). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 77;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

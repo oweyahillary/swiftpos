@@ -31,7 +31,13 @@
  *     where it sits to one where it runs low — worked out in units to decide and rank, shown as a plain recommendation
  *     with no quantity and no KES (the owner's call) — and the branches side by side, a branch flagged when its sales fall
  *     against its own previous period more than the other branches'.
+ *   A575 — what sells together (migration 164's analytics_together: the product pairs found in the same order): the
+ *     pairs in plain words ("People who buy Chicken Wrap often add Soda 500ml (38 of 120 orders)"), ranked by how much
+ *     more often than chance they go together, the top 10; one or two "Do this next" cards in the business's own way of
+ *     selling (lib/analyticsTerms.ts togetherAdvice: a combo, the same shelf, at the pumps) — never a price, no KES. And
+ *     the business type's words on the cards (a shop's "cost of sales", never its "food cost").
  */
+import { togetherAdvice, analyticsWords, type TogetherAdvice } from './analyticsTerms';
 
 export const ANALYTICS_FLAG = 'analytics';
 export const ANALYTICS_OFF_MESSAGE = 'Analytics is part of ZapTill Premium — contact ZapTill to enable it.';
@@ -738,9 +744,9 @@ export const SLOW_MIN_ITEMS = 5;         // a list of at least 5 items sold to c
 export const SLOW_TOP = 3;
 
 export type RecKind = 'stock_low' | 'stock_up' | 'slow' | 'promote' | 'rework' | 'staffing' | 'quiet' | 'leak' | 'day_close' | 'credit' | 'cost'
-  | 'stock_out' | 'wastage' | 'lapsed' | 'food_cost' | 'thin_margin' | 'cost_rise' | 'stock_move' | 'branch_drop';
+  | 'stock_out' | 'wastage' | 'lapsed' | 'food_cost' | 'thin_margin' | 'cost_rise' | 'stock_move' | 'branch_drop' | 'together';
 export type Confidence = 'high' | 'medium' | 'low';
-export type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times' | 'stock' | 'customers' | 'costs' | 'branches';
+export type Evidence = 'menu' | 'heatmap' | 'leaks' | 'credit' | 'times' | 'stock' | 'customers' | 'costs' | 'branches' | 'together';
 export interface Recommendation {
   id: string; kind: RecKind;
   /** verb first: "Stock up for Friday: 140 Tusker lager" */
@@ -793,6 +799,10 @@ export interface RecInput {
   branchCompare?: BranchCompare | null;
   /** A565: the branch in view (null: every branch) — moves touching it, and the run-out cards a move replaces */
   branchInView?: string | null;
+  /** A575: what sells together (migration 164); null or absent — no together card */
+  together?: TogetherResult | null;
+  /** A575: the business type (businesses.type) — the words of the cards; absent: a restaurant's, as before */
+  businessType?: string | null;
 }
 
 const perMonth = (x: number, days: number) => (days > 0 ? (x * MONTH_DAYS) / days : 0);
@@ -848,7 +858,9 @@ export function recRework(i: RecInput): Recommendation[] {
     title: dogs.length === 1 ? `Rework or drop ${dogs[0].name}` : `Rework or drop ${dogs.length} slow items`,
     why: `${andList(dogs.map((d) => d.name))} sell little and earn little: ${qtyText(sold)} sold in ${i.days} days, about ${moneyText(margin, cur)} a month left after cost${dogs.length === 1 ? '' : ' between them'}.`,
     impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
-    assumption: 'No KES estimate: a shorter menu saves prep, stock and waste, and points customers to your best items.',
+    assumption: analyticsWords(i.businessType).costOfSales === 'Food cost'
+      ? 'No KES estimate: a shorter menu saves prep, stock and waste, and points customers to your best items.'
+      : 'No KES estimate: a shorter list frees shelf space and money tied up in stock, and points customers to your best items.',
     confidence: 'medium', evidence: 'menu',
   }];
 }
@@ -1211,7 +1223,7 @@ export function rankRecommendations(recs: Recommendation[]): Recommendation[] {
   return top;
 }
 
-/** Every rule, ranked. Upsell ("what sells together") is not here: it needs baskets, which no cheap aggregate gives. */
+/** Every rule, ranked. A575: what sells together comes from migration 164's analytics_together (the baskets in SQL). */
 export function buildRecommendations(i: RecInput): Recommendation[] {
   return rankRecommendations(allRecommendations(i));
 }
@@ -1237,6 +1249,7 @@ export function allRecommendations(i: RecInput): Recommendation[] {
     ...moves, ...recStockUp(i), ...recSlowMovers(i), ...recBranchDrop(i),
     ...recPromote(i), ...recRework(i), ...recStaffing(i), ...recQuietSlot(i), ...recLeaks(i), ...recDayClose(i), ...recCredit(i),
     ...recCostData(i), ...recWastage(i), ...recLapsed(i), ...recFoodCost(i), ...recThinMargin(i), ...recCostRise(i),
+    ...recTogether(i),
   ];
 }
 
@@ -1713,13 +1726,16 @@ export function recFoodCost(i: RecInput): Recommendation[] {
   if (f.now === null || f.prev === null || f.change === null || f.change < FOOD_COST_RISE - 1e-9) return [];
   const costedRev = m.items.filter((x) => x.unitCost !== null).reduce((s, x) => s + x.revenue, 0);
   const names = f.movers.map((x) => x.name);
+  const w = analyticsWords(i.businessType); const food = w.costOfSales === 'Food cost';   // A575: a shop's own words
+  const cos = w.costOfSales.toLowerCase();
   return [{
     id: 'food_cost.rise', kind: 'food_cost',
-    title: `Your food cost rose from ${pctText(f.prev)} to ${pctText(f.now)} — check the biggest movers`,
-    why: names.length ? `The biggest movers are ${andList(names)}: they took a bigger share of what you spend on food. Check their portions and what you pay for them.`
-      : 'Check the portions of your best sellers and what you pay for them.',
+    title: `Your ${cos} rose from ${pctText(f.prev)} to ${pctText(f.now)} — check the biggest movers`,
+    why: names.length ? (food ? `The biggest movers are ${andList(names)}: they took a bigger share of what you spend on food. Check their portions and what you pay for them.`
+      : `The biggest movers are ${andList(names)}: they took a bigger share of what your stock costs. Check what you pay for them.`)
+      : food ? 'Check the portions of your best sellers and what you pay for them.' : 'Check what you pay for your best sellers.',
     impact: Math.round(perMonth(f.change * costedRev, i.days)), impactPer: 'month', impactKind: 'recover', stock: null, warning: false,
-    assumption: `If your food cost goes back to ${pctText(f.prev)} of what these items sell for. Both periods use today's costs, so the change comes from what sold and what it sold for; cost rises show on the Costs tab.`,
+    assumption: `If your ${cos} goes back to ${pctText(f.prev)} of what these items sell for. Both periods use today's costs, so the change comes from what sold and what it sold for; cost rises show on the Costs tab.`,
     confidence: 'low', evidence: 'costs',
   }];
 }
@@ -1784,6 +1800,8 @@ export function tileHooks(input: {
   stockUse: StockUseResult | null; customers: CustomersResult | null; costWatch: CostsResult | null; recommendations: Recommendation[];
   /** without costs (no menu worked out): how many items sold, from what sells when */
   itemsSold?: number | null;
+  /** A575: the business type — a shop's "Cost of sales", a restaurant's "Food cost" */
+  businessType?: string | null;
   /** A565: the Branches tile — null (one branch, or a viewer held to one): hidden */
   branches?: { count: number; moves: number; underperforming: { name: string; change: number | null }[] } | null;
 }): Record<TileKey, TileHook> {
@@ -1812,7 +1830,7 @@ export function tileHooks(input: {
     : `${plural(cu.now.returning, 'customer', 'customers')} came back`;
   const cw = input.costWatch;
   const costText = !cw ? 'What each sale earns' : cw.noCost.total ? `${plural(cw.noCost.total, 'item has', 'items have')} no cost`
-    : cw.foodCost.now !== null ? `Food cost ${pctText(cw.foodCost.now)}` : 'What each sale earns';
+    : cw.foodCost.now !== null ? `${analyticsWords(input.businessType).costOfSales} ${pctText(cw.foodCost.now)}` : 'What each sale earns';
   return {
     menu: hook('menu', menuText), heatmap: hook('heatmap', heatText), leaks: hook('leaks', leakText),
     credit: hook('credit', creditText, !input.seesCredit), stock: hook('stock', stockText),
@@ -2103,4 +2121,128 @@ function branchText(b: { count: number; moves: number; underperforming: { name: 
   const u = b.underperforming[0];
   if (u && u.change !== null) return `${u.name} down ${pctText(-u.change)}`;
   return `${b.count} branches compared`;
+}
+
+// ── A575: what sells together ─────────────────────────────────────────────────
+//
+// The owner's backlog: which products end up in the same order, in plain words, and what to do about it — stock them
+// together, put them side by side, offer one with the other, make a combo. Never a price (the owner: "prices should be
+// competitive"), never a KES gain: only what was seen.
+
+/** migration 164's analytics_together: one 'total' row, then the pairs found together most */
+export interface TogetherRow {
+  kind: 'total' | 'pair'; orders: number | string | null; multi_orders: number | string | null;
+  a_id: string | null; a_name: string | null; a_fuel: boolean | null; a_orders: number | string | null;
+  b_id: string | null; b_name: string | null; b_fuel: boolean | null; b_orders: number | string | null;
+  together: number | string | null;
+}
+export const TOGETHER_LIMIT = 100;        // pairs asked of the SQL (the most found together)
+export const TOGETHER_MIN_BASKETS = 30;   // no section on fewer orders holding two or more items
+export const TOGETHER_MIN_PAIR = 5;       // a pair listed: together in at least 5 orders…
+export const TOGETHER_MIN_LIFT = 1.2;     // …and at least 1.2× as often as chance would put them together
+export const TOGETHER_CARD_MIN = 10;      // a card: together in at least 10 orders…
+export const TOGETHER_CARD_SHARE = 0.15;  // …in at least 15% of the orders with the first item…
+export const TOGETHER_CARD_LIFT = 1.5;    // …and 1.5× as often as chance
+export const TOGETHER_CARDS = 2;          // at most 2 cards, no product in both
+export interface TogetherPair {
+  /** a: what customers come for (the item with fewer orders — the stronger "who buys a adds b"); b: what they add */
+  aId: string; aName: string; aFuel: boolean; aOrders: number;
+  bId: string; bName: string; bFuel: boolean; bOrders: number;
+  /** orders holding both */
+  together: number;
+  /** together ÷ the orders with a */
+  share: number;
+  /** how many times as often as chance (together × orders ÷ (a's orders × b's orders)); ranks, never shown as a number */
+  lift: number;
+  /** "People who buy Chicken Wrap often add Soda 500ml (38 of 120 orders with Chicken Wrap)" */
+  sentence: string;
+  /** what to do, in the business's own way of selling */
+  advice: TogetherAdvice;
+}
+export interface TogetherResult {
+  orders: number; multiOrders: number;
+  /** enough orders with two or more items to say anything */
+  enough: boolean;
+  /** why nothing is listed (too few orders, or nothing goes together more than by chance) */
+  note: string | null;
+  /** the top 10 */
+  pairs: TogetherPair[];
+  /** every pair that passed, before the cap */
+  total: number;
+  /** the cards' pairs (at most 2, no product in both) */
+  strong: TogetherPair[];
+}
+/** How often b comes with a, in words: half the time or more "usually", a quarter "often", else "sometimes". */
+export function togetherWord(share: number): string {
+  return share >= 0.5 ? 'usually' : share >= 0.25 ? 'often' : 'sometimes';
+}
+export function togetherSentence(p: { aName: string; bName: string; together: number; aOrders: number; share: number }): string {
+  return `People who buy ${p.aName} ${togetherWord(p.share)} add ${p.bName} (${qtyText(p.together)} of ${qtyText(p.aOrders)} orders with ${p.aName})`;
+}
+
+/**
+ * The pairs of migration 164 in plain words. Each pair is turned so that `a` is the item with fewer orders (who buys a
+ * adds b — the stronger direction), listed when found together in at least 5 orders and 1.2× as often as chance, ranked
+ * by orders together × how much more often than chance (capped at 5×, so two rare items never outrank a real habit),
+ * the top 10. Fewer than 30 orders with two or more items: nothing, and a note.
+ */
+export function summariseTogether(rows: TogetherRow[], businessType?: string | null): TogetherResult {
+  const n = (x: unknown) => (x === null || x === undefined ? 0 : Number(x) || 0);
+  const tot = rows.find((r) => r.kind === 'total');
+  const orders = n(tot?.orders); const multiOrders = n(tot?.multi_orders);
+  if (multiOrders < TOGETHER_MIN_BASKETS) {
+    return {
+      orders, multiOrders, enough: false, pairs: [], total: 0, strong: [],
+      note: `Not enough orders with two or more items yet (${qtyText(multiOrders)} of the ${TOGETHER_MIN_BASKETS} needed) — try a longer period.`,
+    };
+  }
+  const all: (TogetherPair & { score: number })[] = [];
+  for (const r of rows) {
+    if (r.kind !== 'pair' || !r.a_id || !r.b_id) continue;
+    const together = n(r.together); const ao = n(r.a_orders); const bo = n(r.b_orders);
+    if (together < TOGETHER_MIN_PAIR || ao <= 0 || bo <= 0 || orders <= 0) continue;
+    const lift = (together * orders) / (ao * bo);
+    if (lift < TOGETHER_MIN_LIFT) continue;
+    const aName = r.a_name || 'Unnamed item'; const bName = r.b_name || 'Unnamed item';
+    // the anchor: the item with fewer orders (ties: by name)
+    const flip = bo < ao || (bo === ao && bName.localeCompare(aName) < 0);
+    const A = flip ? { id: r.b_id, name: bName, fuel: !!r.b_fuel, orders: bo } : { id: r.a_id, name: aName, fuel: !!r.a_fuel, orders: ao };
+    const B = flip ? { id: r.a_id, name: aName, fuel: !!r.a_fuel, orders: ao } : { id: r.b_id, name: bName, fuel: !!r.b_fuel, orders: bo };
+    const share = together / A.orders;
+    const p = { aId: A.id, aName: A.name, aFuel: A.fuel, aOrders: A.orders, bId: B.id, bName: B.name, bFuel: B.fuel, bOrders: B.orders, together, share, lift };
+    all.push({
+      ...p, sentence: togetherSentence(p), advice: togetherAdvice(businessType, { name: A.name, fuel: A.fuel }, { name: B.name, fuel: B.fuel }),
+      score: together * Math.min(lift, 5),
+    });
+  }
+  all.sort((x, y) => y.score - x.score || y.together - x.together || x.aName.localeCompare(y.aName) || x.bName.localeCompare(y.bName));
+  const strip = ({ score: _s, ...x }: TogetherPair & { score: number }): TogetherPair => x;
+  const strong: TogetherPair[] = [];
+  const used = new Set<string>();
+  for (const p of all) {
+    if (strong.length >= TOGETHER_CARDS) break;
+    if (p.together < TOGETHER_CARD_MIN || p.share < TOGETHER_CARD_SHARE || p.lift < TOGETHER_CARD_LIFT) continue;
+    if (used.has(p.aId) || used.has(p.bId)) continue;
+    used.add(p.aId); used.add(p.bId); strong.push(strip(p));
+  }
+  return {
+    orders, multiOrders, enough: true,
+    note: all.length ? null : 'Nothing is bought together more often than chance would put it in the same order — your customers buy each item for itself.',
+    pairs: all.slice(0, TABLE_TOP).map(strip), total: all.length, strong,
+  };
+}
+
+/** One or two cards from the strongest pairs (no product in two cards). No KES: what customers already do. */
+export function recTogether(i: RecInput): Recommendation[] {
+  const t = i.together;
+  if (!t || !t.enough) return [];
+  return t.strong.slice(0, TOGETHER_CARDS).map((p): Recommendation => ({
+    id: `together.${p.aId}.${p.bId}`, kind: 'together',
+    title: p.advice.title,
+    why: `${p.sentence}. ${p.advice.action}`,
+    impact: null, impactPer: null, impactKind: null, stock: null, warning: false,
+    assumption: `Based on what customers already bought together in the period (${qtyText(p.together)} orders); nothing here is an estimate.`,
+    confidence: p.together >= 30 && i.days >= 14 ? 'high' : 'medium',
+    evidence: 'together',
+  }));
 }

@@ -11,11 +11,26 @@
  *   - Receipt printer: a barcode slip on the till roll (GS k or the bars as an image).
  * The items and prices are this till's own (offline too); the price is today's — reprint when a price changes.
  * Main does the printing (main/ipc/labels.ts); the preview here is the same layout (shared/labels.ts).
+ *
+ * A574 — every label carries a barcode (owner, 2026-10-22: "label should contain barcodes"): the barcode is no longer a
+ * choice. Items chosen without one are given one when you print — "N items have no barcode yet — generate them and
+ * print?" — through the cloud with your own sign-in (menu.edit); offline, or without that right, they are left out and
+ * named, the rest print. Barcode numbering (format, prefix, start number, digits — owner: "i should also be able to set
+ * barcode start sequence, number of digits i need etc") is set here too, with the next codes shown.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { posApi, type LabelSetup, type LabelPrinter, type LabelPath } from '../lib/posApi';
-import { encodeBarcode, isInStoreCode } from '../../shared/barcode';
+import {
+  encodeBarcode, isGeneratedCode, lacksBarcode, cleanBarcodeNumbering, numberingPreview, CODE128N_MIN_LENGTH, CODE128N_MAX_LENGTH,
+  type BarcodeNumbering, type NumberingFormat,
+} from '../../shared/barcode';
 import { cleanLabelSettings, labelSvg, layoutLabel, LABEL_SIZE_PRESETS, type LabelSettings } from '../../shared/labels';
+import { businessTerms } from '../../shared/businessTerms';   // A574: every business type in its own words
+import { labelsIntro } from '../lib/labelsWords';
+
+const FORMAT_LABEL: Record<NumberingFormat, string> = {
+  EAN13: 'EAN-13 (13 digits, most scanners)', EAN8: 'EAN-8 (8 digits, small items)', UPCA: 'UPC-A (12 digits)', CODE128N: 'Code 128, digits only (choose the length)',
+};
 
 const PATH_LABEL: Record<LabelPath, string> = {
   windows: 'Windows printer (driver installed)',
@@ -36,9 +51,11 @@ export default function LabelsTab() {
   const [category, setCategory] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [numbering, setNumbering] = useState<BarcodeNumbering | null>(null);
+  const [numMsg, setNumMsg] = useState('');
 
   useEffect(() => {
-    posApi.labels.setup().then((s) => { setSetup(s); setSettings(cleanLabelSettings(s.settings)); setPrinter(s.printer); })
+    posApi.labels.setup().then((s) => { setSetup(s); setSettings(cleanLabelSettings(s.settings)); setPrinter(s.printer); setNumbering(cleanBarcodeNumbering(s.numbering)); })
       .catch((e: any) => setMsg({ ok: false, text: e?.message ?? 'Could not open labels.' }));
     posApi.print.list().then((list) => setWindowsPrinters((list ?? []).map((p) => p.name))).catch(() => {});
   }, []);
@@ -52,10 +69,15 @@ export default function LabelsTab() {
   const picked = products.filter((p) => (qty[p.id] ?? 0) > 0);
   const total = picked.reduce((s, p) => s + (qty[p.id] ?? 0), 0);
   const first = picked[0] ?? shown[0];
-  const preview = settings && first ? layoutLabel(settings, { name: first.name, price: first.price, currency: setup?.business.currency, business: setup?.business.name },
-    encodeBarcode(first.barcode)) : null;
+  const numPreview = useMemo(() => (numbering ? numberingPreview(numbering, setup?.barcodes ?? products.map((p) => p.barcode)) : null), [numbering, setup, products]);
+  // A574: an item without a barcode is shown with the next code it would get (an example) — never a label without bars.
+  const firstBars = first ? encodeBarcode(first.barcode) : null;
+  const exampleBars = firstBars ?? encodeBarcode(numPreview?.next[0] ?? '2000000000015');
+  const preview = settings && first && exampleBars ? layoutLabel(settings, { name: first.name, price: first.price, currency: setup?.business.currency, business: setup?.business.name },
+    exampleBars) : null;
+  const missing = picked.filter((p) => lacksBarcode(p.barcode));
 
-  if (!setup || !settings || !printer) return <div className="p-6 text-gray-300">{msg?.text ?? 'Loading…'}</div>;
+  if (!setup || !settings || !printer || !numbering) return <div className="p-6 text-gray-300">{msg?.text ?? 'Loading…'}</div>;
 
   const set = (patch: Partial<LabelSettings>) => setSettings((s) => cleanLabelSettings({ ...s, ...patch }));
   const setP = (patch: Partial<LabelPrinter>) => setPrinter((p) => ({ ...(p as LabelPrinter), ...patch }));
@@ -67,18 +89,42 @@ export default function LabelsTab() {
       const r = await posApi.labels.save({ settings, printer });
       setMsg({ ok: true, text: r.cloud === 'saved' ? 'Saved — the label is the business\'s, on every till and the web.'
         : r.cloud === 'offline' ? 'Saved on this till; the business\'s label is updated when the cloud can be reached.'
-        : 'Saved on this till (changing the business\'s label needs menu editing).' });
+        : 'Saved on this till (changing the business\'s label needs the right to edit products).' });
     } catch (e: any) { setMsg({ ok: false, text: e?.message ?? 'Could not save.' }); }
     finally { setBusy(false); }
   };
   const print = async () => {
+    // A574: items with no barcode get one first — the person is asked; without menu.edit main leaves them out and says so.
+    let generate = false;
+    if (missing.length && setup.canGenerate) {
+      const n = missing.length;
+      if (!window.confirm(`${n} item${n === 1 ? ' has' : 's have'} no barcode yet — generate ${n === 1 ? 'it' : 'them'} and print?`)) return;
+      generate = true;
+    }
     setBusy(true); setMsg(null);
     try {
       await posApi.labels.save({ printer });
-      const r = await posApi.labels.print({ items: picked.map((p) => ({ product_id: p.id, copies: qty[p.id] })), path: printer.path, settings });
-      setMsg(r.ok ? { ok: true, text: `${r.labels} label${r.labels === 1 ? '' : 's'} sent to the printer.${r.warnings?.length ? ' ' + r.warnings.join('. ') + '.' : ''}` }
+      const r = await posApi.labels.print({ items: picked.map((p) => ({ product_id: p.id, copies: qty[p.id] })), path: printer.path, settings, generate });
+      const gen = r.generated ?? [];
+      if (gen.length) {
+        const got = new Map(gen.map((g) => [g.id, g.barcode]));
+        setSetup((s) => (s ? { ...s, products: s.products.map((p) => (got.has(p.id) ? { ...p, barcode: got.get(p.id) ?? p.barcode } : p)),
+          barcodes: [...s.barcodes, ...gen.map((g) => g.barcode)] } : s));
+      }
+      const made = gen.length ? ` ${gen.length} barcode${gen.length === 1 ? '' : 's'} generated.` : '';
+      setMsg(r.ok ? { ok: !r.skipped?.length, text: `${r.labels} label${r.labels === 1 ? '' : 's'} sent to the printer.${made}${r.warnings?.length ? ' ' + r.warnings.join('. ') + '.' : ''}${r.notice ? ' ' + r.notice : ''}` }
         : { ok: false, text: r.error ?? 'The labels did not print.' });
     } catch (e: any) { setMsg({ ok: false, text: e?.message ?? 'The labels did not print.' }); }
+    finally { setBusy(false); }
+  };
+  const setNum = (patch: Partial<BarcodeNumbering>) => { setNumbering((n) => cleanBarcodeNumbering({ ...n, ...patch })); setNumMsg(''); };
+  const saveNumbering = async () => {
+    setBusy(true);
+    try {
+      const r = await posApi.labels.numbering(numbering);
+      setNumbering(cleanBarcodeNumbering(r.numbering));
+      setNumMsg(r.ok ? 'Saved — new barcodes follow this numbering, on every till and the web. Existing barcodes are not changed.' : (r.error ?? 'Not saved.'));
+    } catch (e: any) { setNumMsg(e?.message ?? 'Not saved.'); }
     finally { setBusy(false); }
   };
 
@@ -86,19 +132,19 @@ export default function LabelsTab() {
     <div className="p-4 space-y-4 text-gray-200" data-testid="labels-tab">
       <div>
         <h2 className="text-lg font-semibold text-white">Labels</h2>
-        <p className="text-sm text-gray-400">Barcode labels for the shelf or the item. A label shows today's price — reprint it when the price changes.</p>
+        <p className="text-sm text-gray-400" data-testid="labels-intro">{labelsIntro(setup.business.type)} Every label has a barcode. A label shows today's price — reprint it when the price changes.</p>
       </div>
 
       <section className="bg-gray-800 border border-gray-700 rounded-xl p-3 space-y-2">
         <h3 className="font-semibold text-white">1. Items</h3>
         <div className="flex flex-wrap gap-2">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or barcode" className={`${field} flex-1`} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${businessTerms(setup.business.type).products.toLowerCase()} by name or barcode`} className={`${field} flex-1`} />
           <select value={category} onChange={(e) => setCategory(e.target.value)} className={field}>
             <option value="">All categories</option>
             {categories.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
           <button className={btn} onClick={() => addAll(shown)}>Add all shown</button>
-          <button className={btn} onClick={() => addAll(products.filter((p) => isInStoreCode(p.barcode)))}>Add every generated code</button>
+          <button className={btn} onClick={() => addAll(products.filter((p) => isGeneratedCode(p.barcode, numbering)))}>Add every generated code</button>
           <button className={btn} onClick={() => setQty({})}>Clear</button>
         </div>
         <div className="max-h-64 overflow-y-auto">
@@ -113,7 +159,8 @@ export default function LabelsTab() {
           ))}
         </div>
         <p className="text-sm text-gray-400">{picked.length} item{picked.length === 1 ? '' : 's'}, {total} label{total === 1 ? '' : 's'}.
-          {picked.some((p) => !encodeBarcode(p.barcode)) && <span className="text-amber-300"> Some have no barcode — give them one on the web (Products › Generate barcodes).</span>}</p>
+          {missing.length > 0 && <span className="text-amber-300" data-testid="labels-missing"> {missing.length} {missing.length === 1 ? 'has' : 'have'} no barcode yet — {setup.canGenerate
+            ? 'one is generated when you print (needs the internet).' : 'ask a manager to generate barcodes for them; the others print.'}</span>}</p>
       </section>
 
       <section className="bg-gray-800 border border-gray-700 rounded-xl p-3 space-y-2">
@@ -133,13 +180,50 @@ export default function LabelsTab() {
           </select>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          {([['showName', 'Name'], ['showPrice', 'Price'], ['showBarcode', 'Barcode'], ['showDigits', 'Digits'], ['showBusiness', 'Business name']] as const).map(([k, label]) => (
+          {/* A574: no Barcode switch — every label carries one. */}
+          {([['showName', 'Name'], ['showPrice', 'Price'], ['showDigits', 'Digits under the bars'], ['showBusiness', 'Business name']] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-1"><input type="checkbox" checked={settings[k]} onChange={(e) => set({ [k]: e.target.checked } as Partial<LabelSettings>)} />{label}</label>
           ))}
           <label className="flex items-center gap-1">After the price <input className={`${field} w-24`} maxLength={20} value={settings.unitText} onChange={(e) => set({ unitText: e.target.value })} placeholder="per kg" /></label>
         </div>
         <div className="bg-white rounded-md p-2 inline-block">{preview ? <div dangerouslySetInnerHTML={{ __html: labelSvg(preview) }} /> : <span className="text-gray-500 text-sm">No items</span>}</div>
+        {first && !firstBars && <p className="text-xs text-gray-400">{first.name} has no barcode yet: the preview shows the next code as an example.</p>}
         {preview?.warnings.map((w) => <p key={w} className="text-xs text-amber-300">{w}</p>)}
+      </section>
+
+      {/* A574: barcode numbering — how new barcodes are made. */}
+      <section className="bg-gray-800 border border-gray-700 rounded-xl p-3 space-y-2" data-testid="barcode-numbering">
+        <h3 className="font-semibold text-white">Barcode numbering</h3>
+        <p className="text-xs text-gray-400">How new barcodes are made (when you print an item without one, or generate on the web). Existing barcodes never change.</p>
+        <div className="flex flex-wrap gap-2 items-center text-sm">
+          <select className={field} aria-label="Barcode format" value={numbering.format} disabled={!setup.canGenerate}
+            onChange={(e) => setNum({ format: e.target.value as NumberingFormat })}>
+            {(Object.keys(FORMAT_LABEL) as NumberingFormat[]).map((k) => <option key={k} value={k}>{FORMAT_LABEL[k]}</option>)}
+          </select>
+          <label className="flex items-center gap-1">Prefix <input className={`${field} w-24 font-mono`} inputMode="numeric" value={numbering.prefix} disabled={!setup.canGenerate}
+            onChange={(e) => setNum({ prefix: e.target.value })} aria-label="Prefix" /></label>
+          <label className="flex items-center gap-1">Start at <input type="number" min={1} className={`${field} w-28`} value={numbering.start} disabled={!setup.canGenerate}
+            onChange={(e) => setNum({ start: Number(e.target.value) })} aria-label="Start number" /></label>
+          {numbering.format === 'CODE128N' ? (
+            <>
+              <label className="flex items-center gap-1">Digits <input type="number" min={CODE128N_MIN_LENGTH} max={CODE128N_MAX_LENGTH} className={`${field} w-16`} value={numbering.length}
+                disabled={!setup.canGenerate} onChange={(e) => setNum({ length: Number(e.target.value) })} aria-label="Number of digits" /></label>
+              <label className="flex items-center gap-1"><input type="checkbox" checked={numbering.checkDigit} disabled={!setup.canGenerate}
+                onChange={(e) => setNum({ checkDigit: e.target.checked })} />Add a check digit</label>
+            </>
+          ) : <span className="text-gray-400">Digits: {numbering.length} (fixed by the format; the last is a check digit the scanner uses to catch misreads)</span>}
+        </div>
+        {numPreview && (
+          <div className="text-xs space-y-0.5">
+            <p className="text-gray-400">{numPreview.describe}</p>
+            <p className="text-gray-300">Next: <span className="font-mono">{numPreview.next.join(', ') || '—'}</span> · {numPreview.remaining.toLocaleString()} code{numPreview.remaining === 1 ? '' : 's'} left in this range</p>
+            {numPreview.exhausted && <p className="text-red-300">This range is used up: change the prefix or the number of digits.</p>}
+            {numPreview.warnings.map((w) => <p key={w} className="text-amber-300">{w}</p>)}
+          </div>
+        )}
+        {setup.canGenerate
+          ? <div className="flex items-center gap-2"><button className={btn} onClick={saveNumbering} disabled={busy}>Save numbering</button>{numMsg && <span className="text-xs text-gray-300">{numMsg}</span>}</div>
+          : <p className="text-xs text-gray-500">Changing the numbering needs the right to edit products.</p>}
       </section>
 
       <section className="bg-gray-800 border border-gray-700 rounded-xl p-3 space-y-2">

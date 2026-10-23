@@ -385,7 +385,9 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // A571: barcode labels — the setup (this till's catalogue, the business's label, this till's label printer), print.
   'labels:setup': NO_PAYLOAD,
   'labels:save':  { settings: { t: 'any', optional: true }, printer: { t: 'any', optional: true } },
-  'labels:print': { items: { t: 'any' }, path: { t: 'string', optional: true }, settings: { t: 'any', optional: true } },
+  'labels:print': { items: { t: 'any' }, path: { t: 'string', optional: true }, settings: { t: 'any', optional: true }, generate: { t: 'boolean', optional: true } },
+  // A574: the business's barcode numbering (menu.edit; saved in the cloud).
+  'labels:numbering': { numbering: { t: 'any' } },
   // A466: the monthly pack (A455) on the till — read, download and record for the books, from the cloud.
   'monthly:get':              { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },
   'monthly:export':           { month: { t: 'string', min: 7 }, branch_id: { t: 'string', optional: true } },

@@ -165,8 +165,10 @@ await ok("an ingredient's sale carries its order (late till sales of an ingredie
 console.log('\nThe till, the web POS, the screens\n');
 await ok('the till refuses a frozen item on tap and scan, and keeps the list it last heard', () => {
   const pos = read('apps/desktop/src/renderer/pages/POSPage.tsx');
-  assert.match(pos, /const addSimple = \(product: any\) => \{\n\s+if \(refuseFrozen\(product\)\) return;/);
-  assert.match(pos, /const handleTap = \(product: any\) => \{\n\s+if \(refuseFrozen\(product\)\) return;/);
+  // A578: the menu-hours refusal comes first (an asleep menu's item is refused before the freeze is asked); A577's
+  // weighed-item line may come before it.
+  assert.match(pos, /const addSimple = \(product: any\) => \{\n(?:[^\n]*\n){0,2}?\s+if \(refuseFrozen\(product\)\) return;/);
+  assert.match(pos, /const handleTap = \(product: any\) => \{\n(?:\s+if \(refuseOutOfHours\(product\)\) return;[^\n]*\n)?\s+if \(refuseFrozen\(product\)\) return;/);   // A578: hours first
   assert.match(pos, /posApi\.pos\.stockCountFreeze\(\)\.then\(setCountFreeze\)/);
   assert.match(read('apps/desktop/src/main/syncEngine.ts'), /setStockCountFreeze\(c\.stockCount\);/);
   assert.match(read('apps/desktop/src/main/syncEngine.ts'), /stockCount: 'stockCount' in _j \? \(_j\.stockCount \?\? null\) : undefined,/);
@@ -175,7 +177,8 @@ await ok('the till refuses a frozen item on tap and scan, and keeps the list it 
 });
 await ok('the web POS refuses a frozen item at the counter (tap, scan, minimart)', () => {
   const c = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-  assert.match(c, /\(product: Product\) => \{ if \(!isFrozen\(product\)\) _addToCart\(product, variantsByProduct\); \},/);
+  // A577: the adapter also sends an item sold by weight to the weight keypad — after the frozen check, as before.
+  assert.match(c, /\(product: Product\) => \{\s*if \(isFrozen\(product\)\) return;[\s\S]{0,200}?_addToCart\(product, variantsByProduct\);\s*\},/);
   assert.match(c, /onAddToCart=\{minimartAddToCartChecked\}/);
 });
 await ok('the screens: the difference only for a reviewer; a blind printed sheet; the manager counts', () => {

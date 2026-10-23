@@ -18,7 +18,7 @@
  *   of the grid as big tabs and the panel lists only the chosen menu's categories (`menuBar` — its own tabs drop out).
  *   No menus: no bar, the panel alone as before. The theme (--act-strong) and the POS's light / dark tokens (--pos-*).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Category, Menu, Product } from '../../../types';
 import {
   ALL_CATEGORIES, ALL_MENUS, PANEL_PREFS_KEY, categoryGroups, menuBarEdges, menuBarLabel, menuTabs, parsePanelPrefs,
@@ -76,8 +76,11 @@ export function CategoryChip({ label, onClear }: { label: string | null; onClear
  * A566: the menus across the top of the grid — "All", "Food", "Drinks" … — big tabs (46 px) as the categories were before
  * A537. Many menus: the row scrolls sideways (a swipe, the wheel, or the ‹ › arrows that show, with a fade, on the side
  * that hides more); the chosen tab is kept in view. Nothing when the business has no menus.
+ * A573: `label` is the business's word for them — "Menus" (a restaurant), "Departments" (a shop), "Groups" (lib/businessTerms.ts).
  */
-export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void }) {
+/** A578: `hints` — a tab's small "until 11:00" (a menu with hours); `trailing` — the manager's "Show all" at the row's end
+ *  (shown even when every menu is asleep, so it can bring them back). */
+export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void; label?: string; hints?: Record<string, string>; trailing?: ReactNode }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   const measure = useCallback(() => {
@@ -95,7 +98,7 @@ export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: str
   useEffect(() => {   // the chosen menu stays in view (a remembered one far along the row)
     try { (rowRef.current?.querySelector('[aria-selected="true"]') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); } catch { /* fine */ }
   }, [shown]);
-  if (tabs.length === 0) return null;
+  if (tabs.length === 0 && !trailing) return null;
   const nudge = (dir: 1 | -1) => {
     const el = rowRef.current;
     if (el) el.scrollBy({ left: dir * Math.max(160, el.clientWidth * 0.6), behavior: 'smooth' });
@@ -107,8 +110,9 @@ export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: str
     background: `linear-gradient(to ${side === 'left' ? 'right' : 'left'}, var(--pos-bg, #0f172a) 45%, transparent)`,
   });
   return (
-    <div data-testid="menu-bar" style={{ position: 'relative', flexShrink: 0, borderBottom: '1px solid var(--pos-border-l, #1e293b)' }}>
-      <div ref={rowRef} role="tablist" aria-label="Menus" onScroll={measure}
+    <div data-testid="menu-bar" style={{ position: 'relative', flexShrink: 0, borderBottom: '1px solid var(--pos-border-l, #1e293b)', display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+      <div ref={rowRef} role="tablist" aria-label={label} onScroll={measure}
         style={{ display: 'flex', gap: 8, padding: '8px 12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
         {tabs.map((t) => {
           const on = t.id === shown;
@@ -118,12 +122,15 @@ export function MenuBar({ tabs, active, onPick }: { tabs: MenuTab[]; active: str
                        fontSize: 15, fontWeight: 700, border: `1px solid ${on ? ACT : 'var(--pos-border, #334155)'}`,
                        background: on ? ACT : 'var(--pos-surface, #1e293b)', color: on ? '#fff' : 'var(--pos-text, #f1f5f9)' }}>
               {t.icon && <span aria-hidden style={{ marginRight: 6 }}>{t.icon}</span>}{menuBarLabel(t)}
+              {hints?.[t.id] && <span data-testid="menu-bar-hint" style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, opacity: 0.8 }}>{hints[t.id]}</span>}
             </button>
           );
         })}
       </div>
-      {edges.left && <button type="button" data-testid="menu-bar-left" aria-label="More menus to the left" onClick={() => nudge(-1)} style={arrow('left')}>‹</button>}
-      {edges.right && <button type="button" data-testid="menu-bar-right" aria-label="More menus to the right" onClick={() => nudge(1)} style={arrow('right')}>›</button>}
+      {edges.left && <button type="button" data-testid="menu-bar-left" aria-label={`More ${label.toLowerCase()} to the left`} onClick={() => nudge(-1)} style={arrow('left')}>‹</button>}
+      {edges.right && <button type="button" data-testid="menu-bar-right" aria-label={`More ${label.toLowerCase()} to the right`} onClick={() => nudge(1)} style={arrow('right')}>›</button>}
+      </div>
+      {trailing && <div style={{ flexShrink: 0, paddingRight: 12 }}>{trailing}</div>}
     </div>
   );
 }
@@ -141,9 +148,13 @@ interface Props {
   overlay: boolean;
   /** A566: the menus are across the top of the grid (MenuBar) — the panel lists the chosen menu's categories, no tabs of its own. */
   menuBar?: boolean;
+  /** A573: the business's words — "Menus" / "All menus", "Departments" / "All departments", "Groups" / "All groups". */
+  menusLabel?: string;
+  allMenusLabel?: string;
 }
 
-export default function CategoryPanel({ panel, categories, menus, products, activeMenu, activeCategory, onMenu, onCategory, overlay, menuBar = false }: Props) {
+export default function CategoryPanel({ panel, categories, menus, products, activeMenu, activeCategory, onMenu, onCategory, overlay, menuBar = false,
+  menusLabel = 'Menus', allMenusLabel = 'All menus' }: Props) {
   const tabs = useMemo(() => menuTabs(menus, categories), [menus, categories]);
   const groups = useMemo(() => categoryGroups(categories, menus, activeMenu), [categories, menus, activeMenu]);
   const counts = useMemo(() => productCounts(products.filter((p) => p.status === 'active')), [products]);
@@ -177,7 +188,7 @@ export default function CategoryPanel({ panel, categories, menus, products, acti
       </div>
 
       {tabs.length > 0 && !menuBar && (
-        <div data-testid="menu-tabs" role="tablist" aria-label="Menus"
+        <div data-testid="menu-tabs" role="tablist" aria-label={menusLabel}
           style={{ display: 'flex', gap: 6, padding: '4px 10px 8px', overflowX: 'auto', flexShrink: 0 }}>
           {tabs.map((t) => {
             const on = t.id === (tabs.some((x) => x.id === activeMenu) ? activeMenu : ALL_MENUS);
@@ -186,7 +197,7 @@ export default function CategoryPanel({ panel, categories, menus, products, acti
                 style={{ flexShrink: 0, minHeight: 36, padding: '0 12px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
                          fontSize: 12, fontWeight: 600, border: `1px solid ${on ? 'transparent' : 'var(--pos-border, #334155)'}`,
                          background: on ? ACT : 'var(--pos-surface, #1e293b)', color: on ? '#fff' : 'var(--pos-text3, #94a3b8)' }}>
-                {t.icon && <span style={{ marginRight: 4 }}>{t.icon}</span>}{t.name}
+                {t.icon && <span style={{ marginRight: 4 }}>{t.icon}</span>}{t.id === ALL_MENUS ? allMenusLabel : t.name}
               </button>
             );
           })}

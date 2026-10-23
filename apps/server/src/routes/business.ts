@@ -20,8 +20,10 @@ import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
 import { cleanReportSchedule } from '../jobs/ownerAlertsDecision';   // A476
 import { isOwnerAlertJobKey } from '../jobs/ownerAlerts';             // A476
+import { LOSS_SETTINGS_KEY } from '../jobs/lossAlerts';               // A576
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
+import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
 
 const router = safeRouter();
 
@@ -61,6 +63,7 @@ export const BUSINESS_SETTING_KEYS: ReadonlySet<string> = new Set([
   'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
   'continuous_operation', BUSINESS_DAY_CUTOFF_KEY, CASHIER_HISTORY_METHODS_KEY,
   'cashier_sees_shift_sales', 'cashier_history_totals', 'kitchen_exclusions', 'order_note_picks',
+  SCALE_SETTINGS_KEY,   // A577: how the business's weighing scales print their labels
 ]);
 /** Families of settings.business keys whose suffix is the tenant's own (a vehicle type, a delivery platform). */
 const BUSINESS_SETTING_PREFIXES = ['parking_rate_', 'aggregator_commission_'];
@@ -160,6 +163,8 @@ const READABLE_SETTING_KEYS = new Set([
   'kitchen_exclusions',
   // A367: the owner's quick picks for order notes ("No salt", "Extra cheese") — a JSON array of strings.
   'order_note_picks',
+  // A577: the scale label layout (shared/scaleBarcode.ts) — the settings screen shows and tests it.
+  SCALE_SETTINGS_KEY,
   // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules (lib/reversalRules.ts).
   'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales', 'delivery_free_allowed',
   // A505: saved (a REVERSAL_SETTING_KEYS key) but never read back — the Voids, refunds & delivery screen showed the
@@ -248,9 +253,14 @@ router.patch('/', requireAuth, requirePermission('settings.business'), async (re
 });
 
 // GET /api/business/support — 0.6.35 (A384): who this shop calls — its tech (admin portal), or null (SwiftPOS support).
-// Any signed-in member: the web's Help page shows it.
+// Any signed-in member: the web's Help page shows it. A575: and the business type (a shop's Help page leaves out the
+// kitchen-ticket step; shared/helpTopics.ts helpTopicsFor).
 router.get('/support', requireAuth, async (req, res) => {
-  res.json({ support: await getSupportContact(req.businessId) });
+  const [support, { data: biz }] = await Promise.all([
+    getSupportContact(req.businessId),
+    supabase.from('businesses').select('type').eq('id', req.businessId).maybeSingle(),
+  ]);
+  res.json({ support, businessType: (biz as { type?: string | null } | null)?.type ?? null });
 });
 
 // GET /api/business/cloud-trial — A569: the owner's cloud trial, for the dashboard's quiet notice in its last 7 days
@@ -627,7 +637,8 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // A550: web dashboard access is given and taken only through Staff (routes/staff.ts /:id/web-access), which also links
   // and unlinks the sign-in account and ends sessions — never written here.
   // A569: the cloud trial record (once per client, ever) is ZapTill's too.
-  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY || String(key) === CLOUD_TRIAL_KEY) {
+  // A576: the loss-prevention alerts' settings are the owner's, written only through PUT /api/loss-alerts/settings (cleaned).
+  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY || String(key) === CLOUD_TRIAL_KEY || String(key) === LOSS_SETTINGS_KEY) {
     res.status(403).json({ error: 'That setting is kept by ZapTill itself.', code: 'READ_ONLY_KEY' });
     return;
   }
@@ -731,6 +742,24 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
       : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
     if (hmErr) { sendError(res, hmErr); return; }
     invalidateHistoryMethods(req.businessId);
+    res.json({ key, value: clean });
+    return;
+  }
+
+  // ── A577: the scale label layout — only a layout that adds up to an EAN-13 is stored, as clean JSON ──
+  if (key === SCALE_SETTINGS_KEY) {
+    const c = cleanScaleSettings(value);
+    if ('error' in c) {
+      res.status(400).json({ error: c.error, code: 'INVALID_VALUE' });
+      return;
+    }
+    const clean = JSON.stringify(c.settings);
+    const { data: existingSc } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: scErr } = existingSc
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingSc.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (scErr) { sendError(res, scErr); return; }
     res.json({ key, value: clean });
     return;
   }

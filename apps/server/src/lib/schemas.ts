@@ -23,7 +23,7 @@ const OrderItemSchema = z.object({
     categories: z.object({ name: z.string() }).nullable().optional(),
   }),
   unitPrice: z.number().nonnegative(),
-  quantity: z.number().int().positive(),
+  quantity: z.number().positive(),   // A577: a weighed item's quantity is its weight in kg (0.452)
   lineTotal: z.number().nonnegative(),
   selectedVariants: z.array(z.object({
     groupName: nonEmptyString,
