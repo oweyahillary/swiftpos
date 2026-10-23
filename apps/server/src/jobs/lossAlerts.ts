@@ -26,6 +26,8 @@ import { isOwnerRoleName } from '../lib/ownerRole';
 import { readPartners } from '../lib/webPartners';
 import { cashDifference } from './ownerAlertsDecision';
 import { lossAlertsSection } from './ownerEmails';
+import { analyticsEnabled } from '../lib/analyticsAccess';   // A580: premium — the same switch as Analytics
+import { ANALYTICS_FLAG } from '../lib/analyticsRules';
 import {
   readLossSettings, detectLossAlerts, toNotify, teamRecipients, ownerTold, notificationTitle, lossPrevDate, kindsFor,
   emailLines, LOSS_WEEK_DAYS, type LossInput, type LossAlert, type LossSettings, type Person, type StoredAlert,
@@ -53,9 +55,17 @@ export async function readLossSettingsFor(businessId: string): Promise<LossSetti
 }
 
 export async function runLossAlertsTick(now: Date = new Date()): Promise<void> {
-  const { data: businesses, error } = await supabase.from('businesses').select('id, name, owner_id, currency, type');
-  if (error) { console.error('[lossAlerts] businesses:', error.message); return; }
-  for (const biz of (businesses ?? []) as Biz[]) {
+  // A580 (owner, 2026-10-23: "Yes let them be premium"): only the businesses with premium Analytics switched on (the
+  // 'analytics' feature flag) — one read for the list; every other business is skipped (nothing read, stored or told).
+  const { data: flags, error: fErr } = await supabase.from('feature_flags').select('business_id')
+    .eq('key', ANALYTICS_FLAG).eq('enabled', true).limit(10000);
+  if (fErr) { console.error('[lossAlerts] feature_flags:', fErr.message); return; }
+  const premium = [...new Set(((flags ?? []) as Array<{ business_id: string }>).map((f) => f.business_id).filter(Boolean))];
+  if (premium.length === 0) return;
+  let businesses: Biz[];
+  try { businesses = await chunkIn<Biz>('businesses', 'id', premium, (q) => q.select('id, name, owner_id, currency, type')); }
+  catch (e: any) { console.error('[lossAlerts] businesses:', e?.message); return; }
+  for (const biz of businesses) {
     try { await runLossAlertsForBusiness(biz, now); }
     catch (e: any) { console.error(`[lossAlerts] failed for ${biz.name} (${biz.id}):`, e?.message); }
   }
@@ -180,6 +190,8 @@ const missingTable = (msg: string) => /loss_alerts/.test(msg) && /does not exist
  * tests read both. Nothing at all when the owner switched the alerts off.
  */
 export async function runLossAlertsForBusiness(biz: Biz, now: Date = new Date()): Promise<{ stored: LossAlert[]; notified: LossAlert[] }> {
+  // A580: premium only (the Analytics switch) — a business without it gets nothing stored and nobody told.
+  if (!(await analyticsEnabled(biz.id))) return { stored: [], notified: [] };
   const settings = await readLossSettingsFor(biz.id);
   if (!settings.enabled) return { stored: [], notified: [] };
   const { users, people, ownerRoleIds } = await loadPeople(biz.id);
@@ -246,6 +258,7 @@ export async function runLossAlertsForBusiness(biz: Biz, now: Date = new Date())
  */
 export async function lossEmailHtml(biz: { id: string; name: string; owner_id: string | null; currency: string | null }, recipients: string[], now: Date): Promise<string> {
   try {
+    if (!(await analyticsEnabled(biz.id))) return '';   // A580: premium only — no block in a non-premium owner's email
     const settings = await readLossSettingsFor(biz.id);
     if (!settings.enabled || !settings.daily_email) return '';
     const { data: b } = await supabase.from('businesses').select('type').eq('id', biz.id).maybeSingle();

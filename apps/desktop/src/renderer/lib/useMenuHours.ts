@@ -12,11 +12,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { menuHoursView, menuTimerDelay, type HoursCategoryLike, type HoursMenuLike, type MenuHoursView } from '../../shared/menuHours';
 
 export function useMenuHours<M extends HoursMenuLike, C extends HoursCategoryLike>(
-  menus: readonly M[], categories: readonly C[], opts: { cutoff?: number; showAll?: boolean } = {},
+  menus: readonly M[], categories: readonly C[], opts: { cutoff?: number; showAll?: boolean; later?: boolean } = {},
 ): MenuHoursView<M, C> {
   const [now, setNow] = useState(() => new Date());
-  const { cutoff = 0, showAll = false } = opts;
-  const view = useMemo(() => menuHoursView(menus, categories, now, { cutoff, showAll }), [menus, categories, now, cutoff, showAll]);
+  const { cutoff = 0, showAll = false, later = false } = opts;   // A580: later — the closed menus greyed ("Later")
+  const view = useMemo(() => menuHoursView(menus, categories, now, { cutoff, showAll, later }), [menus, categories, now, cutoff, showAll, later]);
   const nextMs = view.nextChange ? view.nextChange.getTime() : null;
   useEffect(() => {
     const delay = menuTimerDelay(nextMs === null ? null : new Date(nextMs), Date.now());

@@ -29,7 +29,7 @@ import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
 import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
-import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar } from './cashier/CategoryPanel';   // A537; A566
+import CategoryPanel, { useCategoryPanel, PanelToggle, CategoryChip, MenuBar, LaterButton } from './cashier/CategoryPanel';   // A537; A566; A580
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../lib/menuFilter';   // A537
 import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
@@ -44,7 +44,7 @@ import { useStockView } from '../../lib/useStockView';   // A563
 import { showsSoldOut, hiddenOutOfStock, stockRefusals } from '../../lib/stockGate';   // A563
 import { useToast } from '../../hooks/useToast';
 import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
-import { hiddenByHours, hoursRefusal, type MenuHoursView } from '../../lib/menuHours';   // A578: menus by time of day
+import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '../../lib/menuHours';   // A578: menus by time of day; A580: Later
 import { useMenuHours } from '../../lib/useMenuHours';   // A578
 import { getWebDayCutoff } from '../../lib/webDayCutoff';   // A578: hours past midnight belong to the night before
 import Toast from '../../components/Toast';
@@ -295,7 +295,9 @@ export default function CashierScreen() {
   // An item scanned or tapped anyway is refused in plain words (isFrozen below). "Show all" for the session: menu.edit.
   const canShowAllMenus = hasPermission('menu.edit');
   const [showAllMenus, setShowAllMenus] = useState(false);
-  const hours = useMenuHours(menus, categories, { cutoff: getWebDayCutoff(), showAll: showAllMenus && canShowAllMenus });
+  // A580: "Later" — any staff member sees the closed menus greyed (view only, nothing sold); this session only, never stored.
+  const [laterMenus, setLaterMenus] = useState(false);
+  const hours = useMenuHours(menus, categories, { cutoff: getWebDayCutoff(), showAll: showAllMenus && canShowAllMenus, later: laterMenus });
   const hoursRef = useRef<Pick<MenuHoursView<unknown, unknown>, 'asleep'>>(hours);
   hoursRef.current = hours;   // the scanner's listener reads the latest, not the render it was made in
   const menusNow = hours.menus, categoriesNow = hours.categories;
@@ -901,13 +903,19 @@ export default function CashierScreen() {
   const menuBar = useMemo(() => menuBarTabs(menusNow, categoriesNow), [menusNow, categoriesNow]);
   const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); setSearch(''); };
   // A578: the manager's "Show all" at the end of the menu row — only with menu.edit, only while a menu is asleep.
+  // A580: amber with a key and "sell" — clearly not the grey, dashed "Later" (anyone's, view only) beside it.
   const showAllButton = canShowAllMenus && hours.anyAsleep ? (
     <button type="button" data-testid="menu-show-all" aria-pressed={showAllMenus} onClick={() => setShowAllMenus((v) => !v)}
+      title={`Manager: bring back every ${words.menu.toLowerCase()} and sell from them now`}
       style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600,
-               border: '1px solid var(--pos-border, #334155)', background: 'var(--pos-surface, #1e293b)', color: 'var(--pos-text, #f1f5f9)' }}>
-      {showAllMenus ? `Showing all ${words.menus.toLowerCase()} ✕` : `Show all ${words.menus.toLowerCase()}`}
+               border: '1px solid rgba(245,158,11,0.55)', background: showAllMenus ? 'rgba(245,158,11,0.18)' : 'var(--pos-surface, #1e293b)', color: '#f59e0b' }}>
+      <span aria-hidden style={{ marginRight: 4 }}>🔑</span>{showAllMenus ? `Showing all ${words.menus.toLowerCase()} ✕` : `Show all ${words.menus.toLowerCase()} · sell`}
     </button>
   ) : undefined;
+  // A580 (owner, 2026-10-23): "Later" for every staff member while a menu is closed — gone while a manager's Show all is on.
+  const laterButton = hours.anyAsleep && !(showAllMenus && canShowAllMenus)
+    ? <LaterButton on={laterMenus} onToggle={() => setLaterMenus((v) => !v)} label={words.menus} /> : undefined;
+  const menuBarTrailing = laterButton || showAllButton ? <>{laterButton}{showAllButton}</> : undefined;
   const catChip = chosenCategoryName ?? (chosenMenuName && menuBar.length === 0 ? `${chosenMenuName} ${words.menu.toLowerCase()}` : null);
   const clearCatChip = () => { setActiveCategory('all'); if (!chosenCategoryName) catPanel.setMenu(ALL_MENUS); };
 
@@ -1190,7 +1198,8 @@ export default function CashierScreen() {
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay = onGrid((p as any).show_days, search.trim() !== '');
     const matchStock = !hiddenOutOfStock(stockView.mode, stockView, p.id);   // A563: "Hide when out of stock"
-    const matchHours = !hiddenByHours(p as any, hours);   // A578: its menu outside its hours — off the grid, All and search
+    const matchHours = !hiddenByHours(p as any, hours)   // A578: its menu outside its hours — off the grid, All and search
+      || laterPeek(p as any, hours, { menu: activeMenu, category: activeCategory, search });   // A580: Later — shown greyed in its own menu
     return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock && matchHours;
   });
   // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000 at
@@ -1412,7 +1421,9 @@ export default function CashierScreen() {
             categories={categoriesNow}   // A578: a department outside its hours left out (a scan of its item is refused)
             menus={menusNow}
             menuHints={hours.hints}
-            menuBarTrailing={showAllButton}
+            menuBarTrailing={menuBarTrailing}   // A580: Later + Show all
+            menuLater={hours.later}
+            peekLater={(p: Product, scope: { menu: string; category: string; search: string }) => laterPeek(p as any, hours, scope)}
             outOfHours={(p: Product) => hoursRefusal(p as any, hours)}
             cart={cart}
             currency={currency}
@@ -1680,7 +1691,7 @@ export default function CashierScreen() {
               </div>
 
               {/* A566: the menus as big tabs across the top of the grid (none when the business has no menus). */}
-              <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={words.menus} hints={hours.hints} trailing={showAllButton} />
+              <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={words.menus} hints={hours.hints} trailing={menuBarTrailing} greyed={hours.later} />
 
               {/* A537: the category panel (collapsed at start) beside — or, on a phone, over — the product grid. */}
               <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
@@ -1702,6 +1713,7 @@ export default function CashierScreen() {
                     const hasVariants =
                       product.has_variants && (variantsByProduct[product.id]?.length ?? 0) > 0;
                     const soldOut = showsSoldOut(stockView.mode, stockView, product.id);   // A563
+                    const later = hours.later.size > 0 && itemAsleep(product as any, hours) !== null;   // A580: a closed menu's item, Later on
 
                     return (
                       <button
@@ -1710,11 +1722,13 @@ export default function CashierScreen() {
                         className="press"
                         data-has-variants={hasVariants ? 'true' : 'false'}
                         data-sold-out={soldOut ? 'true' : undefined}
-                        aria-disabled={soldOut || undefined}
-                        style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}), ...(soldOut ? { opacity: 0.5, filter: 'grayscale(1)' } : {}) }}
+                        data-later={later ? 'true' : undefined}
+                        aria-disabled={soldOut || later || undefined}
+                        style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}), ...(soldOut || later ? { opacity: 0.5, filter: 'grayscale(1)' } : {}) }}
                         onClick={() => addToCart(product)}
                       >
-                        {soldOut && <span style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700 }}>SOLD OUT</span>}
+                        {later && <span data-testid="tile-later" style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700, border: '1px dashed #6b7280' }}>LATER</span>}
+                        {soldOut && !later && <span style={{ ...s.variantBadge, left: 'auto', right: 6, background: '#111827', color: '#f3f4f6', fontWeight: 700 }}>SOLD OUT</span>}
                         {inCart && <span key={cartQty} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{cartQty}</span>}
                         {hasVariants && <span style={s.variantBadge}>options</span>}
                         {(product as any).is_fuel && <span style={s.fuelBadge}>⛽</span>}

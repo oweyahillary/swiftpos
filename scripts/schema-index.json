@@ -256,6 +256,45 @@
     "recorded_at": "\"timestamp with time zone\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "cloud_payments": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "currency": "\"text\" NOT NULL",
+    "period": "\"text\" NOT NULL",
+    "method": "\"text\" NOT NULL",
+    "reference": "\"text\"",
+    "paid_at": "\"timestamp with time zone\" NOT NULL",
+    "paid_until_before": "\"timestamp with time zone\"",
+    "paid_until_after": "\"timestamp with time zone\" NOT NULL",
+    "invoice_id": "\"uuid\"",
+    "recorded_by": "\"uuid\"",
+    "recorded_by_email": "\"text\" NOT NULL",
+    "recorded_at": "\"timestamp with time zone\" NOT NULL",
+    "note": "\"text\""
+  },
+  "cloud_plan_reminders": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "paid_until": "\"timestamp with time zone\" NOT NULL",
+    "milestone": "\"text\" NOT NULL",
+    "sent_at": "\"timestamp with time zone\" NOT NULL",
+    "owner_email": "\"text\"",
+    "owner_sent": "\"boolean\" NOT NULL",
+    "admin_sent": "\"boolean\" NOT NULL",
+    "error": "\"text\""
+  },
+  "cloud_plans": {
+    "business_id": "\"uuid\" NOT NULL",
+    "period": "\"text\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
+    "currency": "\"text\" NOT NULL",
+    "custom_until": "\"timestamp with time zone\"",
+    "notes": "\"text\"",
+    "updated_by": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "combo_items": {
     "id": "\"uuid\" NOT NULL",
     "combo_id": "\"uuid\" NOT NULL",

@@ -41,7 +41,7 @@ const isDev = import.meta.env.DEV;
         <h2>Call</h2>
         <p>Same number, if you would rather talk.</p>
         <p class="way__phone"><a href={telLink}>{SITE.phoneDisplay}</a></p>
-        <!-- TODO(owner): add support hours here. -->
+        <p class="way__hours">Support from 8 am to 7 pm. Priority clients get 24-hour support.</p>
       </article>
 
       <article class="way">
@@ -96,6 +96,7 @@ const isDev = import.meta.env.DEV;
   .way h2 { font-size: var(--fs-lg); }
   .way p { color: var(--ink-2); }
   .way__alt { margin: var(--s-4) 0 0; font-size: var(--fs-sm); }
+  .way__hours { margin: var(--s-3) 0 0; font-size: var(--fs-sm); }
   .way__phone a { font: 800 var(--fs-xl)/1.1 var(--font-display); text-decoration: none; color: var(--ink); }
   .way__phone a:hover { color: var(--teal-strong); }
   @media (min-width: 900px) { .ways { grid-template-columns: 1.4fr 1fr 1fr; } }

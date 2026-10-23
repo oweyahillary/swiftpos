@@ -593,7 +593,9 @@ declare global {
                                 /** A363: records the cloud refused (parked), why, and when the till last had nothing waiting. */
                                 parkedCount?: number; parkedReason?: string; lastSyncedAt?: string | null;
                                 /** A529: the cloud could not be reached on the last try (no answer, its 5xx, another server's page). */
-                                cloudUnreachable?: { since: string; why: string } | null }>;
+                                cloudUnreachable?: { since: string; why: string } | null;
+                                /** A581: the cloud refuses this business's sync (its cloud plan lapsed); records stay queued. */
+                                cloudLapsed?: { since: string; message: string } | null }>;
         retryFailed: () => Promise<{ requeued: number; pushed: number; errors: string[] }>;
         notifyNetworkChange: (online: boolean) => Promise<{ online: boolean; pendingCount: number; failedCount: number }>;
       };

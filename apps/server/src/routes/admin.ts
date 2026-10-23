@@ -74,6 +74,7 @@ import { listDesktopReleasesOrStale } from '../lib/desktopReleases';
 import { ownerSetsFeature } from './controls';        // A490
 import { checkApprovableVersion } from '../lib/desktopVersionApproval';   // A493: the admin approves till updates
 import { startTrialIfEligible, convertTrialIfAny, readTrial, trialPhase, planLabel, planLabelsFor } from '../lib/cloudTrial';   // A569
+import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds } from '../lib/cloudPlan';   // A581
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
@@ -581,7 +582,20 @@ router.post('/clients', requireAdmin, async (req, res) => {
 });
 
 router.get('/clients', requireAdmin, async (req, res) => {
-  const { search, status, type, limit = '50', offset = '0' } = req.query as Record<string, string>;
+  const { search, status, type, expiry, limit = '50', offset = '0' } = req.query as Record<string, string>;
+
+  // A581: "Expiring (14 days)" / "Lapsed" — the clients on the cloud plan whose paid-until is near or past.
+  let onlyIds: string[] | null = null;
+  if (expiry === 'expiring' || expiry === 'lapsed') {
+    const now = Date.now();
+    const facts = await readCloudFacts(await gatedBusinessIds().catch(() => [])).catch(() => new Map());
+    onlyIds = [...facts.entries()].filter(([, f]) => {
+      const s = cloudStanding(f, now);
+      if (s.daysLeft === null) return false;
+      return expiry === 'lapsed' ? s.daysLeft < 0 || s.state === 'ended' : s.daysLeft >= 0 && s.daysLeft <= 14 && s.state !== 'ended';
+    }).map(([id]) => id);
+    if (!onlyIds.length) { res.json({ clients: [], total: 0 }); return; }
+  }
 
   let query = supabase
     .from('businesses')
@@ -593,13 +607,23 @@ router.get('/clients', requireAdmin, async (req, res) => {
   if (status) query = query.eq('status', status);
   if (type)   query = query.eq('type', type);
   if (search) query = query.ilike('name', `%${search}%`);
+  if (onlyIds) query = query.in('id', onlyIds);
 
   const { data, count, error } = await query;
   if (error) { sendError(res, error); return; }
   // A569: each client's plan in words — Desktop / Cloud trial / Cloud trial ended / Cloud / No licence yet.
   const rows = (data ?? []) as Array<{ id: string }>;
   const labels = await planLabelsFor(rows.map((r) => r.id)).catch(() => new Map<string, string>());
-  res.json({ clients: rows.map((r) => ({ ...r, plan_label: labels.get(r.id) ?? null })), total: count ?? 0 });
+  // A581: where each client on the cloud plan stands — "Expires in 5 days" / "Lapsed 3 days" (null: not on the plan).
+  const now = Date.now();
+  const facts = await readCloudFacts(rows.map((r) => r.id)).catch(() => new Map());
+  const cloud = (id: string) => {
+    const f = facts.get(id);
+    if (!f) return null;
+    const s = cloudStanding(f, now);
+    return s.gated ? { paid_until: s.paidUntil, days_left: s.daysLeft, state: s.state, sync_refused: s.syncRefused, trial: s.trial, sync_stops_at: s.syncStopsAt } : null;
+  };
+  res.json({ clients: rows.map((r) => ({ ...r, plan_label: labels.get(r.id) ?? null, cloud: cloud(r.id) })), total: count ?? 0 });
 });
 
 router.get('/clients/:id', requireAdmin, async (req, res) => {
@@ -1175,6 +1199,7 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
     .single();
 
   if (error) { sendError(res, error); return; }
+  if (key === 'web_hosting') forgetStanding(String(id));   // A581: the lapse gate reads afresh
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -1231,6 +1256,7 @@ router.patch('/clients/:id/web-access', requireAdmin, requireSuperAdmin, async (
 
   if (error) { sendError(res, error); return; }
 
+  forgetStanding(id);   // A581: paid-until is web_access_expires_at — the lapse gate reads afresh
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
     action: 'web_access.set_expiry', resource: 'business',
@@ -1860,6 +1886,14 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
     res.status(409).json({
       error: 'Assign a desktop licence to this branch before enrolling a till.',
       code:  'BRANCH_NOT_LICENSED',
+    });
+    return;
+  }
+  // A581: a lapsed cloud plan (past its grace) — no new till and no rejoin until the payment is recorded.
+  if (await enrolRefusal(String(businessId)).catch(() => null)) {
+    res.status(409).json({
+      error: 'This client\'s cloud plan has lapsed, so a till cannot be joined. Record the payment on Plan & billing first.',
+      code:  'CLOUD_SUBSCRIPTION_ENDED',
     });
     return;
   }

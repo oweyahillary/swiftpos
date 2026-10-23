@@ -172,6 +172,10 @@ export interface BusinessConfig {
    *  2026-10-21, on paper: "kitchen receipt use the same font as the despatcher"). A543's `kitchenFontA` (Font A when
    *  Font B was the standard) is not read any more. Dispatch tickets and receipts are Font A either way. */
   kitchenFontB?: boolean;
+  /** A580 (owner, 2026-10-23: no kitchen words at a shop): false = a business with no kitchen (retail, minimart,
+   *  petrol_station, parking, other) — the customer receipt has no "Kots: 0" line. Absent / true = a restaurant or café
+   *  (or a type not known yet): the Kots line as before, byte for byte. The caller decides from the business type. */
+  kitchenTickets?: boolean;
 }
 
 /**

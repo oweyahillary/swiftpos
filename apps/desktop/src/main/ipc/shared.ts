@@ -48,6 +48,13 @@ export const TILL_OFF_NOTE = 'The till is not connected — this applies when it
 // and on logout (so the next user never sees stale data on boot).
 // Orders and sync_queue are intentionally kept so pending offline orders
 // can still be pushed after re-login.
+/** A580: a restaurant or café — or a type not known yet (shared/businessTerms.ts isFoodService) — has kitchen tickets, so its
+ *  receipt keeps the "Kots" line; a shop, a petrol station, a car park or "other" does not. */
+export function kitchenBusiness(type: string | null | undefined): boolean {
+  const t = String(type ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return t === '' || t === 'restaurant' || t === 'cafe';
+}
+
 export function clearCatalogue(db: ReturnType<typeof getLocalDb>) {
   db.exec(`
     DELETE FROM products;
@@ -342,6 +349,9 @@ export function createIpcShared(handle: IpcHandle) {
           // A551 (owner, 2026-10-21: "kitchen receipt use the same font as the despatcher"): kitchen tickets in Font A
           // unless the admin portal's 'kitchen_font_b' is on for this client (A543's Font B). Dispatch and receipts: Font A.
           kitchenFontB:    kitchenFontBFrom(getPosFeatures()),
+          // A580 (owner, 2026-10-23): a shop has no kitchen — no "Kots: 0" on its receipt. A restaurant or café (or a
+          // type not known yet) prints the Kots line as before.
+          kitchenTickets:  kitchenBusiness(cfg?.business_type),
         },
         // The presets shared/printing exports, NOT a hand-rolled config here.
         // They are what the verified sample output was rendered from, so a

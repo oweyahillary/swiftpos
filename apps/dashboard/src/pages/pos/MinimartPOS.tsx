@@ -91,6 +91,10 @@ interface Props {
   menuBarTrailing?: ReactNode;
   /** A578: why an item is not sold now (its department outside its hours), or null — off the catalogue; a scan is refused. */
   outOfHours?: (p: Product) => string | null;
+  /** A580: the closed departments "Later" shows greyed on the bar (CashierScreen's — any staff member, view only). */
+  menuLater?: ReadonlySet<string>;
+  /** A580: with Later on, a closed department's item shows (greyed, never sold) in its own department — else false. */
+  peekLater?: (p: Product, scope: { menu: string; category: string; search: string }) => boolean;
   cart: CartItem[];
   currency: string;
   onAddToCart: (product: Product, qty?: number) => void;
@@ -140,6 +144,8 @@ export default function MinimartPOS({
   menuHints,
   menuBarTrailing,
   outOfHours,
+  menuLater,
+  peekLater,
   cart,
   currency,
   onAddToCart,
@@ -335,6 +341,7 @@ export default function MinimartPOS({
 
   // ── A577: a tap (or a search pick) on an item sold by weight asks for the weight; anything else is added ──
   function pick(product: Product) {
+    if (outOfHours?.(product)) { onAddToCart(product); return; }   // A580: a greyed (Later) item — refused in A578's words, no weight asked
     if (isSoldByWeight(product as any) && !(product as any).is_fuel) { setWeightModal({ product }); setWeightInput(''); return; }
     onAddToCart(product);
   }
@@ -399,7 +406,8 @@ export default function MinimartPOS({
   const filteredProducts = products.filter(p => {
     if (activeCategory !== 'all' && p.category_id !== activeCategory) return false;
     if (!inMenuScope(p, gridMenuScope(menuFilterScope, catalogueSearch))) return false;   // A537: a menu chosen = its categories only; A566: a search looks through every menu
-    if (outOfHours?.(p)) return false;   // A578: its department outside its hours — off the catalogue and its search
+    // A578: its department outside its hours — off the catalogue and its search; A580: Later shows it greyed in its own department
+    if (outOfHours?.(p) && !peekLater?.(p, { menu: activeMenu, category: activeCategory, search: catalogueSearch })) return false;
     if (catalogueSearch) {
       const q = catalogueSearch.toLowerCase();
       return (
@@ -544,7 +552,7 @@ export default function MinimartPOS({
               <CategoryChip label={catChip} onClear={clearCatChip} />
             </div>
             {/* A566: the menus as big tabs across the top of the catalogue (none when the business has no menus). */}
-            <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={WORDS.menus} hints={menuHints} trailing={menuBarTrailing} />
+            <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={WORDS.menus} hints={menuHints} trailing={menuBarTrailing} greyed={menuLater} />
 
             <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
             <CategoryPanel panel={catPanel} categories={categories} menus={menus} products={products}
@@ -558,11 +566,14 @@ export default function MinimartPOS({
                 <div style={s.emptyGrid}>No products match</div>
               ) : gridList.slice(0, grid.count).map(product => {
                 const inCart = cart.find(i => i.product.id === product.id);
+                const later = !!outOfHours?.(product);   // A580: shown only because Later is on — greyed, never sold
                 return (
                   <button
                     key={product.id}
                     className="press"
-                    style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}) }}
+                    data-later={later ? 'true' : undefined}
+                    aria-disabled={later || undefined}
+                    style={{ ...s.productCard, ...(inCart ? s.productCardActive : {}), ...(later ? { opacity: 0.5, filter: 'grayscale(1)' } : {}) }}
                     onClick={() => pick(product)}
                   >
                     {inCart && <span key={inCart.quantity} data-testid="cart-badge" className="animate-bump" style={s.cartBadge}>{inCart.quantity}</span>}

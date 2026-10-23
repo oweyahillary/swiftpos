@@ -83,7 +83,7 @@ try {
     ['MinimartPOS', 'apps/dashboard/src/pages/pos/MinimartPOS.tsx', 'catalogueSearch', 'setCatalogueSearch']]) {
     const s = read(f);
     ok(`${n}: the screens wire the bar under the search, pickMenu (category and search start again), the panel told`,
-      /<CategoryChip label=\{catChip\} onClear=\{clearCatChip\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} label=\{(?:words|WORDS)\.menus\}(?: hints=\{[^}]+\} trailing=\{[^}]+\})? \/>/.test(s)   // A573: the business's word; A578: the hours' hints and Show all
+      /<CategoryChip label=\{catChip\} onClear=\{clearCatChip\} \/>\s*<\/div>\s*\{\/\*[^]*?\*\/\}\s*<MenuBar tabs=\{menuBar\} active=\{activeMenu\} onPick=\{pickMenu\} label=\{(?:words|WORDS)\.menus\}(?: hints=\{[^}]+\} trailing=\{[^}]+\}(?: greyed=\{[^}]+\})?)? \/>/.test(s)   // A573: the business's word; A578: the hours' hints and Show all; A580: Later's greyed tabs
       && s.includes(`const pickMenu = (id: string) => { catPanel.setMenu(id); setActiveCategory('all'); ${setter}(''); };`)
       // A578: CashierScreen gives the bar the menus open now (menusNow / categoriesNow — useMenuHours)
       && /const menuBar = useMemo\(\(\) => menuBarTabs\((menus|menusNow), (categories|categoriesNow)\), \[\1, \2\]\);/.test(s)

@@ -23,6 +23,7 @@ import { isOwnerAlertJobKey } from '../jobs/ownerAlerts';             // A476
 import { LOSS_SETTINGS_KEY } from '../jobs/lossAlerts';               // A576
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
+import { readCloudFacts, cloudStanding, defaultAmount, CLOUD_MONTHLY_KES } from '../lib/cloudPlan';   // A581
 import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
 
 const router = safeRouter();
@@ -58,7 +59,7 @@ export const BUSINESS_SETTING_KEYS: ReadonlySet<string> = new Set([
   'service_charge_pct', 'table_turnover_alert_mins', 'turnover_alert_minutes',
   'period_breakfast', 'period_lunch', 'period_dinner', 'period_allday',
   'fuel_show_litres_dispensed', 'fuel_require_attendant_name', 'fuel_auto_print_receipt', 'fuel_unit_display',
-  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep', 'weight_unit',
+  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep',   // A580: 'weight_unit' gone (read by nothing; per-item kg / g, A577)
   'default_parking_rate', 'parking_min_hours', 'parking_billing_mode',
   'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
   'continuous_operation', BUSINESS_DAY_CUTOFF_KEY, CASHIER_HISTORY_METHODS_KEY,
@@ -132,7 +133,7 @@ const READABLE_SETTING_KEYS = new Set([
   'service_charge_pct', 'table_turnover_alert_mins', 'turnover_alert_minutes',
   'period_breakfast', 'period_lunch', 'period_dinner', 'period_allday',
   'fuel_show_litres_dispensed', 'fuel_require_attendant_name', 'fuel_auto_print_receipt', 'fuel_unit_display',
-  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep', 'weight_unit',
+  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep',   // A580: 'weight_unit' gone (read by nothing; per-item kg / g, A577)
   'default_parking_rate', 'parking_min_hours', 'parking_billing_mode',
   'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
   'loyalty_enabled', 'loyalty_earn_rate',
@@ -272,7 +273,20 @@ router.get('/cloud-trial', requireAuth, async (req, res) => {
   let trial;
   try { trial = await readTrial(req.businessId); }
   catch (e) { sendError(res, e); return; }
-  res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null });
+  // A581: the cloud plan — paid-until, the amount and period, where it stands — for the owner's notice in the last 14
+  // days before paid-until and while lapsed (CloudTrialNotice). null when the business is not on the plan.
+  let plan = null;
+  try {
+    const f = (await readCloudFacts([req.businessId])).get(req.businessId);
+    const s = f ? cloudStanding(f) : null;
+    if (f && s && s.gated && s.paidUntil) {
+      const period = f.plan?.period ?? 'monthly';
+      plan = { paid_until: s.paidUntil, days_left: s.daysLeft, state: s.state, trial: s.trial, sync_stops_at: s.syncStopsAt,
+        sync_refused: s.syncRefused, amount: Number(f.plan?.amount ?? defaultAmount(period) ?? CLOUD_MONTHLY_KES), currency: f.plan?.currency ?? 'KES', period };
+      plan = { ...plan, amount_label: `${plan.currency} ${Math.round(plan.amount).toLocaleString('en-KE')}` };
+    }
+  } catch { plan = null; }
+  res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null, plan });
 });
 
 // GET /api/business/branding

@@ -155,11 +155,52 @@ async function syncFetch(url: string, opts: any = {}): Promise<Response> {
       SYNC_FETCH_TIMEOUT_MS);
     const nullBody = [101, 204, 205, 304].includes(res.status);
     const body = nullBody ? null : await res.arrayBuffer();
+    noteCloudPlanAnswer(String(opts?.method ?? 'GET'), res.status, body);   // A581
     return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
   } finally {
     clearTimeout(timer);
   }
 }
+// ── A581: the business's ZapTill cloud plan has lapsed ──────────────────────────────────────────────────────────────
+// Owner, 2026-10-23: "if a client stops paying for the cloud … till continues to work, but the cloud stops syncing". The
+// cloud answers this business's till writes 503 CLOUD_SUBSCRIPTION_ENDED (apps/server/src/lib/cloudPlan.ts). A 503 is
+// already the cloud's passing state on every push stage (the record stays queued, never 'failed' or parked) — so selling
+// and the queue are untouched; this only (a) tells the manager in plain words (getSyncStatus → syncNotice) and (b) asks
+// at most every CLOUD_LAPSED_PROBE_MS instead of every pass. Any write the cloud then accepts (the payment was recorded)
+// clears it, and the queue drains in that same pass. In memory: a restart asks again at once.
+export const CLOUD_LAPSED_PROBE_MS = 5 * 60_000;
+let _cloudLapsed: { since: string; message: string } | null = null;
+let _cloudLapsedProbeAt = 0;
+function noteCloudPlanAnswer(method: string, status: number, body: ArrayBuffer | null): void {
+  if (status === 503 && body && body.byteLength < 4096) {
+    let code = ''; let message = '';
+    try { const j = JSON.parse(Buffer.from(body).toString('utf8')); code = String(j?.code ?? ''); message = String(j?.error ?? ''); } catch { /* not JSON */ }
+    if (code === 'CLOUD_SUBSCRIPTION_ENDED') {
+      if (!_cloudLapsed) logLine('sync', `the cloud refused this business's sync: ${message || code} - records stay queued on this till`);
+      _cloudLapsed = { since: _cloudLapsed?.since ?? new Date().toISOString(), message };
+      _cloudLapsedProbeAt = Date.now();
+      return;
+    }
+  }
+  if (_cloudLapsed && status >= 200 && status < 300 && method.toUpperCase() !== 'GET') {
+    logLine('sync', "the cloud accepts this business's sync again - sending what waited");
+    _cloudLapsed = null;
+  }
+}
+/** A581: the cloud refuses this business's sync (its plan lapsed), since when — null when it does not. */
+export function cloudLapsedNow(): { since: string; message: string } | null { return _cloudLapsed; }
+/** A581: lapsed and asked within CLOUD_LAPSED_PROBE_MS — this pass leaves the queue as it is. */
+function cloudLapsedHold(now = Date.now()): boolean {
+  if (!_cloudLapsed) return false;
+  if (now - _cloudLapsedProbeAt < CLOUD_LAPSED_PROBE_MS) return true;
+  _cloudLapsedProbeAt = now;   // this pass is the probe
+  return false;
+}
+/** Tests only. */
+export function _resetCloudLapsed(at: number | null = null): void {
+  if (at === null) { _cloudLapsed = null; _cloudLapsedProbeAt = 0; } else _cloudLapsedProbeAt = at;
+}
+
 // A20: last roster version this peer applied, in-memory. Skips re-wrapping an
 // unchanged roster every pull; on restart it re-applies once, which is harmless.
 
@@ -745,6 +786,8 @@ async function runPushStagesOnce(errors: string[]): Promise<number> {
   // A521 (#15): the cloud's test-data clears come down BEFORE anything goes up (asked at most every 90 s; the first push
   // after a start always asks). A till that was off during a clear pushed its unsent test sales and shifts back first.
   await stage('test-data clears', () => testClearsBeforePush());
+  // A581: the cloud refuses this business's sync (its plan lapsed) — the queue stays as it is until the next probe.
+  if (cloudLapsedHold()) return 0;
   // A338: first, give back to the queue what a sibling drawer's clash parked (0.6.10 and earlier), so it goes in this pass.
   // A363: then what a trading-day clash parked (an offline close-and-reopen), once.
   await stage('requeue', async () => { requeueAfterDayClash(); requeueTransientConflicts(); return requeueAfterDrawerClash(); });
@@ -765,9 +808,58 @@ async function runPushStagesOnce(errors: string[]): Promise<number> {
   // A365: then a manager's confirmation of a shift whose close is on the cloud.
   await stage('confirm', () => pushShiftConfirmations(errors));
   await stage('node push', () => pushToNode(errors));
+  // A579: nothing left to send → an empty push at most every 15 min, so the cloud knows an idle till is up to date.
+  await stage('heartbeat', () => syncHeartbeat());
   // A363: the manager's "Last synced" — stamped only when this pass left nothing waiting for the cloud.
   await stage('last synced', async () => noteSyncedIfClear());
   return orders;
+}
+
+// ── A579: the idle heartbeat ───────────────────────────────────────────────────────────────────────────────────────
+// Owner, 2026-10-23, on critical emails about a till "on but not syncing" for 9 hours: "maybe its just that no trade is
+// taking place". The cloud's last_sync_at moves only on /api/sync/push, which a till sent only with drawer rows to send
+// (sales go through /api/orders) — an idle till looked exactly like a broken one. Now, when a sync pass leaves NOTHING
+// waiting for the cloud (sales, drawers, days, voids, confirmations — getSyncStatus().pendingCount), the till sends an
+// EMPTY push (`{}`, under activityTracker's SYNC_PUSH_MIN_BYTES, so a branch server never counts it as trade) at most
+// every 15 minutes, online and signed in only. Every push says what still waits (X-Sync-Pending) and what the cloud
+// refused and this till set aside (X-Sync-Failed: failed + parked) — those do not hold the heartbeat back: they are a
+// person's job, reported on their own, and the till's sales still reach the cloud. A peer till at a branch with a server
+// sends its own (to the cloud, through the server's gateway when it has one) under its own device id, exactly as its
+// drawer rows go; a branch server sends its own for itself.
+export const HEARTBEAT_EVERY_MS = 15 * 60_000;
+let _lastSyncPushAt = 0;
+/** Test seam. */
+export function _resetHeartbeat(at = 0): void { _lastSyncPushAt = at; }
+
+/** What still waits for the cloud, as the two headers every /api/sync/push carries. Never throws. */
+function syncQueueHeaders(s?: ReturnType<typeof getSyncStatus>): Record<string, string> {
+  try {
+    const st = s ?? getSyncStatus();
+    return { 'X-Sync-Pending': String(Math.max(0, st.pendingCount | 0)),
+      'X-Sync-Failed': String(Math.max(0, (st.failedCount | 0) + ((st.parkedCount ?? 0) | 0))) };
+  } catch { return {}; }
+}
+
+/** The empty push, when due. Returns whether the cloud took one. Never throws. */
+export async function syncHeartbeat(now = Date.now()): Promise<boolean> {
+  if (!_accessToken || !_serverUrl || !isOnline()) return false;
+  if (_lastSyncPushAt && now - _lastSyncPushAt < HEARTBEAT_EVERY_MS) return false;
+  let s: ReturnType<typeof getSyncStatus>;
+  try { s = getSyncStatus(); } catch { return false; }
+  if (s.pendingCount > 0) return false;   // something still waits: the push that sends it is the proof, not this
+  const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
+    method: 'POST', headers: { ...pushAuthHeaders(), ...syncQueueHeaders(s) }, body: '{}',
+  });
+  try {
+    let res = await doPost();
+    if (res.status === 401 && await refreshStaffToken()) res = await doPost();
+    if (!res.ok) { logLine('sync', `heartbeat refused (HTTP ${res.status}) - tried again at the next pass`); return false; }
+    _lastSyncPushAt = now;
+    return true;
+  } catch (err: any) {
+    logLine('sync', `heartbeat not sent: ${err?.message ?? err}`);
+    return false;
+  }
 }
 
 // A178: a REAL reachability probe the tech screen can run. Unlike the "ONLINE"
@@ -1646,6 +1738,8 @@ export function getSyncStatus(): {
   nodeRefused?: { status: number; since: string } | null;
   /** A529: the cloud could not be reached on the last try (no answer, its 5xx, or another server's page), and since when. */
   cloudUnreachable?: { since: string; why: string } | null;
+  /** A581: the cloud refuses this business's sync — its ZapTill cloud plan lapsed. Records stay queued; sent when renewed. */
+  cloudLapsed?: { since: string; message: string } | null;
 } {
   const db = getLocalDb();
   // Till sync audit (F5): a sale whose drawer the cloud refused (shift parked 'conflict') is not sent until the drawer is
@@ -1728,6 +1822,7 @@ export function getSyncStatus(): {
     lastSyncedAt: lastSyncedAt(),
     nodeRefused: hasNode() ? nodeRefusal() : null,
     cloudUnreachable: cloudUnreachableNow(),   // A529
+    cloudLapsed: cloudLapsedNow(),   // A581
   };
 }
 
@@ -2916,9 +3011,10 @@ export function isDataErrorCode(code: string | null | undefined): boolean {
 /** One request of pushLocalRecords. The number of rows sent, or -1 when the cloud did not take the request. */
 async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTables, errors: string[]): Promise<number> {
   const { shifts, floats, expenses, business_days, kitchen_voids } = batch;
+  const queue = syncQueueHeaders();   // A579: what still waits (this batch included)
   const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
     method: 'POST',
-    headers: pushAuthHeaders(),
+    headers: { ...pushAuthHeaders(), ...queue },
     body: JSON.stringify({ shifts, floats, expenses, business_days, kitchen_voids }),
   });
 
@@ -2944,6 +3040,7 @@ async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTable
       return -1;
     }
     notePushOk(db);   // A534: the cloud took this batch (the Tech page's "last successful push")
+    _lastSyncPushAt = Date.now();   // A579: the cloud's last_sync_at just moved — no heartbeat needed for 15 min
 
     // Rows the server understood and refused on their merits — currently only a
     // cashier who already holds an open drawer elsewhere. Retrying cannot fix

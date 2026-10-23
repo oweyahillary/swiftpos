@@ -94,6 +94,21 @@ export function WatchListView({ data, isOwner, onDismiss, busy, portal = false }
 }
 
 /** The calls the list makes — the owner's dashboard client, or the manager portal's session (POSAuthContext posApi). */
+/**
+ * A580 (owner, 2026-10-23: "Yes let them be premium"): a business without premium Analytics (the 'analytics' switch in the
+ * admin portal) is answered 403 LOSS_ALERTS_OFF by every /api/loss-alerts route — the Watch list and the Loss prevention
+ * settings show this note instead (the same note as Analytics' AnalyticsLocked, the cloud's own words).
+ */
+export const LOSS_OFF_CODE = 'LOSS_ALERTS_OFF';
+export function WatchListLocked({ message }: { message?: string }) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-xl m-4 sm:m-6" data-testid="watch-list-locked">
+      <p className="text-xs font-bold uppercase tracking-wider text-swift-text">ZapTill Premium</p>
+      <h2 className="text-lg font-bold text-white mt-1">{message || 'The Watch list is part of ZapTill Premium — contact ZapTill to enable it.'}</h2>
+    </div>
+  );
+}
+
 export interface WatchClient {
   get: <T>(path: string) => Promise<T>;
   patch: <T>(path: string, body: unknown) => Promise<T>;
@@ -107,6 +122,7 @@ export function WatchListPanel({ client = api, isOwner, reloadKey, portal = fals
   const [data, setData] = useState<WatchList | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [locked, setLocked] = useState<string | null>(null);   // A580: not premium — the cloud's words
   // The portal's client is a new object each render: read it through a ref, so loading never loops.
   const clientRef = useRef(client);
   clientRef.current = client;
@@ -114,7 +130,10 @@ export function WatchListPanel({ client = api, isOwner, reloadKey, portal = fals
   const load = useCallback(async () => {
     setError('');
     try { setData(await clientRef.current.get<WatchList>('/api/loss-alerts')); }
-    catch (e: any) { setError(e?.message ?? 'Could not load the watch list'); }
+    catch (e: any) {
+      if (e?.code === LOSS_OFF_CODE) { setLocked(e?.message ?? ''); return; }   // A580: premium only
+      setError(e?.message ?? 'Could not load the watch list');
+    }
   }, []);
   useEffect(() => { load(); }, [load, reloadKey]);
 
@@ -125,6 +144,7 @@ export function WatchListPanel({ client = api, isOwner, reloadKey, portal = fals
     finally { setBusy(null); }
   };
 
+  if (locked !== null) return <WatchListLocked message={locked} />;
   if (error && !data) return <div className="p-6 text-sm text-red-500">{error}</div>;
   if (!data) return <div className="p-6 text-sm text-gray-500">Loading…</div>;
   return (

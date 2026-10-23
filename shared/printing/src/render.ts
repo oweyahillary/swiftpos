@@ -444,7 +444,8 @@ function renderReceipt(ctx: PrintContext): Document {
     if (full) info(voided); else d.lines(wrap(voided, cols));
   }
   // A530: how many kitchen tickets the order made is the kitchen's business, not the customer's.
-  if (full) info(`Kots: ${order.kotCount}`);
+  // A580: and a shop has no kitchen — no "Kots: 0" on its receipt (business.kitchenTickets false).
+  if (full && business.kitchenTickets !== false) info(`Kots: ${order.kotCount}`);
   for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, undefined, 0));   // A367
   minorRule();
 

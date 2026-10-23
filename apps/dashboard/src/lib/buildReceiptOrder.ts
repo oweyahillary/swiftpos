@@ -60,6 +60,8 @@ export interface ReceiptBusinessConfig {
   receiptClassic?: { spacing: boolean; fullLogo: boolean; compactLayout: boolean; extraFeed: boolean };
   /** A551: the admin portal's 'kitchen_font_b' — kitchen tickets in Font B (A543); false = Font A (the standard). */
   kitchenFontB?: boolean;
+  /** A580: false = a business with no kitchen (a shop, a petrol station, a car park, other) — no "Kots" line on its receipt. */
+  kitchenTickets?: boolean;
 }
 
 const toCents = (n: number) => Math.round((Number(n) || 0) * 100);
@@ -173,6 +175,12 @@ function receiptClassic(f: Partial<Record<string, unknown>> | null | undefined):
            compactLayout: f?.receipt_compact_layout === true, extraFeed: f?.receipt_extra_feed === true };
 }
 
+/** A580: a restaurant or café — or a type not known yet (shared/businessTerms.ts isFoodService, written out here). */
+export function kitchenBusiness(type: string | null | undefined): boolean {
+  const t = String(type ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return t === '' || t === 'restaurant' || t === 'cafe';
+}
+
 export function buildReceiptBusinessConfig(
   b: Business,
   footerMessage?: string,
@@ -190,6 +198,9 @@ export function buildReceiptBusinessConfig(
     // A551 (owner, 2026-10-21: "kitchen receipt use the same font as the despatcher"): posFeatures.kitchenFontBFrom,
     // written out for the same reason as receiptClassic — only a real `true` puts the kitchen ticket in Font B.
     kitchenFontB:    extra.posFeatures?.kitchen_font_b === true,
+    // A580 (owner, 2026-10-23): a shop's receipt has no "Kots: 0" — only a restaurant or café (or a type not known yet,
+    // as businessTerms' isFoodService) prints the Kots line. Written out (no import) for the same reason as above.
+    kitchenTickets:  kitchenBusiness(b.type),
     logoRaster:      extra.logoRaster ?? undefined,
     name:            b.name,
     branchName:      extra.branchName || undefined,

@@ -65,6 +65,7 @@ import { pinKey, pinLocked, notePinFailure, notePinSuccess, PIN_LOCKED_BODY, acc
 import { keysFromGrants } from '../lib/effectiveKeys';   // A494
 import { notifyAccountLocked } from '../lib/accountLockNotice';   // A507
 import { resolvePartnerSignIn, checkPartner, writePartners, type PartnerCheck, type PartnerPerson } from '../lib/webPartners';   // A550
+import { enrolRefusal } from '../lib/cloudPlan';   // A581: no till joins a lapsed business
 
 const router = safeRouter();
 
@@ -903,6 +904,11 @@ router.post('/enrol/redeem', async (req, res) => {
   }
   const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
   const nowIso   = new Date().toISOString();
+
+  // A581: a business whose cloud plan has lapsed (past its grace) joins no till — new or rejoining — until it is paid.
+  // Refused BEFORE the code is spent, so the technician can use the same code once the payment is recorded.
+  const lapsed = await enrolRefusal(businessId).catch(() => null);
+  if (lapsed) { res.status(403).json(lapsed); return; }
 
   // A415: a rejoin keeps the till's data, which is its own branch's — a code for another branch is refused BEFORE it
   // is spent, so the technician can still use it on the right till.

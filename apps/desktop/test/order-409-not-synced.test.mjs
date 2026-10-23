@@ -8,64 +8,63 @@
  * This drives the real compiled engine with a 409 responder and asserts the order
  * is surfaced (escalates to failed), never marked synced.
  */
-import assert from 'assert';
-import fs from 'fs'; import os from 'os'; import path from 'path'; import Module from 'module';
-import { pathToFileURL, fileURLToPath } from 'url';
+import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
+import Module, { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
+// The REAL compiled engine on the REAL till schema (dist/main/localDb on a temp userData, electron shimmed), and the
+// REAL durable log (dist/main/logFile writing swiftpos.log in that userData). The hand-made schema this test used to
+// carry went stale as the order push grew (sales on account, A552): the order stage threw before it reached the network.
+//
+//   cd apps/desktop && npm run build:main && node test/order-409-not-synced.test.mjs
 const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', 'dist', 'main');
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'o409-'));
-const w = (n, s) => { const p = path.join(tmp, n); fs.writeFileSync(p, s); return p; };
-const require0 = Module.createRequire(path.join(DIST, '..', '..', 'package.json'));
-let db, driver;
-try { db = new (require0('better-sqlite3'))(':memory:'); driver = 'better-sqlite3'; }
-catch { const { DatabaseSync } = await import('node:sqlite'); db = new DatabaseSync(':memory:'); driver = 'node:sqlite'; }
-
-db.exec(`
-  CREATE TABLE sync_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, attempts INTEGER DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, status TEXT DEFAULT 'pending', drawer_wait_at TEXT);
-  CREATE TABLE orders (id TEXT PRIMARY KEY, sync_status TEXT DEFAULT 'pending', shift_id TEXT);
-  CREATE TABLE shifts (id TEXT, sync_status TEXT, device_id TEXT);
-  CREATE TABLE float_transactions (id TEXT, sync_status TEXT, device_id TEXT);
-  CREATE TABLE expenses (id TEXT, sync_status TEXT, device_id TEXT);
-  CREATE TABLE business_days (id TEXT, sync_status TEXT, device_id TEXT);
-  CREATE TABLE local_price_edits (product_id TEXT, price REAL, updated_at TEXT, synced INTEGER DEFAULT 0);
-`);
-db.prepare(`INSERT INTO sync_queue (order_id,payload,created_at,status) VALUES ('o1',?,?,'pending')`).run(JSON.stringify({ branch_id: 'b1', order_number: 'T1--1', items: [], payments: [] }), new Date().toISOString());
-db.prepare(`INSERT INTO orders (id,sync_status) VALUES ('o1','pending')`).run();
-
-const logs = [];
-const map = {
-  electron: w('electron.cjs', `module.exports={app:{getPath:()=>${JSON.stringify(tmp)}},net:{isOnline:()=>true},safeStorage:{isEncryptionAvailable:()=>false}};`),
-  './localDb': w('localDb.cjs', `module.exports={getLocalDb:()=>global.__db,LOCAL_SCHEMA_VERSION:52};`),
-  './deviceConfig': w('deviceConfig.cjs', `module.exports={getDeviceConfig:()=>({device_id:'d1',branch_id:'b1',node_url:null}),saveDeviceConfig:()=>{},getServerUrl:()=>'http://127.0.0.1:9',canSell:()=>true,isNodeRole:()=>false};`),
-  './nodeClient': w('nodeClient.cjs', `module.exports={hasNode:()=>false,pushRowsToNode:async()=>({}),measureNodeDrift:async()=>({}),fetchReferenceFromNode:async()=>null};`),
-  './nodeIngest': w('nodeIngest.cjs', `module.exports=new Proxy({},{get:()=>()=>{}});`),
-  './logFile': w('logFile.cjs', `module.exports={logLine:(s,m)=>global.__logs.push('['+s+'] '+m),getLogPath:()=>'x',describeResponse:async()=>''};`),
-};
-global.__db = db; global.__logs = logs;
+const dist = path.join(here, '..', 'dist', 'main');
+const require = createRequire(import.meta.url);
+if (!fs.existsSync(path.join(dist, 'syncEngine.js'))) { console.error('dist/main not built. Run:  npm run build:main'); process.exit(1); }
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-o409-'));
+const shim = path.join(userData, 'electron-shim.cjs');
+fs.writeFileSync(shim, `module.exports = { app: { getPath: () => ${JSON.stringify(userData)}, getVersion: () => '1.0.20' }, ipcMain: { handle() {} }, BrowserWindow: class { static getAllWindows() { return []; } }, dialog: {}, safeStorage: { isEncryptionAvailable: () => false }, net: { isOnline: () => true } };`);
 const orig = Module._resolveFilename;
-Module._resolveFilename = function (req, parent, ...r) { const fd = parent?.filename?.startsWith(DIST); if (req === 'electron') return map.electron; if (fd && map[req]) return map[req]; return orig.call(this, req, parent, ...r); };
+Module._resolveFilename = function (req, parent, ...rest) { return orig.call(this, req === 'electron' ? shim : req, parent, ...rest); };
+
+const L = require(path.join(dist, 'localDb.js'));
+const engine = require(path.join(dist, 'syncEngine.js'));
+const DC = require(path.join(dist, 'deviceConfig.js'));
+const LF = require(path.join(dist, 'logFile.js'));
+const durableLog = () => { try { LF._flushRepeats?.(); return fs.readFileSync(LF.getLogPath(), 'utf8'); } catch { return ''; } };
+
+const db = L.getLocalDb();
+db.prepare(`INSERT INTO session (id, token, user_id, business_id, business_name, logged_in_at) VALUES (1, 't', 'u-owner', 'biz-1', 'Pollo', '2026-10-23T00:00:00Z')`).run();
+DC.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'b1', device_id: 'd1', device_role: 'till', terminal_code: 'T1', device_name: 'Front' });
+
+// A sale rung on this till whose number another order already holds on the cloud.
+const at = new Date().toISOString();
+db.prepare(`INSERT INTO orders (id, business_id, branch_id, order_number, subtotal, vat_amount, total, created_at, sync_status, device_id)
+  VALUES ('o1', 'biz-1', 'b1', 'T1--1', 100, 0, 100, ?, 'pending', 'd1')`).run(at);
+db.prepare(`INSERT INTO sync_queue (order_id, payload, created_at, status) VALUES ('o1', ?, ?, 'pending')`)
+  .run(JSON.stringify({ id: 'o1', branch_id: 'b1', order_number: 'T1--1', items: [], payments: [] }), at);
 
 // Server responds 409 (order-number collision) for the order push.
+const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 globalThis.fetch = async (u) => String(u).includes('/api/orders')
-  ? { ok: false, status: 409, json: async () => ({ error: 'Order number already exists — please retry.' }), text: async () => '' }
-  : { ok: false, status: 404, json: async () => ({}), text: async () => '' };
+  ? json(409, { error: 'Order number already exists — please retry.' })
+  : json(404, {});
 
-const engine = await import(pathToFileURL(path.join(DIST, 'syncEngine.js')).href);
-engine.configureSyncEngine('http://127.0.0.1:9', 'tok', 'refresh');
+engine.configureSyncEngine('http://cloud', 'tok', 'refresh');
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) { pass++; console.log(`  ok   ${n}`); } else { fail++; console.log(`FAIL  ${n}`); } };
+const ok = (n, c, d = '') => { if (c) { pass++; console.log(`  ok   ${n}`); } else { fail++; console.log(`FAIL  ${n}  ${d}`); } };
 
-console.log(`order 409 not-synced (driver: ${driver})\n`);
+console.log(`order 409 not-synced (real localDb)\n`);
 for (let i = 0; i < 5; i++) await engine.syncPush();
 const q = db.prepare("SELECT status, attempts, last_error FROM sync_queue WHERE order_id='o1'").get();
 
-ok('a 409 NEVER marks the order synced', q.status !== 'synced');
+ok('a 409 NEVER marks the order synced', q.status !== 'synced', JSON.stringify(q));
 ok('the local order is not marked synced either', db.prepare("SELECT sync_status FROM orders WHERE id='o1'").get().sync_status !== 'synced');
-ok('after repeated collisions it escalates to failed (visible)', q.status === 'failed');
-ok('the reason names the number conflict', /order number/i.test(q.last_error || ''));
-ok('the 409 reached the durable log', logs.some(l => /rejected \(409\)/.test(l)));
+ok('after repeated collisions it escalates to failed (visible)', q.status === 'failed', JSON.stringify(q));
+ok('the reason names the number conflict', /order number/i.test(q.last_error || ''), JSON.stringify(q));
+ok('the 409 reached the durable log', /rejected \(409\)/.test(durableLog()));
 
 console.log(`\n${pass} passed, ${fail} failed`);
+try { L.closeLocalDb?.(); } catch { /* ignore */ }
 process.exit(fail === 0 ? 0 : 1);

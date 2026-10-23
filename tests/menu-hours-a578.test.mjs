@@ -156,10 +156,10 @@ try {
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx'), mm = read('apps/dashboard/src/pages/pos/MinimartPOS.tsx');
   ok('CashierScreen: the hours by the browser\'s clock and the business day; Show all only with menu.edit, this session',
     /const canShowAllMenus = hasPermission\('menu\.edit'\);/.test(cs) && /const \[showAllMenus, setShowAllMenus\] = useState\(false\);/.test(cs)
-    && /useMenuHours\(menus, categories, \{ cutoff: getWebDayCutoff\(\), showAll: showAllMenus && canShowAllMenus \}\)/.test(cs)
+    && /useMenuHours\(menus, categories, \{ cutoff: getWebDayCutoff\(\), showAll: showAllMenus && canShowAllMenus, later: laterMenus \}\)/.test(cs)   // A580: + Later
     && /const showAllButton = canShowAllMenus && hours\.anyAsleep \?/.test(cs));
   ok('CashierScreen: the grid leaves out what is asleep (All and search too); the bar and panel take the menus open now',
-    /const matchHours = !hiddenByHours\(p as any, hours\);/.test(cs) && /&& matchStock && matchHours;/.test(cs)
+    /const matchHours = !hiddenByHours\(p as any, hours\)[^\n]*\n\s*\|\| laterPeek\(p as any, hours, \{ menu: activeMenu, category: activeCategory, search \}\);/.test(cs) && /&& matchStock && matchHours;/.test(cs)   // A580: Later peeks
     && /menuBarTabs\(menusNow, categoriesNow\)/.test(cs) && /<CategoryPanel panel=\{catPanel\} categories=\{categoriesNow\} menus=\{menusNow\}/.test(cs));
   ok('CashierScreen: the scanner and a tap refused in words — isFrozen\'s FIRST check is the hours (through a ref: the scanner\'s listener reads the latest)',
     /const isFrozen = useCallback\(\(product: Product\): boolean => \{\s*const outOfHours = hoursRefusal\(product as any, hoursRef\.current\);/.test(cs)
@@ -169,9 +169,9 @@ try {
   ok('MinimartPOS refuses a scan of an out-of-hours department\'s item in words (not "not found", not added) and leaves it off its catalogue',
     /const notNow = product && outOfHours \? outOfHours\(product\) : null;\s*if \(product && notNow\) \{\s*setScanStatus\('error'\);\s*setScanMessage\(notNow\);\s*\} else if/.test(mm)
     && /\} else if \(notNow\) \{\s*setScanStatus\('error'\);\s*setScanMessage\(notNow\);/.test(mm)   // A577's scale label too
-    && /if \(outOfHours\?\.\(p\)\) return false;/.test(mm)
+    && /if \(outOfHours\?\.\(p\) && !peekLater\?\.\(p, \{ menu: activeMenu, category: activeCategory, search: catalogueSearch \}\)\) return false;/.test(mm)   // A580
     && /outOfHours=\{\(p: Product\) => hoursRefusal\(p as any, hours\)\}/.test(cs) && /categories=\{categoriesNow\}/.test(cs)
-    && /hints=\{menuHints\} trailing=\{menuBarTrailing\}/.test(mm));
+    && /hints=\{menuHints\} trailing=\{menuBarTrailing\} greyed=\{menuLater\}/.test(mm));   // A580: the greyed Later tabs
   ok('the web\'s copies are the shared file, verbatim (lib/ and the cloud\'s)',
     read('apps/dashboard/src/lib/menuHours.ts') === read('shared/menuHours.ts') && read('apps/server/src/lib/menuHours.ts') === read('shared/menuHours.ts'));
 

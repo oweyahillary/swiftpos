@@ -28,7 +28,7 @@ const minAgo = (m) => new Date(NOW.getTime() - m * 60_000).toISOString();
 const names = { b1: 'African Fries' };
 
 await ok('a till that is ON but has not synced for 2 hours is critical', () => {
-  const a = R.tillsNotSyncing([{ id: 'd1', business_id: 'b1', terminal_code: 'T1', status: 'approved', last_seen_at: minAgo(5), last_sync_at: minAgo(150) }], NOW, names);
+  const a = R.tillsNotSyncing([{ id: 'd1', business_id: 'b1', terminal_code: 'T1', status: 'approved', app_version: '1.0.20', last_seen_at: minAgo(5), last_sync_at: minAgo(150) }], NOW, names);
   assert.strictEqual(a.length, 1);
   assert.strictEqual(a[0].severity, 'critical');
   assert.strictEqual(a[0].key, 'till_not_syncing:d1');

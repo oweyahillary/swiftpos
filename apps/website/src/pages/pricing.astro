@@ -9,11 +9,12 @@ import { WA_MESSAGES, PRICES, kes } from '../lib/site';
 import { PRICING_FAQ } from '../lib/faq';
 import { faqPage } from '../lib/schema';
 
-// The owner's model (2026-10-22): the desktop app is a ONE-OFF purchase per branch (a branch = the branch server and a
-// till, two computers); the cloud is month to month, per branch, with six or twelve months ahead recommended; the first
-// month of the cloud is free with the setup (A569); Analytics is an add-on.
-// TODO(owner): the price of an extra computer (not published), a reward for paying ahead (no figure), the ZapTill Online
-// price, and the notice period beyond "month to month".
+// The owner's model (2026-10-22, cloud per business 2026-10-23): the desktop app is a ONE-OFF purchase per branch (a
+// branch = the branch server and a till, two computers); the cloud is month to month, PER BUSINESS (one fee covers every
+// branch), with six or twelve months ahead recommended; the first month of the cloud is free with the setup (A569);
+// Analytics is an add-on, per business too. Owner, 2026-10-23: an extra computer from about KES 10,000, quoted per
+// client; installation can vary; no reward for paying ahead; 3, 6 or 12 months at once.
+// TODO(owner): the ZapTill Online price, and the notice period beyond "month to month".
 const once = {
   name: 'ZapTill for one branch',
   price: `KES ${kes(PRICES.setup)}`,
@@ -38,10 +39,10 @@ const monthly = [
     tag: 'First month free',
     price: `KES ${kes(PRICES.monthly)}`,
     per: 'a month',
-    alt: 'Per branch, month to month. We recommend paying for 6 or 12 months at once.',
+    alt: 'One fee for your whole business, however many branches. Month to month, or 3, 6 or 12 months at once; we recommend 6 or 12.',
     intro: 'Your business on the web and on your phone, wherever you are.',
     items: [
-      'Every branch on one web dashboard, on any phone',
+      'Every branch on one web dashboard, on any phone, for this one fee',
       'A daily summary by email, at the time you choose',
       'Close a branch\'s day from the web',
       'Partner and accountant logins, never yours',
@@ -68,7 +69,7 @@ const monthly = [
     pre: 'About',
     price: `KES ${kes(PRICES.analyticsMonthly)}`,
     per: 'a month',
-    alt: 'An add-on to the cloud',
+    alt: 'An add-on to the cloud, for your whole business',
     intro: 'What to do next, in plain words.',
     items: [
       '"Do this next": what to order, what to have in for a busy day, credit to chase',
@@ -92,7 +93,7 @@ const setupItems = [
 ---
 <Base
   title="Pricing: pay once for the tills, about KES 100 a day for the cloud | ZapTill"
-  description="ZapTill costs KES 30,000 once per branch for the tills, then KES 3,000 a month for the cloud, with the first month free. See what the setup buys, and work out what leaks are costing you." "
+  description="ZapTill costs KES 30,000 once per branch for the tills, then KES 3,000 a month for the cloud for your whole business, with the first month free. See what the setup buys, and work out what leaks are costing you."
   waMessage={WA_MESSAGES.pricing}
   ogImage="/og/pricing.png"
   jsonLd={[faqPage(PRICING_FAQ)]}
@@ -104,8 +105,8 @@ const setupItems = [
       <h1>Pay once for the tills. About KES 100 a day for the cloud.</h1>
       <p class="lede">
         Each branch is set up once, for KES {kes(PRICES.setup)}, and the tills are yours. The cloud, your business on
-        the web and your phone, is KES {kes(PRICES.monthly)} a month, and the first month is free. No percentage of your
-        sales. Here is exactly what you get.
+        the web and your phone, is KES {kes(PRICES.monthly)} a month for the whole business, however many branches you
+        have, and the first month is free. No percentage of your sales. Here is exactly what you get.
       </p>
       <div class="actions">
         <WhatsAppButton message={WA_MESSAGES.pricing} label="Get a quote on WhatsApp" />
@@ -152,8 +153,10 @@ const setupItems = [
         </div>
       </div>
       <p class="small muted packages__note">
-        A branch is two computers. More tills or a kitchen screen are quoted separately, as is any hardware you need, or
-        bring your own. Prices are in Kenyan shillings.
+        The setup is per branch: a branch is two computers. The monthly fees are per business: a second branch adds its
+        setup, not a second cloud fee. Each extra till or kitchen-screen computer is from about
+        KES {kes(PRICES.extraComputerFrom)}, quoted for your setup, as is any hardware you need, or bring your own.
+        Installation can vary with the site, and we confirm the price before we start. Prices are in Kenyan shillings.
       </p>
     </div>
   </section>
@@ -183,8 +186,8 @@ const setupItems = [
           cloud costs. ZapTill shows you that shortage at every day close, by name, and the cloud puts it on your phone.
         </p>
         <p>
-          It is month to month. We recommend paying for six months or a year at once: one payment, and nothing to
-          remember every month. <!-- TODO(owner): a reward for paying ahead, if any. No figure until decided. -->
+          It is month to month, or pay for 3, 6 or 12 months at once. We recommend 6 or 12: one payment, and nothing
+          to remember every month. Paying ahead is simpler, not cheaper: there is no discount.
         </p>
       </div>
       <dl class="perday__sum" aria-label="The sum">
@@ -228,7 +231,7 @@ const setupItems = [
       <ul class="nosurprise">
         <li><h3>The tills are paid for once.</h3><p>Once paid, it's a done deal. No monthly fee for the tills.</p></li>
         <li><h3>No percentage of your sales.</h3><p>Sell more and the price stays the same.</p></li>
-        <li><h3>The cloud is month to month.</h3><p>The first month is free, so you see it working before you pay.</p></li>
+        <li><h3>The cloud is month to month.</h3><p>One fee for the whole business, not per branch. The first month is free, so you see it working before you pay. We email you before your plan ends.</p></li>
         <li><h3>M-Pesa charges are Safaricom's.</h3><p>We don't add anything on top.</p></li>
         <li><h3>Hardware is separate.</h3><p>We quote it, or you bring your own and we check it.</p></li>
         <li><h3>Your data is yours.</h3><p>Download your reports whenever you want them.</p></li>

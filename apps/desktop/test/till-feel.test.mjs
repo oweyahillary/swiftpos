@@ -106,7 +106,7 @@ ok(`Pay, open / close shift, start selling, void / refund, kitchen void and conf
 // ── speed (measured; see the header) ──────────────────────────────────────────────────────────────────────────────────
 ok('speed: the grid\'s list is memoised on what it depends on (catalogue, category, search, petrol, the day), not rebuilt each render',
   /const filtered = useMemo\(\(\) => products\.filter\(p => \{/.test(pos)
-  && pos.includes('}), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);')   // A537: + the menu; A563: + the stock view (set only when it changed); A578: + the menu hours (a new view only when the clock crosses a change)
+  && pos.includes('}), [products, activeCategory, activeMenu, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);')   // A537: + the menu; A563: + the stock view (set only when it changed); A578: + the menu hours (a new view only when the clock crosses a change); A580: + the chosen menu (Later peeks into it)
   && pos.includes('const gridDay = offerClock.toDateString();'));
 ok('speed: each product\'s count on the order is one Map built per cart change — no per-tile scan of the cart',
   /const cartCounts = useMemo\(\(\) => \{\s*const m = new Map<string, number>\(\);\s*for \(const i of cart\) m\.set\(i\.product\.id, \(m\.get\(i\.product\.id\) \?\? 0\) \+ \(i\.measureUnit \? 1 : i\.quantity\)\);[^\n]*\s*return m;\s*\}, \[cart\]\);/.test(pos)
@@ -115,7 +115,7 @@ ok('speed: each product\'s count on the order is one Map built per cart change �
 ok('speed: tiles are memoised with one stable tap handler (the current handleTap through a ref), so a tap redraws one tile',
   tile.length > 0 && pos.includes('const handleTapRef = useRef(handleTap);') && pos.includes('handleTapRef.current = handleTap;')
   && pos.includes('const tapTile = useCallback((product: any) => handleTapRef.current(product), []);')
-  && /onTap=\{tapTile\} setInfoProduct=\{setInfoProduct\}\s+soldOut=\{showsSoldOut\(stockView\.mode, stockView, product\.id\)\}\s+onCheckBranches=\{mayCheckBranches \? checkBranchesFor : undefined\} \/>/.test(pos)   // A563: + sold out (a boolean: memo holds); A566: + the long press (a stable callback or nothing)
+  && /onTap=\{tapTile\} setInfoProduct=\{setInfoProduct\}\s+soldOut=\{showsSoldOut\(stockView\.mode, stockView, product\.id\)\}\s+later=\{hours\.later\.size > 0 && itemAsleep\(product, hours\) !== null\}\s+onCheckBranches=\{mayCheckBranches \? checkBranchesFor : undefined\} \/>/.test(pos)   // A563: + sold out (a boolean: memo holds); A566: + the long press (a stable callback or nothing); A580: + later (a boolean)
   && pos.includes('const checkBranchesFor = useCallback((product: any) => setBranchCheck(String(product?.name ?? \'\')), []);')
   && !/onClick=\{\(\) => handleTap\(product\)\}/.test(pos));
 ok('speed: tile pictures load lazily and decode off the main thread',

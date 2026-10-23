@@ -83,18 +83,19 @@ The **Sign in** button in the header goes to `app.zaptill.co.ke`.
 5. **"No surprises":** no percentage of your sales; M-Pesa charges are Safaricom's; hardware is quoted separately or
    bring your own; your data is yours to export.
 
-## 6. Packages (the owner's model, 2026-10-22; prices still a draft)
+## 6. Packages (the owner's model, 2026-10-22; cloud per business 2026-10-23; prices still a draft)
 
 | Package | Price (draft) | Includes |
 |---|---|---|
-| **ZapTill for one branch** (pay once) | KES 30,000, one-off ("once paid it's a done deal") | A branch = 2 computers (branch server + till). Tills, M-Pesa, kitchen, day close, staff and roles, barcode scanning, sales on account, setup on site and training |
-| **ZapTill Cloud** (month to month) | KES 3,000 a month per branch; first month free with the setup (A569); 6 or 12 months ahead recommended | Web dashboard on any phone, daily email, close a branch from the web, partner and accountant logins, barcodes and labels from the web |
+| **ZapTill for one branch** (pay once) | KES 30,000, one-off ("once paid it's a done deal"); installation can vary with the site, confirmed before we start; each extra computer from about KES 10,000, quoted per client | A branch = 2 computers (branch server + till). Tills, M-Pesa, kitchen, day close, staff and roles, barcode scanning, sales on account, setup on site and training |
+| **ZapTill Cloud** (month to month) | KES 3,000 a month per business (one fee covers every branch); first month free with the setup (A569); month to month or 3, 6 or 12 months at once (6 or 12 recommended, no discount); if it lapses the tills keep selling, syncing stops and a till cannot be re-registered until paid; email reminders before expiry | Web dashboard on any phone, daily email, close a branch from the web, partner and accountant logins, barcodes and labels from the web |
 | **ZapTill Online** | Ask us / price coming soon | Pictures, variants, offers, stock and labels at the till, other branches' stock from the till (the online licence) |
-| **ZapTill Analytics** | about KES 10,000 a month | "Do this next" in plain words, week at a glance, stock moves between branches, money-leak warnings, menu engineering, credit ageing |
+| **ZapTill Analytics** | about KES 10,000 a month, per business | "Do this next" in plain words, week at a glance, stock moves between branches, money-leak warnings, menu engineering, credit ageing |
 
-**Still open for the owner:** the price of an extra computer at a branch (not published); a reward for paying ahead (no
-figure published); the ZapTill Online price; the notice period beyond "month to month"; whether the cloud fee is per
-branch (the site says so) or per business.
+**Still open for the owner:** the ZapTill Online price; the notice period beyond "month to month"; what makes a client
+"priority". (Answered 2026-10-23: the cloud fee is per business, not per branch; the setup stays per branch; an extra
+computer from about KES 10,000, quoted per client; no reward for paying ahead; what a lapsed cloud does; support 8 am to
+7 pm, 24 hours for priority clients.)
 
 ## 7. Look and feel
 
@@ -129,9 +130,10 @@ branch (the site says so) or per business.
 ## 10. Needed from the owner
 
 - [ ] Choose the homepage headline (B recommended; A and C are in the analysis, §6)
-- [x] Pricing model (§6): per branch, desktop one-off, cloud monthly, one-month trial (2026-10-22). Still open: the extra-PC price, a pay-ahead reward, the Online price
+- [x] Pricing model (§6): desktop one-off per branch, cloud monthly per business (2026-10-23), one-month trial (2026-10-22), extra PC from about KES 10,000 and no pay-ahead reward (2026-10-23). Still open: the Online price, the notice period
 - [ ] A company email address
-- [ ] The city and area served, and support hours for clients who are not priority clients (priority: 24 hours)
+- [ ] The city and area served
+- [x] Support hours (2026-10-23): 8 am to 7 pm; 24 hours for priority clients. Still open: what makes a client "priority"
 - [ ] Permission from 2–3 clients for a quote and a number (the analysis §8 lists what to capture)
 - [ ] The eTIMS FAQ wording
 - [x] A UPS is recommended hardware (2026-10-22): in the hardware FAQ and the power-cut answer

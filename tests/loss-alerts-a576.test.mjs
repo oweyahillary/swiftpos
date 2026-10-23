@@ -370,7 +370,9 @@ const reset = () => {
     payments: [...[1, 2, 3, 4, 5, 6].map((i) => ({ id: `pay-${i}`, order_id: `o-m${i}`, business_id: B, amount: 700, status: 'completed', method: 'cash' })),
       { id: 'pay-j', order_id: 'o-j1', business_id: B, amount: 700, status: 'completed', method: 'cash' }],
     business_days: [], order_price_variances: [], kitchen_voids: [], parking_sessions: [],
-    loss_alerts: [], notifications: [], audit_log: [], refresh_tokens: [], sync_versions: [], sync_changes: [], feature_flags: [],
+    loss_alerts: [], notifications: [], audit_log: [], refresh_tokens: [], sync_versions: [], sync_changes: [],
+    // A580: the Watch list is premium — the business has the Analytics switch on (the non-premium cases are owner-decisions-a580)
+    feature_flags: [{ id: 'ff-an', business_id: B, key: 'analytics', enabled: true }],
     user_devices: [{ id: 'ud-1', business_id: B, device_id: 'dev-T1', status: 'approved', retired_at: null, branch_id: W, user_id: OWNER }],
   };
 };

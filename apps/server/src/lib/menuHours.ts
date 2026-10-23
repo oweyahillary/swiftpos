@@ -28,6 +28,13 @@
  * for the session (showAll). An open menu with hours carries a small hint on its tab ("until 11:00"). The bar changes
  * by itself at the next opening or closing (nextChange — one timer, never a poll).
  *
+ * A580 (owner, 2026-10-23: "let it remain as built, but add a 'Later' button to the menu list to show closed menus in
+ * greyed-out form"): closed menus stay hidden by default; ANY staff member may tap "Later" (session only, never stored)
+ * to see them greyed on the bar with when they open ("from 17:00 (Mon–Sat)") — `later`. A greyed menu can be opened to
+ * LOOK at its items (greyed tiles — laterPeek), but nothing in it is sold: the asleep map stays full, so hoursRefusal
+ * still refuses with A578's words. The All tab and search stay as A578 (closed items left out). Distinct from the
+ * manager's "Show all" (showAll — menu.edit), which brings everything back AND lets it be sold; Show all wins over Later.
+ *
  * A stored value that cannot be read is treated as NO schedule — never hide a menu by mistake (as productDays).
  *
  * Pure (no React, no storage, no imports — Node runs it as is in the tests). Copied verbatim: shared/,
@@ -206,8 +213,10 @@ export interface MenuHoursView<M, C> {
   asleep: Map<string, AsleepMenu>;
   /** A tab's small hint, by menu id: "until 11:00" (open, with hours); with Show all an asleep one's "from 17:00". */
   hints: Record<string, string>;
-  /** Some menu is outside its hours right now (the Show all switch is offered). */
+  /** Some menu is outside its hours right now (the Show all switch and A580's Later are offered). */
   anyAsleep: boolean;
+  /** A580: the asleep menus shown GREYED on the bar because "Later" is on (empty otherwise, and with Show all). */
+  later: Set<string>;
   /** When the bar changes next (the POS's one timer), or null. */
   nextChange: Date | null;
 }
@@ -221,7 +230,7 @@ const isOn = (v: unknown): boolean => v === undefined || v === null ? true : v =
  */
 export function menuHoursView<M extends HoursMenuLike, C extends HoursCategoryLike>(
   menus: readonly M[] | null | undefined, categories: readonly C[] | null | undefined, now: Date,
-  opts: { cutoff?: number; showAll?: boolean } = {},
+  opts: { cutoff?: number; showAll?: boolean; later?: boolean } = {},
 ): MenuHoursView<M, C> {
   const ms = Array.isArray(menus) ? menus : [];
   const cs = Array.isArray(categories) ? categories : [];
@@ -241,19 +250,47 @@ export function menuHoursView<M extends HoursMenuLike, C extends HoursCategoryLi
     else {
       asleepMenus.set(m.id, { menuId: m.id, menuName: String(m.name ?? ''), label: availabilityLabel(av) });
       if (opts.showAll) hints[m.id] = soon ? `from ${soon}` : 'not today';
+      else if (opts.later) hints[m.id] = laterHint(av, soon);
     }
   }
   const nextChange = nextMenuChange(avs, now, cutoff);
   if (opts.showAll || asleepMenus.size === 0) {
-    return { menus: ms.slice(), categories: cs.slice(), asleep: new Map(), hints, anyAsleep: asleepMenus.size > 0, nextChange };
+    return { menus: ms.slice(), categories: cs.slice(), asleep: new Map(), hints, anyAsleep: asleepMenus.size > 0, later: new Set(), nextChange };
   }
   const asleep = new Map<string, AsleepMenu>();
   for (const c of cs) { const a = c?.menu_id ? asleepMenus.get(c.menu_id) : undefined; if (a) asleep.set(c.id, a); }
+  if (opts.later) {
+    // A580: every menu on the bar (the asleep ones greyed), every category in the panel — but the asleep map stays full:
+    // nothing under a greyed menu is sold (hoursRefusal), and its items show only when that menu is opened (laterPeek).
+    return { menus: ms.slice(), categories: cs.slice(), asleep, hints, anyAsleep: true, later: new Set(asleepMenus.keys()), nextChange };
+  }
   return {
     menus: ms.filter((m) => !asleepMenus.has(m?.id)),
     categories: cs.filter((c) => !asleep.has(c?.id)),
-    asleep, hints, anyAsleep: true, nextChange,
+    asleep, hints, anyAsleep: true, later: new Set(), nextChange,
   };
+}
+
+/** A580: a greyed (Later) tab's hint — "from 17:00 (Mon–Sat)", "from 06:00", "Sat, Sun" (opens more than a day away). */
+function laterHint(av: MenuAvailability, soon: string | null): string {
+  const days = av.days && av.days.length > 0 && av.days.length < 7 ? daysLabel(av.days) : null;
+  if (soon) return days ? `from ${soon} (${days})` : `from ${soon}`;
+  return days ?? 'not today';
+}
+
+/**
+ * A580: with "Later" on, an item under a greyed menu shows (as a greyed tile, never sold) when the cashier opened THAT menu
+ * or one of its categories — never on the All tab or in a search (A578's rule stays). False without Later.
+ */
+export function laterPeek(
+  p: HoursProductLike | null | undefined, view: Pick<MenuHoursView<unknown, unknown>, 'asleep' | 'later'>,
+  scope: { menu?: string | null; category?: string | null; search?: string | null },
+): boolean {
+  if (!view.later || view.later.size === 0 || (scope.search ?? '').trim() !== '') return false;
+  const a = itemAsleep(p, view);
+  if (!a || !view.later.has(a.menuId)) return false;
+  const c = p?.category_id ?? p?.categories?.id ?? null;
+  return scope.menu === a.menuId || (!!c && scope.category === c);
 }
 
 export interface HoursProductLike { name?: string; category_id?: string | null; categories?: { id?: string | null } | null; is_fuel?: boolean | number | null }

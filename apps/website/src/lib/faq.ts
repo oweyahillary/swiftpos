@@ -28,7 +28,7 @@ export const FAQ_HARDWARE: FaqItem = {
 </ul>
 <p>If you want them: a cash drawer, a kitchen printer or a kitchen screen, a barcode scanner, and a label printer (or
 use A4 sticker sheets on an office printer). If you already have hardware, we'll check it and use what fits. Anything
-new is quoted separately.</p>`,
+new is quoted for your setup; an extra computer is from about KES 10,000.</p>`,
 };
 
 export const FAQ_MPESA: FaqItem = {
@@ -44,10 +44,12 @@ export const FAQ_DATA: FaqItem = {
 
 export const FAQ_STOP: FaqItem = {
   q: 'What happens if I stop paying for the cloud?',
-  // TODO(owner): confirm exactly what the tills and the dashboard do when the cloud lapses, then tighten this answer.
-  a: `<p>The tills were paid for once, so they stay yours. The cloud is month to month: stop paying and the web
-dashboard, the daily email and the online extras stop. Your records are yours, so download your reports first. We'll
-go through exactly how it works before you sign anything.</p>`,
+  // Owner, 2026-10-23: the till keeps working; the cloud stops syncing and the till cannot be re-registered until the
+  // client pays again; reminders are emailed before expiry.
+  a: `<p>Your tills keep selling. They were paid for once, so they stay yours. What stops is the cloud: the web
+dashboard, your phone access, the daily email and syncing, until you pay again. Your sales wait safely on the till and
+arrive in the cloud when you renew. Adding a till, or registering one again, needs an active cloud plan.</p>
+<p>We remind you by email before your plan ends, so it never lapses by surprise.</p>`,
 };
 
 export const FAQ_ETIMS: FaqItem = {
@@ -65,7 +67,8 @@ set up the printers and screens, and train your staff on site. We'll give you a 
 export const FAQ_ONCE: FaqItem = {
   q: 'Do I pay for the tills every month?',
   a: `<p>No. Setting up a branch is paid once, and the tills are yours: once paid, it's a done deal. The monthly fee is
-for the cloud: your dashboard on the web and on your phone, the daily email, and the online features.</p>`,
+for the cloud: your dashboard on the web and on your phone, the daily email, and the online features. It is one fee
+for your whole business, however many branches you have.</p>`,
 };
 
 export const FAQ_TRIAL: FaqItem = {
@@ -76,22 +79,24 @@ your numbers on your phone and get the daily email before you pay a shilling for
 
 export const FAQ_PAY_AHEAD: FaqItem = {
   q: 'Can I pay for the cloud for a year?',
-  // TODO(owner): if paying ahead earns a reward (a month free, a lower price), say it here. No figure until then.
-  a: `<p>Yes. The cloud is month to month, but we recommend paying for six months or a year at once: one payment, and
-nothing to remember every month. Ask us about it when we quote.</p>`,
+  // Owner, 2026-10-23: no reward for paying ahead for now.
+  a: `<p>Yes. Pay month to month, or for 3, 6 or 12 months at once. We recommend 6 or 12 months: one payment, and
+nothing to remember every month. Paying ahead is simpler, not cheaper: there is no discount.</p>`,
 };
 
 export const FAQ_TILLS: FaqItem = {
   q: 'What is a branch, and can I have more tills?',
-  // TODO(owner): the price of an extra computer is not published yet (owner deciding). Keep "quoted separately".
+  // Owner, 2026-10-23: "10k, in fact the price might vary depending on the client, even installation costs".
   a: `<p>A branch is a two-computer setup: the branch server and a till. A busy place can add more tills or a kitchen
-screen; each extra computer is quoted separately.</p>`,
+screen; each extra computer is from about KES 10,000, quoted for your setup. The branch setup is KES 30,000;
+installation can vary with the site, and we confirm the price before we start.</p>`,
 };
 
 export const FAQ_SUPPORT: FaqItem = {
   q: 'What support do I get?',
-  // TODO(owner): the support hours for clients who are not on priority support.
-  a: `<p>Call or WhatsApp us on 0717 675 635. Priority clients get support 24 hours a day. Many problems are fixed
+  // Owner, 2026-10-23: 8 am to 7 pm for every client (no days given, so none are stated); 24 hours for priority clients.
+  a: `<p>Call or WhatsApp us on 0717 675 635. Support is from 8 am to 7 pm; priority clients get support 24 hours a
+day. Many problems are fixed
 without anyone driving to your shop: support can pull a till's log remotely to see what went wrong, and updates
 install themselves.</p>`,
 };
@@ -99,7 +104,8 @@ install themselves.</p>`,
 export const FAQ_BRANCH: FaqItem = {
   q: 'Can I add a branch later?',
   a: `<p>Yes. A new branch is set up the same way, paid once, and shows up on the same web dashboard as the others, so
-you see every branch side by side. Its cloud fee is added to your monthly fee.</p>`,
+you see every branch side by side. You pay its setup once; your monthly cloud fee stays the same, because it covers
+the whole business, not each branch.</p>`,
 };
 
 export const FAQ_CONTRACT: FaqItem = {

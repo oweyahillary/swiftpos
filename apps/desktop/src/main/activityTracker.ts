@@ -78,7 +78,8 @@ export function noteRendererPing(payload: unknown, now = Date.now()): boolean {
  * so the server never installed (and its tills, who take their update from the server's copy, waited on it).
  *
  * Counted: a sale and its void / refund, the drawer's rows (`/api/sync/push` — opens, closes, floats, expenses, the day;
- * the till never sends it empty, and a body too small to carry a row is not counted), a drawer closed or confirmed, a
+ * a body too small to carry a row is not counted — A579: a 1.0.20 till's idle heartbeat is exactly that, an empty `{}`
+ * every 15 min, so it never keeps a server busy), a drawer closed or confirmed, a
  * wastage record, a day close acknowledged, and a manager's edit made at a till (menu, staff, prices, offers, settings —
  * somebody is standing there). Everything else is not trading — a route not listed here never keeps the server busy.
  */
@@ -101,7 +102,8 @@ export const GATEWAY_PERSON: ReadonlyArray<{ methods: string[]; path: RegExp; wh
   // the sync with the till's own sign-in, is background like /api/changes).
   { methods: ['POST'], path: new RegExp(`^credit/sales/${ID}/(confirm|dispute)$`), what: 'a manager confirming a credit sale' },
 ];
-/** The smallest /api/sync/push body that can carry a row (an empty push, five empty lists, is about 80 bytes). */
+/** The smallest /api/sync/push body that can carry a row (an empty push, five empty lists, is about 80 bytes; the A579
+ *  heartbeat is `{}`, 2 bytes). */
 export const SYNC_PUSH_MIN_BYTES = 100;
 
 /** Pure: what one gateway request is. `url` is the path the server saw (/node/cloud/api/…, the query is cut off). */

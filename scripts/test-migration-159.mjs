@@ -87,7 +87,9 @@ const sql = fs.readFileSync(path.join(MIG, THIS), 'utf8');
 await ok('the SQL carries exactly the A550 roles of shared BUILT_IN_ROLES (names, descriptions, keys)', async () => {
   for (const r of ROLES) assert.ok(r, 'a role is missing from BUILT_IN_ROLES');
   const built = [...sql.matchAll(/^\s+\('([^']+)', '([^']*)', (true|false)\)/gm)].map((m) => ({ name: m[1], description: m[2], fuel: m[3] === 'true' }));
-  assert.deepEqual(built, ROLES.map((r) => ({ name: r.name, description: r.description, fuel: !!r.types })));
+  // A580: Kitchen Manager is now food-only in BUILT_IN_ROLES (restaurant / café); 159 gave it to every business as it ran —
+  // migration 169 takes the unused ones off shops. "fuel" is the petrol-station typing only.
+  assert.deepEqual(built, ROLES.map((r) => ({ name: r.name, description: r.description, fuel: !!r.types && r.types.includes('petrol_station') })));
   const pairs = [...sql.matchAll(/^\s+\('([^']+)', '([a-z_]+\.[a-z_]+)'\)/gm)].map((m) => `${m[1]}|${m[2]}`).sort();
   assert.deepEqual(pairs, ROLES.flatMap((r) => [...new Set(r.keys)].map((k) => `${r.name}|${k}`)).sort());
   for (const r of ROLES) for (const k of r.keys) assert.ok(P.isPermissionKey(k), `${r.name}: ${k}`);

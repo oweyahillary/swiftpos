@@ -234,8 +234,12 @@ await ok('signed out (refused, needs rejoin): once, whatever the time; retired, 
 });
 await ok('trading: a drawer open on the branch, or the till on and talking after its last sync', () => {
   assert.equal(D.tillTrading(dev(), new Set([BR1]), NOW), true);
-  assert.equal(D.tillTrading(dev(), new Set(), NOW), true, 'seen 5 min ago, after its last sync');
-  assert.equal(D.tillTrading(dev({ last_seen_at: '2026-10-14T06:00:00Z' }), new Set(), NOW), false, 'off since the morning');
+  assert.equal(D.tillTrading(dev({ app_version: '1.0.20' }), new Set(), NOW), true, 'seen 5 min ago, after its last sync (a heartbeat till)');
+  assert.equal(D.tillTrading(dev({ app_version: '1.0.20', last_seen_at: '2026-10-14T06:00:00Z' }), new Set(), NOW), false, 'off since the morning');
+  // A579: a till before 1.0.20 pushes only when it has drawer rows — on and quiet is no sign of trade.
+  assert.equal(D.tillTrading(dev({ app_version: '1.0.5' }), new Set(), NOW), false, 'an old idle till is not "trading"');
+  assert.equal(D.tillTrading(dev(), new Set(), NOW), false, 'no version: treated as old');
+  assert.equal(D.tillTrading(dev({ app_version: '1.0.5' }), new Set([BR1]), NOW), true, 'a drawer open on its branch still counts');
 });
 await ok('a big void / refund: at the amount counts, under it does not; once per void', () => {
   const rows = [{ id: 'o1', kind: 'void', amount: 5000 }, { id: 'o2', kind: 'void', amount: 4999.99 }, { id: 'o1', kind: 'refund', amount: 9000 }];

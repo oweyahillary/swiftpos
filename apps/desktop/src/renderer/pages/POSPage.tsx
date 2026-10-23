@@ -44,13 +44,13 @@ import { onGrid } from '../../shared/productDays';
 import { exactFirst } from '../../shared/paginate';   // A472
 import { useGridWindow } from '../hooks/useGridWindow';   // A472
 import { reportBusy } from '../lib/activity';   // A508
-import CategoryPanel, { useCategoryPanel, useNarrowWindow, PanelToggle, CategoryChip, MenuBar } from '../components/CategoryPanel';   // A537; A566
+import CategoryPanel, { useCategoryPanel, useNarrowWindow, PanelToggle, CategoryChip, MenuBar, LaterButton } from '../components/CategoryPanel';   // A537; A566; A580
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../shared/menuFilter';   // A537; A566
 import { FindInBranches } from '../components/BranchStockTab';   // A566: A564's lookup, from the selling screen
 import { mayCheckOtherBranches, outHereMatches, outHereNote } from '../lib/branchCheck';   // A566
 import { useOnlineLicence } from '../lib/onlineLicence';   // A566 (A460)
 import { businessTerms } from '../../shared/businessTerms';   // A573: Menus / Departments / Groups
-import { hiddenByHours, hoursRefusal, type MenuHoursView } from '../../shared/menuHours';   // A578: menus by time of day
+import { hiddenByHours, hoursRefusal, itemAsleep, laterPeek, type MenuHoursView } from '../../shared/menuHours';   // A578: menus by time of day; A580: Later
 import { useMenuHours } from '../lib/useMenuHours';   // A578
 // A577: items sold by weight — the keypad loads on its first use (the main chunk's budget, lazy-load-a517).
 const WeightModal = lazy(() => import('../components/WeightModal'));
@@ -139,8 +139,10 @@ function useLongPress(on: (() => void) | null) {
 
 // A563: `soldOut` — the owner chose "Show as sold out" and this branch's stock of it is 0 or less: greyed, a "Sold out"
 // badge, and a tap says so instead of adding it (main refuses it at Charge too).
-const ProductTile = memo(function ProductTile({ product, cartCount, currency, onTap, setInfoProduct, soldOut = false, onCheckBranches }: {
-  product: any; cartCount: number; currency: string; onTap: (product: any) => void; setInfoProduct: (product: any) => void; soldOut?: boolean;
+// A580: `later` — the item's menu is closed and shown only because "Later" is on: greyed with a "Later" badge; a tap is
+// refused in A578's words (handleTap's first check), nothing added.
+const ProductTile = memo(function ProductTile({ product, cartCount, currency, onTap, setInfoProduct, soldOut = false, later = false, onCheckBranches }: {
+  product: any; cartCount: number; currency: string; onTap: (product: any) => void; setInfoProduct: (product: any) => void; soldOut?: boolean; later?: boolean;
   /** A566: long press / right-click → "Check other branches" (absent = not offered). */
   onCheckBranches?: (product: any) => void;
 }) {
@@ -150,11 +152,16 @@ const ProductTile = memo(function ProductTile({ product, cartCount, currency, on
     <button
       onClick={() => { if (press.consume()) return; onTap(product); }}
       {...press.handlers}
-      aria-disabled={soldOut || undefined}
-      data-testid={soldOut ? 'tile-sold-out' : undefined}
-      className={`relative bg-gray-900 border rounded-xl p-3 text-left transition duration-150 ease-out [@media(hover:hover)]:hover:scale-[1.02] active:scale-[0.97] active:duration-75 active:border-action-500 ${soldOut ? 'opacity-50 grayscale border-gray-800' : inCart ? 'border-action-500/60 bg-action-500/5' : 'border-gray-800 hover:border-gray-700'}`}
+      aria-disabled={soldOut || later || undefined}
+      data-testid={later ? 'tile-later' : soldOut ? 'tile-sold-out' : undefined}
+      className={`relative bg-gray-900 border rounded-xl p-3 text-left transition duration-150 ease-out [@media(hover:hover)]:hover:scale-[1.02] active:scale-[0.97] active:duration-75 active:border-action-500 ${soldOut || later ? 'opacity-50 grayscale border-gray-800' : inCart ? 'border-action-500/60 bg-action-500/5' : 'border-gray-800 hover:border-gray-700'}`}
     >
-      {soldOut && (
+      {later && (
+        <span className="absolute top-2 right-2 z-10 bg-gray-950/90 border border-dashed border-gray-500 text-gray-200 text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded">
+          Later
+        </span>
+      )}
+      {soldOut && !later && (
         <span className="absolute top-2 right-2 z-10 bg-gray-950/90 border border-gray-600 text-gray-100 text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded">
           Sold out
         </span>
@@ -441,6 +448,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     // A501: the branch server's refusal (by reason) and this till's backlog for it — the manager's notice names both.
     nodeRefused?: SyncStatusLike['nodeRefused']; nodeBacklog?: SyncStatusLike['nodeBacklog'];
     cloudUnreachable?: SyncStatusLike['cloudUnreachable'];   // A529: "the cloud cannot be reached" in the quiet notice
+    cloudLapsed?: SyncStatusLike['cloudLapsed'];   // A581: the business's cloud plan lapsed — the manager's notice says so
   }>({ online: true, pendingCount: 0, failedCount: 0 });
   // A363: the manager's bottom notice (null when nothing waits); `noticeBusy` while its button runs.
   const notice = canSeeSync ? syncNotice(syncStatus) : null;
@@ -495,6 +503,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const [menuDayCutoff, setMenuDayCutoff] = useState(0);
   const [canShowAllMenus, setCanShowAllMenus] = useState(false);
   const [showAllMenus, setShowAllMenus] = useState(false);
+  // A580: "Later" — any staff member sees the closed menus greyed (view only, nothing sold); this session only, never stored.
+  const [laterMenus, setLaterMenus] = useState(false);
   const hoursRef = useRef<Pick<MenuHoursView<unknown, unknown>, 'asleep'>>({ asleep: new Map() });
   /** A578: an item whose menu is outside its hours — scanned, searched for by its code, or tapped — is not sold; say why. */
   const refuseOutOfHours = (product: any): boolean => {
@@ -1359,7 +1369,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // the All tab and search, by this till's clock (offline too); one timer at the next change. In every mode — a
   // restaurant's Breakfast / Lunch, a shop's licensed-hours alcohol department, a petrol station's shop groups. An item
   // in no menu, or in a menu without hours, is never touched; fuel never. "Show all" (menu.edit) brings them back.
-  const hours = useMenuHours(menus, categories, { cutoff: menuDayCutoff, showAll: showAllMenus && canShowAllMenus });
+  const hours = useMenuHours(menus, categories, { cutoff: menuDayCutoff, showAll: showAllMenus && canShowAllMenus, later: laterMenus });
   hoursRef.current = hours;
   const menusNow = hours.menus, categoriesNow = hours.categories;
   const menuCats = useMemo(() => categoriesForMenu(categoriesNow, menusNow, activeMenu), [categoriesNow, menusNow, activeMenu]);
@@ -1383,9 +1393,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     // A563: "Hide when out of stock" — a tracked item this branch is known to be out of is off the grid and out of search.
     const matchStock  = !hiddenOutOfStock(stockView.mode, stockView, p.id);
     // A578: an item whose menu is outside its hours is off the grid, the All tab and search (Show all: back).
-    const matchHours  = !hiddenByHours(p, hours);
+    // A580: with Later on, a closed menu's items show (greyed, never sold) when that menu or its category is opened.
+    const matchHours  = !hiddenByHours(p, hours) || laterPeek(p, hours, { menu: activeMenu, category: activeCategory, search });
     return p.status === 'active' && matchCat && matchMenu && matchSearch && matchFuel && matchDay && matchStock && matchHours;
-  }), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);
+  }), [products, activeCategory, activeMenu, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);
   // A472 (speed): the grid draws GRID_STEP tiles and GRID_STEP more as the cashier scrolls near its end — not 1,000
   // tiles at once. A new category or search starts again at the top. The tiles stay memoised (ProductTile). An exact
   // hit (a product's name, barcode or PLU typed in full) is the first tile, so it is on screen at once.
@@ -1822,14 +1833,22 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
           {/* A566: the menus as big tabs across the top of the grid (none when the business has no menus). */}
           <MenuBar tabs={menuBar} active={activeMenu} onPick={pickMenu} label={words.menus} hints={hours.hints}
-            trailing={canShowAllMenus && hours.anyAsleep ? (
-              // A578: the manager's "Show all" — this session only; no banner, the button says what it does
-              <button type="button" data-testid="menu-show-all" aria-pressed={showAllMenus} onClick={() => setShowAllMenus((v) => !v)}
-                className={`min-h-[40px] px-3 rounded-lg text-sm font-semibold whitespace-nowrap border transition-colors ${showAllMenus
-                  ? 'bg-amber-500/15 border-amber-500/50 text-amber-200' : 'bg-gray-900 border-gray-700 text-gray-300 hover:text-white'}`}>
-                {showAllMenus ? `Showing all ${words.menus.toLowerCase()} ✕` : `Show all ${words.menus.toLowerCase()}`}
-              </button>
-            ) : undefined} />
+            greyed={hours.later}
+            trailing={hours.anyAsleep ? (<>
+              {/* A580: "Later" — anyone; the closed menus greyed, view only (gone while a manager's Show all is on) */}
+              {!(showAllMenus && canShowAllMenus) && (
+                <LaterButton on={laterMenus} onToggle={() => setLaterMenus((v) => !v)} label={words.menus} />
+              )}
+              {canShowAllMenus && (
+                // A578: the manager's "Show all" — this session only; A580: amber with a key, and it says it SELLS (not Later)
+                <button type="button" data-testid="menu-show-all" aria-pressed={showAllMenus} onClick={() => setShowAllMenus((v) => !v)}
+                  title={`Manager: bring back every ${words.menu.toLowerCase()} and sell from them now`}
+                  className={`min-h-[40px] px-3 rounded-lg text-sm font-semibold whitespace-nowrap border transition-colors ${showAllMenus
+                    ? 'bg-amber-500/15 border-amber-500/50 text-amber-200' : 'bg-gray-900 border-amber-500/40 text-amber-200/90 hover:text-amber-100'}`}>
+                  <span aria-hidden className="mr-1">🔑</span>{showAllMenus ? `Showing all ${words.menus.toLowerCase()} ✕` : `Show all ${words.menus.toLowerCase()} · sell`}
+                </button>
+              )}
+            </>) : undefined} />
 
           {/* A566: the search found an item that is out HERE — look at the other branches (inventory.view + online licence). */}
           {outHere.length > 0 && (
@@ -1878,6 +1897,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                   <ProductTile key={product.id} product={product} cartCount={cartCounts.get(product.id) ?? 0}
                     currency={currency} onTap={tapTile} setInfoProduct={setInfoProduct}
                     soldOut={showsSoldOut(stockView.mode, stockView, product.id)}
+                    later={hours.later.size > 0 && itemAsleep(product, hours) !== null}
                     onCheckBranches={mayCheckBranches ? checkBranchesFor : undefined} />
                 ))}
                 {grid.more && <div ref={grid.sentinelRef} data-testid="grid-more" aria-hidden className="col-span-full h-px" />}

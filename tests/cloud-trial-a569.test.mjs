@@ -345,8 +345,9 @@ try {
     assert.equal(P.trialBillingLine({ ...trial('converted'), converted_at: 'x' }), null);
     const a = read('apps/admin/src/AdminPortal.tsx');
     assert.match(a, /data-testid="trial-convert">Convert to paid/);
-    assert.match(a, /toggleWebHosting\(true, `Convert \$\{d\.name\}'s cloud trial to paid/);
-    assert.match(a, /description: 'Web Portal Hosting — Annual Access'/, 'the convert raises the existing invoice');
+    // A581: Convert to paid is the Cloud plan's Record payment (amount and period editable), not a fixed KES 10,000 year.
+    assert.match(a, /querySelector\('\[data-testid="pay-amount"\]'\)/);
+    assert.match(a, /<CloudPlanCard /);
     assert.match(a, /data-testid="client-plan"/);
   });
   await ok('create-client no longer promises a trial it cannot give', () => {

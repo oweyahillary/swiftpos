@@ -228,7 +228,7 @@ try {
       && R.hints['m-happy'] === 'until 19:00');
     const pos = src('renderer/pages/POSPage.tsx');
     ok('restaurant: the table\'s order uses the same grid — one filter with the hours, no second product list',
-      (pos.match(/const filtered = useMemo\(\(\) => products\.filter/g) ?? []).length === 1 && /const matchHours\s+= !hiddenByHours\(p, hours\);/.test(pos));
+      (pos.match(/const filtered = useMemo\(\(\) => products\.filter/g) ?? []).length === 1 && /const matchHours\s+= !hiddenByHours\(p, hours\) \|\| laterPeek\(p, hours, \{ menu: activeMenu, category: activeCategory, search \}\);/.test(pos));   // A580: + Later
 
     // Retail / minimart: a licensed-hours alcohol department. 10:00: hidden, and a SCAN of Tusker is refused in words.
     const ALC = { days: [1, 2, 3, 4, 5, 6], windows: [{ start: '17:00', end: '23:00' }] };
@@ -281,9 +281,9 @@ try {
   {
     const pos = src('renderer/pages/POSPage.tsx');
     ok('the bar and the panel take the menus open now; the hints and Show all on the bar',
-      /const hours = useMenuHours\(menus, categories, \{ cutoff: menuDayCutoff, showAll: showAllMenus && canShowAllMenus \}\);/.test(pos)
+      /const hours = useMenuHours\(menus, categories, \{ cutoff: menuDayCutoff, showAll: showAllMenus && canShowAllMenus, later: laterMenus \}\);/.test(pos)   // A580: + Later
       && /<CategoryPanel panel=\{catPanel\} categories=\{categoriesNow\} menus=\{menusNow\}/.test(pos)
-      && /hints=\{hours\.hints\}\s+trailing=\{canShowAllMenus && hours\.anyAsleep \?/.test(pos));
+      && /hints=\{hours\.hints\}\s+greyed=\{hours\.later\}\s+trailing=\{hours\.anyAsleep \?/.test(pos) && /\{canShowAllMenus && \(/.test(pos));   // A580: Later for anyone, Show all for menu.edit
     ok('Show all only with menu.edit (the menu permission, an existing key), for this session (component state, never stored)',
       /setCanShowAllMenus\(can\(ss, 'menu\.edit'\)\)/.test(pos) && /const \[showAllMenus, setShowAllMenus\] = useState\(false\);/.test(pos)
       && !/localStorage[^\n]*showAll/i.test(pos));

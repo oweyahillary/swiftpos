@@ -138,7 +138,7 @@ try {
     /const matchMenu\s+= inMenuScope\(p, gridMenuScope\(menuFilterScope, search\)\);/.test(pos)
     && /const matchStock\s+= !hiddenOutOfStock\(stockView\.mode, stockView, p\.id\);/.test(pos)
     && /soldOut=\{showsSoldOut\(stockView\.mode, stockView, product\.id\)\}/.test(pos)
-    && pos.includes('}), [products, activeCategory, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);'));   // A578: + hours
+    && pos.includes('}), [products, activeCategory, activeMenu, menuFilterScope, search, flags.isPetrol, gridDay, stockView, hours]);'));   // A578: + hours; A580: + activeMenu (Later)
   ok('…with the bar, the chip names only the category (the bar shows the menu); with no menus, as before',
     /categoryName: chosenCategoryName \?\? \(chosenMenuName && menuBar\.length === 0 \? `\$\{chosenMenuName\} \$\{words\.menu\.toLowerCase\(\)\}` : null\),/.test(pos));   // A573: the business's word
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { usePermissions } from '../../context/PermissionsContext';
+import { WatchListLocked, LOSS_OFF_CODE } from '../WatchListPage';   // A580: premium only
 
 // Settings › Business › Loss prevention — A576. The owner's switches for the watch list (pages/WatchListPage.tsx):
 // which patterns are watched (only those that fit this kind of business), the amounts, and who is told. The cloud keeps
@@ -176,15 +177,17 @@ export default function LossAlertsTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [locked, setLocked] = useState<string | null>(null);   // A580: not premium — the cloud's words
 
   useEffect(() => {
     if (!isOwner) return;
     api.get<LossSettingsView>('/api/loss-alerts/settings')
       .then((v) => { setView(v); setValue(v.settings); })
-      .catch((e) => setError(e?.message ?? 'Could not load the settings'));
+      .catch((e) => { if (e?.code === LOSS_OFF_CODE) setLocked(e?.message ?? ''); else setError(e?.message ?? 'Could not load the settings'); });
   }, [isOwner]);
 
   if (!isOwner) return <div className="p-4 sm:p-6 text-gray-500 text-sm">Only the owner can change loss-prevention alerts.</div>;
+  if (locked !== null) return <WatchListLocked message={locked} />;   // A580 (owner, 2026-10-23): premium, as Analytics
   if (!view || !value) return <div className="p-4 sm:p-6 text-gray-500 text-sm">{error || 'Loading…'}</div>;
 
   const save = async () => {

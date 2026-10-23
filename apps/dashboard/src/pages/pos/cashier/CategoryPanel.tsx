@@ -80,7 +80,8 @@ export function CategoryChip({ label, onClear }: { label: string | null; onClear
  */
 /** A578: `hints` — a tab's small "until 11:00" (a menu with hours); `trailing` — the manager's "Show all" at the row's end
  *  (shown even when every menu is asleep, so it can bring them back). */
-export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void; label?: string; hints?: Record<string, string>; trailing?: ReactNode }) {
+/** A580: `greyed` — the closed menus "Later" shows: greyed and dashed, still tappable (to LOOK at their items, nothing sold). */
+export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing, greyed }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void; label?: string; hints?: Record<string, string>; trailing?: ReactNode; greyed?: ReadonlySet<string> }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   const measure = useCallback(() => {
@@ -116,9 +117,16 @@ export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing
         style={{ display: 'flex', gap: 8, padding: '8px 12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
         {tabs.map((t) => {
           const on = t.id === shown;
+          const later = !!greyed?.has(t.id);   // A580: a closed menu shown by "Later" — greyed, dashed
           return (
-            <button key={t.id} type="button" role="tab" aria-selected={on} data-testid="menu-bar-tab" onClick={() => onPick(t.id)}
-              style={{ flexShrink: 0, minHeight: 46, minWidth: 84, padding: '0 18px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap',
+            <button key={t.id} type="button" role="tab" aria-selected={on} data-testid={later ? 'menu-bar-tab-later' : 'menu-bar-tab'} onClick={() => onPick(t.id)}
+              data-later={later ? 'true' : undefined}
+              style={later ? {
+                       flexShrink: 0, minHeight: 46, minWidth: 84, padding: '0 18px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap',
+                       fontSize: 15, fontWeight: 700, opacity: 0.55, filter: 'grayscale(1)',
+                       border: `1px dashed ${on ? 'var(--pos-text, #f1f5f9)' : 'var(--pos-border, #334155)'}`,
+                       background: on ? 'var(--pos-border, #334155)' : 'transparent', color: 'var(--pos-text, #f1f5f9)' } : {
+                       flexShrink: 0, minHeight: 46, minWidth: 84, padding: '0 18px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap',
                        fontSize: 15, fontWeight: 700, border: `1px solid ${on ? ACT : 'var(--pos-border, #334155)'}`,
                        background: on ? ACT : 'var(--pos-surface, #1e293b)', color: on ? '#fff' : 'var(--pos-text, #f1f5f9)' }}>
               {t.icon && <span aria-hidden style={{ marginRight: 6 }}>{t.icon}</span>}{menuBarLabel(t)}
@@ -130,8 +138,26 @@ export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing
       {edges.left && <button type="button" data-testid="menu-bar-left" aria-label={`More ${label.toLowerCase()} to the left`} onClick={() => nudge(-1)} style={arrow('left')}>‹</button>}
       {edges.right && <button type="button" data-testid="menu-bar-right" aria-label={`More ${label.toLowerCase()} to the right`} onClick={() => nudge(1)} style={arrow('right')}>›</button>}
       </div>
-      {trailing && <div style={{ flexShrink: 0, paddingRight: 12 }}>{trailing}</div>}
+      {trailing && <div style={{ flexShrink: 0, paddingRight: 12, display: 'flex', alignItems: 'center', gap: 8 }}>{trailing}</div>}
     </div>
+  );
+}
+
+/**
+ * A580 (owner, 2026-10-23: "add a 'Later' button to the menu list to show closed menus in greyed-out form"): at the end of
+ * the menu bar, for EVERY staff member, only while a menu is closed now. Tap: the closed menus join the bar greyed with
+ * when they open; tap again: hidden. View only — nothing in them is sold (A578's refusal). Session only, never stored.
+ * Not the manager's "Show all" (menu.edit, "sell"), which lets them be sold.
+ */
+export function LaterButton({ on, onToggle, label = 'Menus' }: { on: boolean; onToggle: () => void; label?: string }) {
+  return (
+    <button type="button" data-testid="menu-later" aria-pressed={on} onClick={onToggle}
+      title={on ? `Hide the closed ${label.toLowerCase()}` : `See the ${label.toLowerCase()} that open later (view only)`}
+      style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600,
+               border: '1px dashed var(--pos-border, #475569)', background: on ? 'var(--pos-border, #334155)' : 'transparent',
+               color: 'var(--pos-text, #f1f5f9)', opacity: on ? 1 : 0.8 }}>
+      <span aria-hidden style={{ marginRight: 4 }}>🕒</span>{on ? 'Later ✕' : 'Later'}
+    </button>
   );
 }
 

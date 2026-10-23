@@ -8,7 +8,9 @@
  * remembers what it already said (public.watchdog_alerts, migration 116) and sends (lib/alertNotify.ts).
  *
  *   CRITICAL — told at once, reminded every REMIND_MIN while it lasts, "resolved" when it clears:
- *     • a till that is ON (seen in the last 30 min) but has not synced for 2 hours — its sales are not reaching the cloud;
+ *     • a till that is ON (seen in the last 30 min) but has not synced for 2 hours — its sales are not reaching the cloud
+ *       (A579: a till before 1.0.20 sends no idle heartbeat, so it is critical only with trade evidence; otherwise a
+ *       WARNING, "quiet — no sales sent");
  *     • M-Pesa requests with no answer from Safaricom after 10 minutes (2 or more in 2 hours) — the callback is broken;
  *     • an M-Pesa payment that did not match (payment_exceptions, unresolved);
  *     • a burst of server errors (10 or more 5xx in 5 minutes);
@@ -20,6 +22,7 @@
  *   put in the admin"): new and still-happening. "Resolved" and the digest go to Telegram and the admin portal's Alerts.
  *   WARNING — in the morning digest and the admin portal only:
  *     • tills on an older version or local schema; one M-Pesa request unanswered; eTIMS invoices that failed;
+ *     • A579: an old till quiet for over 2 hours with no sign of trade; a till reporting records the cloud refused;
  *     • the counters: write-guard blocks (A159) and failed sign-ins since the last digest.
  */
 
@@ -79,6 +82,9 @@ export function compareVersions(a: string | null | undefined, b: string | null |
 export interface DeviceRow {
   id: string;
   business_id: string;
+  /** The till's own id (X-Device-Id) — A579 joins its queue report and its orders by it. */
+  device_id?: string | null;
+  branch_id?: string | null;
   device_label?: string | null;
   terminal_code?: string | null;
   status?: string | null;
@@ -117,22 +123,115 @@ export function tillsSignedOut(devices: DeviceRow[], now: Date, names: Record<st
   return out;
 }
 
-/** CRITICAL: the till is switched on and talking to the cloud, but its sales have not synced for 2 hours. */
-export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<string, string> = {}): Alert[] {
+/**
+ * A579 — "on but not syncing", and a till that is simply quiet.
+ *
+ * Owner, 2026-10-23, on two critical emails about TJS PIZZA's T1 ("Last sync 7 h 31 min ago", then "9 h 1 min"): "This
+ * emails of not syncing maybe its just that no trade is taking place". He was right. last_sync_at moves only when a till
+ * POSTs /api/sync/push, and a till before 1.0.20 sends that only when it has drawer rows to send (a shift opened or closed,
+ * a float, an expense, the day) — its sales go through /api/orders. So an idle till, or one selling with no drawer change
+ * for two hours, looked exactly like a broken one, and was emailed as one every 3 hours.
+ *
+ *   • A till that SENDS THE HEARTBEAT (1.0.20 or later, or one whose push reported its queue — X-Sync-Pending): when a sync
+ *     pass leaves nothing waiting it sends an empty push at most every 15 minutes. A stale last_sync_at while it is seen
+ *     therefore means something: CRITICAL, as before, with "N waiting" from its last report.
+ *   • An OLDER till (no heartbeat): a stale last_sync_at proves nothing on its own. Evidence, read from the cloud's own
+ *     tables (TradeEvidence, filled by jobs/watchdog.ts for these tills only):
+ *       – its own sales made since its last sync are on the cloud → its sales ARE arriving: nothing to say;
+ *       – a drawer is open on it AND the branch's other tills (or the web POS) sold since its last sync → the shop is
+ *         trading and this till sent nothing: CRITICAL;
+ *       – otherwise WARNING only (the morning digest and the admin portal, never emailed, never reminded): "quiet for 9 h
+ *         — no sales sent; if it was trading, check it".
+ *   The key stays `till_not_syncing:<till>` for all three, so a critical opened by the old rule settles to a warning
+ *   without a "resolved" message, and a warning that turns critical is sent as new (planRun).
+ */
+export const HEARTBEAT_FROM_VERSION = '1.0.20';
+
+/** A579: what a till last said it still had to send (lib/watchdogCounters.ts, by device id). */
+export interface QueueReportLite { pending: number; failed: number; at: number; pendingSince?: number | null }
+
+/** A579: for a till without the heartbeat — evidence, from the cloud's tables, of whether it should have synced. */
+export interface TradeEvidence {
+  /** A drawer is open on this till in the cloud. */
+  openShift?: boolean;
+  /** Sales at its branch by OTHER tills (or the web POS) since its last sync. */
+  otherSales?: number;
+  /** Its own sales made since its last sync that are on the cloud. */
+  ownSales?: number;
+}
+
+/** A579: does this till send the idle heartbeat (so a stale last sync means a problem)? */
+export function sendsHeartbeat(d: { app_version?: string | null }, report?: QueueReportLite | null): boolean {
+  if (report && typeof report.pending === 'number') return true;
+  return compareVersions(d.app_version, HEARTBEAT_FROM_VERSION) >= 0;
+}
+
+/** A579: the tills the job must look up evidence for — on, stale, and without the heartbeat. Pure. */
+export function quietCandidates(devices: DeviceRow[], now: Date, queues: Record<string, QueueReportLite> = {}): DeviceRow[] {
+  return devices.filter((d) => live(d) && d.last_seen_at && ago(now, d.last_seen_at) <= WATCHDOG.SEEN_RECENT_MIN
+    && !((d.last_sync_at ? ago(now, d.last_sync_at) : Infinity) <= WATCHDOG.SYNC_STALE_MIN)
+    && !sendsHeartbeat(d, d.device_id ? queues[d.device_id] : null));
+}
+
+/** CRITICAL: the till is switched on and talking to the cloud, but its sales have not synced for 2 hours (A579 above). */
+export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<string, string> = {},
+  ctx: { queues?: Record<string, QueueReportLite>; evidence?: Record<string, TradeEvidence> } = {}): Alert[] {
   const out: Alert[] = [];
   for (const d of devices) {
     if (!live(d) || !d.last_seen_at) continue;
     if (ago(now, d.last_seen_at) > WATCHDOG.SEEN_RECENT_MIN) continue;      // off / offline — not this rule
     const stale = d.last_sync_at ? ago(now, d.last_sync_at) : Infinity;
     if (!(stale > WATCHDOG.SYNC_STALE_MIN)) continue;
+    const seen = durationLabel(ago(now, d.last_seen_at));
+    const who = `${names[d.business_id] ?? 'A client'}: ${tillName(d)}`;
+    const key = `till_not_syncing:${d.id}`;
+    const q = d.device_id ? ctx.queues?.[d.device_id] : undefined;
+    if (sendsHeartbeat(d, q)) {
+      const waiting = q && q.pending > 0
+        ? ` ${q.pending} sale${q.pending === 1 ? '' : 's'} and records waiting on the till when it last reported.` : '';
+      out.push({
+        key, severity: 'critical', businessId: d.business_id,
+        title: `${who} is on but not syncing`,
+        detail: (d.last_sync_at
+          ? `Last sync ${durationLabel(stale)} ago (seen ${seen} ago). It checks in every 15 min even when idle, so its sales are not reaching the cloud.`
+          : `It has never synced (seen ${seen} ago).`) + waiting,
+      });
+      continue;
+    }
+    // No heartbeat (before 1.0.20): only trade evidence makes a quiet till a problem.
+    const ev = ctx.evidence?.[d.id] ?? {};
+    if ((ev.ownSales ?? 0) > 0) continue;                                     // its sales are arriving (/api/orders)
+    const ver = d.app_version ? `v${d.app_version}` : 'an old build';
+    if (ev.openShift && (ev.otherSales ?? 0) > 0) {
+      out.push({
+        key, severity: 'critical', businessId: d.business_id,
+        title: `${who} is on but not syncing`,
+        detail: `Last sync ${d.last_sync_at ? `${durationLabel(stale)} ago` : 'never'} (seen ${seen} ago). A drawer is open on it and the branch's `
+          + `other tills sent ${ev.otherSales} sale${ev.otherSales === 1 ? '' : 's'} since, but none came from this till — its sales may not be reaching the cloud.`,
+      });
+      continue;
+    }
     out.push({
-      key: `till_not_syncing:${d.id}`,
-      severity: 'critical',
-      businessId: d.business_id,
-      title: `${names[d.business_id] ?? 'A client'}: ${tillName(d)} is on but not syncing`,
-      detail: d.last_sync_at
-        ? `Last sync ${durationLabel(stale)} ago (seen ${durationLabel(ago(now, d.last_seen_at))} ago). Its sales are not reaching the cloud.`
-        : `It has never synced (seen ${durationLabel(ago(now, d.last_seen_at))} ago).`,
+      key, severity: 'warning', businessId: d.business_id,
+      title: d.last_sync_at ? `${who} quiet for ${durationLabel(stale)} — no sales sent` : `${who} is on but has never sent anything`,
+      detail: `It is on (seen ${seen} ago) but has sent nothing${d.last_sync_at ? ` since ${durationLabel(stale)} ago` : ''}. It runs ${ver}, which does not `
+        + `check in when idle, so this is most likely no trade. If it was trading, check it. From ${HEARTBEAT_FROM_VERSION} an idle till proves it is up to date.`,
+    });
+  }
+  return out;
+}
+
+/** A579 WARNING: a till that reports records the cloud refused and it parked — they wait for a person (digest only). */
+export function tillsWithParkedRecords(devices: DeviceRow[], now: Date, names: Record<string, string> = {},
+  queues: Record<string, QueueReportLite> = {}): Alert[] {
+  const out: Alert[] = [];
+  for (const d of devices) {
+    const q = d.device_id ? queues[d.device_id] : undefined;
+    if (!live(d) || !q || !(q.failed > 0) || (now.getTime() - q.at) / MIN > 60) continue;
+    out.push({
+      key: `till_parked:${d.id}`, severity: 'warning', businessId: d.business_id,
+      title: `${names[d.business_id] ?? 'A client'}: ${tillName(d)} has ${q.failed} record${q.failed === 1 ? '' : 's'} the cloud refused`,
+      detail: 'They are set aside on the till and will not be sent again by themselves — see the till\'s Tech page (Sync) for why.',
     });
   }
   return out;

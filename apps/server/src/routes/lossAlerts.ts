@@ -20,13 +20,20 @@ import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import {
   cleanLossSettings, readLossSettings, topLoss, kindLabel, kindsFor, lossNeedsData, lossPrevDate, LOSS_DEFAULTS, LOSS_KINDS,
-  LOSS_LIMITS, LOSS_TOP, type LossKind,
+  LOSS_LIMITS, LOSS_TOP, LOSS_OFF_CODE, LOSS_OFF_MESSAGE, type LossKind,
 } from '../lib/lossAlertRules';
 import { LOSS_SETTINGS_KEY } from '../jobs/lossAlerts';
+import { analyticsEnabled } from '../lib/analyticsAccess';   // A580: premium, the same switch as Analytics
 
 const router = safeRouter();
 router.use(requireAuth);
 router.use(requireWebSurface);
+// A580 (owner, 2026-10-23: "Yes let them be premium"): every route — the watch list, "looked into" and the owner's
+// settings — needs the business's premium Analytics switch (the 'analytics' feature flag, as /api/analytics/*).
+router.use(async (req, res, next) => {
+  if (!(await analyticsEnabled(req.businessId))) { res.status(403).json({ error: LOSS_OFF_MESSAGE, code: LOSS_OFF_CODE }); return; }
+  next();
+});
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -21,7 +21,8 @@ import { startWatchdogJob }     from './jobs/watchdog';          // A383
 import { startMonthlyPackJob }  from './jobs/monthlyPack';       // A455
 import { startOwnerAlertsJob }  from './jobs/ownerAlerts';       // A476
 import { startLossAlertsJob }   from './jobs/lossAlerts';        // A576
-import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt } from './lib/watchdogCounters';
+import { startCloudPlanRemindersJob } from './jobs/cloudPlanReminders';   // A581
+import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt, recordSyncQueue, parseQueueCount } from './lib/watchdogCounters';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { refreshPermissionsState } from './lib/permissionsState';   // A490
@@ -176,6 +177,9 @@ app.use((req, res, next) => {
   }
   res.on('finish', () => {
     const path = path0;
+    // A581: a lapsed cloud plan's 503 (CLOUD_SUBSCRIPTION_ENDED) is a decision, not a fault — never a server error, never a
+    // till "the cloud keeps refusing" (the admin is told by the plan's reminders and the client list).
+    if (res.locals.cloudLapsed === true) return;
     if (res.statusCode >= 500) recordServerError(path);
     else if (isSignInFailure(req.method, path, res.statusCode)) {
       recordFailedSignIn({ path, account: typeof req.body?.email === 'string' ? req.body.email : '', ip: req.ip ?? '' });
@@ -189,6 +193,10 @@ app.use((req, res, next) => {
         error: typeof answer?.error === 'string' ? answer.error : (rejected[0]?.error ?? null),
         rejected: rejected.length,
       });
+      // A579: a 1.0.20 till says what it still has to send (its idle heartbeat included) — only a push the cloud took.
+      if (res.statusCode < 400 && /^\/api\/sync\/push\/?$/.test(path.split('?')[0])) {
+        recordSyncQueue(String(req.header('X-Device-Id')), parseQueueCount(req.header('X-Sync-Pending')), parseQueueCount(req.header('X-Sync-Failed')));
+      }
     }
   });
   next();
@@ -338,6 +346,7 @@ const httpServer = app.listen(PORT, () => {
   startMonthlyPackJob();   // A455: the monthly pack by email on the 1st
   startOwnerAlertsJob();   // A476: branch managers' open tills (always), the owner's alerts, the weekly summary
   startLossAlertsJob();    // A576: loss-prevention alerts every hour (the watch list, the bell)
+  startCloudPlanRemindersJob();   // A581: cloud plan reminders to the owner and ZapTill (14/7/3/1 days, lapse, weekly)
 
   // A525: the start, in the admin portal's System page (public.ops_events). Never awaited, never throws — a missing
   // table (migration 149 not run) is a warning in the log.

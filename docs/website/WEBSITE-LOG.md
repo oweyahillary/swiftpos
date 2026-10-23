@@ -10,8 +10,37 @@ The newest entry is at the top.
 | `WORKPLAN.md` | How the site will be built, page by page, phase by phase (written after the research) |
 
 Standing rules: the site is never deployed, published or committed by Claude; the owner reviews and commits. Prices are
-a draft: KES 30,000 once per branch for the tills; the cloud KES 3,000 a month per branch, month to month, first month
-free; Analytics about KES 10,000 a month. Contact: 0717 675 635, no company email yet.
+a draft: KES 30,000 once per branch for the tills; the cloud KES 3,000 a month per business (all branches), month to
+month, first month free; Analytics about KES 10,000 a month, per business. Contact: 0717 675 635, no company email yet.
+
+---
+
+## 2026-10-23: owner answers
+
+- **Question 17 answered: the cloud fee is per business, not per branch.** ZapTill Cloud (about KES 3,000 a month, KES
+  100 a day) covers every branch; the KES 30,000 desktop setup stays one-off per branch (a branch = branch server + a
+  till); extra computers stay "quoted separately"; Analytics (about KES 10,000 a month) is per business too; ZapTill
+  Online stays "Ask us"; 6 or 12 months ahead recommended, no discount figure.
+- Changed to match: Pricing (lede, Cloud and Analytics cards, the note under the packages, "No surprises", the meta
+  description), the FAQ ("Do I pay for the tills every month?", "Can I add a branch later?": no second cloud fee), Home
+  (price band, the one-dashboard benefit), Features ("Add a branch later … with no second cloud fee"), Analytics hero
+  price, the leak calculator label, the Pricing Open Graph card, `site.ts` comments, WORKPLAN §6 and §10. Multi-branch
+  now reads as a plus of the per-business fee.
+- **Questions 18–21 answered:**
+  - 18, the cloud lapses: "the till continues to work, but the cloud stops syncing and the till cannot be re-registered
+    until the client pays again"; reminders are emailed before expiry. Plans: month to month, or 3, 6 or 12 months at
+    once (6 or 12 recommended). The FAQ "What happens if I stop paying for the cloud?" now says the tills keep selling;
+    the dashboard, phone access, daily email and syncing stop until you pay; sales wait on the till and arrive on
+    renewal; adding or re-registering a till needs an active plan; we email before the plan ends.
+  - 19, support hours: 8 am to 7 pm (no days given, so none are stated); 24 hours for priority clients. On Contact
+    (Call card), the FAQ "What support do I get?" and Features (Support and updates). The footer has no support line.
+  - 20, a reward for paying ahead: none for now. Pricing and the FAQ say "Paying ahead is simpler, not cheaper: there is
+    no discount", and recommend 6 or 12 months for convenience.
+  - 21, an extra computer: "10k, in fact the price might vary depending on the client, even installation costs". The
+    site says "from about KES 10,000 each, quoted for your setup" (`PRICES.extraComputerFrom`), and "installation can
+    vary with the site, and we confirm the price before we start" (packages note, FAQ "What is a branch…", hardware FAQ).
+    No JSON-LD offers block was added: the prices are still a draft.
+- Still open from 19: what makes a client "priority" (a paid tier?).
 
 ---
 
@@ -136,12 +165,7 @@ edited) `apps/server/src/lib/analyticsRules.ts`, the dashboard's Analytics page,
 - Phase 4: proof (quotes, logos, case studies with permission).
 
 **Open questions for the owner (new)**
-17. Is the cloud fee per branch (as the site now says) or per business?
-18. When a client stops paying for the cloud, do the tills carry on exactly as before, including the ZapTill Online extras?
-19. Support hours for clients who are not priority clients, and what makes a client "priority" (a paid tier?). The site
-    only says "24-hour support for priority clients".
-20. Is there a reward for paying 6 or 12 months ahead? The site says "recommended" with no figure.
-21. The extra-computer price, when decided (the site says "quoted separately").
+19. What makes a client "priority" (a paid tier?). (18, 20, 21 and the support hours were answered on 2026-10-23.)
 
 ---
 

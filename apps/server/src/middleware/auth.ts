@@ -11,6 +11,7 @@ import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
 import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
 import { partnerRequestBranch } from '../lib/webPartners';    // A550
+import { lapseRefusal } from '../lib/cloudPlan';                // A581
 
 /**
  * A494: a session from the owner's password sign-in (/auth/login — only the account that owns the business can make
@@ -189,6 +190,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         return;
       }
       if (terminalWriteBlocked(req, res)) return;
+      if (await cloudLapseBlocked(req, res)) return;   // A581
       next();
       return;
     }
@@ -282,6 +284,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     if (terminalWriteBlocked(req, res)) return;
+    if (await cloudLapseBlocked(req, res)) return;   // A581
     next();
     return;
   }
@@ -377,6 +380,22 @@ export function requireWebSurface(req: Request, res: Response, next: NextFunctio
     error: 'This feature requires web portal access. Please contact ZapTill to upgrade.',
     code:  'WEB_SURFACE_REQUIRED',
   });
+}
+
+// ── A581: the cloud plan's lapse gate ─────────────────────────────────────────────────────────────────────────────
+// A business whose cloud plan (or trial) has lapsed past its grace: its tills' writes (sales, drawers, days, changes, the
+// heartbeat, a manager's edits on the till) are answered 503 CLOUD_SUBSCRIPTION_ENDED — 503 so every till version keeps
+// the record queued; 1.0.20 tells the manager. Sign-in and renewals, the technician's routes, support logs and the update
+// state stay open (lib/cloudPlan.ts lapseGateApplies). Remembered a minute per business; a failed read never refuses.
+async function cloudLapseBlocked(req: Request, res: Response): Promise<boolean> {
+  let refusal = null;
+  try { refusal = await lapseRefusal(req.businessId, req.surface, req.method, req.originalUrl || req.url || ''); }
+  catch { return false; }
+  if (!refusal) return false;
+  res.locals.cloudLapsed = true;   // index.ts: not a server error, not a refused till for the watchdog
+  res.set('Retry-After', '900');
+  res.status(503).json(refusal);
+  return true;
 }
 
 // ── terminal write guard (A159) ───────────────────────────────────────────────

@@ -15,7 +15,7 @@ const CARDS = [
   { slug: 'quick-service', kicker: 'For quick service', lines: ['Faster at the counter.', 'Right in the bag.'], sub: 'Combos on one line, dispatch tickets that count the bags, offers.' },
   { slug: 'retail', kicker: 'For shops', lines: ['Stock that adds up.', 'A till that never stops.'], sub: 'Departments, barcodes and labels, stock, transfers and drawers by cashier.' },
   { slug: 'analytics', kicker: 'ZapTill Analytics', lines: ['Know what to do next,', 'in plain words.'], sub: 'What to order, what to prepare each day, which branch needs stock.' },
-  { slug: 'pricing', kicker: 'Pricing', lines: ['Pay once for the tills.', 'About KES 100 a day for the cloud.'], sub: 'Per branch, the first month of the cloud free. No percentage of sales.' },
+  { slug: 'pricing', kicker: 'Pricing', lines: ['Pay once for the tills.', 'About KES 100 a day for the cloud.'], sub: 'Setup once per branch. One cloud fee for the business, first month free.' },
   { slug: 'contact', kicker: 'Contact', lines: ['Talk to a person,', 'on WhatsApp.'], sub: 'Call or WhatsApp 0717 675 635, or book a visit.' },
 ];
 

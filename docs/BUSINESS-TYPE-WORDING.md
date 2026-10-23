@@ -74,8 +74,8 @@ cafés keep **Menus** (Food, Soft drinks, Alcohol, Tea) exactly as before.
 | Till sale screen: top tabs, panel, chip | Menus, All menus, "Food menu" | Departments, All departments, "Groceries department" | FIXED |
 | Till Labels: note | "… needs menu editing" | "… needs the right to edit products" (every type) | FIXED |
 | Till: order types, tables, KOT, held tabs | `modeFlags().isRestaurant` | unchanged | OK |
-| Built-in roles Waiter, Kitchen, Kitchen Manager | seeded for every type (A514 / migrations 142, 159) | a shop would not need them | LEFT FOR THE OWNER (see below) |
-| Standard receipt "Kots: 0" line | printed on every standard receipt | a shop has no kitchen tickets | LEFT FOR THE OWNER (paper change) |
+| Built-in roles Waiter, Kitchen, Kitchen Manager | seeded for every type (A514 / migrations 142, 159) | restaurant / café only; the unused ones removed from shops (migration 169) | FIXED (A580, owner 2026-10-23) |
+| Standard receipt "Kots: 0" line | printed on every standard receipt | none on a shop's receipt (restaurant / café unchanged) | FIXED (A580, owner 2026-10-23) |
 
 ## petrol_station
 
@@ -117,12 +117,18 @@ user-visible "hotel" (comments excluded) and fails on one.
 
 ## Left for the owner to decide (not changed)
 
-1. **Built-in roles Waiter, Kitchen and Kitchen Manager** exist at every business (A514 seeded them for every type;
-   migrations 142 and 159 gave them to existing businesses, and their tests pin that). Making them restaurant-only for new
-   businesses means changing shared/permissions.ts's BUILT_IN_ROLES and those migration tests; removing them from existing
-   shops needs a migration and must not touch roles that have staff on them.
-2. **"Kots: 0" on a shop's standard receipt** (shared/printing render.ts — the line is the classic layout's). Dropping it
-   for shops changes the printed receipt; the owner checks receipt changes on paper (A538), so it waits for his word.
+1. ~~**Built-in roles Waiter, Kitchen and Kitchen Manager**~~ — **DECIDED and FIXED in A580** (owner, 2026-10-23: "how can
+   shops have waiter and kitchen roles unless requested keep them off we only have cashier and other roles"):
+   shared/permissions.ts BUILT_IN_ROLES gives them `types: FOOD_BUSINESS_TYPES` (restaurant, cafe) — a new retail,
+   minimart, petrol station, car park or "other" business is created with Manager, Cashier, Supervisor, Storekeeper,
+   Accountant and the A550 roles (Fuel attendant at a petrol station), never a waiter or kitchen role; a business that
+   becomes a restaurant or café is given them (addTypeRoles). **Migration 169** deletes, once, the built-in (is_default)
+   Waiter / Kitchen / Kitchen Manager roles of every non-food business that NOBODY is on (active or inactive staff); a
+   role with staff on it stays. A shop that wants one adds it on request: Settings › Roles and permissions › New role
+   (name it "Waiter", tick its keys or copy another role) — it is not refilled with the built-in keys automatically.
+2. ~~**"Kots: 0" on a shop's standard receipt**~~ — **DECIDED and FIXED in A580**: shared/printing's `kitchenTickets`
+   (false for retail, minimart, petrol_station, parking, other — the till from device_config.business_type, the web from
+   the business's type) leaves the line out; a restaurant's or café's receipt is byte for byte as before.
 3. ~~**Analytics**~~ — **FIXED in A575**: `shared/analyticsTerms.ts` analyticsWords — a shop reads "Product performance",
    "items you sell with no cost", "Cost of sales", "items removed", "what to push and stock" (web page and the cloud's
    cards and tiles); a restaurant or café keeps its words.
@@ -132,7 +138,8 @@ user-visible "hotel" (comments excluded) and fails on one.
    would read "menu" in such an error.
 6. ~~**The upload template's help line**~~ — **FIXED in A575**: a shop's line names its own word ("the product's
    department, e.g. Groceries …"); the column stays `menu`.
-7. **The till's Item Mix** is restaurant-only (A105); a shop would find it useful too (the reverse case).
+7. **The till's Item Mix** is restaurant-only (A105); a shop would find it useful too (the reverse case). Owner,
+   2026-10-23 (A580): stays restaurant-only — no change.
 8. **Admin portal** › Test data "Also delete the whole menu" — ZapTill staff only; left.
 9. ~~The till's old `MenuTab`~~ — **FIXED in A575**: still imported (so not deleted), its category list and messages now
    take businessTerms ("No department" at a shop).

@@ -336,6 +336,13 @@ export function defaultKeysFor(kind: 'owner' | 'manager' | 'cashier' | 'none'): 
  * get the built-in Fuel attendant role.
  */
 export const FUEL_BUSINESS_TYPES: readonly string[] = ['petrol_station'];
+/**
+ * A580 (owner, 2026-10-23: "how can shops have waiter and kitchen roles unless requested keep them off we only have
+ * cashier and other roles"): the business types that run a kitchen and serve at tables (shared/businessTerms.ts
+ * FOOD_SERVICE_TYPES). Only these get the built-in Waiter, Kitchen and Kitchen Manager roles; a shop (retail, minimart),
+ * a petrol station, a car park or "other" does not. Migration 169 takes the unused ones off existing shops.
+ */
+export const FOOD_BUSINESS_TYPES: readonly string[] = ['restaurant', 'cafe'];
 
 export interface BuiltInRole {
   /** The role's name as a new business sees it. Matched case- and space-insensitively (lower(trim(name))). */
@@ -417,9 +424,9 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
       'shifts.confirm', 'reports.sales', 'reports.shifts', 'shifts.close_day'] },   // A520: Close Day, not Close Branch
   { name: 'Waiter', description: 'Takes orders, sends them to the kitchen and takes payment',
     keys: ['orders.create', 'sales.discount', 'products.view', 'inventory.view', 'customers.view', 'customers.edit',
-      'reservations.manage'] },
+      'reservations.manage'], types: FOOD_BUSINESS_TYPES },   // A580: restaurants and cafés only
   { name: 'Kitchen', description: 'Kitchen staff - reads the menu (the kitchen display has its own sign-in)',
-    keys: ['products.view'] },
+    keys: ['products.view'], types: FOOD_BUSINESS_TYPES },   // A580
   { name: 'Storekeeper', description: 'Receives deliveries, transfers, counts and writes off stock',
     keys: ['products.view', 'inventory.view', 'inventory.receive', 'inventory.transfer', 'inventory.count',
       'inventory.waste', 'reports.inventory', 'menu.costs'] },
@@ -444,7 +451,8 @@ export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
     keys: VIEW_KEYS },
   { name: 'Kitchen Manager', description: 'Runs the kitchen - the menu and recipes, receiving, counting and writing off stock',
     keys: ['products.view', 'menu.edit', 'menu.recipes', 'menu.costs', 'ingredients.manage', 'inventory.view',
-      'inventory.receive', 'inventory.count', 'inventory.waste', 'reports.inventory', 'stations.manage'] },
+      'inventory.receive', 'inventory.count', 'inventory.waste', 'reports.inventory', 'stations.manage'],
+    types: FOOD_BUSINESS_TYPES },   // A580
 ];
 
 const roleNameKey = (name: string | null | undefined): string => String(name ?? '').trim().toLowerCase().replace(/[\s_]+/g, ' ');

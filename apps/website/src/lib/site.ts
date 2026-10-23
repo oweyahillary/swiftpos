@@ -19,14 +19,19 @@ export const SITE = {
 /**
  * The draft prices (WORKPLAN §6, owner's model of 2026-10-22). Change them here only.
  * - setup: the desktop app for ONE BRANCH, paid once ("once paid it's a done deal"). A branch is a two-computer setup:
- *   the branch server and a till. Extra computers cost extra: TODO(owner) no figure is published until decided.
- * - monthly: the cloud (web dashboard, daily email, online features), month to month, per branch; paying for six or
- *   twelve months at once is recommended, with no discount figure until the owner sets one. TODO(owner).
+ *   the branch server and a till. Installation can vary with the site; the price is confirmed before we start.
+ * - extraComputerFrom: each extra computer (a till, a kitchen screen) is from about this much, quoted per client
+ *   (owner, 2026-10-23: "10k, the price might vary depending on the client").
+ * - monthly: the cloud (web dashboard, daily email, online features), month to month, PER BUSINESS: one fee covers
+ *   every branch (owner, 2026-10-23). It can be paid for 3, 6 or 12 months at once (6 or 12 recommended), with no
+ *   discount for paying ahead (owner, 2026-10-23). If it lapses the tills keep selling; the cloud stops syncing and a
+ *   till cannot be registered again until it is paid; reminders are emailed before it ends.
  * - The first month of the cloud is free with the desktop setup (A569).
- * - analyticsMonthly: the Analytics add-on, about this much a month.
+ * - analyticsMonthly: the Analytics add-on, about this much a month, per business like the cloud.
  */
 export const PRICES = {
   setup: 30000,
+  extraComputerFrom: 10000,
   monthly: 3000,
   yearly: 36000,
   trialMonths: 1,

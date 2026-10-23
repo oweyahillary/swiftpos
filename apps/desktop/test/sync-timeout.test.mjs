@@ -13,50 +13,42 @@
  * the wedge is impossible: the pass RESOLVES, the order is attempted, and a
  * following sync is never blocked.
  */
-import assert from 'assert';
-import fs from 'fs'; import os from 'os'; import path from 'path'; import Module from 'module';
-import { pathToFileURL, fileURLToPath } from 'url';
+import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
+import Module, { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 process.env.SYNC_FETCH_TIMEOUT_MS = '300';
 
+// The REAL compiled engine on the REAL till schema (dist/main/localDb on a temp userData, electron shimmed). The
+// hand-made schema this test used to carry went stale as the order push grew (sales on account, A552): the order
+// stage threw before it reached the network, so the timeout was never exercised.
+//
+//   cd apps/desktop && npm run build:main && node test/sync-timeout.test.mjs
 const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', 'dist', 'main');
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'synctimeout-'));
-const w = (n, s) => { const p = path.join(tmp, n); fs.writeFileSync(p, s); return p; };
-
-const require0 = Module.createRequire(path.join(DIST, '..', '..', 'package.json'));
-let db, driver;
-try { db = new (require0('better-sqlite3'))(':memory:'); driver = 'better-sqlite3'; }
-catch { const { DatabaseSync } = await import('node:sqlite'); db = new DatabaseSync(':memory:'); driver = 'node:sqlite'; }
-
-db.exec(`
-  CREATE TABLE sync_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, attempts INTEGER DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, status TEXT DEFAULT 'pending', drawer_wait_at TEXT);
-  CREATE TABLE orders (id TEXT PRIMARY KEY, sync_status TEXT DEFAULT 'pending', shift_id TEXT);
-  CREATE TABLE shifts (id TEXT, business_id TEXT, branch_id TEXT, cashier_id TEXT, opened_at TEXT, closed_at TEXT, status TEXT, opening_float REAL, closing_float REAL, expected_cash REAL, cash_variance REAL, notes TEXT, created_at TEXT, business_day_id TEXT, business_date TEXT, device_id TEXT, terminal_code TEXT, drawer_label TEXT, opened_by TEXT, sync_status TEXT);
-  CREATE TABLE float_transactions (id TEXT, shift_id TEXT, branch_id TEXT, cashier_id TEXT, type TEXT, amount REAL, reason TEXT, created_at TEXT, device_id TEXT, sync_status TEXT);
-  CREATE TABLE expenses (id TEXT, business_id TEXT, branch_id TEXT, expense_category_id TEXT, description TEXT, amount REAL, paid_by TEXT, expense_date TEXT, shift_id TEXT, created_at TEXT, device_id TEXT, sync_status TEXT);
-  CREATE TABLE business_days (id TEXT, business_id TEXT, branch_id TEXT, device_id TEXT, terminal_code TEXT, business_date TEXT, opened_at TEXT, opened_by TEXT, closed_at TEXT, closed_by TEXT, status TEXT, counted_cash REAL, expected_cash REAL, cash_variance REAL, notes TEXT, sync_status TEXT);
-  CREATE TABLE local_price_edits (product_id TEXT, price REAL, updated_at TEXT, updated_by TEXT, synced INTEGER DEFAULT 0);
-`);
-db.prepare(`INSERT INTO sync_queue (order_id,payload,created_at,status) VALUES ('o1',?,?,'pending')`).run(JSON.stringify({ branch_id: 'b1', order_number: 'A-1', items: [], payments: [] }), new Date().toISOString());
-db.prepare(`INSERT INTO orders (id,sync_status) VALUES ('o1','pending')`).run();
-
-const map = {
-  electron: w('electron.cjs', `module.exports={app:{getPath:()=>${JSON.stringify(tmp)}},net:{isOnline:()=>true},safeStorage:{isEncryptionAvailable:()=>false}};`),
-  './localDb': w('localDb.cjs', `module.exports={getLocalDb:()=>global.__db,LOCAL_SCHEMA_VERSION:52};`),
-  './deviceConfig': w('deviceConfig.cjs', `module.exports={getDeviceConfig:()=>({device_id:'d1',branch_id:'b1',node_url:null}),saveDeviceConfig:()=>{},getServerUrl:()=>'http://127.0.0.1:9',canSell:()=>true,isNodeRole:()=>false};`),
-  './nodeClient': w('nodeClient.cjs', `module.exports={hasNode:()=>false,pushRowsToNode:async()=>({}),measureNodeDrift:async()=>({}),fetchReferenceFromNode:async()=>null};`),
-  './nodeIngest': w('nodeIngest.cjs', `module.exports=new Proxy({},{get:()=>()=>{}});`),
-  './logFile': w('logFile.cjs', `module.exports={logLine:()=>{},getLogPath:()=>'x',describeResponse:async()=>''};`),
-};
-global.__db = db;
+const dist = path.join(here, '..', 'dist', 'main');
+const require = createRequire(import.meta.url);
+if (!fs.existsSync(path.join(dist, 'syncEngine.js'))) { console.error('dist/main not built. Run:  npm run build:main'); process.exit(1); }
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'zaptill-synctimeout-'));
+const shim = path.join(userData, 'electron-shim.cjs');
+fs.writeFileSync(shim, `module.exports = { app: { getPath: () => ${JSON.stringify(userData)}, getVersion: () => '1.0.20' }, ipcMain: { handle() {} }, BrowserWindow: class { static getAllWindows() { return []; } }, dialog: {}, safeStorage: { isEncryptionAvailable: () => false }, net: { isOnline: () => true } };`);
 const orig = Module._resolveFilename;
-Module._resolveFilename = function (req, parent, ...r) {
-  const fd = parent?.filename?.startsWith(DIST);
-  if (req === 'electron') return map.electron;
-  if (fd && map[req]) return map[req];
-  return orig.call(this, req, parent, ...r);
-};
+Module._resolveFilename = function (req, parent, ...rest) { return orig.call(this, req === 'electron' ? shim : req, parent, ...rest); };
+
+const L = require(path.join(dist, 'localDb.js'));
+const engine = require(path.join(dist, 'syncEngine.js'));
+const DC = require(path.join(dist, 'deviceConfig.js'));
+const driver = 'real localDb';
+
+const db = L.getLocalDb();
+db.prepare(`INSERT INTO session (id, token, user_id, business_id, business_name, logged_in_at) VALUES (1, 't', 'u-owner', 'biz-1', 'Pollo', '2026-10-23T00:00:00Z')`).run();
+DC.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'b1', device_id: 'd1', device_role: 'till', terminal_code: 'T1', device_name: 'Front' });
+
+// A sale rung on this till: the order and its queue row, as the selling path writes them.
+const at = new Date().toISOString();
+db.prepare(`INSERT INTO orders (id, business_id, branch_id, order_number, subtotal, vat_amount, total, created_at, sync_status, device_id)
+  VALUES ('o1', 'biz-1', 'b1', 'A-1', 100, 0, 100, ?, 'pending', 'd1')`).run(at);
+db.prepare(`INSERT INTO sync_queue (order_id, payload, created_at, status) VALUES ('o1', ?, ?, 'pending')`)
+  .run(JSON.stringify({ id: 'o1', branch_id: 'b1', order_number: 'A-1', items: [], payments: [] }), at);
 
 // A fetch that hangs until its AbortSignal fires — exactly what a black-holed
 // connection does, and exactly what the old code hung on forever.
@@ -66,11 +58,10 @@ globalThis.fetch = (_u, o) => new Promise((_res, rej) => {
   if (o?.signal) o.signal.addEventListener('abort', () => rej(o.signal.reason || new Error('aborted')));
 });
 
-const engine = await import(pathToFileURL(path.join(DIST, 'syncEngine.js')).href);
-engine.configureSyncEngine('http://127.0.0.1:9', 'tok', 'refresh');
+engine.configureSyncEngine('http://cloud', 'tok', 'refresh');
 
 let pass = 0, fail = 0;
-const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`FAIL  ${name}`); } };
+const ok = (name, cond, d = '') => { if (cond) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`FAIL  ${name}  ${d}`); } };
 const attempts = () => db.prepare(`SELECT attempts FROM sync_queue WHERE order_id='o1'`).get().attempts;
 const qrow = () => db.prepare(`SELECT status, last_error FROM sync_queue WHERE order_id='o1'`).get();
 
@@ -108,4 +99,5 @@ const r4 = await engine.syncPush();
 ok('…and the next sync is not wedged', !r4.errors.includes('Sync already in progress') && calls === 4);
 
 console.log(`\n${pass} passed, ${fail} failed`);
+try { L.closeLocalDb?.(); } catch { /* ignore */ }
 process.exit(fail === 0 ? 0 : 1);

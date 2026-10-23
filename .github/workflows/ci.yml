@@ -435,6 +435,18 @@ jobs:
           node --no-warnings tests/cloud-trial-a569.test.mjs
           node --no-warnings tests/installer-download-a570.test.mjs
 
+      # A581 — the cloud payment plan per business: month maths (31 Jan → 28/29 Feb), one period from the later of today and
+      # paid-until (no lost days), Record payment over HTTP (invoice, web access on, audited, a trial converted, an M-Pesa
+      # code once only, super admin only); a lapsed business's till writes → 503 CLOUD_SUBSCRIPTION_ENDED (its reads, a web
+      # write, a client in its 21-day grace and a client not on the plan untouched), no till joins until paid, sync resumes
+      # at once after the payment; reminders to the owner AND ZapTill once per milestone (14/7/3/1 days, the day, weekly
+      # while lapsed), no provider → logged and skipped; the owner's notice, the admin list's expiry and filter; migration
+      # 170 replayed into PGlite. Need the server build.
+      - name: Cloud payment plan (A581) and migration 170
+        run: |
+          node --no-warnings tests/cloud-plan-a581.test.mjs
+          node --no-warnings scripts/test-migration-170.mjs
+
       # A550: partner login — someone on the staff the owner lets into the web dashboard with a password, never the owner
       # (the real auth / staff routers over HTTP) — and the five built-in roles that came with it. They run in the loop
       # below too; named here so a failure says what broke.
@@ -526,6 +538,25 @@ jobs:
         run: |
           TZ=UTC node --no-warnings tests/scale-barcode-a577.test.mjs
           node --no-warnings scripts/test-migration-167.mjs
+
+      # A579: "on but not syncing" only when it means something — a 1.0.20 till checks in while idle (a stale sync while
+      # seen is critical); an older till is critical only with trade evidence (a drawer open on it while the branch's other
+      # tills sell, none of its own sales arriving), else a warning "quiet — no sales sent", never emailed or reminded; the
+      # X-Sync-Pending / X-Sync-Failed queue report; owner alerts no longer call an old idle till "trading". Runs in the
+      # loop too; named here so a failure says what broke.
+      - name: Till heartbeat and quiet tills (A579)
+        run: node --no-warnings tests/till-heartbeat-a579.test.mjs
+
+      # A580: the owner's decisions of 2026-10-23 — menu hours' "Later" (the closed menus greyed on the bar, view only,
+      # A578's refusal word for word, any staff member, Show all still the manager's); loss alerts premium (every
+      # /api/loss-alerts route 403 LOSS_ALERTS_OFF, the job, the bell and the daily email skip a business without the
+      # Analytics switch; the locked note); Retail setup's unused "Default weight unit" removed; Waiter, Kitchen and Kitchen
+      # Manager a restaurant's or café's only (migration 169 takes the unused ones off shops, replayed into PGlite); no
+      # "Kots" on a shop's receipt, a restaurant's bytes unchanged. Runs in the loop too; named here so a failure says what broke.
+      - name: Owner decisions (A580) and migration 169
+        run: |
+          node --no-warnings tests/owner-decisions-a580.test.mjs
+          node --no-warnings scripts/test-migration-169.mjs
 
       - name: Run offline suites
         run: |
@@ -805,6 +836,17 @@ jobs:
       - name: Desktop sync failure reporting
         working-directory: apps/desktop
         run: node --no-warnings test/syncEngine-failures.test.mjs
+
+      # A177 / A178 / A181 — a hung or stalled cloud answer times out and never wedges sync; a throwing shift push
+      # never holds back the order push; a 409 (order-number clash) is never taken as synced and escalates to failed
+      # with its reason in the durable log. Real compiled syncEngine on the real localDb schema. Only in
+      # `npm run test:desktop` before, where their hand-made schemas went stale unnoticed.
+      - name: Desktop sync timeout, stage decoupling, 409 clash
+        working-directory: apps/desktop
+        run: |
+          node --no-warnings test/sync-timeout.test.mjs
+          node --no-warnings test/sync-decouple.test.mjs
+          node --no-warnings test/order-409-not-synced.test.mjs
 
       # A321 — any successful catalogue pull (10-min floor, startup, manual, post-edit, 20-s check)
       # signals the open screens to reload; the 20-s freshness check refreshes on 401 and records
@@ -1363,6 +1405,13 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/menu-hours-a578.test.mjs
 
+      # A580 — the owner's decisions on the till: "Later" at the end of the menu bar (the closed menus greyed with when
+      # they open, view only, any staff member, this session; Show all still the manager's and says it sells), per mode —
+      # restaurant, café, retail, minimart, petrol (fuel never), parking, other; no "Kots" on a shop's receipt.
+      - name: Desktop owner decisions (A580)
+        working-directory: apps/desktop
+        run: node --no-warnings test/owner-decisions-a580.test.mjs
+
       # A573 — the till in the business's words: the Manager sidebar's catalogue (Menu / Products), the sale screen's top
       # tabs and panel (Menus / Departments / Groups), the import; src/shared/businessTerms.ts is the web's file.
       - name: Desktop business-type words (A573)
@@ -1464,6 +1513,18 @@ jobs:
       - name: Desktop till sync audit — push, pull and the close contract
         working-directory: apps/desktop
         run: node --no-warnings test/till-sync-audit.test.mjs
+
+      # A579: the idle heartbeat — an empty /api/sync/push when a pass leaves nothing waiting, at most every 15 min, online
+      # and signed in only, with X-Sync-Pending / X-Sync-Failed; a branch server never counts it as trade.
+      - name: Desktop idle sync heartbeat (A579)
+        working-directory: apps/desktop
+        run: node --no-warnings test/sync-heartbeat-a579.test.mjs
+
+      # A581: the cloud plan lapsed — the till keeps selling and keeps its queue (503 is a passing state, never failed or
+      # parked), asks at most every 5 minutes, tells the manager in plain words (never a cashier), and drains after payment.
+      - name: Desktop cloud plan lapsed (A581)
+        working-directory: apps/desktop
+        run: node --no-warnings test/cloud-lapsed-a581.test.mjs
 
       # A460 + A459 + A197 — premium screens only with the online licence; staff renamed / re-roled / deactivated on
       # the till (offline too); stock transfers in the Stock group.

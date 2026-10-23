@@ -38,6 +38,13 @@ export type LossKind = (typeof LOSS_KINDS)[number];
 
 /** At most this many alerts on the watch list, in the daily email, and new notifications per run. */
 export const LOSS_TOP = 10;
+/**
+ * A580 (owner, 2026-10-23: "Yes let them be premium"): the Watch list, its settings, the bell alerts and the daily-email
+ * block go with Analytics — the same per-business 'analytics' flag (ZapTill Premium, set in the admin portal). Off: every
+ * /api/loss-alerts route answers 403 with this code and words (the shape of ANALYTICS_OFF), and the job skips the business.
+ */
+export const LOSS_OFF_CODE = 'LOSS_ALERTS_OFF';
+export const LOSS_OFF_MESSAGE = 'The Watch list is part of ZapTill Premium — contact ZapTill to enable it.';
 /** The rolling period, in business days (today included). */
 export const LOSS_WEEK_DAYS = 7;
 /** A shortage counts toward "short again and again" from this amount (smaller is rounding and coins). */

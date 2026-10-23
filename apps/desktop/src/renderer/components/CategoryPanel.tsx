@@ -88,7 +88,8 @@ export function CategoryChip({ label, onClear }: { label: string | null; onClear
 // A573: `label` is the business's word for the menus — "Menus", "Departments", "Groups" (src/shared/businessTerms.ts).
 /** A578: `hints` — a tab's small "until 11:00" (a menu with hours); `trailing` — the manager's "Show all" at the row's end
  *  (shown even when every menu is asleep, so it can bring them back). */
-export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void; label?: string; hints?: Record<string, string>; trailing?: ReactNode }) {
+/** A580: `greyed` — the closed menus "Later" shows: greyed and dashed, still tappable (to LOOK at their items, nothing sold). */
+export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing, greyed }: { tabs: MenuTab[]; active: string; onPick: (id: string) => void; label?: string; hints?: Record<string, string>; trailing?: ReactNode; greyed?: ReadonlySet<string> }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   const measure = useCallback(() => {
@@ -119,12 +120,15 @@ export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing
         className="flex gap-2 px-4 py-2.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((t) => {
           const on = t.id === shown;
+          const later = !!greyed?.has(t.id);   // A580: a closed menu shown by "Later"
           return (
-            <button key={t.id} type="button" role="tab" aria-selected={on} data-testid="menu-bar-tab" onClick={() => onPick(t.id)}
+            <button key={t.id} type="button" role="tab" aria-selected={on} data-testid={later ? 'menu-bar-tab-later' : 'menu-bar-tab'} onClick={() => onPick(t.id)}
+              data-later={later ? 'true' : undefined}
               className={`flex-shrink-0 min-h-[48px] min-w-[88px] px-5 rounded-xl text-base font-semibold whitespace-nowrap border transition-colors ${
-                on ? 'bg-action-500 border-action-500 text-gray-950' : 'bg-gray-800 border-gray-700 text-gray-200 hover:text-white hover:border-gray-600'}`}>
+                later ? `border-dashed opacity-60 grayscale ${on ? 'bg-gray-700 border-gray-400 text-gray-100' : 'bg-gray-900 border-gray-600 text-gray-400'}`
+                : on ? 'bg-action-500 border-action-500 text-gray-950' : 'bg-gray-800 border-gray-700 text-gray-200 hover:text-white hover:border-gray-600'}`}>
               {t.icon && <span aria-hidden className="mr-1.5">{t.icon}</span>}{menuBarLabel(t)}
-              {hints?.[t.id] && <span data-testid="menu-bar-hint" className={`ml-2 text-xs font-medium ${on ? 'text-gray-900/80' : 'text-gray-400'}`}>{hints[t.id]}</span>}
+              {hints?.[t.id] && <span data-testid="menu-bar-hint" className={`ml-2 text-xs font-medium ${on && !later ? 'text-gray-900/80' : 'text-gray-400'}`}>{hints[t.id]}</span>}
             </button>
           );
         })}
@@ -138,8 +142,25 @@ export function MenuBar({ tabs, active, onPick, label = 'Menus', hints, trailing
           className={`${arrow} right-0 justify-end pr-2 bg-gradient-to-l`}>›</button>
       )}
       </div>
-      {trailing && <div className="flex-shrink-0 pr-3">{trailing}</div>}
+      {trailing && <div className="flex-shrink-0 pr-3 flex items-center gap-2">{trailing}</div>}
     </div>
+  );
+}
+
+/**
+ * A580 (owner, 2026-10-23: "add a 'Later' button to the menu list to show closed menus in greyed-out form"): at the end of
+ * the menu bar, for EVERY staff member, only while a menu is closed now. Tap: the closed menus join the bar greyed with
+ * when they open; tap again: hidden. View only — nothing in them is sold (A578's refusal). Session only, never stored.
+ * Not the manager's "Show all" (menu.edit, amber, "sell"), which lets them be sold.
+ */
+export function LaterButton({ on, onToggle, label = 'Menus' }: { on: boolean; onToggle: () => void; label?: string }) {
+  return (
+    <button type="button" data-testid="menu-later" aria-pressed={on} onClick={onToggle}
+      title={on ? `Hide the closed ${label.toLowerCase()}` : `See the ${label.toLowerCase()} that open later (view only)`}
+      className={`min-h-[40px] px-3 rounded-lg text-sm font-semibold whitespace-nowrap border border-dashed transition-colors ${on
+        ? 'bg-gray-700 border-gray-400 text-gray-100' : 'bg-gray-900 border-gray-600 text-gray-300 hover:text-white'}`}>
+      <span aria-hidden className="mr-1">🕒</span>{on ? 'Later ✕' : 'Later'}
+    </button>
   );
 }
 

@@ -183,22 +183,8 @@ export default function MinimartSettingsPage() {
               />
             </div>
           ))}
-
-          <div className="flex items-center justify-between py-3.5">
-            <div>
-              <div className="text-sm font-medium text-gray-200">Default weight unit</div>
-              <div className="text-xs text-gray-500 mt-0.5">Unit displayed for weighed items on receipts</div>
-            </div>
-            <select
-              className="bg-gray-950 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm"
-              value={settings['weight_unit'] ?? 'kg'}
-              onChange={e => saveSetting('weight_unit', e.target.value)}
-            >
-              <option value="kg">Kilograms (kg)</option>
-              <option value="g">Grams (g)</option>
-              <option value="lb">Pounds (lb)</option>
-            </select>
-          </div>
+          {/* A580 (owner, 2026-10-23: "remove"): the old "Default weight unit" (kg / g / lb) is gone — nothing read it; each
+              weighed item carries its own kg or g (Products › Sold by weight, A577). A stored value is left, harmless. */}
         </div>
       )}
 
