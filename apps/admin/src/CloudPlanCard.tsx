@@ -7,6 +7,9 @@
  * payment (amount, M-Pesa code, date paid — paid-until moves one period on from the later of today and the current
  * paid-until), the payments and the reminders sent. Cloud: /api/admin/clients/:id/cloud-plan (routes/cloudPlanAdmin.ts).
  * Payment detection is manual for now: nothing here takes money, and a monthly plan does not renew by itself.
+ * A584: the ONE way to turn web access on — Record payment, or (super admin, a special case) a complimentary paid-until
+ * with a reason, audited. The standing reads due / unpaid N days (locks in M) / locked; the notices listed are ZapTill's
+ * (the client gets only the invoice and a receipt).
  */
 import { useCallback, useEffect, useState } from "react";
 import { C, S } from "./theme";
@@ -45,6 +48,9 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
   const [paidAt, setPaidAt] = useState(today());
   const [payUntil, setPayUntil] = useState("");
   const [note, setNote] = useState("");
+  // A584: complimentary / manual paid-until
+  const [compUntil, setCompUntil] = useState("");
+  const [compReason, setCompReason] = useState("");
 
   const adopt = useCallback((v: View) => {
     setView(v);
@@ -80,7 +86,19 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
       });
       adopt(v);
       setReference(""); setNote(""); setPayUntil("");
-      setNotice(`Payment recorded — paid until ${trialDate(v.payment?.paid_until_after)}${v.trial_converted ? "; the cloud trial is converted" : ""}${v.invoice_number ? `; invoice ${v.invoice_number} (paid)` : ""}. Sync is open again.`);
+      setNotice(`Payment recorded — paid until ${trialDate(v.payment?.paid_until_after)}${v.trial_converted ? "; the cloud trial is converted" : ""}${v.invoice_number ? `; invoice ${v.invoice_number} (paid)` : ""}${v.receipt_sent ? "; receipt emailed" : ""}. Web access and sync are open.`);
+      onChanged?.();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  async function complimentary() {
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const v = await req("POST", `/clients/${clientId}/cloud-plan/complimentary`, {
+        paid_until: compUntil ? new Date(`${compUntil}T23:59:00+03:00`).toISOString() : null, reason: compReason.trim(),
+      });
+      adopt(v); setCompUntil(""); setCompReason("");
+      setNotice(`Complimentary paid-until set — ${trialDate(v.paid_until)}. Web access is on; no invoice raised; audited.`);
       onChanged?.();
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   }
@@ -121,7 +139,9 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
 
       <div style={{ fontSize: 12, fontWeight: 600, margin: "18px 0 8px" }}>Record payment</div>
       <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
-        Paid-until moves on one period from the later of today and {view.standing?.paid_until ? trialDate(view.standing.paid_until) : "today"} — paying early never loses a day.
+        {view.standing?.state === "unpaid" && view.standing.due_at
+          ? <>This payment covers the invoiced period, from {trialDate(view.standing.due_at)}. </>
+          : <>Paid-until moves on one period from the later of today and {view.standing?.paid_until ? trialDate(view.standing.paid_until) : "today"} — paying early never loses a day. </>}
         Payments are checked by hand for now (M-Pesa Daraja later); a monthly plan needs a payment each month.
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -146,6 +166,19 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
           : <span style={{ fontSize: 11, color: C.muted }}>Super admin only</span>}
       </div>
 
+      {isSuper && (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 600, margin: "18px 0 8px" }}>Complimentary / manual paid-until</div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>For a special case only: no payment, no invoice. Web access is turned on to the date you choose; the reason is kept in the audit log.</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            {field("Paid until", <input data-testid="comp-until" type="date" style={S.input} value={compUntil} min={today()} onChange={(e) => setCompUntil(e.target.value)} />)}
+            {field("Reason (required)", <input data-testid="comp-reason" style={S.input} value={compReason} placeholder="e.g. launch partner, 3 months free" onChange={(e) => setCompReason(e.target.value)} />)}
+            <button data-testid="comp-save" disabled={busy || !compUntil || compReason.trim().length < 3} onClick={complimentary}
+              style={{ ...S.btn, ...S.btnGhost, opacity: busy || !compUntil || compReason.trim().length < 3 ? 0.5 : 1 }}>Set complimentary</button>
+          </div>
+        </>
+      )}
+
       <div style={{ fontSize: 12, fontWeight: 600, margin: "18px 0 8px" }}>Payments</div>
       {view.payments.length === 0 ? <div style={{ fontSize: 12, color: C.muted }}>No cloud payments recorded yet.</div> : (
         <div className="sp-table-wrap"><table style={S.table} data-testid="cloud-payments">
@@ -164,10 +197,10 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
       )}
       {view.reminders.length > 0 && (
         <div style={{ fontSize: 11, color: C.muted, marginTop: 12 }} data-testid="cloud-reminders">
-          Reminders sent: {view.reminders.map((r) => `${milestoneText(r.milestone)} (${trialDate(r.sent_at)}${r.owner_sent ? "" : ", owner not reached"}${r.admin_sent ? "" : ", ZapTill not reached"})`).join(" · ")}
+          Notices sent: {view.reminders.map((r) => `${milestoneText(r.milestone)} (${trialDate(r.sent_at)}${r.owner_sent ? "" : ", owner not reached"}${r.admin_sent ? "" : ", ZapTill not reached"})`).join(" · ")}
         </div>
       )}
-      <div style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>{clientName}'s tills never stop selling. When the plan lapses past its grace the cloud stops their sync and no till can be joined; a recorded payment opens it again at once.</div>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>{clientName}'s tills never stop selling. On each due date the client is emailed the invoice (nothing else). Unpaid 7 days after it, everything locks at once — web dashboard paused, sync stopped, no till joins; a recorded payment opens it again at once.</div>
     </div>
   );
 }

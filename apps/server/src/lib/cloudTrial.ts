@@ -19,9 +19,9 @@
  *   ended" (CLOUD_TRIAL_ENDED). Tills are never affected — they sell on the desktop licence, not on web access.
  *
  * CONVERT TO PAID
- *   The admin's "Enable web access" (PATCH /api/admin/clients/:id/features/web_hosting { enabled: true }, then the portal
- *   raises the KES 10,000 invoice as before) on a client in or after its trial marks the trial converted and sets the
- *   web-access expiry to one year from that day. "Disable web access" during a trial ends it at once (no web access).
+ *   A581/A584: Record payment on the Cloud plan (routes/cloudPlanAdmin.ts) marks the trial converted and runs a paid period
+ *   from that day; a complimentary paid-until does too. The old "Enable web access" (a year, KES 10,000) is retired —
+ *   the cloud refuses a bare enable (WEB_ACCESS_BY_PLAN). "Disable web access" during a trial ends it at once.
  *
  * No migration: business_settings already exists, is unique per (business_id, key), and the key is refused by
  * POST /api/business/settings (READ_ONLY_KEY), so an owner cannot write or reset it.

@@ -5,7 +5,7 @@ import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 import { notifyAdmin, alertChannels } from '../lib/alertNotify';
 import { recentErrors, digestCounters, recentSignInFailures, recentSyncAttempts, syncQueueReports } from '../lib/watchdogCounters';
-import { lapsedBusinessIds } from '../lib/cloudPlan';   // A581
+import { lapsedBusinessIds, billingDigestLines } from '../lib/cloudPlan';   // A581, A584
 import {
   Alert, OpenAlertRow, WATCHDOG, planRun, alertText, digestText, DeviceRow, TradeEvidence,
   tillsNotSyncing, quietCandidates, tillsWithParkedRecords, mpesaUnanswered, paymentExceptions, errorBurst, daysNotClosed, oldTills, etimsFailures,
@@ -260,7 +260,11 @@ export async function runWatchdog(now = new Date()): Promise<{ opened: number; r
 export async function sendDigest(now = new Date()): Promise<void> {
   const open = await openAlerts();
   open.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
-  const text = digestText(open, digestCounters(true), now);
+  let text = digestText(open, digestCounters(true), now);
+  // A584: ZapTill's billing lines — every locked client each morning (the client hears nothing), the unpaid ones and when
+  // they lock, and how many have no expiry set.
+  const billing = await billingDigestLines(now.getTime()).catch(() => [] as string[]);
+  if (billing.length) text = [text, '', ...billing].join('\n');
   // A392: the digest is not emailed (critical failures only) — Telegram, and the admin portal's Alerts page.
   await notifyAdmin(`ZapTill daily check — ${now.toISOString().slice(0, 10)}`, text, { email: false });
 }

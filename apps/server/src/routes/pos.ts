@@ -38,6 +38,7 @@ import { servedBranchBranding } from '../lib/branchBrandingStore';             /
 import { businessOutOfStockMode, branchStockView } from '../lib/stockGateStore';  // A563
 import { assertBranchAccess } from '../middleware/rbac';                        // A563
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
+import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -761,8 +762,14 @@ router.get('/credit-customers', async (req, res) => {
       .slice(0, 5000)
       .map((c) => ({ id: c.id, name: c.name ?? '', phone: c.phone ?? null, status: c.status ?? 'active',
         credit_limit: Number(c.credit_limit) || 0, credit_balance: Number(c.credit_balance) || 0 }));
+    // A585: who approves a sale on account at THIS branch — the owner's choice (off = A552's customers.credit rule). The
+    // till keeps it with the list, so it holds offline. owner_id: the owner always approves.
+    const branchId = req.branchId ?? (typeof req.query.branch_id === 'string' ? req.query.branch_id : null);
+    const [rule, { data: biz }] = await Promise.all([loadCreditRule(req.businessId),
+      supabase.from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle()]);
+    const approval = { on: rule.on, approvers: rule.on ? approversAt(rule, branchId) : [], owner_id: (biz as { owner_id?: string | null } | null)?.owner_id ?? null };
     res.set('Cache-Control', 'no-store');
-    res.json({ at, customers });
+    res.json({ at, customers, approval });
   } catch (e: any) {
     sendError(res, e);
   }

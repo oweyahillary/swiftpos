@@ -401,11 +401,11 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
   // A552: On account on this till — offered?, and may the person signed in approve it themselves (read as Pay opens).
-  const [onAccount, setOnAccount] = useState<{ offered: boolean; selfApproves: boolean } | null>(null);
+  const [onAccount, setOnAccount] = useState<{ offered: boolean; selfApproves: boolean; chosen?: boolean } | null>(null);
   useEffect(() => {
     if (!showPayment) return;
     let live = true;
-    posApi.order.creditCustomers('').then((r) => { if (live) setOnAccount({ offered: !!r?.offered, selfApproves: !!r?.selfApproves }); })
+    posApi.order.creditCustomers('').then((r) => { if (live) setOnAccount({ offered: !!r?.offered, selfApproves: !!r?.selfApproves, chosen: !!r?.chosenApprovers }); })
       .catch(() => { if (live) setOnAccount(null); });
     return () => { live = false; };
   }, [showPayment]);

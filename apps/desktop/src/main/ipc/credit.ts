@@ -4,7 +4,7 @@ import { getLocalDb } from '../localDb';
 import { logLine } from '../logFile';
 import * as creditConfirm from '../creditConfirm';   // A545
 import { readCreditCustomers, onAccountOffered, ensureCreditCustomers, creditListAt, selfApproves, pullCreditCustomers,
-  mayFindCreditCustomers } from '../creditSale';   // A552; A559
+  mayFindCreditCustomers, readCreditApproval } from '../creditSale';   // A552; A559; A585
 import { signedIn as sessionPerson } from '../tillAccess';
 import { onCataloguePulled } from '../syncEngine';
 import { NO_CONNECTION_MESSAGE } from '../offlineSession';
@@ -88,9 +88,11 @@ export function registerCreditHandlers(ctx: IpcShared) {
     await ensureCreditCustomers().catch(() => { /* the saved list */ });
     const db = getLocalDb();
     const offered = onAccountOffered(db);
+    const rule = readCreditApproval(db);   // A585: the owner's chosen approvers (kept offline)
     return {
       offered,
-      selfApproves: selfApproves(person),
+      selfApproves: selfApproves(person, rule),
+      chosenApprovers: rule.on,
       saved_at: creditListAt(db),
       customers: offered ? readCreditCustomers(db, String(search ?? ''), 30) : [],
     };

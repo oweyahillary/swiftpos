@@ -101,7 +101,7 @@ const body = (marker) => { const i = src.indexOf(marker); const rest = src.slice
 await ok('orders.ts: verifyOverrideAuthorizer asks findApprover with the real sign-in PIN check and the business owner', async () => {
   assert.match(src, /import \{ verifyPin \} from '\.\/auth';/);
   // A495: the approver works at the sale's branch and is never the asker (branchId / actorId; user_branches selected).
-  assert.match(src, /findApprover\(\(rows \?\? \[\]\) as ApproverRow\[\], \{ pin, authorizerId, ownerId: \(biz as any\)\?\.owner_id \?\? null,\s*may: \(row, ownerId\) => mayApprove\(row, ownerId, action\), branchId: scope\.branchId \?\? null, actorId: scope\.actorId \?\? null \}/);
+  assert.match(src, /findApprover\(\(rows \?\? \[\]\) as ApproverRow\[\], \{ pin, authorizerId, ownerId: \(biz as any\)\?\.owner_id \?\? null,\s*may: scope\.may \?\? \(\(row, ownerId\) => mayApprove\(row, ownerId, action\)\), branchId: scope\.branchId \?\? null, actorId: scope\.actorId \?\? null \}/);
   assert.match(src, /user_permissions \( granted, permissions \( key \) \), user_branches \( branch_id \)'\)/);
   assert.match(src, /loginPin:\s+async \(p, h\) => \(await verifyPin\(p, h, businessId\)\)\.valid/);
 });
@@ -116,7 +116,8 @@ await ok('void AND refund: only people\'s own PINs (A514: the business superviso
   }
   const helper = src.slice(src.indexOf('async function approverByPin('), src.indexOf('// What the till/web is told when no approval matched'));
   assert.doesNotMatch(src, /verifySupervisorPin|supervisor_pin_hash'/, 'A514: nothing reads the business supervisor PIN');
-  assert.match(helper, /if \(ov\.result === 'no_authorizers'\) return \{ status: 400, body: \{ \.\.\.NO_APPROVER \} \};/);
+  // A585: a credit sale under the owner's chosen approvers (`may` given) names where the owner chooses them.
+  assert.match(helper, /if \(ov\.result === 'no_authorizers'\) return \{ status: 400, body: may \? \{ \.\.\.NO_CHOSEN_APPROVER \} : \{ \.\.\.NO_APPROVER \} \};/);
   assert.match(helper, /return \{ status: 403, body: \{ \.\.\.APPROVER_PIN_REFUSED \} \};/);
   assert.match(src, /error: 'That PIN was not recognised\. Enter the PIN of a manager \(or the owner\) on duty\.'/);
 });

@@ -1,27 +1,17 @@
 /**
- * cloudPlanEmail.ts — A581: the cloud plan reminder's words — the owner's email (HTML, the daily email's look) and
- * ZapTill's copy (plain text: the admin alert email and Telegram, lib/alertNotify.ts). Pure, so a test reads exactly what
- * is sent.
+ * cloudPlanEmail.ts — the cloud plan's words. Pure, so a test reads exactly what is sent.
  *
- * Plain and polite: the amount, the period, the paid-until date, what happens and when, and how to pay (WhatsApp or call
- * ZapTill on 0717 675 635 — no company email yet). Never a threat; always that the tills keep selling.
+ * A584 (2026-10-23) — owner: "an invoice is sent to the client on the first day of their billing … without informing them
+ * when the access will be revoked"; reminders go to ZapTill only. So the CLIENT gets:
+ *   - the invoice (HTML, the daily email's look): the business, the invoice number, the period, the amount in KES, "due
+ *     now", how to pay (M-Pesa, or WhatsApp / call ZapTill on 0717 675 635 — no company email yet). Never a word of a
+ *     lock, a pause, a deadline or a revocation; never a countdown.
+ *   - a short receipt when a payment is recorded: the amount, the reference, the paid-until date.
+ * and ZAPTILL gets (plain text: the admin alert email and Telegram — lib/alertNotify.ts): the invoice issued (to whom),
+ * the 5th unpaid day ("locks in 2 days"), the lock, a trial's end — and the morning digest lists the locked clients.
  */
 import { esc, emailShell, subjectSafe } from '../jobs/ownerEmails';
 import { PERIOD_LABEL, ZAPTILL_PHONE, type PlanPeriod } from './cloudPlan';
-
-export interface ReminderFacts {
-  businessName: string;
-  milestone: string;              // before_14 … lapsed_w8 (lib/cloudPlan.ts reminderMilestone)
-  daysLeft: number;               // calendar days to paid-until (negative: lapsed)
-  paidUntil: string;
-  syncStopsAt: string | null;     // paid-until + the grace (a trial: its end)
-  amount: number;
-  currency: string;
-  period: PlanPeriod;
-  trial: boolean;
-  syncStopped: boolean;           // the tills' sync is refused now
-  ownerEmail: string | null;
-}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "23 Nov 2026", in Nairobi time. */
@@ -33,78 +23,147 @@ export function planDate(iso: string | null | undefined): string {
 }
 const whole = (n: number) => Math.round(Number(n || 0)).toLocaleString('en-KE');
 const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+const WHATSAPP = 'https://wa.me/254717675635';
 
-/** "KES 3,000 for one month (Monthly)", "KES 18,000 for 6 months". */
-export function priceLine(f: Pick<ReminderFacts, 'amount' | 'currency' | 'period'>): string {
+/** "KES 3,000 for one month (month on month)", "KES 18,000 for 6 months". */
+export function priceLine(f: { amount: number; currency: string; period: PlanPeriod }): string {
   const what = f.period === 'monthly' ? 'one month (month on month)' : f.period === 'custom' ? 'the agreed period' : PERIOD_LABEL[f.period];
   return `${f.currency} ${whole(f.amount)} for ${what}`;
 }
 
-/** The headline, the explanation and the subject, for both copies. */
-export function reminderWords(f: ReminderFacts): { subject: string; headline: string; lines: string[] } {
-  const thing = f.trial ? 'ZapTill cloud trial' : 'ZapTill cloud subscription';
-  const until = planDate(f.paidUntil);
-  const stops = planDate(f.syncStopsAt);
-  const keepSelling = 'Your tills keep selling whatever happens — every sale stays on the till.';
-  let headline: string; let when: string;
-  if (f.daysLeft > 0) {
-    headline = `Your ${thing} for ${f.businessName} ${f.trial ? 'ends' : 'is paid until'} ${until} — ${days(f.daysLeft)} left`;
-    when = f.trial
-      ? `When the trial ends, the cloud stops syncing your tills and the web dashboard goes to reports only, then closes a week later.`
-      : `If it is not renewed, the web dashboard and syncing carry on until ${stops}; after that the cloud stops syncing your tills and no new till can be joined until it is paid.`;
-  } else if (f.daysLeft === 0) {
-    headline = `Your ${thing} for ${f.businessName} ${f.trial ? 'ends' : 'is due'} today (${until})`;
-    when = f.trial || f.syncStopped
-      ? `The cloud has stopped syncing your tills, and no new till can be joined, until it is paid.`
-      : `The web dashboard and syncing carry on until ${stops}; after that the cloud stops syncing your tills and no new till can be joined until it is paid.`;
-  } else {
-    headline = `Your ${thing} for ${f.businessName} ended on ${until} — ${days(-f.daysLeft)} ago`;
-    when = f.syncStopped
-      ? `The cloud has stopped syncing your tills and no new till can be joined. Your sales are kept on the tills and go up as soon as it is paid.`
-      : `The web dashboard and syncing carry on until ${stops}; after that the cloud stops syncing your tills and no new till can be joined until it is paid.`;
-  }
-  const lines = [
-    when,
-    `To ${f.trial ? 'keep the cloud' : 'renew'}: ${priceLine(f)}. Pay ahead for 3, 6 or 12 months if you prefer.`,
-    `How to pay: WhatsApp or call ZapTill on ${ZAPTILL_PHONE} — we confirm your payment and the cloud carries on (or starts syncing again at once).`,
-    keepSelling,
-  ];
-  const short = f.daysLeft > 0 ? `${days(f.daysLeft)} left (${until})` : f.daysLeft === 0 ? `due today (${until})` : `ended ${until}`;
-  return { subject: subjectSafe(`ZapTill cloud: ${f.businessName} — ${f.trial ? 'trial ' : ''}${short}`), headline, lines };
-}
-
-/** The owner's email. */
-export function reminderEmailHtml(f: ReminderFacts): { subject: string; html: string } {
-  const w = reminderWords(f);
-  const facts: Array<[string, string]> = [
-    [f.trial ? 'Trial ends' : 'Paid until', planDate(f.paidUntil)],
-    ['Plan', f.period === 'custom' ? 'Agreed period' : PERIOD_LABEL[f.period]],
-    ['Amount', `${f.currency} ${whole(f.amount)}`],
-    ['Cloud syncing', f.syncStopped ? 'Stopped until paid' : f.syncStopsAt ? `Until ${planDate(f.syncStopsAt)}` : '—'],
-  ];
-  const body = `
+const factsTable = (facts: Array<[string, string]>) => `
   <tr><td style="padding-top:16px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#111;border:1px solid #1a1a1a;border-radius:12px;padding:8px 20px;">
     ${facts.map(([k, v]) => `<tr><td style="padding:9px 0;font-size:13px;color:#9ca3af;">${esc(k)}</td><td style="padding:9px 0;font-size:13px;color:#fff;text-align:right;font-weight:600;">${esc(v)}</td></tr>`).join('')}
-  </table></td></tr>
-  ${w.lines.map((l) => `<tr><td style="padding:14px 4px 0;font-size:14px;line-height:1.55;color:#d1d5db;">${esc(l)}</td></tr>`).join('')}`;
+  </table></td></tr>`;
+const para = (lines: string[]) => lines.map((l) => `<tr><td style="padding:14px 4px 0;font-size:14px;line-height:1.55;color:#d1d5db;">${esc(l)}</td></tr>`).join('');
+
+// ── The invoice (to the client) ───────────────────────────────────────────────────────────────────────────────────────
+
+export interface InvoiceFacts {
+  businessName: string;
+  invoiceNumber: string;
+  periodStart: string;
+  periodEnd: string | null;
+  amount: number;
+  currency: string;
+  period: PlanPeriod;
+}
+
+/** The invoice's words — the subject, the headline and the lines. */
+export function invoiceWords(f: InvoiceFacts): { subject: string; headline: string; lines: string[]; facts: Array<[string, string]> } {
+  const span = f.periodEnd ? `${planDate(f.periodStart)} – ${planDate(f.periodEnd)}` : `from ${planDate(f.periodStart)}`;
+  return {
+    subject: subjectSafe(`ZapTill invoice ${f.invoiceNumber} — ${f.businessName}`),
+    headline: `Invoice ${f.invoiceNumber} for your ZapTill cloud`,
+    facts: [
+      ['Business', f.businessName],
+      ['Invoice', f.invoiceNumber],
+      ['Period', span],
+      ['Plan', f.period === 'custom' ? 'Agreed period' : PERIOD_LABEL[f.period]],
+      ['Amount', `${f.currency} ${whole(f.amount)}`],
+      ['Due', 'Now'],
+    ],
+    lines: [
+      `Thank you for using ZapTill. This is your invoice for the ZapTill cloud — the web dashboard, the online features and syncing — for ${span}: ${priceLine(f)}.`,
+      `How to pay: M-Pesa, or WhatsApp or call ZapTill on ${ZAPTILL_PHONE} and we will confirm your payment and send you a receipt.`,
+      'You may also pay ahead for 3, 6 or 12 months.',
+    ],
+  };
+}
+
+/** The client's invoice email. */
+export function invoiceEmailHtml(f: InvoiceFacts): { subject: string; html: string } {
+  const w = invoiceWords(f);
   const html = emailShell({
-    businessName: f.businessName, kind: 'Cloud plan', banner: w.headline, body,
-    cta: { href: `https://wa.me/254717675635`, label: `WhatsApp ZapTill · ${ZAPTILL_PHONE}` },
-  }).replace('Choose which emails you get in Settings › Report Scheduler.', 'This reminder is about your ZapTill cloud plan.');
+    businessName: f.businessName, kind: 'Invoice', banner: w.headline, bannerSub: `${f.currency} ${whole(f.amount)} · due now`,
+    body: factsTable(w.facts) + para(w.lines),
+    cta: { href: WHATSAPP, label: `WhatsApp ZapTill · ${ZAPTILL_PHONE}` },
+  }).replace('Choose which emails you get in Settings › Report Scheduler.', 'This is your ZapTill cloud invoice.');
   return { subject: w.subject, html };
 }
 
-/** ZapTill's copy (the admin alert email and Telegram): the same facts and who the owner's copy went to. */
-export function reminderAdminText(f: ReminderFacts): { subject: string; text: string } {
-  const w = reminderWords(f);
+// ── The receipt (to the client, when a payment is recorded) ───────────────────────────────────────────────────────────
+
+export interface ReceiptFacts { businessName: string; amount: number; currency: string; method: string; reference: string | null; paidAt: string; paidUntil: string; invoiceNumber: string | null }
+const METHOD: Record<string, string> = { mpesa: 'M-Pesa', bank: 'Bank', cash: 'Cash', other: 'Payment' };
+
+export function receiptEmailHtml(f: ReceiptFacts): { subject: string; html: string; text: string } {
+  const how = `${METHOD[f.method] ?? 'Payment'}${f.reference ? ` ${f.reference}` : ''}`;
+  const lines = [
+    `Thank you — we received ${f.currency} ${whole(f.amount)} (${how}) on ${planDate(f.paidAt)}.`,
+    `Your ZapTill cloud is paid until ${planDate(f.paidUntil)}.`,
+  ];
+  const facts: Array<[string, string]> = [['Amount', `${f.currency} ${whole(f.amount)}`], ['Reference', how], ['Paid until', planDate(f.paidUntil)]];
+  if (f.invoiceNumber) facts.push(['Invoice', `${f.invoiceNumber} (paid)`]);
+  const html = emailShell({
+    businessName: f.businessName, kind: 'Receipt', banner: 'Payment received — thank you',
+    body: factsTable(facts) + para(lines),
+    cta: { href: WHATSAPP, label: `WhatsApp ZapTill · ${ZAPTILL_PHONE}` },
+  }).replace('Choose which emails you get in Settings › Report Scheduler.', 'This is your ZapTill cloud receipt.');
+  return { subject: subjectSafe(`ZapTill receipt — ${f.businessName} — ${f.currency} ${whole(f.amount)}`), html, text: lines.join('\n') };
+}
+
+// ── ZapTill's notices (admin only) ────────────────────────────────────────────────────────────────────────────────────
+
+export interface AdminNoticeFacts {
+  businessName: string;
+  milestone: 'invoice' | 'unpaid_5' | 'locked' | 'trial_end';
+  dueAt: string | null;
+  lockAt: string | null;
+  unpaidDays: number | null;
+  lockInDays: number | null;
+  amount: number;
+  currency: string;
+  period: PlanPeriod;
+  invoiceNumber?: string | null;
+  ownerEmail: string | null;
+  ownerSent?: boolean;
+}
+
+/** ZapTill's copy (the admin alert email and Telegram). */
+export function adminNoticeText(f: AdminNoticeFacts): { subject: string; text: string } {
+  const record = 'Record the payment: admin portal › client › Plan & billing › Record payment.';
+  const price = priceLine(f);
+  if (f.milestone === 'invoice') {
+    return {
+      subject: subjectSafe(`[ZapTill billing] ${f.businessName} — invoice ${f.invoiceNumber ?? ''} issued, ${f.currency} ${whole(f.amount)}`),
+      text: [
+        `Invoice ${f.invoiceNumber ?? '(not raised)'} issued to ${f.businessName}: ${price}, due ${planDate(f.dueAt)}.`,
+        `Client's copy: ${f.ownerEmail ? `${f.ownerEmail}${f.ownerSent === false ? ' (NOT delivered — check the email provider)' : ''}` : 'no email on file — send it yourself'}.`,
+        `If unpaid it locks at the end of ${planDate(f.lockAt ? new Date(Date.parse(f.lockAt) - 1).toISOString() : null)} (7 days). The client is not told when.`,
+        record,
+      ].join('\n'),
+    };
+  }
+  if (f.milestone === 'unpaid_5') {
+    const n = f.lockInDays ?? 2;
+    return {
+      subject: subjectSafe(`[ZapTill billing] ${f.businessName} — unpaid ${days(f.unpaidDays ?? 5)}, locks in ${days(n)}`),
+      text: [
+        `${f.businessName} has not paid ${price} (due ${planDate(f.dueAt)}) — unpaid ${days(f.unpaidDays ?? 5)}.`,
+        `Locks in ${days(n)} (at the end of ${planDate(f.lockAt ? new Date(Date.parse(f.lockAt) - 1).toISOString() : null)}): the web dashboard pauses, sync stops, no till can join. Tills keep selling.`,
+        `Owner: ${f.ownerEmail ?? 'no email on file'}. A call now may save the lock.`,
+        record,
+      ].join('\n'),
+    };
+  }
+  if (f.milestone === 'locked') {
+    return {
+      subject: subjectSafe(`[ZapTill billing] ${f.businessName} — locked (unpaid since ${planDate(f.dueAt)})`),
+      text: [
+        `${f.businessName} is locked: unpaid since ${planDate(f.dueAt)} (${price}).`,
+        'The web dashboard is paused, the cloud refuses its tills\' sync and no till can join. The tills keep selling and keep their sales.',
+        'A recorded payment opens everything at once and the tills\' queues drain. The morning digest lists it while locked.',
+        record,
+      ].join('\n'),
+    };
+  }
   return {
-    subject: subjectSafe(`[ZapTill billing] ${f.businessName} — ${f.milestone.replace(/_/g, ' ')}`),
+    subject: subjectSafe(`[ZapTill billing] ${f.businessName} — cloud trial ended ${planDate(f.dueAt)}`),
     text: [
-      w.headline,
-      `${f.trial ? 'Trial ends' : 'Paid until'}: ${planDate(f.paidUntil)} · ${priceLine(f)}`,
-      `Sync: ${f.syncStopped ? 'STOPPED (lapsed past the grace)' : f.syncStopsAt ? `runs until ${planDate(f.syncStopsAt)}` : '—'}`,
-      `Owner's copy: ${f.ownerEmail ?? 'no email on file'}`,
-      'Record the payment: admin portal › client › Plan & billing › Record payment.',
+      `${f.businessName}'s one-month cloud trial ended on ${planDate(f.dueAt)}: sync has stopped and the web dashboard reads reports only for 7 days, then closes.`,
+      `Owner: ${f.ownerEmail ?? 'no email on file'}.`,
+      'Convert to paid: admin portal › client › Plan & billing › Record payment.',
     ].join('\n'),
   };
 }

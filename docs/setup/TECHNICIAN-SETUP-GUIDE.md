@@ -1,10 +1,10 @@
 # ZapTill Technician Setup Guide
 
-*Version 1.4 · 23 October 2026 · ZapTill 1.0.20 · for ZapTill field technicians*
+*Version 1.6 · 23 October 2026 · ZapTill 1.0.20 · for ZapTill field technicians*
 
 This guide takes a ZapTill technician from an empty account to a client selling on a working till, then to the technician access used for support afterwards. Follow the steps in order; each one depends on the one before.
 
-**New in 1.0.20:** the installer is downloaded from the admin portal (Step 7a); the first desktop licence starts a one-month cloud trial, so the licence now comes before web access (Step 2); the owner must change the temporary password at the first sign-in (Step 3); a customer gets a credit limit from **+ Give credit** (Step 6); the business type now decides the wording, such as Menus or Departments (Step 1); the cloud is now a payment plan per business (month on month by default, KES 3,000 a month) with **Record payment**, and a client that stops paying keeps selling but stops syncing (Step 2b); a partner of some branches sees only theirs, with **All my branches** to add them up (Step 5); plus the zero-stock setting, menus as tabs on the till, other branches' stock, barcodes and labels, and the approval PIN as a feature switch.
+**New in 1.0.20:** the installer is downloaded from the admin portal (Step 7a); the first desktop licence starts a one-month cloud trial, so the licence now comes before web access (Step 2); the owner must change the temporary password at the first sign-in (Step 3); a customer gets a credit limit from **+ Give credit**, and only the owner or a manager sets credit limits; the owner may choose who approves sales on account, branch by branch, and a customer's profile shows their **Credit history** (Step 6); the business type now decides the wording, such as Menus or Departments (Step 1); the cloud is now a payment plan per business (month on month by default, KES 3,000 a month) with **Record payment**; an invoice is emailed on the first day of each period and a client unpaid 7 days after it is locked at once (the web dashboard paused, the tills keep selling but stop syncing); the old KES 10,000 **Enable web access** is gone (Step 2b); a partner of some branches sees only theirs, with **All my branches** to add them up (Step 5); plus the zero-stock setting, menus as tabs on the till, other branches' stock, barcodes and labels, and the approval PIN as a feature switch.
 
 ## Before you go
 
@@ -111,24 +111,38 @@ A new client can do nothing yet: the owner cannot sign in to the web dashboard a
 The cloud (web dashboard, online features and the tills' sync) is paid **per business, month to month** — KES 3,000 a month by default. Paying 3, 6 or 12 months ahead is welcome but carries no discount. The desktop setup stays a one-off per branch.
 
 - **The Cloud plan card** (**Plan & billing › Cloud plan**): choose the **Period** (Monthly (month on month), 3 months, 6 months, 12 months, or Custom end date) and the **Amount per period** (it fills in KES 3,000 × months; type another amount if agreed) and click **Save plan**.
-- **When the client pays:** under **Record payment** choose what it covers, type the **Amount paid**, the **M-Pesa code** (for M-Pesa; a code can be recorded only once, on any client), the date paid and an optional note, and click **Record payment**. The paid-until date moves on by one period from **the later of today and the current paid-until**, so a client who pays early loses no days and one who pays late starts from today. A paid invoice is raised, web access is switched on, and the payment is listed with who recorded it. Payments are checked by hand for now; a monthly plan does **not** renew itself, each month needs a recorded payment.
-- **During or after the trial:** **Convert to paid** takes you to **Record payment** — the first payment converts the trial (no fixed KES 10,000 year any more).
-- **A client with no trial and no plan** (from before 1.0.20): **Enable web access** still works as before and raises its "Web Portal Hosting — Annual Access" invoice of KES 10,000. Prefer putting the client on the Cloud plan with **Record payment**.
+- **Turning web access on = Record payment.** Under **Record payment** choose what it covers, type the **Amount paid**, the **M-Pesa code** (for M-Pesa; a code can be recorded only once, on any client), the date paid and an optional note, and click **Record payment**. Web access is switched on, the period's invoice is marked paid (or a paid one is raised), the owner is emailed a short receipt, and the payment is listed with who recorded it. Payments are checked by hand for now; a monthly plan does **not** renew itself, each month needs a recorded payment.
+- **Which dates it covers:** paying early adds a period to what is left (no lost days); paying within the 7 unpaid days covers the period that was invoiced, from its due date (due 23 Nov, paid 28 Nov → paid until 23 Dec); a locked client starts a new period from the day it pays.
+- **There is no "Enable web access" any more.** The old KES 10,000 a year switch is retired; the button now reads **Record payment** and takes you there. (A client switched off by mistake whose paid-until is still ahead can be switched back on.)
+- **Complimentary / manual paid-until** (super admin, special cases only): on the Cloud plan card choose the date and type the reason, then **Set complimentary**. Web access goes on to that date, no invoice is raised, and the reason is kept in the audit log.
+- **During or after the trial:** **Convert to paid** takes you to **Record payment** — the first payment converts the trial.
 - **Web access expiry** is the same date as the plan's paid-until. **Record payment** moves it; set it by hand only to correct it.
+- **Clients whose licence was set before the plan** (an expiry date, no plan): ZapTill puts them on a plan by itself within the hour — 12 months at KES 36,000 unless their last invoice shows another period — and the note on the card says to check the period and amount. If their date had already passed, their billing starts on that day: an invoice, then the 7 days. Nobody is cut off by the change. A client with web access on and **no expiry date** is left as it was and listed as **No expiry set** — put it on a plan.
 
 ![The Cloud plan card: the plan, Record payment and the payments](screenshots/02i-admin-cloud-plan.png)
 
-**When a client stops paying.** After the paid-until date there are **21 days' grace** (everything works; the card reads "Lapsed N days — in grace until {date}"). After the grace — or straight after a cloud trial ends, there is no grace for a trial:
-- **Tills keep selling** exactly as before, cash and M-Pesa. Every sale is kept on the till.
-- **The cloud stops syncing** that business's tills. A manager (never a cashier) sees at the bottom of the till: "ZapTill cloud subscription ended — N records kept on this till, sent when renewed (ZapTill 0717 675 635)". The dashboard goes to reports only for 7 days, then the owner's sign-in is refused.
-- **No till can be joined or rejoined**: an enrolment code is refused with "This business's ZapTill cloud subscription has ended, so a till cannot be joined (or rejoined) until it is renewed…" (the code is not used up), and the admin portal will not issue a new code until the payment is recorded.
-- **When the payment is recorded** sync opens again at once; each till sends what it kept within about 5 minutes.
+**The invoice.** On the first day of each billing period (the paid-until date; for a monthly plan, each month) ZapTill raises the invoice and emails it to the owner: the business, the invoice number, the period, the amount in KES, "Due: Now", and how to pay (M-Pesa, or WhatsApp or call ZapTill on 0717 675 635). It says nothing about when access would stop — by the owner's decision. ZapTill gets a copy.
 
-**Reminders.** The owner (by email) and ZapTill (the admin alert email, and Telegram when set) are reminded 14, 7, 3 and 1 day(s) before the paid-until date, on the day it lapses, and every 7 days while it stays lapsed (up to 8 weeks), once each. The reminder gives the amount, the period, the date and how to pay: WhatsApp or call ZapTill on 0717 675 635. In the last 14 days the owner also sees a line at the top of the dashboard. The admin portal's client list has a **Cloud expiry** column ("Expires in 5 days", "Lapsed 3 days") and a filter for **Expiring (14 days)** and **Lapsed**.
+**When a client does not pay.** For 7 days after the due date everything works and nothing on the dashboard warns the owner. At the end of the 7th day (midnight, Nairobi time) the business is **locked at once**:
+- **The web dashboard is paused** for everyone, including a session already open: "Your ZapTill cloud access is paused. Call 0717 675 635 to renew." Sign-in shows the same.
+- **Tills keep selling** exactly as before, cash and M-Pesa. Every sale is kept on the till.
+- **The cloud stops syncing** that business's tills. A manager (never a cashier) sees at the bottom of the till: "ZapTill cloud subscription ended — N records kept on this till, sent when renewed (ZapTill 0717 675 635)".
+- **No till can be joined or rejoined**: an enrolment code is refused with "This business's ZapTill cloud subscription has ended, so a till cannot be joined (or rejoined) until it is renewed…" (the code is not used up), and the admin portal will not issue a new code until the payment is recorded.
+- **When the payment is recorded** everything opens again at once; each till sends what it kept within about 5 minutes.
+
+A cloud trial is different: after its end, 7 days of reports only (sync stops at once), then sign-in is refused (Step 2a).
+
+**Reminders go to ZapTill only.** The owner gets the invoice and, when paid, the receipt — nothing else. ZapTill (the admin alert email, and Telegram when set) gets: the invoice issued, a note on the 5th unpaid day ("locks in 2 days" — a call then may save the lock), the lock, and a trial's end; the morning check lists every locked client each day. The admin portal's client list has a **Billing** column ("Due in 5 days", "Unpaid 3 days (locks in 4 days)", "Locked 2 days", "No expiry set") and a filter for **Due (14 days)**, **Unpaid**, **Locked** and **No expiry set**.
+
+![The client list's billing statuses](../screenshots/billing-a584-admin-list.webp)
+
+![The invoice the owner receives](../screenshots/billing-a584-invoice-email.webp)
+
+![The dashboard when the cloud access is paused](../screenshots/billing-a584-paused-dashboard.webp)
 
 ![Plan & billing with web access enabled](screenshots/02b-admin-plan-billing-web-access.png)
 
-Without web access (and outside a trial) the owner sees "Web portal access not enabled" when signing in. Web access also unlocks the online-licence features on the till (offers, wastage, transfers, other branches' stock, labels, pictures and variants). After the paid-until date there are 21 days of full access, then 7 days of reports only, then the owner is refused; on the cloud plan the tills stop syncing after the 21 days. Tills keep selling throughout.
+Without web access (and outside a trial) the owner sees "Web portal access not enabled" when signing in. Web access also unlocks the online-licence features on the till (offers, wastage, transfers, other branches' stock, labels, pictures and variants). After the due date there are 7 days of full access, then the dashboard is paused and the tills stop syncing at once. Tills keep selling throughout.
 
 **2c. Features.** Open the **Features** tab. Changes take effect at once; tills pick them up at their next sync.
 
@@ -201,7 +215,8 @@ A till judges only stock it has heard from the cloud or the branch server: an it
 | --- | --- |
 | Web portal access not enabled | No trial and no web access: Step 2b |
 | Your cloud trial has ended | The trial and its reports-only week are over: **Record payment** on the Cloud plan (Step 2b) |
-| A till says "ZapTill cloud subscription ended — … kept on this till" | The cloud plan lapsed past its grace: **Record payment** (Step 2b); the till sends what it kept within about 5 minutes |
+| A till says "ZapTill cloud subscription ended — … kept on this till" | Unpaid 7 days after the due date: **Record payment** (Step 2b); the till sends what it kept within about 5 minutes |
+| Your ZapTill cloud access is paused | Unpaid 7 days after the due date: **Record payment** (Step 2b); the dashboard opens at once |
 | Enrolment code refused: "…cloud subscription has ended, so a till cannot be joined" | Record the payment first (Step 2b), then use the same code |
 | Invalid email or password | Wrong password; check caps and the temporary password |
 | Too many failed sign-ins for this account | Locked for 15 minutes |
@@ -322,7 +337,17 @@ The dashboard sets which payment methods the business takes; the M-Pesa number i
 
 ![+ Give credit: set and confirm the limit](screenshots/06h-dashboard-give-credit-limit.png)
 
-**Who may give credit:** anyone with the **Customer credit** right: the owner, and by default **Manager**, **Supervisor**, **General Manager** and **Finance Manager**. A cashier does not see **+ Give credit** or the limit box (only the limit, read only). A till cannot set a limit: a person approves it, on the web. **The person who saves the limit approves it**: every grant or change is recorded in the client's audit log in the cloud with who, when, and the old and new limit. No screen shows that log yet, in the dashboard or the admin portal. Tills pick up a new credit customer at their next sync.
+**Who sets a credit limit: the owner or a manager.** Giving, changing or removing a limit (setting it to 0) is for the business owner and for staff on the built-in **Manager** role only. The owner does it on the web dashboard (**+ Give credit**, the customer's profile, **+ New Customer**). A manager does it in the web POS: **Manager › Credit**, open the customer, **Credit limit**, **Save**. Customers belong to the whole business, so a manager can set the limit of any customer, and the branch they did it from is recorded. Only the role ZapTill created as Manager counts. A role the business made itself and called "Manager", a built-in Manager role renamed to something else, General Manager, Finance Manager, Supervisor and partners all get the line "Only the owner or a manager sets credit limits." and no box, and the cloud refuses them too. A till never sets a limit, and neither can ZapTill staff in the admin portal. Every grant, change or removal is recorded with who, from which branch, when, and the old and new limit, and shown on the customer's profile (below). Tills pick up a new credit customer at their next sync.
+
+**Who approves credit sales (optional, the owner's choice).** **Settings › Business › Credit approvals** (the owner only). Off by default: as before, anyone with the **Customer credit** right approves a sale on account (a cashier enters such a person's PIN at the till), within the customer's limit. Turn **Who approves credit sales** on and tick, for each branch, the staff who may approve (only people who work at that branch are listed), then **Save**. From then on every sale on account at that branch, on the till and on the web POS, needs one of them or the owner: when the seller is on the list it is approved automatically; anyone else types the PIN of someone on the list ("Approver's PIN — someone the owner chose"). A manager who is not on the list is refused. Nobody ticked at a branch means only the owner approves there. The limit always applies: no approver can sell past it. The tills keep the list with their credit customers, so it works offline; a change reaches a till at its next customer list (within a minute online).
+
+![Settings › Business › Credit approvals: who approves, per branch](screenshots/06i-dashboard-credit-approvers.png)
+
+![The till asks for an approver's PIN](screenshots/06k-till-credit-approver-pin.png)
+
+**Credit history.** **Customers**, open a customer: under the credit limit, **Credit history** lists every limit change (who, from which branch for a manager, when, old → new) and their recent sales on account with who sold each and who approved it.
+
+![A customer's Credit history](screenshots/06j-dashboard-credit-history.png)
 
 ## Step 7 — Install ZapTill on the till PC and join it
 
@@ -524,7 +549,7 @@ Run one full trading day in ten minutes with the client watching: sell, print, p
 | That PIN was not recognised | Wrong PIN, or the person has no access at this branch |
 | Too many wrong PINs on this till | Wait for the lockout to end |
 | Payments must add up to KES {n} | The split legs don't add up to the total |
-| {name} has no credit limit / Over {name}'s credit limit | Set or raise the limit (Credit Accounts) |
+| {name} has no credit limit / Over {name}'s credit limit | The owner or a manager sets or raises the limit (Credit Accounts) |
 | This order is {n} minutes old, past the void window | Use Refund instead |
 | Confirm every shift above before closing the day | Confirm each shift first |
 
@@ -586,7 +611,7 @@ Tick every line before you leave the site.
 - [ ] **Business profile:** address, KRA PIN, receipt header and footer; **Business day ends at** matches the closing time
 - [ ] **Menu:** uploaded, with costs or recipes, variants and extras checked, menus making sense on the till
 - [ ] **Staff:** everyone has their own PIN (no two the same); each manager has signed in once on each till; web access given to partners and accountants
-- [ ] **Payments:** the methods the shop takes are on; the M-Pesa number is set on each branch's till; credit customers have limits (**+ Give credit**), given by the owner or a manager, not by you
+- [ ] **Payments:** the methods the shop takes are on; the M-Pesa number is set on each branch's till; credit customers have limits (**+ Give credit**), set by the owner or a manager, not by you; if the owner wants it, **Credit approvals** chosen per branch
 - [ ] **Every till:** right branch, unique terminal code, device name; **Updater task: installed** on Tech › Updates
 - [ ] **Printers:** **Print through these printers** ON; every station has a printer (or another till handles it); paper width matches the roll; test print OK; the drawer opens on a cash sale
 - [ ] **Branch server** (if any): keep-running settings done; every till joined and "Encrypted"; Close Branch visible on it
@@ -610,18 +635,19 @@ Tick every line before you leave the site.
 | Could not reach that branch server | Check the firewall rules (TCP 4100–4103, UDP 4199) and the Private profile |
 | Port 4100 in use (only in the server log) | Close the program holding 4100; tills that know the server follow it |
 | That PIN was not recognised (sale on account) | The manager signs in once on this till, or use a branch server |
-| Web portal access is not enabled for your account | Admin › Plan & billing › **Enable web access** |
+| Web portal access is not enabled for your account | Admin › Plan & billing › Cloud plan › **Record payment** |
 | Your web portal subscription has expired | Renew: set a new web access expiry |
 | Sign-in code not arriving | Check spam, wait 45 seconds, **Send a new code**; admin › **Reset to email code** |
 | Trading day {date} was never closed on this till | A manager closes it (Manager › Close › Close Day), or close it remotely in Tills & days |
 | This till's clock is {n} min ahead of/behind the server | Fix Windows time and time zone (Nairobi); turn on automatic time |
 | Late-night sales land on the wrong day | Profile › **Business day ends at** (e.g. 02:00) |
-| This is part of the online licence | Admin › enable web access (or **Convert to paid** after a trial) |
+| This is part of the online licence | Admin › Plan & billing › **Record payment** (or **Convert to paid** after a trial) |
 | Your cloud trial has ended | Admin › Plan & billing › **Convert to paid**; tills are not affected |
 | Installer downloads are not set up on this server | A developer sets `DESKTOP_DOWNLOAD_BASE_URL` or `GITHUB_RELEASES_TOKEN` on the cloud (Step 7a) |
 | The owner's role belongs to the owner alone | Give the person another role, e.g. General Manager |
 | {Item} is sold out. / Only {n} of {item} left. | The zero-stock setting is on (Step 3) and the branch's stock is at zero: receive stock, or ask the owner to choose **Sell as normal** |
-| A cashier cannot see **+ Give credit** | By design: a manager or the owner gives credit (Step 6) |
+| Someone sees "Only the owner or a manager sets credit limits." | By design: only the owner and the built-in Manager role set credit limits (Step 6) |
+| "A sale on account needs the approval of someone the owner chose" | Credit approvals is on: enter the PIN of someone ticked for this branch, or the owner's (Step 6) |
 | A shop's screens say Menus, tables or kitchen | Wrong business type: Admin › client › **Edit details** › type (Step 1) |
 | Pull logs stays Waiting | Use Tech › **Send logs to support** and ask for the reference |
 
@@ -630,9 +656,9 @@ Tick every line before you leave the site.
 - **Where to get the installer:** the admin portal's **Download ZapTill** (Step 7a). The till's server address is not pre-filled; type `https://api.zaptill.co.ke` (Step 7d).
 - **A first credit limit for a customer:** **+ Give credit**, the customer's profile, or **+ New Customer** (Step 6).
 - **The owner's forced password change:** now enforced at the first sign-in and after an admin password reset (Step 3).
-- **What the cloud costs and what happens when a client stops paying:** a payment plan per business, month on month by default (KES 3,000 a month, editable), recorded with **Record payment**; after the 21-day grace the tills keep selling but stop syncing and no till can be joined until it is paid; reminders go to the owner and ZapTill (Step 2b).
+- **What the cloud costs and what happens when a client stops paying:** a payment plan per business, month on month by default (KES 3,000 a month, editable), recorded with **Record payment**; an invoice is emailed on the first day of each period; unpaid 7 days after it the dashboard is paused and the tills keep selling but stop syncing, and no till can be joined until it is paid; reminders go to ZapTill only (Step 2b).
 - **Plan: None for a new client:** there is no trial plan; the first desktop licence starts a one-month cloud trial, and **Plan** reads No licence yet, Desktop, Cloud trial, Cloud trial ended or Cloud (Step 2).
 
-**Still open:** who approved a credit limit is recorded but no screen shows it yet (Step 6).
+- **Who approved a credit limit, and each credit sale:** the customer's **Credit history** (Step 6).
 
-*Screenshots show the real ZapTill apps running a made-up demo business (Mama Lishe Grill). The branch-server Allow prompts are mock-ups. The 1.0.20 screens (02g, 02h, 02i, 03i, 03j, 03k, 06g, 06h, 07a2) are the real admin portal and dashboard screens fed made-up demo data, without a live backend; the business ID, dates and checksum in them are made up.*
+*Screenshots show the real ZapTill apps running a made-up demo business (Mama Lishe Grill). The branch-server Allow prompts are mock-ups. The 1.0.20 screens (02g, 02h, 02i, 03i, 03j, 03k, 06g, 06h, 06i, 06j, 06k, 07a2) are the real admin portal and dashboard screens fed made-up demo data, without a live backend; the business ID, dates and checksum in them are made up.*

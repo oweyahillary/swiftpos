@@ -2,15 +2,19 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { money } from '../lib/format';
 import { usePermissions } from '../context/PermissionsContext';
-import { CREDIT_LIMIT_KEY, limitFromInput, limitRequest } from '../lib/creditLimit';
+import { limitFromInput, limitRequest } from '../lib/creditLimit';
+import { OWNER_SETS_LIMITS_LINE } from '../lib/creditApprovers';   // A585
 
 /**
  * CreditLimitEditor — A567: a customer's credit limit on their own profile (Customers › a customer). Someone with
  * customers.credit gives or changes it there; the cloud records who approved it and when. Without the key: the limit is
  * shown (when they may read credit), never a box.
+ * A585 (owner, 2026-10-23: "credit limit — the owner for now"): the OWNER only — anyone else sees the limit and the line
+ * "Only the owner or a manager sets credit limits." (the cloud refuses them too). On the dashboard (the owner and partners) only
+ * the owner edits: partners are refused; managers set limits on the web POS manager screen (A585 owner change).
  */
 export default function CreditLimitEditor({ customerId, currency }: { customerId: string; currency: string }) {
-  const mayCredit = usePermissions().can(CREDIT_LIMIT_KEY);
+  const mayCredit = usePermissions().isOwner;   // A585: the owner alone sets a limit
   const [limit, setLimit] = useState<number | null>(null);
   const [balance, setBalance] = useState(0);
   const [text, setText] = useState('');
@@ -60,7 +64,10 @@ export default function CreditLimitEditor({ customerId, currency }: { customerId
           </button>
         </div>
       ) : (
-        <p className="text-white text-sm">{limit ? money(limit, currency) : 'No credit'}</p>
+        <>
+          <p className="text-white text-sm">{limit ? money(limit, currency) : 'No credit'}</p>
+          <p className="text-xs text-gray-500 mt-1" data-testid="owner-sets-limits">{OWNER_SETS_LIMITS_LINE}</p>
+        </>
       )}
       {msg && <p className={`text-xs mt-2 ${msg.kind === 'ok' ? 'text-gray-300' : 'text-red-400'}`}>{msg.text}</p>}
     </div>

@@ -49,6 +49,7 @@ import { isTillOwnSalePush } from '../lib/tillScope';   // A545
 import { webSaleStockRefusal } from '../lib/stockGateStore';   // A563
 import { recordCreditSale } from '../lib/creditConfirm';   // A545
 import { isSoldByWeight, weighedAmountAccepted } from '../lib/scaleBarcode';   // A577
+import { loadCreditRule, onApproverList, type CreditApprovalRule } from '../lib/creditApprovers';   // A585
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -161,7 +162,7 @@ async function verifyOverrideAuthorizer(
   authorizerId: string | undefined,
   pin:          string | undefined,
   action:       ApproveAction,   // A490: a void's approver holds sales.void, a refund's sales.refund
-  scope:        { branchId?: string | null; actorId?: string | null } = {},   // A494: the sale's branch; who asks
+  scope:        { branchId?: string | null; actorId?: string | null; may?: (row: ApproverRow, ownerId: string | null | undefined) => boolean } = {},   // A494: the sale's branch; who asks; A585: who may (the owner's credit approvers)
 ): Promise<{ result: 'ok' | 'invalid' | 'no_authorizers' | 'self'; userId?: string }> {
   const [{ data: rows }, { data: biz }] = await Promise.all([
     supabase
@@ -173,7 +174,7 @@ async function verifyOverrideAuthorizer(
   ]);
   // A494: the approver works at the sale's branch, and is never the person asking (lib/approver.ts; the owner may).
   const found = await findApprover((rows ?? []) as ApproverRow[], { pin, authorizerId, ownerId: (biz as any)?.owner_id ?? null,
-    may: (row, ownerId) => mayApprove(row, ownerId, action), branchId: scope.branchId ?? null, actorId: scope.actorId ?? null }, {
+    may: scope.may ?? ((row, ownerId) => mayApprove(row, ownerId, action)), branchId: scope.branchId ?? null, actorId: scope.actorId ?? null }, {
     loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
     overridePin: (p, h) => bcrypt.compare(p, h),
   });
@@ -207,11 +208,12 @@ async function recordedPerson(businessId: string, userId: string | null | undefi
  * A514: the business-wide supervisor PIN is retired — it is a wrong PIN like any other (INVALID_APPROVER_PIN, counted); a
  * branch where nobody may approve with a PIN answers NO_OVERRIDE_CONFIGURED (give someone who may approve a PIN in Staff - A518: their sign-in PIN already approves).
  */
-async function approverByPin(req: any, authorizerId: string | undefined, pin: string | undefined, action: ApproveAction, branchId: string | null):
+async function approverByPin(req: any, authorizerId: string | undefined, pin: string | undefined, action: ApproveAction, branchId: string | null,
+  may?: (row: ApproverRow, ownerId: string | null | undefined) => boolean):   // A585: the owner's credit approvers, when on
   Promise<{ userId: string | null } | { status: number; body: Record<string, string> }> {
   const key = pinKey(req);
   if (pinLocked(key)) return { status: 429, body: { ...PIN_LOCKED_BODY } };
-  const ov = await verifyOverrideAuthorizer(req.businessId, authorizerId, pin, action, { branchId, actorId: req.userId ?? null });
+  const ov = await verifyOverrideAuthorizer(req.businessId, authorizerId, pin, action, { branchId, actorId: req.userId ?? null, may });
   if (ov.result === 'ok') {
     notePinSuccess(key);
     if (!req.isOwner && ov.userId && ov.userId === req.userId) return { status: 403, body: { ...SELF_APPROVAL } };
@@ -219,7 +221,7 @@ async function approverByPin(req: any, authorizerId: string | undefined, pin: st
   }
   // A505: the asker's OWN PIN — not a wrong guess: told someone else must approve, never a strike towards the PIN lock.
   if (ov.result === 'self') return { status: 403, body: { ...SELF_APPROVAL } };
-  if (ov.result === 'no_authorizers') return { status: 400, body: { ...NO_APPROVER } };
+  if (ov.result === 'no_authorizers') return { status: 400, body: may ? { ...NO_CHOSEN_APPROVER } : { ...NO_APPROVER } };
   if (String(pin ?? '').trim()) notePinFailure(key);
   return { status: 403, body: { ...APPROVER_PIN_REFUSED } };
 }
@@ -242,27 +244,35 @@ const CREDIT_APPROVAL_REQUIRED = {
 // signed in when the till pushes is not who approved it, so it is never born confirmed. Everything else is A511 as it was
 // — the live web POS still needs the manager's PIN at the moment of sale, and that approval is the confirmation.
 type CreditOk = { approvedBy: string | null; approvedAtSale: boolean; approverName: string | null; note: string; tillSale: boolean };
-async function creditApproval(req: any, body: any, branchId: string | null):
+export async function creditApproval(req: any, body: any, branchId: string | null):   // exported for tests (A585)
   Promise<CreditOk | { status: number; body: Record<string, string> }> {
+  // A585: the owner's choice of who approves (lib/creditApprovers.ts) — off: A511 / A552 exactly as before.
+  const rule = await loadCreditRule(req.businessId);
   if (isTillOwnSalePush(req) || tillMadeSale(req)) {
     // A552: the till approved it AT THE SALE (the seller holding customers.credit, or a manager's PIN checked on the till)
     // and names who (`credit_approved_by`) — born confirmed by that person, as a web sale approved with a PIN is. The
     // person is checked here as the A545 replay checks `by`: customers.credit (or the owner), working at the sale's branch.
     // Anyone else named, or no one, is a till's sale awaiting a manager (A545). Never refused either way.
-    const named = await tillCreditApprover(req.businessId, body?.credit_approved_by, branchId);
+    const named = await tillCreditApprover(req.businessId, body?.credit_approved_by, branchId, rule);
     if (named) {
       return { approvedBy: named.id, approvedAtSale: true, approverName: named.name, note: ` — approved by ${named.name || 'a manager'} at the till`, tillSale: true };
     }
     return { approvedBy: null, approvedAtSale: false, approverName: null, note: " — awaiting a manager's confirmation", tillSale: true };
   }
-  if (req.isOwner || can(req, 'customers.credit')) {
+  // A585: ON — the seller approves it themselves only when they are the owner or on this branch's list; anyone else needs
+  // the PIN of someone on it. OFF — customers.credit, as A511.
+  const sellerApproves = rule.on
+    ? onApproverList(rule, branchId, req.userId ? { id: String(req.userId) } : null, { isOwner: !!req.isOwner })
+    : (req.isOwner || can(req, 'customers.credit'));
+  if (sellerApproves) {
     // The seller may approve it themselves: born confirmed by them (an owner with no users row is named "Owner").
     const me = await recordedPerson(req.businessId, req.userId, !!req.isOwner);
     return { approvedBy: me, approvedAtSale: true, approverName: me ? null : (req.isOwner ? 'Owner' : null), note: '', tillSale: false };
   }
   const pin = typeof body?.credit_pin === 'string' ? body.credit_pin.trim() : '';
-  if (!pin) return { status: 403, body: { ...CREDIT_APPROVAL_REQUIRED } };
-  const a = await approverByPin(req, typeof body?.credit_authorizer_id === 'string' ? body.credit_authorizer_id : undefined, pin, 'credit', branchId);
+  if (!pin) return { status: 403, body: rule.on ? { ...CHOSEN_APPROVAL_REQUIRED } : { ...CREDIT_APPROVAL_REQUIRED } };
+  const a = await approverByPin(req, typeof body?.credit_authorizer_id === 'string' ? body.credit_authorizer_id : undefined, pin, 'credit', branchId,
+    rule.on ? (row, ownerId) => isOwnerRow(row, ownerId) || onApproverList(rule, branchId, row, { ownerId }) : undefined);
   if ('status' in a) return a;
   let who = 'a manager';
   if (a.userId) {
@@ -277,13 +287,16 @@ async function creditApproval(req: any, body: any, branchId: string | null):
  * customers.credit (or are the owner) and work at the sale's branch (the owner anywhere). null = not one (unknown, a
  * cashier, another branch's manager, not a user id): the sale is recorded awaiting a manager, as any till's sale.
  */
-export async function tillCreditApprover(businessId: string | undefined, by: unknown, branchId: string | null):
+export async function tillCreditApprover(businessId: string | undefined, by: unknown, branchId: string | null, rule?: CreditApprovalRule):
   Promise<{ id: string; name: string | null } | null> {
   if (!businessId || typeof by !== 'string' || !/^[0-9a-f-]{36}$/i.test(by)) return null;
   try {
     const { rows, ownerId } = await confirmerRows(businessId);
     const row = rows.find((r) => r.id === by);
-    if (!row || !mayApprove(row, ownerId, 'credit')) return null;
+    if (!row) return null;
+    // A585: ON — the owner, or someone on the sale's branch's list; OFF — customers.credit (A552).
+    if (rule?.on) return isOwnerRow(row, ownerId) || onApproverList(rule, branchId, row, { ownerId }) ? { id: row.id, name: row.name ?? null } : null;
+    if (!mayApprove(row, ownerId, 'credit')) return null;
     if (branchId && !isOwnerRow(row, ownerId) && !worksAtBranch(row.user_branches, branchId)) return null;
     return { id: row.id, name: row.name ?? null };
   } catch { return null; }
@@ -292,6 +305,15 @@ export async function tillCreditApprover(businessId: string | undefined, by: unk
 const APPROVER_PIN_REFUSED = {
   error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.',
   code:  'INVALID_APPROVER_PIN',
+} as const;
+// A585: the owner chose who approves sales on account.
+const CHOSEN_APPROVAL_REQUIRED = {
+  error: 'A sale on account needs the approval of someone the owner chose — enter their PIN.',
+  code:  'CREDIT_APPROVAL_REQUIRED',
+} as const;
+const NO_CHOSEN_APPROVER = {
+  error: 'Nobody at this branch may approve sales on account yet. The owner chooses who in Settings › Credit approvals.',
+  code:  'NO_OVERRIDE_CONFIGURED',
 } as const;
 const NO_APPROVER = {
   error: 'Nobody at this branch can approve this yet. The owner or a manager gives someone who may approve a PIN in Staff.',

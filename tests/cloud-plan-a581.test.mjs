@@ -12,8 +12,11 @@
  * business routers over HTTP on the in-memory database (tests/lib-memdb.mjs), the reminders job, lib/cloudPlan.js and
  * lib/cloudPlanEmail.js — and the dashboard's notice and the admin portal's words from their TypeScript:
  *   1 the rules: month maths (31 Jan → 28/29 Feb, 31 Mar → 30 Apr), one period from the LATER of now and paid-until,
- *     custom end dates, the default amounts (KES 3,000 a month, no discount), the standing (not on the plan; a paid
- *     client's 21-day grace; a trial's none), the milestones, which till writes the gate covers
+ *     custom end dates, the default amounts (KES 3,000 a month, no discount), the standing (A584: 7 unpaid days then
+ *     locked — no 21-day grace; a trial's own ladder; a dated licence not yet bridged never locked), which till writes the
+ *     gate covers
+ *   (A584 replaced A581's client reminders — 14/7/3/1 days, the lapse day, weekly — with the invoice on the due day and
+ *    ZapTill-only notices: tests/billing-a584.test.mjs. Section 4 here checks they are gone.)
  *   2 the lapse over HTTP: a lapsed business's till write → 503 CLOUD_SUBSCRIPTION_ENDED (its reads, a web write, another
  *     business and a client in grace untouched; a business not on the plan never gated); enrolment refused before the
  *     code is spent; the admin's enrolment code refused; not a server error for the watchdog
@@ -28,7 +31,7 @@
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, reverted — listed in the A581 report):
  *   - addMonthsClamped without the month-end clamp                         → 1 "31 Jan → 28 Feb" fails
  *   - nextPaidUntil from now always (not the later of now and paid-until)  → 1 "no lost days", 3 "early payment" fail
- *   - cloudStanding refusing in the grace (state !== 'active')             → 1 "21-day grace", 2 "in grace" fail
+ *   - cloudStanding refusing in the unpaid week (state !== 'active')       → 1 "the standing", 2 "within the 7 unpaid days" fail
  *   - the middleware without cloudLapseBlocked                             → 2 "503 CLOUD_SUBSCRIPTION_ENDED" fails
  *   - the enrolment check after the burn instead of before                 → 2 "code not spent" fails
  *   - the reminder claim check removed (cloudPlanReminders seen)             → 4 "idempotent" fails
@@ -185,15 +188,15 @@ try {
     assert.equal(CP.defaultAmount('custom'), null);
     assert.equal(P.periodDefault('6_months'), '18000');
   });
-  await ok('the standing: not on the plan → never gated; a paid client keeps the 21-day grace; a trial has none', () => {
+  await ok('the standing (A584): 7 unpaid days then locked (no 21-day grace); a dated licence not yet bridged is never locked; a trial has none', () => {
     const now = Date.now();
-    const f = (x) => ({ onPlan: true, trial: null, expiresAt: iso(now - 10 * DAY), webHosting: true, ...x });
-    assert.equal(CP.cloudStanding({ ...f(), onPlan: false, expiresAt: iso(now - 400 * DAY) }, now).syncRefused, false);
-    assert.equal(CP.cloudStanding({ ...f(), onPlan: false }, now).state, 'not_on_plan');
+    const f = (x) => ({ onPlan: true, trial: null, expiresAt: iso(now - 5 * DAY), webHosting: true, ...x });
+    assert.equal(CP.cloudStanding({ ...f(), onPlan: false, expiresAt: iso(now - 400 * DAY) }, now).syncRefused, false, 'not bridged yet: never locked');
+    assert.equal(CP.cloudStanding({ ...f(), onPlan: false, expiresAt: iso(now - 400 * DAY) }, now).bridgePending, true);
+    assert.equal(CP.cloudStanding({ ...f(), onPlan: false, expiresAt: null, webHosting: false }, now).state, 'not_on_plan');
     const g = CP.cloudStanding(f(), now);
-    assert.equal(g.state, 'grace'); assert.equal(g.syncRefused, false); assert.equal(g.daysLeft, -10);
-    assert.equal(Date.parse(g.syncStopsAt) - Date.parse(g.paidUntil), 21 * DAY);
-    assert.equal(CP.cloudStanding(f({ expiresAt: iso(now - 22 * DAY) }), now).syncRefused, true);
+    assert.equal(g.state, 'unpaid'); assert.equal(g.syncRefused, false); assert.equal(g.daysLeft, -5);
+    assert.equal(CP.cloudStanding(f({ expiresAt: iso(now - 9 * DAY) }), now).syncRefused, true, 'past the 7 days: locked');
     assert.equal(CP.cloudStanding(f({ expiresAt: iso(now - 40 * DAY) }), now).state, 'locked');
     const trial = { started_at: iso(now - 31 * DAY), ends_at: iso(now - DAY), branch_id: null, started_by: null, converted_at: null };
     const t = CP.cloudStanding({ onPlan: false, trial, expiresAt: trial.ends_at, webHosting: true }, now);
@@ -201,11 +204,9 @@ try {
     assert.equal(CP.cloudStanding({ onPlan: false, trial, expiresAt: iso(now + 5 * DAY), webHosting: false }, now).state, 'ended', '"End trial" is over at once');
     assert.equal(CP.cloudStanding(f({ expiresAt: null }), now).state, 'no_date');
   });
-  await ok('the milestones: 14 / 7 / 3 / 1 day(s) before, the lapse day, every 7 days lapsed (8 at most)', () => {
-    const m = (d) => CP.reminderMilestone(d);
-    assert.deepEqual([20, 15, 14, 8, 7, 4, 3, 2, 1, 0, -1, -6, -7, -13, -14, -56, -62, -63].map(m),
-      [null, null, 'before_14', 'before_14', 'before_7', 'before_7', 'before_3', 'before_3', 'before_1', 'lapse_day', 'lapse_day', 'lapse_day',
-        'lapsed_w1', 'lapsed_w1', 'lapsed_w2', 'lapsed_w8', 'lapsed_w8', null]);
+  await ok('A584: no client milestones any more — only ZapTill\'s (invoice, unpaid_5, locked, trial_end)', () => {
+    assert.equal(CP.reminderMilestone, undefined, 'A581\'s 14/7/3/1 / lapse-day / weekly owner reminders are gone');
+    assert.equal(typeof CP.adminMilestones, 'function');
   });
   await ok('the gate covers a till\'s writes — never its sign-in / renewals, the technician, support logs, a read, a web write', () => {
     const g = CP.lapseGateApplies;
@@ -228,13 +229,17 @@ try {
     assert.equal((await call('GET', '/api/pos/catalogue-version', TILL_B)).status, 200);
     assert.equal((await call('POST', '/api/support/logs', TILL_B, {})).status, 200);
   });
-  await ok('a web write of the same business is not this gate\'s (the dashboard ladder decides); another business untouched', async () => {
-    assert.equal((await call('POST', '/api/expenses', OWNER_WEB, {})).status, 201);
-    assert.equal((await call('POST', '/api/sync/push', TILL_L, {})).status, 200, 'a business not on the plan is never gated (legacy, 90 days past)');
+  await ok('A584: the same business\'s web dashboard is paused (403 CLOUD_ACCESS_PAUSED, plain words); a business not yet bridged untouched', async () => {
+    const w = await call('POST', '/api/expenses', OWNER_WEB, {});
+    assert.equal(w.status, 403); assert.equal(w.body.code, 'CLOUD_ACCESS_PAUSED');
+    assert.equal(w.body.error, 'Your ZapTill cloud access is paused. Call 0717 675 635 to renew.');
+    assert.equal((await call('POST', '/api/sync/push', TILL_L, {})).status, 200, 'a dated licence not yet bridged is never locked (90 days past)');
   });
-  await ok('in grace (10 days past paid-until): sync goes on', async () => {
-    setPaidUntil(Date.now() - 10 * DAY);
+  await ok('within the 7 unpaid days (5 days past the due date): sync goes on; 9 days past: refused', async () => {
+    setPaidUntil(Date.now() - 5 * DAY);
     assert.equal((await call('POST', '/api/sync/push', TILL_B, {})).status, 200);
+    setPaidUntil(Date.now() - 9 * DAY);
+    assert.equal((await call('POST', '/api/sync/push', TILL_B, {})).status, 503);
     setPaidUntil(Date.now() - 30 * DAY);
   });
   await ok('a lapsed trial (2 days after its end, no grace) → refused too, with the trial\'s words', async () => {
@@ -325,93 +330,47 @@ try {
     assert.equal((await call('POST', '/api/orders', TILL_T, {})).status, 201);
   });
 
-  console.log('\n4. The reminders\n');
+  console.log('\n4. The client reminders are gone (A584)\n');
   const run = (now = new Date()) => JOB.runCloudPlanReminders(now, { force: true });
-  await ok('5 days before: one email to the owner AND one to ZapTill, with the amount, the period, the date and how to pay', async () => {
-    reset(); setPaidUntil(Date.now() + 5 * DAY); mem.db.businesses = mem.db.businesses.filter((b) => b.id !== T);
+  await ok('5 days before the due date: nothing to the owner, nothing to ZapTill (no countdown — the invoice comes on the day)', async () => {
+    reset(); setPaidUntil(Date.now() + 5 * DAY); mem.db.businesses = mem.db.businesses.filter((b) => b.id !== T && b.id !== L);
     const out = await run();
-    assert.deepEqual(out.sent.map((s) => [s.business_id, s.milestone, s.owner, s.admin]), [[B, 'before_7', true, true]]);
-    const owner = mails.find((m) => m.to === 'owner@pollo.test'), admin = mails.find((m) => /billing@zaptill\.test/.test(m.to));
-    assert.ok(owner && admin, `mails to ${mails.map((m) => m.to).join(', ')}`);
-    assert.match(owner.subject, /5 days left/);
-    assert.match(owner.html, /KES 3,000/); assert.match(owner.html, /month on month/); assert.match(owner.html, /0717 675 635/);
-    assert.match(owner.html, new RegExp(EM.planDate(biz().web_access_expires_at)));
-    assert.match(owner.html, /Pollo &lt;b&gt;Grill&lt;\/b&gt;/, 'the name escaped'); assert.doesNotMatch(owner.html, /<b>Grill<\/b>/);
-    assert.match(admin.html, /Owner&#39;s copy: owner@pollo\.test|Owner's copy: owner@pollo\.test/);
-    const rem = mem.db.cloud_plan_reminders[0];
-    assert.deepEqual([rem.milestone, rem.owner_sent, rem.admin_sent, rem.owner_email], ['before_7', true, true, 'owner@pollo.test']);
+    assert.equal(out.sent.length, 0); assert.equal(mails.length, 0);
   });
-  await ok('idempotent: the next hour sends nothing for the same milestone', async () => {
+  await ok('3 days into the unpaid week: the owner gets the invoice only (once), never a reminder', async () => {
+    setPaidUntil(Date.now() - 3 * DAY);
+    const out = await run();
+    assert.deepEqual(out.sent.map((x) => x.milestone), ['invoice']);
+    assert.equal(mails.filter((m) => m.to === 'owner@pollo.test').length, 1);
     mails.length = 0;
-    assert.equal((await run()).sent.length, 0); assert.equal(mails.length, 0);
-  });
-  await ok('the next milestone (2 days → 3 days before) goes; a payment (a new paid-until) starts afresh', async () => {
-    setPaidUntil(Date.now() + 2 * DAY);
-    assert.deepEqual((await run()).sent.map((s) => s.milestone), ['before_3']);
-    setPaidUntil(Date.now() + 2 * DAY + 3600_000);
-    assert.deepEqual((await run()).sent.map((s) => s.milestone), ['before_3'], 'a new paid-until is a new set');
-  });
-  await ok('the day it lapses, then weekly while lapsed (with "sync stopped" past the grace); none after 8 weeks', async () => {
-    setPaidUntil(Date.now() - 3600_000);
-    assert.deepEqual((await run()).sent.map((s) => s.milestone), ['lapse_day']);
-    setPaidUntil(Date.now() - 23 * DAY);
-    mails.length = 0;
-    assert.deepEqual((await run()).sent.map((s) => s.milestone), ['lapsed_w3']);
-    assert.match(mails.find((m) => m.to === 'owner@pollo.test').html, /stopped syncing your tills/);
-    setPaidUntil(Date.now() - 70 * DAY);
-    assert.equal((await run()).sent.length, 0);
+    assert.equal((await run()).sent.length, 0); assert.equal(mails.length, 0, 'the next hour: nothing');
   });
   await ok('only in the day (07:00–20:00 Nairobi) unless forced', async () => {
     assert.equal(CP.reminderHour(Date.parse('2026-10-23T03:30:00Z')), false);   // 06:30 EAT
     assert.equal(CP.reminderHour(Date.parse('2026-10-23T05:00:00Z')), true);    // 08:00 EAT
     assert.equal(CP.reminderHour(Date.parse('2026-10-23T17:30:00Z')), false);   // 20:30 EAT
   });
-  await ok('no email provider: logged and skipped (no crash); the claim is kept, the failure recorded', async () => {
-    reset(); setPaidUntil(Date.now() + DAY); mailOk = false;
-    const out = await run();
-    assert.equal(out.sent[0].milestone, 'before_1');
-    const rem = mem.db.cloud_plan_reminders.find((r) => r.business_id === B);
-    assert.equal(rem.owner_sent, false); assert.match(rem.error, /No email provider|not sent/);
-  });
-  await ok('a business not on the plan gets no reminder; a suspended one neither', async () => {
-    reset(); setPaidUntil(Date.now() + 3 * DAY, L);
-    biz(B).status = 'suspended'; setPaidUntil(Date.now() + 3 * DAY);
-    const out = await run();
-    assert.ok(!out.sent.some((s) => s.business_id === L || s.business_id === B));
-  });
-  await ok('the words: before (what happens after the grace), lapsed in grace, a trial', () => {
-    const f = { businessName: 'Duka', milestone: 'before_14', daysLeft: 14, paidUntil: '2026-11-06T07:00:00Z', syncStopsAt: '2026-11-27T07:00:00Z',
-      amount: 18000, currency: 'KES', period: '6_months', trial: false, syncStopped: false, ownerEmail: null };
-    const w = EM.reminderWords(f);
-    assert.match(w.headline, /paid until 6 Nov 2026 — 14 days left/); assert.match(w.lines[0], /until 27 Nov 2026/); assert.match(w.lines[1], /KES 18,000 for 6 months/);
-    assert.match(EM.reminderWords({ ...f, daysLeft: -3 }).headline, /ended on 6 Nov 2026 — 3 days ago/);
-    assert.match(EM.reminderWords({ ...f, trial: true, daysLeft: 3 }).headline, /cloud trial for Duka ends 6 Nov 2026/);
-    assert.match(EM.reminderAdminText(f).text, /Owner's copy: no email on file/);
-  });
 
   console.log('\n5. Shown\n');
-  await ok('the owner\'s dashboard: GET /api/business/cloud-trial carries the plan; the notice in the last 14 days and while lapsed', async () => {
+  await ok('A584: the owner\'s dashboard has no paid-plan notice (GET /api/business/cloud-trial answers plan: null; no planNotice)', async () => {
     reset(); setPaidUntil(Date.now() + 5 * DAY);
     const r = await call('GET', '/api/business/cloud-trial', OWNER_WEB);
-    assert.equal(r.status, 200); assert.equal(r.body.plan.days_left, 5); assert.equal(r.body.plan.amount, 3000);
-    assert.match(N.planNotice(r.body.plan), /paid until .* \(5 days left\)\. To renew: KES 3,000 a month — WhatsApp or call ZapTill on 0717 675 635/);
-    assert.equal(N.planNotice({ ...r.body.plan, days_left: 15 }), null, 'not before the last 14 days');
-    assert.match(N.planNotice({ ...r.body.plan, days_left: -25, sync_refused: true }), /stopped syncing them until it is paid/);
-    assert.match(N.planNotice({ ...r.body.plan, days_left: -3, sync_stops_at: iso(Date.now() + 18 * DAY) }), /syncing stops on/);
-    assert.equal(N.planNotice({ ...r.body.plan, trial: true }), null, 'a trial has its own notice');
+    assert.equal(r.status, 200); assert.equal(r.body.plan, null);
+    assert.equal(N.planNotice, undefined);
   });
-  await ok('the admin client list: "Expires in 5 days" / "Lapsed 3 days", and the Expiring / Lapsed filter', async () => {
+  await ok('the admin client list (A584): "Due in 5 days" / "Unpaid 3 days (locks in 4 days)" / "Locked", and the filters', async () => {
     reset(); setPaidUntil(Date.now() + 5 * DAY);
     const all = await call('GET', '/api/admin/clients', ADMIN);
     const row = all.body.clients.find((c) => c.id === B);
-    assert.equal(row.cloud.days_left, 5); assert.equal(P.expiryText(row.cloud).text, 'Expires in 5 days');
-    assert.equal(all.body.clients.find((c) => c.id === L).cloud, null, 'not on the plan: no expiry shown');
-    assert.equal(P.expiryText({ ...row.cloud, days_left: -3, sync_refused: false }).text, 'Lapsed 3 days');
-    assert.equal(P.expiryText({ ...row.cloud, days_left: -25, sync_refused: true }).text, 'Lapsed 25 days — sync stopped');
-    const exp = await call('GET', '/api/admin/clients?expiry=expiring', ADMIN);
+    assert.equal(row.cloud.days_left, 5); assert.equal(P.expiryText(row.cloud).text, 'Due in 5 days');
+    assert.equal(P.expiryText({ ...row.cloud, state: 'unpaid', unpaid_days: 3, lock_in_days: 4 }).text, 'Unpaid 3 days (locks in 4 days)');
+    assert.equal(P.expiryText({ ...row.cloud, state: 'locked', locked_days: 25, sync_refused: true }).text, 'Locked 25 days');
+    const exp = await call('GET', '/api/admin/clients?expiry=due', ADMIN);
     assert.deepEqual(exp.body.clients.map((c) => c.id), [B]);
-    const lap = await call('GET', '/api/admin/clients?expiry=lapsed', ADMIN);
+    const lap = await call('GET', '/api/admin/clients?expiry=locked', ADMIN);
     assert.deepEqual(lap.body.clients.map((c) => c.id), [T], 'the lapsed trial only');
+    assert.deepEqual((await call('GET', '/api/admin/clients?expiry=lapsed', ADMIN)).body.clients.map((c) => c.id).sort(), [L, T].sort(),
+      'A581\'s name still answers: unpaid or locked (the legacy licence not yet bridged reads due today)');
     const a = read('apps/admin/src/AdminPortal.tsx');
     assert.match(a, /data-testid="client-expiry-filter"/); assert.match(a, /data-testid="client-expiry"/);
   });

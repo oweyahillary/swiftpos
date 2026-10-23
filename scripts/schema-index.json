@@ -580,7 +580,8 @@
     "period_start": "\"timestamp with time zone\"",
     "period_end": "\"timestamp with time zone\"",
     "paid_at": "\"timestamp with time zone\"",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "kind": "\"text\""
   },
   "kitchen_tickets": {
     "id": "\"uuid\" NOT NULL",

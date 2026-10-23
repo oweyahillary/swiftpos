@@ -156,7 +156,7 @@ const ROUTES = [
   ['GET', '/api/etims/invoices', 'reports.tax'],
   ['POST', '/api/webhooks', 'settings.integrations', {}],
   ['PATCH', '/api/qr/settings', 'settings.integrations', {}],
-  ['PATCH', `/api/credit/customer/${X}/limit`, 'customers.credit', {}],
+  // A585: PATCH /api/credit/customer/:id/limit is the OWNER's alone now (no key opens it) — tests/credit-owner-a585.test.mjs.
   ['POST', `/api/credit/customer/${X}/payment`, 'customers.credit', {}],
   ['PATCH', `/api/loyalty/customer/${X}`, 'customers.edit', {}],
   ['POST', '/api/loyalty/customer', 'customers.edit', {}, ['customers.view']],
@@ -262,7 +262,7 @@ try {
     ['products.manage', 'POST', '/api/payment-methods', true], ['products.manage', 'PATCH', '/api/business', false],
     ['settings.manage', 'GET', '/api/devices/fleet', true], ['settings.manage', 'PATCH', '/api/business', true],
     ['settings.manage', 'POST', `/api/shifts/${X}/force-close`, true], ['settings.manage', 'POST', '/api/products', false],
-    ['staff.manage', 'POST', '/api/staff/roles', true], ['customers.manage', 'PATCH', `/api/credit/customer/${X}/limit`, true],
+    ['staff.manage', 'POST', '/api/staff/roles', true], ['customers.manage', 'POST', `/api/credit/customer/${X}/payment`, true],   // A585: the limit is the owner's; repayments keep customers.credit
   ];
   for (const [k, method, p, passes] of legacy) {
     await ok(`a token holding ${k} ${passes ? 'passes' : 'is refused'} ${method} ${p}`, async () => {
@@ -309,7 +309,10 @@ try {
   await ok('…but the portal still sets what stays ZapTill\'s (web_hosting, themes)', async () => {
     reset();
     const r = await adminCall('PATCH', `/api/admin/clients/${BZ}/features/web_hosting`, { enabled: true });
-    assert.equal(r.status, 200, JSON.stringify(r.body));
+    // A584: web_hosting stays ZapTill's — never OWNER_SETS — but a bare enable is refused: it is turned on by the cloud plan.
+    assert.notEqual(r.body?.code, 'OWNER_SETS', JSON.stringify(r.body));
+    assert.equal(r.status, 409, JSON.stringify(r.body)); assert.equal(r.body.code, 'WEB_ACCESS_BY_PLAN');
+    assert.equal((await adminCall('PATCH', `/api/admin/clients/${BZ}/features/web_hosting`, { enabled: false })).status, 200, 'switching it off still goes');
   });
   // A493 (owner, 2026-10-15): till update approval is the admin portal's — never the client's.
   await ok('A493: PATCH /api/admin/clients/:id/desktop-version — the admin holds (and approves) a client\'s till version', async () => {

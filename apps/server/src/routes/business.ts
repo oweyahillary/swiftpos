@@ -21,9 +21,9 @@ import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';  
 import { cleanReportSchedule } from '../jobs/ownerAlertsDecision';   // A476
 import { isOwnerAlertJobKey } from '../jobs/ownerAlerts';             // A476
 import { LOSS_SETTINGS_KEY } from '../jobs/lossAlerts';               // A576
+import { CREDIT_APPROVERS_KEY } from '../lib/creditApprovers';         // A585
 import { PARTNER_SETTING_KEY } from '../lib/webPartners';             // A550
 import { CLOUD_TRIAL_KEY, readTrial, trialPhase } from '../lib/cloudTrial';   // A569
-import { readCloudFacts, cloudStanding, defaultAmount, CLOUD_MONTHLY_KES } from '../lib/cloudPlan';   // A581
 import { cleanScaleSettings, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
 
 const router = safeRouter();
@@ -273,20 +273,9 @@ router.get('/cloud-trial', requireAuth, async (req, res) => {
   let trial;
   try { trial = await readTrial(req.businessId); }
   catch (e) { sendError(res, e); return; }
-  // A581: the cloud plan — paid-until, the amount and period, where it stands — for the owner's notice in the last 14
-  // days before paid-until and while lapsed (CloudTrialNotice). null when the business is not on the plan.
-  let plan = null;
-  try {
-    const f = (await readCloudFacts([req.businessId])).get(req.businessId);
-    const s = f ? cloudStanding(f) : null;
-    if (f && s && s.gated && s.paidUntil) {
-      const period = f.plan?.period ?? 'monthly';
-      plan = { paid_until: s.paidUntil, days_left: s.daysLeft, state: s.state, trial: s.trial, sync_stops_at: s.syncStopsAt,
-        sync_refused: s.syncRefused, amount: Number(f.plan?.amount ?? defaultAmount(period) ?? CLOUD_MONTHLY_KES), currency: f.plan?.currency ?? 'KES', period };
-      plan = { ...plan, amount_label: `${plan.currency} ${Math.round(plan.amount).toLocaleString('en-KE')}` };
-    }
-  } catch { plan = null; }
-  res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null, plan });
+  // A584 (owner: "no warning for web"): the paid plan has no notice on the dashboard — the client gets the invoice by
+  // email on the due day, nothing counts down. `plan` stays in the answer, always null, for dashboards built for A581.
+  res.json({ trial: trial ? { ends_at: trial.ends_at, phase: trialPhase(trial) } : null, plan: null });
 });
 
 // GET /api/business/branding
@@ -652,7 +641,8 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   // and unlinks the sign-in account and ends sessions — never written here.
   // A569: the cloud trial record (once per client, ever) is ZapTill's too.
   // A576: the loss-prevention alerts' settings are the owner's, written only through PUT /api/loss-alerts/settings (cleaned).
-  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY || String(key) === CLOUD_TRIAL_KEY || String(key) === LOSS_SETTINGS_KEY) {
+  if (isOwnerAlertJobKey(String(key)) || String(key) === PARTNER_SETTING_KEY || String(key) === CLOUD_TRIAL_KEY || String(key) === LOSS_SETTINGS_KEY
+      || String(key) === CREDIT_APPROVERS_KEY) {   // A585: written only through PUT /api/credit/approvers (the owner, cleaned)
     res.status(403).json({ error: 'That setting is kept by ZapTill itself.', code: 'READ_ONLY_KEY' });
     return;
   }

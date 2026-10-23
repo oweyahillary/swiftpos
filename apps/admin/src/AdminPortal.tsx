@@ -659,7 +659,7 @@ function ClientsPage({ req, onSelectClient }) {
   const [search, setSearch]   = useState("");
   const [status, setStatus]   = useState("");
   const [type, setType]       = useState("");
-  const [expiry, setExpiry]   = useState("");   // A581: "" | "expiring" | "lapsed"
+  const [expiry, setExpiry]   = useState("");   // A584: "" | "due" | "unpaid" | "locked" | "no_expiry"
   const [loading, setLoading] = useState(false);
   // A475 (owner, 2026-10-14: "proceed and build"): every client reachable, a page at a time — the list asked for the first
   // 50 only, so client 51 on could be found only by search. The server pages (limit / offset); the pager drives it.
@@ -707,18 +707,20 @@ function ClientsPage({ req, onSelectClient }) {
           <option value="">All types</option>
           {Object.entries(TYPE_META).map(([v, m]) => <option key={v} value={v}>{m.label}</option>)}
         </select>
-        {/* A581: the clients whose cloud plan is near its paid-until, or past it */}
+        {/* A584: due soon / unpaid (within the 7 days) / locked / no expiry set */}
         <select data-testid="client-expiry-filter" style={{ ...S.input, width: "auto" }} value={expiry} onChange={e => setExpiry(e.target.value)}>
-          <option value="">Any cloud expiry</option>
-          <option value="expiring">Expiring (14 days)</option>
-          <option value="lapsed">Lapsed</option>
+          <option value="">Any billing status</option>
+          <option value="due">Due (14 days)</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="locked">Locked</option>
+          <option value="no_expiry">No expiry set</option>
         </select>
       </div>
 
       <div style={S.card}>
         <div className="sp-table-wrap"><table style={S.table}>
           <thead>
-            <tr>{["Client","Type","Status","Plan","Cloud expiry","Currency","Phone","Joined",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+            <tr>{["Client","Type","Status","Plan","Billing","Currency","Phone","Joined",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
@@ -733,7 +735,7 @@ function ClientsPage({ req, onSelectClient }) {
                 <td style={S.td}><StatusBadge status={b.status} />{isPurgeDue(b) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 20, padding: "2px 7px" }}>purge-due</span>}</td>
                 {/* A569: Desktop / Cloud trial / Cloud trial ended / Cloud / No licence yet */}
                 <td data-testid="client-plan" style={{ ...S.td, fontSize: 12, color: TONE[planTone(b.plan_label)] }}>{b.plan_label || "—"}</td>
-                {/* A581: "Expires in 5 days" / "Lapsed 3 days" / "Paid to …" for a client on the cloud plan */}
+                {/* A584: "Due in 5 days" / "Unpaid 3 days (locks in 4 days)" / "Locked 2 days" / "No expiry set" */}
                 {(() => { const x = expiryText(b.cloud); return <td data-testid="client-expiry" style={{ ...S.td, fontSize: 12, color: x ? TONE[x.tone] : C.muted, whiteSpace: "nowrap" }}>{x ? x.text : "—"}</td>; })()}
                 <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{b.currency}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{b.phone || "—"}</td>
@@ -926,7 +928,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
 
   async function toggleWebHosting(enable, confirmOverride = null) {
     const confirmMsg = confirmOverride ?? (enable
-      ? 'Enable web portal access? This will allow the client to log into the dashboard. Ensure payment of KES 10,000 has been received.'
+      ? 'Switch web portal access back on? Only for a client whose paid-until is still ahead (otherwise record the payment on the Cloud plan).'
       : 'Disable web portal access? The client will be locked out of the dashboard immediately.');
     if (!(await askConfirm(confirmMsg))) return;
 
@@ -935,7 +937,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
         enabled: enable,
         // A495: the note read the admin email off the fetch helper (`req`) — a property it never had, always undefined, so every note read
         // "by admin". The cloud records who switched it (feature_flags.set_by and the audit log); the note says what.
-        notes:   enable ? 'Web hosting enabled — KES 10,000 paid' : 'Web hosting disabled',
+        notes:   enable ? 'Web hosting switched back on (paid-until ahead)' : 'Web hosting disabled',
       });
 
       setFeatures(prev => {
@@ -944,18 +946,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
         return [...prev, { key: 'web_hosting', enabled: enable }];
       });
 
-      // Auto-create invoice on enable
-      if (enable) {
-        try {
-          await req("POST", `/clients/${client.id}/billing`, {
-            description: 'Web Portal Hosting — Annual Access',
-            amount:      10000,
-            currency:    'KES',
-          });
-        } catch(e) { /* Invoice creation is non-fatal */ }
-        // A569: a cloud trial converted to paid — web access now runs a year; the invoices list shows the new one.
-        req("GET", `/clients/${client.id}/billing`).then(setInvoices).catch(() => {});
-      }
+      // A584: no invoice here any more — the KES 10,000 annual "Enable web access" is retired into the Cloud plan
+      // (Record payment raises the invoice; the cloud refuses a bare enable: WEB_ACCESS_BY_PLAN).
       await reloadDetail();
     } catch(e) { setError(e.message); }
   }
@@ -1580,16 +1572,18 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
               </span>,
               hasWebHosting
                 ? "The client can use the cloud dashboard and the web POS."
-                : "Desktop-only licence. Enabling web access (KES 10,000 a year) raises an invoice.",
-              superOnly(<button onClick={() => toggleWebHosting(!hasWebHosting)} style={{ ...S.btn, ...(hasWebHosting ? S.btnDanger : S.btnPrimary), fontSize: 12 }}>
-                {hasWebHosting ? "Disable web access" : "Enable web access"}
-              </button>),
+                : "Desktop-only. Web access is turned on from the Cloud plan below: Record payment (KES 3,000 a month by default), or a complimentary paid-until for a special case.",
+              superOnly(hasWebHosting
+                ? <button onClick={() => toggleWebHosting(false)} style={{ ...S.btn, ...S.btnDanger, fontSize: 12 }}>Disable web access</button>
+                /* A584: the KES 10,000 "Enable web access" is retired — it points at Record payment */
+                : <button data-testid="web-access-via-plan" onClick={() => document.querySelector('[data-testid="pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                    style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Record payment</button>),
               "web-access")}
             {/* A147: the date the renewal ladder is measured against */}
             {settingRow("Web access expiry (the cloud plan's paid-until)",
               detail?.web_access_expires_at
-                ? `Renewal is measured against ${fmtDate(detail.web_access_expires_at)}. Record payment (below) moves it on; set it here only to correct it.`
-                : "No expiry set — the renewal reminders have no date to measure against.",
+                ? `Billing is measured against ${fmtDate(detail.web_access_expires_at)}: the invoice goes out that day, and unpaid 7 days after it locks. Record payment (below) moves it on; set it here only to correct it (audited).`
+                : "No expiry set — nothing is billed and nothing locks. Record a payment (or a complimentary paid-until) below to put the client on the plan.",
               superOnly(<>
                 <input type="date" value={expiryDraft} onChange={e => setExpiryDraft(e.target.value)} style={{ ...S.input, width: "auto" }} />
                 <button disabled={savingExpiry || !expiryDraft} onClick={() => setWebAccessExpiry(expiryDraft)}

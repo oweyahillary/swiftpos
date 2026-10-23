@@ -584,7 +584,7 @@ declare global {
         detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('../../shared/orderDetail').OrderDetail; canReprint?: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
         /** A552: On account — offered on this till?, may the person signed in approve it themselves (no PIN)?, the customers. */
-        creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;
+        creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; chosenApprovers?: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;
       };
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;

@@ -34,6 +34,7 @@ export function useBusinessTabs() {
     { to: 'voids-refunds', label: 'Voids, refunds & delivery' },   // 0.6.30 (A336 stage 3): the owner's rules; 0.6.33 + free delivery
     ...(can('settings.pos') ? [{ to: 'pos-options',  label: 'POS options' }] : []),    // A491: the owner's now (was the admin portal's)
     ...(isOwner ? [{ to: 'loss-alerts',  label: 'Loss prevention' }] : []),   // A576: the watch list's switches — the owner's
+    ...(isOwner ? [{ to: 'credit-approvals', label: 'Credit approvals' }] : []),   // A585: who approves sales on account — the owner's
     ...(can('settings.business') ? [{ to: 'scale-labels', label: 'Scale labels' }] : []),   // A577: weighing-scale barcodes
     { to: 'setup',        label: setupLabel },
     { to: 'integrations', label: 'Integrations' },

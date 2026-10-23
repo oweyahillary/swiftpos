@@ -1,12 +1,12 @@
 /**
  * CloudTrialNotice — A569: a small, quiet line for the OWNER in the last 7 days of the cloud trial (lib/cloudTrialNotice.ts).
- * A581: and the cloud plan's notice in the last 14 days before paid-until and while lapsed (planNotice).
+ * A584: the paid plan has no notice (owner: "no warning for web") — A581's plan line is gone; the trial's stays.
  * Asked once per page load (GET /api/business/cloud-trial); nothing for anyone else, and nothing when the call fails.
  */
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { usePermissions } from '../context/PermissionsContext';
-import { trialNotice, planNotice, type TrialAnswer, type PlanAnswer } from '../lib/cloudTrialNotice';
+import { trialNotice, type TrialAnswer } from '../lib/cloudTrialNotice';
 
 export default function CloudTrialNotice() {
   const { isOwner, isPartner } = usePermissions();
@@ -14,8 +14,8 @@ export default function CloudTrialNotice() {
   useEffect(() => {
     if (!isOwner || isPartner) { setText(null); return; }
     let live = true;
-    api.get<{ trial: TrialAnswer | null; plan?: PlanAnswer | null }>('/api/business/cloud-trial')
-      .then((r) => { if (live) setText(trialNotice(r?.trial) ?? planNotice(r?.plan)); })
+    api.get<{ trial: TrialAnswer | null }>('/api/business/cloud-trial')
+      .then((r) => { if (live) setText(trialNotice(r?.trial)); })
       .catch(() => {});
     return () => { live = false; };
   }, [isOwner, isPartner]);

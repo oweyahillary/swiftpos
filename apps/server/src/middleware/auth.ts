@@ -12,7 +12,7 @@ import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
 import { partnerRequestBranch, partnerBranchSet } from '../lib/webPartners';    // A550, A582
 import { NO_BRANCH, PICK_ONE_BRANCH_BODY } from './rbac';        // A582
-import { lapseRefusal } from '../lib/cloudPlan';                // A581
+import { accessRefusal } from '../lib/cloudPlan';               // A581, A584
 
 /**
  * A582: in "All my branches" a write is refused before any route — a set of branches is never where a sale, a count, a
@@ -399,6 +399,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.roleId         = ownerRoleId ?? null;
   req.permissionKeys = ['*'];
 
+  if (await cloudLapseBlocked(req, res)) return;   // A584: a paused business's web dashboard
   next();
 }
 
@@ -411,19 +412,23 @@ export function requireWebSurface(req: Request, res: Response, next: NextFunctio
   });
 }
 
-// ── A581: the cloud plan's lapse gate ─────────────────────────────────────────────────────────────────────────────
-// A business whose cloud plan (or trial) has lapsed past its grace: its tills' writes (sales, drawers, days, changes, the
-// heartbeat, a manager's edits on the till) are answered 503 CLOUD_SUBSCRIPTION_ENDED — 503 so every till version keeps
-// the record queued; 1.0.20 tells the manager. Sign-in and renewals, the technician's routes, support logs and the update
-// state stay open (lib/cloudPlan.ts lapseGateApplies). Remembered a minute per business; a failed read never refuses.
+// ── A581 / A584: the cloud plan's gates ───────────────────────────────────────────────────────────────────────────
+// A581: a LOCKED business's tills' writes (sales, drawers, days, changes, the heartbeat, a manager's edits on the till) are
+// answered 503 CLOUD_SUBSCRIPTION_ENDED — 503 so every till version keeps the record queued; 1.0.20 tells the manager.
+// Sign-in and renewals, the technician's routes, support logs and the update state stay open.
+// A584 (owner: "after 7 days the access gets revoked immediately, no warning for web"): from the lock, every WEB request
+// (reads too) but /api/auth/* is answered 403 CLOUD_ACCESS_PAUSED (a trial: CLOUD_TRIAL_ENDED) — the dashboard shows
+// "Your ZapTill cloud access is paused. Call 0717 675 635 to renew." A session already open is paused at once, not at its
+// next sign-in. Rules: lib/cloudPlan.ts accessRefusal. Remembered a minute per business (a recorded payment forgets it at
+// once); a failed read never refuses.
 async function cloudLapseBlocked(req: Request, res: Response): Promise<boolean> {
   let refusal = null;
-  try { refusal = await lapseRefusal(req.businessId, req.surface, req.method, req.originalUrl || req.url || ''); }
+  try { refusal = await accessRefusal(req.businessId, req.surface, req.method, req.originalUrl || req.url || ''); }
   catch { return false; }
   if (!refusal) return false;
   res.locals.cloudLapsed = true;   // index.ts: not a server error, not a refused till for the watchdog
-  res.set('Retry-After', '900');
-  res.status(503).json(refusal);
+  if (refusal.status === 503) res.set('Retry-After', '900');
+  res.status(refusal.status).json(refusal.body);
   return true;
 }
 

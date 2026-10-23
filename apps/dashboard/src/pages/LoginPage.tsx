@@ -9,6 +9,7 @@ import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../lib/otpTrust';   //
 import ForgotPassword from '../components/ForgotPassword';   // A402
 import OtpCodeStep, { type OtpPrompt } from '../components/OtpCodeStep';
 import { loginBrand } from '../lib/loginBrand';   // A424
+import { PAUSED_TITLE, PAUSED_BODY } from '../lib/cloudPaused';   // A584
 
 // Error codes returned by POST /api/auth/login for specific access issues
 const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: string }> = {
@@ -21,13 +22,24 @@ const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: st
   WEB_HOSTING_REQUIRED: {
     icon:  '🔒',
     title: 'Web portal access not enabled',
-    body:  'Your licence covers the desktop POS app only. To access the web dashboard and cloud portal, contact ZapTill to upgrade your plan (KES 10,000).',
+    body:  'Your licence covers the desktop POS app only. To add the web dashboard and the cloud, call ZapTill on 0717 675 635.',
   },
   // A569: the 30-day cloud trial (started with the first desktop licence) ended, and its week of reports only too.
   CLOUD_TRIAL_ENDED: {
     icon:  '⏳',
     title: 'Your cloud trial has ended',
     body:  'Your one-month cloud trial is over. Contact ZapTill to keep the web dashboard. Your tills keep working as before.',
+  },
+  // A584: unpaid 7 days after the due date — the plain words, no blame, no dates (lib/cloudPaused.ts).
+  CLOUD_ACCESS_PAUSED: {
+    icon:  '⏸️',
+    title: PAUSED_TITLE,
+    body:  PAUSED_BODY,
+  },
+  WEB_ACCESS_EXPIRED: {
+    icon:  '⏸️',
+    title: PAUSED_TITLE,
+    body:  PAUSED_BODY,
   },
   ACCOUNT_SUSPENDED: {
     icon:  '⛔',

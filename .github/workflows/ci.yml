@@ -453,6 +453,19 @@ jobs:
           node --no-warnings tests/cloud-plan-a581.test.mjs
           node --no-warnings scripts/test-migration-170.mjs
 
+      # A584 — one set of billing rules for every business with an expiry date: the lock at 00:00 Nairobi after the 7th
+      # unpaid day (no grace, no reports-only stage for a paid client); the invoice on the due day (monthly and 12 months,
+      # month ends) once per period, its email without a word of a lock; the bridge of licence expiries set before the plan
+      # (put on a plan, audited, invoiced from the bridge day — never locked by a deploy; no expiry → unchanged and listed);
+      # ZapTill-only notices (day 5, the lock, the digest); over HTTP the web paused (403 CLOUD_ACCESS_PAUSED), till writes
+      # 503, no till joins, and a payment restoring all at once (covering the invoiced period, the invoice marked paid, a
+      # receipt); "Enable web access" retired; the complimentary paid-until; the dashboard's paused screen. Migration 172
+      # replayed into PGlite. Need the server build.
+      - name: Cloud billing - invoice, 7-day lock, bridge (A584) and migration 172
+        run: |
+          node --no-warnings tests/billing-a584.test.mjs
+          node --no-warnings scripts/test-migration-172.mjs
+
       # A550: partner login — someone on the staff the owner lets into the web dashboard with a password, never the owner
       # (the real auth / staff routers over HTTP) — and the five built-in roles that came with it. They run in the loop
       # below too; named here so a failure says what broke.
@@ -532,6 +545,13 @@ jobs:
         run: |
           TZ=UTC node --no-warnings tests/credit-limit-a567.test.mjs
           node --no-warnings tests/owner-password-a568.test.mjs
+
+      # A585: only the owner sets credit limits (every route that writes one: managers, GMs, finance managers, supervisors,
+      # partners, the owner's role by PIN, a till all refused); the owner's "Who approves credit sales" per branch (off =
+      # A511/A552; on = the list or the owner, at the web POS and in a till's push); the till's list carries the rule; the
+      # Credit history panel's endpoint. The real routers over HTTP. Run in the loop below too; named here so a failure says what broke.
+      - name: Credit limits are the owner's; credit sale approvers (A585)
+        run: TZ=UTC node --no-warnings tests/credit-owner-a585.test.mjs
 
       # A571: barcodes and labels — the encoders against published references (EAN-13 / UPC-A tables, Code 128 values,
       # check digits, subset switching), in-store codes (prefix 20), the label layout on every size, the sheet grid and
@@ -1054,6 +1074,13 @@ jobs:
       - name: Desktop sales on account (A552)
         working-directory: apps/desktop
         run: node --no-warnings test/credit-sale-a552.test.mjs
+
+      # A585 — the owner chose who approves sales on account: the rule kept on the till (maintenance_state, offline), the
+      # seller on the list approves automatically, anyone else needs a listed approver's PIN (a manager not on it refused),
+      # the limit still applies; the branch server hands its tills the rule.
+      - name: Desktop credit sale approvers (A585)
+        working-directory: apps/desktop
+        run: node --no-warnings test/credit-approval-a585.test.mjs
 
       # A559 — a till sale through queueThermal → printSale: its extras ("+ Extra Cheese") and its notes on the kitchen
       # ticket, the extras not counted as dishes, a soda's extra kept off the kitchen; the packer still sees every extra.

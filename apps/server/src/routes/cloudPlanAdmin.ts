@@ -1,21 +1,26 @@
 /**
  * cloudPlanAdmin.ts — A581: the client's cloud payment plan in the admin portal (client › Plan & billing › Cloud plan).
+ * A584: the ONE way web access is turned on — a recorded payment, or a super admin's complimentary paid-until (audited).
  *
- * Owner, 2026-10-23: "add payment plan option such that i can select month on month and always remind me on email about
- * expiry and also the client". Rules in lib/cloudPlan.ts; the paid-until is businesses.web_access_expires_at.
+ * Owner, 2026-10-23: "add payment plan option such that i can select month on month" (A581) · "build a robust structure"
+ * and "an invoice is sent to the client on the first day of their billing" (A584). Rules in lib/cloudPlan.ts; the
+ * paid-until is businesses.web_access_expires_at.
  *
- *   GET  /api/admin/clients/:businessId/cloud-plan           — the plan (or the defaults), where the client stands
- *        (paid-until, days left, grace, sync stopped?), the payments (newest first), the reminders sent. Any admin.
- *   PUT  /api/admin/clients/:businessId/cloud-plan           — { period, amount, custom_until?, notes? }: sets the plan
- *        (puts the client on it). Super admin.
+ *   GET  /api/admin/clients/:businessId/cloud-plan           — the plan (or the defaults), where the client stands (due,
+ *        unpaid days, lock), the payments (newest first), the invoices and ZapTill's notices sent. Any admin.
+ *   PUT  /api/admin/clients/:businessId/cloud-plan           — { period, amount, custom_until?, notes? }: sets the plan.
+ *        Super admin.
  *   POST /api/admin/clients/:businessId/cloud-plan/payments  — { amount, method, reference, paid_at?, period?,
- *        paid_until? (custom), note? }: records a payment — paid-until moves on one period from the LATER of now and the
- *        current paid-until; web access is switched on; an unconverted cloud trial is marked converted; a paid invoice is
- *        raised; who / when / amount / reference audited (admin_audit_log 'cloud_plan.payment'). The lapse gate opens at
- *        once. Super admin (a money write, as A495's invoices).
+ *        paid_until? (custom), note? }: records a payment — paid-until moves on one period from: the current paid-until
+ *        when still ahead (early: no lost days); the due date when the client is within its 7 unpaid days (the invoiced
+ *        period); else today (locked, first payment, a trial). Web access on; a trial converted; the period's pending
+ *        invoice marked paid (else a paid invoice raised); a short receipt to the owner; audited ('cloud_plan.payment').
+ *        Everything opens at once. Super admin (a money write).
+ *   POST /api/admin/clients/:businessId/cloud-plan/complimentary — { paid_until, reason }: A584 — a manual paid-until for
+ *        a special case (no payment, no invoice): web access on, the client put on the plan, a trial converted; the reason
+ *        required; audited ('cloud_plan.complimentary'). Super admin.
  *
- * Payment DETECTION is manual for now (the admin records what the client paid; M-Pesa Daraja later) — nothing here takes
- * money, and a monthly plan does not renew by itself: each month needs a recorded payment, and the reminders say so.
+ * Payment DETECTION is manual for now (M-Pesa Daraja later) — nothing here takes money.
  *
  * Mounted at /admin/clients before /admin (routes/index.ts): a path this router does not serve falls through.
  */
@@ -23,11 +28,14 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAdmin, requireSuperAdmin } from '../middleware/adminAuth';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
+import { sendEmailChecked } from '../lib/mailer';
 import { CLOUD_TRIAL_KEY, readTrial } from '../lib/cloudTrial';
 import {
   CLOUD_MONTHLY_KES, PERIOD_LABEL, PLAN_PERIODS, PAYMENT_METHODS, isPeriod, defaultAmount, nextPaidUntil, cloudStanding,
-  readCloudFacts, forgetStanding, type PlanPeriod, type CloudPlanRow,
+  readCloudFacts, forgetStanding, nextInvoiceNumber, insertCloudInvoice, standingView, type PlanPeriod, type CloudPlanRow,
 } from '../lib/cloudPlan';
+import { receiptEmailHtml } from '../lib/cloudPlanEmail';
+import { ownerEmailOf } from '../jobs/cloudPlanReminders';
 
 const router = safeRouter();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,12 +69,6 @@ const text = (v: unknown, max: number): string | null => {
 };
 const isoOrNull = (v: unknown): string | null => (typeof v === 'string' && v && Number.isFinite(Date.parse(v)) ? new Date(Date.parse(v)).toISOString() : null);
 
-async function nextInvoiceNumber(): Promise<string> {
-  const year = new Date().getFullYear();
-  const { count } = await supabase.from('invoices').select('*', { count: 'exact', head: true }).like('invoice_number', `INV-${year}-%`);
-  return `INV-${year}-${String((count ?? 0) + 1).padStart(4, '0')}`;
-}
-
 /** Everything the Plan & billing card shows. */
 async function planView(businessId: string) {
   const now = Date.now();
@@ -78,10 +80,7 @@ async function planView(businessId: string) {
   const s = facts ? cloudStanding(facts, now) : null;
   return {
     plan: facts?.plan ?? null,
-    standing: s ? {
-      gated: s.gated, state: s.state, trial: s.trial, paid_until: s.paidUntil, sync_stops_at: s.syncStopsAt,
-      days_left: s.daysLeft, sync_refused: s.syncRefused,
-    } : null,
+    standing: s ? standingView(s) : null,
     payments: payments.data ?? [],
     reminders: reminders.data ?? [],
     defaults: {
@@ -90,6 +89,25 @@ async function planView(businessId: string) {
       methods: PAYMENT_METHODS,
     },
   };
+}
+
+async function webAccessOn(req: any, businessId: string, note: string): Promise<void> {
+  const fl = await supabase.from('feature_flags').upsert({
+    business_id: businessId, key: 'web_hosting', enabled: true, notes: note, set_by: req.adminEmail ?? null, updated_at: new Date().toISOString(),
+  }, { onConflict: 'business_id,key' });
+  if (fl.error) console.error('[cloud-plan] web access not switched on:', fl.error.message);
+}
+
+async function convertTrial(businessId: string, now: number): Promise<boolean> {
+  try {
+    const trial = await readTrial(businessId);
+    if (trial && !trial.converted_at) {
+      const t = await supabase.from('business_settings').update({ value: { ...trial, converted_at: new Date(now).toISOString() }, updated_at: new Date(now).toISOString() })
+        .eq('business_id', businessId).eq('key', CLOUD_TRIAL_KEY);
+      return !t.error;
+    }
+  } catch (e) { console.error('[cloud-plan] trial not marked converted:', (e as Error)?.message); }
+  return false;
 }
 
 router.get('/:businessId/cloud-plan', requireAdmin, async (req, res) => {
@@ -112,7 +130,7 @@ router.put('/:businessId/cloud-plan', requireAdmin, requireSuperAdmin, async (re
     custom_until: b.period === 'custom' ? customUntil : null, notes: text(b.notes, 500), updated_by: req.adminEmail ?? null,
   };
   const { data, error } = await supabase.from('cloud_plans')
-    .upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: 'business_id' }).select().single();
+    .upsert({ ...row, updated_at: new Date().toISOString(), ...(before ? {} : { created_at: new Date().toISOString() }) }, { onConflict: 'business_id' }).select().single();
   if (error) { sendError(res, error); return; }
   forgetStanding(client.id);
   await audit(req, client, before ? 'cloud_plan.update' : 'cloud_plan.create', (before as object | null) ?? null,
@@ -145,7 +163,10 @@ router.post('/:businessId/cloud-plan/payments', requireAdmin, requireSuperAdmin,
   if (Date.parse(paidAt) > now + 60_000) { res.status(400).json({ error: 'The payment date cannot be in the future.', code: 'BAD_DATE' }); return; }
 
   const before = facts.expiresAt;
-  const ext = nextPaidUntil({ period, now, paidUntil: before, customUntil: isoOrNull(b.paid_until) ?? plan?.custom_until ?? null });
+  // A584: within the 7 unpaid days the payment covers the period that was invoiced (from its due date).
+  const standing = cloudStanding(facts, now);
+  const continueFrom = !standing.trial && standing.state === 'unpaid' ? standing.dueAt : null;
+  const ext = nextPaidUntil({ period, now, paidUntil: before, continueFrom, customUntil: isoOrNull(b.paid_until) ?? plan?.custom_until ?? null });
   if (ext.ok === false) { res.status(400).json({ error: ext.error, code: ext.code }); return; }
 
   // 1. the payment (an M-Pesa code is unique in the table too — two admins at once: one wins).
@@ -174,40 +195,79 @@ router.post('/:businessId/cloud-plan/payments', requireAdmin, requireSuperAdmin,
   if (!plan) {
     const p = await supabase.from('cloud_plans').upsert({
       business_id: client.id, period, amount, currency: 'KES',
-      custom_until: period === 'custom' ? ext.until : null, updated_by: req.adminEmail ?? null,
+      custom_until: period === 'custom' ? ext.until : null, updated_by: req.adminEmail ?? null, created_at: new Date(now).toISOString(),
     }, { onConflict: 'business_id' });
     if (p.error) console.error('[cloud-plan] plan not saved with the first payment:', p.error.message);
   }
-  const fl = await supabase.from('feature_flags').upsert({
-    business_id: client.id, key: 'web_hosting', enabled: true,
-    notes: `Cloud plan — paid until ${ext.until.slice(0, 10)} (A581)`, set_by: req.adminEmail ?? null, updated_at: new Date(now).toISOString(),
-  }, { onConflict: 'business_id,key' });
-  if (fl.error) console.error('[cloud-plan] web access not switched on:', fl.error.message);
-  let trialConverted = false;
-  try {
-    const trial = await readTrial(client.id);
-    if (trial && !trial.converted_at) {
-      const t = await supabase.from('business_settings').update({ value: { ...trial, converted_at: new Date(now).toISOString() }, updated_at: new Date(now).toISOString() })
-        .eq('business_id', client.id).eq('key', CLOUD_TRIAL_KEY);
-      trialConverted = !t.error;
-    }
-  } catch (e) { console.error('[cloud-plan] trial not marked converted:', (e as Error)?.message); }
+  await webAccessOn(req, client.id, `Cloud plan — paid until ${ext.until.slice(0, 10)} (A581)`);
+  const trialConverted = await convertTrial(client.id, now);
+  // A584: the period's invoice (raised on its due day, pending) is marked paid; else a paid one is raised.
   let invoiceNumber: string | null = null;
   try {
-    invoiceNumber = await nextInvoiceNumber();
-    const inv = await supabase.from('invoices').insert({
-      business_id: client.id, invoice_number: invoiceNumber, amount, currency: 'KES', status: 'paid',
-      payment_method: method, payment_reference: reference, period_start: ext.from, period_end: ext.until, paid_at: paidAt,
-    }).select('id').single();
-    if (!inv.error && inv.data) await supabase.from('cloud_payments').update({ invoice_id: (inv.data as { id: string }).id }).eq('id', payment.id);
-    else invoiceNumber = null;
+    const { data: open } = await supabase.from('invoices').select('id, invoice_number')
+      .eq('business_id', client.id).eq('period_start', ext.from).eq('status', 'pending').limit(1).maybeSingle();
+    let invoiceId: string | null = null;
+    if (open) {
+      const u = await supabase.from('invoices').update({
+        status: 'paid', amount, payment_method: method, payment_reference: reference, paid_at: paidAt, period_end: ext.until,
+      }).eq('id', (open as { id: string }).id).select('id');
+      if (!u.error) { invoiceId = (open as { id: string }).id; invoiceNumber = (open as { invoice_number: string }).invoice_number; }
+    } else {
+      const number = await nextInvoiceNumber();
+      const inv = await insertCloudInvoice({
+        business_id: client.id, invoice_number: number, amount, currency: 'KES', status: 'paid',
+        payment_method: method, payment_reference: reference, period_start: ext.from, period_end: ext.until, paid_at: paidAt,
+      });
+      if (!inv.error && inv.data) { invoiceId = inv.data.id; invoiceNumber = inv.data.invoice_number ?? number; }
+    }
+    if (invoiceId) await supabase.from('cloud_payments').update({ invoice_id: invoiceId }).eq('id', payment.id);
   } catch { invoiceNumber = null; }
 
   forgetStanding(client.id);
-  await audit(req, client, 'cloud_plan.payment', { paid_until: before },
+  await audit(req, client, 'cloud_plan.payment', { paid_until: before, state: standing.state },
     { amount, currency: 'KES', period, method, reference, paid_at: paidAt, paid_until: ext.until, from: ext.from, invoice_number: invoiceNumber, trial_converted: trialConverted },
     text(b.note, 500));
-  res.status(201).json({ payment: { ...payment, paid_until_after: ext.until }, trial_converted: trialConverted, invoice_number: invoiceNumber, ...(await planView(client.id)) });
+
+  // A584: a short receipt to the owner (best effort — never fails the payment).
+  let receiptSent = false;
+  try {
+    const { data: bz } = await supabase.from('businesses').select('owner_id, email').eq('id', client.id).maybeSingle();
+    const to = await ownerEmailOf((bz as any)?.owner_id, (bz as any)?.email);
+    if (to) {
+      const m = receiptEmailHtml({ businessName: client.name ?? 'your business', amount, currency: 'KES', method, reference, paidAt, paidUntil: ext.until, invoiceNumber });
+      receiptSent = (await sendEmailChecked({ to, subject: m.subject, html: m.html })).ok;
+    }
+  } catch (e) { console.warn('[cloud-plan] receipt not sent:', (e as Error)?.message); }
+
+  res.status(201).json({ payment: { ...payment, paid_until_after: ext.until }, trial_converted: trialConverted, invoice_number: invoiceNumber, receipt_sent: receiptSent, ...(await planView(client.id)) });
+});
+
+router.post('/:businessId/cloud-plan/complimentary', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const client = await clientOf(req, res); if (!client) return;
+  const b = req.body ?? {};
+  const now = Date.now();
+  const until = isoOrNull(b.paid_until);
+  if (!until) { res.status(400).json({ error: 'Choose the date it is paid until.', code: 'BAD_DATE' }); return; }
+  if (Date.parse(until) <= now) { res.status(400).json({ error: 'The date must be in the future.', code: 'BAD_DATE' }); return; }
+  const reason = text(b.reason, 500);
+  if (!reason || reason.length < 3) { res.status(400).json({ error: 'Say why (a complimentary or manual paid-until is audited).', code: 'REASON_REQUIRED' }); return; }
+  const facts = (await readCloudFacts([client.id])).get(client.id);
+  if (!facts) { res.status(404).json({ error: 'No such client' }); return; }
+  const before = facts.expiresAt;
+  const { error } = await supabase.from('businesses').update({ web_access_expires_at: until }).eq('id', client.id);
+  if (error) { sendError(res, error); return; }
+  if (!facts.plan) {
+    const p = await supabase.from('cloud_plans').upsert({
+      business_id: client.id, period: 'monthly', amount: CLOUD_MONTHLY_KES, currency: 'KES', custom_until: null,
+      notes: 'A584: put on the plan with a complimentary paid-until', updated_by: req.adminEmail ?? null, created_at: new Date(now).toISOString(),
+    }, { onConflict: 'business_id' });
+    if (p.error) console.error('[cloud-plan] plan not saved with the complimentary date:', p.error.message);
+  }
+  await webAccessOn(req, client.id, `Complimentary — paid until ${until.slice(0, 10)} (A584)`);
+  const trialConverted = await convertTrial(client.id, now);
+  forgetStanding(client.id);
+  await audit(req, client, 'cloud_plan.complimentary', { paid_until: before }, { paid_until: until, trial_converted: trialConverted }, reason);
+  res.json({ paid_until: until, trial_converted: trialConverted, ...(await planView(client.id)) });
 });
 
 export default router;

@@ -1,36 +1,36 @@
 // Web access state — the single source of truth for whether a business may use
 // the cloud web portal, and to what degree.
 //
-// Web access is the recurring product (10k/yr, per business). Its state is
-// derived from businesses.web_access_expires_at so there is one clock, not a
-// stored status that can drift:
+// Its state is derived from businesses.web_access_expires_at (the cloud plan's paid-until) so there is one clock, not a
+// stored status that can drift. A584 (2026-10-23) — owner: "after 7 days the access gets revoked immediately, no warning
+// for web". The paid ladder (lib/billingClock.ts, Nairobi days):
 //
-//   active        — within the paid term. Full portal.
-//   grace         — up to ~3 weeks past expiry. Still full portal (soft landing).
-//   reports_only  — the following ~1 week. Portal management locked; reports readable.
-//   locked        — beyond that. Login blocked; "Renew licence" banner.
+//   active        — within the paid period. Full portal.
+//   grace         — the 7 unpaid days after the due date (A584: no longer 21). Full portal, and NOTHING on the dashboard
+//                   says so — the client has the invoice; ZapTill has the admin notices.
+//   locked        — from the end of the 7th unpaid day. Sign-in refused and every web request answered 403
+//                   CLOUD_ACCESS_PAUSED: "Your ZapTill cloud access is paused. Call 0717 675 635 to renew."
 //   none          — never subscribed / explicitly disabled. Login blocked.
+//   (reports_only — a cloud TRIAL's week after its end only — A569; paid clients have no reports-only stage any more.)
 //
-// Offline desktop POS is NOT affected by any of this — desktop tills keep selling
-// regardless of web-access state (a till's own session, /api/auth/enrol/redeem, does not gate).
+// Offline desktop POS is NOT affected by any of this — desktop tills keep selling regardless of web-access state.
 //
-// Transition safety: if web_access_expires_at is NULL, we fall back to the legacy
-// feature_flags.web_hosting boolean, so existing accounts behave exactly as before
-// until a renewal date is set.
+// Transition safety: if web_access_expires_at is NULL, we fall back to the legacy feature_flags.web_hosting boolean, so
+// those accounts behave exactly as before ("No expiry set" in the admin portal — A584). A dated business that the billing
+// job has not yet bridged onto a plan (A584) is never locked meanwhile.
 //
 // A569 — a CLOUD TRIAL (lib/cloudTrial.ts: 30 days from the first desktop licence, no invoice) has its own, shorter
-// ladder: active until the trial's end, then reports_only for 7 days (no 21-day grace), then locked with
-// "Your cloud trial has ended" (CLOUD_TRIAL_ENDED). "Disable web access" during a trial ends it at once (none).
-// A converted trial (the admin's "Enable web access") is an ordinary paid term again.
+// ladder: active until the trial's end, then reports_only for 7 days, then locked with "Your cloud trial has ended"
+// (CLOUD_TRIAL_ENDED). "Disable web access" during a trial ends it at once (none). A trial converted by a recorded
+// payment (A581) is an ordinary paid term.
 
-import { supabase } from './supabase';
-import { CLOUD_TRIAL_KEY, TRIAL_REPORTS_ONLY_DAYS, cleanTrial, type CloudTrial } from './cloudTrial';
+import { readCloudFacts, cloudStanding, PAUSED_WORDS, TRIAL_ENDED_WORDS, type CloudFacts } from './cloudPlan';
+import { DAY_MS, effectiveDue, paidState, trialState, UNPAID_DAYS } from './billingClock';
 
 export type WebAccessState = 'active' | 'grace' | 'reports_only' | 'locked' | 'none';
 
-// Days past expiry for each step of the renewal ladder.
-export const GRACE_DAYS         = 21; // full access after expiry
-export const REPORTS_ONLY_DAYS  = 28; // = grace + ~1 week reports-only, then locked
+/** A584: the unpaid days a paid client keeps full access after its due date (was a 21-day grace, then a reports-only week). */
+export const GRACE_DAYS = UNPAID_DAYS;
 
 export interface WebAccess {
   state:      WebAccessState;
@@ -44,33 +44,46 @@ export interface WebAccess {
 }
 
 /**
- * A569: the ladder state at `now` for an expiry — a paid term (21 days' grace, then a week of reports only) or a trial
- * (no grace: a week of reports only straight after its end). Pure; getWebAccess reads the dates.
+ * The ladder state at `now`: a paid term (A584: the 7 unpaid days, then locked at the end of the 7th, Nairobi) or a trial
+ * (A569: a week of reports only straight after its end, then locked). `billingFrom` — the day the business was put on its
+ * plan — moves a due date that had already passed then to that day. Pure; getWebAccess reads the dates.
  */
-export function ladderState(expiresAt: string, now: number, trial = false): WebAccessState {
-  const expiry  = new Date(expiresAt).getTime();
-  const grace   = expiry + (trial ? 0 : GRACE_DAYS) * DAY_MS;
-  const readEnd = expiry + (trial ? TRIAL_REPORTS_ONLY_DAYS : REPORTS_ONLY_DAYS) * DAY_MS;
-  if (now < expiry)  return 'active';
-  if (now < grace)   return 'grace';
-  if (now < readEnd) return 'reports_only';
-  return 'locked';
+export function ladderState(expiresAt: string, now: number, trial = false, billingFrom: string | null = null): WebAccessState {
+  if (trial) return trialState(expiresAt, now);
+  const p = paidState(effectiveDue(expiresAt, billingFrom), now);
+  return p === 'active' ? 'active' : p === 'unpaid' ? 'grace' : 'locked';
 }
 
 /**
- * A569: why sign-in is refused, in words (auth.ts answers it on every web sign-in). A lapsed trial says so — not
- * "your subscription has expired", which it never was.
+ * Why sign-in is refused, in words (auth.ts answers it on every web sign-in). A lapsed trial says so; a paid client that
+ * is locked reads the plain paused words (A584 — no blame, no dates).
  */
 export function webAccessRefusal(w: WebAccess): { error: string; code: string } {
-  if (w.state === 'locked' && w.trial) {
-    return { error: 'Your cloud trial has ended. Contact ZapTill to keep the web dashboard — your tills keep working.', code: 'CLOUD_TRIAL_ENDED' };
-  }
+  if (w.state === 'locked' && w.trial) return { error: TRIAL_ENDED_WORDS, code: 'CLOUD_TRIAL_ENDED' };
   return w.state === 'locked'
-    ? { error: 'Your web portal subscription has expired. Please renew to continue.', code: 'WEB_ACCESS_EXPIRED' }
+    ? { error: PAUSED_WORDS, code: 'CLOUD_ACCESS_PAUSED' }
     : { error: 'Web portal access is not enabled for your account. Please contact ZapTill to upgrade.', code: 'WEB_HOSTING_REQUIRED' };
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** The web access of a business from its facts at `now` — the same standing the till gate and the billing job read. Pure. */
+export function webAccessFor(f: CloudFacts, now: number = Date.now()): WebAccess {
+  const expiresAt = f.expiresAt && Number.isFinite(Date.parse(f.expiresAt)) ? f.expiresAt : null;
+  // ── Legacy path: no dated subscription → honour the old boolean flag ("No expiry set") ──
+  if (!expiresAt) {
+    const enabled = f.webHosting === true;
+    return { state: enabled ? 'active' : 'none', expiresAt: null, fullAccess: enabled, canLogin: enabled };
+  }
+  const s = cloudStanding(f, now);
+  if (s.trial) {
+    if (s.state === 'ended') return { state: 'none', expiresAt, fullAccess: false, canLogin: false, trial: true };
+    const t = s.state === 'reports_only' ? 'reports_only' : s.state === 'locked' ? 'locked' : 'active';
+    return { state: t, expiresAt, fullAccess: t === 'active', canLogin: t !== 'locked', trial: true };
+  }
+  // 'off' (switched off, a date kept, no plan): its date as written — the same 7-day ladder, no bridge.
+  const state: WebAccessState = s.state === 'locked' ? 'locked' : s.state === 'unpaid' ? 'grace' : s.state === 'off'
+    ? ladderState(expiresAt, now) : 'active';
+  return { state, expiresAt, fullAccess: state === 'active' || state === 'grace', canLogin: state !== 'locked' };
+}
 
 /**
  * Resolve a business's current web-access state.
@@ -83,64 +96,10 @@ export async function getWebAccess(
   if (businessStatus === 'suspended') {
     return { state: 'locked', expiresAt: null, fullAccess: false, canLogin: false };
   }
-
-  const [{ data: biz }, { data: trialRow }] = await Promise.all([
-    supabase
-      .from('businesses')
-      .select('web_access_expires_at')
-      .eq('id', businessId)
-      .maybeSingle(),
-    // A569: a trial not yet converted runs on its own ladder (a failed read: no trial known — the paid ladder, as before).
-    supabase
-      .from('business_settings')
-      .select('value')
-      .eq('business_id', businessId)
-      .eq('key', CLOUD_TRIAL_KEY)
-      .maybeSingle(),
-  ]);
-
-  const expiresAt: string | null = biz?.web_access_expires_at ?? null;
-  const trialRec: CloudTrial | null = cleanTrial((trialRow as { value?: unknown } | null)?.value);
-  const onTrial = !!trialRec && !trialRec.converted_at;
-
-  // ── Legacy path: no dated subscription yet → honour the old boolean flag ──
-  if (!expiresAt) {
-    const { data: flag } = await supabase
-      .from('feature_flags')
-      .select('enabled')
-      .eq('business_id', businessId)
-      .eq('key', 'web_hosting')
-      .maybeSingle();
-    const enabled = !!flag?.enabled;
-    return {
-      state:      enabled ? 'active' : 'none',
-      expiresAt:  null,
-      fullAccess: enabled,
-      canLogin:   enabled,
-    };
-  }
-
-  // ── A569: a trial the admin switched off ("Disable web access") is over at once ──
-  if (onTrial) {
-    const { data: flag } = await supabase
-      .from('feature_flags')
-      .select('enabled')
-      .eq('business_id', businessId)
-      .eq('key', 'web_hosting')
-      .maybeSingle();
-    if (flag && !flag.enabled) {
-      return { state: 'none', expiresAt, fullAccess: false, canLogin: false, trial: true };
-    }
-  }
-
-  // ── Dated path: derive the ladder state from now() vs expiry ──
-  const state = ladderState(expiresAt, Date.now(), onTrial);
-
-  return {
-    state,
-    expiresAt,
-    fullAccess: state === 'active' || state === 'grace',
-    canLogin:   state !== 'locked',
-    ...(onTrial ? { trial: true } : {}),
-  };
+  const f = (await readCloudFacts([businessId])).get(businessId);
+  if (!f) return { state: 'none', expiresAt: null, fullAccess: false, canLogin: false };
+  if (f.suspended) return { state: 'locked', expiresAt: null, fullAccess: false, canLogin: false };
+  return webAccessFor(f);
 }
+
+export { DAY_MS };
