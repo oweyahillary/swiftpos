@@ -62,7 +62,7 @@ export function backOffice(s: SessionLike | null | undefined): boolean {
 }
 
 /** A519: the words a person without "Sell" reads — the same as main's (main/sellGate.ts SELL_REFUSAL). */
-export const SELL_REFUSAL = 'Your role can’t sell on this till — ask a manager to add ‘Sell’ to your role in Settings › Roles.';
+export const SELL_REFUSAL = 'Your role can’t sell on this POS — ask a manager to add ‘Sell’ to your role in Settings › Roles.';
 
 /**
  * A519: may this person START a sale on this till — main's rule (main/sellGate.ts maySell): the owner; a map from

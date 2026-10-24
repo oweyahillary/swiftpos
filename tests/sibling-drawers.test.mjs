@@ -158,7 +158,7 @@ try {
     const r = await till('POST', `/${TILL_SHIFT}/close`, { closing_float: 1400 });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.equal(r.body.cash_variance, 1400 - 2130);
-    assert.match(r.body.notes, /Variance recorded when the till's close reached the cloud/);
+    assert.match(r.body.notes, /Variance recorded when the POS's close reached the cloud/);
   });
   reset();
   await ok('…while a WEB close with a variance and no note is still refused (400)', async () => {

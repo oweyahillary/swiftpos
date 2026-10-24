@@ -145,7 +145,7 @@ const authLimiter = rateLimit({
 const renewLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: RENEWALS_PER_WINDOW,
-  message: { error: 'Too many renewals from this till — it tries again in 15 minutes' },
+  message: { error: 'Too many renewals from this POS — it tries again in 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => renewalKey(req.header('x-device-id') ?? (typeof req.body?.device_id === 'string' ? req.body.device_id : ''), ipKeyGenerator(req.ip ?? '')),

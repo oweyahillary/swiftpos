@@ -1027,7 +1027,7 @@ function LeaksSection({ l, p, currency, words }: { l: LeaksAnswer; p: ChartPalet
         )}
         <CapNote shown={days.rows.length} total={days.total} by="by what the day lost" />
       </div>
-      <p className="text-xs text-gray-500">{words.voidsNote} Refunds count on the day they were given, against the cashier of the sale. Drawer ± is the cashier's shift count; day close ± the till's day close (over +, short −).</p>
+      <p className="text-xs text-gray-500">{words.voidsNote} Refunds count on the day they were given, against the cashier of the sale. Drawer ± is the cashier's shift count; day close ± the POS's day close (over +, short −).</p>
     </div>
   );
 }

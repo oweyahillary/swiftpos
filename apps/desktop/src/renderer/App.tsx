@@ -287,7 +287,7 @@ function AppScreens() {
     return (
       <>
       <Lazy name="manager" onBack={() => { if (maySell(staff)) setState('pos'); else void handleEndShift(); }}
-        backLabel={maySell(staff) ? 'Back to the till' : 'Sign out'}>
+        backLabel={maySell(staff) ? 'Back to the POS' : 'Sign out'}>
       <ManagerPage
         business={session!.business}
         staff={staff}

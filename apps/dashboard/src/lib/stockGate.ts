@@ -46,7 +46,7 @@ export const OUT_OF_STOCK_MODES: ReadonlyArray<{ mode: OutOfStockMode; label: st
   { mode: 'sold_out', label: 'Show as sold out',
     description: 'Items at zero stay on the menu, greyed with a "Sold out" badge, and cannot be sold until stock comes in.' },
   { mode: 'hide', label: 'Hide when out of stock',
-    description: 'Items at zero leave the till menu and the web POS, and come back by themselves when stock comes in.' },
+    description: 'Items at zero leave the desktop POS menu and the web POS, and come back by themselves when stock comes in.' },
 ];
 
 export function isOutOfStockMode(v: unknown): v is OutOfStockMode {

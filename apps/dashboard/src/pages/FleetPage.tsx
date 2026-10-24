@@ -162,7 +162,7 @@ export default function FleetPage() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Terminals</h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Which build each till is running, and when it last synced. Tills are
+            Which build each POS is running, and when it last synced. Points of sale are
             updated by hand, so this is the only place that shows the fleet drifting.
           </p>
         </div>
@@ -226,8 +226,8 @@ export default function FleetPage() {
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             {showRetired
-              ? 'No retired terminals. Retiring a dead till moves it here and out of the health view.'
-              : 'No approved terminals yet. A till appears here once it has been approved and someone has signed in on it.'}
+              ? 'No retired terminals. Retiring a dead POS moves it here and out of the health view.'
+              : 'No approved terminals yet. A POS appears here once it has been approved and someone has signed in on it.'}
           </p>
         </div>
       ) : (
@@ -325,7 +325,7 @@ export default function FleetPage() {
                       )}
                       {d.noDeviceSecret && (
                         <div className="mt-1 inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/40"
-                          title="This till holds no device secret, so it cannot sign itself back in if its session is refused. It is given one on its next renewal.">
+                          title="This POS holds no device secret, so it cannot sign itself back in if its session is refused. It is given one on its next renewal.">
                           No device secret
                         </div>
                       )}
@@ -386,7 +386,7 @@ export default function FleetPage() {
 
       <p className="text-xs text-gray-500 dark:text-gray-500">
         <strong>Last sync</strong> is when the terminal last pushed sales. It matters
-        more than sign-in: a till can be signed in and trading while silently failing
+        more than sign-in: a POS can be signed in and trading while silently failing
         to sync, and nothing else in ZapTill would show it.
         Amber past {WARN_HOURS}h, red past {ALERT_HOURS}h.
       </p>

@@ -106,7 +106,7 @@ const sale = (num) => ({ branch_id: 'br-1', order_number: num, subtotal: 100, va
   items: [{ product: { id: 'p-1', name: 'Tea' }, unitPrice: 100, quantity: 1, lineTotal: 100 }], payments: [{ method: 'cash', amount: 100 }] });
 
 // ── 1. Sell ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-console.log('\n1. The till checks "Sell" (orders.create)\n');
+console.log('\n1. The POS checks "Sell" (orders.create)\n');
 const SG = require(path.join(dist, 'sellGate.js'));
 const RA = await bundle('src/renderer/lib/access.ts', 'access.mjs');
 {
@@ -194,7 +194,7 @@ const TC = require(path.join(dist, 'terminalCodes.js'));
   const v = (code, current, cloud, server) => TC.terminalCodeVerdict({ code, current, cloud, server });
   const taken = v('T1', null, { in_use: ['T1', 'T2'] }, null);
   ok('a code another till uses is refused, with the next free one', !taken.ok && taken.taken && taken.suggestion === 'T3'
-    && /T1 is already used by another till at this branch \(in use: T1, T2\)\. Use T3\./.test(taken.message), JSON.stringify(taken));
+    && /T1 is already used by another POS at this branch \(in use: T1, T2\)\. Use T3\./.test(taken.message), JSON.stringify(taken));
   ok('the cloud first; the branch server\'s answer when the cloud could not be asked', v('T2', null, { in_use: ['T1'] }, ['T2']).ok
     && !v('T2', null, null, ['T2']).ok && v('T2', null, null, ['T2']).source === 'server');
   ok('nobody could be asked → not refused (setup never stops on a check)', v('T1', null, null, null).ok);
@@ -221,7 +221,7 @@ const TC = require(path.join(dist, 'terminalCodes.js'));
   C.saveDeviceConfig({ configured: false, terminal_code: null });
   route = (url) => url.includes('/api/support/terminal-codes') ? json(200, { in_use: ['T1', 'T2'], suggestion: 'T3' }) : json(404, {});
   const refused = await said(() => call('config:save', { terminal_code: 'T1' }));
-  ok('config:save refuses a code another till at the branch uses, naming the free one', /already used by another till[\s\S]*Use T3/.test(refused), refused);
+  ok('config:save refuses a code another till at the branch uses, naming the free one', /already used by another POS[\s\S]*Use T3/.test(refused), refused);
   ok('…asked the cloud with this till\'s own session for its branch', fetched.some((f) => /\/api\/support\/terminal-codes\?branch_id=br-1&code=T1/.test(f.url)
     && /Bearer till-token/.test(String(f.init?.headers?.Authorization ?? ''))));
   ok('…takes a free one', (await said(() => call('config:save', { terminal_code: 'T3' }))) === 'OK' && C.getDeviceConfig().terminal_code === 'T3');
@@ -252,7 +252,7 @@ const SL = require(path.join(dist, 'supportLogs.js'));
     ['tech token st2.eyJ0ZWNoIjoiYm9iIn0.c2lnbmF0dXJlLXZhbHVl ok', /st2\.eyJ0/],
     ['hash $2b$10$abcdefghijklmnopqrstuuJ8zVb3u5v8jK0lq9WcF8m1rN2pQ4sT6 stored', /\$2b\$10\$abcdef/],
     ['body {"pin":"4321","branch_id":"br-1"}', /4321/],
-    ['verify pin=0099 for till', /0099/],
+    ['verify pin=0099 for POS', /0099/],
     ['the PIN 7788 was wrong', /7788/],
     ['config {"node_secret":"K7Q2-XM4P","node_url":"https://192.168.1.5:4100"}', /K7Q2-XM4P/],
     ['access_code: ABCD-1234 shown', /ABCD-1234/],
@@ -318,7 +318,7 @@ console.log('\n4. A lazy screen that cannot load says so (A517 follow-up)\n');
   const React = require('react');
   const { renderToStaticMarkup, renderToPipeableStream } = require('react-dom/server');
   const html = renderToStaticMarkup(React.createElement(SB.ScreenLoadFailed, { onRetry() {}, onBack() {} }));
-  ok('"This screen could not load — Retry / Back to the till"', /This screen could not load/.test(html) && />Retry</.test(html) && />Back to the till</.test(html));
+  ok('"This screen could not load — Retry / Back to the till"', /This screen could not load/.test(html) && />Retry</.test(html) && />Back to the POS</.test(html));
   ok('…no Back where there is nowhere to go (setup)', !/screen-back/.test(renderToStaticMarkup(React.createElement(SB.ScreenLoadFailed, { onRetry() {} }))));
   const logged = [];
   globalThis.window = { swiftpos: { logError: (m) => logged.push(m) }, location: { reload() {} } };
@@ -377,7 +377,7 @@ console.log('\n5. The update bar: one tap for back office, no PIN\n');
   const banner = read('src/renderer/pages/UpdateBanner.tsx');
   ok('the bar: "Restart & update now" only with canRestart; no PIN box; says it installs on close or when idle; nothing about the day',
     /\{canRestart && \([\s\S]{0,300}Restart &amp; update now/.test(banner) && !/type="password"/.test(banner) && !/close the day/i.test(banner.replace(/\/\*[\s\S]*?\*\//g, ''))
-    && /installs when ZapTill is closed, or by itself when the till is idle/.test(banner));
+    && /installs when ZapTill is closed, or by itself when the POS is idle/.test(banner));
   ok('App gives the button to back office only', /<UpdateBanner [^>]*canRestart=\{backOffice\(staff\)\}/.test(read('src/renderer/App.tsx')));
 }
 

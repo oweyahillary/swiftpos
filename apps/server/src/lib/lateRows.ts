@@ -67,7 +67,7 @@ export async function settleLateRows(businessId: string, shiftIds: Array<string 
 
       const oldVariance = s.cash_variance === null || s.cash_variance === undefined ? null : r2(Number(s.cash_variance));
       if (variance !== null && variance !== oldVariance) {
-        const till = s.terminal_code || 'A till';
+        const till = s.terminal_code || 'A POS';
         await notifyOwner(businessId, s.branch_id ?? null, 'late_rows_after_close',
           `${till}: a closed drawer's difference changed`,
           `${till} sent ${what} after its drawer (shift ${id.slice(0, 8)}) was closed. Expected cash is now ${kes(after)} (was ${before === null ? 'not set' : kes(before)}); ` +

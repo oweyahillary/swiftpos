@@ -759,7 +759,7 @@ function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
     ] as ReportSheet[]),
     ...(diffs.length === 0 ? [] : [
       { name: 'Offline Price Differences',
-        columns: [col('order_number', 'Order'), money('catalogue_total', 'Catalogue price'), money('till_total', 'Till charged'), money('difference', 'Loss'), col('reason', 'Why'), col('flag', 'Flag'), col('time', 'Sold')],
+        columns: [col('order_number', 'Order'), money('catalogue_total', 'Catalogue price'), money('till_total', 'POS charged'), money('difference', 'Loss'), col('reason', 'Why'), col('flag', 'Flag'), col('time', 'Sold')],
         rows: diffs.map(d => ({ ...d, catalogue_total: Number(d.catalogue_total), till_total: Number(d.till_total), difference: Number(d.difference),
           flag: d.suspicious ? 'Over half the price' : '', time: localStamp(d.sold_at ?? d.created_at) })) },
     ] as ReportSheet[]),
@@ -855,7 +855,7 @@ function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
             </p>
           </div>
           <p className="px-4 pt-3 text-xs text-gray-500 dark:text-gray-400">
-            Sold on a till while offline, at the till's price; the menu price was different when the sale reached the cloud.
+            Sold on a POS while offline, at the POS's price; the menu price was different when the sale reached the cloud.
             The sale is kept as the customer paid it — the difference is counted as a loss.
           </p>
           <div className="overflow-x-auto">
@@ -864,7 +864,7 @@ function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
                 <tr>
                   <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Order</th>
                   <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Menu price</th>
-                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Till charged</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>POS charged</th>
                   <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Loss</th>
                   <th className={`text-left text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Why</th>
                   <th className={`text-right text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>Sold</th>
@@ -886,7 +886,7 @@ function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
                   </tr>
                   <MoreRow open={more.isOpen(`pd-${d.id}`)} colSpan={2} items={[
                     ['Menu price', fmt.money(Number(d.catalogue_total), currency, { blank: '—' })],
-                    ['Till charged', fmt.money(Number(d.till_total), currency, { blank: '—' })],
+                    ['POS charged', fmt.money(Number(d.till_total), currency, { blank: '—' })],
                     ['Why', d.reason],
                     ['Sold', fmt.dateTime(d.sold_at ?? d.created_at)],
                   ]} />

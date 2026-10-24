@@ -333,12 +333,12 @@ router.get('/sales/count', requireAnyPermission('customers.credit', 'shifts.clos
  *   customers.credit (no tillScope check is asked for). A replay never overturns a decided sale.
  */
 const personGate = (req: any, res: any, next: any) => {
-  if (req.isTill) { res.status(403).json({ error: "A till sends a manager's decision as a replay.", code: 'TILL_SENDS_REPLAY' }); return; }
+  if (req.isTill) { res.status(403).json({ error: "A POS sends a manager's decision as a replay.", code: 'TILL_SENDS_REPLAY' }); return; }
   creditKey(req, res, next);
 };
 const tillGate = (req: any, res: any, next: any) => {
   if (req.isTill === true && !!req.deviceId) { next(); return; }
-  res.status(403).json({ error: "Only a till sends a replay — decide with your own sign-in.", code: 'REPLAY_IS_THE_TILLS' });
+  res.status(403).json({ error: "Only a POS sends a replay — decide with your own sign-in.", code: 'REPLAY_IS_THE_TILLS' });
 };
 const decide = (fixed?: CreditDecision) => async (req: any, res: any) => {
   const decision: CreditDecision = fixed ?? (req.body?.decision === 'dispute' ? 'dispute' : req.body?.decision === 'confirm' ? 'confirm' : (null as unknown as CreditDecision));

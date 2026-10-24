@@ -28,7 +28,7 @@ const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: st
   CLOUD_TRIAL_ENDED: {
     icon:  '⏳',
     title: 'Your cloud trial has ended',
-    body:  'Your one-month cloud trial is over. Contact ZapTill to keep the web dashboard. Your tills keep working as before.',
+    body:  'Your one-month cloud trial is over. Contact ZapTill to keep the web dashboard. Your points of sale keep working as before.',
   },
   // A584: unpaid 7 days after the due date — the plain words, no blame, no dates (lib/cloudPaused.ts).
   CLOUD_ACCESS_PAUSED: {

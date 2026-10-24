@@ -332,7 +332,7 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
     headers: { Authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(10_000),
   });
   let token = d.token();
-  if (!cloud || !token) return say({ decision: 'unreachable', approved: null, reason: `not checked: ${!cloud ? 'no cloud address' : 'this till is not signed in to the cloud'}` });
+  if (!cloud || !token) return say({ decision: 'unreachable', approved: null, reason: `not checked: ${!cloud ? 'no cloud address' : 'this POS is not signed in to the cloud'}` });
   let approved: string | null = null;
   try {
     let res = await ask(token);
@@ -602,7 +602,7 @@ export function createUpdateLoop(d: UpdateLoopDeps) {
     quietAsks = 0;
     const held = heldNewer(s);
     if (!r.newer || (held && r.version && compareVersions(r.version, held) <= 0)) return;
-    d.log(`the branch server holds ${r.version} (this till runs ${d.running}${held ? `, has ${held} downloaded` : ''}) — checking now`);
+    d.log(`the branch server holds ${r.version} (this POS runs ${d.running}${held ? `, has ${held} downloaded` : ''}) — checking now`);
     await check('the branch server holds a newer version');
   }
 
@@ -951,8 +951,8 @@ export function startupInstallPlan(s: StartupInstallInput): { install: boolean; 
     return no(`the approved version is now ${s.cloudApproved} — ${v} will not be installed`, true);
   }
   if (!s.installerExists) return no(`the downloaded installer of ${v} is no longer on this machine — the next check downloads it again`);
-  if (s.server && !s.shareReady) return no(`waiting: the branch's copy of ${v} for the tills is not ready yet`);
-  return { install: true, reason: `${v} is downloaded and approved — installing it before ${s.server ? 'this server serves the branch' : s.quiet ? 'anyone opens the till (quietly, at Windows sign-in)' : 'the till opens'}` };
+  if (s.server && !s.shareReady) return no(`waiting: the branch's copy of ${v} for the points of sale is not ready yet`);
+  return { install: true, reason: `${v} is downloaded and approved — installing it before ${s.server ? 'this server serves the branch' : s.quiet ? 'anyone opens the POS (quietly, at Windows sign-in)' : 'the POS opens'}` };
 }
 
 export interface StartupInstallDeps {
@@ -1012,7 +1012,7 @@ export async function runStartupInstall(d: StartupInstallDeps): Promise<{ instal
   const quiet = input.quiet === true;
   const byHand = !quiet && input.openedByHand === true && !input.signInStart;
   if (quiet && !(await d.task().catch(() => false))) {
-    const why = 'no ZapTill Updater task on this PC — Windows would ask for permission and nobody may be at the till';
+    const why = 'no ZapTill Updater task on this PC — Windows would ask for permission and nobody may be at the POS';
     d.log(`start-up install: ${v} not installed at Windows sign-in: ${why}; it installs the next time ZapTill is opened (Windows will ask)`);
     return { installing: false, reason: why };
   }
@@ -1336,7 +1336,7 @@ export function initAutoUpdate(): void {
       viaTask: async (v, relaunch) => {
         const s = readStaged();
         const r = await requestTaskInstall(defaultTaskDeps(), { version: v, installerPath: s?.installerPath ?? '', relaunch, timeoutMs: 90_000 });
-        if (r.ok) { taskInstallStarted = true; noteUpdate(`the updater task checked ${v} against the official release — ZapTill closes now and ${relaunch ? 'starts again' : 'stays closed (a till at Windows sign-in: the next open runs the new version)'} after the install`); }
+        if (r.ok) { taskInstallStarted = true; noteUpdate(`the updater task checked ${v} against the official release — ZapTill closes now and ${relaunch ? 'starts again' : 'stays closed (a POS at Windows sign-in: the next open runs the new version)'} after the install`); }
         return r;
       },
       // A546: a till opened by hand — a small screen while it installs (somebody is there), never at a quiet sign-in.
@@ -1429,6 +1429,6 @@ export function initAutoUpdate(): void {
   onShareWanted(() => {
     if (Date.now() - lastAsked < 5 * 60_000) return;
     lastAsked = Date.now();
-    void loop.check('a till asked for a version this server does not hold');
+    void loop.check('a POS asked for a version this server does not hold');
   });
 }

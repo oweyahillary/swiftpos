@@ -10,7 +10,7 @@ export const PAUSED_SENTENCE = `${PAUSED_TITLE}. ${PAUSED_BODY}`;
 
 export function pausedWords(code: PausedCode): { title: string; body: string } {
   if (code === 'CLOUD_TRIAL_ENDED') {
-    return { title: 'Your cloud trial has ended', body: 'Your one-month cloud trial is over. Call ZapTill on 0717 675 635 to keep the web dashboard. Your tills keep working as before.' };
+    return { title: 'Your cloud trial has ended', body: 'Your one-month cloud trial is over. Call ZapTill on 0717 675 635 to keep the web dashboard. Your points of sale keep working as before.' };
   }
   return { title: PAUSED_TITLE, body: PAUSED_BODY };
 }

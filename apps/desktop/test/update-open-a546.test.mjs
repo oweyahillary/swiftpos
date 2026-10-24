@@ -56,12 +56,12 @@ const L = require(path.join(dist, 'localDb.js'));
 L.getLocalDb();
 const C = require(path.join(dist, 'deviceConfig.js'));
 C.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1', device_id: 'dev-T1', device_role: 'till',
-  terminal_code: 'T1', device_name: 'Till 1', configured: true });
+  terminal_code: 'T1', device_name: 'POS 1', configured: true });
 const U = require(path.join(dist, 'autoUpdate.js'));
 const S = require(path.join(dist, 'lowImpactStart.js'));
 
 // ── 1. The gate: a till's sign-in launch goes on only with an update waiting ───────────────────────────────────────────
-console.log('\n1. The gate (a till\'s sign-in launch)\n');
+console.log('\n1. The gate (a POS\'s sign-in launch)\n');
 {
   const G = (argv, o) => S.gateDecision(['ZapTill.exe', ...argv], { server: false, quitByHand: false, ...o });
   ok('a till\'s sign-in launch with an update waiting goes on (till-install)', G(['--at-login'], { updateWaiting: true }) === 'till-install');
@@ -111,7 +111,7 @@ const openIn = (o = {}) => ({ signInStart: false, updatedLaunch: false, running:
   triedVersion: null, server: false, shareReady: true, openedByHand: true, ...o });
 {
   const P = (i) => U.startupInstallPlan(i);
-  ok('a till opened by hand: install first', P(openIn()).install === true && /before the till opens/.test(P(openIn()).reason), P(openIn()).reason);
+  ok('a till opened by hand: install first', P(openIn()).install === true && /before the POS opens/.test(P(openIn()).reason), P(openIn()).reason);
   ok('a branch server opened by hand: unchanged (A541 — no install)', P(openIn({ server: true })).install === false);
   ok('a start by hand that is not "opened by hand" (e.g. the restart task): no install', P(openIn({ openedByHand: false })).install === false);
   ok('opened by hand: once per version, approved, newer, not after an update', P(openIn({ triedVersion: '1.0.20' })).install === false

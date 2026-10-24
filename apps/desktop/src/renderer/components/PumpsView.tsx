@@ -72,7 +72,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
         {pumps.length === 0 ? (
           <div className="text-center text-gray-300 text-sm mt-12 px-6">
             No pumps configured. Add pumps in the dashboard (Settings → Pumps),
-            then press Sync on the till.
+            then press Sync on the POS.
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">

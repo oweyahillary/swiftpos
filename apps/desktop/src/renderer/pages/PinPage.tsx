@@ -146,7 +146,7 @@ export default function PinPage({ businessName, onStaffLogin, onTechUnlock, onHe
       const j = session.joinedDrawer;
       if (j && !j.sameCashier) {
         const id = await posApi.config.identity().catch(() => null);
-        const till = id?.terminalCode ? `${id.terminalCode}${id.deviceName ? ` — ${id.deviceName}` : ''}` : (id?.deviceName || 'This till');
+        const till = id?.terminalCode ? `${id.terminalCode}${id.deviceName ? ` — ${id.deviceName}` : ''}` : (id?.deviceName || 'This POS');
         const at = new Date(j.openedAt);
         const since = isNaN(at.getTime()) ? '' : `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
         setJoined({ session, till, who: j.openedByName ?? 'another cashier', since });

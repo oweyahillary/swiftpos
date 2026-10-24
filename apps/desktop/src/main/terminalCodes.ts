@@ -97,6 +97,6 @@ export function terminalCodeVerdict(i: CodeCheckInput): CodeVerdict {
   const taken = inUse.includes(code);
   return {
     ok: !taken, taken, inUse, suggestion, source,
-    message: taken ? `${code} is already used by another till at this branch (in use: ${inUse.join(', ')}). Use ${suggestion}.` : null,
+    message: taken ? `${code} is already used by another POS at this branch (in use: ${inUse.join(', ')}). Use ${suggestion}.` : null,
   };
 }

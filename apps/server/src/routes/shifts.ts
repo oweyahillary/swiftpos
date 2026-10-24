@@ -529,7 +529,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
       const list = (unpaid ?? []).slice(0, 4).map((o: { order_number: string }) => `#${o.order_number}`).join(', ');
       const mayOverride = !req.isTill && (req.isOwner === true || can(req, 'shifts.close_day'));
       if (mayOverride && req.body?.ack_unpaid === true) {
-        unpaidNote = `Closed on the web with ${unpaid!.length} unpaid kitchen order${unpaid!.length === 1 ? '' : 's'} still open (${list}) — they stay open on the till.`;
+        unpaidNote = `Closed on the web with ${unpaid!.length} unpaid kitchen order${unpaid!.length === 1 ? '' : 's'} still open (${list}) — they stay open on the POS.`;
       } else {
         res.status(409).json({
           error: `${unpaid!.length} order${unpaid!.length === 1 ? ' was' : 's were'} sent to the kitchen and not paid (${list}). ` +
@@ -606,7 +606,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   // difference and say where it came from instead.
   let closeNotes: string | null = notes ?? null;
   if (req.surface === 'desktop' && Math.round(cashVariance * 100) !== 0 && !(notes && notes.trim())) {
-    closeNotes = 'Variance recorded when the till\'s close reached the cloud — figures on this till moved after the count.';
+    closeNotes = 'Variance recorded when the POS\'s close reached the cloud — figures on this POS moved after the count.';
   } else if (Math.round(cashVariance * 100) !== 0 && !(notes && notes.trim())
              // 0.6.27: a blind close ('blind_shift_close', a cashier) — they could not see the variance; the manager
              // explains it at confirmation.
@@ -645,7 +645,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   if (!closed) { await alreadyClosed(req, res, id); return; }
 
   // A342: the till's count closed the web's shift(s) on this till too — recorded as counted, inside that drawer, no variance.
-  const tillLabel = shift.terminal_code || 'the till';
+  const tillLabel = shift.terminal_code || 'the POS';
   for (const sib of siblings) {
     const { error: sibErr } = await supabase
       .from('shifts')
@@ -752,7 +752,7 @@ async function confirmShiftRoute(req: Request, res: Response): Promise<void> {
 
   if (req.surface === 'desktop' && typeof req.body?.confirmed_by === 'string') {
     // The till's replay: its manager was verified by PIN on the till.
-    if (!sameTill) { res.status(403).json({ error: 'Only the till that holds this shift can send its confirmation.' }); return; }
+    if (!sameTill) { res.status(403).json({ error: 'Only the POS that holds this shift can send its confirmation.' }); return; }
     const { rows, ownerId } = await confirmerRows(req.businessId!);
     const row = rows.find((r) => r.id === req.body.confirmed_by);
     if (!row || !mayConfirm(row, ownerId)) {
@@ -931,7 +931,7 @@ async function recordTillCount(req: Request, shift: Record<string, any>): Promis
   const recorded = shift.closing_float === null || shift.closing_float === undefined ? null : Number(shift.closing_float);
   if (recorded !== null && Math.round(recorded * 100) === Math.round(count * 100)) return false;   // the same count — its own close
   const at = cleanCloseTime(req.body?.closed_at, shift.opened_at ?? null);
-  const till = shift.terminal_code || 'The till';
+  const till = shift.terminal_code || 'The POS';
   const expected = shift.expected_cash === null || shift.expected_cash === undefined ? null : Number(shift.expected_cash);
   const note = `${till} counted ${count} at ${at.slice(0, 16).replace('T', ' ')} UTC after the drawer was closed on the web` +
     `${recorded === null ? ' (closed uncounted)' : ` (the web count was ${recorded})`}${expected === null ? '' : ` — expected ${expected}`}.`;
@@ -945,7 +945,7 @@ async function recordTillCount(req: Request, shift: Record<string, any>): Promis
   await notifyOwner(req.businessId!, shift.branch_id ?? null, 'till_count_after_close',
     `${till} counted ${kes(count)} after the web closed the drawer`,
     `${till} counted ${kes(count)} for shift ${String(shift.id).slice(0, 8)}, which was ${recorded === null ? 'force-closed uncounted' : `closed on the web with ${kes(recorded)}`}` +
-    `${expected === null ? '' : `; it expected ${kes(expected)} (a difference of ${kes(count - expected)} by the till's count)`}. Check the drawer and confirm it.`);
+    `${expected === null ? '' : `; it expected ${kes(expected)} (a difference of ${kes(count - expected)} by the POS's count)`}. Check the drawer and confirm it.`);
   return true;
 }
 
@@ -963,7 +963,7 @@ async function recordTillConfirmation(req: Request, shift: Record<string, any>, 
   const { error } = await supabase.from('shifts').update({ till_confirmed_methods: counts })
     .eq('id', shift.id).eq('business_id', req.businessId).is('till_confirmed_methods', null);
   if (error) { console.error('[shifts] A522 the till\'s confirmation was not kept:', error.message); return false; }
-  const till = shift.terminal_code || 'The till';
+  const till = shift.terminal_code || 'The POS';
   const line = Object.entries(counts).map(([m, v]) => `${m} ${kes(v)}`).join(', ');
   await notifyOwner(req.businessId!, shift.branch_id ?? null, 'till_confirm_after_close',
     `${till}: a manager confirmed different counts after the web did`,
@@ -1453,7 +1453,7 @@ router.get('/branch-report', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/:id/zreport', async (req, res) => {
   // A490: reports.shifts or shifts.confirm (never the till's own sign-in — a manager signs in).
-  if (req.isTill || !can(req, 'reports.shifts', 'shifts.confirm')) { res.status(403).json({ error: 'A manager signs in to see another till\'s shift.', code: 'MANAGER_ONLY' }); return; }
+  if (req.isTill || !can(req, 'reports.shifts', 'shifts.confirm')) { res.status(403).json({ error: 'A manager signs in to see another POS\'s shift.', code: 'MANAGER_ONLY' }); return; }
   const { data: shift, error } = await supabase.from('shifts').select('*')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
   if (error) { sendError(res, error); return; }

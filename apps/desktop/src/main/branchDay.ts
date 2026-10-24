@@ -104,7 +104,7 @@ export async function cloudBranchDay(range: ReportRange): Promise<BranchDay> {
   // A480: the reason is said to a manager signed in on this till's own check (no cloud token yet) — "sign in as a manager"
   // read as an error to someone who is one. Unlocking (or the 30-s upgrade) brings the cloud's view back by itself.
   const token = readStaffTokens().token;
-  if (!token) throw new Error('signed in on this till — the cloud view returns once the sign-in reaches the cloud');
+  if (!token) throw new Error('signed in on this POS — the cloud view returns once the sign-in reaches the cloud');
   const q = new URLSearchParams({
     from: range.from, to: range.to,
     // Minutes east of UTC, so the cloud draws the hours as this till does (Kenya: 180).
@@ -115,14 +115,14 @@ export async function cloudBranchDay(range: ReportRange): Promise<BranchDay> {
     headers: { Authorization: `Bearer ${token}`, 'x-device-id': cfg?.device_id ?? '', ...(cfg?.branch_id ? { 'x-branch-id': cfg.branch_id } : {}) },
   }), 10_000);
   if (res.status === 404) throw new Error('The cloud is not updated for this yet');
-  if (res.status === 403) throw new Error('Only a manager sees every till');
+  if (res.status === 403) throw new Error('Only a manager sees every POS');
   if (!res.ok) throw new Error(`The cloud did not answer (HTTP ${res.status})`);
   const body = await res.json() as any;
   const own = cfg?.device_id ?? null;
   const ctlLevied = Number(cfg?.ctl_rate ?? 0) > 0 || Number(body.summary?.totalCtl ?? 0) > 0;
   return {
     source: 'cloud',
-    scopeLabel: 'All tills at this branch',
+    scopeLabel: 'All points of sale at this branch',
     fallbackReason: null,
     localCoversBranch: getReportScope().coversBranch,
     summary: { ...body.summary, ctlLevied },
@@ -150,7 +150,7 @@ export function localBranchDay(range: ReportRange, fallbackReason: string | null
      GROUP BY o.device_id
   `).all(range.from, range.to) as Array<{ device_id: string | null; code: string | null; orders: number; revenue: number }>)
     .map(t => ({
-      device_id: t.device_id, label: t.code || (t.device_id === own ? 'This till' : 'Till'),
+      device_id: t.device_id, label: t.code || (t.device_id === own ? 'This POS' : 'POS'),
       this_till: t.device_id === own, orders: Number(t.orders), revenue: money2(Number(t.revenue)),
     })).sort((a, b) => b.revenue - a.revenue);
 
@@ -180,7 +180,7 @@ export function localBranchDay(range: ReportRange, fallbackReason: string | null
     if (state === 'open') { try { expected = computeZReport(s.id).totals.expectedCash; } catch { expected = null; } }
     return {
       id: s.id, device_id: s.device_id ?? null,
-      till: s.terminal_code || (s.device_id === own ? 'This till' : 'Till'),
+      till: s.terminal_code || (s.device_id === own ? 'This POS' : 'POS'),
       this_till: s.device_id === own,
       cashier: s.cashier || 'Unknown',
       opened_at: s.opened_at, closed_at: s.closed_at ?? null, state,
@@ -211,7 +211,7 @@ export function localBranchDay(range: ReportRange, fallbackReason: string | null
   return {
     source: 'local',
     scopeLabel: scope.coversBranch
-      ? 'What this branch server holds — every till that has synced to it'
+      ? 'What this branch server holds — every POS that has synced to it'
       : scope.scopeLabel,
     fallbackReason,
     localCoversBranch: scope.coversBranch,

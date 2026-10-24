@@ -36,7 +36,7 @@ export default function ServerDistributionPanel() {
   }, []);
   if (!d || d.role !== 'server') return null;
   const parts = LABEL.filter(([k]) => d.waiting[k] > 0)
-    .map(([k, l]) => `${d.waiting[k]} ${l}${k === 'orders' && d.waiting.ordersFromTills ? ` (${d.waiting.ordersFromTills} from this branch's tills)` : ''}`);
+    .map(([k, l]) => `${d.waiting[k]} ${l}${k === 'orders' && d.waiting.ordersFromTills ? ` (${d.waiting.ordersFromTills} from this branch's points of sale)` : ''}`);
   const late = (d.oldestAgeMs ?? 0) > 30 * 60_000;
   return (
     <div className="mt-3 text-[11px]" data-testid="server-distribution">

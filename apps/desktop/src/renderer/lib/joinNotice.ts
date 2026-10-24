@@ -18,8 +18,8 @@ export function joinWaitNotice(tillName: string, srv: JoinServer, minutesLeft: n
     title: 'Now go to the branch server and press Allow',
     steps: [
       `Go to ${where}${srv.business ? `, ${srv.business}` : ''}.`,
-      `On its screen: "A till wants to join this branch server" — with this till's name, "${tillName}". If ZapTill is hidden, click its icon by the clock, or the notification.`,
-      'Press Allow. This till carries on by itself once it is allowed.',
+      `On its screen: "A POS wants to join this branch server" — with this POS's name, "${tillName}". If ZapTill is hidden, click its icon by the clock, or the notification.`,
+      'Press Allow. This POS carries on by itself once it is allowed.',
     ],
     footer: left > 0
       ? `The request waits ${left} more minute${left === 1 ? '' : 's'}.`

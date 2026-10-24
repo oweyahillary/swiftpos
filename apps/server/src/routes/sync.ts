@@ -38,9 +38,9 @@ function judgeRowError(table: string, id: string, err: PgErr): { id: string; cod
 export function duplicateDayCode(err: PgErr & { details?: string }): { code: string; error: string } {
   const text = `${err?.message ?? ''} ${err?.details ?? ''}`;
   if (/business_days_till_date_uniq/.test(text)) {
-    return { code: 'duplicate_business_date', error: 'This till already has a trading day for that date on the cloud (under another id).' };
+    return { code: 'duplicate_business_date', error: 'This POS already has a trading day for that date on the cloud (under another id).' };
   }
-  return { code: 'duplicate_open_day', error: 'This till already has an open trading day. It must be closed before this one can sync.' };
+  return { code: 'duplicate_open_day', error: 'This POS already has an open trading day. It must be closed before this one can sync.' };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ router.post('/push', async (req, res) => {
   // A494: a till's push — its own session, or a person's PIN sign-in on it (the till pushes with whoever is signed in,
   // syncEngine pushAuthHeaders). A browser session (the dashboard, the web POS) never writes drawers and days here.
   if (!req.isTill && !(req.pinSignIn && req.surface === 'desktop')) {
-    res.status(403).json({ error: 'Only a till sends its drawers and days here.', code: 'TILL_ONLY' });
+    res.status(403).json({ error: 'Only a POS sends its drawers and days here.', code: 'TILL_ONLY' });
     return;
   }
   let shifts   = Array.isArray(req.body?.shifts)   ? req.body.shifts   : [];
@@ -91,7 +91,7 @@ router.post('/push', async (req, res) => {
   const clientSchema = Number(req.header('X-Schema-Version') ?? 0) || 0;
   if (clientSchema && clientSchema < HARD_MIN_DESKTOP_SCHEMA) {
     res.status(426).json({
-      error: `This till is running schema ${clientSchema}; this server needs at least ` +
+      error: `This POS is running schema ${clientSchema}; this server needs at least ` +
              `${HARD_MIN_DESKTOP_SCHEMA}. Install the current ZapTill build on this terminal.`,
       code: 'desktop_upgrade_required',
     });
@@ -212,7 +212,7 @@ router.post('/push', async (req, res) => {
         behind: true,
         client: clientSchema,
         required: REQUIRED_DESKTOP_SCHEMA,
-        message: `This till is on schema ${clientSchema || 'unknown'}; current is ` +
+        message: `This POS is on schema ${clientSchema || 'unknown'}; current is ` +
                  `${REQUIRED_DESKTOP_SCHEMA}. It is still syncing, but install the ` +
                  `latest build when you can.`,
       }

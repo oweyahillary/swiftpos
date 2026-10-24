@@ -224,7 +224,7 @@ export function openShift(opening_float = 0, drawerLabel?: string | null): any {
   // open-shift check so the message names the real obstacle rather than sending
   // the cashier to close a shift that is not the problem.
   const gate = checkStaleDay();
-  if (!gate.canTrade) throw new Error(gate.reason ?? 'This till cannot trade yet');
+  if (!gate.canTrade) throw new Error(gate.reason ?? 'This POS cannot trade yet');
 
   const existing = getOpenShift();
   if (existing) {
@@ -350,7 +350,7 @@ export function recordExpense(e: ExpenseInput): { id: string; already?: boolean 
   let shift: any = null;
   if (e.shiftId) {
     shift = ownOpenShift(e.shiftId);
-    if (!shift) throw new Error('That shift is not open on this till');
+    if (!shift) throw new Error('That shift is not open on this POS');
   }
   const session = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
   const staff   = db.prepare(`SELECT branch_id, staff_id FROM staff_session WHERE id=1`).get() as any;
@@ -896,7 +896,7 @@ export function confirmShift(shiftId: string, confirmer: { id: string; name: str
                              reasonsIn: unknown = null): Confirmation {
   const db = getLocalDb();
   const shift = db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shiftId) as any;
-  if (!shift || (shift.device_id ?? '') !== (getDeviceConfig()?.device_id ?? '')) throw new Error('Shift not found on this till');
+  if (!shift || (shift.device_id ?? '') !== (getDeviceConfig()?.device_id ?? '')) throw new Error('Shift not found on this POS');
   if (shift.status === 'open') throw new Error('The cashier has not closed this shift yet.');
   if (shift.confirmed_at) throw new Error('This shift is already confirmed.');
   const given = cleanMethods(counts);

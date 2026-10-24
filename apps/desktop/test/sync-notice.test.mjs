@@ -73,10 +73,10 @@ ok('waiting → a quiet notice with the count, last synced and Sync now', () => 
 });
 ok('refusals first (red, the reason) — this morning\'s case; then failures (red, Retry)', () => {
   const s = { online: true, pendingCount: 2, failedCount: 1, failedReason: 'bad date', parkedCount: 2,
-    parkedReason: 'This till already has an open trading day. It must be closed before this one can sync.', lastSyncedAt: null };
+    parkedReason: 'This POS already has an open trading day. It must be closed before this one can sync.', lastSyncedAt: null };
   const n = N.syncNotice(s, NOW);
   assert.equal(n.tone, 'alert'); assert.equal(n.action, 'sync');
-  assert.equal(n.text, 'The cloud refused 2 records: This till already has an open trading day. It must be closed before this one can sync. · last synced never');
+  assert.equal(n.text, 'The cloud refused 2 records: This POS already has an open trading day. It must be closed before this one can sync. · last synced never');
   const f = N.syncNotice({ ...s, parkedCount: 0 }, NOW);
   assert.deepEqual(f, { tone: 'alert', action: 'retry-failed', text: '1 sale failed to sync: bad date · last synced never' });
 });
@@ -84,14 +84,14 @@ ok('A448: the branch server refusing this till’s access code comes first — r
   const n = N.syncNotice({ online: true, pendingCount: 3, failedCount: 1, parkedCount: 1, lastSyncedAt: null,
     nodeRefused: { status: 401, since: '2026-10-12T07:00:00Z' } }, NOW);
   assert.equal(n.tone, 'alert');
-  assert.match(n.text, /^The branch server refused this till's access code — sales are kept on this till/);
+  assert.match(n.text, /^The branch server refused this POS's access code — sales are kept on this POS/);
   assert.match(n.text, /Branch access code/);
   assert.equal(N.syncNotice({ online: true, pendingCount: 0, failedCount: 0, nodeRefused: null }, NOW), null);
 });
 // A501: the refusal is named by its reason — a device-key, branch or encryption refusal is not an access-code problem.
 ok('A501: the refusal names its reason (device key, branch, encryption) — never "access code" for those', () => {
   const t = (reason) => N.syncNotice({ online: true, pendingCount: 0, failedCount: 0, nodeRefused: { status: 401, since: '2026-10-12T07:00:00Z', reason } }, NOW).text;
-  assert.match(t('device_key'), /does not recognise this till \(its device key\)/);
+  assert.match(t('device_key'), /does not recognise this POS \(its device key\)/);
   assert.doesNotMatch(t('device_key'), /access code/);
   assert.match(t('branch'), /another branch/);
   assert.doesNotMatch(t('branch'), /access code/);
@@ -115,8 +115,8 @@ ok('A501: the branch-server backlog reaches the manager — refused records red;
 });
 ok('the Z-report note: refused drawer, sales not up yet, or nothing', () => {
   assert.equal(N.zBackupNote({ sales: 0, drawerRefused: true }), 'NOT BACKED UP: the cloud refused this shift — a manager must check the sync notice.');
-  assert.equal(N.zBackupNote({ sales: 2, drawerRefused: false }), 'NOT BACKED UP YET: 2 sales of this shift are only on this till until it syncs.');
-  assert.equal(N.zBackupNote({ sales: 1, drawerRefused: false }), 'NOT BACKED UP YET: 1 sale of this shift is only on this till until it syncs.');
+  assert.equal(N.zBackupNote({ sales: 2, drawerRefused: false }), 'NOT BACKED UP YET: 2 sales of this shift are only on this POS until it syncs.');
+  assert.equal(N.zBackupNote({ sales: 1, drawerRefused: false }), 'NOT BACKED UP YET: 1 sale of this shift is only on this POS until it syncs.');
   assert.equal(N.zBackupNote({ sales: 0, drawerRefused: false }), null);
   assert.equal(N.zBackupNote(undefined), null);
 });

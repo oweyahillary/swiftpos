@@ -118,7 +118,7 @@ export async function checkDeviceBranch(
             code: 'terminal_code_conflict',
             boundBranchId: device.branch_id,
             error:
-              'This terminal cannot move to that branch yet: another till there already uses the ' +
+              'This terminal cannot move to that branch yet: another POS there already uses the ' +
               'same terminal code. Give one of them a different code first, then authorise the move again.',
           };
         }
@@ -141,7 +141,7 @@ export async function checkDeviceBranch(
       error:
         'This terminal is registered to a different branch. If it has been moved, a manager must ' +
         'authorise the change in Settings → Terminals before it can sell here. Nothing has been lost — ' +
-        'the sales are still on this till and will sync once the branch is corrected.',
+        'the sales are still on this POS and will sync once the branch is corrected.',
     };
   } catch (err: any) {
     console.warn('[deviceBinding] check failed, allowing through:', err?.message ?? err);

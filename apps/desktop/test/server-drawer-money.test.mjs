@@ -67,7 +67,7 @@ const H = global.__handlers;
 const mary = { id: 'u-mary', name: 'Mary' };
 const expected = (id) => S.computeZReport(id).totals.expectedCash;
 
-console.log('\nThe till records what the server sent, on its own books\n');
+console.log('\nThe POS records what the server sent, on its own books\n');
 signIn('u-amira', 'Amira', 'cashier');
 const sh = S.openShift(500);
 sale(sh.id, 'cash', 1000);
@@ -120,7 +120,7 @@ const peerShift = (state = 'open') => ({ id: 'sh-peer', cashier_name: 'Brian', o
   by_method: { cash: 100 }, expected: { cash: 300 }, methods: ['cash'], declared: null,
   cash: { opening_float: 200, cash_sales: 100, float_in: 0, float_out: 0, expenses: 0 }, confirmed: null });
 const peerReport = (shifts) => B.recordPeerState('dev-P', { business_date: '2026-10-13', day_open: true, open_drawer: { cashier_name: 'Brian' },
-  drawers_on_day: 0, cashiers_counted_total: 0, shifts, clock: now(), terminal: { code: 'T2', name: 'Bar till' } });
+  drawers_on_day: 0, cashiers_counted_total: 0, shifts, clock: now(), terminal: { code: 'T2', name: 'Bar POS' } });
 {
   global.__sent.length = 0;
   const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-S', shift_id: sh.id, kind: 'float_in', amount: 100, reason: 'top-up' });
@@ -141,7 +141,7 @@ let sentId;
   const ov = await H['branchClose:overview'](null);
   const peer = ov.tills.find((t) => t.device_id === 'dev-P');
   ok('the screen shows it waiting for the till, and the till by its name', peer?.money?.some((m) => m.id === r.instruction_id && m.status === 'pending'
-    && m.amount === 150 && m.kind === 'float_out' && m.shift_id === 'sh-peer' && m.note === 'banked') && peer.state.terminal.name === 'Bar till', JSON.stringify(peer?.money));
+    && m.amount === 150 && m.kind === 'float_out' && m.shift_id === 'sh-peer' && m.note === 'banked') && peer.state.terminal.name === 'Bar POS', JSON.stringify(peer?.money));
   const second = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'expense', amount: 40, description: 'Ice', payment_method: 'cash' });
   ok('a second one is its own instruction — the first is kept', second.ok && !!db.prepare(`SELECT 1 FROM node_instructions WHERE id = ?`).get(r.instruction_id)
     && B.collectInstructions('dev-P').filter((i) => i.kind === 'shift_money').length === 2);
@@ -163,7 +163,7 @@ let sentId;
   // A521 (#13, owner 2026-10-17: "never wait on an absent till … queue the rest for when it reconnects"): a till that is
   // off is no longer refused — the row waits for it (no 24-h expiry, Cancel until it is picked up), said plainly.
   ok('a till not heard from is queued for when it reconnects, said plainly (A521)',
-    r.ok === true && r.queued_offline === true && r.message === 'The till is not connected — this applies when it reconnects.', JSON.stringify(r));
+    r.ok === true && r.queued_offline === true && r.message === 'The POS is not connected — this applies when it reconnects.', JSON.stringify(r));
   await H['branchClose:cancelShiftMoney'](null, { instruction_id: r.instruction_id });
   peerReport([peerShift('awaiting')]);
   const c = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10 });
@@ -179,7 +179,7 @@ let sentId;
   ok('an expense needs a description', e.ok === false && /Description/.test(e.error ?? ''));
 }
 
-console.log('\nA plain till: unchanged\n');
+console.log('\nA plain POS: unchanged\n');
 DC.saveDeviceConfig({ device_role: 'till' });
 {
   const r = await H['branchClose:shiftMoney'](null, { device_id: 'dev-P', shift_id: 'sh-peer', kind: 'float_in', amount: 10 });
@@ -198,7 +198,7 @@ DC.saveDeviceConfig({ device_role: 'till' });
     ex?.shift_id === sh.id && ex.device_id === 'dev-S' && ex.approved_by === 'u-mary' && /^[0-9a-f-]{36}$/.test(ex.id) && expected(sh.id) === 1445, JSON.stringify(ex));
   S.closeShift(1445, 'counted', null, {});
   const r2 = B.executeShiftMoney({ row_id: 'r-late', shift_id: sh.id, kind: 'float_in', amount: 5, approver: mary });
-  ok('an instruction for a shift closed since is refused with the message', r2.ok === false && r2.error === 'That shift is closed on this till — record it on the shift now open', JSON.stringify(r2));
+  ok('an instruction for a shift closed since is refused with the message', r2.ok === false && r2.error === 'That shift is closed on this POS — record it on the shift now open', JSON.stringify(r2));
   const noShift = await H['expense:create'](null, { description: 'Paper', amount: 12, payment_method: 'cash' });
   ok('with no drawer open, an expense is paid outside any drawer (as before)', db.prepare(`SELECT shift_id FROM expenses WHERE id = ?`).get(noShift.id)?.shift_id === null);
 }
@@ -240,7 +240,7 @@ console.log('\nWired end to end (source)\n');
     tab.includes("const isServer = role === 'node' || role === 'office';") && tab.includes('{isServer && openDrawers.length > 0 && (')
     && tab.includes("s.state === 'open'") && tab.includes('Cash in / out</button>') && tab.includes('Expense</button>') && tab.includes('posApi.branchClose.shiftMoney('));
   ok('…with what was sent: waiting for the till (Cancel), recorded, refused with the reason',
-    tab.includes('waiting for the till') && tab.includes('>recorded<') && tab.includes('refused: {') && tab.includes('posApi.branchClose.cancelShiftMoney('));
+    tab.includes('waiting for the POS') && tab.includes('>recorded<') && tab.includes('refused: {') && tab.includes('posApi.branchClose.cancelShiftMoney('));
   const form = read('src/renderer/components/RecordExpenseForm.tsx');
   ok('Manager › Expenses: "Which drawer" only on the server; another till\'s goes to it, else as before',
     form.includes("if (c?.device_role !== 'node' && c?.device_role !== 'office') return;") && form.includes('{isServer && (drawers.length > 0 || shiftOpen) && (')

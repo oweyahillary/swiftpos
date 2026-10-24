@@ -906,8 +906,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
   // A348: approve one desktop version for this business (its tills update to it within the hour), or hold (null).
   async function setDesktopVersion(version) {
     const msg = version
-      ? `Approve desktop ${version} for ${detail?.name ?? 'this client'}? Their tills download it within the hour and install it the next time each till is closed.`
-      : `Hold desktop updates for ${detail?.name ?? 'this client'}? Their tills stay on the version they run now.`;
+      ? `Approve desktop ${version} for ${detail?.name ?? 'this client'}? Their points of sale download it within the hour and install it the next time each POS is closed.`
+      : `Hold desktop updates for ${detail?.name ?? 'this client'}? Their points of sale stay on the version they run now.`;
     if (!(await askConfirm(msg))) return;
     setSavingDesktop(true);
     try {
@@ -954,8 +954,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
 
   async function toggleThemes(enable) {
     const msg = enable
-      ? 'Enable themes? The client can then pick an app theme on the Branding page; their tills pick it up within about 20 seconds.'
-      : 'Disable themes? The client\'s tills return to the standard look within about 20 seconds. Their chosen theme is kept for later.';
+      ? 'Enable themes? The client can then pick an app theme on the Branding page; their points of sale pick it up within about 20 seconds.'
+      : 'Disable themes? The client\'s points of sale return to the standard look within about 20 seconds. Their chosen theme is kept for later.';
     if (!(await askConfirm(msg))) return;
     try {
       await req("PATCH", `/clients/${client.id}/features/themes`, {
@@ -1020,7 +1020,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
   // desktop-licensed (the server refuses otherwise). Batching mints N separate
   // single-use codes — it is NOT a reusable code.
   async function generateEnrolCode(branch) {
-    const ans = await askPrompt(`How many tills for ${branch.name}? (1–20)`, "1");
+    const ans = await askPrompt(`How many points of sale for ${branch.name}? (1–20)`, "1");
     if (ans === null) return;                                   // cancelled
     const count = Math.max(1, Math.min(20, parseInt(ans as string, 10) || 1));
     setEnrolBranch(branch.id); setEnrolResult(null); setEnrolError("");
@@ -1076,7 +1076,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
   async function toggleBranchStatus(b) {
     const closing = b.status !== "inactive";
     const msg = closing
-      ? `Close "${b.name}"? It is deactivated and hidden from the branch selector.${b.desktop_licensed ? " It still holds an active desktop licence — click Revoke to stop its tills and billing." : ""}`
+      ? `Close "${b.name}"? It is deactivated and hidden from the branch selector.${b.desktop_licensed ? " It still holds an active desktop licence — click Revoke to stop its points of sale and billing." : ""}`
       : `Reopen "${b.name}"? It becomes active again.`;
     if (!(await askConfirm(msg))) return;
     setClosingBranch(b.id);
@@ -1089,7 +1089,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
 
   // G4: revoke a device (e.g. a lost/stolen till) straight from the fleet console.
   async function revokeDevice(dev) {
-    if (!(await askConfirm(`Revoke "${dev.label}"? It is removed from the fleet and blocked on its next sync — it must re-enrol with a new code. Use this for a lost or stolen till.`))) return;
+    if (!(await askConfirm(`Revoke "${dev.label}"? It is removed from the fleet and blocked on its next sync — it must re-enrol with a new code. Use this for a lost or stolen POS.`))) return;
     try {
       await req("DELETE", `/clients/${client.id}/devices/${dev.id}`);
       setDevices(prev => prev.filter(x => x.id !== dev.id));
@@ -1163,10 +1163,10 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
   // one header with the facts that matter, then one tab per job — nothing above the tabs but what needs attention.
   const TABS = [
     ["overview", "Overview"],
-    ["branches", "Branches & tills"],
+    ["branches", "Branches & POS"],
     ["billing",  "Plan & billing"],
     ["features", "Features"],
-    ["tills",    "Tills & days"],   // A523: support closes a till's day or drawer for the client
+    ["tills",    "POS & days"],   // A523: support closes a till's day or drawer for the client
     ["updates",  "Desktop updates"],
     ["account",  "Owner & account"],
     ["notes",    `Notes${notes.length ? ` (${notes.length})` : ""}`],
@@ -1223,7 +1223,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
             Enrolment {enrolResult.codes.length === 1 ? "code" : `codes (${enrolResult.codes.length})`} — {enrolResult.branchName}
           </div>
           <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
-            Single-use. Expire {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Give each till the Business ID + one code.
+            Single-use. Expire {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Give each POS the Business ID + one code.
           </div>
           {[["Business ID", enrolResult.businessId],
             ...enrolResult.codes.map((c, i) => [enrolResult.codes.length > 1 ? `Code ${i + 1}` : "Code", c])
@@ -1268,7 +1268,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
           {(() => { const w = webPortalTile(d.cloud_trial, hasWebHosting); return fact("Web portal", w.text, TONE[w.tone], () => setTab("billing")); })()}
           {(() => { const p = planTile(activeSub, d.plan_label); return fact("Plan", p.text, p.tone === "ok" ? C.text : TONE[p.tone], () => setTab("billing")); })()}
           {fact("Branches", `${branches.length} · ${licensedCount} licensed`, C.text, () => setTab("branches"))}
-          {fact("Tills", `${devices.length} enrolled`, C.text, () => setTab("branches"))}
+          {fact("POS", `${devices.length} enrolled`, C.text, () => setTab("branches"))}
           {fact("Desktop version", d.desktop_approved_version ? `v${d.desktop_approved_version}` : "Held", d.desktop_approved_version ? C.text : "#f59e0b", () => setTab("updates"))}
           {fact("Outstanding", fmt(outstanding), outstanding > 0 ? "#fbbf24" : C.text, () => setTab("billing"))}
         </div>
@@ -1444,7 +1444,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>Branches</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>A branch needs a desktop licence before its tills can be enrolled.</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>A branch needs a desktop licence before its points of sale can be enrolled.</div>
                 </div>
                 <button onClick={() => { setBranchForm({ name: "", address: "", phone: "" }); setAddingBranch(v => !v); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>{addingBranch ? "Cancel" : "+ Add branch"}</button>
               </div>
@@ -1464,12 +1464,12 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
                     <div style={{ flex: 1, minWidth: 180, cursor: "pointer" }} onClick={() => openTills(b)}>
                       <div style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>{b.name}{b.is_main && <span style={{ fontSize: 10, color: C.accent, fontWeight: 600 }}>MAIN</span>}</div>
                       <div style={{ fontSize: 11, color: b.desktop_licensed ? "#34e5a0" : C.danger, marginTop: 2 }}>
-                        {b.desktop_licensed ? `✓ Licensed${b.desktop_licensed_at ? ` ${new Date(b.desktop_licensed_at).toLocaleDateString("en-KE")}` : ""}` : "✗ Not licensed — desktop POS blocked"} · {tills.length} till{tills.length === 1 ? "" : "s"}
+                        {b.desktop_licensed ? `✓ Licensed${b.desktop_licensed_at ? ` ${new Date(b.desktop_licensed_at).toLocaleDateString("en-KE")}` : ""}` : "✗ Not licensed — desktop POS blocked"} · {tills.length} POS
                       </div>
                     </div>
                     <StatusBadge status={b.status} />
-                    <button onClick={() => openTills(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Tills →</button>
-                    {b.desktop_licensed && <button disabled={enrolBranch === b.id} onClick={() => generateEnrolCode(b)} title="Mint a single-use enrolment code for a till on this branch" style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}>{enrolBranch === b.id ? "…" : "Enrol till"}</button>}
+                    <button onClick={() => openTills(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>POS →</button>
+                    {b.desktop_licensed && <button disabled={enrolBranch === b.id} onClick={() => generateEnrolCode(b)} title="Mint a single-use enrolment code for a POS on this branch" style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}>{enrolBranch === b.id ? "…" : "Enrol POS"}</button>}
                     {isSuper && <button disabled={licencingBranch === b.id} onClick={() => toggleBranchLicence(b, !b.desktop_licensed)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>{licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke licence" : "Activate licence"}</button>}
                     {!b.is_main && <button disabled={closingBranch === b.id} onClick={() => toggleBranchStatus(b)} title={b.status === "inactive" ? "Reactivate this branch" : "Deactivate this branch"} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>{closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}</button>}
                   </div>
@@ -1482,7 +1482,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
               <button onClick={() => setBranchView(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, marginBottom: 12 }}>← Branches</button>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{branchView.name} — tills</div>
               {devices.filter(x => x.branchId === branchView.id).length === 0
-                ? <p style={{ fontSize: 12, color: C.muted }}>No tills enrolled on this branch.</p>
+                ? <p style={{ fontSize: 12, color: C.muted }}>No points of sale enrolled on this branch.</p>
                 : devices.filter(x => x.branchId === branchView.id).map(dev => (
                     <div key={dev.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
                       <div style={{ flex: 1 }}>
@@ -1501,7 +1501,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
               {techAudit === null
                 ? <p style={{ fontSize: 12, color: C.muted }}>Loading…</p>
                 : techAudit.length === 0
-                  ? <p style={{ fontSize: 12, color: C.muted }}>No tech actions logged on this till.</p>
+                  ? <p style={{ fontSize: 12, color: C.muted }}>No tech actions logged on this POS.</p>
                   : techAudit.map(e => (
                       <div key={e.id} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
                         <div style={{ fontSize: 13 }}><b style={{ color: C.accent }}>{e.action}</b>{e.tech_name ? ` · ${e.tech_name}` : ""}</div>
@@ -1517,11 +1517,11 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
         {!branchView && (
           <div style={S.card}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>All enrolled tills</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>All enrolled points of sale</div>
               <div style={{ fontSize: 11, color: C.muted }}>{devices.length} total</div>
             </div>
             {devices.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.muted, padding: "8px 0" }}>No tills enrolled yet.</div>
+              <div style={{ fontSize: 12, color: C.muted, padding: "8px 0" }}>No points of sale enrolled yet.</div>
             ) : devices.map(dv => (
               <div key={dv.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1561,7 +1561,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
                 <button onClick={() => document.querySelector('[data-testid="pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
                   style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }} data-testid="trial-convert">Convert to paid</button>
                 {d.cloud_trial.phase === "active" && hasWebHosting && (
-                  <button onClick={() => toggleWebHosting(false, `End ${d.name}'s cloud trial now? The owner is locked out of the web dashboard at once. Tills are not affected.`)}
+                  <button onClick={() => toggleWebHosting(false, `End ${d.name}'s cloud trial now? The owner is locked out of the web dashboard at once. Points of sale are not affected.`)}
                     style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>End trial</button>
                 )}
               </>),
@@ -1689,7 +1689,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Changes take effect at once; tills pick them up at their next sync.</p>
           {/* A325: client branding Phase 2 — curated app themes (premium; off by default). */}
           {settingRow("App themes",
-            hasThemes ? "The client picks an app theme on the Branding page; tills follow it." : "Tills keep the standard look. Turn on to let the client pick an app theme.",
+            hasThemes ? "The client picks an app theme on the Branding page; points of sale follow it." : "Points of sale keep the standard look. Turn on to let the client pick an app theme.",
             toggle(hasThemes, () => toggleThemes(!hasThemes), "App themes"))}
           {/* A549: Analytics v1 (premium; off by default) — the web dashboard's Analytics page. */}
           {settingRow("Analytics",
@@ -1726,7 +1726,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
               "go back to the old layout", "line spacing in the middle, about 3.75 mm"): the standard is the classic layout
               at 3.75 mm with a small logo; each switch changes one part for this client. ZapTill sets them, here. */}
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Receipt options</div>
-          <div data-testid="receipt-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>All off = the standard receipt: the classic layout at 3.75 mm line spacing with a small logo. Thermal receipts on the tills and the web POS; kitchen tickets never change.</div>
+          <div data-testid="receipt-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>All off = the standard receipt: the classic layout at 3.75 mm line spacing with a small logo. Thermal receipts on the desktop POS and the web POS; kitchen tickets never change.</div>
           {RECEIPT_OPTION_KEYS.map(key => {
             const rf = POS_FEATURES.find(x => x.key === key);
             const on = features.some(f => f.key === key && f.enabled);
@@ -1743,7 +1743,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
           {/* A543 (owner, 2026-10-21: "change the font of the kitchen printer, packing is okay" — chose "the printer's smaller
               Font B so long orders fit on less paper"): kitchen tickets are Font B; this client's switch brings Font A back. */}
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>Kitchen ticket options</div>
-          <div data-testid="kitchen-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Off = the standard kitchen ticket: the printer’s smaller Font B, 64 characters a line on 80 mm. Kitchen tickets on the tills and the web POS; dispatch (packing) tickets and receipts are always in the normal font.</div>
+          <div data-testid="kitchen-switches-note" style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Off = the standard kitchen ticket: the printer’s smaller Font B, 64 characters a line on 80 mm. Kitchen tickets on the desktop POS and the web POS; dispatch (packing) tickets and receipts are always in the normal font.</div>
           {KITCHEN_OPTION_KEYS.map(key => {
             const kf = POS_FEATURES.find(x => x.key === key);
             const on = features.some(f => f.key === key && f.enabled);
@@ -1799,8 +1799,8 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
           <div style={{ fontSize: 13, fontWeight: 600 }}>Desktop updates</div>
           <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
             {detail?.desktop_approved_version
-              ? `Approved: ${detail.desktop_approved_version}. Tills on 0.6.16 or later update to it within the hour; it installs when each till is next closed.`
-              : "Held — tills stay on the version they run. (Tills older than 0.6.16 still follow the published GitHub release.)"}
+              ? `Approved: ${detail.desktop_approved_version}. Points of sale on 0.6.16 or later update to it within the hour; it installs when each POS is next closed.`
+              : "Held — points of sale stay on the version they run. (Points of sale older than 0.6.16 still follow the published GitHub release.)"}
           </div>
           {desktopReleases && desktopReleases.error && (
             <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
@@ -1833,7 +1833,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
           </div>
           {devices.length > 0 && (
             <div style={{ marginTop: 18 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Tills now</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Points of sale now</div>
               {devices.map(dv => {
                 // A534: why a till is (not) updating — its own report from 1.0.20, a hint from its version before that.
                 const u = tillUpdateLine(dv, detail?.desktop_approved_version);
@@ -2317,7 +2317,7 @@ function TechPage({ req, admin }) {
   // pick up the new one on their next online sync.
   async function rotateRevealCode() {
     if (!genForm.branch_id) return;
-    if (!(await askConfirm("Rotate this branch's reveal code? The current code stops working immediately; tills refresh the new one on their next online sync. Do this when a tech's access should end."))) return;
+    if (!(await askConfirm("Rotate this branch's reveal code? The current code stops working immediately; points of sale refresh the new one on their next online sync. Do this when a tech's access should end."))) return;
     try {
       const r = await req("POST", `/branches/${genForm.branch_id}/reveal-code/regenerate`, {});
       setRevealCode(r?.reveal_code ?? null);
@@ -2431,7 +2431,7 @@ function TechPage({ req, admin }) {
               <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>TOKEN — share securely with tech. Shown once only.</div>
               {revealCode && (
                 <div style={{ marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${C.accent}33` }}>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>Reveal code — the tech enters this FIRST on the till.</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>Reveal code — the tech enters this FIRST on the POS.</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <code style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2, color: C.accent }}>{revealCode}</code>
                     <button onClick={() => navigator.clipboard?.writeText(revealCode)} style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "3px 8px" }}>Copy</button>

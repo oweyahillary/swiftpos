@@ -49,10 +49,10 @@ type BoolKey = 'open_tills' | 'variances' | 'voids_refunds' | 'tills_not_syncing
 type AmountKey = 'not_syncing_hours' | 'big_void_amount' | 'variance_amount';
 
 const SECTIONS: { key: BoolKey; label: string; hint?: string }[] = [
-  { key: 'open_tills',           label: 'Tills not closed or confirmed', hint: 'Open drawers and closed shifts waiting for a manager\'s count — or "All tills closed and confirmed ✓"' },
+  { key: 'open_tills',           label: 'Points of sale not closed or confirmed', hint: 'Open drawers and closed shifts waiting for a manager\'s count — or "All points of sale closed and confirmed ✓"' },
   { key: 'variances',            label: 'Cash differences at confirm',   hint: 'Shifts confirmed that day where the count was over or short' },
   { key: 'voids_refunds',        label: 'Voids and refunds',             hint: 'How many, how much, and the largest with who and why' },
-  { key: 'tills_not_syncing',    label: 'Tills not syncing',             hint: 'Tills behind on sending their sales, or signed out' },
+  { key: 'tills_not_syncing',    label: 'Points of sale not syncing',             hint: 'Points of sale behind on sending their sales, or signed out' },
   { key: 'expenses',             label: 'Expenses',                      hint: 'The day\'s total and the largest items' },
   { key: 'low_stock',            label: 'Low stock',                     hint: 'Products below their threshold' },
   { key: 'include_top_products', label: 'Top products by revenue' },
@@ -185,7 +185,7 @@ export default function ReportSchedulerTab() {
         <input type="time" value={schedule.send_time}
           onChange={e => setSchedule(s => ({ ...s, send_time: e.target.value }))}
           className="bg-gray-900 border border-gray-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift w-40" />
-        <p className="text-gray-600 text-xs mt-1.5">The daily email goes at this time — and so does the branch managers' "tills not closed" email.</p>
+        <p className="text-gray-600 text-xs mt-1.5">The daily email goes at this time — and so does the branch managers' "points of sale not closed" email.</p>
       </div>
 
       <div>
@@ -245,7 +245,7 @@ export default function ReportSchedulerTab() {
           <div className="bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-white text-sm font-medium">A till is not syncing</p>
+                <p className="text-white text-sm font-medium">A POS is not syncing</p>
                 <p className="text-gray-500 text-xs">Its sales have not reached the cloud while the branch is trading, or it was signed out and needs rejoining. Also sent to that branch's managers.</p>
               </div>
               <Toggle on={isOn('alert_not_syncing')} onClick={() => flip('alert_not_syncing')} testId="alert-not-syncing" />
@@ -312,7 +312,7 @@ export default function ReportSchedulerTab() {
       </div>
 
       <div className="bg-gray-800/30 border border-gray-700 rounded-xl px-4 py-3" data-testid="branch-manager-note">
-        <p className="text-gray-300 text-sm font-medium">Branch managers always hear about tills not closed</p>
+        <p className="text-gray-300 text-sm font-medium">Branch managers always hear about points of sale not closed</p>
         <p className="text-gray-500 text-xs">Each branch's managers get an email listing their branch's drawers still open or waiting for a confirmed count — at the send time, and again at 09:00 if any are still not done. This one cannot be switched off.</p>
       </div>
 

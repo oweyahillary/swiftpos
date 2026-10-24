@@ -69,7 +69,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
   useEffect(() => { void load(); }, [load]);
 
   // A522: force-closing for a till that has not synced lately — a tick first.
-  const forceBehind = target?.device_id ? tillBehindLine(target.terminal_code ?? 'The till', target.till_last_sync_at ?? null) : null;
+  const forceBehind = target?.device_id ? tillBehindLine(target.terminal_code ?? 'The POS', target.till_last_sync_at ?? null) : null;
   const forceClose = async () => {
     if (!target || !reason.trim()) return;
     if (forceBehind && !behindOk) return;
@@ -104,7 +104,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium">{s.cashier_name}{s.terminal_code ? ` · ${s.terminal_code}` : ''}</p>
                   <p className="text-gray-500 text-xs">open {since(s.opened_at)} · float {money(s.opening_float, currency, { blank: 'unavailable' })}{seesExpected && <> · expected {money(s.expected_cash_live, currency, { blank: 'unavailable' })}</>}</p>
-                  {s.device_id && <p className={`text-xs ${syncRecent(s.till_last_sync_at) ? 'text-gray-500' : 'text-amber-400'}`}>till synced {agoLabel(s.till_last_sync_at)}</p>}
+                  {s.device_id && <p className={`text-xs ${syncRecent(s.till_last_sync_at) ? 'text-gray-500' : 'text-amber-400'}`}>POS synced {agoLabel(s.till_last_sync_at)}</p>}
                 </div>
                 <div className="sm:flex-shrink-0 flex flex-wrap items-center gap-2">
                   {seesExpected && <button
@@ -168,9 +168,9 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
             <h3 className="text-white font-semibold">Force-close {target.cashier_name}’s drawer?</h3>
-            <p className="text-gray-400 text-sm mt-1 mb-4">This records the drawer as <strong className="text-gray-200">uncounted</strong> — no closing count is taken. Use it only when the till is unreachable. A reason is required.</p>
+            <p className="text-gray-400 text-sm mt-1 mb-4">This records the drawer as <strong className="text-gray-200">uncounted</strong> — no closing count is taken. Use it only when the POS is unreachable. A reason is required.</p>
             <textarea value={reason} onChange={e => setReason(e.target.value)}
-              placeholder="e.g. till T2 crashed and won't restart"
+              placeholder="e.g. POS T2 crashed and won't restart"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500" rows={3} />
             {forceBehind && (
               <label className="flex gap-2 items-start mt-3 text-xs text-amber-300" data-testid="force-behind">

@@ -87,9 +87,9 @@ export default function LabelsTab() {
     setBusy(true);
     try {
       const r = await posApi.labels.save({ settings, printer });
-      setMsg({ ok: true, text: r.cloud === 'saved' ? 'Saved — the label is the business\'s, on every till and the web.'
-        : r.cloud === 'offline' ? 'Saved on this till; the business\'s label is updated when the cloud can be reached.'
-        : 'Saved on this till (changing the business\'s label needs the right to edit products).' });
+      setMsg({ ok: true, text: r.cloud === 'saved' ? 'Saved — the label is the business\'s, on every POS and the web.'
+        : r.cloud === 'offline' ? 'Saved on this POS; the business\'s label is updated when the cloud can be reached.'
+        : 'Saved on this POS (changing the business\'s label needs the right to edit products).' });
     } catch (e: any) { setMsg({ ok: false, text: e?.message ?? 'Could not save.' }); }
     finally { setBusy(false); }
   };
@@ -123,7 +123,7 @@ export default function LabelsTab() {
     try {
       const r = await posApi.labels.numbering(numbering);
       setNumbering(cleanBarcodeNumbering(r.numbering));
-      setNumMsg(r.ok ? 'Saved — new barcodes follow this numbering, on every till and the web. Existing barcodes are not changed.' : (r.error ?? 'Not saved.'));
+      setNumMsg(r.ok ? 'Saved — new barcodes follow this numbering, on every POS and the web. Existing barcodes are not changed.' : (r.error ?? 'Not saved.'));
     } catch (e: any) { setNumMsg(e?.message ?? 'Not saved.'); }
     finally { setBusy(false); }
   };
@@ -253,7 +253,7 @@ export default function LabelsTab() {
         {printer.path === 'escpos' && (
           <div className="text-sm space-y-1">
             <input className={`${field} w-72`} value={printer.escposTarget} onChange={(e) => setP({ escposTarget: e.target.value })}
-              placeholder={setup.receiptPrinter ? `This till's receipt printer (${setup.receiptPrinter.target})` : 'IP address, or printer:<name>'} />
+              placeholder={setup.receiptPrinter ? `This POS's receipt printer (${setup.receiptPrinter.target})` : 'IP address, or printer:<name>'} />
             <select className={field} value={printer.escposWidthMm} onChange={(e) => setP({ escposWidthMm: Number(e.target.value) === 58 ? 58 : 80 })}>
               <option value={80}>80 mm</option><option value={58}>58 mm</option>
             </select>

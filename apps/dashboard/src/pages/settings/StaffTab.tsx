@@ -168,7 +168,7 @@ export default function StaffTab({ branches, canResetSignIn, canEdit = true, web
   const revokeWeb = (s: StaffMember) => {
     showConfirm({
       title: `Take away ${s.name}'s web dashboard access?`,
-      message: 'They are signed out of the dashboard everywhere at once. Their PIN on the tills is not changed.',
+      message: 'They are signed out of the dashboard everywhere at once. Their PIN on the points of sale is not changed.',
       intent: 'warning',
       confirmLabel: 'Revoke',
       onConfirm: async () => {

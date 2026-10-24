@@ -263,7 +263,7 @@ function MovementsCard({ branch, month, methods, moves, onChange, money }: {
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-3 space-y-3" data-testid="pack-movements">
       <p className="text-sm font-medium text-gray-900 dark:text-white">Record for the books</p>
-      <p className="text-xs text-gray-500">What no till records: the balance carried in, money in that is not a sale (used oil sold), the owner's personal use, money banked, M-Pesa or bank charges. Sales and expenses come from the tills.</p>
+      <p className="text-xs text-gray-500">What no POS records: the balance carried in, money in that is not a sale (used oil sold), the owner's personal use, money banked, M-Pesa or bank charges. Sales and expenses come from the points of sale.</p>
       <div className="flex flex-wrap gap-2 items-end">
         <input type="date" value={f.movement_date} onChange={(e) => setF({ ...f, movement_date: e.target.value })} className={input} />
         <select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })} className={input}>

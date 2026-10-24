@@ -59,7 +59,7 @@ console.log('\nThe server announces itself\n');
   ok('it is sent to each network\'s own broadcast address and to all networks', addrs.includes('192.168.1.255') && addrs.includes('255.255.255.255') && !addrs.includes('127.255.255.255'), addrs.join(','));
 }
 
-console.log('\nA new till listens (real UDP)\n');
+console.log('\nA new POS listens (real UDP)\n');
 {
   const listening = B.listenForServers(900);
   await new Promise((r) => setTimeout(r, 200));

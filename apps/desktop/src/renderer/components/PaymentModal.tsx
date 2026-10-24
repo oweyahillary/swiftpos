@@ -373,7 +373,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                         <span className="text-gray-300">Left to use</span>
                         <span className={customer.available + EPSILON >= creditAmount ? 'text-white' : 'text-red-400'}>{fmt(Math.max(0, customer.available))}</span>
                       </div>
-                      {customer.pending > 0 && <p className="text-[11px] text-gray-400">Includes {fmt(customer.pending)} on account from this till not yet on the cloud.</p>}
+                      {customer.pending > 0 && <p className="text-[11px] text-gray-400">Includes {fmt(customer.pending)} on account from this POS not yet on the cloud.</p>}
                     </div>
                   ) : (
                     <div className="space-y-1">

@@ -600,6 +600,13 @@ jobs:
           node --no-warnings tests/owner-decisions-a580.test.mjs
           node --no-warnings scripts/test-migration-169.mjs
 
+      # A586 — "POS" or "point of sale", never "till", in what people read: the gate passes and bites on a "till" put back
+      # (a desktop screen, a cloud error, a printed line); the frozen permission catalogue and built-in roles read POS
+      # through posWording(); key screens and the owner's email; the Z-report's web-shift line at 58 / 80 mm. M-Pesa's own
+      # "Till number" stays. Runs in the loop too; named here so a failure says what broke.
+      - name: POS wording, never "till" (A586)
+        run: node --no-warnings tests/pos-wording-a586.test.mjs
+
       - name: Run offline suites
         run: |
           set -e
@@ -798,6 +805,12 @@ jobs:
       # tests or scripts (the technician test print once printed one on every client's printer).
       - name: No reference business names
         run: node scripts/check-reference-names.mjs && node scripts/check-reference-names.mjs --self-test
+
+      # A586 — owner, 2026-10-23: "ensure we use the word POS or point of sale instead of till". String literals, template
+      # text and JSX text in every app, the cloud, the help and the printing; M-Pesa's own "Till number", identifiers,
+      # comments, developer logs and the frozen permission catalogue are allowed.
+      - name: No user-visible "till" wording
+        run: node scripts/check-no-till-wording.mjs && node scripts/check-no-till-wording.mjs --self-test
 
       # A328 — no NEW raw green in the web POS + shared components (status and money only stay green).
       - name: No new raw green in the web POS

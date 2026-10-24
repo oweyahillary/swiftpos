@@ -117,7 +117,7 @@ export function registerBranchSettingsHandlers(ctx: IpcShared) {
     requireKey(['settings.payments'], PAYMENTS_REFUSED);   // A490
     const list = (Array.isArray(codes) ? codes : []).map((c) => String(c).trim().toLowerCase());
     const branchId = tillBranchId();   // A446: the signed-in person's branch when the till never recorded one
-    if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
+    if (!branchId) throw new Error('This POS does not know its branch yet — sign in once with a staff PIN, then try again.');
     const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });
     setPaymentMethodsEnabled(list);
     return out;
@@ -134,7 +134,7 @@ export function registerBranchSettingsHandlers(ctx: IpcShared) {
   handle('manage:getMpesa', async () => {
     if (!sessionPerson()) throw new Error('Not signed in');
     const branchId = tillBranchId();
-    if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
+    if (!branchId) throw new Error('This POS does not know its branch yet — sign in once with a staff PIN, then try again.');
     const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/mpesa`, 'GET') as
       { own: MpesaReceive | null; inherited: MpesaReceive | null; canEdit?: boolean };
     return { own: out?.own ?? null, inherited: out?.inherited ?? null, canEdit: mayMpesa() && out?.canEdit !== false };
@@ -143,7 +143,7 @@ export function registerBranchSettingsHandlers(ctx: IpcShared) {
     if (!sessionPerson()) throw new Error('Not signed in');
     if (!mayMpesa()) throw new Error(MPESA_REFUSED);
     const branchId = tillBranchId();
-    if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
+    if (!branchId) throw new Error('This POS does not know its branch yet — sign in once with a staff PIN, then try again.');
     const clear = (raw as any)?.clear === true;
     const c = clear ? null : cleanMpesaReceive(raw as any);
     if (c && 'error' in c) throw new Error(c.error);

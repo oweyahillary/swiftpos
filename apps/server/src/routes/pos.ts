@@ -170,7 +170,7 @@ router.get('/changes', async (req, res) => {
 // the till redeems it itself and gets its own session. Only a confirmed branch server, only for its own licensed branch.
 router.post('/join-code', async (req, res) => {
   if (!req.isTill || req.surface !== 'desktop' || !req.deviceId) {
-    res.status(403).json({ error: 'Only a branch server can add a till.', code: 'not_a_server' }); return;
+    res.status(403).json({ error: 'Only a branch server can add a POS.', code: 'not_a_server' }); return;
   }
   if (!(await isConfirmedBranchServer(req.businessId, req.deviceId))) {
     res.status(403).json({ error: 'This machine is not confirmed as the branch server yet — let it sync once, then try again.', code: 'not_confirmed_server' });
@@ -187,7 +187,7 @@ router.post('/join-code', async (req, res) => {
     res.status(409).json({ error: 'This branch has no desktop licence — ask ZapTill to assign one.', code: 'BRANCH_NOT_LICENSED' }); return;
   }
   if (!mayIssueJoinCode(req.deviceId)) {
-    res.status(429).json({ error: 'Too many tills added in the last hour — try again later.', code: 'join_rate' }); return;
+    res.status(429).json({ error: 'Too many points of sale added in the last hour — try again later.', code: 'join_rate' }); return;
   }
 
   const raw = makeCode();
@@ -221,10 +221,10 @@ router.get('/branch-staff', async (req, res) => {
   // A494: the PIN hashes go to a TILL's own session only, for itself — never a person's sign-in (a cashier's token is not
   // a till), and never for another device named in a header. The till (staffRoster.ts, syncEngine.ts) asks with its own
   // session and its own id in X-Device-Id.
-  if (!req.isTill || !req.deviceId) { res.status(403).json({ error: "Only a till's own session receives the staff list.", code: 'TILL_ONLY' }); return; }
+  if (!req.isTill || !req.deviceId) { res.status(403).json({ error: "Only a POS's own session receives the staff list.", code: 'TILL_ONLY' }); return; }
   const deviceId = String(req.headers['x-device-id'] ?? '').split(',')[0].trim();
   if (!deviceId) { res.status(400).json({ error: 'x-device-id required' }); return; }
-  if (deviceId !== req.deviceId) { res.status(403).json({ error: 'A till receives only its own staff list.', code: 'NOT_THIS_TILL' }); return; }
+  if (deviceId !== req.deviceId) { res.status(403).json({ error: 'A POS receives only its own staff list.', code: 'NOT_THIS_TILL' }); return; }
 
   // A528: the till's row as the sign-in check just read it (lib/authCache.ts — remembered 30 s while joined; blocking,
   // retiring or moving a till through this server forgets it), not a second read on every ask.
@@ -234,7 +234,7 @@ router.get('/branch-staff', async (req, res) => {
   // cashier signs in at once on every till, and a till signs its staff in with no server and no internet. Every till of
   // the business gets its branch's list now (it was the branch server only), as long as it is joined (not retired).
   if (!device || (device as { retired_at?: string | null }).retired_at || (device as { status?: string }).status === 'blocked') {
-    res.status(403).json({ error: 'this till is not joined to the business', code: 'not_joined' });
+    res.status(403).json({ error: 'this POS is not joined to the business', code: 'not_joined' });
     return;
   }
   // The branch: the one the cloud bound this till to, else the one its own sign-in names (A415: a till's session names
@@ -245,7 +245,7 @@ router.get('/branch-staff', async (req, res) => {
     const bound = await checkDeviceBranch(req.businessId!, deviceId, req.branchId);
     if (bound.ok) branchId = bound.boundBranchId ?? req.branchId;
   }
-  if (!branchId) { res.status(409).json({ error: 'this till has not been given a branch yet', code: 'no_branch' }); return; }
+  if (!branchId) { res.status(409).json({ error: 'this POS has not been given a branch yet', code: 'no_branch' }); return; }
 
   // A528: every till asks every 10-20 s and each ask read the whole staff list. The staff version (migration 150: bumped
   // by users, roles, grants, people's branches, tills joining or leaving; remembered 15 s and dropped when this server

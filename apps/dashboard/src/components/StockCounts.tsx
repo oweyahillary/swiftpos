@@ -192,7 +192,7 @@ function FreezeSwitch({ client }: { client: CountsClient }) {
       <div className="min-w-[220px] flex-1">
         <div className="text-sm font-semibold text-white">Freeze items while they are counted <span className="ml-1 rounded-full bg-swift/15 px-2 py-0.5 text-[10px] font-medium text-swift-text">Recommended</span></div>
         <div className="mt-0.5 text-xs text-gray-400">
-          On: an item in a count cannot be sold — on the tills or the web POS — until it has been counted. Off: selling carries on;
+          On: an item in a count cannot be sold — on the desktop POS or the web POS — until it has been counted. Off: selling carries on;
           each item is compared with what the system held when it was counted. Applies to counts started after the change.
         </div>
         {error && <div className="mt-1 text-xs text-red-400">{error}</div>}
@@ -495,7 +495,7 @@ function CountScreen({ client, id, currency, business, onClose }: {
                       {[l.category, l.unit, l.item_kind === 'ingredient' ? 'ingredient' : null].filter(Boolean).join(' · ')}
                       {l.recount && l.counted_qty === null ? <span className="ml-1 text-amber-400">· count again</span> : null}
                       {showDiff && num(l.previous_count) !== null ? <span className="ml-1">· first count {fmtQty(l.previous_count)}</span> : null}
-                      {showDiff && late !== 0 ? <span className="ml-1">· {fmtQty(-late)} sold on a till before the count, synced after</span> : null}
+                      {showDiff && late !== 0 ? <span className="ml-1">· {fmtQty(-late)} sold on a POS before the count, synced after</span> : null}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right">

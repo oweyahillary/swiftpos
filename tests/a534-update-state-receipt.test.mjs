@@ -113,7 +113,7 @@ await ok('each reported state, in words', () => {
 });
 await ok('a till older than 1.0.20 reports nothing: a hint from its version alone', () => {
   assert.equal(line({ ...fresh, appVersion: '1.0.5' }).text,
-    'Not checking — this till is older than 1.0.16: close ZapTill fully and reopen it; accept the Windows prompt');
+    'Not checking — this POS is older than 1.0.16: close ZapTill fully and reopen it; accept the Windows prompt');
   assert.equal(line({ ...fresh, appVersion: '1.0.15' }).tone, 'warn');
   assert.equal(line({ ...fresh, appVersion: '1.0.16' }).text, 'Installs itself when idle — if stuck, close and reopen ZapTill');
   assert.equal(line({ ...fresh, appVersion: '1.0.19' }).text, 'Installs itself when idle — if stuck, close and reopen ZapTill');

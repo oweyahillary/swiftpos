@@ -194,7 +194,7 @@ try {
     const c = rowOf(r.body.orderId);
     assert.deepEqual([c.state, c.source, c.decided_by, c.approved_at_sale_by, c.decided_by_name], ['confirmed', 'till', MGR, MGR, 'Max']);
     assert.ok(!lines.some((l) => /\[tillScope\] REFUSED/.test(l)), lines.join('\n'));
-    assert.match(rpcs.find((x) => x.name === 'apply_credit_transaction').args.p_notes, /approved by Max at the till/);
+    assert.match(rpcs.find((x) => x.name === 'apply_credit_transaction').args.p_notes, /approved by Max at the POS/);
   });
 
   await ok('…the same under a person\'s sign-in on the till (A505 tillMadeSale): born confirmed by the manager named', async () => {

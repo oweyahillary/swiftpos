@@ -133,7 +133,7 @@ export default function PrinterSettingsModal({ settings, onSave, onReset, onClos
           {/* Preview note */}
           <div className="mx-6 mb-4 bg-gray-800/60 rounded-xl px-4 py-3">
             <p className="text-gray-400 text-xs">
-              <span className="text-action-400 font-medium">Tip:</span> These settings apply to this device only. Each till/computer can have different settings. Changes take effect on the next print.
+              <span className="text-action-400 font-medium">Tip:</span> These settings apply to this device only. Each POS or computer can have different settings. Changes take effect on the next print.
             </p>
           </div>
 

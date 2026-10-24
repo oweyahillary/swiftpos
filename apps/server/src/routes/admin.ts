@@ -815,7 +815,7 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
   });
   if (error) {
     // Before migration 122 (132 for the menu) the function does not exist — say so rather than a raw database error.
-    const missing = closeOpen && /purge_test_(menu_)?window|p_close_open/.test(error.message) ? 'Run migration 148 first (clear what is still open on tills that are off).'
+    const missing = closeOpen && /purge_test_(menu_)?window|p_close_open/.test(error.message) ? 'Run migration 148 first (clear what is still open on points of sale that are off).'
       : /purge_test_menu/.test(error.message) ? 'Run migration 132 first (delete the whole menu).'
       : /purge_test_data/.test(error.message) ? 'Run migration 122 first (clear test data).' : null;
     res.status(503).json({ error: missing ?? error.message, code: 'NOT_READY' });
@@ -830,7 +830,7 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
     .eq('business_id', biz.id).is('retired_at', null);
   const behind = ((tills ?? []) as Array<{ device_label: string | null; terminal_code: string | null; last_sync_at: string | null }>)
     .filter((t) => !t.last_sync_at || !(Date.parse(t.last_sync_at) >= behindBefore))
-    .map((t) => ({ name: t.terminal_code || t.device_label || 'A till', last_sync_at: t.last_sync_at }));
+    .map((t) => ({ name: t.terminal_code || t.device_label || 'A POS', last_sync_at: t.last_sync_at }));
   // A488: "N trading day(s) … still open or closed after it" named no day — and the check reads the CLOUD's days, so a
   // close a till made that never reached the cloud looks open here while every till says closed. The same rule as
   // purge_test_data (opened in the window; no closed_at, or closed after the window's end), listed so it can be found.
@@ -1893,7 +1893,7 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
   if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
   if (!branch.desktop_licensed) {
     res.status(409).json({
-      error: 'Assign a desktop licence to this branch before enrolling a till.',
+      error: 'Assign a desktop licence to this branch before enrolling a POS.',
       code:  'BRANCH_NOT_LICENSED',
     });
     return;
@@ -1901,7 +1901,7 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
   // A581: a lapsed cloud plan (past its grace) — no new till and no rejoin until the payment is recorded.
   if (await enrolRefusal(String(businessId)).catch(() => null)) {
     res.status(409).json({
-      error: 'This client\'s cloud plan has lapsed, so a till cannot be joined. Record the payment on Plan & billing first.',
+      error: 'This client\'s cloud plan has lapsed, so a POS cannot be joined. Record the payment on Plan & billing first.',
       code:  'CLOUD_SUBSCRIPTION_ENDED',
     });
     return;

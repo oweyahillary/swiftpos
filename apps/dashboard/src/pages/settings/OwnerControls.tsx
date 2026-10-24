@@ -119,7 +119,7 @@ export function PosOptionsTab() {
     <div className="p-4 sm:p-6 max-w-3xl space-y-4" data-testid="pos-options">
       <div>
         <h2 className="text-lg font-semibold text-white">POS options</h2>
-        <p className="text-sm text-gray-400">How the tills and the web POS work for this business. The tills follow on their next sync.</p>
+        <p className="text-sm text-gray-400">How the desktop POS and the web POS work for this business. Each desktop POS follows on its next sync.</p>
       </div>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {!data && !error && <p className="text-sm text-gray-500">Loading…</p>}
@@ -167,7 +167,7 @@ export function PosOptionsTab() {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="text-sm font-medium text-white">Loyalty points</div>
-              <div className="mt-0.5 text-xs leading-relaxed text-gray-400">Customers earn points on what they pay and spend them at the till.</div>
+              <div className="mt-0.5 text-xs leading-relaxed text-gray-400">Customers earn points on what they pay and spend them at the POS.</div>
             </div>
             <Switch on={data.loyalty.enabled} onClick={() => void saveLoyalty({ enabled: !data.loyalty!.enabled })} label="Loyalty points"
               disabled={busy === 'loyalty'} testid="loyalty-enabled" />
@@ -204,7 +204,7 @@ export function BusinessPaymentMethods() {
     setError(''); setSaved('');
     const before = data;
     setData({ ...data, payments: { enabled: JSON.parse(v) } });
-    try { await api.post('/api/business/settings', { key: PAYMENT_METHODS_ENABLED_KEY, value: v }); setSaved('Saved — the tills follow on their next sync.'); }
+    try { await api.post('/api/business/settings', { key: PAYMENT_METHODS_ENABLED_KEY, value: v }); setSaved('Saved — the points of sale follow on their next sync.'); }
     catch (e: any) { setData(before); setError(e?.message ?? 'Could not save'); }
   };
   return (

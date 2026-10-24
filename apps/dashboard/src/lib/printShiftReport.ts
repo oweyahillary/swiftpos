@@ -14,7 +14,7 @@ const cents = (n: unknown) => Math.round((Number(n) || 0) * 100);
 
 export async function printShiftReport(shiftId: string): Promise<{ ok: boolean; message: string }> {
   if (getQZStatus() !== 'connected') {
-    return { ok: false, message: 'Print server not connected on this device — open the till to print.' };
+    return { ok: false, message: 'Print server not connected on this device — open the POS to print.' };
   }
 
   let shift: any;

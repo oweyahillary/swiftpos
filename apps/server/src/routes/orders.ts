@@ -255,7 +255,7 @@ export async function creditApproval(req: any, body: any, branchId: string | nul
     // Anyone else named, or no one, is a till's sale awaiting a manager (A545). Never refused either way.
     const named = await tillCreditApprover(req.businessId, body?.credit_approved_by, branchId, rule);
     if (named) {
-      return { approvedBy: named.id, approvedAtSale: true, approverName: named.name, note: ` — approved by ${named.name || 'a manager'} at the till`, tillSale: true };
+      return { approvedBy: named.id, approvedAtSale: true, approverName: named.name, note: ` — approved by ${named.name || 'a manager'} at the POS`, tillSale: true };
     }
     return { approvedBy: null, approvedAtSale: false, approverName: null, note: " — awaiting a manager's confirmation", tillSale: true };
   }
@@ -578,7 +578,7 @@ export function tillPricing(items: OrderItemInput[], cat: RecomputeOk, body: { t
   return {
     lines, subtotal, discount: round2(Math.max(0, subtotal - total)), total,
     catalogueTotal: cat.total, tillTotal: total, difference,
-    reason: [...new Set(reasons)].join('; ').slice(0, 500) || 'priced differently on the till',
+    reason: [...new Set(reasons)].join('; ').slice(0, 500) || 'priced differently on the POS',
     suspicious: cat.total > 0 ? Math.abs(difference) > SUSPICIOUS_SHARE * cat.total : Math.abs(difference) >= 0.01,
   };
 }
@@ -1537,7 +1537,7 @@ const reversalGate = (action: ApproveAction) => (req: any, res: any, next: any) 
   // A494: a replay sent with a person's sign-in on the till (the till pushes with whoever is signed in) is not refused for
   // good — 409 tells the till to keep it and send it again; it goes through with the till's own session.
   if (claimsReplay(req) && !req.isTill) {
-    res.status(409).json({ error: 'An offline void or refund is sent with the till\'s own session — it is sent again.', code: 'REPLAY_NEEDS_TILL_SESSION' });
+    res.status(409).json({ error: 'An offline void or refund is sent with the POS\'s own session — it is sent again.', code: 'REPLAY_NEEDS_TILL_SESSION' });
     return;
   }
   // A545: the till's own sign-in WITHOUT a replay — the till's live void / refund when no person's cloud sign-in is on it
@@ -1562,7 +1562,7 @@ async function tillHoldsOrder(req: any, order: any): Promise<boolean> {
   }
   return holds;
 }
-const NOT_THIS_TILL = { error: 'Only the till that holds this sale can send its offline void or refund.', code: 'NOT_THIS_TILL' } as const;
+const NOT_THIS_TILL = { error: 'Only the POS that holds this sale can send its offline void or refund.', code: 'NOT_THIS_TILL' } as const;
 
 async function checkTillReplay(req: any, order: any, action: ApproveAction): Promise<TillReplay | { status: number; body: Record<string, string> }> {
   if (!(await tillHoldsOrder(req, order))) {

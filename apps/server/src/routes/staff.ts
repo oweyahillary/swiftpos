@@ -1088,7 +1088,7 @@ router.post('/clock', async (req, res) => {
   const invalid = () => { notePinFailure(pk); res.status(401).json({ error: 'Invalid PIN' }); };
 
   const who = typeof staff_id === 'string' && staff_id ? staff_id : req.userId;
-  if (!who) { res.status(400).json({ error: 'staff_id is required on a till\'s own session' }); return; }
+  if (!who) { res.status(400).json({ error: 'staff_id is required on a POS\'s own session' }); return; }
   if (!/^\d{4,6}$/.test(String(pin))) { invalid(); return; }
 
   // Where: a non-owner clocks at their own branch only. A550: a partner of every branch at any of theirs.

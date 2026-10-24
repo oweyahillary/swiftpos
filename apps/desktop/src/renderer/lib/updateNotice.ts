@@ -33,6 +33,6 @@ export function updateBarContent(s: BarStatus, canRestart: boolean, now = Date.n
   if (canRestart && at !== null && now - at >= READY_NOTICE_AFTER_MS) {
     return { kind: 'stale', title: 'Update waiting', text: staleNoticeText(s.version), button: 'Restart now and install' };
   }
-  return { kind: 'ready', title: 'Update ready', text: `ZapTill ${s.version ?? ''} installs when ZapTill is closed, or by itself when the till is idle.`,
+  return { kind: 'ready', title: 'Update ready', text: `ZapTill ${s.version ?? ''} installs when ZapTill is closed, or by itself when the POS is idle.`,
     button: canRestart ? 'Restart & update now' : null };
 }

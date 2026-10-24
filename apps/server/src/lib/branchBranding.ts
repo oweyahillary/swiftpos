@@ -66,7 +66,7 @@ export function accentWriteError(v: unknown): string | null {
   if (v === null) return null;
   const hex = normaliseHex(v);
   if (!hex) return 'accent_hex must be a #RGB or #RRGGBB hex colour (or null)';
-  if (!resolveBrandLayer(hex)) return 'That colour cannot be seen on the till’s dark screens (it needs 3:1) — pick a lighter or stronger shade';
+  if (!resolveBrandLayer(hex)) return 'That colour cannot be seen on the POS’s dark screens (it needs 3:1) — pick a lighter or stronger shade';
   return null;
 }
 

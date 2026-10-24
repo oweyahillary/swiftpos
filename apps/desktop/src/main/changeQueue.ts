@@ -87,7 +87,7 @@ async function sendOnce(): Promise<void> {
     if (r.settled > 0) {
       // The cloud's answer is the cloud's state now: pull it (and the staff list, for a cashier or a PIN).
       syncAll().catch(() => { /* the next beat */ });
-      void refreshStaffRosterNow('a change made on this till settled');
+      void refreshStaffRosterNow('a change made on this POS settled');
     }
   } catch (e: any) {
     logLine('change', `sending changes failed: ${e?.message ?? e}`);

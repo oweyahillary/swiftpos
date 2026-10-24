@@ -139,7 +139,7 @@ export default function StationsPage() {
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Print stations</h1>
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">
           A station is a job — the grill, the bar, the packing bench. Point menu
-          categories at it here, then bind a printer to it on each till under
+          categories at it here, then bind a printer to it on each POS under
           Manager → Printers. The printer is per terminal; the station is shared.
         </p>
       </div>

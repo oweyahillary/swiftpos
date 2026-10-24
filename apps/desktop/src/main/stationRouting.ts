@@ -98,7 +98,7 @@ export async function pushPendingRouting(
   for (const [stationId, set] of Object.entries(readPending(db))) {
     let r: { status: number; body: any };
     try { r = await put(stationId, set.category_ids); }
-    catch (e: any) { out[stationId] = { state: 'pending', message: `Saved on this till — it goes to the cloud when the connection is back (${e?.message ?? e}).` }; continue; }
+    catch (e: any) { out[stationId] = { state: 'pending', message: `Saved on this POS — it goes to the cloud when the connection is back (${e?.message ?? e}).` }; continue; }
 
     if (r.status >= 200 && r.status < 300) {
       const accepted: string[] = Array.isArray(r.body?.category_ids) ? r.body.category_ids.map(String) : set.category_ids;
@@ -116,7 +116,7 @@ export async function pushPendingRouting(
       continue;
     }
     if (r.status >= 500 || r.status === 401 || r.status === 408 || r.status === 429) {
-      out[stationId] = { state: 'pending', message: `Saved on this till — the cloud did not take it yet (HTTP ${r.status}); it retries at the next sync.` };
+      out[stationId] = { state: 'pending', message: `Saved on this POS — the cloud did not take it yet (HTTP ${r.status}); it retries at the next sync.` };
       continue;
     }
     // A real refusal (403 role, 404 station gone, 400): stop waiting; the next pull brings the cloud's routing back.

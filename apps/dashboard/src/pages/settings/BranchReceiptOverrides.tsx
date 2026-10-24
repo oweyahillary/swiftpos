@@ -21,7 +21,7 @@ function BranchMpesaLine({ branchId }: { branchId: string }) {
       <p className="text-sm text-gray-300">
         {v?.own ? mpesaDescribe(v.own) : v?.inherited ? `Not set for this branch — receipts print the business-wide ${mpesaDescribe(v.inherited)}` : 'Not set for this branch'}
       </p>
-      <p className="text-gray-500 text-xs mt-1">Set on the branch's till by its manager: Manager › Settings › M-Pesa. You are notified whenever it changes.</p>
+      <p className="text-gray-500 text-xs mt-1">Set on the branch's POS by its manager: Manager › Settings › M-Pesa. You are notified whenever it changes.</p>
     </div>
   );
 }

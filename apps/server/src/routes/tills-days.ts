@@ -23,7 +23,7 @@ router.use(requireAuth);
 
 /** A till's own session never acts here — a person does. */
 router.use((req: any, res, next) => {
-  if (req.isTill) { res.status(403).json({ error: 'A till cannot use Tills & days — a person signs in.', code: 'PERSON_ONLY' }); return; }
+  if (req.isTill) { res.status(403).json({ error: 'A POS cannot use POS & days — a person signs in.', code: 'PERSON_ONLY' }); return; }
   next();
 });
 

@@ -73,7 +73,7 @@ export function scopeProblem(body: Record<string, any>, current?: { applies_to?:
 /** A518: the promotion as the page lists it — with whether it is charged at the sale, and if not, why. */
 function withCharge(p: any) {
   const why = p.applies_at_sale !== true
-    ? 'Saved before promotions were charged at the till - open it and save to start charging it.'
+    ? 'Saved before promotions were charged at the POS - open it and save to start charging it.'
     : promotionChargeable(p);
   return { ...p, charged_at_sale: p.status === 'active' && !why, not_charged_reason: why };
 }

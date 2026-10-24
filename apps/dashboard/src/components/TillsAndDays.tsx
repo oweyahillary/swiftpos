@@ -40,14 +40,14 @@ type Action =
   | { kind: 'abandon'; till: Till; date: string };
 
 const WAIT_CODE: Record<string, string> = {
-  DRAWER_OPEN: 'a drawer is still open on the till',
-  SHIFTS_UNCONFIRMED: 'a shift on the till waits for a manager’s confirmation',
+  DRAWER_OPEN: 'a drawer is still open on the POS',
+  SHIFTS_UNCONFIRMED: 'a shift on the POS waits for a manager’s confirmation',
 };
 
 function waitingLine(w: Waiting): string {
-  if (w.cloud_closed) return `Day ${w.business_date} closed on the web — the till adopts it when it next connects${w.delivered_at ? ' (it has collected it)' : ''}.`;
-  if (w.waiting) return `Close of ${w.business_date} waiting — ${w.code && WAIT_CODE[w.code] ? WAIT_CODE[w.code] : (w.error ?? 'the till cannot close yet')}; it tries again at every sync.`;
-  return `Close of ${w.business_date} queued ${agoLabel(w.created_at)} — ${w.delivered_at ? 'collected, waiting for the till' : 'the till applies it when it next connects'}.`;
+  if (w.cloud_closed) return `Day ${w.business_date} closed on the web — the POS adopts it when it next connects${w.delivered_at ? ' (it has collected it)' : ''}.`;
+  if (w.waiting) return `Close of ${w.business_date} waiting — ${w.code && WAIT_CODE[w.code] ? WAIT_CODE[w.code] : (w.error ?? 'the POS cannot close yet')}; it tries again at every sync.`;
+  return `Close of ${w.business_date} queued ${agoLabel(w.created_at)} — ${w.delivered_at ? 'collected, waiting for the POS' : 'the POS applies it when it next connects'}.`;
 }
 
 export default function TillsAndDays({ client, currency, base = '/api/tills-days', heading = true }:
@@ -67,7 +67,7 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
 
   const load = useCallback(async () => {
     try { setOv(await client.get<Overview>(`${base}/overview`)); setError(''); }
-    catch (e: any) { setError(e?.message ?? 'Could not load the tills'); }
+    catch (e: any) { setError(e?.message ?? 'Could not load the points of sale'); }
   }, [client, base]);
   useEffect(() => {
     void load();
@@ -84,7 +84,7 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
     if (!act) return;
     if (!reason.trim()) { setMsg('Say why — a short reason is kept with it.'); return; }
     const silent = act.till.silent && act.kind !== 'cancel' && act.kind !== 'abandon';
-    if (silent && !silentOk) { setMsg('Tick that you understand the till’s sales since it last synced are not in this yet.'); return; }
+    if (silent && !silentOk) { setMsg('Tick that you understand the POS’s sales since it last synced are not in this yet.'); return; }
     const typed = count.trim();
     const amount = typed === '' ? null : Number(typed);
     if (amount !== null && (!Number.isFinite(amount) || amount < 0)) { setMsg('The count must be 0 or more — or leave it empty.'); return; }
@@ -94,15 +94,15 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
       if (act.kind === 'close_day') {
         await client.post(`${base}/close-day`, { device_id: act.till.device_id, business_date: act.date, counted_cash: amount, reason: reason.trim(),
           silent_ok: silentOk, force_drawers: forceOk });
-        setDone(`${act.till.label}: day ${act.date} closed on the web. The till adopts it when it next connects.`);
+        setDone(`${act.till.label}: day ${act.date} closed on the web. The POS adopts it when it next connects.`);
       } else if (act.kind === 'drawer') {
         await client.post(`${base}/close-drawer`, { shift_id: act.drawer.id, counted_cash: act.counted ? amount : null, reason: reason.trim(), silent_ok: silentOk });
         setDone(`${act.drawer.cashier_name}'s drawer on ${act.till.label} ${act.counted ? 'closed with your count' : 'force-closed (uncounted)'}.`);
       } else if (act.kind === 'cancel') {
         const r = await client.post<{ delivered?: boolean }>(`${base}/instructions/${act.waiting.id}/cancel`, { reason: reason.trim() });
-        setDone(`Close withdrawn${r?.delivered ? ' — the till had already collected it and may still carry it out' : ''}.`);
+        setDone(`Close withdrawn${r?.delivered ? ' — the POS had already collected it and may still carry it out' : ''}.`);
       } else {
-        if (!abandonOk) { setMsg('Tick that you understand the till’s unsent sales are not in this close.'); setBusy(false); return; }
+        if (!abandonOk) { setMsg('Tick that you understand the POS’s unsent sales are not in this close.'); setBusy(false); return; }
         await client.post(`${base}/abandon`, { device_id: act.till.device_id, business_date: act.date, reason: reason.trim(), confirm: true });
         setDone(`${act.till.label}: day ${act.date} closed as abandoned.`);
       }
@@ -128,8 +128,8 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
         <div>
           <h3 className="text-sm font-semibold text-gray-200">Tills &amp; days</h3>
           <p className="text-xs text-gray-500">
-            Every till, its open trading day and drawers. Close a day or a drawer from here — it takes effect on the web at once
-            and the till adopts it when it next connects (about every 90 seconds while it is on). A till locks only when there
+            Every POS, its open trading day and drawers. Close a day or a drawer from here — it takes effect on the web at once
+            and the POS adopts it when it next connects (about every 90 seconds while it is on). A POS locks only when there
             is money to count; an old day with nothing left to count closes itself.
           </p>
         </div>
@@ -139,7 +139,7 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
       {error && <p className="text-xs text-red-400">{error}</p>}
       {done && <p className="text-xs text-action-400" data-testid="td-done">{done}</p>}
       {!ov && !error && <p className="text-xs text-gray-500">Loading tills…</p>}
-      {ov && tills.length === 0 && <p className="text-xs text-gray-500">No tills yet.</p>}
+      {ov && tills.length === 0 && <p className="text-xs text-gray-500">No points of sale yet.</p>}
 
       {[...byBranch.entries()].map(([branch, list]) => (
         <div key={branch} className="space-y-2">
@@ -215,12 +215,12 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
               {act.kind === 'abandon' && `Close ${act.till.label} — day ${act.date} — as abandoned`}
             </h4>
             <p className="text-xs text-gray-400">
-              {act.kind === 'close_day' && 'It closes on the web now, on the cash the managers confirmed shift by shift — or on a count you enter (only one made at the till, never an estimate). The till adopts it when it next connects; anything it sold offline is added to its drawers when it arrives.'}
+              {act.kind === 'close_day' && 'It closes on the web now, on the cash the managers confirmed shift by shift — or on a count you enter (only one made at the POS, never an estimate). The POS adopts it when it next connects; anything it sold offline is added to its drawers when it arrives.'}
               {act.kind === 'drawer' && (act.counted
-                ? 'Enter the cash counted in the drawer. It closes counted, under your name; the till closes it too when it next connects.'
+                ? 'Enter the cash counted in the drawer. It closes counted, under your name; the POS closes it too when it next connects.'
                 : 'It is recorded as never counted — no closing count and no difference (not zero). Use it only when nobody can count the drawer.')}
-              {act.kind === 'cancel' && 'The till will not carry it out (unless it already collected it).'}
-              {act.kind === 'abandon' && `For a till that is retired or silent over ${ov?.abandon_after_hours ?? 24} h: its open drawers are force-closed uncounted and the day closed with what the web knows. If it comes back it closes its own day too.`}
+              {act.kind === 'cancel' && 'The POS will not carry it out (unless it already collected it).'}
+              {act.kind === 'abandon' && `For a POS that is retired or silent over ${ov?.abandon_after_hours ?? 24} h: its open drawers are force-closed uncounted and the day closed with what the web knows. If it comes back it closes its own day too.`}
             </p>
             {act.kind === 'drawer' && ov?.sees_figures && act.drawer.expected_cash !== null && (
               <p className="text-xs text-gray-300">Expected in the drawer so far: <b>{money(act.drawer.expected_cash, currency)}</b></p>
@@ -244,7 +244,7 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
             {act.kind === 'close_day' && askForce && (
               <label className="flex gap-2 items-start text-xs text-red-300" data-testid="td-force-drawers">
                 <input type="checkbox" checked={forceOk} onChange={(e) => setForceOk(e.target.checked)} className="mt-0.5" />
-                <span>Force-close the open drawer{act.till.open_drawers.length === 1 ? '' : 's'} first ({act.till.open_drawers.map((d) => d.cashier_name).join(', ') || 'on the till'}) — recorded uncounted.</span>
+                <span>Force-close the open drawer{act.till.open_drawers.length === 1 ? '' : 's'} first ({act.till.open_drawers.map((d) => d.cashier_name).join(', ') || 'on the POS'}) — recorded uncounted.</span>
               </label>
             )}
             {act.kind === 'abandon' && (

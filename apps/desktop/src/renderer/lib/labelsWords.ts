@@ -8,7 +8,7 @@
 /** A574: what labels are for, in each business type's words (the tab is the same for every type). */
 export function labelsIntro(type: string | null | undefined): string {
   const t = String(type ?? '').trim().toLowerCase().replace(/\s+/g, '_');
-  if (t === 'restaurant' || t === 'cafe') return 'Barcode labels for grab-and-go and packaged items (bottled drinks, take-away packs, cakes), so they scan at the till.';
+  if (t === 'restaurant' || t === 'cafe') return 'Barcode labels for grab-and-go and packaged items (bottled drinks, take-away packs, cakes), so they scan at the POS.';
   if (t === 'petrol_station') return 'Barcode labels for the shop: lubricants, gas, snacks and drinks. Pump fuel is sold at the pump and needs no label.';
   if (t === 'parking') return 'Barcode labels for what you sell besides parking (car wash cards, permits, items at the booth).';
   return 'Barcode labels for the shelf or the item.';

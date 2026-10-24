@@ -29,29 +29,29 @@ export default function TillVersionsPanel() {
   return (
     <div data-testid="till-versions" className="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-2 text-sm">
       <div className="flex items-center justify-between">
-        <h3 className="text-white font-medium">Tills on this server</h3>
+        <h3 className="text-white font-medium">Points of sale on this server</h3>
         <span className="text-xs text-gray-400">This server: v{data.serverVersion}</span>
       </div>
       <p className="text-xs text-gray-400">
         {data.ready
-          ? `Holding v${data.ready} for the tills — each takes it from here and installs it when it is next closed.`
-          : 'No update is waiting. When one is approved, this server fetches it once and the tills take it from here.'}
+          ? `Holding v${data.ready} for the points of sale — each takes it from here and installs it when it is next closed.`
+          : 'No update is waiting. When one is approved, this server fetches it once and the points of sale take it from here.'}
       </p>
       {/* A496: the server's own fetch of the update for its tills — so a stuck fetch says why instead of looking idle. */}
       {data.share && data.share.state === 'fetching' && (
         <p className="text-xs text-gray-400">
-          Fetching v{data.share.version} for the tills
+          Fetching v{data.share.version} for the points of sale
           {data.share.size ? ` — ${Math.round((100 * (data.share.bytes ?? 0)) / data.share.size)}%` : ''}.
         </p>
       )}
       {data.share && data.share.state === 'failed' && (
         <p className="text-xs text-amber-300">
-          Could not fetch v{data.share.version} for the tills ({data.share.failures} tr{data.share.failures === 1 ? 'y' : 'ies'})
-          {data.share.error ? `: ${data.share.error}` : ''}. It tries again on its next check; after 3 failures the tills download it through this server directly.
+          Could not fetch v{data.share.version} for the points of sale ({data.share.failures} tr{data.share.failures === 1 ? 'y' : 'ies'})
+          {data.share.error ? `: ${data.share.error}` : ''}. It tries again on its next check; after 3 failures the points of sale download it through this server directly.
         </p>
       )}
       {data.tills.length === 0
-        ? <p className="text-xs text-gray-500">No till has checked in yet (each asks every 2 minutes).</p>
+        ? <p className="text-xs text-gray-500">No POS has checked in yet (each asks every 2 minutes).</p>
         : (
           <ul className="divide-y divide-gray-800">
             {data.tills.map((t) => (
@@ -65,7 +65,7 @@ export default function TillVersionsPanel() {
             ))}
           </ul>
         )}
-      {behind > 0 && <p className="text-xs text-amber-300">{behind} till{behind === 1 ? ' is' : 's are'} not on v{data.ready ?? data.serverVersion} yet.</p>}
+      {behind > 0 && <p className="text-xs text-amber-300">{behind} POS{behind === 1 ? ' is' : ' are'} not on v{data.ready ?? data.serverVersion} yet.</p>}
     </div>
   );
 }

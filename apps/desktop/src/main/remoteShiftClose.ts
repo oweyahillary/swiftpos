@@ -65,7 +65,7 @@ export function keepOwnExpected(c: LocalClose, own: number | null): LocalClose {
   const ownExpected = r2(own);
   const variance = c.closing_float === null ? null : r2(c.closing_float - ownExpected);
   const webSaid = c.web_expected_cash !== null && c.web_expected_cash !== undefined && r2(c.web_expected_cash) !== ownExpected
-    ? ` The web's figures: expected ${r2(c.web_expected_cash)}${c.web_cash_variance === null || c.web_cash_variance === undefined ? '' : `, variance ${r2(c.web_cash_variance)}`}; this till expects ${ownExpected} (its own books).`
+    ? ` The web's figures: expected ${r2(c.web_expected_cash)}${c.web_cash_variance === null || c.web_cash_variance === undefined ? '' : `, variance ${r2(c.web_cash_variance)}`}; this POS expects ${ownExpected} (its own books).`
     : '';
   return { ...c, expected_cash: ownExpected, cash_variance: variance, note: `${c.note}${webSaid}` };
 }

@@ -15,7 +15,7 @@ import { OFFLINE_SESSION_MESSAGE } from '../offlineSession';
 import { syncAll } from '../syncEngine';
 import { type IpcShared } from './shared';
 
-export const NEEDS_CONNECTION = 'Needs a connection — other branches\' stock is on the cloud. Try again once this till is online.';
+export const NEEDS_CONNECTION = 'Needs a connection — other branches\' stock is on the cloud. Try again once this POS is online.';
 export const FIND_REFUSED = 'Your role does not see stock.';
 export const REQUEST_REFUSED = 'Only a manager who transfers stock can ask another branch for it.';
 export const DECIDE_STEPS = ['accept', 'decline', 'cancel'] as const;
@@ -55,7 +55,7 @@ export function registerBranchStockHandlers(ctx: Pick<IpcShared, 'handle' | 'req
   handle('branchStock:requests', async () => {
     requireOnlineLicence();
     requireKey(['inventory.transfer'], REQUEST_REFUSED);
-    if (!transferBranch()) return { ok: false, offline: false, error: 'This till is not bound to a branch.', code: null };
+    if (!transferBranch()) return { ok: false, offline: false, error: 'This POS is not bound to a branch.', code: null };
     return cloudAnswer(() => manageFetch('/api/stock/requests?limit=100', 'GET'));
   });
 
@@ -65,7 +65,7 @@ export function registerBranchStockHandlers(ctx: Pick<IpcShared, 'handle' | 'req
     requireOnlineLicence();
     requireKey(['inventory.transfer'], REQUEST_REFUSED);
     const to = transferBranch();   // always FOR this branch (the person's, else this till's) — the cloud checks it is theirs
-    if (!to) return { ok: false, offline: false, error: 'This till is not bound to a branch.', code: null };
+    if (!to) return { ok: false, offline: false, error: 'This POS is not bound to a branch.', code: null };
     if (!(p.quantity > 0)) return { ok: false, offline: false, error: 'Ask for a quantity above 0.', code: 'INVALID_QUANTITY' };
     return cloudAnswer(() => manageFetch('/api/stock/requests', 'POST',
       { from_branch_id: p.from_branch_id, to_branch_id: to, product_id: p.product_id, quantity: p.quantity, note: p.note?.trim() || undefined }));

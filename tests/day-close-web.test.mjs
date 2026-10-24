@@ -24,7 +24,7 @@ ok('A275: it queues a close with a real counted_cash (never estimates)', () => {
   const s = r(UI);
   assert.match(s, /posApi\.post\('\/api\/day-close\/instruct'/);
   assert.match(s, /counted_cash:\s+amount/);
-  assert.match(s, /Enter the cash counted at the till/);
+  assert.match(s, /Enter the cash counted at the POS/);
   // it must read open days, not close them client-side
   assert.match(s, /posApi\.get<\{ tills: TillDay\[\] \}>\('\/api\/day-close\/overview'\)/);
 });

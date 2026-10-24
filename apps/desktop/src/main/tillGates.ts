@@ -47,7 +47,7 @@ export function configSaveRefusal(patch: Record<string, unknown> | null | undefi
   for (const k of keys) {
     if ((CONFIG_IDENTITY_KEYS as readonly string[]).includes(k)) {
       if (!ctx.configured || ctx.techSession) continue;
-      return 'This till’s set-up changes only from the technician console.';
+      return 'This POS’s set-up changes only from the technician console.';
     }
     const need = CONFIG_SETTING_KEY[k];
     if (need) {

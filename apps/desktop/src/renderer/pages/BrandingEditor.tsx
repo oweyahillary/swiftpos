@@ -73,7 +73,7 @@ export default function BrandingEditor() {
   };
 
   const save = async () => {
-    if (!businessId) { setMsg('No business on this till yet — enrol it first.'); return; }
+    if (!businessId) { setMsg('No business on this POS yet — enrol it first.'); return; }
     setBusy(true); setMsg('');
     try {
       const saved = await posApi.branding.set({
@@ -88,10 +88,10 @@ export default function BrandingEditor() {
       // 0.6.25: the upload is saved to the cloud too, so a later sync no longer puts the old logo back — say how that went.
       const cloud = saved.cloud;
       setMsg(cloud?.state === 'refused'
-        ? `Saved on this till, but the cloud refused it: ${cloud.message ?? 'unknown reason'}. The next sync will bring the cloud's logo back — upload it on the web dashboard instead.`
+        ? `Saved on this POS, but the cloud refused it: ${cloud.message ?? 'unknown reason'}. The next sync will bring the cloud's logo back — upload it on the web dashboard instead.`
         : cloud?.state === 'pending'
-          ? `Saved on this till. ${cloud.message ?? 'It will be saved to the cloud at the next sync.'} Until then, syncing keeps this logo.`
-          : 'Saved on this till and to the cloud — every till and receipt picks it up at its next sync.');
+          ? `Saved on this POS. ${cloud.message ?? 'It will be saved to the cloud at the next sync.'} Until then, syncing keeps this logo.`
+          : 'Saved on this POS and to the cloud — every POS and receipt picks it up at its next sync.');
       await load();
     } catch (err: any) {
       setMsg(String(err?.message ?? err));      // e.g. main-side guard rejected the logo
@@ -106,8 +106,8 @@ export default function BrandingEditor() {
       await posApi.tech.logAction('tech.branding.clear');
       setAccentHex(''); setLogoPng(null); setWarnings([]);
       setMsg(cleared.cloud?.state === 'saved'
-        ? 'Cleared on this till and the cloud — back to the ZapTill default.'
-        : `Cleared on this till. ${cleared.cloud?.message ?? 'The cloud will be updated at the next sync.'}`);
+        ? 'Cleared on this POS and the cloud — back to the ZapTill default.'
+        : `Cleared on this POS. ${cleared.cloud?.message ?? 'The cloud will be updated at the next sync.'}`);
     } catch (err: any) {
       setMsg(String(err?.message ?? err));
     } finally { setBusy(false); }
@@ -118,7 +118,7 @@ export default function BrandingEditor() {
       <h2 className="text-sm font-semibold text-gray-300 mb-3">Client branding</h2>
 
       {!businessId && (
-        <p className="text-xs text-amber-400 mb-3">This till has no business yet — enrol it before setting branding.</p>
+        <p className="text-xs text-amber-400 mb-3">This POS has no business yet — enrol it before setting branding.</p>
       )}
 
       {/* Accent */}

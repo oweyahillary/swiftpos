@@ -41,10 +41,10 @@ export const NODE_BACKLOG_QUIET_MS = 10 * 60_000;
 /** A501: what the branch server refused, in words that point at the right fix (it always said "access code"). */
 export function nodeRefusalText(reason: string | undefined): string {
   switch (reason) {
-    case 'device_key': return 'The branch server does not recognise this till (its device key) — sales are kept on this till but reach nothing else. A technician rejoins it from the branch server (Find my server)';
-    case 'branch': return 'This till is set to another branch than its branch server — sales are kept on this till but do not reach the branch server. A technician checks it (Tech › Branch sync)';
-    case 'tls': return "The branch server refused this till's unencrypted connection — sales are kept on this till but reach nothing else. A technician checks it (Tech › Shop network)";
-    default: return "The branch server refused this till's access code — sales are kept on this till but reach nothing else. A technician re-enters the code (Install › Branch access code)";
+    case 'device_key': return 'The branch server does not recognise this POS (its device key) — sales are kept on this POS but reach nothing else. A technician rejoins it from the branch server (Find my server)';
+    case 'branch': return 'This POS is set to another branch than its branch server — sales are kept on this POS but do not reach the branch server. A technician checks it (Tech › Branch sync)';
+    case 'tls': return "The branch server refused this POS's unencrypted connection — sales are kept on this POS but reach nothing else. A technician checks it (Tech › Shop network)";
+    default: return "The branch server refused this POS's access code — sales are kept on this POS but reach nothing else. A technician re-enters the code (Install › Branch access code)";
   }
 }
 
@@ -79,7 +79,7 @@ export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotic
   // A581: the business's cloud plan lapsed — the cloud refuses its sync until it is paid; nothing is lost.
   if (s.cloudLapsed) {
     return { tone: 'alert', action: 'sync',
-      text: `ZapTill cloud subscription ended — ${plural(s.pendingCount, 'record')} kept on this till, sent when renewed (ZapTill 0717 675 635) · ${last}` };
+      text: `ZapTill cloud subscription ended — ${plural(s.pendingCount, 'record')} kept on this POS, sent when renewed (ZapTill 0717 675 635) · ${last}` };
   }
   // A448: first — it stops everything reaching the cloud, and only a person can fix it (before: the log alone said so).
   if (s.nodeRefused) {
@@ -118,6 +118,6 @@ export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotic
 export function zBackupNote(n: { sales: number; drawerRefused: boolean } | null | undefined): string | null {
   if (!n) return null;
   if (n.drawerRefused) return 'NOT BACKED UP: the cloud refused this shift — a manager must check the sync notice.';
-  if (n.sales > 0) return `NOT BACKED UP YET: ${plural(n.sales, 'sale')} of this shift ${n.sales === 1 ? 'is' : 'are'} only on this till until it syncs.`;
+  if (n.sales > 0) return `NOT BACKED UP YET: ${plural(n.sales, 'sale')} of this shift ${n.sales === 1 ? 'is' : 'are'} only on this POS until it syncs.`;
   return null;
 }

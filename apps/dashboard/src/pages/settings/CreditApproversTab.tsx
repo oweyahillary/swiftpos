@@ -55,7 +55,7 @@ export function CreditApproversView({ view, rule, onChange, onSave, saving, save
           className="px-4 py-2 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 text-sm font-bold rounded-lg">
           {saving ? 'Saving…' : 'Save'}
         </button>
-        {saved && <span className="text-sm text-gray-300">Saved. The tills take it with their next customer list (within a minute online).</span>}
+        {saved && <span className="text-sm text-gray-300">Saved. The points of sale take it with their next customer list (within a minute online).</span>}
         {error && <span className="text-sm text-red-400">{error}</span>}
       </div>
     </div>

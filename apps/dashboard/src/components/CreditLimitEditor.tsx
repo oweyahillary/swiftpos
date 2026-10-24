@@ -42,7 +42,7 @@ export default function CreditLimitEditor({ customerId, currency }: { customerId
       const req = limitRequest(customerId, r.value);
       const saved = await api.patch<{ credit_limit: number; credit_balance: number }>(req.path, req.body);
       setLimit(Number(saved.credit_limit) || 0); setBalance(Number(saved.credit_balance) || 0);
-      setMsg({ kind: 'ok', text: r.value > 0 ? `Credit limit set to ${money(r.value, currency)}. They now show in Credit Accounts and at the tills.` : 'Credit limit removed.' });
+      setMsg({ kind: 'ok', text: r.value > 0 ? `Credit limit set to ${money(r.value, currency)}. They now show in Credit Accounts and at the points of sale.` : 'Credit limit removed.' });
     } catch (e: any) { setMsg({ kind: 'err', text: e?.message ?? 'Could not save the credit limit.' }); }
     finally { setBusy(false); }
   };

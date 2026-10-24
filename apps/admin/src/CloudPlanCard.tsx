@@ -200,7 +200,7 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
           Notices sent: {view.reminders.map((r) => `${milestoneText(r.milestone)} (${trialDate(r.sent_at)}${r.owner_sent ? "" : ", owner not reached"}${r.admin_sent ? "" : ", ZapTill not reached"})`).join(" · ")}
         </div>
       )}
-      <div style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>{clientName}'s tills never stop selling. On each due date the client is emailed the invoice (nothing else). Unpaid 7 days after it, everything locks at once — web dashboard paused, sync stopped, no till joins; a recorded payment opens it again at once.</div>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>{clientName}'s points of sale never stop selling. On each due date the client is emailed the invoice (nothing else). Unpaid 7 days after it, everything locks at once — web dashboard paused, sync stopped, no POS joins; a recorded payment opens it again at once.</div>
     </div>
   );
 }

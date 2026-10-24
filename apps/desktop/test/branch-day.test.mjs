@@ -33,7 +33,7 @@ ok('no cloud → what this till holds, with the reason',
   /try \{\s*return await cloudBranchDay\(range\);\s*\} catch \(e\) \{\s*return localBranchDay\(range, /.test(day));
 ok('the local shift report has no till filter (on a branch server that is every till)',
   /FROM shifts s LEFT JOIN users u/.test(local) && !/device_id,''\) = /.test(local) && !/WHERE s\.device_id/.test(local));
-ok('it says what it shows', /source: 'cloud',\s*scopeLabel: 'All tills at this branch'/.test(cloud) && /source: 'local',\s*scopeLabel:/.test(local));
+ok('it says what it shows', /source: 'cloud',\s*scopeLabel: 'All points of sale at this branch'/.test(cloud) && /source: 'local',\s*scopeLabel:/.test(local));
 
 ok('the IPC channel is handled, bridged and validated',
   // A490: the handler first asks the person's key (reports.overview / orders.view_all), then reads the branch.
@@ -51,10 +51,10 @@ ok('every Overview says what it shows and has the shift report',
   && (mp.match(/<BranchShiftsAndTills day=\{sales\} currency=\{currency\} when=\{when\} \/>/g) || []).length === 3);
 ok('the shift report: till, cashier, time, sales, expected, counted, difference, status',
   /data-testid="overview-shift-report"/.test(mp)
-  && ['Till', 'Cashier', 'Time', 'Sales', 'Expected cash', 'Counted', 'Difference', 'Status'].every(h => mp.includes(`font-medium${h === 'Till' || h === 'Cashier' || h === 'Time' || h === 'Status' ? '' : ' text-right'}">${h}</th>`)));
+  && ['POS', 'Cashier', 'Time', 'Sales', 'Expected cash', 'Counted', 'Difference', 'Status'].every(h => mp.includes(`font-medium${h === 'POS' || h === 'Cashier' || h === 'Time' || h === 'Status' ? '' : ' text-right'}">${h}</th>`)));
 ok('Top sellers: every till from the cloud; "(this till)" only when it is',
   // A468: the web's section card — "Top sellers", the day (and "(this till)") beside it.
-  (mp.match(/title="Top sellers" sub=\{`\$\{when\}\$\{sales && sales\.source !== 'cloud' && !sales\.localCoversBranch \? ' \(this till\)' : ''\}`\}/g) || []).length === 2
+  (mp.match(/title="Top sellers" sub=\{`\$\{when\}\$\{sales && sales\.source !== 'cloud' && !sales\.localCoversBranch \? ' \(this POS\)' : ''\}`\}/g) || []).length === 2
   && mp.includes("setTopItems(s?.source === 'cloud' ? (s.topProducts ?? []).slice(0, 8) : t)"));
 
 console.log(`\n${pass} passed, ${fail} failed`);

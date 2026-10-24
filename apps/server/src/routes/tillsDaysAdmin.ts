@@ -36,7 +36,7 @@ const actionLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: any) => `admin:${String(req.adminId ?? 'none')}`,
-  message: { error: 'Too many till actions from this admin — wait a few minutes.', code: 'RATE_LIMITED' },
+  message: { error: 'Too many POS actions from this admin — wait a few minutes.', code: 'RATE_LIMITED' },
 });
 
 async function clientOf(req: any, res: any): Promise<{ id: string; name: string | null } | null> {
@@ -95,7 +95,7 @@ router.post('/:businessId/close-day', requireAdmin, actionLimiter, async (req: a
       `ZapTill support closed ${r.till}'s day for ${r.day.business_date} — reason: ${reason}`,
       `Counted ${r.day.counted_cash} (${r.counted_from === 'confirmed_shifts' ? 'the confirmed shift counts' : 'a count entered by support'}), expected ${r.day.expected_cash}, difference ${r.day.cash_variance}.` +
       (r.drawers_force_closed.length ? ` ${r.drawers_force_closed.length} open drawer(s) were force-closed uncounted first.` : '') +
-      ` The till adopts this close when it next connects. Done by ${req.adminEmail}.`,
+      ` The POS adopts this close when it next connects. Done by ${req.adminEmail}.`,
       { device_id: b.device_id, till: r.till, business_date: r.day.business_date, ...r.day, drawers_force_closed: r.drawers_force_closed }, reason);
     res.json({ ...r, owner_emailed: emailed });
   } catch (e) { answer(res, e); }
@@ -112,7 +112,7 @@ router.post('/:businessId/close-drawer', requireAdmin, actionLimiter, async (req
     const emailed = await afterAction(req, client, r.counted ? 'tills_days.count_close_drawer' : 'tills_days.force_close_drawer',
       `ZapTill support ${what} ${r.cashier}'s drawer on ${r.till} — reason: ${reason}`,
       `${r.counted ? `Closed with a count of ${r.shift?.closing_float}` : 'Recorded uncounted (no count, no difference)'}; expected ${r.shift?.expected_cash}. ` +
-      `The till closes it too when it next connects. Done by ${req.adminEmail}.`,
+      `The POS closes it too when it next connects. Done by ${req.adminEmail}.`,
       { shift_id: b.shift_id, till: r.till, cashier: r.cashier, counted: r.counted }, reason);
     res.json({ ...r, owner_emailed: emailed });
   } catch (e) { answer(res, e); }
@@ -126,7 +126,7 @@ router.post('/:businessId/instructions/:id/cancel', requireAdmin, actionLimiter,
     const reason = String(req.body?.reason).trim();
     const emailed = await afterAction(req, client, 'tills_days.cancel_close',
       `ZapTill support withdrew a waiting day close on ${r.till} — reason: ${reason}`,
-      `${r.delivered ? 'The till had already collected it and may still carry it out. ' : ''}Done by ${req.adminEmail}.`,
+      `${r.delivered ? 'The POS had already collected it and may still carry it out. ' : ''}Done by ${req.adminEmail}.`,
       { instruction_id: req.params.id, till: r.till, delivered: r.delivered }, reason);
     res.json({ ...r, owner_emailed: emailed });
   } catch (e) { answer(res, e); }
@@ -142,7 +142,7 @@ router.post('/:businessId/abandon', requireAdmin, actionLimiter, async (req: any
     const dates = (r.days ?? []).map((d: any) => d.business_date).join(', ');
     const emailed = await afterAction(req, client, 'tills_days.abandon',
       `ZapTill support closed ${r.till}'s day for ${dates} as abandoned — reason: ${reason}`,
-      `${(r.shifts ?? []).length} drawer(s) force-closed uncounted; sales the till made after it last synced are not in it. Done by ${req.adminEmail}.`,
+      `${(r.shifts ?? []).length} drawer(s) force-closed uncounted; sales the POS made after it last synced are not in it. Done by ${req.adminEmail}.`,
       { device_id: b.device_id, till: r.till, days: dates, shifts_force_closed: (r.shifts ?? []).length }, reason);
     res.json({ ...r, owner_emailed: emailed });
   } catch (e) { answer(res, e); }

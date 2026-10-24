@@ -283,7 +283,7 @@ export default function DevicesTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-white text-sm font-medium">
-                    {d.users?.name ?? (d.device_id ? 'Till' : 'Unknown')}
+                    {d.users?.name ?? (d.device_id ? 'POS' : 'Unknown')}
                   </span>
                   <span className="text-gray-600 text-xs">·</span>
                   {editingId === d.id ? (
@@ -295,7 +295,7 @@ export default function DevicesTab() {
                         autoFocus
                         onKeyDown={e => { if (e.key === 'Enter') saveLabel(d); if (e.key === 'Escape') setEditingId(null); }}
                         className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-white w-44"
-                        placeholder="e.g. Front Till"
+                        placeholder="e.g. Front POS"
                       />
                       <button onClick={() => saveLabel(d)} className="text-swift-text hover:text-swift-text-hover text-xs font-medium">Save</button>
                       <button onClick={() => setEditingId(null)} className="text-gray-500 hover:text-gray-300 text-xs">✕</button>
@@ -306,7 +306,7 @@ export default function DevicesTab() {
                       <button
                         onClick={() => { setEditingId(d.id); setEditValue(d.device_label ?? ''); }}
                         className="text-gray-600 hover:text-gray-300 text-xs"
-                        title="Rename device — a desktop till's own name (set on the till) replaces this at its next sign-in"
+                        title="Rename device — a desktop POS's own name (set on the POS) replaces this at its next sign-in"
                       >✎</button>
                     </span>
                   )}

@@ -174,7 +174,7 @@ export function answerDrawers(device: string, ask: DrawersAsk, o: { self?: boole
     if (device) { peerAsks.delete(device); peerAsks.set(device, now); if (peerAsks.size > 200) peerAsks.delete(peerAsks.keys().next().value as string); }   // A542
   }
   if (!fresh(now)) {
-    void pollBranchDrawers('a till asked').catch(() => false);
+    void pollBranchDrawers('a POS asked').catch(() => false);
     return { status: 503, body: { error: 'The branch server is fetching the drawers - ask the cloud this time.', code: 'DRAWERS_STALE' } };
   }
   const out: Record<string, unknown> = { at: new Date(copy.okAt).toISOString() };
@@ -285,7 +285,7 @@ const HOUR_MS = 3_600_000;
 /** The Tech page / the log pull: how the drawer checks go. */
 export function drawersStatus(now = Date.now()): DrawersStatus {
   const role = isServer() ? 'server' : isPeer() ? 'peer' : 'direct';
-  const mode = role === 'server' ? (now < unsupportedUntil ? 'each till asks (older cloud)' : `one call for the branch every ${Math.round(beatMs(now) / 1000)} s`)
+  const mode = role === 'server' ? (now < unsupportedUntil ? 'each POS asks (older cloud)' : `one call for the branch every ${Math.round(beatMs(now) / 1000)} s`)
     : role === 'peer' ? (now < peerUnsupportedUntil ? 'through the gateway (older server)' : 'from the branch server') : 'the cloud';
   // A542: what the branch server's Tech page shows (DrawersCopyPanel).
   let open = 0, awaiting = 0;

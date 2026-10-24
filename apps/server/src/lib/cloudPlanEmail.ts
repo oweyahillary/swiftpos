@@ -141,7 +141,7 @@ export function adminNoticeText(f: AdminNoticeFacts): { subject: string; text: s
       subject: subjectSafe(`[ZapTill billing] ${f.businessName} — unpaid ${days(f.unpaidDays ?? 5)}, locks in ${days(n)}`),
       text: [
         `${f.businessName} has not paid ${price} (due ${planDate(f.dueAt)}) — unpaid ${days(f.unpaidDays ?? 5)}.`,
-        `Locks in ${days(n)} (at the end of ${planDate(f.lockAt ? new Date(Date.parse(f.lockAt) - 1).toISOString() : null)}): the web dashboard pauses, sync stops, no till can join. Tills keep selling.`,
+        `Locks in ${days(n)} (at the end of ${planDate(f.lockAt ? new Date(Date.parse(f.lockAt) - 1).toISOString() : null)}): the web dashboard pauses, sync stops, no POS can join. Points of sale keep selling.`,
         `Owner: ${f.ownerEmail ?? 'no email on file'}. A call now may save the lock.`,
         record,
       ].join('\n'),
@@ -152,8 +152,8 @@ export function adminNoticeText(f: AdminNoticeFacts): { subject: string; text: s
       subject: subjectSafe(`[ZapTill billing] ${f.businessName} — locked (unpaid since ${planDate(f.dueAt)})`),
       text: [
         `${f.businessName} is locked: unpaid since ${planDate(f.dueAt)} (${price}).`,
-        'The web dashboard is paused, the cloud refuses its tills\' sync and no till can join. The tills keep selling and keep their sales.',
-        'A recorded payment opens everything at once and the tills\' queues drain. The morning digest lists it while locked.',
+        'The web dashboard is paused, the cloud refuses sync from its points of sale and no POS can join. The points of sale keep selling and keep their sales.',
+        'A recorded payment opens everything at once and the queues on the points of sale drain. The morning digest lists it while locked.',
         record,
       ].join('\n'),
     };

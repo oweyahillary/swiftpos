@@ -158,7 +158,7 @@ export function executeConfirmShift(payload: ConfirmShiftPayload): { ok: boolean
     const c = confirmShift(payload.shift_id, payload.confirmer, payload.counts, payload.reasons ?? null);
     return { ok: true, summary: c };
   } catch (err: any) {
-    return { ok: false, error: err?.message ?? 'Could not confirm the shift on this till' };
+    return { ok: false, error: err?.message ?? 'Could not confirm the shift on this POS' };
   }
 }
 
@@ -233,7 +233,7 @@ export interface ShiftMoneyPayload {
   recorded_by?: { id: string; name: string | null } | null;
 }
 
-export const SHIFT_MONEY_CLOSED = 'That shift is closed on this till — record it on the shift now open';
+export const SHIFT_MONEY_CLOSED = 'That shift is closed on this POS — record it on the shift now open';
 
 /** A465: record a server manager's cash in / out or expense on one of this till's open shifts. Never throws. */
 export function executeShiftMoney(payload: ShiftMoneyPayload):
@@ -263,7 +263,7 @@ export function executeShiftMoney(payload: ShiftMoneyPayload):
     const expected = computeZReport(p.shift_id).totals.expectedCash;
     return { ok: true, summary: { kind: p.kind, amount, shift_id: p.shift_id, expected_cash: expected } };
   } catch (err: any) {
-    return { ok: false, error: err?.message ?? 'Could not record it on this till' };
+    return { ok: false, error: err?.message ?? 'Could not record it on this POS' };
   }
 }
 
@@ -331,7 +331,7 @@ export function executeCloseDay(payload: CloseDayPayload):
     const code = err?.code === 'SHIFTS_UNCONFIRMED' ? 'SHIFTS_UNCONFIRMED'
       : err?.code === 'DRAWER_OPEN' || /drawer is still open/i.test(String(err?.message ?? '')) ? 'DRAWER_OPEN' : undefined;
     const notYet = payload?.wait_for_till === true && !!code;
-    return { ok: false, error: err?.message ?? 'Could not close the day on this till', ...(code ? { code } : {}), ...(notYet ? { wait: true } : {}) };
+    return { ok: false, error: err?.message ?? 'Could not close the day on this POS', ...(code ? { code } : {}), ...(notYet ? { wait: true } : {}) };
   }
 }
 
@@ -340,7 +340,7 @@ export function executeCloseDay(payload: CloseDayPayload):
 /** A452: queue a shift confirmation for one peer (one live instruction per shift — a second replaces the first).
  *  P3 (2026-10-14): only one the till has NOT collected yet is replaced. One it already collected may be on its books
  *  (its ack can lag); replacing it would send a second, different count for the same shift — refused instead. */
-export const CONFIRM_IN_FLIGHT = 'The till has already taken an earlier confirmation of this shift — wait for its answer (about 15 seconds).';
+export const CONFIRM_IN_FLIGHT = 'The POS has already taken an earlier confirmation of this shift — wait for its answer (about 15 seconds).';
 export function createConfirmInstruction(deviceId: string, payload: ConfirmShiftPayload, createdByStaffId: string | null): { id: number } {
   ensureInstructionUid();
   const db = getLocalDb();
@@ -562,7 +562,7 @@ export function forgetTill(deviceId: string): boolean {
     db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`).run(`forgotten_till:${id}`, now, now);
     db.prepare(`DELETE FROM node_peer_state WHERE device_id = ?`).run(id);
     db.prepare(`UPDATE node_instructions SET status = 'expired', acked_at = ?, ack = ? WHERE device_id = ? AND status = 'pending'`)
-      .run(now, JSON.stringify({ ok: false, error: 'The till was revoked on the branch server' }), id);
+      .run(now, JSON.stringify({ ok: false, error: 'The POS was revoked on the branch server' }), id);
   })();
   try { forgetDeviceKey(id); } catch { /* no key table yet */ }
   return true;
@@ -680,7 +680,7 @@ export const PEER_STALE_MS = 120_000;
 export function tillLabel(t: { is_self: boolean; device_id: string; state?: { terminal?: { code?: string | null; name?: string | null } } | null }): string {
   if (t.is_self) return 'This terminal (branch server)';
   const n = t.state?.terminal?.name?.trim(); const c = t.state?.terminal?.code?.trim();
-  return n && c ? `${n} (${c})` : n || (c ? `Till ${c}` : `Terminal ${t.device_id.slice(0, 8)}`);
+  return n && c ? `${n} (${c})` : n || (c ? `POS ${c}` : `Terminal ${t.device_id.slice(0, 8)}`);
 }
 
 export interface BranchCloseAssessment {
@@ -739,10 +739,10 @@ export function assessBranchClose(tills: BranchCloseTillView[], nowMs: number = 
         const line = `${label} is on an older version and last reported a drawer open — update it, or close that drawer on it`;
         out.blockers.push(line);
         out.without.push({ device_id: t.device_id, label, connected: !stale, lines: [line],
-          warning: `Close the branch without ${label} — it is on an older version and last reported a drawer open; its cash is not in tonight's totals; its day closes at the till (Close Day) or here once it is updated` });
+          warning: `Close the branch without ${label} — it is on an older version and last reported a drawer open; its cash is not in tonight's totals; its day closes at the POS (Close Day) or here once it is updated` });
       } else if (!t.is_self && st.day_open) {
         out.held.push({ device_id: t.device_id, label, business_date: st.business_date ?? null, close: false,
-          note: 'is on an older version — update it; until then its day closes at the till (Close Day)' });
+          note: 'is on an older version — update it; until then its day closes at the POS (Close Day)' });
       } else if (t.is_self) out.blockers.push(`${label} is on an older version — update it to close the branch from here`);
       continue;
     }
@@ -764,7 +764,7 @@ export function assessBranchClose(tills: BranchCloseTillView[], nowMs: number = 
     if (stale) {
       // Money a person must count or confirm: it still holds the close — and the line says exactly what to do.
       if (st.open_drawer) lines.push(`${label} last reported a drawer open${who ? ` (${who})` : ''} — switch it on so it can close, or close that drawer on it`);
-      if (waiting) lines.push(`${label} last reported ${shiftsWord} not confirmed yet — switch it on so ${waiting === 1 ? 'it' : 'they'} can be confirmed here, or confirm ${waiting === 1 ? 'it' : 'them'} on that till`);
+      if (waiting) lines.push(`${label} last reported ${shiftsWord} not confirmed yet — switch it on so ${waiting === 1 ? 'it' : 'they'} can be confirmed here, or confirm ${waiting === 1 ? 'it' : 'them'} on that POS`);
       if (!lines.length) {
         if (st.day_open) out.held.push({ device_id: t.device_id, label, business_date: st.business_date ?? null });
         continue;

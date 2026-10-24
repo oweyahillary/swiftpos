@@ -56,7 +56,7 @@ export function registerCreditHandlers(ctx: IpcShared) {
       if (!creditOffline()) throw e;
       creditConfirm.queueDecision(db, { order_id: orderId, decision, reason: why, by: me.staff_id, by_name: me.staff_name ?? null, at: new Date().toISOString() });
       logLine('manage', `A545 credit sale ${orderId} ${decision}ed by ${me.staff_name ?? me.staff_id} — kept on this till until the cloud is back`);
-      return { state: 'pending' as const, message: 'Saved on this till — it goes to the cloud when the connection is back.' };
+      return { state: 'pending' as const, message: 'Saved on this POS — it goes to the cloud when the connection is back.' };
     }
   });
   // The Close Day / Close Branch notice: how many credit sales wait for a manager. NEVER blocks a close — a count only.

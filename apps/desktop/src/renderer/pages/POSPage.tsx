@@ -1051,7 +1051,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             order_number: num, lines: unsent.map(({ item, qty }) => linePayload(item, qty)),
             order_type: flags.isRestaurant ? orderType : 'retail', table_number: orderType === 'dine_in' ? tableNumber : undefined,
           });
-        } catch { ledgerMsg = ' (not recorded on this till — tell the manager)'; }
+        } catch { ledgerMsg = ' (not recorded on this POS — tell the manager)'; }
 
         const sentIds = new Map(unsent.map(({ item }) => [item.lineId, item.quantity]));
         setCart(prev => prev.map(i => {
@@ -1712,7 +1712,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         <div className="bg-red-500/15 border-b border-red-500/40 px-4 py-3 flex items-center gap-3">
           <span className="text-red-400 text-base">⛔</span>
           <div className="flex-1">
-            <p className="text-sm text-red-200 font-medium">This till cannot sell yet</p>
+            <p className="text-sm text-red-200 font-medium">This POS cannot sell yet</p>
             <p className="text-xs text-red-300/80 mt-0.5">{dayGate?.reason}</p>
           </div>
           {/* A405: a manager signed in closes the day from here; anyone else is told who can. */}
@@ -2333,7 +2333,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
-                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? `Today's orders · void within ${windowLabel(voidWindowMin)} of the sale, refund any time after` : historyOwnOnly ? 'Your sales today' : 'Today\'s orders on this till'}</p>
+                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? `Today's orders · void within ${windowLabel(voidWindowMin)} of the sale, refund any time after` : historyOwnOnly ? 'Your sales today' : 'Today\'s orders on this POS'}</p>
                 {reprintNote && <p className="text-emerald-400 text-xs mt-1">{reprintNote}</p>}
               </div>
               <button onClick={() => { setReprintNote(''); setShowHistory(false); }}
@@ -2446,7 +2446,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                             {o.order_number}
                             {o.origin === 'web' && (
                               <span data-testid="web-sale" className="ml-1.5 font-sans text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400"
-                                title="Rung on the web POS on this till's drawer">web</span>
+                                title="Rung on the web POS on this desktop POS's drawer">web</span>
                             )}
                           </td>
                           <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">

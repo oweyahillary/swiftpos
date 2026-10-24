@@ -44,7 +44,7 @@ export function registerJoinHandlers(ctx: IpcShared) {
     const db = getLocalDb();
     const current = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined;
     if (rejoin && current?.business_id && current.business_id !== businessId) {
-      throw new Error('That business ID is not this till\'s business. Rejoin keeps this till\'s sales, so it only joins its own business.');
+      throw new Error('That business ID is not this POS\'s business. Rejoin keeps this POS\'s sales, so it only joins its own business.');
     }
     const res = await cloudFetch(`${getCloudUrl()}/api/auth/enrol/redeem`, {
       method: 'POST',
@@ -109,7 +109,7 @@ export function registerJoinHandlers(ctx: IpcShared) {
 
     configureSyncEngine(getCloudUrl(), data.token, data.refreshToken ?? '');
     // A477: a technician's action — the renewal gate opens at once (a refused session waits 15 min otherwise).
-    resetRenewalGate(rejoin ? 'a technician rejoined this till' : 'the till joined its business');
+    resetRenewalGate(rejoin ? 'a technician rejoined this POS' : 'the POS joined its business');
     authLog(rejoin ? 'rejoin' : 'join', `business ${data.business?.id ?? businessId}${data.deviceSecret ? ', device secret kept' : ''}`);
     refreshTechConfig(data.token).catch(() => {});
     logLine('enrol', rejoin ? 'the technician rejoined this till to its business — everything on it kept' : 'joined the business');
@@ -124,7 +124,7 @@ export function registerJoinHandlers(ctx: IpcShared) {
     // A490: a till already set up AND joined to its business joins again only from the technician console (as
     // auth:rejoin) — a first join clears the catalogue and replaces the till's session, so it is not anyone's button.
     const joined = !!(getLocalDb().prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined)?.business_id;
-    if (isConfigured() && joined && !getActiveSession()) throw new Error('This till is already joined to its business. A technician rejoins it from the technician console.');
+    if (isConfigured() && joined && !getActiveSession()) throw new Error('This POS is already joined to its business. A technician rejoins it from the technician console.');
     return joinBusiness(String(business_id).trim(), String(code).trim(), false);
   });
 
@@ -155,7 +155,7 @@ export function registerJoinHandlers(ctx: IpcShared) {
   // clears its menu) only by a technician — the same rule as auth:enrolDevice; its own rejoin (keeps everything) stays.
   const joinedHere = (): boolean => isConfigured()
     && !!(getLocalDb().prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined)?.business_id;
-  const ALREADY_JOINED = 'This till is already joined to its business. A technician moves it from the technician console.';
+  const ALREADY_JOINED = 'This POS is already joined to its business. A technician moves it from the technician console.';
   const sameCloud = (a: string, b: string) => String(a ?? '').trim().replace(/\/+$/, '').toLowerCase() === String(b ?? '').trim().replace(/\/+$/, '').toLowerCase();
   handle('install:requestJoin', async (_event, payload) => {
     const { url, rejoin } = assertPayload<{ url: string; rejoin?: boolean }>({ url: { t: 'string', min: 1 }, rejoin: { t: 'boolean', optional: true } }, payload);
@@ -172,7 +172,7 @@ export function registerJoinHandlers(ctx: IpcShared) {
     try {
       res = await joinFetch(`${url}/node/join`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...joinProofHeaders(deviceId, cert) },   // A503
         body: JSON.stringify({ device_id: deviceId, name: os.hostname() }), signal: AbortSignal.timeout(5000) }, cert);
-    } catch { throw new Error('Could not reach that branch server. Check this till is on the same network.'); }
+    } catch { throw new Error('Could not reach that branch server. Check this POS is on the same network.'); }
     const body: any = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body?.error ?? `The branch server refused (HTTP ${res.status}).`);
     joinAsk = { url, id: String(body.id), token: String(body.token), rejoin: !!rejoin, cert };
@@ -201,7 +201,7 @@ export function registerJoinHandlers(ctx: IpcShared) {
     if (!ask.rejoin && joinedHere() && !getActiveSession()) throw new Error(ALREADY_JOINED);
     if ((ask.rejoin || isConfigured()) && !sameCloud(String(g.cloud_url ?? ''), getCloudUrl())) {
       logLine('join', `A494: refused a join answer from ${ask.url} for another cloud (${String(g.cloud_url ?? '')})`);
-      throw new Error('That branch server belongs to another cloud than this till. Ask your technician.');
+      throw new Error('That branch server belongs to another cloud than this POS. Ask your technician.');
     }
     const port = Number(new URL(ask.url).port);
     if (ask.rejoin) {
@@ -321,11 +321,11 @@ export function registerJoinHandlers(ctx: IpcShared) {
     const { id, allow } = assertPayload<{ id: string; allow: boolean }>({ id: { t: 'string', min: 1 }, allow: { t: 'boolean' } }, payload);
     if (!isNodeRole(getDeviceConfig()?.device_role)) throw new Error('Only the branch server answers join requests.');
     // A490: adding a till to the branch is devices.approve (the cloud's Tills and devices), or a technician.
-    if (!getActiveSession() && !signedInCan('devices.approve')) throw new Error('Only someone who approves tills (or a technician) can answer a till asking to join.');
+    if (!getActiveSession() && !signedInCan('devices.approve')) throw new Error('Only someone who approves points of sale (or a technician) can answer a POS asking to join.');
     const out = await answerJoin(id, allow, async () => {
       let res: Response;
       try { res = await tillFetch('/api/pos/join-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); }
-      catch { throw new Error('The server needs the internet to add a till — check the connection and press Allow again.'); }
+      catch { throw new Error('The server needs the internet to add a POS — check the connection and press Allow again.'); }
       const d: any = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d?.error ?? `The cloud refused (HTTP ${res.status}).`);
       const cfg = getDeviceConfig();

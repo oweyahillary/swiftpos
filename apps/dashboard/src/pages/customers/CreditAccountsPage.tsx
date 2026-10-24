@@ -209,7 +209,7 @@ export default function CreditAccountsPage() {
         <GiveCreditPicker currency={currency} onClose={() => setGiving(false)}
           onGiven={(name, lim) => {
             setGiving(false);
-            setMsg({ kind: 'ok', text: `${name} can now buy on account up to ${money(lim, currency)}. The tills pick it up at their next pull.` });
+            setMsg({ kind: 'ok', text: `${name} can now buy on account up to ${money(lim, currency)}. The points of sale pick it up at their next pull.` });
             void loadList();
           }} />
       )}

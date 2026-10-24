@@ -247,7 +247,7 @@ await ok('the picker: catalogue words from the cloud (local copy as fallback), "
   assert.match(p, /client\.get<CatalogueGroup\[\]>\('\/api\/staff\/permission-groups'\)/);
   assert.match(p, /ref\.current\.indeterminate = indeterminate && !checked/);
   assert.match(p, /placeholder="Search permissions…"/);
-  assert.match(p, /surface === 'both' \? \['Web', 'Till'\]/);
+  assert.match(p, /surface === 'both' \? \['Web', 'POS'\]/);
 });
 await ok('RolesTab: the new API — keys, copy_from, rename, delete with ROLE_IN_USE, the owner\'s role locked, unsaved guard', () => {
   const r = read('pages/settings/RolesTab.tsx');

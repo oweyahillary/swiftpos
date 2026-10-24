@@ -134,7 +134,7 @@ export function registerDeviceHandlers(ctx: IpcShared) {
   handle('install:checkTerminalCode', async (_e, payload) => {
     const { code, branch_id } = assertPayload<{ code: string; branch_id?: string }>(
       { code: { t: 'string', min: 1 }, branch_id: { t: 'string', optional: true } }, payload);
-    if (isConfigured() && !getActiveSession()) throw new Error('This till’s set-up changes only from the technician console.');
+    if (isConfigured() && !getActiveSession()) throw new Error('This POS’s set-up changes only from the technician console.');
     return checkTerminalCode(code, branch_id || getDeviceConfig()?.branch_id || '');
   });
 
@@ -300,7 +300,7 @@ export function registerDeviceHandlers(ctx: IpcShared) {
 
     if (Number(unsynced) > 0 && !force) {
       throw new Error(
-        `${unsynced} order${unsynced === 1 ? '' : 's'} on this till have not reached the server. ` +
+        `${unsynced} order${unsynced === 1 ? '' : 's'} on this POS have not reached the server. ` +
         'Get it back online and let them sync before resetting, or they are lost.',
       );
     }

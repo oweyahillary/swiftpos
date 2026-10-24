@@ -194,7 +194,7 @@ export function registerSignInHandlers(ctx: IpcShared) {
       logLine('pin', `this till's staff list: ${v.reason} - checking the PIN on this till's saved sign-ins`);
       const verdict = verifyPinOffline(String(pin), branch_id);
       if (verdict.ok) return signInLocal(verdict.staff);
-      void refreshStaffRosterNow('a PIN this till did not know');
+      void refreshStaffRosterNow('a PIN this POS did not know');
       // A494: a PIN some authority said no to counts toward this till's lockout (one that could not be checked does not).
       if (nodeSaidNo || v.reason === 'no_match' || verdict.reason === 'no_match') recordPinFailure();
       throw expectedRefusal(new Error(nodeSaidNo ?? (v.reason === 'no_match' ? 'Invalid PIN' : verdict.message)));   // A554
@@ -303,7 +303,7 @@ export function registerSignInHandlers(ctx: IpcShared) {
   handle('auth:unlock', async (_e, payload) => {
     const { pin } = assertPayload<{ pin: string }>({ pin: { t: 'string', min: 1 } }, payload);
     const st = getLocalDb().prepare(`SELECT staff_id, branch_id FROM staff_session WHERE id=1`).get() as { staff_id?: string; branch_id?: string } | undefined;
-    if (!st?.staff_id || !st.branch_id) throw new Error('Nobody is signed in on this till — sign in again.');
+    if (!st?.staff_id || !st.branch_id) throw new Error('Nobody is signed in on this POS — sign in again.');
     assertPinAllowed();   // A494
     // A480: a session signed in on this till's own check (no cloud token — offline, a slow line, a refused till, or after a
     // restart lost the held PIN) becomes a cloud one again from the unlock: the PIN is held and the upgrade tried at once,
@@ -337,23 +337,23 @@ export function registerSignInHandlers(ctx: IpcShared) {
       res = await withinMs(tillFetch('/api/auth/verify-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: verifyPinBody(String(pin), st.branch_id) }), 8_000);
     } catch {
-      void refreshStaffRosterNow('an unlock PIN this till did not know');
+      void refreshStaffRosterNow('an unlock PIN this POS did not know');
       // A494: offline, the till's own "no" is the answer — the same 'wrong' as a colleague's PIN, and counted (a
       // different message here told an unknown PIN from a real one). Only a till holding no list at all says it cannot check.
       if (localNo) { recordPinFailure(); return WRONG; }
-      throw new Error('This till does not know that PIN and cannot reach the cloud to check it. Try again, or sign out.');
+      throw new Error('This POS does not know that PIN and cannot reach the cloud to check it. Try again, or sign out.');
     }
     if (res.status === 429) throw new Error(PIN_CLOUD_BUSY);   // A494
     if (isUnreachableStatus(res.status)) {
       if (localNo) { recordPinFailure(); return WRONG; }
-      throw new Error('This till does not know that PIN and the cloud is not answering. Try again, or sign out.');
+      throw new Error('This POS does not know that PIN and the cloud is not answering. Try again, or sign out.');
     }
     const data = await res.json().catch(() => ({} as any));
-    if (!res.ok) { void refreshStaffRosterNow('an unlock PIN this till did not know'); recordPinFailure(); return WRONG; }
+    if (!res.ok) { void refreshStaffRosterNow('an unlock PIN this POS did not know'); recordPinFailure(); return WRONG; }
     if (data.staff?.id !== st.staff_id) { recordPinFailure(); return WRONG; }
     notePinSuccess();   // A504
     persistCloudSignIn(data, st.branch_id);   // the same person, with a fresh cloud session — better than the one held
-    void refreshStaffRosterNow('this till did not know a PIN the cloud did');
+    void refreshStaffRosterNow('this POS did not know a PIN the cloud did');
     return { ok: true };
   });
 

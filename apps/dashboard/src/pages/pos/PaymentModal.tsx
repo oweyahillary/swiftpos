@@ -406,7 +406,7 @@ export default function PaymentModal({
     if (!cashValid || !creditValid) return;
     if (chargingRef.current) return;   // synchronous double-tap guard
     if (!existingOrderId && !branchId) {
-      setError('No branch is set for this session. Please lock the till and sign in again.');
+      setError('No branch is set for this session. Please lock the POS and sign in again.');
       return;
     }
     chargingRef.current = true;

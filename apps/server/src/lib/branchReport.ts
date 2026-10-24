@@ -61,7 +61,7 @@ export function shiftState(s: Pick<BranchShift, 'status' | 'declared_methods' | 
 /** The till's name as people know it: its code, else its label, else "Web Till" (a web POS drawer has no device). */
 export function tillLabel(deviceId: string | null, terminalCode: string | null, names: Map<string, TillName>): string {
   const d = deviceId ? names.get(deviceId) : undefined;
-  return d?.terminal_code || terminalCode || d?.device_label || (deviceId ? 'Till' : 'Web Till');
+  return d?.terminal_code || terminalCode || d?.device_label || (deviceId ? 'POS' : 'Web POS');
 }
 
 /** The hour of the day where the branch is (minutes east of UTC; Kenya 180) — the till's Overview draws local hours. */

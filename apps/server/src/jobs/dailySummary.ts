@@ -454,7 +454,7 @@ export function priceDiffLine(d: { count: number; loss: number; suspicious: numb
       <tr><td style="padding:14px 18px;font-size:13px;color:#fff;">
         Offline sales priced differently: <strong>${d.count}</strong>, loss <strong style="color:#f97316;">${c} ${fmt(d.loss)}</strong>
         ${d.suspicious ? `<span style="color:#ef4444;font-weight:700;"> · ${d.suspicious} over half the price — check them</span>` : ''}
-        <p style="margin:6px 0 0;font-size:11px;color:#6b7280;">Sold on a till while offline at the till's price; the menu price had changed when they reached the cloud. Reports › Voids &amp; Exceptions lists them.</p>
+        <p style="margin:6px 0 0;font-size:11px;color:#6b7280;">Sold on a POS while offline at the POS's price; the menu price had changed when they reached the cloud. Reports › Voids &amp; Exceptions lists them.</p>
       </td></tr>
     </table>
   </td></tr>`;
@@ -570,7 +570,7 @@ function buildSummaryEmail(opts: {
   <!-- P0-2: offline sales priced differently (only when there are any) -->
   ${priceDiffLine(opts.priceDiffs, c)}
 
-  <!-- A476: tills not closed or confirmed, cash differences, voids and refunds, tills not syncing, expenses -->
+  <!-- A476: points of sale not closed or confirmed, cash differences, voids and refunds, points of sale not syncing, expenses -->
   ${opts.extrasHtml ?? ''}
 
   <!-- Top products -->

@@ -162,10 +162,10 @@ export function getReportScope(): ReportScope {
     deviceRole: role,
     coversBranch,
     scopeLabel: coversBranch
-      ? `All tills at this branch (${tills} seen)`
+      ? `All points of sale at this branch (${tills} seen)`
       : others > 0
-        ? `This till${code ? ` (${code})` : ''} and ${others} other till${others === 1 ? '' : 's'} of the branch, as copied from the branch server — the newest sales of other tills may not be here yet`
-        : `This till only${code ? ` (${code})` : ''} — other tills are not included`,
+        ? `This POS${code ? ` (${code})` : ''} and ${others} other ${others === 1 ? 'POS' : 'points of sale'} of the branch, as copied from the branch server — the newest sales of other points of sale may not be here yet`
+        : `This POS only${code ? ` (${code})` : ''} — other points of sale are not included`,
     earliestOrder: earliest,
   };
 }

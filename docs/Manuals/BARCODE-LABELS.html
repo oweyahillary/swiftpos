@@ -44,7 +44,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 </blockquote>
 <h2 id="1-barcodes">1. Barcodes</h2>
 <h3 id="products-that-already-have-a-barcode">Products that already have a barcode</h3>
-<p>A product&#39;s own barcode (the EAN-13 or UPC-A printed by the manufacturer, or any code you scan or type) stays as it is. To add one, open the product on the web (<strong>Menu › Products</strong>, then <strong>Edit</strong>), click in <strong>Barcode</strong> and scan the item, or type the code. The tills can scan it as soon as they next refresh the menu.</p>
+<p>A product&#39;s own barcode (the EAN-13 or UPC-A printed by the manufacturer, or any code you scan or type) stays as it is. To add one, open the product on the web (<strong>Menu › Products</strong>, then <strong>Edit</strong>), click in <strong>Barcode</strong> and scan the item, or type the code. The points of sale can scan it as soon as they next refresh the menu.</p>
 <h3 id="products-without-a-barcode-generate">Products without a barcode: Generate</h3>
 <p>Things you pack or make yourself (bread, cut vegetables, own-brand items) have no manufacturer&#39;s barcode. ZapTill can give them one:</p>
 <ol>
@@ -62,7 +62,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 <li>These codes work in your own shops only. To sell your products in other shops (a supermarket chain, for example), you need GS1 Kenya codes; type those into <strong>Barcode</strong> instead.</li>
 </ul>
 <h3 id="barcode-numbering-format-prefix-start-number-digits">Barcode numbering: format, prefix, start number, digits</h3>
-<p>You choose how new barcodes are made. On the web it is the <strong>Barcode numbering</strong> section of <strong>Menu › Print labels</strong>; on the till it is the same section on <strong>Manager › Stock › Labels</strong>. Changing it needs the right to edit the menu, and the till needs the internet to save it. Everyone else sees it but cannot change it.</p>
+<p>You choose how new barcodes are made. On the web it is the <strong>Barcode numbering</strong> section of <strong>Menu › Print labels</strong>; on the POS it is the same section on <strong>Manager › Stock › Labels</strong>. Changing it needs the right to edit the menu, and the POS needs the internet to save it. Everyone else sees it but cannot change it.</p>
 <table>
 <thead>
 <tr>
@@ -97,7 +97,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 </ul>
 <h2 id="2-the-label">2. The label</h2>
 <p>Labels work the same for every kind of business: a shop&#39;s shelf labels, a restaurant&#39;s or café&#39;s grab-and-go and packaged items (bottled drinks, take-away packs), a petrol station&#39;s shop items (lubricants, gas, snacks; pump fuel is sold at the pump and is not listed), and anything a car park sells besides parking.</p>
-<p>On the web the label is set on <strong>Menu › Print labels</strong>. On the till it is set on <strong>Manager › Stock › Labels</strong>. Both screens use the same settings. When someone allowed to edit the menu clicks <strong>Save</strong>, every till and the web use the new settings.</p>
+<p>On the web the label is set on <strong>Menu › Print labels</strong>. On the POS it is set on <strong>Manager › Stock › Labels</strong>. Both screens use the same settings. When someone allowed to edit the menu clicks <strong>Save</strong>, every POS and the web use the new settings.</p>
 <table>
 <thead>
 <tr>
@@ -115,7 +115,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 </tr>
 <tr>
 <td>Price</td>
-<td>Today&#39;s price at this branch (on the till) or the main price (on the web).</td>
+<td>Today&#39;s price at this branch (on the POS) or the main price (on the web).</td>
 </tr>
 <tr>
 <td>Barcode</td>
@@ -154,9 +154,9 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 <h3 id="items-without-a-barcode">Items without a barcode</h3>
 <p>A label is never printed without a barcode. If some of the items you chose have none, the screen says so. When you click <strong>Print</strong>:</p>
 <ul>
-<li><strong>If you may edit the menu</strong>, ZapTill asks: &quot;3 items have no barcode yet — generate them and print?&quot; Click <strong>OK</strong>. ZapTill gives those items, and only those items, a barcode using your numbering. Then it prints every label. Click <strong>Cancel</strong> to print nothing. The new barcodes are saved to the products, and the tills can scan them after their next menu refresh.</li>
+<li><strong>If you may edit the menu</strong>, ZapTill asks: &quot;3 items have no barcode yet — generate them and print?&quot; Click <strong>OK</strong>. ZapTill gives those items, and only those items, a barcode using your numbering. Then it prints every label. Click <strong>Cancel</strong> to print nothing. The new barcodes are saved to the products, and the points of sale can scan them after their next menu refresh.</li>
 <li><strong>If you may not edit the menu</strong>, those items are left out. The other items print, and the screen lists the items left out: &quot;ask a manager to generate barcodes for: Bread, Eggs&quot;.</li>
-<li><strong>On the till without internet</strong>, barcodes cannot be made, because the codes come from the cloud. Those items are left out and named, and the others print. Print them again when the till is back online.</li>
+<li><strong>On the POS without internet</strong>, barcodes cannot be made, because the codes come from the cloud. Those items are left out and named, and the others print. Print them again when the POS is back online.</li>
 <li><strong>A barcode that cannot be printed.</strong> A code with letters outside A to Z, such as &quot;Café&quot;, cannot be drawn. That item is left out and named. Change its barcode on <strong>Menu › Products</strong>. Any other code you typed prints, as Code 128 if it is not a valid EAN or UPC.</li>
 </ul>
 <h2 id="4-printing-on-a-label-printer-with-its-driver">4. Printing on a label printer (with its driver)</h2>
@@ -168,7 +168,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 <li>Print.</li>
 </ol>
 <p>To make a PDF, choose <strong>Save as PDF</strong> instead of a printer.</p>
-<p><strong>Till:</strong> on <strong>Manager › Stock › Labels</strong>, under <strong>3. Printer</strong>, choose <strong>Windows printer (driver installed)</strong> and pick the printer. Then click <strong>Print</strong>. The till prints without opening a window.</p>
+<p><strong>POS:</strong> on <strong>Manager › Stock › Labels</strong>, under <strong>3. Printer</strong>, choose <strong>Windows printer (driver installed)</strong> and pick the printer. Then click <strong>Print</strong>. The POS prints without opening a window.</p>
 <p><strong>The driver must use the same paper size as the label.</strong> This is the setting that matters most: if the driver&#39;s paper is 100 × 150 mm and the label is 40 × 30 mm, the labels come out shrunk or spread over several labels. See section 7.</p>
 <h2 id="5-printing-on-a4-sticker-sheets">5. Printing on A4 sticker sheets</h2>
 <p><strong>Web only.</strong> On <strong>Print labels</strong>, under <em>On A4 / Letter sticker sheets</em>:</p>
@@ -181,13 +181,13 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 <p>Print one test sheet on plain paper first and hold it against a sticker sheet up to the light. If everything is shifted, change the margins (Custom) and try again.</p>
 </blockquote>
 <h2 id="6-label-printers-with-no-driver-and-the-receipt-printer">6. Label printers with no driver, and the receipt printer</h2>
-<p><strong>Till only.</strong> Under <strong>3. Printer</strong> on <strong>Manager › Stock › Labels</strong>:</p>
+<p><strong>POS only.</strong> Under <strong>3. Printer</strong> on <strong>Manager › Stock › Labels</strong>:</p>
 <ul>
 <li><strong>Label printer, no driver: TSC / Xprinter (TSPL)</strong>: most TSC and Xprinter label printers (XP-365B, XP-420B, TSC TE200 and others).</li>
 <li><strong>Label printer, no driver: Zebra (ZPL)</strong>: Zebra printers (ZD220, ZD420, GK420 and others).</li>
 </ul>
 <p>Type the printer&#39;s <strong>IP address</strong> (for example <code>192.168.1.50</code>; the port is 9100) for a network printer. For a USB printer, choose it from <strong>USB: pick the Windows printer…</strong>. ZapTill sends the label straight to the printer in its own language, so the driver&#39;s paper settings do not matter. The label size, gap and dpi come from the label settings in section 2.</p>
-<p><strong>Receipt printer</strong>: prints a barcode slip on the till&#39;s receipt roll, for a shelf tag or when the label printer is down. ZapTill uses this till&#39;s receipt printer (<strong>Settings › Printing</strong>, Till station) unless you type another address. If the barcode does not print, choose <strong>Send the barcode as an image</strong>.</p>
+<p><strong>Receipt printer</strong>: prints a barcode slip on the POS&#39;s receipt roll, for a shelf tag or when the label printer is down. ZapTill uses this POS&#39;s receipt printer (<strong>Settings › Printing</strong>, POS station) unless you type another address. If the barcode does not print, choose <strong>Send the barcode as an image</strong>.</p>
 <h2 id="7-driver-set-up-tips">7. Driver set-up tips</h2>
 <p>The rule for every brand: <strong>the driver&#39;s paper size must be the label&#39;s size</strong> (width × height, without the gap). Set it once and the label prints at the same size every time.</p>
 <h3 id="xprinter-xp-365b-xp-420b-xp-470b-and-others">Xprinter (XP-365B, XP-420B, XP-470B and others)</h3>
@@ -247,7 +247,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 <td>Change <strong>Barcode numbering</strong>: a shorter prefix or more digits.</td>
 </tr>
 <tr>
-<td>The till says the label printer did not answer</td>
+<td>The POS says the label printer did not answer</td>
 <td>Check the IP address (print the printer&#39;s self-test page to see it), that the printer is on the same network, and that it is switched on.</td>
 </tr>
 <tr>
@@ -259,7 +259,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 <p>Meat, fruit and vegetables, loose sweets and nyama choma can be sold <strong>by the kilo</strong>: the weight is the quantity (0.452 kg) and the amount is the price per kg × the weight. The full guide is <strong>Items sold by weight</strong> (<code>WEIGHED-ITEMS</code>); in short:</p>
 <ol>
 <li>On the web, edit the item: price <strong>per kg</strong>, switch on <strong>Sold by weight</strong>, and give it its <strong>Scale code (PLU)</strong> — the number it has on your weighing scale.</li>
-<li>At any till, tapping the item asks for the weight (a keypad in kg).</li>
+<li>At any POS, tapping the item asks for the weight (a keypad in kg).</li>
 <li>With a <strong>label scale</strong>, scan the sticker the scale prints: the item is added with its weight and amount. Choose your scale (CAS, DIGI, Ishida or standard) and test one label in <strong>Settings › Business › Scale labels</strong>.</li>
 </ol>
 <blockquote>

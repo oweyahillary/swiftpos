@@ -303,9 +303,9 @@ async function validateRefreshToken(refreshToken: string): Promise<{
     const deviceId = String(payload.deviceId ?? dbRow.device_hint ?? '').slice(0, 64);
     console.error(`[auth] A477 TOKEN_STALE: an outdated refresh token of till ${deviceId || '?'} (business ${payload.businessId}) was presented — refused alone, the session kept`);
     if (deviceId && payload.businessId) {
-      await markTillSecurityAlert(payload.businessId, deviceId, 'An outdated copy of this till\'s sign-in key was used — possibly a copy of the till\'s data on another computer');
+      await markTillSecurityAlert(payload.businessId, deviceId, 'An outdated copy of this POS\'s sign-in key was used — possibly a copy of the POS\'s data on another computer');
     }
-    throw Object.assign(new Error('This sign-in key was already replaced — the till uses its newest one'), { code: 'TOKEN_STALE' });
+    throw Object.assign(new Error('This sign-in key was already replaced — the POS uses its newest one'), { code: 'TOKEN_STALE' });
   }
   if (decision.action === 'expired') {
     throw Object.assign(new Error('Refresh token expired'), { code: 'TOKEN_EXPIRED' });
@@ -918,7 +918,7 @@ router.post('/enrol/redeem', async (req, res) => {
       .eq('code_hash', codeHash).eq('business_id', businessId).eq('status', 'active').gt('expires_at', nowIso).maybeSingle();
     const codeBranch = (pending as { branch_id?: string | null } | null)?.branch_id;
     if (codeBranch && codeBranch !== ownBranch) {
-      res.status(409).json({ error: 'That code is for a different branch. Rejoin needs a code for this till\'s own branch.', code: 'REJOIN_OTHER_BRANCH' });
+      res.status(409).json({ error: 'That code is for a different branch. Rejoin needs a code for this POS\'s own branch.', code: 'REJOIN_OTHER_BRANCH' });
       return;
     }
   }
@@ -968,7 +968,7 @@ router.post('/enrol/redeem', async (req, res) => {
   const { data: dev, error: devErr } = await supabase
     .from('user_devices').select('id, branch_id').eq('business_id', businessId).eq('device_id', deviceId).maybeSingle();
   if (devErr || !dev) {
-    res.status(500).json({ error: 'This till could not be recorded on the business — try again with a new code.', code: 'ENROL_STATE' });
+    res.status(500).json({ error: 'This POS could not be recorded on the business — try again with a new code.', code: 'ENROL_STATE' });
     return;
   }
 
@@ -1038,7 +1038,7 @@ router.post('/device-token', async (req, res) => {
   // sign back in — record it so ZapTill is emailed (watchdog, critical), and say so.
   if (!secret) {
     await markTillSessionLost(businessId, deviceId, 'Its sign-in was refused and it holds no device secret');
-    res.status(401).json({ error: 'This till needs a technician to rejoin it to the business.', code: 'DEVICE_NO_SECRET' });
+    res.status(401).json({ error: 'This POS needs a technician to rejoin it to the business.', code: 'DEVICE_NO_SECRET' });
     return;
   }
 
@@ -1062,7 +1062,7 @@ router.post('/device-token', async (req, res) => {
   // A477: the secret is the machine's — from another computer it is refused and the owner alerted.
   const ident = await checkTillIdentity(businessId, deviceId, (n) => req.header(n));
   if (ident.verdict === 'mismatch') {
-    res.status(401).json({ error: 'This till\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' });
+    res.status(401).json({ error: 'This POS\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' });
     return;
   }
   await clearTillSessionLost(businessId, deviceId);   // A407: back
@@ -1146,18 +1146,18 @@ router.post('/refresh', async (req, res) => {
     if (devErr) { sendError(res, devErr); return; }
     const row = candidates.map((c) => (rows ?? []).find((r: any) => r.device_id === c)).find(Boolean) as any;
     if (!row) {
-      res.status(401).json({ error: 'This till is no longer joined to the business. A technician can rejoin it.', code: 'DEVICE_UNKNOWN' });
+      res.status(401).json({ error: 'This POS is no longer joined to the business. A technician can rejoin it.', code: 'DEVICE_UNKNOWN' });
       return;
     }
     if (tillBlockReason(row)) {
-      res.status(401).json({ error: 'This till is no longer joined to the business. A technician can rejoin it.', code: 'DEVICE_BLOCKED' });
+      res.status(401).json({ error: 'This POS is no longer joined to the business. A technician can rejoin it.', code: 'DEVICE_BLOCKED' });
       return;
     }
     // A477: the key is bound to the machine — from another computer it is refused (the session is NOT revoked, the
     // owner is alerted); the token stays unspent.
     const ident = await checkTillIdentity(cleanPayload.businessId, row.device_id, (n) => req.header(n));
     if (ident.verdict === 'mismatch') {
-      res.status(401).json({ error: 'This till\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' });
+      res.status(401).json({ error: 'This POS\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' });
       return;
     }
     tillDevice = { device_id: row.device_id, device_secret_hash: row.device_secret_hash ?? null, identityMatched: ident.matched };
@@ -1368,7 +1368,7 @@ router.post('/refresh/ack', async (req, res) => {
   if (isTillPayload(payload) && payload.businessId) {
     const ident = await checkTillIdentity(payload.businessId, String(payload.deviceId), (n) => req.header(n));
     if (ident.verdict === 'mismatch') {
-      res.status(401).json({ error: 'This till\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' }); return;
+      res.status(401).json({ error: 'This POS\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' }); return;
     }
   }
   if (!(row as any).acked_at) {
@@ -1717,7 +1717,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   // on a till. Any other session (a web browser, a web POS cashier, the owner's dashboard) could otherwise try every
   // PIN of the business and walk away with the session of whoever it matched. Nothing on the web calls it.
   if (!(req.isTill || req.pinSignIn)) {
-    res.status(403).json({ error: 'PIN sign-in is for tills.', code: 'TILL_ONLY' });
+    res.status(403).json({ error: 'PIN sign-in is for points of sale.', code: 'TILL_ONLY' });
     return;
   }
   // A494: one PIN limiter (lib/pinAttempts.ts) — per till (or person), the right PIN refused too while paused. The
@@ -2115,7 +2115,7 @@ router.post('/otp/email', requireAuth, async (req, res) => {
 // so the dashboard shows what they may use, offers the branches they work at, and hides what is the owner's alone. Read
 // only; the cloud decides every request on its own (requirePermission, branchScope).
 router.get('/session', requireAuth, async (req, res) => {
-  if (req.isTill) { res.status(403).json({ error: 'A till has no dashboard session.', code: 'PERSON_ONLY' }); return; }
+  if (req.isTill) { res.status(403).json({ error: 'A POS has no dashboard session.', code: 'PERSON_ONLY' }); return; }
   const { data: me } = req.userId
     ? await supabase.from('users').select('name, must_change_password').eq('id', req.userId).eq('business_id', req.businessId).maybeSingle()
     : { data: null };

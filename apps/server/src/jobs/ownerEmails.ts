@@ -129,13 +129,13 @@ function openTillRows(lines: OpenTillLine[], currency: string, withBranch: boole
 }
 
 const OPEN_HEADERS = [
-  { label: 'TILL' }, { label: 'CASHIER' }, { label: 'OPENED' }, { label: 'STATUS' }, { label: 'EXPECTED CASH', align: 'right' as const },
+  { label: 'POS' }, { label: 'CASHIER' }, { label: 'OPENED' }, { label: 'STATUS' }, { label: 'EXPECTED CASH', align: 'right' as const },
 ];
 
 /** The daily email's "Tills not closed or confirmed" section — or the ✓ line when every till is done. */
 export function openTillsSection(lines: OpenTillLine[], currency: string): string {
   if (!lines.length) {
-    return sectionHeader('Tills') + card(note('✓ All tills closed and confirmed.', '#22c55e'));
+    return sectionHeader('POS') + card(note('✓ All points of sale closed and confirmed.', '#22c55e'));
   }
   // grouped by branch: a branch heading row, then its tills
   const byBranch = new Map<string, OpenTillLine[]>();
@@ -145,7 +145,7 @@ export function openTillsSection(lines: OpenTillLine[], currency: string): strin
     inner += `<tr><td colspan="5" style="padding:14px 0 4px;font-size:12px;font-weight:600;color:#e5e7eb;">${esc(branch)} · ${list.length} not done</td></tr>`;
     inner += table(OPEN_HEADERS, openTillRows(list, currency, false));
   }
-  return sectionHeader(`Tills not closed or confirmed (${lines.length})`) + card(inner);
+  return sectionHeader(`Points of sale not closed or confirmed (${lines.length})`) + card(inner);
 }
 
 export interface BranchTillsEmail { subject: string; html: string }
@@ -155,15 +155,15 @@ export function branchOpenTillsEmail(opts: {
   businessName: string; branchName: string; slot: 'evening' | 'morning'; lines: OpenTillLine[]; currency: string;
 }): BranchTillsEmail {
   const n = opts.lines.length;
-  const tills = `${n} till${n === 1 ? '' : 's'}`;
+  const tills = `${n} ${n === 1 ? 'POS' : 'points of sale'}`;
   const subject = opts.slot === 'morning'
     ? `Still not closed this morning: ${tills} — ${opts.branchName}`
     : `${tills} not closed or confirmed — ${opts.branchName}`;
-  const body = sectionHeader(opts.slot === 'morning' ? 'Still open from yesterday or earlier' : 'Tills to close or confirm')
+  const body = sectionHeader(opts.slot === 'morning' ? 'Still open from yesterday or earlier' : 'Points of sale to close or confirm')
     + card(table(OPEN_HEADERS, openTillRows(opts.lines, opts.currency, false)));
   const html = emailShell({
     businessName: opts.businessName,
-    kind: `${opts.branchName} · Tills`,
+    kind: `${opts.branchName} · POS`,
     banner: `${opts.branchName}: ${tills} not closed or confirmed`,
     bannerSub: opts.slot === 'morning'
       ? 'These were still open or waiting for a manager\'s count at 09:00. Close each drawer and confirm the count so the day can be closed.'
@@ -218,8 +218,8 @@ export function notSyncingSection(lines: SyncLine[]): string {
       : `<span style="color:#f97316;">Not synced for ${esc(hoursLabel(s.hours))}</span>`,
     esc(eatLabel(s.lastSyncAt)),
   ]);
-  return sectionHeader(`Tills not syncing (${lines.length})`) + card(table(
-    [{ label: 'TILL' }, { label: 'BRANCH' }, { label: 'STATE' }, { label: 'LAST SYNC', align: 'right' }], rows));
+  return sectionHeader(`Points of sale not syncing (${lines.length})`) + card(table(
+    [{ label: 'POS' }, { label: 'BRANCH' }, { label: 'STATE' }, { label: 'LAST SYNC', align: 'right' }], rows));
 }
 
 export interface ExpenseLine { branch: string; description: string; category: string; method: string; amount: number }
@@ -245,33 +245,33 @@ export function notSyncingAlertEmail(opts: {
 }): AlertEmail {
   const where = opts.branchName || opts.businessName;
   const subject = opts.kind === 'refused'
-    ? `⚠ Till '${opts.till}' is signed out and cannot sync — ${where}`
-    : `⚠ Till '${opts.till}' has not synced for ${hoursLabel(opts.hours)} — ${where}`;
+    ? `⚠ POS '${opts.till}' is signed out and cannot sync — ${where}`
+    : `⚠ POS '${opts.till}' has not synced for ${hoursLabel(opts.hours)} — ${where}`;
   const lines = opts.kind === 'refused'
-    ? `The cloud refused this till's sign-in and it could not sign itself back in${opts.reason ? ` (${esc(opts.reason)})` : ''}. It keeps selling, but its sales wait on the till until it is rejoined: issue an enrolment code in Branches &amp; tills and use "Rejoin this till" on the till.`
-    : `Its last sync was ${esc(eatLabel(opts.lastSyncAt))} (${esc(hoursLabel(opts.hours))} ago) while the branch is trading. Its sales are not reaching the cloud — check the till's internet and that it is switched on.`;
-  const body = sectionHeader('Till not syncing') + card(`<tr><td style="padding:14px 0;font-size:13px;color:#e5e7eb;line-height:1.5;">
+    ? `The cloud refused this POS's sign-in and it could not sign itself back in${opts.reason ? ` (${esc(opts.reason)})` : ''}. It keeps selling, but its sales wait on the POS until it is rejoined: issue an enrolment code in Branches &amp; points of sale and use "Rejoin this POS" on the POS.`
+    : `Its last sync was ${esc(eatLabel(opts.lastSyncAt))} (${esc(hoursLabel(opts.hours))} ago) while the branch is trading. Its sales are not reaching the cloud — check the POS's internet and that it is switched on.`;
+  const body = sectionHeader('POS not syncing') + card(`<tr><td style="padding:14px 0;font-size:13px;color:#e5e7eb;line-height:1.5;">
     <strong style="color:#fff;">${esc(opts.till)}</strong> · ${esc(opts.branchName)}<br>${lines}</td></tr>`);
   return {
     subject: subjectSafe(subject),
     html: emailShell({ businessName: opts.businessName, kind: 'Alert', banner: subjectSafe(subject).replace(/^⚠ /, ''), body,
-      cta: { href: `${DASH()}/dashboard/settings/devices/terminals`, label: 'Open the tills (Fleet) →' } }),
+      cta: { href: `${DASH()}/dashboard/settings/devices/terminals`, label: 'Open the points of sale (Fleet) →' } }),
   };
 }
 
 /** A477: another computer seems to hold a till's data (an outdated sign-in key, or the key from a machine not on record). */
 export function tillSecurityAlertEmail(opts: { businessName: string; branchName: string; till: string; reason: string | null; at: string | null }): AlertEmail {
   const where = opts.branchName || opts.businessName;
-  const subject = `⚠ Till '${opts.till}' — its sign-in was used from another computer — ${where}`;
-  const lines = `${opts.reason ? `${esc(opts.reason)}. ` : ''}The cloud refused it (${esc(eatLabel(opts.at))}); the till itself keeps working. `
-    + 'If nobody copied or moved this till, someone may hold a copy of its data: retire the old copy in Branches &amp; tills, '
-    + 'and have a technician rejoin the real till if it stops syncing.';
-  const body = sectionHeader('Till sign-in from another computer') + card(`<tr><td style="padding:14px 0;font-size:13px;color:#e5e7eb;line-height:1.5;">
+  const subject = `⚠ POS '${opts.till}' — its sign-in was used from another computer — ${where}`;
+  const lines = `${opts.reason ? `${esc(opts.reason)}. ` : ''}The cloud refused it (${esc(eatLabel(opts.at))}); the POS itself keeps working. `
+    + 'If nobody copied or moved this POS, someone may hold a copy of its data: retire the old copy in Branches &amp; points of sale, '
+    + 'and have a technician rejoin the real POS if it stops syncing.';
+  const body = sectionHeader('POS sign-in from another computer') + card(`<tr><td style="padding:14px 0;font-size:13px;color:#e5e7eb;line-height:1.5;">
     <strong style="color:#fff;">${esc(opts.till)}</strong> · ${esc(opts.branchName)}<br>${lines}</td></tr>`);
   return {
     subject: subjectSafe(subject),
     html: emailShell({ businessName: opts.businessName, kind: 'Alert', banner: subjectSafe(subject).replace(/^⚠ /, ''), body,
-      cta: { href: `${DASH()}/dashboard/settings/devices/terminals`, label: 'Open the tills (Fleet) →' } }),
+      cta: { href: `${DASH()}/dashboard/settings/devices/terminals`, label: 'Open the points of sale (Fleet) →' } }),
   };
 }
 

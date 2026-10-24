@@ -59,7 +59,7 @@ function write(db: Database.Database, s: PinAttemptState): void {
 export function pinLockedMessage(ms: number): string {
   const s = Math.max(1, Math.ceil(ms / 1000));
   const when = s >= 90 ? `${Math.ceil(s / 60)} minutes` : `${s} seconds`;
-  return `Too many wrong PINs on this till. Try again in ${when}.`;
+  return `Too many wrong PINs on this POS. Try again in ${when}.`;
 }
 
 /** The cloud answered "too many tries" (429) — never checked on the till instead (that would undo the cloud's limit). */

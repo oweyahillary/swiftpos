@@ -122,7 +122,7 @@ export function shiftDocSpec(i: ShiftDocInput): PrintDocSpec {
   const short = totalVar !== null && Math.round(totalVar * 100) < 0;
   const noteParts = [
     i.running ? 'This shift is still running — the table shows only what has been recorded so far.' : null,
-    !i.running ? `Variance = ${i.confirmed ? "the manager's count" : "the cashier's figure (not yet confirmed by a manager)"} − what the till recorded. Cash "till recorded" is the expected cash in the drawer (opening float + cash sales + pay-ins − pay-outs − expenses).` : null,
+    !i.running ? `Variance = ${i.confirmed ? "the manager's count" : "the cashier's figure (not yet confirmed by a manager)"} − what the POS recorded. Cash "POS recorded" is the expected cash in the drawer (opening float + cash sales + pay-ins − pay-outs − expenses).` : null,
     i.lines.some((l) => l.mismatch) ? `Where marked *, the manager's count differs from what the cashier said.` : null,
     i.self ? 'Self-confirmed: the manager who confirmed this shift also worked it.' : null,
     i.notes ? `Shift notes: ${i.notes}` : null,
@@ -136,7 +136,7 @@ export function shiftDocSpec(i: ShiftDocInput): PrintDocSpec {
     accent: short ? DOC_ACCENT.cancelled : i.confirmed ? DOC_ACCENT.received : DOC_ACCENT.despatch,
     meta: [
       { label: 'Cashier', value: i.cashier },
-      { label: 'Till', value: i.till },
+      { label: 'POS', value: i.till },
       { label: 'Opened', value: i.opened },
       { label: 'Closed', value: i.closed },
       { label: 'Opening float', value: docMoney(i.currency, i.openingFloat) },
@@ -144,7 +144,7 @@ export function shiftDocSpec(i: ShiftDocInput): PrintDocSpec {
     ],
     columns: [
       { label: 'Method' }, { label: 'Cashier said', align: 'right' }, { label: 'Manager counted', align: 'right' },
-      { label: 'Till recorded', align: 'right' }, { label: 'Variance', align: 'right' },
+      { label: 'POS recorded', align: 'right' }, { label: 'Variance', align: 'right' },
     ],
     rows: i.lines.map((l) => [
       `${i.methodName(l.method)}${l.mismatch ? ' *' : ''}`, m(l.cashier), i.confirmed ? m(l.manager) : '—', m(l.recorded), signed(l.variance),
@@ -172,7 +172,7 @@ export function shiftListDocSpec(i: ShiftListDocInput): PrintDocSpec {
     statusLabel: i.filterLabel,
     accent: i.problems > 0 ? DOC_ACCENT.despatch : DOC_ACCENT.received,
     meta: [{ label: 'Period', value: `${i.from} – ${i.to}` }, { label: 'Showing', value: i.filterLabel }],
-    columns: [{ label: 'Cashier' }, { label: 'Till' }, { label: 'Opened' }, { label: 'Closed' }, { label: 'Status' }, { label: 'Difference', align: 'right' }],
+    columns: [{ label: 'Cashier' }, { label: 'POS' }, { label: 'Opened' }, { label: 'Closed' }, { label: 'Status' }, { label: 'Difference', align: 'right' }],
     rows: i.rows.map((r) => [r.cashier, r.till, r.opened, r.closed, r.status, r.difference || '—']),
     totals: [
       { label: 'Shifts', value: String(i.rows.length) },

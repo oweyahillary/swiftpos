@@ -52,7 +52,7 @@ const H = global.__handlers;
 const S = require(path.join(dist, 'shiftService.js'));
 const row = (id) => db.prepare(`SELECT * FROM expenses WHERE id = ?`).get(id);
 
-console.log('\nA manager records an expense with no shift open on this till\n');
+console.log('\nA manager records an expense with no shift open on this POS\n');
 signIn('u-mary', 'Mary', 'manager');
 {
   const r = await H['expense:create'](null, { description: 'Gas refill', amount: 1500, payment_method: 'cash' });
@@ -62,7 +62,7 @@ signIn('u-mary', 'Mary', 'manager');
   ok('…queued to sync like any expense', e.sync_status === 'pending' && e.device_id === 'dev-T1');
 }
 
-console.log('\nWith this till\'s shift open\n');
+console.log('\nWith this POS\'s shift open\n');
 {
   const shift = S.openShift(2000);
   const before = S.computeZReport(shift.id).totals.expectedCash;
@@ -89,7 +89,7 @@ console.log('\nThe screen\n');
     /data-testid="record-expense"/.test(mgr) && /<RecordExpenseForm currency=\{currency\}/.test(mgr) && /setReload\(\(n\) => n \+ 1\)/.test(mgr));
   const form = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'components', 'RecordExpenseForm.tsx'), 'utf8');
   ok('the form records through the same expense:create as the cashier\'s, and says whether the drawer is touched',
-    /posApi\.expense\.create\(\{/.test(form) && /Cash comes out of this till\\'s drawer/.test(form) && /recorded as cash paid outside any drawer/.test(form));
+    /posApi\.expense\.create\(\{/.test(form) && /Cash comes out of this POS\\'s drawer/.test(form) && /recorded as cash paid outside any drawer/.test(form));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

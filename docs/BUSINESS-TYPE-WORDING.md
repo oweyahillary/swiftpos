@@ -115,6 +115,28 @@ cafés keep **Menus** (Food, Soft drinks, Alcohol, Tea) exactly as before.
 `tests/business-terms-a573.test.mjs` scans apps/dashboard, apps/desktop, apps/admin, apps/server and shared for a
 user-visible "hotel" (comments excluded) and fails on one.
 
+## "POS", never "till" (A586) — every business type
+
+Owner, 2026-10-23: "ensure we use the word POS or point of sale instead of till".
+
+**The rule.** What a person reads says **POS** (a label, a button, a printed slip: "Rejoin this POS", "Branches & POS",
+"POS: T1") or **point of sale** in a sentence where it reads better. The plural in a sentence is **points of sale**
+("Points of sale keep selling"); in a tight label or a count it stays **POS** ("3 POS refused", "POS & days"). Beside the
+web POS, the Windows app is the **desktop POS** ("on the desktop POS or the web POS"). The website already follows this.
+
+| Kept | Why |
+|---|---|
+| M-Pesa's **Till number**, **Buy Goods till**, a receipt's **TILL NO** | Safaricom's product name, not ours (`shared/mpesaReceive.ts`, the M-Pesa settings, the receipt) |
+| Code: identifiers, file names, API routes (`/tills-days`), tables and columns (`till_sessions`), keys, the `'till'` device role and surface | Not read by people; renaming them would break the cloud, the tills already installed and the database |
+| Developer logs (`console.*`, `logLine`) and comments | For developers |
+| `shared/permissions.ts` labels, descriptions and the built-in roles' descriptions | FROZEN — registered word for word by migrations 134 and 142. Shown through `posWording()` (`shared/businessTerms.ts`) on Settings › Roles and permissions, as a shop's words already were |
+| The generic device labels the cloud stores ("ZapTill till", `GENERIC_TERMINAL_LABELS`) | Stored data the web POS recognises; Settings › Devices shows them as "ZapTill POS" (`deviceLabelShown`) |
+| Text the desktop app matches in stored or older messages (`refused this till`, the old day-clash note, an older branch server's "Update this till") | Matched alongside the new words, so a 1.0.19 server or an old queue row is still understood |
+
+**The gate:** `scripts/check-no-till-wording.mjs` (CI) scans string literals, template text and JSX text in
+apps/dashboard, apps/admin, apps/desktop (renderer, main, shared), apps/server and shared, and fails on a "till" word.
+A line that handles the word itself carries `// till-wording: ok`. Tests: `tests/pos-wording-a586.test.mjs`.
+
 ## Left for the owner to decide (not changed)
 
 1. ~~**Built-in roles Waiter, Kitchen and Kitchen Manager**~~ — **DECIDED and FIXED in A580** (owner, 2026-10-23: "how can

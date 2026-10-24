@@ -42,7 +42,7 @@ export function resolveReceiptLogo(): MonoRaster | undefined {
 /** Range selection sent from the manager report screens. */
 export type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
 /** A521: what the manager is told when something is sent to a till that is off — it waits for it (no expiry). */
-export const TILL_OFF_NOTE = 'The till is not connected — this applies when it reconnects.';
+export const TILL_OFF_NOTE = 'The POS is not connected — this applies when it reconnects.';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
 // and on logout (so the next user never sees stale data on boot).
@@ -258,14 +258,14 @@ export function createIpcShared(handle: IpcHandle) {
       const effective = stations.length ? [...stations] : [
         { id: 'kitchen',  name: 'Kitchen',  kind: 'kitchen'  as const },
         { id: 'dispatch', name: 'Dispatch', kind: 'dispatch' as const },
-        { id: 'receipt',  name: 'Till',     kind: 'receipt'  as const },
+        { id: 'receipt',  name: 'POS',     kind: 'receipt'  as const },
       ];
 
       // The receipt station is added when the business has not defined one.
       // Kitchen and dispatch are genuinely optional — a retail shop has neither
       // — but somewhere to print the bill is not.
       if (!effective.some(st => st.kind === 'receipt')) {
-        effective.push({ id: 'receipt', name: 'Till receipt', kind: 'receipt' as const });
+        effective.push({ id: 'receipt', name: 'POS receipt', kind: 'receipt' as const });
       }
 
       // Which stations have a printer bound on THIS terminal. Drives the Kots
@@ -393,7 +393,7 @@ export function createIpcShared(handle: IpcHandle) {
     }
     const cfg = getDeviceConfig();
     const token = readStaffTokens().token ?? readSessionTokens().token;
-    if (!token) throw new Error('This order is not on this till, and the till is not signed in to the cloud.');
+    if (!token) throw new Error('This order is not on this POS, and the POS is not signed in to the cloud.');
     let res: Response;
     try {
       res = await Promise.race([
@@ -403,7 +403,7 @@ export function createIpcShared(handle: IpcHandle) {
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error('The cloud took too long to answer.')), 8_000)),
       ]);
     } catch (e: any) {
-      throw new Error(/took too long/.test(e?.message ?? '') ? e.message : 'This order is not on this till and the cloud cannot be reached.');
+      throw new Error(/took too long/.test(e?.message ?? '') ? e.message : 'This order is not on this POS and the cloud cannot be reached.');
     }
     if (res.status === 404) throw new Error('Order not found.');
     if (!res.ok) throw new Error(`The cloud did not answer (HTTP ${res.status}).`);

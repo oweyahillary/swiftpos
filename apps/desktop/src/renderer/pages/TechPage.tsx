@@ -59,7 +59,7 @@ export default function TechPage({ onExit }: Props) {
     try {
       const out = await posApi.auth.rejoin(rejoinBiz.trim(), rejoinCode.trim());
       setRejoinCode('');
-      setRejoinMsg({ ok: true, text: `Rejoined ${out.business?.name ?? 'the business'}. Everything on this till was kept; it is syncing now.` });
+      setRejoinMsg({ ok: true, text: `Rejoined ${out.business?.name ?? 'the business'}. Everything on this POS was kept; it is syncing now.` });
       await load();
     } catch (e: any) {
       setRejoinMsg({ ok: false, text: String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') });
@@ -326,10 +326,10 @@ export default function TechPage({ onExit }: Props) {
 
         {/* A415: Rejoin this till */}
         <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4" data-testid="tech-rejoin">
-          <h2 className="text-sm font-semibold text-gray-300 mb-1">Rejoin this till</h2>
+          <h2 className="text-sm font-semibold text-gray-300 mb-1">Rejoin this POS</h2>
           <p className="text-[11px] text-gray-400 mb-3">
-            When this till has lost its link to the business, enter the business ID and a new enrolment code from ZapTill
-            (admin portal › client › Branches &amp; tills) for this till&apos;s branch. Nothing on the till is cleared: sales
+            When this POS has lost its link to the business, enter the business ID and a new enrolment code from ZapTill
+            (admin portal › client › Branches &amp; points of sale) for this POS&apos;s branch. Nothing on the POS is cleared: sales
             waiting to sync, shifts, the menu and settings stay.
           </p>
           <div className="space-y-2">
@@ -339,7 +339,7 @@ export default function TechPage({ onExit }: Props) {
               className="w-full bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono tracking-widest" />
             <button onClick={rejoin} disabled={!!busy}
               className="w-full bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">
-              {busy === 'rejoin' ? 'Rejoining…' : 'Rejoin this till'}
+              {busy === 'rejoin' ? 'Rejoining…' : 'Rejoin this POS'}
             </button>
             {rejoinMsg && <p className={`text-[11px] ${rejoinMsg.ok ? 'text-action-300' : 'text-red-400'}`}>{rejoinMsg.text}</p>}
           </div>
@@ -397,7 +397,7 @@ export default function TechPage({ onExit }: Props) {
             This machine: <span className="text-gray-200 font-medium">{dev?.device_role ?? '—'}</span>
           </p>
           <p className="text-[11px] text-gray-500 mb-3" data-testid="branch-network-note">
-            Network: put the branch server and its tills on a wired or separate network — not the customer Wi-Fi.
+            Network: put the branch server and its points of sale on a wired or separate network — not the customer Wi-Fi.
           </p>
           {dev?.device_role === 'till' && (
             <>
@@ -406,8 +406,8 @@ export default function TechPage({ onExit }: Props) {
                 {busy === 'promote' ? 'Promoting…' : 'Promote to branch server'}
               </button>
               <p className="text-[11px] text-gray-500 mt-1.5">
-                Use when the branch server has failed. This till already holds the branch data;
-                afterwards, point each remaining till here (below, on those tills).
+                Use when the branch server has failed. This POS already holds the branch data;
+                afterwards, point each remaining POS here (below, on those points of sale).
               </p>
             </>
           )}
@@ -570,7 +570,7 @@ export default function TechPage({ onExit }: Props) {
                 <div className="border border-red-500/40 bg-red-500/10 rounded-lg p-3">
                   <p className="text-xs text-red-300">
                     {resetInfo.unsyncedOrders > 0
-                      ? 'This till is holding sales the server has never seen. Get it online, let them sync, then check again. Resetting now would destroy them and there is no other copy.'
+                      ? 'This POS is holding sales the server has never seen. Get it online, let them sync, then check again. Resetting now would destroy them and there is no other copy.'
                       : 'A shift is still open. Close it before resetting, or the day cannot be reconciled.'}
                   </p>
                   <button onClick={previewReset} disabled={!!busy}

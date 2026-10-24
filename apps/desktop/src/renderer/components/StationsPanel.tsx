@@ -152,7 +152,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
       <div>
         <h3 className="text-white font-semibold">Stations</h3>
         <p className="text-xs text-gray-400 mt-0.5">
-          Where each category prints. Shared by every till — the printer for each
+          Where each category prints. Shared by every POS — the printer for each
           station is set per terminal below.
         </p>
       </div>
@@ -198,7 +198,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                 {busy === 'seed' ? 'Creating…' : 'Create default stations'}
               </button>
               <p className="text-xs text-gray-600">
-                Creates Kitchen, Packing and Till, and routes every category — cooked ones to
+                Creates Kitchen, Packing and POS, and routes every category — cooked ones to
                 Kitchen, all of them to Packing — so nothing prints nowhere. Adjust anytime.
               </p>
             </>
@@ -226,7 +226,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                         : `${st.category_ids.length} categor${st.category_ids.length === 1 ? 'y' : 'ies'}`}
                     </span>
                     {!boundPrinter && (
-                      <span className="ml-2 text-xs text-amber-400">· no printer on this till</span>
+                      <span className="ml-2 text-xs text-amber-400">· no printer on this POS</span>
                     )}
                     {st.pending_sync && (
                       <span className="ml-2 text-xs text-amber-300">· waiting to sync</span>
@@ -242,7 +242,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                     <div>
                       <label className="block text-xs text-gray-400 mb-1.5">
                         Categories that print here
-                        <span className="text-gray-600"> · shared by all tills</span>
+                        <span className="text-gray-600"> · shared by all points of sale</span>
                       </label>
                       <div className="flex flex-wrap gap-1.5">
                         {categories.map(c => {
@@ -268,7 +268,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                       )}
                       {st.pending_sync && chipError?.stationId !== st.id && (
                         <p className="text-xs text-amber-300 mt-1.5">
-                          Saved on this till — it prints this way now, and goes to the cloud and the other tills when the connection is back.
+                          Saved on this POS — it prints this way now, and goes to the cloud and the other points of sale when the connection is back.
                         </p>
                       )}
                     </div>
@@ -276,7 +276,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                     <div>
                       <label className="block text-xs text-gray-400 mb-1.5">
                         Printer for this station
-                        <span className="text-gray-600"> · this till only</span>
+                        <span className="text-gray-600"> · this POS only</span>
                       </label>
                       <select
                         value={boundPrinter}

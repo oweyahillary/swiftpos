@@ -65,7 +65,7 @@ export function effectiveFooter(businessFooter: string, served: { themeId?: stri
 
 export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolean; message: string }> {
   if (getQZStatus() !== 'connected') {
-    return { ok: false, message: 'Print server not connected on this device — open the till to reprint.' };
+    return { ok: false, message: 'Print server not connected on this device — open the POS to reprint.' };
   }
 
   let order: any;

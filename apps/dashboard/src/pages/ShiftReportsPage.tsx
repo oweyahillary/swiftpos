@@ -134,7 +134,7 @@ export default function ShiftReportsPage() {
 
   const exportCsv = () => {
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['Cashier', 'Till', 'Opened', 'Closed', 'Status', 'Difference', 'Opening float', 'Cash counted', 'Expected cash'];
+    const head = ['Cashier', 'POS', 'Opened', 'Closed', 'Status', 'Difference', 'Opening float', 'Cash counted', 'Expected cash'];
     const lines = shown.map((s) => [
       s.cashier_name, s.terminal_code ?? 'Web', s.opened_at, s.closed_at ?? '',
       shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), shiftDifference(s, (n: number) => num(n, 2)),
@@ -211,7 +211,7 @@ export default function ShiftReportsPage() {
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-900 text-left text-xs text-gray-500">
-                <tr><th className="px-3 py-2">Cashier</th><th className={DESK}>Till</th><th className={DESK}>Shift</th><th>Status</th><th className={DESK}>Difference</th><th /></tr>
+                <tr><th className="px-3 py-2">Cashier</th><th className={DESK}>POS</th><th className={DESK}>Shift</th><th>Status</th><th className={DESK}>Difference</th><th /></tr>
               </thead>
               <tbody>
                 {paged.items.map((s) => {
@@ -234,7 +234,7 @@ export default function ShiftReportsPage() {
                       </td>
                     </tr>
                     <MoreRow open={more.isOpen(String(s.id))} colSpan={3} items={[
-                      ['Till', s.terminal_code ?? 'Web'],
+                      ['POS', s.terminal_code ?? 'Web'],
                       ['Shift', `${dayTime(s.opened_at)} – ${s.closed_at ? time(s.closed_at, '…') : 'now'}`],
                       ['Difference', <span className={bad ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500'}>{diff || '—'}</span>],
                     ]} />
@@ -273,7 +273,7 @@ export default function ShiftReportsPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm" data-testid="shift-view-table">
                     <thead className="text-left text-xs text-gray-500">
-                      <tr><th className="py-1">Method</th><th className={`text-right ${DESK}`}>Cashier said</th><th className={`text-right ${DESK}`}>Manager counted</th><th className={`text-right ${DESK}`}>Till recorded</th><th className="text-right">Variance</th></tr>
+                      <tr><th className="py-1">Method</th><th className={`text-right ${DESK}`}>Cashier said</th><th className={`text-right ${DESK}`}>Manager counted</th><th className={`text-right ${DESK}`}>POS recorded</th><th className="text-right">Variance</th></tr>
                     </thead>
                     <tbody>
                       {lines.map((l) => {
@@ -294,7 +294,7 @@ export default function ShiftReportsPage() {
                           <MoreRow open={moreV.isOpen(String(l.method))} colSpan={2} items={[
                             ['Cashier said', money(l.cashier, currency, { blank: '—' })],
                             ['Manager counted', confirmed ? money(l.manager, currency, { blank: '—' }) : '—'],
-                            ['Till recorded', money(l.recorded, currency, { blank: '—' })],
+                            ['POS recorded', money(l.recorded, currency, { blank: '—' })],
                           ]} />
                           </Fragment>
                         );
@@ -305,7 +305,7 @@ export default function ShiftReportsPage() {
               )}
 
               <div className="text-xs text-gray-500 space-y-1">
-                {st !== 'running' && <p>Variance = {confirmed ? 'the manager\'s count' : 'the cashier\'s figure (not yet confirmed)'} − what the till recorded. Cash “till recorded” is the expected cash in the drawer (float + cash sales + pay-ins − pay-outs − expenses).</p>}
+                {st !== 'running' && <p>Variance = {confirmed ? 'the manager\'s count' : 'the cashier\'s figure (not yet confirmed)'} − what the POS recorded. Cash “POS recorded” is the expected cash in the drawer (float + cash sales + pay-ins − pay-outs − expenses).</p>}
                 {lines.some((l) => l.mismatch) && <p className="text-amber-700 dark:text-amber-300">Highlighted: the manager's count differs from what the cashier said.</p>}
                 {st === 'self' && <p className="text-amber-700 dark:text-amber-300">Self-confirmed: the manager who confirmed this shift also worked it.</p>}
                 {view.notes && <p className="whitespace-pre-wrap">Notes: {view.notes}</p>}

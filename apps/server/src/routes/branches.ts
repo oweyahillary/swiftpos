@@ -315,7 +315,7 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.branche
   // A492: the branch's M-Pesa number is set as one thing (Buy Goods, or Paybill with its account) on the till by its
   // manager — PUT /:id/mpesa — never piece by piece here.
   if (MPESA_KEYS.includes(key)) {
-    res.status(400).json({ error: 'The branch\'s M-Pesa number is set on its till: Manager › Settings › M-Pesa.', code: 'MPESA_ON_TILL' });
+    res.status(400).json({ error: 'The branch\'s M-Pesa number is set on its POS: Manager › Settings › M-Pesa.', code: 'MPESA_ON_TILL' });
     return;
   }
   // A490: the branch's payment methods are settings.payments; its receipt lines settings.branches or receipt.manage;

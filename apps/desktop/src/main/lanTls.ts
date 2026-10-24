@@ -167,7 +167,7 @@ export function forgetPinForRetrust(): void {
 }
 /** A503: a re-trust is waiting for a certificate to pin — nothing goes to the server's address until then. */
 export function awaitingRepin(): boolean { return readState('node_tls_repin') === '1' && !tillPin(); }
-const REPIN_WAIT = 'waiting to trust the branch server\'s certificate again — nothing is sent to it until it answers encrypted and accepts this till\'s access code; if it was reinstalled, join it again (Find my server)';
+const REPIN_WAIT = 'waiting to trust the branch server\'s certificate again — nothing is sent to it until it answers encrypted and accepts this POS\'s access code; if it was reinstalled, join it again (Find my server)';
 
 // ── The pinned client ───────────────────────────────────────────────────────────────────────────────────────────────
 const agents = new Map<string, https.Agent>();
@@ -202,7 +202,7 @@ function agentFor(pin: string, gateway = false): https.Agent {
 
 /** Thrown when the server answered with a certificate other than the pinned one. */
 export class NodeIdentityError extends Error {
-  constructor(detail: string) { super(`fetch failed: the branch server's identity does not match this till's record (${detail})`); this.name = 'NodeIdentityError'; }
+  constructor(detail: string) { super(`fetch failed: the branch server's identity does not match this POS's record (${detail})`); this.name = 'NodeIdentityError'; }
 }
 /** The server presented a certificate that is not the pinned one. */
 const CERT_ERRORS = new Set(['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
@@ -305,7 +305,7 @@ export async function pinnedFetch(url: string, init: any = {}, pin: string): Pro
       if (e?.name === 'AbortError' || signal?.aborted) return fail(e);
       if (e instanceof NodeIdentityError || CERT_ERRORS.has(String(e?.code ?? ''))) return fail(e instanceof NodeIdentityError ? e : new NodeIdentityError(String(e.code)));
       if (DATE_ERRORS.has(String(e?.code ?? ''))) {
-        const err = new TypeError('fetch failed'); (err as any).cause = new Error(`the branch server's certificate is outside its dates by this till's clock (${e.code}) — check this till's date and time`);
+        const err = new TypeError('fetch failed'); (err as any).cause = new Error(`the branch server's certificate is outside its dates by this POS's clock (${e.code}) — check this POS's date and time`);
         return fail(err);
       }
       // A515: a kept connection the server already closed (it restarted — A508 installs updates by itself now — or its
@@ -505,7 +505,7 @@ async function recheckPinnedServer(base: string, headers: () => Record<string, s
   const pin = tillPin()!;
   const got = await readServerCert(base);
   if (got.cert && !samePem(got.cert, pin)) {
-    const why = `the branch server now hands out another certificate (security code ${securityCode(got.cert)}, this till trusts ${securityCode(pin)})`;
+    const why = `the branch server now hands out another certificate (security code ${securityCode(got.cert)}, this POS trusts ${securityCode(pin)})`;
     if (!mismatchAt) logLine('node', `A501: ${why} — nothing is sent to it; if it was reinstalled, trust it again from the Tech page`);
     mismatchAt = mismatchAt || Date.now(); mismatchError = why;
     noteChannelError('tls', null, why);

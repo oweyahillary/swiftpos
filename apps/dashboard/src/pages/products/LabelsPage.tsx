@@ -140,12 +140,12 @@ export default function LabelsPage() {
     } catch (e: any) { setMsg(e?.message ?? 'Could not read the deliveries'); }
   };
   const saveSettings = async () => {
-    try { setSettings(cleanLabelSettings(await api.put<LabelSettings>('/api/products/labels/settings', settings))); setSaved('Saved for every till and the web.'); }
+    try { setSettings(cleanLabelSettings(await api.put<LabelSettings>('/api/products/labels/settings', settings))); setSaved('Saved for every POS and the web.'); }
     catch (e: any) { setSaved(e?.message ?? 'Could not save'); }
   };
   const setNum = (patch: Partial<BarcodeNumbering>) => { setNumbering((n) => cleanBarcodeNumbering({ ...n, ...patch })); setNumSaved(''); };
   const saveNumbering = async () => {
-    try { setNumbering(cleanBarcodeNumbering(await api.put<BarcodeNumbering>('/api/products/barcodes/settings', numbering))); setNumSaved('Saved: new barcodes follow this numbering, on the web and every till. Existing barcodes are not changed.'); }
+    try { setNumbering(cleanBarcodeNumbering(await api.put<BarcodeNumbering>('/api/products/barcodes/settings', numbering))); setNumSaved('Saved: new barcodes follow this numbering, on the web and every POS. Existing barcodes are not changed.'); }
     catch (e: any) { setNumSaved(e?.message ?? 'Could not save'); }
   };
   /**
@@ -372,7 +372,7 @@ export default function LabelsPage() {
               className="bg-swift hover:bg-swift-light text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm disabled:opacity-40">Print on sheets</button>
           </div>
         </div>
-        <p className="text-xs text-gray-500">A label printer with no Windows driver (TSPL or ZPL over the network or USB), or the receipt printer: print from the till — Manager › Stock › Labels.</p>
+        <p className="text-xs text-gray-500">A label printer with no Windows driver (TSPL or ZPL over the network or USB), or the receipt printer: print from the POS — Manager › Stock › Labels.</p>
       </section>
     </div>
   );

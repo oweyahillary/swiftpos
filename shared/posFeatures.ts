@@ -51,7 +51,7 @@ export const POS_FEATURES = [
   {
     key: 'cashier_no_money_out',
     label: 'Only managers record expenses and cash in / out',
-    description: 'Cashiers no longer record an expense, a pay-in or a pay-out on the till or the web POS — not even with a manager’s PIN. A manager signed in records them (the till’s shift screen and Manager › Expenses, the web POS). The delivery rider’s automatic pay-out still happens.',
+    description: 'Cashiers no longer record an expense, a pay-in or a pay-out on the desktop POS or the web POS — not even with a manager’s PIN. A manager signed in records them (the desktop POS’s shift screen and Manager › Expenses, the web POS). The delivery rider’s automatic pay-out still happens.',
   },
   // A530 (owner, 2026-10-19: "I feel the receipt is too long wasting paper … the switch settings … should be in the admin per
   // client") made the receipt compact. A538 (owner, 2026-10-21, after printing it: "I don't like how the print out looks, it
@@ -113,7 +113,7 @@ export const POS_FEATURES = [
   {
     key: 'stock_zero_hide',
     label: 'Items at zero stock: hide',
-    description: 'A tracked item whose stock at the branch is 0 or less is not on the till menu or the web POS, and cannot be sold, until stock comes in.',
+    description: 'A tracked item whose stock at the branch is 0 or less is not on the desktop POS menu or the web POS, and cannot be sold, until stock comes in.',
   },
 ] as const;
 

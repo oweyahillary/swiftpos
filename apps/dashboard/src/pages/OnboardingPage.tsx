@@ -611,7 +611,7 @@ export default function OnboardingPage() {
               <div className="flex items-start gap-2.5 px-3 py-2.5 bg-[#0f172a] border border-[#1e293b] rounded-xl">
                 <span className="text-yellow-400 text-sm mt-0.5 flex-shrink-0">⚠</span>
                 <p className="text-xs text-[#475569] leading-relaxed">
-                  Owner will be asked to <strong className="text-[#64748b] font-medium">change their password</strong> on first login. A till PIN — only needed if the owner rings sales at a register — can be set anytime in Settings.
+                  Owner will be asked to <strong className="text-[#64748b] font-medium">change their password</strong> on first login. A POS PIN — only needed if the owner rings sales at a register — can be set anytime in Settings.
                 </p>
               </div>
 

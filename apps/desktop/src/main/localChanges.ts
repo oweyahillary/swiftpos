@@ -173,7 +173,7 @@ export function recordChange(db: Database.Database, input: RecordInput, maker: M
     base: input.op === 'create' ? null : readLocal(db, input.entity, entityId), made_by: maker.id, made_by_name: maker.name, made_at: now });
   if (!c.ok) return { ok: false, error: (c as { error: string }).error };
   const change = (c as { change: TillChange }).change;
-  if (input.op !== 'create' && input.entity !== 'staff_pin' && !readLocal(db, input.entity, entityId)) return { ok: false, error: 'that is not on this till' };
+  if (input.op !== 'create' && input.entity !== 'staff_pin' && !readLocal(db, input.entity, entityId)) return { ok: false, error: 'that is not on this POS' };
 
   // A PIN never sits in the queue in the clear: its hash is applied here, the PIN itself kept wrapped until sent.
   let pinHashEnc: string | null = null;
@@ -404,7 +404,7 @@ export async function pushLocalChanges(db: Database.Database, d: PushDeps): Prom
         if (r.status === 'applied' || r.status === 'identical') {
           if (r.canonical_id && row.state === 'relayed') adoptCanonical(db, row.entity, row.entity_id, r.canonical_id);
           up.run('done', null, r.canonical_id ?? null, now(), r.id); settled++;
-          d.log?.(`${what} (from another till, forwarded by this server): on the cloud (${r.status})`);
+          d.log?.(`${what} (from another POS, forwarded by this server): on the cloud (${r.status})`);
         } else if (r.status === 'awaiting') {
           // A PIN / a new person is never held for the owner by the cloud (it is refused with retry) — only the rest.
           up.run(row.state === 'forward' ? 'forward' : 'relayed_awaiting', r.message ?? 'waiting for the owner', r.canonical_id ?? null, now(), r.id);
@@ -413,7 +413,7 @@ export async function pushLocalChanges(db: Database.Database, d: PushDeps): Prom
         } else {
           if (row.state === 'relayed' && row.op === 'create') undoRefusedCreate(db, row.entity, row.entity_id);
           up.run('rejected', r.message ?? 'refused', null, now(), r.id); settled++;
-          d.log?.(`${what} (from another till, forwarded by this server): refused — ${r.message ?? ''}; the cloud's stands`);
+          d.log?.(`${what} (from another POS, forwarded by this server): refused — ${r.message ?? ''}; the cloud's stands`);
         }
       }
     }

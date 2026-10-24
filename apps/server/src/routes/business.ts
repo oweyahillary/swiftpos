@@ -397,7 +397,7 @@ async function businessBranch(businessId: string | undefined, branchId: string):
 
 /** The branch-branding gate a write passes before anything is read: a person (never a till's own session). */
 function branchBrandingCaller(req: any, res: any): boolean {
-  if (req.isTill) { res.status(403).json({ error: 'Branch branding is changed by a person on the web, not by a till.' }); return false; }
+  if (req.isTill) { res.status(403).json({ error: 'Branch branding is changed by a person on the web, not by a POS.' }); return false; }
   return true;
 }
 
@@ -598,7 +598,7 @@ router.post('/settings', requireAuth, requireAnyPermission(...SETTING_WRITE_KEYS
   }
   // A492: the M-Pesa number is per branch, set on the branch's till by its manager — not business-wide.
   if (['receipt_pay_label', 'receipt_pay_number', 'receipt_pay_account'].includes(String(key))) {
-    res.status(400).json({ error: 'Each branch sets its own M-Pesa number on its till: Manager › Settings › M-Pesa.', code: 'MPESA_ON_TILL' });
+    res.status(400).json({ error: 'Each branch sets its own M-Pesa number on its POS: Manager › Settings › M-Pesa.', code: 'MPESA_ON_TILL' });
     return;
   }
 

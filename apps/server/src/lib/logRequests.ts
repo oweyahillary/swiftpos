@@ -74,7 +74,7 @@ export function versionNote(version: string | null | undefined, a: PullAbility =
   if (canAnswerPull(version, a)) return null;
   const v = version ? `runs ${version}` : 'has not reported its version';
   // A554: "may wait" — the version is all the cloud knows (an older till reports nothing more); a build that answers anyway is not held back.
-  return `This till ${v} — it can only send logs from its Tech page from ${SENDS_FROM_VERSION}, and answer a pull from ${ANSWERS_FROM_VERSION}. The request may wait until it updates (kept 7 days).`;
+  return `This POS ${v} — it can only send logs from its Tech page from ${SENDS_FROM_VERSION}, and answer a pull from ${ANSWERS_FROM_VERSION}. The request may wait until it updates (kept 7 days).`;
 }
 
 /** Waiting requests past their 7 days become expired (of a business; of one device when named). Never throws. */

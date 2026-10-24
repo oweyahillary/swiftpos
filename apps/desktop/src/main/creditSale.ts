@@ -57,7 +57,7 @@ export const SELF_APPROVAL = 'Someone else must approve this — enter the PIN o
 export const CHOSEN_PIN_NEEDED = 'A sale on account needs the approval of someone the owner chose — enter their PIN.';
 export const NOT_A_CHOSEN_APPROVER = 'That PIN was not recognised. Enter the PIN of someone the owner chose to approve sales on account.';
 export const NO_CHOSEN_APPROVER = 'Nobody at this branch may approve sales on account yet — the owner chooses who in Settings › Credit approvals.';
-export const NO_ON_ACCOUNT = 'This till does not take sales on account.';
+export const NO_ON_ACCOUNT = 'This POS does not take sales on account.';
 export const CUSTOMER_NEEDED = 'Choose the customer this sale goes on account to.';
 export const ONE_ACCOUNT_LEG = 'Put the account part of this sale in one payment.';
 /** A559: the person signed in may not look up the customers (neither customers.view nor customers.credit). */

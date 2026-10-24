@@ -106,7 +106,7 @@ export default function OpenShiftsPage() {
   useEffect(() => { if (paged.page !== page) setPage(paged.page); }, [paged.page, page]);
 
   // A522: force-closing for a till that has not synced lately — its sales since are not in it (it adds them when back).
-  const forceBehind = target?.device_id ? tillBehindLine(target.terminal_code ?? 'The till', target.till_last_sync_at ?? null) : null;
+  const forceBehind = target?.device_id ? tillBehindLine(target.terminal_code ?? 'The POS', target.till_last_sync_at ?? null) : null;
 
   const forceClose = async () => {
     if (!target) return;
@@ -157,8 +157,8 @@ export default function OpenShiftsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                  {['Cashier', 'Till', 'Opened', 'Opening float', 'Expected cash', ''].map(h => (
-                    <th key={h} className={`px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400 ${['Till', 'Opened', 'Opening float'].includes(h) ? DESK : ''}`}>
+                  {['Cashier', 'POS', 'Opened', 'Opening float', 'Expected cash', ''].map(h => (
+                    <th key={h} className={`px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400 ${['POS', 'Opened', 'Opening float'].includes(h) ? DESK : ''}`}>
                       {h}
                     </th>
                   ))}
@@ -208,7 +208,7 @@ export default function OpenShiftsPage() {
                       </td>
                     </tr>
                     <MoreRow open={more.isOpen(String(s.id))} colSpan={3} items={[
-                      ['Till', s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>],
+                      ['POS', s.terminal_code ?? s.device_id ?? <span className="italic text-gray-400">unknown</span>],
                       ['Opened', <>
                         <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
                           {hrs}h ago
@@ -230,7 +230,7 @@ export default function OpenShiftsPage() {
       <p className="text-xs text-gray-500 dark:text-gray-500">
         Force-closing records the drawer as <strong>uncounted</strong> — no closing
         float and no variance, because nobody counted it. Only use it when the
-        terminal cannot be reached. If the till still works, count the drawer there — or use
+        terminal cannot be reached. If the POS still works, count the drawer there — or use
         <strong> Close with count</strong>: you count each method here and it closes counted, under your name.
       </p>
 
@@ -254,7 +254,7 @@ export default function OpenShiftsPage() {
                 Force close {target.cashier_name}'s drawer
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                {target.terminal_code ?? 'Unknown till'} · open {hoursOpen(target.opened_at)}h
+                {target.terminal_code ?? 'Unknown POS'} · open {hoursOpen(target.opened_at)}h
               </p>
             </div>
 
@@ -277,7 +277,7 @@ export default function OpenShiftsPage() {
                   rows={2}
                   value={reason}
                   onChange={e => setReason(e.target.value)}
-                  placeholder="e.g. Till 2 power supply failed, cash secured in safe"
+                  placeholder="e.g. POS 2 power supply failed, cash secured in safe"
                   className="w-full rounded-lg border border-gray-300 dark:border-gray-700
                              bg-white dark:bg-gray-950 px-3 py-2 text-sm
                              text-gray-900 dark:text-white"

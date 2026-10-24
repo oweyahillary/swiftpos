@@ -108,7 +108,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_NAME_TS) {
     assert.equal(web.tillName({ device_id: 'x', terminal_code: null, device_label: 'Bar' }), 'Bar');
     const a = web.tillName({ device_id: 'dev-1234', terminal_code: null, device_label: 'SwiftPOS till' });
     const b = web.tillName({ device_id: 'dev-9876', terminal_code: '', device_label: null });
-    assert.equal(a, 'Till 1234'); assert.equal(b, 'Till 9876');
+    assert.equal(a, 'POS 1234'); assert.equal(b, 'POS 9876');
   });
   await ok('cleanLabel: trims, collapses spaces, caps at 64, empty → null', () => {
     assert.equal(cloud.cleanLabel('  a   b  '), 'a b');

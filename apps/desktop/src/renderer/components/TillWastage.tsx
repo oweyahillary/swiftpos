@@ -67,7 +67,7 @@ export default function TillWastage() {
       const out = await posApi.manage.recordWastage({ reason, note,
         items: lines.map((l) => ({ kind: l.kind, id: l.id, name: l.name, quantity: Number(l.qty) })) });
       if (out.state === 'saved') setNotice(`Recorded as ${out.ref}.`);
-      else if (out.state === 'pending') setNotice('Saved on this till — it goes to the cloud when the connection is back.');
+      else if (out.state === 'pending') setNotice('Saved on this POS — it goes to the cloud when the connection is back.');
       else setError(`Not recorded: ${out.message ?? 'the cloud refused it'}`);
       if (out.state !== 'refused') { setLines([]); setReason(''); setNote(''); }
       await loadState();
@@ -80,7 +80,7 @@ export default function TillWastage() {
     <div className="max-w-3xl space-y-5" data-testid="till-wastage">
       <div>
         <h2 className="text-lg font-semibold text-white">Wastage</h2>
-        <p className="text-sm text-gray-400">Write off what spoiled, expired or was dropped. Saved on this till at once; it goes to the cloud now, or when the connection is back.</p>
+        <p className="text-sm text-gray-400">Write off what spoiled, expired or was dropped. Saved on this POS at once; it goes to the cloud now, or when the connection is back.</p>
       </div>
 
       {expiring && expiring.length > 0 && (
@@ -103,7 +103,7 @@ export default function TillWastage() {
       <div className="space-y-3 rounded-lg border border-gray-700 p-4">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item…" className={field} data-testid="till-wastage-search" />
         {source && source !== 'cloud' && (
-          <p className="text-xs text-amber-300">{source === 'saved' ? 'Offline — the item list is the one this till saved last.' : 'Offline — this till\'s own items (ingredients need the connection).'}</p>
+          <p className="text-xs text-amber-300">{source === 'saved' ? 'Offline — the item list is the one this POS saved last.' : 'Offline — this POS\'s own items (ingredients need the connection).'}</p>
         )}
         {matches.length > 0 && (
           <div className="divide-y divide-gray-800 rounded-lg border border-gray-800">

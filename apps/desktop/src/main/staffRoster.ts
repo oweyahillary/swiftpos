@@ -164,7 +164,7 @@ export function refreshStaffRosterNow(why: string): Promise<RosterPull> {
 
 /** A staff change on this till: pull now, and tell the branch server to pull now (so its other tills have it). */
 export async function staffChangedHere(): Promise<void> {
-  await refreshStaffRosterNow('staff changed on this till');
+  await refreshStaffRosterNow('staff changed on this POS');
   const base = hasNode() ? nodeUrl() : null;
   if (!base) return;
   try {

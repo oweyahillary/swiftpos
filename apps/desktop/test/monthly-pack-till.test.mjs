@@ -87,7 +87,7 @@ console.log('\nOnline only (A466)\n');
 {
   const r = await H['monthly:get'](null, { month: '2026-10' });
   ok('offline: a plain message — the pack is built on the cloud', r.ok === false && r.code === 'offline'
-    && r.error === 'The monthly pack needs a connection — it is built from every till\'s records on the cloud.', JSON.stringify(r));
+    && r.error === 'The monthly pack needs a connection — it is built from every POS\'s records on the cloud.', JSON.stringify(r));
   const m = await H['monthly:movements'](null, { month: '2026-10' });
   ok('…the books\' entries too', m.ok === false && m.code === 'offline');
 }

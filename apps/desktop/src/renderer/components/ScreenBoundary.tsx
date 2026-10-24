@@ -36,7 +36,7 @@ export function logScreenFailure(name: string, error: unknown): void {
 }
 
 /** The fallback itself (exported so the tests render it). */
-export function ScreenLoadFailed({ onRetry, onBack, backLabel = 'Back to the till', overlay = false, again = false }: {
+export function ScreenLoadFailed({ onRetry, onBack, backLabel = 'Back to the POS', overlay = false, again = false }: {
   onRetry: () => void; onBack?: () => void; backLabel?: string; overlay?: boolean; again?: boolean;
 }) {
   return (
@@ -46,7 +46,7 @@ export function ScreenLoadFailed({ onRetry, onBack, backLabel = 'Back to the til
         <p className="text-white text-lg font-semibold">This screen could not load</p>
         <p className="text-gray-400 text-sm">
           {again ? 'It failed again — Retry reloads ZapTill’s screens (you will sign in again; nothing is lost).'
-            : 'Your sales and the till are fine. Try again, or go back.'}
+            : 'Your sales and the POS are fine. Try again, or go back.'}
         </p>
         <div className="flex gap-2 justify-center">
           <button onClick={onRetry} data-testid="screen-retry"

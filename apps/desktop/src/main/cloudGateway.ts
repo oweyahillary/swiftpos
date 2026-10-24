@@ -81,7 +81,7 @@ export class UplinkDownError extends Error {
 
 /** The branch server itself refused (wrong access code, its own fault) — also "no connection" to the caller. */
 export class NodeRefusedError extends Error {
-  constructor(public status: number) { super(`fetch failed: the branch server refused this till (HTTP ${status})`); this.name = 'NodeRefusedError'; }
+  constructor(public status: number) { super(`fetch failed: the branch server refused this POS (HTTP ${status})`); this.name = 'NodeRefusedError'; }
 }
 
 // A448: the branch server's own refusal of this till (a wrong branch access code) — kept so the manager is TOLD, not just
@@ -98,7 +98,8 @@ export function refusalReasonFor(status: number, error?: string | null): NodeRef
   if (status === 426) return 'tls';
   const e = String(error ?? '');
   if (/X-Node-Secret|access code/i.test(e)) return 'access_code';
-  if (/device key|not joined|Update this till|two different tills/i.test(e)) return 'device_key';
+  // A586: a server on 1.0.20 says "POS"; an older one "till" — both are read.
+  if (/device key|not joined|Update this (till|POS)|two different (tills|points of sale)/i.test(e)) return 'device_key';
   return 'access_code';
 }
 /** The branch server refused this till (status) — cleared by the next answer that proves the same thing is fixed. */
@@ -176,7 +177,7 @@ export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: ty
   if (!res.headers.get(GATEWAY_MARK)) {
     if (res.status === 404) {
       oldNodeUntil = now + OLD_NODE_RETRY_MS;
-      (deps.log ?? console.warn)('[gateway] the branch server is on an older build with no cloud gateway — this till calls the cloud itself until it updates');
+      (deps.log ?? console.warn)('[gateway] the branch server is on an older build with no cloud gateway — this POS calls the cloud itself until it updates');
       return direct();
     }
     // Not the cloud's answer — the branch server's own (a wrong branch access code is a 401). Passed on, a 401 would read
@@ -185,7 +186,7 @@ export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: ty
     // encryption (426); its words name which.
     const said = await res.clone().json().then((b: any) => (typeof b?.error === 'string' ? b.error : null)).catch(() => null);
     const reason = refusalReasonFor(res.status, said);
-    (deps.log ?? console.warn)(`[gateway] the branch server refused the request (HTTP ${res.status})${said ? `: ${said}` : " — check this till's branch access code"}`);
+    (deps.log ?? console.warn)(`[gateway] the branch server refused the request (HTTP ${res.status})${said ? `: ${said}` : " — check this POS's branch access code"}`);
     if (res.status === 401 || res.status === 403 || res.status === 426) noteNodeRefused(res.status, now, reason);
     noteChannelError('gateway', res.status, said ?? `the branch server refused the request (HTTP ${res.status})`, now);
     throw new NodeRefusedError(res.status);

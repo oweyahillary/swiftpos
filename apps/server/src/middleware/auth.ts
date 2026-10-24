@@ -212,7 +212,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
       if (tillBlockReason(tillRow as { status?: string; retired_at?: string } | null)) {
         res.status(401).json({
-          error: 'This till is no longer joined to the business. A technician can rejoin it.',
+          error: 'This POS is no longer joined to the business. A technician can rejoin it.',
           code:  'DEVICE_BLOCKED',
         });
         return;
@@ -226,7 +226,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // A415: a till session from before the till signed in as itself carried the owner's identity. Never accepted —
     // the till renews (/refresh), which replaces it with the till's own session.
     if (isOwnerEraTillPayload(payload as { surface?: unknown; pinSignIn?: unknown; till?: unknown })) {
-      res.status(401).json({ error: 'This till\'s sign-in is being replaced — renewing.', code: 'TOKEN_REPLACED' });
+      res.status(401).json({ error: 'This POS\'s sign-in is being replaced — renewing.', code: 'TOKEN_REPLACED' });
       return;
     }
 

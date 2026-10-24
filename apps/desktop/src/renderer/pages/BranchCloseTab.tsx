@@ -41,7 +41,7 @@ const STALE_MS = 120_000;
 const tillLabel = (t: { is_self: boolean; device_id: string; state?: { terminal?: { code?: string | null; name?: string | null } } | null }) => {
   if (t.is_self) return 'This terminal (branch server)';
   const n = t.state?.terminal?.name?.trim(); const c = t.state?.terminal?.code?.trim();
-  return n && c ? `${n} (${c})` : n || (c ? `Till ${c}` : `Terminal ${t.device_id.slice(0, 8)}`);
+  return n && c ? `${n} (${c})` : n || (c ? `POS ${c}` : `Terminal ${t.device_id.slice(0, 8)}`);
 };
 
 export default function BranchCloseTab({ currency, businessName }: Props) {
@@ -93,7 +93,7 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
     return (
       <div className="p-6 text-sm text-gray-400">
         <p className="text-gray-300 font-medium">Close Branch lives on the branch server.</p>
-        <p className="mt-1">This till is not the branch server. Use Close Day here for this till's own day,
+        <p className="mt-1">This POS is not the branch server. Use Close Day here for this POS's own day,
           or run Close Branch on the server terminal.</p>
       </div>
     );
@@ -139,8 +139,8 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
         const later = (r.results ?? []).filter(x => x.held && !x.without).length;   // A520
         const wo = (r.results ?? []).filter(x => x.without).length;                  // A521
         const live = (r.results ?? []).some(x => x.sent && !x.held);
-        setCloseMsg({ ok: true, text: [live ? 'Closing — each till answers within ~15 seconds.' : 'The branch is closed.',
-          later ? `${later} till${later === 1 ? ' is' : 's are'} not connected — ${later === 1 ? 'its day closes when it next connects' : 'their days close when they next connect'}.` : '',
+        setCloseMsg({ ok: true, text: [live ? 'Closing — each POS answers within ~15 seconds.' : 'The branch is closed.',
+          later ? `${later} POS${later === 1 ? ' is' : ' are'} not connected — ${later === 1 ? 'its day closes when it next connects' : 'their days close when they next connect'}.` : '',
           wo ? `Closed without ${ticked.map(w => w.label).join(', ')} — ${wo === 1 ? 'its day closes' : 'their days close'} when ${wo === 1 ? 'its' : 'their'} money is closed and confirmed.` : ''].filter(Boolean).join(' ') });
         setWithoutOk(new Set());
       }
@@ -160,14 +160,14 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
     await load();
   };
   const revoke = async (t: TillView) => {
-    if (!window.confirm(`Revoke ${tillLabel(t)}? Its device key is removed: it can no longer reach this branch server — no sales, no staff list, no instructions — until it joins again (on that till: Find my server, then allow it here). Its sales stay in the branch's records. If it is only switched off for a while, Cancel and use Hide instead.`)) return;
+    if (!window.confirm(`Revoke ${tillLabel(t)}? Its device key is removed: it can no longer reach this branch server — no sales, no staff list, no instructions — until it joins again (on that POS: Find my server, then allow it here). Its sales stay in the branch's records. If it is only switched off for a while, Cancel and use Hide instead.`)) return;
     const r = await posApi.branchClose.forgetTill(t.device_id).catch(() => ({ ok: false, error: 'Could not revoke it.' }));
     setCloseMsg(r.ok ? { ok: true, text: `${tillLabel(t)} revoked — it must join this server again to reconnect.` } : { ok: false, text: r.error ?? 'Could not revoke it.' });
     await load();
   };
   const cancelMoney = async (id: number) => {
     const r = await posApi.branchClose.cancelShiftMoney(id).catch(() => ({ ok: false, error: 'Could not withdraw it.' }));
-    setMoneyMsg(r.ok ? 'Withdrawn — the till will not record it.' : (r.error ?? 'Could not withdraw it.'));
+    setMoneyMsg(r.ok ? 'Withdrawn — the POS will not record it.' : (r.error ?? 'Could not withdraw it.'));
     await load();
   };
 
@@ -186,8 +186,8 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
         <h2 className="text-lg font-semibold text-gray-100">Close the branch</h2>
         <p className="text-sm text-gray-400">
           Server date <span className="text-gray-200 font-medium">{ov.business_date}</span> — the server's date is final.
-          Confirm each cashier's shift, then check the day's totals below — every till's confirmed shifts added up by
-          payment method — tick them and close: every till closes its day and starts the next.
+          Confirm each cashier's shift, then check the day's totals below — every POS's confirmed shifts added up by
+          payment method — tick them and close: every POS closes its day and starts the next.
         </p>
       </div>
       {/* A545: credit sales still waiting for a manager — said, never a block on the close (the owner: no deadlocks). */}
@@ -196,11 +196,11 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
       {/* A458: the day's totals for the whole branch, by payment method */}
       <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 space-y-2" data-testid="branch-totals">
         <div className="flex flex-wrap justify-between gap-2">
-          <span className="text-gray-100 font-medium">The day's totals — all tills</span>
+          <span className="text-gray-100 font-medium">The day's totals — all points of sale</span>
           <span className="text-xs text-gray-400">{T.orders} order{T.orders === 1 ? '' : 's'} · {T.shifts.all} shift{T.shifts.all === 1 ? '' : 's'} · {T.shifts.confirmed} confirmed</span>
         </div>
         {T.methods.length === 0 ? (
-          <p className="text-xs text-gray-400">No sales on any till yet today.</p>
+          <p className="text-xs text-gray-400">No sales on any POS yet today.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -276,7 +276,7 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
       {isServer && openDrawers.length > 0 && (
         <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 space-y-2" data-testid="open-drawers">
           <p className="text-gray-100 font-medium">Drawers open now ({openDrawers.length})</p>
-          <p className="text-xs text-gray-400">Record cash in, cash out or an expense on any drawer. The till that holds it records it within about 15 seconds.</p>
+          <p className="text-xs text-gray-400">Record cash in, cash out or an expense on any drawer. The POS that holds it records it within about 15 seconds.</p>
           {moneyMsg && <p className="text-xs text-gray-300">{moneyMsg}</p>}
           {openDrawers.map(({ t, s }) => {
             const age = ageOf(t.is_self ? new Date().toISOString() : t.last_seen);
@@ -322,7 +322,7 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
                   <span className="ml-auto text-gray-100 font-medium tabular-nums">{money(s.sales)}</span>
                   <span className="text-xs text-gray-400">{open === s.id ? 'Hide' : 'Details'}</span>
                 </div>
-                {c?.status === 'failed' && c.error && <p className="text-xs text-red-300">The till did not take the confirmation: {c.error}</p>}
+                {c?.status === 'failed' && c.error && <p className="text-xs text-red-300">The POS did not take the confirmation: {c.error}</p>}
                 {open === s.id && (
                   <div className="pt-2">
                     <ShiftDetails s={s} money={money} options={options} />
@@ -345,7 +345,7 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
 
       {/* A458: the per-till detail, hidden unless asked for */}
       <button data-testid="show-tills" onClick={() => setShowTills(!showTills)} className="text-sm text-action-300 hover:text-action-200">
-        {showTills ? 'Hide tills' : `Show tills (${ov.tills.length})`}
+        {showTills ? 'Hide points of sale' : `Show points of sale (${ov.tills.length})`}
       </button>
       {showTills && (<>
         {ov.tills.map(t => {
@@ -368,7 +368,7 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
                   <button data-testid={`hide-${t.device_id}`} onClick={() => void hide(t)}
                     className="text-xs px-2 py-0.5 rounded border border-gray-600 text-gray-300 hover:bg-gray-700/40">Hide from Close Branch</button>
                   <button data-testid={`revoke-${t.device_id}`} onClick={() => void revoke(t)}
-                    className="text-xs px-2 py-0.5 rounded border border-red-700/60 text-red-300 hover:bg-red-900/30">Revoke this till</button>
+                    className="text-xs px-2 py-0.5 rounded border border-red-700/60 text-red-300 hover:bg-red-900/30">Revoke this POS</button>
                 </>)}
                 {st && !st.day_open && <span className="text-xs px-2 py-0.5 rounded bg-gray-600/30 text-gray-300 border border-gray-600/50">day closed</span>}
                 {closedNow && <span className="text-xs px-2 py-0.5 rounded bg-action-600/20 text-action-300 border border-action-600/40">closed with the branch</span>}
@@ -380,21 +380,21 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
                 {ins?.status === 'failed' && <span className="text-xs px-2 py-0.5 rounded bg-red-600/20 text-red-300 border border-red-600/40">refused</span>}
               </div>
 
-              {!st && <p className="text-xs text-amber-400/80">This till has never reported in. It shows here once it is on and reaches the server.</p>}
+              {!st && <p className="text-xs text-amber-400/80">This POS has never reported in. It shows here once it is on and reaches the server.</p>}
               {behindDay && (
                 <p className="text-xs text-amber-300" data-testid="behind-day">
-                  Its trading day {st!.business_date} is still open — it closes with the branch, and the till starts {ov.business_date}.
+                  Its trading day {st!.business_date} is still open — it closes with the branch, and the POS starts {ov.business_date}.
                 </p>
               )}
               {Math.abs(skewMin) >= 5 && (
-                <p className="text-xs text-amber-300">This till's clock is {Math.abs(skewMin)} min {skewMin > 0 ? 'ahead of' : 'behind'} the server — set it right; the server's time counts.</p>
+                <p className="text-xs text-amber-300">This POS's clock is {Math.abs(skewMin)} min {skewMin > 0 ? 'ahead of' : 'behind'} the server — set it right; the server's time counts.</p>
               )}
               {st && !st.shifts && (
-                <p className="text-xs text-amber-300">This till is on an older version — update it to see and confirm its shifts here.</p>
+                <p className="text-xs text-amber-300">This POS is on an older version — update it to see and confirm its shifts here.</p>
               )}
               {ins?.status === 'failed' && ins.ack?.error && <p className="text-xs text-red-300">{ins.ack.error}</p>}
 
-              {st?.shifts && st.shifts.length === 0 && st.day_open && <p className="text-xs text-gray-400">No shifts on this till today.</p>}
+              {st?.shifts && st.shifts.length === 0 && st.day_open && <p className="text-xs text-gray-400">No shifts on this POS today.</p>}
               {st?.shifts && st.shifts.length > 0 && (
                 <table className="w-full text-sm">
                   <thead>
@@ -418,7 +418,7 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
                             <td className="py-2 text-right text-xs text-gray-400 pl-2">{open === s.id ? 'Hide' : 'Details'}</td>
                           </tr>
                           {c?.status === 'failed' && c.error && (
-                            <tr><td colSpan={6} className="pb-2 text-xs text-red-300">The till did not take the confirmation: {c.error}</td></tr>
+                            <tr><td colSpan={6} className="pb-2 text-xs text-red-300">The POS did not take the confirmation: {c.error}</td></tr>
                           )}
                           {open === s.id && (
                             <tr><td colSpan={6} className="pb-3">
@@ -455,7 +455,7 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
 
       <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 space-y-2 text-sm" data-testid="close-branch">
         <div className="flex justify-between text-gray-300">
-          <span>Tills with their day closed</span>
+          <span>Points of sale with their day closed</span>
           <span>{closedTills.length} of {ov.tills.length}</span>
         </div>
         {blockers.length > 0 ? (
@@ -464,14 +464,14 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
             {blockers.map(b => <p key={b}>· {b}</p>)}
           </div>
         ) : dayOpen.length === 0 ? (
-          <p className="text-xs text-gray-400">Every till's day is closed. Each starts {ov.business_date === '' ? 'the next day' : 'the next trading day'} at its next sale.</p>
+          <p className="text-xs text-gray-400">Every POS's day is closed. Each starts {ov.business_date === '' ? 'the next day' : 'the next trading day'} at its next sale.</p>
         ) : (
-          <p className="text-xs text-gray-300">Every shift is closed and confirmed. Closing the branch closes each till's day with its confirmed counts — the totals above.</p>
+          <p className="text-xs text-gray-300">Every shift is closed and confirmed. Closing the branch closes each POS's day with its confirmed counts — the totals above.</p>
         )}
         {/* A521 (#1): another till's money — the manager may close the branch without it, with the warning ticked */}
         {without.length > 0 && (
           <div className="text-xs space-y-1.5 pt-1" data-testid="close-without">
-            <p className="text-gray-300">Or close the branch without these tills — this terminal and every other till close tonight:</p>
+            <p className="text-gray-300">Or close the branch without these points of sale — this terminal and every other POS close tonight:</p>
             {without.map(w => (
               <label key={w.device_id} className="flex items-start gap-2 text-amber-200" data-testid={`without-${w.device_id}`}>
                 <input type="checkbox" className="mt-0.5" checked={withoutOk.has(w.device_id)}
@@ -488,8 +488,8 @@ export default function BranchCloseTab({ currency, businessName }: Props) {
             {waitingConnect.map(t => <p key={t.device_id}>· {tillLabel(t)} — {t.instruction?.ack?.wait ? 'closed without it; its day closes when its money is closed and confirmed' : 'not connected; its day closes when it next connects'}</p>)}
           </div>
         )}
-        {waitingClose.length > 0 && <p className="text-xs text-amber-300">Waiting on {waitingClose.length} till{waitingClose.length === 1 ? '' : 's'} to answer (Close branch still closes the rest).</p>}
-        {refusedClose.length > 0 && <p className="text-xs text-red-300">{refusedClose.length} till{refusedClose.length === 1 ? '' : 's'} refused — the reason is on its card.</p>}
+        {waitingClose.length > 0 && <p className="text-xs text-amber-300">Waiting on {waitingClose.length} POS to answer (Close branch still closes the rest).</p>}
+        {refusedClose.length > 0 && <p className="text-xs text-red-300">{refusedClose.length} POS refused — the reason is on its card.</p>}
         {/* A458: the manager confirms the day's totals (the confirmed shifts added up, per payment method) */}
         {blockers.length === 0 && dayOpen.length > 0 && (
           <label className="flex items-start gap-2 text-sm text-gray-200 pt-1" data-testid="totals-confirm">
@@ -657,11 +657,11 @@ function MoneyLine({ m, money, onCancel }: { m: ShiftMoneyView; money: (n: numbe
     <div className="flex flex-wrap items-center gap-2 text-xs" data-testid={`money-${m.id}`}>
       <span className="text-gray-200 tabular-nums">{money(m.amount)} {what}{m.note ? ` — ${m.note}` : ''}</span>
       {m.status === 'pending' && <>
-        <span className="text-amber-300">{m.delivered_at ? 'the till has it — recording' : 'waiting for the till'}</span>
+        <span className="text-amber-300">{m.delivered_at ? 'the POS has it — recording' : 'waiting for the POS'}</span>
         {!m.delivered_at && <button onClick={onCancel} className="text-gray-400 hover:text-gray-200 underline">Cancel</button>}
       </>}
       {m.status === 'acked' && <span className="text-gray-400">recorded</span>}
-      {m.status === 'failed' && <span className="text-red-300">refused: {m.error ?? 'the till did not say why'}</span>}
+      {m.status === 'failed' && <span className="text-red-300">refused: {m.error ?? 'the POS did not say why'}</span>}
     </div>
   );
 }
@@ -698,7 +698,7 @@ function ShiftMoneyModal({ till, s, mode, label, money, currency, options, time,
             expense_category_id: catId || undefined, category_name: categories.find(c => c.id === catId)?.name, payment_method: method });
       if (!r.ok) { setError(r.error ?? 'Could not record it.'); return; }
       // A521: to a till that is off it waits for it — said so (r.message: "the till is not connected — this applies when it reconnects").
-      onDone(r.direct ? 'Recorded on this terminal\'s drawer.' : r.queued_offline ? `Saved. ${r.message ?? ''}`.trim() : 'Sent — the till records it within about 15 seconds.');
+      onDone(r.direct ? 'Recorded on this terminal\'s drawer.' : r.queued_offline ? `Saved. ${r.message ?? ''}`.trim() : 'Sent — the POS records it within about 15 seconds.');
     } catch (e: any) { setError(e?.message ?? 'Could not record it.'); }
     finally { setBusy(false); }
   };

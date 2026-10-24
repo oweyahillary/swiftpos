@@ -64,7 +64,7 @@ export function nextFreeTerminalCode(inUse: Iterable<string>, wanted?: string | 
 }
 
 router.post('/logs', requireAuth, async (req: any, res) => {
-  if (!req.isTill) { res.status(403).json({ error: 'Only a till sends its log (its own session).', code: 'TILL_ONLY' }); return; }
+  if (!req.isTill) { res.status(403).json({ error: 'Only a POS sends its log (its own session).', code: 'TILL_ONLY' }); return; }
   const b64 = req.body?.log_gz_b64;
   if (typeof b64 !== 'string' || !b64) { res.status(400).json({ error: 'log_gz_b64 is required', code: 'BAD_LOG' }); return; }
   if (b64.length > MAX_B64) { res.status(413).json({ error: 'That log is too big (900 kB packed at most).', code: 'LOG_TOO_BIG' }); return; }
@@ -85,7 +85,7 @@ router.post('/logs', requireAuth, async (req: any, res) => {
     if (lErr) { res.status(503).json({ error: 'Log requests are not available right now (migration 152?).', code: 'LOG_REQUESTS_UNAVAILABLE' }); return; }
     const r = lr as { id: string; business_id: string; device_id: string; status: string; requested_by_email?: string | null } | null;
     if (!r || r.business_id !== req.businessId) { res.status(404).json({ error: 'No such log request.', code: 'NO_SUCH_REQUEST' }); return; }
-    if (r.device_id !== String(req.deviceId)) { res.status(403).json({ error: 'That log request is for another till.', code: 'NOT_YOUR_REQUEST' }); return; }
+    if (r.device_id !== String(req.deviceId)) { res.status(403).json({ error: 'That log request is for another POS.', code: 'NOT_YOUR_REQUEST' }); return; }
     if (r.status !== 'waiting') { res.status(409).json({ error: `That log request is ${r.status}.`, code: 'REQUEST_CLOSED', status: r.status }); return; }
     pull = r;
   }
@@ -96,11 +96,11 @@ router.post('/logs', requireAuth, async (req: any, res) => {
     .eq('business_id', req.businessId).eq('device_id', req.deviceId).gte('created_at', since);
   if (cErr) { res.status(503).json({ error: 'Support logs are not available right now (migration 145?).', code: 'SUPPORT_LOGS_UNAVAILABLE' }); return; }
   if (!pull && (count ?? 0) >= RATE_PER_HOUR) {
-    res.status(429).json({ error: `Five logs were sent from this till in the last hour — wait a little, or save the log to a file.`, code: 'RATE_LIMITED' });
+    res.status(429).json({ error: `Five logs were sent from this POS in the last hour — wait a little, or save the log to a file.`, code: 'RATE_LIMITED' });
     return;
   }
 
-  let sentBy = 'the till';
+  let sentBy = 'the POS';
   const raw = req.header('x-tech-token');
   if (pull) sentBy = `pulled by ZapTill support${pull.requested_by_email ? ` (${pull.requested_by_email})` : ''}`;
   else if (raw) {
@@ -140,7 +140,7 @@ router.post('/logs', requireAuth, async (req: any, res) => {
 });
 
 router.get('/log-requests/mine', requireAuth, async (req: any, res) => {
-  if (!req.isTill) { res.status(403).json({ error: 'Only a till asks for its own log requests (its own session).', code: 'TILL_ONLY' }); return; }
+  if (!req.isTill) { res.status(403).json({ error: 'Only a POS asks for its own log requests (its own session).', code: 'TILL_ONLY' }); return; }
   const deviceId = String(req.deviceId ?? '');
   if (!deviceId) { res.json({ requests: [] }); return; }
   await expireWaiting(req.businessId, deviceId);
@@ -158,13 +158,13 @@ router.get('/terminal-codes', requireAuth, async (req: any, res) => {
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   const allowed = req.isTill ? (!req.branchId || req.branchId === branchId)
     : (req.isOwner || (can(req, 'devices.approve') && (req.allBranches || inBranchSet(req) ? assertBranchAccess(req, branchId) : (!req.branchId || req.branchId === branchId))));   // A550, A582: a partner's set
-  if (!allowed) { res.status(403).json({ error: 'Only this branch\'s own till, the owner or someone who approves devices can see this.', code: 'FORBIDDEN' }); return; }
+  if (!allowed) { res.status(403).json({ error: 'Only this branch\'s own POS, the owner or someone who approves devices can see this.', code: 'FORBIDDEN' }); return; }
   const { data: branch } = await supabase.from('branches').select('id, business_id').eq('id', branchId).maybeSingle();
   if (!branch || (branch as { business_id?: string }).business_id !== req.businessId) { res.status(404).json({ error: 'Branch not found' }); return; }
 
   const { data, error } = await supabase.from('user_devices').select('device_id, terminal_code, device_label, status, retired_at, mac_address')
     .eq('business_id', req.businessId).eq('branch_id', branchId).eq('status', 'approved');
-  if (error) { res.status(503).json({ error: 'Could not read the branch\'s tills right now.', code: 'UNAVAILABLE' }); return; }
+  if (error) { res.status(503).json({ error: 'Could not read the branch\'s points of sale right now.', code: 'UNAVAILABLE' }); return; }
   const self = req.isTill ? String(req.deviceId) : String(req.query.device_id ?? '');
   // This machine's own earlier installs (the same MAC, A182) are not "another till": a reinstalled till takes its old
   // code back. Retired tills hold no code.

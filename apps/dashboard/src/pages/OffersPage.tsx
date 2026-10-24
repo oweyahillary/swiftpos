@@ -105,7 +105,7 @@ export function OffersManager({ client, isOwner, branchId, currency }: { client:
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-white">Offers</h1>
-          <p className="text-sm text-gray-400 mt-1">They apply by themselves at the tills and the web POS, on the days and hours you set. A cashier can still add a discount on top, up to the usual limit.</p>
+          <p className="text-sm text-gray-400 mt-1">They apply by themselves at the desktop POS and the web POS, on the days and hours you set. A cashier can still add a discount on top, up to the usual limit.</p>
         </div>
         <button data-testid="offer-new" onClick={() => setEditing(blank())}
           className="shrink-0 px-4 py-2 bg-swift hover:bg-swift-light text-black text-sm font-semibold rounded-lg transition-colors">+ New offer</button>
@@ -243,7 +243,7 @@ function OfferForm({ draft, onChange, onSave, onCancel, saving, error, products,
       )}
 
       <div className="space-y-2 border-t border-gray-800 pt-4">
-        <span className="text-xs text-gray-400">When it runs (leave empty for always) — by each till's own clock</span>
+        <span className="text-xs text-gray-400">When it runs (leave empty for always) — by each POS's own clock</span>
         <div className="grid grid-cols-2 gap-3">
           <Field label="From date"><input type="date" className={input} value={draft.start_date ?? ''} onChange={(e) => set({ start_date: e.target.value || null })} /></Field>
           <Field label="To date"><input type="date" className={input} value={draft.end_date ?? ''} onChange={(e) => set({ end_date: e.target.value || null })} /></Field>

@@ -54,7 +54,7 @@ const MENU_LABELS: Array<[string, string]> = [
   ["menu_modifiers", "Add-ons"], ["menu_extras", "Extras"], ["menu_combos", "Combo lines"], ["menu_recipes", "Recipe lines"],
   ["menu_offers", "Offers"], ["menu_branch_prices", "Branch prices"], ["menu_stock_lines", "Stock lines"],
 ];
-const MENU_WARNING = "Every product, category, variant / choice group, extra, combo, recipe, branch price, offer and the menu's stock levels are deleted. The till menus empty on their next sync. This cannot be undone.";
+const MENU_WARNING = "Every product, category, variant / choice group, extra, combo, recipe, branch price, offer and the menu's stock levels are deleted. The POS menus empty on their next sync. This cannot be undone.";
 
 export default function TestDataCard({ clientId, req, isSuper }: { clientId: string; req: Req; isSuper: boolean }) {
   const [open, setOpen] = useState(false);
@@ -145,7 +145,7 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
           {(openOnTills > 0 || closeOpen) && (
             <label style={{ fontSize: 12, color: "#f59e0b", display: "flex", gap: 6, alignItems: "center" }} data-testid="test-close-open">
               <input type="checkbox" checked={closeOpen} onChange={(e) => setCloseOpen(e.target.checked)} />
-              Also clear shifts and trading days still open on tills that are switched off ({openOnTills} found — began in the window, never closed, nothing after it). Then press "Show what will be removed" again.
+              Also clear shifts and trading days still open on points of sale that are switched off ({openOnTills} found — began in the window, never closed, nothing after it). Then press "Show what will be removed" again.
             </label>
           )}
           {menu && (
@@ -191,7 +191,7 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
           {data && data.tills_behind.length > 0 && (
             <div style={{ fontSize: 12, color: "#f59e0b" }} data-testid="tills-behind">
               Not synced since testing stopped: {data.tills_behind.map((t) => `${t.name} (${t.last_sync_at ? when(t.last_sync_at) : "never"})`).join(", ")}.
-              Such a till may still hold test sales it has not sent — sync it first, or clear again after it has.
+              Such a POS may still hold test sales it has not sent — sync it first, or clear again after it has.
             </div>
           )}
           {problems.length > 0 && (
@@ -202,11 +202,11 @@ export default function TestDataCard({ clientId, req, isSuper }: { clientId: str
               Trading days as the cloud holds them:
               {data!.days_in_question!.map((d) => (
                 <div key={`${d.till}-${d.opened_at}`}>
-                  {d.business_date} · {d.till ?? "a till"}{d.branch ? ` · ${d.branch}` : ""} · opened {when(d.opened_at)} ·{" "}
+                  {d.business_date} · {d.till ?? "a POS"}{d.branch ? ` · ${d.branch}` : ""} · opened {when(d.opened_at)} ·{" "}
                   {d.closed_at ? `closed ${when(d.closed_at)}, after the window's end` : `not closed on the cloud (${d.status})`}
                 </div>
               ))}
-              If the till shows this day closed, its close has not reached the cloud yet — sync that till (update it if it is on an old build), then preview again.
+              If the POS shows this day closed, its close has not reached the cloud yet — sync that POS (update it if it is on an old build), then preview again.
             </div>
           )}
           {nothing && <div style={{ fontSize: 12, color: C.muted }}>Nothing in this window.</div>}

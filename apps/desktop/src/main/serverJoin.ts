@@ -88,15 +88,15 @@ export function createJoinRequest(body: any, ip: string, now: number = Date.now(
   { ok: true; id: string; token: string } | { ok: false; status: number; error: string } {
   sweep(now);
   const device_id = clean(body?.device_id, 64);
-  const name = clean(body?.name, 60) || 'New till';
+  const name = clean(body?.name, 60) || 'New POS';
   if (!device_id) return { ok: false, status: 400, error: 'device_id required' };
   if (opts.holdsKey?.(device_id)) {
     // A521: the button is "Revoke this till" now (it was "Forget this till"; "Hide from Close Branch" keeps the key).
-    return { ok: false, status: 409, error: 'This till is already joined to this branch server. To join it again, revoke it at the server first (Close Branch → Show tills → Revoke this till), then join it from here.' };
+    return { ok: false, status: 409, error: 'This POS is already joined to this branch server. To join it again, revoke it at the server first (Close Branch → Show points of sale → Revoke this POS), then join it from here.' };
   }
   for (const [id, r] of requests) if ((r.ip === ip || r.device_id === device_id) && r.status === 'pending') requests.delete(id);
   if ([...requests.values()].filter((r) => r.status !== 'denied').length >= MAX_PENDING) {
-    return { ok: false, status: 429, error: 'Too many tills are waiting to join — answer them on the server first.' };
+    return { ok: false, status: 429, error: 'Too many points of sale are waiting to join — answer them on the server first.' };
   }
   const id = crypto.randomBytes(8).toString('hex');
   const token = crypto.randomBytes(24).toString('hex');
@@ -132,7 +132,7 @@ export function readJoin(id: string, token: string, now: number = Date.now()):
  */
 export async function answerJoin(id: string, allow: boolean, issue: () => Promise<JoinGrant>): Promise<{ ok: true }> {
   const r = requests.get(String(id));
-  if (!r || r.status !== 'pending') throw new Error('That request is no longer waiting — ask the till to search again.');
+  if (!r || r.status !== 'pending') throw new Error('That request is no longer waiting — ask the POS to search again.');
   if (!allow) { r.status = 'denied'; return { ok: true }; }
   r.grant = await issue();
   r.status = 'approved';

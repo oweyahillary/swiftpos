@@ -81,8 +81,8 @@ export default function CreditSalesToConfirm({ client, currency, canDecide, show
           <tbody>
             {awaiting.map((r) => (
               <tr key={r.order_id} className="border-t border-gray-800 align-top">
-                <td className="py-2 text-white">{r.customer_name ?? 'A customer'}<div className="text-xs text-gray-500">{r.order_number ?? ''}{r.source === 'till' ? ' · from a till' : ''}</div>
-                  {r.over_limit && <div className="text-xs text-amber-400">Over the credit limit (taken on a till)</div>}</td>
+                <td className="py-2 text-white">{r.customer_name ?? 'A customer'}<div className="text-xs text-gray-500">{r.order_number ?? ''}{r.source === 'till' ? ' · from a POS' : ''}</div>
+                  {r.over_limit && <div className="text-xs text-amber-400">Over the credit limit (taken on a POS)</div>}</td>
                 <td className="py-2 text-right text-white">{money(r.amount, currency)}</td>
                 <td className="py-2 text-gray-300">{r.cashier_name ?? '—'}</td>
                 <td className="py-2 text-gray-300">{dateTime(r.sold_at)}</td>

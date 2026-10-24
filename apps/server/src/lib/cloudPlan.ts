@@ -229,7 +229,7 @@ export function standingView(s: CloudStanding) {
 export function syncRefusalBody(s: CloudStanding): { error: string; code: 'CLOUD_SUBSCRIPTION_ENDED'; trial: boolean } {
   const what = s.trial || s.state === 'ended' ? 'ZapTill cloud trial has ended' : 'ZapTill cloud subscription has ended';
   return {
-    error: `This business's ${what}. The till keeps selling and keeps its sales; they are sent when it is renewed. Call or WhatsApp ZapTill on ${ZAPTILL_PHONE}.`,
+    error: `This business's ${what}. The POS keeps selling and keeps its sales; they are sent when it is renewed. Call or WhatsApp ZapTill on ${ZAPTILL_PHONE}.`,
     code: 'CLOUD_SUBSCRIPTION_ENDED',
     trial: s.trial,
   };
@@ -238,14 +238,14 @@ export function syncRefusalBody(s: CloudStanding): { error: string; code: 'CLOUD
 /** The technician's words when a till cannot join (enrolment code, rejoin, a branch server's join code). */
 export function enrolRefusalBody(): { error: string; code: 'CLOUD_SUBSCRIPTION_ENDED' } {
   return {
-    error: `This business's ZapTill cloud subscription has ended, so a till cannot be joined (or rejoined) until it is renewed. Ask the owner to pay, or call ZapTill on ${ZAPTILL_PHONE}. Tills already joined keep selling.`,
+    error: `This business's ZapTill cloud subscription has ended, so a POS cannot be joined (or rejoined) until it is renewed. Ask the owner to pay, or call ZapTill on ${ZAPTILL_PHONE}. Points of sale already joined keep selling.`,
     code: 'CLOUD_SUBSCRIPTION_ENDED',
   };
 }
 
 /** A584: the plain words for a paused web dashboard (sign-in and every web request). No blame, no dates. */
 export const PAUSED_WORDS = `Your ZapTill cloud access is paused. Call ${ZAPTILL_PHONE} to renew.`;
-export const TRIAL_ENDED_WORDS = 'Your cloud trial has ended. Contact ZapTill to keep the web dashboard — your tills keep working.';
+export const TRIAL_ENDED_WORDS = 'Your cloud trial has ended. Contact ZapTill to keep the web dashboard — your points of sale keep working.';
 
 /** The 403 a paused business's web requests get (the dashboard shows the paused screen). */
 export function webRefusalBody(s: Pick<CloudStanding, 'trial' | 'state'>): { error: string; code: 'CLOUD_ACCESS_PAUSED' | 'CLOUD_TRIAL_ENDED' } {

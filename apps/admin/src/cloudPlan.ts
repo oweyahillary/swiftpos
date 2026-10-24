@@ -52,10 +52,10 @@ export function trialBillingLine(trial: CloudTrialView | null | undefined): { ti
   }
   if (trial.phase === "reports_only") {
     return { title: `Cloud trial ended ${end} — reports only`,
-      text: "The owner can still sign in to read reports for 7 days after the trial, then sign-in stops. Tills are not affected. Convert to paid to keep the dashboard." };
+      text: "The owner can still sign in to read reports for 7 days after the trial, then sign-in stops. Points of sale are not affected. Convert to paid to keep the dashboard." };
   }
   return { title: `Cloud trial ended ${end}`,
-    text: "The owner can no longer sign in to the web dashboard (\"Your cloud trial has ended\"). Tills are not affected. Convert to paid to give it back." };
+    text: "The owner can no longer sign in to the web dashboard (\"Your cloud trial has ended\"). Points of sale are not affected. Convert to paid to give it back." };
 }
 
 /** The client list's plan colour. */
@@ -120,12 +120,12 @@ export function standingLine(s: CloudStandingView | null | undefined): { title: 
   const lastOpen = s.lock_at ? trialDate(new Date(Date.parse(s.lock_at) - 1).toISOString()) : "—";
   if (s.trial) {
     if (s.sync_refused) return { title: s.state === "locked" || s.state === "ended" ? "Trial ended — locked" : "Trial ended — reports only", tone: "bad",
-      text: "Sync is stopped and no till can be joined; the tills keep selling. Recording a payment converts the trial and opens everything at once." };
+      text: "Sync is stopped and no POS can be joined; the points of sale keep selling. Recording a payment converts the trial and opens everything at once." };
     return { title: `Cloud trial — ends ${due}`, tone: (s.days_left ?? 0) <= 7 ? "warn" : "ok",
       text: "No invoice for a trial. After it ends: 7 days of reports only, then locked. Recording a payment converts it." };
   }
   if (s.state === "locked") return { title: `Locked — unpaid since ${due}`, tone: "bad",
-    text: "The web dashboard is paused (\"Your ZapTill cloud access is paused. Call 0717 675 635 to renew.\"), the cloud refuses this client's tills' sync and no till can be joined. The tills keep selling and keep their sales; recording a payment opens everything at once and the queue drains." };
+    text: "The web dashboard is paused (\"Your ZapTill cloud access is paused. Call 0717 675 635 to renew.\"), the cloud refuses sync from this client's points of sale and no POS can be joined. The points of sale keep selling and keep their sales; recording a payment opens everything at once and the queue drains." };
   if (s.state === "unpaid") {
     const u = s.unpaid_days ?? 0, m = s.lock_in_days ?? 0;
     return { title: `${u <= 0 ? "Due today" : `Unpaid ${dayWord(u)}`} — locks ${m <= 0 ? "tonight" : `in ${dayWord(m)}`} (end of ${lastOpen})`, tone: u >= 5 ? "bad" : "warn",

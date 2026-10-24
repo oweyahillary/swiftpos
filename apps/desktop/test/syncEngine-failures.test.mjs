@@ -262,9 +262,9 @@ check('a revoked refresh token still returns false', () => {
 
 check('the D13 re-login case is now recorded, not silent', () => {
   const s = engine.getSyncStatus();
-  assert.match(s.pullError, /till token refresh failed/);
+  assert.match(s.pullError, /POS token refresh failed/);
   assert.match(s.pullError, /HTTP 401/);
-  assert.match(log(), /\[auth\] till token refresh failed/);
+  assert.match(log(), /\[auth\] POS token refresh failed/);
 });
 
 // A477: a definitive refusal holds every renewal for 15 minutes (one gate for all callers); a technician's action
@@ -273,7 +273,7 @@ engine.resetRenewalGate('test: the next scenario');
 globalThis.fetch = async () => { throw new Error('socket hang up'); };
 await engine.refreshAccessToken();
 check('a thrown refresh is recorded rather than swallowed', () => {
-  assert.match(engine.getSyncStatus().pullError, /till token refresh error: socket hang up/);
+  assert.match(engine.getSyncStatus().pullError, /POS token refresh error: socket hang up/);
 });
 
 console.log('\nsyncEngine - refresh single-flight (D13)\n');
@@ -330,7 +330,7 @@ globalThis.fetch = async () => { refreshCalls++; return resp(200, JSON.stringify
 const after = await engine.refreshAccessToken();
 check('a failure does not wedge the guard forever', () => {
   assert.strictEqual(after, true);
-  assert.strictEqual(refreshCalls, 1, 'a stuck guard means the till can never refresh again');
+  assert.strictEqual(refreshCalls, 1, 'a stuck guard means the POS can never refresh again');
 });
 
 console.log('\nsyncEngine - stale token retry (D13)\n');

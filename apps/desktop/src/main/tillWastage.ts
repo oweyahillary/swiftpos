@@ -91,7 +91,7 @@ export async function pushPendingWastage(
     let res: { status: number; body: any };
     try { res = await post(r); }
     catch (e: any) {
-      for (const left of readPending(db)) if (!out[left.client_id]) out[left.client_id] = { state: 'pending', message: `Saved on this till — it goes to the cloud when the connection is back (${e?.message ?? e}).` };
+      for (const left of readPending(db)) if (!out[left.client_id]) out[left.client_id] = { state: 'pending', message: `Saved on this POS — it goes to the cloud when the connection is back (${e?.message ?? e}).` };
       break;
     }
     if (res.status >= 200 && res.status < 300) {
@@ -101,7 +101,7 @@ export async function pushPendingWastage(
       continue;
     }
     if (res.status >= 500 || res.status === 401 || res.status === 408 || res.status === 429) {
-      out[r.client_id] = { state: 'pending', message: `Saved on this till — the cloud did not take it yet (HTTP ${res.status}); it retries at the next sync.` };
+      out[r.client_id] = { state: 'pending', message: `Saved on this POS — the cloud did not take it yet (HTTP ${res.status}); it retries at the next sync.` };
       continue;
     }
     // A real refusal: stop waiting, keep it where the manager can see why.

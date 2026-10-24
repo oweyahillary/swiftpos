@@ -173,7 +173,7 @@ const NAV: NavEntry[] = [
       // the only route to a drawer stranded on a terminal that has died.
       { to: '/dashboard/open-drawers', label: 'Open Drawers', icon: 'drawers' },
       // A523: every till's open day and drawers — close a day or a drawer from the web when nobody can at the till.
-      { to: '/dashboard/tills-days',   label: 'Tills & Days', icon: 'drawers' },
+      { to: '/dashboard/tills-days',   label: 'POS & Days', icon: 'drawers' },
     ],
   },
   {

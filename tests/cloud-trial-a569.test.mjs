@@ -264,7 +264,7 @@ try {
     const w = await W.getWebAccess(B, 'active');
     assert.equal(w.state, 'locked'); assert.equal(w.canLogin, false);
     const r = W.webAccessRefusal(w);
-    assert.equal(r.code, 'CLOUD_TRIAL_ENDED'); assert.match(r.error, /cloud trial has ended/i); assert.match(r.error, /tills keep working/);
+    assert.equal(r.code, 'CLOUD_TRIAL_ENDED'); assert.match(r.error, /cloud trial has ended/i); assert.match(r.error, /points of sale keep working/);
     // A584: a PAID term 8 days past (on a plan since before) is locked — no 21-day grace; one not yet bridged is not
     reset(); biz().web_access_expires_at = new Date(Date.now() - 8 * DAY).toISOString();
     assert.equal((await W.getWebAccess(B, 'active')).state, 'grace', 'a licence not yet bridged is never locked');

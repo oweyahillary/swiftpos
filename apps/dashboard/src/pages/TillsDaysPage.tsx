@@ -17,9 +17,9 @@ export default function TillsDaysPage() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Tills &amp; days</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-          Every till, its open trading day and drawers. Close a till’s day or a drawer from here when nobody can at the till —
-          it takes effect on the web at once and the till adopts it when it next connects. Each action asks why, and is
-          recorded. A till locks only when there is money to count; an old day with nothing left to count closes itself.
+          Every POS, its open trading day and drawers. Close a POS’s day or a drawer from here when nobody can at the POS —
+          it takes effect on the web at once and the POS adopts it when it next connects. Each action asks why, and is
+          recorded. A POS locks only when there is money to count; an old day with nothing left to count closes itself.
         </p>
       </div>
       <TillsAndDays client={api as any} currency={currency} heading={false} />

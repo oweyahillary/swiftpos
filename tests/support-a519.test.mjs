@@ -103,7 +103,7 @@ try {
     assert.match(r.body.reference, /^[A-HJ-NP-Z2-9]{6}$/);
     const row = mem.db.support_logs[0];
     assert.equal(row.business_id, B); assert.equal(row.device_id, 'dev-T1'); assert.equal(row.branch_id, BR); assert.equal(row.terminal_code, 'T1');
-    assert.equal(row.reference, r.body.reference); assert.equal(row.sent_by, 'the till');
+    assert.equal(row.reference, r.body.reference); assert.equal(row.sent_by, 'the POS');
   });
   await ok('redacted AGAIN before it is stored (a till on an older build sent a token and a PIN)', async () => {
     reset();
