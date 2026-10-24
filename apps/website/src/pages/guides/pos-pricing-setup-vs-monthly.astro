@@ -1,0 +1,126 @@
+---
+// Guide 4 (night 3, DRAFT for the owner): setup vs monthly. Every ZapTill figure comes from PRICES in src/lib/site.ts
+// through zaptillCost() in src/lib/guides.ts (tested), so it follows the pricing page. No other supplier is named or
+// priced; the only outside figures are the reader's own.
+import Guide from '../../layouts/Guide.astro';
+import { WA_MESSAGES, PRICES, kes } from '../../lib/site';
+import { zaptillCost } from '../../lib/guides';
+
+const one = zaptillCost({ branches: 1, years: 3 });
+const two = zaptillCost({ branches: 2, years: 3 });
+const cloudMonths = 36 - PRICES.trialMonths;
+---
+<Guide slug="pos-pricing-setup-vs-monthly" waMessage={WA_MESSAGES.guidePricing} ctaTitle="Get a quote for your business, in writing."
+  ctaText="Tell us how many branches and counters you have and what you sell. We will send you the setup, the monthly fee and any hardware, itemised.">
+  <p class="draft-banner">Draft — ZapTill prices being finalised</p>
+  <p>
+    Point of sale prices are hard to compare. One supplier asks for a large amount up front. Another asks for nothing
+    up front and a monthly fee. A third says it is free. A fourth takes a small percentage of every sale. They are all
+    selling roughly the same thing: a way to sell, count the money and know what happened. So which is cheapest?
+  </p>
+  <p>The honest answer: it depends on how long you keep it, how many branches you have, and what is included.</p>
+
+  <h2>Compare over three years, not one month</h2>
+  <p>
+    A point of sale is not a one-month purchase. Most businesses keep theirs for years. So the fair comparison is the
+    total over three years, for your number of branches:
+  </p>
+  <div class="guide-note">
+    <p><strong>Setup</strong> (once, for each branch if it is charged per branch)<br />
+      + <strong>the monthly fee &times; 36</strong> (&times; the number of branches, if it is per branch)<br />
+      + <strong>hardware</strong> you have to buy<br />
+      + <strong>anything charged per sale</strong> (a percentage, or a fee per transaction)<br />
+      + <strong>extras</strong>: training, support, more points of sale, kitchen screens, installation.</p>
+  </div>
+  <p>
+    Two things move the answer more than anything else. A fee charged <em>per branch</em> doubles when you open a
+    second branch. A fee charged <em>per sale</em> grows as you grow: 1% of KES 20,000 a day is KES 200 a day, which is
+    about KES 6,000 a month, every month, forever.
+  </p>
+
+  <h2>What ZapTill costs, added up</h2>
+  <p>
+    ZapTill is paid once per branch for the point of sale, KES {kes(PRICES.setup)}, and then KES {kes(PRICES.monthly)} a
+    month for the cloud for the whole business, however many branches. The first month of the cloud is free. Over three
+    years, before hardware:
+  </p>
+  <div class="table-scroll">
+    <table>
+      <caption class="visually-hidden">ZapTill over three years, from the draft prices</caption>
+      <thead>
+        <tr><th scope="col">Over 3 years</th><th scope="col" class="num">One branch</th><th scope="col" class="num">Two branches</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Setup, once per branch</th><td class="num">KES {kes(one.setup)}</td><td class="num">KES {kes(two.setup)}</td></tr>
+        <tr><th scope="row">The cloud, {cloudMonths} paid months (the first is free), one fee for the business</th><td class="num">KES {kes(one.cloud)}</td><td class="num">KES {kes(two.cloud)}</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><td>Total</td><td class="num">KES {kes(one.total)}</td><td class="num">KES {kes(two.total)}</td></tr>
+        <tr><td>About a day</td><td class="num">KES {kes(one.perDay)}</td><td class="num">KES {kes(two.perDay)}</td></tr>
+      </tfoot>
+    </table>
+  </div>
+  <p>
+    The second branch adds its setup, not a second monthly fee. ZapTill Analytics, if you want it, is about
+    KES {kes(PRICES.analyticsMonthly)} a month on top, for the whole business; take it when the cloud has shown you
+    what your numbers look like. Hardware is quoted separately, or you bring your own and we check it; each
+    extra computer, such as a second counter or a kitchen screen, is from about KES {kes(PRICES.extraComputerFrom)}.
+  </p>
+  <p>
+    Now do the same sum for any other quote you have. Put your own numbers in, and the cheapest option is usually
+    obvious.
+  </p>
+
+  <h2>What the setup should buy you</h2>
+  <p>
+    A setup fee is only worth paying if it buys work you would otherwise do yourself, badly, at midnight. Ask what is
+    included. A good setup covers:
+  </p>
+  <ul>
+    <li><strong>Installation at your place:</strong> the computers, the printers, the scanner or the pumps, set up and tested.</li>
+    <li><strong>Your items loaded for you:</strong> your product list, price list or menu, typed in by someone else.</li>
+    <li><strong>Staff roles and PINs,</strong> so each person sees only what they should.</li>
+    <li><strong>Training</strong> for cashiers, attendants and managers, on your own products.</li>
+    <li><strong>Your logo and colours</strong> on the receipt.</li>
+    <li><strong>The first day close, together,</strong> so the first one is right.</li>
+  </ul>
+  <p>ZapTill's branch setup includes all of these. The full list is on the <a href="/pricing/">pricing page</a>.</p>
+
+  <h2>What the monthly fee should buy you</h2>
+  <p>
+    A monthly fee should pay for something that keeps working for you every month, not for permission to keep using
+    what you already paid for. With ZapTill, the points of sale are yours once the setup is paid; the monthly fee is for
+    the cloud: every branch on one web dashboard on your phone, a daily summary by email, closing a branch's day from the
+    web, partner and accountant logins, and reports to Excel.
+  </p>
+  <p>
+    And if you stop paying? Ask every supplier this. With ZapTill, the points of sale keep selling; what stops is the
+    cloud (the dashboard, your phone access, the daily email and syncing) until you pay again, and your sales wait
+    safely on the point of sale until then.
+  </p>
+
+  <h2>"Free" is a price too</h2>
+  <p>A free point of sale can be a good deal. Before you take one, ask:</p>
+  <ul>
+    <li>Is there a fee per sale, or a percentage, or a required payment provider?</li>
+    <li>Must I buy their hardware, at their price?</li>
+    <li>Who sets it up, and who trains my staff?</li>
+    <li>Who do I call when something goes wrong, at what hours, and does it cost extra?</li>
+    <li>Does it keep selling with no internet?</li>
+    <li>Can I take my data with me if I leave?</li>
+  </ul>
+
+  <h2>The questions that matter</h2>
+  <ol>
+    <li>What is the total over three years, for my number of branches?</li>
+    <li>Is anything charged per branch, per computer or per sale?</li>
+    <li>What exactly does the setup include?</li>
+    <li>What does the monthly fee pay for, and what happens if I stop?</li>
+    <li>What hardware do I need, and can I use my own?</li>
+    <li>When can I get support, and is there a cost?</li>
+  </ol>
+  <p>
+    For a side-by-side look at what you get from a cash book, a basic point of sale and ZapTill, see
+    <a href="/pricing/#compare-title">the comparison on the pricing page</a>.
+  </p>
+</Guide>

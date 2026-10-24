@@ -1,0 +1,107 @@
+---
+// Guide 2 (night 3, DRAFT for the owner): running a second branch from a distance. Claims checked against WORKPLAN §3:
+// every branch on one web dashboard, the daily email, closing a branch from the web, partner and accountant logins,
+// transfers and other branches' stock, Analytics' stock moves in words, the cloud fee per business.
+import Guide from '../../layouts/Guide.astro';
+import Phone from '../../components/frames/Phone.astro';
+import PhoneSummary from '../../components/screens/PhoneSummary.astro';
+import ProductVideo from '../../components/ProductVideo.astro';
+import { WA_MESSAGES, PRICES, kes } from '../../lib/site';
+---
+<Guide slug="run-two-branches-without-being-there" waMessage={WA_MESSAGES.guideBranches} ctaTitle="Both branches on your phone, every night.">
+  <p>
+    The second branch is where many good businesses start to struggle. The first shop, restaurant or station works
+    because you are in it: you see the queue, the shelves, the drawer and the staff. Then you open a second one across
+    town, and suddenly you are only ever in one place. Whichever branch you are not in becomes a guess.
+  </p>
+  <p>
+    You cannot be in two places at once. You can know, every night, what happened in both, and you can make the
+    branch you are not in run the same way as the one you are in. Here is a routine that works.
+  </p>
+
+  <h2>Before you open: make both branches the same</h2>
+  <p>
+    Most second-branch problems are differences: different prices, different ways of counting the drawer, a different
+    list of who is allowed to do what. Before you worry about watching the new branch, make it a copy of the first.
+  </p>
+  <ul>
+    <li><strong>The same items and prices,</strong> set in one place, so a price change reaches both.</li>
+    <li><strong>The same roles.</strong> Decide what a cashier, a supervisor and a branch manager may each do (void a sale, give a discount, receive stock) and give each person exactly that.</li>
+    <li><strong>The same close.</strong> Every drawer counted, every night, the same way.</li>
+    <li><strong>One person in charge on the spot,</strong> with the authority to act and the knowledge that you will see what they did.</li>
+  </ul>
+
+  <h2>Every night: ten minutes with your phone</h2>
+  <p>
+    The habit that matters most takes ten minutes. Each evening, look at the same few numbers for each branch, in the
+    same order:
+  </p>
+  <ol>
+    <li><strong>Sales,</strong> against the same day last week. A quiet Tuesday is normal; a quiet Saturday is a question.</li>
+    <li><strong>Each drawer, over or short,</strong> by name. One short evening is a mistake. The same name short every week is a pattern.</li>
+    <li><strong>Voids, refunds and discounts,</strong> by cashier.</li>
+    <li><strong>What is running low,</strong> so tomorrow's order is placed tonight, not when the shelf is empty.</li>
+  </ol>
+
+  <figure>
+    <Phone label="The daily summary on the owner's phone">
+      <PhoneSummary />
+    </Phone>
+    <figcaption>The daily summary email from a demo restaurant: sales, top sellers, each drawer and what is running low.</figcaption>
+  </figure>
+
+  <div class="guide-zt">
+    <p class="guide-zt__h">How ZapTill does it</p>
+    <p>
+      Every branch shows on one web dashboard that opens on any phone. A daily summary comes by email at the time you
+      choose. You can close a branch's day from the web, and see each branch side by side. The ZapTill Cloud is one fee
+      for the whole business, KES {kes(PRICES.monthly)} a month however many branches you have, so a second branch adds its
+      setup, not a second monthly fee.
+    </p>
+  </div>
+
+  <h2>Every week: stock and people</h2>
+  <ul>
+    <li><strong>Move stock, don't buy it twice.</strong> One branch's slow mover can be the other's best seller. Before you order, check whether the other branch has too much of it.</li>
+    <li><strong>Count the expensive items</strong> in both branches, on the same day.</li>
+    <li><strong>Talk to the person in charge</strong> about the week's numbers, with the numbers in front of you both. It changes the conversation from "I think" to "on Thursday".</li>
+  </ul>
+  <p>
+    In ZapTill, a branch sends a transfer and the other receives it, so both stock levels stay right, and a branch can
+    see the other's stock and ask for some. With ZapTill Analytics, the dashboard also suggests, in a plain sentence,
+    stock worth moving from one branch to the other.
+  </p>
+
+  <h2>Let others see, without giving them your keys</h2>
+  <p>
+    A business partner wants to see the branch they invested in. Your accountant needs the month's sales. Neither
+    should need your password. Give each their own login, limited to what they need: ZapTill has partner and accountant
+    logins for exactly this, and a partner sees only the branches you give them.
+  </p>
+
+  <h2>Every month: visit without warning</h2>
+  <p>
+    The numbers tell you where to look; they do not replace looking. Once a month, visit each branch on a day nobody
+    expects you. Watch the counter for an hour. Check that the process on the floor is the process you set: drawers
+    counted, deliveries checked, voids called to a supervisor. Then compare what you saw with what the dashboard said.
+  </p>
+
+  <figure>
+    <ProductVideo name="owner" caption={false}
+      label="The owner's phone: the day's sales, top sellers and who was short at Mama Lishe Grill, then the Analytics page with its Do this next cards, then every branch side by side on a laptop." />
+    <figcaption>The owner's view: the day on the phone, then every branch side by side. Demo businesses are fictional.</figcaption>
+  </figure>
+
+  <h2>The short version</h2>
+  <ol>
+    <li>Make the second branch a copy of the first: items, prices, roles and the close.</li>
+    <li>Ten minutes every night: sales, drawers by name, voids and refunds, what is running low.</li>
+    <li>Every week: move stock before you buy it, count the expensive items, talk numbers with the person in charge.</li>
+    <li>Give partners and accountants their own logins.</li>
+    <li>Visit without warning once a month, and compare what you see with what the numbers say.</li>
+  </ol>
+  <p>
+    A second branch should double what you earn, not what you worry about. The routine is what makes the difference;
+    the right point of sale makes the routine take ten minutes instead of an evening.
+  </p>
+</Guide>

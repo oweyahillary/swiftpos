@@ -9,8 +9,8 @@ import { DEMO_DAYPARTS, DEMO_TOP3 } from '../../lib/analyticsDemo';
 
 const problems = [
   {
-    problem: 'The queue is out the door, and the till is slow.',
-    fix: 'Big buttons in the groups you sell from, a split payment in two taps, and an order that can be held while the customer decides. The till keeps selling with no internet.',
+    problem: 'The queue is out the door, and the point of sale is slow.',
+    fix: 'Big buttons in the groups you sell from, a split payment in two taps, and an order that can be held while the customer decides. The point of sale keeps selling with no internet.',
   },
   {
     problem: 'The wrong bag goes to the wrong customer.',
@@ -22,7 +22,7 @@ const problems = [
   },
   {
     problem: 'Offers are worked out on a calculator.',
-    fix: 'With ZapTill Online, set up an offer once and the till applies it. The receipt prints the offer by name, and it shows in the day\'s figures.',
+    fix: 'With ZapTill Online, set up an offer once and the point of sale applies it. The receipt prints the offer by name, and it shows in the day\'s figures.',
   },
   {
     problem: 'Riders\' fees disappear from the drawer.',
@@ -34,9 +34,11 @@ const lunch = DEMO_DAYPARTS.find((d) => d.name === 'Lunch')!;
 const lunchHours = DEMO_TOP3.filter(([h]) => h === '11:00' || h === '13:00');
 ---
 <Industry
-  title="ZapTill for quick service and takeaways: speed, combos, dispatch tickets | ZapTill"
-  description="ZapTill for quick-service restaurants and takeaways in Kenya: a fast counter till, combos and variants on one line, dispatch tickets that count the bags, offers, delivery fees and M-Pesa on every receipt."
+  title="Quick-service and takeaway POS in Kenya | ZapTill"
+  description="ZapTill for quick-service restaurants and takeaways in Kenya: a fast counter POS, combos on one line, dispatch tickets that count the bags, M-Pesa on every receipt."
   ogImage="/og/quick-service.png"
+  kicker="Quick-service and takeaway POS in Kenya"
+  guides={['pos-when-the-internet-goes-off', 'pos-pricing-setup-vs-monthly']}
   crumb="Quick service and takeaways"
   heading="Faster at the counter. Right in the bag."
   sub="ZapTill keeps the queue moving, prints combos the way the kitchen reads them, and counts the bags at dispatch, so every order leaves complete."
@@ -47,9 +49,9 @@ const lunchHours = DEMO_TOP3.filter(([h]) => h === '11:00' || h === '13:00');
 >
   <Fragment slot="hero">
     <div class="q-hero">
-      <Monitor label="Taking a split payment at the ZapTill till">
+      <Monitor label="Taking a split payment at the ZapTill point of sale">
         <Shot src="/screens/till-split.webp" eager width={1280} height={800}
-          alt="The real ZapTill till taking payment: total due KES 3,050, split into KES 1,050 cash and KES 2,000 M-Pesa." />
+          alt="The real ZapTill point of sale taking payment: total due KES 3,050, split into KES 1,050 cash and KES 2,000 M-Pesa." />
       </Monitor>
       <Receipt kind="dispatch" paper={58} class="q-hero__slip" />
     </div>

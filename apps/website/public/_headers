@@ -10,3 +10,20 @@ https://:version.:project.pages.dev/*
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+
+# Night 3: long caching for files whose names never change in place. Astro's bundles carry a hash in the name; the
+# fonts, videos and screenshots are re-made rarely, so a day, re-checked after that.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/*
+  Cache-Control: public, max-age=2592000
+
+/video/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/screens/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/demo-products/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

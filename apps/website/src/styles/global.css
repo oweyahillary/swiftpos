@@ -9,6 +9,43 @@
  * Type: Bricolage Grotesque (headings) and Figtree (text). Receipts use the system monospace, like a thermal printer.
  */
 
+/*
+ * Fonts, self-hosted (night 3): both are SIL Open Font License, latin subset only, weight axis cut to what the site uses
+ * (Figtree 400-700, Bricolage Grotesque 600-800). Served from our own domain, so no request to Google before the first
+ * paint. The "Fallback" faces are Arial stretched to each font's width and line height, so the swap barely moves text.
+ */
+@font-face {
+  font-family: 'Figtree';
+  src: url('/fonts/figtree-latin.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('/fonts/bricolage-grotesque-latin.woff2') format('woff2');
+  font-weight: 600 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Figtree Fallback';
+  src: local('Arial'), local('ArialMT'), local('Helvetica');
+  size-adjust: 101%;
+  ascent-override: 94%;
+  descent-override: 24.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Bricolage Fallback';
+  src: local('Arial Bold'), local('Arial-BoldMT'), local('Arial'), local('Helvetica');
+  font-weight: 600 800;
+  size-adjust: 98%;
+  ascent-override: 94.9%;
+  descent-override: 27.6%;
+  line-gap-override: 0%;
+}
+
 :root {
   /* Brand */
   --teal: #14b8a6;          /* swift (teal 500) */
@@ -45,12 +82,12 @@
   --thermal-ink: #23292b;
 
   /* WhatsApp button: a darker green than WhatsApp's own so white text passes AA */
-  --wa: #128c4a;
-  --wa-hover: #0e7a40;
+  --wa: #0e7a40;            /* white text 5.4:1 (night 3: #128c4a was 4.3:1) */
+  --wa-hover: #0b6434;
 
   /* Type */
-  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
-  --font-text: 'Figtree', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-display: 'Bricolage Grotesque', 'Bricolage Fallback', 'Segoe UI', system-ui, sans-serif;
+  --font-text: 'Figtree', 'Figtree Fallback', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-receipt: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
 
   /* Type scale: a 1.25 ratio on a 17px base, display sizes fluid */

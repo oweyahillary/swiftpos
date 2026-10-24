@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 200" width="680" height="200">
+  <!-- Kijani Basket, one colour for the thermal receipt (FICTIONAL demo business). -->
+  <rect width="680" height="200" fill="#fff"/>
+  <rect x="8" y="8" width="184" height="184" rx="44" fill="#000"/>
+  <path d="M100 30c26 4 40 22 38 46-26-2-42-18-38-46z" fill="#fff"/>
+  <path d="M42 92h116l-14 70a10 10 0 0 1-10 8H66a10 10 0 0 1-10-8z" fill="#fff"/>
+  <path d="M62 112h76M66 132h68M70 152h60M84 104v58M116 104v58" stroke="#000" stroke-width="8" stroke-linecap="round"/>
+  <text x="222" y="112" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="74" fill="#000" letter-spacing="-1">Kijani Basket</text>
+  <text x="226" y="164" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="30" fill="#000" letter-spacing="9">MINIMART</text>
+</svg>

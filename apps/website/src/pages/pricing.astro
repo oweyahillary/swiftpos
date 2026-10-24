@@ -10,7 +10,7 @@ import { PRICING_FAQ } from '../lib/faq';
 import { faqPage } from '../lib/schema';
 
 // The owner's model (2026-10-22, cloud per business 2026-10-23): the desktop app is a ONE-OFF purchase per branch (a
-// branch = the branch server and a till, two computers); the cloud is month to month, PER BUSINESS (one fee covers every
+// branch = the branch server and a point of sale, two computers); the cloud is month to month, PER BUSINESS (one fee covers every
 // branch), with six or twelve months ahead recommended; the first month of the cloud is free with the setup (A569);
 // Analytics is an add-on, per business too. Owner, 2026-10-23: an extra computer from about KES 10,000, quoted per
 // client; installation can vary; no reward for paying ahead; 3, 6 or 12 months at once.
@@ -19,15 +19,15 @@ const once = {
   name: 'ZapTill for one branch',
   price: `KES ${kes(PRICES.setup)}`,
   per: 'once',
-  alt: 'Paid once. The tills are yours: no monthly fee for them.',
-  intro: 'A branch is two computers: the branch server and a till. Everything you need to sell, cook and close the day.',
+  alt: 'Paid once. The points of sale are yours: no monthly fee for them.',
+  intro: 'A branch is two computers: the branch server and a point of sale. Everything you need to sell and close the day, set up for your kind of business.',
   items: [
-    'Tills that keep selling with no internet',
+    'Points of sale that keep selling with no internet',
     'M-Pesa Buy Goods and Paybill on every receipt, split payments',
-    'Kitchen and dispatch tickets, a kitchen display',
+    'Set up for your trade: departments, barcodes and weighed items for a shop; menus and kitchen tickets for a restaurant; the pumps for a petrol station',
     'Day close: drawer counts, over and short by cashier',
     'Staff roles and PINs',
-    'Scan barcodes at the till',
+    'Scan barcodes at the point of sale',
     'Sales on account for regulars, within their limit',
     'Set up on site, your items loaded, your staff trained',
   ],
@@ -55,12 +55,12 @@ const monthly = [
     price: 'Ask us',
     per: '',
     alt: 'Price coming soon. We can quote you today.',
-    intro: 'The extras that make the till look and work like your menu or your shop.',
+    intro: 'The extras that make the point of sale look and work like your menu or your shop.',
     items: [
-      'Pictures of your items on the till',
+      'Pictures of your items on the point of sale',
       'Variants: sizes, flavours, "Normal" or "Spicy"',
       'Offers',
-      'Stock at the till, and labels printed from the till',
+      'Stock at the point of sale, and labels printed from the point of sale',
       'Check other branches\' stock and ask them for some',
     ],
   },
@@ -76,24 +76,42 @@ const monthly = [
       'Your week at a glance: what to prepare each day',
       'Stock to move between branches, in a sentence',
       'Money leaks by cashier, as warnings to look into',
-      'Menu engineering and credit ageing',
+      "What sells together, in your trade's words",
+      'Credit ageing, and menu engineering for restaurants',
     ],
   },
 ];
 
 const setupItems = [
-  { t: 'We install it at your place', d: 'The branch server, the till and the printers, set up on site.' },
-  { t: 'Your items and stock, loaded for you', d: 'Send us your menu or product list in Excel or on paper. We do the typing.' },
-  { t: 'Printers and kitchen screens', d: 'Receipts at the counter, tickets in the kitchen and at dispatch.' },
+  { t: 'We install it at your place', d: 'The branch server, the point of sale and the printers, set up on site.' },
+  { t: 'Your items and stock, loaded for you', d: 'Send us your product list, price list or menu in Excel or on paper. We do the typing.' },
+  { t: 'Printers, scanners and screens', d: 'Receipts at the counter, the barcode scanner and labels for a shop, the pumps for a station, tickets in the kitchen for a restaurant.' },
   { t: 'Staff roles and PINs', d: 'Cashiers, supervisors, managers and the rest, each seeing only what they should.' },
-  { t: 'Training', d: 'For your cashiers and managers, on your own menu.' },
-  { t: 'Your brand', d: 'Your logo and colours on the till and the receipt, per branch.' },
+  { t: 'Training', d: 'For your cashiers, attendants and managers, on your own products.' },
+  { t: 'Your brand', d: 'Your logo and colours on the point of sale and the receipt, per branch.' },
   { t: 'The first day close, together', d: 'We stay for it, so the first one is right.' },
+];
+// Night 3: ZapTill against a cash book and a basic point of sale, no supplier named. Honest both ways: a cash book is
+// cheaper and needs no power; "a basic POS" varies, so it says "varies" rather than guessing. ZapTill's column is
+// WORKPLAN §3's "Say" column only.
+const compare: { what: string; book: string; basic: string; zt: string; good?: 'book' }[] = [
+  { what: 'Every sale recorded', book: 'Only if someone writes it down', basic: 'Yes', zt: 'Yes, with a receipt' },
+  { what: 'Who was short, by name', book: 'If each cashier has a page and you add it up', basic: 'Varies: ask', zt: 'Every drawer at the day close, over or short, by name' },
+  { what: 'M-Pesa by cashier', book: 'Added up by hand', basic: 'Varies', zt: 'M-Pesa total per cashier at the close; your number on every receipt' },
+  { what: 'Cancelling a paid sale', book: 'Crossed out, by anyone', basic: 'Varies', zt: "Needs a manager's PIN, and stays on the record" },
+  { what: 'Stock', book: 'A separate count, by hand', basic: 'Often stock levels', zt: 'Deliveries, counts, wastage and transfers between branches' },
+  { what: 'When the internet goes', book: 'Paper needs no internet', basic: 'Some stop selling: ask', zt: 'The desktop POS keeps selling and printing; it catches up by itself', good: 'book' },
+  { what: 'In a power cut', book: 'Works by candlelight', basic: 'Needs power', zt: 'Needs power, like any computer; a UPS is on our list', good: 'book' },
+  { what: 'Seeing it from home', book: 'No', basic: 'Sometimes', zt: 'Every branch on your phone, and a daily email' },
+  { what: 'Your trade', book: 'One book for everything', basic: 'Varies', zt: 'Barcodes and weighed items, kitchen tickets, pumps, or bays, set up for you' },
+  { what: 'What to do next', book: 'Your own judgement', basic: 'Not usually', zt: 'With Analytics: what to order, what sells together, credit to chase' },
+  { what: 'Set up and training', book: 'You', basic: 'Varies, often a download', zt: 'On site: your items loaded, your staff trained' },
+  { what: 'What it costs', book: 'A few hundred shillings', basic: 'Varies', zt: `KES ${kes(PRICES.setup)} once per branch, then KES ${kes(PRICES.monthly)} a month for the business`, good: 'book' },
 ];
 ---
 <Base
-  title="Pricing: pay once for the tills, about KES 100 a day for the cloud | ZapTill"
-  description="ZapTill costs KES 30,000 once per branch for the tills, then KES 3,000 a month for the cloud for your whole business, with the first month free. See what the setup buys, and work out what leaks are costing you."
+  title="POS pricing in Kenya: KES 30,000 once per branch | ZapTill"
+  description="KES 30,000 once per branch for the point of sale, then KES 3,000 a month for the cloud for your whole business, first month free. See what the setup buys."
   waMessage={WA_MESSAGES.pricing}
   ogImage="/og/pricing.png"
   jsonLd={[faqPage(PRICING_FAQ)]}
@@ -102,9 +120,9 @@ const setupItems = [
     <div class="wrap">
       <!-- OWNER: remove this banner once the prices are final. -->
       <p class="draft-banner">Draft — prices being finalised</p>
-      <h1>Pay once for the tills. About KES 100 a day for the cloud.</h1>
+      <h1>Pay once for your point of sale. About KES 100 a day for the cloud.</h1>
       <p class="lede">
-        Each branch is set up once, for KES {kes(PRICES.setup)}, and the tills are yours. The cloud, your business on
+        Each branch is set up once, for KES {kes(PRICES.setup)}, and the points of sale are yours. The cloud, your business on
         the web and your phone, is KES {kes(PRICES.monthly)} a month for the whole business, however many branches you
         have, and the first month is free. No percentage of your sales. Here is exactly what you get.
       </p>
@@ -154,7 +172,7 @@ const setupItems = [
       </div>
       <p class="small muted packages__note">
         The setup is per branch: a branch is two computers. The monthly fees are per business: a second branch adds its
-        setup, not a second cloud fee. Each extra till or kitchen-screen computer is from about
+        setup, not a second cloud fee. Each extra computer (another point of sale, a second counter, a kitchen screen) is from about
         KES {kes(PRICES.extraComputerFrom)}, quoted for your setup, as is any hardware you need, or bring your own.
         Installation can vary with the site, and we confirm the price before we start. Prices are in Kenyan shillings.
       </p>
@@ -222,6 +240,39 @@ const setupItems = [
     </div>
   </section>
 
+  <!-- ZapTill against a cash book and a basic point of sale (night 3) -->
+  <section class="band band--white" aria-labelledby="compare-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="compare-title">ZapTill, a cash book or a basic POS?</h2>
+        <p>
+          A cash book is cheaper, and it never needs the internet or power. A basic point of sale records the sale. What
+          ZapTill adds is the part that shows where the money went: by cashier, by day, and on your phone.
+        </p>
+      </div>
+      <table class="compare">
+        <caption class="visually-hidden">What you get from a cash book, a basic point of sale and ZapTill</caption>
+        <thead>
+          <tr><th scope="col"><span class="visually-hidden">What you need</span></th><th scope="col">A cash book</th><th scope="col">A basic POS</th><th scope="col" class="compare__zt">ZapTill</th></tr>
+        </thead>
+        <tbody>
+          {compare.map((r) => (
+            <tr>
+              <th scope="row">{r.what}</th>
+              <td data-label="A cash book" class:list={{ 'compare__good': r.good === 'book' }}>{r.book}</td>
+              <td data-label="A basic POS">{r.basic}</td>
+              <td data-label="ZapTill" class="compare__zt">{r.zt}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p class="small muted compare__note">
+        "A basic POS" means a simple point of sale that records sales and prints receipts; they vary a lot, so ask yours.
+        Prices are the draft above. Read more in <a href="/guides/pos-pricing-setup-vs-monthly/">Pricing your POS: setup vs monthly</a>.
+      </p>
+    </div>
+  </section>
+
   <!-- No surprises -->
   <section class="band band--night" aria-labelledby="nosurprise-title">
     <div class="wrap">
@@ -229,7 +280,7 @@ const setupItems = [
         <h2 id="nosurprise-title">No surprises</h2>
       </div>
       <ul class="nosurprise">
-        <li><h3>The tills are paid for once.</h3><p>Once paid, it's a done deal. No monthly fee for the tills.</p></li>
+        <li><h3>The points of sale are paid for once.</h3><p>Once paid, it's a done deal. No monthly fee for the points of sale.</p></li>
         <li><h3>No percentage of your sales.</h3><p>Sell more and the price stays the same.</p></li>
         <li><h3>The cloud is month to month.</h3><p>One fee for the whole business, not per branch. The first month is free, so you see it working before you pay. We email you before your plan ends.</p></li>
         <li><h3>M-Pesa charges are Safaricom's.</h3><p>We don't add anything on top.</p></li>
@@ -262,6 +313,26 @@ const setupItems = [
 </Base>
 
 <style>
+  /* ZapTill, a cash book or a basic POS (night 3): a table on wide screens, one card per row on a phone. */
+  .compare { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); background: var(--card); }
+  .compare th, .compare td { text-align: left; vertical-align: top; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); }
+  .compare thead th { font: 700 var(--fs-base)/1.2 var(--font-display); border-bottom: 2px solid var(--line-strong); }
+  .compare tbody th { font-weight: 700; color: var(--ink); width: 18%; }
+  .compare td { color: var(--ink-2); width: 27%; }
+  .compare .compare__zt { background: var(--teal-wash); color: var(--ink); font-weight: 600; }
+  .compare thead .compare__zt { color: var(--teal-deep); }
+  .compare .compare__good { color: var(--ink); font-weight: 600; }
+  .compare__note { margin-top: var(--s-4); }
+  @media (max-width: 720px) {
+    .compare, .compare tbody, .compare tr, .compare th, .compare td { display: block; width: 100%; }
+    .compare thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .compare tr { border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: var(--s-4); overflow: hidden; }
+    .compare tbody th, .compare td { width: auto; }
+    .compare tbody th { background: var(--paper); border-bottom: 1px solid var(--line); font-size: var(--fs-base); }
+    .compare td { display: grid; grid-template-columns: 6.5rem 1fr; gap: var(--s-3); padding-block: var(--s-2); }
+    .compare td::before { content: attr(data-label); font-weight: 700; color: var(--muted); }
+    .compare tr td:last-child { border-bottom: 0; }
+  }
   .pricing-head { background: var(--card); border-bottom: 1px solid var(--line); }
   .pricing-head h1 { margin-top: var(--s-5); }
   .pricing-head .lede { margin-bottom: var(--s-5); }

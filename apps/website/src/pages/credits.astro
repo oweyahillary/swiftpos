@@ -1,0 +1,97 @@
+---
+import Base from '../layouts/Base.astro';
+import credits from '../data/photo-credits.json';
+import brandData from '../assets/demo-brands/brands.json';
+import { WA_MESSAGES } from '../lib/site';
+
+// Photo credits (every product photo, even where the licence asks for none) and the FICTIONAL demo businesses the site's
+// screens, receipts, labels and videos are made with (2026-10-23).
+const photos = credits.photos;
+const brands = brandData.brands;
+---
+<Base
+  title="Photo credits and demo businesses | ZapTill"
+  description="Where the product photos on the ZapTill website come from, and the fictional demo businesses used in its screens, receipts and videos."
+  waMessage={WA_MESSAGES.general}
+>
+  <section class="page-head cr-head">
+    <div class="wrap">
+      <h1>Photo credits and demo businesses</h1>
+      <p class="lede">
+        The screens, receipts, labels and videos on this site are the real ZapTill, running on made-up businesses with
+        made-up numbers. The product photos come from Unsplash, under its free licence.
+      </p>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="demo-h">
+    <div class="wrap">
+      <h2 id="demo-h">The demo businesses are fictional</h2>
+      <p class="cr-note">
+        These businesses do not exist. We made up their names, logos, colours, branches and prices to show ZapTill the
+        way a client would see it, with its own branding. Any likeness to a real business is not intended.
+      </p>
+      <ul class="cr-brands">
+        {brands.map((b) => (
+          <li>
+            <img src={`/demo-brands/${b.id}.png`} width="680" height="200" alt={`The ${b.name} logo (a fictional demo business)`} loading="lazy" decoding="async" />
+            <p><b>{b.name}</b>: a {b.trade === 'petrol' ? 'petrol station' : b.trade === 'cafe' ? 'café' : b.trade}, {b.branches.join(', ')}. {b.tagline}.</p>
+            <p class="cr-pal" aria-label="Its colours">
+              {Object.values(b.palette).map((c) => <span style={`background:${c}`} title={c}></span>)}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="photos-h">
+    <div class="wrap">
+      <h2 id="photos-h">Product photos</h2>
+      <p class="cr-note">
+        Every photo is from <a href="https://unsplash.com/" rel="noopener">Unsplash</a>, under the{' '}
+        <a href="https://unsplash.com/license" rel="noopener">Unsplash License</a>: free to use, commercial use included,
+        with no permission or attribution needed. We credit each one anyway, and chose photos with no brand packaging in
+        view.
+      </p>
+      <table class="cr-table">
+        <thead><tr><th scope="col">File</th><th scope="col">Used for</th><th scope="col">Photographer</th></tr></thead>
+        <tbody>
+          {photos.map((p) => (
+            <tr>
+              <td><code>{p.file}</code></td>
+              <td>{p.products}</td>
+              <td><a href={p.source} rel="noopener">{p.photographer}</a> on Unsplash</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="fonts-h">
+    <div class="wrap">
+      <h2 id="fonts-h">Fonts</h2>
+      <p>
+        Headings are set in Bricolage Grotesque and text in Figtree, both under the SIL Open Font License, served from
+        this site.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .cr-head { background: var(--card); border-bottom: 1px solid var(--line); }
+  .cr-note { color: var(--ink-2); max-width: 46rem; }
+  .cr-brands { list-style: none; margin: var(--s-5) 0 0; padding: 0; display: grid; gap: var(--s-5); }
+  .cr-brands li { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4) var(--s-5); }
+  .cr-brands img { width: 100%; max-width: 320px; height: auto; display: block; margin-bottom: var(--s-3); }
+  .cr-brands p { margin: 0 0 var(--s-2); color: var(--ink-2); }
+  .cr-pal { display: flex; gap: 6px; }
+  .cr-pal span { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--line); }
+  @media (min-width: 760px) { .cr-brands { grid-template-columns: repeat(2, 1fr); } }
+  .cr-table { width: 100%; border-collapse: collapse; margin-top: var(--s-5); font-size: var(--fs-sm); }
+  .cr-table th, .cr-table td { text-align: left; padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .cr-table code { font-size: 0.8rem; }
+  .cr-table th { color: var(--muted); font-weight: 600; }
+</style>

@@ -14,9 +14,11 @@ interface Props {
   ogImage?: string;
   /** schema.org objects for this page (SoftwareApplication, FAQPage…). The Organization is added on every page. */
   jsonLd?: object[];
+  /** Keep this page out of search engines (a guide still in draft, night 3). */
+  noindex?: boolean;
 }
 
-const { title, description, waMessage, ogImage = '/og-zaptill.png', jsonLd = [] } = Astro.props;
+const { title, description, waMessage, ogImage = '/og-zaptill.png', jsonLd = [], noindex = false } = Astro.props;
 // JSON in a <script>: "<" escaped so no string we wrote can close the tag.
 const ld = (o: object) => JSON.stringify(o).replace(/</g, '\\u003c');
 const canonical = new URL(Astro.url.pathname, Astro.site ?? SITE.url).href;
@@ -30,6 +32,7 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.url).href;
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
     <meta name="theme-color" content="#061a1d" />
 
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -51,12 +54,8 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.url).href;
     <script type="application/ld+json" set:html={ld(organization())} />
     {jsonLd.map((o) => <script type="application/ld+json" set:html={ld(o)} />)}
 
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap"
-    />
+    <link rel="preload" href="/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>

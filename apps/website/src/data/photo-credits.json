@@ -1,0 +1,371 @@
+{
+  "note": "Product photos for the FICTIONAL demo businesses, all from Unsplash under the Unsplash License (attribution not required; given here anyway). Chosen with no brand packaging or logos in view. Tiles made by scripts/make-products.mjs.",
+  "photos": [
+    {
+      "file": "fresh-milk.webp",
+      "products": "Fresh milk 500ml",
+      "download": "fresh-milk",
+      "source": "https://unsplash.com/photos/7IO2SZYWbp4",
+      "image": "https://images.unsplash.com/photo-1585083969600-495ee7e3604b",
+      "photographer": "Luis Quintero",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "milk-1l.webp",
+      "products": "Milk 1L",
+      "download": "milk-pour",
+      "source": "https://unsplash.com/photos/_8bnn1GqX70",
+      "image": "https://images.unsplash.com/photo-1550583724-b2692b85b150",
+      "photographer": "Eiliv Aceron",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "white-bread.webp",
+      "products": "White bread 400g",
+      "download": "white-bread",
+      "source": "https://unsplash.com/photos/w2ZFjDnUL3w",
+      "image": "https://images.unsplash.com/photo-1598373182133-52452f7691ef",
+      "photographer": "Charles Chen",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "brown-bread.webp",
+      "products": "Brown bread 600g",
+      "download": "brown-bread",
+      "source": "https://unsplash.com/photos/kU7TkW9FIJY",
+      "image": "https://images.unsplash.com/photo-1549413468-cd78edb7e75c",
+      "photographer": "Maria Orlova",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "beef.webp",
+      "products": "Beef (per kg)",
+      "download": "beef",
+      "source": "https://unsplash.com/photos/raw-meat-on-a-table-with-a-knife-garlic-and-pepper-CEsrs0WHOiw",
+      "image": "https://images.unsplash.com/photo-1690983325551-b922137727be",
+      "photographer": "Sergey Kotenev",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "tomatoes.webp",
+      "products": "Tomatoes (per kg)",
+      "download": "tomatoes",
+      "source": "https://unsplash.com/photos/red-tomatoes-on-brown-wooden-table-eb26eV-ys_k",
+      "image": "https://images.unsplash.com/photo-1582284540020-8acbe03f4924",
+      "photographer": "engin akyurt",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "sukuma-wiki.webp",
+      "products": "Sukuma wiki (bunch)",
+      "download": "sukuma",
+      "source": "https://unsplash.com/photos/a-close-up-of-fresh-green-kale-leaves-T0OVbbl0wjQ",
+      "image": "https://images.unsplash.com/photo-1768672957286-e635cdad5ecd",
+      "photographer": "Ilona Frey",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "maize-flour.webp",
+      "products": "Maize flour 2kg",
+      "download": "maize-flour",
+      "source": "https://unsplash.com/photos/0bTtmiRAlyk",
+      "image": "https://images.unsplash.com/photo-1606854428728-5fe3eea23475",
+      "photographer": "Simona Sergi",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "rice.webp",
+      "products": "Rice 1kg",
+      "download": "rice",
+      "source": "https://unsplash.com/photos/raw-white-rice-grains-background--LdilhDx3sk",
+      "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c",
+      "photographer": "Pierre Bamin",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "sugar.webp",
+      "products": "Sugar 1kg",
+      "download": "sugar",
+      "source": "https://unsplash.com/photos/stainless-steel-spoon-on-clear-glass-bowl-ub880veY4AA",
+      "image": "https://images.unsplash.com/photo-1628606050166-20b1f9f5a98a",
+      "photographer": "Naira Babayan",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "cooking-oil.webp",
+      "products": "Cooking oil 1L",
+      "download": "cooking-oil",
+      "source": "https://unsplash.com/photos/clear-glass-cruet-bottle-uOBApnN_K7w",
+      "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
+      "photographer": "Roberta Sorge",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "eggs.webp",
+      "products": "Eggs (tray of 30)",
+      "download": "eggs",
+      "source": "https://unsplash.com/photos/brown-chicken-eggs-in-carton-leOh1CzRZVQ",
+      "image": "https://images.unsplash.com/photo-1506976785307-8732e854ad03",
+      "photographer": "Erol Ahmed",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "soda.webp",
+      "products": "Soda 500ml",
+      "download": "soda",
+      "source": "https://unsplash.com/photos/NfaZjll9-8g",
+      "image": "https://images.unsplash.com/photo-1566846128021-b940b0eec910",
+      "photographer": "Fernando Andrade",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "water.webp",
+      "products": "Water 1L",
+      "download": "water",
+      "source": "https://unsplash.com/photos/clear-plastic-bottle-on-white-table-edBR3b2JAuA",
+      "image": "https://images.unsplash.com/photo-1616118132534-381148898bb4",
+      "photographer": "charlesdeluvio",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "juice.webp",
+      "products": "Mango juice, Passion juice",
+      "download": "juice",
+      "source": "https://unsplash.com/photos/ywc7plzTxGU",
+      "image": "https://images.unsplash.com/photo-1606673993554-a5f993a16e0d",
+      "photographer": "Max Griss",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "bar-soap.webp",
+      "products": "Bar soap 800g",
+      "download": "bar-soap",
+      "source": "https://unsplash.com/photos/lcPRIn9Bq2Y",
+      "image": "https://images.unsplash.com/photo-1781080922537-7d5338f96e95",
+      "photographer": "Nigel Hoare",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "crisps.webp",
+      "products": "Crisps 100g",
+      "download": "crisps",
+      "source": "https://unsplash.com/photos/potato-chips-in-bowl-ONQ86GlHs3c",
+      "image": "https://images.unsplash.com/photo-1528751014936-863e6e7a319c",
+      "photographer": "Emiliano Vittoriosi",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "nyama-choma.webp",
+      "products": "Nyama choma 1kg",
+      "download": "nyama-choma",
+      "source": "https://unsplash.com/photos/grilled-meat-and-vegetable-on-the-table-UC0HZdUitWY",
+      "image": "https://images.unsplash.com/photo-1555939594-58d7cb561ad1",
+      "photographer": "Victoria Shes",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "nyama-choma-500.webp",
+      "products": "Nyama choma 500g",
+      "download": "grill-fire",
+      "source": "https://unsplash.com/photos/gray-metal-tong-and-grilled-meat-with-fire-jeiqzOgwwKU",
+      "image": "https://images.unsplash.com/photo-1508615263227-c5d58c1e5821",
+      "photographer": "Paul Hermann",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "chicken-wings.webp",
+      "products": "Chicken wings",
+      "download": "chicken-wings",
+      "source": "https://unsplash.com/photos/fried-chicken-on-black-plate-R-7_ErUOLxw",
+      "image": "https://images.unsplash.com/photo-1608039755401-742074f0548d",
+      "photographer": "Scott Eckersley",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "quarter-chicken.webp",
+      "products": "Quarter chicken",
+      "download": "quarter-chicken",
+      "source": "https://unsplash.com/photos/chicken-on-black-round-plate-BhnZwPW_tIc",
+      "image": "https://images.unsplash.com/photo-1598103442097-8b74394b95c6",
+      "photographer": "Anshu A",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "half-chicken.webp",
+      "products": "Half chicken",
+      "download": "half-chicken",
+      "source": "https://unsplash.com/photos/roasted-chicken-on-white-ceramic-plate-4qJlXK4mYzU",
+      "image": "https://images.unsplash.com/photo-1606728035253-49e8a23146de",
+      "photographer": "Claudio Schwarz",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "mbuzi-ribs.webp",
+      "products": "Mbuzi ribs",
+      "download": "ribs",
+      "source": "https://unsplash.com/photos/a-close-up-of-grilled-lamb-chops-on-a-platter-V65tvNj3GXI",
+      "image": "https://images.unsplash.com/photo-1766589152485-9aafd9812a19",
+      "photographer": "Diego Arenas de Rodrigo",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "mishkaki.webp",
+      "products": "Mishkaki",
+      "download": "mishkaki",
+      "source": "https://unsplash.com/photos/grilled-meat-skewers-with-fries-WHtVB-RiW2I",
+      "image": "https://images.unsplash.com/photo-1603360946369-dc9bb6258143",
+      "photographer": "Markus Winkler",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "tilapia.webp",
+      "products": "Tilapia whole",
+      "download": "tilapia",
+      "source": "https://unsplash.com/photos/fish-being-grilled-3_M4NxDo89A",
+      "image": "https://images.unsplash.com/photo-1556814901-18c866c057da",
+      "photographer": "Clint Bustrillos",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "pilau.webp",
+      "products": "Pilau",
+      "download": "pilau",
+      "source": "https://unsplash.com/photos/a-bowl-of-rice-with-vegetables-MVMohJBieo4",
+      "image": "https://images.unsplash.com/photo-1664717698774-84f62382613b",
+      "photographer": "herry shani",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "chicken-burger.webp",
+      "products": "Chicken burger",
+      "download": "chicken-burger",
+      "source": "https://unsplash.com/photos/a-crispy-chicken-burger-with-french-fries-Omyk3J_LPfk",
+      "image": "https://images.unsplash.com/photo-1761515397046-44035db91504",
+      "photographer": "Allen Y",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "beef-burger.webp",
+      "products": "Beef burger",
+      "download": "beef-burger",
+      "source": "https://unsplash.com/photos/burger-with-lettuce-and-tomatoes-sc5sTPMrVfk",
+      "image": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd",
+      "photographer": "amirali mirhashemian",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "chips-masala.webp",
+      "products": "Chips masala",
+      "download": "chips",
+      "source": "https://unsplash.com/photos/-doMDpFipzQ",
+      "image": "https://images.unsplash.com/photo-1768215610440-fcb9631c7ee2",
+      "photographer": "Cindy Bartillon",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "kachumbari.webp",
+      "products": "Kachumbari",
+      "download": "kachumbari",
+      "source": "https://unsplash.com/photos/sliced-vegetables-on-green-ceramic-plate-AfsZ1KC2huY",
+      "image": "https://images.unsplash.com/photo-1625944227313-4f7f68e6b3fa",
+      "photographer": "Farhad Ibrahimzade",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "ugali.webp",
+      "products": "Ugali",
+      "download": "ugali",
+      "source": "https://unsplash.com/photos/sJAHun5GHMo",
+      "image": "https://images.unsplash.com/photo-1666181551815-b9adecb24e46",
+      "photographer": "Keesha's Kitchen",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license",
+      "crop": [
+        0.25,
+        0.0,
+        0.55
+      ]
+    },
+    {
+      "file": "chapati.webp",
+      "products": "Chapati",
+      "download": "chapati",
+      "source": "https://unsplash.com/photos/a-pile-of-pita-bread-sitting-on-top-of-a-wooden-cutting-board--C93EET79kU",
+      "image": "https://images.unsplash.com/photo-1640625314547-aee9a7696589",
+      "photographer": "Sweetyoga Justine",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "passion-fruit.webp",
+      "products": "Passion juice",
+      "download": "passion-fruit",
+      "source": "https://unsplash.com/photos/dVBxFStU7kQ",
+      "image": "https://images.unsplash.com/photo-1604495772376-9657f0035eb5",
+      "photographer": "Michael Kucharski",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "masala-tea.webp",
+      "products": "Masala tea",
+      "download": "tea",
+      "source": "https://unsplash.com/photos/zI27XpN1GdA",
+      "image": "https://images.unsplash.com/photo-1561336526-2914f13ceb36",
+      "photographer": "René Porter",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "samosa.webp",
+      "products": "Samosa (2)",
+      "download": "samosa",
+      "source": "https://unsplash.com/photos/samosas-with-green-chili-and-pomegranate-8T9AVksyt7s",
+      "image": "https://images.unsplash.com/photo-1601050690597-df0568f70950",
+      "photographer": "kabir cheema",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "latte.webp",
+      "products": "Café latte",
+      "download": "latte",
+      "source": "https://unsplash.com/photos/5nYLHK68TLM",
+      "image": "https://images.unsplash.com/photo-1760175445000-0e01e193d1cd",
+      "photographer": "nameless 3791",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    },
+    {
+      "file": "engine-oil.webp",
+      "products": "Engine oil 1L, Engine oil 4L",
+      "download": "coolant",
+      "source": "https://unsplash.com/photos/two-plastic-containers-of-liquid-on-a-curb-Bnq1hqbdk_4",
+      "image": "https://images.unsplash.com/photo-1766933181278-16bf0bb27e13",
+      "photographer": "iridial",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license",
+      "crop": [
+        0.45,
+        0.25,
+        0.75
+      ]
+    },
+    {
+      "file": "coolant.webp",
+      "products": "Coolant 1L",
+      "download": "coolant",
+      "source": "https://unsplash.com/photos/two-plastic-containers-of-liquid-on-a-curb-Bnq1hqbdk_4",
+      "image": "https://images.unsplash.com/photo-1766933181278-16bf0bb27e13",
+      "photographer": "iridial",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license",
+      "crop": [
+        0.0,
+        0.2,
+        0.75
+      ]
+    },
+    {
+      "file": "gas-refill.webp",
+      "products": "Gas refill 6kg, Gas refill 13kg",
+      "download": "gas-2",
+      "source": "https://unsplash.com/photos/red-propane-tanks-stored-in-a-metal-cage-2ZKBiSqTDDg",
+      "image": "https://images.unsplash.com/photo-1764231502962-a246b3fca4e3",
+      "photographer": "Sergej",
+      "licence": "Unsplash License (free for commercial use, no permission needed): https://unsplash.com/license"
+    }
+  ]
+}

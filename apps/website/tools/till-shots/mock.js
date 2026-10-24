@@ -10,10 +10,17 @@
   const manager = { staff: { id: 'u-otieno', name: 'Achieng' }, role: 'manager', permissions: { '*': true }, branchId: BR, branchName: 'Ngong Road' };
   const me = () => (S.role === 'manager' ? manager : cashier);
   const cats = [{ id: 'c1', name: 'Grill', sort_order: 1 }, { id: 'c2', name: 'Mains', sort_order: 2 }, { id: 'c3', name: 'Sides', sort_order: 3 }, { id: 'c4', name: 'Drinks', sort_order: 4 }, { id: 'c5', name: 'Breakfast', sort_order: 5 }];
-  const P = (id, name, price, cat, desc) => ({ id, name, price, base_price: price, selling_price: price, category_id: cat, status: 'active', description: desc ?? null, categories: { name: 'menu' }, track_stock: false, vat_rate: 16, sort_order: 0 });
+  // 2026-10-23: each dish carries its photo (the product's image_url, as the till shows it), from the website's licensed
+  // stock tiles (public/demo-products, credits in src/data/photo-credits.json), served by serve.cjs.
+  const IMG = { 'Nyama Choma 1kg': 'nyama-choma', 'Nyama Choma 500g': 'nyama-choma-500', 'Chicken Wings': 'chicken-wings', 'Quarter Chicken': 'quarter-chicken',
+    'Half Chicken': 'half-chicken', 'Mbuzi Ribs': 'mbuzi-ribs', 'Samosa (2)': 'samosa', 'Mishkaki': 'mishkaki', 'Tilapia Whole': 'tilapia', 'Pilau': 'pilau',
+    'Chicken Burger': 'chicken-burger', 'Beef Burger': 'beef-burger', 'Chips Masala': 'chips-masala', 'Kachumbari': 'kachumbari', 'Ugali': 'ugali',
+    'Chapati': 'chapati', 'Passion Juice': 'passion-fruit', 'Soda 500ml': 'soda', 'Masala Tea': 'masala-tea', 'Water 500ml': 'water' };
+  const P = (id, name, price, cat, desc) => ({ id, name, price, base_price: price, selling_price: price, category_id: cat, status: 'active', description: desc ?? null, categories: { name: 'menu' }, track_stock: false, vat_rate: 16, sort_order: 0,
+    image_url: IMG[name] ? `/demo-products/${IMG[name]}.webp` : null });
   const products = [
     P('p1', 'Nyama Choma 1kg', 1450, 'c1'), P('p2', 'Nyama Choma 500g', 800, 'c1'), P('p3', 'Chicken Wings', 650, 'c1'), P('p4', 'Quarter Chicken', 650, 'c1'),
-    P('p5', 'Half Chicken', 1150, 'c1'), P('p6', 'Mbuzi Ribs', 950, 'c1'), P('p7', 'Beef Sausage', 120, 'c1'), P('p8', 'Mishkaki', 300, 'c1'),
+    P('p5', 'Half Chicken', 1150, 'c1'), P('p6', 'Mbuzi Ribs', 950, 'c1'), P('p7', 'Samosa (2)', 120, 'c1'), P('p8', 'Mishkaki', 300, 'c1'),
     P('p9', 'Tilapia Whole', 1500, 'c2'), P('p10', 'Pilau', 550, 'c2'), Object.assign(P('p11', 'Chicken Burger', 650, 'c2'), { has_variants: true }), P('p12', 'Beef Burger', 750, 'c2'),
     Object.assign(P('p13', 'Chips Masala', 300, 'c3'), { has_variants: true }), P('p14', 'Kachumbari', 150, 'c3'), P('p15', 'Ugali', 100, 'c3'), P('p16', 'Chapati', 50, 'c3'),
     P('p17', 'Passion Juice', 250, 'c4'), P('p18', 'Soda 500ml', 100, 'c4'), P('p19', 'Masala Tea', 120, 'c4'), P('p20', 'Water 500ml', 80, 'c4'),
@@ -37,7 +44,8 @@
     'auth:listBranches': () => [{ id: BR, name: 'Ngong Road', desktop_licensed: true }],
     'auth:verifyPin': () => me(),
     'auth:clearStaffSession': () => true,
-    'branding:get': () => ({ accentHex: null, logoPng: null, logoReceipt: null, receiptLogoEnabled: false }),
+    // Mama Lishe Grill's own branding (a FICTIONAL demo brand, src/assets/demo-brands): its colour on the till, its logo.
+    'branding:get': () => ({ themeId: 'teal', accentHex: '#E4572E', logoPng: '/demo-brands/mama-lishe-grill-mark.png', logoReceipt: null, receiptLogoEnabled: true }),
     'tech:checkReveal': () => false,
     'idle:setSurface': () => true,
     'node:joinRequests': () => [],

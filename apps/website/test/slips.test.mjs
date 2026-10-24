@@ -48,6 +48,19 @@ test('the shift close shows the KES 350 short', () => {
 
 test('every slip is made-up demo data', () => {
   const all = JSON.stringify(fresh);
-  assert.ok(all.includes('Mama Lishe Grill') && all.includes('Demo Mini Mart'));
+  assert.ok(all.includes('Mama Lishe Grill') && all.includes('Kijani Basket') && all.includes('Kifaru Fuel & Mart'));
+  assert.ok(!/Tel: /.test(all), 'no phone number on a demo receipt');
   assert.ok(!/P0\d{8}[A-Z]/.test(all), 'no KRA PIN printed');
+});
+
+test('each demo receipt prints its brand logo above the name, and a shop prints no Kots line (A310, A580)', () => {
+  for (const [k, id] of [['sale80', 'mama-lishe-grill'], ['shop80', 'kijani-basket'], ['fuel80', 'kifaru-fuel'], ['cafe58', 'mvua-cafe']]) {
+    assert.equal(fresh[k].lines[0].logo, id, k);
+  }
+  assert.ok(!fresh.shop80.lines.some((l) => /^Kots:/.test(l.t)));
+  assert.ok(fresh.sale80.lines.some((l) => /^Kots:/.test(l.t)));
+});
+
+test('the weighed beef prints as a measure (A577)', () => {
+  assert.ok(fresh.shop80.lines.some((l) => /0\.640 kg @ 650\/kg/.test(l.t)));
 });

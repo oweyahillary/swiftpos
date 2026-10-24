@@ -1,19 +1,23 @@
 // Renders the site's receipts through the REAL print renderer (shared/printing), so the slips on the website are
 // exactly what the thermal printer prints: the customer receipt, the kitchen and dispatch tickets, and the shift
-// close (Z-report). Made-up demo data only ("Mama Lishe Grill"); never a client's.
+// close (Z-report). Made-up demo data only: the FICTIONAL demo brands (src/assets/demo-brands: Mama Lishe Grill, Kijani
+// Basket, Kifaru Fuel & Mart, Mvua Café), each with its receipt logo as the product stores it (logo_receipt, a mono1
+// raster from scripts/make-brands.mjs) and prints it (business.logoRaster, A310/A530); never a client's.
 //
 // Run from apps/website after building shared/printing (cd shared/printing && npm run build):
 //   node scripts/render-slips.mjs
 // It writes src/lib/slips.generated.json, which src/components/screens/Receipt.astro reads.
 import { createRequire } from 'node:module';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const P = require(join(here, '../../../shared/printing/dist/index.js'));
-const { renderTicket, toPreview, kitchenPreset, dispatchPreset, receiptPreset, renderShiftReport, toUnits, stationsForCategory } = P;
+const { renderTicket, toPreview, kitchenPreset, dispatchPreset, receiptPreset, renderShiftReport, toUnits, stationsForCategory, monoRasterFromString } = P;
+const RASTERS = JSON.parse(readFileSync(join(here, '../src/lib/demo-brands.rasters.json'), 'utf8'));
+const logo = (id) => monoRasterFromString(RASTERS[id]) ?? undefined;
 
 const KITCHEN = 'st-kitchen';
 const DISPATCH = 'st-dispatch';
@@ -44,7 +48,8 @@ const total = orderLines.reduce((a, l) => a + l.lineTotal, 0);   // 3,350.00
 const business = {
   name: 'Mama Lishe Grill',
   branchName: 'Ngong Road',
-  telephone: '0700 000 000',
+  header: 'Nyama choma & more',
+  logoRaster: logo('mama-lishe-grill'),
   tillLabel: 'Buy Goods',
   tillNumber: '123456',
   thankYouMessage: 'Asante! Karibu tena.',
@@ -70,11 +75,18 @@ const order = {
 // Each printed line as { t: text, s: size, b: bold }. The text is laid out exactly as toPreview lays it out (the same
 // centring and truncation), except that a double-width line keeps its own letters instead of spacing them out: the
 // site draws it twice as wide with CSS instead. Blank feeds are kept; the cut and the drawer kick are dropped.
-function lines(doc) {
+function lines(doc, logoId) {
   const cols = doc.columns;
   const out = [];
   for (const b of doc.blocks) {
     if (b.kind === 'feed') { for (let i = 0; i < b.lines; i++) out.push({ t: '' }); continue; }
+    if (b.kind === 'image') {
+      // The logo: the preview's own tag line ("[logo 384x113]"), and which brand's printed logo the site draws there
+      // (public/demo-brands/<id>-receipt.png is that same fitted raster, one pixel a dot).
+      const tag = `[logo ${b.raster.width}x${b.raster.height}]`;
+      out.push({ t: ' '.repeat(Math.max(0, Math.floor((cols - tag.length) / 2))) + tag.slice(0, cols), logo: logoId, w: b.raster.width, h: b.raster.height });
+      continue;
+    }
     if (b.kind !== 'text') continue;
     const wide = b.size === 'wide' || b.size === 'large';
     const eff = wide ? Math.floor(cols / 2) : cols;
@@ -91,8 +103,8 @@ function lines(doc) {
 }
 
 // The check: with double-width letters spaced out again, our lines must equal toPreview's, line for line.
-function text(doc) {
-  const r = lines(doc);
+function text(doc, logoId) {
+  const r = lines(doc, logoId);
   const spaced = (t) => t.replace(/^( *)(.*)$/, (_, sp, x) => sp + x.split('').join(' '));
   const ours = r.lines.map((l) => (l.s === 'wide' || l.s === 'large' ? spaced(l.t) : l.t));
   const theirs = toPreview(doc).split('\n').filter((l) => !/^=+$/.test(l)).map((l) => l.replace(/\s+$/, ''));
@@ -103,16 +115,49 @@ function text(doc) {
   return r;
 }
 
-// A shop sale for the retail page: counter sale, no kitchen, M-Pesa and cash.
+// A shop sale: Kijani Basket's bill from the till shot (tools/till-shots, EXTRA=shop.js): milk, bread, flour, eggs and
+// beef weighed at 0.640 kg (A577: "0.640 kg @ 650/kg"), paid by M-Pesa.
 const shopLines = [
-  ['Bar Soap 800g', 1, 240], ['Cooking Oil 1L', 2, 680], ['Toothpaste 100ml', 1, 180], ['Soda 500ml', 3, 240], ['Biscuits 200g', 1, 120],
+  ['Fresh Milk 500ml', 2, 130], ['White Bread 400g', 1, 65], ['Maize Flour 2kg', 1, 185], ['Eggs (tray of 30)', 1, 450],
 ].map(([name, quantity, shillings]) => ({ name, quantity, stationIds: [], unitPrice: Math.round((shillings * 100) / quantity), lineTotal: shillings * 100, units: [] }));
-const shopTotal = shopLines.reduce((a, l) => a + l.lineTotal, 0);   // 1,460.00
+shopLines.push({ name: 'Beef (per kg)', quantity: 0.64, measureUnit: 'kg', stationIds: [], unitPrice: 65000, lineTotal: 41600, units: [] });
+const shopTotal = shopLines.reduce((a, l) => a + l.lineTotal, 0);   // 1,246.00
 const shop = {
-  business: { ...business, name: 'Demo Mini Mart', branchName: 'Main Street', thankYouMessage: 'Thank you, come again!' },
+  business: { ...business, name: 'Kijani Basket', branchName: 'Kahawa West', header: 'Fresh every morning', logoRaster: logo('kijani-basket'), kitchenTickets: false,
+    thankYouMessage: 'Asante! Fresh again tomorrow.' },
   order: {
-    billNumber: 'T1-2207', orderType: 'counter', cashierName: 'Amina', soldAt: new Date(2026, 9, 21, 17, 12, 40), kotCount: 0,
-    lines: shopLines, total: shopTotal, payments: [{ label: 'M-Pesa', amount: 100000 }, { label: 'Cash', amount: shopTotal - 100000 }], changeGiven: 0,
+    billNumber: 'KW-2318', orderType: 'counter', cashierName: 'Kevin', soldAt: new Date(2026, 9, 21, 12, 44, 10), kotCount: 0,
+    lines: shopLines, total: shopTotal, payments: [{ label: 'M-Pesa', amount: shopTotal }], changeGiven: 0,
+  },
+};
+
+// A forecourt sale: Kifaru Fuel & Mart's bill from the pumps shot: KES 2,000 of diesel on Pump 3 (11.655 L at 171.60; fuel
+// carries no unit on paper today, so it prints as "11.655 @ 171.60") with engine oil and water from the shop.
+const fuelLines = [
+  { name: 'Diesel', quantity: 11.655, stationIds: [], unitPrice: 17160, lineTotal: 200000, units: [] },
+  { name: 'Engine Oil 1L', quantity: 1, stationIds: [], unitPrice: 85000, lineTotal: 85000, units: [] },
+  { name: 'Water 1L', quantity: 1, stationIds: [], unitPrice: 7000, lineTotal: 7000, units: [] },
+];
+const fuelTotal = fuelLines.reduce((a, l) => a + l.lineTotal, 0);   // 2,920.00
+const fuel = {
+  business: { ...business, name: 'Kifaru Fuel & Mart', branchName: 'Thika Road', header: 'Fuel, food and the road ahead', logoRaster: logo('kifaru-fuel'), kitchenTickets: false,
+    thankYouMessage: 'Asante! Safe journey.' },
+  order: {
+    billNumber: 'TR-0871', orderType: 'counter', cashierName: 'Brian', soldAt: new Date(2026, 9, 21, 7, 52, 30), kotCount: 0,
+    lines: fuelLines, total: fuelTotal, payments: [{ label: 'M-Pesa', amount: fuelTotal }], changeGiven: 0,
+  },
+};
+
+// A café's takeaway: Mvua Café, Kilimani.
+const cafeLines = [['Cafe Latte', 2, 700], ['Masala Tea', 1, 150], ['Samosa (2)', 1, 120]]
+  .map(([name, quantity, shillings]) => ({ name, quantity, stationIds: [], unitPrice: Math.round((shillings * 100) / quantity), lineTotal: shillings * 100, units: [] }));
+const cafeTotal = cafeLines.reduce((a, l) => a + l.lineTotal, 0);   // 970.00
+const cafe = {
+  business: { ...business, name: 'Mvua Cafe', branchName: 'Kilimani', header: 'Coffee for every weather', logoRaster: logo('mvua-cafe'),
+    thankYouMessage: 'Asante! See you when it rains.' },
+  order: {
+    billNumber: 'KL-0412', orderType: 'takeaway', cashierName: 'Achieng', soldAt: new Date(2026, 9, 21, 8, 15, 0), kotCount: 0,
+    lines: cafeLines, total: cafeTotal, payments: [{ label: 'M-Pesa', amount: cafeTotal }], changeGiven: 0,
   },
 };
 
@@ -168,11 +213,13 @@ const shift = {
 export function renderSlips() {
   const out = { note: 'Generated by scripts/render-slips.mjs from shared/printing. Do not edit by hand.' };
   for (const mm of [80, 58]) {
-    out[`sale${mm}`] = text(renderTicket({ order, business, station: receiptPreset('st-till', 'Till', mm) }));
+    out[`sale${mm}`] = text(renderTicket({ order, business, station: receiptPreset('st-till', 'Till', mm) }), 'mama-lishe-grill');
     out[`kitchen${mm}`] = text(renderTicket({ order, business, station: kitchenPreset(KITCHEN, 'Kitchen', mm) }));
     out[`dispatch${mm}`] = text(renderTicket({ order, business, station: dispatchPreset(DISPATCH, 'Dispatch', mm) }));
     out[`close${mm}`] = text(renderShiftReport(shift, mm));
-    out[`shop${mm}`] = text(renderTicket({ order: shop.order, business: shop.business, station: receiptPreset('st-till', 'Till', mm) }));
+    out[`shop${mm}`] = text(renderTicket({ order: shop.order, business: shop.business, station: receiptPreset('st-till', 'Till', mm) }), 'kijani-basket');
+    out[`fuel${mm}`] = text(renderTicket({ order: fuel.order, business: fuel.business, station: receiptPreset('st-till', 'Till', mm) }), 'kifaru-fuel');
+    out[`cafe${mm}`] = text(renderTicket({ order: cafe.order, business: cafe.business, station: receiptPreset('st-till', 'Till', mm) }), 'mvua-cafe');
     out[`extras${mm}`] = text(renderTicket({ order: extrasOrder, business, station: kitchenPreset(KITCHEN, 'Kitchen', mm) }));
   }
   return out;

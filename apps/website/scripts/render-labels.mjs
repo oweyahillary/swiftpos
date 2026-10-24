@@ -1,6 +1,6 @@
 // Renders the site's barcode labels through the REAL label code (shared/labels.ts and shared/barcode.ts, A571/A574,
 // read only), so the labels on the website are exactly what ZapTill prints: the same layout, the same bars, the same
-// in-store EAN-13 codes. Made-up demo shop only ("Demo Mini Mart"); never a client's items or prices.
+// in-store EAN-13 codes. The FICTIONAL demo minimart only ("Kijani Basket", src/assets/demo-brands); never a client's items or prices.
 //
 // Run from apps/website (Node 24 reads the .ts files directly):
 //   npm run labels
@@ -20,10 +20,10 @@ const B = await import(pathToFileURL(join(shared, 'barcode.ts')).href);
 const codes = B.nextInStoreCodes([], 3);
 const items = [
   { name: 'Cooking Oil 1L', price: 340, code: codes[0] },
-  { name: 'Bar Soap 800g', price: 240, code: codes[1] },
-  { name: 'Biscuits 200g', price: 120, code: codes[2] },
+  { name: 'Maize Flour 2kg', price: 185, code: codes[1] },
+  { name: 'Brown Bread 600g', price: 90, code: codes[2] },
 ];
-const business = 'Demo Mini Mart';
+const business = 'Kijani Basket';
 
 const base = L.cleanLabelSettings({});
 

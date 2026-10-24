@@ -9,15 +9,19 @@
 //   kind="kitchen"   the kitchen ticket ("2   CHIPS MASALA - SPICY")
 //   kind="dispatch"  the dispatch (packing) ticket, with the drinks
 //   kind="close"     the shift close (Z-report): sales by method, the cash count, the variance
-//   kind="shop"      a shop's counter sale (Demo Mini Mart), for the retail page
+//   kind="shop"      a shop's counter sale (Kijani Basket, with the weighed beef), for the shop pages
+//   kind="fuel"      a forecourt sale (Kifaru Fuel & Mart: diesel and two shop items)
+//   kind="cafe"      a café's takeaway (Mvua Café)
+// Every receipt carries its demo brand's logo where the printer prints it: a line { logo, w, h } from the renderer's image
+// block, drawn with public/demo-brands/<logo>-receipt.png (the same 1-bit raster, one pixel a dot; FICTIONAL brands).
 //   kind="extras"    a kitchen ticket with an extra and the cashier's notes (A559), Table 6
 //
 // paper: 80 (48 characters a line, the usual) or 58 (32 a line, a narrow printer); the slip scales its type to fit.
 // lines: show only part of the slip, as [first, last) line numbers (an excerpt keeps the torn edge).
 import slips from '../../lib/slips.generated.json';
 
-type Kind = 'sale' | 'kitchen' | 'dispatch' | 'close' | 'shop' | 'extras';
-interface Line { t: string; s?: string; b?: number }
+type Kind = 'sale' | 'kitchen' | 'dispatch' | 'close' | 'shop' | 'extras' | 'fuel' | 'cafe';
+interface Line { t: string; s?: string; b?: number; logo?: string; w?: number; h?: number }
 interface Slip { cols: number; lines: Line[] }
 interface Props { kind?: Kind; paper?: 80 | 58; lines?: [number, number]; class?: string; label?: string }
 
@@ -26,17 +30,22 @@ const slip = (slips as unknown as Record<string, Slip>)[`${kind}${paper}`];
 const shown = range ? slip.lines.slice(range[0], range[1]) : slip.lines;
 
 const labels: Record<Kind, string> = {
-  sale: 'A customer receipt from a demo restaurant, Table 4: Nyama Choma, Chips Masala - Spicy, Chicken Burger - Spicy, Kachumbari and two Passion Juice. KES 3,350, paid KES 2,000 by M-Pesa and KES 1,350 cash, with the Buy Goods number printed large.',
+  sale: 'A customer receipt from Mama Lishe Grill (a fictional demo restaurant), with its logo, Table 4: Nyama Choma, Chips Masala - Spicy, Chicken Burger - Spicy, Kachumbari and two Passion Juice. KES 3,350, paid KES 2,000 by M-Pesa and KES 1,350 cash, with the Buy Goods number printed large.',
   kitchen: 'A kitchen ticket for Table 4 from a demo restaurant: 1 Nyama Choma 1kg, 2 Chips Masala - Spicy, 1 Chicken Burger - Spicy, 1 Kachumbari. 4 items to cook.',
   dispatch: 'A dispatch ticket for Table 4 from a demo restaurant: the four dishes and two Passion Juice. 5 bags.',
   extras: 'A kitchen ticket for Table 6 from a demo restaurant: 1 Chicken Burger with + Extra Cheese and the note No onions, and 1 Chips Masala with the note Well done. 2 items to cook.',
-  shop: 'A customer receipt from a demo shop: soap, cooking oil, toothpaste, sodas and biscuits, KES 1,460, paid KES 1,000 by M-Pesa and KES 460 cash, with the Buy Goods number printed large.',
+  shop: 'A customer receipt from Kijani Basket (a fictional demo minimart), with its logo: two Fresh Milk 500ml, White Bread, Maize Flour 2kg, a tray of eggs and Beef 0.640 kg at 650 a kilo. KES 1,246 paid by M-Pesa, with the Buy Goods number printed large.',
+  fuel: 'A customer receipt from Kifaru Fuel & Mart (a fictional demo petrol station), with its logo: Diesel, 11.655 litres at 171.60, KES 2,000, with Engine Oil 1L and Water 1L. KES 2,920 paid by M-Pesa.',
+  cafe: 'A customer receipt from Mvua Café (a fictional demo café), with its logo: two Cafe Latte, a Masala Tea and Samosa (2), KES 970, paid by M-Pesa.',
   close: "A shift-close slip (Z-report) from a demo restaurant: Wanjiru's shift, KES 41,250 in sales, cash expected KES 14,550, counted KES 14,200, variance KES 350 short.",
 };
 ---
 <div class:list={['slip-wrap', extra]} style={`--cols:${slip.cols}`}>
   <div class:list={['slip', `slip--${kind}`]} role="img" aria-label={label ?? labels[kind]}>
-    {shown.map((l) => (
+    {shown.map((l) => l.logo ? (
+      <img class="ln-logo" src={`/demo-brands/${l.logo}-receipt.png`} width={l.w} height={l.h} alt="" aria-hidden="true" loading="lazy" decoding="async"
+        style={`width:${((l.w ?? 384) / (slip.cols === 48 ? 576 : 384)) * 100}%`} />
+    ) : (
       <span class:list={['ln', l.s && `ln--${l.s}`, { 'ln--b': l.b, 'ln--rule': /^-+$/.test(l.t), 'ln--short': /short\)/.test(l.t) }]}>{l.t || ' '}</span>
     ))}
   </div>
@@ -68,6 +77,8 @@ const labels: Record<Kind, string> = {
       linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth) + 1px) no-repeat;
   }
   .ln { display: block; white-space: pre; overflow: hidden; }
+  /* The printed logo: black dots on the paper, kept sharp like the thermal head prints them. */
+  .ln-logo { display: block; height: auto; margin: 0.2rem auto 0.4rem; image-rendering: pixelated; mix-blend-mode: multiply; }
   .ln--b { font-weight: 700; }
   /* A dashed rule prints as a row of hyphens; drawn as a thin dashed line it reads like the paper. */
   .ln--rule { color: transparent; height: 1.38em; background: linear-gradient(90deg, #9aa3a5 50%, transparent 0) 0 50% / 6px 1px repeat-x; }
