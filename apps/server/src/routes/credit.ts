@@ -10,7 +10,8 @@ import { mayApprove, isOwnerRow } from '../lib/approver';
 import { worksAtBranch } from '../lib/branchAccess';
 import { CREDIT_STATES, cleanReason, creditCounts, decisionRefusal, decisionTime, listCreditSales, targetState, awaitingSentence,
   type CreditDecision, type CreditState } from '../lib/creditConfirm';   // A545
-import { ownerOnlyGate, limitSetterGate, OWNER_CHOOSES_APPROVERS, CREDIT_APPROVERS_KEY, cleanRule, loadCreditRule } from '../lib/creditApprovers';   // A585
+import { ownerOnlyGate, limitSetterGate, OWNER_CHOOSES_APPROVERS, CREDIT_APPROVERS_KEY, cleanRule, loadCreditRule,
+  mayDecideCreditSale, CHOSEN_APPROVERS_DECIDE } from '../lib/creditApprovers';   // A585, A587
 import { creditHistory } from '../lib/creditHistory';   // A585
 
 const router = safeRouter();
@@ -120,6 +121,8 @@ router.get('/candidates', limitSetterGate(), async (req, res) => {
 // limit is the OWNER's or the built-in MANAGER role's (lib/creditApprovers.ts maySetCreditLimits) — never a supervisor,
 // General / Finance Manager, a custom role named Manager, a partner, someone holding the owner's role by PIN, a till or
 // ZapTill. Customers are business-wide: a manager may set any customer's limit; who and the branch they acted at are audited.
+// A587 (owner, 2026-10-24): the built-in General Manager role too, and a partner acting at ONE of their branches on the
+// dashboard (never "All my branches" — 403 PICK_ONE_BRANCH); customers stay business-wide, the partner's branch is audited.
 router.patch('/customer/:id/limit', limitSetterGate(), async (req, res) => {
   // A567: a person approves a limit — a till's own session names nobody.
   if (req.isTill || !req.userId) { res.status(403).json({ error: 'A credit limit is set by a person, signed in.', code: 'PERSON_ONLY' }); return; }
@@ -156,7 +159,7 @@ async function auditLimit(req: any, customerId: string, from: number, to: number
   if (from === to) return;
   try {
     const { data: me } = req.userId ? await supabase.from('users').select('name').eq('id', req.userId).maybeSingle() : { data: null };
-    // A585: the branch the person acted at (a manager's PIN sign-in), when it is this business's — else none.
+    // A585: the branch the person acted at (a manager's PIN sign-in; A587: a partner's picked branch), when it is this business's — else none.
     let branchId: string | null = null;
     if (typeof req.branchId === 'string' && /^[0-9a-f-]{36}$/i.test(req.branchId)) {
       const { data: br } = await supabase.from('branches').select('id').eq('id', req.branchId).eq('business_id', req.businessId).maybeSingle();
@@ -350,6 +353,21 @@ const decide = (fixed?: CreditDecision) => async (req: any, res: any) => {
   const cur = row as { order_id: string; branch_id: string | null; state: CreditState } | null;
   if (cur && !req.isOwner && !assertBranchAccess(req, cur.branch_id)) {
     res.status(403).json({ error: "That sale is another branch's.", code: 'OTHER_BRANCH' }); return;
+  }
+  // A587 (owner, 2026-10-24: "Is confirming a waiting credit sale limited to the approvers? — yes"): with approval ON only
+  // the sale's branch's chosen approvers (and the owner) confirm or dispute it — on the web, on the POS, or replayed by a
+  // POS for someone who decided offline. OFF: the A545 rule below, as before.
+  if (cur) {
+    const rule = await loadCreditRule(req.businessId);
+    if (rule.on) {
+      const { rows, ownerId } = await confirmerRows(req.businessId);
+      const personId = req.isTill ? String(req.body?.by ?? '') : String(req.userId ?? '');
+      const row = rows.find((r) => r.id === personId) ?? null;
+      const owner = req.isTill ? !!row && isOwnerRow(row, ownerId) : req.isOwner === true && req.webPartner !== true;
+      if (!owner && !(row && mayDecideCreditSale(rule, cur.branch_id, row, { ownerId }))) {
+        res.status(403).json({ ...CHOSEN_APPROVERS_DECIDE }); return;
+      }
+    }
   }
   let decidedBy: string | null = null; let decidedName: string | null = null;
   if (req.isTill) {

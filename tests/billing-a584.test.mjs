@@ -104,7 +104,7 @@ const reset = () => {
     businesses: [
       { id: M, name: 'Pollo <b>Grill</b>', owner_id: OWNER, email: 'shop@pollo.test', status: 'active', type: 'restaurant', currency: 'KES', web_access_expires_at: iso(now - 3600_000), created_at: '2026-01-01T00:00:00Z' },
       { id: Y, name: 'Year Duka', owner_id: 'y', email: 'year@duka.test', status: 'active', type: 'retail', currency: 'KES', web_access_expires_at: iso(now - 3600_000), created_at: '2026-01-01T00:00:00Z' },
-      { id: LG, name: 'Legacy Parking', owner_id: 'l', email: 'legacy@park.test', status: 'active', type: 'parking', currency: 'KES', web_access_expires_at: iso(now - 40 * DAY), created_at: '2025-06-01T00:00:00Z' },
+      { id: LG, name: 'Legacy Parking', owner_id: 'l', email: 'legacy@park.test', status: 'active', type: 'parking', currency: 'KES', web_access_expires_at: iso(now - 20 * DAY), created_at: '2025-06-01T00:00:00Z' },
       { id: NE, name: 'No Date Salon', owner_id: 'n', email: 'nd@salon.test', status: 'active', type: 'other', currency: 'KES', web_access_expires_at: null, created_at: '2025-06-01T00:00:00Z' },
       { id: OFF, name: 'Off Kiosk', owner_id: 'o', email: 'off@kiosk.test', status: 'active', type: 'retail', currency: 'KES', web_access_expires_at: iso(now - 3 * DAY), created_at: '2025-06-01T00:00:00Z' },
     ],
@@ -282,7 +282,7 @@ try {
     assert.equal(inv.period_start, plan.created_at, 'the period starts the day it was bridged'); assert.equal(inv.amount, 36000);
     assert.ok(mails.find((m) => m.to === 'legacy@park.test'), 'the legacy client gets its invoice');
   });
-  await ok('…and is never locked by the deploy: 40 days past its date, its till syncs and its web works for the 7 days', async () => {
+  await ok('…and is never locked by the deploy: 20 days past its date (not yet locked by the old ladder — A587), its till syncs and its web works for the 7 days', async () => {
     CP.forgetStanding();
     assert.equal((await call('POST', '/api/sync/push', TILL_LG, {})).status, 200);
     assert.equal((await call('GET', '/api/reports/daily', web(LG))).status, 200);
@@ -324,7 +324,7 @@ try {
     await run();
     const locked = mails.filter((m) => /locked/.test(m.subject));
     assert.equal(locked.length, 1); assert.match(locked[0].to, /billing@zaptill\.test/);
-    assert.equal(mails.filter((m) => m.to === 'owner@pollo.test').length, 0, 'nothing to the owner: no lock notice (and no invoice once locked)');
+    assert.equal(mails.filter((m) => m.to === 'owner@pollo.test').length, 0, 'nothing to the owner: no lock notice (and no invoice once locked — A587: pay as you go)');
     mails.length = 0; await run();
     assert.equal(mails.filter((m) => /locked/.test(m.subject)).length, 0, 'once');
     const lines = await CP.billingDigestLines();
@@ -353,7 +353,7 @@ try {
     const e = await call('POST', '/api/auth/enrol/redeem', null, { business_id: M, code: CODE, device_id: 'new-till' });
     assert.equal(e.body?.code, 'CLOUD_SUBSCRIPTION_ENDED'); assert.equal(mem.db.device_enrolment_codes[0].status, 'active');
   });
-  await ok('a payment restores everything at once (web, sync, enrolment) — a locked client starts from today; a receipt', async () => {
+  await ok('a payment restores everything at once (web, sync, enrolment) — a locked client starts from today (A587: pay as you go); a receipt', async () => {
     const r = await pay(M, { amount: 3000, method: 'mpesa', reference: 'SJK8LOCK01' });
     assert.equal(r.status, 201, JSON.stringify(r.body));
     assert.ok(Math.abs(Date.parse(biz(M).web_access_expires_at) - Date.parse(CP.addMonthsClamped(iso(Date.now()), 1))) < 120_000);

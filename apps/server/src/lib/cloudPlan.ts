@@ -29,17 +29,35 @@
  * A cloud TRIAL (A569) keeps its ladder: full until its end; reports only for 7 days (sync refused); then locked.
  *
  * Record payment continues the period the invoice was for when the client is still within the 7 days (paid 28 Nov on a
- * 23 Nov due date → paid until 23 Dec); early adds on (no lost days); a locked client starts again from the day it pays.
+ * 23 Nov due date → paid until 23 Dec); early adds on (no lost days).
+ *
+ * A587 (owner, 2026-10-24):
+ *   - "we offset it" … then, correcting it the same day: "it's pay as you go, not pay for missed months, since they won't be
+ *     using the system at that time". A LOCKED client who pays starts a fresh period from the payment day; the unpaid
+ *     cloud invoice(s) of the locked time are closed — written off, "not charged: access was paused" (audited), never
+ *     collected (paymentCovers). A client who pays WITHIN its 7 unpaid days (it still had access) continues from the due
+ *     date, as A584. A locked client gets no further invoices.
+ *   - "if they fail to pay for 3 months we assume they are not interested" — NOT_INTERESTED_MONTHS after the first unpaid
+ *     due date (or the day billing began, when later): state 'not_interested' — no more invoices, the open cloud invoices
+ *     written off by the job (audited), still locked; ZapTill hears once. A payment then starts afresh from the day it is
+ *     made (no arrears).
+ *   - a cloud TRIAL ends like a paid period: its end is its due day (an invoice), then the 7 days, then locked.
+ *   - the A584 bridge keeps a licence that was already locked under the old ladder (28+ days past) locked at once, due
+ *     from its own date (cloud_plans.billing_from, migration 173) — no fresh 7 days and no arrears invoice; when it pays, a
+ *     fresh period starts from the payment day.
+ *   - "Disable web access" is a hard off at once (state 'off'): web paused, sync refused, no POS joins — whatever the date.
  *
  * Pure rules first (the tests run them), storage after.
  */
 import { supabase } from './supabase';
 import { CLOUD_TRIAL_KEY, TRIAL_REPORTS_ONLY_DAYS, cleanTrial, type CloudTrial } from './cloudTrial';
 import {
-  DAY_MS, EAT_MS, UNPAID_DAYS, ADMIN_WARN_DAY, nairobiDay, daysUntil, effectiveDue, lockAtFor, unpaidDaysAt, paidState, trialState,
+  DAY_MS, EAT_MS, UNPAID_DAYS, ADMIN_WARN_DAY, NOT_INTERESTED_MONTHS, nairobiDay, daysUntil, effectiveDue, lockAtFor, unpaidDaysAt, paidState,
 } from './billingClock';
 
-export { daysUntil, UNPAID_DAYS, ADMIN_WARN_DAY };
+export { daysUntil, UNPAID_DAYS, ADMIN_WARN_DAY, NOT_INTERESTED_MONTHS };
+/** A587: the old A147 ladder locked the web 28 days after the date (21 days' grace + 7 of reports only). */
+export const OLD_LADDER_LOCK_DAYS = 28;
 
 /** The cloud's price per business per month (owner, 2026-10-23: KES 36,000 a year = 3,000 a month). A default only —
  *  each plan carries its own amount, which the admin may change. */
@@ -120,6 +138,8 @@ export interface CloudFacts {
   onPlan: boolean;
   /** When that row was made — the day billing began (A584). */
   planCreatedAt?: string | null;
+  /** A587: cloud_plans.billing_from — the bridge's kept due date for a licence already locked under the old ladder. */
+  billingFrom?: string | null;
   /** The A569 trial record, if any. */
   trial: CloudTrial | null;
   /** businesses.web_access_expires_at — the paid-until. */
@@ -131,17 +151,21 @@ export interface CloudFacts {
 }
 
 /**
- *   not_on_plan  no web access, no date, no plan — nothing to bill
- *   off          web access switched off with a date and no plan (A584: not invoiced; listed)
- *   no_expiry    web access on, no date, no plan — unchanged; listed "No expiry set"
- *   no_date      on a plan, no payment yet
- *   active       paid (or a trial within its 30 days)
- *   unpaid       due, within the 7 unpaid days — everything works
- *   reports_only a trial's week after its end (sync refused; the web reads only)
- *   locked       paused: web, sync and enrolment refused
- *   ended        a trial ended early ("End trial")
+ *   not_on_plan    no web access, no date, no plan — nothing to bill
+ *   off            A587: "Disable web access" on a business with a date, a plan or a trial — a HARD off at once: web
+ *                  paused, sync refused, no POS joins, not invoiced (A584: it was only "not invoiced"); "Enable" restores
+ *                  it while paid-until is ahead
+ *   no_expiry      web access on, no date, no plan — unchanged; listed "No expiry set"
+ *   no_date        on a plan, no payment yet
+ *   active         paid (or a trial within its 30 days)
+ *   unpaid         due (a trial: ended), within the 7 unpaid days — everything works
+ *   reports_only   A569's trial week after its end — A587: no longer given (kept in the type for older readers)
+ *   locked         paused: web, sync and enrolment refused
+ *   not_interested A587: unpaid 3 months after the first unpaid due date — still locked, no more invoices, the open ones
+ *                  written off; a payment starts afresh
+ *   ended          a trial ended early ("End trial")
  */
-export type CloudState = 'not_on_plan' | 'off' | 'no_expiry' | 'no_date' | 'active' | 'unpaid' | 'reports_only' | 'locked' | 'ended';
+export type CloudState = 'not_on_plan' | 'off' | 'no_expiry' | 'no_date' | 'active' | 'unpaid' | 'reports_only' | 'locked' | 'not_interested' | 'ended';
 
 export interface CloudStanding {
   /** Under the billing rules (A584: any business with a date, a plan or a trial). */
@@ -171,9 +195,29 @@ export interface CloudStanding {
   syncRefused: boolean;
   /** The web dashboard is paused now (every web request answered 403). */
   webLocked: boolean;
+  /** A587: the day billing began (the plan row's created_at; a trial: its end) — later periods are invoiced from it. */
+  billingStart: string | null;
+  /** A587: when an unpaid client is (or would be) taken as "Not interested" — 3 months after max(due, billingStart). */
+  notInterestedAt: string | null;
 }
 
 const validIso = (s: string | null | undefined): s is string => !!s && Number.isFinite(Date.parse(s));
+
+/** A587: 3 months (Nairobi calendar, month ends held) after the later of the due moment and the day billing began. */
+export function notInterestedAtFor(dueIso: string, billingStart?: string | null): string {
+  const d = Date.parse(dueIso), b = billingStart ? Date.parse(billingStart) : NaN;
+  const from = Number.isFinite(b) && b > d ? new Date(b).toISOString() : new Date(d).toISOString();
+  return addMonthsClamped(from, NOT_INTERESTED_MONTHS);
+}
+
+/**
+ * A587 (decision 4): was this licence already locked under the OLD ladder (A147: 21 days' grace + 7 of reports only →
+ * locked from 28 days after its date) when the bridge reached it? Then it stays locked, due from its own date.
+ */
+export function lockedUnderOldLadder(paidUntil: string | null | undefined, now: number): boolean {
+  const t = paidUntil ? Date.parse(paidUntil) : NaN;
+  return Number.isFinite(t) && now >= t + OLD_LADDER_LOCK_DAYS * DAY_MS;
+}
 
 /** Where a business stands at `now`. Pure. */
 export function cloudStanding(f: CloudFacts, now: number = Date.now()): CloudStanding {
@@ -182,38 +226,49 @@ export function cloudStanding(f: CloudFacts, now: number = Date.now()): CloudSta
   const blank: CloudStanding = {
     gated: false, state: 'not_on_plan', trial: onTrial, paidUntil: dated ? f.expiresAt : null, dueAt: null, lockAt: null, syncStopsAt: null,
     daysLeft: null, unpaidDays: null, lockInDays: null, lockedDays: null, bridgePending: false, syncRefused: false, webLocked: false,
+    billingStart: null, notInterestedAt: null,
   };
-  // ── A569 trial: its own ladder ──
-  if (onTrial) {
-    if (!dated) return { ...blank, gated: true, state: 'no_date' };
-    const end = f.expiresAt as string;
-    const base = { ...blank, gated: true, dueAt: end, lockAt: end, syncStopsAt: end, daysLeft: daysUntil(end, now) };
-    if (f.webHosting === false) return { ...base, state: 'ended', syncRefused: true, webLocked: true };   // "End trial": at once
-    const t = trialState(end, now);
-    return { ...base, state: t, syncRefused: t !== 'active', webLocked: t === 'locked' };
+  // A587 (decision 5): "Disable web access" switches a client off AT ONCE — a business the rules govern (a date, a plan or a
+  // trial): web paused, sync refused, no POS joins, nothing invoiced. ("End trial" is the same switch on a trial.) A
+  // business with no date, no plan and no trial (desktop only) is untouched, as before.
+  if (f.webHosting === false && (dated || f.onPlan || onTrial)) {
+    const at = dated ? f.expiresAt as string : null;
+    return {
+      ...blank, gated: onTrial, state: onTrial ? 'ended' : 'off', dueAt: at, lockAt: at, syncStopsAt: at,
+      daysLeft: at ? daysUntil(at, now) : null, syncRefused: true, webLocked: true,
+    };
   }
   if (!dated) {
-    if (f.onPlan) return { ...blank, gated: true, state: 'no_date' };
+    if (onTrial || f.onPlan) return { ...blank, gated: true, state: 'no_date' };
     return { ...blank, state: f.webHosting === true ? 'no_expiry' : 'not_on_plan' };
   }
   const paidUntil = f.expiresAt as string;
-  // Switched off by the admin, a date kept, never on a plan: not billed (the dashboard reads its date as before).
-  const off = !f.onPlan && f.webHosting === false;
-  const bridgePending = !f.onPlan && !off;
-  // Before the bridge has made the plan row, the due moment is never in the past (nobody locked by a deploy).
-  const billingFrom = f.onPlan ? (f.planCreatedAt ?? null) : off ? null : new Date(now).toISOString();
-  const due = effectiveDue(paidUntil, billingFrom);
+  let due: string; let billingStart: string | null; let bridgePending = false;
+  if (onTrial) {
+    // A587 (decision 2): a trial ends like a paid period — its end is the due day (the invoice), then the 7 days, then locked.
+    due = paidUntil; billingStart = paidUntil;
+  } else {
+    bridgePending = !f.onPlan;
+    // Before the bridge has made the plan row, the due moment is never in the past (nobody locked by a deploy). A587: a
+    // bridged licence that was already locked keeps its own date (billing_from), so it stays locked.
+    const billingFrom = f.onPlan ? (f.billingFrom ?? f.planCreatedAt ?? null) : new Date(now).toISOString();
+    due = effectiveDue(paidUntil, billingFrom);
+    billingStart = f.onPlan ? (f.planCreatedAt ?? null) : null;
+  }
   const lockAt = lockAtFor(due);
   const ps = paidState(due, now);
   const unpaid = unpaidDaysAt(due, now);
-  const s: CloudStanding = {
-    ...blank, gated: !off, paidUntil, dueAt: due, lockAt, syncStopsAt: lockAt, daysLeft: daysUntil(due, now), bridgePending,
-    state: off ? 'off' : ps, unpaidDays: ps === 'active' ? null : unpaid,
+  const niAt = bridgePending ? null : notInterestedAtFor(due, billingStart);
+  const notInterested = ps === 'locked' && !!niAt && now >= Date.parse(niAt);
+  const state: CloudState = notInterested ? 'not_interested' : ps;
+  const locked = ps === 'locked';
+  return {
+    ...blank, gated: true, paidUntil, dueAt: due, lockAt, syncStopsAt: lockAt, daysLeft: daysUntil(due, now), bridgePending,
+    state, unpaidDays: ps === 'active' ? null : unpaid,
     lockInDays: ps === 'unpaid' && unpaid !== null ? Math.max(0, UNPAID_DAYS - unpaid) : null,
-    lockedDays: ps === 'locked' ? nairobiDay(now) - nairobiDay(Date.parse(lockAt)) : null,
+    lockedDays: locked ? nairobiDay(now) - nairobiDay(Date.parse(lockAt)) : null,
+    syncRefused: locked, webLocked: locked, billingStart, notInterestedAt: niAt,
   };
-  if (off) return { ...s, unpaidDays: null, lockInDays: null, lockedDays: null };
-  return { ...s, syncRefused: ps === 'locked', webLocked: ps === 'locked' };
 }
 
 /** The standing as the portal reads it (snake_case). */
@@ -222,7 +277,49 @@ export function standingView(s: CloudStanding) {
     gated: s.gated, state: s.state, trial: s.trial, paid_until: s.paidUntil, due_at: s.dueAt, lock_at: s.lockAt, sync_stops_at: s.syncStopsAt,
     days_left: s.daysLeft, unpaid_days: s.unpaidDays, lock_in_days: s.lockInDays, locked_days: s.lockedDays,
     bridge_pending: s.bridgePending, sync_refused: s.syncRefused, web_locked: s.webLocked,
+    not_interested_at: s.notInterestedAt,   // A587: "Not interested (since …)" — and, while unpaid, when it would be
   };
+}
+
+/**
+ * A587: the period start invoiced now — the due date's, from its first day (Nairobi) until the lock. Pay as you go (owner,
+ * 2026-10-24): a locked client is not invoiced for the time it cannot use (a licence bridged when already locked gets no
+ * arrears invoice either); a payment starts it afresh.
+ */
+export function invoiceStarts(s: CloudStanding, _plan: unknown, now: number): string[] {
+  if (!s.dueAt || (s.state !== 'active' && s.state !== 'unpaid')) return [];
+  return nairobiDay(now) >= nairobiDay(Date.parse(s.dueAt)) ? [s.dueAt] : [];
+}
+
+/** An open (pending) cloud invoice, as Record payment reads it. */
+export interface OpenInvoice { id: string; invoice_number: string; period_start: string | null; period_end: string | null; amount: number | string; status?: string }
+
+type CoverInvoice = { id: string; invoice_number: string; period_start: string | null; period_end: string | null; amount: number };
+export interface PaymentCover {
+  /** Where the paid time starts and ends (paid-until after the payment). */
+  from: string; until: string;
+  /** The open invoice(s) this payment pays — within the 7 unpaid days (or early), the invoiced period's. */
+  settles: CoverInvoice[];
+  /** A587: the open invoices of the locked time, closed — written off, not charged ("access was paused"). */
+  closes: CoverInvoice[];
+  /** A587: a fresh start from the payment day (the client was locked, or "Not interested") — no arrears. */
+  fresh: boolean;
+}
+
+/**
+ * A587 (owner, 2026-10-24: "it's pay as you go, not pay for missed months, since they won't be using the system at that
+ * time"): what one payment covers. Within the 7 unpaid days (or early): the open invoice whose period starts in the paid
+ * time is paid. A fresh start (locked, or "Not interested"): nothing is collected for the locked time — every open cloud
+ * invoice is closed (written off, not charged) and the payment buys a new period from today. Pure.
+ */
+export function paymentCovers(p: { from: string; until: string; outstanding: readonly OpenInvoice[]; fresh: boolean }): PaymentCover {
+  const f = Date.parse(p.from), u = Date.parse(p.until);
+  const open = p.outstanding.filter((i) => (i.status ?? 'pending') === 'pending')
+    .sort((a, b) => (Date.parse(a.period_start ?? '') || 0) - (Date.parse(b.period_start ?? '') || 0))
+    .map((i) => ({ id: i.id, invoice_number: i.invoice_number, period_start: i.period_start, period_end: i.period_end, amount: Number(i.amount) || 0 }));
+  if (p.fresh) return { from: p.from, until: p.until, settles: [], closes: open, fresh: true };
+  const settles = open.filter((i) => i.period_start && Date.parse(i.period_start) >= f - 1000 && Date.parse(i.period_start) < u);
+  return { from: p.from, until: p.until, settles, closes: [], fresh: false };
 }
 
 /** The 503 a locked business's tills get for a write (the till keeps the record queued; 1.0.20 tells the manager). */
@@ -287,18 +384,19 @@ export function webGateApplies(surface: string | null | undefined, path: string)
  *   invoice   the due day (and after, until the lock): the invoice raised and emailed to the client; ZapTill's copy
  *   unpaid_5  the 5th unpaid day: "locks in 2 days"
  *   locked    once when locked (the morning digest lists locked clients after)
- *   trial_end the day a cloud trial ends
+ *   not_interested  A587: once, 3 months unpaid — the open invoices written off, no more invoices
+ *   trial_end A569/A584's trial notice — A587: a trial's end is its due day, so it gets the 'invoice' (kept for history)
+ * A587: a trial is billed like a paid client. A locked client gets no invoice (pay as you go — a payment starts afresh).
  */
-export type AdminMilestone = 'invoice' | 'unpaid_5' | 'locked' | 'trial_end';
+export type AdminMilestone = 'invoice' | 'unpaid_5' | 'locked' | 'not_interested' | 'trial_end';
 export function adminMilestones(s: CloudStanding, now: number): AdminMilestone[] {
   if (!s.gated || !s.dueAt) return [];
-  if (s.trial) return s.state === 'active' ? [] : ['trial_end'];
-  if (s.state === 'locked') return ['locked'];
+  if (s.state === 'not_interested') return ['not_interested'];
+  if (s.state !== 'active' && s.state !== 'unpaid' && s.state !== 'locked') return [];
   const out: AdminMilestone[] = [];
-  if (s.state === 'active' || s.state === 'unpaid') {
-    if (nairobiDay(now) >= nairobiDay(Date.parse(s.dueAt))) out.push('invoice');
-    if (s.state === 'unpaid' && (s.unpaidDays ?? 0) >= ADMIN_WARN_DAY) out.push('unpaid_5');
-  }
+  if (s.state === 'locked') return ['locked'];
+  if (nairobiDay(now) >= nairobiDay(Date.parse(s.dueAt))) out.push('invoice');
+  if (s.state === 'unpaid' && (s.unpaidDays ?? 0) >= ADMIN_WARN_DAY) out.push('unpaid_5');
   return out;
 }
 
@@ -330,6 +428,8 @@ export interface CloudPlanRow {
   updated_by: string | null;
   created_at?: string;
   updated_at?: string;
+  /** A587 (migration 173): the bridge's kept due date for a licence already locked under the old ladder. */
+  billing_from?: string | null;
 }
 
 export type CloudFactsRow = CloudFacts & { plan: CloudPlanRow | null; name?: string; ownerId?: string | null; email?: string | null };
@@ -354,7 +454,7 @@ export async function readCloudFacts(businessIds: string[]): Promise<Map<string,
   for (const b of (bizs.data ?? []) as Array<{ id: string; name: string; owner_id: string | null; email: string | null; status: string | null; web_access_expires_at: string | null }>) {
     const plan = planBy.get(b.id) ?? null;
     out.set(b.id, {
-      onPlan: !!plan, planCreatedAt: plan?.created_at ?? null, plan, trial: trialBy.get(b.id) ?? null,
+      onPlan: !!plan, planCreatedAt: plan?.created_at ?? null, billingFrom: plan?.billing_from ?? null, plan, trial: trialBy.get(b.id) ?? null,
       expiresAt: b.web_access_expires_at ?? null, webHosting: flagBy.has(b.id) ? flagBy.get(b.id)! : null,
       suspended: b.status === 'suspended', name: b.name, ownerId: b.owner_id, email: b.email,
     });
@@ -408,7 +508,9 @@ export async function billingDigestLines(now: number = Date.now()): Promise<stri
       if (f.suspended) continue;
       const s = cloudStanding(f, now);
       const name = f.name ?? 'a client';
-      if (s.syncRefused) locked.push(`${name} — ${s.trial ? 'trial ended' : `locked ${s.lockedDays ?? 0} day${s.lockedDays === 1 ? '' : 's'}`}`);
+      // A587: a "Not interested" client (ZapTill heard once) and one switched off by the admin are not listed daily.
+      if (s.state === 'not_interested' || s.state === 'off') continue;
+      if (s.syncRefused) locked.push(`${name} — ${s.state === 'ended' ? 'trial ended' : `${s.trial ? 'trial ended, ' : ''}locked ${s.lockedDays ?? 0} day${s.lockedDays === 1 ? '' : 's'}`}`);
       else if (s.state === 'unpaid') unpaid.push(`${name} — unpaid ${s.unpaidDays} day${s.unpaidDays === 1 ? '' : 's'}, locks in ${s.lockInDays} day${s.lockInDays === 1 ? '' : 's'}`);
       else if (s.state === 'no_expiry') noExpiry++;
     }
@@ -442,6 +544,35 @@ export async function insertCloudInvoice(row: Record<string, unknown>): Promise<
     return { data: (again.data as { id: string; invoice_number: string } | null) ?? null, error: (again.error as { code?: string; message: string } | null) ?? null };
   }
   return { data: null, error: e };
+}
+
+/** A587: a business's open (pending) cloud invoices, oldest first. A failed read: none (a payment then raises its own). */
+export async function openCloudInvoices(businessId: string): Promise<OpenInvoice[]> {
+  const { data, error } = await supabase.from('invoices').select('id, invoice_number, period_start, period_end, amount, status')
+    .eq('business_id', businessId).eq('kind', 'cloud').eq('status', 'pending').order('period_start', { ascending: true }).limit(100);
+  if (error) { console.warn('[cloud-plan] open invoices not read:', error.message); return []; }
+  return (data ?? []) as OpenInvoice[];
+}
+
+/** A587: the invoice status a write-off sets ('written_off' — migration 173; a cloud before it: 'failed', A584's word). */
+export const WRITTEN_OFF = 'written_off';
+
+/**
+ * A587: the business's open cloud invoices (or the ones named) are closed — written off, not charged: on "Not interested",
+ * and when a locked client pays (pay as you go — the locked time is not charged). Returns the numbers closed.
+ * A cloud whose migration 173 has not run refuses the new status (a check constraint): 'failed' instead.
+ */
+export async function writeOffCloudInvoices(businessId: string, only?: readonly string[]): Promise<{ numbers: string[]; status: string; error: string | null }> {
+  const ids = only ? [...only] : (await openCloudInvoices(businessId)).map((i) => i.id);
+  if (!ids.length) return { numbers: [], status: WRITTEN_OFF, error: null };
+  let status = WRITTEN_OFF;
+  let r = await supabase.from('invoices').update({ status }).eq('business_id', businessId).eq('status', 'pending').in('id', ids).select('invoice_number');
+  if (r.error && ((r.error as { code?: string }).code === '23514' || /invoices_status_check/.test(String(r.error.message)))) {
+    status = 'failed';
+    r = await supabase.from('invoices').update({ status }).eq('business_id', businessId).eq('status', 'pending').in('id', ids).select('invoice_number');
+  }
+  if (r.error) return { numbers: [], status, error: r.error.message };
+  return { numbers: ((r.data ?? []) as Array<{ invoice_number: string }>).map((x) => x.invoice_number), status, error: null };
 }
 
 const warned = new Set<string>();
@@ -509,4 +640,4 @@ export async function enrolRefusal(businessId: string): Promise<ReturnType<typeo
   return s && s.syncRefused ? enrolRefusalBody() : null;
 }
 
-export { TRIAL_REPORTS_ONLY_DAYS };
+export { TRIAL_REPORTS_ONLY_DAYS, DAY_MS };

@@ -12,11 +12,27 @@ export interface ApproversView { rule: ApprovalRule; branches: Array<{ id: strin
 // A585, owner change 2026-10-23 ("add the credit rights to the manager"): the owner or the built-in Manager role.
 export const OWNER_SETS_LIMITS_LINE = 'Only the owner or a manager sets credit limits.';
 
-/** The web POS manager screen: show the limit box to the Manager role or the owner's role (the cloud decides: only the
- *  built-in Manager role and the real owner pass; anyone else is told so). */
+/** The web POS manager screen: show the limit box to the Manager or General Manager role (A587) or the owner's role (the
+ *  cloud decides: only the built-in Manager / General Manager roles and the real owner pass; anyone else is told so). */
 export function limitBoxForRole(roleName: string | null | undefined): boolean {
-  const r = String(roleName ?? '').trim().toLowerCase();
-  return r === 'manager' || r === 'owner' || r === 'admin';
+  const r = String(roleName ?? '').trim().toLowerCase().replace(/[\s_]+/g, ' ');
+  return r === 'manager' || r === 'general manager' || r === 'owner' || r === 'admin';
+}
+
+// A587 (owner, 2026-10-24: "Can a co-owner partner set credit limits? — yes for their selected branch"): on the dashboard
+// the owner, or a partner with ONE of their branches picked (never "All my branches"). The cloud decides the same
+// (lib/creditApprovers.ts maySetCreditLimits; PICK_ONE_BRANCH otherwise); customers are business-wide, the branch is recorded.
+export const PICK_ONE_BRANCH_LINE = 'Pick one of your branches at the top of the page to set a credit limit.';
+
+/** May the person on the dashboard give, change or remove a limit here? */
+export function dashboardSetsLimits(x: { isOwner: boolean; isPartner: boolean; activeBranchId: string | null | undefined; allMine?: boolean }): boolean {
+  if (x.isOwner && !x.isPartner) return true;
+  return x.isPartner && !x.allMine && !!x.activeBranchId;
+}
+
+/** The line shown instead of the editor. */
+export function limitLineFor(x: { isOwner: boolean; isPartner: boolean; activeBranchId: string | null | undefined; allMine?: boolean }): string {
+  return x.isPartner && !dashboardSetsLimits(x) ? PICK_ONE_BRANCH_LINE : OWNER_SETS_LIMITS_LINE;
 }
 
 /** The staff who may be picked for a branch: they work there (no branch assigned = every branch). */

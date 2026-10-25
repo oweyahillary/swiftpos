@@ -46,6 +46,15 @@ export interface Pump {
   price_per_litre: number | null;
 }
 
+/** A588: the pumps screen's gauges (main/forecourt.ts) — this POS's own fuel sales and, when known, the tanks. */
+export interface Forecourt {
+  pumps: { pump_id: string; litres_today: number; last_sale_at: string | null; last_sale_litres: number | null; last_sale_amount: number | null }[];
+  grades: { product_id: string; litres_today: number; litres_yesterday: number }[];
+  /** null = the levels are not known on this POS now (offline, no online licence, no tanks) — never zeros. */
+  tanks: { id: string; name: string; product_id: string; capacity_litres: number; current_level: number; reorder_level: number | null }[] | null;
+  tanksAt: string | null;
+}
+
 export type DeviceRole = 'till' | 'node' | 'office';
 
 export interface TechSession {
@@ -569,6 +578,8 @@ declare global {
         help: () => Promise<{ contact: { name: string; phones: string[]; assigned: boolean }; till: string | null; version: string }>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
+        /** A588: the pumps screen's gauges — this POS's litres today / yesterday, each pump's last sale, the tanks (null = not known). */
+        forecourt: () => Promise<Forecourt>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
         /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
         paymentMethodsEnabled: () => Promise<{ enabled: string[] | null }>;

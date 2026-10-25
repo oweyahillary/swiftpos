@@ -102,7 +102,7 @@ console.log('\n1. The gateway: trading only (an allowlist)\n');
     ['GET', 'pos/branch', B], ['GET', 'changes/state', B], ['GET', 'day-close/pending', B], ['GET', 'inventory', B], ['GET', 'health', B],
     ['GET', 'support/log-requests/mine', B], ['GET', 'support/terminal-codes', B], ['GET', 'support/terminal', B], ['GET', 'tech/branch-config/br-1', B],
     ['GET', 'desktop-update/status', B], ['GET', 'desktop-update/v/1.0.20/latest.yml', B], ['GET', 'batches', B], ['GET', 'wastage/items', B],
-    ['GET', 'tables', B], ['GET', 'pumps', B], ['GET', 'stations', B], ['GET', 'categories', B], ['GET', 'branches', B], ['GET', 'payment', B],
+    ['GET', 'tables', B], ['GET', 'pumps', B], ['GET', 'fuel-tanks', B], ['GET', 'stations', B], ['GET', 'categories', B], ['GET', 'branches', B], ['GET', 'payment', B],
     ['GET', 'staff/roles', B], ['GET', 'reports/monthly', B], ['GET', 'reports/monthly/export', B], ['GET', 'expenses/categories', B],
     ['GET', 'stations/unassigned', B], ['GET', 'products', B], ['GET', 'combos', B], ['GET', 'offers', B], ['GET', 'modifiers/groups', B],
     ['GET', 'variants/groups', B], ['GET', 'shifts', B], ['GET', 'shifts/s-1/zreport', B], ['GET', 'shifts/s-1/confirm-view', B],

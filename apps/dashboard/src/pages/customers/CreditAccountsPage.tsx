@@ -16,7 +16,7 @@ import { paginate } from '../../lib/paginate';
 import CreditSalesToConfirm, { ledgerNote } from '../../components/CreditSalesToConfirm';   // A545
 import { usePermissions } from '../../context/PermissionsContext';   // A545
 import GiveCreditPicker from '../../components/GiveCreditPicker';   // A567
-import { OWNER_SETS_LIMITS_LINE } from '../../lib/creditApprovers';   // A585
+import { useSetsLimits } from '../../hooks/useSetsLimits';   // A585, A587
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -35,7 +35,7 @@ export default function CreditAccountsPage() {
   const currency = useBusiness().business?.currency ?? 'KES';
   const perms = usePermissions();
   const mayCredit = perms.can('customers.credit');   // A545: confirm / dispute sales on account
-  const setsLimits = perms.isOwner;   // A585: only the owner gives, changes or removes a limit
+  const { setsLimits, line: limitLine } = useSetsLimits();   // A585: the owner; A587: a partner at one of their branches
   const [rows, setRows] = useState<CreditCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -165,7 +165,7 @@ export default function CreditAccountsPage() {
       )}
 
       {loading ? <p className="text-gray-500">Loading…</p> : rows.length === 0 ? (
-        <p className="text-gray-500">No credit customers yet. {setsLimits ? 'Use "+ Give credit" to give a customer a credit limit.' : OWNER_SETS_LIMITS_LINE}</p>
+        <p className="text-gray-500">No credit customers yet. {setsLimits ? 'Use "+ Give credit" to give a customer a credit limit.' : limitLine}</p>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -236,8 +236,8 @@ export default function CreditAccountsPage() {
               <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{money(selected.available_credit, currency)}</p></div>
             </div>
 
-            {/* Set limit — A585: the owner's alone */}
-            {!setsLimits && <p className="text-xs text-gray-500 mb-4" data-testid="owner-sets-limits">{OWNER_SETS_LIMITS_LINE}</p>}
+            {/* Set limit — A585: the owner's; A587: a partner at one of their branches too */}
+            {!setsLimits && <p className="text-xs text-gray-500 mb-4" data-testid="owner-sets-limits">{limitLine}</p>}
             {setsLimits && <div className="flex items-end gap-2 mb-4">
               <div className="flex-1">
                 <label className="block text-sm text-gray-400 mb-1.5">Credit limit</label>

@@ -8,7 +8,8 @@
  *     lock, a pause, a deadline or a revocation; never a countdown.
  *   - a short receipt when a payment is recorded: the amount, the reference, the paid-until date.
  * and ZAPTILL gets (plain text: the admin alert email and Telegram — lib/alertNotify.ts): the invoice issued (to whom),
- * the 5th unpaid day ("locks in 2 days"), the lock, a trial's end — and the morning digest lists the locked clients.
+ * the 5th unpaid day ("locks in 2 days"), the lock, "Not interested" (A587: 3 months unpaid, its invoices written off) —
+ * and the morning digest lists the locked clients. A587: a trial's end is its first invoice (the line says the trial ended).
  */
 import { esc, emailShell, subjectSafe } from '../jobs/ownerEmails';
 import { PERIOD_LABEL, ZAPTILL_PHONE, type PlanPeriod } from './cloudPlan';
@@ -47,6 +48,8 @@ export interface InvoiceFacts {
   amount: number;
   currency: string;
   period: PlanPeriod;
+  /** A587: the first invoice after a cloud trial — its end (the line says the trial ended). */
+  trialEnded?: string | null;
 }
 
 /** The invoice's words — the subject, the headline and the lines. */
@@ -64,6 +67,7 @@ export function invoiceWords(f: InvoiceFacts): { subject: string; headline: stri
       ['Due', 'Now'],
     ],
     lines: [
+      ...(f.trialEnded ? [`Your one-month ZapTill cloud trial ended on ${planDate(f.trialEnded)} — thank you for trying it.`] : []),
       `Thank you for using ZapTill. This is your invoice for the ZapTill cloud — the web dashboard, the online features and syncing — for ${span}: ${priceLine(f)}.`,
       `How to pay: M-Pesa, or WhatsApp or call ZapTill on ${ZAPTILL_PHONE} and we will confirm your payment and send you a receipt.`,
       'You may also pay ahead for 3, 6 or 12 months.',
@@ -107,7 +111,7 @@ export function receiptEmailHtml(f: ReceiptFacts): { subject: string; html: stri
 
 export interface AdminNoticeFacts {
   businessName: string;
-  milestone: 'invoice' | 'unpaid_5' | 'locked' | 'trial_end';
+  milestone: 'invoice' | 'unpaid_5' | 'locked' | 'trial_end' | 'not_interested';
   dueAt: string | null;
   lockAt: string | null;
   unpaidDays: number | null;
@@ -118,6 +122,11 @@ export interface AdminNoticeFacts {
   invoiceNumber?: string | null;
   ownerEmail: string | null;
   ownerSent?: boolean;
+  /** A587: the client is on a cloud trial (its first invoice). */
+  trial?: boolean;
+  /** A587: when it became "Not interested", and the invoices written off. */
+  notInterestedAt?: string | null;
+  writtenOff?: string[];
 }
 
 /** ZapTill's copy (the admin alert email and Telegram). */
@@ -130,6 +139,7 @@ export function adminNoticeText(f: AdminNoticeFacts): { subject: string; text: s
       text: [
         `Invoice ${f.invoiceNumber ?? '(not raised)'} issued to ${f.businessName}: ${price}, due ${planDate(f.dueAt)}.`,
         `Client's copy: ${f.ownerEmail ? `${f.ownerEmail}${f.ownerSent === false ? ' (NOT delivered — check the email provider)' : ''}` : 'no email on file — send it yourself'}.`,
+        ...(f.trial ? ['The one-month cloud trial has ended: this is its first invoice, billed as a paid client is.'] : []),
         `If unpaid it locks at the end of ${planDate(f.lockAt ? new Date(Date.parse(f.lockAt) - 1).toISOString() : null)} (7 days). The client is not told when.`,
         record,
       ].join('\n'),
@@ -153,8 +163,20 @@ export function adminNoticeText(f: AdminNoticeFacts): { subject: string; text: s
       text: [
         `${f.businessName} is locked: unpaid since ${planDate(f.dueAt)} (${price}).`,
         'The web dashboard is paused, the cloud refuses sync from its points of sale and no POS can join. The points of sale keep selling and keep their sales.',
-        'A recorded payment opens everything at once and the queues on the points of sale drain. The morning digest lists it while locked.',
+        'A recorded payment opens everything at once and starts a fresh period from that day (pay as you go — the locked time is not charged; its unpaid invoice is closed). The morning digest lists it while locked.',
         record,
+      ].join('\n'),
+    };
+  }
+  if (f.milestone === 'not_interested') {
+    const n = f.writtenOff ?? [];
+    return {
+      subject: subjectSafe(`[ZapTill billing] ${f.businessName} — Not interested (unpaid 3 months)`),
+      text: [
+        `${f.businessName} has not paid since ${planDate(f.dueAt)} — 3 months. It is now marked "Not interested" (since ${planDate(f.notInterestedAt)}).`,
+        n.length ? `Written off: ${n.join(', ')}.` : 'No open cloud invoice to write off.',
+        'No more invoices go out; the cloud stays locked (web paused, sync refused, no POS joins). The points of sale keep selling.',
+        'If the client pays later, the payment starts a fresh period from that day (pay as you go — no arrears): admin portal › client › Plan & billing › Record payment.',
       ].join('\n'),
     };
   }

@@ -581,13 +581,15 @@ router.post('/clients', requireAdmin, async (req, res) => {
   }
 });
 
-const BILLING_FILTERS = new Set(['due', 'unpaid', 'locked', 'no_expiry', 'expiring', 'lapsed']);
-/** A584: the client list's billing filter. */
+const BILLING_FILTERS = new Set(['due', 'unpaid', 'locked', 'no_expiry', 'expiring', 'lapsed', 'not_interested', 'off']);
+/** A584: the client list's billing filter. A587: "Not interested" and "Web access off" have their own (not under Locked). */
 export function billingFilterMatch(filter: string, s: CloudStanding): boolean {
-  const locked = s.syncRefused || s.webLocked;
-  if (filter === 'due' || filter === 'expiring') return !locked && s.state === 'active' && s.daysLeft !== null && s.daysLeft <= 14;
+  const locked = s.state === 'locked' || s.state === 'ended';
+  if (filter === 'due' || filter === 'expiring') return !s.syncRefused && s.state === 'active' && s.daysLeft !== null && s.daysLeft <= 14;
   if (filter === 'unpaid') return s.state === 'unpaid';
   if (filter === 'locked') return locked;
+  if (filter === 'not_interested') return s.state === 'not_interested';
+  if (filter === 'off') return s.state === 'off';
   if (filter === 'lapsed') return s.state === 'unpaid' || locked;
   if (filter === 'no_expiry') return s.state === 'no_expiry' || s.state === 'no_date';
   return true;
@@ -1199,6 +1201,10 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   // Web access is turned ON by recording a payment or a super admin's complimentary paid-until (Plan & billing › Cloud
   // plan). Switching it back on is only allowed for a client whose paid-until is still ahead (it was switched off by
   // mistake) — never a way round the plan, never for a trial (Record payment converts it).
+  // A587 (owner, 2026-10-24: "Should Disable switch a client off at once? — yes"): "Disable web access" is a HARD off at
+  // once whatever the paid-until (lib/cloudPlan.ts cloudStanding 'off': web paused, sync refused, no POS joins), audited;
+  // "Enable" restores it only while the paid-until (a payment's or a complimentary date) is ahead — else 409 and the
+  // portal points at Record payment.
   if (key === 'web_hosting' && enabled) {
     const f = (await readCloudFacts([String(id)])).get(String(id));
     const ahead = !!f?.expiresAt && Date.parse(f.expiresAt) > Date.now();

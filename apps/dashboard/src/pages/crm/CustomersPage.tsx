@@ -5,6 +5,7 @@ import { money, num, dateShort } from '../../lib/format';
 import { usePermissions } from '../../context/PermissionsContext';
 import CreditLimitEditor from '../../components/CreditLimitEditor';   // A567
 import CreditHistoryPanel from '../../components/CreditHistoryPanel';   // A585
+import { useSetsLimits } from '../../hooks/useSetsLimits';   // A587
 import { limitFromInput, limitOnCreate, limitRequest } from '../../lib/creditLimit';   // A567
 
 // ── Types ─────────────────────────────────────────────────────
@@ -502,7 +503,7 @@ export default function CustomersPage({ currency }: Props) {
   const [creating, setCreating]     = useState(false);
   const [createError, setCreateError] = useState('');
   // A567: a credit limit on New Customer — only for someone who may approve one (customers.credit, as the cloud asks).
-  const mayCredit = usePermissions().isOwner;   // A585: only the owner sets a credit limit (New Customer's box too)
+  const mayCredit = useSetsLimits().setsLimits;   // A585: the owner (New Customer's box too); A587: a partner at one of their branches
   const [createLimit, setCreateLimit] = useState('');
   const [createNotice, setCreateNotice] = useState('');
   const more = useRowMore();

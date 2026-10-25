@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     help: () => ipcRenderer.invoke('pos:help'),                     // 0.6.35 (A384)
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
+    forecourt:    ()                  => ipcRenderer.invoke('pos:forecourt'),   // A588: litres today, last sales, tank levels
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
     paymentMethodsEnabled: ()         => ipcRenderer.invoke('pos:paymentMethodsEnabled'),   // A429
     offers: ()                        => ipcRenderer.invoke('pos:offers'),   // A445

@@ -157,6 +157,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:getTables':      NO_PAYLOAD,
   'pos:paymentMethods': NO_PAYLOAD,
   'pos:getPumps':       NO_PAYLOAD,
+  'pos:forecourt':      NO_PAYLOAD,   // A588
   'pos:init':           NO_PAYLOAD,
   'pos:getVariants':    { kind: 'string' },
   'pos:getModifiers':   { kind: 'string' },

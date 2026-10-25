@@ -26,6 +26,10 @@ export interface Pump {
   name: string;
   sort_order: number;
   status: 'idle' | 'dispensing' | 'inactive';
+  fuel_product_id?: string | null;   // A588: the grade it pours
+  /** A588: the tank it draws from, when linked (/api/pumps joins it) — its level for the pump's gauge. */
+  fuel_tanks?: { id: string; name?: string; current_level: number | string; capacity_litres: number | string; reorder_level?: number | string | null }
+    | { id: string; name?: string; current_level: number | string; capacity_litres: number | string; reorder_level?: number | string | null }[] | null;
 }
 
 export interface ParkingSession {

@@ -92,7 +92,8 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   // catalogue key now, so there are no sub-tabs; its rail's active tab still takes the theme.
   // A537: − 4 — the category row is gone (CashierScreen's active tab, MinimartPOS's catBtnActive fill, border and text);
   // the category panel that replaced it (cashier/CategoryPanel.tsx) takes the theme through --act-strong.
-  ok(`89 inline uses take the theme (found ${themedUses})`, themedUses === 89);
+  // A588: + 1 — the fuel entry's "Full tank" chip, chosen (its border).
+  ok(`90 inline uses take the theme (found ${themedUses})`, themedUses === 90);
   ok('A537: the category panel takes the theme (--act-strong)',
     /const ACT = 'rgb\(var\(--act-strong, 15 118 110\)\)';/.test(fs.readFileSync(path.join(posDir, 'cashier/CategoryPanel.tsx'), 'utf8')));
   const cs = fs.readFileSync(path.join(posDir, 'CashierScreen.tsx'), 'utf8');

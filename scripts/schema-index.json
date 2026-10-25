@@ -293,7 +293,8 @@
     "notes": "\"text\"",
     "updated_by": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "updated_at": "\"timestamp with time zone\" NOT NULL"
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "billing_from": "\"timestamp with time zone\""
   },
   "combo_items": {
     "id": "\"uuid\" NOT NULL",

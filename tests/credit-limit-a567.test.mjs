@@ -257,7 +257,7 @@ try {
   });
   await ok('the screens: "+ Give credit" on Credit Accounts, a Credit limit on the profile and on New Customer — A585: the owner only', () => {
     const page = read('apps/dashboard/src/pages/customers/CreditAccountsPage.tsx');
-    assert.match(page, /const setsLimits = perms\.isOwner;/);
+    assert.match(page, /const \{ setsLimits, line: limitLine \} = useSetsLimits\(\);/);
     assert.match(page, /\{setsLimits && \(\s*<button onClick=\{\(\) => \{ setGiving\(true\); setMsg\(null\); \}\} data-testid="give-credit"/);
     assert.match(page, /<GiveCreditPicker currency=\{currency\}/);
     assert.match(page, /void loadList\(\);/);
@@ -265,13 +265,13 @@ try {
     assert.match(picker, /api\.get<Candidate\[\]>\(candidatesPath\(search\)\)/);
     assert.match(picker, /const req = limitRequest\(picked\.id, r\.value\);\s*await api\.patch\(req\.path, req\.body\);/);
     const editor = read('apps/dashboard/src/components/CreditLimitEditor.tsx');
-    assert.match(editor, /const mayCredit = usePermissions\(\)\.isOwner;/);
+    assert.match(editor, /const \{ setsLimits: mayCredit, line \} = useSetsLimits\(\);/);   // A587: the owner, or a partner at one of their branches
     assert.match(editor, /\{mayCredit \? \(/);
     const crm = read('apps/dashboard/src/pages/crm/CustomersPage.tsx');
     assert.match(crm, /<CreditLimitEditor customerId=\{customer\.id\} currency=\{currency\} \/>/);
     assert.match(crm, /\{mayCredit && \(\s*<div>\s*<label className="block text-xs text-gray-500 mb-1">Credit limit<\/label>/);
     assert.match(crm, /const limit = limitOnCreate\(createLimit, mayCredit\);/);
-    assert.match(crm, /const mayCredit = usePermissions\(\)\.isOwner;/);
+    assert.match(crm, /const mayCredit = useSetsLimits\(\)\.setsLimits;/);   // A587
   });
 } finally {
   server.close();

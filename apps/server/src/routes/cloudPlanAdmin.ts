@@ -16,6 +16,14 @@
  *        period); else today (locked, first payment, a trial). Web access on; a trial converted; the period's pending
  *        invoice marked paid (else a paid invoice raised); a short receipt to the owner; audited ('cloud_plan.payment').
  *        Everything opens at once. Super admin (a money write).
+ *        A587 (owner, 2026-10-24: "it's pay as you go, not pay for missed months, since they won't be using the system at
+ *        that time"): a LOCKED (or "Not interested") client starts a fresh period from the payment day, and the open cloud
+ *        invoice(s) of the locked time are closed — written off, not charged (audited in 'cloud_plan.payment'). Within the
+ *        7 unpaid days the payment continues from the due date and pays that invoice (A584). A client switched off pays
+ *        like any other (and is switched on).
+ *   POST /api/admin/clients/:businessId/cloud-plan/payments/preview — { period, paid_until? }: A587 — what that payment
+ *        would cover (no write): the new period, the invoice it pays, or the invoices it closes unpaid. The Record payment
+ *        form shows it ("Starts a new period: 24 Oct – 24 Nov. INV-… (not used while paused) is closed, not charged."). Any admin.
  *   POST /api/admin/clients/:businessId/cloud-plan/complimentary — { paid_until, reason }: A584 — a manual paid-until for
  *        a special case (no payment, no invoice): web access on, the client put on the plan, a trial converted; the reason
  *        required; audited ('cloud_plan.complimentary'). Super admin.
@@ -32,7 +40,8 @@ import { sendEmailChecked } from '../lib/mailer';
 import { CLOUD_TRIAL_KEY, readTrial } from '../lib/cloudTrial';
 import {
   CLOUD_MONTHLY_KES, PERIOD_LABEL, PLAN_PERIODS, PAYMENT_METHODS, isPeriod, defaultAmount, nextPaidUntil, cloudStanding,
-  readCloudFacts, forgetStanding, nextInvoiceNumber, insertCloudInvoice, standingView, type PlanPeriod, type CloudPlanRow,
+  readCloudFacts, forgetStanding, nextInvoiceNumber, insertCloudInvoice, standingView, openCloudInvoices, paymentCovers,
+  writeOffCloudInvoices, type PlanPeriod, type CloudPlanRow, type CloudFactsRow, type PaymentCover, type CloudStanding,
 } from '../lib/cloudPlan';
 import { receiptEmailHtml } from '../lib/cloudPlanEmail';
 import { ownerEmailOf } from '../jobs/cloudPlanReminders';
@@ -78,9 +87,11 @@ async function planView(businessId: string) {
     supabase.from('cloud_plan_reminders').select('milestone, paid_until, sent_at, owner_sent, admin_sent, error').eq('business_id', businessId).order('sent_at', { ascending: false }).limit(20),
   ]);
   const s = facts ? cloudStanding(facts, now) : null;
+  const open = facts ? await openCloudInvoices(businessId) : [];
   return {
     plan: facts?.plan ?? null,
     standing: s ? standingView(s) : null,
+    open_invoices: open,   // A587: what a payment offsets, oldest first
     payments: payments.data ?? [],
     reminders: reminders.data ?? [],
     defaults: {
@@ -109,6 +120,42 @@ async function convertTrial(businessId: string, now: number): Promise<boolean> {
   } catch (e) { console.error('[cloud-plan] trial not marked converted:', (e as Error)?.message); }
   return false;
 }
+
+type WorkedOut = { ok: true; period: PlanPeriod; standing: CloudStanding; from: string; until: string; cover: PaymentCover } | { ok: false; status: number; body: { error: string; code: string } };
+
+/**
+ * A587: what a payment would buy — the period, where the paid time starts (early: the current paid-until; unpaid or
+ * LOCKED: the original due date — offset, no free gap; "Not interested": today, afresh) and the outstanding invoices it
+ * settles. A client switched off is read as if on (it pays like any other). Shared by Record payment and its preview.
+ */
+async function workOut(clientId: string, facts: CloudFactsRow, b: any, now: number): Promise<WorkedOut> {
+  const plan = facts.plan;
+  const period: PlanPeriod | null = isPeriod(b.period) ? b.period : plan?.period ?? null;
+  if (!period) return { ok: false, status: 400, body: { error: 'Choose the period this payment covers (or set the plan first).', code: 'BAD_PERIOD' } };
+  const standing = cloudStanding({ ...facts, webHosting: facts.webHosting === false ? true : facts.webHosting }, now);
+  // A587 (pay as you go): locked or "Not interested" — a fresh period from today, the locked time not charged.
+  const fresh = standing.state === 'locked' || standing.state === 'not_interested';
+  // A584: within the 7 unpaid days (it still had access) the payment covers the invoiced period, from its due date.
+  const continueFrom = standing.state === 'unpaid' ? standing.dueAt : null;
+  const ext = nextPaidUntil({ period, now, paidUntil: fresh ? null : facts.expiresAt, continueFrom, customUntil: isoOrNull(b.paid_until) ?? plan?.custom_until ?? null });
+  if (ext.ok === false) return { ok: false, status: 400, body: { error: ext.error, code: ext.code } };
+  const outstanding = await openCloudInvoices(clientId);
+  return { ok: true, period, standing, from: ext.from, until: ext.until, cover: paymentCovers({ from: ext.from, until: ext.until, outstanding, fresh }) };
+}
+
+const coverView = (w: Extract<WorkedOut, { ok: true }>) => ({
+  period: w.period, from: w.from, until: w.until, state: w.standing.state, fresh: w.cover.fresh,
+  settles: w.cover.settles, closes: w.cover.closes, not_interested_at: w.standing.notInterestedAt,
+});
+
+router.post('/:businessId/cloud-plan/payments/preview', requireAdmin, async (req, res) => {
+  const client = await clientOf(req, res); if (!client) return;
+  const facts = (await readCloudFacts([client.id])).get(client.id);
+  if (!facts) { res.status(404).json({ error: 'No such client' }); return; }
+  const w = await workOut(client.id, facts, req.body ?? {}, Date.now());
+  if (w.ok === false) { res.status(w.status).json(w.body); return; }
+  res.json(coverView(w));
+});
 
 router.get('/:businessId/cloud-plan', requireAdmin, async (req, res) => {
   const client = await clientOf(req, res); if (!client) return;
@@ -145,8 +192,7 @@ router.post('/:businessId/cloud-plan/payments', requireAdmin, requireSuperAdmin,
   const facts = (await readCloudFacts([client.id])).get(client.id);
   if (!facts) { res.status(404).json({ error: 'No such client' }); return; }
   const plan = facts.plan;
-  const period: PlanPeriod | null = isPeriod(b.period) ? b.period : plan?.period ?? null;
-  if (!period) { res.status(400).json({ error: 'Choose the period this payment covers (or set the plan first).', code: 'BAD_PERIOD' }); return; }
+  if (!isPeriod(b.period) && !plan?.period) { res.status(400).json({ error: 'Choose the period this payment covers (or set the plan first).', code: 'BAD_PERIOD' }); return; }
   const amount = money(b.amount);
   if (amount === null || amount <= 0 || amount > AMOUNT_MAX) { res.status(400).json({ error: 'Type the amount the client paid (KES).', code: 'BAD_AMOUNT' }); return; }
   const method = (PAYMENT_METHODS as readonly string[]).includes(b.method) ? b.method as string : 'mpesa';
@@ -163,11 +209,12 @@ router.post('/:businessId/cloud-plan/payments', requireAdmin, requireSuperAdmin,
   if (Date.parse(paidAt) > now + 60_000) { res.status(400).json({ error: 'The payment date cannot be in the future.', code: 'BAD_DATE' }); return; }
 
   const before = facts.expiresAt;
-  // A584: within the 7 unpaid days the payment covers the period that was invoiced (from its due date).
-  const standing = cloudStanding(facts, now);
-  const continueFrom = !standing.trial && standing.state === 'unpaid' ? standing.dueAt : null;
-  const ext = nextPaidUntil({ period, now, paidUntil: before, continueFrom, customUntil: isoOrNull(b.paid_until) ?? plan?.custom_until ?? null });
-  if (ext.ok === false) { res.status(400).json({ error: ext.error, code: ext.code }); return; }
+  // A584: within the 7 unpaid days the payment covers the invoiced period (from its due date). A587: a locked or "Not
+  // interested" client starts afresh from today (pay as you go).
+  const w = await workOut(client.id, facts, b, now);
+  if (w.ok === false) { res.status(w.status).json(w.body); return; }
+  const { period, standing, cover } = w;
+  const ext = { from: w.from, until: w.until };
 
   // 1. the payment (an M-Pesa code is unique in the table too — two admins at once: one wins).
   const ins = await supabase.from('cloud_payments').insert({
@@ -202,30 +249,40 @@ router.post('/:businessId/cloud-plan/payments', requireAdmin, requireSuperAdmin,
   await webAccessOn(req, client.id, `Cloud plan — paid until ${ext.until.slice(0, 10)} (A581)`);
   const trialConverted = await convertTrial(client.id, now);
   // A584: the period's invoice (raised on its due day, pending) is marked paid; else a paid one is raised.
+  // A587 (pay as you go): a fresh start closes the locked time's open invoices — written off, not charged.
   let invoiceNumber: string | null = null;
+  const settled: string[] = [];
+  let closed: string[] = [];
   try {
-    const { data: open } = await supabase.from('invoices').select('id, invoice_number')
-      .eq('business_id', client.id).eq('period_start', ext.from).eq('status', 'pending').limit(1).maybeSingle();
     let invoiceId: string | null = null;
-    if (open) {
+    const inv0 = cover.settles[0];
+    if (inv0) {
       const u = await supabase.from('invoices').update({
         status: 'paid', amount, payment_method: method, payment_reference: reference, paid_at: paidAt, period_end: ext.until,
-      }).eq('id', (open as { id: string }).id).select('id');
-      if (!u.error) { invoiceId = (open as { id: string }).id; invoiceNumber = (open as { invoice_number: string }).invoice_number; }
-    } else {
+      }).eq('id', inv0.id).eq('business_id', client.id).eq('status', 'pending').select('id');
+      if (!u.error && (u.data ?? []).length) { settled.push(inv0.invoice_number); invoiceId = inv0.id; }
+    }
+    if (!invoiceId) {
       const number = await nextInvoiceNumber();
       const inv = await insertCloudInvoice({
         business_id: client.id, invoice_number: number, amount, currency: 'KES', status: 'paid',
         payment_method: method, payment_reference: reference, period_start: ext.from, period_end: ext.until, paid_at: paidAt,
       });
-      if (!inv.error && inv.data) { invoiceId = inv.data.id; invoiceNumber = inv.data.invoice_number ?? number; }
+      if (!inv.error && inv.data) { invoiceId = inv.data.id; settled.push(inv.data.invoice_number ?? number); }
     }
+    if (cover.closes.length) {
+      const wo = await writeOffCloudInvoices(client.id, cover.closes.map((i) => i.id));
+      if (wo.error) console.error('[cloud-plan] unpaid invoices of the locked time not closed:', wo.error);
+      closed = wo.numbers;
+    }
+    invoiceNumber = settled[0] ?? null;
     if (invoiceId) await supabase.from('cloud_payments').update({ invoice_id: invoiceId }).eq('id', payment.id);
   } catch { invoiceNumber = null; }
 
   forgetStanding(client.id);
   await audit(req, client, 'cloud_plan.payment', { paid_until: before, state: standing.state },
-    { amount, currency: 'KES', period, method, reference, paid_at: paidAt, paid_until: ext.until, from: ext.from, invoice_number: invoiceNumber, trial_converted: trialConverted },
+    { amount, currency: 'KES', period, method, reference, paid_at: paidAt, paid_until: ext.until, from: ext.from, invoice_number: invoiceNumber, trial_converted: trialConverted,
+      fresh_start: cover.fresh, not_charged: closed, ...(closed.length ? { not_charged_reason: 'Not charged — access was paused (pay as you go, A587)' } : {}) },
     text(b.note, 500));
 
   // A584: a short receipt to the owner (best effort — never fails the payment).
@@ -239,7 +296,8 @@ router.post('/:businessId/cloud-plan/payments', requireAdmin, requireSuperAdmin,
     }
   } catch (e) { console.warn('[cloud-plan] receipt not sent:', (e as Error)?.message); }
 
-  res.status(201).json({ payment: { ...payment, paid_until_after: ext.until }, trial_converted: trialConverted, invoice_number: invoiceNumber, receipt_sent: receiptSent, ...(await planView(client.id)) });
+  res.status(201).json({ payment: { ...payment, paid_until_after: ext.until }, trial_converted: trialConverted, invoice_number: invoiceNumber, not_charged: closed,
+    covers: coverView(w), receipt_sent: receiptSent, ...(await planView(client.id)) });
 });
 
 router.post('/:businessId/cloud-plan/complimentary', requireAdmin, requireSuperAdmin, async (req, res) => {

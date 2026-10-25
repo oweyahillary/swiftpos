@@ -8,7 +8,8 @@ import type { ModeFlags } from '../lib/posMode';
 import { listHeldOrders, holdOrder, recallHeldOrder, deleteHeldOrder, importLegacyHeldOrders } from '../lib/heldOrders';
 import type { HeldOrder } from '../lib/heldOrders';
 import TablesView from '../components/TablesView';
-import PumpsView from '../components/PumpsView';
+// A588: the forecourt (pumps, gauges, the fuel keypad) loads when a petrol station opens it — not in every POS's start.
+const PumpsView = lazy(() => import('../components/PumpsView'));
 import type { DiningTable, Pump } from '../lib/posApi';
 import { buildTicketLines, kitchenOnly, linesForStation, routingIsConfigured, ROUTING_UNCONFIGURED } from '../lib/ticketLines';
 import type { StationRouting } from '../lib/ticketLines';
@@ -46,7 +47,8 @@ import { useGridWindow } from '../hooks/useGridWindow';   // A472
 import { reportBusy } from '../lib/activity';   // A508
 import CategoryPanel, { useCategoryPanel, useNarrowWindow, PanelToggle, CategoryChip, MenuBar, LaterButton } from '../components/CategoryPanel';   // A537; A566; A580
 import { ALL_MENUS, categoriesForMenu, gridMenuScope, inMenuScope, menuBarTabs, menuScope, menuTabs, resolveCategory } from '../../shared/menuFilter';   // A537; A566
-import { FindInBranches } from '../components/BranchStockTab';   // A566: A564's lookup, from the selling screen
+// A566: A564's lookup, from the selling screen. A588: loaded when opened (rarely used; A517's budget).
+const FindInBranches = lazy(() => import('../components/BranchStockTab').then((m) => ({ default: m.FindInBranches })));
 import { mayCheckOtherBranches, outHereMatches, outHereNote } from '../lib/branchCheck';   // A566
 import { useOnlineLicence } from '../lib/onlineLicence';   // A566 (A460)
 import { businessTerms } from '../../shared/businessTerms';   // A573: Menus / Departments / Groups
@@ -141,6 +143,24 @@ function useLongPress(on: (() => void) | null) {
 // badge, and a tap says so instead of adding it (main refuses it at Charge too).
 // A580: `later` — the item's menu is closed and shown only because "Later" is on: greyed with a "Later" badge; a tap is
 // refused in A578's words (handleTap's first check), nothing added.
+/** A588: a petrol station's two counters, always at the top — the pumps (fuel) and the forecourt shop (its items). */
+function ForecourtTabs({ view, onView }: { view: string; onView: (v: 'pumps' | 'products') => void }) {
+  const tab = (v: 'pumps' | 'products', label: string, icon: string) => (
+    <button type="button" role="tab" aria-selected={view === v} data-testid={`forecourt-tab-${v === 'pumps' ? 'pumps' : 'shop'}`}
+      onClick={() => onView(v)}
+      className={`press flex-1 min-h-[44px] rounded-lg text-sm font-semibold transition-colors ${view === v
+        ? 'bg-action-500 text-gray-950' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`}>
+      <span aria-hidden className="mr-1.5">{icon}</span>{label}
+    </button>
+  );
+  return (
+    <div role="tablist" aria-label="Forecourt" data-testid="forecourt-tabs" className="flex gap-1 p-1 mx-4 mt-3 rounded-xl bg-gray-900 border border-gray-800">
+      {tab('pumps', 'Pumps', '⛽')}
+      {tab('products', 'Shop', '🛒')}
+    </div>
+  );
+}
+
 const ProductTile = memo(function ProductTile({ product, cartCount, currency, onTap, setInfoProduct, soldOut = false, later = false, onCheckBranches }: {
   product: any; cartCount: number; currency: string; onTap: (product: any) => void; setInfoProduct: (product: any) => void; soldOut?: boolean; later?: boolean;
   /** A566: long press / right-click → "Check other branches" (absent = not offered). */
@@ -786,6 +806,9 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     }]);
   };
 
+  // A588: the pumps with a fuel line on this sale (their cards say "In use").
+  const pumpsOnSale = useMemo(() => new Set(cart.filter((i) => i.isFuel && i.pumpId).map((i) => String(i.pumpId))), [cart]);
+
   const handleTap = (product: any) => {
     if (refuseOutOfHours(product)) return;   // A578
     if (refuseFrozen(product)) return;
@@ -1382,12 +1405,10 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
     const matchCat    = activeCategory === 'all' || p.category_id === activeCategory;
     const matchMenu   = inMenuScope(p, gridMenuScope(menuFilterScope, search));   // A537; A566: a search looks through every menu
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    // Petrol: only show fuel grades on the product grid (shop items are still
-    // reachable via PumpsView → "Shop items →" which clears the fuel filter).
-    // All other verticals: exclude fuel-flagged products.
-    const matchFuel   = flags.isPetrol
-      ? (p as any).is_fuel === true
-      : !(p as any).is_fuel;
+    // A588: fuel is never a tile — in every mode. A petrol station sells its grades from the pumps (PumpsView) and its
+    // forecourt shop (oil, water, snacks, car care…) from this grid. Before, a petrol POS's grid listed ONLY the fuel
+    // grades, so the shop's items could only be scanned.
+    const matchFuel   = !(p as any).is_fuel;
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay    = onGrid((p as any).show_days, search.trim() !== '');
     // A563: "Hide when out of stock" — a tracked item this branch is known to be out of is off the grid and out of search.
@@ -1791,15 +1812,21 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           </div>
         ) : flags.isPetrol && view === 'pumps' ? (
           <div className="flex-1 flex flex-col overflow-hidden border-r border-gray-800">
-            <PumpsView
-              pumps={pumps}
-              currency={currency}
-              onAddFuel={addFuelLine}
-              onShowProducts={() => setView('products')}
-            />
+            <ForecourtTabs view={view} onView={setView} />
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading the pumps…</div>}>
+              <PumpsView
+                pumps={pumps}
+                currency={currency}
+                onAddFuel={addFuelLine}
+                products={products}
+                onSale={pumpsOnSale}
+                refreshKey={String(completedOrder?.id ?? completedOrder?.order_number ?? '')}
+              />
+            </Suspense>
           </div>
         ) : (
         <div className="flex-1 flex flex-col overflow-hidden border-r border-gray-800">
+          {flags.isPetrol && <ForecourtTabs view={view} onView={setView} />}
           <div className="px-4 pt-4 pb-3 border-b border-gray-800 flex gap-2">
             {flags.isRestaurant && (
               <button
@@ -1808,15 +1835,6 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                 title="Table map (holds the current order)"
               >
                 ← Tables
-              </button>
-            )}
-            {flags.isPetrol && (
-              <button
-                onClick={() => setView('pumps')}
-                className="flex-shrink-0 bg-gray-800 border border-gray-700 hover:border-gray-600 text-gray-300 text-sm rounded-lg px-3 transition-colors"
-                title="Back to the pump grid"
-              >
-                ← Pumps
               </button>
             )}
             {/* A537: ☰ opens the category panel; the chosen category shows by the search ("Burgers ✕"). */}
@@ -2318,7 +2336,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
               <button onClick={() => setBranchCheck(null)} aria-label="Close" className="min-w-[40px] min-h-[40px] text-gray-300 hover:text-white text-lg">✕</button>
             </div>
             <div className="px-5 py-4 max-h-[60vh] overflow-y-auto">
-              <FindInBranches key={branchCheck} initial={branchCheck} autoSearch />
+              <Suspense fallback={<p className="text-gray-400 text-sm">Loading…</p>}><FindInBranches key={branchCheck} initial={branchCheck} autoSearch /></Suspense>
               <p className="text-gray-400 text-xs mt-3">To ask a branch to send some here, a manager uses Manager › Stock › Other branches.</p>
             </div>
           </div>

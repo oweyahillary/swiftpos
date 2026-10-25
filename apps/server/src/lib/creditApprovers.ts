@@ -14,6 +14,12 @@
  *              branch's list (or the owner) — the seller themselves when they are on it, else that person's PIN. The
  *              limit is enforced as before: no approver sells past what the owner allowed.
  *
+ * A587 (owner, 2026-10-24): limits are also set by the built-in GENERAL MANAGER role (the same rule as the built-in
+ * Manager) and by a PARTNER (A550 / A582) acting at ONE of their branches on the dashboard ("yes for their selected
+ * branch" — never in "All my branches"); customers are business-wide, so the branch is recorded in the audit and the
+ * Credit history. With approval ON, confirming or disputing a POS's waiting credit sale (A545) is the chosen approvers'
+ * of that branch (and the owner's) only — mayDecideCreditSale.
+ *
  * The till holds the rule for its branch (GET /api/pos/credit-customers carries it; kept in maintenance_state) so it
  * works offline. Pure functions first — the tests run them as they are.
  */
@@ -152,17 +158,22 @@ export const ownerOnlyGate = (body: { error: string; code: string } = OWNER_SETS
   res.status(403).json({ ...body });
 };
 
+/** The built-in roles that set credit limits (A585: Manager; A587: General Manager too). */
+export const LIMIT_SETTER_ROLES = ['manager', 'general manager'] as const;
+const roleKey = (name: string | null | undefined): string => String(name ?? '').trim().toLowerCase().replace(/[\s_]+/g, ' ');
+
 /**
  * A585 (owner change, 2026-10-23: "add the credit rights to the manager"): the BUILT-IN Manager role — the one ZapTill
- * made for the business (roles.is_default, lib/defaultRolePermissions.ts), still named Manager. A custom role merely
- * named "Manager" (is_default false) does not count; nor does General Manager, Finance Manager or Supervisor (owner's
- * default: Manager only). A built-in role renamed away from "Manager" stops counting.
+ * made for the business (roles.is_default, lib/defaultRolePermissions.ts), still named Manager. A587 (owner, 2026-10-24:
+ * "General Managers may set credit limits"): the built-in General Manager role too, by the same rule. A custom role
+ * merely named "Manager" or "General Manager" (is_default false) does not count; nor does Finance Manager or Supervisor.
+ * A built-in role renamed away from those names stops counting.
  */
 export function isBuiltInManagerRole(role: { name?: string | null; is_default?: boolean | null } | null | undefined): boolean {
-  return !!role && role.is_default === true && String(role.name ?? '').trim().toLowerCase() === 'manager';
+  return !!role && role.is_default === true && (LIMIT_SETTER_ROLES as readonly string[]).includes(roleKey(role.name));
 }
 
-/** The person signed in is on the built-in Manager role (read from their users row, not the token) — never a till or a partner. */
+/** The person signed in is on the built-in Manager / General Manager role (read from their users row, not the token) — never a till or a partner. */
 export async function isBuiltInManager(req: any): Promise<boolean> {
   if (req?.isTill === true || req?.webPartner === true || !req?.userId || !req?.businessId) return false;
   try {
@@ -174,13 +185,66 @@ export async function isBuiltInManager(req: any): Promise<boolean> {
   } catch { return false; }
 }
 
-/** May this person give, change or remove a customer's credit limit: the owner, or the built-in Manager role. */
-export async function maySetCreditLimits(req: any): Promise<boolean> {
-  return (await isTheOwner(req)) || (await isBuiltInManager(req));
+export const PICK_ONE_BRANCH = { error: 'Pick one of your branches to set a credit limit (not "All my branches").', code: 'PICK_ONE_BRANCH' } as const;
+
+/**
+ * A587 (owner, 2026-10-24: "Can a co-owner partner set credit limits? — yes for their selected branch"): the partner's
+ * request as the dashboard sends it — 'branch' when acting at ONE of their branches (X-Branch-Id one of theirs; a
+ * partner of every branch: any branch picked), 'set' in "All my branches" (A582), 'none' with no branch picked (a partner
+ * of every branch on "All Branches"), null when this is not a partner. Pure.
+ */
+export function partnerLimitScope(req: { webPartner?: unknown; isTill?: unknown; isOwner?: unknown; branchSet?: unknown; branchId?: unknown;
+  partnerBranches?: unknown; allBranches?: unknown }): 'branch' | 'set' | 'none' | null {
+  if (req.webPartner !== true || req.isTill === true || req.isOwner === true) return null;
+  if (Array.isArray(req.branchSet) && req.branchSet.length) return 'set';
+  const b = typeof req.branchId === 'string' ? req.branchId : '';
+  if (!UUID.test(b)) return 'none';
+  const mine = Array.isArray(req.partnerBranches) ? (req.partnerBranches as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+  return req.allBranches === true || mine.includes(b) ? 'branch' : 'none';
 }
 
-/** Express gate for the limit routes (403 OWNER_SETS_LIMITS: "Only the owner or a manager sets credit limits."). */
+/** A587: a partner at one of their branches, the branch checked to be this business's (an active branch). */
+export async function isPartnerAtOwnBranch(req: any): Promise<boolean> {
+  if (partnerLimitScope(req) !== 'branch' || !req.businessId) return false;
+  try {
+    const { data } = await supabase.from('branches').select('id, status').eq('id', req.branchId).eq('business_id', req.businessId).maybeSingle();
+    const br = data as { id?: string; status?: string | null } | null;
+    return !!br?.id && (!br.status || br.status === 'active');
+  } catch { return false; }
+}
+
+/**
+ * May this person give, change or remove a customer's credit limit: the owner, the built-in Manager or General Manager
+ * role (A585, A587), or a partner acting at one of their branches (A587).
+ */
+export async function maySetCreditLimits(req: any): Promise<boolean> {
+  return (await isTheOwner(req)) || (await isBuiltInManager(req)) || (await isPartnerAtOwnBranch(req));
+}
+
+/**
+ * Express gate for the limit routes (403 OWNER_SETS_LIMITS: "Only the owner or a manager sets credit limits."; a partner
+ * in "All my branches" or with no branch picked: 403 PICK_ONE_BRANCH).
+ */
 export const limitSetterGate = () => async (req: any, res: any, next: any) => {
   if (await maySetCreditLimits(req)) { next(); return; }
-  res.status(403).json({ ...OWNER_SETS_LIMITS });
+  const scope = partnerLimitScope(req);
+  res.status(403).json(scope === 'set' || scope === 'none' ? { ...PICK_ONE_BRANCH } : { ...OWNER_SETS_LIMITS });
 };
+
+export const CHOSEN_APPROVERS_DECIDE = {
+  error: 'Only the people the owner chose to approve credit sales at this branch (or the owner) confirm or dispute them.',
+  code: 'NOT_A_CHOSEN_APPROVER',
+} as const;
+
+/**
+ * A587 (owner, 2026-10-24: "Is confirming a waiting credit sale limited to the approvers? — yes"): with approval ON, who
+ * may confirm or dispute a POS's waiting sale on account (A545) — the owner, or someone on the sale's branch's list who
+ * still works there (a sale with no branch: the owner only). OFF: null — the A545 rule (customers.credit at the branch)
+ * decides, as before. Pure.
+ */
+export function mayDecideCreditSale(rule: CreditApprovalRule, branchId: string | null | undefined,
+  person: { id: string; user_branches?: Array<{ branch_id: string | null }> | null } | null | undefined,
+  owner: { ownerId?: string | null; isOwner?: boolean } = {}): boolean | null {
+  if (!rule.on) return null;
+  return onApproverList(rule, branchId, person, owner);
+}

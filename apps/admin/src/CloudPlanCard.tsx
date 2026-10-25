@@ -10,18 +10,23 @@
  * A584: the ONE way to turn web access on — Record payment, or (super admin, a special case) a complimentary paid-until
  * with a reason, audited. The standing reads due / unpaid N days (locks in M) / locked; the notices listed are ZapTill's
  * (the client gets only the invoice and a receipt).
+ * A587 (owner, 2026-10-24: "it's pay as you go, not pay for missed months"): the form says what the payment covers before
+ * it is recorded (POST …/cloud-plan/payments/preview) — a locked client: "Starts a new period: … INV-… (not used while
+ * paused) is closed, not charged."; within the 7 days: "Pays INV-… (…); paid until …" — and lists the unpaid invoices.
  */
 import { useCallback, useEffect, useState } from "react";
 import { C, S } from "./theme";
-import { standingLine, milestoneText, periodDefault, trialDate, type CloudStandingView } from "./cloudPlan";
+import { standingLine, milestoneText, periodDefault, trialDate, coversLine, type CloudStandingView, type CoverView } from "./cloudPlan";
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 interface Plan { period: string; amount: number; currency: string; custom_until: string | null; notes: string | null; updated_by: string | null; updated_at?: string }
 interface Payment { id: string; amount: number; currency: string; period: string; method: string; reference: string | null; paid_at: string;
   paid_until_before: string | null; paid_until_after: string; recorded_by_email: string; recorded_at: string; note: string | null }
 interface Reminder { milestone: string; paid_until: string; sent_at: string; owner_sent: boolean; admin_sent: boolean; error: string | null }
+interface OpenInvoice { id: string; invoice_number: string; period_start: string | null; period_end: string | null; amount: number }
 interface View {
   plan: Plan | null; standing: CloudStandingView | null; payments: Payment[]; reminders: Reminder[];
+  open_invoices?: OpenInvoice[];   // A587: what a payment offsets, oldest first
   defaults: { monthly: number; periods: Array<{ value: string; label: string; amount: number | null }>; methods: string[] };
 }
 
@@ -51,6 +56,8 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
   // A584: complimentary / manual paid-until
   const [compUntil, setCompUntil] = useState("");
   const [compReason, setCompReason] = useState("");
+  // A587: what the payment would cover
+  const [cover, setCover] = useState<CoverView | null>(null);
 
   const adopt = useCallback((v: View) => {
     setView(v);
@@ -66,6 +73,19 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
     req("GET", `/clients/${clientId}/cloud-plan`).then(adopt).catch((e) => setError(e.message));
   }, [clientId, req, adopt]);
   useEffect(() => { load(); }, [load]);
+
+  // A587: ask the cloud what this payment would cover (no write) whenever the period, amount or custom date changes.
+  useEffect(() => {
+    if (!view) return;
+    let live = true;
+    const t = setTimeout(() => {
+      req("POST", `/clients/${clientId}/cloud-plan/payments/preview`, {
+        period: payPeriod,
+        paid_until: payPeriod === "custom" ? (payUntil ? new Date(`${payUntil}T23:59:00+03:00`).toISOString() : null) : null,
+      }).then((c) => { if (live) setCover(c); }).catch(() => { if (live) setCover(null); });
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [view, clientId, req, payPeriod, payUntil]);
 
   async function savePlan() {
     setBusy(true); setError(null); setNotice(null);
@@ -86,7 +106,8 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
       });
       adopt(v);
       setReference(""); setNote(""); setPayUntil("");
-      setNotice(`Payment recorded — paid until ${trialDate(v.payment?.paid_until_after)}${v.trial_converted ? "; the cloud trial is converted" : ""}${v.invoice_number ? `; invoice ${v.invoice_number} (paid)` : ""}${v.receipt_sent ? "; receipt emailed" : ""}. Web access and sync are open.`);
+      const closed: string[] = Array.isArray(v.not_charged) ? v.not_charged : [];
+      setNotice(`Payment recorded — paid until ${trialDate(v.payment?.paid_until_after)}${v.trial_converted ? "; the cloud trial is converted" : ""}${v.invoice_number ? `; invoice ${v.invoice_number} (paid)` : ""}${closed.length ? `; ${closed.join(", ")} closed, not charged` : ""}${v.receipt_sent ? "; receipt emailed" : ""}. Web access and sync are open.`);
       onChanged?.();
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   }
@@ -139,8 +160,10 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
 
       <div style={{ fontSize: 12, fontWeight: 600, margin: "18px 0 8px" }}>Record payment</div>
       <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
-        {view.standing?.state === "unpaid" && view.standing.due_at
-          ? <>This payment covers the invoiced period, from {trialDate(view.standing.due_at)}. </>
+        {view.standing?.state === "not_interested" || view.standing?.state === "locked"
+          ? <>Pay as you go: a payment starts a fresh period from today; the locked time is not charged (its unpaid invoice is closed). </>
+          : view.standing?.state === "unpaid" && view.standing.due_at
+          ? <>This payment covers the invoiced period, from {trialDate(view.standing.due_at)} (the client still had access). </>
           : <>Paid-until moves on one period from the later of today and {view.standing?.paid_until ? trialDate(view.standing.paid_until) : "today"} — paying early never loses a day. </>}
         Payments are checked by hand for now (M-Pesa Daraja later); a monthly plan needs a payment each month.
       </div>
@@ -157,6 +180,14 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
         {field(method === "mpesa" ? "M-Pesa code" : "Reference", <input data-testid="pay-reference" disabled={!isSuper} style={{ ...S.input, textTransform: reference ? "uppercase" : "none" }} placeholder={method === "mpesa" ? "e.g. SJK4H7Q2LM" : "optional"} value={reference} onChange={(e) => setReference(e.target.value)} />)}
         {field("Paid on", <input type="date" disabled={!isSuper} style={S.input} value={paidAt} max={today()} onChange={(e) => setPaidAt(e.target.value)} />)}
       </div>
+      {(view.open_invoices?.length ?? 0) > 0 && (
+        <div data-testid="open-invoices" style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
+          Unpaid invoices: {view.open_invoices!.map((i) => `${i.invoice_number} (${trialDate(i.period_start)} – ${trialDate(i.period_end)}, ${kes(i.amount)})`).join(" · ")}
+        </div>
+      )}
+      {coversLine(cover) && (
+        <div data-testid="pay-covers" style={{ fontSize: 12, color: "#34e5a0", marginTop: 8, fontWeight: 600 }}>{coversLine(cover)}</div>
+      )}
       <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
         {field("Note (optional)", <input disabled={!isSuper} style={S.input} value={note} onChange={(e) => setNote(e.target.value)} />)}
         {isSuper
@@ -200,7 +231,7 @@ export default function CloudPlanCard({ clientId, clientName, req, isSuper, onCh
           Notices sent: {view.reminders.map((r) => `${milestoneText(r.milestone)} (${trialDate(r.sent_at)}${r.owner_sent ? "" : ", owner not reached"}${r.admin_sent ? "" : ", ZapTill not reached"})`).join(" · ")}
         </div>
       )}
-      <div style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>{clientName}'s points of sale never stop selling. On each due date the client is emailed the invoice (nothing else). Unpaid 7 days after it, everything locks at once — web dashboard paused, sync stopped, no POS joins; a recorded payment opens it again at once.</div>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>{clientName}'s points of sale never stop selling. On each due date the client is emailed the invoice (nothing else). Unpaid 7 days after it, everything locks at once — web dashboard paused, sync stopped, no POS joins; a recorded payment opens it again at once and starts a fresh period that day (the locked time is not charged). Unpaid 3 months, the client is taken as not interested (invoices written off, still locked).</div>
     </div>
   );
 }

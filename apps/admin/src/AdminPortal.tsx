@@ -659,7 +659,7 @@ function ClientsPage({ req, onSelectClient }) {
   const [search, setSearch]   = useState("");
   const [status, setStatus]   = useState("");
   const [type, setType]       = useState("");
-  const [expiry, setExpiry]   = useState("");   // A584: "" | "due" | "unpaid" | "locked" | "no_expiry"
+  const [expiry, setExpiry]   = useState("");   // A584: "" | "due" | "unpaid" | "locked" | "no_expiry"; A587: "not_interested" | "off"
   const [loading, setLoading] = useState(false);
   // A475 (owner, 2026-10-14: "proceed and build"): every client reachable, a page at a time — the list asked for the first
   // 50 only, so client 51 on could be found only by search. The server pages (limit / offset); the pager drives it.
@@ -714,6 +714,8 @@ function ClientsPage({ req, onSelectClient }) {
           <option value="unpaid">Unpaid</option>
           <option value="locked">Locked</option>
           <option value="no_expiry">No expiry set</option>
+          <option value="not_interested">Not interested</option>
+          <option value="off">Web access off</option>
         </select>
       </div>
 
@@ -929,7 +931,7 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
   async function toggleWebHosting(enable, confirmOverride = null) {
     const confirmMsg = confirmOverride ?? (enable
       ? 'Switch web portal access back on? Only for a client whose paid-until is still ahead (otherwise record the payment on the Cloud plan).'
-      : 'Disable web portal access? The client will be locked out of the dashboard immediately.');
+      : 'Disable web portal access? This switches the client off at once: the web dashboard is paused, the cloud refuses sync from their points of sale and no POS can join. Their points of sale keep selling. (Audited; Enable restores it while the paid-until is ahead.)');
     if (!(await askConfirm(confirmMsg))) return;
 
     try {
@@ -1568,16 +1570,25 @@ function ClientDetailPage({ client, req, apiUrl = "", onBack, isSuper = false })
               "cloud-trial") : settingRow(
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 {hasWebHosting ? <IconGlobe size={18} color="#22c55e" /> : <IconLock size={18} color={C.danger} />}
-                Web portal {hasWebHosting ? "active" : "not enabled"}
+                Web portal {hasWebHosting ? "active" : webHostingFlag && detail?.web_access_expires_at ? "switched off" : "not enabled"}
               </span>,
               hasWebHosting
                 ? "The client can use the cloud dashboard and the web POS."
-                : "Desktop-only. Web access is turned on from the Cloud plan below: Record payment (KES 3,000 a month by default), or a complimentary paid-until for a special case.",
+                : webHostingFlag && detail?.web_access_expires_at
+                  /* A587: "Disable web access" is a hard off at once */
+                  ? "Switched off: the web dashboard is paused, the cloud refuses sync from the client's points of sale and no POS can join (they keep selling). Enable it again while the paid-until is ahead, or record a payment."
+                  : "Desktop-only. Web access is turned on from the Cloud plan below: Record payment (KES 3,000 a month by default), or a complimentary paid-until for a special case.",
               superOnly(hasWebHosting
                 ? <button onClick={() => toggleWebHosting(false)} style={{ ...S.btn, ...S.btnDanger, fontSize: 12 }}>Disable web access</button>
-                /* A584: the KES 10,000 "Enable web access" is retired — it points at Record payment */
-                : <button data-testid="web-access-via-plan" onClick={() => document.querySelector('[data-testid="pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                    style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Record payment</button>),
+                /* A584: the KES 10,000 "Enable web access" is retired — it points at Record payment. A587: a client switched off
+                   while its paid-until is still ahead may be switched back on (the cloud refuses otherwise: WEB_ACCESS_BY_PLAN). */
+                : <>
+                    {webHostingFlag && detail?.web_access_expires_at && Date.parse(detail.web_access_expires_at) > Date.now() && (
+                      <button data-testid="web-access-enable" onClick={() => toggleWebHosting(true)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Enable web access</button>
+                    )}
+                    <button data-testid="web-access-via-plan" onClick={() => document.querySelector('[data-testid="pay-amount"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                      style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Record payment</button>
+                  </>),
               "web-access")}
             {/* A147: the date the renewal ladder is measured against */}
             {settingRow("Web access expiry (the cloud plan's paid-until)",

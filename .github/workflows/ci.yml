@@ -466,6 +466,17 @@ jobs:
           node --no-warnings tests/billing-a584.test.mjs
           node --no-warnings scripts/test-migration-172.mjs
 
+      # A587 — the owner's billing and credit decisions of 2026-10-24: pay as you go (a locked client who pays starts a fresh
+      # period; the locked time's invoices closed, not charged; within the 7 days the period continues); "Not interested"
+      # after 3 months unpaid (invoices written off, ZapTill once, still locked, a fresh start if it pays); a trial invoiced
+      # at its end like a paid client; the bridge keeping an already-locked licence locked; Disable a hard off; General
+      # Managers and partners (at one of their branches) set credit limits; with approval ON only the chosen approvers
+      # confirm or dispute a waiting credit sale. Migration 173 replayed into PGlite. Need the server build.
+      - name: Billing pay as you go, not interested, hard off; credit GM / partner / approvers (A587) and migration 173
+        run: |
+          node --no-warnings tests/billing-credit-a587.test.mjs
+          node --no-warnings scripts/test-migration-173.mjs
+
       # A550: partner login — someone on the staff the owner lets into the web dashboard with a password, never the owner
       # (the real auth / staff routers over HTTP) — and the five built-in roles that came with it. They run in the loop
       # below too; named here so a failure says what broke.
@@ -606,6 +617,13 @@ jobs:
       # "Till number" stays. Runs in the loop too; named here so a failure says what broke.
       - name: POS wording, never "till" (A586)
         run: node --no-warnings tests/pos-wording-a586.test.mjs
+
+      # A588 — the web POS at a petrol station: the grid is the forecourt shop (it listed only the fuel), the grades as
+      # nozzles above it (the open pump's first) → the fuel entry as before; a pump's card names its grade and its tank's
+      # level when linked ("x L left", Low under 20 %), no gauge without one; Full tank and litres to 3 decimals. Runs in
+      # the loop too; named here so a failure says what broke.
+      - name: Web POS petrol - shop items and nozzles (A588)
+        run: node --no-warnings tests/petrol-pos-web-a588.test.mjs
 
       - name: Run offline suites
         run: |
@@ -1514,6 +1532,16 @@ jobs:
         env:
           TZ: UTC
         run: node --no-warnings test/weighed-items-a577.test.mjs
+
+      # A588 — the petrol POS: the Shop grid lists the forecourt shop's items (it listed only the fuel grades — shop items
+      # could only be scanned), fuel only on the pumps; "Pumps | Shop" always at the top; each pump a dispenser (grade
+      # colour, price per litre, state, last sale, litres today); a gauge per grade — the tank's level when the cloud says
+      # (online licence, this branch's tanks, once a minute) else this POS's litres today against yesterday, never made up;
+      # the fuel keypad (amount or litres, 500 / 1,000 / 2,000 / Full tank); a mixed fuel + shop sale stored as always; the
+      # forecourt a lazy chunk (main chunk ≤ 445 kB).
+      - name: Desktop petrol POS - shop items, pumps and gauges (A588)
+        working-directory: apps/desktop
+        run: node --no-warnings test/petrol-pos-a588.test.mjs
 
       # A541 — tills and branch servers stuck on an old version since the A513 autostart install their update: a start at
       # Windows sign-in installs an approved, newer, downloaded update before serving (the updater task, else the

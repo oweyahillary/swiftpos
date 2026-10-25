@@ -3,8 +3,9 @@
  *
  * Owner: "they should get a 1 month trial plan for cloud if they have subscribed on the desktop platform". The trial
  * (30 days from the first desktop licence; apps/server/src/lib/cloudTrial.ts) ends on its own; the owner hears of it in
- * its last week — "Your cloud trial ends on {date} — contact ZapTill to keep the dashboard" — and, in the week of reports
- * only after it, that it has ended. The owner only (GET /api/business/cloud-trial answers { trial: null } to anyone
+ * its last week — "Your cloud trial ends on {date} — contact ZapTill to keep the dashboard". A587 (owner, 2026-10-24):
+ * after its end the trial is invoiced like a paid client (the 7 days, then locked) — no line after the end (the cloud
+ * no longer answers phase 'reports_only'; that branch stays for an older cloud). The owner only (GET /api/business/cloud-trial answers { trial: null } to anyone
  * else); never a cashier, never a till.
  *
  * Pure, so the test runs it.

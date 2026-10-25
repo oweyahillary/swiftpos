@@ -19,13 +19,15 @@
 // those accounts behave exactly as before ("No expiry set" in the admin portal — A584). A dated business that the billing
 // job has not yet bridged onto a plan (A584) is never locked meanwhile.
 //
-// A569 — a CLOUD TRIAL (lib/cloudTrial.ts: 30 days from the first desktop licence, no invoice) has its own, shorter
-// ladder: active until the trial's end, then reports_only for 7 days, then locked with "Your cloud trial has ended"
-// (CLOUD_TRIAL_ENDED). "Disable web access" during a trial ends it at once (none). A trial converted by a recorded
-// payment (A581) is an ordinary paid term.
+// A569 — a CLOUD TRIAL (lib/cloudTrial.ts: 30 days from the first desktop licence, no invoice). A587 (owner, 2026-10-24:
+// "they get an invoice then as usual"): at its end it is invoiced like a paid client (due on the end day), keeps the 7
+// unpaid days with full access, then locks with "Your cloud trial has ended" (CLOUD_TRIAL_ENDED — the code kept). The
+// reports-only week (A569) is gone. "Disable web access" during a trial ends it at once (none). A trial converted by a
+// recorded payment (A581) is an ordinary paid term.
+// A587 (decision 5): "Disable web access" on any dated / planned business is a hard off at once (locked).
 
 import { readCloudFacts, cloudStanding, PAUSED_WORDS, TRIAL_ENDED_WORDS, type CloudFacts } from './cloudPlan';
-import { DAY_MS, effectiveDue, paidState, trialState, UNPAID_DAYS } from './billingClock';
+import { DAY_MS, effectiveDue, paidState, UNPAID_DAYS } from './billingClock';
 
 export type WebAccessState = 'active' | 'grace' | 'reports_only' | 'locked' | 'none';
 
@@ -44,13 +46,13 @@ export interface WebAccess {
 }
 
 /**
- * The ladder state at `now`: a paid term (A584: the 7 unpaid days, then locked at the end of the 7th, Nairobi) or a trial
- * (A569: a week of reports only straight after its end, then locked). `billingFrom` — the day the business was put on its
+ * The ladder state at `now`: a paid term (A584: the 7 unpaid days, then locked at the end of the 7th, Nairobi) — and, A587,
+ * a trial the same way from its end (A569's week of reports only is gone). `billingFrom` — the day the business was put on its
  * plan — moves a due date that had already passed then to that day. Pure; getWebAccess reads the dates.
  */
 export function ladderState(expiresAt: string, now: number, trial = false, billingFrom: string | null = null): WebAccessState {
-  if (trial) return trialState(expiresAt, now);
-  const p = paidState(effectiveDue(expiresAt, billingFrom), now);
+  // A587: a trial ends like a paid period (its end is the due day) — no reports-only week any more.
+  const p = paidState(trial ? expiresAt : effectiveDue(expiresAt, billingFrom), now);
   return p === 'active' ? 'active' : p === 'unpaid' ? 'grace' : 'locked';
 }
 
@@ -74,15 +76,13 @@ export function webAccessFor(f: CloudFacts, now: number = Date.now()): WebAccess
     return { state: enabled ? 'active' : 'none', expiresAt: null, fullAccess: enabled, canLogin: enabled };
   }
   const s = cloudStanding(f, now);
-  if (s.trial) {
-    if (s.state === 'ended') return { state: 'none', expiresAt, fullAccess: false, canLogin: false, trial: true };
-    const t = s.state === 'reports_only' ? 'reports_only' : s.state === 'locked' ? 'locked' : 'active';
-    return { state: t, expiresAt, fullAccess: t === 'active', canLogin: t !== 'locked', trial: true };
-  }
-  // 'off' (switched off, a date kept, no plan): its date as written — the same 7-day ladder, no bridge.
-  const state: WebAccessState = s.state === 'locked' ? 'locked' : s.state === 'unpaid' ? 'grace' : s.state === 'off'
-    ? ladderState(expiresAt, now) : 'active';
-  return { state, expiresAt, fullAccess: state === 'active' || state === 'grace', canLogin: state !== 'locked' };
+  // "End trial" (web access switched off during a trial): at once, as A569.
+  if (s.trial && s.state === 'ended') return { state: 'none', expiresAt, fullAccess: false, canLogin: false, trial: true };
+  // A587: a trial ends like a paid period (its 7 unpaid days after its end, then locked — CLOUD_TRIAL_ENDED); a client
+  // switched off by the admin ('off', a hard off) or "Not interested" is locked like any unpaid one.
+  const state: WebAccessState = s.state === 'locked' || s.state === 'not_interested' || s.state === 'off' ? 'locked'
+    : s.state === 'unpaid' ? 'grace' : 'active';
+  return { state, expiresAt, fullAccess: state === 'active' || state === 'grace', canLogin: state !== 'locked', ...(s.trial ? { trial: true } : {}) };
 }
 
 /**

@@ -15,7 +15,10 @@
  *   locked       from the END of day 7 (00:00 Nairobi on day 8): the web dashboard is paused, the cloud refuses the tills'
  *                sync and no till can be joined. The tills keep selling. Recording a payment opens it at once.
  *
- * A cloud TRIAL (A569) keeps its own ladder: full until its end, then 7 days of reports only, then locked.
+ * A587 (owner, 2026-10-24): a cloud TRIAL ends like a paid period — its end day is its due day (an invoice), then the same
+ * 7 days, then locked (A569's week of reports only is gone; trialState is kept for older callers). And a client unpaid for
+ * NOT_INTERESTED_MONTHS months after its first unpaid due date is "Not interested": no more invoices, the open ones written
+ * off, still locked; a payment then starts afresh from the day it is made.
  */
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,7 +28,9 @@ export const EAT_MS = 3 * 60 * 60 * 1000;
 export const UNPAID_DAYS = 7;
 /** ZapTill (the admin, never the client) hears on this unpaid day that the lock is near. */
 export const ADMIN_WARN_DAY = 5;
-/** A trial (A569): reports only for this many days after it ends, then locked. */
+/** A587 (owner: "if they fail to pay for 3 months we assume they are not interested"): months after the first unpaid due date. */
+export const NOT_INTERESTED_MONTHS = 3;
+/** A569's trial: reports only for this many days after it ended (A587: no longer used by the rules — kept for older callers). */
 export const TRIAL_READ_DAYS = 7;
 
 const parse = (iso: string | null | undefined): number => (iso ? Date.parse(iso) : NaN);
@@ -74,7 +79,7 @@ export function paidState(dueIso: string, now: number): PaidState {
 
 export type TrialState = 'active' | 'reports_only' | 'locked';
 
-/** A569's trial ladder, unchanged: full until the end, reports only for 7 days, then locked. */
+/** A569's trial ladder (A587: superseded — a trial now ends like a paid period, cloudPlan.ts cloudStanding). Kept for older callers. */
 export function trialState(endIso: string, now: number): TrialState {
   const end = Date.parse(endIso);
   if (now < end) return 'active';

@@ -99,7 +99,7 @@ const reset = () => {
     businesses: [
       { id: B, name: 'Pollo <b>Grill</b>', owner_id: OWNER, email: 'shop@pollo.test', status: 'active', type: 'restaurant', currency: 'KES', web_access_expires_at: iso(now - 30 * DAY), created_at: '2026-09-01T00:00:00Z' },
       { id: L, name: 'Legacy Duka', owner_id: 'x', email: null, status: 'active', type: 'retail', currency: 'KES', web_access_expires_at: iso(now - 90 * DAY), created_at: '2026-08-01T00:00:00Z' },
-      { id: T, name: 'Trial Parking', owner_id: 'y', email: 'trial@park.test', status: 'active', type: 'parking', currency: 'KES', web_access_expires_at: iso(now - 2 * DAY), created_at: '2026-09-10T00:00:00Z' },
+      { id: T, name: 'Trial Parking', owner_id: 'y', email: 'trial@park.test', status: 'active', type: 'parking', currency: 'KES', web_access_expires_at: iso(now - 10 * DAY), created_at: '2026-09-10T00:00:00Z' },
     ],
     branches: [
       { id: BR, business_id: B, name: 'Main', is_main: true, status: 'active', desktop_licensed: true },
@@ -107,7 +107,7 @@ const reset = () => {
       { id: TR, business_id: T, name: 'Main', is_main: true, status: 'active', desktop_licensed: true },
     ],
     cloud_plans: [{ business_id: B, period: 'monthly', amount: 3000, currency: 'KES', custom_until: null, notes: null, updated_by: 'boss@zaptill.test' }],
-    business_settings: [{ business_id: T, key: 'cloud_trial', value: { started_at: iso(now - 32 * DAY), ends_at: iso(now - 2 * DAY), branch_id: TR, started_by: SUPER, converted_at: null } }],
+    business_settings: [{ business_id: T, key: 'cloud_trial', value: { started_at: iso(now - 40 * DAY), ends_at: iso(now - 10 * DAY), branch_id: TR, started_by: SUPER, converted_at: null } }],
     feature_flags: [{ business_id: B, key: 'web_hosting', enabled: true }, { business_id: T, key: 'web_hosting', enabled: true }],
     user_devices: [
       { id: 'ud1', business_id: B, device_id: 'till-B', status: 'approved', retired_at: null, branch_id: BR },
@@ -188,7 +188,7 @@ try {
     assert.equal(CP.defaultAmount('custom'), null);
     assert.equal(P.periodDefault('6_months'), '18000');
   });
-  await ok('the standing (A584): 7 unpaid days then locked (no 21-day grace); a dated licence not yet bridged is never locked; a trial has none', () => {
+  await ok('the standing (A584): 7 unpaid days then locked (no 21-day grace); a dated licence not yet bridged is never locked; a trial (A587) the same from its end', () => {
     const now = Date.now();
     const f = (x) => ({ onPlan: true, trial: null, expiresAt: iso(now - 5 * DAY), webHosting: true, ...x });
     assert.equal(CP.cloudStanding({ ...f(), onPlan: false, expiresAt: iso(now - 400 * DAY) }, now).syncRefused, false, 'not bridged yet: never locked');
@@ -200,7 +200,9 @@ try {
     assert.equal(CP.cloudStanding(f({ expiresAt: iso(now - 40 * DAY) }), now).state, 'locked');
     const trial = { started_at: iso(now - 31 * DAY), ends_at: iso(now - DAY), branch_id: null, started_by: null, converted_at: null };
     const t = CP.cloudStanding({ onPlan: false, trial, expiresAt: trial.ends_at, webHosting: true }, now);
-    assert.equal(t.gated, true); assert.equal(t.trial, true); assert.equal(t.syncRefused, true, 'no grace for a trial');
+    assert.equal(t.gated, true); assert.equal(t.trial, true); assert.equal(t.state, 'unpaid'); assert.equal(t.syncRefused, false, 'A587: a trial ends like a paid period — the 7 days');
+    const t9 = CP.cloudStanding({ onPlan: false, trial: { ...trial, ends_at: iso(now - 9 * DAY) }, expiresAt: iso(now - 9 * DAY), webHosting: true }, now);
+    assert.equal(t9.syncRefused, true, 'past its 7 days: locked');
     assert.equal(CP.cloudStanding({ onPlan: false, trial, expiresAt: iso(now + 5 * DAY), webHosting: false }, now).state, 'ended', '"End trial" is over at once');
     assert.equal(CP.cloudStanding(f({ expiresAt: null }), now).state, 'no_date');
   });
@@ -242,7 +244,7 @@ try {
     assert.equal((await call('POST', '/api/sync/push', TILL_B, {})).status, 503);
     setPaidUntil(Date.now() - 30 * DAY);
   });
-  await ok('a lapsed trial (2 days after its end, no grace) → refused too, with the trial\'s words', async () => {
+  await ok('a lapsed trial (10 days after its end — past its 7 days, A587) → refused too, with the trial\'s words', async () => {
     const r = await call('POST', '/api/orders', TILL_T, {});
     assert.equal(r.status, 503); assert.equal(r.body.trial, true); assert.match(r.body.error, /trial has ended/);
   });

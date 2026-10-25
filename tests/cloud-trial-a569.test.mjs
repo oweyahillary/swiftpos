@@ -127,13 +127,13 @@ try {
     assert.equal(T.trialEligibility(facts({ webHostingFlag: { enabled: false } })).reason, 'web_access_was_set');
     assert.equal(T.trialEligibility(facts({ webAccessExpiresAt: '2027-01-01T00:00:00Z' })).reason, 'web_access_dated');
   });
-  await ok('a trial is 30 days; its phases: active, reports only for 7 days, ended; converted', () => {
+  await ok('a trial is 30 days; its phases: active, ended (A587: no reports-only week — invoiced like a paid client); converted', () => {
     const now = Date.parse('2026-10-22T09:00:00Z');
     const t = T.newTrial(now, BR1, 'boss');
     assert.equal(Date.parse(t.ends_at) - now, 30 * DAY);
     assert.equal(T.trialPhase(t, now + 29 * DAY), 'active');
-    assert.equal(T.trialPhase(t, now + 31 * DAY), 'reports_only');
-    assert.equal(T.trialPhase(t, now + 36.9 * DAY), 'reports_only');
+    assert.equal(T.trialPhase(t, now + 31 * DAY), 'ended');
+    assert.equal(T.trialPhase(t, now + 36.9 * DAY), 'ended');
     assert.equal(T.trialPhase(t, now + 37.1 * DAY), 'ended');
     assert.equal(T.trialPhase({ ...t, converted_at: new Date(now).toISOString() }, now + 99 * DAY), 'converted');
   });
@@ -145,12 +145,12 @@ try {
     assert.equal(T.planLabel({ trial: null, webHosting: false, licensedBranches: 2, now }), 'Desktop');
     assert.equal(T.planLabel({ trial: null, webHosting: false, licensedBranches: 0, now }), 'No licence yet');
   });
-  await ok('the trial ladder has no grace: reports only for 7 days, then locked — the paid ladder (A584): 7 unpaid days, locked at the end of the 7th (Nairobi)', () => {
+  await ok('A587: a trial ends like a paid period — the 7 unpaid days from its end, locked at the end of the 7th (Nairobi); the paid ladder (A584) the same', () => {
     const end = '2026-11-21T09:00:00.000Z', e = Date.parse(end);   // 12:00 Nairobi, 21 Nov
     assert.equal(W.ladderState(end, e - 1, true), 'active');
-    assert.equal(W.ladderState(end, e + 1, true), 'reports_only');
-    assert.equal(W.ladderState(end, e + 6.9 * DAY, true), 'reports_only');
-    assert.equal(W.ladderState(end, e + 7.1 * DAY, true), 'locked');
+    assert.equal(W.ladderState(end, e + 1, true), 'grace');
+    assert.equal(W.ladderState(end, e + 6.9 * DAY, true), 'grace');
+    assert.equal(W.ladderState(end, Date.parse('2026-11-28T21:00:00Z'), true), 'locked', '00:00 Nairobi on day 8');
     assert.equal(W.ladderState(end, e + 1, false), 'grace');
     assert.equal(W.ladderState(end, Date.parse('2026-11-28T20:59:00Z'), false), 'grace', '23:59 Nairobi on day 7: still open');
     assert.equal(W.ladderState(end, Date.parse('2026-11-28T21:00:00Z'), false), 'locked', '00:00 Nairobi on day 8: locked');
@@ -254,10 +254,10 @@ try {
     const w = await W.getWebAccess(B, 'active');
     assert.equal(w.state, 'active'); assert.equal(w.trial, true); assert.equal(w.canLogin, true); assert.equal(w.fullAccess, true);
   });
-  await ok('3 days after: reports only (sign-in works, the web POS is off) — no 21-day grace', async () => {
+  await ok('3 days after: A587 — the 7 unpaid days of a paid client (full access; the invoice went out on its end day), no reports-only week', async () => {
     reset(); await licence(B, BR1); endIn(-3 * DAY);
     const w = await W.getWebAccess(B, 'active');
-    assert.equal(w.state, 'reports_only'); assert.equal(w.canLogin, true); assert.equal(w.fullAccess, false);
+    assert.equal(w.state, 'grace'); assert.equal(w.canLogin, true); assert.equal(w.fullAccess, true); assert.equal(w.trial, true);
   });
   await ok('8 days after: sign-in refused — "Your cloud trial has ended" (CLOUD_TRIAL_ENDED)', async () => {
     reset(); await licence(B, BR1); endIn(-8 * DAY);

@@ -14,6 +14,9 @@
  * Manager role (roles.is_default, still named Manager) set limits — a custom role named "Manager", General Manager,
  * Finance Manager, Supervisor, partners, the owner's role by PIN, tills and ZapTill stay refused. A manager's change is
  * audited with who and the branch they acted at, and the Credit history shows it.
+ * A587 (owner, 2026-10-24): the built-in General Manager role too, and a partner at ONE of their branches — those cases
+ * live in tests/billing-credit-a587.test.mjs; here a GM is no longer in the refused list and a partner with no branch
+ * picked is told to pick one (PICK_ONE_BRANCH).
  *
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, put back):
  *   - PATCH /limit back to requirePermission('customers.credit')            → "a General Manager … is refused" fails
@@ -188,7 +191,7 @@ try {
   state._setPermissionsMigrated(true);
   reset();
   console.log('\nA585 — only the owner sets credit limits (every route that writes one)\n');
-  for (const [who, tok] of [['a custom role named "Manager" (not the built-in one)', T.fake], ['a General Manager', T.gm], ['a Finance Manager', T.fm], ['a Supervisor', T.sup]]) {
+  for (const [who, tok] of [['a custom role named "Manager" (not the built-in one)', T.fake], ['a Finance Manager', T.fm], ['a Supervisor', T.sup]]) {
     await ok(`${who} holding customers.credit is refused the limit (grant, change, remove) and the picker`, async () => {
       for (const v of [5000, 2000, 0]) {
         const r = await call('PATCH', LIMIT, tok, { credit_limit: v });
@@ -198,10 +201,9 @@ try {
       assert.equal(limitOf(), 1000); assert.equal(db.audit_log.length, 0);
     });
   }
-  await ok('a partner (A550) holding \'*\' is refused — and a partner whose staff role is the built-in Manager too', async () => {
+  await ok('a partner (A550) holding \'*\' with no branch picked is refused — A587: told to pick one of their branches', async () => {
     const r = await call('PATCH', LIMIT, T.partner, { credit_limit: 5000 });
-    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(limitOf(), 1000);
-    assert.equal((await call('PATCH', LIMIT, T.partnerMgr, { credit_limit: 5000 })).status, 403); assert.equal(limitOf(), 1000);
+    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'PICK_ONE_BRANCH'); assert.equal(limitOf(), 1000);
   });
   await ok('someone holding the owner\'s role ("Admin") by PIN is refused', async () => {
     assert.equal((await call('PATCH', LIMIT, T.adminPin, { credit_limit: 5000 })).status, 403); assert.equal(limitOf(), 1000);
@@ -251,7 +253,8 @@ try {
       ['customer.credit_limit.changed', MGR, 'Max', BR, 1000, 1500]);
     assert.equal(CA.isBuiltInManagerRole({ name: ' manager ', is_default: true }), true);
     assert.equal(CA.isBuiltInManagerRole({ name: 'Manager', is_default: false }), false);
-    assert.equal(CA.isBuiltInManagerRole({ name: 'General Manager', is_default: true }), false);
+    assert.equal(CA.isBuiltInManagerRole({ name: 'General Manager', is_default: true }), true, 'A587: the built-in GM too');
+    assert.equal(CA.isBuiltInManagerRole({ name: 'General Manager', is_default: false }), false);
   });
   await ok('no other route writes a credit limit (the customer edit route ignores it; the only writer is PATCH /limit)', () => {
     const loy = read('apps/server/src/routes/loyalty.ts');
@@ -398,8 +401,9 @@ try {
     assert.equal(LA.limitBoxForRole('Manager'), true); assert.equal(LA.limitBoxForRole('Supervisor'), false);
   });
   await ok('the screens: the limit editors are the owner\'s; the history panel on the profile; the setting in Settings › Business', () => {
-    assert.match(read('apps/dashboard/src/components/CreditLimitEditor.tsx'), /const mayCredit = usePermissions\(\)\.isOwner;[\s\S]*\{OWNER_SETS_LIMITS_LINE\}/);
-    assert.match(read('apps/dashboard/src/pages/customers/CreditAccountsPage.tsx'), /const setsLimits = perms\.isOwner;/);
+    // A587: the owner, or a partner at one of their branches (hooks/useSetsLimits.ts)
+    assert.match(read('apps/dashboard/src/components/CreditLimitEditor.tsx'), /const \{ setsLimits: mayCredit, line \} = useSetsLimits\(\);[\s\S]*\{line\}/);
+    assert.match(read('apps/dashboard/src/pages/customers/CreditAccountsPage.tsx'), /const \{ setsLimits, line: limitLine \} = useSetsLimits\(\);/);
     const md = read('apps/dashboard/src/pages/manager/ManagerDashboard.tsx');
     assert.match(md, /const setsLimits = limitBoxForRole\(session\?\.role\);/);
     assert.match(md, /\{setsLimits \? \([\s\S]{0,900}onClick=\{saveLimit\}[\s\S]{0,700}\{OWNER_SETS_LIMITS_LINE\}/, 'the web POS manager screen: the box for a manager, the line for others');

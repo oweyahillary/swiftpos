@@ -267,8 +267,9 @@ try {
     const diesel = { id: 'p-diesel', name: 'Diesel', category_id: 'c-fuel', is_fuel: true }, crisps = { id: 'p-crisps', name: 'Crisps', category_id: 'c-snacks' };
     ok('petrol 23:00: the shop group is closed (Crisps hidden and refused); fuel is never hidden or refused',
       H.hiddenByHours(crisps, P23) && H.hoursRefusal(crisps, P23) !== null && !H.hiddenByHours(diesel, P23) && H.hoursRefusal(diesel, P23) === null);
-    ok('petrol: the pumps\' grid keeps its fuel filter, the hours ride along (shop items via "Shop items")',
-      /const matchFuel\s+= flags\.isPetrol/.test(pos) && /&& matchFuel && matchDay && matchStock && matchHours;/.test(pos));
+    // A588: the petrol POS's grid is its forecourt shop (fuel only on the pumps) — the hours ride along on it.
+    ok('petrol: the shop grid never lists fuel (A588: the grades are on the pumps), the hours ride along',
+      /const matchFuel\s+= !\(p as any\)\.is_fuel;/.test(pos) && /&& matchFuel && matchDay && matchStock && matchHours;/.test(pos));
 
     // Parking / other: Groups with hours work the same (a car wash group 08:00–18:00).
     const G = H.menuHoursView([{ id: 'g-wash', name: 'Car wash', active: true, availability: { days: null, windows: [{ start: '08:00', end: '18:00' }] } }],

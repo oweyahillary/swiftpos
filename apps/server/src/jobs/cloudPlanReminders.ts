@@ -13,7 +13,12 @@
  *      kind 'cloud', the period and amount) raised ONCE per business and period, emailed to the owner (sign-in email, else
  *      the business email) — never a word of a lock — and ZapTill's copy (ADMIN_ALERT_EMAIL / Telegram).
  *   3. ZAPTILL ONLY: the 5th unpaid day ("locks in 2 days"), the lock (once — the morning digest lists locked clients
- *      after: jobs/watchdog.ts), a trial's end.
+ *      after: jobs/watchdog.ts).
+ * A587 (owner, 2026-10-24 — "it's pay as you go, not pay for missed months"): a locked client gets no further invoices;
+ * 3 months after its first unpaid due date it is "Not interested": its open cloud invoices are written off (audited
+ * 'cloud_plan.not_interested'), still locked, and ZapTill hears once. A trial's end is its due day — an invoice like a
+ * paid client's. The bridge keeps a licence that was already locked under the old ladder locked at once
+ * (cloud_plans.billing_from = its own date) — no fresh 7 days and no arrears invoice.
  * Once each: the (business, due date, milestone) row is claimed in cloud_plan_reminders (unique) before anything is
  * sent; an invoice that could not be written gives the claim back for the next hour. No email provider (SendGrid is the
  * owner's pending action): logged and recorded, never a crash. A suspended business is skipped.
@@ -24,7 +29,8 @@ import { sendEmailChecked } from '../lib/mailer';
 import { notifyAdmin } from '../lib/alertNotify';
 import {
   cloudBusinessIds, readCloudFacts, cloudStanding, adminMilestones, reminderHour, invoicePeriod, inferBridgePeriod, defaultAmount,
-  nextInvoiceNumber, insertCloudInvoice, forgetStanding, type CloudFactsRow, type AdminMilestone,
+  nextInvoiceNumber, insertCloudInvoice, forgetStanding, invoiceStarts, lockedUnderOldLadder, writeOffCloudInvoices,
+  type CloudFactsRow, type AdminMilestone, type CloudStanding,
 } from '../lib/cloudPlan';
 import { invoiceEmailHtml, adminNoticeText } from '../lib/cloudPlanEmail';
 
@@ -52,7 +58,7 @@ export async function ownerEmailOf(ownerId: string | null | undefined, fallback:
 
 export interface BillingRun {
   bridged: string[];
-  sent: Array<{ business_id: string; milestone: AdminMilestone; owner: boolean; admin: boolean; invoice?: string | null }>;
+  sent: Array<{ business_id: string; milestone: AdminMilestone; owner: boolean; admin: boolean; invoice?: string | null; period_start?: string }>;
   skipped: number;
 }
 
@@ -61,12 +67,22 @@ async function bridge(businessId: string, f: CloudFactsRow, now: Date): Promise<
   const { data: last } = await supabase.from('invoices').select('period_start, period_end, created_at')
     .eq('business_id', businessId).order('created_at', { ascending: false }).limit(1).maybeSingle();
   const period = inferBridgePeriod(last as { period_start?: string | null; period_end?: string | null } | null);
-  const row = {
+  // A587 (owner: "Should already-locked clients get the 7 days? — no"): a licence already locked under the old ladder
+  // stays locked — due from its own date (billing_from), invoiced for that overdue period.
+  const keptLocked = lockedUnderOldLadder(f.expiresAt, now.getTime());
+  const row: Record<string, unknown> = {
     business_id: businessId, period, amount: defaultAmount(period) ?? 0, currency: 'KES', custom_until: null,
-    notes: `A584: put on the plan from the web-access licence (paid until ${String(f.expiresAt).slice(0, 10)}) — check the period and amount.`,
+    notes: `A584: put on the plan from the web-access licence (paid until ${String(f.expiresAt).slice(0, 10)})${keptLocked ? ' — already locked under the old rules, kept locked (A587)' : ''} — check the period and amount.`,
     updated_by: 'A584 bridge', created_at: now.toISOString(), updated_at: now.toISOString(),
+    ...(keptLocked ? { billing_from: f.expiresAt } : {}),
   };
-  const ins = await supabase.from('cloud_plans').insert(row).select().single();
+  let ins = await supabase.from('cloud_plans').insert(row).select().single();
+  if (ins.error && keptLocked && /billing_from/.test(String(ins.error.message))) {
+    // A cloud before migration 173: no billing_from — the A584 bridge (the 7 days from today).
+    const { billing_from: _drop, ...older } = row;
+    // business_id: the same row as above (row.business_id), only billing_from taken out.
+    ins = await supabase.from('cloud_plans').insert(older).select().single();
+  }
   if (ins.error) {
     if ((ins.error as { code?: string }).code !== '23505') console.warn(`[cloudPlan] bridge not written for ${businessId}:`, ins.error.message);
     return null;
@@ -74,7 +90,8 @@ async function bridge(businessId: string, f: CloudFactsRow, now: Date): Promise<
   const { error: aErr } = await supabase.from('admin_audit_log').insert({
     admin_id: null, admin_email: 'system (A584 bridge)', action: 'cloud_plan.bridge', resource: 'cloud_plan',
     business_id: businessId, business_name: f.name ?? null, before_data: { web_access_expires_at: f.expiresAt, plan: null },
-    after_data: { period, amount: row.amount, billing_from: row.created_at }, reason: 'A licence expiry set before the plan — governed by the same rules (A584)',
+    after_data: { period, amount: row.amount, billing_from: (ins.data as { billing_from?: string | null })?.billing_from ?? row.created_at, kept_locked: keptLocked && !!(ins.data as { billing_from?: string | null })?.billing_from },
+    reason: keptLocked ? 'A licence already locked under the old rules — kept locked, invoiced for the overdue period (A587)' : 'A licence expiry set before the plan — governed by the same rules (A584)',
   });
   if (aErr) console.error('[cloudPlan] bridge audit not written:', aErr.message);
   forgetStanding(businessId);
@@ -96,7 +113,7 @@ export async function runCloudBilling(now: Date = new Date(), opts: { force?: bo
       if (s.bridgePending) {
         const plan = await bridge(businessId, f, now);
         if (!plan) { out.skipped++; continue; }
-        f.onPlan = true; f.plan = plan; f.planCreatedAt = plan.created_at ?? now.toISOString();
+        f.onPlan = true; f.plan = plan; f.planCreatedAt = plan.created_at ?? now.toISOString(); f.billingFrom = plan.billing_from ?? null;
         out.bridged.push(businessId);
         s = cloudStanding(f, t);
       }
@@ -104,79 +121,108 @@ export async function runCloudBilling(now: Date = new Date(), opts: { force?: bo
       const milestones = adminMilestones(s, t);
       if (!milestones.length || !due) { out.skipped++; continue; }
       for (const milestone of milestones) {
-        // The claim: once per (business, due date, milestone) — asked first, and the unique key settles a race.
-        const seen = await supabase.from('cloud_plan_reminders').select('id')
-          .eq('business_id', businessId).eq('paid_until', due).eq('milestone', milestone).maybeSingle();
-        if (seen.error || seen.data) continue;
-        const claim = await supabase.from('cloud_plan_reminders')
-          .insert({ business_id: businessId, paid_until: due, milestone, sent_at: now.toISOString() }).select('id').single();
-        if (claim.error) {
-          if ((claim.error as { code?: string }).code !== '23505') console.warn(`[cloudPlan] ${milestone} not claimed for ${businessId}:`, claim.error.message);
-          continue;
-        }
-        const claimId = (claim.data as { id: string }).id;
-        const ip = invoicePeriod(f.plan, due);
-        const ownerEmail = await ownerEmailOf(f.ownerId, f.email);
-        const errors: string[] = [];
-        let invoiceNumber: string | null = null;
-        let ownerSent = false;
-
-        if (milestone === 'invoice') {
-          // 2. the invoice — one per business and period (a payment recorded early may already have raised it).
-          const have = await supabase.from('invoices').select('id, invoice_number, status')
-            .eq('business_id', businessId).eq('period_start', due).limit(1).maybeSingle();
-          if (have.error) { await supabase.from('cloud_plan_reminders').delete().eq('id', claimId); continue; }
-          if (have.data) invoiceNumber = (have.data as { invoice_number: string }).invoice_number;
-          else {
-            const number = await nextInvoiceNumber();
-            const inv = await insertCloudInvoice({
-              business_id: businessId, invoice_number: number, amount: ip.amount, currency: f.plan?.currency ?? 'KES', status: 'pending',
-              period_start: ip.start, period_end: ip.end,
-            });
-            if (inv.error || !inv.data) {
-              console.warn(`[cloudPlan] invoice not raised for ${businessId} — tried again next hour:`, inv.error?.message);
-              await supabase.from('cloud_plan_reminders').delete().eq('id', claimId);
-              continue;
-            }
-            invoiceNumber = inv.data.invoice_number ?? number;
-          }
-          const paidAlready = (have.data as { status?: string } | null)?.status === 'paid';
-          if (!paidAlready) {
-            if (ownerEmail) {
-              const mail = invoiceEmailHtml({ businessName: f.name ?? 'your business', invoiceNumber: invoiceNumber ?? '', periodStart: ip.start, periodEnd: ip.end,
-                amount: ip.amount, currency: f.plan?.currency ?? 'KES', period: ip.period });
-              try {
-                const r = await sendEmailChecked({ to: ownerEmail, subject: mail.subject, html: mail.html });
-                ownerSent = r.ok;
-                if (!r.ok) errors.push(`owner: ${r.error ?? `not sent (${r.provider})`}`);
-              } catch (e: any) { errors.push(`owner: ${e?.message ?? e}`); }
-            } else errors.push('owner: no email on file');
-          }
-        }
-
-        // 3. ZapTill's copy / notice.
-        let adminSent = false;
-        try {
-          const a = adminNoticeText({
-            businessName: f.name ?? 'a client', milestone, dueAt: due, lockAt: s.lockAt, unpaidDays: s.unpaidDays, lockInDays: s.lockInDays,
-            amount: ip.amount, currency: f.plan?.currency ?? 'KES', period: ip.period, invoiceNumber, ownerEmail, ownerSent,
-          });
-          const r = await notifyAdmin(a.subject, a.text, { email: true });
-          adminSent = r.email || r.telegram;
-          if (!adminSent) errors.push('ZapTill: no alert channel worked (ADMIN_ALERT_EMAIL / Telegram)');
-        } catch (e: any) { errors.push(`ZapTill: ${e?.message ?? e}`); }
-        if (errors.length) console.warn(`[cloudPlan] ${f.name} ${milestone}: ${errors.join('; ')}`);
-        await supabase.from('cloud_plan_reminders').update({
-          owner_email: milestone === 'invoice' ? ownerEmail : null, owner_sent: ownerSent, admin_sent: adminSent,
-          error: errors.length ? errors.join('; ').slice(0, 500) : null,
-        }).eq('id', claimId);
-        out.sent.push({ business_id: businessId, milestone, owner: ownerSent, admin: adminSent, ...(milestone === 'invoice' ? { invoice: invoiceNumber } : {}) });
+        // A587: 'invoice' is the due date's period (never while locked — pay as you go).
+        const keys = milestone === 'invoice' ? invoiceStarts(s, f.plan, t) : [due];
+        for (const key of keys) await sendOne(businessId, f, s, milestone, key, now, out);
       }
     } catch (e: any) {
       console.error(`[cloudPlan] billing failed for ${businessId}:`, e?.message ?? e);
     }
   }
   return out;
+}
+
+/** One notice, once per (business, period start / due date, milestone) — the claim first. */
+async function sendOne(businessId: string, f: CloudFactsRow, s: CloudStanding, milestone: AdminMilestone, key: string, now: Date, out: BillingRun): Promise<void> {
+  // The claim: once per (business, due date, milestone) — asked first, and the unique key settles a race.
+  const seen = await supabase.from('cloud_plan_reminders').select('id')
+    .eq('business_id', businessId).eq('paid_until', key).eq('milestone', milestone).maybeSingle();
+  if (seen.error || seen.data) return;
+  const claim = await supabase.from('cloud_plan_reminders')
+    .insert({ business_id: businessId, paid_until: key, milestone, sent_at: now.toISOString() }).select('id').single();
+  if (claim.error) {
+    if ((claim.error as { code?: string }).code !== '23505') console.warn(`[cloudPlan] ${milestone} not claimed for ${businessId}:`, claim.error.message);
+    return;
+  }
+  const claimId = (claim.data as { id: string }).id;
+  const ip = invoicePeriod(f.plan, key);
+  const ownerEmail = await ownerEmailOf(f.ownerId, f.email);
+  const errors: string[] = [];
+  let invoiceNumber: string | null = null;
+  let ownerSent = false;
+  let writtenOff: string[] = [];
+
+  if (milestone === 'invoice') {
+    // 2. the invoice — one per business and period (a payment recorded early may already have raised it).
+    const have = await supabase.from('invoices').select('id, invoice_number, status')
+      .eq('business_id', businessId).eq('period_start', key).limit(1).maybeSingle();
+    if (have.error) { await supabase.from('cloud_plan_reminders').delete().eq('id', claimId); return; }
+    if (have.data) invoiceNumber = (have.data as { invoice_number: string }).invoice_number;
+    else {
+      const number = await nextInvoiceNumber();
+      const inv = await insertCloudInvoice({
+        business_id: businessId, invoice_number: number, amount: ip.amount, currency: f.plan?.currency ?? 'KES', status: 'pending',
+        period_start: ip.start, period_end: ip.end,
+      });
+      if (inv.error || !inv.data) {
+        console.warn(`[cloudPlan] invoice not raised for ${businessId} — tried again next hour:`, inv.error?.message);
+        await supabase.from('cloud_plan_reminders').delete().eq('id', claimId);
+        return;
+      }
+      invoiceNumber = inv.data.invoice_number ?? number;
+    }
+    const paidAlready = (have.data as { status?: string } | null)?.status === 'paid';
+    if (!paidAlready) {
+      if (ownerEmail) {
+        const mail = invoiceEmailHtml({ businessName: f.name ?? 'your business', invoiceNumber: invoiceNumber ?? '', periodStart: ip.start, periodEnd: ip.end,
+          amount: ip.amount, currency: f.plan?.currency ?? 'KES', period: ip.period, trialEnded: s.trial && key === s.dueAt ? s.dueAt : null });
+        try {
+          const r = await sendEmailChecked({ to: ownerEmail, subject: mail.subject, html: mail.html });
+          ownerSent = r.ok;
+          if (!r.ok) errors.push(`owner: ${r.error ?? `not sent (${r.provider})`}`);
+        } catch (e: any) { errors.push(`owner: ${e?.message ?? e}`); }
+      } else errors.push('owner: no email on file');
+    }
+  }
+
+  if (milestone === 'not_interested') {
+    // A587: "if they fail to pay for 3 months we assume they are not interested" — the open cloud invoices closed, audited.
+    const w = await writeOffCloudInvoices(businessId);
+    if (w.error) {
+      console.warn(`[cloudPlan] invoices not written off for ${businessId} — tried again next hour:`, w.error);
+      await supabase.from('cloud_plan_reminders').delete().eq('id', claimId);
+      return;
+    }
+    writtenOff = w.numbers;
+    const { error: aErr } = await supabase.from('admin_audit_log').insert({
+      admin_id: null, admin_email: 'system (A587 billing)', action: 'cloud_plan.not_interested', resource: 'cloud_plan',
+      business_id: businessId, business_name: f.name ?? null,
+      before_data: { state: 'locked', due_at: s.dueAt, open_invoices: w.numbers },
+      after_data: { state: 'not_interested', since: s.notInterestedAt, written_off: w.numbers, invoice_status: w.status },
+      reason: 'Unpaid 3 months after the first unpaid due date — taken as not interested (A587); a payment starts afresh',
+    });
+    if (aErr) console.error('[cloudPlan] not-interested audit not written:', aErr.message);
+    forgetStanding(businessId);
+  }
+
+  // 3. ZapTill's copy / notice.
+  let adminSent = false;
+  try {
+    const a = adminNoticeText({
+      businessName: f.name ?? 'a client', milestone, dueAt: milestone === 'invoice' ? key : s.dueAt, lockAt: s.lockAt, unpaidDays: s.unpaidDays, lockInDays: s.lockInDays,
+      amount: ip.amount, currency: f.plan?.currency ?? 'KES', period: ip.period, invoiceNumber, ownerEmail, ownerSent,
+      trial: s.trial, notInterestedAt: s.notInterestedAt, writtenOff,
+    });
+    const r = await notifyAdmin(a.subject, a.text, { email: true });
+    adminSent = r.email || r.telegram;
+    if (!adminSent) errors.push('ZapTill: no alert channel worked (ADMIN_ALERT_EMAIL / Telegram)');
+  } catch (e: any) { errors.push(`ZapTill: ${e?.message ?? e}`); }
+  if (errors.length) console.warn(`[cloudPlan] ${f.name} ${milestone}: ${errors.join('; ')}`);
+  await supabase.from('cloud_plan_reminders').update({
+    owner_email: milestone === 'invoice' ? ownerEmail : null, owner_sent: ownerSent, admin_sent: adminSent,
+    error: errors.length ? errors.join('; ').slice(0, 500) : null,
+  }).eq('id', claimId);
+  out.sent.push({ business_id: businessId, milestone, owner: ownerSent, admin: adminSent, ...(milestone === 'invoice' ? { invoice: invoiceNumber, period_start: key } : {}) });
 }
 
 /** A581's name, kept for its callers and tests. */
