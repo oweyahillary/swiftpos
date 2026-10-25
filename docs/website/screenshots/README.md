@@ -27,3 +27,7 @@ brands (logo, the receipt logo as printed, the mark).
 Night 3 (2026-10-23): every page re-taken at 1440 and 390 px after the quality pass, plus the new `site-guides-*`
 (the hub and the four draft guides) and the Pricing page's new comparison table (in `site-pricing-*`). Before/after
 Lighthouse numbers are in `../WEBSITE-LOG.md`.
+
+2026-10-25 (owner tweaks: no disclaimer, no Sign in, credits unlinked, printing receipts): `site-home-*`,
+`site-for-restaurants-*`, `site-for-petrol-stations-*` and `site-credits-*` re-taken; `site-home-receipt-printing-start`,
+`-mid` and `-end` are three frames of the receipts feeding out of the printer on Home (1440 px).

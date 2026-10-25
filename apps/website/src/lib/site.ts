@@ -8,7 +8,6 @@
 export const SITE = {
   name: 'ZapTill',
   url: 'https://zaptill.co.ke',
-  signIn: 'https://app.zaptill.co.ke',
   phoneDisplay: '0717 675 635',
   phoneIntl: '+254717675635',
   waNumber: '254717675635',

@@ -14,8 +14,51 @@ Standing rules: the site is never deployed, published or committed by Claude; th
 a draft: KES 30,000 once per branch for the point of sale; the cloud KES 3,000 a month per business (all branches), month to
 month, first month free; Analytics about KES 10,000 a month, per business. Contact: 0717 675 635, no company email yet.
 Wording (owner, 2026-10-23): "point of sale" (or "POS"), never "till", except Safaricom's own M-Pesa "Till number";
-`npm run check` fails on any other "till" a visitor can read. Every demo business is FICTIONAL (src/assets/demo-brands)
-and the pages say so; product photos only from free-licence libraries, credited in src/data/photo-credits.json.
+`npm run check` fails on any other "till" a visitor can read. Every demo business is FICTIONAL (src/assets/demo-brands);
+since 2026-10-25 only `/credits/` says so (one short note), no other page carries a disclaimer. Product photos only from
+free-licence libraries, credited in src/data/photo-credits.json (on `/credits/`, reachable by URL, not linked).
+
+---
+
+## 2026-10-25: owner tweaks
+
+Local only: nothing committed, pushed or deployed. Only `apps/website/**` and `docs/website/**` touched.
+
+**Asked** (owner): remove "Demo businesses shown on this site are fictional." everywhere; remove the "Sign in to your
+dashboard" link; keep `/credits/` as a page but not as a link; make some receipts look like they come out of a printer.
+
+**Done**
+- **Disclaimer gone** from the footer, under the product videos (`ProductVideo` caption), the guide call-to-action
+  (`Guide.astro`), the two-branches guide's caption, the receipt and logo descriptions ("(a fictional demo …)") and the
+  label notes ("for Kijani Basket, a demo minimart"); "made-up grill/station/café" became "demo …". Plain "demo
+  restaurant" descriptions stay (they say what the picture is, not a disclaimer). `/credits/` alone carries the owner's
+  line: "The businesses shown in our demos are made up for illustration. If you believe something on this site concerns
+  you or your business, contact us on WhatsApp or 0717 675 635 and we will review it and remove it if needed." (WhatsApp
+  and the number are links). Its heading is now "The demo businesses"; the photo and font credits are unchanged.
+- **Sign in removed** everywhere: header button, phone menu item and the footer's "Sign in to your dashboard";
+  `SITE.signIn` deleted from `src/lib/site.ts` (nothing else used it).
+- **`/credits/` unlinked** (the footer's "Photo credits and demo businesses" link removed). Still built, indexable and in
+  the sitemap; `check-dist` has no orphan-page rule, so no change was needed there.
+- **Printing receipts** (`Receipt.astro`, new `print` and `printDelay` props): the slip sits under a small dark thermal
+  printer (CSS only: the front lip, the mouth, a teal LED that blinks while printing) and feeds out of the mouth in
+  line-sized steps (`steps(<lines>)`, about 55 ms a line) when a third of it scrolls into view (IntersectionObserver),
+  with a shade where the paper leaves the mouth and the existing torn bottom edge. Only a transform moves, inside a box
+  that already has the slip's full height, so nothing shifts (CLS 0, heights equal before and after printing). No sound.
+  No script, no IntersectionObserver or `prefers-reduced-motion: reduce`: the finished receipt shows (checked both).
+  The text stays the real rendered slip and its `role="img"` description is untouched. Used on 4 slips: Home (the shop
+  receipt and the kitchen ticket, staggered 450 ms), Restaurants (the Mvua Café receipt) and Petrol stations (the fuel
+  receipt beside the pump entry). The printing slip keeps 14 px inside its own box for the printer's lip, so a
+  full-width slip on a phone does not scroll the page sideways (it did by 8 px before that fix).
+
+**Checked**: `npm run build`, `npm test` (37 pass), `npm run check` green. Screenshots at 1440 and 390 px re-taken for
+home, for-restaurants, for-petrol-stations and credits (no horizontal overflow on any), plus
+`site-home-receipt-printing-start/-mid/-end.webp` (frames of the animation, paused at 18 %, 55 % and 100 %).
+
+**Lighthouse, mobile** (same method as night 3; local build, uncompressed): `/` before P98 A100 LCP 2.11 s CLS 0 (two
+runs: 98, 98) → after P99 / P97 A100 LCP 2.11 s CLS 0, 187 → 190 KB (the 0.6 KB script and the printer CSS);
+`/for/petrol-stations/` P96 → P98, LCP 2.18 → 2.11 s, CLS 0 → 0; `/for/restaurants/` after P96 A100 LCP 2.18 s CLS 0.
+Desktop `/` after P100 A100 LCP 0.49 s CLS 0. (Night 3's P100 on Home was a quieter machine; the before and after here
+were run back to back.)
 
 ---
 
