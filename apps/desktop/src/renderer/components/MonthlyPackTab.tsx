@@ -72,7 +72,7 @@ export default function MonthlyPackTab({ currency, canRecord }: { currency: stri
           {saving ? 'Saving…' : 'Download Excel'}
         </button>
         <button onClick={() => void load()} disabled={busy} className="px-3 py-2 rounded-lg border border-gray-600 text-gray-200 text-sm disabled:opacity-40">Refresh</button>
-        <p className="text-xs text-gray-400 basis-full">This branch, one month at a time, as the books are kept — built on the cloud from every till's records.</p>
+        <p className="text-xs text-gray-400 basis-full">This branch, one month at a time, as the books are kept — built on the cloud from every POS's records.</p>
       </div>
 
       {err && <p className="text-sm text-red-300" data-testid="pack-error">{err}</p>}
@@ -225,7 +225,7 @@ function MovementsCard({ month, methods, moves, onChange, canRecord }: {
   return (
     <div className="bg-gray-800/80 border border-gray-700/70 rounded-2xl p-3 space-y-3" data-testid="pack-movements">
       <p className="text-sm font-semibold text-white">{canRecord ? 'Record for the books' : 'Recorded for the books'}</p>
-      <p className="text-xs text-gray-400">What no till records: the balance carried in, money in that is not a sale (used oil sold), the owner's personal use, money banked, M-Pesa or bank charges. Sales and expenses come from the tills.</p>
+      <p className="text-xs text-gray-400">What no POS records: the balance carried in, money in that is not a sale (used oil sold), the owner's personal use, money banked, M-Pesa or bank charges. Sales and expenses come from the points of sale.</p>
       {canRecord && (
         <div className="flex flex-wrap gap-2 items-end" data-testid="pack-record-form">
           <input type="date" value={f.movement_date} onChange={(e) => setF({ ...f, movement_date: e.target.value })} className={input} />

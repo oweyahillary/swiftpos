@@ -24,7 +24,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess, allBranchAccess } from '../middleware/rbac';   // A550: allBranchAccess
+import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess, allBranchAccess, branchFilter, byBranch, rowInBranches } from '../middleware/rbac';   // A550: allBranchAccess
 import { branchOfBusiness, idsOfBusiness } from '../lib/branchGuard';   // A494
 import type { Request, Response } from 'express';
 
@@ -42,8 +42,8 @@ const canReadFuel = requireAnyPermission('fuel.manage', 'reports.fuel', 'orders.
 /** The rows a caller sees: the owner all (or the chosen branch's and the business-wide), anyone else their branch's
  *  and the business-wide. */
 function visible<T extends { branch_id?: string | null }>(req: Request, rows: T[] | null | undefined): T[] {
-  const scoped = branchScope(req);
-  return (rows ?? []).filter((r) => !scoped || !r.branch_id || r.branch_id === scoped);
+  const bf = branchFilter(req);   // A582: a partner's set too (and the business-wide equipment)
+  return (rows ?? []).filter((r) => rowInBranches(bf, r.branch_id, true));
 }
 
 /** May the caller change this tank / pump? Business-wide equipment (no branch) is every branch's. */
@@ -159,7 +159,7 @@ fuelTanksRouter.delete('/:id', canManageFuel, async (req, res) => {
 // GET /api/fuel-tanks/movements — stock movement history (sales + deliveries)
 fuelTanksRouter.get('/movements', canReadFuel, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-  const branch_id = branchScope(req);   // A494: the caller's branch (the owner: the chosen one, or all)
+  const bf = branchFilter(req);   // A494: the caller's branch (the owner: the chosen one, or all); A582: a partner's set
 
   // A494: FUEL products only — this route is open to every seller (orders.create), and it listed every product's
   // sales and restocks with the level after each: a shop's whole stock, and a blind count's figures, to a cashier.
@@ -181,7 +181,7 @@ fuelTanksRouter.get('/movements', canReadFuel, async (req, res) => {
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (branch_id) query = query.eq('branch_id', branch_id);
+  query = byBranch(query, bf);
 
   const { data: movements, error } = await query;
   if (error) { sendError(res, error); return; }
@@ -281,6 +281,7 @@ pumpsRouter.use(requireAuth);
 pumpsRouter.get('/', canReadFuel, async (req, res) => {
   // A494: a manager / cashier sees their branch's pumps and the business-wide ones; ?branch_id= is the owner's choice only.
   const branch_id = branchScope(req);
+  const bf = branchFilter(req);   // A582
   let query = supabase
     .from('pumps')
     .select('*, fuel_tanks(id, name, current_level, capacity_litres)')
@@ -290,7 +291,9 @@ pumpsRouter.get('/', canReadFuel, async (req, res) => {
   // pumps, so a pump configured without a branch still appears on every branch's
   // POS instead of the till reading "No pumps configured". UUID-guarded because
   // this builds a PostgREST or() filter from a query param.
-  if (typeof branch_id === 'string' && /^[0-9a-fA-F-]{36}$/.test(branch_id)) {
+  if (bf.kind === 'set') {
+    query = query.or(`branch_id.in.(${bf.ids.join(',')}),branch_id.is.null`);
+  } else if (typeof branch_id === 'string' && /^[0-9a-fA-F-]{36}$/.test(branch_id)) {
     query = query.or(`branch_id.eq.${branch_id},branch_id.is.null`);
   }
   const { data, error } = await query;

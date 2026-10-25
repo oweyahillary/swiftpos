@@ -117,7 +117,7 @@ export function registerSaleHandlers(ctx: IpcShared) {
     // Marked as a duplicate on the paper itself. An unmarked second copy of a
     // receipt is the thing an auditor cannot tell from a second sale.
     const r = queueThermal(lastOrderPayload, ['receipt'], { at: new Date(), count: reprintCount });
-    if (r.failed.length) return { ok: false, error: 'The receipt could not be produced — see the till log.' };
+    if (r.failed.length) return { ok: false, error: 'The receipt could not be produced — see the POS log.' };
     return { ok: true };
   });
 
@@ -128,7 +128,7 @@ export function registerSaleHandlers(ctx: IpcShared) {
   handle('escpos:reprintReceiptForOrder', async (_e, orderId: string) => {
     // 0.6.27: History's Reprint is for managers when the client has 'cashier_no_reprint' on — refused here too.
     const scope = historyScope();
-    if (!scope.canReprint) return { ok: false, error: 'Reprinting is for managers on this till.' };
+    if (!scope.canReprint) return { ok: false, error: 'Reprinting is for managers on this POS.' };
     const NOT_YOURS = 'This sale is not yours.';
     const row = getLocalDb()
       .prepare('SELECT payload FROM receipt_payloads WHERE order_id = ?')
@@ -151,7 +151,7 @@ export function registerSaleHandlers(ctx: IpcShared) {
     }
     try {
       const r = queueThermal(payload, ['receipt'], { at: new Date(), count: 1 });
-      if (r.failed.length) return { ok: false, error: 'The receipt could not be produced — see the till log.' };
+      if (r.failed.length) return { ok: false, error: 'The receipt could not be produced — see the POS log.' };
       return { ok: true };
     } catch {
       return { ok: false, error: 'Could not rebuild this receipt.' };

@@ -74,7 +74,7 @@ ok('A482: the box is unticked by default; ticked, a red warning says what goes a
   assert.match(card, /const \[menu, setMenu\] = useState\(false\);/);
   assert.match(card, /<input type="checkbox" checked=\{menu\} onChange=\{\(e\) => setMenu\(e\.target\.checked\)\} data-testid="test-menu" \/> Also delete the whole menu<\/label>/);
   assert.match(card, /\{menu && \(\s*<div style=\{\{ fontSize: 12, color: C\.danger,[^}]*\}\} data-testid="test-menu-warning">/);
-  assert.ok(card.includes("Every product, category, variant / choice group, extra, combo, recipe, branch price, offer and the menu's stock levels are deleted. The till menus empty on their next sync. This cannot be undone."));
+  assert.ok(card.includes("Every product, category, variant / choice group, extra, combo, recipe, branch price, offer and the menu's stock levels are deleted. The POS menus empty on their next sync. This cannot be undone."));
 });
 ok('A482: the preview asks with menu, shows the menu counts, and a preview for the other setting cannot be cleared', () => {
   assert.match(card, /new URLSearchParams\(\{ stock, customers: String\(customers\), menu: String\(menu\) \}\)/);

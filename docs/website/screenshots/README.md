@@ -14,5 +14,16 @@ data ("Mama Lishe Grill"). They are taken after each build session and saved as 
 | `app-analytics-tabs.webp` | A561: the "Dig into the details" tiles — dark, light, the sticky compact bar while scrolling an area, and the phone row |
 | `app-analytics-branches.webp` | A565: the Branches area (three branches, demo data) — a falling branch flagged, the branches side by side, the stock moves to consider in words (no quantity) |
 
-Pages: home, how-it-works, features, who-its-for, for-restaurants, for-bars, for-quick-service, for-retail,
-analytics, pricing, contact. Latest: 2026-10-23 (night 2: pricing model, Analytics without price rises, barcodes and labels; home, pricing, analytics, features, retail, restaurants, bars, how-it-works and contact re-taken; quick service and who-its-for are from night 1).
+Pages: home, how-it-works, features (also `features-filter-shop`, `features-filter-petrol`: the business-type filter),
+who-its-for, for-restaurants, for-bars, for-quick-service, for-retail, for-minimarts, for-petrol-stations, for-parking,
+analytics (also `analytics-shop`, `analytics-petrol`: the trade switch on the demo cards), pricing, contact. Latest:
+2026-10-23 (balancing every business type: home, features, analytics, who-its-for, retail, minimarts, petrol stations,
+parking, pricing, contact and how-it-works re-taken; restaurants, bars and quick service are from night 2). Pages taller
+than 16,000 px are scaled down to fit WebP. Evening of 2026-10-23 (videos, demo brands, "point of sale", photos): every
+page re-taken, plus `site-credits-*`; `video-reel-frame-weigh.webp`, `video-reel-frame-kitchen.webp` and
+`video-fuel-frame-pump.webp` are frames of the product videos; `demo-brands-sheet.webp` shows the four FICTIONAL demo
+brands (logo, the receipt logo as printed, the mark).
+
+Night 3 (2026-10-23): every page re-taken at 1440 and 390 px after the quality pass, plus the new `site-guides-*`
+(the hub and the four draft guides) and the Pricing page's new comparison table (in `site-pricing-*`). Before/after
+Lighthouse numbers are in `../WEBSITE-LOG.md`.

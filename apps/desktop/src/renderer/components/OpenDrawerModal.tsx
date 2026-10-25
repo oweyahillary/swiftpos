@@ -100,7 +100,7 @@ export default function OpenDrawerModal({ cashierName, currency, onOpened, onLog
               they are at — useful when three tills sit side by side. */}
           {terminal && (
             <p className="text-xs text-gray-500 mt-1.5">
-              Till <span className="text-gray-300 font-medium">{terminal}</span>
+              POS <span className="text-gray-300 font-medium">{terminal}</span>
             </p>
           )}
         </div>

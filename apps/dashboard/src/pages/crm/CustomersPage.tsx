@@ -4,7 +4,9 @@ import { useRowMore, ViewMore } from '../../components/RowMore';
 import { money, num, dateShort } from '../../lib/format';
 import { usePermissions } from '../../context/PermissionsContext';
 import CreditLimitEditor from '../../components/CreditLimitEditor';   // A567
-import { CREDIT_LIMIT_KEY, limitFromInput, limitOnCreate, limitRequest } from '../../lib/creditLimit';   // A567
+import CreditHistoryPanel from '../../components/CreditHistoryPanel';   // A585
+import { useSetsLimits } from '../../hooks/useSetsLimits';   // A587
+import { limitFromInput, limitOnCreate, limitRequest } from '../../lib/creditLimit';   // A567
 
 // ── Types ─────────────────────────────────────────────────────
 interface Customer {
@@ -308,6 +310,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
 
           {/* A567: give or change this customer's credit limit (customers.credit) */}
           <CreditLimitEditor customerId={customer.id} currency={currency} />
+          <CreditHistoryPanel customerId={customer.id} currency={currency} />
 
           {/* Stats row */}
           <div className="px-5 py-4 border-b border-gray-800/60">
@@ -500,7 +503,7 @@ export default function CustomersPage({ currency }: Props) {
   const [creating, setCreating]     = useState(false);
   const [createError, setCreateError] = useState('');
   // A567: a credit limit on New Customer — only for someone who may approve one (customers.credit, as the cloud asks).
-  const mayCredit = usePermissions().can(CREDIT_LIMIT_KEY);
+  const mayCredit = useSetsLimits().setsLimits;   // A585: the owner (New Customer's box too); A587: a partner at one of their branches
   const [createLimit, setCreateLimit] = useState('');
   const [createNotice, setCreateNotice] = useState('');
   const more = useRowMore();

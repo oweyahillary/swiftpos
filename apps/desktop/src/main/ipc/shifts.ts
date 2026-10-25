@@ -92,7 +92,7 @@ export function registerShiftHandlers(ctx: IpcShared) {
     return (rows ?? []).map((s) => ({
       id: s.id, status: s.status, opened_at: s.opened_at, closed_at: s.closed_at ?? null,
       cashier_name: s.cashier_name ?? null, expected_cash: s.expected_cash ?? null, cash_variance: s.cash_variance ?? null,
-      till: s.terminal_code || (s.device_id ? 'Till' : 'Web Till'),
+      till: s.terminal_code || (s.device_id ? 'POS' : 'Web POS'),
       this_till: !!own && s.device_id === own,
       awaiting: !!s.awaiting_confirmation,
     }));

@@ -96,7 +96,7 @@ console.log('\n4. The promotion lever');
   ok('a former node steps down AND stops serving, audited',
      /if \(wasServer\) \{ stopNodeServer\(\); logTechAction\('role\.stepdown'/.test(IH) && /\.\.\.\(wasServer \? \{ device_role: 'till' \} : \{\}\)/.test(IH));
   ok('probeNode distinguishes refused-code from no-answer',
-     NC.includes('refused this till') && NC.includes('No branch server answered'));
+     NC.includes('refused this POS') && NC.includes('No branch server answered'));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

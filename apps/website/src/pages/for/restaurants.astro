@@ -5,6 +5,7 @@ import Shot from '../../components/screens/Shot.astro';
 import Receipt from '../../components/screens/Receipt.astro';
 import KitchenDisplay from '../../components/screens/KitchenDisplay.astro';
 import DoThisNextCard from '../../components/screens/DoThisNextCard.astro';
+import ProductVideo from '../../components/ProductVideo.astro';
 import { WA_MESSAGES } from '../../lib/site';
 import { RESTAURANT_FAQ } from '../../lib/faq';
 import { demoCard } from '../../lib/analyticsDemo';
@@ -35,9 +36,11 @@ const problems = [
 const tilapia = demoCard(6);
 ---
 <Industry
-  title="ZapTill for restaurants and cafés: kitchen tickets, tables, M-Pesa | ZapTill"
-  description="ZapTill for restaurants and cafés in Kenya: orders straight to the kitchen printer or screen, variants and combos on one line, tables and dine-in, dispatch tickets, M-Pesa and a day close that shows who was short."
+  title="Restaurant POS in Kenya: kitchen tickets, tables | ZapTill"
+  description="ZapTill for restaurants and cafés in Kenya: orders straight to the kitchen printer or screen, combos on one line, tables, M-Pesa and a day close by cashier."
   ogImage="/og/restaurants.png"
+  kicker="Restaurant and café POS in Kenya"
+  guides={['pos-when-the-internet-goes-off', 'stop-cash-going-missing']}
   crumb="Restaurants and cafés"
   heading="From the order to the plate, nothing gets lost."
   sub="ZapTill sends every order to the right station as it's taken, keeps tables open while they eat, takes M-Pesa at the table, and closes the day by cashier."
@@ -48,16 +51,30 @@ const tilapia = demoCard(6);
 >
   <Fragment slot="hero">
     <div class="r-hero">
-      <Monitor label="The ZapTill till with Table 4's order">
+      <Monitor label="The ZapTill point of sale with Table 4's order">
         <Shot src="/screens/till-pos.webp" eager width={1280} height={800}
-          alt="The real ZapTill till: menu buttons, and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
+          alt="The real ZapTill point of sale: menu buttons, and Table 4's order with Chips Masala and Chicken Burger marked Spice: Spicy, total KES 3,050." />
       </Monitor>
       <Receipt kind="kitchen" paper={58} class="r-hero__slip" />
     </div>
   </Fragment>
 
   <!-- The kitchen flow -->
-  <section class="band" aria-labelledby="flow-h">
+  <section class="band" aria-labelledby="rvid-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="rvid-h">Twelve seconds at Table 4</h2>
+        <p>The waiter taps the dishes, picks "Spicy" for the chips and the burger, and sends the order. The kitchen
+          ticket prints at once, with the variant on each dish's line. This is the real ZapTill point of sale, branded
+          for a demo grill.</p>
+      </div>
+      <div class="split__visual">
+        <ProductVideo name="grill" note="Mama Lishe Grill: Table 4 to the kitchen." label="Mama Lishe Grill, Table 4: nyama choma, two chips masala and a chicken burger, both Spicy, kachumbari and two passion juices, sent to the kitchen; then the kitchen ticket prints." />
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="flow-h">
     <div class="wrap">
       <div class="section-head">
         <h2 id="flow-h">One order, three places, the same words</h2>
@@ -134,7 +151,7 @@ const tilapia = demoCard(6);
         </div>
         <div>
           <h3>Your menus, as big tabs</h3>
-          <p>Food, Drinks, Tea: your menus sit as big tabs across the top of the till, so the cashier changes menu in
+          <p>Food, Drinks, Tea: your menus sit as big tabs across the top of the point of sale, so the cashier changes menu in
             one tap. Big buttons and, with ZapTill Online, pictures of your dishes.</p>
           <!-- TODO(owner): menus by time of day (breakfast menu until 11:00…) are not built yet (A537: "no hours or days
                for now"); add them here only when they ship. -->
@@ -142,16 +159,30 @@ const tilapia = demoCard(6);
         <div>
           <h3>Credit for your regulars</h3>
           <p>The office that pays at the end of the month gets an account with a credit limit. The cashier puts the
-            bill on their account at the till, every sale on account is confirmed by a manager, and you see who owes
+            bill on their account at the point of sale, every sale on account is confirmed by a manager, and you see who owes
             what.</p>
         </div>
       </div>
-      <p class="r-note">Variants, pictures and offers on the till come with ZapTill Online. <a href="/pricing/">See the packages</a></p>
+      <p class="r-note">Variants, pictures and offers on the point of sale come with ZapTill Online. <a href="/pricing/">See the packages</a></p>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="cafe-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="cafe-h">And for a café</h2>
+        <p>A café sells at the counter, takeaway and in: lattes, tea and a samosa, paid by M-Pesa in seconds. Your
+          menus can follow the day (breakfast in the morning), and your logo prints at the top of every receipt.
+          Here is a real ZapTill receipt for Mvua Café, a made-up café in Kilimani.</p>
+      </div>
+      <div class="split__visual cafe-slip">
+        <Receipt kind="cafe" paper={58} />
+      </div>
     </div>
   </section>
 
   <!-- Analytics -->
-  <section class="band" aria-labelledby="ran-h">
+  <section class="band band--white" aria-labelledby="ran-h">
     <div class="wrap split split--flip">
       <div class="split__copy">
         <h2 id="ran-h">Then: which dishes earn, and when to push them</h2>
@@ -192,4 +223,6 @@ const tilapia = demoCard(6);
   .grid4 p { color: var(--ink-2); margin: 0; }
   @media (min-width: 760px) { .grid4 { grid-template-columns: repeat(2, 1fr); gap: var(--s-6) var(--s-8); } }
   .r-note { margin-top: var(--s-6); font-size: var(--fs-sm); color: var(--muted); }
+  .cafe-slip { display: flex; justify-content: center; }
+  .cafe-slip :global(.slip-wrap) { width: min(100%, 17rem); --slip-fs: 0.78rem; transform: rotate(-1.2deg); }
 </style>

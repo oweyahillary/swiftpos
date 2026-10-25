@@ -194,9 +194,9 @@ export function packSupportText(text: string, max = MAX_ENCODED_BYTES): { b64: s
 
 /** What the Tech page shows for the cloud's answer. */
 export function sendVerdict(status: number | null, body: any): { ok: true; reference: string } | { ok: false; offline: boolean; message: string } {
-  if (status === null) return { ok: false, offline: true, message: 'This till cannot reach the cloud right now. Save the log to a file instead, and send it another way.' };
+  if (status === null) return { ok: false, offline: true, message: 'This POS cannot reach the cloud right now. Save the log to a file instead, and send it another way.' };
   if (status >= 200 && status < 300 && typeof body?.reference === 'string') return { ok: true, reference: body.reference };
-  if (status === 429) return { ok: false, offline: false, message: body?.error ?? 'Five logs were sent from this till in the last hour — wait a little, or save the log to a file.' };
+  if (status === 429) return { ok: false, offline: false, message: body?.error ?? 'Five logs were sent from this POS in the last hour — wait a little, or save the log to a file.' };
   if (status === 404) return { ok: false, offline: false, message: 'The cloud does not take logs yet (an older cloud). Save the log to a file instead.' };
   if (status >= 500 || status === 502 || status === 503) return { ok: false, offline: true, message: 'The cloud is not answering right now. Save the log to a file instead.' };
   return { ok: false, offline: false, message: body?.error ?? `The cloud refused the log (HTTP ${status}).` };

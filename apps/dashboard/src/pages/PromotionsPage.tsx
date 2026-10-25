@@ -290,7 +290,7 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
         <div>
           <h1 className="text-white text-xl sm:text-2xl font-bold">{term('promotions')}</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Happy hour and BOGO deals — charged at every till and the web POS, at every branch
+            Happy hour and BOGO deals — charged at every desktop POS and the web POS, at every branch
           </p>
         </div>
         <button onClick={openCreate}
@@ -363,7 +363,7 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
                             </span>
                           )}
                           {p.status === 'active' && p.charged_at_sale === false && p.not_charged_reason && (
-                            <span className="text-amber-400" data-testid="promotion-not-charged">Not charged at the till: {p.not_charged_reason}</span>
+                            <span className="text-amber-400" data-testid="promotion-not-charged">Not charged at the POS: {p.not_charged_reason}</span>
                           )}
                           {(p.start_date || p.end_date) && (
                             <span>📆 {p.start_date ?? '…'} → {p.end_date ?? '…'}</span>
@@ -565,7 +565,7 @@ export default function PromotionsPage({ client = api }: { client?: PosApi } = {
                 )}
               </div>
               {type === 'quantity_discount' && (
-                <p className="text-xs text-amber-400">A quantity discount is not charged at the till yet - set it up as an Offer ({terms.catalogueGroup} › Offers) to charge it.</p>
+                <p className="text-xs text-amber-400">A quantity discount is not charged at the POS yet - set it up as an Offer ({terms.catalogueGroup} › Offers) to charge it.</p>
               )}
 
               {error && (

@@ -52,8 +52,8 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.WEB_TILL_TS) {
 
   // ── 1. The web rules ──
   await ok('the name: "<Branch> Web Till" (a blank branch → "Web Till")', () => {
-    assert.equal(label.webTillName('Westlands'), 'Westlands Web Till');
-    assert.equal(label.webTillName('  '), 'Web Till');
+    assert.equal(label.webTillName('Westlands'), 'Westlands Web POS');
+    assert.equal(label.webTillName('  '), 'Web POS');
   });
   await ok('cashier A (opened the Till 1 shift) signs in on the web → straight into it', () => {
     assert.equal(web.mayEnterSilently({ id: 's-A', opened_by: A }, A), true);
@@ -124,7 +124,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.WEB_TILL_TS) {
       await ok('GET /web-till: "Westlands Web Till", no drawer open yet (Anne\'s Till 1 shift is NOT the web till\'s)', async () => {
         const r = await get(`/web-till?branch_id=${BR}`);
         assert.equal(r.status, 200, JSON.stringify(r.body));
-        assert.deepEqual(r.body, { name: 'Westlands Web Till', open_shift: null });
+        assert.deepEqual(r.body, { name: 'Westlands Web POS', open_shift: null });
       });
       await ok('…only the web:<branch> drawer counts as the web till\'s: Ben\'s own web shift is reported, with his name', async () => {
         db.shifts.push({ id: 's-B', business_id: Bz, branch_id: BR, device_id: null, terminal_code: null, status: 'open', opened_at: '2026-09-27T09:00:00Z', opened_by: 'u-B' });

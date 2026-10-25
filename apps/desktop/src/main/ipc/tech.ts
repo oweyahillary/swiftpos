@@ -56,7 +56,7 @@ export function registerTechHandlers(ctx: IpcShared) {
     const existing = getActiveSession();
     if (existing) return { ok: true, session: existing };
     // A494: never a bare call — the technician's code is entered at this till first (tech:checkReveal).
-    if (!revealPassedAt || Date.now() - revealPassedAt > REVEAL_FRESH_MS) return { ok: false, error: 'Enter the technician code on this till first.' };
+    if (!revealPassedAt || Date.now() - revealPassedAt > REVEAL_FRESH_MS) return { ok: false, error: 'Enter the technician code on this POS first.' };
     const token = await fetchNodeTechToken().catch(() => null);
     if (!token) return { ok: false };
     const result = openTechSession(token);
@@ -136,7 +136,7 @@ export function registerTechHandlers(ctx: IpcShared) {
     startNodeServer();
     const secret = ensureNodeSecret();
     return { ok: true, role: 'node', secret,
-             note: 'Now repoint each remaining till at this machine (Tech → branch server address).' };
+             note: 'Now repoint each remaining POS at this machine (Tech → branch server address).' };
   });
 
   // Repoint this till at a (new) branch server. Probe BEFORE save — a wrong

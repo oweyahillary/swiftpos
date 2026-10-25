@@ -105,15 +105,15 @@ export function togetherAdvice(raw: string | null | undefined, a: { name: string
     }
     return {
       title: `Put ${b.name} next to ${a.name}`,
-      action: `Place them together in the forecourt shop or near the till, and remind cashiers to offer ${b.name} with ${a.name}.`,
+      action: `Place them together in the forecourt shop or near the POS, and remind cashiers to offer ${b.name} with ${a.name}.`,
       short: 'Side by side in the shop',
     };
   }
   if (t === 'retail' || t === 'minimart') {
     return {
       title: `Put ${b.name} next to ${a.name}`,
-      action: `Place them on the same shelf or near the till, keep both in stock together, and remind cashiers to offer ${b.name} with ${a.name}.`,
-      short: 'Same shelf or near the till',
+      action: `Place them on the same shelf or near the POS, keep both in stock together, and remind cashiers to offer ${b.name} with ${a.name}.`,
+      short: 'Same shelf or near the POS',
     };
   }
   return {

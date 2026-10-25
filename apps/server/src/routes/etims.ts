@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, branchScope } from '../middleware/rbac';
+import { requirePermission, branchScope, oneBranchOnly, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { registerBranch } from '../lib/etims';
 import { processPending } from '../lib/etims/queue';
@@ -20,6 +20,7 @@ router.use(requireAuth);
 
 // GET /api/etims/config?branch_id=  — current eTIMS config + enabled flag
 router.get('/config', requirePermission('etims.manage'), async (req, res) => {
+  if (oneBranchOnly(req, res)) return;   // A582: one branch's fiscal device at a time
   const branchId = branchScope(req) || req.branchId;
   if (!(await guardBranch(req, res, branchId, 'Forbidden'))) return;
 
@@ -88,8 +89,10 @@ router.put('/config', requirePermission('etims.manage'), async (req, res) => {
 // Returns the signed sale row if present; 204 if none yet.
 router.get('/order/:orderId', async (req, res) => {
   const { data: order } = await supabase
-    .from('orders').select('business_id').eq('id', req.params.orderId).single();
+    .from('orders').select('business_id, branch_id').eq('id', req.params.orderId).single();
   if (!order || order.business_id !== req.businessId) { res.status(404).json({ error: 'Not found' }); return; }
+  // A582: a partner reads only their branches' sales (an order id of another branch: not found)
+  if (req.webPartner && !assertBranchAccess(req, (order as { branch_id?: string | null }).branch_id ?? null)) { res.status(404).json({ error: 'Not found' }); return; }
 
   const { data } = await supabase
     .from('etims_invoices')
@@ -107,6 +110,7 @@ router.get('/order/:orderId', async (req, res) => {
 // GET /api/etims/status?branch_id=  — fiscalisation health for a branch
 // Counts by status so the dashboard can surface pending/failed invoices.
 router.get('/status', async (req, res) => {
+  if (oneBranchOnly(req, res)) return;   // A582: one branch's fiscal device at a time
   const branchId = branchScope(req) || req.branchId;
   if (!(await guardBranch(req, res, branchId, 'Forbidden'))) return;
 
@@ -126,6 +130,7 @@ router.get('/status', async (req, res) => {
 
 // GET /api/etims/invoices?branch_id=&status=  — list fiscalisation records
 router.get('/invoices', requirePermission('reports.tax'), async (req, res) => {
+  if (oneBranchOnly(req, res)) return;   // A582: one branch's fiscal device at a time
   const branchId = branchScope(req) || req.branchId;
   if (!(await guardBranch(req, res, branchId, 'Forbidden'))) return;
 

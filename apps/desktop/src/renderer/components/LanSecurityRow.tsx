@@ -27,7 +27,7 @@ export default function LanSecurityRow() {
     setBusy(true); setNote('');
     try {
       await posApi.serverJoin.tlsRetrust();
-      setNote('Forgotten — the till trusts the branch server\'s new certificate within a minute.');
+      setNote('Forgotten — the POS trusts the branch server\'s new certificate within a minute.');
       setSt(await posApi.serverJoin.tlsStatus());
     } catch (e: any) { setNote(e?.message ?? 'Could not do that.'); }
     finally { setBusy(false); }
@@ -38,13 +38,13 @@ export default function LanSecurityRow() {
     <>
       <dt className="text-gray-300">Shop network</dt>
       <dd className="text-gray-300" data-testid="lan-security">
-        {st.state === 'server' && <>Encrypted for tills on 1.0.15 or later · security code {code}</>}
+        {st.state === 'server' && <>Encrypted for points of sale on 1.0.15 or later · security code {code}</>}
         {st.state === 'encrypted' && <>Encrypted · security code {code}</>}
         {st.state === 'plain' && <>Not encrypted yet — it switches by itself once the branch server answers encrypted</>}
         {st.state === 'old_server' && <>Not encrypted — the branch server runs an older build; update it</>}
         {st.state === 'tls_failed' && (
           <span className="text-red-400" data-testid="lan-tls-failed">
-            The branch server does not answer encrypted any more — nothing is sent to it; this till checks again every minute.
+            The branch server does not answer encrypted any more — nothing is sent to it; this POS checks again every minute.
             If it was reinstalled with an older build, update it, or trust it again.
             {st.error && <span className="block text-gray-400">{st.error}</span>}{/* A503: e.g. a re-trust waiting for a certificate */}{' '}
             <button onClick={retrust} disabled={busy}

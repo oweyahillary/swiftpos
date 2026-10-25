@@ -131,7 +131,7 @@ await ok('the screens: balances only for payables.manage; the account with state
   assert.match(a, /client\.get<Account>\(`\/api\/payables\/suppliers\/\$\{supplierId\}`\)/);
   assert.match(a, /client = api, canPay = true, canReturn = true/);
   assert.match(a, /docType: 'SUPPLIER STATEMENT'/);
-  assert.match(a, /A payment recorded here is not an expense and does not come out of a till drawer\./);
+  assert.match(a, /A payment recorded here is not an expense and does not come out of a POS drawer\./);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

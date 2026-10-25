@@ -44,7 +44,7 @@ router.get('/status', async (req, res) => {
 // before 154 the cloud answers 501 and the till rests its reports for 6 hours. Read only by the admin portal.
 let stateColumnWarned = false;
 router.post('/state', async (req, res) => {
-  if (!req.isTill || !req.deviceId) { res.status(403).json({ error: "Only a till's own session reports its update state.", code: 'TILL_ONLY' }); return; }
+  if (!req.isTill || !req.deviceId) { res.status(403).json({ error: "Only a POS's own session reports its update state.", code: 'TILL_ONLY' }); return; }
   const clean = cleanUpdateState(req.body);
   if (!clean) { res.status(400).json({ error: 'not an update state', code: 'INVALID' }); return; }
   const { error } = await supabase

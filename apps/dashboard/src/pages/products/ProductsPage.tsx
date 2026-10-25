@@ -826,7 +826,7 @@ export default function ProductsPage() {
                       />
                     </div>
                     <p className="col-span-2 text-gray-600 text-xs">
-                      Tapped on the till it asks for the weight. Give it the same code as on your weighing scale and the
+                      Tapped on the POS it asks for the weight. Give it the same code as on your weighing scale and the
                       scale's labels scan straight in (0.452 kg, the right amount). Label layout: Settings › Scale labels.
                     </p>
                   </div>

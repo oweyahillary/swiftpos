@@ -66,7 +66,7 @@ ok('only completed payments count in the method split', () => {
   assert.deepEqual(r.paymentMethods, { cash: 2500, mpesa: 500, card: 200 });
 });
 ok("every till, by name: T1's code, Bar's label, the web POS as Web Till", () => {
-  assert.deepEqual(r.byTill.map((t) => [t.label, t.orders, t.revenue]), [['T1', 2, 1500], ['Bar', 1, 300], ['Web Till', 1, 200]]);
+  assert.deepEqual(r.byTill.map((t) => [t.label, t.orders, t.revenue]), [['T1', 2, 1500], ['Bar', 1, 300], ['Web POS', 1, 200]]);
 });
 ok("the branch's own hour (Nairobi 10:00, not 07:00 UTC)", () => {
   assert.deepEqual(r.hourly.map((h) => h.hour), [10, 12, 13]);

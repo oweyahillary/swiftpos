@@ -271,7 +271,7 @@ export async function printLabels(req: LabelPrintRequest, settings: LabelSetting
     // escpos — the receipt printer
     const bound = receiptPrinterTarget();
     const target = printer.escposTarget || bound?.target || '';
-    if (!target) return out({ ok: false, labels: 0, error: 'No receipt printer is set up on this till (Settings › Printing), and none is named here.' });
+    if (!target) return out({ ok: false, labels: 0, error: 'No receipt printer is set up on this POS (Settings › Printing), and none is named here.' });
     const width = printer.escposTarget ? printer.escposWidthMm : (bound?.paperWidthMm ?? printer.escposWidthMm);
     const bytes: number[] = [];
     for (const r of rows) {

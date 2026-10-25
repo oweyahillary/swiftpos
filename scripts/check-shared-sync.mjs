@@ -103,6 +103,16 @@ const SHARED = [
     ],
   },
   {
+    // A588: the petrol POS's forecourt — grade colours, the fuel keypad (amount / litres), the gauges (tank or today's
+    // litres), a pump's state. Pure, no imports.
+    name: 'forecourt.ts',
+    copies: [
+      'shared/forecourt.ts',
+      'apps/desktop/src/shared/forecourt.ts',   // the till's pumps screen (PumpsView, lazy)
+      'apps/dashboard/src/lib/forecourt.ts',    // the web POS's pumps and fuel keypad
+    ],
+  },
+  {
     // A575: Analytics in each business type's words, and what to do about two products bought together. Imports
     // businessTerms.ts (beside each copy); not on the till (it has no Analytics).
     name: 'analyticsTerms.ts',

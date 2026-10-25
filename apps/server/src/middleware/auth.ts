@@ -10,8 +10,23 @@ import { expandKeys } from '../lib/permissions';                 // A490
 import { permissionsOpenBefore } from '../lib/permissionsState'; // A490
 import { isOwnerRoleName } from '../lib/ownerRole';              // A494
 import { readTill, cachedUser, cachedOwner, cachedOwnerRole, forgetUser } from '../lib/authCache';   // A528
-import { partnerRequestBranch } from '../lib/webPartners';    // A550
-import { lapseRefusal } from '../lib/cloudPlan';                // A581
+import { partnerRequestBranch, partnerBranchSet } from '../lib/webPartners';    // A550, A582
+import { NO_BRANCH, PICK_ONE_BRANCH_BODY } from './rbac';        // A582
+import { accessRefusal } from '../lib/cloudPlan';               // A581, A584
+
+/**
+ * A582: in "All my branches" a write is refused before any route — a set of branches is never where a sale, a count, a
+ * setting or a staff change lands. The partner picks one of their branches for it. Sign-in housekeeping (/api/auth: renew,
+ * sign out, their own password) and marking their own notifications read (checked against the set by the route) still go.
+ */
+function setModeWriteRefused(req: Request, res: Response): boolean {
+  const m = String(req.method).toUpperCase();
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return false;
+  const p = String(req.originalUrl ?? '').split('?')[0];
+  if (p.startsWith('/api/auth/') || /^\/api\/notifications\/(read-all|[^/]+\/read)$/.test(p)) return false;
+  res.status(400).json(PICK_ONE_BRANCH_BODY);
+  return true;
+}
 
 /**
  * A494: a session from the owner's password sign-in (/auth/login — only the account that owns the business can make
@@ -48,6 +63,12 @@ declare global {
       partnerBranches:    string[];
       /** A550: a partner who works at EVERY branch — the owner's branch picker ("All branches" = branchId null). */
       allBranches:        boolean;
+      /**
+       * A582: "All my branches" — a partner of some branches reading them combined (X-Branch-Id 'mine'): exactly their
+       * list. null (or absent) for everyone else. While set, branchId is NO_BRANCH (a read not taught the set finds
+       * nothing; a write is refused before any route — a set is never a write target). Read it through rbac.branchFilter.
+       */
+      branchSet?:         string[] | null;
     }
   }
 }
@@ -153,10 +174,17 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.webPartner         = pc.webPartner === true && !req.isOwner && !req.isTill;
     req.partnerBranches    = req.webPartner && Array.isArray(pc.partnerBranches) ? pc.partnerBranches.filter((b): b is string => typeof b === 'string') : [];
     req.allBranches        = req.webPartner && pc.allBranches === true;
+    req.branchSet          = null;
     if (req.webPartner) {
       req.branchId = partnerRequestBranch(
         { branchIds: req.partnerBranches, allBranches: req.allBranches, sessionBranch: payload.branchId ?? null },
         req.headers['x-branch-id']);
+      // A582: "All my branches" — their list, combined; branchId a branch that matches nothing (fail closed).
+      req.branchSet = partnerBranchSet({ branchIds: req.partnerBranches, allBranches: req.allBranches }, req.headers['x-branch-id']);
+      if (req.branchSet) {
+        req.branchId = NO_BRANCH;
+        if (setModeWriteRefused(req, res)) return;
+      }
     }
 
     // A KDS display token (surface:'kds') is a long-lived, branch-scoped capability
@@ -184,7 +212,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
       if (tillBlockReason(tillRow as { status?: string; retired_at?: string } | null)) {
         res.status(401).json({
-          error: 'This till is no longer joined to the business. A technician can rejoin it.',
+          error: 'This POS is no longer joined to the business. A technician can rejoin it.',
           code:  'DEVICE_BLOCKED',
         });
         return;
@@ -198,7 +226,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // A415: a till session from before the till signed in as itself carried the owner's identity. Never accepted —
     // the till renews (/refresh), which replaces it with the till's own session.
     if (isOwnerEraTillPayload(payload as { surface?: unknown; pinSignIn?: unknown; till?: unknown })) {
-      res.status(401).json({ error: 'This till\'s sign-in is being replaced — renewing.', code: 'TOKEN_REPLACED' });
+      res.status(401).json({ error: 'This POS\'s sign-in is being replaced — renewing.', code: 'TOKEN_REPLACED' });
       return;
     }
 
@@ -344,6 +372,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.webPartner         = false;   // A550: a Supabase session is only ever the owner's (resolveOwnerBusinesses above)
   req.partnerBranches    = [];
   req.allBranches        = false;
+  req.branchSet          = null;    // A582
 
   if (supabaseEmail) {
     const { data: userRow } = await supabase
@@ -370,6 +399,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.roleId         = ownerRoleId ?? null;
   req.permissionKeys = ['*'];
 
+  if (await cloudLapseBlocked(req, res)) return;   // A584: a paused business's web dashboard
   next();
 }
 
@@ -382,19 +412,23 @@ export function requireWebSurface(req: Request, res: Response, next: NextFunctio
   });
 }
 
-// ── A581: the cloud plan's lapse gate ─────────────────────────────────────────────────────────────────────────────
-// A business whose cloud plan (or trial) has lapsed past its grace: its tills' writes (sales, drawers, days, changes, the
-// heartbeat, a manager's edits on the till) are answered 503 CLOUD_SUBSCRIPTION_ENDED — 503 so every till version keeps
-// the record queued; 1.0.20 tells the manager. Sign-in and renewals, the technician's routes, support logs and the update
-// state stay open (lib/cloudPlan.ts lapseGateApplies). Remembered a minute per business; a failed read never refuses.
+// ── A581 / A584: the cloud plan's gates ───────────────────────────────────────────────────────────────────────────
+// A581: a LOCKED business's tills' writes (sales, drawers, days, changes, the heartbeat, a manager's edits on the till) are
+// answered 503 CLOUD_SUBSCRIPTION_ENDED — 503 so every till version keeps the record queued; 1.0.20 tells the manager.
+// Sign-in and renewals, the technician's routes, support logs and the update state stay open.
+// A584 (owner: "after 7 days the access gets revoked immediately, no warning for web"): from the lock, every WEB request
+// (reads too) but /api/auth/* is answered 403 CLOUD_ACCESS_PAUSED (a trial: CLOUD_TRIAL_ENDED) — the dashboard shows
+// "Your ZapTill cloud access is paused. Call 0717 675 635 to renew." A session already open is paused at once, not at its
+// next sign-in. Rules: lib/cloudPlan.ts accessRefusal. Remembered a minute per business (a recorded payment forgets it at
+// once); a failed read never refuses.
 async function cloudLapseBlocked(req: Request, res: Response): Promise<boolean> {
   let refusal = null;
-  try { refusal = await lapseRefusal(req.businessId, req.surface, req.method, req.originalUrl || req.url || ''); }
+  try { refusal = await accessRefusal(req.businessId, req.surface, req.method, req.originalUrl || req.url || ''); }
   catch { return false; }
   if (!refusal) return false;
   res.locals.cloudLapsed = true;   // index.ts: not a server error, not a refused till for the watchdog
-  res.set('Retry-After', '900');
-  res.status(503).json(refusal);
+  if (refusal.status === 503) res.set('Retry-After', '900');
+  res.status(refusal.status).json(refusal.body);
   return true;
 }
 

@@ -185,7 +185,7 @@ export default function InstallPage({ onComplete }: Props) {
       if (busy) return; busy = true;
       try {
         const st = await posApi.install.joinStatus();
-        if (st.status === 'denied') { setJoinTarget(null); setJoinNote('The server did not allow this till to join.'); }
+        if (st.status === 'denied') { setJoinTarget(null); setJoinNote('The server did not allow this POS to join.'); }
         else if (st.status === 'expired' || st.status === 'none') { setJoinTarget(null); setJoinNote('The request ran out — ask again.'); }
         else if (st.status === 'joined') {
           setJoinTarget(null);
@@ -416,7 +416,7 @@ export default function InstallPage({ onComplete }: Props) {
                 {/:4100(\/|$)/.test(serverUrl.trim()) && (
                   <p className="text-xs mt-2 rounded-lg px-3 py-2 border text-amber-400 bg-amber-400/10 border-amber-400/20">
                     That looks like a <span className="font-semibold">branch server</span> address.
-                    Port 4100 relays sales between tills — it cannot sign anyone in.
+                    Port 4100 relays sales between points of sale — it cannot sign anyone in.
                     Put the hosted server URL here (https://…), and the branch server
                     address at step 3.
                   </p>
@@ -442,7 +442,7 @@ export default function InstallPage({ onComplete }: Props) {
               {!verified && testMsg && (
                 <p className="text-xs text-gray-300 -mt-2">
                   The server did not respond correctly. Fix the address before continuing —
-                  a wrong one here means this till cannot sign in, load the menu, or sync.
+                  a wrong one here means this POS cannot sign in, load the menu, or sync.
                 </p>
               )}
             </>
@@ -506,8 +506,8 @@ export default function InstallPage({ onComplete }: Props) {
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Device role</label>
                 <div className="flex gap-3">
-                  {roleBtn('till', 'Till', 'A point of sale terminal')}
-                  {roleBtn('node', 'Branch server', 'Other tills sync to this one')}
+                  {roleBtn('till', 'POS', 'A point of sale terminal')}
+                  {roleBtn('node', 'Branch server', 'Other points of sale sync to this one')}
                   {roleBtn('office', 'Office', 'Branch server that cannot sell — reports and day close only')}
                 </div>
               </div>
@@ -525,8 +525,8 @@ export default function InstallPage({ onComplete }: Props) {
                   </div>
                 )}
                 <p className="text-xs text-gray-400 mt-1.5">
-                  Prefixes every bill number from this till, e.g. <span className="font-mono">T1--1042</span>.
-                  <span className="text-amber-400/80"> Each till at this branch must have a different code</span> — T1, T2, T3 — or their bill numbers will collide.
+                  Prefixes every bill number from this POS, e.g. <span className="font-mono">T1--1042</span>.
+                  <span className="text-amber-400/80"> Each POS at this branch must have a different code</span> — T1, T2, T3 — or their bill numbers will collide.
                 </p>
               </div>
 
@@ -537,8 +537,8 @@ export default function InstallPage({ onComplete }: Props) {
                   {/* A503 (A502): tills no longer type this code — they find this server and someone here presses Allow;
                       the code goes to them with the answer. */}
                   <p className="text-xs text-amber-200/70 mt-2">
-                    Keep a note of it for support. The tills do not type it: each one finds this server (Find my server)
-                    and someone here presses Allow — the code goes to the till with that answer.
+                    Keep a note of it for support. The points of sale do not type it: each one finds this server (Find my server)
+                    and someone here presses Allow — the code goes to the POS with that answer.
                   </p>
                 </div>
               )}
@@ -555,14 +555,14 @@ export default function InstallPage({ onComplete }: Props) {
                   ) : (
                     <>
                       <p className="text-xs text-gray-400">
-                        None — this till works on its own. To join the branch server, find it on this network and press Allow there.
+                        None — this POS works on its own. To join the branch server, find it on this network and press Allow there.
                       </p>
                       <button type="button" onClick={() => { setStep('search'); void search(); }}
                         className="mt-2 text-xs text-action-400 hover:text-action-300">Find my server</button>
                     </>
                   )}
                   <p className="text-xs text-gray-400 mt-1.5">
-                    Network: put the branch server and its tills on a wired or separate network &mdash; not the customer Wi-Fi.
+                    Network: put the branch server and its points of sale on a wired or separate network &mdash; not the customer Wi-Fi.
                   </p>
                 </div>
               )}
@@ -588,7 +588,7 @@ export default function InstallPage({ onComplete }: Props) {
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Device name <span className="text-gray-400">(optional)</span></label>
                 <input type="text" value={deviceName} onChange={e => setDeviceName(e.target.value)}
-                  placeholder="Front till 1" className={inputCls} />
+                  placeholder="Front POS 1" className={inputCls} />
               </div>
               {error && <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-2.5">{error}</p>}
               <button onClick={complete} disabled={saving || !branchId}

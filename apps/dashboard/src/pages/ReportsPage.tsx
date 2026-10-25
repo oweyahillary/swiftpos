@@ -209,9 +209,11 @@ function ErrMsg({ msg }: { msg: string }) {
 
 // ── Date range bar ────────────────────────────────────────────────────────────
 
-function DateRangeBar({ range, onChange, branches, branchId, onBranchChange }: {
+function DateRangeBar({ range, onChange, branches, branchId, onBranchChange, allLabel = 'All branches', showAll = true }: {
   range: DateRange; onChange: (r: DateRange) => void;
   branches: { id: string; name: string }[]; branchId: string; onBranchChange: (id: string) => void;
+  /** A582: "All my branches (3)" for a partner of some branches; shown only where every branch in view is theirs to combine. */
+  allLabel?: string; showAll?: boolean;
 }) {
   // A467: Today · Yesterday · This week · Last week · This month · Last month — local (EAT) days, Monday-first weeks.
   const presets = reportPresets();
@@ -232,7 +234,7 @@ function DateRangeBar({ range, onChange, branches, branchId, onBranchChange }: {
       <input type="date" value={range.to} min={range.from} onChange={e => onChange({ ...range, to: e.target.value })} className={inputCls} />
       {branches.length > 1 && (
         <select value={branchId} onChange={e => onBranchChange(e.target.value)} className={inputCls}>
-          <option value="">All branches</option>
+          {showAll && <option value="">{allLabel}</option>}
           {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
       )}
@@ -243,6 +245,7 @@ function DateRangeBar({ range, onChange, branches, branchId, onBranchChange }: {
 // ── Tab: Master / DSR ─────────────────────────────────────────────────────────
 
 function MasterTab({ range, branchId, currency, meta, staffId }: TabProps) {
+  const { allLabel } = useBranch();   // A582: "All my branches (3)" for a partner of some branches
   const [data, setData]     = useState<MasterReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState('');
@@ -304,7 +307,7 @@ function MasterTab({ range, branchId, currency, meta, staffId }: TabProps) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">{data.branchName || 'All branches'}</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">{data.branchName || allLabel}</h2>
           <p className="text-xs text-gray-400 mt-0.5">{range.from} — {range.to}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -756,7 +759,7 @@ function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
     ] as ReportSheet[]),
     ...(diffs.length === 0 ? [] : [
       { name: 'Offline Price Differences',
-        columns: [col('order_number', 'Order'), money('catalogue_total', 'Catalogue price'), money('till_total', 'Till charged'), money('difference', 'Loss'), col('reason', 'Why'), col('flag', 'Flag'), col('time', 'Sold')],
+        columns: [col('order_number', 'Order'), money('catalogue_total', 'Catalogue price'), money('till_total', 'POS charged'), money('difference', 'Loss'), col('reason', 'Why'), col('flag', 'Flag'), col('time', 'Sold')],
         rows: diffs.map(d => ({ ...d, catalogue_total: Number(d.catalogue_total), till_total: Number(d.till_total), difference: Number(d.difference),
           flag: d.suspicious ? 'Over half the price' : '', time: localStamp(d.sold_at ?? d.created_at) })) },
     ] as ReportSheet[]),
@@ -852,7 +855,7 @@ function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
             </p>
           </div>
           <p className="px-4 pt-3 text-xs text-gray-500 dark:text-gray-400">
-            Sold on a till while offline, at the till's price; the menu price was different when the sale reached the cloud.
+            Sold on a POS while offline, at the POS's price; the menu price was different when the sale reached the cloud.
             The sale is kept as the customer paid it — the difference is counted as a loss.
           </p>
           <div className="overflow-x-auto">
@@ -861,7 +864,7 @@ function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
                 <tr>
                   <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Order</th>
                   <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Menu price</th>
-                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Till charged</th>
+                  <th className={`text-right text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>POS charged</th>
                   <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Loss</th>
                   <th className={`text-left text-xs text-gray-400 px-2 py-2.5 font-medium ${DESK}`}>Why</th>
                   <th className={`text-right text-xs text-gray-400 px-4 py-2.5 font-medium ${DESK}`}>Sold</th>
@@ -883,7 +886,7 @@ function VoidsTab({ range, branchId, currency, meta, staffId }: TabProps) {
                   </tr>
                   <MoreRow open={more.isOpen(`pd-${d.id}`)} colSpan={2} items={[
                     ['Menu price', fmt.money(Number(d.catalogue_total), currency, { blank: '—' })],
-                    ['Till charged', fmt.money(Number(d.till_total), currency, { blank: '—' })],
+                    ['POS charged', fmt.money(Number(d.till_total), currency, { blank: '—' })],
                     ['Why', d.reason],
                     ['Sold', fmt.dateTime(d.sold_at ?? d.created_at)],
                   ]} />
@@ -1131,6 +1134,7 @@ const EXPORT_FORMATS: { key: string; label: string; desc: string }[] = [
 ];
 
 function ExportsTab({ range, branchId }: TabProps) {
+  const { allLabel } = useBranch();   // A582
   const [busyKey, setBusyKey] = useState('');
   const [dlError, setDlError] = useState('');
   const download = async (key: string) => {
@@ -1150,7 +1154,7 @@ function ExportsTab({ range, branchId }: TabProps) {
     <div className="space-y-4">
       <p className="text-sm text-gray-500 dark:text-gray-400">
         Download any report as an Excel file for {range.from === range.to ? range.from : `${range.from} — ${range.to}`}
-        {branchId ? ' (selected branch)' : ' (all branches)'}.
+        {branchId ? ' (selected branch)' : ` (${allLabel.toLowerCase()})`}.
       </p>
       {dlError && <p className="text-sm text-red-500">{dlError}</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2526,7 +2530,7 @@ export default function ReportsPage() {
     if (t.id === 'matrix' || t.id === 'food_cost')     return !isPetrol;
     return true;
   });
-  const { branches, activeBranchId } = useBranch();
+  const { branches, activeBranchId, allLabel, allowAll, allMine } = useBranch();   // A582: allLabel, allMine
   // A576: ?tab=&from=&to=&branch=&staff= — a watch-list alert opens the list behind it (that day, branch and person).
   const [params] = useSearchParams();
   const isDay = (d: string | null): d is string => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -2541,7 +2545,7 @@ export default function ReportsPage() {
   // A467: the About sheet of every tab's Excel — the business, and the branch picked (blank = All branches).
   const meta: ReportMeta = {
     businessName: business?.name ?? '',
-    branchName: branchId ? ((branches ?? []).find(b => b.id === branchId)?.name ?? '') : '',
+    branchName: branchId ? ((branches ?? []).find(b => b.id === branchId)?.name ?? '') : (allMine ? allLabel : ''),   // A582
   };
   const tabProps: TabProps = { range, branchId, currency, meta, staffId };
 
@@ -2552,7 +2556,8 @@ export default function ReportsPage() {
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sales analysis · Tax · Staff performance · Voids</p>
       </div>
 
-      <DateRangeBar range={range} onChange={setRange} branches={branches ?? []} branchId={branchId} onBranchChange={setBranchId} />
+      <DateRangeBar range={range} onChange={setRange} branches={branches ?? []} branchId={branchId} onBranchChange={setBranchId}
+        allLabel={allLabel} showAll={allowAll || allMine} />
       {staffId && (
         <div className="mb-3 flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300" data-testid="reports-one-person">
           <span>Showing one staff member's sales (from the Watch list).</span>

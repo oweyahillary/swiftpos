@@ -137,7 +137,7 @@ export default function LockCurtain({
           )}
           <p data-testid="lock-clock" className="text-4xl font-light tabular-nums text-white tracking-tight">{clock}</p>
           <p className="text-sm text-gray-400 mt-0.5 mb-4">{day}</p>
-          <h1 className="text-lg font-semibold text-white">Till locked</h1>
+          <h1 className="text-lg font-semibold text-white">POS locked</h1>
           {/* Naming who is still signed in matters: it tells the next person
               whether they can PIN in here or need Lock till, without making
               them guess and fail twice. */}

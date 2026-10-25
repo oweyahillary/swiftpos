@@ -60,7 +60,7 @@ globalThis.fetch = async (url, init = {}) => {
 E.configureSyncEngine('http://cloud', 'tok', 'refresh');
 const localLogo = () => L.getBranding()?.logoPng ?? null;
 
-console.log('0.6.25 — a till upload is saved to the cloud too\n');
+console.log('0.6.25 — a POS upload is saved to the cloud too\n');
 
 // 1. The cloud is down (500): saved on the till, pending.
 cloud.putStatus = 500;
@@ -94,7 +94,7 @@ ok('a refusal is reported with the reason, and pulls resume (not pending)', r.st
 
 // 6. The editor says how it went.
 const editor = fs.readFileSync(path.join(here, '..', 'src/renderer/pages/BrandingEditor.tsx'), 'utf8');
-ok('the tech screen says saved / pending / refused', /Saved on this till and to the cloud/.test(editor) && /the cloud refused it/.test(editor) && /Until then, syncing keeps this logo/.test(editor));
+ok('the tech screen says saved / pending / refused', /Saved on this POS and to the cloud/.test(editor) && /the cloud refused it/.test(editor) && /Until then, syncing keeps this logo/.test(editor));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

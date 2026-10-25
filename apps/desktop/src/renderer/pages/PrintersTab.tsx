@@ -308,7 +308,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-400">
-          Printer setup for <span className="text-white">this till only</span>. Nothing here syncs to the other machines.
+          Printer setup for <span className="text-white">this POS only</span>. Nothing here syncs to the other machines.
         </p>
         <button onClick={loadPrinters} className="text-xs text-gray-400 hover:text-white transition-colors">
           ↻ Refresh list
@@ -387,11 +387,11 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
           className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-gray-300 text-sm font-mono h-20 resize-y cursor-default"
         />
         <p className="text-xs text-gray-400 mt-1">
-          Applies on top of the built-in rule, for <span className="font-medium text-gray-300">every till at this branch</span>.
+          Applies on top of the built-in rule, for <span className="font-medium text-gray-300">every POS at this branch</span>.
           The dispatcher ticket always prints everything.
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          Edited on the web dashboard. It reaches this till on the next sync.
+          Edited on the web dashboard. It reaches this POS on the next sync.
         </p>
       </Card>
 
@@ -399,7 +399,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
         <Card title="Kitchen ticket">
           <p className="text-sm text-gray-300">
             Handled by <span className="text-gray-100 font-medium">Stations and routing</span> above — the
-            Kitchen station decides what prints and which printer serves it on this till.
+            Kitchen station decides what prints and which printer serves it on this POS.
           </p>
         </Card>
       ) : (
@@ -435,7 +435,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
         <Card title="Dispatcher / packing ticket">
           <p className="text-sm text-gray-300">
             Handled by <span className="text-gray-100 font-medium">Stations and routing</span> above — the
-            Packing station prints the whole order on the printer bound to it on this till.
+            Packing station prints the whole order on the printer bound to it on this POS.
           </p>
         </Card>
       ) : (

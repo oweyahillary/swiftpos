@@ -220,7 +220,7 @@ console.log('\nF9 / F8 — the server\'s own rows travel; refunds travel\n');
   // Report scope on a till that holds copies.
   C.saveDeviceConfig({ ...C.getDeviceConfig(), device_role: 'till' });
   const scope = MR.getReportScope();
-  ok('F8: a till holding other tills\' copies says so (not "This till only")', /other till/.test(scope.scopeLabel) && !/only/.test(scope.scopeLabel) && scope.coversBranch === false, scope.scopeLabel);
+  ok('F8: a till holding other tills\' copies says so (not "This till only")', /other points of sale of the branch/.test(scope.scopeLabel) && !/only/.test(scope.scopeLabel) && scope.coversBranch === false, scope.scopeLabel);
   asNode();
 }
 
@@ -257,7 +257,7 @@ console.log('\nF11 / F12 — instructions\n');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\nF4 — Close Branch lists the tills that matter\n');
+console.log('\nF4 — Close Branch lists the points of sale that matter\n');
 {
   const day = (open) => JSON.stringify({ business_date: '2026-10-14', day_open: open, open_drawer: null, drawers_on_day: 0, cashiers_counted_total: 0, shifts: [] });
   db.prepare(`INSERT OR REPLACE INTO node_peer_state (device_id, state, updated_at) VALUES ('dev-GONE', ?, ?)`).run(day(true), new Date(Date.now() - 9 * 86_400_000).toISOString());
@@ -285,7 +285,7 @@ console.log('\nF4 — Close Branch lists the tills that matter\n');
   // A521 (#3): "Forget this till" is "Revoke this till" (same channel, named for what it does — the key goes), beside
   // "Hide from Close Branch" (keeps the key). Intent kept: a small way off the list on a stale till row.
   ok('the screen: a small "Revoke this till" (was "Forget") and "Hide from Close Branch" on a stale till row; the same day-closed rule',
-    /Revoke this till/.test(tab) && /Hide from Close Branch/.test(tab) && /posApi\.branchClose\.forgetTill\(/.test(tab)
+    /Revoke this POS/.test(tab) && /Hide from Close Branch/.test(tab) && /posApi\.branchClose\.forgetTill\(/.test(tab)
     // A520: the day-closed rule moved to the server (branchClose.assessBranchClose) — the screen shows its blockers.
     && /st\.day_open === false && !st\.open_drawer\) continue;/.test(read('src/main/branchClose.ts')) && /ov\.close\?\.blockers/.test(tab));
   ok('the bridge carries it', /'branchClose:forgetTill'/.test(read('src/main/preload.ts')) && /'branchClose:forgetTill'/.test(read('src/main/ipcSchemas.ts')));
@@ -404,7 +404,7 @@ console.log('\nF7 / F5 / F14 / F15 / F16 — the real branch server over HTTP\n'
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\nThe till side, and wiring\n');
+console.log('\nThe POS side, and wiring\n');
 {
   C.saveDeviceConfig({ ...C.getDeviceConfig(), device_role: 'till', node_url: 'http://127.0.0.1:9', node_secret: 'S' });
   const h = NC.nodeHeaders();

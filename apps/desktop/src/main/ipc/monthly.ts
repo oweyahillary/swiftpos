@@ -15,7 +15,7 @@ export function registerMonthlyHandlers(ctx: IpcShared) {
   // Owner, 2026-10-13: "desktop app does not have some reports I added yesterday, can you add them" — A455's monthly pack.
   // The cloud builds it from every till's records (routes/reports-monthly.ts), so it is online only; the manager's own
   // PIN sign-in reads it (reports.financial) and records for the books (expenses.manage), for this till's branch.
-  const MONTHLY_OFFLINE = 'The monthly pack needs a connection — it is built from every till\'s records on the cloud.';
+  const MONTHLY_OFFLINE = 'The monthly pack needs a connection — it is built from every POS\'s records on the cloud.';
   const monthlyAnswer = async (fn: () => Promise<any>, refused = 'Your role does not open the monthly pack (it needs financial reports).') => {
     try { return { ok: true, data: await fn() }; }
     catch (e: any) {
@@ -30,7 +30,7 @@ export function registerMonthlyHandlers(ctx: IpcShared) {
   const monthlyQuery = (month: string, branchId?: string): { q: string; branch: string } | { error: string } => {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month ?? ''))) return { error: 'Pick a month.' };
     const branch = (branchId && branchId.trim()) || transferBranch();
-    if (!branch) return { error: 'This till is not bound to a branch.' };
+    if (!branch) return { error: 'This POS is not bound to a branch.' };
     return { q: `month=${month}&branch_id=${encodeURIComponent(branch)}`, branch };
   };
   // A490: reading the pack is reports.monthly_pack or expenses.manage (A481); recording for the books expenses.manage.
@@ -77,7 +77,7 @@ export function registerMonthlyHandlers(ctx: IpcShared) {
         note: { t: 'string', optional: true }, branch_id: { t: 'string', optional: true } }, payload);
     if (!signedInCan('expenses.manage')) return { ok: false, error: MONTHLY_RECORD_REFUSED };   // A490
     const branch = (p.branch_id && p.branch_id.trim()) || transferBranch();
-    if (!branch) return { ok: false, error: 'This till is not bound to a branch.' };
+    if (!branch) return { ok: false, error: 'This POS is not bound to a branch.' };
     // The cloud checks the rest (kind, amount, a note for other income / personal) and the person's expenses.manage.
     return monthlyAnswer(() => manageFetch('/api/reports/monthly/movements', 'POST', { branch_id: branch, movement_date: p.movement_date,
       method: p.method, kind: p.kind, amount: p.amount, note: p.note?.trim() || undefined }), MONTHLY_RECORD_REFUSED);

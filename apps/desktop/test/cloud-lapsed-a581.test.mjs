@@ -45,7 +45,7 @@ DC.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_i
 let paid = false;
 const writes = [];
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-const LAPSED = { error: "This business's ZapTill cloud subscription has ended. The till keeps selling and keeps its sales; they are sent when it is renewed. Call or WhatsApp ZapTill on 0717 675 635.", code: 'CLOUD_SUBSCRIPTION_ENDED', trial: false };
+const LAPSED = { error: "This business's ZapTill cloud subscription has ended. The POS keeps selling and keeps its sales; they are sent when it is renewed. Call or WhatsApp ZapTill on 0717 675 635.", code: 'CLOUD_SUBSCRIPTION_ENDED', trial: false };
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url); const method = String(init.method ?? 'GET').toUpperCase();
   if (method === 'GET') return json(200, []);
@@ -88,7 +88,7 @@ console.log('\nA581 — the cloud plan lapsed\n');
   ok('getSyncStatus carries cloudLapsed and counts both sales as waiting', !!st.cloudLapsed && st.pendingCount >= 2 && st.failedCount === 0, JSON.stringify({ c: st.cloudLapsed, p: st.pendingCount, f: st.failedCount }));
   const notice = SN.syncNotice(st);
   ok('the manager\'s notice says so in plain words — kept on this till, sent when renewed, ZapTill\'s number',
-    notice?.tone === 'alert' && /ZapTill cloud subscription ended/.test(notice.text) && /kept on this till, sent when renewed/.test(notice.text) && /0717 675 635/.test(notice.text),
+    notice?.tone === 'alert' && /ZapTill cloud subscription ended/.test(notice.text) && /kept on this POS, sent when renewed/.test(notice.text) && /0717 675 635/.test(notice.text),
     JSON.stringify(notice));
   const pos = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'pages', 'POSPage.tsx'), 'utf8');
   ok('no cashier surface: the notice is shown only to who may see sync (canSeeSync = back office, never a cashier)',

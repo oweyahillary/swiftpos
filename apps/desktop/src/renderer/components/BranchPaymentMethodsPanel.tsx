@@ -24,7 +24,7 @@ export default function BranchPaymentMethodsPanel({ canEdit }: { canEdit: boolea
     if (!canEdit || busy) return;
     const next = enabled.includes(code) ? enabled.filter((c) => c !== code) : [...enabled, code];
     if (!next.some((c) => !PAYMENT_CATALOGUE.find((m) => m.code === c)?.webOnly)) {
-      setError('Leave at least one method switched on for the tills.'); return;
+      setError('Leave at least one method switched on for the points of sale.'); return;
     }
     const before = enabled;
     setEnabled(enabledFromSetting(next)); setBusy(true); setError(''); setSaved(false);
@@ -67,7 +67,7 @@ export default function BranchPaymentMethodsPanel({ canEdit }: { canEdit: boolea
       <div>
         <h3 className="text-white text-sm font-semibold">Payment methods — this branch</h3>
         <p className="text-xs text-gray-400 mt-1">
-          The ways to pay this branch takes, on every till and the web POS. Switch on the ones your customers use; old sales
+          The ways to pay this branch takes, on every desktop POS and the web POS. Switch on the ones your customers use; old sales
           paid by a method you switch off still show in History and the reports.
         </p>
       </div>

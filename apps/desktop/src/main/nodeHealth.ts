@@ -136,7 +136,7 @@ export function noteKeyedRefusal(route: string, status: number, serverError: str
   refusalLogged.set(k, now);
   const v = protocolVerdict();
   const why = v.tillOlder
-    ? `this till is older than the branch server expects (protocol ${NODE_PROTOCOL}, the server needs ${serverInfo()?.min_till_protocol}) — update this till`
+    ? `this POS is older than the branch server expects (protocol ${NODE_PROTOCOL}, the server needs ${serverInfo()?.min_till_protocol}) — update this POS`
     : (serverError || `HTTP ${status}`);
   logLine('node', `A501: the branch server refused this till on ${route} (HTTP ${status}): ${why}`);
 }

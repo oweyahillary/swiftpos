@@ -51,10 +51,10 @@ function statusLine(ins: Instruction | null): string {
     const v = ins.ack?.summary?.cash_variance;
     return typeof v === 'number' ? `Closed — variance ${v}` : 'Closed';
   }
-  if (ins.status === 'failed') return `Failed — ${ins.ack?.error ?? 'the till refused'}`;
+  if (ins.status === 'failed') return `Failed — ${ins.ack?.error ?? 'the POS refused'}`;
   if (ins.status === 'cancelled') return 'Withdrawn';
-  if (ins.ack?.waiting) return `Waiting — ${ins.ack.error ?? 'the till cannot close yet'} (it tries again at every sync)`;
-  return ins.delivered_at ? 'Delivered — waiting for the till to close' : 'Queued — the till applies it when it next connects';
+  if (ins.ack?.waiting) return `Waiting — ${ins.ack.error ?? 'the POS cannot close yet'} (it tries again at every sync)`;
+  return ins.delivered_at ? 'Delivered — waiting for the POS to close' : 'Queued — the POS applies it when it next connects';
 }
 
 export default function RemoteDayClose({ currency }: { currency: string }) {
@@ -106,8 +106,8 @@ export default function RemoteDayClose({ currency }: { currency: string }) {
     // A522: empty = the confirmed shift counts (null) — never 0.
     const typed = counted.trim();
     const amount = typed === '' ? null : parseFloat(typed);
-    if (amount !== null && (isNaN(amount) || amount < 0)) { setError('Enter the cash counted at the till (0 or more), or leave it empty'); return; }
-    if (behind && !behindOk) { setError('Tick that you understand the till’s sales since it last synced are not in this close.'); return; }
+    if (amount !== null && (isNaN(amount) || amount < 0)) { setError('Enter the cash counted at the POS (0 or more), or leave it empty'); return; }
+    if (behind && !behindOk) { setError('Tick that you understand the POS’s sales since it last synced are not in this close.'); return; }
     setBusy(true); setError('');
     try {
       await posApi.post('/api/day-close/instruct', {
@@ -189,7 +189,7 @@ export default function RemoteDayClose({ currency }: { currency: string }) {
       <div>
         <h3 className="text-sm font-semibold text-gray-200">Remote day close</h3>
         <p className="text-xs text-gray-500">
-          Close a till's trading day when you're not in the store. The till closes itself when it next syncs (about every
+          Close a POS's trading day when you're not in the store. The POS closes itself when it next syncs (about every
           90 seconds while it is on) — on the shift counts its managers confirmed, or on a count you enter.
         </p>
       </div>
@@ -202,19 +202,19 @@ export default function RemoteDayClose({ currency }: { currency: string }) {
         <p className="text-xs text-gray-500">Loading open trading days…</p>
       ) : tills.length === 0 && retired.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-800 p-6 text-center text-xs text-gray-500">
-          No open trading days. Every till's day is closed.
+          No open trading days. Every POS's day is closed.
         </div>
       ) : (
         <div className="space-y-2">
           {tills.map(row)}
-          {retired.length > 0 && <p className="text-xs text-gray-500 pt-2">Retired tills with a day still open — they will never close it themselves:</p>}
+          {retired.length > 0 && <p className="text-xs text-gray-500 pt-2">Retired points of sale with a day still open — they will never close it themselves:</p>}
           {retired.map(row)}
         </div>
       )}
 
       {devices.length > 0 && (
         <div className="text-xs text-gray-500" data-testid="all-tills">
-          <p className="font-semibold text-gray-400 mb-1">Every till</p>
+          <p className="font-semibold text-gray-400 mb-1">Every POS</p>
           {devices.map((d) => (
             <p key={d.device_id}>
               {d.label} · last synced <span className={syncRecent(d.last_sync_at) ? '' : 'text-amber-400'}>{agoLabel(d.last_sync_at)}</span>
@@ -231,7 +231,7 @@ export default function RemoteDayClose({ currency }: { currency: string }) {
             <h4 className="text-base font-semibold text-gray-100">Close {target.label} — day {target.business_date}</h4>
             <p className="text-xs text-gray-500 mt-1">
               Leave the count empty to close on the shift counts the managers confirmed. Enter a count only if the cash was
-              counted again <b>at the till</b> — never an estimate.
+              counted again <b>at the POS</b> — never an estimate.
             </p>
             <label className="block text-xs text-gray-400 mt-4 mb-1">Cash counted ({currency}) — optional</label>
             <input
@@ -265,9 +265,9 @@ export default function RemoteDayClose({ currency }: { currency: string }) {
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto" data-testid="abandon-dialog">
             <h4 className="text-base font-semibold text-gray-100">Close {abandon.label} — day {abandon.business_date} — as abandoned</h4>
             <p className="text-xs text-red-300 mt-2">
-              {abandon.retired ? 'This till is retired.' : `This till has not synced for over ${silentHours} h (last ${agoLabel(abandon.last_sync_at)}).`}{' '}
+              {abandon.retired ? 'This POS is retired.' : `This POS has not synced for over ${silentHours} h (last ${agoLabel(abandon.last_sync_at)}).`}{' '}
               The day is closed on the web with what the web knows: its open drawers are force-closed <b>uncounted</b>, there is
-              no cash count, and anything it sold after it last synced is not in this close. If the till comes back, it closes
+              no cash count, and anything it sold after it last synced is not in this close. If the POS comes back, it closes
               its own day too and its late sales are added.
             </p>
             <label className="block text-xs text-gray-400 mt-4 mb-1">Reason (required)</label>
@@ -275,7 +275,7 @@ export default function RemoteDayClose({ currency }: { currency: string }) {
               value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. T2 broken, replaced by T4" />
             <label className="flex gap-2 items-start mt-3 text-xs text-amber-300">
               <input type="checkbox" checked={abandonOk} onChange={(e) => setAbandonOk(e.target.checked)} className="mt-0.5" />
-              <span>I understand this till's unsent sales are not in this close.</span>
+              <span>I understand this POS's unsent sales are not in this close.</span>
             </label>
             <div className="flex gap-3 mt-4">
               <button className="flex-1 px-3 py-2 rounded-lg text-sm bg-gray-800 text-gray-300" onClick={() => setAbandon(null)} disabled={busy}>Cancel</button>

@@ -15,6 +15,7 @@ import { BranchProvider }      from './context/BranchContext';
 import { PermissionsProvider } from './context/PermissionsContext';
 import { POSAuthProvider }     from './context/POSAuthContext';
 import ErrorBoundary           from './components/ErrorBoundary';
+import CloudPausedScreen       from './components/CloudPausedScreen';   // A584: the paused cloud covers every page
 import ProtectedRoute          from './components/ProtectedRoute';
 import OpenShiftsPage         from './pages/OpenShiftsPage';
 import FleetPage              from './pages/FleetPage';
@@ -55,6 +56,7 @@ const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
 const AnalyticsPage           = lazy(() => import('./pages/analytics/AnalyticsPage'));   // A549
 const WatchListPage           = lazy(() => import('./pages/WatchListPage'));   // A576
 const LossAlertsTab           = lazy(() => import('./pages/settings/LossAlertsTab'));   // A576
+const CreditApproversTab       = lazy(() => import('./pages/settings/CreditApproversTab'));   // A585
 const ScaleLabelsTab          = lazy(() => import('./pages/settings/ScaleLabelsTab'));   // A577
 const ShiftReportsPage        = lazy(() => import('./pages/ShiftReportsPage'));
 const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
@@ -105,6 +107,7 @@ export default function App() {
         <ThemeLayer />
         <BranchProvider>
           <BrowserRouter>
+            <CloudPausedScreen />
             <Suspense fallback={<PageLoader />}>
             <Routes>
 
@@ -199,6 +202,7 @@ export default function App() {
                         <Route path="voids-refunds" element={<VoidRefundRulesTab />} />
                         <Route path="pos-options"  element={<PosOptionsTab />} />
                         <Route path="loss-alerts"  element={<LossAlertsTab />} />
+                        <Route path="credit-approvals" element={<CreditApproversTab />} />
                         <Route path="scale-labels" element={<ScaleLabelsTab />} />
                         <Route path="setup"        element={<VerticalSetupRoute />} />
                         <Route path="integrations" element={<IntegrationsRoute />} />

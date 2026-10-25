@@ -114,7 +114,7 @@ async function makerSignedInHere(ctx: ChangeContext, userId: string | null): Pro
   if (ctx.branchId) {
     const { data: devs, error } = await supabase.from('user_devices').select('device_id')
       .eq('business_id', ctx.businessId).eq('branch_id', ctx.branchId);
-    readOk(error, "the branch's tills");
+    readOk(error, "the branch's points of sale");
     for (const d of (devs ?? []) as Row[]) if (d.device_id) devices.add(String(d.device_id));
   }
   if (!devices.size) return false;
@@ -242,8 +242,8 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
     try {
       const { data: cur, error: curErr } = await supabase.from(spec.table).select('*').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
       readOk(curErr, spec.table);
-      await notifyOwner(ctx, c, 'A change from a till — your approval',
-        `${describeChange(c, (cur as Row | null)?.name)} on a till, named as made by ${c.made_by_name ?? 'someone'} who has not signed in online at that branch. Approve to apply it.`);
+      await notifyOwner(ctx, c, 'A change from a POS — your approval',
+        `${describeChange(c, (cur as Row | null)?.name)} on a POS, named as made by ${c.made_by_name ?? 'someone'} who has not signed in online at that branch. Approve to apply it.`);
       return done({ id: c.id, status: 'awaiting', message: 'who made it could not be confirmed — waiting for the owner' },
         { cloud_value: cur ? pick(cur as Row, Object.keys(c.data ?? {})) : null });
     } catch (e) { return retryLater(c, e); }
@@ -267,8 +267,8 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       }
       const clash = await pinTakenBy(ctx.businessId, String(c.data.pin), null);
       if (clash) {
-        await notifyOwner(ctx, c, 'A PIN set on a till is already someone else\'s',
-          `${c.data.name} (added on a till by ${c.made_by_name ?? 'a manager'}) was given ${clash}'s PIN — set a different one.`);
+        await notifyOwner(ctx, c, 'A PIN set on a POS is already someone else\'s',
+          `${c.data.name} (added on a POS by ${c.made_by_name ?? 'a manager'}) was given ${clash}'s PIN — set a different one.`);
         return done({ id: c.id, status: 'refused', message: PIN_IN_USE });
       }
       const err = await write(ctx, c, c.entity_id, true);
@@ -291,8 +291,8 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
         const v = judgeCreate(c.entity, same, c.data);
         const canonical = same.id !== c.entity_id ? same.id : null;
         if (v.verdict === 'identical') return done({ id: c.id, status: 'identical', canonical_id: canonical });
-        await notifyOwner(ctx, c, 'A till added something that already exists differently',
-          `${describeChange(c)} on a till (${c.made_by_name ?? 'a manager'}) differs from the cloud's: ${(v as { fields: string[] }).fields.join(', ')}. Approve to take the till's.`);
+        await notifyOwner(ctx, c, 'A POS added something that already exists differently',
+          `${describeChange(c)} on a POS (${c.made_by_name ?? 'a manager'}) differs from the cloud's: ${(v as { fields: string[] }).fields.join(', ')}. Approve to take the POS's.`);
         return done({ id: c.id, status: 'awaiting', canonical_id: canonical, message: 'differs from the cloud\'s — waiting for the owner' },
           { cloud_value: pick(same, Object.keys(c.data)) });
       }
@@ -324,8 +324,8 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
       // Offline supersedes online — but a PIN is one person's: refused (and the owner told) when another has it.
       const clash = await pinTakenBy(ctx.businessId, String(c.data.pin), c.entity_id);
       if (clash) {
-        await notifyOwner(ctx, c, 'A PIN set on a till is already someone else\'s',
-          `${(cur as Row).name ?? 'A staff member'}'s new PIN (set on a till by ${c.made_by_name ?? 'a manager'}) is ${clash}'s too — set a different one.`);
+        await notifyOwner(ctx, c, 'A PIN set on a POS is already someone else\'s',
+          `${(cur as Row).name ?? 'A staff member'}'s new PIN (set on a POS by ${c.made_by_name ?? 'a manager'}) is ${clash}'s too — set a different one.`);
         return done({ id: c.id, status: 'refused', message: PIN_IN_USE });
       }
     }
@@ -342,7 +342,7 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
     if (v.verdict === 'identical') return done({ id: c.id, status: 'identical' });
     if (v.verdict === 'clash') {
       await notifyOwner(ctx, c, 'Two changes to the same thing — your approval',
-        `${describeChange(c, (cur as Row).name)}: a till (${c.made_by_name ?? 'a manager'}) and the cloud changed ${v.fields.join(', ')} differently. Approve to take the till's.`);
+        `${describeChange(c, (cur as Row).name)}: a POS (${c.made_by_name ?? 'a manager'}) and the cloud changed ${v.fields.join(', ')} differently. Approve to take the POS's.`);
       return done({ id: c.id, status: 'awaiting', message: 'changed differently on the cloud — waiting for the owner' },
         { cloud_value: pick(cur as Row, Object.keys(c.data)) });
     }

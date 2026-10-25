@@ -211,7 +211,7 @@ export async function prepareShare(version: string, d: ShareDeps): Promise<'read
     for (const other of fs.readdirSync(d.dir)) {
       if (other !== version) { try { fs.rmSync(path.join(d.dir, other), { recursive: true, force: true }); } catch { /* next time */ } }
     }
-    d.log?.(`update share: ${version} ready for the branch's tills`);
+    d.log?.(`update share: ${version} ready for the branch's points of sale`);
     outcome = 'ready';
     return 'ready';
   } catch (e: any) {
@@ -249,7 +249,7 @@ export function serveSharedUpdate(req: http.IncomingMessage, res: http.ServerRes
       return false;
     }
     wanted(ask.version);
-    const body = JSON.stringify({ error: 'The branch server is still fetching this update. The till will ask again shortly.' });
+    const body = JSON.stringify({ error: 'The branch server is still fetching this update. The POS will ask again shortly.' });
     res.writeHead(503, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Retry-After': '600', [GATEWAY_MARK]: '1' });
     res.end(body);
     return true;

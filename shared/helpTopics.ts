@@ -25,9 +25,9 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: 'internet',
     title: 'The internet is down',
     steps: [
-      'Keep selling. Cash and card sales are saved on the till and go to the cloud by themselves when the internet returns.',
+      'Keep selling. Cash and card sales are saved on the POS and go to the cloud by themselves when the internet returns.',
       'M-Pesa prompts need internet. Without it, take the M-Pesa payment on the shop\'s phone, then record the sale as M-Pesa with the code.',
-      'Do not switch the till off until the screen shows it has synced.',
+      'Do not switch the POS off until the screen shows it has synced.',
     ],
   },
   {
@@ -47,7 +47,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     steps: [
       'Check: paper in, lid shut, light green, cable or Wi-Fi connected.',
       'Switch the printer off and on, then reprint from History. The sale is already saved; a failed print never loses it.',
-      'A kitchen ticket that failed shows a warning on the till. Reprint it from the order.',
+      'A kitchen ticket that failed shows a warning on the POS. Reprint it from the order.',
     ],
   },
   {
@@ -73,7 +73,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     title: 'Forgot the PIN or locked out',
     steps: [
       'A manager resets the staff member\'s PIN from the Staff page.',
-      'Without internet, staff can sign in with their PIN for up to 14 days on a till that works alone (no limit when there is a branch server). After that the till needs internet once.',
+      'Without internet, staff can sign in with their PIN for up to 14 days on a POS that works alone (no limit when there is a branch server). After that the POS needs internet once.',
     ],
   },
   {
@@ -81,8 +81,8 @@ export const HELP_TOPICS: HelpTopic[] = [
     title: 'Power cut',
     steps: [
       'Every completed sale is saved the moment it is paid.',
-      'When power returns, start the till and sign in. Open orders and held bills are still there.',
-      'A UPS (backup battery) for the till and the router is strongly advised.',
+      'When power returns, start the POS and sign in. Open orders and held bills are still there.',
+      'A UPS (backup battery) for the POS and the router is strongly advised.',
     ],
   },
   {
@@ -96,11 +96,11 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'update',
-    title: 'The till will not open or asks for an update',
+    title: 'The POS will not open or asks for an update',
     steps: [
       'Restart the computer.',
       'If it says an update is needed, connect to the internet and let it finish. Do not switch off during the update.',
-      'If it still will not open, call support. Your sales are safe on the till.',
+      'If it still will not open, call support. Your sales are safe on the POS.',
     ],
   },
 ];
@@ -123,7 +123,7 @@ export function helpTopicsFor(foodService: boolean): HelpTopic[] {
 export function whoToCallSteps(name: string, phones: string[]): string[] {
   return [
     `${name}: ${phones.join(' or ')} (call or WhatsApp).`,
-    'Have ready: the shop name, the till name and version (shown on this Help page) and a photo of the error.',
+    'Have ready: the shop name, the POS name and version (shown on this Help page) and a photo of the error.',
   ];
 }
 
@@ -155,7 +155,7 @@ export const HOW_TO: HelpTopic[] = [
       'Tap "Shift open" in the top bar. The shift panel opens; "Close shift" is at the bottom of the Shift tab.',
       'Count the cash in the drawer — include the opening float — and type it in "Counted cash in drawer".',
       'Type the total for each other payment method listed (M-Pesa from the statement, card from the card machine). Type 0 if none.',
-      'Press "Close shift" (on some tills "Close shift & print Z-report"). If your report shows, press "Done — sign out". The PIN screen says "Shift closed." and is ready for the next person.',
+      'Press "Close shift" (on some points of sale "Close shift & print Z-report"). If your report shows, press "Done — sign out". The PIN screen says "Shift closed." and is ready for the next person.',
       'Leave the counted cash in the drawer (or as the manager tells you). A manager checks your count.',
     ],
     images: [null, 'close-2.jpg', 'close-3.jpg', null, 'close-5.jpg', 'close-6.jpg'],
@@ -165,10 +165,10 @@ export const HOW_TO: HelpTopic[] = [
     title: 'Manager: confirm a closed shift',
     steps: [
       'Sign in with your manager PIN and open Manager.',
-      'Find the shift: Overview › "Shift report — today" (any till), or Sales › Shift report, or Close › Close Day (this till). It says "Awaiting manager".',
+      'Find the shift: Overview › "Shift report — today" (any POS), or Sales › Shift report, or Close › Close Day (this POS). It says "Awaiting manager".',
       'Press "Confirm". Count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total.',
       'Type what YOU counted. Where the business shows the cashier\'s figure, give a reason for any difference.',
-      'Press "Confirm shift". The shift shows "Confirmed" by your name. A shift on another till is confirmed there too within a minute.',
+      'Press "Confirm shift". The shift shows "Confirmed" by your name. A shift on another POS is confirmed there too within a minute.',
     ],
     images: ['confirm-1.jpg', 'confirm-2.jpg', null, 'confirm-4.jpg', 'confirm-5.jpg'],
   },
@@ -176,11 +176,11 @@ export const HOW_TO: HelpTopic[] = [
     id: 'howto-close-day',
     title: 'Manager: close the day',
     steps: [
-      'Every shift on this till must be closed and confirmed first (see the two guides above).',
+      'Every shift on this POS must be closed and confirmed first (see the two guides above).',
       'Open Manager › Close › Close Day.',
       'Count the cash and type it in "Cash you counted". Add a note if anything is unusual.',
       'Press "Count verified — close the day". The screen shows "Day closed".',
-      'Do this on every till. On the branch server, Close › Close Branch shows every till\'s day and drawer, and can close them together.',
+      'Do this on every POS. On the branch server, Close › Close Branch shows every POS\'s day and drawer, and can close them together.',
       'If a shift opens later the same day, the day reopens; the next close counts only the cash since.',
     ],
     images: [null, 'day-2.jpg', 'day-3.jpg', 'day-4.jpg', null, null],

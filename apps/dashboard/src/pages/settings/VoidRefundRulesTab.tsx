@@ -107,7 +107,7 @@ export default function VoidRefundRulesTab({ client = api }: { client?: PosApi }
 
       <p className="text-sm text-gray-400">
         Voids and refunds are done by managers and by you — never by cashiers. These rules are the owner's: the owner, or
-        someone the owner gave "Void and refund rules", changes them here or on a till (Manager → Settings).
+        someone the owner gave "Void and refund rules", changes them here or on a POS (Manager → Settings).
       </p>
 
       {/* ── Void window ── */}
@@ -134,11 +134,11 @@ export default function VoidRefundRulesTab({ client = api }: { client?: PosApi }
 
       {/* ── Offline refunds ── */}
       <section>
-        <h3 className="text-white font-semibold">Refunds while a till is offline</h3>
+        <h3 className="text-white font-semibold">Refunds while a POS is offline</h3>
         <p className="text-gray-500 text-sm mt-0.5 mb-4">
-          A refund hands back each payment in the method it came in. When a till cannot reach the internet it can only
+          A refund hands back each payment in the method it came in. When a POS cannot reach the internet it can only
           refund a sale paid entirely in the methods you tick — the rest wait until it is back online. The refund is sent
-          to the cloud, with the approving manager, as soon as the till reconnects.
+          to the cloud, with the approving manager, as soon as the POS reconnects.
         </p>
         <div className="grid gap-2">
           {methods.map((m) => {
@@ -153,7 +153,7 @@ export default function VoidRefundRulesTab({ client = api }: { client?: PosApi }
           })}
         </div>
         {rules.offlineRefundMethods.length === 0 && (
-          <p className="text-xs text-amber-400 mt-2">Nothing ticked — a till cannot refund anything while it is offline.</p>
+          <p className="text-xs text-amber-400 mt-2">Nothing ticked — a POS cannot refund anything while it is offline.</p>
         )}
       </section>
 
@@ -163,9 +163,9 @@ export default function VoidRefundRulesTab({ client = api }: { client?: PosApi }
       <section>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h3 className="text-white font-semibold">Offline: also web sales on the till's drawer</h3>
+            <h3 className="text-white font-semibold">Offline: also web sales on the POS's drawer</h3>
             <p className="text-gray-500 text-sm mt-0.5">
-              Offline, a till voids and refunds only the sales it rang itself. Turn this on to let it also reverse the web
+              Offline, a POS voids and refunds only the sales it rang itself. Turn this on to let it also reverse the web
               POS sales it holds on its drawer.
             </p>
           </div>
@@ -188,7 +188,7 @@ export default function VoidRefundRulesTab({ client = api }: { client?: PosApi }
           <div>
             <h3 className="text-white font-semibold">Allow free delivery</h3>
             <p className="text-gray-500 text-sm mt-0.5">
-              When your deliveries carry a fee, turn this on to let the cashier tick <b>Free delivery</b> — on the tills and
+              When your deliveries carry a fee, turn this on to let the cashier tick <b>Free delivery</b> — on the points of sale and
               the web POS. The cashier still enters the fee and the rider is still paid it from the drawer; the customer
               pays none of it (the shop does). Off: the customer always pays the fee.
             </p>

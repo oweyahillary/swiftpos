@@ -41,7 +41,7 @@ const ok = (n, c, d = '') => { if (c) { console.log(`  ok   ${n}`); pass++; } el
 
 const db = L.getLocalDb();
 db.prepare(`INSERT INTO session (id, token, refresh_token, user_id, business_id, business_name, logged_in_at) VALUES (1, 'acc', 'ref', 'u-owner', 'biz-1', 'B Foods', '2026-10-05T00:00:00Z')`).run();
-C.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1', device_id: 'dev-T1', device_role: 'till', terminal_code: 'T1', device_name: 'Till 1' });
+C.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1', device_id: 'dev-T1', device_role: 'till', terminal_code: 'T1', device_name: 'POS 1' });
 E.configureSyncEngine('http://cloud', 'acc', 'ref');
 const now = new Date().toISOString();
 for (const [id, name] of [['st-drinks', 'Drinks'], ['st-kitchen', 'Kitchen']]) {
@@ -79,7 +79,7 @@ console.log('\nNo connection at all\n');
   R.saveRoutingLocally(db, 'st-drinks', ['c-coffee', 'c-juice', 'c-coffee'], 'Mary');
   ok('a tap prints the new way at once — this till\'s routing has it', JSON.stringify(links('st-drinks')) === '["c-coffee","c-juice"]', JSON.stringify(links('st-drinks')));
   const out = await E.pushStationRoutingNow();
-  ok('the cloud cannot be reached: saved on this till, waiting', out['st-drinks']?.state === 'pending' && /Saved on this till/.test(out['st-drinks'].message));
+  ok('the cloud cannot be reached: saved on this till, waiting', out['st-drinks']?.state === 'pending' && /Saved on this POS/.test(out['st-drinks'].message));
   ok('…still waiting, still routed here', E.stationRoutingPending() && JSON.stringify(links('st-drinks')) === '["c-coffee","c-juice"]');
 
   // A pull from the cloud (or the branch server) rewrites the routing as the cloud has it — the old set.
@@ -139,7 +139,7 @@ console.log('\nThe connection is back\n');
   ok('a station no longer on this till is dropped from the waiting list', !('st-gone' in R.readPending(db)));
 }
 
-console.log('\nOn a till with a branch server (A410)\n');
+console.log('\nOn a POS with a branch server (A410)\n');
 {
   C.saveDeviceConfig({ node_url: 'http://server.lan:4100', node_secret: 'BRANCH-CODE' });
   cloud.puts.length = 0;

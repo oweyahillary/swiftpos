@@ -22,14 +22,14 @@ export default function TillChangesNotice() {
   const awaiting = rows.filter((r) => r.state === 'awaiting').length;
   const refused = rows.filter((r) => r.state === 'refused').length;
   const parts = [
-    pending ? `${pending} saved on this till, not on the cloud yet` : '',
+    pending ? `${pending} saved on this POS, not on the cloud yet` : '',
     awaiting ? `${awaiting} waiting for the owner's approval` : '',
     refused ? `${refused} not taken by the cloud` : '',
   ].filter(Boolean);
   return (
     <div data-testid="till-changes-notice" className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm">
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-3 text-left">
-        <span className="text-amber-200">Changes made on this till: {parts.join(' · ')}</span>
+        <span className="text-amber-200">Changes made on this POS: {parts.join(' · ')}</span>
         <span className="text-xs text-gray-300">{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
@@ -48,7 +48,7 @@ export default function TillChangesNotice() {
           cleared from here once read. Make it again on the web if it is still wanted. */}
       {open && refused > 0 && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs" data-testid="till-changes-refused">
-          <span className="text-gray-300">Refused changes are not on this till — the cloud's value stands. Make the change again on the web if it is still wanted.</span>
+          <span className="text-gray-300">Refused changes are not on this POS — the cloud's value stands. Make the change again on the web if it is still wanted.</span>
           <button data-testid="till-changes-clear" onClick={() => {
             posApi.manage.dismissRefusedChanges().then(() => posApi.manage.changeStates())
               .then((r) => setRows(Array.isArray(r) ? r : [])).catch(() => {});

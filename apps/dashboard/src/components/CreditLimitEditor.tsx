@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { money } from '../lib/format';
-import { usePermissions } from '../context/PermissionsContext';
-import { CREDIT_LIMIT_KEY, limitFromInput, limitRequest } from '../lib/creditLimit';
+import { limitFromInput, limitRequest } from '../lib/creditLimit';
+import { useSetsLimits } from '../hooks/useSetsLimits';   // A585, A587
 
 /**
  * CreditLimitEditor — A567: a customer's credit limit on their own profile (Customers › a customer). Someone with
  * customers.credit gives or changes it there; the cloud records who approved it and when. Without the key: the limit is
  * shown (when they may read credit), never a box.
+ * A585 (owner, 2026-10-23: "credit limit — the owner for now"): the OWNER only — anyone else sees the limit and the line
+ * "Only the owner or a manager sets credit limits." (the cloud refuses them too). On the dashboard (the owner and partners) only
+ * the owner edits: partners are refused; managers set limits on the web POS manager screen (A585 owner change).
+ * A587 (owner, 2026-10-24): a partner too, with ONE of their branches picked (not "All my branches" — the line says to
+ * pick one); the cloud records the branch.
  */
 export default function CreditLimitEditor({ customerId, currency }: { customerId: string; currency: string }) {
-  const mayCredit = usePermissions().can(CREDIT_LIMIT_KEY);
+  const { setsLimits: mayCredit, line } = useSetsLimits();   // A585: the owner; A587: a partner at one of their branches
   const [limit, setLimit] = useState<number | null>(null);
   const [balance, setBalance] = useState(0);
   const [text, setText] = useState('');
@@ -38,7 +43,7 @@ export default function CreditLimitEditor({ customerId, currency }: { customerId
       const req = limitRequest(customerId, r.value);
       const saved = await api.patch<{ credit_limit: number; credit_balance: number }>(req.path, req.body);
       setLimit(Number(saved.credit_limit) || 0); setBalance(Number(saved.credit_balance) || 0);
-      setMsg({ kind: 'ok', text: r.value > 0 ? `Credit limit set to ${money(r.value, currency)}. They now show in Credit Accounts and at the tills.` : 'Credit limit removed.' });
+      setMsg({ kind: 'ok', text: r.value > 0 ? `Credit limit set to ${money(r.value, currency)}. They now show in Credit Accounts and at the points of sale.` : 'Credit limit removed.' });
     } catch (e: any) { setMsg({ kind: 'err', text: e?.message ?? 'Could not save the credit limit.' }); }
     finally { setBusy(false); }
   };
@@ -60,7 +65,10 @@ export default function CreditLimitEditor({ customerId, currency }: { customerId
           </button>
         </div>
       ) : (
-        <p className="text-white text-sm">{limit ? money(limit, currency) : 'No credit'}</p>
+        <>
+          <p className="text-white text-sm">{limit ? money(limit, currency) : 'No credit'}</p>
+          <p className="text-xs text-gray-500 mt-1" data-testid="owner-sets-limits">{line}</p>
+        </>
       )}
       {msg && <p className={`text-xs mt-2 ${msg.kind === 'ok' ? 'text-gray-300' : 'text-red-400'}`}>{msg.text}</p>}
     </div>

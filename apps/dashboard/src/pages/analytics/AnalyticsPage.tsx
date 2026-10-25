@@ -271,6 +271,9 @@ export function Analytics({ client, ownerView, currency, branchName, businessTyp
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // An area that failed to load says so in its own panel (not only at the top of the page), with Retry
+  const [areaError, setAreaError] = useState<Record<string, string>>({});
+  const [retry, setRetry] = useState(0);
   const tabsRef = useRef<HTMLDivElement>(null);
   const timesRef = useRef<HTMLElement>(null);
   const togetherRef = useRef<HTMLElement>(null);
@@ -315,6 +318,7 @@ export function Analytics({ client, ownerView, currency, branchName, businessTyp
     if (locked || tabKey in data) return;
     let live = true;
     setBusy(true);
+    setAreaError((a) => { if (!(tabKey in a)) return a; const n = { ...a }; delete n[tabKey]; return n; });
     const path = TABS.find((t) => t.key === tab)!.path;
     client.get<unknown>(`${path}?${qs}`)
       .then((r) => { if (live) setData((d) => ({ ...d, [tabKey]: r })); })
@@ -322,11 +326,12 @@ export function Analytics({ client, ownerView, currency, branchName, businessTyp
         if (!live) return;
         const err = e as { status?: number; code?: string; message?: string };
         if (err?.status === 403 && err.code !== 'ANALYTICS_OFF') { setData((d) => ({ ...d, [tabKey]: { forbidden: err.message || 'Your role cannot see this area.' } satisfies Forbidden })); return; }
-        fail(e);
+        if (err?.code === 'ANALYTICS_OFF') { fail(e); return; }
+        setAreaError((a) => ({ ...a, [tabKey]: err?.message || 'This area could not be loaded.' }));
       })
       .finally(() => { if (live) setBusy(false); });
     return () => { live = false; };
-  }, [tabKey, locked]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tabKey, locked, retry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A561: once the cloud says which areas this person sees, an area they may not open (a ?tab= link) falls back to the first
   const seen = visibleAreas(recs?.hooks, recs?.costsHidden ?? overview?.marginHidden ?? false);
@@ -388,7 +393,7 @@ export function Analytics({ client, ownerView, currency, branchName, businessTyp
         <div className="min-w-0">
           <h1 className="text-xl font-bold text-white">Analytics</h1>
           <p className="text-sm text-gray-400">
-            {ownerView ? (branchCtx.activeBranch?.name ?? 'All branches') : (branchName ?? 'Your branch')} · {fmt.dateShort(`${range.from}T12:00:00`)} – {fmt.dateShort(`${range.to}T12:00:00`)}
+            {ownerView ? (branchCtx.activeBranch?.name ?? branchCtx.allLabel) : (branchName ?? 'Your branch')} · {fmt.dateShort(`${range.from}T12:00:00`)} – {fmt.dateShort(`${range.to}T12:00:00`)}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -397,7 +402,7 @@ export function Analytics({ client, ownerView, currency, branchName, businessTyp
               Branch
               <select value={branch} onChange={(e) => branchCtx.setActiveBranch(branchCtx.branches.find((b) => b.id === e.target.value) ?? null)}
                 className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm max-w-[12rem]" data-testid="analytics-branch">
-                <option value="">All branches</option>
+                {(branchCtx.allowAll || branchCtx.allowMine) && <option value="">{branchCtx.allLabel}</option>}
                 {branchCtx.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </label>
@@ -469,7 +474,12 @@ export function Analytics({ client, ownerView, currency, branchName, businessTyp
         <AreaTiles areas={areas} hooks={recs?.hooks ?? null} active={tab} onPick={pick} labels={{ menu: words.itemsArea }}
           stickyTop={ownerView ? 'top-12 md:top-0' : 'top-0'}>
           <p className="text-sm text-gray-300" data-testid="analytics-tab-tells">{tells}</p>
-          {!current ? <p className="text-sm text-gray-500">{busy ? 'Loading…' : ''}</p>
+          {!current ? (areaError[tabKey] && !busy
+              ? <div className="flex flex-wrap items-center gap-3 px-4 py-3 rounded-lg text-sm bg-red-500/10 text-red-400" data-testid="analytics-area-error">
+                  <span>{areaError[tabKey]}</span>
+                  <button type="button" onClick={() => setRetry((n) => n + 1)} className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white">Retry</button>
+                </div>
+              : <p className="text-sm text-gray-500">Loading…</p>)
             : forbidden ? <p className="text-sm text-gray-400" data-testid="analytics-area-forbidden">{forbidden}</p>
             : tab === 'menu' ? <MenuSection m={current as MenuAnswer} p={p} currency={currency} words={words} />
             : tab === 'heatmap' ? <HeatmapSection h={current as HeatAnswer} p={p} currency={currency} />
@@ -1017,7 +1027,7 @@ function LeaksSection({ l, p, currency, words }: { l: LeaksAnswer; p: ChartPalet
         )}
         <CapNote shown={days.rows.length} total={days.total} by="by what the day lost" />
       </div>
-      <p className="text-xs text-gray-500">{words.voidsNote} Refunds count on the day they were given, against the cashier of the sale. Drawer ± is the cashier's shift count; day close ± the till's day close (over +, short −).</p>
+      <p className="text-xs text-gray-500">{words.voidsNote} Refunds count on the day they were given, against the cashier of the sale. Drawer ± is the cashier's shift count; day close ± the POS's day close (over +, short −).</p>
     </div>
   );
 }

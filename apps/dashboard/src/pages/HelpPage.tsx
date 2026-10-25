@@ -57,7 +57,7 @@ export default function HelpPage() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-xl font-semibold text-white">Help — what to do when…</h1>
-            <p className="text-sm text-gray-400 mt-1">For the till and the web. The till has the same Help, and it works without internet.</p>
+            <p className="text-sm text-gray-400 mt-1">For the POS and the web. The POS has the same Help, and it works without internet.</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => window.print()} data-testid="help-print"

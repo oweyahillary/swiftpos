@@ -4,7 +4,8 @@
  *
  * Owner: "stock should not appear in the desktop app thats a web pos feature pro feature" → "stock should only appear if the
  * web pos is enabled"; asked when a lapsed subscription hides it: "While web is fully usable" (active or grace — not the
- * reports-only week, not never-subscribed, not suspended).
+ * reports-only week, not never-subscribed, not suspended). A584: a paid client has 7 unpaid days of full access after the
+ * due date, then it is locked (no 21-day grace, no reports-only week); a licence not yet bridged onto a plan is never locked.
  *
  *   node tests/stock-web-pos.test.mjs          (build apps/server first — this runs its dist/)
  *
@@ -13,7 +14,6 @@
  * apps/desktop/test/stock-web-pos.test.mjs.
  *
  * MUTATIONS TO CONFIRM BITE:
- *   - webPosEnabled = canLogin (not fullAccess)       → "reports-only week → no" fails
  *   - webPosEnabled left out of the response          → every "→ yes" check fails
  *   - the business's status not passed (suspended)    → "a suspended business → no" fails
  */
@@ -47,6 +47,7 @@ const db = {
   businesses: [{ id: BZ, name: 'B Foods', type: 'restaurant', currency: 'KES', vat_rate: 16, ctl_rate: 0, status: 'active', web_access_expires_at: null }],
   branches: [{ id: BR, business_id: BZ, name: 'Main', is_main: true, desktop_licensed: true }],
   feature_flags: [],
+  cloud_plans: [],
   user_devices: [{ business_id: BZ, device_id: 'dev-T1', status: 'approved', retired_at: null }],   // A415: the till, on the business
 };
 // A permissive in-memory stand-in: every builder method chains; filters apply to the rows the tables above hold, and any
@@ -78,7 +79,8 @@ const init = async () => {
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/pos/init?branch_id=${BR}`, { headers: { Authorization: `Bearer ${t}`, 'x-device-id': 'dev-T1' } });
   return { status: res.status, body: await res.json().catch(() => null) };
 };
-const setAccess = ({ flag = null, expiresInDays = null, status = 'active' }) => {
+const setAccess = ({ flag = null, expiresInDays = null, status = 'active', onPlan = true }) => {
+  db.cloud_plans = onPlan ? [{ business_id: BZ, period: 'monthly', amount: 3000, currency: 'KES', created_at: '2026-01-01T00:00:00.000Z' }] : [];
   db.feature_flags = flag === null ? [] : [{ business_id: BZ, key: 'web_hosting', enabled: flag }];
   db.businesses[0].web_access_expires_at = expiresInDays === null ? null : new Date(Date.now() + expiresInDays * DAY).toISOString();
   db.businesses[0].status = status;
@@ -99,13 +101,17 @@ try {
     setAccess({ expiresInDays: 200 });
     assert.equal((await init()).body.webPosEnabled, true);
   });
-  await ok('expired 10 days ago (grace — web still fully usable) → yes', async () => {
-    setAccess({ expiresInDays: -10 });
+  await ok('A584: due 5 days ago (within the 7 unpaid days — web still fully usable) → yes', async () => {
+    setAccess({ expiresInDays: -5 });
     assert.equal((await init()).body.webPosEnabled, true);
   });
-  await ok('expired 25 days ago (reports-only week) → no', async () => {
-    setAccess({ expiresInDays: -25 });
+  await ok('A584: due 10 days ago (past the 7 days — locked, no reports-only week) → no', async () => {
+    setAccess({ expiresInDays: -10 });
     assert.equal((await init()).body.webPosEnabled, false);
+  });
+  await ok('A584: a dated licence not yet bridged onto a plan is never locked → yes', async () => {
+    setAccess({ expiresInDays: -40, onPlan: false });
+    assert.equal((await init()).body.webPosEnabled, true);
   });
   await ok('expired 40 days ago (web locked) → no', async () => {
     setAccess({ expiresInDays: -40 });

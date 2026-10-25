@@ -38,11 +38,11 @@ export default function DrawersCopyPanel() {
       </p>
       <p className="text-gray-500 mt-0.5" data-testid="server-drawers-line">
         Push line: {s.channel === 'push' ? 'up (the cloud rings when a drawer changes)' : `${s.channel} — asked on the shorter beat`}
-        {s.fallback ? '' : s.fresh ? '' : ' · the copy is too old to answer from — tills ask the cloud until the next ask'}
+        {s.fallback ? '' : s.fresh ? '' : ' · the copy is too old to answer from — points of sale ask the cloud until the next ask'}
       </p>
       {s.fallback && (
         <p className="text-amber-300 mt-0.5" data-testid="server-drawers-fallback">
-          Fallback: each till asks the cloud about its own drawers (the cloud does not answer for the branch in one call)
+          Fallback: each POS asks the cloud about its own drawers (the cloud does not answer for the branch in one call)
           {s.fallbackUntil ? ` — tried again at ${new Date(s.fallbackUntil).toLocaleTimeString()}` : ''}.
         </p>
       )}

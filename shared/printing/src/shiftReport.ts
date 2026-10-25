@@ -202,7 +202,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   if (r.riderPayouts != null && r.riderPayouts > 0) d.line(pair(cols, '- Paid to riders', money(r.riderPayouts)));
   // 0.6.11: expenses were always deducted from expected cash but never printed, so the column did not add up.
   if (r.expenses != null) d.line(pair(cols, '- Expenses', money(r.expenses)));
-  if (r.siblingCash != null) d.line(pair(cols, '+ Web shift, this till', money(r.siblingCash)));
+  if (r.siblingCash != null) d.line(pair(cols, '+ Web shift, this POS', money(r.siblingCash)));
   d.line(pair(cols, '= Expected cash', money(r.expectedCash)), { bold: true });
 
   if (isClosed) {

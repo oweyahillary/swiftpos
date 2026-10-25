@@ -127,7 +127,7 @@ function stationConfigFor(stationId: string, paperWidthMm: 58 | 80): StationConf
     const builtin: Record<string, { name: string; kind: 'kitchen' | 'dispatch' | 'receipt' }> = {
       kitchen:  { name: 'Kitchen',  kind: 'kitchen'  },
       dispatch: { name: 'Dispatch', kind: 'dispatch' },
-      receipt:  { name: 'Till',     kind: 'receipt'  },
+      receipt:  { name: 'POS',     kind: 'receipt'  },
     };
     const b = builtin[stationId];
     if (!b) return null;

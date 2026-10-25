@@ -36,7 +36,7 @@ ok('every running shift at the branch — this till\'s from its records, another
 ok('side by side, wrapping for more, each with its own Print',
   /<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start" data-testid="live-zreports">/.test(mp)
   && /onClick=\{\(\) => void handlePrint\(l\.report\)\}/.test(mp));
-ok('the picker says so', mp.includes('<option value="">Running shifts — every till (live)</option>'));
+ok('the picker says so', mp.includes('<option value="">Running shifts — every POS (live)</option>'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

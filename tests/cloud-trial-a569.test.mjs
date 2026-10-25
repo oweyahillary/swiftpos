@@ -89,6 +89,7 @@ reset();
 
 const express = require('express');
 const app = express(); app.use(express.json());
+app.use('/api/admin/clients', require(path.join(DIST, 'routes/cloudPlanAdmin.js')).default);   // A584: Record payment converts
 app.use('/api/admin', require(path.join(DIST, 'routes/admin.js')).default);
 app.use('/api/business', require(path.join(DIST, 'routes/business.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, '127.0.0.1', () => r(s)); });
@@ -126,13 +127,13 @@ try {
     assert.equal(T.trialEligibility(facts({ webHostingFlag: { enabled: false } })).reason, 'web_access_was_set');
     assert.equal(T.trialEligibility(facts({ webAccessExpiresAt: '2027-01-01T00:00:00Z' })).reason, 'web_access_dated');
   });
-  await ok('a trial is 30 days; its phases: active, reports only for 7 days, ended; converted', () => {
+  await ok('a trial is 30 days; its phases: active, ended (A587: no reports-only week — invoiced like a paid client); converted', () => {
     const now = Date.parse('2026-10-22T09:00:00Z');
     const t = T.newTrial(now, BR1, 'boss');
     assert.equal(Date.parse(t.ends_at) - now, 30 * DAY);
     assert.equal(T.trialPhase(t, now + 29 * DAY), 'active');
-    assert.equal(T.trialPhase(t, now + 31 * DAY), 'reports_only');
-    assert.equal(T.trialPhase(t, now + 36.9 * DAY), 'reports_only');
+    assert.equal(T.trialPhase(t, now + 31 * DAY), 'ended');
+    assert.equal(T.trialPhase(t, now + 36.9 * DAY), 'ended');
     assert.equal(T.trialPhase(t, now + 37.1 * DAY), 'ended');
     assert.equal(T.trialPhase({ ...t, converted_at: new Date(now).toISOString() }, now + 99 * DAY), 'converted');
   });
@@ -144,15 +145,16 @@ try {
     assert.equal(T.planLabel({ trial: null, webHosting: false, licensedBranches: 2, now }), 'Desktop');
     assert.equal(T.planLabel({ trial: null, webHosting: false, licensedBranches: 0, now }), 'No licence yet');
   });
-  await ok('the trial ladder has no grace: reports only for 7 days, then locked — the paid ladder keeps 21 + 7', () => {
-    const end = '2026-11-21T09:00:00.000Z', e = Date.parse(end);
+  await ok('A587: a trial ends like a paid period — the 7 unpaid days from its end, locked at the end of the 7th (Nairobi); the paid ladder (A584) the same', () => {
+    const end = '2026-11-21T09:00:00.000Z', e = Date.parse(end);   // 12:00 Nairobi, 21 Nov
     assert.equal(W.ladderState(end, e - 1, true), 'active');
-    assert.equal(W.ladderState(end, e + 1, true), 'reports_only');
-    assert.equal(W.ladderState(end, e + 6.9 * DAY, true), 'reports_only');
-    assert.equal(W.ladderState(end, e + 7.1 * DAY, true), 'locked');
+    assert.equal(W.ladderState(end, e + 1, true), 'grace');
+    assert.equal(W.ladderState(end, e + 6.9 * DAY, true), 'grace');
+    assert.equal(W.ladderState(end, Date.parse('2026-11-28T21:00:00Z'), true), 'locked', '00:00 Nairobi on day 8');
     assert.equal(W.ladderState(end, e + 1, false), 'grace');
-    assert.equal(W.ladderState(end, e + 22 * DAY, false), 'reports_only');
-    assert.equal(W.ladderState(end, e + 29 * DAY, false), 'locked');
+    assert.equal(W.ladderState(end, Date.parse('2026-11-28T20:59:00Z'), false), 'grace', '23:59 Nairobi on day 7: still open');
+    assert.equal(W.ladderState(end, Date.parse('2026-11-28T21:00:00Z'), false), 'locked', '00:00 Nairobi on day 8: locked');
+    assert.equal(W.ladderState(end, e + 22 * DAY, false), 'locked', 'no 21-day grace, no reports-only stage');
   });
 
   console.log('\n2. The first licence starts it — no invoice\n');
@@ -218,18 +220,17 @@ try {
     assert.equal(r.status, 200); assert.equal(mem.db.branches[0].desktop_licensed, true);
     assert.equal(trialRow(), undefined); assert.equal(flag(), undefined);
   });
-  await ok('Convert to paid: "Enable web access" marks the trial converted and runs web access a year, audited', async () => {
+  await ok('Convert to paid (A584): "Enable web access" is retired (409 WEB_ACCESS_BY_PLAN, nothing converted); Record payment converts', async () => {
     reset();
     await licence(B, BR1);
     const r = await call('PATCH', `/api/admin/clients/${B}/features/web_hosting`, ADMIN, { enabled: true, notes: 'paid' });
-    assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.equal(r.body.cloud_trial_converted, true);
+    assert.equal(r.status, 409, JSON.stringify(r.body)); assert.equal(r.body.code, 'WEB_ACCESS_BY_PLAN');
+    assert.equal(trialRow().value.converted_at, null);
+    const p = await call('POST', `/api/admin/clients/${B}/cloud-plan/payments`, ADMIN, { amount: 3000, period: 'monthly', method: 'cash' });
+    assert.equal(p.status, 201, JSON.stringify(p.body)); assert.equal(p.body.trial_converted, true);
     assert.ok(trialRow().value.converted_at);
-    assert.ok(near(biz().web_access_expires_at, 365 * DAY, 2 * DAY));
-    assert.equal(audits('web_access.trial_convert').length, 1);
-    // a second "Enable" converts nothing more
-    const again = await call('PATCH', `/api/admin/clients/${B}/features/web_hosting`, ADMIN, { enabled: true });
-    assert.equal(again.body.cloud_trial_converted, undefined); assert.equal(audits('web_access.trial_convert').length, 1);
+    assert.ok(near(biz().web_access_expires_at, 60 * DAY, 3 * DAY), 'the trial\'s days kept, then a month (the plan) — not a fixed year');
+    assert.equal(audits('cloud_plan.payment').length, 1);
   });
   await ok('the client list and the client read the plan in words', async () => {
     reset();
@@ -253,21 +254,24 @@ try {
     const w = await W.getWebAccess(B, 'active');
     assert.equal(w.state, 'active'); assert.equal(w.trial, true); assert.equal(w.canLogin, true); assert.equal(w.fullAccess, true);
   });
-  await ok('3 days after: reports only (sign-in works, the web POS is off) — no 21-day grace', async () => {
+  await ok('3 days after: A587 — the 7 unpaid days of a paid client (full access; the invoice went out on its end day), no reports-only week', async () => {
     reset(); await licence(B, BR1); endIn(-3 * DAY);
     const w = await W.getWebAccess(B, 'active');
-    assert.equal(w.state, 'reports_only'); assert.equal(w.canLogin, true); assert.equal(w.fullAccess, false);
+    assert.equal(w.state, 'grace'); assert.equal(w.canLogin, true); assert.equal(w.fullAccess, true); assert.equal(w.trial, true);
   });
   await ok('8 days after: sign-in refused — "Your cloud trial has ended" (CLOUD_TRIAL_ENDED)', async () => {
     reset(); await licence(B, BR1); endIn(-8 * DAY);
     const w = await W.getWebAccess(B, 'active');
     assert.equal(w.state, 'locked'); assert.equal(w.canLogin, false);
     const r = W.webAccessRefusal(w);
-    assert.equal(r.code, 'CLOUD_TRIAL_ENDED'); assert.match(r.error, /cloud trial has ended/i); assert.match(r.error, /tills keep working/);
-    // a PAID term 8 days past is still in its grace — the trial's ladder is its own
+    assert.equal(r.code, 'CLOUD_TRIAL_ENDED'); assert.match(r.error, /cloud trial has ended/i); assert.match(r.error, /points of sale keep working/);
+    // A584: a PAID term 8 days past (on a plan since before) is locked — no 21-day grace; one not yet bridged is not
     reset(); biz().web_access_expires_at = new Date(Date.now() - 8 * DAY).toISOString();
-    assert.equal((await W.getWebAccess(B, 'active')).state, 'grace');
-    assert.equal(W.webAccessRefusal({ state: 'locked', expiresAt: null, fullAccess: false, canLogin: false }).code, 'WEB_ACCESS_EXPIRED');
+    assert.equal((await W.getWebAccess(B, 'active')).state, 'grace', 'a licence not yet bridged is never locked');
+    mem.db.cloud_plans = [{ business_id: B, period: 'monthly', amount: 3000, currency: 'KES', created_at: new Date(Date.now() - 60 * DAY).toISOString() }];
+    assert.equal((await W.getWebAccess(B, 'active')).state, 'locked');
+    const paused = W.webAccessRefusal({ state: 'locked', expiresAt: null, fullAccess: false, canLogin: false });
+    assert.equal(paused.code, 'CLOUD_ACCESS_PAUSED'); assert.equal(paused.error, 'Your ZapTill cloud access is paused. Call 0717 675 635 to renew.');
   });
   await ok('"End trial" (web access switched off during the trial) is over at once', async () => {
     reset(); await licence(B, BR1);
@@ -275,9 +279,9 @@ try {
     const w = await W.getWebAccess(B, 'active');
     assert.equal(w.state, 'none'); assert.equal(w.canLogin, false); assert.equal(W.webAccessRefusal(w).code, 'WEB_HOSTING_REQUIRED');
   });
-  await ok('a converted trial is a paid term (a year, the paid ladder)', async () => {
+  await ok('a converted trial is a paid term (the paid ladder)', async () => {
     reset(); await licence(B, BR1);
-    await call('PATCH', `/api/admin/clients/${B}/features/web_hosting`, ADMIN, { enabled: true });
+    await call('POST', `/api/admin/clients/${B}/cloud-plan/payments`, ADMIN, { amount: 3000, period: 'monthly', method: 'cash' });
     const w = await W.getWebAccess(B, 'active');
     assert.equal(w.state, 'active'); assert.equal(w.trial, undefined);
   });

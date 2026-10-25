@@ -14,7 +14,7 @@
 import { safeRouter } from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess, inBranchSet } from '../middleware/rbac';
 import { worksAtBranch } from '../lib/branchAccess';   // A494
 import { isNodeRole } from '../lib/deviceRegistry';
 import { ROLE_HANDOVER_WINDOW_MINUTES } from '../lib/deviceRole';
@@ -37,6 +37,8 @@ async function deviceInReach(req: any, device: { branch_id?: string | null; user
   if (!device.user_id || !req.branchId) return false;
   const { data: ub, error } = await supabase.from('user_branches').select('branch_id').eq('user_id', device.user_id);
   if (error) throw new Error(`device's person: ${error.message}`);
+  // A582: a partner's "All my branches" — a browser whose person works at one of their branches
+  if (inBranchSet(req)) return (req.branchSet as string[]).some((b) => worksAtBranch((ub ?? []) as Array<{ branch_id: string | null }>, b));
   return worksAtBranch((ub ?? []) as Array<{ branch_id: string | null }>, req.branchId);
 }
 const NOT_IN_REACH = { error: 'That device is at another branch.', code: 'OTHER_BRANCH' } as const;
@@ -128,11 +130,14 @@ router.get('/fleet', requirePermission('devices.approve'), async (req, res) => {
   const { data, error } = await query;
 
   if (error) { sendError(res, error); return; }
+  // A582: a partner sees the tills of their branches only (every device of the business was listed to any key holder)
+  const shown: any[] = [];
+  for (const d of (data ?? []) as any[]) if (!req.webPartner || await deviceInReach(req, d)) shown.push(d);
 
   // A184 Tier 1 — resolve branch names. user_devices has two FKs to branches
   // (branch_id + previous_branch_id), so PostgREST can't embed one unambiguously;
   // a lookup map is simpler and safe.
-  const branchIds = [...new Set((data ?? []).map((d: any) => d.branch_id).filter(Boolean))];
+  const branchIds = [...new Set(shown.map((d: any) => d.branch_id).filter(Boolean))];
   const branchMap: Record<string, string> = {};
   if (branchIds.length) {
     const { data: branches } = await supabase
@@ -142,7 +147,7 @@ router.get('/fleet', requirePermission('devices.approve'), async (req, res) => {
 
   // A184 Tier 2 — active session: the OPEN shift on each till (if any) and the
   // cashier who opened it. Scoped to this business's own devices by device_id.
-  const deviceIds = [...new Set((data ?? []).map((d: any) => d.device_id).filter(Boolean))];
+  const deviceIds = [...new Set(shown.map((d: any) => d.device_id).filter(Boolean))];
   const shiftByDevice: Record<string, { cashier: string | null; openedAt: string | null }> = {};
   if (deviceIds.length) {
     const { data: openShifts } = await supabase
@@ -170,7 +175,7 @@ router.get('/fleet', requirePermission('devices.approve'), async (req, res) => {
   const hoursSince = (iso: string | null) =>
     iso ? Math.floor((now - new Date(iso).getTime()) / 3_600_000) : null;
 
-  const fleet = (data ?? []).map((d: any) => ({
+  const fleet = shown.map((d: any) => ({
     id: d.id,
     deviceId: d.device_id ?? null,
     label: d.device_label ?? null,

@@ -77,7 +77,7 @@ export default function UpdateBanner({ canRestart = false }: Props) {
     setMsg(''); setBusy(true);
     try {
       const r = await posApi.update.installNow();   // visible installer progress + relaunch
-      if (!r.ok) setMsg(r.reason === 'manager_required' ? 'Only a manager can restart the till for the update.' : `Cannot install now: ${r.reason ?? 'unknown'}`);
+      if (!r.ok) setMsg(r.reason === 'manager_required' ? 'Only a manager can restart the POS for the update.' : `Cannot install now: ${r.reason ?? 'unknown'}`);
     } catch (e: any) {
       setMsg(e?.message ?? 'Cannot install now.');
     } finally {
@@ -110,7 +110,7 @@ export default function UpdateBanner({ canRestart = false }: Props) {
       ) : (
         <>
           <span className="font-semibold text-green-400">Update ready</span>
-          <span className="flex-1">ZapTill {status.version ?? ''} installs when ZapTill is closed, or by itself when the till is idle.</span>
+          <span className="flex-1">ZapTill {status.version ?? ''} installs when ZapTill is closed, or by itself when the POS is idle.</span>
           {canRestart && (
             <button onClick={restartNow} disabled={busy} data-testid="update-restart-now"
                     className="bg-action-700 hover:bg-action-600 disabled:opacity-40 rounded-lg px-3 py-1.5">

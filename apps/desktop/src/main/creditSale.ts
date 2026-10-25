@@ -25,6 +25,13 @@
  *   SPLIT    a sale may be part on account and part cash / M-Pesa / card (the web POS's split allows it) — ONE leg on
  *            account, one customer. The cloud charges only the credit leg; the drawer counts only cash (method = 'cash').
  *
+ * A585 (owner, 2026-10-23: "they can assign to branch manager for approval but they set the limit"): the owner may choose
+ * who approves sales on account at each branch (Settings › Credit approvals). The cloud sends this branch's list with the
+ * customers (approval: { on, approvers, owner_id }); it is kept in maintenance_state, so it holds offline. ON: the seller
+ * approves it themselves only when they are on the list (or the owner); anyone else needs the PIN of someone on it — a
+ * PIN of anyone else, a manager included, does not approve. OFF (the default, and before the cloud sends it): A552.
+ * The limit is the same either way.
+ *
  * The screen's word is never taken: order:create calls prepareCreditSale, which re-reads the customer, the limit and the
  * approver here and strips anything the screen sent about them (credit_pin never leaves this process).
  */
@@ -32,7 +39,7 @@ import type Database from 'better-sqlite3';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, getPaymentMethodsEnabled, isNodeRole } from './deviceConfig';
 import { logLine } from './logFile';
-import { personCan } from './personAccess';
+import { personCan, isOwnerRole } from './personAccess';
 import { assertPinAllowed, recordPinFailure } from './pinAttempts';
 import { verifyPinOffline } from './pinCache';
 import { verifyPinAtNode } from './branchStaff';
@@ -46,7 +53,11 @@ const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 export const CREDIT_PIN_NEEDED = "A sale on account needs a manager's approval — enter their PIN.";
 export const NOT_A_CREDIT_APPROVER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
 export const SELF_APPROVAL = 'Someone else must approve this — enter the PIN of another manager (or the owner).';
-export const NO_ON_ACCOUNT = 'This till does not take sales on account.';
+// A585: the owner chose who approves.
+export const CHOSEN_PIN_NEEDED = 'A sale on account needs the approval of someone the owner chose — enter their PIN.';
+export const NOT_A_CHOSEN_APPROVER = 'That PIN was not recognised. Enter the PIN of someone the owner chose to approve sales on account.';
+export const NO_CHOSEN_APPROVER = 'Nobody at this branch may approve sales on account yet — the owner chooses who in Settings › Credit approvals.';
+export const NO_ON_ACCOUNT = 'This POS does not take sales on account.';
 export const CUSTOMER_NEEDED = 'Choose the customer this sale goes on account to.';
 export const ONE_ACCOUNT_LEG = 'Put the account part of this sale in one payment.';
 /** A559: the person signed in may not look up the customers (neither customers.view nor customers.credit). */
@@ -136,13 +147,48 @@ export function onAccountOffered(db: Database.Database = getLocalDb(), enabled: 
   return (Number(r?.n) || 0) > 0;
 }
 
+// ── A585: who approves (the owner's choice for this branch, kept offline) ─────────────────────────────────────────────
+export interface CreditApprovalRule { on: boolean; approvers: string[]; owner_id: string | null }
+export const APPROVAL_KEY = 'credit_approval';
+const OFF: CreditApprovalRule = { on: false, approvers: [], owner_id: null };
+
+/** What the cloud (or the branch server) sent → the rule. Anything unreadable is OFF. */
+export function cleanApproval(raw: unknown): CreditApprovalRule {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...OFF };
+  const o = raw as { on?: unknown; approvers?: unknown; owner_id?: unknown };
+  return {
+    on: o.on === true,
+    approvers: Array.isArray(o.approvers) ? [...new Set(o.approvers.filter((x): x is string => typeof x === 'string' && !!x))].slice(0, 50) : [],
+    owner_id: typeof o.owner_id === 'string' && o.owner_id ? o.owner_id : null,
+  };
+}
+/** Keep the rule — only when one was sent (an older cloud or server sends none: the last one stands, OFF if never). */
+export function writeCreditApproval(db: Database.Database, raw: unknown): void {
+  if (!raw || typeof raw !== 'object') return;
+  db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(APPROVAL_KEY, JSON.stringify(cleanApproval(raw)), new Date().toISOString());
+}
+export function readCreditApproval(db: Database.Database = getLocalDb()): CreditApprovalRule {
+  try {
+    const r = db.prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(APPROVAL_KEY) as { value?: string } | undefined;
+    return r?.value ? cleanApproval(JSON.parse(r.value)) : { ...OFF };
+  } catch { return { ...OFF }; }
+}
+/** ON: the owner (their role, or the account the business names) or someone on this branch's list. */
+export function onApproverList(p: LocalPerson | null | undefined, rule: CreditApprovalRule): boolean {
+  if (!p?.id) return false;
+  return isOwnerRole(p.roleName) || (!!rule.owner_id && p.id === rule.owner_id) || rule.approvers.includes(p.id);
+}
+
 // ── the rules ──────────────────────────────────────────────────────────────────────────────────────────────────────
 export interface LocalPerson { id: string; name: string | null; roleName?: string | null; permissions?: unknown }
 /** A PIN's person at THIS branch, or null (no match). Throws (with its words) when it cannot be checked at all. */
 export type PinCheck = (pin: string, branchId: string) => Promise<LocalPerson | null>;
 
-/** Holds customers.credit (the owner always): approves a sale on account without anyone's PIN. */
-export function selfApproves(p: LocalPerson | null | undefined): boolean {
+/** Holds customers.credit (the owner always): approves a sale on account without anyone's PIN. A585: when the owner chose
+ *  the approvers, only someone on the list (or the owner). */
+export function selfApproves(p: LocalPerson | null | undefined, rule?: CreditApprovalRule | null): boolean {
+  if (rule?.on) return onApproverList(p, rule);
   return !!p?.id && personCan(p, 'customers.credit');
 }
 
@@ -163,7 +209,7 @@ export function limitProblem(c: CreditCustomer, amount: number, currency = 'KES'
   const f = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (round2(amount) > round2(c.available) + 0.004) {
     return c.credit_limit <= 0
-      ? `${c.name} has no credit limit — a manager sets one in Customers › Credit on the web.`
+      ? `${c.name} has no credit limit — the owner or a manager sets one (Customers › Credit on the web).`
       : `Over ${c.name}'s credit limit: ${f(Math.max(0, c.available))} left, this sale ${f(amount)}.`;
   }
   return null;
@@ -175,16 +221,18 @@ export function limitProblem(c: CreditCustomer, amount: number, currency = 'KES'
  * counts towards the till's PIN lock (their own does not: it is not a guess).
  */
 export async function creditApprover(asker: LocalPerson | null, pin: string | null | undefined, branchId: string,
-  verify: PinCheck = identifyByPin): Promise<LocalPerson> {
+  verify: PinCheck = identifyByPin, rule: CreditApprovalRule | null = null): Promise<LocalPerson> {
   if (!asker?.id) throw new Error('Not signed in');
-  if (selfApproves(asker)) return asker;
+  const chosen = !!rule?.on;   // A585: the owner chose who approves
+  if (selfApproves(asker, rule)) return asker;
   const p = String(pin ?? '').trim();
-  if (!p) throw new Error(CREDIT_PIN_NEEDED);
+  if (!p) throw new Error(chosen ? CHOSEN_PIN_NEEDED : CREDIT_PIN_NEEDED);
   assertPinAllowed();
+  const refused = chosen ? NOT_A_CHOSEN_APPROVER : NOT_A_CREDIT_APPROVER;
   const who = await verify(p, branchId);
-  if (!who) { recordPinFailure(); throw new Error(NOT_A_CREDIT_APPROVER); }
+  if (!who) { recordPinFailure(); throw new Error(refused); }
   if (who.id === asker.id) throw new Error(SELF_APPROVAL);
-  if (!selfApproves(who)) { recordPinFailure(); throw new Error(NOT_A_CREDIT_APPROVER); }
+  if (!selfApproves(who, rule)) { recordPinFailure(); throw new Error(refused); }
   return who;
 }
 
@@ -236,7 +284,7 @@ export async function prepareCreditSale(payload: any, o: { asker: LocalPerson | 
   const limit = limitProblem(customer, amount, o.currency);
   if (limit) throw new Error(limit);
   const branchId = o.branchId ?? getDeviceConfig()?.branch_id ?? '';
-  const approver = await creditApprover(o.asker, pin, branchId, o.verify ?? identifyByPin);
+  const approver = await creditApprover(o.asker, pin, branchId, o.verify ?? identifyByPin, readCreditApproval(db));   // A585
   const balanceAfter = round2(customer.owed + amount);
   payload.customer_id = customer.id;
   payload.customer_name = customer.name;
@@ -258,7 +306,7 @@ let lastTriedAt = 0;
 const isServer = (): boolean => isNodeRole(getDeviceConfig()?.device_role ?? null);
 
 /** A till behind a branch server asks the server's copy (shop network); null = ask the cloud (no server, an older one). */
-async function askServer(): Promise<{ customers: unknown; ageMs: number } | null> {
+async function askServer(): Promise<{ customers: unknown; ageMs: number; approval?: unknown } | null> {
   const base = nodeUrl();
   const now = Date.now();
   if (!base || isServer() || now < serverUnsupportedUntil) return null;
@@ -270,9 +318,9 @@ async function askServer(): Promise<{ customers: unknown; ageMs: number } | null
       return null;
     }
     if (!res.ok) return null;
-    const b = await res.json() as { customers?: unknown; age_ms?: unknown };
+    const b = await res.json() as { customers?: unknown; age_ms?: unknown; approval?: unknown };
     if (!Array.isArray(b?.customers)) return null;
-    return { customers: b.customers, ageMs: Math.max(0, Number(b.age_ms) || 0) };
+    return { customers: b.customers, ageMs: Math.max(0, Number(b.age_ms) || 0), approval: b.approval };
   } catch { return null; }
 }
 
@@ -286,6 +334,7 @@ export function pullCreditCustomers(db: Database.Database = getLocalDb()): Promi
       if (fromServer) {
         // The server's copy is ageMs old; 2 s more of margin counts a sale synced just then as not yet in it (safe side).
         const n = writeCreditCustomers(db, fromServer.customers, new Date(Date.now() - fromServer.ageMs - 2_000));
+        writeCreditApproval(db, fromServer.approval);   // A585
         logLine('sync', `A552: ${n} credit customer(s) from the branch server`);
         return true;
       }
@@ -294,9 +343,10 @@ export function pullCreditCustomers(db: Database.Database = getLocalDb()): Promi
       const res = await liveCloudGet('/api/pos/credit-customers');
       if (res.status === 404) { cloudUnsupportedUntil = Date.now() + UNSUPPORTED_WAIT_MS; return false; }   // an older cloud
       if (!res.ok) return false;
-      const b = await res.json() as { customers?: unknown };
+      const b = await res.json() as { customers?: unknown; approval?: unknown };
       if (!Array.isArray(b?.customers)) return false;
       writeCreditCustomers(db, b.customers, sent);
+      writeCreditApproval(db, b.approval);   // A585
       return true;
     } catch (e: any) {
       logLine('sync', `A552: credit customers not read: ${e?.message ?? e}`);
@@ -321,7 +371,7 @@ export async function answerCreditCustomers(db: Database.Database = getLocalDb()
   const at = creditListAt(db);
   if (!at) return { status: 503, body: { error: 'The branch server has no credit customers yet - ask again shortly.' } };
   const rows = db.prepare(`SELECT id, name, phone, status, credit_limit, credit_balance FROM credit_customers`).all();
-  return { status: 200, body: { age_ms: Math.max(0, Date.now() - Date.parse(at)), customers: rows } };
+  return { status: 200, body: { age_ms: Math.max(0, Date.now() - Date.parse(at)), customers: rows, approval: readCreditApproval(db) } };   // A585
 }
 
 /** Tests only. */

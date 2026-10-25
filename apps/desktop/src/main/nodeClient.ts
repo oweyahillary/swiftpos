@@ -279,20 +279,20 @@ export async function pushRowsToNode(
   const detail = await res.json().catch(() => null as any);
   if (res.status === 401) {
     // A448: the manager is told (sync notice), not only the log — A501: by its reason (noteKeyedAnswer).
-    return { kind: 'transport', status: 401, error: detail?.error ?? 'branch server rejected the access code — re-run install on this till with the code from the branch server' };
+    return { kind: 'transport', status: 401, error: detail?.error ?? 'branch server rejected the access code — re-run install on this POS with the code from the branch server' };
   }
   if (res.status === 413) return { kind: 'too_large', error: detail?.error ?? 'the batch was too large for the branch server' };
   if (isUnreachableStatus(res.status)) return { kind: 'transport', status: res.status, error: detail?.error ?? `branch server could not take the batch (HTTP ${res.status})` };
   // A501: the server refusing the TILL, not the rows — retried, never counted (see NodePushOutcome).
   if (res.status === 400 || res.status === 403 || res.status === 426) {
     const what = res.status === 403
-      ? `the branch server serves another branch than this till's (${cfg?.branch_id ?? 'none'})`
-      : res.status === 426 ? 'the branch server accepts only encrypted connections' : 'the branch server could not read this till\'s request';
+      ? `the branch server serves another branch than this POS's (${cfg?.branch_id ?? 'none'})`
+      : res.status === 426 ? 'the branch server accepts only encrypted connections' : 'the branch server could not read this POS\'s request';
     return { kind: 'transport', status: res.status, error: `${what}${detail?.error ? ` — it said: ${detail.error}` : ''}` };
   }
   if (!res.ok) return { kind: 'refused', status: res.status, error: detail?.error ?? `branch server refused the batch (HTTP ${res.status})` };
   if (!detail || typeof detail.results !== 'object' || detail.results === null) {
-    return { kind: 'transport', status: res.status, error: 'branch server sent an answer this till could not read' };
+    return { kind: 'transport', status: res.status, error: 'branch server sent an answer this POS could not read' };
   }
   return { kind: 'ok', results: detail.results };
 }
@@ -605,7 +605,7 @@ export async function probeNode(url: string, timeoutMs = 4000): Promise<{ ok: bo
     const res = cert
       ? await pinnedFetch(`${base}/node/health`, { signal: ctrl.signal, headers: nodeHeaders() }, cert)
       : await globalThis.fetch(`${base}/node/health`, { signal: ctrl.signal, headers: nodeHeaders() });
-    if (res.status === 401) return { ok: false, error: 'That machine refused this till\'s branch access code' };
+    if (res.status === 401) return { ok: false, error: 'That machine refused this POS\'s branch access code' };
     if (!res.ok) return { ok: false, error: `The machine answered ${res.status} — is it the branch server?` };
     return { ok: true, cert, code: securityCode(cert) };
   } catch {

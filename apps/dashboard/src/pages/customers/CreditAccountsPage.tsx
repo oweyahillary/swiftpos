@@ -16,6 +16,7 @@ import { paginate } from '../../lib/paginate';
 import CreditSalesToConfirm, { ledgerNote } from '../../components/CreditSalesToConfirm';   // A545
 import { usePermissions } from '../../context/PermissionsContext';   // A545
 import GiveCreditPicker from '../../components/GiveCreditPicker';   // A567
+import { useSetsLimits } from '../../hooks/useSetsLimits';   // A585, A587
 
 interface CreditCustomer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -32,7 +33,9 @@ interface LedgerRow {
 
 export default function CreditAccountsPage() {
   const currency = useBusiness().business?.currency ?? 'KES';
-  const mayCredit = usePermissions().can('customers.credit');   // A545: confirm / dispute sales on account
+  const perms = usePermissions();
+  const mayCredit = perms.can('customers.credit');   // A545: confirm / dispute sales on account
+  const { setsLimits, line: limitLine } = useSetsLimits();   // A585: the owner; A587: a partner at one of their branches
   const [rows, setRows] = useState<CreditCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -142,7 +145,7 @@ export default function CreditAccountsPage() {
         <h1 className="text-xl font-bold text-white">Credit Accounts</h1>
         <div className="flex items-center gap-3">
           <div className="text-sm text-gray-400">Total outstanding: <span className="text-white font-semibold">{money(totalOwed, currency)}</span></div>
-          {mayCredit && (
+          {setsLimits && (
             <button onClick={() => { setGiving(true); setMsg(null); }} data-testid="give-credit"
               className="px-3 py-2 bg-swift-strong hover:bg-swift-deep text-white rounded-lg text-sm">+ Give credit</button>
           )}
@@ -162,7 +165,7 @@ export default function CreditAccountsPage() {
       )}
 
       {loading ? <p className="text-gray-500">Loading…</p> : rows.length === 0 ? (
-        <p className="text-gray-500">No credit customers yet. {mayCredit ? 'Use "+ Give credit" to give a customer a credit limit.' : 'Someone with credit rights gives a customer a limit to start.'}</p>
+        <p className="text-gray-500">No credit customers yet. {setsLimits ? 'Use "+ Give credit" to give a customer a credit limit.' : limitLine}</p>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -206,7 +209,7 @@ export default function CreditAccountsPage() {
         <GiveCreditPicker currency={currency} onClose={() => setGiving(false)}
           onGiven={(name, lim) => {
             setGiving(false);
-            setMsg({ kind: 'ok', text: `${name} can now buy on account up to ${money(lim, currency)}. The tills pick it up at their next pull.` });
+            setMsg({ kind: 'ok', text: `${name} can now buy on account up to ${money(lim, currency)}. The points of sale pick it up at their next pull.` });
             void loadList();
           }} />
       )}
@@ -233,15 +236,16 @@ export default function CreditAccountsPage() {
               <div className="bg-gray-800 rounded-lg p-3"><p className="text-xs text-gray-500">Available</p><p className="text-green-400 font-semibold">{money(selected.available_credit, currency)}</p></div>
             </div>
 
-            {/* Set limit */}
-            <div className="flex items-end gap-2 mb-4">
+            {/* Set limit — A585: the owner's; A587: a partner at one of their branches too */}
+            {!setsLimits && <p className="text-xs text-gray-500 mb-4" data-testid="owner-sets-limits">{limitLine}</p>}
+            {setsLimits && <div className="flex items-end gap-2 mb-4">
               <div className="flex-1">
                 <label className="block text-sm text-gray-400 mb-1.5">Credit limit</label>
                 <input type="number" value={limit} onChange={e => setLimit(e.target.value)} min={0}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white" />
               </div>
               <button onClick={saveLimit} disabled={busy} className="px-4 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Save</button>
-            </div>
+            </div>}
 
             {/* Record payment */}
             <div className="bg-gray-800/50 rounded-lg p-4 mb-4">

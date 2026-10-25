@@ -87,7 +87,7 @@ export function WatchListView({ data, isOwner, onDismiss, busy, portal = false }
         {isOwner
           ? <>Which patterns, the amounts and who is told: <Link to="/dashboard/settings/business/loss-alerts" className="text-swift-text hover:underline">Settings › Business › Loss prevention</Link>.</>
           : `The owner chooses which patterns are watched and who is told.${portal ? ' The lists behind them: Reports › Voids & Exceptions.' : ''}`}
-        {' '}Only the owner and managers see this — never the till.
+        {' '}Only the owner and managers see this — never the POS.
       </p>
     </div>
   );

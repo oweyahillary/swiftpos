@@ -123,13 +123,19 @@ export interface CreditListRow {
   decided_at: string | null; dispute_reason: string | null; sold_at: string;
 }
 
+/** A582: a branch (eq), a partner's "All my branches" (in — never empty: an empty set matches nothing), or every (null). */
+function atBranches<Q>(q: Q, b: string | readonly string[] | null): Q {
+  if (Array.isArray(b)) return (q as any).in('branch_id', b.length ? [...b] : ['00000000-0000-0000-0000-000000000000']);
+  return b ? (q as any).eq('branch_id', b) : q;
+}
+
 /** The list a manager (own branch) or the owner (every branch, or the one picked) sees. Before 157: empty. */
-export async function listCreditSales(businessId: string, branchId: string | null, states: CreditState[], limit = 200):
+export async function listCreditSales(businessId: string, branchId: string | readonly string[] | null, states: CreditState[], limit = 200):
   Promise<CreditListRow[]> {
   let q = supabase.from('credit_confirmations')
     .select('order_id, branch_id, customer_id, amount, state, source, over_limit, cashier_id, approved_at_sale_by, decided_by, decided_by_name, decided_at, dispute_reason, sold_at')
     .eq('business_id', businessId).in('state', states).order('sold_at', { ascending: false }).limit(Math.min(Math.max(limit, 1), 500));
-  if (branchId) q = q.eq('branch_id', branchId);
+  q = atBranches(q, branchId);   // A582: one branch, a partner's set, or every branch
   const { data, error } = await q;
   if (error) { console.warn(`[credit] A545: list not read (is migration 157 applied?): ${error.message}`); return []; }
   const rows = (data ?? []) as Array<Record<string, any>>;
@@ -157,11 +163,11 @@ export async function listCreditSales(businessId: string, branchId: string | nul
 export interface CreditCounts { awaiting: number; awaiting_amount: number; disputed: number; disputed_amount: number }
 
 /** How many wait / are disputed (a branch, or every branch). Before 157 (or on error): zeros — never blocks anything. */
-export async function creditCounts(businessId: string, branchId: string | null): Promise<CreditCounts> {
+export async function creditCounts(businessId: string, branchId: string | readonly string[] | null): Promise<CreditCounts> {
   const out: CreditCounts = { awaiting: 0, awaiting_amount: 0, disputed: 0, disputed_amount: 0 };
   try {
     let q = supabase.from('credit_confirmations').select('state, amount').eq('business_id', businessId).in('state', ['awaiting', 'disputed']).limit(5000);
-    if (branchId) q = q.eq('branch_id', branchId);
+    q = atBranches(q, branchId);   // A582: one branch, a partner's set, or every branch
     const { data, error } = await q;
     if (error) return out;
     for (const r of (data ?? []) as Array<{ state: CreditState; amount: number | string }>) {

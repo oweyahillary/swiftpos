@@ -34,7 +34,7 @@ import { sendError }  from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }   from '../lib/supabase';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { branchScope, requirePermission } from '../middleware/rbac';
+import { requirePermission, branchFilter, byBranch, type BranchFilter } from '../middleware/rbac';
 import { csvCell } from '../lib/csvSafe';   // A494
 import ExcelJS        from 'exceljs';
 
@@ -105,7 +105,7 @@ async function businessName(businessId: string): Promise<string> {
 }
 
 /** Orders in range, completed only, with their payments and items. */
-async function fetchOrders(businessId: string, branchId: string | null, start: string, end: string) {
+async function fetchOrders(businessId: string, bf: BranchFilter, start: string, end: string) {
   let q = supabase
     .from('orders')
     .select(`
@@ -119,7 +119,7 @@ async function fetchOrders(businessId: string, branchId: string | null, start: s
     .gte('created_at', start)
     .lte('created_at', end);
 
-  if (branchId) q = q.eq('branch_id', branchId);
+  q = byBranch(q, bf);   // A582
   const { data, error } = await q;
   if (error) throw error;
   return data ?? [];
@@ -141,8 +141,8 @@ router.get('/daily', requirePermission('reports.sales'), async (req: any, res) =
     // hung forever. Resolving it here, the way reports-export.ts does, both
     // unblocks the route AND applies the correct branch: req.branchId alone was
     // undefined for owners, so an owner's selected branch was silently ignored.
-    const scopedBranch = branchScope(req);
-    const orders = await fetchOrders(req.businessId, scopedBranch, start, end);
+    const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
+    const orders = await fetchOrders(req.businessId, bf, start, end);
 
     const completed = orders.filter((o: any) => o.status === 'completed');
     const voided    = orders.filter((o: any) => o.status === 'voided');
@@ -243,8 +243,8 @@ router.get('/hourly', requirePermission('reports.sales'), async (req: any, res) 
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);
     // See /daily above — branchScope is a helper, not middleware.
-    const scopedBranch = branchScope(req);
-    const orders = (await fetchOrders(req.businessId, scopedBranch, start, end))
+    const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
+    const orders = (await fetchOrders(req.businessId, bf, start, end))
       .filter((o: any) => o.status === 'completed');
 
     const hours: Array<{ bills: number; gross: number; items: number }> =
@@ -309,8 +309,8 @@ router.get('/audit', requirePermission('reports.voids'), async (req: any, res) =
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);
     // See /daily above — branchScope is a helper, not middleware.
-    const scopedBranch = branchScope(req);
-    const orders = await fetchOrders(req.businessId, scopedBranch, start, end);
+    const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
+    const orders = await fetchOrders(req.businessId, bf, start, end);
 
     const staffIds = [...new Set(orders.map((o: any) => o.cashier_id).filter(Boolean))];
     const { data: staff } = staffIds.length

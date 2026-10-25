@@ -26,5 +26,5 @@ test('every label carries a barcode (A574) and its in-store EAN-13 code is valid
 test('the labels are made-up demo data', () => {
   const all = JSON.stringify(fresh);
   assert.ok(all.includes('Cooking Oil 1L'));
-  assert.ok(fresh.rolls.some((r) => r.svg.includes('Demo Mini Mart')), 'the 58 x 40 label shows the demo shop name');
+  assert.ok(fresh.rolls.some((r) => r.svg.includes('Kijani Basket')), 'the 58 x 40 label shows the demo shop name');
 });

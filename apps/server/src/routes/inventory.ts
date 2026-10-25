@@ -3,9 +3,9 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { branchScope, assertBranchAccess, requirePermission, requireAnyPermission } from '../middleware/rbac';
+import { branchScope, assertBranchAccess, requirePermission, requireAnyPermission, branchFilter, byBranch } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
-import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A394
+import { hiddenWhileCounting, hiddenWhileCountingIn } from '../lib/stockTakeAccess';   // A394, A582
 import { recordReceivedBatch, wantsBatch } from '../lib/batchStore';   // A413
 import { heldUnits } from '../lib/batches';
 import { actor } from '../lib/actor';
@@ -24,7 +24,29 @@ router.use(stripCostsUnlessAllowed());
 // cashier's role need not hold inventory.view. It is branch-locked (branchScope; a branchless non-owner reads nothing),
 // sends no cost (router strip) and is blind for the items a count at the branch is counting (hiddenWhileCounting).
 router.get('/', async (req, res) => {
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582
+  const scopedBranch = bf.kind === 'set' ? null : branchScope(req);
+
+  // A582: a partner's "All my branches" — the rows of their branches, as the owner's every-branch list (never another's)
+  if (bf.kind === 'set') {
+    const { data, error } = await supabase
+      .from('stock_levels')
+      .select(`
+        *,
+        products!inner (
+          id, name, image_url, track_stock, status, business_id,
+          categories ( name, color )
+        )
+      `)
+      .in('branch_id', bf.ids)
+      .eq('products.business_id', req.businessId)
+      .order('quantity', { ascending: true });
+    if (error) { sendError(res, error); return; }
+    const hide = await hiddenWhileCountingIn(req, bf);
+    res.json(((data ?? []) as any[]).filter((r) => bf.ids.includes(r.branch_id)).map((r: any) =>
+      hide.has(`p:${r.product_id}`) ? { ...r, quantity: null, qty_pieces: null, counting: true } : r));
+    return;
+  }
 
   if (!scopedBranch) {
     // Owner with no branch filter — return all branches
@@ -219,7 +241,7 @@ router.patch('/:product_id/threshold', requireAnyPermission('inventory.adjust', 
 // A494: was open to every signed-in user — inventory.view; branch-locked; blind for counted items.
 router.get('/movements', requirePermission('inventory.view'), async (req, res) => {
   const { product_id, limit = '50' } = req.query;
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('stock_movements')
@@ -232,12 +254,12 @@ router.get('/movements', requirePermission('inventory.view'), async (req, res) =
     .limit(Math.min(parseInt(limit as string) || 50, 500));
 
   if (product_id)   query = query.eq('product_id', product_id as string);
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
 
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
   // A394 / A494: while the branch counts, the level after each movement of a counted item would give the count away.
-  const hide = await hiddenWhileCounting(req, scopedBranch);
+  const hide = await hiddenWhileCountingIn(req, bf);
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   res.json(hide.size ? rows.map((m) => (hide.has(`p:${m.product_id}`) ? { ...m, quantity_after: null, counting: true } : m)) : rows);
 });

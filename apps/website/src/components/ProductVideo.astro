@@ -1,0 +1,99 @@
+---
+import { existsSync } from 'node:fs';
+// A short product video (public/video/<name>.mp4 / .webm / -poster.webp, made by tools/video/render.cjs from the real app
+// and FICTIONAL demo businesses). Muted, looping, playsinline, no sound.
+// - The poster is an ordinary <img> (eager on the hero, so it is the fast first paint); the video's sources are only
+//   attached when it comes into view, so nothing heavy loads before it is wanted.
+// - Reduced motion, Save-Data, or a phone (under 640 px): the poster stays, with a "Play the video" button.
+// - A Pause / Play button is always there once it plays (motion longer than 5 s can be stopped).
+// - Without JavaScript: the poster, and nothing plays.
+interface Props {
+  name: 'reel' | 'shop' | 'grill' | 'fuel' | 'owner';
+  /** What plays, for screen readers and as the caption. */
+  label: string;
+  eager?: boolean;
+  class?: string;
+  caption?: boolean;
+  /** A short visible caption instead of the full label (the label stays the accessible description). */
+  note?: string;
+}
+const { name, label, eager = false, class: extra, caption = true, note } = Astro.props;
+// The 800 px poster for phones (scripts/make-responsive.mjs), when it has been made.
+const poster = `/video/${name}-poster.webp`;
+const posterSmall = `/video/${name}-poster-800.webp`;
+const posterSrcset = existsSync(`public${posterSmall}`) ? `${posterSmall} 800w, ${poster} 1280w` : undefined;
+---
+<figure class:list={['pv', extra]} data-pv>
+  <div class="pv__box">
+    <img class="pv__poster" src={poster} srcset={posterSrcset} sizes={posterSrcset ? '(max-width: 760px) 94vw, 640px' : undefined} width="1280" height="720" alt={label}
+      loading={eager ? 'eager' : 'lazy'} decoding="async" fetchpriority={eager ? 'high' : undefined} />
+    <video class="pv__video" muted loop playsinline preload="none" aria-label={label} tabindex="-1"
+      data-webm={`/video/${name}.webm`} data-mp4={`/video/${name}.mp4`}></video>
+    <button type="button" class="pv__play" data-pv-play hidden>
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+      <span>Play the video</span>
+    </button>
+    <button type="button" class="pv__toggle" data-pv-toggle hidden aria-label="Pause the video">
+      <svg class="pv__i-pause" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>
+      <svg class="pv__i-play" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+    </button>
+  </div>
+  {caption && <figcaption class="pv__cap">{note ?? label} Demo businesses are fictional.</figcaption>}
+</figure>
+
+<script is:inline>
+  (function () {
+    if (window.__pvReady) return; window.__pvReady = true;
+    var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var save = navigator.connection && navigator.connection.saveData;
+    function attach(v) {
+      if (v.dataset.on) return; v.dataset.on = '1';
+      [['webm', 'video/webm'], ['mp4', 'video/mp4']].forEach(function (s) { var e = document.createElement('source'); e.src = v.dataset[s[0]]; e.type = s[1]; v.appendChild(e); });
+      v.preload = 'metadata'; v.load();
+    }
+    function setup(fig) {
+      var v = fig.querySelector('video'), play = fig.querySelector('[data-pv-play]'), tog = fig.querySelector('[data-pv-toggle]');
+      var paused = false;
+      function start() { attach(v); var p = v.play(); if (p && p.catch) p.catch(function () { play.hidden = false; }); }
+      v.addEventListener('playing', function () { fig.classList.add('pv--on'); play.hidden = true; tog.hidden = false; tog.setAttribute('aria-label', 'Pause the video'); fig.classList.remove('pv--paused'); });
+      v.addEventListener('pause', function () { fig.classList.add('pv--paused'); tog.setAttribute('aria-label', 'Play the video'); });
+      tog.addEventListener('click', function () { if (v.paused) { paused = false; v.play(); } else { paused = true; v.pause(); } });
+      play.addEventListener('click', function () { paused = false; start(); });
+      var small = window.innerWidth < 640;
+      if (reduce || save || small || !('IntersectionObserver' in window)) { play.hidden = false; return; }
+      new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) { if (!paused) start(); } else if (!v.paused) { v.pause(); paused = false; } });
+      }, { threshold: 0.35 }).observe(fig);
+    }
+    function init() { document.querySelectorAll('[data-pv]').forEach(setup); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+  })();
+</script>
+
+<style>
+  .pv { margin: 0; }
+  .pv__box { position: relative; aspect-ratio: 16 / 9; border-radius: var(--r-lg, 16px); overflow: hidden; background: #061a1d;
+    box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+  .pv__poster, .pv__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pv__video { opacity: 0; transition: opacity 0.4s ease; }
+  .pv--on .pv__video { opacity: 1; }
+  .pv__play {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.1rem 0.7rem 0.9rem;
+    border-radius: 999px; border: 1px solid rgba(94, 234, 212, 0.6); background: rgba(5, 13, 18, 0.85); color: #fff;
+    font: 600 0.95rem/1 var(--font-text, sans-serif); cursor: pointer;
+  }
+  .pv__play[hidden], .pv__toggle[hidden] { display: none; }
+  .pv__play:hover { background: rgba(15, 118, 110, 0.95); }
+  .pv__toggle {
+    position: absolute; right: 10px; bottom: 10px; width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(5, 13, 18, 0.75); color: #fff; cursor: pointer;
+  }
+  .pv__toggle .pv__i-play { display: none; }
+  .pv--paused .pv__toggle .pv__i-play { display: block; }
+  .pv--paused .pv__toggle .pv__i-pause { display: none; }
+  .pv__play:focus-visible, .pv__toggle:focus-visible { outline: 3px solid #2dd4bf; outline-offset: 2px; }
+  .pv__cap { font-size: var(--fs-sm, 0.875rem); color: var(--muted, #5b6b6e); margin-top: 0.6rem; text-align: center; }
+  :global(.band--night) .pv__cap { color: var(--night-muted, #9fb7b5); }
+  @media (prefers-reduced-motion: reduce) { .pv__video { transition: none; } }
+</style>

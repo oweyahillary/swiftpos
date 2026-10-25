@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 200" width="680" height="200">
+  <!-- Kifaru Fuel & Mart: a FICTIONAL demo business for the ZapTill website. Mark: a K whose arm is a rhino's horn
+       ("kifaru" is rhino), on a shield. -->
+  <path d="M100 8l84 26v58c0 50-36 84-84 100C52 176 16 142 16 92V34z" fill="#13294B"/>
+  <rect x="56" y="50" width="26" height="104" rx="5" fill="#FFC20E"/>
+  <path d="M82 112c18-8 40-30 66-74 4 34-14 66-48 88z" fill="#FFC20E"/>
+  <path d="M96 116l50 38h-32l-32-26z" fill="#FFE07A"/>
+  <text x="218" y="114" font-family="Segoe UI, Arial, sans-serif" font-weight="900" font-size="84" fill="#13294B" letter-spacing="4">KIFARU</text>
+  <rect x="220" y="134" width="300" height="42" rx="8" fill="#FFC20E"/>
+  <text x="236" y="165" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="28" fill="#13294B" letter-spacing="7">FUEL &amp; MART</text>
+</svg>

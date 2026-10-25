@@ -190,11 +190,11 @@ export function kindLabel(kind: LossKind, rawType: string | null | undefined): {
     case 'paid_voids': return { label: `${cap(w.orders)} voided after payment`, hint: `A ${w.staff} voids ${w.orders} that were already paid.` };
     case 'many_voids': return { label: 'Many voids by one person', hint: `More voids than the other ${w.staffs} at the branch.` };
     case 'many_refunds': return { label: 'Many refunds by one person', hint: `More refunds than the other ${w.staffs} at the branch.` };
-    case 'big_discounts': return { label: 'Big discounts', hint: 'Discounts typed in at the till above the percentage or the amount.' };
+    case 'big_discounts': return { label: 'Big discounts', hint: 'Discounts typed in at the POS above the percentage or the amount.' };
     case 'frequent_discounts': return { label: 'Frequent discounts', hint: `More discounts typed in than the other ${w.staffs}.` };
     case 'free_sales': return { label: cap(w.free), hint: `A ${w.order} discounted to nothing.` };
     case 'cash_short': return { label: 'Cash short or over', hint: 'A drawer counted short or over at the manager\'s confirm, a drawer short again and again, or a day closed short or over.' };
-    case 'price_below_list': return { label: 'Priced below the list', hint: `${cap(w.orders)} rung up below the price list — often an old price on the till.` };
+    case 'price_below_list': return { label: 'Priced below the list', hint: `${cap(w.orders)} rung up below the price list — often an old price on the POS.` };
     case 'kitchen_removed': return { label: 'Items taken back from the kitchen', hint: 'Items removed after they were sent to the kitchen.' };
     case 'parking_no_charge': return { label: 'Vehicles let out with no charge', hint: 'Parking sessions voided — the vehicle left without paying.' };
   }
@@ -205,11 +205,11 @@ export function lossNeedsData(rawType: string | null | undefined): string[] {
   const t = businessTypeOf(rawType);
   const food = isFoodService(rawType);
   const out = [
-    'A drawer opened with no sale — the till does not record a "no sale" opening.',
+    'A drawer opened with no sale — the POS does not record a "no sale" opening.',
     'Sales outside opening hours — no opening hours are stored.',
     'A void after the receipt printed — receipt prints are not recorded.',
   ];
-  if (food) out.push('A table closed with no payment — the till does not record it apart from a credit or room-charge sale.');
+  if (food) out.push('A table closed with no payment — the POS does not record it apart from a credit or room-charge sale.');
   if (!food && t !== 'parking') out.push('An item removed from the basket before payment — only whole voided sales are recorded.');
   if (t === 'petrol_station') out.push('Fuel sold against the pump meters — no meter readings are recorded.');
   if (t === 'parking') out.push('Who let a vehicle out with no charge — a parking session does not record who closed it.');
@@ -435,7 +435,7 @@ export function detectLossAlerts(input: LossInput, settings: LossSettings): Loss
   countKind('free_sales', manual.filter(isFree), settings.free_count,
     (who, n, _r, when) => `${who} rang up ${n} ${w.free} ${when}. Worth a look.`);
   countKind('price_below_list', input.prices.filter((p) => p.difference > 0), settings.price_count,
-    (who, n, rs, when) => `${n} of ${who}'s ${w.orders} ${n === 1 ? 'was' : 'were'} priced below the price list ${when} (${wholeMoney(input.currency, rs.reduce((s, r) => s + r.difference, 0))} below in all). Often an old price on the till — worth a look.`,
+    (who, n, rs, when) => `${n} of ${who}'s ${w.orders} ${n === 1 ? 'was' : 'were'} priced below the price list ${when} (${wholeMoney(input.currency, rs.reduce((s, r) => s + r.difference, 0))} below in all). Often an old price on the POS — worth a look.`,
     (rs) => Math.round(rs.reduce((s, r) => s + r.difference, 0) * 100) / 100);
   peerKind('kitchen_removed', input.kitchen, settings.kitchen_count,
     (who, n, rs, others, when) => {

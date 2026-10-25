@@ -276,7 +276,7 @@ export function checkDayGate(): DayGate {
         needsManager: true,
         staleDay: open,
         reason:
-          `Trading day ${open.business_date} was never closed on this till. ` +
+          `Trading day ${open.business_date} was never closed on this POS. ` +
           `A manager must count the cash and close it before ${today} can start${where}`,
       };
     }
@@ -284,7 +284,7 @@ export function checkDayGate(): DayGate {
     const pad = (n: number) => String(n).padStart(2, '0');
     graceReason =
       `Trading day ${open.business_date} still needs closing. A manager must count ` +
-      `the cash and close it by ${pad(g.getHours())}:${pad(g.getMinutes())} — the till keeps running until then.`;
+      `the cash and close it by ${pad(g.getHours())}:${pad(g.getMinutes())} — the POS keeps running until then.`;
   }
 
   if (!getOpenShift()) {
@@ -321,7 +321,7 @@ export function checkStaleDay(): DayGate {
 
 export function ensureDayOpen(openedByStaffId?: string | null): BusinessDay {
   const gate = checkStaleDay();
-  if (!gate.canTrade) throw new Error(gate.reason ?? 'This till cannot trade yet');
+  if (!gate.canTrade) throw new Error(gate.reason ?? 'This POS cannot trade yet');
 
   const existing = getOpenDay();
   if (existing) return existing;
@@ -483,7 +483,7 @@ export function retryConflictedShift(shiftId: string): { rearmed: number } {
      WHERE id = ? AND sync_status = 'conflict'
        AND COALESCE(device_id,'') = COALESCE(?,'')
   `).get(shiftId, device_id) as { id: string; business_day_id: string | null } | undefined;
-  if (!shift) throw new Error('No conflicted shift with that id on this till');
+  if (!shift) throw new Error('No conflicted shift with that id on this POS');
 
   let rearmed = 0;
   db.transaction(() => {
@@ -583,7 +583,7 @@ export function closeDayInstructed(
   from: 'branch_server' | 'web' = 'branch_server',   // A523: a close the web made at once (the cloud's), adopted here
 ): DayCloseSummary {
   const centralNote = from === 'web'
-    ? `Closed on the web${closedByName ? ` by ${closedByName}` : ''} — this till adopted the web's close.`
+    ? `Closed on the web${closedByName ? ` by ${closedByName}` : ''} — this POS adopted the web's close.`
     : `Closed centrally from the branch server${closedByName ? ` by ${closedByName}` : ''}.`;
   const combined = notes && notes.trim() ? `${notes.trim()}\n${centralNote}` : centralNote;
   return closeDayCore(countedCash, combined, closedByStaffId);
@@ -596,12 +596,12 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
 
   const db = getLocalDb();
   const day = getOpenDay();
-  if (!day) throw new Error('No open trading day on this till');
+  if (!day) throw new Error('No open trading day on this POS');
 
   const liveShift = getOpenShift();
   if (liveShift) {
     const err: any = new Error(
-      'A drawer is still open on this till. Every shift must be closed before the day can be.',
+      'A drawer is still open on this POS. Every shift must be closed before the day can be.',
     );
     err.code = 'DRAWER_OPEN';   // A523: the cloud reads the code (A522 waitingCode), not the text
     throw err;
@@ -624,7 +624,7 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
   }
 
   const summary = getDayCloseSummary();
-  if (!summary) throw new Error('No open trading day on this till');
+  if (!summary) throw new Error('No open trading day on this POS');
 
   const now = new Date().toISOString();
   const variance = countedCash - summary.expectedCash;
@@ -673,7 +673,7 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
  */
 export function assertCanSell(): { shiftId: string; businessDayId: string | null } {
   const gate = checkDayGate();
-  if (!gate.canTrade) throw new Error(gate.reason ?? 'This till cannot trade yet');
+  if (!gate.canTrade) throw new Error(gate.reason ?? 'This POS cannot trade yet');
 
   const shift = getOpenShift();
   if (!shift) {

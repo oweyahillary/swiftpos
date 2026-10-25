@@ -16,7 +16,7 @@ import { supabase } from './supabase';
 import { identityDecision, presentedIdentity, type MachineIdentity } from './refreshHandshake';
 import { markTillSecurityAlert } from './tillSessions';
 
-export const MISMATCH_REASON = 'The till\'s data is being used on another computer (its sign-in came from a machine that is not the one on record)';
+export const MISMATCH_REASON = 'The POS\'s data is being used on another computer (its sign-in came from a machine that is not the one on record)';
 
 export interface TillIdentityResult {
   verdict: 'pass' | 'mismatch';

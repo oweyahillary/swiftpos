@@ -78,7 +78,7 @@ function TriCheckbox({ checked, indeterminate, disabled, onChange, label }: {
 }
 
 function SurfaceBadges({ surface }: { surface: CatalogueKey['surface'] }) {
-  const tags = surface === 'both' ? ['Web', 'Till'] : surface === 'till' ? ['Till'] : ['Web'];
+  const tags = surface === 'both' ? ['Web', 'POS'] : surface === 'till' ? ['POS'] : ['Web'];
   return (
     <span className="inline-flex gap-1 flex-shrink-0">
       {tags.map((t) => (

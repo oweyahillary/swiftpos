@@ -20,7 +20,7 @@ interface AlertRow {
   notify_count?: number; resolved_at?: string | null; acknowledged_at?: string | null; acknowledged_by?: string | null;
 }
 
-const WHERE: Record<string, string> = { admin: "Admin portal", dashboard: "Dashboard", web_pos: "Web POS", till: "Till" };
+const WHERE: Record<string, string> = { admin: "Admin portal", dashboard: "Dashboard", web_pos: "Web POS", till: "POS" };
 
 export function ago(iso?: string | null): string {
   if (!iso) return "—";
@@ -220,9 +220,9 @@ export default function AlertsPage({ req, isSuper }: { req: Req; isSuper: boolea
             ))}
           </div>
           <div style={S.card} data-testid="recent-sync">
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Tills the cloud refused — last 3 hours</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Points of sale the cloud refused — last 3 hours</div>
             <div style={{ fontSize: 11, color: C.muted, margin: "2px 0 8px" }}>
-              Becomes critical when a till is refused 3 times in 30 min with nothing taken, or a record is refused.
+              Becomes critical when a POS is refused 3 times in 30 min with nothing taken, or a record is refused.
             </div>
             {!recent.sync.length && <div style={{ fontSize: 12, color: C.muted }}>None.</div>}
             {recent.sync.map((s: any) => (
@@ -239,7 +239,7 @@ export default function AlertsPage({ req, isSuper }: { req: Req; isSuper: boolea
       {counters && (
         <div style={{ fontSize: 12, color: C.muted }}>
           Since {String(counters.since).slice(0, 16).replace("T", " ")} UTC: {counters.serverErrors} server errors ·{" "}
-          {counters.failedSignIns} refused sign-ins · {counters.writeGuard} till writes the cloud would block.
+          {counters.failedSignIns} refused sign-ins · {counters.writeGuard} POS writes the cloud would block.
         </div>
       )}
     </div>

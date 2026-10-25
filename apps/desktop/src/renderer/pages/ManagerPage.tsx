@@ -57,7 +57,7 @@ import { paginate } from '../../shared/paginate';
 const FALLBACK_STATIONS = [
   { id: 'kitchen',  name: 'Kitchen',  kind: 'kitchen'  as const },
   { id: 'dispatch', name: 'Dispatch', kind: 'dispatch' as const },
-  { id: 'receipt',  name: 'Till',     kind: 'receipt'  as const },
+  { id: 'receipt',  name: 'POS',     kind: 'receipt'  as const },
 ];
 import BranchCloseTab from './BranchCloseTab';
 import DayCloseTab from './DayCloseTab';
@@ -284,12 +284,12 @@ function BranchShiftsAndTills({ day, currency, when = 'today' }: { day: BranchDa
       {day.byTill.length > 1 && (() => {
         const best = Math.max(...day.byTill.map(t => t.revenue), 1);
         return (
-          <Section title="By till" sub={when}>
+          <Section title="By POS" sub={when}>
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3" data-testid="overview-by-till">
               {day.byTill.map(t => (
                 <div key={t.device_id ?? 'web'} className="bg-gray-800 rounded-lg p-3">
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <p className="text-white text-sm font-medium truncate">{t.label}{t.this_till && <span className="text-gray-500 text-xs font-normal ml-2">this till</span>}</p>
+                    <p className="text-white text-sm font-medium truncate">{t.label}{t.this_till && <span className="text-gray-500 text-xs font-normal ml-2">this POS</span>}</p>
                     <span className="text-white text-sm font-semibold tabular-nums whitespace-nowrap">{fmt(t.revenue, currency)}</span>
                   </div>
                   <div className="h-1 bg-gray-700 rounded-full overflow-hidden mb-1">
@@ -311,7 +311,7 @@ function BranchShiftsAndTills({ day, currency, when = 'today' }: { day: BranchDa
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-gray-500 uppercase tracking-wide border-b border-gray-800">
-                    <th className="py-2 pr-3 font-medium">Till</th>
+                    <th className="py-2 pr-3 font-medium">POS</th>
                     <th className="py-2 pr-3 font-medium">Cashier</th>
                     <th className="py-2 pr-3 font-medium">Time</th>
                     <th className="py-2 pr-3 font-medium text-right">Sales</th>
@@ -690,7 +690,7 @@ function RestaurantOverview({ currency, date = null, linkTo, showLowStock = fals
         </Section>
 
         {/* Top items */}
-        <Section title="Top sellers" sub={`${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}
+        <Section title="Top sellers" sub={`${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this POS)' : ''}`}
           link={linkOf(linkTo, 'items', 'item mix →')}>
           <TopSellers items={topItems} currency={currency} empty={when === 'today' ? 'No sales yet today.' : 'No sales that day.'} />
         </Section>
@@ -921,7 +921,7 @@ function RetailOverview({ currency, date = null, linkTo, showLowStock = false }:
             empty={when === 'today' ? 'No payments yet today.' : 'No payments that day.'} />
         </Section>
 
-        <Section title="Top sellers" sub={`${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}
+        <Section title="Top sellers" sub={`${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this POS)' : ''}`}
           link={linkOf(linkTo, 'items', 'item mix →')}>
           <TopSellers items={topItems} currency={currency} empty={when === 'today' ? 'No sales yet today.' : 'No sales that day.'} />
         </Section>
@@ -1111,7 +1111,7 @@ function OrdersTab({ currency, rights = { void: false, refund: false } }: { curr
       try { return { list: await posApi.manager.branchOrders({ ...r, limit: 500 }), note: '' }; }
       catch { /* offline or the cloud did not answer — fall through to this till's own list */ }
       return { list: await posApi.manager.recentOrders({ ...r, limit: 500 }),
-               note: 'The cloud could not be reached — showing this till only.' };
+               note: 'The cloud could not be reached — showing this POS only.' };
     }
     return { list: await posApi.manager.recentOrders({ ...r, limit: 500 }), note: '' };
   };
@@ -1156,13 +1156,13 @@ function OrdersTab({ currency, rights = { void: false, refund: false } }: { curr
       </div>
 
       <SegmentedSelector
-        options={[{ key: 'till', label: 'This till' }, { key: 'branch', label: 'All tills at this branch' }]}
+        options={[{ key: 'till', label: 'This POS' }, { key: 'branch', label: 'All points of sale at this branch' }]}
         value={scope}
         onChange={v => setScope(v)}
       />
 
       <ReportRangeBar value={range} onChange={setRange} exportKind="orders" showDailyReport
-        scopeOverride={scope === 'branch' && !scopeNote ? 'All tills at this branch — read from the cloud' : null} />
+        scopeOverride={scope === 'branch' && !scopeNote ? 'All points of sale at this branch — read from the cloud' : null} />
       {scopeNote && <p data-testid="branch-offline" className="text-[11px] text-amber-400/80">⚠ {scopeNote}</p>}
 
       {loading && <Spinner />}
@@ -1189,10 +1189,10 @@ function OrdersTab({ currency, rights = { void: false, refund: false } }: { curr
                         {o.order_number}
                         {o.origin === 'web' && (
                           <span className="ml-1.5 font-sans text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400"
-                            title="Rung on the web POS on this till's drawer">web</span>
+                            title="Rung on the web POS on this desktop POS's drawer">web</span>
                         )}
                         {scope === 'branch' && !scopeNote && o.this_till && (
-                          <span className="ml-1.5 font-sans text-[10px] text-gray-400">this till</span>
+                          <span className="ml-1.5 font-sans text-[10px] text-gray-400">this POS</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{timeAgo(o.created_at)}</td>
@@ -1268,7 +1268,7 @@ function ShiftTab({ currency }: { currency: string }) {
       {(totals as any).foreign?.orders > 0 && (
         <p data-testid="foreign-note" className="text-gray-300 text-xs">
           Includes {(totals as any).foreign.orders} web POS sale{(totals as any).foreign.orders !== 1 ? 's' : ''} on this drawer
-          not yet downloaded to this till — they appear in Orders within about 20 seconds when online.
+          not yet downloaded to this POS — they appear in Orders within about 20 seconds when online.
         </p>
       )}
 
@@ -1326,7 +1326,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
     posApi.shift.history().then(setShifts).catch(() => setShifts([]));
     posApi.manager.branchShifts()
       .then(r => { setBranch(r); setBranchNote(''); })
-      .catch(() => { setBranch(null); setBranchNote("Other tills' shifts need the cloud — showing this till's only."); });
+      .catch(() => { setBranch(null); setBranchNote("Shifts on other points of sale need the cloud — showing this POS's only."); });
     posApi.shift.canConfirm().then(v => setCanConfirm(v === true)).catch(() => setCanConfirm(false));
   }, [reloadKey]);
 
@@ -1346,7 +1346,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
           .catch(() => ({ id: x.id, till: x.till, this_till: false, report: null })));
       Promise.all([mine, ...others]).then(([m, ...rest]) => {
         if (!on) return;
-        const ownTill = open.find(x => x.this_till)?.till ?? 'This till';
+        const ownTill = open.find(x => x.this_till)?.till ?? 'This POS';
         const list = [...(m ? [{ id: (m as ZReport).shift.id, till: ownTill, this_till: true, report: m as ZReport }] : []), ...rest];
         setLive(list);
         setReport(list.length === 1 ? list[0].report : null);
@@ -1392,13 +1392,13 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
           <h2 className="text-lg font-bold text-white">Shift Report</h2>
           <p className="text-gray-300 text-sm">
             {selected ? 'Z-report of a shift' : `Live — ${live.length} running shift${live.length === 1 ? '' : 's'}, not closed Z-reports`}
-            {branch ? ' · every till at this branch' : ''}
+            {branch ? ' · every POS at this branch' : ''}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <select data-testid="shift-picker" value={selected ?? ''} onChange={e => setSelected(e.target.value || null)}
             className="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 max-w-full">
-            <option value="">Running shifts — every till (live)</option>
+            <option value="">Running shifts — every POS (live)</option>
             {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
           {awaiting && canConfirm && (
@@ -1421,7 +1421,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
           {live.map(l => (
             <div key={l.id} className="bg-white rounded-xl p-4">
               <div className="flex items-center justify-between mb-2 gap-2">
-                <span className="text-gray-900 text-sm font-bold">{l.till}{l.this_till ? ' (this till)' : ''}</span>
+                <span className="text-gray-900 text-sm font-bold">{l.till}{l.this_till ? ' (this POS)' : ''}</span>
                 <button onClick={() => void handlePrint(l.report)} disabled={!l.report}
                   className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg">Print</button>
               </div>
@@ -1435,7 +1435,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
         <div className="text-center py-16">
           <p className="text-gray-400 font-medium">{selected ? 'That shift could not be loaded' : 'No open shift'}</p>
           <p className="text-gray-400 text-sm mt-1">
-            {selected ? (remote(selected) ? "Another till's shift needs the cloud — check the connection, or choose another." : 'Choose another shift above.')
+            {selected ? (remote(selected) ? "Another POS's shift needs the cloud — check the connection, or choose another." : 'Choose another shift above.')
               : 'Open a shift from the POS, or choose a previous shift above.'}
           </p>
         </div>
@@ -1702,8 +1702,8 @@ function TopItemsTab({ currency }: { currency: string }) {
       .then(d => {
         if (!live) return;
         setItems(d.topProducts ?? []);
-        setScopeLine(d.source === 'cloud' ? 'All tills at this branch'
-          : d.localCoversBranch ? 'What this branch server holds' : `This till only${d.fallbackReason ? ` — ${d.fallbackReason}` : ''}`);
+        setScopeLine(d.source === 'cloud' ? 'All points of sale at this branch'
+          : d.localCoversBranch ? 'What this branch server holds' : `This POS only${d.fallbackReason ? ` — ${d.fallbackReason}` : ''}`);
       })
       .catch(() => {}).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
@@ -1983,7 +1983,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
         // fallback (its id matches the escpos:canPrint checks) so a printer can
         // still be bound to it.
         if (!live.some(s => s.kind === 'receipt')) {
-          live.push({ id: 'receipt', name: 'Till receipt', kind: 'receipt' });
+          live.push({ id: 'receipt', name: 'POS receipt', kind: 'receipt' });
         }
 
         setEscposStations(live);
@@ -2208,10 +2208,10 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
               labelled "Sign out", which reads like it signs the business out.
               The owner sign-out below is the one that actually does that. */}
           <button onClick={onLogout}
-            title={!sidebarOpen ? 'Lock till' : undefined}
+            title={!sidebarOpen ? 'Lock POS' : undefined}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-gray-200 hover:bg-gray-800 hover:text-white transition-colors">
             <Icon d={I.logout} size={18} cls="flex-shrink-0" />
-            {sidebarOpen && <span>Lock till</span>}
+            {sidebarOpen && <span>Lock POS</span>}
           </button>
           {/* The running build, where someone on the phone can read it out.
               Three tills are updated by hand and drift; "which version are you

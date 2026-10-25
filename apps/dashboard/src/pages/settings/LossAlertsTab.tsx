@@ -72,14 +72,14 @@ export function LossAlertsSettingsView({ view, value, onChange, onSave, saving, 
         <h3 className="text-white font-semibold mb-1">Loss prevention</h3>
         <p className="text-gray-500 text-sm">
           ZapTill watches for unusual patterns — per branch and per staff member, today and over the last 7 days — and lists the
-          ten most worth a look on the Watch list. A warning to look into, never an accusation. Nothing is shown on the till.
+          ten most worth a look on the Watch list. A warning to look into, never an accusation. Nothing is shown on the POS.
         </p>
       </div>
 
       <div className="flex items-center justify-between gap-3 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3">
         <div>
           <p className="text-white text-sm font-medium">Watch for unusual patterns</p>
-          <p className="text-gray-500 text-xs">Worked out every hour from what the tills send.</p>
+          <p className="text-gray-500 text-xs">Worked out every hour from what the points of sale send.</p>
         </div>
         <Toggle on={s.enabled} onClick={() => set({ enabled: !s.enabled })} testId="loss-enabled" label="Watch for unusual patterns" />
       </div>
@@ -151,7 +151,7 @@ export function LossAlertsSettingsView({ view, value, onChange, onSave, saving, 
 
       {view.needs_data.length > 0 && (
         <div className="bg-gray-800/30 border border-gray-700 rounded-xl px-4 py-3" data-testid="loss-needs-data">
-          <p className="text-gray-300 text-sm font-medium">Not watched yet — the tills do not record it</p>
+          <p className="text-gray-300 text-sm font-medium">Not watched yet — the points of sale do not record it</p>
           <ul className="list-disc pl-5 mt-1 space-y-0.5">
             {view.needs_data.map((t) => <li key={t} className="text-gray-500 text-xs">{t}</li>)}
           </ul>

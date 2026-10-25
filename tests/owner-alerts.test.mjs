@@ -289,15 +289,15 @@ await ok('every typed name is escaped (till, cashier, branch, business, reason)'
 });
 await ok('subjects: "⚠ Till \'Front Counter\' has not synced for 5 h — Mama Ngina"', () => {
   assert.equal(E.notSyncingAlertEmail({ businessName: 'Biz', branchName: 'Mama Ngina', till: 'Front Counter', kind: 'stale', hours: 5.4, lastSyncAt: null }).subject,
-    '⚠ Till \'Front Counter\' has not synced for 5 h — Mama Ngina');
+    '⚠ POS \'Front Counter\' has not synced for 5 h — Mama Ngina');
   assert.equal(E.notSyncingAlertEmail({ businessName: 'Biz', branchName: 'Mama Ngina', till: 'Front Counter', kind: 'refused', hours: null, lastSyncAt: null }).subject,
-    '⚠ Till \'Front Counter\' is signed out and cannot sync — Mama Ngina');
+    '⚠ POS \'Front Counter\' is signed out and cannot sync — Mama Ngina');
   assert.equal(E.hoursLabel(30), '1 d 6 h');
 });
 await ok('nothing open → "All tills closed and confirmed ✓"; something open → the list, per branch', () => {
-  assert.match(E.openTillsSection([], 'KES'), /All tills closed and confirmed/);
+  assert.match(E.openTillsSection([], 'KES'), /All points of sale closed and confirmed/);
   const h = E.openTillsSection([{ branch: 'Kilimani', till: 'T1', cashier: 'Amina', openedAt: '2026-10-12T05:00:00Z', state: 'open', older: true, expectedCash: 3500 }], 'KES');
-  assert.match(h, /Tills not closed or confirmed \(1\)/); assert.match(h, /Open since 12 Oct 08:00/); assert.match(h, /KES 3,500\.00/);
+  assert.match(h, /Points of sale not closed or confirmed \(1\)/); assert.match(h, /Open since 12 Oct 08:00/); assert.match(h, /KES 3,500\.00/);
 });
 
 // ══ the job entry points against the in-memory database ═══════════════════════
@@ -312,8 +312,8 @@ await ok('21:05: each branch\'s managers get their branch\'s open / unconfirmed 
   const n = await J.branchOpenTillsForBusiness(biz, schedule({ enabled: false }), EVENING);
   assert.equal(n, 1); assert.equal(SENT.length, 1);
   assert.deepEqual(to(SENT[0]), ['joshua@biz.test'], 'Mama Ngina\'s manager only: not the owner, not Kilimani\'s, not an inactive one');
-  assert.equal(SENT[0].subject, '2 tills not closed or confirmed — Mama Ngina');
-  assert.match(SENT[0].html, /Front Counter/); assert.match(SENT[0].html, /Mama Ngina Web Till/);
+  assert.equal(SENT[0].subject, '2 points of sale not closed or confirmed — Mama Ngina');
+  assert.match(SENT[0].html, /Front Counter/); assert.match(SENT[0].html, /Mama Ngina Web POS/);
   assert.match(SENT[0].html, /KES 3,500\.00/, 'open drawer: the live expected cash (2,000 float + 1,500 cash sales)');
   assert.match(SENT[0].html, /KES 3,100\.00/, 'closed, not confirmed: the expected cash recorded');
   assert.match(SENT[0].html, /Amina &lt;b&gt;/);
@@ -331,7 +331,7 @@ await ok('09:00 next morning: again, for the drawer still open from last night (
   db.shifts.push(openShift({ id: 's-morning', opened_at: '2026-10-15T04:30:00Z', business_date: '2026-10-15' }));
   await J.branchOpenTillsForBusiness(biz, schedule(), at('2026-10-15T06:05:00Z'));
   assert.equal(SENT.length, 1);
-  assert.equal(SENT[0].subject, 'Still not closed this morning: 1 till — Mama Ngina');
+  assert.equal(SENT[0].subject, 'Still not closed this morning: 1 POS — Mama Ngina');
   assert.match(SENT[0].html, /Open since 14 Oct 08:00/);
 });
 await ok('09:00 with everything closed: nothing is sent', async () => {
@@ -394,7 +394,7 @@ await ok('a till not syncing: the owner, the addresses and that branch\'s manage
     status: 'approved', retired_at: null, last_seen_at: '2026-10-14T06:00:00Z', last_sync_at: '2026-10-14T07:00:00Z', session_lost_at: null });
   await J.alertsForBusiness(biz, schedule(), NOW);
   assert.equal(SENT.length, 1);
-  assert.equal(SENT[0].subject, '⚠ Till \'Front Counter\' has not synced for 5 h — Mama Ngina');
+  assert.equal(SENT[0].subject, '⚠ POS \'Front Counter\' has not synced for 5 h — Mama Ngina');
   assert.deepEqual(to(SENT[0]), ['books@biz.test', 'joshua@biz.test', 'owner@biz.test']);
   SENT = [];
   await J.alertsForBusiness(biz, schedule(), at('2026-10-14T13:00:00Z'));
@@ -465,10 +465,10 @@ await ok('open tills, cash differences, voids and refunds, tills not syncing, ex
   db.expenses.push({ id: 'ex', business_id: BZ, branch_id: BR1, expense_date: today, description: 'Gas <refill>', amount: '2500.00', payment_method: 'cash', expense_categories: { name: 'Fuel' } });
   await DS.runDailySummary(now);
   assert.equal(SENT.length, 1); const h = SENT[0].html;
-  assert.match(h, /Tills not closed or confirmed \(1\)/); assert.match(h, /Open since 1 Oct 08:00/);
+  assert.match(h, /Points of sale not closed or confirmed \(1\)/); assert.match(h, /Open since 1 Oct 08:00/);
   assert.match(h, /Cash differences at confirm/); assert.match(h, /-300\.00/);
   assert.match(h, /Voids and refunds/); assert.match(h, /spilt/);
-  assert.match(h, /Tills not syncing \(1\)/); assert.match(h, /Back Bar/);
+  assert.match(h, /Points of sale not syncing \(1\)/); assert.match(h, /Back Bar/);
   assert.match(h, /Expenses — 1 · KES 2,500\.00/); assert.match(h, /Gas &lt;refill&gt;/);
   assert.match(h, /Mama Ngina Foods · Daily Report/);
 
@@ -479,13 +479,13 @@ await ok('open tills, cash differences, voids and refunds, tills not syncing, ex
   db.expenses.push({ id: 'ex', business_id: BZ, branch_id: BR1, expense_date: today, description: 'Gas', amount: '2500.00' });
   await DS.runDailySummary(now);
   assert.equal(SENT.length, 1);
-  assert.ok(!/Tills not closed|Expenses —|Inventory Alert|Low Stock/.test(SENT[0].html), 'switched off: not in the email');
+  assert.ok(!/Points of sale not closed|Expenses —|Inventory Alert|Low Stock/.test(SENT[0].html), 'switched off: not in the email');
 
   reset();
   db.business_settings.push({ id: 'rs', business_id: BZ, key: 'report_schedule', value: JSON.stringify(schedule({ enabled: true, send_time: '00:00' })) });
   await DS.runDailySummary(now);
-  assert.match(SENT[0].html, /All tills closed and confirmed/);
-  assert.ok(!/Cash differences|Voids and refunds|Tills not syncing|Expenses —/.test(SENT[0].html), 'a section with nothing to say is left out');
+  assert.match(SENT[0].html, /All points of sale closed and confirmed/);
+  assert.ok(!/Cash differences|Voids and refunds|Points of sale not syncing|Expenses —/.test(SENT[0].html), 'a section with nothing to say is left out');
 });
 
 console.log('\nOne business failing never stops the others\n');
@@ -542,7 +542,7 @@ console.log('\nWired in\n');
 await ok('the job runs every 15 min from the server; the page has the three sections in teal', () => {
   assert.match(read('apps/server/src/index.ts'), /startOwnerAlertsJob\(\);/);
   const page = read('apps/dashboard/src/pages/settings/ReportSchedulerTab.tsx');
-  for (const t of ['What the daily email includes', 'Alerts as they happen', 'Weekly summary', 'Branch managers always hear about tills not closed']) assert.ok(page.includes(t), t);
+  for (const t of ['What the daily email includes', 'Alerts as they happen', 'Weekly summary', 'Branch managers always hear about points of sale not closed']) assert.ok(page.includes(t), t);
   assert.match(page, /bg-swift-strong/);
 });
 

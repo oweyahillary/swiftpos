@@ -11,7 +11,7 @@
 //   POST /instructions/:id/cancel     — withdraw a stuck close (shifts.close_day)
 //   POST /abandon                     — close a retired / 24-h-silent till's day as abandoned (shifts.close_day)
 // Every action needs a reason; a silent till needs `silent_ok`; each is audited and the owner told.
-import { requirePermission, requireAnyPermission, branchScope, can, allBranchAccess } from '../middleware/rbac';   // A550: allBranchAccess
+import { requirePermission, requireAnyPermission, branchScope, can, allBranchAccess, branchFilter } from '../middleware/rbac';   // A550: allBranchAccess
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -23,7 +23,7 @@ router.use(requireAuth);
 
 /** A till's own session never acts here — a person does. */
 router.use((req: any, res, next) => {
-  if (req.isTill) { res.status(403).json({ error: 'A till cannot use Tills & days — a person signs in.', code: 'PERSON_ONLY' }); return; }
+  if (req.isTill) { res.status(403).json({ error: 'A POS cannot use POS & days — a person signs in.', code: 'PERSON_ONLY' }); return; }
   next();
 });
 
@@ -49,7 +49,8 @@ router.get('/overview', requireAnyPermission('shifts.close_day', 'shifts.force_c
     const actor = await actorOf(req);
     // The owner: the branch picked in the dashboard (X-Branch-Id / ?branch_id), or every branch.
     const branchId = allBranchAccess(req) ? (branchScope(req) || null) : actor.branchId;   // A550
-    const ov = await tillsOverview(req.businessId, { branchId, seesFigures: can(req, 'reports.shifts', 'shifts.confirm') });
+    const bf = branchFilter(req);   // A582: a partner's "All my branches" — their branches, combined
+    const ov = await tillsOverview(req.businessId, { branchId, branchIds: bf.kind === 'set' ? bf.ids : null, seesFigures: can(req, 'reports.shifts', 'shifts.confirm') });
     res.json({ ...ov, may: { close_day: can(req, 'shifts.close_day'), force_close: can(req, 'shifts.force_close') },
       sees_figures: can(req, 'reports.shifts', 'shifts.confirm') });
   } catch (e) { answer(res, e); }

@@ -162,7 +162,7 @@ export function MenuTab({ currency }: { currency: string }) {
     try {
       const next = p.status === 'active' ? 'inactive' : 'active';
       await posApi.manage.updateProduct(p.id, { status: next });
-      flash(next === 'active' ? `${p.name} ${terms.backOnSale}` : `${p.name} hidden from the till`);
+      flash(next === 'active' ? `${p.name} ${terms.backOnSale}` : `${p.name} hidden from the POS`);
       await load();
     } catch (e: any) {
       setErr(e?.message ?? 'Could not update.');
@@ -469,7 +469,7 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
     setBusy(true); setErr('');
     try {
       await posApi.manage.setStaffPin(m.id, newPin);
-      setOk(`${m.name}'s PIN is changed — it works on this till now.`); setTimeout(() => setOk(''), 4000);
+      setOk(`${m.name}'s PIN is changed — it works on this POS now.`); setTimeout(() => setOk(''), 4000);
       setPinFor(null); setNewPin('');
       await load();
     } catch (e: any) { setErr(e?.message ?? 'Could not change the PIN.'); }
@@ -483,7 +483,7 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
     try {
       const nowActive = !isActive(m);
       await posApi.manage.updateStaff(m.id, { status: nowActive ? 'active' : 'inactive' });
-      setOk(nowActive ? `${m.name} can sign in again.` : `${m.name} is deactivated — their PIN no longer works on this till.`);
+      setOk(nowActive ? `${m.name} can sign in again.` : `${m.name} is deactivated — their PIN no longer works on this POS.`);
       setTimeout(() => setOk(''), 4000);
       await load();
     } catch (e: any) {
@@ -531,9 +531,9 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
             <p className="text-sm text-amber-300">{offline.message}</p>
             <p className="text-xs text-gray-300 mt-1">
               {offline.source === 'branch'
-                ? 'Showing this branch\'s staff as saved on this till.'
-                : 'Showing the staff who have signed in on this till. Others appear once the till is online.'}
-              {' '}A cashier added or a PIN changed here works on this till at once and reaches the cloud when it is back.
+                ? 'Showing this branch\'s staff as saved on this POS.'
+                : 'Showing the staff who have signed in on this POS. Others appear once the POS is online.'}
+              {' '}A cashier added or a PIN changed here works on this POS at once and reaches the cloud when it is back.
             </p>
           </div>
           <button onClick={load} className="text-xs text-gray-300 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5">
@@ -608,7 +608,7 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
               {/* A448: a cashier added (or a PIN set) here that the cloud has not taken yet, or that waits for the owner. */}
               {m.change_state && (
                 <p data-testid="staff-change-state" className="text-[11px] text-amber-300">
-                  {m.change_state === 'pending' ? 'Saved on this till — not on the cloud yet'
+                  {m.change_state === 'pending' ? 'Saved on this POS — not on the cloud yet'
                     : m.change_state === 'awaiting' ? 'Waiting for the owner\'s approval'
                     : m.change_message ?? 'Not taken by the cloud'}
                 </p>
@@ -669,7 +669,7 @@ export function StaffTab({ branchId, canEdit = true }: { branchId?: string; canE
       </div>
 
       <p className="text-xs text-gray-400 mt-3">
-        Deactivating stops the PIN working on this till at once (offline too) and on the other tills as the change
+        Deactivating stops the PIN working on this POS at once (offline too) and on the other points of sale as the change
         reaches them. Staff are never deleted, so past sales keep their cashier name.
       </p>
     </div>
@@ -695,7 +695,7 @@ export function ReceiptTextTab() {
     setBusy(true); setErr('');
     try {
       await posApi.manage.setReceiptText(header, footer);
-      setOk('Saved — applies to every till'); setTimeout(() => setOk(''), 3000);
+      setOk('Saved — applies to every POS'); setTimeout(() => setOk(''), 3000);
     } catch (e: any) {
       setErr(e?.message ?? 'Could not save.');
     } finally { setBusy(false); }
@@ -724,7 +724,7 @@ export function ReceiptTextTab() {
 
       <p className="text-xs text-gray-400">
         One line per line. Blank lines are ignored so a stray return can't waste paper.
-        This applies to every till at the business, not just this one.
+        This applies to every POS at the business, not just this one.
       </p>
 
       <button onClick={save} disabled={busy} className={btn}>

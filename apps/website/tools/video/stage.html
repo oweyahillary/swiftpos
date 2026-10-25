@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ZapTill video stage</title>
+<!--
+  The stage the product videos are drawn on, one frame at a time (render.cjs calls window.render(t) and takes a
+  screenshot). Real screens captured from the real till renderer and the site's own receipts, inside device frames,
+  with an eased camera, crossfades, captions and a smooth synthetic pointer. Demo businesses are FICTIONAL.
+-->
+<style>
+  html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: #061a1d; font-family: 'Segoe UI', Arial, sans-serif; }
+  .layer { position: absolute; inset: 0; opacity: 0; overflow: hidden;
+    background: radial-gradient(900px 520px at 78% 8%, rgba(20,184,166,0.20), transparent 62%), radial-gradient(700px 420px at 8% 100%, rgba(20,184,166,0.10), transparent 60%), #061a1d; }
+  .cam { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+  /* Monitor: a 16:10 screen on a stand. */
+  .monitor .bezel { position: absolute; left: 176px; top: 26px; width: 896px; height: 560px; padding: 16px; background: #121c1f; border-radius: 18px; box-shadow: inset 0 0 0 1px #2a3a3e, 0 40px 80px -30px rgba(0,0,0,.75); }
+  .monitor .screen { position: relative; width: 896px; height: 560px; border-radius: 6px; overflow: hidden; background: #050b0d; }
+  .monitor .neck { position: absolute; left: 584px; top: 618px; width: 112px; height: 34px; background: linear-gradient(90deg,#172326,#24353a 50%,#172326); }
+  .monitor .foot { position: absolute; left: 488px; top: 650px; width: 304px; height: 12px; border-radius: 12px 12px 4px 4px; background: #1d2b2f; }
+  .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+  /* Phone */
+  .phone .body { position: absolute; left: 485px; top: 20px; width: 310px; height: 640px; border-radius: 44px; background: #0d1417; padding: 12px; box-shadow: inset 0 0 0 2px #2a3a3e, 0 40px 80px -30px rgba(0,0,0,.8); }
+  .phone .screen { position: relative; width: 310px; height: 640px; border-radius: 34px; overflow: hidden; background: #fff; }
+  .phone .screen img { position: absolute; left: 0; top: 0; width: 100%; height: auto; opacity: 0; inset: auto; object-fit: initial; }
+  .phone .notch { position: absolute; left: 50%; top: 10px; width: 90px; height: 22px; margin-left: -45px; border-radius: 12px; background: #0d1417; z-index: 3; }
+  /* Laptop */
+  .laptop .lid { position: absolute; left: 160px; top: 30px; width: 960px; height: 540px; padding: 14px; background: #121c1f; border-radius: 16px 16px 6px 6px; box-shadow: inset 0 0 0 1px #2a3a3e; }
+  .laptop .screen { position: relative; width: 960px; height: 540px; overflow: hidden; background: #fff; border-radius: 4px; }
+  .laptop .screen img { position: absolute; left: 0; top: 0; width: 100%; height: auto; opacity: 0; inset: auto; object-fit: initial; }
+  .laptop .base { position: absolute; left: 100px; top: 598px; width: 1080px; height: 18px; border-radius: 0 0 22px 22px; background: linear-gradient(#c9d2d4, #9aa7aa); box-shadow: 0 24px 40px -18px rgba(0,0,0,.8); }
+  /* A receipt on the counter */
+  .slip .paper { position: absolute; left: 50%; top: 40px; width: 400px; margin-left: -200px; transform: rotate(-1.2deg); filter: drop-shadow(0 30px 40px rgba(0,0,0,.55)); }
+  .slip .paper img { display: block; width: 100%; height: auto; }
+  /* Captions, the brand badge, the pointer */
+  .badge { position: absolute; left: 18px; top: 18px; display: flex; gap: 10px; align-items: center; opacity: 0; z-index: 20;
+    background: rgba(5, 13, 18, 0.88); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 7px 14px 7px 7px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .badge img { width: 44px; height: 44px; border-radius: 10px; background: #fff; padding: 3px; box-sizing: border-box; }
+  .badge b { display: block; color: #fff; font-size: 16px; }
+  .badge span { display: block; color: #9fb7b5; font-size: 12px; }
+  .zt { position: absolute; right: 18px; top: 18px; color: #e4efee; font-weight: 800; font-size: 18px; letter-spacing: -0.02em; z-index: 20;
+    background: rgba(5, 13, 18, 0.88); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 9px 14px; }
+  .zt i { display: inline-block; width: 20px; height: 20px; border-radius: 6px; border: 2px solid #5eead4; background: #050d12; margin-right: 7px; vertical-align: -4px; font-style: normal; color: #14b8a6; font-size: 13px; text-align: center; line-height: 20px; }
+  .cap { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 20; white-space: nowrap; opacity: 0;
+    background: rgba(5, 13, 18, 0.86); color: #fff; border: 1px solid rgba(94,234,212,.45); border-radius: 999px; padding: 10px 22px 10px 16px; font-size: 21px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+  .cap em { font-style: normal; display: inline-block; min-width: 26px; height: 26px; line-height: 26px; text-align: center; border-radius: 50%; background: #14b8a6; color: #04201d; font-weight: 800; font-size: 15px; margin-right: 10px; vertical-align: 2px; }
+  .ptr { position: absolute; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; z-index: 15; opacity: 0;
+    background: rgba(255,255,255,.92); box-shadow: 0 0 0 3px rgba(20,184,166,.85), 0 6px 18px rgba(0,0,0,.45); }
+  .ring { position: absolute; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; border: 3px solid #5eead4; z-index: 14; opacity: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="badge" id="badge"><img id="badgeImg" alt=""><div><b id="badgeName"></b><span>Demo business: fictional</span></div></div>
+<div class="zt"><i>Z</i>ZapTill</div>
+<div class="cap" id="cap"></div>
+<div class="ptr" id="ptr"></div>
+<div class="ring" id="ring"></div>
+<script>
+  // window.SPEC = { scenes: [{ device, start, end, brand: {name, mark}, frames: [{ src, at, tap? }], cam: [{ t, s, fx, fy }],
+  //   scroll: [{ t, y }], caps: [{ t0, t1, text, n }] }] } — times in seconds, absolute. fx/fy and tap are in the screen's
+  //   own pixels (1280 x 800 for the till; the image's natural px for phone, laptop and slip).
+  const ease = (x) => (x < 0 ? 0 : x > 1 ? 1 : x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const FADE = 0.45, SWAP = 0.16;
+  const GEO = {   // the screen rectangle on the stage, and the screen's own coordinate size
+    monitor: { x: 192, y: 42, w: 896, h: 560, sw: 1280, sh: 800 },
+    phone: { x: 497, y: 32, w: 310, h: 640 },
+    laptop: { x: 174, y: 44, w: 960, h: 540 },
+    slip: { x: 440, y: 40, w: 400, h: 0 },
+  };
+  function key(list, t, f) {   // eased interpolation over keyframes [{t, ...}]
+    if (!list || !list.length) return null;
+    if (t <= list[0].t) return f(list[0], list[0], 0);
+    for (let i = 0; i < list.length - 1; i++) if (t <= list[i + 1].t) return f(list[i], list[i + 1], ease((t - list[i].t) / Math.max(1e-6, list[i + 1].t - list[i].t)));
+    const l = list[list.length - 1]; return f(l, l, 0);
+  }
+  let built = false; const layers = [];
+  function build() {
+    const root = document.getElementById('root');
+    for (const sc of window.SPEC.scenes) {
+      const L = document.createElement('div'); L.className = 'layer ' + sc.device;
+      const cam = document.createElement('div'); cam.className = 'cam'; L.appendChild(cam);
+      let screen;
+      if (sc.device === 'monitor') cam.innerHTML = '<div class="bezel"><div class="screen"></div></div><div class="neck"></div><div class="foot"></div>';
+      if (sc.device === 'phone') cam.innerHTML = '<div class="body"><div class="screen"><div class="notch"></div></div></div>';
+      if (sc.device === 'laptop') cam.innerHTML = '<div class="lid"><div class="screen"></div></div><div class="base"></div>';
+      if (sc.device === 'slip') cam.innerHTML = '<div class="paper"></div>';
+      screen = cam.querySelector('.screen, .paper');
+      const imgs = sc.frames.map((f) => { const i = new Image(); i.src = f.src; screen.appendChild(i); return i; });
+      root.appendChild(L); layers.push({ L, cam, imgs, sc });
+    }
+    built = true;
+  }
+  window.ready = async () => { build(); await Promise.all(layers.flatMap((l) => l.imgs.map((i) => i.decode().catch(() => {})))); };
+  window.render = (t) => {
+    const scenes = window.SPEC.scenes;
+    let active = null;
+    layers.forEach(({ L, cam, imgs, sc }, i) => {
+      const next = scenes[i + 1];
+      const visible = t >= sc.start && t < (next ? next.start + FADE : sc.end + 1);
+      const op = !visible ? 0 : i === 0 ? 1 : ease((t - sc.start) / FADE);
+      L.style.opacity = op; L.style.zIndex = i;
+      if (!visible) return;
+      if (t >= sc.start) active = sc;
+      // Frames inside the scene: each crossfades in over the one before.
+      sc.frames.forEach((f, k) => { imgs[k].style.opacity = k === 0 ? 1 : ease((t - f.at) / SWAP); });
+      const g = GEO[sc.device];
+      // Tall images scroll inside phone, laptop and slip.
+      const y = key(sc.scroll, t, (a, b, e) => lerp(a.y, b.y, e)) || 0;
+      if (sc.device !== 'monitor') imgs.forEach((im) => { im.style.transform = `translateY(${-y * (g.w / (sc.natural || g.w))}px)`; });
+      // The camera: zoom s on a focus point (screen px), centred on the stage as it zooms.
+      const c = key(sc.cam, t, (a, b, e) => ({ s: lerp(a.s, b.s, e), fx: lerp(a.fx, b.fx, e), fy: lerp(a.fy, b.fy, e) })) || { s: 1, fx: null, fy: null };
+      let tx = 0, ty = 0;
+      if (c.s !== 1 && c.fx !== null) {
+        const sw = g.sw || sc.natural || g.w;
+        const px = g.x + (c.fx / sw) * g.w, py = g.y + (c.fy / sw) * g.w - (sc.device !== 'monitor' ? y * (g.w / (sc.natural || g.w)) : 0);
+        const k = Math.min(1, (c.s - 1) / 0.35);   // how far the focus point travels to the centre
+        const cx = lerp(px, 640, k), cy = lerp(py, 330, k);
+        tx = cx - c.s * px; ty = cy - c.s * py;
+      }
+      cam.style.transform = `translate(${tx}px, ${ty}px) scale(${c.s})`;
+      sc._tx = tx; sc._ty = ty; sc._s = c.s;
+    });
+    // Brand badge
+    const b = document.getElementById('badge');
+    if (active && active.brand) { document.getElementById('badgeImg').src = active.brand.mark; document.getElementById('badgeName').textContent = active.brand.name; b.style.opacity = 1; } else b.style.opacity = 0;
+    // Caption
+    const cap = document.getElementById('cap');
+    const cs = scenes.flatMap((s) => s.caps || []).find((c) => t >= c.t0 && t < c.t1);
+    if (cs) { cap.innerHTML = (cs.n ? `<em>${cs.n}</em>` : '') + cs.text; cap.style.opacity = Math.min(1, (t - cs.t0) / 0.3, (cs.t1 - t) / 0.3); } else cap.style.opacity = 0;
+    // Pointer: glides between taps, arriving just before the screen changes; a ring on each tap.
+    const ptr = document.getElementById('ptr'), ring = document.getElementById('ring');
+    ptr.style.opacity = 0; ring.style.opacity = 0;
+    if (active && active.device === 'monitor') {
+      const taps = active.frames.filter((f) => f.tap);
+      if (taps.length) {
+        const g = GEO.monitor, toStage = (p) => ({ x: active._tx + active._s * (g.x + (p.x / g.sw) * g.w), y: active._ty + active._s * (g.y + (p.y / g.sw) * g.w) });
+        const ARR = 0.12, TRAVEL = 0.42;
+        let pos = null, vis = 0;
+        for (let k = 0; k < taps.length; k++) {
+          const arrive = taps[k].at - ARR, leave = arrive - TRAVEL;
+          const prev = k ? taps[k - 1].tap : { x: taps[0].tap.x + 120, y: taps[0].tap.y + 160 };
+          if (t < leave) { if (k === 0) { pos = prev; vis = Math.max(0, (t - (leave - 0.3)) / 0.3); } break; }
+          vis = 1;
+          pos = t < arrive ? { x: lerp(prev.x, taps[k].tap.x, ease((t - leave) / TRAVEL)), y: lerp(prev.y, taps[k].tap.y, ease((t - leave) / TRAVEL)) } : taps[k].tap;
+          const since = t - (taps[k].at - 0.06);
+          if (since >= 0 && since < 0.45) { const r = toStage(taps[k].tap); ring.style.left = r.x + 'px'; ring.style.top = r.y + 'px'; ring.style.opacity = 1 - since / 0.45; ring.style.transform = `scale(${1 + since * 3})`; }
+        }
+        if (pos) {
+          const fadeOut = active.ptrOff ? Math.max(0, 1 - (t - active.ptrOff) / 0.3) : 1;
+          const s = toStage(pos); ptr.style.left = s.x + 'px'; ptr.style.top = s.y + 'px'; ptr.style.opacity = vis * fadeOut;
+          const press = taps.find((f) => t >= f.at - ARR && t < f.at + 0.05); ptr.style.transform = press ? 'scale(0.82)' : 'scale(1)';
+        }
+      }
+    }
+  };
+</script>
+</body>
+</html>

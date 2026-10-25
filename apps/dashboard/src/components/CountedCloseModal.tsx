@@ -36,7 +36,7 @@ export default function CountedCloseModal({ client, shift, currency, onDone, onC
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   // A522: the till has not synced lately — its sales since are not in this close (a tick first).
-  const behind = shift.device_id ? tillBehindLine(shift.terminal_code ?? 'The till', shift.till_last_sync_at ?? null) : null;
+  const behind = shift.device_id ? tillBehindLine(shift.terminal_code ?? 'The POS', shift.till_last_sync_at ?? null) : null;
   const [behindOk, setBehindOk] = useState(false);
   // A522: unpaid kitchen orders on a till that is off — the cloud lists them; the owner / a close-day holder may go ahead.
   const [unpaid, setUnpaid] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export default function CountedCloseModal({ client, shift, currency, onDone, onC
     const r = readAmounts(inputs, codes);
     if (r.ok === false) { setMsg(`Enter what you counted for: ${r.missing.map((m) => methodName(m)).join(', ')}.`); return; }
     if (cashOff && !note.trim()) { setMsg('The cash is over or short — say why in the note.'); return; }
-    if (behind && !behindOk) { setMsg('Tick that you understand the till’s sales since it last synced are not in this close.'); return; }
+    if (behind && !behindOk) { setMsg('Tick that you understand the POS’s sales since it last synced are not in this close.'); return; }
     const { cash, ...others } = r.map;
     setBusy(true); setMsg('');
     try {
@@ -115,7 +115,7 @@ export default function CountedCloseModal({ client, shift, currency, onDone, onC
         {unpaid && (
           <label className="flex gap-2 items-start text-sm text-amber-300" data-testid="cc-unpaid">
             <input type="checkbox" checked={unpaidOk} onChange={(e) => setUnpaidOk(e.target.checked)} className="mt-1" />
-            <span>{unpaid} Close anyway — the till may be off; these orders stay open on it, to be charged or voided there.</span>
+            <span>{unpaid} Close anyway — the POS may be off; these orders stay open on it, to be charged or voided there.</span>
           </label>
         )}
         {msg && <p className="text-sm text-red-400">{msg}</p>}

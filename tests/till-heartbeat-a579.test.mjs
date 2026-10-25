@@ -79,7 +79,7 @@ await ok('an old till with trade evidence (a drawer open on it, the branch\'s ot
   const a = R.tillsNotSyncing([till({ app_version: '1.0.19' })], NOW, names, { evidence: { 'row-t1': { openShift: true, otherSales: 23, ownSales: 0 } } });
   assert.strictEqual(a[0].severity, 'critical');
   assert.match(a[0].title, /T1 is on but not syncing/);
-  assert.match(a[0].detail, /other tills sent 23 sales since, but none came from this till/);
+  assert.match(a[0].detail, /other points of sale sent 23 sales since, but none came from this POS/);
 });
 await ok('an old till whose own sales are arriving (through /api/orders): nothing to say', () => {
   assert.deepStrictEqual(R.tillsNotSyncing([till({ app_version: '1.0.19' })], NOW, names, { evidence: { 'row-t1': { openShift: true, otherSales: 23, ownSales: 4 } } }), []);

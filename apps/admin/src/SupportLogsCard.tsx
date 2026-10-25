@@ -72,7 +72,7 @@ export default function SupportLogsCard({ clientId, req }: { clientId: string; r
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Support logs</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Sent from a till's Tech page (the last 24 hours, secrets removed — the client reads out the reference), or pulled above.</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Sent from a POS's Tech page (the last 24 hours, secrets removed — the client reads out the reference), or pulled above.</div>
         </div>
         <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Reference, e.g. K7Q2XM" maxLength={8}
           style={{ ...S.input, maxWidth: 190, textTransform: "uppercase" }} data-testid="support-log-ref" />
@@ -86,7 +86,7 @@ export default function SupportLogsCard({ clientId, req }: { clientId: string; r
           {rows.map((r) => (
             <div key={r.id} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap" }}>
               <span style={{ fontFamily: "monospace", fontWeight: 700, color: C.accent }}>{r.reference}</span>
-              <span style={{ flex: 1, minWidth: 180 }}>{r.terminal_code ?? "a till"} <span style={{ color: C.muted }}>· {r.app_version ? `v${r.app_version}` : "—"} · {r.sent_by ?? "—"} · {kb(r.bytes)}{r.trimmed ? " (older lines left out)" : ""}</span></span>
+              <span style={{ flex: 1, minWidth: 180 }}>{r.terminal_code ?? "a POS"} <span style={{ color: C.muted }}>· {r.app_version ? `v${r.app_version}` : "—"} · {r.sent_by ?? "—"} · {kb(r.bytes)}{r.trimmed ? " (older lines left out)" : ""}</span></span>
               <span style={{ color: C.muted }}>{when(r.created_at)}</span>
               <button onClick={() => view(r)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>View</button>
               <button onClick={() => download(r)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>Download</button>
@@ -97,7 +97,7 @@ export default function SupportLogsCard({ clientId, req }: { clientId: string; r
       {open && (
         <div style={{ marginTop: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.muted, marginBottom: 4 }}>
-            <span>{open.row.reference} · {open.row.terminal_code ?? "a till"} · {when(open.row.created_at)}</span>
+            <span>{open.row.reference} · {open.row.terminal_code ?? "a POS"} · {when(open.row.created_at)}</span>
             <button onClick={() => setOpen(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "2px 8px" }}>Close</button>
           </div>
           <pre style={{ maxHeight: 420, overflow: "auto", fontSize: 11, lineHeight: 1.45, whiteSpace: "pre-wrap", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, color: C.text }}>{open.text}</pre>

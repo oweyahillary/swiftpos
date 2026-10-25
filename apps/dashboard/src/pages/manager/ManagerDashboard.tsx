@@ -42,6 +42,7 @@ import Pager, { usePageSize } from '../../components/Pager';   // A475
 import { paginate } from '../../lib/paginate';
 import { hasAnyPermission } from '../../lib/permissions';   // A490
 import { businessTerms, foodAreas } from '../../lib/businessTerms';   // A573
+import { OWNER_SETS_LIMITS_LINE, limitBoxForRole } from '../../lib/creditApprovers';   // A585
 // A549 · A553: the Analytics tab loads its own chunk (and the chart library) only when it is opened
 const Analytics = lazy(() => import('../analytics/AnalyticsPage').then((m) => ({ default: m.Analytics })));
 
@@ -1070,9 +1071,10 @@ interface MLedgerRow {
 }
 
 function ManagerCreditTab({ currency }: { currency: string }) {
-  const { posApi, hasPermission } = usePOSAuth();
+  const { posApi, hasPermission, session } = usePOSAuth();
   // A490: limits, repayments and adjustments are customers.credit (seeing the accounts is customers.view, the page's key).
   const canManage = hasPermission('customers.credit');
+  const setsLimits = limitBoxForRole(session?.role);   // A585: the Manager role or the owner
 
   const [rows, setRows] = useState<MCreditCustomer[]>([]);
   const [search, setSearch] = useState('');
@@ -1114,6 +1116,8 @@ function ManagerCreditTab({ currency }: { currency: string }) {
     setSelected(customer); setLimit(String(customer.credit_limit)); setLedger(ledger ?? []);
     await loadList();
   };
+  // A585 (owner change 2026-10-23: "add the credit rights to the manager"): the limit box is back — for the Manager role
+  // and the owner; the cloud allows only the built-in Manager role and the owner (and records who and this branch).
   const saveLimit = async () => {
     if (!selected) return; setBusy(true); setMsg(null);
     try { await posApi.patch(`/api/credit/customer/${selected.id}/limit`, { credit_limit: Number(limit) || 0 }); setMsg({ kind: 'ok', text: 'Limit updated' }); await refreshSelected(); }
@@ -1212,11 +1216,15 @@ function ManagerCreditTab({ currency }: { currency: string }) {
             </div>
             {canManage && (
               <>
-                <div className="flex items-end gap-2 mb-4">
-                  <div className="flex-1"><label className="block text-sm text-gray-400 mb-1.5">Credit limit</label>
-                    <input type="number" value={limit} onChange={e => setLimit(e.target.value)} min={0} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white" /></div>
-                  <button onClick={saveLimit} disabled={busy} className="px-4 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Save</button>
-                </div>
+                {setsLimits ? (
+                  <div className="flex items-end gap-2 mb-4">
+                    <div className="flex-1"><label className="block text-sm text-gray-400 mb-1.5">Credit limit</label>
+                      <input type="number" value={limit} onChange={e => setLimit(e.target.value)} min={0} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white" /></div>
+                    <button onClick={saveLimit} disabled={busy} className="px-4 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Save</button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 mb-4" data-testid="owner-sets-limits">{OWNER_SETS_LIMITS_LINE}</p>
+                )}
                 <div className="bg-gray-800/50 rounded-lg p-4 mb-4">
                   <p className="text-white font-medium text-sm mb-3">Record repayment</p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">

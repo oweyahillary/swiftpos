@@ -3,9 +3,22 @@ import Base from '../layouts/Base.astro';
 import WhatsAppButton from '../components/WhatsAppButton.astro';
 import { WA_MESSAGES } from '../lib/site';
 
-// Each lane keeps to what ships today (WORKPLAN §3). Petrol stays a conversation until the owner decides what to say
-// (WEBSITE-LOG open question 8).
+// Each lane keeps to what ships today (WORKPLAN §3). 2026-10-23: every business type ZapTill is set up for (shared/
+// businessTerms.ts): restaurants and cafés (Menus), shops, minimarts and petrol stations (Departments), parking and other
+// businesses (Groups). Petrol and parking describe only what the product code has; each keeps a "talk to us".
 const lanes = [
+  {
+    href: '/for/retail/',
+    name: 'Shops and supermarkets',
+    line: 'Stock that adds up. A point of sale that never stops.',
+    points: ['A barcode on every product, labels on any printer', 'Departments as big tabs, items sold by weight', 'Deliveries, counts, suppliers and other branches\' stock'],
+  },
+  {
+    href: '/for/minimarts/',
+    name: 'Minimarts',
+    line: 'A quick queue, a weighed kilo, a drawer that adds up.',
+    points: ['Scan or tap, and weigh the meat and tomatoes', 'Alcohol only in your licensed hours', 'Neighbours on account, with a limit'],
+  },
   {
     href: '/for/restaurants/',
     name: 'Restaurants and cafés',
@@ -22,19 +35,25 @@ const lanes = [
     href: '/for/quick-service/',
     name: 'Quick service and takeaways',
     line: 'Faster at the counter. Right in the bag.',
-    points: ['A fast counter till', 'Dispatch tickets that count the bags', 'Offers, delivery fees and M-Pesa'],
+    points: ['A fast counter point of sale', 'Dispatch tickets that count the bags', 'Offers, delivery fees and M-Pesa'],
   },
   {
-    href: '/for/retail/',
-    name: 'Shops and retail',
-    line: 'Stock that adds up. A till that never stops.',
-    points: ['Deliveries received against the note', 'Counts, wastage and transfers', 'Drawers counted by cashier'],
+    href: '/for/petrol-stations/',
+    name: 'Petrol stations',
+    line: 'Every litre, every pump, every shilling.',
+    points: ['The point of sale opens on your pumps: amount or litres', 'Tanks and deliveries in litres, fuel sales by grade and pump', 'The forecourt shop on the same point of sale'],
+  },
+  {
+    href: '/for/parking/',
+    name: 'Car parks',
+    line: 'Every bay, every plate, every hour charged.',
+    points: ['Open a bay with the plate and vehicle type', 'Each hour started charged, paid by cash or M-Pesa', 'Occupancy and open sessions from anywhere'],
   },
 ];
 ---
 <Base
-  title="Who it's for: restaurants, bars, quick service and shops | ZapTill"
-  description="ZapTill for restaurants and cafés, bars and lounges, quick service and takeaways, and shops in Kenya. Petrol stations: talk to us about your forecourt."
+  title="Who ZapTill is for: shops, restaurants, stations, car parks"
+  description="ZapTill is set up for shops, supermarkets, minimarts, restaurants, cafés, bars, quick service, petrol stations and car parks in Kenya, and other counter businesses."
   waMessage={WA_MESSAGES.demo}
   ogImage="/og/who-its-for.png"
 >
@@ -42,8 +61,9 @@ const lanes = [
     <div class="wrap">
       <h1>Made for the way your place works</h1>
       <p class="lede">
-        A restaurant needs its kitchen to keep up. A bar needs to know whose drawer is short. A shop needs its stock to
-        add up. It is the same ZapTill, set up for each, and we set it up with you.
+        A shop needs its stock to add up. A restaurant needs its kitchen to keep up. A petrol station needs every litre
+        accounted for, and a car park every hour. It is the same ZapTill, set up for each in its own words, and we set
+        it up with you.
       </p>
     </div>
   </section>
@@ -63,16 +83,16 @@ const lanes = [
         ))}
       </ul>
 
-      <section class="petrol" id="petrol" aria-labelledby="petrol-h">
+      <section class="other" id="other" aria-labelledby="other-h">
         <div>
-          <h2 id="petrol-h">Petrol stations</h2>
+          <h2 id="other-h">Other businesses</h2>
           <p>
-            Talk to us about your forecourt. Tell us how your pumps, attendants and shop work, and we'll tell you honestly
-            what ZapTill covers today.
+            A hardware store, a salon, an agrovet, a car wash: if you sell over a counter, ZapTill can be set up
+            with your own groups of products and services (Services, Products, Accessories or whatever you call them),
+            with the same day close, M-Pesa, stock and reports. Tell us how you sell and we'll tell you honestly what fits.
           </p>
-          <!-- TODO(owner): open question 8: what to say about petrol stations (pumps, attendants, tank deliveries). -->
         </div>
-        <WhatsAppButton small message={WA_MESSAGES.petrol} label="Talk to us about your forecourt" />
+        <WhatsAppButton small message={WA_MESSAGES.other} label="Ask if ZapTill fits" />
       </section>
     </div>
   </section>
@@ -95,12 +115,13 @@ const lanes = [
   .hub__points { margin-bottom: var(--s-5); color: var(--ink-2); }
   .hub__go { margin-top: auto; color: var(--teal-strong); font-weight: 600; }
   @media (min-width: 760px) { .hub { grid-template-columns: repeat(2, 1fr); gap: var(--s-5); } }
+  @media (min-width: 1180px) { .hub { grid-template-columns: repeat(3, 1fr); } }
 
-  .petrol {
+  .other {
     margin-top: var(--s-7); padding: var(--s-5); border: 1px dashed var(--line-strong); border-radius: var(--r-lg);
     display: grid; gap: var(--s-4); align-items: center; scroll-margin-top: 5rem;
   }
-  .petrol h2 { font-size: var(--fs-lg); margin-bottom: var(--s-2); }
-  .petrol p { color: var(--ink-2); margin: 0; max-width: 40rem; }
-  @media (min-width: 860px) { .petrol { grid-template-columns: 1fr auto; } }
+  .other h2 { font-size: var(--fs-lg); margin-bottom: var(--s-2); }
+  .other p { color: var(--ink-2); margin: 0; max-width: 46rem; }
+  @media (min-width: 860px) { .other { grid-template-columns: 1fr auto; } }
 </style>

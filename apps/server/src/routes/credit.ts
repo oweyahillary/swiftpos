@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, branchScope, assertBranchAccess, branchFilter } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { actor } from '../lib/actor';
 import { confirmerRows } from '../lib/confirmerLookup';
@@ -10,6 +10,9 @@ import { mayApprove, isOwnerRow } from '../lib/approver';
 import { worksAtBranch } from '../lib/branchAccess';
 import { CREDIT_STATES, cleanReason, creditCounts, decisionRefusal, decisionTime, listCreditSales, targetState, awaitingSentence,
   type CreditDecision, type CreditState } from '../lib/creditConfirm';   // A545
+import { ownerOnlyGate, limitSetterGate, OWNER_CHOOSES_APPROVERS, CREDIT_APPROVERS_KEY, cleanRule, loadCreditRule,
+  mayDecideCreditSale, CHOSEN_APPROVERS_DECIDE } from '../lib/creditApprovers';   // A585, A587
+import { creditHistory } from '../lib/creditHistory';   // A585
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -87,8 +90,8 @@ router.get('/customer/:id', canReadCredit, async (req, res) => {
 
 // GET /api/credit/candidates?search= — A567: the business's customers by name or phone, to give one their FIRST credit
 // limit (Credit Accounts › "+ Give credit"). The list above only shows customers who already have a limit or a balance,
-// so no screen could start an account. customers.credit — the key that sets the limit.
-router.get('/candidates', requirePermission('customers.credit'), async (req, res) => {
+// so no screen could start an account. A585: whoever may set a limit — the owner or the built-in Manager role (was customers.credit).
+router.get('/candidates', limitSetterGate(), async (req, res) => {
   // PostgREST's or() is a comma/parenthesis grammar: those (and the LIKE wildcards) are taken out of what was typed.
   const term = String(req.query.search ?? '').replace(/[,()%*\\:"']/g, ' ').trim().slice(0, 60);
   let q = supabase
@@ -113,7 +116,14 @@ router.get('/candidates', requirePermission('customers.credit'), async (req, res
 // A567: the limit is APPROVED by whoever sets it — customers.credit (the owner always, managers by default) — and who and
 // when go in the business's audit log (audit_log: before and after). The till's credit-customer list
 // (GET /api/pos/credit-customers) carries a customer once their limit is above 0, at its next pull.
-router.patch('/customer/:id/limit', requirePermission('customers.credit'), async (req, res) => {
+// A585 (owner, 2026-10-23: "credit limit — the owner for now; they can assign to branch manager for approval but they set
+// the limit"), then the owner change the same day ("add the credit rights to the manager"): giving, changing or removing a
+// limit is the OWNER's or the built-in MANAGER role's (lib/creditApprovers.ts maySetCreditLimits) — never a supervisor,
+// General / Finance Manager, a custom role named Manager, a partner, someone holding the owner's role by PIN, a till or
+// ZapTill. Customers are business-wide: a manager may set any customer's limit; who and the branch they acted at are audited.
+// A587 (owner, 2026-10-24): the built-in General Manager role too, and a partner acting at ONE of their branches on the
+// dashboard (never "All my branches" — 403 PICK_ONE_BRANCH); customers stay business-wide, the partner's branch is audited.
+router.patch('/customer/:id/limit', limitSetterGate(), async (req, res) => {
   // A567: a person approves a limit — a till's own session names nobody.
   if (req.isTill || !req.userId) { res.status(403).json({ error: 'A credit limit is set by a person, signed in.', code: 'PERSON_ONLY' }); return; }
   const limit = Number(req.body?.credit_limit);
@@ -149,14 +159,79 @@ async function auditLimit(req: any, customerId: string, from: number, to: number
   if (from === to) return;
   try {
     const { data: me } = req.userId ? await supabase.from('users').select('name').eq('id', req.userId).maybeSingle() : { data: null };
+    // A585: the branch the person acted at (a manager's PIN sign-in; A587: a partner's picked branch), when it is this business's — else none.
+    let branchId: string | null = null;
+    if (typeof req.branchId === 'string' && /^[0-9a-f-]{36}$/i.test(req.branchId)) {
+      const { data: br } = await supabase.from('branches').select('id').eq('id', req.branchId).eq('business_id', req.businessId).maybeSingle();
+      branchId = (br as { id?: string } | null)?.id ?? null;
+    }
     const { error } = await supabase.from('audit_log').insert({
-      business_id: req.businessId, branch_id: null, user_id: req.userId ?? null, user_name: (me as any)?.name ?? null,
-      action: from === 0 ? 'customer.credit_limit.granted' : 'customer.credit_limit.changed', table_name: 'customers',
+      business_id: req.businessId, branch_id: branchId, user_id: req.userId ?? null, user_name: (me as any)?.name ?? (req.isOwner ? 'Owner' : null),   // A585: the owner with no users row is named
+      action: from === 0 ? 'customer.credit_limit.granted' : to === 0 ? 'customer.credit_limit.removed' : 'customer.credit_limit.changed',   // A585: .removed
+      table_name: 'customers',
       record_id: customerId, before_data: { credit_limit: from }, after_data: { credit_limit: to },
     });
     if (error) console.error('[credit] limit audit not written:', error.message);
   } catch (e) { console.error('[credit] limit audit not written:', (e as Error)?.message ?? e); }
 }
+
+// GET /api/credit/customer/:id/history — A585: the Credit history panel on the customer's profile: every limit grant /
+// change / removal (who, when, old → new) and their recent sales on account with who sold and who APPROVED each.
+// Read like the account itself (customers.view or customers.credit).
+router.get('/customer/:id/history', canReadCredit, async (req, res) => {
+  const id = String(req.params.id ?? '');
+  if (!/^[0-9a-f-]{36}$/i.test(id)) { res.status(400).json({ error: 'Which customer?' }); return; }
+  const { data: c, error } = await supabase.from('customers').select('id').eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  if (!c) { res.status(404).json({ error: 'Customer not found' }); return; }
+  res.json(await creditHistory(req.businessId!, id, Number(req.query.limit) || 50));
+});
+
+// ── A585: who approves credit sales (the owner chooses, per branch) ─────────────────────────────────────────────────
+// GET  /api/credit/approvers → { rule: { on, branches: { <branch>: [ids] } }, branches: [{id, name}], staff: [{id, name,
+//      role, branch_ids}] } — the owner's setting and who may be picked.
+// PUT  /api/credit/approvers { on, branches } — the owner only; each person must be active and work at that branch.
+const ownerChooses = ownerOnlyGate(OWNER_CHOOSES_APPROVERS);
+async function approverChoices(businessId: string) {
+  const [{ data: br, error: bErr }, { data: st, error: sErr }] = await Promise.all([
+    supabase.from('branches').select('id, name').eq('business_id', businessId).order('name', { ascending: true }),
+    supabase.from('users').select('id, name, status, roles ( name ), user_branches ( branch_id )').eq('business_id', businessId).eq('status', 'active'),
+  ]);
+  if (bErr) throw bErr;
+  if (sErr) throw sErr;
+  return { branches: (br ?? []) as Array<{ id: string; name: string | null }>, staff: (st ?? []) as any[] };
+}
+router.get('/approvers', ownerChooses, async (req, res) => {
+  try {
+    const [rule, { branches, staff }] = await Promise.all([loadCreditRule(req.businessId), approverChoices(req.businessId!)]);
+    res.json({
+      rule, branches,
+      staff: staff.map((s) => ({ id: s.id, name: s.name ?? '', role: s.roles?.name ?? null,
+        branch_ids: (s.user_branches ?? []).map((b: { branch_id: string | null }) => b.branch_id).filter(Boolean) })),
+    });
+  } catch (e: any) { sendError(res, e); }
+});
+router.put('/approvers', ownerChooses, async (req, res) => {
+  let choices;
+  try { choices = await approverChoices(req.businessId!); } catch (e: any) { sendError(res, e); return; }
+  const r = cleanRule(req.body, { branchIds: choices.branches.map((b) => b.id), staff: choices.staff });
+  if (r.ok === false) { res.status(400).json({ error: r.error, code: 'BAD_APPROVERS' }); return; }
+  const before = await loadCreditRule(req.businessId);
+  const nowIso = new Date().toISOString();
+  const { data: existing, error: rErr } = await supabase.from('business_settings').select('id')
+    .eq('business_id', req.businessId).eq('key', CREDIT_APPROVERS_KEY).maybeSingle();
+  if (rErr) { sendError(res, rErr); return; }
+  const { error } = existing
+    ? await supabase.from('business_settings').update({ value: r.rule, updated_at: nowIso }).eq('business_id', req.businessId).eq('key', CREDIT_APPROVERS_KEY)
+    : await supabase.from('business_settings').insert({ business_id: req.businessId, key: CREDIT_APPROVERS_KEY, value: r.rule, updated_at: nowIso });
+  if (error) { sendError(res, error); return; }
+  try {
+    const who = await actor(req);
+    await supabase.from('audit_log').insert({ business_id: req.businessId, branch_id: null, user_id: who.id, user_name: who.name,
+      action: 'credit.approvers.changed', table_name: 'business_settings', record_id: null, before_data: before, after_data: r.rule });
+  } catch { /* best-effort */ }
+  res.json({ rule: r.rule });
+});
 
 // POST /api/credit/customer/:id/payment — record a repayment (decreases balance)
 // Body: { amount, method, reference?, notes? }
@@ -232,7 +307,8 @@ router.get('/sales', creditKey, async (req, res) => {
   const asked = String(req.query.state ?? 'open');
   const states: CreditState[] = asked === 'all' ? [...CREDIT_STATES]
     : (CREDIT_STATES as readonly string[]).includes(asked) ? [asked as CreditState] : ['awaiting', 'disputed'];
-  const branch = branchScope(req);
+  const f = branchFilter(req);   // A582: a partner's "All my branches" — their branches' credit sales
+  const branch = f.kind === 'set' ? f.ids : branchScope(req);
   const [rows, counts] = await Promise.all([
     listCreditSales(req.businessId!, branch, states, Number(req.query.limit) || 200),
     creditCounts(req.businessId!, branch),
@@ -243,7 +319,8 @@ router.get('/sales', creditKey, async (req, res) => {
 // GET /api/credit/sales/count — the badge, and the Close Day / Close Branch notice (whoever closes the day reads it too).
 // NEVER blocks a close (the owner: no deadlocks) — it only says how many wait.
 router.get('/sales/count', requireAnyPermission('customers.credit', 'shifts.close_day', 'shifts.close_branch'), async (req, res) => {
-  const counts = await creditCounts(req.businessId!, branchScope(req));
+  const f = branchFilter(req);   // A582
+  const counts = await creditCounts(req.businessId!, f.kind === 'set' ? f.ids : branchScope(req));
   res.json({ ...counts, notice: awaitingSentence(counts.awaiting) });
 });
 
@@ -259,12 +336,12 @@ router.get('/sales/count', requireAnyPermission('customers.credit', 'shifts.clos
  *   customers.credit (no tillScope check is asked for). A replay never overturns a decided sale.
  */
 const personGate = (req: any, res: any, next: any) => {
-  if (req.isTill) { res.status(403).json({ error: "A till sends a manager's decision as a replay.", code: 'TILL_SENDS_REPLAY' }); return; }
+  if (req.isTill) { res.status(403).json({ error: "A POS sends a manager's decision as a replay.", code: 'TILL_SENDS_REPLAY' }); return; }
   creditKey(req, res, next);
 };
 const tillGate = (req: any, res: any, next: any) => {
   if (req.isTill === true && !!req.deviceId) { next(); return; }
-  res.status(403).json({ error: "Only a till sends a replay — decide with your own sign-in.", code: 'REPLAY_IS_THE_TILLS' });
+  res.status(403).json({ error: "Only a POS sends a replay — decide with your own sign-in.", code: 'REPLAY_IS_THE_TILLS' });
 };
 const decide = (fixed?: CreditDecision) => async (req: any, res: any) => {
   const decision: CreditDecision = fixed ?? (req.body?.decision === 'dispute' ? 'dispute' : req.body?.decision === 'confirm' ? 'confirm' : (null as unknown as CreditDecision));
@@ -276,6 +353,21 @@ const decide = (fixed?: CreditDecision) => async (req: any, res: any) => {
   const cur = row as { order_id: string; branch_id: string | null; state: CreditState } | null;
   if (cur && !req.isOwner && !assertBranchAccess(req, cur.branch_id)) {
     res.status(403).json({ error: "That sale is another branch's.", code: 'OTHER_BRANCH' }); return;
+  }
+  // A587 (owner, 2026-10-24: "Is confirming a waiting credit sale limited to the approvers? — yes"): with approval ON only
+  // the sale's branch's chosen approvers (and the owner) confirm or dispute it — on the web, on the POS, or replayed by a
+  // POS for someone who decided offline. OFF: the A545 rule below, as before.
+  if (cur) {
+    const rule = await loadCreditRule(req.businessId);
+    if (rule.on) {
+      const { rows, ownerId } = await confirmerRows(req.businessId);
+      const personId = req.isTill ? String(req.body?.by ?? '') : String(req.userId ?? '');
+      const row = rows.find((r) => r.id === personId) ?? null;
+      const owner = req.isTill ? !!row && isOwnerRow(row, ownerId) : req.isOwner === true && req.webPartner !== true;
+      if (!owner && !(row && mayDecideCreditSale(rule, cur.branch_id, row, { ownerId }))) {
+        res.status(403).json({ ...CHOSEN_APPROVERS_DECIDE }); return;
+      }
+    }
   }
   let decidedBy: string | null = null; let decidedName: string | null = null;
   if (req.isTill) {

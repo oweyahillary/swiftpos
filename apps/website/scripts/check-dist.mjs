@@ -2,6 +2,8 @@
 //
 //   - every internal link and #anchor resolves to a page or file in dist/
 //   - every page has a <title>, a meta description, a canonical link and exactly one <h1>
+//   - search snippets fit (night 3): a <title> of at most 65 characters, a description of at most 170
+//   - a page marked noindex (a draft guide) is not in the sitemap, and every other page is
 //   - headings never skip a level going down (an h2 is not followed by an h4)
 //   - every <img> has alt text (or is aria-hidden), a width and a height; at most one image a page loads eagerly
 //   - every JSON-LD block parses
@@ -45,12 +47,23 @@ const size = (p) => (existsSync(p) ? statSync(p).size : 0);
 
 const rows = [];
 let external = 0;
+const noindexed = new Set();
+const indexed = new Set();
 for (const [url, { html, file }] of htmlByUrl) {
   const is404 = url === '/404';
   // Head
   if (!/<title>[^<]{5,}<\/title>/.test(html)) err(url, 'no <title>');
   if (!/<meta name="description" content="[^"]{30,}"/.test(html)) err(url, 'no meta description');
   if (!is404 && !/<link rel="canonical" href="https:\/\/zaptill\.co\.ke\/[^"]*"/.test(html)) err(url, 'no canonical link');
+  {
+    const decode = (t) => t.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+    const t = decode((html.match(/<title>([^<]*)<\/title>/) || [])[1] || '');
+    const d = decode((html.match(/<meta name="description" content="([^"]*)"/) || [])[1] || '');
+    if (t.length > 65) err(url, `title is ${t.length} characters (want at most 65): ${t}`);
+    if (d.length > 170) err(url, `description is ${d.length} characters (want at most 170)`);
+    const noindex = /<meta name="robots" content="noindex/.test(html);
+    if (!is404) (noindex ? noindexed : indexed).add(url);
+  }
   // Headings
   const levels = [...html.matchAll(/<h([1-6])[\s>]/g)].map((m) => Number(m[1]));
   const h1s = levels.filter((l) => l === 1).length;
@@ -72,6 +85,19 @@ for (const [url, { html, file }] of htmlByUrl) {
   // JSON-LD
   for (const m of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
     try { JSON.parse(m[1]); } catch (e) { err(url, `JSON-LD does not parse: ${e.message}`); }
+  }
+  // Wording (owner, 2026-10-23: "use Point of sale not the word Till"): no "till" a visitor can read or a search
+  // engine can index (text, alt, aria-label, title, meta, JSON-LD), except Safaricom's own "Till number". File names
+  // and code (till-pos.webp, tools/till-shots) are not text and do not count.
+  {
+    const visible = html
+      .replace(/<style[\s\S]*?<\/style>/g, ' ')
+      .replace(/<script(?![^>]*application\/ld\+json)[\s\S]*?<\/script>/g, ' ')
+      .replace(/\s(?:src|href|srcset|data-[\w-]+|class|id|style)="[^"]*"/g, ' ')
+      .replace(/<[^>]*?\s(alt|aria-label|title|content)="([^"]*)"[^>]*>/g, ' $2 ')
+      .replace(/<[^>]+>/g, ' ');
+    const hits = [...visible.matchAll(/(?<![\w/.-])(till|tills|till's)(?![\w-])(?!\s+number)/gi)].map((m) => visible.slice(Math.max(0, m.index - 30), m.index + 30).replace(/\s+/g, ' '));
+    for (const h of hits.slice(0, 5)) err(url, `says "till" (use "point of sale"): …${h}…`);
   }
   // Links and assets
   const refs = [...html.matchAll(/\s(?:href|src)="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, '&'));
@@ -98,6 +124,15 @@ for (const [url, { html, file }] of htmlByUrl) {
   const heavy = [...assets].filter((f) => !/og[\\/]|og-zaptill|favicon|apple-touch/.test(f));
   const pageBytes = Buffer.byteLength(html) + heavy.reduce((a, f) => a + size(f), 0);
   rows.push({ url, html: Buffer.byteLength(html), assets: assetBytes, page: pageBytes });
+}
+
+// The sitemap lists exactly the pages search engines may index.
+{
+  const smFiles = files.filter((f) => /sitemap-\d+\.xml$/.test(f));
+  const inSitemap = new Set(smFiles.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/<loc>https:\/\/zaptill\.co\.ke([^<]*)<\/loc>/g)].map((m) => m[1])));
+  if (!smFiles.length) errors.push('no sitemap in dist/');
+  for (const u of noindexed) if (inSitemap.has(u)) errors.push(`${u}: noindex but listed in the sitemap`);
+  for (const u of indexed) if (!inSitemap.has(u)) errors.push(`${u}: indexable but missing from the sitemap`);
 }
 
 const kb = (n) => `${(n / 1024).toFixed(0)} KB`.padStart(7);

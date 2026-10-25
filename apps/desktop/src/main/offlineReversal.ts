@@ -47,7 +47,7 @@ const METHOD_NAMES: Record<string, string> = { cash: 'cash', mpesa: 'M-Pesa', ca
 const methodName = (m: string) => METHOD_NAMES[m] ?? m;
 const list = (xs: string[]) => xs.length <= 1 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 
-export const OFFLINE_NOT_ON_TILL = 'This sale is not on this till. It can be voided or refunded when the till is back online.';
+export const OFFLINE_NOT_ON_TILL = 'This sale is not on this POS. It can be voided or refunded when the POS is back online.';
 
 export interface OfflineReversalInput {
   kind: 'void' | 'refund';
@@ -89,7 +89,7 @@ export function reverseOffline(input: OfflineReversalInput, db: Database.Databas
     { id: string; status: string; created_at: string; origin: string | null; refunded_at: string | null } | undefined;
   if (!order) throw new Error(OFFLINE_NOT_ON_TILL);
   if (!offlineScopeAllows(order.origin, rules)) {
-    throw new Error('Offline, this till can only void or refund the sales it rang itself. This is a web sale — do it when the till is back online.');
+    throw new Error('Offline, this POS can only void or refund the sales it rang itself. This is a web sale — do it when the POS is back online.');
   }
   if (order.status === 'voided') throw new Error('Order is already voided');
   if (order.refunded_at) throw new Error('That order has already been refunded');
@@ -114,8 +114,8 @@ export function reverseOffline(input: OfflineReversalInput, db: Database.Databas
     if (blocked.length) {
       const allowed = rules.offlineRefundMethods.map(methodName);
       throw new Error(
-        `Offline, this till can refund only ${allowed.length ? list(allowed) : 'nothing (the owner has allowed no method)'}. `
-        + `This sale was paid by ${list(blocked.map(methodName))} — refund it when the till is back online.`);
+        `Offline, this POS can refund only ${allowed.length ? list(allowed) : 'nothing (the owner has allowed no method)'}. `
+        + `This sale was paid by ${list(blocked.map(methodName))} — refund it when the POS is back online.`);
     }
   }
 

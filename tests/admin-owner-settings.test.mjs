@@ -85,7 +85,7 @@ ok('A493 Updates: the admin picks a version, approves or holds; the tills\' vers
   assert.match(u, /visibleVersions\(desktopReleases, detail\?\.desktop_approved_version, showAllVersions\)\.map/);
   assert.match(u, /onClick=\{\(\) => setDesktopVersion\(desktopPick\)\}/);
   assert.match(u, /onClick=\{\(\) => setDesktopVersion\(null\)\}/);
-  assert.match(u, />Tills now</);
+  assert.match(u, />Points of sale now</);
   assert.match(ap, /req\("PATCH", `\/clients\/\$\{client\.id\}\/desktop-version`, \{ version \}\)/);
 });
 

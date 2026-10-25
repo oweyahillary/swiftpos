@@ -169,22 +169,47 @@ export function foodAreas(raw: string | null | undefined): FoodAreas {
  * The permission catalogue's words as a business of this type reads them on Settings › Roles and permissions.
  * shared/permissions.ts's labels and descriptions are frozen (migration 134 registers them word for word, and its test
  * reads them), so a shop's words are put in place at display time: only the entries that talk about a menu, a kitchen
- * or tables change; everything else is shown as the catalogue has it.
+ * or tables change; everything else is shown as the catalogue has it. Every type reads "POS", never "till" (A586).
  */
 export function permissionWords(raw: string | null | undefined, key: string, label: string, description: string):
   { label: string; description: string } {
-  if (isFoodService(raw)) return { label, description };
+  if (isFoodService(raw)) return { label: posWording(label), description: posWording(description) };
   const t = businessTerms(raw);
   const w = shopPermissionWords(t)[key];
-  return { label: w?.label ?? label, description: w?.description ?? description };
+  return { label: posWording(w?.label ?? label), description: posWording(w?.description ?? description) };
 }
 
 /** The catalogue's group words (PERMISSION_GROUPS) for this type — see permissionWords. */
 export function permissionGroupWords(raw: string | null | undefined, id: string, label: string, description: string):
   { label: string; description: string } {
-  if (isFoodService(raw)) return { label, description };
+  if (isFoodService(raw)) return { label: posWording(label), description: posWording(description) };
   const w = SHOP_GROUP_WORDS[id];
-  return { label: w?.label ?? label, description: w?.description ?? description };
+  return { label: posWording(w?.label ?? label), description: posWording(w?.description ?? description) };
+}
+
+/**
+ * A586 — owner, 2026-10-23: "ensure we use the word POS or point of sale instead of till". The product's own words say
+ * POS; what is frozen in the old words (shared/permissions.ts's catalogue and built-in roles, registered word for word by
+ * migrations 134 and 142) or read back from the database is put right here, at display time. Safaricom's M-Pesa
+ * "Buy Goods till number" is M-Pesa's own name and stays. Beside "web POS", a till reads "desktop POS"; a plural in a
+ * sentence reads "points of sale"; a label ("Tills", "Tills and devices") reads "POS".
+ */
+export function posWording(text: string): string {
+  if (!text || !/till/i.test(text)) return text;
+  const kept: string[] = [];
+  let t = text.replace(/buy[\s-]*goods(?:\s*till)?(?:\s*(?:no\.?|numbers?))?|m-?pesa\s+till(?:\s*(?:no\.?|numbers?))?|\bTILL\s*NO\b/gi,
+    (m) => { kept.push(m); return `\u0000${kept.length - 1}\u0000`; });
+  const desk = /web POS/i.test(t);
+  t = t.replace(/(?<![\w$@\-/.])(Till|till|TILL)(s|S)?(?![\w\-/])/g, (m: string, w: string, plural: string | undefined, at: number, all: string) => {
+    const cap = w[0] === 'T';
+    if (w === w.toUpperCase()) return 'POS';
+    if (desk) return cap ? 'Desktop POS' : 'desktop POS';
+    if (!plural) return 'POS';
+    const next = all.slice(at + m.length);
+    if (cap) return /^ [a-z]/.test(next) && !/^ and\b/.test(next) ? 'Points of sale' : 'POS';
+    return /&\s*$/.test(all.slice(0, at)) || /^['’]/.test(next) ? 'POS' : 'points of sale';
+  });
+  return t.replace(/\u0000(\d+)\u0000/g, (_m, k: string) => kept[Number(k)]);
 }
 
 const SHOP_GROUP_WORDS: Record<string, { label?: string; description?: string }> = {
@@ -203,8 +228,8 @@ function shopPermissionWords(t: BusinessTerms): Record<string, { label?: string;
     'menu.edit': { label: 'Edit the products',
       description: `Add and change products, categories, ${t.menus.toLowerCase()}, variants, choices and combos` },
     'menu.costs': { description: 'Cost prices and margins wherever they appear (products, deliveries, stock)' },
-    'settings.pos': { description: 'How the tills work: delivery fee and rider, pay later, sign-in codes and loyalty' },
+    'settings.pos': { description: 'How the points of sale work: delivery fee and rider, pay later, sign-in codes and loyalty' },
     'stations.manage': { description: 'Printers, print stations and what prints where' },
-    'changes.approve': { description: 'Approve or refuse product and staff changes made on a till' },
+    'changes.approve': { description: 'Approve or refuse product and staff changes made on a POS' },
   };
 }

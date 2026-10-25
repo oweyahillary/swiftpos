@@ -72,7 +72,7 @@ interface Props {
   offers?: AppliedOffer[];
   /** A552: On account on this till — offered (the branch takes it and a credit customer is held), and whether the person
    *  signed in approves it themselves (customers.credit) or needs a manager's PIN. Absent / not offered: no button. */
-  onAccount?: { offered: boolean; selfApproves: boolean } | null;
+  onAccount?: { offered: boolean; selfApproves: boolean; chosen?: boolean } | null;   // A585: chosen = the owner chose the approvers
   onConfirm: (result: PaymentResult) => void;
   onClose: () => void;
 }
@@ -142,7 +142,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
     : !customer ? 'Choose the customer this sale goes on account to.'
     : customer.credit_limit <= 0 ? `${customer.name} has no credit limit.`
     : creditAmount > customer.available + EPSILON ? `Over ${customer.name}'s credit limit.`
-    : needsPin && creditPin.trim().length < 4 ? "A manager's PIN approves a sale on account."
+    : needsPin && creditPin.trim().length < 4 ? (onAccount?.chosen ? 'The PIN of an approver the owner chose approves a sale on account.' : "A manager's PIN approves a sale on account.")
     : '';
   const creditOk = !creditProblem;
 
@@ -373,7 +373,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                         <span className="text-gray-300">Left to use</span>
                         <span className={customer.available + EPSILON >= creditAmount ? 'text-white' : 'text-red-400'}>{fmt(Math.max(0, customer.available))}</span>
                       </div>
-                      {customer.pending > 0 && <p className="text-[11px] text-gray-400">Includes {fmt(customer.pending)} on account from this till not yet on the cloud.</p>}
+                      {customer.pending > 0 && <p className="text-[11px] text-gray-400">Includes {fmt(customer.pending)} on account from this POS not yet on the cloud.</p>}
                     </div>
                   ) : (
                     <div className="space-y-1">
@@ -397,11 +397,11 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                   )}
                   {needsPin && (
                     <div>
-                      <label className="block text-xs text-gray-300 mb-1">Manager's PIN — approves this sale on account</label>
+                      <label className="block text-xs text-gray-300 mb-1">{onAccount?.chosen ? "Approver's PIN — someone the owner chose" : "Manager's PIN"} — approves this sale on account</label>
                       <input
                         type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={creditPin}
                         onChange={e => setCreditPin(e.target.value.replace(/\D/g, ''))}
-                        placeholder="Manager PIN" data-testid="credit-pin"
+                        placeholder={onAccount?.chosen ? 'Approver PIN' : 'Manager PIN'} data-testid="credit-pin"
                         className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500"
                       />
                     </div>

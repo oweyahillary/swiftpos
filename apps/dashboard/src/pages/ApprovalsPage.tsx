@@ -38,7 +38,7 @@ export default function ApprovalsPage() {
     setBusy(c.id); setError(''); setDone('');
     try {
       await api.post(`/api/changes/${c.id}/decide`, { approve });
-      setDone(approve ? `${c.summary}: the till's change is applied everywhere.` : `${c.summary}: the cloud's is kept; the till takes it on its next sync.`);
+      setDone(approve ? `${c.summary}: the POS's change is applied everywhere.` : `${c.summary}: the cloud's is kept; the POS takes it on its next sync.`);
       load();
     } catch (e: any) { setError(e?.message ?? 'Could not save your decision.'); }
     finally { setBusy(null); }
@@ -48,7 +48,7 @@ export default function ApprovalsPage() {
     <div className="p-4 sm:p-6 space-y-5 max-w-4xl">
       <div>
         <h1 className="text-xl font-semibold text-white">Approvals</h1>
-        <p className="text-sm text-gray-400 mt-1">Changes made on a till that differ from what was changed elsewhere. The till keeps its own until you decide.</p>
+        <p className="text-sm text-gray-400 mt-1">Changes made on a POS that differ from what was changed elsewhere. The POS keeps its own until you decide.</p>
       </div>
       {error && <div className="text-sm text-red-300 bg-red-950/40 border border-red-800 rounded-lg px-3 py-2">{error}</div>}
       {done && <div className="text-sm text-gray-200 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">{done}</div>}
@@ -61,12 +61,12 @@ export default function ApprovalsPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-white font-medium">{c.summary}</p>
-                <p className="text-xs text-gray-400 mt-0.5">On a till by {c.made_by_name ?? 'a manager'}{c.made_at ? `, ${dateTime(c.made_at)}` : ''}</p>
+                <p className="text-xs text-gray-400 mt-0.5">On a POS by {c.made_by_name ?? 'a manager'}{c.made_at ? `, ${dateTime(c.made_at)}` : ''}</p>
               </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="text-xs text-gray-400"><th className="text-left font-medium py-1">Field</th><th className="text-left font-medium py-1">The till's</th><th className="text-left font-medium py-1">The cloud's now</th></tr></thead>
+                <thead><tr className="text-xs text-gray-400"><th className="text-left font-medium py-1">Field</th><th className="text-left font-medium py-1">The POS's</th><th className="text-left font-medium py-1">The cloud's now</th></tr></thead>
                 <tbody className="divide-y divide-gray-800">
                   {fields.map((k) => (
                     <tr key={k}>
@@ -80,7 +80,7 @@ export default function ApprovalsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <button data-testid="approve" disabled={busy === c.id} onClick={() => void decide(c, true)}
-                className="px-4 py-2 bg-swift hover:bg-swift-light text-black text-sm font-semibold rounded-lg disabled:opacity-50">Take the till's</button>
+                className="px-4 py-2 bg-swift hover:bg-swift-light text-black text-sm font-semibold rounded-lg disabled:opacity-50">Take the POS's</button>
               <button disabled={busy === c.id} onClick={() => void decide(c, false)}
                 className="px-4 py-2 rounded-lg border border-gray-700 text-gray-200 text-sm hover:border-gray-500 disabled:opacity-50">Keep the cloud's</button>
             </div>

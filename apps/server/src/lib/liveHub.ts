@@ -126,7 +126,7 @@ async function onSignedIn(c: Conn, msg: any): Promise<void> {
   const v = await checkToken(msg.token);
   if (v.status === 503) return;   // the database is busy: the old token holds until its own expiry
   const same = v.ok && v.isTill && v.surface === 'desktop' && v.businessId === c.businessId && (v.deviceId ?? null) === c.deviceId;
-  if (!same) { try { c.ws.close(4001, v.ok ? 'not the same till' : (v.code ?? `refused ${v.status}`)); } catch { /* gone */ } return; }
+  if (!same) { try { c.ws.close(4001, v.ok ? 'not the same POS' : (v.code ?? `refused ${v.status}`)); } catch { /* gone */ } return; }
   c.token = msg.token;
   c.branchId = v.branchId ?? c.branchId;
   armExpiry(c);
@@ -303,7 +303,7 @@ function onConnection(ws: WebSocket): void {
     const token = msg.token as string;
     const v = await checkToken(token);
     if (!v.ok) { try { ws.close(4001, v.code ?? `refused ${v.status}`); } catch { /* gone */ } return; }
-    if (!v.isTill || v.surface !== 'desktop') { try { ws.close(4003, 'a till only'); } catch { /* gone */ } return; }
+    if (!v.isTill || v.surface !== 'desktop') { try { ws.close(4003, 'a POS only'); } catch { /* gone */ } return; }
     clearTimeout(helloTimer);
     const c: Conn = { ws, businessId: v.businessId!, branchId: v.branchId ?? null, deviceId: v.deviceId ?? null, token, alive: true, expiryTimer: null, lastPushed: 0 };
     conn = c;

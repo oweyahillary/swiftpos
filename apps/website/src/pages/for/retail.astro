@@ -5,10 +5,14 @@ import StockScreen from '../../components/screens/StockScreen.astro';
 import Shot from '../../components/screens/Shot.astro';
 import Receipt from '../../components/screens/Receipt.astro';
 import LabelSamples from '../../components/screens/LabelSamples.astro';
+import Monitor from '../../components/frames/Monitor.astro';
+import ProductVideo from '../../components/ProductVideo.astro';
 import { WA_MESSAGES } from '../../lib/site';
 import { RETAIL_FAQ } from '../../lib/faq';
 
 // Shop words (owner, 2026-10-22, A573): departments, products, barcodes, labels, stock. No menus, kitchens or tables.
+// 2026-10-23: shops and supermarkets (minimarts have their own page, /for/minimarts/); items sold by weight (A577) and
+// departments by the hour (A578) now ship, so they are described.
 const problems = [
   {
     problem: 'Half the shelf has no barcode, so the cashier types or guesses.',
@@ -24,7 +28,11 @@ const problems = [
   },
   {
     problem: 'A customer asks for something you\'ve run out of, and walks out.',
-    fix: 'Look it up at your other branches from the till, and a manager asks that branch to send some. When it is gone, you choose whether the till keeps selling it, shows it as sold out, or hides it until stock comes in.',
+    fix: 'Look it up at your other branches from the point of sale, and a manager asks that branch to send some. When it is gone, you choose whether the point of sale keeps selling it, shows it as sold out, or hides it until stock comes in.',
+  },
+  {
+    problem: 'The deli and the butchery weigh on a scale, and the price is typed in by hand.',
+    fix: 'Mark those items as sold by weight: the cashier types the weight on the point of sale, or scans the label your scale prints with the weight or price inside. Stock comes off to the gram.',
   },
   {
     problem: 'The cash at closing never matches the sales.',
@@ -33,12 +41,14 @@ const problems = [
 ];
 ---
 <Industry
-  title="ZapTill for shops and minimarts: barcodes, labels, stock and M-Pesa | ZapTill"
-  description="ZapTill for shops and minimarts in Kenya: your departments as big tabs on the till, barcodes for every product and labels on any printer, stock levels and counts, deliveries, transfers between branches, drawers counted by cashier and M-Pesa on every receipt."
+  title="Supermarket and shop POS in Kenya: barcodes, stock | ZapTill"
+  description="ZapTill for shops and supermarkets in Kenya: barcodes and labels, items sold by weight, stock and suppliers, drawers counted by cashier, M-Pesa on every receipt."
   ogImage="/og/retail.png"
-  crumb="Shops and retail"
-  heading="Stock that adds up. A till that never stops."
-  sub="ZapTill puts a barcode on every product, keeps your stock honest from the delivery to the shelf, moves it between branches, and closes every drawer by name, with or without internet."
+  kicker="Shop and supermarket POS in Kenya"
+  guides={['stop-cash-going-missing', 'run-two-branches-without-being-there']}
+  crumb="Shops and supermarkets"
+  heading="Stock that adds up. A point of sale that never stops."
+  sub="ZapTill puts a barcode on every product, weighs what you sell loose, keeps your stock honest from the supplier's delivery to the shelf, moves it between branches, and closes every drawer by name, with or without internet."
   waMessage={WA_MESSAGES.retail}
   problems={problems}
   faq={RETAIL_FAQ}
@@ -65,12 +75,12 @@ const problems = [
             with the name and the price if you want them. When a delivery comes in, print labels for just the items in
             it.
           </p>
-          <p class="r-note">Printing labels from the till comes with ZapTill Online. When a price changes, print the
+          <p class="r-note">Printing labels from the point of sale comes with ZapTill Online. When a price changes, print the
             label again.</p>
         </div>
         <div class="split__visual">
           <LabelSamples />
-          <p class="r-note">Drawn by ZapTill's own label code, for a demo shop.</p>
+          <p class="r-note">Drawn by ZapTill's own label code, for Kijani Basket (a fictional demo minimart).</p>
         </div>
       </div>
     </div>
@@ -78,13 +88,23 @@ const problems = [
 
   <section class="band band--white" aria-labelledby="rdept-h">
     <div class="wrap">
-      <div class="section-head">
-        <h2 id="rdept-h">Built around how a shop sells</h2>
+      <div class="split r-till">
+        <div class="split__copy">
+          <h2 id="rdept-h">Built around how a shop sells</h2>
+          <p>Departments across the top, every product scannable, and the weighed items on a keypad: this is the real
+            ZapTill point of sale at a demo shop.</p>
+        </div>
+        <div class="split__visual">
+          <Monitor label="The ZapTill point of sale at a demo shop">
+            <Shot src="/screens/till-shop.webp" width={1280} height={800}
+              alt="The real ZapTill point of sale at a demo shop: departments as big tabs (All, Groceries, Beverages, Personal care), and a bill of milk, bread, maize flour, eggs and 0.640 kg of beef at KES 650 a kilo, total KES 1,246." />
+          </Monitor>
+        </div>
       </div>
       <div class="grid4">
         <div>
           <h3>Departments across the top</h3>
-          <p>Groceries, Beverages, Toiletries: your departments as big tabs on the till, so the cashier finds an item
+          <p>Groceries, Beverages, Toiletries: your departments as big tabs on the point of sale, so the cashier finds an item
             without scrolling. Or just scan it.</p>
         </div>
         <div>
@@ -99,12 +119,45 @@ const problems = [
         </div>
         <div>
           <h3>Customers on account</h3>
-          <p>A trusted customer gets an account with a credit limit. The cashier puts the bill on it at the till, and
+          <p>A trusted customer gets an account with a credit limit. The cashier puts the bill on it at the point of sale, and
             the dashboard shows who owes you and for how long.</p>
         </div>
+        <div>
+          <h3>Sold by weight</h3>
+          <p>Type the weight on the POS keypad, or scan the label your scale prints. The receipt says "0.640 kg @
+            650/kg" and the stock comes off to the gram.</p>
+        </div>
+        <div>
+          <h3>Departments by the hour</h3>
+          <p>Give the alcohol department your licensed hours. Outside them its items leave the point of sale, and a scan is
+            refused with the reason on screen.</p>
+        </div>
+        <div>
+          <h3>Suppliers and what you owe</h3>
+          <p>Deliveries are received against the supplier's note, the supplier's bill sits next to it, and you see what
+            you still owe each one.</p>
+        </div>
+        <div>
+          <h3>What sells together</h3>
+          <p>With ZapTill Analytics: "Put White bread next to Fresh milk", what to order before Friday, and never a
+            price rise. <a href="/analytics/">See Analytics</a></p>
+        </div>
       </div>
-      <p class="r-note">Stock at the till, checking other branches and labels from the till come with ZapTill Online.{' '}
+      <p class="r-note">Stock at the point of sale, checking other branches and labels from the point of sale come with ZapTill Online.{' '}
         <a href="/pricing/">See the packages</a></p>
+    </div>
+  </section>
+
+  <section class="band band--night" aria-labelledby="rvid-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="rvid-h">A sale at the counter, from scan to receipt</h2>
+        <p>Milk, bread, flour and eggs on the bill, the beef weighed at 0.640 kg, paid by M-Pesa, and the receipt prints
+          with the shop's own logo. The real ZapTill point of sale, branded for Kijani Basket, a made-up minimart.</p>
+      </div>
+      <div class="split__visual">
+        <ProductVideo name="shop" note="Kijani Basket: scan, weigh, M-Pesa, receipt." label="Kijani Basket, a minimart: two fresh milk, white bread, maize flour and a tray of eggs go on the bill, beef is weighed at 0.640 kg on the keypad, the customer pays KES 1,246 by M-Pesa and the receipt prints with the shop's logo." />
+      </div>
     </div>
   </section>
 
@@ -114,7 +167,7 @@ const problems = [
         <h2 id="rclose-h">Every drawer, counted by name</h2>
         <p>
           Each cashier opens with a counted float and closes with a counted drawer. The manager sees each one's expected
-          cash, counted cash and difference, confirms it, and closes the day from the till or the web.
+          cash, counted cash and difference, confirms it, and closes the day from the point of sale or the web.
         </p>
       </div>
       <div class="split__visual">
@@ -132,10 +185,8 @@ const problems = [
         <h2 id="rrec-h">M-Pesa on every receipt</h2>
         <p>
           The receipt carries your Buy Goods or Paybill number in large print, and a split payment shows each part. This
-          is the real receipt ZapTill prints, for a demo shop.
+          is the real receipt ZapTill prints, with the shop's own logo at the top, for Kijani Basket, a made-up minimart.
         </p>
-        <!-- TODO(owner): items sold by weight (scale barcodes) are not described: in-store codes 21-29 are kept free for
-             them (A571), but weighing is not built. Add only once it ships. -->
       </div>
       <div class="split__visual r-rec">
         <Receipt kind="shop" />
@@ -149,7 +200,8 @@ const problems = [
   .r-rec :global(.slip-wrap) { --slip-fs: 0.72rem; }
   .r-note { font-size: var(--fs-sm); color: var(--muted); }
   .grid4 + .r-note { margin-top: var(--s-5); }
-  .grid4 { display: grid; gap: var(--s-5); }
+  .grid4 { display: grid; gap: var(--s-5); margin-top: var(--s-7); }
+  .r-till .split__copy p { color: var(--ink-2); }
   .grid4 h3 { font-size: var(--fs-md); margin-bottom: var(--s-2); }
   .grid4 p { color: var(--ink-2); margin: 0; }
   @media (min-width: 700px) { .grid4 { grid-template-columns: repeat(2, 1fr); } }

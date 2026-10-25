@@ -374,7 +374,7 @@ export function applyPeerRows(
     for (const r of rows) {
       result.rejected.push({
         id: String(r?.id ?? '?'), table,
-        reason: 'peer is presenting this node\'s own device_id — that till was probably '
+        reason: 'peer is presenting this node\'s own device_id — that POS was probably '
               + 'cloned from this one. Re-run setup on it to mint a distinct device id.',
       });
     }
@@ -415,7 +415,7 @@ export function applyPeerRows(
     // it, so it would be re-offered forever, or it would be skipped and lost. It
     // means the peer is on a build older than 45.
     if (!Number.isInteger(seq) || seq <= 0) {
-      refuse(id, 'row has no sequence number — that till is on a build older than schema 45', seq);
+      refuse(id, 'row has no sequence number — that POS is on a build older than schema 45', seq);
       continue;
     }
 

@@ -89,7 +89,7 @@ const get = (p, h = A) => realFetch(`${NODE}${p}`, { headers: h });
 const uuid = (n) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`;
 const randKey = () => crypto.randomBytes(32).toString('hex');
 
-console.log('\n2. Device keys: first use only for tills known before keys\n');
+console.log('\n2. Device keys: first use only for points of sale known before keys\n');
 {
   const legacy = randKey();
   const r1 = await get('/node/report', hdr('dev-LEGACY', legacy));
@@ -142,7 +142,7 @@ console.log('\n1. /node/changes\n');
   ok('…a rename of someone on it still applies', jo.name === 'Joanna');
 }
 
-console.log('\n3. The branch\'s data only to a proven till\n');
+console.log('\n3. The branch\'s data only to a proven POS\n');
 {
   BS.storeBranchStaff('br-1', [{ staff_id: 'u-1', name: 'Cash', role_name: 'Cashier', permissions: { 'orders.create': true }, pin_hash: '$2a$04$abc', override_pin_hash: '$2a$04$override', status: 'active' }]);
   ok('the override PIN hash is no longer kept', db.prepare(`SELECT override_pin_hash_enc FROM branch_staff WHERE staff_id = 'u-1'`).get()?.override_pin_hash_enc === null);
@@ -215,7 +215,7 @@ console.log('\n6. Join requests\n');
   const r1 = await post('/node/join', { device_id: 'dev-A', name: 'Front' }, {});
   const b1 = await r1.json();
   // A521: the button is "Revoke this till" now — the refusal names it (intent kept: refused until the server lets it go).
-  ok('6: a till that already holds a key is refused until the server revokes it', r1.status === 409 && /revoke it at the server/.test(b1.error) && /Revoke this till/.test(b1.error), JSON.stringify(b1));
+  ok('6: a till that already holds a key is refused until the server revokes it', r1.status === 409 && /revoke it at the server/.test(b1.error) && /Revoke this POS/.test(b1.error), JSON.stringify(b1));
   B.forgetTill('dev-A');
   ok('…then it may ask again', (await post('/node/join', { device_id: 'dev-A', name: 'Front' }, {})).status === 202);
   J._resetJoins();

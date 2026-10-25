@@ -1,0 +1,147 @@
+---
+import Industry from '../../layouts/Industry.astro';
+import Laptop from '../../components/frames/Laptop.astro';
+import WhatsAppButton from '../../components/WhatsAppButton.astro';
+import { WA_MESSAGES } from '../../lib/site';
+import { PARKING_FAQ } from '../../lib/faq';
+
+// 2026-10-23. Only what ships (read, never edited): the web POS's "Parking Bays" (CashierScreen.tsx): a bay, the plate,
+// the vehicle type and the rate an hour, "Open Bay"; the charge is each hour started, at least one, at the bay's rate
+// (routes/parking.ts); payment through the ordinary checkout; a session voided when a vehicle left without paying;
+// Parking Settings (bay map, zones and rates); the manager's Parking Overview (bays, free, occupied, occupancy, open
+// sessions); the Watch list's "Vehicles let out with no charge" (A576, premium). NOT on the desktop POS (posMode.ts),
+// so parking needs the internet. NOT claimed: printed entry tickets, plate cameras, barriers, grace periods, lost-ticket
+// fees or day caps (shared/parkingTariff.ts is a design nothing calls yet).
+const problems = [
+  {
+    problem: 'Cars come and go all day, and the attendant\'s book is the only record.',
+    fix: 'Each vehicle gets a session on its bay: the number plate, the kind of vehicle, the time it came in and the rate. When it leaves, the point of sale charges each hour started at that rate and takes cash, M-Pesa or card.',
+  },
+  {
+    problem: 'You can\'t tell from home how full the car park is.',
+    fix: 'The Parking Overview shows how many bays are free and occupied, the occupancy, and every open session with its plate and how long it has been in the bay.',
+  },
+  {
+    problem: 'Some cars leave without paying, and nobody says so.',
+    fix: 'A session closed without a charge stays on record. With ZapTill Analytics, the Watch list warns you when a car park lets out more vehicles with no charge in a day than it usually does.',
+  },
+  {
+    problem: 'The car wash and the monthly permits are on a separate receipt book.',
+    fix: 'Sell them as items on the same system, in your own groups (Parking, Car wash, Permits), with barcodes and labels if you want them.',
+  },
+];
+const bays = [
+  { n: 'A1', plate: 'KCA 123A', t: '1 h 20 min' }, { n: 'A2' }, { n: 'A3', plate: 'KDG 450K', t: '25 min' },
+  { n: 'A4', plate: 'KBZ 908M', t: '3 h 05 min' }, { n: 'B1' }, { n: 'B2', plate: 'KDA 771Q', t: '50 min' },
+  { n: 'B3' }, { n: 'B4' },
+];
+---
+<Industry
+  title="Car park system in Kenya: bays, plates, hourly charges | ZapTill"
+  description="ZapTill for car parks in Kenya: open a bay with the plate and vehicle type, charge each hour started, take cash or M-Pesa, and see occupancy from anywhere."
+  ogImage="/og/parking.png"
+  kicker="Car park system in Kenya"
+  guides={['pos-pricing-setup-vs-monthly', 'run-two-branches-without-being-there']}
+  crumb="Car parks"
+  heading="Every bay, every plate, every hour charged."
+  sub="On ZapTill's web point of sale (POS), in a browser, the attendant opens a bay with the number plate, and the point of sale charges the hours started when the vehicle leaves. You see how full the car park is, and who left without paying, from your phone."
+  waMessage={WA_MESSAGES.parking}
+  problems={problems}
+  faq={PARKING_FAQ}
+  closing="Tell us how your car park works."
+>
+  <Fragment slot="hero">
+    <Laptop label="An illustration of the parking bays on ZapTill's web POS">
+      <div class="bays" aria-hidden="true">
+        <div class="bays__head"><b>Parking Bays</b><span>Select a bay to start a parking session</span></div>
+        <ul class="bays__grid">
+          {bays.map((b) => (
+            <li class:list={['bay', { 'bay--busy': b.plate }]}>
+              <b>{b.n}</b>
+              {b.plate ? <><span class="bay__plate">{b.plate}</span><span class="bay__t">{b.t}</span></> : <span class="bay__free">Free</span>}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Laptop>
+    <p class="bays__cap">An illustration of the web POS's parking bays, with made-up plates.</p>
+  </Fragment>
+
+  <section class="band" aria-labelledby="kflow-h">
+    <div class="wrap">
+      <div class="section-head"><h2 id="kflow-h">How a vehicle goes through</h2></div>
+      <ol class="flow">
+        <li>
+          <h3>In</h3>
+          <p>The attendant taps a free bay and types the plate (KCA 123A), picks car, truck, motorbike or other, checks the
+            rate an hour and taps Open Bay. A bay that is in use can't be opened again.</p>
+        </li>
+        <li>
+          <h3>Out</h3>
+          <p>Tap the bay. The point of sale charges each hour started, at least one, at the rate set when the bay was opened: 1
+            hour 20 minutes at KES 100 an hour is KES 200.</p>
+        </li>
+        <li>
+          <h3>Paid</h3>
+          <p>Cash, M-Pesa or card, through the same checkout as any sale, with your Buy Goods or Paybill number on the
+            receipt.</p>
+        </li>
+        <li>
+          <h3>Seen</h3>
+          <p>The Parking Overview shows free and occupied bays, the occupancy and every open session with its plate and
+            its time in the bay. You lay the bays out in zones in the settings.</p>
+        </li>
+      </ol>
+      <p class="k-honest">
+        <b>Good to know:</b> parking runs on ZapTill's web POS, in a browser on a computer or tablet at the gate, so it
+        needs an internet connection. It does not print an entry ticket, read plates with a camera or work a barrier, and
+        it has no grace period or lost-ticket fee yet. Tell us how your car park works and we'll say plainly what fits.
+      </p>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="kmoney-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="kmoney-h">The money, in the day's figures</h2>
+        <p>
+          Parking takings sit in the day's sales with everything else, by payment method, on one web dashboard for every
+          site you run, with the daily summary by email.
+        </p>
+        <p>The car wash, permits and anything else you sell go in your own groups, on the same system.</p>
+      </div>
+      <div class="split__visual k-talk">
+        <p>Running a car park, or a car park with a shop or a car wash?</p>
+        <WhatsAppButton message={WA_MESSAGES.parking} label="Talk to us about your car park" />
+      </div>
+    </div>
+  </section>
+</Industry>
+
+<style>
+  .bays { container-type: inline-size; height: 100%; background: #0b1416; color: #e3ecec; padding: 4cqw; font-size: 2.2cqw; display: flex; flex-direction: column; gap: 3cqw; }
+  .bays__head { display: flex; flex-direction: column; gap: 0.6cqw; }
+  .bays__head b { font-size: 3.2cqw; }
+  .bays__head span { color: #8da2a2; }
+  .bays__grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2cqw; }
+  .bay { background: #16302b; border: 1px solid #1f5d52; border-radius: 1.2cqw; padding: 2cqw; display: grid; gap: 0.8cqw; min-height: 14cqw; align-content: start; }
+  .bay b { font-size: 3cqw; }
+  .bay--busy { background: #2a2216; border-color: #7a5a1f; }
+  .bay__plate { font-weight: 700; color: #fff; letter-spacing: 0.02em; }
+  .bay__t { color: #fbbf24; }
+  .bay__free { color: #5eead4; }
+  .bays__cap { font-size: var(--fs-sm); color: var(--night-muted); text-align: center; margin-top: var(--s-3); }
+
+  .flow { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-5); counter-reset: flow; }
+  .flow li { counter-increment: flow; padding-left: var(--s-4); border-left: 3px solid var(--teal); }
+  .flow h3 { font-size: var(--fs-md); margin-bottom: var(--s-2); }
+  .flow h3::before { content: counter(flow) '. '; color: var(--teal-strong); }
+  .flow p { color: var(--ink-2); margin: 0; }
+  @media (min-width: 900px) { .flow { grid-template-columns: repeat(4, 1fr); } }
+  .k-honest {
+    margin-top: var(--s-6); max-width: 46rem; padding: var(--s-4) var(--s-5);
+    border: 1px dashed var(--line-strong); border-radius: var(--r-md); color: var(--ink-2);
+  }
+  .k-talk { display: grid; gap: var(--s-4); justify-items: start; padding: var(--s-5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); }
+  .k-talk p { margin: 0; font-weight: 600; }
+</style>

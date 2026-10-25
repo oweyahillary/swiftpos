@@ -157,7 +157,7 @@ try {
   await ok('a sale on account asks the same people-only approver (approverByPin credit) — no business PIN, no "approved by the supervisor PIN"', async () => {
     const src = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/orders.ts'), 'utf8');
     assert.doesNotMatch(src, /verifySupervisorPin|'the supervisor PIN'/);
-    assert.match(src, /const a = await approverByPin\(req, typeof body\?\.credit_authorizer_id === 'string' \? body\.credit_authorizer_id : undefined, pin, 'credit', branchId\);/);
+    assert.match(src, /const a = await approverByPin\(req, typeof body\?\.credit_authorizer_id === 'string' \? body\.credit_authorizer_id : undefined, pin, 'credit', branchId,/);   // A585: + the owner's chosen approvers when on
   });
 
   console.log('\n2. Nobody at the branch may approve\n');

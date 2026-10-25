@@ -18,7 +18,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { can } from '../middleware/rbac';
+import { can, inBranchSet, assertBranchAccess } from '../middleware/rbac';
 import { verifyTechToken as verifyEd25519Token, PUBLIC_KEY_PEM, generateRevealCode } from '../lib/techToken';
 import crypto        from 'crypto';
 import os            from 'os';
@@ -147,6 +147,7 @@ export function branchConfigAllowed(req: any, branchId: string): boolean {
   if (req.isOwner) return true;
   if (!can(req, 'devices.approve')) return false;
   if (req.allBranches) return (req.partnerBranches ?? []).includes(branchId);   // A550: a partner of every branch
+  if (inBranchSet(req)) return assertBranchAccess(req, branchId);   // A582: a partner's set — one of theirs
   return !req.branchId || req.branchId === branchId;
 }
 
@@ -169,7 +170,7 @@ router.get('/branch-config/:branchId', requireAuth, async (req: any, res) => {
   // till's own session for ITS branch (techService.refreshTechConfig sends exactly that, at join and on every sync), the
   // owner, or a person who may approve devices (devices.approve) on a branch they work at.
   if (!branchConfigAllowed(req, branchId)) {
-    res.status(403).json({ error: 'Only the owner, a manager who approves devices, or the branch\'s own till can read this', code: 'FORBIDDEN' });
+    res.status(403).json({ error: 'Only the owner, a manager who approves devices, or the branch\'s own POS can read this', code: 'FORBIDDEN' });
     return;
   }
 
@@ -325,12 +326,12 @@ router.post('/mode-switch/apply', requireTechToken, async (req: any, res) => {
   // branch (approved, not retired) — X-Device-Id, as every till call sends. A copied pair is useless off the premises'
   // tills. (No desktop build calls this route yet; it is bound before one does.)
   const deviceId = String(req.headers['x-device-id'] ?? req.body?.device_id ?? '').trim();
-  if (!deviceId) { res.status(400).json({ error: 'Run the switch from an enrolled till (device id missing)', code: 'DEVICE_REQUIRED' }); return; }
+  if (!deviceId) { res.status(400).json({ error: 'Run the switch from an enrolled POS (device id missing)', code: 'DEVICE_REQUIRED' }); return; }
   const { data: dev, error: devErr } = await supabase.from('user_devices')
     .select('status, retired_at, branch_id').eq('business_id', businessId).eq('device_id', deviceId).maybeSingle();
-  if (devErr) { res.status(503).json({ error: 'Could not check this till right now — try again' }); return; }
+  if (devErr) { res.status(503).json({ error: 'Could not check this POS right now — try again' }); return; }
   if (!dev || (dev as any).status !== 'approved' || (dev as any).retired_at || ((dev as any).branch_id && (dev as any).branch_id !== branchId)) {
-    res.status(403).json({ error: 'This till is not enrolled on the branch being switched', code: 'DEVICE_NOT_ENROLLED' });
+    res.status(403).json({ error: 'This POS is not enrolled on the branch being switched', code: 'DEVICE_NOT_ENROLLED' });
     return;
   }
 

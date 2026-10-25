@@ -31,7 +31,7 @@ export interface PromotionRow {
 
 /** Why a promotion is not charged at the sale, or null when it is (given it is switched on and saved since A518). */
 export function promotionChargeable(p: PromotionRow): string | null {
-  if (p.promo_type === 'quantity_discount') return 'A quantity discount is not charged at the till - set it up as an Offer.';
+  if (p.promo_type === 'quantity_discount') return 'A quantity discount is not charged at the POS - set it up as an Offer.';
   if (p.promo_type === 'happy_hour' && !(Number(p.discount_value) > 0)) return 'Enter the discount.';
   if (p.promo_type !== 'happy_hour' && p.promo_type !== 'bogo') return 'This kind of promotion is not charged.';
   if (p.applies_to === 'product' && !(p.product_ids ?? []).length) return 'Choose the products.';

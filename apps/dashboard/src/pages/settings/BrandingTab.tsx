@@ -166,7 +166,7 @@ export default function BrandingTab() {
         // A327: only when the business has themes — the cloud refuses a theme without the flag (A325).
         ...(themesEnabled ? { theme_id: theme?.id ?? null } : {}),
       });
-      setMsg('Saved. Tills pick up the new branding within about 20 seconds — no restart needed.');
+      setMsg('Saved. Points of sale pick up the new branding within about 20 seconds — no restart needed.');
       window.dispatchEvent(new Event(BRANDING_SAVED_EVENT)); // A328: the dashboard re-reads its own theme now
     } catch (err: any) { setMsg(err?.message ?? 'Could not save branding.'); }
     finally { setBusy(false); }
@@ -188,7 +188,7 @@ export default function BrandingTab() {
   return (
     <div className="p-4 sm:p-6 max-w-3xl">
       <h2 className="text-lg font-semibold mb-1">Branding</h2>
-      <p className="text-sm text-gray-500 mb-6">Your logo and accent colour on the till lock screen. Changes reach tills automatically.</p>
+      <p className="text-sm text-gray-500 mb-6">Your logo and accent colour on the POS lock screen. Changes reach points of sale automatically.</p>
 
       <div className="grid md:grid-cols-2 gap-8">
         {/* Controls */}
@@ -240,7 +240,7 @@ export default function BrandingTab() {
           {themesEnabled && (
             <div className="mt-6">
               <label className="block text-sm font-medium text-gray-700 mb-1">App theme</label>
-              <p className="text-xs text-gray-500 mb-2">The colour of buttons and selections on your tills. Paid, warnings, voids and prices keep their own colours.</p>
+              <p className="text-xs text-gray-500 mb-2">The colour of buttons and selections on your points of sale. Paid, warnings, voids and prices keep their own colours.</p>
               <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="App theme">
                 {THEMES.map((t) => {
                   const on = theme?.id === t.id;
@@ -277,7 +277,7 @@ export default function BrandingTab() {
           <p className="text-xs text-gray-500 mt-2">This is how a till’s lock screen will look.</p>
 
           {theme && (<>
-            <label className="block text-sm font-medium text-gray-700 mb-2 mt-6">Till preview</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 mt-6">POS preview</label>
             <TillPreview theme={theme} brandHex={accentHex.trim() || null} />
             <p className="text-xs text-gray-500 mt-2">Buttons and selections take the theme; your brand colour marks the top strip and the sidebar. Paid and prices stay green.</p>
           </>)}
@@ -387,7 +387,7 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
         theme_id: themeId, accent_hex: accent.trim() ? accent.trim() : null, receipt_footer: footer.trim() ? footer : null,
       });
       onSaved({ branch_id: row.branch_id, theme_id: r?.theme_id ?? null, accent_hex: r?.accent_hex ?? null, receipt_footer: r?.receipt_footer ?? null });
-      setMsg('Saved. This branch’s tills pick it up within about 30 minutes, or when they are idle.');
+      setMsg('Saved. This branch’s points of sale pick it up within about 30 minutes, or when they are idle.');
     } catch (e: any) { setMsg(e?.message ?? 'Could not save.'); }
     finally { setBusy(false); }
   };
@@ -469,7 +469,7 @@ function BranchBrandingEditor({ row, business, limits, client, open, onToggle, o
             {msg && <p className="text-xs text-gray-500 mt-2">{msg}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{row.name} till preview</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{row.name} POS preview</label>
             <TillPreview theme={resolveTheme(look.themeId)} brandHex={look.accentHex} />
             <p className="text-xs text-gray-500 mt-2">{look.fromBranch.theme || look.fromBranch.accent ? 'This branch’s own look.' : 'The business’s look (no override).'}</p>
             {look.receiptFooter && (<>

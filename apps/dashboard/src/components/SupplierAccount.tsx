@@ -255,7 +255,7 @@ export default function SupplierAccount({ supplierId, currency, business, branch
           <Pager paged={paged} noun="rows" onPage={setPage} onSize={n => { setPageSize(n); setPage(1); }} />
         )}
       </div>
-      <p className="text-xs text-gray-500">A payment recorded here is not an expense and does not come out of a till drawer. Pay a supplier from a drawer as a pay-out, or record it here — not both.</p>
+      <p className="text-xs text-gray-500">A payment recorded here is not an expense and does not come out of a POS drawer. Pay a supplier from a drawer as a pay-out, or record it here — not both.</p>
 
       {form?.kind === 'bill' && <BillForm client={client} supplierId={supplierId} grn={form.grn} currency={currency} onClose={() => setForm(null)} onDone={() => { setForm(null); void load(); }} />}
       {form?.kind === 'pay' && <PayForm client={client} supplierId={supplierId} bills={acc.bills.filter((b) => b.due > 0)} bill={form.bill} currency={currency}

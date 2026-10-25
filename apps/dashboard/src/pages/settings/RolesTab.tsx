@@ -17,6 +17,7 @@ import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import PermissionPicker, { usePermissionCatalogue } from '../../components/PermissionPicker';
 import { useBusiness } from '../../context/BusinessContext';   // A573
+import { posWording } from '../../lib/businessTerms';           // A586: a built-in role's stored words say "till"
 
 export interface RoleRow {
   id: string;
@@ -117,7 +118,7 @@ export default function RolesTab({ onRolesChange }: Props) {
       const fresh = await fetchRoles();
       const r = fresh.find((x) => x.id === editingRole.id);
       if (r) setDraft(roleKeys(r));
-      setSaveMsg({ ok: true, text: 'Saved — it applies the next time each person signs in or their till refreshes.' });
+      setSaveMsg({ ok: true, text: 'Saved — it applies the next time each person signs in or their POS refreshes.' });
     } catch (e: any) {
       setSaveMsg({ ok: false, text: e?.message ?? 'Could not save' });
     } finally { setSaving(false); }
@@ -182,7 +183,7 @@ export default function RolesTab({ onRolesChange }: Props) {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div className="min-w-0">
           <h2 className="text-white font-semibold text-lg">Roles and permissions</h2>
-          <p className="text-gray-500 text-sm">What each role may see and do — every screen, report and action, on the web and the tills. A person can also be given or refused single permissions on their staff card.</p>
+          <p className="text-gray-500 text-sm">What each role may see and do — every screen, report and action, on the web and the points of sale. A person can also be given or refused single permissions on their staff card.</p>
         </div>
         <button onClick={() => leaveEditor(() => { setEditingId(null); setShowNew(true); setError(''); })} data-testid="new-role"
           className="px-4 py-2 bg-swift hover:bg-swift-light text-gray-950 text-sm font-semibold rounded-xl transition-colors">
@@ -244,7 +245,7 @@ export default function RolesTab({ onRolesChange }: Props) {
                       <span className="text-xs text-gray-500">{people(r.members ?? 0)}</span>
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {owner ? 'Everything — the owner\'s role' : `${count} of ${total} permissions`}{r.description ? ` · ${r.description}` : ''}
+                      {owner ? 'Everything — the owner\'s role' : `${count} of ${total} permissions`}{r.description ? ` · ${posWording(r.description)}` : ''}
                     </p>
                   </div>
                 )}

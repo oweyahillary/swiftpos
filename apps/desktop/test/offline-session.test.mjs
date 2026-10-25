@@ -244,7 +244,7 @@ ok('a timer retries the upgrade every 30 s while a PIN is held, and never keeps 
   /setInterval\(\(\) => \{ if \(heldOfflinePin\(\)\) void tryUpgradeOfflineSession\(\); \}, 30_000\)/.test(ipc) && /offlineUpgradeTimer as any\)\.unref/.test(ipc));
 const menuPage = src('renderer/pages/MenuWorkbench.tsx');
 ok('Menu page: falls back ONLY when the till says it is offline, and says why', /if \(cached\?\.offline\) \{/.test(menuPage)
-  && /\{offline\.message\}/.test(menuPage) && /Showing the menu saved on this till — read-only/.test(menuPage));
+  && /\{offline\.message\}/.test(menuPage) && /Showing the menu saved on this POS — read-only/.test(menuPage));
 ok('Menu page: offline, prices cannot be edited, import is hidden, the detail is the read-only one',
   // A490: the same read-only view also without the key (menu.prices for the price, menu.edit for the detail and import).
   /disabled=\{savingId === p\.id \|\| !!offline \|\| !canPrices\}/.test(menuPage) && /onOpenImport && !offline && canEdit &&/.test(menuPage) && /\) : offline \|\| !canEdit \? \(\s*<SavedItemDetail/.test(menuPage));

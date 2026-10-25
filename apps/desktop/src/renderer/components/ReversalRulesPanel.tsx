@@ -85,7 +85,7 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
         <h3 className="text-white text-sm font-semibold">Voids &amp; refunds</h3>
         <p className="text-xs text-gray-400 mt-1">
           Managers and the owner void and refund — never cashiers. {isOwner
-            ? 'These rules are yours; they apply on every till and on the web.'
+            ? 'These rules are yours; they apply on every POS and on the web.'
             : 'Only the owner can change these rules.'}
         </p>
       </div>
@@ -108,9 +108,9 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
       </div>
 
       <div className="border border-gray-800 rounded-xl p-4">
-        <p className="text-white text-sm font-medium">Refunds while the till is offline</p>
+        <p className="text-white text-sm font-medium">Refunds while the POS is offline</p>
         <p className="text-xs text-gray-400 mt-1">
-          A refund hands back each payment in the method it came in. Offline, a till refunds only a sale paid entirely in
+          A refund hands back each payment in the method it came in. Offline, a POS refunds only a sale paid entirely in
           the methods ticked here; it sends the refund to the cloud when it reconnects.
         </p>
         <div className="grid gap-2 mt-3">
@@ -126,8 +126,8 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
 
       <div className="flex items-start justify-between gap-4 border border-gray-800 rounded-xl p-4">
         <div className="flex-1">
-          <p className="text-white text-sm font-medium">Offline: also web sales on this till's drawer</p>
-          <p className="text-xs text-gray-400 mt-1">Offline, a till voids and refunds only the sales it rang itself. On: also the web POS sales on its drawer.</p>
+          <p className="text-white text-sm font-medium">Offline: also web sales on this POS's drawer</p>
+          <p className="text-xs text-gray-400 mt-1">Offline, a desktop POS voids and refunds only the sales it rang itself. On: also the web POS sales on its drawer.</p>
         </div>
         <button
           onClick={() => void save('offline_reverse_web_sales', !web, { ...rules, offlineReverseWebSales: !web })}

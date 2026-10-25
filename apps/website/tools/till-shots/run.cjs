@@ -13,7 +13,9 @@ const exe = process.env.CHROME || path.join(process.env.LOCALAPPDATA, 'ms-playwr
   if (process.env.AT) await p.clock.setFixedTime(new Date(process.env.AT));
   await p.addInitScript(`window.__SCENARIO = ${scenario || '{}'};`);
   await p.addInitScript({ path: path.join(__dirname, 'mock.js') });
-  if (fs.existsSync(path.join(__dirname, 'extra.js'))) await p.addInitScript({ path: path.join(__dirname, 'extra.js') });
+  // EXTRA=shop.js or petrol.js: a business of another type (it sets window.__EXTRA, which mock.js answers first).
+  const extra = process.env.EXTRA || 'extra.js';
+  if (fs.existsSync(path.join(__dirname, extra))) await p.addInitScript({ path: path.join(__dirname, extra) });
   await p.addInitScript({ path: path.join(__dirname, 'preload.bundle.js') });
   await p.goto('http://localhost:5180/', { waitUntil: 'networkidle' });
   await p.waitForTimeout(800);

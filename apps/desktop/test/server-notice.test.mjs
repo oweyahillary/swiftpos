@@ -55,13 +55,13 @@ ok('a notice that fails never refuses the till', () => {
   J.onJoinAsked(null);
 });
 
-console.log('\nThe till says: go to the server and press Allow (A436)\n');
+console.log('\nThe POS says: go to the server and press Allow (A436)\n');
 const srv = { ip: '192.168.1.20', server: 'Back office', business: 'Albaik' };
 ok('where to go (the server\'s name and address), what they will see, what to press', () => {
   const n = N.joinWaitNotice('FRONT-PC', srv);
   assert.match(n.title, /branch server and press Allow/);
   assert.ok(n.steps[0].includes('"Back office" (192.168.1.20)'), n.steps[0]);
-  assert.ok(n.steps[1].includes('A till wants to join this branch server') && n.steps[1].includes('"FRONT-PC"'), n.steps[1]);
+  assert.ok(n.steps[1].includes('A POS wants to join this branch server') && n.steps[1].includes('"FRONT-PC"'), n.steps[1]);
   assert.match(n.steps[2], /Press Allow/);
 });
 ok('a server with no name: its address', () => {

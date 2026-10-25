@@ -218,7 +218,7 @@ export async function loadDevices(businessId: string): Promise<DeviceRow[]> {
 }
 
 export const deviceName = (d: { device_label?: string | null; terminal_code?: string | null }): string =>
-  d.terminal_code || d.device_label || 'Till';
+  d.terminal_code || d.device_label || 'POS';
 
 // ── the daily email's new sections ───────────────────────────────────────────
 
@@ -244,7 +244,7 @@ export async function dailyExtrasHtml(i: DailyExtrasInput): Promise<string> {
   try { branches = await branchNames(businessId); } catch (e: any) { console.error('[dailySummary] branch names:', e?.message); }
   let html = '';
 
-  if (s.open_tills) html += await section('open tills', async () => {
+  if (s.open_tills) html += await section('open points of sale', async () => {
     const rows = selectOpenTills(await loadOpenShifts(businessId), i.reportDate, i.cutoff, 'report');
     return openTillsSection(await openTillLines(businessId, rows, branches), currency);
   });
@@ -285,7 +285,7 @@ export async function dailyExtrasHtml(i: DailyExtrasInput): Promise<string> {
     }, currency);
   });
 
-  if (s.tills_not_syncing) html += await section('tills not syncing', async () => {
+  if (s.tills_not_syncing) html += await section('points of sale not syncing', async () => {
     const lines: SyncLine[] = [];
     for (const d of await loadDevices(businessId)) {
       const hours = d.last_sync_at ? (i.now.getTime() - Date.parse(d.last_sync_at)) / 3_600_000 : null;

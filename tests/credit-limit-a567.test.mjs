@@ -15,6 +15,12 @@
  * MUTATIONS TO CONFIRM BITE (each made, seen to fail, put back):
  *   - PATCH /customer/:id/limit without requirePermission('customers.credit')   → "a cashier is refused" fails
  *   - GET /candidates without requirePermission('customers.credit')            → "a cashier is refused the picker" fails
+ *
+ * A585 (owner, 2026-10-23: "credit limit — the owner for now"): the limit and the picker are now THE OWNER's alone
+ * (lib/creditApprovers.ts limitSetterGate) — then, the same day, the owner OR the built-in Manager role ("add the credit rights to
+ * the manager"). This fixture's "Manager" is a custom role (is_default false), so it is refused; the built-in Manager is
+ * tested in tests/credit-owner-a585.test.mjs. The grant below is the owner's. The full
+ * owner-only suite is tests/credit-owner-a585.test.mjs.
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -52,7 +58,7 @@ const reset = () => {
     businesses: [{ id: BZ, owner_id: OWNER, name: 'Pollo' }],
     branches: [{ id: BR, business_id: BZ, name: 'Westlands', status: 'active' }],
     permissions: Object.entries(PID).map(([key, pid]) => ({ id: pid, key, label: key, module: 'x' })),
-    roles: [{ id: R_MGR, business_id: BZ, name: 'Manager' }, { id: R_CASH, business_id: BZ, name: 'Cashier' }],
+    roles: [{ id: R_MGR, business_id: BZ, name: 'Manager', is_default: false }, { id: R_CASH, business_id: BZ, name: 'Cashier' }],
     role_permissions: [grant(R_MGR, 'customers.view'), grant(R_MGR, 'customers.credit'), grant(R_CASH, 'orders.create'), grant(R_CASH, 'customers.view')],
     users: [
       { id: OWNER, business_id: BZ, name: 'Olga', role_id: null, status: 'active', permissions_version: 1 },
@@ -156,13 +162,13 @@ try {
     assert.ok(!(await atTill()).includes(NEWBIE));
   });
   await ok('"+ Give credit" finds them by name or by phone (this business only, limit shown)', async () => {
-    const byName = await call('GET', L.candidatesPath('wanjiru'), T.mgr);
+    const byName = await call('GET', L.candidatesPath('wanjiru'), T.owner);   // A585: the owner's picker
     assert.equal(byName.status, 200, JSON.stringify(byName.body));
     assert.deepEqual(byName.body.map((c) => c.id), [NEWBIE], 'another business\'s Wanjiru is not offered');
     assert.equal(byName.body[0].credit_limit, 0);
-    const byPhone = await call('GET', L.candidatesPath('0722 555 010'), T.mgr);
+    const byPhone = await call('GET', L.candidatesPath('0722 555 010'), T.owner);
     assert.deepEqual(byPhone.body.map((c) => c.id), [NEWBIE]);
-    const sneaky = await call('GET', L.candidatesPath('x,credit_limit.gt.0'), T.mgr);
+    const sneaky = await call('GET', L.candidatesPath('x,credit_limit.gt.0'), T.owner);
     assert.equal(sneaky.status, 200); assert.ok(!sneaky.body.some((c) => c.id === CUST), 'a typed comma cannot widen the filter');
   });
   await ok('a cashier (customers.view, not customers.credit) is refused the picker', async () => {
@@ -179,17 +185,25 @@ try {
     const r = await quiet(() => call('PATCH', req.path, T.till, req.body));
     assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(newbie().credit_limit, 0);
   });
-  await ok('a manager with customers.credit gives the first limit: saved, and who approved it and when is recorded', async () => {
+  await ok('A585: a custom role named Manager (not the built-in one) holding customers.credit is refused the picker and the limit', async () => {
+    const pick = await call('GET', L.candidatesPath('wanjiru'), T.mgr);
+    assert.equal(pick.status, 403); assert.equal(pick.body.code, 'OWNER_SETS_LIMITS');
+    const req = L.limitRequest(NEWBIE, 5000);
+    const r = await call('PATCH', req.path, T.mgr, req.body);
+    assert.equal(r.status, 403); assert.equal(r.body.error, 'Only the owner or a manager sets credit limits.');
+    assert.equal(newbie().credit_limit, 0); assert.equal(db.audit_log.length, 0);
+  });
+  await ok('the owner gives the first limit: saved, and who approved it and when is recorded', async () => {
     const typed = L.limitFromInput('5,000');
     assert.equal(typed.ok, true);
     const req = L.limitRequest(NEWBIE, typed.value);
-    const r = await call('PATCH', req.path, T.mgr, req.body);
+    const r = await call('PATCH', req.path, T.owner, req.body);
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.equal(newbie().credit_limit, 5000);
     const a = db.audit_log.find((x) => x.record_id === NEWBIE);
     assert.ok(a, 'an audit row');
     assert.deepEqual([a.action, a.user_id, a.user_name, a.table_name, a.before_data.credit_limit, a.after_data.credit_limit],
-      ['customer.credit_limit.granted', MGR, 'Max', 'customers', 0, 5000]);
+      ['customer.credit_limit.granted', OWNER, 'Olga', 'customers', 0, 5000]);
     assert.ok(!Number.isNaN(Date.parse(a.created_at)), 'when');
   });
   await ok('…they now appear in Credit Accounts and in the till\'s credit-customer list at its next pull', async () => {
@@ -204,15 +218,15 @@ try {
     assert.equal((await call('PATCH', req.path, T.owner, req.body)).status, 200);
     assert.equal((await call('PATCH', req.path, T.owner, req.body)).status, 200);
     const rows = db.audit_log.filter((x) => x.record_id === NEWBIE);
-    assert.equal(rows.length, 2);
+    assert.equal(rows.length, 2);   // the grant above, and this change
     assert.deepEqual([rows[1].action, rows[1].user_id, rows[1].before_data.credit_limit, rows[1].after_data.credit_limit],
       ['customer.credit_limit.changed', OWNER, 5000, 8000]);
   });
   await ok('a negative limit → 400; another business\'s customer or an unknown one → 404', async () => {
-    assert.equal((await call('PATCH', L.limitRequest(NEWBIE, -1).path, T.mgr, { credit_limit: -1 })).status, 400);
-    assert.equal((await call('PATCH', L.limitRequest(OTHER, 100).path, T.mgr, { credit_limit: 100 })).status, 404);
+    assert.equal((await call('PATCH', L.limitRequest(NEWBIE, -1).path, T.owner, { credit_limit: -1 })).status, 400);
+    assert.equal((await call('PATCH', L.limitRequest(OTHER, 100).path, T.owner, { credit_limit: 100 })).status, 404);
     assert.equal(db.customers.find((c) => c.id === OTHER).credit_limit, 0);
-    assert.equal((await call('PATCH', L.limitRequest(id(), 100).path, T.mgr, { credit_limit: 100 })).status, 404);
+    assert.equal((await call('PATCH', L.limitRequest(id(), 100).path, T.owner, { credit_limit: 100 })).status, 404);
   });
 
   console.log('\nThe dashboard\'s rules (lib/creditLimit.ts) and screens\n');
@@ -223,8 +237,9 @@ try {
   });
   await ok('the requests are the cloud\'s routes; the key is the one the route requires', () => {
     assert.equal(L.CREDIT_LIMIT_KEY, 'customers.credit');
-    assert.match(read('apps/server/src/routes/credit.ts'), /router\.patch\('\/customer\/:id\/limit', requirePermission\('customers\.credit'\)/);
-    assert.match(read('apps/server/src/routes/credit.ts'), /router\.get\('\/candidates', requirePermission\('customers\.credit'\)/);
+    // A585: the owner's or the built-in Manager role's (no permission key opens them).
+    assert.match(read('apps/server/src/routes/credit.ts'), /router\.patch\('\/customer\/:id\/limit', limitSetterGate\(\)/);
+    assert.match(read('apps/server/src/routes/credit.ts'), /router\.get\('\/candidates', limitSetterGate\(\)/);
     assert.deepEqual(L.limitRequest('c-1', 10), { path: '/api/credit/customer/c-1/limit', body: { credit_limit: 10 } });
     assert.equal(L.candidatesPath('  '), '/api/credit/candidates');
     assert.equal(L.candidatesPath('07 22'), '/api/credit/candidates?search=07%2022');
@@ -240,21 +255,23 @@ try {
     assert.match(L.candidateNote({ credit_limit: 500, credit_balance: 0 }, fmt), /Limit KES 500 already/);
     assert.match(L.candidateNote({ credit_limit: 0, credit_balance: 50 }, fmt), /owes KES 50/);
   });
-  await ok('the screens: "+ Give credit" on Credit Accounts, a Credit limit on the profile and on New Customer — all behind customers.credit', () => {
+  await ok('the screens: "+ Give credit" on Credit Accounts, a Credit limit on the profile and on New Customer — A585: the owner only', () => {
     const page = read('apps/dashboard/src/pages/customers/CreditAccountsPage.tsx');
-    assert.match(page, /\{mayCredit && \(\s*<button onClick=\{\(\) => \{ setGiving\(true\); setMsg\(null\); \}\} data-testid="give-credit"/);
+    assert.match(page, /const \{ setsLimits, line: limitLine \} = useSetsLimits\(\);/);
+    assert.match(page, /\{setsLimits && \(\s*<button onClick=\{\(\) => \{ setGiving\(true\); setMsg\(null\); \}\} data-testid="give-credit"/);
     assert.match(page, /<GiveCreditPicker currency=\{currency\}/);
     assert.match(page, /void loadList\(\);/);
     const picker = read('apps/dashboard/src/components/GiveCreditPicker.tsx');
     assert.match(picker, /api\.get<Candidate\[\]>\(candidatesPath\(search\)\)/);
     assert.match(picker, /const req = limitRequest\(picked\.id, r\.value\);\s*await api\.patch\(req\.path, req\.body\);/);
     const editor = read('apps/dashboard/src/components/CreditLimitEditor.tsx');
-    assert.match(editor, /const mayCredit = usePermissions\(\)\.can\(CREDIT_LIMIT_KEY\);/);
+    assert.match(editor, /const \{ setsLimits: mayCredit, line \} = useSetsLimits\(\);/);   // A587: the owner, or a partner at one of their branches
     assert.match(editor, /\{mayCredit \? \(/);
     const crm = read('apps/dashboard/src/pages/crm/CustomersPage.tsx');
     assert.match(crm, /<CreditLimitEditor customerId=\{customer\.id\} currency=\{currency\} \/>/);
     assert.match(crm, /\{mayCredit && \(\s*<div>\s*<label className="block text-xs text-gray-500 mb-1">Credit limit<\/label>/);
     assert.match(crm, /const limit = limitOnCreate\(createLimit, mayCredit\);/);
+    assert.match(crm, /const mayCredit = useSetsLimits\(\)\.setsLimits;/);   // A587
   });
 } finally {
   server.close();

@@ -13,15 +13,17 @@
  *   Once per client, ever: the 'cloud_trial' row is never deleted, and (business_id, key) is unique, so a second insert
  *   fails even when two licences are activated at the same moment.
  *
- * THE END (lib/webAccess.ts reads it)
- *   No 21-day grace for a trial: the day after it ends the portal is "reports only" for 7 days (sign-in works, the web
- *   POS is off — the same as a paid client's reports-only week), then sign-in is refused with "Your cloud trial has
- *   ended" (CLOUD_TRIAL_ENDED). Tills are never affected — they sell on the desktop licence, not on web access.
+ * THE END (lib/cloudPlan.ts cloudStanding; lib/webAccess.ts reads it)
+ *   A587 (owner, 2026-10-24: "Yes they get an invoice then as usual"): the trial's end is its DUE day — the billing job
+ *   raises and emails an invoice like a paid client's — then the same 7 unpaid days (everything works), then locked:
+ *   sign-in refused with "Your cloud trial has ended" (CLOUD_TRIAL_ENDED, the code kept), sync refused, no POS joins.
+ *   A569's week of reports only is gone. The owner keeps the quiet notice in the trial's last 7 days (before its end).
+ *   Points of sale keep selling.
  *
  * CONVERT TO PAID
- *   The admin's "Enable web access" (PATCH /api/admin/clients/:id/features/web_hosting { enabled: true }, then the portal
- *   raises the KES 10,000 invoice as before) on a client in or after its trial marks the trial converted and sets the
- *   web-access expiry to one year from that day. "Disable web access" during a trial ends it at once (no web access).
+ *   A581/A584: Record payment on the Cloud plan (routes/cloudPlanAdmin.ts) marks the trial converted and runs a paid period
+ *   from that day; a complimentary paid-until does too. The old "Enable web access" (a year, KES 10,000) is retired —
+ *   the cloud refuses a bare enable (WEB_ACCESS_BY_PLAN). "Disable web access" during a trial ends it at once.
  *
  * No migration: business_settings already exists, is unique per (business_id, key), and the key is refused by
  * POST /api/business/settings (READ_ONLY_KEY), so an owner cannot write or reset it.
@@ -30,7 +32,7 @@ import { supabase } from './supabase';
 
 export const CLOUD_TRIAL_KEY = 'cloud_trial';
 export const TRIAL_DAYS = 30;
-/** After the trial ends: reports only for this many days, then sign-in is refused. No grace for a trial. */
+/** A569: reports only for this many days after the trial (A587: no longer given — a trial ends like a paid period). Kept for older callers. */
 export const TRIAL_REPORTS_ONLY_DAYS = 7;
 /** The owner's dashboard shows its notice in the trial's last this-many days. */
 export const TRIAL_NOTICE_DAYS = 7;
@@ -47,7 +49,8 @@ export interface CloudTrial {
   converted_at: string | null;
 }
 
-/** 'active' — within the 30 days; 'reports_only' — the 7 days after; 'ended' — past those; 'converted' — paid. */
+/** 'active' — within the 30 days; 'ended' — after it (A587: invoiced, 7 days, then locked); 'converted' — paid.
+ *  'reports_only' is kept in the type for older readers and is no longer given. */
 export type TrialPhase = 'active' | 'reports_only' | 'ended' | 'converted';
 
 const isoOrNull = (v: unknown): string | null => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v : null);
@@ -72,8 +75,7 @@ export function trialPhase(trial: CloudTrial, now: number = Date.now()): TrialPh
   if (trial.converted_at) return 'converted';
   const end = Date.parse(trial.ends_at);
   if (now < end) return 'active';
-  if (now < end + TRIAL_REPORTS_ONLY_DAYS * DAY_MS) return 'reports_only';
-  return 'ended';
+  return 'ended';   // A587: no week of reports only — the invoice, the 7 days and the lock are the billing rules'
 }
 
 export interface TrialFacts {

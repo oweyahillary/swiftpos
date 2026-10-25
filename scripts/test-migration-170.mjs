@@ -5,7 +5,7 @@
  * Owner, 2026-10-23: "add payment plan option such that i can select month on month and always remind me on email about
  * expiry and also the client". Paid-until stays businesses.web_access_expires_at.
  *
- *   - 170 runs twice, recorded once; the columns match scripts/schema-index.json; the updated_at trigger on cloud_plans.
+ *   - 170 runs twice, recorded once; every column it creates is in scripts/schema-index.json (later migrations may add more); the updated_at trigger on cloud_plans.
  *   - one plan per business; only the known periods; an amount not below 0.
  *   - a payment: amount above 0; the known methods; an M-Pesa payment needs its code; an M-Pesa code once only (any
  *     client, any case); a bank reference may repeat; paid-until must move forward.
@@ -89,7 +89,9 @@ await ok('the columns match scripts/schema-index.json', async () => {
   for (const t of ['cloud_plans', 'cloud_payments', 'cloud_plan_reminders']) {
     assert.ok(idx[t], `${t} missing from schema-index.json`);
     const cols = (await q(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`, [t])).map((r) => r.column_name).sort();
-    assert.deepEqual(Object.keys(idx[t]).sort(), cols, t);
+    // Every column 170 creates is in the index; a later migration may add more (173: cloud_plans.billing_from).
+    const missing = cols.filter((c) => !Object.keys(idx[t]).includes(c));
+    assert.deepEqual(missing, [], `${t}: ${missing.join(', ')} not in schema-index.json`);
   }
 });
 const plan = (o = {}) => put('cloud_plans', { business_id: A, period: 'monthly', amount: 3000, ...o });

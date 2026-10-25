@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import type { ReportOrderRow, DbShift, DbFloatTransaction } from '../lib/dbTypes';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { branchScope, requirePermission, requireAnyPermission, can } from '../middleware/rbac';
+import { requirePermission, requireAnyPermission, can, branchFilter, byBranch, rowInBranches, type BranchFilter } from '../middleware/rbac';
 import { withoutCosts } from '../lib/costAccess';   // A490
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
@@ -84,7 +84,7 @@ void BIZ_TZ_OFFSET;
 router.get('/sales', requireAnyPermission('reports.sales', 'reports.overview'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('orders')
@@ -101,7 +101,7 @@ router.get('/sales', requireAnyPermission('reports.sales', 'reports.overview'), 
     .lte('created_at', end)
     .order('created_at', { ascending: true });
 
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
 
   const { data: orders, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
@@ -178,7 +178,7 @@ router.get('/sales', requireAnyPermission('reports.sales', 'reports.overview'), 
 router.get('/products', requireAnyPermission('reports.items', 'reports.overview'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let ordersQuery = supabase
     .from('orders')
@@ -188,7 +188,7 @@ router.get('/products', requireAnyPermission('reports.items', 'reports.overview'
     .gte('created_at', start)
     .lte('created_at', end);
 
-  if (scopedBranch) ordersQuery = ordersQuery.eq('branch_id', scopedBranch);
+  ordersQuery = byBranch(ordersQuery, bf);
   const { data: orders } = await ordersQuery;
   const orderIds = (orders ?? []).map(o => o.id);
 
@@ -221,7 +221,7 @@ router.get('/products', requireAnyPermission('reports.items', 'reports.overview'
 router.get('/staff', requirePermission('reports.staff'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   // A439: paged by id — one read stops at 1,000 rows, and a busy month has more; with each sale's payments, for the
   // money by payment method.
@@ -234,7 +234,7 @@ router.get('/staff', requirePermission('reports.staff'), async (req, res) => {
       .eq('status', 'completed')
       .gte('created_at', start)
       .lte('created_at', end);
-    if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+    query = byBranch(query, bf);
     const { data: page, error } = await query.order('id', { ascending: true }).range(at, at + 999);
     if (error) { res.status(500).json({ error: error.message }); return; }
     orders.push(...(page ?? []));
@@ -253,7 +253,7 @@ router.get('/staff', requirePermission('reports.staff'), async (req, res) => {
     .eq('business_id', req.businessId)
     .lte('opened_at', end)
     .or(`status.eq.open,closed_at.gte.${start}`);
-  if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
+  shiftsQ = byBranch(shiftsQ, bf);
   const { data: shiftRows } = await shiftsQ;
   const shiftById: Record<string, { cashier_id: string | null }> = {};
   (shiftRows ?? []).forEach((sh: any) => { shiftById[sh.id] = sh; });
@@ -319,7 +319,7 @@ router.get('/staff', requirePermission('reports.staff'), async (req, res) => {
 router.get('/inventory', requirePermission('reports.inventory'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   // ── 1. Units sold: from order_items in completed orders ──
   let ordersQuery = supabase
@@ -330,7 +330,7 @@ router.get('/inventory', requirePermission('reports.inventory'), async (req, res
     .gte('created_at', start)
     .lte('created_at', end);
 
-  if (scopedBranch) ordersQuery = ordersQuery.eq('branch_id', scopedBranch);
+  ordersQuery = byBranch(ordersQuery, bf);
   const { data: completedOrders } = await ordersQuery;
   const orderIds = (completedOrders ?? []).map(o => o.id);
 
@@ -360,7 +360,7 @@ router.get('/inventory', requirePermission('reports.inventory'), async (req, res
     .lte('created_at', end)
     .order('created_at', { ascending: false });
 
-  if (scopedBranch) adjQuery = adjQuery.eq('branch_id', scopedBranch);
+  adjQuery = byBranch(adjQuery, bf);
   const { data: adjustments, error: adjErr } = await adjQuery;
   if (adjErr) { res.status(500).json({ error: adjErr.message }); return; }
 
@@ -408,7 +408,7 @@ router.get('/eod', async (req, res) => {
   const seesProfit = can(req, 'reports.costs');
   const seesExpenses = seesProfit || can(req, 'expenses.view');
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('orders')
@@ -425,7 +425,7 @@ router.get('/eod', async (req, res) => {
     .lte('created_at', end)
     .order('created_at', { ascending: true });
 
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
   if (cashier_id) query = query.eq('cashier_id', cashier_id as string);
   if (shiftId) query = query.eq('shift_id', shiftId);
 
@@ -494,7 +494,7 @@ router.get('/eod', async (req, res) => {
     .gte('expense_date', start.slice(0, 10))
     .lte('expense_date', end.slice(0, 10));
 
-  if (scopedBranch) expensesQuery = expensesQuery.eq('branch_id', scopedBranch);
+  expensesQuery = byBranch(expensesQuery, bf);
 
   const { data: expenseRows } = await expensesQuery;
   const byCat: Record<string, number> = {};
@@ -518,7 +518,7 @@ router.get('/eod', async (req, res) => {
     .lte('opened_at', end)
     .or(`status.eq.open,opened_at.gte.${start}`)   // A258: include active open shifts
     .order('opened_at', { ascending: false });
-  if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
+  shiftsQ = byBranch(shiftsQ, bf);
   if (shiftId) shiftsQ = shiftsQ.eq('id', shiftId);
   const { data: allShiftRows } = await shiftsQ;
   // A490: someone seeing only their own Z-report sees only the drawers they opened.
@@ -579,7 +579,7 @@ router.get('/eod', async (req, res) => {
     .select('id, order_number, product_name, quantity, amount, reason, note, cooked, cashier_id, cashier_name, approved_by_name, created_at')
     .eq('business_id', req.businessId).gte('created_at', start).lte('created_at', end)
     .order('created_at', { ascending: true }).limit(500);
-  if (scopedBranch) kvQ = kvQ.eq('branch_id', scopedBranch);
+  kvQ = byBranch(kvQ, bf);
   if (cashier_id) kvQ = kvQ.eq('cashier_id', cashier_id as string);
   const { data: kvRows } = await kvQ;
   const kitchenVoidLines = (kvRows ?? []).map((r: any) => ({
@@ -618,7 +618,7 @@ router.get('/eod', async (req, res) => {
 router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
   const { from, to, status, cashier_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('shifts')
@@ -630,7 +630,7 @@ router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
     .or(`status.eq.open,opened_at.gte.${start}`)
     .order('opened_at', { ascending: false });
 
-  if (scopedBranch)            query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
   if (req.query.branch_id)     query = query.eq('branch_id', req.query.branch_id as string);
   if (status)                  query = query.eq('status', status as string);
   if (cashier_id)              query = query.eq('cashier_id', cashier_id as string);
@@ -726,7 +726,7 @@ router.get('/shifts', requirePermission('reports.shifts'), async (req, res) => {
 router.get('/master', requirePermission('reports.sales'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   // Catering/Tourism Levy applies only where the business is actually registered
   // for it. Was gated on business type with a hardcoded 2%; now driven by the
@@ -756,7 +756,7 @@ router.get('/master', requirePermission('reports.sales'), async (req, res) => {
     .gte('created_at', start)
     .lte('created_at', end);
 
-  if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
+  ordersQ = byBranch(ordersQ, bf);
   const { data: allOrders, error: oErr } = await ordersQ;
   if (oErr) { res.status(500).json({ error: oErr.message }); return; }
 
@@ -855,7 +855,7 @@ router.get('/master', requirePermission('reports.sales'), async (req, res) => {
     .eq('business_id', req.businessId)
     .gte('expense_date', start.slice(0, 10))
     .lte('expense_date', end.slice(0, 10));
-  if (scopedBranch) expQ = expQ.eq('branch_id', scopedBranch);
+  expQ = byBranch(expQ, bf);
   const { data: expRows } = await expQ;
   const totalExpenses = (expRows ?? []).reduce((s, e) => s + Number(e.amount), 0);
   const expByCategory: Record<string, number> = {};
@@ -917,7 +917,7 @@ router.get('/master', requirePermission('reports.sales'), async (req, res) => {
 router.get('/hourly', requirePermission('reports.sales'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('orders')
@@ -927,7 +927,7 @@ router.get('/hourly', requirePermission('reports.sales'), async (req, res) => {
     .gte('created_at', start)
     .lte('created_at', end);
 
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
   const { data: orders, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
 
@@ -998,7 +998,7 @@ router.get('/hourly', requirePermission('reports.sales'), async (req, res) => {
 router.get('/voids', requirePermission('reports.voids'), async (req, res) => {
   const { from, to, cashier_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('orders')
@@ -1014,7 +1014,7 @@ router.get('/voids', requirePermission('reports.voids'), async (req, res) => {
     .lte('created_at', end)
     .order('created_at', { ascending: false });
 
-  if (scopedBranch)  query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
   // A576: one person (the watch list's link) — the sales they rang up, or the ones they voided.
   if (cashier_id)    query = /^[0-9a-f-]{36}$/i.test(String(cashier_id)) ? query.or(`cashier_id.eq.${cashier_id},voided_by.eq.${cashier_id}`) : query.eq('cashier_id', cashier_id as string);
 
@@ -1058,7 +1058,7 @@ router.get('/voids', requirePermission('reports.voids'), async (req, res) => {
     let pq = supabase.from('order_price_variances')
       .select('id, order_id, order_number, branch_id, catalogue_total, till_total, difference, reason, suspicious, sold_at, created_at')
       .eq('business_id', req.businessId).gte('sold_at', start).lte('sold_at', end);
-    if (scopedBranch) pq = pq.eq('branch_id', scopedBranch);
+    pq = byBranch(pq, bf);
     const { data: page, error: pErr } = await pq.order('id', { ascending: true }).range(at, at + 499);
     if (pErr) { console.warn('[reports/voids] price differences not read (is migration 133 applied?):', pErr.message); break; }
     priceDifferences.push(...(page ?? []));
@@ -1095,7 +1095,7 @@ router.get('/voids', requirePermission('reports.voids'), async (req, res) => {
 router.get('/refunds', requirePermission('reports.voids'), async (req, res) => {
   const { from, to, cashier_id } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('orders')
@@ -1110,7 +1110,7 @@ router.get('/refunds', requirePermission('reports.voids'), async (req, res) => {
     .lte('refunded_at', end)
     .order('refunded_at', { ascending: false });
 
-  if (scopedBranch)  query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
   // A576: one person (the watch list's link) — the sales they rang up, or the ones they refunded.
   if (cashier_id)    query = /^[0-9a-f-]{36}$/i.test(String(cashier_id)) ? query.or(`cashier_id.eq.${cashier_id},refunded_by.eq.${cashier_id}`) : query.eq('cashier_id', cashier_id as string);
 
@@ -1167,7 +1167,7 @@ router.get('/refunds', requirePermission('reports.voids'), async (req, res) => {
 router.get('/tax', requirePermission('reports.tax'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   // CTL (Catering Levy) is hospitality-only; gate it on business type.
   const { data: bizRow } = await supabase
@@ -1197,7 +1197,7 @@ router.get('/tax', requirePermission('reports.tax'), async (req, res) => {
     .gte('created_at', start)
     .lte('created_at', end);
 
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+  query = byBranch(query, bf);
   const { data: orders, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
 
@@ -1275,7 +1275,7 @@ router.get('/tax', requirePermission('reports.tax'), async (req, res) => {
 router.get('/products-v2', requirePermission('reports.items'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let ordersQ = supabase
     .from('orders')
@@ -1284,7 +1284,7 @@ router.get('/products-v2', requirePermission('reports.items'), async (req, res) 
     .eq('status', 'completed')
     .gte('created_at', start)
     .lte('created_at', end);
-  if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
+  ordersQ = byBranch(ordersQ, bf);
   const { data: completedOrders } = await ordersQ;
   const orderIds = (completedOrders ?? []).map(o => o.id);
 
@@ -1348,7 +1348,7 @@ router.get('/products-v2', requirePermission('reports.items'), async (req, res) 
 router.get('/food-cost', requirePermission('reports.costs'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   // ── 1. Sales in period (completed orders) ─────────────────────────────────
   let ordersQ = supabase
@@ -1358,7 +1358,7 @@ router.get('/food-cost', requirePermission('reports.costs'), async (req, res) =>
     .eq('status', 'completed')
     .gte('created_at', start)
     .lte('created_at', end);
-  if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
+  ordersQ = byBranch(ordersQ, bf);
   const { data: orders } = await ordersQ;
   const orderIds = (orders ?? []).map(o => o.id);
 
@@ -1523,7 +1523,7 @@ router.get('/food-cost', requirePermission('reports.costs'), async (req, res) =>
 router.get('/splh', requirePermission('reports.labour'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
-  const scopedBranch = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   // 1. Fetch closed shifts in period
   let shiftsQ = supabase
@@ -1534,7 +1534,7 @@ router.get('/splh', requirePermission('reports.labour'), async (req, res) => {
     .gte('opened_at', start)
     .lte('opened_at', end);
 
-  if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
+  shiftsQ = byBranch(shiftsQ, bf);
   const { data: shifts, error: sErr } = await shiftsQ;
   if (sErr) { res.status(500).json({ error: sErr.message }); return; }
   if (!shifts?.length) {
@@ -1653,13 +1653,13 @@ router.get('/splh', requirePermission('reports.labour'), async (req, res) => {
 /** A494: the fuel reports read ?branch_id= directly — a manager saw every branch's fuel (or another's by naming it).
  *  branchScope now: the manager's branch; the owner's choice, or all. Pumps and tanks: the branch's own and the
  *  business-wide ones (no branch), as the POS lists them. */
-function atBranch<T extends { branch_id?: string | null }>(rows: T[] | null | undefined, branch: string | null): T[] {
-  return (rows ?? []).filter((r) => !branch || !r.branch_id || r.branch_id === branch);
+function atBranch<T extends { branch_id?: string | null }>(rows: T[] | null | undefined, bf: BranchFilter): T[] {
+  return (rows ?? []).filter((r) => rowInBranches(bf, r.branch_id, true));   // A582: a partner's set too
 }
 
 router.get('/fuel-sales', requirePermission('reports.fuel'), async (req, res) => {
   const { from, to } = req.query;
-  const branch_id = branchScope(req);
+  const bf = branchFilter(req);   // A582
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
 
   let orderQuery = supabase
@@ -1671,7 +1671,7 @@ router.get('/fuel-sales', requirePermission('reports.fuel'), async (req, res) =>
     .gte('created_at', start)
     .lte('created_at', end);
 
-  if (branch_id) orderQuery = orderQuery.eq('branch_id', branch_id as string);
+  orderQuery = byBranch(orderQuery, bf);
   const { data: orders, error: oErr } = await orderQuery;
   if (oErr) { res.status(500).json({ error: oErr.message }); return; }
 
@@ -1713,14 +1713,14 @@ router.get('/fuel-sales', requirePermission('reports.fuel'), async (req, res) =>
     .from('pumps')
     .select('id, name, fuel_product_id, branch_id')
     .eq('business_id', req.businessId);
-  const pumps = atBranch(pumpRows as Array<{ id: string; name: string; fuel_product_id: string | null; branch_id: string | null }>, branch_id);
+  const pumps = atBranch(pumpRows as Array<{ id: string; name: string; fuel_product_id: string | null; branch_id: string | null }>, bf);
 
   // Current tank levels per fuel_product — for opening/remaining calc
   const { data: allTankRows } = await supabase
     .from('fuel_tanks')
     .select('fuel_product_id, current_level, capacity_litres, branch_id')
     .eq('business_id', req.businessId);
-  const tankRows = atBranch(allTankRows as Array<{ fuel_product_id: string; current_level: number; capacity_litres: number; branch_id: string | null }>, branch_id);
+  const tankRows = atBranch(allTankRows as Array<{ fuel_product_id: string; current_level: number; capacity_litres: number; branch_id: string | null }>, bf);
   const tankByProduct: Record<string, { current_level: number; capacity_litres: number }> = {};
   (tankRows ?? [] as Array<{ fuel_product_id: string; capacity: number | string; current_level: number | string; products?: { name: string; base_price: string } | null }>).forEach(t => {
     tankByProduct[t.fuel_product_id] = { current_level: Number(t.current_level), capacity_litres: Number(t.capacity_litres) };
@@ -1785,7 +1785,7 @@ router.get('/pump-monitor', requireAnyPermission('reports.fuel', 'reports.overvi
   // 0.6.34: today's BUSINESS date in East Africa Time (was the UTC date — off by a day from 21:00 to midnight EAT).
   const today = businessDateEAT(new Date(), (req as any).dayCutoff ?? 0);
   const { start, end } = getDateRange(today, today, (req as any).dayCutoff ?? 0);
-  const branch_id = branchScope(req);   // A494
+  const bf = branchFilter(req);   // A582   // A494
 
   // The branch's pumps (and the business-wide ones)
   const { data: pumpRows } = await supabase
@@ -1793,14 +1793,14 @@ router.get('/pump-monitor', requireAnyPermission('reports.fuel', 'reports.overvi
     .select('id, name, status, fuel_product_id, branch_id')
     .eq('business_id', req.businessId)
     .order('sort_order');
-  const pumps = atBranch(pumpRows as Array<{ id: string; name: string; status: string; fuel_product_id: string | null; branch_id: string | null }>, branch_id);
+  const pumps = atBranch(pumpRows as Array<{ id: string; name: string; status: string; fuel_product_id: string | null; branch_id: string | null }>, bf);
 
   // The branch's tanks (current live levels)
   const { data: tankRows } = await supabase
     .from('fuel_tanks')
     .select('id, name, fuel_product_id, capacity_litres, current_level, reorder_level, branch_id, products(name, base_price)')
     .eq('business_id', req.businessId);
-  const tanks = atBranch(tankRows as Array<{ branch_id: string | null }>, branch_id);
+  const tanks = atBranch(tankRows as Array<{ branch_id: string | null }>, bf);
 
   // fuel_tanks has capacity_litres / current_level / reorder_level (there is no
   // `capacity` column), and products is a to-one embed.
@@ -1825,7 +1825,7 @@ router.get('/pump-monitor', requireAnyPermission('reports.fuel', 'reports.overvi
     .eq('order_type', 'fuel_sale')
     .gte('created_at', start)
     .lte('created_at', end);
-  if (branch_id) ordQ = ordQ.eq('branch_id', branch_id as string);
+  ordQ = byBranch(ordQ, bf);
   const { data: todayOrders } = await ordQ;
 
   const soldByProduct: Record<string, { litres: number; revenue: number; transactions: number }> = {};
@@ -1889,7 +1889,7 @@ router.get('/pump-monitor', requireAnyPermission('reports.fuel', 'reports.overvi
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/wet-stock', requirePermission('reports.fuel'), async (req, res) => {
   const { from, to } = req.query;
-  const branch_id = branchScope(req);   // A494
+  const bf = branchFilter(req);   // A582   // A494
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
 
   // Current tank levels — include null-branch (business-wide) tanks
@@ -1898,7 +1898,7 @@ router.get('/wet-stock', requirePermission('reports.fuel'), async (req, res) => 
     .select('id, name, fuel_product_id, capacity_litres, current_level, reorder_level, branch_id, products(name, base_price)')
     .eq('business_id', req.businessId);
   const { data: tankRows } = await tanksQuery;
-  const tanks = atBranch(tankRows as Array<{ branch_id: string | null }>, branch_id) as any[];
+  const tanks = atBranch(tankRows as Array<{ branch_id: string | null }>, bf) as any[];
 
   // Deliveries in period (stock_movements with movement_type = restock, reference_type = delivery)
   let movQuery = supabase
@@ -1908,7 +1908,7 @@ router.get('/wet-stock', requirePermission('reports.fuel'), async (req, res) => 
     .eq('movement_type', 'restock')
     .gte('created_at', start)
     .lte('created_at', end);
-  if (branch_id) movQuery = movQuery.eq('branch_id', branch_id);   // A494: the branch's deliveries only
+  movQuery = byBranch(movQuery, bf);   // A494: the branch's deliveries only
   const { data: movements } = await movQuery;
 
   // Group deliveries by product
@@ -1929,7 +1929,7 @@ router.get('/wet-stock', requirePermission('reports.fuel'), async (req, res) => 
     .eq('order_type', 'fuel_sale')
     .gte('created_at', start)
     .lte('created_at', end);
-  if (branch_id) salesQuery = salesQuery.eq('branch_id', branch_id as string);
+  salesQuery = byBranch(salesQuery, bf);
   const { data: fuelOrders } = await salesQuery;
   const fuelOrderIds = (fuelOrders ?? [] as Array<{ id: string }>).map(o => o.id);
 

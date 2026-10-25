@@ -28,9 +28,9 @@ export function ago(iso: string | null | undefined, now = Date.now()): string {
 
 const REFUSAL: Record<string, string> = {
   // A503 (A502): no address or access code is typed any more — the way back is Find my server, on this page.
-  access_code: 'The branch server refused this till\'s branch access code — join it again: Find my server, then Allow on the server.',
-  device_key: 'The branch server does not recognise this till\'s device key — rejoin it from the branch server (Find my server).',
-  branch: 'The branch server serves another branch than this till — sign in on this till for the server\'s branch, or point it at that branch\'s server.',
+  access_code: 'The branch server refused this POS\'s branch access code — join it again: Find my server, then Allow on the server.',
+  device_key: 'The branch server does not recognise this POS\'s device key — rejoin it from the branch server (Find my server).',
+  branch: 'The branch server serves another branch than this POS — sign in on this POS for the server\'s branch, or point it at that branch\'s server.',
   tls: 'The branch server accepts only encrypted connections — see Shop network above.',
 };
 
@@ -65,22 +65,22 @@ export default function BranchSyncPanel() {
       <div className="text-gray-300 font-semibold mb-1">Branch sync</div>
       {h.serverOlder && (
         <p className="text-amber-300 mb-1" data-testid="branch-sync-update-server">
-          Update the branch server — it runs an older build (protocol {h.server?.protocol ?? 1}) than this till ({h.tillProtocol}).
+          Update the branch server — it runs an older build (protocol {h.server?.protocol ?? 1}) than this POS ({h.tillProtocol}).
         </p>
       )}
       {h.tillOlder && (
-        <p className="text-amber-300 mb-1">Update this till — the branch server expects protocol {h.server?.min_till_protocol} or later.</p>
+        <p className="text-amber-300 mb-1">Update this POS — the branch server expects protocol {h.server?.min_till_protocol} or later.</p>
       )}
       {h.branch.mismatch && (
         <p className="text-red-400 mb-1" data-testid="branch-sync-branch">
-          This till is set to branch <span className="font-mono">{h.branch.till}</span>; its branch server serves <span className="font-mono">{h.branch.server}</span> — the server refuses its records until they match.
+          This POS is set to branch <span className="font-mono">{h.branch.till}</span>; its branch server serves <span className="font-mono">{h.branch.server}</span> — the server refuses its records until they match.
         </p>
       )}
-      {h.refusal && !h.branch.mismatch && <p className="text-red-400 mb-1">{REFUSAL[h.refusal.reason] ?? `The branch server refused this till (HTTP ${h.refusal.status}).`}</p>}
+      {h.refusal && !h.branch.mismatch && <p className="text-red-400 mb-1">{REFUSAL[h.refusal.reason] ?? `The branch server refused this POS (HTTP ${h.refusal.status}).`}</p>}
       {h.heard && (
         <p className="text-gray-400 mb-1">
           {h.heard.proven ? `Followed the branch server to ${h.heard.url} (the same server, proven) ${ago(h.heard.at)}.`
-            : `A branch server was heard at ${h.heard.url} ${ago(h.heard.at)} — not followed (this till's connection is not encrypted); if it is this branch's server, use Find my server.`}
+            : `A branch server was heard at ${h.heard.url} ${ago(h.heard.at)} — not followed (this POS's connection is not encrypted); if it is this branch's server, use Find my server.`}
         </p>
       )}
       <table className="w-full">
@@ -107,10 +107,10 @@ export default function BranchSyncPanel() {
         {/* A534 (A23): this till's own records the branch server has not yet confirmed (A501 nodeQueueDepth) */}
         Not yet confirmed by the branch server: {h.backlog.pending} of this till&apos;s records{h.backlog.oldestPendingAt ? ` (oldest ${ago(h.backlog.oldestPendingAt)})` : ''}
         {' · '}<span className={h.backlog.failed ? 'text-red-400' : ''}>{h.backlog.failed} failed{h.backlog.failedReason ? `: ${h.backlog.failedReason}` : ''}</span>
-        {' · '}held back from other tills: {h.quarantine.waiting} retrying, {h.quarantine.givenUp} given up{h.quarantine.reason ? ` (${h.quarantine.reason})` : ''}
+        {' · '}held back from other points of sale: {h.quarantine.waiting} retrying, {h.quarantine.givenUp} given up{h.quarantine.reason ? ` (${h.quarantine.reason})` : ''}
       </p>
       {h.server && (
-        <p className="text-gray-500 mt-0.5">Server protocol {h.server.protocol} · this till {h.tillProtocol} · last seen {ago(h.server.seenAt)}</p>
+        <p className="text-gray-500 mt-0.5">Server protocol {h.server.protocol} · this POS {h.tillProtocol} · last seen {ago(h.server.seenAt)}</p>
       )}
       <button onClick={retry} disabled={busy || !stuck} data-testid="branch-sync-retry"
         className="mt-2 w-full bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-1.5 text-xs">

@@ -185,6 +185,9 @@ const EXCLUDED = [
 ];
 /** Kept on purpose — file → [definition name, reason]. */
 const ALLOW = {
+  // A588: a copy of shared/forecourt.ts (kept identical by check-shared-sync) — the desktop POS's pumps screen formats the
+  // price per litre with it (the desktop has no lib/format); the web screens use lib/format.
+  'lib/forecourt.ts': [['moneyText', 'the shared forecourt copy, for the desktop pumps screen']],
   'pages/ReportsPage.tsx': [['fmtShiftTime', 'a weekday + date + time label ("Tue 13 Oct, 14:05") for the shift list; lib/format has no weekday form']],
 };
 const files = [];

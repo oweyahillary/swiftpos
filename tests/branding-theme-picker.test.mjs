@@ -44,7 +44,7 @@ ok('the theme resolves through the registry only when the business has themes',
 // ── What the page shows ──
 ok('the picker appears only with themes, listing the registry\'s themes',
   /\{themesEnabled && \(\s*<div className="mt-6">\s*<label[^>]*>App theme<\/label>/.test(tab) && /\{THEMES\.map\(\(t\) => \{/.test(tab));
-ok('the till preview appears only with themes', /\{theme && \(<>\s*<label[^>]*>Till preview<\/label>\s*<TillPreview theme=\{theme\}/.test(tab));
+ok('the till preview appears only with themes', /\{theme && \(<>\s*<label[^>]*>POS preview<\/label>\s*<TillPreview theme=\{theme\}/.test(tab));
 ok('lock preview wears the theme without a brand colour (the till\'s PinPage rule); otherwise the Phase 1 accent',
   /const lockAccent = theme && accentHex\.trim\(\) === '' \? theme\.shades\[500\] : shownAccent;/.test(tab) && /<LockPreview accent=\{lockAccent\}/.test(tab));
 ok('the till preview draws action from the theme tokens and the strip/sidebar from the brand layer',

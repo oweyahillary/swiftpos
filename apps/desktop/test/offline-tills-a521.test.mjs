@@ -92,7 +92,7 @@ const pending = (dev, kind = 'close_day') => db.prepare(`SELECT * FROM node_inst
 signIn('u-mary', 'Mary', 'Manager', MANAGER);
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n#1 Close Branch closes what can be closed — a switched-off till with a drawer open is a manager\'s tick\n');
+console.log('\n#1 Close Branch closes what can be closed — a switched-off POS with a drawer open is a manager\'s tick\n');
 const t2Seen = 3 * HOUR;
 peer('dev-T2', state({ terminal: { code: 'T2', name: 'Center' }, open_drawer: { cashier_name: 'Eugene' }, shifts: [shiftOf('sh-t2', 'Eugene', 'open')] }), t2Seen);
 peer('dev-T1', state({ terminal: { code: 'T1', name: 'Front' } }), 5_000);
@@ -158,7 +158,7 @@ peer('dev-T1', state({ terminal: { code: 'T1', name: 'Front' } }), 5_000);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n#2 / #14 a close to a till that went off waits for it, and never holds the button\n');
+console.log('\n#2 / #14 a close to a POS that went off waits for it, and never holds the button\n');
 {
   peer('dev-T4', state({ terminal: { code: 'T4', name: 'Bar' } }), 5_000);
   B.createCloseInstruction('dev-T4', { business_date: '2026-10-17', counted_cash: null }, 'u-mary');
@@ -182,7 +182,7 @@ console.log('\n#2 / #14 a close to a till that went off waits for it, and never 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n#13 confirmations and cash in / out wait for a till that is off — no 24-h expiry\n');
+console.log('\n#13 confirmations and cash in / out wait for a POS that is off — no 24-h expiry\n');
 {
   peer('dev-T5', state({ terminal: { code: 'T5', name: 'Side' }, open_drawer: { cashier_name: 'Amos' },
     shifts: [shiftOf('sh-t5-aw', 'Amos', 'awaiting'), shiftOf('sh-t5-open', 'Amos', 'open')] }), 2 * HOUR);
@@ -202,7 +202,7 @@ console.log('\n#13 confirmations and cash in / out wait for a till that is off �
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n#12 a till that never reported, or an older build, is held with a note — never a blocker\n');
+console.log('\n#12 a POS that never reported, or an older build, is held with a note — never a blocker\n');
 {
   db.prepare(`INSERT OR REPLACE INTO peer_cursors (device_id, table_name, last_seq, updated_at) VALUES ('dev-GHOST', 'orders', 3, ?)`).run(iso(HOUR));
   peer('dev-OLD', { business_date: '2026-10-16', day_open: true, open_drawer: null, drawers_on_day: 1, cashiers_counted_total: 0 }, 2 * HOUR);
@@ -225,7 +225,7 @@ console.log('\n#12 a till that never reported, or an older build, is held with a
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n#3 Hide from Close Branch keeps the till; Revoke this till lets it go\n');
+console.log('\n#3 Hide from Close Branch keeps the POS; Revoke this POS lets it go\n');
 {
   I.prepareDeviceEnrolment();
   db.prepare(`INSERT OR IGNORE INTO node_enrol_allowed (device_id, noted_at) VALUES ('dev-T6', ?)`).run(iso());
@@ -246,10 +246,10 @@ console.log('\n#3 Hide from Close Branch keeps the till; Revoke this till lets i
   ok('#3 Revoke this till removes its key — it must join again', f.ok && !I.holdsDeviceKey('dev-T6') && I.checkDeviceKey('dev-T6', key) === 'unknown');
   const tab = read('src/renderer/pages/BranchCloseTab.tsx');
   ok('#3 the screen: "Hide from Close Branch" and "Revoke this till", the revoke warning saying it is refused until it joins again',
-    /Hide from Close Branch/.test(tab) && /Revoke this till/.test(tab) && /until it joins again/.test(tab) && !/it comes back if it reports again/.test(tab));
+    /Hide from Close Branch/.test(tab) && /Revoke this POS/.test(tab) && /until it joins again/.test(tab) && !/it comes back if it reports again/.test(tab));
   const ns = read('src/main/nodeServer.ts');
   ok('#3 the key-refused text says how to re-join (revoke at the server, then Find my server on the till)',
-    /To re-join: on the branch server, Close Branch → Show tills → Revoke this till; then on this till, Find my server/.test(ns) && !/forget it there and let it reconnect/.test(ns));
+    /To re-join: on the branch server, Close Branch → Show points of sale → Revoke this POS; then on this POS, Find my server/.test(ns) && !/forget it there and let it reconnect/.test(ns));
   ok('#3 the bridge carries Hide', /'branchClose:hideTill'/.test(read('src/main/preload.ts')) && /'branchClose:hideTill'/.test(read('src/main/ipcSchemas.ts')));
 }
 
@@ -355,7 +355,7 @@ console.log('\n#6 staff changes relayed through the server stay until the cloud 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n#21 a row waiting on another till\'s data keeps trying for 7 days\n');
+console.log('\n#21 a row waiting on another POS\'s data keeps trying for 7 days\n');
 {
   const row = { id: 'o-late', business_id: 'biz-1', branch_id: 'br-OTHER', order_number: 'T9-1', status: 'completed', subtotal: 1, vat_amount: 0, total: 1,
     created_at: iso(), device_id: 'dev-T9', seq: 1 };
@@ -371,14 +371,14 @@ console.log('\n#21 a row waiting on another till\'s data keeps trying for 7 days
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n#9 / #10 the till keeps its own figures when the web closed its drawer\n');
+console.log('\n#9 / #10 the POS keeps its own figures when the web closed its drawer\n');
 {
   const [web] = R.closesToAdopt(['s1'], [{ id: 's1', status: 'closed', closed_at: iso(), close_method: 'web', closed_by: 'u-mary', closed_by_name: 'Mary',
     closing_float: '5000', cash_variance: '-500', expected_cash: '5500', notes: null }]);
   const c = R.keepOwnExpected(web, 6200);
   ok('#9 the till keeps its own expected cash (6,200 from its rows), the variance against it (5,000 − 6,200)',
     c.expected_cash === 6200 && c.cash_variance === -1200 && c.closing_float === 5000, JSON.stringify(c));
-  ok('#9 …the web\'s figures recorded as the web\'s', /The web's figures: expected 5500, variance -500; this till expects 6200/.test(c.note), c.note);
+  ok('#9 …the web\'s figures recorded as the web\'s', /The web's figures: expected 5500, variance -500; this POS expects 6200/.test(c.note), c.note);
   ok('#9 …no own figure → the web\'s, as before', R.keepOwnExpected(web, null).expected_cash === 5500);
   ok('#9 pullShiftCloses applies keepOwnExpected with the till\'s own Z report', /const c = keepOwnExpected\(web, own\);/.test(read('src/main/syncEngine.ts')) && /own = computeZReport\(web\.id\)\.totals\.expectedCash/.test(read('src/main/syncEngine.ts')));
   const E = require(path.join(dist, 'syncEngine.js'));

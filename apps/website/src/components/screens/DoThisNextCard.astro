@@ -9,14 +9,16 @@ interface Props extends Partial<DemoCard> {
   showPayback?: boolean;
   /** Hide the "Example from a demo restaurant" label (when a group of cards carries one label). */
   bare?: boolean;
+  /** Whose example it is, for the label: "a demo restaurant" (default), "a demo minimart", "a demo petrol station". */
+  who?: string;
 }
 const props = Astro.props;
-const { showPayback = false, bare = false } = props;
+const { showPayback = false, bare = false, who = 'a demo restaurant' } = props;
 const c: DemoCard = props.title ? (props as DemoCard) : demoCard(props.n ?? 4);
 const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a try' }[c.evidence];
 ---
 <figure class:list={['dtn', { 'dtn--bare': bare }]}>
-  {!bare && <figcaption class="dtn__label">Example from a demo restaurant</figcaption>}
+  {!bare && <figcaption class="dtn__label">Example from {who}</figcaption>}
   <div class:list={['dtn__card', { 'dtn__card--warn': c.warning }]}>
     <div class="dtn__head">
       {c.warning

@@ -73,8 +73,8 @@ import { resolveOwnerUserId } from '../lib/ownerBusiness';
 import { listDesktopReleasesOrStale } from '../lib/desktopReleases';
 import { ownerSetsFeature } from './controls';        // A490
 import { checkApprovableVersion } from '../lib/desktopVersionApproval';   // A493: the admin approves till updates
-import { startTrialIfEligible, convertTrialIfAny, readTrial, trialPhase, planLabel, planLabelsFor } from '../lib/cloudTrial';   // A569
-import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds } from '../lib/cloudPlan';   // A581
+import { startTrialIfEligible, readTrial, trialPhase, planLabel, planLabelsFor } from '../lib/cloudTrial';   // A569
+import { enrolRefusal, forgetStanding, readCloudFacts, cloudStanding, gatedBusinessIds, standingView, type CloudStanding } from '../lib/cloudPlan';   // A581, A584
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
@@ -581,19 +581,30 @@ router.post('/clients', requireAdmin, async (req, res) => {
   }
 });
 
+const BILLING_FILTERS = new Set(['due', 'unpaid', 'locked', 'no_expiry', 'expiring', 'lapsed', 'not_interested', 'off']);
+/** A584: the client list's billing filter. A587: "Not interested" and "Web access off" have their own (not under Locked). */
+export function billingFilterMatch(filter: string, s: CloudStanding): boolean {
+  const locked = s.state === 'locked' || s.state === 'ended';
+  if (filter === 'due' || filter === 'expiring') return !s.syncRefused && s.state === 'active' && s.daysLeft !== null && s.daysLeft <= 14;
+  if (filter === 'unpaid') return s.state === 'unpaid';
+  if (filter === 'locked') return locked;
+  if (filter === 'not_interested') return s.state === 'not_interested';
+  if (filter === 'off') return s.state === 'off';
+  if (filter === 'lapsed') return s.state === 'unpaid' || locked;
+  if (filter === 'no_expiry') return s.state === 'no_expiry' || s.state === 'no_date';
+  return true;
+}
+
 router.get('/clients', requireAdmin, async (req, res) => {
   const { search, status, type, expiry, limit = '50', offset = '0' } = req.query as Record<string, string>;
 
-  // A581: "Expiring (14 days)" / "Lapsed" — the clients on the cloud plan whose paid-until is near or past.
+  // A584 (A581's filter widened): due (in the next 14 days) / unpaid (within the 7 days) / locked / no expiry set.
+  // A581's names still answer: expiring = due, lapsed = unpaid or locked.
   let onlyIds: string[] | null = null;
-  if (expiry === 'expiring' || expiry === 'lapsed') {
+  if (expiry && BILLING_FILTERS.has(expiry)) {
     const now = Date.now();
     const facts = await readCloudFacts(await gatedBusinessIds().catch(() => [])).catch(() => new Map());
-    onlyIds = [...facts.entries()].filter(([, f]) => {
-      const s = cloudStanding(f, now);
-      if (s.daysLeft === null) return false;
-      return expiry === 'lapsed' ? s.daysLeft < 0 || s.state === 'ended' : s.daysLeft >= 0 && s.daysLeft <= 14 && s.state !== 'ended';
-    }).map(([id]) => id);
+    onlyIds = [...facts.entries()].filter(([, f]) => !f.suspended && billingFilterMatch(expiry, cloudStanding(f, now))).map(([id]) => id);
     if (!onlyIds.length) { res.json({ clients: [], total: 0 }); return; }
   }
 
@@ -614,14 +625,15 @@ router.get('/clients', requireAdmin, async (req, res) => {
   // A569: each client's plan in words — Desktop / Cloud trial / Cloud trial ended / Cloud / No licence yet.
   const rows = (data ?? []) as Array<{ id: string }>;
   const labels = await planLabelsFor(rows.map((r) => r.id)).catch(() => new Map<string, string>());
-  // A581: where each client on the cloud plan stands — "Expires in 5 days" / "Lapsed 3 days" (null: not on the plan).
+  // A584: where each client stands — "Due in 5 days" / "Unpaid 3 days (locks in 4 days)" / "Locked 2 days" /
+  // "No expiry set" (null: nothing to bill).
   const now = Date.now();
   const facts = await readCloudFacts(rows.map((r) => r.id)).catch(() => new Map());
   const cloud = (id: string) => {
     const f = facts.get(id);
     if (!f) return null;
     const s = cloudStanding(f, now);
-    return s.gated ? { paid_until: s.paidUntil, days_left: s.daysLeft, state: s.state, sync_refused: s.syncRefused, trial: s.trial, sync_stops_at: s.syncStopsAt } : null;
+    return s.gated || s.state === 'no_expiry' || s.state === 'off' ? standingView(s) : null;
   };
   res.json({ clients: rows.map((r) => ({ ...r, plan_label: labels.get(r.id) ?? null, cloud: cloud(r.id) })), total: count ?? 0 });
 });
@@ -805,7 +817,7 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
   });
   if (error) {
     // Before migration 122 (132 for the menu) the function does not exist — say so rather than a raw database error.
-    const missing = closeOpen && /purge_test_(menu_)?window|p_close_open/.test(error.message) ? 'Run migration 148 first (clear what is still open on tills that are off).'
+    const missing = closeOpen && /purge_test_(menu_)?window|p_close_open/.test(error.message) ? 'Run migration 148 first (clear what is still open on points of sale that are off).'
       : /purge_test_menu/.test(error.message) ? 'Run migration 132 first (delete the whole menu).'
       : /purge_test_data/.test(error.message) ? 'Run migration 122 first (clear test data).' : null;
     res.status(503).json({ error: missing ?? error.message, code: 'NOT_READY' });
@@ -820,7 +832,7 @@ router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
     .eq('business_id', biz.id).is('retired_at', null);
   const behind = ((tills ?? []) as Array<{ device_label: string | null; terminal_code: string | null; last_sync_at: string | null }>)
     .filter((t) => !t.last_sync_at || !(Date.parse(t.last_sync_at) >= behindBefore))
-    .map((t) => ({ name: t.terminal_code || t.device_label || 'A till', last_sync_at: t.last_sync_at }));
+    .map((t) => ({ name: t.terminal_code || t.device_label || 'A POS', last_sync_at: t.last_sync_at }));
   // A488: "N trading day(s) … still open or closed after it" named no day — and the check reads the CLOUD's days, so a
   // close a till made that never reached the cloud looks open here while every till says closed. The same rule as
   // purge_test_data (opened in the window; no closed_at, or closed after the window's end), listed so it can be found.
@@ -1179,10 +1191,31 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   const refusal = ownerSetsFeature(key);
   if (refusal) { res.status(403).json({ error: refusal, code: 'OWNER_SETS' }); return; }
   if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled must be true or false' }); return; }
-  // A495: web access is a paid licence (KES 10,000 a year) — switching it is a super admin's call.
+  // A495: web access is paid (A584: the cloud plan) — switching it is a super admin's call.
   if (PAID_FEATURES.has(key) && req.adminRole !== 'super_admin') {
     res.status(403).json({ error: 'Only a super admin can switch web access (a paid licence).', code: 'SUPER_ADMIN_REQUIRED' });
     return;
+  }
+
+  // A584: the old "Enable web access" (KES 10,000 a year, an invoice raised by the portal) is retired into the cloud plan.
+  // Web access is turned ON by recording a payment or a super admin's complimentary paid-until (Plan & billing › Cloud
+  // plan). Switching it back on is only allowed for a client whose paid-until is still ahead (it was switched off by
+  // mistake) — never a way round the plan, never for a trial (Record payment converts it).
+  // A587 (owner, 2026-10-24: "Should Disable switch a client off at once? — yes"): "Disable web access" is a HARD off at
+  // once whatever the paid-until (lib/cloudPlan.ts cloudStanding 'off': web paused, sync refused, no POS joins), audited;
+  // "Enable" restores it only while the paid-until (a payment's or a complimentary date) is ahead — else 409 and the
+  // portal points at Record payment.
+  if (key === 'web_hosting' && enabled) {
+    const f = (await readCloudFacts([String(id)])).get(String(id));
+    const ahead = !!f?.expiresAt && Date.parse(f.expiresAt) > Date.now();
+    const onTrial = !!f?.trial && !f.trial.converted_at;
+    if (!ahead || onTrial) {
+      res.status(409).json({
+        error: 'Web access is turned on from the Cloud plan: record the payment (or, for a special case, a complimentary paid-until).',
+        code: 'WEB_ACCESS_BY_PLAN',
+      });
+      return;
+    }
   }
 
   const { data: biz } = await supabase.from('businesses').select('name').eq('id', id).single();
@@ -1208,25 +1241,7 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
     after: { key, enabled },
   });
 
-  // A569: "Enable web access" (the paid flow — the portal raises the KES 10,000 invoice) on a client in or after its cloud
-  // trial converts it: the trial is marked converted and web access runs one year from today.
-  if (key === 'web_hosting' && enabled) {
-    let converted;
-    try { converted = await convertTrialIfAny(String(id)); }
-    catch (e) { sendError(res, e, { message: 'Web access is on, but the cloud trial could not be marked paid — try again' }); return; }
-    if (converted) {
-      await writeAdminAudit({
-        adminId: req.adminId, adminEmail: req.adminEmail,
-        action: 'web_access.trial_convert', resource: 'business',
-        businessId: id, businessName: biz?.name ?? undefined,
-        before: { trial_ends_at: converted.trial.ends_at },
-        after:  { web_access_expires_at: converted.expiresAt, converted_at: converted.trial.converted_at },
-      });
-      res.json({ ...data, cloud_trial_converted: true, web_access_expires_at: converted.expiresAt });
-      return;
-    }
-  }
-
+  // A584: a trial is converted by Record payment only (A569's "Enable web access = a year" is retired with the KES 10,000).
   res.json(data);
 });
 
@@ -1884,7 +1899,7 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
   if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
   if (!branch.desktop_licensed) {
     res.status(409).json({
-      error: 'Assign a desktop licence to this branch before enrolling a till.',
+      error: 'Assign a desktop licence to this branch before enrolling a POS.',
       code:  'BRANCH_NOT_LICENSED',
     });
     return;
@@ -1892,7 +1907,7 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
   // A581: a lapsed cloud plan (past its grace) — no new till and no rejoin until the payment is recorded.
   if (await enrolRefusal(String(businessId)).catch(() => null)) {
     res.status(409).json({
-      error: 'This client\'s cloud plan has lapsed, so a till cannot be joined. Record the payment on Plan & billing first.',
+      error: 'This client\'s cloud plan has lapsed, so a POS cannot be joined. Record the payment on Plan & billing first.',
       code:  'CLOUD_SUBSCRIPTION_ENDED',
     });
     return;

@@ -14,7 +14,7 @@ export default function ServerKeepRunning() {
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-800/60 px-4 py-3" data-testid="server-keep-running">
       <p className="text-sm font-semibold text-white">Keep the branch server running</p>
-      <p className="text-xs text-gray-400 mt-0.5">So the tills have their server back by themselves after a power cut or a restart:</p>
+      <p className="text-xs text-gray-400 mt-0.5">So the points of sale have their server back by themselves after a power cut or a restart:</p>
       <ol className="mt-2 space-y-1.5 text-xs text-gray-300 list-decimal list-inside">
         {KEEP_RUNNING_STEPS.map((s, i) => <li key={i}>{s}</li>)}
       </ol>

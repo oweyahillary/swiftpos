@@ -169,7 +169,7 @@ export default function DayCloseTab({ currency }: Props) {
           </div>
         )}
         <p className="text-sm text-gray-400">
-          No trading day is open on this till. A day opens automatically when the
+          No trading day is open on this POS. A day opens automatically when the
           first cashier opens a drawer.
         </p>
         {gate && !gate.canTrade && (
@@ -186,7 +186,7 @@ export default function DayCloseTab({ currency }: Props) {
       <div>
         <h2 className="text-lg font-semibold text-white">Close the day</h2>
         <p className="text-sm text-gray-400">
-          Trading date <span className="text-white">{summary.day.business_date}</span> on this till.
+          Trading date <span className="text-white">{summary.day.business_date}</span> on this POS.
         </p>
         {/* A364: a cash-up, not the end of trading — a later shift reopens the day. */}
         <p data-testid="day-close-cashup" className="text-xs text-gray-500">
@@ -239,7 +239,7 @@ export default function DayCloseTab({ currency }: Props) {
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
           <p className="text-sm text-amber-300">{gate?.reason}</p>
           <p className="text-xs text-amber-400/70 mt-1">
-            This till cannot sell until this day is closed.
+            This POS cannot sell until this day is closed.
           </p>
         </div>
       )}

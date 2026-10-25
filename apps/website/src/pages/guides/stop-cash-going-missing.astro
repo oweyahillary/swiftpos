@@ -1,0 +1,147 @@
+---
+// Guide 1 (night 3, DRAFT for the owner): stopping cash going missing. Habits first, then what the point of sale adds.
+// Claims checked against WORKPLAN §3: drawers by cashier, voids and refunds behind a manager's PIN, the Watch list as
+// warnings (premium, with Analytics), never "proof of theft".
+import Guide from '../../layouts/Guide.astro';
+import Laptop from '../../components/frames/Laptop.astro';
+import Monitor from '../../components/frames/Monitor.astro';
+import DayCloseScreen from '../../components/screens/DayCloseScreen.astro';
+import Shot from '../../components/screens/Shot.astro';
+import { WA_MESSAGES } from '../../lib/site';
+---
+<Guide slug="stop-cash-going-missing" waMessage={WA_MESSAGES.guideCash} ctaTitle="See whose drawer was short, by name, tonight.">
+  <p>
+    Ask any owner of a shop, a bar, a restaurant or a petrol station and they will tell you the same story. The day was
+    busy, the sales felt good, and the money in the drawer at night was less than it should have been. Not by a lot.
+    A few hundred shillings. Then again the next week. Nobody can say where it went.
+  </p>
+  <p>
+    Missing money is rarely one big theft. It is usually small amounts, often, in places nobody is looking: a sale
+    that was never rung up, a void after the customer left, change counted wrong in a rush, a "friend's" drink, stock
+    that walked out of the store. Some of it is honest mistakes. Some of it is not. Either way, you cannot fix what you
+    cannot see.
+  </p>
+  <p>This guide is about making it visible, by name and by day, without accusing anyone.</p>
+
+  <h2>1. One drawer, one person, every shift</h2>
+  <p>
+    If three people work from one cash drawer, a shortage belongs to nobody. Give each cashier their own drawer, or at
+    least their own shift on it, and a count when they start and when they hand over. It feels slower for a week.
+    After that it is simply how the counter works.
+  </p>
+  <ul>
+    <li><strong>Count the float in.</strong> The opening cash is counted and written down before the first sale, by the person who will be responsible for it.</li>
+    <li><strong>Count it out.</strong> At the end of the shift, the cash is counted before anyone else touches the drawer.</li>
+    <li><strong>Sign it off.</strong> Over or short, the number is agreed on the spot, not argued about next morning.</li>
+  </ul>
+
+  <div class="guide-zt">
+    <p class="guide-zt__h">How ZapTill does it</p>
+    <p>
+      Each cashier signs in to the point of sale with their own PIN and counts their float when the shift opens. At the
+      day close, every drawer is counted and ZapTill shows the cash expected, the cash counted and the M-Pesa total for
+      each cashier, with who was over and who was short.
+    </p>
+  </div>
+
+  <figure>
+    <Monitor label="The real ZapTill point of sale asking the cashier to count the float">
+      <Shot src="/screens/till-float.webp" width={1280} height={800}
+        alt="The real ZapTill point of sale: 'Open your drawer. Wanjiru, count the cash in it', with a box for the opening float. A demo business." />
+    </Monitor>
+    <figcaption>The shift opens with the cashier counting their own float. A demo business.</figcaption>
+  </figure>
+
+  <h2>2. Make cancelling a sale someone else's decision</h2>
+  <p>
+    The easiest way to take cash is to take payment, then cancel or refund the sale once the customer has gone. If any
+    cashier can do that on their own, the record shows nothing and the cash leaves with them.
+  </p>
+  <p>
+    The fix is simple: a paid sale can only be voided or refunded by a supervisor or manager, and every void stays on
+    the record with the cashier's name. Most cashiers will never need it. The ones tempted to use it will know it is
+    seen.
+  </p>
+
+  <div class="guide-zt">
+    <p class="guide-zt__h">How ZapTill does it</p>
+    <p>
+      Voiding a paid order or giving a refund needs a manager's PIN, and every void shows up against the cashier's name
+      in the day's report. Discounts and sales on account work the same way: they are recorded, by name.
+    </p>
+  </div>
+
+  <h2>3. Treat M-Pesa like cash</h2>
+  <p>
+    M-Pesa is safer than cash, but it has its own tricks: a payment marked as M-Pesa that never arrived, a fake
+    confirmation message, or a sale paid half in cash and recorded as all M-Pesa. The habits that help:
+  </p>
+  <ul>
+    <li>The cashier checks the confirmation on the business phone or the M-Pesa statement, not the customer's screen.</li>
+    <li>Split payments are recorded as split: so much M-Pesa, so much cash.</li>
+    <li>At the close, the M-Pesa total for each cashier is compared with what actually came in.</li>
+  </ul>
+  <p>
+    ZapTill prints your Buy Goods or Paybill number on every receipt, records split payments, and gives you the M-Pesa
+    total for each cashier at the day close. Comparing that with your Safaricom statement is still your job: ZapTill does
+    not read the statement for you.
+  </p>
+
+  <h2>4. Stock is cash on a shelf</h2>
+  <p>
+    A crate of soda, a bottle of whisky, a tray of meat or a jerrycan of engine oil is money. If it leaves without a
+    sale, it is the same as cash leaving the drawer, only harder to notice.
+  </p>
+  <ul>
+    <li><strong>Check deliveries in.</strong> Count what arrives against the supplier's note before you sign.</li>
+    <li><strong>Count the expensive things often.</strong> You do not need a full stock-take every week. Count the ten items that cost you most, every week, and the rest once a month.</li>
+    <li><strong>Record wastage.</strong> Spoiled milk, a dropped bottle, expired yoghurt: write it off on the day, with a reason, so it does not hide inside "missing".</li>
+  </ul>
+  <p>
+    In ZapTill, deliveries, counts, wastage and transfers between branches are all recorded against the stock, so the
+    gap between what should be on the shelf and what is there shows up, item by item.
+  </p>
+
+  <h2>5. Look at the day close every day</h2>
+  <p>
+    Every check above is useless if nobody looks. The single most effective habit is boring: read the day close every
+    night, even when you are tired, even when you are away. Staff notice very quickly when the owner reads it. They also
+    notice when the owner stops.
+  </p>
+
+  <figure>
+    <Laptop label="The day close on the ZapTill web dashboard">
+      <DayCloseScreen />
+    </Laptop>
+    <figcaption>The day close on the web dashboard: each cashier's M-Pesa, cash expected and counted, over and short. Demo data.</figcaption>
+  </figure>
+
+  <p>
+    With the ZapTill Cloud, the day close is on your phone and a daily summary arrives by email, so you can read it
+    wherever you are. With ZapTill Analytics, the Watch list also warns you about patterns worth a look: many voids or refunds by one
+    cashier, unusual discounts, drawers that keep coming up short.
+  </p>
+
+  <div class="guide-note">
+    <p>
+      <strong>A warning is not proof.</strong> A cashier with many voids may simply work the busiest shift. Use the
+      numbers to ask a calm question, not to accuse. Most of the time the answer is training, a faulty process or a
+      tired evening. When it is not, the record, by name and by day, is what lets you act fairly.
+    </p>
+  </div>
+
+  <h2>A short checklist</h2>
+  <ol>
+    <li>Each cashier has their own PIN and their own drawer or shift.</li>
+    <li>The float is counted in and the drawer counted out, every shift.</li>
+    <li>Only a manager can void a paid sale or give a refund.</li>
+    <li>M-Pesa is checked on your phone or statement, and split payments are recorded as split.</li>
+    <li>Deliveries are counted in; the expensive items are counted every week; wastage is written off on the day.</li>
+    <li>You read the day close every night.</li>
+  </ol>
+  <p>
+    None of this needs a point of sale. A cash book and discipline can do most of it. A point of sale makes it
+    automatic, puts a name on every number, and saves you from adding it all up by hand at midnight. If you want to put
+    a rough figure on what small leaks could be costing you, try the <a href="/pricing/#calc-title">leak calculator</a>.
+  </p>
+</Guide>

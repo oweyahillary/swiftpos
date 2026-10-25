@@ -63,7 +63,7 @@ export default function GenerateBarcodes({ ids, onClose, onDone }: {
                 <p className="text-gray-500">The first: <span className="font-mono text-gray-300">{preview.sample.join(', ')}</span></p>
               )}
               <p className="text-xs text-gray-500">{preview.numbering ? `${describeNumbering(preview.numbering)}. ` : ''}Your own numbers, set under Barcode numbering on the Print labels page.
-                The tills scan them as soon as they next refresh the menu. Print them with Print labels.</p>
+                The points of sale scan them as soon as they next refresh the menu. Print them with Print labels.</p>
               {preview.error && <p className="text-red-400" data-testid="range-full">{preview.error}</p>}
             </>
           )}

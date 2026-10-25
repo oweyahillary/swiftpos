@@ -48,14 +48,15 @@ export function trialBillingLine(trial: CloudTrialView | null | undefined): { ti
   const end = trialDate(trial.ends_at);
   if (trial.phase === "active") {
     return { title: `Cloud trial — ends ${end}`,
-      text: "Started with the first desktop licence; no invoice was raised. Convert to paid = record the first payment on the Cloud plan below (KES 3,000 a month by default, editable); it raises a paid invoice." };
+      text: "Started with the first desktop licence; no invoice was raised. Convert to paid = record the first payment on the Cloud plan below (KES 3,000 a month by default, editable); it raises a paid invoice and turns web access on." };
   }
   if (trial.phase === "reports_only") {
     return { title: `Cloud trial ended ${end} — reports only`,
-      text: "The owner can still sign in to read reports for 7 days after the trial, then sign-in stops. Tills are not affected. Convert to paid to keep the dashboard." };
+      text: "The owner can still sign in to read reports for 7 days after the trial, then sign-in stops. Points of sale are not affected. Convert to paid to keep the dashboard." };
   }
-  return { title: `Cloud trial ended ${end}`,
-    text: "The owner can no longer sign in to the web dashboard (\"Your cloud trial has ended\"). Tills are not affected. Convert to paid to give it back." };
+  // A587: a trial ends like a paid period — the invoice on its end day, the 7 days, then locked.
+  return { title: `Cloud trial ended ${end} — invoiced`,
+    text: `An invoice went to the client on ${end}, as for a paid client. Unpaid 7 days after it, everything locks (web dashboard, sync, joining a POS); points of sale keep selling. Convert to paid = Record payment below: it covers from ${end}.` };
 }
 
 /** The client list's plan colour. */
@@ -66,46 +67,93 @@ export function planTone(label: string | null | undefined): Tone {
   return "muted";
 }
 
-// ── A581: the cloud payment plan (per business; paid-until = web access expiry) ─────────────────────────────────────
-/** Where a client on the plan stands — GET /clients rows' `cloud`, and the Plan & billing card's `standing`. */
+// ── A581 / A584: the cloud payment plan (per business; paid-until = web access expiry) ─────────────────────────────
+/** Where a client stands — GET /clients rows' `cloud`, and the Plan & billing card's `standing` (lib/cloudPlan.ts standingView). */
 export interface CloudStandingView {
   paid_until: string | null; days_left: number | null; state: string; sync_refused: boolean; trial: boolean;
   sync_stops_at?: string | null; gated?: boolean;
+  due_at?: string | null; lock_at?: string | null; unpaid_days?: number | null; lock_in_days?: number | null; locked_days?: number | null;
+  bridge_pending?: boolean; web_locked?: boolean;
+  /** A587: when the client is (or would be) taken as "Not interested". */
+  not_interested_at?: string | null;
 }
 const dayWord = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
 
-/** The client list's expiry: "Expires in 5 days" / "Expires today" / "Lapsed 3 days" / "Paid to 23 Nov 2026"; null off the plan. */
+/**
+ * A584: the client list's billing status (ZapTill's eyes only — the client is never shown a countdown):
+ *   "Due in 5 days" / "Due today" / "Paid to 23 Nov 2026" · "Unpaid 3 days (locks in 4 days)" · "Locked 2 days" ·
+ *   "No expiry set" · a trial's own words. null: nothing to bill.
+ */
 export function expiryText(c: CloudStandingView | null | undefined): { text: string; tone: Tone } | null {
-  if (!c || !c.paid_until || c.days_left === null || c.days_left === undefined) return null;
+  if (!c) return null;
+  if (c.state === "no_expiry") return { text: "No expiry set", tone: "warn" };
+  if (c.state === "no_date") return { text: "On a plan — no payment yet", tone: "warn" };
+  if (c.state === "off") return { text: "Web access off", tone: "bad" };   // A587: a hard off
+  if (c.state === "not_interested") return { text: `Not interested (since ${trialDate(c.not_interested_at)})`, tone: "muted" };   // A587
+  const t = c.trial ? "Trial ended — " : "";   // A587: a trial ends like a paid period
+  if (c.trial) {
+    if (c.state === "ended") return { text: "Trial ended — locked", tone: "bad" };
+    if (c.state === "reports_only") return { text: "Trial ended — reports only", tone: "bad" };
+    if (c.state === "active") {
+      const d = c.days_left ?? 0;
+      return { text: d <= 0 ? "Trial ends today" : `Trial — ends in ${dayWord(d)}`, tone: d <= 7 ? "warn" : "ok" };
+    }
+  }
+  if (c.state === "locked") { const n = c.locked_days ?? 0; return { text: `${t}${n <= 0 ? `${t ? "l" : "L"}ocked today` : `${t ? "l" : "L"}ocked ${dayWord(n)}`}`, tone: "bad" }; }
+  if (c.state === "unpaid") {
+    const u = c.unpaid_days ?? 0, m = c.lock_in_days ?? 0;
+    const lock = m <= 0 ? "locks tonight" : `locks in ${dayWord(m)}`;
+    return { text: `${t}${u <= 0 ? `${t ? "d" : "D"}ue today (${lock})` : `${t ? "u" : "U"}npaid ${dayWord(u)} (${lock})`}`, tone: u >= 5 ? "bad" : "warn" };
+  }
+  if (c.days_left === null || c.days_left === undefined || !c.paid_until) return null;
   const d = c.days_left;
-  if (c.state === "ended") return { text: "Trial ended — sync stopped", tone: "bad" };
-  if (d < 0) return { text: `Lapsed ${dayWord(-d)}${c.sync_refused ? " — sync stopped" : ""}`, tone: "bad" };
-  if (d === 0) return { text: "Expires today", tone: "bad" };
-  if (d <= 14) return { text: `Expires in ${dayWord(d)}`, tone: "warn" };
-  return { text: `Paid to ${trialDate(c.paid_until)}`, tone: "ok" };
+  if (d <= 0) return { text: "Due today", tone: "warn" };
+  if (d <= 31) return { text: `Due in ${dayWord(d)}`, tone: d <= 7 ? "warn" : "ok" };
+  return { text: `Paid to ${trialDate(c.due_at ?? c.paid_until)}`, tone: "ok" };
 }
 
 /** The Plan & billing card's headline and explanation. */
 export function standingLine(s: CloudStandingView | null | undefined): { title: string; text: string; tone: Tone } {
-  if (!s || !s.gated) return { title: "Not on a cloud plan", tone: "muted",
-    text: "Set a plan or record a payment to put this client on it. Until then its tills sync as before (no lapse rule)." };
+  if (!s) return { title: "Not on a cloud plan", tone: "muted", text: "Set a plan or record a payment to put this client on it." };
+  if (s.state === "no_expiry") return { title: "No expiry set", tone: "warn",
+    text: "Web access is on with no paid-until date, so nothing is billed and nothing locks. Record a payment (or a complimentary paid-until) to put this client on the plan." };
+  if (s.state === "off") return { title: "Web access off — switched off now", tone: "bad",
+    text: `"Disable web access" is a hard off: the web dashboard is paused, the cloud refuses sync from this client's points of sale and no POS can be joined; nothing is invoiced. The points of sale keep selling. ${s.paid_until && Date.parse(s.paid_until) > Date.now() ? `Enable web access again (paid until ${trialDate(s.paid_until)} is still ahead), or record a payment.` : "To switch it back on, record a payment (or a complimentary paid-until)."}` };
+  if (s.state === "not_interested") return { title: `Not interested (since ${trialDate(s.not_interested_at)})`, tone: "muted",
+    text: `Unpaid for 3 months after ${trialDate(s.due_at ?? s.paid_until)}: no more invoices, the open cloud invoices were written off, and it stays locked (web, sync, joining a POS). The points of sale keep selling. If the client pays, the payment starts a fresh period from that day — pay as you go, no arrears.` };
+  if (!s.gated) return { title: "Not on a cloud plan", tone: "muted",
+    text: "No web access. Record a payment (or a complimentary paid-until) to turn it on and put this client on the plan." };
   if (!s.paid_until) return { title: "On a plan — no payment yet", tone: "warn", text: "Record the first payment to set the paid-until date." };
-  const until = trialDate(s.paid_until);
-  const stops = trialDate(s.sync_stops_at ?? null);
-  const what = s.trial ? "Cloud trial" : "Paid";
-  if (s.sync_refused) return { title: s.state === "ended" ? "Trial ended — sync stopped" : `Lapsed — ended ${until}`, tone: "bad",
-    text: "The cloud refuses this client's tills' sync and no till can be joined. The tills keep selling and keep their sales; recording a payment opens sync again at once and the queue drains." };
+  const due = trialDate(s.due_at ?? s.paid_until);
+  const lastOpen = s.lock_at ? trialDate(new Date(Date.parse(s.lock_at) - 1).toISOString()) : "—";
+  if (s.trial) {
+    if (s.state === "ended") return { title: "Trial ended — locked", tone: "bad",
+      text: "The trial was ended (web access switched off): sync is stopped and no POS can be joined; the points of sale keep selling. Recording a payment converts the trial and opens everything at once." };
+    if (s.state === "reports_only") return { title: "Trial ended — reports only", tone: "bad",
+      text: "Sync is stopped and no POS can be joined; the points of sale keep selling. Recording a payment converts the trial and opens everything at once." };
+    if (s.state === "active") return { title: `Cloud trial — ends ${due}`, tone: (s.days_left ?? 0) <= 7 ? "warn" : "ok",
+      text: `No invoice during the trial. On ${due} an invoice goes to the client, as for a paid client; unpaid 7 days after it, it locks at the end of ${lastOpen}. Recording a payment converts it.` };
+  }
+  const tr = s.trial ? "Trial ended — " : "";   // A587: after its end a trial is billed like a paid client
+  if (s.state === "locked") return { title: `${tr}Locked — unpaid since ${due}`, tone: "bad",
+    text: `The web dashboard is paused (${s.trial ? "\"Your cloud trial has ended\"" : "\"Your ZapTill cloud access is paused. Call 0717 675 635 to renew.\""}), the cloud refuses sync from this client's points of sale and no POS can be joined. The points of sale keep selling and keep their sales. Pay as you go: a payment starts a fresh period from the day it is made (the locked time is not charged — its unpaid invoice is closed) and opens everything at once; the queue drains. Unpaid 3 months (to ${trialDate(s.not_interested_at)}), it is taken as not interested.` };
+  if (s.state === "unpaid") {
+    const u = s.unpaid_days ?? 0, m = s.lock_in_days ?? 0;
+    return { title: `${tr}${u <= 0 ? "Due today" : `Unpaid ${dayWord(u)}`} — locks ${m <= 0 ? "tonight" : `in ${dayWord(m)}`} (end of ${lastOpen})`, tone: u >= 5 ? "bad" : "warn",
+      text: `The invoice went to the client on ${due}. Everything works until the end of ${lastOpen}; then it locks at once — the client is not warned. A payment now covers the invoiced period (from ${due}).${s.bridge_pending ? " (Its plan row is made by the next billing pass.)" : ""}` };
+  }
   const d = s.days_left ?? 0;
-  if (d < 0) return { title: `Lapsed ${dayWord(-d)} — in grace until ${stops}`, tone: "bad",
-    text: `Everything still works until ${stops} (the 21-day grace); then sync stops and no till can be joined until a payment is recorded.` };
-  return { title: `${what} until ${until} — ${d === 0 ? "today" : `${dayWord(d)} left`}`, tone: d <= 14 ? "warn" : "ok",
-    text: s.trial
-      ? `No grace after a trial: sync stops on ${until}. Recording a payment converts the trial.`
-      : `If unpaid, the 21-day grace runs to ${stops}; then sync stops and no till can be joined. Reminders go to the owner and ZapTill at 14, 7, 3 and 1 day(s), on the day, and weekly while lapsed.` };
+  return { title: `Paid until ${due} — ${d <= 0 ? "due today" : `${dayWord(d)} left`}`, tone: d <= 7 ? "warn" : "ok",
+    text: `On ${due} an invoice goes to the client by email (the next period). Unpaid 7 days after that, it locks at the end of ${lastOpen}. You get the invoice copy, a note on day 5, and the lock.` };
 }
 
-/** The reminder milestone in words. */
+/** The notice milestone in words (A584's admin notices; A581's client reminders as history). */
 export function milestoneText(m: string): string {
+  if (m === "invoice") return "invoice sent";
+  if (m === "unpaid_5") return "unpaid 5 days (to ZapTill)";
+  if (m === "locked") return "locked (to ZapTill)";
+  if (m === "trial_end") return "trial ended (to ZapTill)";
+  if (m === "not_interested") return "not interested — invoices written off (to ZapTill)";   // A587
   if (m.startsWith("before_")) return `${m.slice(7)} day${m.slice(7) === "1" ? "" : "s"} before`;
   if (m === "lapse_day") return "the day it lapsed";
   const w = Number(m.replace("lapsed_w", ""));
@@ -116,4 +164,28 @@ export function milestoneText(m: string): string {
 export function periodDefault(period: string, monthly = 3000): string {
   const months = ({ monthly: 1, "3_months": 3, "6_months": 6, "12_months": 12 } as Record<string, number>)[period];
   return months ? String(monthly * months) : "";
+}
+
+// ── A587: what a payment covers (the Record payment form; POST …/cloud-plan/payments/preview) ─────────────────────────
+export interface CoverInvoice { invoice_number: string; period_start: string | null; period_end: string | null; amount: number }
+export interface CoverView {
+  from: string; until: string; fresh: boolean; settles: CoverInvoice[]; closes?: CoverInvoice[];
+  not_interested_at?: string | null; state?: string;
+}
+const span = (a: string | null | undefined, b: string | null | undefined) => `${trialDate(a)} – ${trialDate(b)}`;
+const andList = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/**
+ * A587 (owner, 2026-10-24: "it's pay as you go, not pay for missed months, since they won't be using the system at that
+ * time"): the line under Record payment — a locked client: "Starts a new period: 24 Oct 2026 – 24 Nov 2026. INV-2026-0012
+ * (not used while paused) is closed, not charged." Within the 7 days: "Pays INV-… (23 Oct 2026 – 23 Nov 2026); paid until …".
+ */
+export function coversLine(c: CoverView | null | undefined): string | null {
+  if (!c || !c.until) return null;
+  const closes = c.closes ?? [];
+  const closed = closes.length
+    ? ` ${andList(closes.map((i) => i.invoice_number))} (not used while paused) ${closes.length === 1 ? "is" : "are"} closed, not charged.` : "";
+  if (c.fresh) return `${c.state === "not_interested" ? `Not interested since ${trialDate(c.not_interested_at)} — s` : "S"}tarts a new period: ${span(c.from, c.until)}.${closed}`;
+  if (c.settles.length) return `Pays ${andList(c.settles.map((i) => `${i.invoice_number} (${span(i.period_start, i.period_end)})`))}; paid until ${trialDate(c.until)}.`;
+  return `Covers ${span(c.from, c.until)} (a new paid invoice); paid until ${trialDate(c.until)}.`;
 }

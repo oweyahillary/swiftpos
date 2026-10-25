@@ -320,7 +320,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
             <>
               {(finalReport as any).blind ? (
                 <div className="bg-gray-950 border border-gray-800 rounded-xl p-4 text-sm text-gray-300" data-testid="blind-closed">
-                  Your count is saved. A manager checks it against the till's figures.
+                  Your count is saved. A manager checks it against the POS's figures.
                 </div>
               ) : (
                 <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
@@ -485,7 +485,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 {!blind && (report?.totals.foreign?.siblings?.count ?? 0) > 0 && (
                   <p className="text-xs text-amber-300" data-testid="sibling-shifts">
                     {/* A342: one count covers both — the cloud closes the web's shift with this close. */}
-                    Also counted in this drawer: the web POS's own shift on this till
+                    Also counted in this drawer: the web POS's own shift on this desktop POS
                     ({report!.totals.foreign!.siblings!.shifts?.map(x => x.opened_by_name ?? 'another cashier').join(', ') || 'another cashier'}),
                     expected {money(report!.totals.foreign!.siblings!.expected)}. Closing here closes it too.
                   </p>
@@ -522,7 +522,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                       This closes the shift <span className="font-semibold">without a cash count</span>.
                       The variance will be recorded as unknown, not zero, and the shift is marked
                       unreconciled permanently. Use it only when the drawer genuinely cannot be counted —
-                      a till left open overnight, for example.
+                      a POS left open overnight, for example.
                     </p>
                     <textarea
                       value={forceReason}

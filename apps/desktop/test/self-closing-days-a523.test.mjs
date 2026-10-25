@@ -145,7 +145,7 @@ console.log('\n#2 money still needs a manager — and today is never touched\n')
   const g = Dy.checkDayGate();
   ok('#2 a drawer open on the old day still locks (a manager counts it)', g.needsManager === true && dayRow('d-4').status === 'open', JSON.stringify(g));
   ok('#2 …with the A520 wording (where to close it)',
-    g.reason === `Trading day ${yesterday} was never closed on this till. A manager must count the cash and close it before ${today} can start — a manager signs in here and closes it in Manager › Close › Close Day.`, g.reason);
+    g.reason === `Trading day ${yesterday} was never closed on this POS. A manager must count the cash and close it before ${today} can start — a manager signs in here and closes it in Manager › Close › Close Day.`, g.reason);
   db.prepare(`UPDATE shifts SET business_day_id = NULL WHERE id = 'sh-4'`).run();   // the till's drawer open, on no day
   ok('#2 this till\'s drawer open (on any day) still locks', Dy.checkDayGate().needsManager === true && dayRow('d-4').status === 'open');
   clean();
@@ -187,7 +187,7 @@ console.log('\n#3 a web force-close and a web day close are learned before the g
   ok('#3 …the drawer closed here uncounted, as on the web; its expected cash is the till\'s own (A521), not the web\'s 1500',
     s.status === 'closed_unreconciled' && s.closing_float === null && s.expected_cash === 1000 && s.sync_status === 'synced', JSON.stringify(s));
   ok('#3 …the day closed here, as the web\'s close — by the web\'s closer, the note says the till adopted it',
-    d.status === 'closed' && d.closed_by === 'u-mary' && /Closed on the web by Mary — this till adopted the web's close\./.test(d.notes ?? '') && /T1 off, cashier gone/.test(d.notes ?? ''), JSON.stringify(d));
+    d.status === 'closed' && d.closed_by === 'u-mary' && /Closed on the web by Mary — this POS adopted the web's close\./.test(d.notes ?? '') && /T1 off, cashier gone/.test(d.notes ?? ''), JSON.stringify(d));
   ok('#3 …on its own books (expected 1000 from its own drawer, counted the confirmed counts: 0)', d.expected_cash === 1000 && d.counted_cash === 0, JSON.stringify(d));
   ok('#3 …and the close acked to the cloud as done', cloud.acks.length === 1 && cloud.acks[0].instruction_id === 'ins-7' && cloud.acks[0].ok === true, JSON.stringify(cloud.acks));
   ok('#3 …the day goes up with the till\'s figures (pending — the cloud keeps one close)', d.sync_status === 'pending');

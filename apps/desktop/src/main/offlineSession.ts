@@ -21,8 +21,8 @@ import { isSessionRefusal } from './sessionRecovery';   // A446
 
 /** Shown by every cloud-owned editor while the session is an offline one. */
 export const OFFLINE_SESSION_MESSAGE =
-  'You signed in while offline. Menu, staff and settings changes are saved on the cloud — once the till is online they ' +
-  'unlock by themselves (or lock the till and sign in again). Selling is not affected.';
+  'You signed in while offline. Menu, staff and settings changes are saved on the cloud — once the POS is online they ' +
+  'unlock by themselves (or lock the POS and sign in again). Selling is not affected.';
 
 /** Shown when the session has a cloud token but the cloud cannot be reached. */
 export const NO_CONNECTION_MESSAGE =

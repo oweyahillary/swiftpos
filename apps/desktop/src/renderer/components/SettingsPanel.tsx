@@ -42,7 +42,7 @@ export default function SettingsPanel({ canBusiness = false, canPayments = false
     <div className="max-w-xl space-y-8">
       <div>
         <h2 className="text-lg font-semibold text-white">Settings</h2>
-        <p className="text-sm text-gray-400 mt-1">Business-wide options for every till.</p>
+        <p className="text-sm text-gray-400 mt-1">Business-wide options for every POS.</p>
       </div>
 
       {/* 24-hour operation */}
@@ -52,10 +52,10 @@ export default function SettingsPanel({ canBusiness = false, canPayments = false
             <p className="text-white text-sm font-medium">24-hour operation</p>
             <p className="text-xs text-gray-400 mt-1">
               For a business that never closes overnight. When on, an unclosed trading
-              day doesn't stop the till the moment the date changes — it keeps running
+              day doesn't stop the POS the moment the date changes — it keeps running
               for a 2-hour grace window behind a reminder, so a manager can count the
               cash and close the day without halting service. After the grace window
-              the till still locks until the day is closed. Off: the till locks
+              the POS still locks until the day is closed. Off: the POS locks
               immediately at rollover, as before.
             </p>
           </div>

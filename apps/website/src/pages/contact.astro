@@ -14,7 +14,7 @@ const isDev = import.meta.env.DEV;
  */
 ---
 <Base
-  title="Contact ZapTill: WhatsApp, call or book a visit"
+  title="Contact ZapTill: WhatsApp 0717 675 635 or book a visit"
   description="WhatsApp or call ZapTill on 0717 675 635, or book a visit: we come to you, or show you ZapTill running at a business near you."
   waMessage={WA_MESSAGES.general}
   ogImage="/og/contact.png"
@@ -22,7 +22,7 @@ const isDev = import.meta.env.DEV;
   <section class="page-head contact-head">
     <div class="wrap">
       <h1>Talk to a person.</h1>
-      <p class="lede">WhatsApp is quickest. Tell us what kind of business you run and how many tills you have.</p>
+      <p class="lede">WhatsApp is quickest. Tell us what kind of business you run and how many points of sale you have.</p>
     </div>
   </section>
 
@@ -33,7 +33,11 @@ const isDev = import.meta.env.DEV;
         <p>Send us a message and a person replies. The message is written for you; change it as you like.</p>
         <WhatsAppButton message={WA_MESSAGES.general} />
         <p class="way__alt">
-          Running a restaurant? <a href={waLink(WA_MESSAGES.restaurant)} target="_blank" rel="noopener">Ask for a restaurant demo</a>.
+          Or ask for a demo for your trade:
+          <a href={waLink(WA_MESSAGES.retail)} target="_blank" rel="noopener">a shop</a>,
+          <a href={waLink(WA_MESSAGES.restaurant)} target="_blank" rel="noopener">a restaurant</a>,
+          <a href={waLink(WA_MESSAGES.petrol)} target="_blank" rel="noopener">a petrol station</a> or
+          <a href={waLink(WA_MESSAGES.parking)} target="_blank" rel="noopener">a car park</a>.
         </p>
       </article>
 
@@ -57,12 +61,13 @@ const isDev = import.meta.env.DEV;
     <div class="wrap visit">
       <div>
         <h2 id="visit-title">Book a visit</h2>
-        <p class="lede">The best way to judge a till is to watch it work.</p>
+        <p class="lede">The best way to judge a point of sale is to watch it work.</p>
       </div>
       <ul class="visit__list">
         <li>
           <h3>We come to you.</h3>
-          <p>We look at your counter, your kitchen and how you close the day, then show you ZapTill on your own kind of menu.</p>
+          <p>We look at your counter, your shelves, your kitchen or your pumps, and how you close the day, then show you
+            ZapTill set up for your own kind of business.</p>
         </li>
         <li>
           <h3>Or see it running.</h3>

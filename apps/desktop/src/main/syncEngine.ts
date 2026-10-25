@@ -456,7 +456,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
         if (res.status === 429) noteTooManyRenewals(res, 'device sign-in');
         const r = await readRefusal(res);
         authLog('device-grant-refused', `${r.code || `HTTP ${res.status}`}`);
-        noteInboundFailure('auth', `the till could not sign itself back in: ${r.detail}`);
+        noteInboundFailure('auth', `the POS could not sign itself back in: ${r.detail}`);
         return false;
       }
       const pair = await res.json() as { accessToken: string; refreshToken: string };
@@ -491,7 +491,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
       // A477: too many renewals — wait as asked; asking again only extends the wait.
       if (res.status === 429) {
         noteTooManyRenewals(res, 'renewal');
-        noteInboundFailure('auth', `till token refresh failed: ${(await readRefusal(res)).detail}`);
+        noteInboundFailure('auth', `POS token refresh failed: ${(await readRefusal(res)).detail}`);
         return false;
       }
       // A160: a 5xx means the cloud answered but can't serve — treat it like
@@ -507,12 +507,12 @@ async function doRefreshAccessToken(): Promise<boolean> {
       // sign in again, and with no internet they cannot. Recording it is the
       // difference between "it logged me out again" and knowing which refresh
       // was rejected and when.
-      noteInboundFailure('auth', `till token refresh failed: ${refusal ? refusal.detail : await describeResponse(res)}`);
+      noteInboundFailure('auth', `POS token refresh failed: ${refusal ? refusal.detail : await describeResponse(res)}`);
       return false;
     }
     const { accessToken, refreshToken, deviceSecret, ack } = (await res.json()) ?? {};
     if (typeof accessToken !== 'string' || !accessToken || typeof refreshToken !== 'string' || !refreshToken) {
-      noteInboundFailure('auth', 'till token refresh: the answer carried no sign-in');
+      noteInboundFailure('auth', 'POS token refresh: the answer carried no sign-in');
       return false;
     }
     // A477: disk first, then memory, then the ack (keepRenewedPair). With the handshake the cloud has NOT retired the
@@ -530,7 +530,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
     // A160: the cloud is unreachable (DNS/refused/timeout). Before giving up,
     // ask the node to broker the refresh — only the node needs internet.
     if (await tryNodeRefresh()) return true;
-    noteInboundFailure('auth', `till token refresh error: ${err?.message ?? err}`);
+    noteInboundFailure('auth', `POS token refresh error: ${err?.message ?? err}`);
     return false;
   }
 }
@@ -901,7 +901,7 @@ export function pushWastageNow(): Promise<Record<string, WasteOutcome>> {
     if (!waiting.length) return {};
     if (!_accessToken || !_serverUrl || !isOnline()) {
       const out: Record<string, WasteOutcome> = {};
-      for (const w of waiting) out[w.client_id] = { state: 'pending', message: 'Saved on this till — it goes to the cloud when the connection is back.' };
+      for (const w of waiting) out[w.client_id] = { state: 'pending', message: 'Saved on this POS — it goes to the cloud when the connection is back.' };
       return out;
     }
     const outcomes = await pushPendingWastage(db, async (rec) => {
@@ -968,7 +968,7 @@ export function pushStationRoutingNow(): Promise<Record<string, PushOutcome>> {
     if (!Object.keys(readPendingRouting(db)).length) return {};
     if (!_accessToken || !_serverUrl || !isOnline()) {
       const out: Record<string, PushOutcome> = {};
-      for (const id of Object.keys(readPendingRouting(db))) out[id] = { state: 'pending', message: 'Saved on this till — it goes to the cloud when the connection is back.' };
+      for (const id of Object.keys(readPendingRouting(db))) out[id] = { state: 'pending', message: 'Saved on this POS — it goes to the cloud when the connection is back.' };
       return out;
     }
     const outcomes = await pushPendingRouting(db, async (stationId, categoryIds) => {
@@ -1029,7 +1029,7 @@ export async function pushBrandingNow(): Promise<BrandingPushResult> {
   const row = sess?.business_id ? db.prepare(
     `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding WHERE business_id = ?`,
   ).get(sess.business_id) as { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number } | undefined : undefined;
-  if (!row) { setBrandingPending(false, version); return { state: 'refused', message: 'No business on this till yet.' }; }
+  if (!row) { setBrandingPending(false, version); return { state: 'refused', message: 'No business on this POS yet.' }; }
   if (!_accessToken || !_serverUrl || !isOnline()) return { state: 'pending', message: 'Offline — it will be saved to the cloud at the next sync.' };
   const body = JSON.stringify({
     accent_hex: row.accent_hex, logo_png: row.logo_png, logo_receipt: row.logo_receipt,
@@ -3051,7 +3051,7 @@ async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTable
     // is reported, not blocked — a terminal that still syncs correctly must keep
     // trading while someone walks round with the installer.
     if (body?.schema?.behind) {
-      errors.push(String(body.schema.message ?? 'This till is running an older build — update it.'));
+      errors.push(String(body.schema.message ?? 'This POS is running an older build — update it.'));
     }
 
     // A rejection names the table it belongs to. This push carries four of them
@@ -3154,7 +3154,7 @@ async function pushCashBatch(db: ReturnType<typeof getLocalDb>, batch: CashTable
     if (unrouted.length) {
       errors.push(
         `${unrouted.length} record(s) were refused by the server for a reason this ` +
-        `build does not recognise — update this till. First reason: ${unrouted[0].error}`,
+        `build does not recognise — update this POS. First reason: ${unrouted[0].error}`,
       );
     }
 
@@ -3272,7 +3272,7 @@ export function pruneSyncedQueue(now = Date.now()): number {
 // or a captive portal does not). COALESCE: a row with no error is never one of them (NOT NULL would drop it from both).
 const CONNECTION_FAILURE_SQL = `(COALESCE(last_error, '') LIKE '%fetch failed%' OR COALESCE(last_error, '') LIKE '%timed out%' OR COALESCE(last_error, '') LIKE '%cannot reach%'
   OR COALESCE(last_error, '') LIKE '%ECONN%' OR COALESCE(last_error, '') LIKE '%ENOTFOUND%' OR COALESCE(last_error, '') LIKE '%EAI_AGAIN%' OR COALESCE(last_error, '') LIKE '%HTTP 5%'
-  OR COALESCE(last_error, '') LIKE '%refused this till%' OR COALESCE(last_error, '') LIKE '%network%' OR COALESCE(last_error, '') LIKE '%aborted%'
+  OR COALESCE(last_error, '') LIKE '%refused this POS%' OR COALESCE(last_error, '') LIKE '%refused this till%' OR COALESCE(last_error, '') LIKE '%network%' OR COALESCE(last_error, '') LIKE '%aborted%'
   OR COALESCE(last_error, '') LIKE '%another server''s page%' OR COALESCE(last_error, '') GLOB 'HTTP [0-9][0-9][0-9]')`;
 function requeueConnectionFailures(): number {
   const back = getLocalDb().prepare(`UPDATE sync_queue SET status='pending', attempts=0 WHERE status='failed' AND ${CONNECTION_FAILURE_SQL}`).run().changes;
@@ -3442,7 +3442,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         // of a sale that reads synced on the till and is absent from the cloud.
         const err = await res.json().catch(() => ({} as any));
         const message = (err as any)?.error
-          || 'order number already exists on the cloud (another till/session) — NOT stored';
+          || 'order number already exists on the cloud (another POS or session) — NOT stored';
         db.prepare(`
           UPDATE sync_queue SET attempts=attempts+1, last_error=?,
           status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'pending' END WHERE id=?
@@ -3695,13 +3695,13 @@ async function pushToNodeOnce(errors: string[]): Promise<number> {
       const warn: string[] = [];
       if (Math.abs(clock.driftMs) > 120_000) {
         const mins = Math.round(Math.abs(clock.driftMs) / 60_000);
-        warn.push(`This till's clock is ${mins} minute(s) ${clock.driftMs > 0 ? 'ahead of' : 'behind'} the branch server. ` +
-          'Correct it before the next day close — trading days are dated from each till\'s own clock.');
+        warn.push(`This POS's clock is ${mins} minute(s) ${clock.driftMs > 0 ? 'ahead of' : 'behind'} the branch server. ` +
+          'Correct it before the next day close — trading days are dated from each POS\'s own clock.');
       }
       if (clock.tzMismatch && clock.nodeTzOffset !== null) {
         const zone = (off: number) => { const m = -off; const sign = m >= 0 ? '+' : '-'; const a = Math.abs(m); return `UTC${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`; };
-        warn.push(`This till's time zone (${zone(clock.tzOffset)}) is not the branch server's (${zone(clock.nodeTzOffset)}). ` +
-          'Set both to the shop\'s time zone in Windows — trading days are dated from each till\'s own time.');
+        warn.push(`This POS's time zone (${zone(clock.tzOffset)}) is not the branch server's (${zone(clock.nodeTzOffset)}). ` +
+          'Set both to the shop\'s time zone in Windows — trading days are dated from each POS\'s own time.');
       }
       _clockWarnings = warn;
     }
@@ -3807,7 +3807,9 @@ export function requeueTransientConflicts(): { kitchenVoids: number; expenses: n
   return out;
 }
 
-export const DAY_CLASH_NOTE ='Sync rejected: This till already has an open trading day. It must be closed before this one can sync.';
+export const DAY_CLASH_NOTE ='Sync rejected: This POS already has an open trading day. It must be closed before this one can sync.';
+/** A586: the same note as an older build (and an older cloud) wrote it — still stripped from a parked day. */
+const DAY_CLASH_NOTE_OLD = 'Sync rejected: This till already has an open trading day. It must be closed before this one can sync.'; // till-wording: ok
 export const MISSING_DAY_NOTE = 'Sync rejected: This shift\'s trading day is not on the server — the day was refused or has not synced yet. Resolve the trading day first.';
 export function requeueAfterDayClash(): { days: number; shifts: number } {
   const db = getLocalDb();
@@ -3829,7 +3831,7 @@ export function requeueAfterDayClash(): { days: number; shifts: number } {
     `).all(own) as { id: string; notes: string | null }[];
     for (const d of parkedDays) {
       if (!once('business_days', d.id)) continue;
-      db.prepare(`UPDATE business_days SET sync_status = 'pending', notes = ? WHERE id = ?`).run(strip(d.notes, DAY_CLASH_NOTE), d.id);
+      db.prepare(`UPDATE business_days SET sync_status = 'pending', notes = ? WHERE id = ?`).run(strip(strip(d.notes, DAY_CLASH_NOTE), DAY_CLASH_NOTE_OLD), d.id);
       days++;
     }
     const parkedShifts = db.prepare(`

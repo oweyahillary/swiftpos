@@ -1,0 +1,161 @@
+---
+import Industry from '../../layouts/Industry.astro';
+import Monitor from '../../components/frames/Monitor.astro';
+import Shot from '../../components/screens/Shot.astro';
+import Receipt from '../../components/screens/Receipt.astro';
+import DoThisNextCard from '../../components/screens/DoThisNextCard.astro';
+import { WA_MESSAGES } from '../../lib/site';
+import { MINIMART_FAQ } from '../../lib/faq';
+import { SHOP_CARDS } from '../../lib/analyticsDemo';
+
+// 2026-10-23. Minimarts are their own business type in ZapTill (OnboardingPage: "Minimart: Grocery & convenience"),
+// with the shop's words (Departments, Products) and the retail point of sale on the desktop. This page is the convenience-store
+// angle: a fast queue, weighed meat and produce (A577), licensed hours for alcohol (A578), neighbours on account (A567),
+// what sells together (A575). Shops and supermarkets in general: /for/retail/. Only what ships (WORKPLAN §3).
+const problems = [
+  {
+    problem: 'The morning queue is out of the door, and the cashier is still looking for the bread.',
+    fix: 'Your departments sit as big tabs across the point of sale (Groceries, Beverages, Personal care) and everything with a barcode scans. Products that came without one get their own code from ZapTill, with labels on any printer.',
+  },
+  {
+    problem: 'Meat and tomatoes are weighed on the scale, then the price is typed in by hand.',
+    fix: 'Mark them as sold by weight. The cashier types the weight on the point of sale\'s keypad, or scans the label the scale prints, and ZapTill charges it at your price a kilo. Stock comes off to the gram.',
+  },
+  {
+    problem: 'Neighbours buy on credit, and the exercise book never adds up.',
+    fix: 'Give a regular an account with a limit. The cashier puts the bill on it at the point of sale, a manager confirms it, and the dashboard shows who owes you and for how long.',
+  },
+  {
+    problem: 'A beer was sold at ten in the morning, outside your licence.',
+    fix: 'Give the alcohol department its hours. Outside them its items leave the point of sale, and a scan is refused with the reason on the screen.',
+  },
+  {
+    problem: 'The drawer is short at night, and you were not there.',
+    fix: 'Each cashier counts their own drawer at the close. ZapTill shows what should be there, what was counted and the difference, by name, with their M-Pesa next to it.',
+  },
+];
+const card = SHOP_CARDS[1];
+---
+<Industry
+  title="Minimart POS in Kenya: scan, weigh, M-Pesa | ZapTill"
+  description="ZapTill for minimarts in Kenya: barcodes and departments, meat and produce weighed at the POS, alcohol only in licensed hours, customers on account, M-Pesa."
+  ogImage="/og/minimarts.png"
+  kicker="Minimart POS in Kenya"
+  guides={['stop-cash-going-missing', 'pos-when-the-internet-goes-off']}
+  crumb="Minimarts"
+  heading="A quick queue, a weighed kilo, a drawer that adds up."
+  sub="ZapTill keeps a minimart's counter moving: scan or tap, weigh the beef and the tomatoes on the point of sale, put the neighbour's bill on account, and know at closing whose drawer was short, even when the internet is off."
+  waMessage={WA_MESSAGES.minimart}
+  problems={problems}
+  faq={MINIMART_FAQ}
+  closing="See your own minimart on ZapTill."
+>
+  <Fragment slot="hero">
+    <Monitor label="The ZapTill point of sale at a demo minimart">
+      <Shot src="/screens/till-shop.webp" eager width={1280} height={800}
+        alt="The real ZapTill point of sale at a demo minimart, Kijani Basket: departments as big tabs (All, Groceries, Beverages, Personal care), and a bill of milk, bread, maize flour, eggs and 0.640 kg of beef at KES 650 a kilo, total KES 1,246." />
+    </Monitor>
+  </Fragment>
+
+  <section class="band" aria-labelledby="mweigh-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="mweigh-h">Weighed at the counter, charged to the gram</h2>
+        <p>
+          Beef, tomatoes, loose sugar: anything you sell by the kilo is marked as sold by weight. Tap it and the point of sale asks
+          for the weight; type it and the amount appears before the cashier adds it. If your scale prints barcode labels
+          with the weight or the price inside, scan the label instead.
+        </p>
+        <p>The receipt prints "0.640 kg @ 650/kg", and the stock comes off to the gram, so a count of the butchery means
+          something.</p>
+        <p class="m-note">ZapTill does not read the scale through a cable or print the scale's labels: your scale does
+          that, and ZapTill reads them.</p>
+      </div>
+      <div class="split__visual m-weigh">
+        <figure class="screen-crop m-weigh__shot">
+          <Shot src="/screens/till-weigh.webp" width={480} height={618}
+            alt="The real ZapTill weight keypad: Beef (per kg) at KES 650 a kilo, 0.640 kg typed in, amount KES 416.00, and an Add 0.640 kg button." />
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="mhours-h">
+    <div class="wrap">
+      <div class="section-head"><h2 id="mhours-h">Built around how a minimart sells</h2></div>
+      <div class="grid4">
+        <div>
+          <h3>Departments by the hour</h3>
+          <p>Give a department its days and hours, such as an Alcohol department from 17:00 to 23:00, Monday to
+            Saturday. Outside them it leaves the point of sale and a scan is refused. A manager can still show everything.</p>
+        </div>
+        <div>
+          <h3>Customers on account</h3>
+          <p>The regulars from the estate get an account and a credit limit. The bill goes on it at the point of sale, and every
+            sale on account is confirmed by a manager.</p>
+        </div>
+        <div>
+          <h3>When stock runs out</h3>
+          <p>You choose, once: keep selling, show the item as sold out so it can't be rung up, or hide it until the next
+            delivery is in.</p>
+        </div>
+        <div>
+          <h3>Deliveries and counts</h3>
+          <p>Receive the supplier's delivery against the note, count the shelves when you want, and write off what
+            expired with a reason and its cost.</p>
+        </div>
+      </div>
+      <p class="m-note">Stock and labels at the point of sale come with ZapTill Online. <a href="/pricing/">See the packages</a></p>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="mtogether-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="mtogether-h">Then: what to order, and what to put side by side</h2>
+        <p>
+          With ZapTill Analytics, your own sales become a short list in plain words: order more milk before Friday,
+          cooking oil runs out in two days, what to have in for Saturday, and which products your customers buy
+          together, so you put them on the same shelf.
+        </p>
+        <p>It also shows when each thing sells: in the demo, bread and milk go fastest from 6 to 9 in the morning. And it
+          never tells you to put a price up.</p>
+        <p><a href="/analytics/">See Analytics</a></p>
+      </div>
+      <div class="split__visual">
+        <DoThisNextCard {...card} who="a demo minimart" />
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="mrec-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="mrec-h">M-Pesa on every receipt, the drawer counted by name</h2>
+        <p>
+          Your Buy Goods or Paybill number prints large on every receipt, and a split payment shows each part. At the
+          close, each cashier counts their drawer and the manager sees what should be there, what was counted and the
+          difference.
+        </p>
+        <p>Run more than one shop? Every branch sits on one web dashboard, for one cloud fee.</p>
+      </div>
+      <div class="split__visual m-rec">
+        <Receipt kind="shop" />
+      </div>
+    </div>
+  </section>
+</Industry>
+
+<style>
+  .m-note { font-size: var(--fs-sm); color: var(--muted); }
+  .grid4 + .m-note { margin-top: var(--s-5); }
+  .grid4 { display: grid; gap: var(--s-5); }
+  .grid4 h3 { font-size: var(--fs-md); margin-bottom: var(--s-2); }
+  .grid4 p { color: var(--ink-2); margin: 0; }
+  @media (min-width: 700px) { .grid4 { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1100px) { .grid4 { grid-template-columns: repeat(4, 1fr); } }
+  .m-weigh { display: flex; justify-content: center; }
+  .m-weigh__shot { max-width: 340px; width: 100%; }
+  .m-rec { display: flex; justify-content: center; }
+  .m-rec :global(.slip-wrap) { --slip-fs: 0.72rem; }
+</style>

@@ -1,0 +1,52 @@
+---
+// A business-type switch over a few example panels (2026-10-23: Analytics shown in a restaurant's, a shop's or a petrol
+// station's own words). Progressive enhancement: without JavaScript the buttons stay hidden and every panel shows, one
+// under the other, each with its own label. With it, one panel shows at a time and the buttons switch between them.
+// The panels are the slot's children carrying data-trade-panel="<id>"; the first trade is shown first.
+interface Props { trades: { id: string; name: string }[]; label: string; class?: string }
+const { trades, label, class: extra } = Astro.props;
+---
+<div class:list={['tswitch', extra]} data-trades>
+  <div class="tswitch__bar" role="group" aria-label={label} data-trade-tabs hidden>
+    <span class="tswitch__label" aria-hidden="true">Show it for:</span>
+    {trades.map((t, i) => (
+      <button type="button" class="tswitch__btn" data-trade={t.id} aria-pressed={i === 0 ? 'true' : 'false'}>{t.name}</button>
+    ))}
+  </div>
+  <slot />
+</div>
+
+<script is:inline>
+  (function () {
+    document.querySelectorAll('[data-trades]').forEach(function (box) {
+      if (box.dataset.ready) return;
+      box.dataset.ready = '1';
+      var bar = box.querySelector('[data-trade-tabs]');
+      var btns = Array.prototype.slice.call(bar.querySelectorAll('[data-trade]'));
+      var panels = Array.prototype.slice.call(box.querySelectorAll('[data-trade-panel]'));
+      function show(id) {
+        panels.forEach(function (p) { p.hidden = p.getAttribute('data-trade-panel') !== id; });
+        btns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-trade') === id)); });
+      }
+      btns.forEach(function (b) { b.addEventListener('click', function () { show(b.getAttribute('data-trade')); }); });
+      bar.hidden = false;
+      if (btns.length) show(btns[0].getAttribute('data-trade'));
+    });
+  })();
+</script>
+
+<style>
+  .tswitch__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-bottom: var(--s-4); }
+  .tswitch__bar[hidden] { display: none; }
+  .tswitch__label { font-size: var(--fs-sm); color: var(--muted); font-weight: 600; margin-right: var(--s-1); }
+  .tswitch__btn {
+    font: 600 var(--fs-sm)/1.2 var(--font-text);
+    padding: 0.45rem 0.95rem; border-radius: var(--r-pill);
+    border: 1px solid var(--line-strong); background: var(--card); color: var(--ink-2); cursor: pointer;
+  }
+  .tswitch__btn:hover { border-color: var(--teal-strong); color: var(--teal-strong); }
+  .tswitch__btn[aria-pressed='true'] { background: var(--teal-strong); border-color: var(--teal-strong); color: #fff; }
+  .tswitch__btn:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+  .tswitch :global([data-trade-panel] + [data-trade-panel]) { margin-top: var(--s-6); }
+  .tswitch :global([data-trade-panel][hidden]) { display: none; }
+</style>

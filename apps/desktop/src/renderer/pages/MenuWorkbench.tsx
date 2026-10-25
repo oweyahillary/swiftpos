@@ -237,7 +237,7 @@ export default function MenuWorkbench({ currency, onOpenImport, canEdit = true, 
           <div className="flex-1">
             <p className="text-sm text-amber-300">{offline.message}</p>
             <p className="text-xs text-gray-300 mt-1">
-              Showing the menu saved on this till — read-only. The till sells from this menu.
+              Showing the menu saved on this POS — read-only. The POS sells from this menu.
             </p>
           </div>
           <button onClick={load}
@@ -456,7 +456,7 @@ function SavedItemDetail({
           </ul>
         )}
       </div>
-      <p className="text-xs text-gray-400">Read-only while offline. Choices and extras are edited once the till is online.</p>
+      <p className="text-xs text-gray-400">Read-only while offline. Choices and extras are edited once the POS is online.</p>
       </>)}
     </div>
   );

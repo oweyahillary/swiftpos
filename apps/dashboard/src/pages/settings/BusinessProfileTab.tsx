@@ -173,7 +173,7 @@ export default function BusinessProfileTab() {
                 ? <p className="text-sm text-gray-300">Business-wide (older set-up): {mpesaDescribe(v)} — printed by branches that have not set their own.</p>
                 : null;
             })()}
-            <p className="text-gray-500 text-xs mt-1">Each branch sets its own M-Pesa number on its till: Manager › Settings › M-Pesa (Buy Goods till number, or Paybill with its account number). You are notified whenever it changes.</p>
+            <p className="text-gray-500 text-xs mt-1">Each branch sets its own M-Pesa number on its POS: Manager › Settings › M-Pesa (Buy Goods till number, or Paybill with its account number). You are notified whenever it changes.</p>
           </div>
         </div>
       </section>
@@ -199,7 +199,7 @@ export default function BusinessProfileTab() {
           <div>
             <h3 className="text-white font-semibold">Business day ends at</h3>
             <p className="text-gray-500 text-sm mt-0.5">
-              Sales before this time count to the night before — on the tills, the reports and the daily email. A bar open
+              Sales before this time count to the night before — on the points of sale, the reports and the daily email. A bar open
               until 3 am sets 04:00, and closes the day after service. Midnight (00:00) unless you change it.
             </p>
           </div>
@@ -216,7 +216,7 @@ export default function BusinessProfileTab() {
         <div className="mt-6">
           <h3 className="text-white font-semibold">What cashiers see in History</h3>
           <p className="text-gray-500 text-sm mt-0.5 mb-3">
-            A cashier's History — on the tills and the web POS — shows only sales paid by the methods ticked here; a split
+            A cashier's History — on the desktop POS and the web POS — shows only sales paid by the methods ticked here; a split
             sale shows only its ticked part. Cashiers never reprint a receipt. Managers and the owner see every sale.
           </p>
           <HistoryMethodsPicker value={settings.cashier_history_methods}
@@ -228,7 +228,7 @@ export default function BusinessProfileTab() {
           <div>
             <h3 className="text-white font-semibold">Cashiers see their sales when closing a shift</h3>
             <p className="text-gray-500 text-sm mt-0.5">
-              When on, a cashier closing a shift sees the shift's sales and number of orders — on the tills and the web POS.
+              When on, a cashier closing a shift sees the shift's sales and number of orders — on the desktop POS and the web POS.
               They still never see the expected cash or any difference; a manager confirms the count. Off by default.
             </p>
           </div>
@@ -246,7 +246,7 @@ export default function BusinessProfileTab() {
             <h3 className="text-white font-semibold">Cashiers see a total in History</h3>
             <p className="text-gray-500 text-sm mt-0.5">
               When on, a cashier's History shows the number of orders and the sales of whatever the filters show (payment
-              method, type, search) — on the tills and the web POS. {seesSales ? 'Off by default.' : 'Turn on "Cashiers see their sales when closing a shift" first.'}
+              method, type, search) — on the desktop POS and the web POS. {seesSales ? 'Off by default.' : 'Turn on "Cashiers see their sales when closing a shift" first.'}
             </p>
           </div>
           <button data-testid="cashier-history-totals-toggle" disabled={!seesSales}

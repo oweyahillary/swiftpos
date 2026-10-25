@@ -191,7 +191,7 @@ export default function ShiftModal({
       const existing = await posApi.get<Shift | null>('/api/shifts/current');
       if (existing) { onShiftOpened?.(existing); return; }
       setCoveredTerminal(null);
-      setError('That drawer has just been closed. Pick the till again to open a new shift.');
+      setError('That drawer has just been closed. Pick the POS again to open a new shift.');
     } catch (e: any) {
       setCoveredTerminal(null);
       setError(e?.message ?? 'Could not join the drawer');
@@ -203,7 +203,7 @@ export default function ShiftModal({
   const handleOpen = async () => {
     if (!branchId) { setError('Branch not found'); return; }
     const till = pick(selectedDeviceId);
-    if (!till) { setError('Choose a till — or your own shift on the web till'); return; }
+    if (!till) { setError('Choose a POS — or your own shift on the web POS'); return; }
     if (till.open_shift) { await handleJoin(till); return; }
     const amount = parseFloat(openFloat);
     if (isNaN(amount) || amount < 0) { setError('Enter a valid opening float (0 or more)'); return; }
@@ -414,7 +414,7 @@ export default function ShiftModal({
             </div>
             <h2 style={s.title}>{joining ? 'Join Shift' : 'Open Shift'}</h2>
             <p style={s.subtitle}>{joining
-              ? 'This till\'s drawer is already open — you will sell into it. No float to count.'
+              ? 'This POS\'s drawer is already open — you will sell into it. No float to count.'
               : 'Count the cash in the drawer and enter the opening float below.'}</p>
 
             {/* A273 — pick the till this web POS is covering so the shift folds
@@ -425,13 +425,13 @@ export default function ShiftModal({
                 {' '}Join it, or start your own shift on <b>{webTill.name}</b>.
               </p>
             )}
-            <label style={s.label}>Which till are you selling on?</label>
+            <label style={s.label}>Which POS are you selling on?</label>
             <select
               style={s.input}
               value={selectedDeviceId}
               onChange={e => setSelectedDeviceId(e.target.value)}
             >
-              <option value="">{terminalsLoading ? 'Loading tills…' : 'Select a till…'}</option>
+              <option value="">{terminalsLoading ? 'Loading points of sale…' : 'Select a POS…'}</option>
               {webTill && (
                 <option value={WEB_TILL_VALUE}>
                   {webTill.name}{webTill.open_shift ? ` · ${openShiftLine({ device_id: '', terminal_code: null, device_label: webTill.name, open_shift: webTill.open_shift })}` : ' · your own shift'}
@@ -444,7 +444,7 @@ export default function ShiftModal({
               ))}
             </select>
             {!terminalsLoading && terminals.length === 0 && (
-              <p style={s.subtitle}>No tills are enrolled for this branch yet. Open the desktop till once to register it.</p>
+              <p style={s.subtitle}>No points of sale are enrolled for this branch yet. Open the desktop POS once to register it.</p>
             )}
 
             {!joining && (<>
@@ -559,7 +559,7 @@ export default function ShiftModal({
             <h2 style={s.title}>Shift Closed</h2>
 
             {(closeResult as any).blind && (
-              <p style={s.subtitle} data-testid="blind-closed">Your count is saved. A manager checks it against the till's figures.</p>
+              <p style={s.subtitle} data-testid="blind-closed">Your count is saved. A manager checks it against the POS's figures.</p>
             )}
             {!(closeResult as any).blind && <>
             <div style={s.summaryBox}>

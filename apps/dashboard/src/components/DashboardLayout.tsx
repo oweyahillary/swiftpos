@@ -173,7 +173,7 @@ const NAV: NavEntry[] = [
       // the only route to a drawer stranded on a terminal that has died.
       { to: '/dashboard/open-drawers', label: 'Open Drawers', icon: 'drawers' },
       // A523: every till's open day and drawers — close a day or a drawer from the web when nobody can at the till.
-      { to: '/dashboard/tills-days',   label: 'Tills & Days', icon: 'drawers' },
+      { to: '/dashboard/tills-days',   label: 'POS & Days', icon: 'drawers' },
     ],
   },
   {
@@ -632,7 +632,10 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 overflow-y-auto flex flex-col">
+      {/* A583: `relative` makes the scroll container the containing block of every absolutely placed element inside a page (an
+          sr-only label is position:absolute). Without it such an element escaped to the window, which then scrolled past the
+          100dvh layout into an empty band (the owner on Analytics > Costs: "scroll down to an empty space"). */}
+      <main className="relative flex-1 min-w-0 overflow-y-auto flex flex-col" data-testid="dashboard-main">
         {/* A463: the phone's top bar — ☰ opens the menu; the business and its unread notifications at a glance. */}
         <div className="md:hidden sticky top-0 z-20 flex items-center gap-3 px-3 h-12 bg-gray-900 border-b border-gray-800">
           <button data-testid="nav-open" onClick={() => setNavOpen(true)} aria-label="Open the menu"

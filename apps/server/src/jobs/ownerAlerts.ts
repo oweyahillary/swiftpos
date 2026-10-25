@@ -91,7 +91,7 @@ export async function runOwnerAlertsTick(now: Date = new Date()): Promise<void> 
     let schedule: any;
     try { schedule = await readReportSchedule(biz.id); } catch (e: any) { console.error(`[ownerAlerts] ${biz.name}: schedule:`, e?.message); continue; }
     for (const [name, step] of [
-      ['branch tills', () => branchOpenTillsForBusiness(biz, schedule, now)],
+      ['branch points of sale', () => branchOpenTillsForBusiness(biz, schedule, now)],
       ['alerts', () => alertsForBusiness(biz, schedule, now)],
       ['weekly', () => weeklyForBusiness(biz, schedule, now)],
     ] as const) {

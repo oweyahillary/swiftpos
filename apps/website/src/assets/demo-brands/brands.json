@@ -1,0 +1,53 @@
+{
+  "note": "FICTIONAL demo businesses for the ZapTill website (2026-10-23). Not real businesses; names checked against well-known Kenyan businesses and brands. No phone numbers: receipts print none. Logos: <id>.svg (colour) and <id>-mono.svg (the thermal receipt). Rendered by scripts/make-brands.mjs.",
+  "brands": [
+    {
+      "id": "kijani-basket",
+      "name": "Kijani Basket",
+      "trade": "minimart",
+      "type": "minimart",
+      "tagline": "Fresh every morning",
+      "branches": ["Kahawa West", "Ruaka"],
+      "palette": { "primary": "#1F7A3E", "accent": "#F2C230", "ink": "#14532D", "paper": "#FFF8E7" },
+      "accentHex": "#1F7A3E",
+      "receipt": { "header": "Fresh every morning", "thankYou": "Asante! Fresh again tomorrow." },
+      "cashiers": ["Kevin", "Faith"]
+    },
+    {
+      "id": "mama-lishe-grill",
+      "name": "Mama Lishe Grill",
+      "trade": "restaurant",
+      "type": "restaurant",
+      "tagline": "Nyama choma & more",
+      "branches": ["Ngong Road", "Westlands", "Kilimani"],
+      "palette": { "primary": "#E4572E", "accent": "#FFB347", "ink": "#2B2118", "paper": "#F6E7D2" },
+      "accentHex": "#E4572E",
+      "receipt": { "header": "Nyama choma & more", "thankYou": "Asante! Karibu tena." },
+      "cashiers": ["Wanjiru", "Otieno"]
+    },
+    {
+      "id": "mvua-cafe",
+      "name": "Mvua Café",
+      "trade": "cafe",
+      "type": "cafe",
+      "tagline": "Coffee for every weather",
+      "branches": ["Kilimani"],
+      "palette": { "primary": "#1E3A5F", "accent": "#7FB7E6", "ink": "#1E3A5F", "paper": "#FAF6EF" },
+      "accentHex": "#2F6DA3",
+      "receipt": { "header": "Coffee for every weather", "thankYou": "Asante! See you when it rains." },
+      "cashiers": ["Achieng"]
+    },
+    {
+      "id": "kifaru-fuel",
+      "name": "Kifaru Fuel & Mart",
+      "trade": "petrol",
+      "type": "petrol_station",
+      "tagline": "Fuel, food and the road ahead",
+      "branches": ["Thika Road"],
+      "palette": { "primary": "#13294B", "accent": "#FFC20E", "ink": "#13294B", "paper": "#FFFFFF" },
+      "accentHex": "#D99A00",
+      "receipt": { "header": "Fuel, food and the road ahead", "thankYou": "Asante! Safe journey." },
+      "cashiers": ["Brian", "Mercy"]
+    }
+  ]
+}

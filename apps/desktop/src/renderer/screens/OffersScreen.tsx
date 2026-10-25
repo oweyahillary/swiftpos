@@ -48,7 +48,7 @@ export default function OffersScreen({ isOwner, currency }: { isOwner: boolean; 
     setLoading(true); setError('');
     posApi.manage.offers()
       .then((r) => setRows(Array.isArray(r) ? r : []))
-      .catch((e) => setError(e?.message ?? 'Could not read the offers — the till needs the internet to change them.'))
+      .catch((e) => setError(e?.message ?? 'Could not read the offers — the POS needs the internet to change them.'))
       .finally(() => setLoading(false));
   };
   useEffect(() => {
@@ -90,7 +90,7 @@ export default function OffersScreen({ isOwner, currency }: { isOwner: boolean; 
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-white font-semibold">Offers</h2>
-          <p className="text-xs text-gray-400 mt-0.5">They apply by themselves at the till and on the web, on the days and hours you set. A cashier can still add a discount on top, up to the usual limit.</p>
+          <p className="text-xs text-gray-400 mt-0.5">They apply by themselves at the POS and on the web, on the days and hours you set. A cashier can still add a discount on top, up to the usual limit.</p>
         </div>
         <button data-testid="offer-new" onClick={() => setEditing({ ...blank(), branch_ids: isOwner ? null : (branchId ? [branchId] : null) })}
           className="shrink-0 px-3 py-2 rounded-lg bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold">+ New offer</button>

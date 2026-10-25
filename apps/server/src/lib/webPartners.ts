@@ -116,6 +116,25 @@ export function partnerRequestBranch(claims: { branchIds: readonly string[]; all
   return claims.sessionBranch && claims.branchIds.includes(claims.sessionBranch) ? claims.sessionBranch : (claims.branchIds[0] ?? null);
 }
 
+/** A582: what the dashboard sends as X-Branch-Id for "All my branches". */
+export const MY_BRANCHES = 'mine';
+
+/**
+ * A582: "All my branches" — a partner of SOME branches (two or more, not every one) who asks for X-Branch-Id 'mine' reads
+ * their branches combined: exactly their token's list, never null (the owner's "every branch"), never another branch.
+ * Anyone else (a partner of every branch — whose "all" is already theirs —, of one branch, any other ask): null, today's
+ * rules. Pure.
+ *
+ * Owner, 2026-10-23: "assume i have partner a and they fully own shop x,y and z they should never see general sales for
+ * all stores only their store" … "yes i want all my branch feature".
+ */
+export function partnerBranchSet(claims: { branchIds: readonly string[]; allBranches: boolean }, asked: unknown): string[] | null {
+  const a = typeof asked === 'string' ? asked.trim().toLowerCase() : '';
+  if (a !== MY_BRANCHES || claims.allBranches) return null;
+  const ids = [...new Set(claims.branchIds.filter((b) => typeof b === 'string' && UUIDISH.test(b)))];
+  return ids.length >= 2 ? ids : null;
+}
+
 /** The business's grants. A read that fails is an error (never "nobody") — the caller decides how to fail. */
 export async function readPartners(businessId: string): Promise<{ map: PartnerMap; error: unknown }> {
   const { data, error } = await supabase.from('business_settings').select('value')

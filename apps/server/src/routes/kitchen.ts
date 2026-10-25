@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { branchScope } from '../middleware/rbac';
+import { branchScope, oneBranchOnly } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
@@ -122,6 +122,7 @@ async function resolveScopedBranch(
 // GET /api/kitchen/tickets
 // Returns today's non-collected tickets for the caller's (validated) branch.
 router.get('/tickets', async (req, res) => {
+  if (oneBranchOnly(req, res)) return;   // A582: one branch's kitchen at a time
   const scope = await resolveScopedBranch(req);
   if (!scope.branchId) { res.status(scope.status ?? 400).json({ error: scope.error }); return; }
 

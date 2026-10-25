@@ -1,0 +1,98 @@
+---
+// Guide 3 (night 3, DRAFT for the owner): what a point of sale should do offline. Claims checked against WORKPLAN §3 and
+// the Features "Works offline" list: the desktop POS sells and prints with no internet (scanner, kitchen tickets, pumps),
+// PIN sign-in, the branch server keeps the branch in step, everything catches up; the PC needs power (a UPS); the web
+// dashboard, the daily email and car parks (web POS) need the internet.
+import Guide from '../../layouts/Guide.astro';
+import Monitor from '../../components/frames/Monitor.astro';
+import Shot from '../../components/screens/Shot.astro';
+import { WA_MESSAGES } from '../../lib/site';
+---
+<Guide slug="pos-when-the-internet-goes-off" waMessage={WA_MESSAGES.guideOffline} ctaTitle="Pull the cable out and watch it keep selling.">
+  <p>
+    In Kenya the internet goes off. So does the power. Not every day, but always at the worst moment: the Friday lunch
+    rush, the end-of-month queue at the minimart, the evening when every matatu stops for fuel. When it happens, a
+    point of sale that needs the internet to sell is not a point of sale. It is a screen that says "Please wait".
+  </p>
+  <p>
+    Before you buy any system, it is worth knowing exactly what it does when the line drops. Here is what a point of
+    sale should keep doing, what can safely wait, and what to ask.
+  </p>
+
+  <h2>What must keep working</h2>
+  <p>These are the things a customer would notice. None of them should depend on the internet:</p>
+  <ul>
+    <li><strong>Selling.</strong> Adding items, taking payment, printing the receipt.</li>
+    <li><strong>Signing in.</strong> A cashier who comes on shift during an outage must still be able to start work with their own PIN, not borrow someone else's.</li>
+    <li><strong>The barcode scanner and the scale.</strong> At a shop or a minimart, scanning and weighing are the queue.</li>
+    <li><strong>The kitchen.</strong> At a restaurant or café, orders must still reach the kitchen printer or screen.</li>
+    <li><strong>The pumps.</strong> At a petrol station, the attendant must still be able to sell fuel by amount or by litres, on the right pump.</li>
+    <li><strong>Every point of sale in the branch, in step.</strong> If you have two counters, both must see the same open orders and the same stock, even with no internet.</li>
+  </ul>
+
+  <figure>
+    <Monitor label="The real ZapTill point of sale at a demo petrol station">
+      <Shot src="/screens/till-pumps.webp" width={1280} height={800}
+        alt="The real ZapTill point of sale at a demo petrol station: five pumps with their grade and price per litre, and a sale of diesel with engine oil and water from the shop." />
+    </Monitor>
+    <figcaption>The pumps are kept on the point of sale itself, so the forecourt keeps selling with no internet. A demo business.</figcaption>
+  </figure>
+
+  <h2>What can wait</h2>
+  <p>Some things genuinely need the internet. That is fine, as long as they catch up by themselves:</p>
+  <ul>
+    <li>Seeing your numbers from somewhere else, on your phone or laptop.</li>
+    <li>The daily summary email.</li>
+    <li>Sales reaching the cloud, and branches seeing each other.</li>
+  </ul>
+  <p>
+    The test is simple: when the line comes back, does everything arrive on its own, or does someone have to type the
+    afternoon's sales in again? Retyping is where mistakes and missing money come from.
+  </p>
+
+  <h2>And the power?</h2>
+  <p>
+    Be honest with yourself here. A point of sale on a computer needs electricity, like any computer. No software keeps
+    a PC running through a KPLC cut. What does is a UPS: a battery box between the wall and the computer, the receipt
+    printer and the router. A small one keeps the counter going through a short cut and gives you time to close
+    properly in a long one. If a system claims to "work through power cuts" without mentioning a UPS or a battery, ask
+    how.
+  </p>
+
+  <div class="guide-zt">
+    <p class="guide-zt__h">How ZapTill does it</p>
+    <p>
+      The ZapTill desktop point of sale keeps selling and printing with no internet: the scanner, the kitchen tickets
+      and the pumps. Staff still sign in with their PIN. A branch server in the shop keeps every point of sale in the
+      branch in step, and when the internet comes back everything catches up by itself; nobody types anything in again.
+      A UPS is on our recommended hardware list for every branch.
+    </p>
+    <p>
+      Honestly: the web dashboard and the daily email need the internet, and so does parking, which runs on the web
+      point of sale.
+    </p>
+  </div>
+
+  <h2>Questions to ask before you buy</h2>
+  <p>Ask any supplier these, and ask them to show you, not tell you:</p>
+  <ol>
+    <li>"Unplug the internet now. Can I still sell, print and sign in a new cashier?"</li>
+    <li>"If I have two points of sale, do they still share the same orders and stock with no internet?"</li>
+    <li>"Do kitchen tickets, the scanner and the pumps still work?"</li>
+    <li>"When the line is back, what happens to the sales? Does anyone retype anything?"</li>
+    <li>"What happens in a power cut, and what hardware do you recommend for it?"</li>
+    <li>"Which parts need the internet, honestly?"</li>
+  </ol>
+  <p>
+    A good answer to the last question is a short list, said without hesitation. Every system needs the internet for
+    something. The point is knowing what, before the Friday lunch rush finds out for you.
+  </p>
+
+  <div class="guide-note">
+    <p>
+      <strong>What about M-Pesa?</strong> The customer pays from their own phone, on Safaricom's network, not your shop's
+      internet. The cashier records the sale as M-Pesa as usual. Do check the payment has arrived on the business phone
+      before handing over the goods, internet or not.
+    </p>
+  </div>
+</Guide>

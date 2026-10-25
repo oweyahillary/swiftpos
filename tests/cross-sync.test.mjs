@@ -133,8 +133,8 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.CROSS_SYNC_TS) {
     const h = ipc.slice(ipc.indexOf("handle('manager:branchOrders'"), ipc.indexOf("handle('manager:branchOrders'") + 1000);
     assert.match(h, /\/api\/orders\?\$\{q\}/); assert.match(h, /q\.set\('branch_id', cfg\.branch_id\)/);
     const mp = read('apps/desktop/src/renderer/pages/ManagerPage.tsx');
-    assert.match(mp, /label: 'All tills at this branch'/);
-    assert.match(mp, /note: 'The cloud could not be reached — showing this till only\.'/);
+    assert.match(mp, /label: 'All points of sale at this branch'/);
+    assert.match(mp, /note: 'The cloud could not be reached — showing this POS only\.'/);
   });
   await ok('rule 21: the new screens say "cloud", never "server" alone', () => {
     const mp = read('apps/desktop/src/renderer/pages/ManagerPage.tsx');

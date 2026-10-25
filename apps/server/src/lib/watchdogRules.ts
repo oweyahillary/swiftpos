@@ -98,7 +98,7 @@ export interface DeviceRow {
   session_lost_reason?: string | null;
 }
 
-const tillName = (d: DeviceRow) => d.terminal_code || d.device_label || `till ${String(d.id).slice(0, 8)}`;
+const tillName = (d: DeviceRow) => d.terminal_code || d.device_label || `POS ${String(d.id).slice(0, 8)}`;
 const live = (d: DeviceRow) => !d.retired_at && (d.status ?? 'approved') === 'approved';
 
 /**
@@ -116,8 +116,8 @@ export function tillsSignedOut(devices: DeviceRow[], now: Date, names: Record<st
       businessId: d.business_id,
       title: `${names[d.business_id] ?? 'A client'}: ${tillName(d)} is signed out and could not sign back in`,
       detail: `Since ${durationLabel(ago(now, d.session_lost_at))} ago${d.session_lost_reason ? ` — ${d.session_lost_reason}` : ''}. `
-        + `It keeps selling on its own, but its sales wait on the till. Issue an enrolment code (client › Branches & tills) `
-        + `and rejoin the till from its technician console (Rejoin this till) — nothing on the till is cleared.`,
+        + `It keeps selling on its own, but its sales wait on the POS. Issue an enrolment code (client › Branches & POS) `
+        + `and rejoin the POS from its technician console (Rejoin this POS) — nothing on the POS is cleared.`,
     });
   }
   return out;
@@ -188,7 +188,7 @@ export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<s
     const q = d.device_id ? ctx.queues?.[d.device_id] : undefined;
     if (sendsHeartbeat(d, q)) {
       const waiting = q && q.pending > 0
-        ? ` ${q.pending} sale${q.pending === 1 ? '' : 's'} and records waiting on the till when it last reported.` : '';
+        ? ` ${q.pending} sale${q.pending === 1 ? '' : 's'} and records waiting on the POS when it last reported.` : '';
       out.push({
         key, severity: 'critical', businessId: d.business_id,
         title: `${who} is on but not syncing`,
@@ -207,7 +207,7 @@ export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<s
         key, severity: 'critical', businessId: d.business_id,
         title: `${who} is on but not syncing`,
         detail: `Last sync ${d.last_sync_at ? `${durationLabel(stale)} ago` : 'never'} (seen ${seen} ago). A drawer is open on it and the branch's `
-          + `other tills sent ${ev.otherSales} sale${ev.otherSales === 1 ? '' : 's'} since, but none came from this till — its sales may not be reaching the cloud.`,
+          + `other points of sale sent ${ev.otherSales} sale${ev.otherSales === 1 ? '' : 's'} since, but none came from this POS — its sales may not be reaching the cloud.`,
       });
       continue;
     }
@@ -215,7 +215,7 @@ export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<s
       key, severity: 'warning', businessId: d.business_id,
       title: d.last_sync_at ? `${who} quiet for ${durationLabel(stale)} — no sales sent` : `${who} is on but has never sent anything`,
       detail: `It is on (seen ${seen} ago) but has sent nothing${d.last_sync_at ? ` since ${durationLabel(stale)} ago` : ''}. It runs ${ver}, which does not `
-        + `check in when idle, so this is most likely no trade. If it was trading, check it. From ${HEARTBEAT_FROM_VERSION} an idle till proves it is up to date.`,
+        + `check in when idle, so this is most likely no trade. If it was trading, check it. From ${HEARTBEAT_FROM_VERSION} an idle POS proves it is up to date.`,
     });
   }
   return out;
@@ -231,7 +231,7 @@ export function tillsWithParkedRecords(devices: DeviceRow[], now: Date, names: R
     out.push({
       key: `till_parked:${d.id}`, severity: 'warning', businessId: d.business_id,
       title: `${names[d.business_id] ?? 'A client'}: ${tillName(d)} has ${q.failed} record${q.failed === 1 ? '' : 's'} the cloud refused`,
-      detail: 'They are set aside on the till and will not be sent again by themselves — see the till\'s Tech page (Sync) for why.',
+      detail: 'They are set aside on the POS and will not be sent again by themselves — see the POS\'s Tech page (Sync) for why.',
     });
   }
   return out;
@@ -310,7 +310,7 @@ export function daysNotClosed(days: OpenDayRow[], now: Date, names: Record<strin
       title: `${names[d.business_id] ?? 'A client'}: day ${d.business_date} not closed${d.terminal_code ? ` on ${d.terminal_code}` : ''}`,
       // A522: a till that is off closes nothing — say where it can be closed without it.
       detail: `The business day ended ${durationLabel(over)} ago. A manager needs to count the cash and close it — `
-        + 'from the till, or from Remote Day Close on the web (a till switched off for a day can be closed there as abandoned).',
+        + 'from the POS, or from Remote Day Close on the web (a POS switched off for a day can be closed there as abandoned).',
     });
   }
   return out;
@@ -331,7 +331,7 @@ export function oldTills(devices: DeviceRow[], latest: Record<string, string | n
     key: `old_tills:${biz}`,
     severity: 'warning' as Severity,
     businessId: biz,
-    title: `${names[biz] ?? 'A client'}: ${list.length} till${list.length === 1 ? '' : 's'} need${list.length === 1 ? 's' : ''} updating`,
+    title: `${names[biz] ?? 'A client'}: ${list.length} ${list.length === 1 ? 'POS needs' : 'points of sale need'} updating`,
     detail: list.join(', '),
   }));
 }
@@ -354,7 +354,7 @@ export function etimsFailures(rows: EtimsRow[], names: Record<string, string> = 
 export interface SignInFailureRow { at: number; account: string; ip: string; where: 'admin' | 'dashboard' | 'web_pos' | 'till' }
 
 const WHERE_LABEL: Record<SignInFailureRow['where'], string> = {
-  admin: 'the admin portal', dashboard: 'the dashboard', web_pos: 'the web POS', till: 'a till',
+  admin: 'the admin portal', dashboard: 'the dashboard', web_pos: 'the web POS', till: 'a POS',
 };
 
 /** CRITICAL (A392): someone keeps failing to sign in — one account, or many accounts from one address. */
@@ -403,14 +403,14 @@ export interface SyncAttemptRow { at: number; deviceId: string; businessId: stri
 /** What a refusal means, in words an admin can act on. */
 export function syncRefusalHint(status: number, code?: string | null): string {
   const c = String(code ?? '');
-  if (status === 426 || c === 'desktop_upgrade_required') return 'The till runs a build this cloud no longer accepts — install the current ZapTill.';
+  if (status === 426 || c === 'desktop_upgrade_required') return 'The POS runs a build this cloud no longer accepts — install the current ZapTill.';
   if (/LICEN[CS]E/i.test(c)) return 'The branch has no desktop licence — activate it on the client page.';
-  if (/REVOKED|RETIRED|DEVICE/i.test(c)) return 'The till was revoked or retired — re-enrol it with a new code.';
-  if (status === 401) return 'The till\'s sign-in is no longer accepted — sign in on the till again.';
-  if (status === 403) return 'The cloud refuses this till — check its branch, licence and the client\'s status.';
-  if (status === 409) return 'Its records clash with the cloud\'s (another till or business) — check the till\'s set-up.';
-  if (status >= 500) return 'The cloud fails on this till\'s data — check the Render logs.';
-  return 'Check the till\'s set-up.';
+  if (/REVOKED|RETIRED|DEVICE/i.test(c)) return 'The POS was revoked or retired — re-enrol it with a new code.';
+  if (status === 401) return 'The POS\'s sign-in is no longer accepted — sign in on the POS again.';
+  if (status === 403) return 'The cloud refuses this POS — check its branch, licence and the client\'s status.';
+  if (status === 409) return 'Its records clash with the cloud\'s (another POS or business) — check the POS\'s set-up.';
+  if (status >= 500) return 'The cloud fails on this POS\'s data — check the Render logs.';
+  return 'Check the POS\'s set-up.';
 }
 
 /**
@@ -426,7 +426,7 @@ export function tillSyncRefused(attempts: SyncAttemptRow[][], now: Date, names: 
     if (!list.length) continue;
     const dev = list[list.length - 1].deviceId;
     const biz = [...list].reverse().find((a) => a.businessId)?.businessId ?? null;
-    const who = `${biz ? names[biz] ?? 'A client' : 'A till'}: ${tills[dev] ?? `till ${dev.slice(0, 8)}`}`;
+    const who = `${biz ? names[biz] ?? 'A client' : 'A POS'}: ${tills[dev] ?? `POS ${dev.slice(0, 8)}`}`;
     const recent = list.filter((a) => a.at >= t - WATCHDOG.SYNC_WINDOW_MIN * MIN && a.at <= t);
     const fails = recent.filter((a) => !a.ok);
     const last = recent[recent.length - 1];
@@ -450,7 +450,7 @@ export function tillSyncRefused(attempts: SyncAttemptRow[][], now: Date, names: 
         severity: 'critical',
         businessId: biz,
         title: `${who} — ${n} record${n === 1 ? '' : 's'} refused by the cloud`,
-        detail: `${r.code ? `${r.code}: ` : ''}${r.error ?? 'refused'}. The till will not send ${n === 1 ? 'it' : 'them'} again — they need a person.`,
+        detail: `${r.code ? `${r.code}: ` : ''}${r.error ?? 'refused'}. The POS will not send ${n === 1 ? 'it' : 'them'} again — they need a person.`,
       });
     }
   }
@@ -519,6 +519,6 @@ export function digestText(open: { severity: Severity; title: string; detail?: s
   lines.push('', `Since ${counters.since.slice(0, 16).replace('T', ' ')} UTC:`,
     `• Server errors: ${counters.serverErrors}`,
     `• Failed sign-ins: ${counters.failedSignIns}`,
-    `• Till writes the cloud would block (A159): ${counters.writeGuard}`);
+    `• POS writes the cloud would block (A159): ${counters.writeGuard}`);
   return lines.join('\n');
 }

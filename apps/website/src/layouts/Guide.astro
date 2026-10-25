@@ -1,0 +1,104 @@
+---
+// A guide (/guides/<slug>/): a readable article with a trail, the summary, the body (the slot), where to go next and a
+// soft call to action. The facts live in src/lib/guides.ts; a draft is kept out of search engines (noindex, no sitemap
+// entry) and shows a review note in `npm run dev` only.
+import Base from './Base.astro';
+import WhatsAppButton from '../components/WhatsAppButton.astro';
+import VisitButton from '../components/VisitButton.astro';
+import { GUIDES, guideBySlug, guideHref } from '../lib/guides';
+import { article, breadcrumb } from '../lib/schema';
+
+interface Props {
+  slug: string;
+  /** The pre-filled WhatsApp message (one we wrote; never anything a visitor typed). */
+  waMessage: string;
+  /** The closing line above the buttons. */
+  ctaTitle?: string;
+  ctaText?: string;
+}
+const { slug, waMessage, ctaTitle = 'Want to see this on your own counter?', ctaText = 'Send us a message about your business, and we will show you ZapTill running: at your place, or at a business near you.' } = Astro.props;
+const g = guideBySlug(slug);
+const path = guideHref(g);
+const others = GUIDES.filter((x) => x.slug !== slug);
+const isDev = import.meta.env.DEV;
+const dateText = new Date(g.date + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+---
+<Base
+  title={g.metaTitle}
+  description={g.description}
+  waMessage={waMessage}
+  noindex={g.status === 'draft'}
+  jsonLd={[article({ title: g.title, description: g.description, path, date: g.date }), breadcrumb([['Guides', '/guides/'], [g.title, path]])]}
+>
+  <article class="guide">
+    <header class="page-head guide-head">
+      <div class="wrap">
+        <p class="guide-head__trail"><a href="/guides/">Guides</a> <span aria-hidden="true">/</span> {g.minutes} min read</p>
+        <h1>{g.title}</h1>
+        <p class="lede">{g.summary}</p>
+        <p class="small muted">By ZapTill &middot; <time datetime={g.date}>{dateText}</time></p>
+        {isDev && g.status === 'draft' && <p class="dev-note">Draft for the owner to review: kept out of search engines until its status in src/lib/guides.ts is "ready".</p>}
+      </div>
+    </header>
+
+    <div class="wrap guide-body">
+      <div class="guide-prose">
+        <slot />
+      </div>
+    </div>
+
+    <section class="band band--white guide-next" aria-labelledby="next-title">
+      <div class="wrap">
+        <h2 id="next-title">Read next</h2>
+        <ul class="guide-next__links">
+          {g.related.map((r) => <li><a href={r.href}>{r.label}</a></li>)}
+          {others.map((o) => <li><a href={guideHref(o)}>{o.title}</a></li>)}
+        </ul>
+      </div>
+    </section>
+
+    <section class="band band--night guide-cta" aria-labelledby="cta-title">
+      <div class="wrap">
+        <h2 id="cta-title">{ctaTitle}</h2>
+        <p class="lede">{ctaText}</p>
+        <div class="actions">
+          <WhatsAppButton message={waMessage} />
+          <VisitButton />
+        </div>
+        <p class="small guide-cta__note">Demo businesses in this guide are fictional.</p>
+      </div>
+    </section>
+  </article>
+</Base>
+
+<style>
+  .guide-head { background: var(--card); border-bottom: 1px solid var(--line); }
+  .guide-head__trail { font-size: var(--fs-sm); color: var(--muted); margin-bottom: var(--s-3); }
+  .guide-head h1 { max-width: 46rem; }
+  .guide-body { padding-block: var(--s-7); }
+  .guide-prose { max-width: 42rem; font-size: 1.09rem; line-height: 1.7; }
+  .guide-prose :global(h2) { font-size: var(--fs-lg); margin-top: var(--s-7); }
+  .guide-prose :global(h3) { font-size: var(--fs-md); margin-top: var(--s-6); }
+  .guide-prose > :global(ul), .guide-prose > :global(ol) { padding-left: 1.3rem; margin: 0 0 var(--s-4); }
+  .guide-prose > :global(ul > li), .guide-prose > :global(ol > li) { margin-bottom: var(--s-2); }
+  .guide-prose > :global(figure) { margin: var(--s-6) 0; }
+  .guide-prose > :global(figure > figcaption) { font-size: var(--fs-sm); color: var(--muted); margin-top: var(--s-3); }
+  .guide-prose :global(.guide-note) {
+    border-left: 4px solid var(--teal); background: var(--teal-wash); padding: var(--s-4) var(--s-5);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0; margin: var(--s-5) 0;
+  }
+  .guide-prose :global(.guide-note p:last-child) { margin-bottom: 0; }
+  .guide-prose :global(.guide-zt) {
+    border: 1px solid var(--line); background: var(--card); border-radius: var(--r-md); padding: var(--s-4) var(--s-5); margin: var(--s-5) 0;
+  }
+  .guide-prose :global(.guide-zt__h) { font: 700 var(--fs-xs)/1.2 var(--font-text); letter-spacing: 0.06em; text-transform: uppercase; color: var(--teal-strong); margin-bottom: var(--s-2); }
+  .guide-prose :global(.guide-zt p:last-child) { margin-bottom: 0; }
+  .guide-prose :global(.table-scroll table) { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); margin: var(--s-4) 0 var(--s-5); }
+  .guide-prose :global(.table-scroll th), .guide-prose :global(.table-scroll td) { text-align: left; padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--line); vertical-align: top; }
+  .guide-prose :global(.table-scroll .num) { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .guide-prose :global(.table-scroll tfoot td) { font-weight: 700; border-top: 2px solid var(--line-strong); }
+  .guide-prose :global(.table-scroll) { overflow-x: auto; }
+  .guide-next__links { columns: 2 18rem; padding-left: 1.2rem; margin: 0; }
+  .guide-next__links li { margin-bottom: var(--s-2); break-inside: avoid; }
+  .guide-cta__note { color: var(--night-muted); margin-top: var(--s-5); margin-bottom: 0; }
+</style>

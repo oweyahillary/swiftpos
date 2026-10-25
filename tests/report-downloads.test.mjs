@@ -193,7 +193,8 @@ await ok('…but not Monthly pack (its own server Excel) nor Exports', () => {
 });
 await ok('each tab is wired: the About sheet gets the business and the picked branch', () => {
   assert(/function ExcelButton\([\s\S]*?<DownloadExcelButton input=\{\{ report, from: range\.from, to: range\.to, businessName: meta\.businessName, branchName: meta\.branchName, sheets \}\} \/>/.test(page), 'ExcelButton');
-  assert(/branchName: branchId \? \(\(branches \?\? \[\]\)\.find\(b => b\.id === branchId\)\?\.name \?\? ''\) : ''/.test(page), 'meta.branchName');
+  // A582: blank = All branches — or, for a partner's "All my branches", those words
+  assert(/branchName: branchId \? \(\(branches \?\? \[\]\)\.find\(b => b\.id === branchId\)\?\.name \?\? ''\) : \(allMine \? allLabel : ''\)/.test(page), 'meta.branchName');
   assert(/const tabProps: TabProps = \{ range, branchId, currency, meta(?:, staffId)? \}/.test(page), 'tabProps carry meta');   // A576: and the person a watch-list link names
 });
 await ok('sheets come from the data, never the page (no DOM scraping)', () => {

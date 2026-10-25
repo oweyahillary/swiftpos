@@ -95,7 +95,7 @@ export const GATEWAY_TRADING: ReadonlyArray<{ methods: string[]; path: RegExp; w
 ];
 /** A manager's edit at a till (manageFetch / the till's own edits): somebody is there. */
 export const GATEWAY_PERSON: ReadonlyArray<{ methods: string[]; path: RegExp; what: string }> = [
-  { methods: ['POST', 'PATCH', 'PUT', 'DELETE'], path: /^(products|categories|combos|variants|modifiers|payment-methods|offers|staff|stock|branch-prices|business|branches|expenses\/categories|reports\/monthly\/movements)(\/|$)/, what: 'a manager editing at a till' },
+  { methods: ['POST', 'PATCH', 'PUT', 'DELETE'], path: /^(products|categories|combos|variants|modifiers|payment-methods|offers|staff|stock|branch-prices|business|branches|expenses\/categories|reports\/monthly\/movements)(\/|$)/, what: 'a manager editing at a POS' },
   { methods: ['PUT'], path: new RegExp(`^stations/${ID}/categories$`), what: 'station routing saved' },
   { methods: ['POST'], path: /^stations\/seed(-defaults)?$/, what: 'stations set up' },
   // A545: a manager confirming / disputing a credit sale at a till (the list is a read; the offline replay, sent later by
@@ -311,13 +311,13 @@ export function installVerdict(s: InstallState, now: number): { install: boolean
   if (!v || !VERSION_RE.test(v)) return no('no update downloaded');
   if (!VERSION_RE.test(s.running) || !newer(v, s.running)) return no(`${v} is not newer than ${s.running}`);
   if (!s.approved) return no(`${v} is no longer approved — it will not be installed`);
-  if (!s.shareReady) return no(`waiting: the branch's copy of ${v} for the tills is not ready yet`);
+  if (!s.shareReady) return no(`waiting: the branch's copy of ${v} for the points of sale is not ready yet`);
   if (s.blocker) return no(`${v} cannot install on its own: ${s.blocker} — it installs when ZapTill is closed`);
   if (s.busy) return no(`waiting: ${s.busy}`);
   if (s.syncSince !== null && now - s.syncSince >= 0 && now - s.syncSince < SYNC_GRACE_MS) return no('waiting: a sync push is under way');
   const idle = Math.max(0, now - s.lastActivity);
   const stale = s.downloadedAt !== null && now - s.downloadedAt >= STALE_DOWNLOAD_MS;
-  const what = s.lastTill && s.lastTill >= s.lastActivity ? ' (a till was trading)' : '';
+  const what = s.lastTill && s.lastTill >= s.lastActivity ? ' (a POS was trading)' : '';
   if (s.quietNow && idle >= IDLE_QUIET_MS) return { install: true, reason: `idle ${mins(idle)} min in a quiet hour` };
   if (idle >= IDLE_LONG_MS) return { install: true, reason: `idle ${mins(idle)} min` };
   if (stale && s.quietNow && idle >= IDLE_STALE_MS) {

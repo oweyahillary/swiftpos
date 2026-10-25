@@ -122,7 +122,7 @@ export async function pushPendingDecisions(
     let res: { status: number; body: any };
     try { res = await post(d); }
     catch (e: any) {
-      for (const left of readPending(db)) if (!out[left.order_id]) out[left.order_id] = { state: 'pending', message: `Saved on this till — it goes to the cloud when the connection is back (${e?.message ?? e}).` };
+      for (const left of readPending(db)) if (!out[left.order_id]) out[left.order_id] = { state: 'pending', message: `Saved on this POS — it goes to the cloud when the connection is back (${e?.message ?? e}).` };
       break;
     }
     const drop = () => { const left = readPending(db).filter((x) => x.order_id !== d.order_id); writeJson(db, PENDING_KEY, left, left.length === 0); };
@@ -136,7 +136,7 @@ export async function pushPendingDecisions(
       continue;
     }
     if (res.status >= 500 || res.status === 401 || res.status === 408 || res.status === 429) {
-      out[d.order_id] = { state: 'pending', message: `Saved on this till — the cloud did not take it yet (HTTP ${res.status}); it retries at the next sync.` };
+      out[d.order_id] = { state: 'pending', message: `Saved on this POS — the cloud did not take it yet (HTTP ${res.status}); it retries at the next sync.` };
       continue;
     }
     // A real refusal (decided by someone else already, not a credit approver): stop waiting, show why.

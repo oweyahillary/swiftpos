@@ -139,7 +139,7 @@ await ok('each business type: a combo, the same shelf, at the pumps (fuel), the 
   for (const t of ['retail', 'minimart']) {
     const a = BT.togetherAdvice(t, { name: 'Bread' }, { name: 'Milk 500ml' });
     assert.equal(a.title, 'Put Milk 500ml next to Bread', t);
-    assert.match(a.action, /same shelf or near the till/);
+    assert.match(a.action, /same shelf or near the POS/);
     assert.doesNotMatch(a.action, /combo|waiter|kitchen/);
   }
   const fuel = BT.togetherAdvice('petrol_station', { name: 'Water 1L' }, { name: 'Diesel', fuel: true });
@@ -358,7 +358,7 @@ try {
     reset([S.A], 'retail');
     const r = await call(TG(`&branch=${S.W}`), TK.owner);
     assert.equal(r.body.pairs[0].advice.title, 'Put Soda next to Burger');
-    assert.equal(r.body.pairs[0].advice.short, 'Same shelf or near the till');
+    assert.equal(r.body.pairs[0].advice.short, 'Same shelf or near the POS');
     reset([S.A], 'petrol_station');
     assert.match((await call(TG(`&branch=${S.W}`), TK.owner)).body.pairs[0].advice.action, /forecourt shop/);
   });
@@ -433,7 +433,7 @@ try {
     assert.equal((html.match(/<li /g) ?? []).length, 10);
     assert.match(html, /Showing the top 10 of 14, the pairs that go together most first\./);
     assert.match(html, /People who buy Item 13 often add Other 13 \(33 of 100 orders with Item 13\)\./);
-    assert.match(html, /Same shelf or near the till/);
+    assert.match(html, /Same shelf or near the POS/);
     assert.ok(!PRICE.test(html.replace(/<[^>]+>/g, ' ')), 'no price words');
     const few = R.summariseTogether([total(100, 12)]);
     const e = renderToStaticMarkup(h(TS.TogetherSection, { t: few, p }));

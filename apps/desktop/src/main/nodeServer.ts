@@ -201,15 +201,15 @@ function whoIsAsking(req: http.IncomingMessage, bodyDevice?: unknown): { device:
 const proven = (v: DeviceKeyVerdict | 'conflict') => v === 'ok' || v === 'enrolled';
 // A521 (#3): it told the person to forget the till and let it reconnect — a forgotten till could never reconnect on its own (its key
 // and its right to record one went with it). Re-joining is two steps, said in order.
-const KEY_REFUSED = 'This till\'s device key does not match the branch server\'s record. To re-join: on the branch server, Close Branch → Show tills → Revoke this till; then on this till, Find my server (Setup) and allow it at the server.';
+const KEY_REFUSED = 'This POS\'s device key does not match the branch server\'s record. To re-join: on the branch server, Close Branch → Show points of sale → Revoke this POS; then on this POS, Find my server (Setup) and allow it at the server.';
 /** A496: a device this server never knew, presenting a key of its own making — it must join (Find my server). */
-const NOT_JOINED = 'This till has not joined this branch server — join it from the till\'s setup (Find my server), and allow it at the server.';
+const NOT_JOINED = 'This POS has not joined this branch server — join it from the POS\'s setup (Find my server), and allow it at the server.';
 /** A496: a verdict that refuses the request outright, on any route. */
 const refusedVerdict = (v: DeviceKeyVerdict | 'conflict') => v === 'conflict' || v === 'mismatch' || v === 'missing' || v === 'unknown';
 const refusalText = (v: DeviceKeyVerdict | 'conflict') =>
-  v === 'conflict' ? 'the request names two different tills'
+  v === 'conflict' ? 'the request names two different points of sale (check the device key)'
   : v === 'unknown' ? NOT_JOINED
-  : v === 'absent' ? 'Update this till — the branch server answers this only to tills with a device key.'
+  : v === 'absent' ? 'Update this POS — the branch server answers this only to points of sale with a device key.'
   : KEY_REFUSED;
 
 /**
@@ -391,7 +391,7 @@ export function startNodeServer(): void {
         const loopback = addr === '127.0.0.1' || addr === '::1';
         if (!loopback) noteTillTransport(headerDevice(req) ?? addr, encrypted(req));
         if (!loopback && !encrypted(req) && requireTlsForTills()) {
-          return json(res, 426, { error: 'This branch server accepts only encrypted connections — update this till (1.0.15 or later), or trust the server again from its Tech page.' }, { Upgrade: 'TLS/1.2' });
+          return json(res, 426, { error: 'This branch server accepts only encrypted connections — update this POS (1.0.15 or later), or trust the server again from its Tech page.' }, { Upgrade: 'TLS/1.2' });
         }
       }
 
@@ -463,7 +463,7 @@ export function startNodeServer(): void {
         if (!proven(who.verdict)) {
           if (who.verdict === 'absent') warnOlderTill(who.device, '/node/verify-pin');
           return json(res, 503, { ok: false, reason: 'unavailable',
-            error: who.verdict === 'absent' ? 'Update this till — the branch server checks PINs only for tills with a device key.' : refusalText(who.verdict) });
+            error: who.verdict === 'absent' ? 'Update this POS — the branch server checks PINs only for points of sale with a device key.' : refusalText(who.verdict) });
         }
         // F16: at most 10 PINs a minute from one till — A496: and from one ADDRESS, whatever devices it names (a guessing
         // loop that rotates device ids from one machine was not limited at all).
@@ -687,7 +687,7 @@ export function startNodeServer(): void {
         const who = whoIsAsking(req);
         if (!proven(who.verdict)) {
           if (who.verdict === 'absent') warnOlderTill(who.device, '/node/changes');
-          return json(res, 401, { error: who.verdict === 'absent' ? 'Update this till to hand changes to the branch server.' : refusalText(who.verdict) });
+          return json(res, 401, { error: who.verdict === 'absent' ? 'Update this POS to hand changes to the branch server.' : refusalText(who.verdict) });
         }
         const body = await readBody(req);
         // F7: a staff change's role and permissions come from THIS server's roles, never from the change; no relayed
@@ -760,7 +760,7 @@ export function startNodeServer(): void {
       // A446: a till changed staff (created a cashier, set a PIN) — this server pulls the branch's staff list from the
       // cloud now, so its other tills have it on their next ask (and the PIN check here knows the new cashier at once).
       if (req.method === 'POST' && url === '/node/roster/refresh') {
-        void refreshStaffRosterNow('a till changed staff');
+        void refreshStaffRosterNow('a POS changed staff');
         return json(res, 202, { ok: true });
       }
 

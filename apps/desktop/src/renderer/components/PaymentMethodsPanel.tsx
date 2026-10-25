@@ -29,8 +29,8 @@ export default function PaymentMethodsPanel({ canEdit = true }: { canEdit?: bool
         setOffline(true);
         // A345: an offline sign-in says so in its own words (it is not a connection fault the manager can fix by waiting).
         setError(/signed in while offline/i.test(String(e?.message ?? ''))
-          ? `${e.message} Showing what's active on this till.`
-          : "Can't reach the cloud to manage payment methods. Showing what's active on this till — reconnect to add, rename, or remove.");
+          ? `${e.message} Showing what's active on this POS.`
+          : "Can't reach the cloud to manage payment methods. Showing what's active on this POS — reconnect to add, rename, or remove.");
       } catch {
         setError(e?.message ?? 'Could not load payment methods.');
       }

@@ -64,7 +64,7 @@ function runGate(): void {
   const updateWaiting = !server && argv.includes(AT_LOGIN_ARG) && tillSignInInstallDue(readUpdateWaiting(userData), app.getVersion());
   const decision = gateDecision(argv, { server, quitByHand: quitByHandFlag(userData), updateWaiting });
   if (decision === 'exit') { process.exit(0); }
-  if (decision === 'till-install') gateNote = 'a till\'s sign-in launch with an approved update waiting — it installs it quietly (no window), then ends';
+  if (decision === 'till-install') gateNote = 'a POS\'s sign-in launch with an approved update waiting — it installs it quietly (no window), then ends';
   if (decision === 'handoff' && process.platform === 'win32' && app.isPackaged) {
     try {
       // The sign-in start is a deliberate start (as the old "start with Windows" was): a quit by hand before the

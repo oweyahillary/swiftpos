@@ -2,12 +2,18 @@
 // A real screen captured from the app running a made-up demo business, as a WebP in public/screens/
 // (scripts/make-screens.mjs). Sits inside a device frame, or on its own with `framed={false}`.
 // Below the fold by default (lazy); pass eager for one in the first screenful.
-interface Props { src: string; alt: string; width: number; height: number; eager?: boolean; class?: string; position?: string }
-const { src, alt, width, height, eager = false, class: extra, position = 'top left' } = Astro.props;
+// A phone gets the 800 px copy (scripts/make-responsive.mjs) when there is one; `sizes` says how wide it shows.
+import { existsSync } from 'node:fs';
+interface Props { src: string; alt: string; width: number; height: number; eager?: boolean; class?: string; position?: string; sizes?: string }
+const { src, alt, width, height, eager = false, class: extra, position = 'top left', sizes = '(max-width: 760px) 94vw, 720px' } = Astro.props;
+const small = src.replace(/\.webp$/, '-800.webp');
+const srcset = small !== src && width > 800 && existsSync(`public${small}`) ? `${small} 800w, ${src} ${width}w` : undefined;
 ---
 <img
   class:list={['shot', extra]}
   src={src}
+  srcset={srcset}
+  sizes={srcset ? sizes : undefined}
   alt={alt}
   width={width}
   height={height}

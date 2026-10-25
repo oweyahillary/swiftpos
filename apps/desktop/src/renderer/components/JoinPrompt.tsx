@@ -38,13 +38,13 @@ export default function JoinPrompt() {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 animate-fade-in" data-testid="join-prompt">
       <div className="w-full max-w-sm rounded-2xl border border-gray-700 bg-gray-900 p-6 animate-pop-in">
-        <h2 className="text-lg font-semibold text-white">A till wants to join this branch server</h2>
+        <h2 className="text-lg font-semibold text-white">A POS wants to join this branch server</h2>
         <p className="mt-2 text-sm text-gray-300"><span className="font-semibold text-white">{r.name}</span> at {r.ip}</p>
-        <p className="mt-1 text-xs text-gray-400">Allow it only if it is a till you are setting up in this shop. It joins this branch and syncs through this server.</p>
+        <p className="mt-1 text-xs text-gray-400">Allow it only if it is a POS you are setting up in this shop. It joins this branch and syncs through this server.</p>
         {/* A489: the till's screen shows this server's code; a different one there means something else answered it. */}
         {r.securityCode && (
           <p className="mt-2 text-sm text-gray-300" data-testid="join-prompt-code">
-            Security code <span className="font-mono font-semibold text-white">{r.securityCode}</span> — the till's screen shows the same code (an older till shows none). If it shows a different one, press Deny.
+            Security code <span className="font-mono font-semibold text-white">{r.securityCode}</span> — the POS's screen shows the same code (an older POS shows none). If it shows a different one, press Deny.
           </p>
         )}
         {reqs.length > 1 && <p className="mt-1 text-xs text-gray-400">{reqs.length - 1} more waiting after this one.</p>}

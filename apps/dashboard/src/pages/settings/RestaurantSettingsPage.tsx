@@ -428,7 +428,7 @@ export default function RestaurantSettingsPage() {
                          focus:border-gray-500"
             />
             <p className="text-xs text-gray-600 mt-2">
-              Takes effect on each till at its next catalogue sync.
+              Takes effect on each POS at its next catalogue sync.
             </p>
           </div>
 
@@ -456,7 +456,7 @@ export default function RestaurantSettingsPage() {
                          focus:border-gray-500"
             />
             <p className="text-xs text-gray-600 mt-2">
-              Up to {PICKS_MAX}. Reaches the web POS the next time it opens, and each till at its next catalogue sync.
+              Up to {PICKS_MAX}. Reaches the web POS the next time it opens, and each desktop POS at its next catalogue sync.
             </p>
           </div>
         </div>

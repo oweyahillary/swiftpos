@@ -12,12 +12,12 @@
 
 /** The labels the cloud invents when a till reports no name (0.6.37: "ZapTill till" — the first three). The web POS hides them. */
 export const GENERIC_TERMINAL_LABELS = [
-  'ZapTill till',
-  'ZapTill till (branch server)',
+  'ZapTill till',                  // till-wording: ok — stored device labels (data), shown via deviceLabelShown
+  'ZapTill till (branch server)',  // till-wording: ok
   'ZapTill office server (view only)',
   // 0.6.37: the names given before the rename — tills already stored under them are still recognised (and hidden).
-  'SwiftPOS till',
-  'SwiftPOS till (branch server)',
+  'SwiftPOS till',                 // till-wording: ok
+  'SwiftPOS till (branch server)', // till-wording: ok
   'SwiftPOS office server (view only)',
 ] as const;
 
@@ -46,5 +46,5 @@ export function labelFor(role: string | null, given?: unknown): string {
  */
 export function webTillName(branchName: string | null | undefined): string {
   const b = cleanLabel(branchName ?? '');
-  return b ? `${b} Web Till` : 'Web Till';
+  return b ? `${b} Web POS` : 'Web POS';
 }

@@ -156,7 +156,7 @@ const base = (o = {}) => ({
     && v({ syncSince: NOW - 3 * MIN }).install === true);
 }
 
-console.log('\n3. The idle installer — activity, a server\'s tills, the install sequence\n');
+console.log('\n3. The idle installer — activity, a server\'s points of sale, the install sequence\n');
 const fakeDeps = (o = {}) => {
   const calls = [];
   const d = {
@@ -191,7 +191,7 @@ const fakeDeps = (o = {}) => {
 
   const s2 = fakeDeps({ isServer: () => true, activity: () => ({ lastUse: NOW - 5 * HOUR, lastUseWhat: 'input', lastTill: NOW - 5 * MIN, busy: null }) });
   const r2 = await U.createIdleInstaller(s2.d).tick();
-  ok('server: nobody at it for 5 h but a till trading 5 min ago → no', r2.install === false && !s2.calls.some((c) => c.startsWith('quitAndInstall')) && /a till was trading/.test(r2.reason), r2.reason);
+  ok('server: nobody at it for 5 h but a till trading 5 min ago → no', r2.install === false && !s2.calls.some((c) => c.startsWith('quitAndInstall')) && /a POS was trading/.test(r2.reason), r2.reason);
   const s3 = fakeDeps({ isServer: () => true, shareReady: () => false });
   ok('server: the branch copy not ready → no', (await U.createIdleInstaller(s3.d).tick()).install === false);
   const s4 = fakeDeps({ candidate: () => ({ version: '1.0.17', approved: false }) });
@@ -257,7 +257,7 @@ console.log('\n5. The record, and the line after the restart\n');
   ok('the Tech page\'s update panel shows it', /update-idle-install/.test(panel) && /while idle/.test(panel));
 }
 
-console.log('\n6. Activity — the IPC ping (throttled), the main-process events, a server\'s tills\n');
+console.log('\n6. Activity — the IPC ping (throttled), the main-process events, a server\'s points of sale\n');
 {
   globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
   require(path.join(dist, 'ipcHandlers.js')).registerIpcHandlers();

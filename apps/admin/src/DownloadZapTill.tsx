@@ -81,7 +81,7 @@ export default function DownloadZapTill({ req, apiUrl, clientId = null }: { req:
     <div style={S.card} data-testid="download-zaptill">
       <div style={{ fontSize: 13, fontWeight: 600 }}>Download ZapTill</div>
       <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-        The Windows installer for a new till, through the ZapTill cloud. Every download is recorded in the audit log.
+        The Windows installer for a new POS, through the ZapTill cloud. Every download is recorded in the audit log.
       </div>
       {error && <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{error}</div>}
       {offer?.problem && <div style={{ fontSize: 12, color: "#f59e0b", marginTop: 8 }}>{offer.problem}</div>}

@@ -53,20 +53,21 @@ export function setCoveredTerminal(t: CoveredTerminal | null): void {
  * compares the two). Never shown as a till's name: they are the same for every till.
  */
 export const GENERIC_TERMINAL_LABELS: readonly string[] = [
-  'ZapTill till',
-  'ZapTill till (branch server)',
+  'ZapTill till',                  // till-wording: ok — stored device labels (data), shown via deviceLabelShown
+  'ZapTill till (branch server)',  // till-wording: ok
   'ZapTill office server (view only)',
   // 0.6.37: the names given before the rename — tills already stored under them are still recognised (and hidden).
-  'SwiftPOS till',
-  'SwiftPOS till (branch server)',
+  'SwiftPOS till',                 // till-wording: ok
+  'SwiftPOS till (branch server)', // till-wording: ok
   'SwiftPOS office server (view only)',
 ];
 
 /** 0.6.37: a stored label as Settings › Devices shows it — a till named before the rename ("SwiftPOS till") reads
- *  "ZapTill till". Anything else unchanged. */
+ *  "ZapTill POS" (A586: the stored generic labels say "till"; people read "POS"). Anything else unchanged. */
 export function deviceLabelShown(label: string | null | undefined): string | null {
   if (label == null) return null;
-  return label.startsWith('SwiftPOS ') && GENERIC_TERMINAL_LABELS.includes(label) ? 'ZapTill ' + label.slice('SwiftPOS '.length) : label;
+  if (!GENERIC_TERMINAL_LABELS.includes(label)) return label;
+  return 'ZapTill ' + label.replace(/^(SwiftPOS|ZapTill) /, '').replace(/^till/, 'POS');
 }
 
 /**
@@ -81,7 +82,7 @@ export function tillName(t: { device_id: string; terminal_code: string | null; d
   if (code && label) return `${code} — ${label}`;
   if (code)  return code;
   if (label) return label;
-  return `Till ${t.device_id.slice(-4)}`;
+  return `POS ${t.device_id.slice(-4)}`;
 }
 
 /**

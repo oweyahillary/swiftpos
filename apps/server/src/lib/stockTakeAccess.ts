@@ -78,3 +78,14 @@ export async function hiddenWhileCounting(req: Request, branchId: string | null)
   } catch { /* nothing hidden */ }
   return hide;
 }
+
+/**
+ * A582: hiddenWhileCounting for a read over several branches ("All my branches"): an item counted at ANY of them is hidden
+ * (a combined level would carry the counted branch's figure). One branch / every branch: exactly hiddenWhileCounting.
+ */
+export async function hiddenWhileCountingIn(req: Request, f: { kind: 'all' } | { kind: 'one'; id: string } | { kind: 'set'; ids: string[] }): Promise<Set<string>> {
+  if (f.kind !== 'set') return hiddenWhileCounting(req, f.kind === 'one' ? f.id : null);
+  const out = new Set<string>();
+  for (const id of f.ids) for (const k of await hiddenWhileCounting(req, id)) out.add(k);
+  return out;
+}

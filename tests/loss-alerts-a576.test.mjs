@@ -153,7 +153,7 @@ await ok('retail and minimart: the same patterns in a shop\'s words (sales); no 
     }), S());
     assert.ok(msgs(a).includes('Mary voided 6 paid sales today (others: 0–1). Worth a look.'), `${type}: ${msgs(a).join(' | ')}`);
     assert.ok(!kinds(a).includes('kitchen_removed'), type);
-    assert.ok(msgs(a).includes("2 of Ann's sales were priced below the price list today (KES 450 below in all). Often an old price on the till — worth a look."), msgs(a).join(' | '));
+    assert.ok(msgs(a).includes("2 of Ann's sales were priced below the price list today (KES 450 below in all). Often an old price on the POS — worth a look."), msgs(a).join(' | '));
   }
 });
 
@@ -604,7 +604,7 @@ export { MemoryRouter } from 'react-router-dom';\n`);
     assert.equal((html.match(/Looked into/g) || []).length, 10);
     assert.match(html, /not a finding/);
     assert.match(html, /Showing the 10 most worth a look of 12/);
-    assert.match(html, /never the till/);
+    assert.match(html, /never the POS/);
     // The manager portal: the owner dashboard's report links are not theirs — it names the portal's Reports instead.
     const portalHtml = renderToStaticMarkup(h(M.MemoryRouter, null, h(M.WatchListView, { data: { alerts, total: 12, top: 10, ready: true }, isOwner: false, portal: true, onDismiss() {} })));
     assert.equal((portalHtml.match(/See the list/g) || []).length, 0);

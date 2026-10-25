@@ -10,7 +10,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { assertBranchAccess, branchScope, requirePermission } from '../middleware/rbac';
+import { assertBranchAccess, requirePermission, branchFilter, byBranch } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -25,7 +25,7 @@ const canManage = requirePermission('stations.manage');
 router.get('/', async (req, res) => {
   // Branch follows the global selector (X-Branch-Id header); staff are
   // locked to their JWT branch by branchScope.
-  const effectiveBranchId = branchScope(req);
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
 
   let query = supabase
     .from('branch_printers')
@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
     .eq('business_id', req.businessId)
     .order('type')
     .order('name');
-  if (effectiveBranchId) query = query.eq('branch_id', effectiveBranchId);
+  query = byBranch(query, bf);
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
   res.json(data ?? []);

@@ -15,7 +15,7 @@
  */
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { requirePermission, branchScope } from '../middleware/rbac';
+import { requirePermission, branchScope, branchFilter } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { sendError } from '../lib/sendError';
 import {
@@ -44,6 +44,8 @@ async function businessType(businessId: string): Promise<string | null> {
 
 /** The branches this caller's watch list covers: null = every branch (the owner's "All branches"). */
 function scopeOf(req: any): { one: string | null; many: string[] | null } {
+  const f = branchFilter(req);   // A582: a partner's "All my branches" — exactly their branches
+  if (f.kind === 'set') return { one: null, many: f.ids };
   const one = branchScope(req);
   if (one) return { one, many: null };
   if (req.isOwner) return { one: null, many: null };

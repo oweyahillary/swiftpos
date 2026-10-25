@@ -77,7 +77,7 @@ export function registerDayCloseHandlers(ctx: IpcShared) {
       return {
         canTrade: false,
         needsManager: true,
-        reason: `This till cannot verify its trading day (${err?.message ?? 'internal error'}). ` +
+        reason: `This POS cannot verify its trading day (${err?.message ?? 'internal error'}). ` +
                 'Restart the app; if this persists, contact support.',
       };
     }
@@ -157,7 +157,7 @@ export function registerDayCloseHandlers(ctx: IpcShared) {
     }, payload);
     try {
       const cfg = getDeviceConfig();
-      if (!isNodeRole(cfg?.device_role)) return { ok: false, error: 'Only the branch server records money on another till\'s shift.' };
+      if (!isNodeRole(cfg?.device_role)) return { ok: false, error: 'Only the branch server records money on another POS\'s shift.' };
       // A manager signed in here approves it as themselves (A388); A453's manager-only switch always lets a manager through.
       // A490: approving is shifts.confirm; recording money is shifts.cash_movements (before migration 134, the switch rule).
       const me = signedInConfirmer();
@@ -174,11 +174,11 @@ export function registerDayCloseHandlers(ctx: IpcShared) {
         // (no 24-h expiry; Cancel withdraws it until the till picks it up) and the manager is told it applies on reconnect.
         // A till that closed that shift meanwhile refuses it with its reason (SHIFT_MONEY_CLOSED), shown on the screen.
         const row = getLocalDb().prepare(`SELECT state, updated_at FROM node_peer_state WHERE device_id = ?`).get(p.device_id) as { state: string; updated_at: string } | undefined;
-        if (!row) return { ok: false, error: 'That till has never reported to this server — check it is on' };
+        if (!row) return { ok: false, error: 'That POS has never reported to this server — check it is on' };
         let st: PeerDayState | null = null;
         try { st = JSON.parse(row.state); } catch { /* unreadable */ }
-        if (!st?.shifts) return { ok: false, error: 'That till is on an older version — update it to record money on it from here.' };
-        if (!st.shifts.some((s) => s.id === p.shift_id && s.state === 'open')) return { ok: false, error: 'That shift is no longer open on its till.' };
+        if (!st?.shifts) return { ok: false, error: 'That POS is on an older version — update it to record money on it from here.' };
+        if (!st.shifts.some((s) => s.id === p.shift_id && s.state === 'open')) return { ok: false, error: 'That shift is no longer open on its POS.' };
       }
       const instr: ShiftMoneyPayload = {
         row_id: uuid(), shift_id: p.shift_id, kind: p.kind, amount,
@@ -214,9 +214,9 @@ export function registerDayCloseHandlers(ctx: IpcShared) {
   // comes back if it reports again"; it could not report. A till only off for a while is hidden instead (hideTill).
   handle('branchClose:forgetTill', async (_e, payload) => {
     const { device_id } = assertPayload<{ device_id: string }>({ device_id: { t: 'string', min: 1 } }, payload);
-    if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server revokes a till.' };
-    if (!mayCloseBranch()) return { ok: false, error: 'Only someone who may close the branch can revoke a till.' };   // A520
-    if (!forgetTill(device_id)) return { ok: false, error: 'That till cannot be revoked here.' };
+    if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server revokes a POS.' };
+    if (!mayCloseBranch()) return { ok: false, error: 'Only someone who may close the branch can revoke a POS.' };   // A520
+    if (!forgetTill(device_id)) return { ok: false, error: 'That POS cannot be revoked here.' };
     logLine('branchClose', `F4/A521 till ${device_id} revoked by a manager (its device key removed — it joins again to reconnect)`);
     return { ok: true };
   });
@@ -224,9 +224,9 @@ export function registerDayCloseHandlers(ctx: IpcShared) {
   // waits for it are kept.
   handle('branchClose:hideTill', async (_e, payload) => {
     const { device_id } = assertPayload<{ device_id: string }>({ device_id: { t: 'string', min: 1 } }, payload);
-    if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server hides a till.' };
-    if (!mayCloseBranch()) return { ok: false, error: 'Only someone who may close the branch can hide a till.' };
-    if (!hideTill(device_id)) return { ok: false, error: 'That till cannot be hidden here.' };
+    if (!isNodeRole(getDeviceConfig()?.device_role)) return { ok: false, error: 'Only the branch server hides a POS.' };
+    if (!mayCloseBranch()) return { ok: false, error: 'Only someone who may close the branch can hide a POS.' };
+    if (!hideTill(device_id)) return { ok: false, error: 'That POS cannot be hidden here.' };
     logLine('branchClose', `A521 till ${device_id} hidden from Close Branch by a manager (until it next reports)`);
     return { ok: true };
   });
@@ -236,7 +236,7 @@ export function registerDayCloseHandlers(ctx: IpcShared) {
     if (!isNodeRole(getDeviceConfig()?.device_role) || !signedInConfirmer()) return { ok: false, error: 'Only a manager on the branch server can do this.' };
     const removed = cancelShiftMoneyInstruction(instruction_id);
     if (removed) logLine('branchClose', `A465 instruction ${instruction_id} withdrawn`);
-    return removed ? { ok: true } : { ok: false, error: 'The till has already answered — it cannot be withdrawn now.' };
+    return removed ? { ok: true } : { ok: false, error: 'The POS has already answered — it cannot be withdrawn now.' };
   });
   // A452: Close Branch — every till's day, once no drawer is open and no shift waits for a manager (owner: "when all
   // shifts are closed and confirmed they get a close branch"). No second count: each till closes with its confirmed

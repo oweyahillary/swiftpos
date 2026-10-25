@@ -101,7 +101,7 @@ export function tillUpdateLine(dv: TillUpdateRow, approved: string | null | unde
   // A till from 1.0.20 reports its state; an older one only its version.
   if (!s || compareTillVersions(running, REPORTS_FROM) < 0) {
     const hint = compareTillVersions(running, SELF_INSTALL_FROM) < 0
-      ? `Not checking — this till is older than ${SELF_INSTALL_FROM}: close ZapTill fully and reopen it; accept the Windows prompt`
+      ? `Not checking — this POS is older than ${SELF_INSTALL_FROM}: close ZapTill fully and reopen it; accept the Windows prompt`
       : "Installs itself when idle — if stuck, close and reopen ZapTill";
     return { text: lastSeen ? `${lastSeen} · ${hint}` : hint, tone: lastSeen ? "muted" : "warn" };
   }

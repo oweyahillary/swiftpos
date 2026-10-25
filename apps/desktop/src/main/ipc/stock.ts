@@ -51,7 +51,7 @@ export function registerWastageHandlers(ctx: IpcShared) {
     if (problem) throw new Error(problem);
     queueRecording(db, rec);
     const outcome = (await pushWastageNow())[rec.client_id];
-    return { client_id: rec.client_id, ...(outcome ?? { state: 'pending', message: 'Saved on this till — it goes to the cloud at the next sync.' }) };
+    return { client_id: rec.client_id, ...(outcome ?? { state: 'pending', message: 'Saved on this POS — it goes to the cloud at the next sync.' }) };
   });
   handle('wastage:state', async () => {
     const db = getLocalDb();
@@ -83,7 +83,7 @@ export function registerTransferHandlers(ctx: IpcShared) {
     requireOnlineLicence();
     requireKey(['inventory.transfer'], TRANSFER_REFUSED);
     const branch = transferBranch();
-    if (!branch) return { ok: false, error: 'This till is not bound to a branch.' };
+    if (!branch) return { ok: false, error: 'This POS is not bound to a branch.' };
     const r = await transferAnswer(() => manageFetch(`/api/stock/transfers?branch_id=${encodeURIComponent(branch)}&limit=100`, 'GET'));
     return r.ok ? { ...r, branch_id: branch } : r;
   });
@@ -100,7 +100,7 @@ export function registerTransferHandlers(ctx: IpcShared) {
     requireOnlineLicence();
     requireKey(['inventory.transfer'], TRANSFER_REFUSED);
     const from = transferBranch();
-    if (!from) return { ok: false, error: 'This till is not bound to a branch.' };
+    if (!from) return { ok: false, error: 'This POS is not bound to a branch.' };
     const clean = (Array.isArray(items) ? items : []).map((i) => ({ product_id: String(i?.product_id ?? ''), quantity: Number(i?.quantity) }))
       .filter((i) => i.product_id && Number.isFinite(i.quantity) && i.quantity > 0);
     if (!clean.length) return { ok: false, error: 'Add at least one item with a quantity.' };

@@ -133,7 +133,7 @@ router.post('/:businessId/log-requests', requireAdmin, async (req: any, res) => 
   const deviceId = typeof b.device_id === 'string' ? b.device_id.trim() : '';
   const reason = cleanReason(b.reason);
   const range = rangeOf(b.range_hours);
-  if (!deviceId) { res.status(400).json({ error: 'Choose the till or server to pull the log from.', code: 'DEVICE_REQUIRED' }); return; }
+  if (!deviceId) { res.status(400).json({ error: 'Choose the POS or server to pull the log from.', code: 'DEVICE_REQUIRED' }); return; }
   if (!reason) { res.status(400).json({ error: 'Say why (the reason is kept with the request and in the admin log).', code: 'REASON_REQUIRED' }); return; }
   if (range === null) { res.status(400).json({ error: 'The range is 24 hours, 3 days or 7 days.', code: 'BAD_RANGE' }); return; }
 
@@ -141,9 +141,9 @@ router.post('/:businessId/log-requests', requireAdmin, async (req: any, res) => 
     .eq('business_id', client.id).eq('device_id', deviceId).maybeSingle();
   if (dErr) { sendError(res, dErr); return; }
   const d = dev as Dev | null;
-  if (!d) { res.status(404).json({ error: 'That device is not one of this client\'s tills.', code: 'NO_SUCH_DEVICE' }); return; }
+  if (!d) { res.status(404).json({ error: 'That device is not one of this client\'s points of sale.', code: 'NO_SUCH_DEVICE' }); return; }
   if (d.retired_at || d.status !== 'approved') {
-    res.status(409).json({ error: d.retired_at ? 'That till is retired — it cannot answer.' : 'That till is not approved — it cannot answer.', code: 'DEVICE_NOT_ACTIVE' });
+    res.status(409).json({ error: d.retired_at ? 'That POS is retired — it cannot answer.' : 'That POS is not approved — it cannot answer.', code: 'DEVICE_NOT_ACTIVE' });
     return;
   }
 

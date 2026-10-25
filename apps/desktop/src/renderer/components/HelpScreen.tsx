@@ -74,7 +74,7 @@ export default function HelpScreen({ businessName, onClose }: Props) {
         <div>
           <h1 className="text-lg font-semibold">Help — what to do when…</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            {businessName}{info.till ? ` · Till ${info.till}` : ''} · ZapTill v{info.version} · works without internet
+            {businessName}{info.till ? ` · POS ${info.till}` : ''} · ZapTill v{info.version} · works without internet
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -96,7 +96,7 @@ export default function HelpScreen({ businessName, onClose }: Props) {
             <p className="text-xs uppercase tracking-wide text-gray-400">{info.contact.assigned ? 'Your technician' : 'Call for help'}</p>
             <p className="text-base font-semibold mt-1">{info.contact.name}</p>
             <p className="text-2xl font-bold tracking-wide mt-1">{phones.join('  ·  ')}</p>
-            <p className="text-xs text-gray-400 mt-1">Call or WhatsApp. Have ready the shop name, this till's name and version (above) and a photo of the error.</p>
+            <p className="text-xs text-gray-400 mt-1">Call or WhatsApp. Have ready the shop name, this POS's name and version (above) and a photo of the error.</p>
           </div>
 
           {/* A422: step by step — the everyday tasks, then "What to do when" below. */}

@@ -90,7 +90,7 @@ export default function PullLogs({ clientId, req, onView, onDownload, onDelivere
       const d = await req("POST", base, { device_id: deviceId, reason, range_hours: range, include: { auth } });
       setReason("");
       setNotice(d?.note ? { text: d.note, warn: true }
-        : { text: `Asked ${d?.request?.device_label ?? "the till"} — it answers within a minute or two when it is on and online.`, warn: false });
+        : { text: `Asked ${d?.request?.device_label ?? "the POS"} — it answers within a minute or two when it is on and online.`, warn: false });
       await load(true);
     } catch (e: any) { setError(e?.message ?? "Could not ask for the log."); }
     finally { setBusy(false); }
@@ -105,10 +105,10 @@ export default function PullLogs({ clientId, req, onView, onDownload, onDelivere
   return (
     <div style={{ marginTop: 4, marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }} data-testid="pull-logs">
       <div style={{ fontSize: 13, fontWeight: 600 }}>Pull logs</div>
-      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Ask a till or the branch server to send its log — no one at the shop needs to press anything. Secrets are removed on the till.</div>
+      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Ask a POS or the branch server to send its log — no one at the shop needs to press anything. Secrets are removed on the POS.</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
         <select value={deviceId} onChange={(e) => { setDeviceId(e.target.value); setNotice(null); }} style={{ ...S.input, flex: "1 1 380px", minWidth: 240, maxWidth: "100%" }} data-testid="pull-device">
-          <option value="">Choose a till or server…</option>
+          <option value="">Choose a POS or server…</option>
           {devices.map((d) => (
             <option key={d.device_id} value={d.device_id}>
               {deviceOption(d)}
@@ -145,7 +145,7 @@ export default function PullLogs({ clientId, req, onView, onDownload, onDelivere
               <span style={{ ...S.badge, color: STATUS[r.status].color, border: `1px solid ${STATUS[r.status].color}` }}>{STATUS[r.status].label}</span>
               <span style={{ flex: 1, minWidth: 200 }}>
                 {r.device_label} <span style={{ color: C.muted }}>· {rangeLabel(r.range_hours)}{r.include?.auth ? " + sign-in history" : ""} · {r.reason} · {r.requested_by_email ?? "—"} · {when(r.requested_at)}</span>
-                {r.status === "waiting" && <div style={{ color: C.muted, marginTop: 2 }}>Till last seen {time(r.last_seen_at)}{r.note ? ` — ${r.note}` : ""}</div>}
+                {r.status === "waiting" && <div style={{ color: C.muted, marginTop: 2 }}>POS last seen {time(r.last_seen_at)}{r.note ? ` — ${r.note}` : ""}</div>}
               </span>
               {r.status === "delivered" && r.support_log && (
                 <>

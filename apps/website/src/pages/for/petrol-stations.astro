@@ -1,0 +1,200 @@
+---
+import Industry from '../../layouts/Industry.astro';
+import Monitor from '../../components/frames/Monitor.astro';
+import Shot from '../../components/screens/Shot.astro';
+import LabelSamples from '../../components/screens/LabelSamples.astro';
+import DoThisNextCard from '../../components/screens/DoThisNextCard.astro';
+import WhatsAppButton from '../../components/WhatsAppButton.astro';
+import Receipt from '../../components/screens/Receipt.astro';
+import ProductVideo from '../../components/ProductVideo.astro';
+import { WA_MESSAGES } from '../../lib/site';
+import { PETROL_FAQ } from '../../lib/faq';
+import { PETROL_CARDS } from '../../lib/analyticsDemo';
+
+// 2026-10-23. Only what the product code has (read, never edited): the pump grid on the desktop POS (PumpsView: amount
+// or litres, quick amounts, the pump on the sale) and the web POS; fuel grades priced a litre (branch prices); tanks in
+// litres with deliveries, each sale taken off its tank (routes/fueltanks.ts, lib/stockEffects.ts); the Fuel Sales, Pump
+// Monitor and Wet Stock reports; the Fuel attendant role; shop items with barcodes and labels (A574, pump fuel never on
+// a label); what sells together "at the pumps" (A575). NOT claimed: pump meter (totaliser) readings, tank dips, attendant
+// reconciliation against the meters, the "Station policies" switches (saved, not yet used). The call to action stays a
+// conversation about the forecourt.
+const problems = [
+  {
+    problem: 'The attendant says KES 2,000, the pump says 11.66 litres, and the book says something else.',
+    fix: 'The point of sale opens on your pumps. Tap the pump, type the amount or the litres (or tap 500, 1,000, 2,000 or 5,000) and ZapTill works out the other from that grade\'s price a litre. Every fuel sale records its pump.',
+  },
+  {
+    problem: 'Nobody can say how much diesel should be left in the tank.',
+    fix: 'Record each delivery in litres; every sale takes its litres off the tank its pump draws from. The Wet Stock report shows each tank\'s opening, delivered, sold and current litres, and which are low.',
+  },
+  {
+    problem: 'Oil, water and gas from the shop are written in a separate book.',
+    fix: 'Fuel and shop items go on one sale and one receipt. Shop items scan by barcode, and the ones without a barcode get their own code and a label from ZapTill.',
+  },
+  {
+    problem: 'Cash from the forecourt never matches at the change of shift.',
+    fix: 'Each cashier or attendant opens with a counted float and closes with a counted drawer. ZapTill shows the expected cash, the counted cash and the difference, by name, with their M-Pesa next to it.',
+  },
+];
+const card = PETROL_CARDS[0];
+---
+<Industry
+  title="Petrol station POS in Kenya: pumps, litres, shop | ZapTill"
+  description="ZapTill for petrol stations in Kenya: the POS opens on your pumps, fuel by amount or litres, each sale on its pump, tanks in litres, the forecourt shop on one sale."
+  ogImage="/og/petrol-stations.png"
+  kicker="Petrol station POS in Kenya"
+  guides={['pos-when-the-internet-goes-off', 'stop-cash-going-missing']}
+  crumb="Petrol stations"
+  heading="Every litre, every pump, every shilling."
+  sub="ZapTill puts your pumps on the point of sale (POS): the attendant taps the pump and types the amount or the litres, the shop's oil and water go on the same sale, and the reports show what each pump and each tank sold, by grade and by hour."
+  waMessage={WA_MESSAGES.petrol}
+  problems={problems}
+  faq={PETROL_FAQ}
+  closing="Tell us how your forecourt works."
+>
+  <Fragment slot="hero">
+    <Monitor label="The ZapTill point of sale at a demo petrol station">
+      <Shot src="/screens/till-pumps.webp" eager width={1280} height={800}
+        alt="The real ZapTill point of sale at a demo petrol station, Kifaru Fuel & Mart: five pumps, each with its grade and price a litre (Super Petrol KES 184.50, Diesel KES 171.60, Kerosene KES 155.20), and a sale of 11.66 litres of diesel for KES 2,000 with Engine Oil 1L and Water 1L, total KES 2,920." />
+    </Monitor>
+  </Fragment>
+
+  <section class="band" aria-labelledby="pentry-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="pentry-h">The pump, the amount, done</h2>
+        <p>
+          Customers in Kenya ask for an amount, so the amount comes first: the attendant taps the pump, taps 2,000 and the
+          litres are worked out at that grade's price. A customer who asks for 20 litres gets 20 litres, and the amount
+          is worked out instead.
+        </p>
+        <p>
+          Each grade has its price a litre, and each branch can have its own. The pumps and their prices are kept on the
+          desktop POS, so the forecourt keeps selling when the internet goes.
+        </p>
+        <p class="p-note">The same pumps are on ZapTill's web POS, in a browser.</p>
+      </div>
+      <div class="split__visual p-entry">
+        <figure class="screen-crop p-entry__shot">
+          <Shot src="/screens/till-pump-entry.webp" width={520} height={504}
+            alt="The real ZapTill fuel entry for Pump 3, Diesel at KES 171.60 a litre: amount KES 2,000, litres 11.66, quick amounts 500, 1,000, 2,000 and 5,000, and an Add to sale button." />
+        </figure>
+        <Receipt kind="fuel" paper={58} class="p-entry__slip" />
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="pvid-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="pvid-h">Pump 3, KES 2,000, oil and water</h2>
+        <p>The attendant taps the pump and KES 2,000, then scans a litre of engine oil and a bottle of water: fuel and
+          shop on one sale, and the receipt shows the litres. The real ZapTill point of sale, branded for Kifaru Fuel &amp;
+          Mart, a made-up station on Thika Road.</p>
+      </div>
+      <div class="split__visual">
+        <ProductVideo name="fuel" note="Kifaru Fuel & Mart: Pump 3 and the shop." label="Kifaru Fuel and Mart: Pump 3, KES 2,000 of diesel (11.66 litres), then engine oil and water scanned from the shop, all on one sale, and the receipt with the litres." />
+      </div>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="ptanks-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="ptanks-h">Tanks, deliveries and the fuel reports</h2>
+        <p>On the web dashboard, from anywhere, for every branch.</p>
+      </div>
+      <div class="grid3">
+        <div>
+          <h3>Wet stock</h3>
+          <p>Each tank with its capacity, its level and a reorder level. Record a delivery in litres; every sale takes
+            its litres off the tank. Low tanks are flagged.</p>
+        </div>
+        <div>
+          <h3>Fuel sales</h3>
+          <p>Litres and shillings by grade, by pump and by hour, with the average price a litre. The Pump Monitor shows
+            each pump's litres sold today.</p>
+        </div>
+        <div>
+          <h3>Tank reconciliation</h3>
+          <p>Opening, delivered, sold and current litres for each tank, and a log of every delivery. Everything downloads
+            to Excel.</p>
+        </div>
+      </div>
+      <p class="p-honest">
+        <b>What ZapTill does not do yet:</b> it does not take pump meter readings or tank dips, so the tank levels are
+        worked out from your deliveries and sales, and attendants are reconciled on their cash, not against the meters.
+        If your station runs on meter readings, talk to us first: we'll tell you honestly what fits.
+      </p>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="pshop-h">
+    <div class="wrap split split--top">
+      <div class="split__copy">
+        <h2 id="pshop-h">The forecourt shop, on the same point of sale</h2>
+        <p>
+          Your shop has its own departments (Lubricants, Shop, Gas, Car wash) and its products scan by barcode. Products
+          that came without one get an in-store code from ZapTill, and the labels print on a label printer, A4 sticker
+          sheets or the receipt printer. Fuel never goes on a label.
+        </p>
+        <p>
+          Staff get the ready-made Fuel attendant role, which sells at the pumps, and the usual cashier, supervisor and
+          manager roles, each with their own PIN.
+        </p>
+        <p class="p-note">Labels printed from the point of sale come with ZapTill Online.</p>
+      </div>
+      <div class="split__visual">
+        <LabelSamples />
+        <p class="p-note">Drawn by ZapTill's own label code, for Kijani Basket (a fictional demo minimart).</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="ptogether-h">
+    <div class="wrap split split--flip">
+      <div class="split__copy">
+        <h2 id="ptogether-h">Then: what to offer at the pumps</h2>
+        <p>
+          ZapTill Analytics finds what your customers buy together, in a station's own words: offer water at the pumps
+          with a fill-up, put coolant next to the engine oil. It also says what is running low in the shop before the
+          weekend and who owes you on account. Never a price rise.
+        </p>
+        <p><a href="/analytics/">See Analytics</a></p>
+      </div>
+      <div class="split__visual">
+        <DoThisNextCard {...card} who="a demo petrol station" />
+      </div>
+    </div>
+  </section>
+
+  <section class="band band--white" aria-labelledby="ptalk-h">
+    <div class="wrap p-talk">
+      <div>
+        <h2 id="ptalk-h">Talk to us about your forecourt</h2>
+        <p>How many pumps and grades, how your attendants are paid in, how the shop runs: tell us, and we'll show you
+          ZapTill set up the same way, and say plainly what it does not do yet.</p>
+      </div>
+      <WhatsAppButton message={WA_MESSAGES.petrol} label="Talk to us about your forecourt" />
+    </div>
+  </section>
+</Industry>
+
+<style>
+  .p-note { font-size: var(--fs-sm); color: var(--muted); }
+  .p-entry { display: flex; justify-content: center; align-items: flex-start; gap: var(--s-4); }
+  .p-entry__shot { max-width: 380px; width: 100%; }
+  .p-entry :global(.p-entry__slip) { --slip-fs: 0.62rem; max-width: 220px; margin-top: var(--s-6); transform: rotate(1.5deg); }
+  @media (max-width: 600px) { .p-entry { flex-direction: column; align-items: center; } .p-entry :global(.p-entry__slip) { margin-top: 0; } }
+  .grid3 { display: grid; gap: var(--s-5); }
+  .grid3 h3 { font-size: var(--fs-md); margin-bottom: var(--s-2); }
+  .grid3 p { color: var(--ink-2); margin: 0; }
+  @media (min-width: 800px) { .grid3 { grid-template-columns: repeat(3, 1fr); } }
+  .p-honest {
+    margin-top: var(--s-6); max-width: 46rem; padding: var(--s-4) var(--s-5);
+    border: 1px dashed var(--line-strong); border-radius: var(--r-md); color: var(--ink-2);
+  }
+  .p-talk { display: grid; gap: var(--s-5); align-items: center; }
+  .p-talk p { color: var(--ink-2); max-width: 40rem; margin: 0; }
+  @media (min-width: 860px) { .p-talk { grid-template-columns: 1fr auto; } }
+</style>

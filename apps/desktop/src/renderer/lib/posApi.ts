@@ -46,6 +46,15 @@ export interface Pump {
   price_per_litre: number | null;
 }
 
+/** A588: the pumps screen's gauges (main/forecourt.ts) — this POS's own fuel sales and, when known, the tanks. */
+export interface Forecourt {
+  pumps: { pump_id: string; litres_today: number; last_sale_at: string | null; last_sale_litres: number | null; last_sale_amount: number | null }[];
+  grades: { product_id: string; litres_today: number; litres_yesterday: number }[];
+  /** null = the levels are not known on this POS now (offline, no online licence, no tanks) — never zeros. */
+  tanks: { id: string; name: string; product_id: string; capacity_litres: number; current_level: number; reorder_level: number | null }[] | null;
+  tanksAt: string | null;
+}
+
 export type DeviceRole = 'till' | 'node' | 'office';
 
 export interface TechSession {
@@ -569,6 +578,8 @@ declare global {
         help: () => Promise<{ contact: { name: string; phones: string[]; assigned: boolean }; till: string | null; version: string }>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
+        /** A588: the pumps screen's gauges — this POS's litres today / yesterday, each pump's last sale, the tanks (null = not known). */
+        forecourt: () => Promise<Forecourt>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
         /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
         paymentMethodsEnabled: () => Promise<{ enabled: string[] | null }>;
@@ -584,7 +595,7 @@ declare global {
         detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('../../shared/orderDetail').OrderDetail; canReprint?: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
         /** A552: On account — offered on this till?, may the person signed in approve it themselves (no PIN)?, the customers. */
-        creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;
+        creditCustomers: (search?: string) => Promise<{ offered: boolean; selfApproves: boolean; chosenApprovers?: boolean; saved_at: string | null; customers: CreditCustomerView[] }>;
       };
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;
@@ -1007,18 +1018,18 @@ const FRIENDLY: Array<[RegExp, string]> = [
   // "unauthorised" first told a technician the till had been signed out when it
   // had never been signed in — and sent an hour into the wrong problem.
   [/bad or missing x-node-secret|node.?secret/i,
-                                         'That address is a branch server, not the main server. Branch servers relay sales between tills and cannot sign anyone in.'],
+                                         'That address is a branch server, not the main server. Branch servers relay sales between points of sale and cannot sign anyone in.'],
   [/enrol|activate/i,                    'The server did not accept that enrolment. Check the business ID, the enrolment code, and the server address.'],
   [/invalid or expired token|jwt expired|unauthor/i,
-                                         'This till was signed out. Ask a manager to sign in again.'],
-  [/not signed in/i,                     'This till is not signed in. Ask a manager to sign in.'],
+                                         'This POS was signed out. Ask a manager to sign in again.'],
+  [/not signed in/i,                     'This POS is not signed in. Ask a manager to sign in.'],
   [/failed to fetch|network ?error|fetch failed|ENOTFOUND|ECONNREFUSED|EAI_AGAIN|ETIMEDOUT|ENETUNREACH/i,
-                                         'Cannot reach the server. Check the internet connection — sales are still saved on this till.'],
+                                         'Cannot reach the server. Check the internet connection — sales are still saved on this POS.'],
   [/timeout|timed out/i,                 'The server took too long to answer. Please try again.'],
   [/UNIQUE constraint failed/i,          'That record already exists.'],
   [/FOREIGN KEY constraint failed/i,     'Something it depends on is missing. Please refresh and try again.'],
-  [/SQLITE_BUSY|database is locked/i,    'The till is busy saving. Please try again in a moment.'],
-  [/no such (table|column)/i,            'This till needs updating. Please contact support.'],
+  [/SQLITE_BUSY|database is locked/i,    'The POS is busy saving. Please try again in a moment.'],
+  [/no such (table|column)/i,            'This POS needs updating. Please contact support.'],
   [/insufficient stock|out of stock/i,   'There is not enough stock for that item.'],
   [/shift .*(not open|required)|no open shift/i,
                                          'No shift is open. Start a shift before selling.'],

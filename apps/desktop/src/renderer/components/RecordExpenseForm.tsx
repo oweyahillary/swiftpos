@@ -48,7 +48,7 @@ export default function RecordExpenseForm({ currency, onSaved, onCancel }: { cur
       const ov = await posApi.branchClose.overview();
       if ('error' in ov) return;
       setDrawers(ov.tills.filter((t) => !t.is_self).flatMap((t) => (t.state?.shifts ?? []).filter((sh) => sh.state === 'open').map((sh) => {
-        const n = t.state?.terminal?.name?.trim() || (t.state?.terminal?.code ? `Till ${t.state.terminal.code}` : `Terminal ${t.device_id.slice(0, 8)}`);
+        const n = t.state?.terminal?.name?.trim() || (t.state?.terminal?.code ? `POS ${t.state.terminal.code}` : `Terminal ${t.device_id.slice(0, 8)}`);
         return { key: `${t.device_id}:${sh.id}`, device_id: t.device_id, shift_id: sh.id, label: `${n} — ${sh.cashier_name}` };
       })));
     }).catch(() => {});
@@ -65,7 +65,7 @@ export default function RecordExpenseForm({ currency, onSaved, onCancel }: { cur
         const r = await posApi.branchClose.shiftMoney({ device_id: target.device_id, shift_id: target.shift_id, kind: 'expense', amount: Number(amount),
           description: desc.trim(), expense_category_id: catId || undefined, category_name: categories.find((c) => c.id === catId)?.name, payment_method: method });
         if (!r.ok) { setError(r.error ?? 'Could not save the expense.'); return; }
-        onSaved(`Expense sent to ${target.label} — that till records it within about 15 seconds.`);
+        onSaved(`Expense sent to ${target.label} — that POS records it within about 15 seconds.`);
         return;
       }
       const saved = await posApi.expense.create({
@@ -118,9 +118,9 @@ export default function RecordExpenseForm({ currency, onSaved, onCancel }: { cur
       <p data-testid="record-expense-drawer" className="text-xs text-gray-400">
         {method !== 'cash' ? 'Not cash — no drawer is affected.'
           : drawer === NONE ? 'Recorded as paid outside any drawer — no drawer\'s expected cash changes.'
-          : drawer ? 'Cash comes out of that drawer — its till records it and its expected cash goes down.'
-          : shiftOpen ? 'Cash comes out of this till\'s drawer (its shift is open) — the shift\'s expected cash goes down.'
-          : 'No shift is open on this till — recorded as cash paid outside any drawer.'}
+          : drawer ? 'Cash comes out of that drawer — its POS records it and its expected cash goes down.'
+          : shiftOpen ? 'Cash comes out of this POS\'s drawer (its shift is open) — the shift\'s expected cash goes down.'
+          : 'No shift is open on this POS — recorded as cash paid outside any drawer.'}
       </p>
       {error && <p className="text-sm text-red-300">{error}</p>}
       <div className="flex gap-2">

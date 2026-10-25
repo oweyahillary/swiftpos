@@ -311,7 +311,7 @@ export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null)
         let perms: unknown = null;
         try { perms = target?.permissions ? JSON.parse(target.permissions) : null; } catch { perms = null; }
         if (isElevatedRole(target.role_name, perms)) {
-          refused.push({ id, reason: 'an owner, admin or manager is not changed from another till' });
+          refused.push({ id, reason: 'an owner, admin or manager is not changed from another POS' });
           continue;
         }
       }
@@ -319,7 +319,7 @@ export function vetRelayedStaffChanges(raws: unknown[], branchId: string | null)
         const role = roles.find((r) => r?.id === data.role_id);
         if (!role) { refused.push({ id, reason: 'that role is not known on the branch server yet — it arrives from the cloud' }); continue; }
         const perms = roleMap(role);
-        if (isOwnerRoleEntry(role) || isElevatedRole(role?.name, perms)) { refused.push({ id, reason: `the ${role?.name ?? 'chosen'} role is not given from another till` }); continue; }
+        if (isOwnerRoleEntry(role) || isElevatedRole(role?.name, perms)) { refused.push({ id, reason: `the ${role?.name ?? 'chosen'} role is not given from another POS` }); continue; }
         accepted.push({ ...c, _local: { role_name: role?.name ?? null, permissions: perms, branch_id: branchId } });
         continue;
       }

@@ -67,7 +67,7 @@ export default function ScaleLabelsTab() {
       const r = await api.post<{ value: string }>('/api/business/settings', { key: SCALE_SETTINGS_KEY, value: settings });
       const s = scaleSettingsOrDefault(r?.value ?? settings);
       setSettings(s); setSaved(JSON.stringify(s));
-      setMsg({ ok: true, text: 'Saved — the tills read it at their next sync.' });
+      setMsg({ ok: true, text: 'Saved — the points of sale read it at their next sync.' });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : 'Could not save.' });
     } finally { setSaving(false); }
@@ -90,7 +90,7 @@ export default function ScaleLabelsTab() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-4">
         <label className="flex items-center justify-between gap-3">
           <span>
-            <span className="block text-sm font-medium text-gray-200">Read scale labels at the till</span>
+            <span className="block text-sm font-medium text-gray-200">Read scale labels at the POS</span>
             <span className="block text-xs text-gray-500">Off: a scale's barcode is looked up like any other barcode.</span>
           </span>
           <input type="checkbox" checked={settings.enabled} onChange={(e) => setSettings((s) => ({ ...s, enabled: e.target.checked }))}
@@ -190,8 +190,8 @@ export default function ScaleLabelsTab() {
       </div>
 
       <p className="text-xs text-gray-500">
-        {weighed.length} item{weighed.length === 1 ? '' : 's'} sold by weight{noCode.length ? ` · ${noCode.length} without a scale code (they are weighed at the till with the keypad)` : ''}.
-        A scale connected to the till by cable is not read yet — print a label on the scale and scan it, or type the weight.
+        {weighed.length} item{weighed.length === 1 ? '' : 's'} sold by weight{noCode.length ? ` · ${noCode.length} without a scale code (they are weighed at the POS with the keypad)` : ''}.
+        A scale connected to the POS by cable is not read yet — print a label on the scale and scan it, or type the weight.
       </p>
     </div>
   );

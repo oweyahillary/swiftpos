@@ -114,7 +114,7 @@ export function enterServerMode(): void {
         { label: 'Restart ZapTill', click: () => { quitting = true; app.relaunch(); app.quit(); } },
         // A435: a quit from here stays quit — the watchdog does not start it again until it is opened by hand.
         // A513: and the restart task is switched off, so nothing is launched every 5 minutes meanwhile.
-        { label: 'Quit (the tills lose their server)', click: () => { quitting = true; markQuitByHand(); disableWatchdog(); app.quit(); } },
+        { label: 'Quit (the points of sale lose their server)', click: () => { quitting = true; markQuitByHand(); disableWatchdog(); app.quit(); } },
       ]));
       tray.on('click', () => { showWindow(); });
       tray.on('double-click', () => { showWindow(); });
@@ -163,7 +163,7 @@ export function announceJoin(name: string, ip: string): void {
   try {
     if (!Notification.isSupported()) return;
     const n = new Notification({
-      title: 'A till wants to join this branch server',
+      title: 'A POS wants to join this branch server',
       body: `${name} (${ip}) is asking to join. Open ZapTill on this computer and press Allow — or Deny if you do not know it.`,
     });
     n.on('click', () => { showWindow(); });   // made if there is none — the join prompt is on top as it loads

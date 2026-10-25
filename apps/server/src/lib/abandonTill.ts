@@ -50,7 +50,7 @@ export async function abandonTillDays(o: {
     const { data: done, error } = await supabase.from('shifts').update({
       status: 'closed_unreconciled', close_method: 'forced', closed_at: now, closed_by: o.userId,
       expected_cash: expected, closing_float: null, cash_variance: null,
-      notes: [s.notes, `Force-closed by manager: ${o.reason} (till ${o.till} closed as abandoned — ${since}).`].filter(Boolean).join('\n'),
+      notes: [s.notes, `Force-closed by manager: ${o.reason} (POS ${o.till} closed as abandoned — ${since}).`].filter(Boolean).join('\n'),
     }).eq('id', s.id).eq('business_id', o.businessId).eq('status', 'open').select('id').maybeSingle();
     if (error) throw new Error(`force-close ${s.id}: ${error.message}`);
     if (done) closedShifts.push(s.id);
@@ -61,8 +61,8 @@ export async function abandonTillDays(o: {
     const { data: drawers } = await supabase.from('shifts').select('expected_cash').eq('business_id', o.businessId).eq('business_day_id', d.id);
     const expected = Math.round(((drawers ?? []) as Array<{ expected_cash: number | string | null }>)
       .reduce((n, x) => n + (Number(x.expected_cash) || 0), 0) * 100) / 100;
-    const note = `Closed as abandoned on the web${o.userName ? ` by ${o.userName}` : ''}: ${o.reason}. Till ${o.till} did not answer — ${since}; ` +
-      'anything it sold after that is not in this close. Uncounted: no cash count, no difference. If the till comes back it closes its own day too.';
+    const note = `Closed as abandoned on the web${o.userName ? ` by ${o.userName}` : ''}: ${o.reason}. POS ${o.till} did not answer — ${since}; ` +
+      'anything it sold after that is not in this close. Uncounted: no cash count, no difference. If the POS comes back it closes its own day too.';
     const { data: closed, error } = await supabase.from('business_days').update({
       status: 'closed', closed_at: now, closed_by: o.userId, counted_cash: null, expected_cash: expected, cash_variance: null,
       notes: [d.notes, note].filter(Boolean).join('\n'), updated_at: now,

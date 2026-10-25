@@ -36,7 +36,7 @@ export const RETIRED_SWITCHES = ['cashier_own_history', 'cashier_no_money_out', 
 
 /** A493 (owner, 2026-10-15): "update approval should live under admin some clients my not want to pay for updates so they
  *  rather not have the ability to do the update them" — the admin portal approves or holds a client's till version. */
-export const ADMIN_SETS_UPDATES = 'ZapTill approves which version your tills install — contact ZapTill support.';
+export const ADMIN_SETS_UPDATES = 'ZapTill approves which version your points of sale install — contact ZapTill support.';
 
 /** Why the admin portal may not set this feature (A490), or null when it still may. */
 export function ownerSetsFeature(key: string): string | null {

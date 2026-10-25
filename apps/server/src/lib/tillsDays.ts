@@ -89,7 +89,7 @@ async function deviceOf(businessId: string, deviceId: string): Promise<any | nul
   const { data, error } = await supabase.from('user_devices')
     .select('device_id, device_label, terminal_code, branch_id, status, last_sync_at, retired_at, app_version, device_role')
     .eq('business_id', businessId).eq('device_id', deviceId).maybeSingle();
-  if (error) throw new Error(`till: ${error.message}`);
+  if (error) throw new Error(`device: ${error.message}`);
   return data ?? null;
 }
 
@@ -115,14 +115,17 @@ export interface TillCard {
 }
 
 /** One answer with everything the page needs, per till, per branch. Figures (expected so far) only when `seesFigures`. */
-export async function tillsOverview(businessId: string, o: { branchId: string | null; seesFigures: boolean; now?: Date }): Promise<{
+export async function tillsOverview(businessId: string, o: { branchId: string | null; branchIds?: string[] | null; seesFigures: boolean; now?: Date }): Promise<{
   branches: Array<{ id: string; name: string }>; tills: TillCard[]; abandon_after_hours: number; silent_after_minutes: number; generated_at: string;
 }> {
   const now = o.now ?? new Date();
-  const scoped = <T>(q: T): T => (o.branchId ? (q as any).eq('branch_id', o.branchId) : q);
+  // A582: a partner's "All my branches" — exactly their branches (branchIds), never every branch
+  const set = Array.isArray(o.branchIds) && o.branchIds.length ? o.branchIds : null;
+  const scoped = <T>(q: T): T => (set ? (q as any).in('branch_id', set) : o.branchId ? (q as any).eq('branch_id', o.branchId) : q);
 
   let brQ = supabase.from('branches').select('id, name').eq('business_id', businessId);
-  if (o.branchId) brQ = brQ.eq('id', o.branchId);   // branches key on id, not branch_id
+  if (set) brQ = brQ.in('id', set);
+  else if (o.branchId) brQ = brQ.eq('id', o.branchId);   // branches key on id, not branch_id
   const { data: brs, error: bErr } = await brQ;
   if (bErr) throw new Error(`branches: ${bErr.message}`);
   const branches = (brs ?? []) as Array<{ id: string; name: string }>;
@@ -131,7 +134,7 @@ export async function tillsOverview(businessId: string, o: { branchId: string | 
   const { data: devs, error: dErr } = await scoped(supabase.from('user_devices')
     .select('device_id, device_label, terminal_code, branch_id, status, last_sync_at, retired_at, app_version, device_role')
     .eq('business_id', businessId) as any) as any;
-  if (dErr) throw new Error(`tills: ${dErr.message}`);
+  if (dErr) throw new Error(`devices: ${dErr.message}`);
   const { data: days, error: dyErr } = await scoped(supabase.from('business_days').select('id, device_id, business_date, opened_at, branch_id')
     .eq('business_id', businessId).eq('status', 'open') as any) as any;
   if (dyErr) throw new Error(`open days: ${dyErr.message}`);
@@ -252,7 +255,7 @@ export async function emailOwnerOfSupportAction(businessId: string, line: string
   <p>Hi,</p>
   <p>${esc(line)}${(biz as any)?.name ? ` (<b>${esc((biz as any).name)}</b>)` : ''}.</p>
   <p>${esc(detail)}</p>
-  <p>It is in your notifications and on the Tills &amp; days page. If you did not ask for this, call ZapTill support.</p></div>`,
+  <p>It is in your notifications and on the POS &amp; days page. If you did not ask for this, call ZapTill support.</p></div>`,
     });
     if (!sent.ok) console.error('[tills-days] the owner was not e-mailed:', sent.error);
     return sent.ok === true;
@@ -281,10 +284,10 @@ export async function cloudCloseDay(actor: Actor, input: CloseDayInput): Promise
   const { data: days, error: dErr } = await daysQ.order('business_date', { ascending: true });
   if (dErr) throw new Error(`open days: ${dErr.message}`);
   const day = ((days ?? []) as any[])[0] ?? null;
-  if (!dev && !day) throw new TillsDaysError(404, 'That till is not one of this business’s.');
+  if (!dev && !day) throw new TillsDaysError(404, 'That POS is not one of this business’s.');
   const branchId = dev?.branch_id ?? day?.branch_id ?? null;
   if (!mayReach(actor, branchId)) throw new TillsDaysError(403, 'You do not have access to this branch');
-  if (dev?.retired_at) throw new TillsDaysError(409, 'This till is retired and will never adopt a close — close its day as abandoned instead.', 'TILL_RETIRED');
+  if (dev?.retired_at) throw new TillsDaysError(409, 'This POS is retired and will never adopt a close — close its day as abandoned instead.', 'TILL_RETIRED');
   if (!day) throw new TillsDaysError(409, `${tillName(dev, deviceId)} has no open trading day${date ? ` for ${date}` : ''} on the cloud.`, 'NOTHING_OPEN');
   if (isSilent(dev?.last_sync_at) && input.silentOk !== true) throw silentRefusal(dev, deviceId);
 
@@ -314,7 +317,7 @@ export async function cloudCloseDay(actor: Actor, input: CloseDayInput): Promise
     const list = [...openById.values()].map((s) => ({ id: s.id, cashier_name: names.get(s.cashier_id) ?? 'Cashier', opened_at: s.opened_at }));
     throw new TillsDaysError(409,
       `${list.map((d) => `${d.cashier_name}'s drawer`).join(', ')} ${list.length === 1 ? 'is' : 'are'} still open on ${tillName(dev, deviceId)}. ` +
-      'Count it on the till, close it here with a count, or tick “force-close the open drawer first” (recorded uncounted).',
+      'Count it on the POS, close it here with a count, or tick “force-close the open drawer first” (recorded uncounted).',
       'DRAWER_OPEN', { drawers: list });
   }
 
@@ -348,7 +351,7 @@ export async function cloudCloseDay(actor: Actor, input: CloseDayInput): Promise
   const note = `Closed on the web by ${who}: ${reason}. ` +
     (counted === null ? `Counted: the confirmed shift counts (${kes(confirmed)}).` : `Counted: ${kes(counted)}, entered on the web.`) +
     (forced.length ? ` ${forced.length} open drawer${forced.length === 1 ? '' : 's'} force-closed uncounted first.` : '') +
-    ` The till adopts this close when it next connects; sales it made offline are added to its drawers when they arrive.`;
+    ` The POS adopts this close when it next connects; sales it made offline are added to its drawers when they arrive.`;
   const { data: closed, error: cErr } = await supabase.from('business_days').update({
     status: 'closed', closed_at: now, closed_by: actor.userId, counted_cash: dayCounted, expected_cash: expected, cash_variance: variance,
     notes: [day.notes, note].filter(Boolean).join('\n'), updated_at: now,
@@ -378,7 +381,7 @@ export async function cloudCloseDay(actor: Actor, input: CloseDayInput): Promise
   });
   await tellOwner(actor, branchId, 'day_closed_on_web', `${till}: trading day ${day.business_date} closed on the web`,
     `${who} closed ${till}'s day for ${day.business_date} (${reason}). Counted ${kes(dayCounted)}, expected ${kes(expected)}, difference ${kes(variance)}.` +
-    (forced.length ? ` ${forced.length} drawer${forced.length === 1 ? '' : 's'} force-closed uncounted.` : '') + ' The till adopts it when it next connects.');
+    (forced.length ? ` ${forced.length} drawer${forced.length === 1 ? '' : 's'} force-closed uncounted.` : '') + ' The POS adopts it when it next connects.');
   return {
     ok: true, till, day: { id: day.id, business_date: day.business_date, closed_at: now, counted_cash: dayCounted, expected_cash: expected, cash_variance: variance },
     instruction_id: (queued as any)?.id ?? null, drawers_force_closed: forced, counted_from: counted === null ? 'confirmed_shifts' : 'count_entered',
@@ -404,7 +407,7 @@ export async function closeDrawer(actor: Actor, input: { shiftId: string; reason
   const expected = r2(await computeExpectedCash(id, Number(s.opening_float) || 0));
   const { data: unpaid } = await supabase.from('orders').select('order_number').eq('business_id', actor.businessId).eq('shift_id', id).eq('status', 'open').limit(20);
   const unpaidNote = (unpaid ?? []).length
-    ? ` ${unpaid!.length} unpaid kitchen order${unpaid!.length === 1 ? '' : 's'} (${(unpaid ?? []).slice(0, 4).map((o: any) => `#${o.order_number}`).join(', ')}) stay open on the till.`
+    ? ` ${unpaid!.length} unpaid kitchen order${unpaid!.length === 1 ? '' : 's'} (${(unpaid ?? []).slice(0, 4).map((o: any) => `#${o.order_number}`).join(', ')}) stay open on the POS.`
     : '';
   const who = actor.name ?? 'a manager';
   const now = new Date().toISOString();
@@ -420,7 +423,7 @@ export async function closeDrawer(actor: Actor, input: { shiftId: string; reason
   if (uErr) throw new Error(`close drawer: ${uErr.message}`);
   if (!closed) throw new TillsDaysError(409, 'That drawer was closed a moment ago — reload.', 'ALREADY_CLOSED');
 
-  const till = s.device_id ? tillName(dev, s.device_id) : (s.terminal_code || 'the web till');
+  const till = s.device_id ? tillName(dev, s.device_id) : (s.terminal_code || 'the web POS');
   const cashier = (await namesOf([s.cashier_id])).get(s.cashier_id) ?? 'Cashier';
   await audit(actor, counted === null ? 'tills_days.force_close_drawer' : 'tills_days.count_close_drawer', 'shifts', id, s.branch_id ?? null, {
     device_id: s.device_id ?? null, till, cashier, reason, expected_cash: expected, counted_cash: counted,
@@ -428,7 +431,7 @@ export async function closeDrawer(actor: Actor, input: { shiftId: string; reason
   });
   await tellOwner(actor, s.branch_id ?? null, 'drawer_closed_on_web', `${till}: ${cashier}'s drawer ${counted === null ? 'force-closed' : 'closed with a count'} on the web`,
     `${who} ${counted === null ? 'force-closed (uncounted)' : `closed with a count of ${kes(counted)}`} ${cashier}'s drawer on ${till} (${reason}). Expected ${kes(expected)}.` +
-    ' The till closes it too when it next connects.');
+    ' The POS closes it too when it next connects.');
   return { ok: true, till, cashier, shift: closed, counted: counted !== null };
 }
 
@@ -445,21 +448,21 @@ export async function cancelClose(actor: Actor, input: { instructionId: string; 
   if (!mayReach(actor, i.branch_id ?? null)) throw new TillsDaysError(403, 'You do not have access to this branch');
   if (i.status !== 'pending') throw new TillsDaysError(409, 'That close is no longer waiting — nothing to withdraw.', 'NOT_PENDING', { status: i.status });
   if (i.payload?.cloud_closed) {
-    throw new TillsDaysError(409, 'This day is already closed on the web — the till only adopts it. Withdrawing it would leave the till’s day open while the web shows it closed.', 'CLOUD_CLOSED');
+    throw new TillsDaysError(409, 'This day is already closed on the web — the POS only adopts it. Withdrawing it would leave the POS’s day open while the web shows it closed.', 'CLOUD_CLOSED');
   }
   const at = new Date().toISOString();
   const { data: done, error: upErr } = await supabase.from('day_close_instructions')
     .update({ status: 'cancelled', acked_at: at, ack: { ok: false, cancelled: true, by: actor.userId, by_name: actor.name, at, reason } })
     .eq('id', id).eq('business_id', actor.businessId).eq('status', 'pending').select('id, status').maybeSingle();
   if (upErr) throw new Error(`withdraw: ${upErr.message}`);
-  if (!done) throw new TillsDaysError(409, 'The till answered just now — reload.', 'NOT_PENDING');
+  if (!done) throw new TillsDaysError(409, 'The POS answered just now — reload.', 'NOT_PENDING');
   const dev = await deviceOf(actor.businessId, i.device_id).catch(() => null);
   const till = tillName(dev, String(i.device_id));
   await audit(actor, 'tills_days.cancel_close', 'day_close_instructions', id, i.branch_id ?? null,
     { device_id: i.device_id, till, business_date: i.business_date, delivered: !!i.delivered_at, reason });
   await tellOwner(actor, i.branch_id ?? null, 'day_close_withdrawn', `${till}: a waiting day close was withdrawn`,
     `${actor.name ?? 'A manager'} withdrew the close of ${till}'s day ${String(i.business_date).slice(0, 10)} (${reason}).` +
-    (i.delivered_at ? ' The till had already collected it and may still carry it out.' : ''));
+    (i.delivered_at ? ' The POS had already collected it and may still carry it out.' : ''));
   return { ok: true, id, status: 'cancelled', delivered: !!i.delivered_at, till };
 }
 
@@ -467,7 +470,7 @@ export async function cancelClose(actor: Actor, input: { instructionId: string; 
 
 export async function abandonDay(actor: Actor, input: { deviceId: string; businessDate?: string | null; reason: unknown; confirm?: boolean }): Promise<Record<string, unknown>> {
   const reason = cleanReason(input.reason);
-  if (input.confirm !== true) throw new TillsDaysError(400, 'Tick that you understand the till’s unsent sales are not in this close.', 'CONFIRM_REQUIRED');
+  if (input.confirm !== true) throw new TillsDaysError(400, 'Tick that you understand the POS’s unsent sales are not in this close.', 'CONFIRM_REQUIRED');
   const deviceId = String(input.deviceId ?? '').trim();
   if (!deviceId) throw new TillsDaysError(400, 'device_id is required');
   const businessDate = typeof input.businessDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.businessDate) ? input.businessDate : null;
@@ -476,25 +479,25 @@ export async function abandonDay(actor: Actor, input: { deviceId: string; busine
   if (!dev) {
     const { data: day } = await supabase.from('business_days').select('branch_id')
       .eq('business_id', actor.businessId).eq('device_id', deviceId).eq('status', 'open').limit(1).maybeSingle();
-    if (!day) throw new TillsDaysError(404, 'That till has no open trading day here.');
+    if (!day) throw new TillsDaysError(404, 'That POS has no open trading day here.');
     branchId = (day as any).branch_id ?? null;
   }
   if (!mayReach(actor, branchId)) throw new TillsDaysError(403, 'You do not have access to this branch');
   if (!mayAbandon(dev)) {
     const h = Math.floor(silentHours(dev?.last_sync_at));
     throw new TillsDaysError(409,
-      `This till synced ${h < 1 ? 'within the last hour' : `${h} h ago`} — close its day instead (Close day). ` +
-      `A day is closed as abandoned only for a retired till or one silent for ${ABANDON_SILENT_HOURS} h.`, 'TILL_NOT_SILENT');
+      `This POS synced ${h < 1 ? 'within the last hour' : `${h} h ago`} — close its day instead (Close day). ` +
+      `A day is closed as abandoned only for a retired POS or one silent for ${ABANDON_SILENT_HOURS} h.`, 'TILL_NOT_SILENT');
   }
   const till = tillName(dev, deviceId);
   const result = await abandonTillDays({ businessId: actor.businessId, deviceId, branchId, userId: actor.userId, userName: actor.name,
     reason, till, lastSyncAt: dev?.last_sync_at ?? null, businessDate });
-  if (!result.days.length) throw new TillsDaysError(409, 'That till has no open trading day on the cloud now.', 'NOTHING_OPEN');
+  if (!result.days.length) throw new TillsDaysError(409, 'That POS has no open trading day on the cloud now.', 'NOTHING_OPEN');
   await audit(actor, 'tills_days.abandon', 'business_days', result.days[0]?.id ?? null, branchId,
     { device_id: deviceId, till, days: result.days.map((d) => d.business_date), shifts_force_closed: result.shifts.length, reason, last_sync_at: dev?.last_sync_at ?? null });
-  await tellOwner(actor, branchId, 'day_closed_abandoned', `${till}: trading day closed without the till`,
+  await tellOwner(actor, branchId, 'day_closed_abandoned', `${till}: trading day closed without the POS`,
     `${actor.name ?? 'A manager'} closed ${result.days.map((d) => d.business_date).join(', ')} on ${till} as abandoned (${reason}). ` +
-    `${result.shifts.length} drawer${result.shifts.length === 1 ? '' : 's'} force-closed uncounted; sales the till made after it last synced are not in it.`);
+    `${result.shifts.length} drawer${result.shifts.length === 1 ? '' : 's'} force-closed uncounted; sales the POS made after it last synced are not in it.`);
   return { ok: true, till, ...result };
 }
 

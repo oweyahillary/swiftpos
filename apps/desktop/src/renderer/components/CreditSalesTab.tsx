@@ -55,7 +55,7 @@ export default function CreditSalesTab({ currency }: { currency: string }) {
       </div>
       {!online && (
         <p className="text-xs text-amber-300" data-testid="credit-offline">
-          No connection — the list saved {savedAt ? when(savedAt) : 'earlier'}. What you confirm or dispute now is kept on this till and sent when the connection is back.
+          No connection — the list saved {savedAt ? when(savedAt) : 'earlier'}. What you confirm or dispute now is kept on this POS and sent when the connection is back.
         </p>
       )}
       {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
@@ -78,7 +78,7 @@ export default function CreditSalesTab({ currency }: { currency: string }) {
               {awaiting.map((r) => (
                 <tr key={r.order_id} className="border-t border-gray-800 align-top" data-testid="credit-row">
                   <td className="py-2 text-white">{r.customer_name ?? 'A customer'}<div className="text-xs text-gray-400">{r.order_number ?? ''}{r.branch_name ? ` · ${r.branch_name}` : ''}</div>
-                    {r.over_limit && <div className="text-xs text-amber-300">Over the customer's credit limit (taken on a till)</div>}</td>
+                    {r.over_limit && <div className="text-xs text-amber-300">Over the customer's credit limit (taken on a POS)</div>}</td>
                   <td className="py-2 text-white">{money(r.amount, currency)}</td>
                   <td className="py-2 text-gray-300">{r.cashier_name ?? '—'}</td>
                   <td className="py-2 text-gray-300">{when(r.sold_at)}</td>

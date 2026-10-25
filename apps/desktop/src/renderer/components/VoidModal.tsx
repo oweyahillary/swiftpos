@@ -103,8 +103,8 @@ export default function VoidModal({ order, currency, windowMin = VOID_WINDOW_MIN
         ? await posApi.order.refund(order.id, finalReason.trim(), pin.trim())
         : await posApi.order.void(order.id, finalReason.trim(), isPaid ? pin.trim() : undefined);
       if (r?.offline) {
-        setOfflineDone(`${isRefund ? 'Refunded' : 'Voided'} on this till while offline${r.approvedBy ? ` — approved by ${r.approvedBy}` : ''}. `
-          + 'It goes to the cloud as soon as the till reconnects.');
+        setOfflineDone(`${isRefund ? 'Refunded' : 'Voided'} on this POS while offline${r.approvedBy ? ` — approved by ${r.approvedBy}` : ''}. `
+          + 'It goes to the cloud as soon as the POS reconnects.');
         return;
       }
       onSuccess();

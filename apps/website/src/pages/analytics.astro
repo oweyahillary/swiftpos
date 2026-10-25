@@ -5,11 +5,13 @@ import Laptop from '../components/frames/Laptop.astro';
 import Shot from '../components/screens/Shot.astro';
 import DoThisNextCard from '../components/screens/DoThisNextCard.astro';
 import { WA_MESSAGES, PRICES, kes } from '../lib/site';
-import { DEMO_CARDS, DEMO_FOUND, DEMO_DAYPARTS, DEMO_TOP3, DEMO_WEEK, DEMO_MOVES, DEMO_NO_COST, demoCard } from '../lib/analyticsDemo';
+import TradeSwitch from '../components/TradeSwitch.astro';
+import ProductVideo from '../components/ProductVideo.astro';
+import { DEMO_CARDS, DEMO_DAYPARTS, DEMO_TOP3, DEMO_WEEK, DEMO_MOVES, DEMO_NO_COST, DEMO_TRADES, CARDS_BY_TRADE, DEMO_FOUND_BY_TRADE, SHOP_DAYPARTS, demoCard } from '../lib/analyticsDemo';
 import { softwareApplication } from '../lib/schema';
 
 const description =
-  'ZapTill Analytics turns your own sales into a short list of what to do next, in plain words: what to order, what to have in for each day, stock to move between branches, credit to chase and cashiers worth a look. It never suggests raising your prices.';
+  'ZapTill Analytics turns your sales into a short list of what to do next, in plain words: what to order, what sells together, credit to chase. Never a price rise.';
 
 const evidenceLabel = { 3: 'Strong evidence', 2: 'Good evidence', 1: 'Worth a try' } as const;
 // The payback table: every demo card, with its estimate where it has an honest one (a stock card says how many to have
@@ -25,7 +27,7 @@ const credit = demoCard(5);
 const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
 ---
 <Base
-  title="Analytics: know what to change next, in shillings | ZapTill"
+  title="Sales analytics for Kenyan businesses | ZapTill"
   description={description}
   waMessage={WA_MESSAGES.analytics}
   ogImage="/og/analytics.png"
@@ -37,8 +39,9 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
         <h1>Run your business properly, even when you're not there.</h1>
         <p class="an-hero__sub">
           ZapTill Analytics reads your own sales and tells you what to do next, in plain words: what to order before
-          Friday, what to prepare each day, which branch needs stock from another, and who owes you. Your prices stay
-          competitive: it never tells you to charge more.
+          Friday, what sells together, what to prepare each day, which branch needs stock from another, and who owes you.
+          In a restaurant, a shop or a petrol station, in that trade's own words. Your prices stay competitive: it never
+          tells you to charge more.
         </p>
         <p class="an-hero__price">An add-on, planned at about KES {kes(PRICES.analyticsMonthly)} a month for your whole business.</p>
         <div class="actions">
@@ -55,6 +58,19 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
     </div>
   </section>
 
+  <section class="band band--white" aria-labelledby="ovid-h">
+    <div class="wrap split">
+      <div class="split__copy">
+        <h2 id="ovid-h">On your phone, wherever you are</h2>
+        <p>The day's summary, then the "Do this next" cards and every branch side by side: the real dashboard, on a
+          made-up grill.</p>
+      </div>
+      <div class="split__visual">
+        <ProductVideo name="owner" note="The owner's phone and the dashboard." label="The owner's phone: the day's sales, top sellers and who was short at Mama Lishe Grill, then the Analytics page scrolling through the Do this next cards, then every branch side by side on a laptop." />
+      </div>
+    </div>
+  </section>
+
   <!-- Do this next -->
   <section class="band" aria-labelledby="dtn-h">
     <div class="wrap">
@@ -67,19 +83,28 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
           your figures support it.
         </p>
       </div>
-      <p class="demo-tag">Example from a demo restaurant</p>
-      <p class="an-found">
-        This period: <b>{DEMO_FOUND.things} things to act on</b>. Two busy days to stock for, two items running low
-        (about {DEMO_FOUND.atRisk} of sales at risk if the beer runs out), <b>{DEMO_FOUND.credit}</b> of old credit to
-        collect, a dish worth featuring, and one warning to look into. Each card says what it assumes.
+      <TradeSwitch trades={DEMO_TRADES} label="Show the example cards for a restaurant, a shop or a petrol station">
+        {DEMO_TRADES.map((t) => (
+          <div data-trade-panel={t.id}>
+            <p class="demo-tag">Example from {t.who}</p>
+            <p class="an-found" set:html={DEMO_FOUND_BY_TRADE[t.id]} />
+            {t.id === 'restaurant' && (
+              <p class="an-nocost">
+                <b>{DEMO_NO_COST.items} items have no cost</b>: {DEMO_NO_COST.share} of your sales, so your margins are partly
+                blind. Analytics lists them, so you can set a cost and see every margin.
+              </p>
+            )}
+            <ul class="an-cards">
+              {CARDS_BY_TRADE[t.id].map((c) => <li><DoThisNextCard bare {...c} /></li>)}
+            </ul>
+          </div>
+        ))}
+      </TradeSwitch>
+      <p class="an-words">
+        Each business gets its cards in its own words. A shop is told to put two products on the same shelf; a petrol
+        station to offer a shop item at the pumps; a restaurant to make two dishes a combo. None of them is ever told to
+        charge more.
       </p>
-      <p class="an-nocost">
-        <b>{DEMO_NO_COST.items} items have no cost</b>: {DEMO_NO_COST.share} of your sales, so your margins are partly
-        blind. Analytics lists them, so you can set a cost and see every margin.
-      </p>
-      <ul class="an-cards">
-        {DEMO_CARDS.map((c) => <li><DoThisNextCard bare {...c} /></li>)}
-      </ul>
     </div>
   </section>
 
@@ -93,27 +118,52 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
           top 3 at every hour, to have ready before the hour starts.
         </p>
       </div>
-      <p class="demo-tag">Example from a demo restaurant</p>
-      <ul class="dayparts">
-        {DEMO_DAYPARTS.map((d) => (
-          <li class="daypart">
-            <h3>What sells {d.name === 'Late at night' ? 'late at night' : d.name === 'Lunch' ? 'at lunch' : `in the ${d.name.toLowerCase()}`}</h3>
-            <p class="daypart__meta">{d.hours} &middot; {d.share} of everything sold</p>
-            <ul>
-              {d.items.map(([name, pct]) => (
-                <li>
-                  <span class="daypart__row"><span>{name}</span><b>{pct}%</b></span>
-                  <span class="daypart__bar" style={`--w:${pct}%`}></span>
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
+      <TradeSwitch trades={DEMO_TRADES.slice(0, 2)} label="Show what sells when for a restaurant or a shop">
+        <div data-trade-panel="restaurant">
+          <p class="demo-tag">Example from a demo restaurant</p>
+          <ul class="dayparts">
+            {DEMO_DAYPARTS.map((d) => (
+              <li class="daypart">
+                <h3>What sells {d.name === 'Late at night' ? 'late at night' : d.name === 'Lunch' ? 'at lunch' : `in the ${d.name.toLowerCase()}`}</h3>
+                <p class="daypart__meta">{d.hours} &middot; {d.share} of everything sold</p>
+                <ul>
+                  {d.items.map(([name, pct]) => (
+                    <li>
+                      <span class="daypart__row"><span>{name}</span><b>{pct}%</b></span>
+                      <span class="daypart__bar" style={`--w:${pct}%`}></span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div data-trade-panel="shop">
+          <p class="demo-tag">Example from a demo minimart</p>
+          <p class="an-found">Bread and milk sell most from 6 to 9 in the morning, so the bakery shelf is full before the first
+            customer; the evening brings flour, meat and oil for dinner.</p>
+          <ul class="dayparts">
+            {SHOP_DAYPARTS.map((d) => (
+              <li class="daypart">
+                <h3>What sells {d.name === 'Afternoon' ? 'in the afternoon' : d.name === 'Evening' ? 'in the evening' : d.name.toLowerCase()}</h3>
+                <p class="daypart__meta">{d.hours} &middot; {d.share} of everything sold</p>
+                <ul>
+                  {d.items.map(([name, pct]) => (
+                    <li>
+                      <span class="daypart__row"><span>{name}</span><b>{pct}%</b></span>
+                      <span class="daypart__bar" style={`--w:${pct}%`}></span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </TradeSwitch>
 
       <div class="week">
         <h3 id="week-h">Your week at a glance: what to prepare each day</h3>
-        <p class="week__sub">The top 3 on each day of the week, with what a typical one sells.</p>
+        <p class="week__sub">The top 3 on each day of the week, with what a typical one sells. From the demo restaurant.</p>
         <ol class="week__days" aria-labelledby="week-h">
           {DEMO_WEEK.map((d) => (
             <li>
@@ -279,6 +329,7 @@ const creditKes = Number((credit.estimate ?? '0').replace(/[^\d]/g, ''));
   @media (min-width: 960px) { .an-hero__grid { grid-template-columns: 1fr 1.2fr; gap: var(--s-8); } }
 
   .an-found { max-width: 46rem; color: var(--ink-2); margin-bottom: var(--s-3); }
+  .an-words { max-width: 46rem; color: var(--ink-2); margin-top: var(--s-5); }
   .an-nocost {
     max-width: 46rem; margin-bottom: var(--s-5); padding: var(--s-3) var(--s-4); font-size: var(--fs-sm);
     background: #fff8eb; border: 1px solid #f3d9a4; border-radius: var(--r-md); color: var(--ink-2);

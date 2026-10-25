@@ -43,7 +43,7 @@ export function isTillOwnSalePush(req: Request): boolean {
  * TILL_SCOPE_ENFORCE). The till's token still cannot manage credit (limits, repayments, adjustments, confirming).
  */
 export const TILL_EXEMPTIONS: ReadonlyArray<{ key: string; why: string; applies: (req: Request) => boolean }> = [
-  { key: 'customers.credit', why: "A545: the till's push of a credit sale it already took", applies: isTillOwnSalePush },
+  { key: 'customers.credit', why: "A545: the POS's push of a credit sale it already took", applies: isTillOwnSalePush },
 ];
 
 /** May the till's own sign-in pass a check for any of `keys`? Logged (once an hour per key and path) when not. */

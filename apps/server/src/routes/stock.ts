@@ -16,13 +16,13 @@ import { Router, type Response } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, assertBranchAccess, branchScope, can, NO_BRANCH } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess, branchScope, can, NO_BRANCH, branchFilter, byBranch, rowInBranches, oneBranchOnly, type BranchFilter } from '../middleware/rbac';
 import { guardBranch, idsOfBusiness, branchOfBusiness } from '../lib/branchGuard';   // A494; A564: branchOfBusiness
 import { supabase } from '../lib/supabase';
 import { importKey } from '../lib/productImport';   // 2026-10-04
 import { chunkIn } from '../lib/pgQuery';
 import { resolveStockNotifications } from '../jobs/lowStockChecker';
-import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A394
+import { hiddenWhileCounting, hiddenWhileCountingIn } from '../lib/stockTakeAccess';   // A394, A582
 import { recordReceivedBatch, wantsBatch } from '../lib/batchStore';   // A413
 import { actor } from '../lib/actor';
 import { searchTerm, lookupLimit, requestQuantity, cleanNote, actingBranch, nextStatus, decidedMessage, SEARCH_MIN } from '../lib/transferRequests';   // A564
@@ -158,7 +158,8 @@ async function applyProductStockOut(
 // gets the branch that matches nothing), sends no cost (router strip: unit_cost) and is blind for counted items.
 router.get('/ingredients', async (req, res) => {
   const { status, category, packaging } = req.query as Record<string, string>;
-  const scopedBranch = branchScope(req); // staff -> their branch; owner -> ?branch_id or null (all)
+  const bf = branchFilter(req);   // A582: one branch, all, or a partner's set
+  const scopedBranch = bf.kind === 'one' ? bf.id : null; // staff -> their branch; owner -> ?branch_id or null (all)
 
   let query = supabase.from('ingredients')
     .select('*, ingredient_stock_levels ( branch_id, current_stock, reorder_level )')
@@ -184,14 +185,15 @@ router.get('/ingredients', async (req, res) => {
       current_stock = Number(lvl?.current_stock ?? 0);
       reorder_level = Number(lvl?.reorder_level ?? 0);
     } else {
-      current_stock = levels.reduce((sum: number, l: any) => sum + Number(l.current_stock ?? 0), 0);
+      // A582: a partner's set — the sum of their branches only, and only their branches' rows below
+      current_stock = levels.filter((l: any) => rowInBranches(bf, l.branch_id)).reduce((sum: number, l: any) => sum + Number(l.current_stock ?? 0), 0);
     }
     const { ingredient_stock_levels, ...rest } = ing;
     // A494: a branch-scoped caller gets their own branch's row only — every branch's levels went to everyone.
-    return { ...rest, current_stock, reorder_level, branch_stock: scopedBranch ? levels.filter((l: any) => l.branch_id === scopedBranch) : levels };
+    return { ...rest, current_stock, reorder_level, branch_stock: levels.filter((l: any) => rowInBranches(bf, l.branch_id)) };
   });
   // A394: blind count — the counted ingredients' figures are hidden from someone who may not change stock.
-  const hide = await hiddenWhileCounting(req, scopedBranch);
+  const hide = await hiddenWhileCountingIn(req, bf);
   res.json(hide.size ? shaped.map((i: any) => hide.has(`i:${i.id}`) ? { ...i, current_stock: null, branch_stock: [], counting: true } : i) : shaped);
 });
 
@@ -441,15 +443,15 @@ router.patch('/ingredients/:id/reorder', requirePermission('inventory.adjust'), 
 // and while that branch counts the item the level after each movement is not sent to someone counting blind.
 router.get('/ingredients/:id/movements', requirePermission('inventory.view'), async (req, res) => {
   const { limit = '50' } = req.query as Record<string, string>;
-  const scoped = branchScope(req);
+  const bf = branchFilter(req);   // A582
   let q = supabase.from('ingredient_stock_movements')
     .select('*, users ( name )')
     .eq('ingredient_id', req.params.id).eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(Math.min(Number(limit) || 50, 200));
-  if (scoped) q = q.eq('branch_id', scoped);
+  q = byBranch(q, bf);
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
-  const hide = await hiddenWhileCounting(req, scoped);
+  const hide = await hiddenWhileCountingIn(req, bf);
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   res.json(hide.has(`i:${req.params.id}`) ? rows.map((m) => ({ ...m, quantity_after: null, counting: true })) : rows);
 });
@@ -504,7 +506,7 @@ router.delete('/suppliers/:id', requirePermission('inventory.receive'), async (r
 
 router.get('/purchase-orders', requirePermission('inventory.receive'), async (req, res) => {
   const { status, supplier_id, limit = '50' } = req.query as Record<string, string>;
-  const scoped = branchScope(req);   // A494: a manager sees their branch's orders; the owner the chosen branch, or all
+  const bf = branchFilter(req);   // A494: a manager sees their branch's orders; the owner the chosen branch, or all; A582: a partner's set
   let query = supabase.from('purchase_orders')
     .select(`*, suppliers ( id, name ),
       purchase_order_items ( id, ingredient_id, quantity_ordered, unit_cost, quantity_received, ingredients ( id, name, unit ) )`)
@@ -514,7 +516,7 @@ router.get('/purchase-orders', requirePermission('inventory.receive'), async (re
     .limit(Math.min(Number(limit), 200));
   if (status)      query = query.eq('status', status);
   if (supplier_id) query = query.eq('supplier_id', supplier_id);
-  if (scoped)      query = query.eq('branch_id', scoped);
+  query = byBranch(query, bf);
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
   // Derive total from the actual line items so a stale stored total_amount can never
@@ -637,14 +639,14 @@ router.delete('/purchase-orders/:id', requirePermission('inventory.receive'), as
 // A494: was open to any signed-in user, every branch — inventory.receive (as recording one), the caller's branch.
 router.get('/grn', requirePermission('inventory.receive'), async (req, res) => {
   const { purchase_order_id, limit = '50' } = req.query as Record<string, string>;
-  const scoped = branchScope(req);
+  const bf = branchFilter(req);   // A582
   let query = supabase.from('goods_received_notes')
     .select(`*, purchase_orders ( po_number ),
       grn_items ( id, ingredient_id, quantity_received, unit_cost, ingredients ( name, unit ) )`)
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(Math.min(Number(limit), 200));
   if (purchase_order_id) query = query.eq('purchase_order_id', purchase_order_id);
-  if (scoped)            query = query.eq('branch_id', scoped);
+  query = byBranch(query, bf);
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
   res.json(data ?? []);
@@ -749,16 +751,16 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
 // caller's branch (the owner: the chosen branch, or all).
 router.get('/transfers', requirePermission('inventory.transfer'), async (req, res) => {
   const { status, limit = '50' } = req.query as Record<string, string>;
-  const branch_id = branchScope(req);
+  const bf = branchFilter(req);   // A582: a transfer from or to one of the caller's branches
   let query = supabase.from('stock_transfers')
     .select(`*, stock_transfer_items ( id, product_id, quantity, quantity_received, products ( name ) )`)
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(Math.min(Number(limit), 200));
   if (status)    query = query.eq('status', status);
-  if (branch_id) query = query.or(`from_branch_id.eq.${branch_id},to_branch_id.eq.${branch_id}`);
+  query = fromOrTo(query, bf);
   const { data: found, error } = await query;
   if (error) { sendError(res, error); return; }
-  const transfers = (found ?? []).filter((t: any) => !branch_id || t.from_branch_id === branch_id || t.to_branch_id === branch_id);
+  const transfers = (found ?? []).filter((t: any) => rowInBranches(bf, t.from_branch_id) || rowInBranches(bf, t.to_branch_id));
   if (transfers.length) {
     const branchIds = [...new Set(transfers.flatMap(t => [t.from_branch_id, t.to_branch_id]))];
     const branches = await chunkIn<any>('branches', 'id', branchIds, q => q.select('id, name'));
@@ -1053,9 +1055,17 @@ type RequestRow = {
 const REQUEST_COLUMNS = 'id, business_id, from_branch_id, to_branch_id, product_id, quantity, sent_quantity, note, status, '
   + 'requested_by, requested_by_name, requested_at, decided_by, decided_by_name, decided_at, decline_reason, transfer_id';
 type Req = Parameters<typeof branchScope>[0];
+/** A582: rows from OR to the filter's branches (a transfer, a request) — the rows are filtered again after the read. */
+function fromOrTo<Q>(q: Q, f: BranchFilter): Q {
+  if (f.kind === 'all') return q;
+  const v = f.kind === 'one' ? `eq.${f.id}` : `in.(${f.ids.join(',')})`;
+  return (q as any).or(`from_branch_id.${v},to_branch_id.${v}`);
+}
 
 router.get('/other-branches', requirePermission('inventory.view'), async (req, res) => {
   // A person's own branch; the owner's (or a partner's) picked branch, or null — every branch is "another" then.
+  // A582: "All my branches" — "other" is from one branch: pick one of yours first.
+  if (oneBranchOnly(req, res, 'Pick one of your branches to check the others.')) return;
   const own = branchScope(req);
   // A494: a non-owner with no branch sees nothing (they are not "every branch").
   if (own === NO_BRANCH) { res.status(403).json({ error: 'You are not signed in at a branch.', code: 'NO_BRANCH' }); return; }
@@ -1078,8 +1088,11 @@ router.get('/other-branches', requirePermission('inventory.view'), async (req, r
   const { data: allBranches, error: bErr } = await supabase.from('branches').select('id, name, status')
     .eq('business_id', req.businessId).order('name', { ascending: true });
   if (bErr) { sendError(res, bErr); return; }
+  // A582: a partner of some branches checks THEIR other branches only — a branch not theirs is someone else's shop (its
+  // name and its stock never reach them). Managers and staff keep A564's every other branch; the owner as before.
+  const reach = (b: { id: string }) => !(req.webPartner && !req.allBranches) || (req.partnerBranches ?? []).includes(b.id);
   const others = ((allBranches ?? []) as Array<{ id: string; name: string; status: string | null }>)
-    .filter((b) => b.id !== own && b.status !== 'inactive');
+    .filter((b) => b.id !== own && b.status !== 'inactive' && reach(b));
 
   const levels = new Map<string, { quantity: number; qty_pieces: number | null; updated_at: string | null }>();
   if (products.length && others.length) {
@@ -1124,6 +1137,21 @@ async function describeRequests(rows: RequestRow[]) {
 
 // The requests to and from the caller's branch (the owner: the branch picked, or every branch), newest first.
 router.get('/requests', requirePermission('inventory.transfer'), async (req, res) => {
+  const bf = branchFilter(req);   // A582: a partner's set — the requests to and from any of their branches
+  if (bf.kind === 'set') {
+    const status = typeof req.query.status === 'string' && req.query.status ? req.query.status : null;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    let query = supabase.from('stock_transfer_requests').select(REQUEST_COLUMNS)
+      .eq('business_id', req.businessId).order('requested_at', { ascending: false }).limit(limit);
+    if (status) query = query.eq('status', status);
+    query = fromOrTo(query, bf);
+    const { data, error } = await query;
+    if (error) { sendError(res, error); return; }
+    const rows = ((data ?? []) as unknown as RequestRow[]).filter((r) => bf.ids.includes(r.from_branch_id) || bf.ids.includes(r.to_branch_id));
+    const incoming = rows.filter((r) => r.status === 'requested' && bf.ids.includes(r.from_branch_id)).length;
+    res.json({ branch_id: null, incoming_open: incoming, requests: await describeRequests(rows) });
+    return;
+  }
   const own = branchScope(req);
   if (own === NO_BRANCH) { res.json({ branch_id: null, incoming_open: 0, requests: [] }); return; }
   const status = typeof req.query.status === 'string' && req.query.status ? req.query.status : null;
@@ -1141,11 +1169,13 @@ router.get('/requests', requirePermission('inventory.transfer'), async (req, res
 
 // The badge: requests waiting for the caller's branch to answer (0 for anyone who does not handle transfers).
 router.get('/requests/count', async (req, res) => {
+  const bf = branchFilter(req);   // A582: a partner's set — waiting at any of their branches
   const own = branchScope(req);
-  if (!can(req, 'inventory.transfer') || own === NO_BRANCH) { res.json({ incoming: 0 }); return; }
+  if (!can(req, 'inventory.transfer') || (own === NO_BRANCH && bf.kind !== 'set')) { res.json({ incoming: 0 }); return; }
   let query = supabase.from('stock_transfer_requests').select('id', { count: 'exact', head: true })
     .eq('business_id', req.businessId).eq('status', 'requested');
-  if (own) query = query.eq('from_branch_id', own);
+  if (bf.kind === 'set') query = byBranch(query, bf, 'from_branch_id');
+  else if (own) query = query.eq('from_branch_id', own);
   const { count, error } = await query;
   if (error) { res.json({ incoming: 0 }); return; }
   res.json({ incoming: Number(count) || 0 });

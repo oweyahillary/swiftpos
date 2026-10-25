@@ -13,7 +13,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { branchScope } from '../middleware/rbac';
+import { branchFilter, rowInBranches, type BranchFilter } from '../middleware/rbac';
 import { requirePermission } from '../middleware/rbac';
 import { buildRecipeImport, importKey } from '../lib/productImport';
 import { supabase } from '../lib/supabase';
@@ -26,14 +26,15 @@ import { supabase } from '../lib/supabase';
  * does — scoped branch → that branch, no branch (owner) → business-wide sum — so
  * the Recipes drawer and the Ingredients page finally show the same number.
  */
-function flattenRecipeStock(rows: any[], scopedBranch: string | null): any[] {
+function flattenRecipeStock(rows: any[], bf: BranchFilter): any[] {
   return (rows ?? []).map((r: any) => {
     const ing = r?.ingredients;
     if (!ing || !Array.isArray(ing.ingredient_stock_levels)) return r;
     const levels = ing.ingredient_stock_levels;
-    const current_stock = scopedBranch
-      ? Number(levels.find((l: any) => l.branch_id === scopedBranch)?.current_stock ?? 0)
-      : levels.reduce((s: number, l: any) => s + Number(l.current_stock ?? 0), 0);
+    // A582: a partner's "All my branches" — the sum of their branches only
+    const current_stock = bf.kind === 'one'
+      ? Number(levels.find((l: any) => l.branch_id === bf.id)?.current_stock ?? 0)
+      : levels.filter((l: any) => rowInBranches(bf, l.branch_id)).reduce((s: number, l: any) => s + Number(l.current_stock ?? 0), 0);
     const { ingredient_stock_levels, ...restIng } = ing;
     return { ...r, ingredients: { ...restIng, current_stock } };
   });
@@ -72,7 +73,7 @@ router.get('/', async (req, res) => {
     .order('product_id');
 
   if (error) { sendError(res, error); return; }
-  res.json(flattenRecipeStock(data ?? [], branchScope(req)));
+  res.json(flattenRecipeStock(data ?? [], branchFilter(req)));
 });
 
 // GET /api/recipes/:productId
@@ -89,7 +90,7 @@ router.get('/:productId', async (req, res) => {
     .order('created_at');
 
   if (error) { sendError(res, error); return; }
-  res.json(flattenRecipeStock(data ?? [], branchScope(req)));
+  res.json(flattenRecipeStock(data ?? [], branchFilter(req)));
 });
 
 // POST /api/recipes/:productId
@@ -219,7 +220,7 @@ router.post('/:productId', canManage, async (req, res) => {
     .eq('business_id', req.businessId)
     .order('created_at');
 
-  res.json({ product, lines: flattenRecipeStock(saved ?? [], branchScope(req)) });
+  res.json({ product, lines: flattenRecipeStock(saved ?? [], branchFilter(req)) });
 });
 
 // DELETE /api/recipes/:productId

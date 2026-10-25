@@ -18,7 +18,7 @@
 //       GET  /pending    — collect this till's pending instructions (marks delivered)
 //       POST /ack        — record this till's verdict, retiring the instruction
 
-import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess, branchScope, branchFilter, byBranch } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -65,12 +65,12 @@ router.post('/instruct', MANAGER, async (req: any, res) => {
   const { data: dev, error: devErr } = await supabase.from('user_devices').select('device_id, branch_id, retired_at')
     .eq('business_id', req.businessId).eq('device_id', deviceId).maybeSingle();
   if (devErr) { sendError(res, devErr); return; }
-  if (!dev) { res.status(404).json({ error: 'That till is not one of this business’s' }); return; }
+  if (!dev) { res.status(404).json({ error: 'That POS is not one of this business’s' }); return; }
   const branchId = (dev as { branch_id?: string | null }).branch_id ?? null;
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
   // A522: a retired till never collects an instruction — its day is closed as abandoned (POST /abandon).
   if ((dev as { retired_at?: string | null }).retired_at) {
-    res.status(409).json({ error: 'This till is retired and will never collect a close — close its day as abandoned instead.', code: 'TILL_RETIRED' });
+    res.status(409).json({ error: 'This POS is retired and will never collect a close — close its day as abandoned instead.', code: 'TILL_RETIRED' });
     return;
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) { res.status(400).json({ error: 'business_date must be YYYY-MM-DD' }); return; }
@@ -122,7 +122,7 @@ router.post('/instruct', MANAGER, async (req: any, res) => {
 router.get('/pending', async (req: any, res) => {
   // A494: only a till's own session collects, and only its own (they carry the counted cash and who closes).
   const deviceId = ownTill(req);
-  if (!deviceId) { res.status(403).json({ error: 'Only a till collects its own day-close instructions.', code: 'TILL_ONLY' }); return; }
+  if (!deviceId) { res.status(403).json({ error: 'Only a POS collects its own day-close instructions.', code: 'TILL_ONLY' }); return; }
 
   const { data, error } = await supabase
     .from('day_close_instructions')
@@ -152,7 +152,7 @@ router.post('/ack', async (req: any, res) => {
   const deviceId      = ownTill(req);   // A494: the till's own session, for itself
   const instructionId = String(req.body?.instruction_id ?? '').trim();
   const ok            = req.body?.ok === true;
-  if (!deviceId)      { res.status(403).json({ error: 'Only a till acknowledges its own day-close instructions.', code: 'TILL_ONLY' }); return; }
+  if (!deviceId)      { res.status(403).json({ error: 'Only a POS acknowledges its own day-close instructions.', code: 'TILL_ONLY' }); return; }
   if (!instructionId) { res.status(400).json({ error: 'instruction_id is required' }); return; }
 
   // A522: "not yet" is not "no". A drawer still open on the till, or a shift counted offline and not yet confirmed: the
@@ -196,12 +196,17 @@ router.get('/overview', MANAGER, async (req: any, res) => {
   const branchId = req.isOwner ? (String(req.query.branch_id ?? '').trim() || branchScope(req) || '')
     : req.allBranches ? (branchScope(req) || '') : String(branchScope(req) ?? '');
 
+  // A582: a partner's "All my branches" — their branches combined (branchScope is NO_BRANCH there: never every branch)
+  const bf = branchFilter(req);
+  const setIds = bf.kind === 'set' ? bf.ids : null;
+  const narrow = <Q>(q: Q): Q => (setIds ? byBranch(q, bf) : branchId ? (q as any).eq('branch_id', branchId) : q);
+
   let daysQ = supabase
     .from('business_days')
     .select('device_id, business_date, branch_id, status, opened_at')
     .eq('business_id', req.businessId)
     .eq('status', 'open');
-  if (branchId) daysQ = daysQ.eq('branch_id', branchId);
+  daysQ = narrow(daysQ);
   const { data: days, error: daysErr } = await daysQ;
   if (daysErr) { sendError(res, daysErr); return; }
 
@@ -211,7 +216,7 @@ router.get('/overview', MANAGER, async (req: any, res) => {
     .from('user_devices')
     .select('device_id, device_label, terminal_code, branch_id, status, last_sync_at, retired_at')
     .eq('business_id', req.businessId);
-  if (branchId) devQ = devQ.eq('branch_id', branchId);
+  devQ = narrow(devQ);
   const { data: devRows } = await devQ;
   const devById = new Map<string, any>();
   for (const d of (devRows ?? []) as any[]) if (d.device_id) devById.set(d.device_id, d);
@@ -268,7 +273,7 @@ router.get('/overview', MANAGER, async (req: any, res) => {
       open_day:     openDayOf.get(d.device_id) ?? null,
       delivered_at: pendingByDevice[d.device_id]?.delivered_at ?? null,
     }));
-  res.json({ branch_id: branchId || null, tills, retired_open_days, devices, abandon_after_hours: ABANDON_SILENT_HOURS });
+  res.json({ branch_id: setIds ? null : branchId || null, tills, retired_open_days, devices, abandon_after_hours: ABANDON_SILENT_HOURS });
 });
 
 /** A522: a row in the business's audit log for a remote day-close decision (best-effort — never fails the action). */
@@ -303,7 +308,7 @@ router.post('/:id/cancel', MANAGER, async (req: any, res) => {
     .eq('id', id).eq('business_id', req.businessId).eq('status', 'pending')
     .select('id, status').maybeSingle();
   if (upErr) { sendError(res, upErr); return; }
-  if (!done) { res.status(409).json({ error: 'The till answered just now — reload.', code: 'NOT_PENDING' }); return; }
+  if (!done) { res.status(409).json({ error: 'The POS answered just now — reload.', code: 'NOT_PENDING' }); return; }
   await audit(req, 'day_close_cancelled', id, (ins as any).branch_id ?? null,
     { device_id: (ins as any).device_id, business_date: (ins as any).business_date, delivered: !!(ins as any).delivered_at, reason: reason || null });
   res.json({ id, status: 'cancelled', delivered: !!(ins as any).delivered_at });
@@ -320,8 +325,8 @@ router.post('/abandon', MANAGER, async (req: any, res) => {
   const businessDate = typeof req.body?.business_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.business_date) ? req.body.business_date : null;
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
   if (!deviceId) { res.status(400).json({ error: 'device_id is required' }); return; }
-  if (!reason) { res.status(400).json({ error: 'Say why this till’s day is closed without it (e.g. the till is broken / replaced).', code: 'REASON_REQUIRED' }); return; }
-  if (req.body?.confirm !== true) { res.status(400).json({ error: 'Tick that you understand the till’s unsent sales are not in this close.', code: 'CONFIRM_REQUIRED' }); return; }
+  if (!reason) { res.status(400).json({ error: 'Say why this POS’s day is closed without it (e.g. the POS is broken / replaced).', code: 'REASON_REQUIRED' }); return; }
+  if (req.body?.confirm !== true) { res.status(400).json({ error: 'Tick that you understand the POS’s unsent sales are not in this close.', code: 'CONFIRM_REQUIRED' }); return; }
   const { data: dev, error: devErr } = await supabase.from('user_devices')
     .select('device_id, branch_id, retired_at, last_sync_at, terminal_code, device_label')
     .eq('business_id', req.businessId).eq('device_id', deviceId).maybeSingle();
@@ -331,15 +336,15 @@ router.post('/abandon', MANAGER, async (req: any, res) => {
   if (!dev) {
     const { data: day } = await supabase.from('business_days').select('branch_id')
       .eq('business_id', req.businessId).eq('device_id', deviceId).eq('status', 'open').limit(1).maybeSingle();
-    if (!day) { res.status(404).json({ error: 'That till has no open trading day here.' }); return; }
+    if (!day) { res.status(404).json({ error: 'That POS has no open trading day here.' }); return; }
     branchId = (day as any).branch_id ?? null;
   }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
   if (!mayAbandon(dev as any)) {
     const h = Math.floor(silentHours((dev as any)?.last_sync_at));
     res.status(409).json({
-      error: `This till synced ${h < 1 ? 'within the last hour' : `${h} h ago`} — close its day normally (it closes itself at its next sync). ` +
-             `A day is closed as abandoned only for a retired till or one silent for ${ABANDON_SILENT_HOURS} h.`,
+      error: `This POS synced ${h < 1 ? 'within the last hour' : `${h} h ago`} — close its day normally (it closes itself at its next sync). ` +
+             `A day is closed as abandoned only for a retired POS or one silent for ${ABANDON_SILENT_HOURS} h.`,
       code: 'TILL_NOT_SILENT',
     });
     return;
@@ -351,13 +356,13 @@ router.post('/abandon', MANAGER, async (req: any, res) => {
     result = await abandonTillDays({ businessId: req.businessId, deviceId, branchId, userId: req.userId ?? null, userName: (me as any)?.name ?? null,
       reason, till, lastSyncAt: (dev as any)?.last_sync_at ?? null, businessDate });
   } catch (e) { sendError(res, e as Error); return; }
-  if (!result.days.length) { res.status(409).json({ error: 'That till has no open trading day on the cloud now.', code: 'NOTHING_OPEN' }); return; }
+  if (!result.days.length) { res.status(409).json({ error: 'That POS has no open trading day on the cloud now.', code: 'NOTHING_OPEN' }); return; }
   await audit(req, 'day_closed_as_abandoned', null, branchId,
     { device_id: deviceId, till, days: result.days.map((d) => d.business_date), shifts_force_closed: result.shifts.length, reason, last_sync_at: (dev as any)?.last_sync_at ?? null });
   await notifyOwner(req.businessId, branchId, 'day_closed_abandoned',
-    `${till}: trading day closed without the till`,
+    `${till}: trading day closed without the POS`,
     `${(me as any)?.name ?? 'A manager'} closed ${result.days.map((d) => d.business_date).join(', ')} on ${till} as abandoned (${reason}). ` +
-    `${result.shifts.length} drawer${result.shifts.length === 1 ? '' : 's'} force-closed uncounted; sales the till made after it last synced are not in it.`,
+    `${result.shifts.length} drawer${result.shifts.length === 1 ? '' : 's'} force-closed uncounted; sales the POS made after it last synced are not in it.`,
     '/dashboard/shifts');
   res.json({ ok: true, ...result });
 });

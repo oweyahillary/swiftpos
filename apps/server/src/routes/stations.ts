@@ -127,7 +127,7 @@ router.post('/seed-defaults', requirePermission('stations.manage'), async (req, 
     .insert([
       { business_id: req.businessId, branch_id: branchId, name: 'Kitchen', kind: 'kitchen',  sort_order: 0 },
       { business_id: req.businessId, branch_id: branchId, name: 'Packing', kind: 'dispatch', sort_order: 1 },
-      { business_id: req.businessId, branch_id: branchId, name: 'Till',    kind: 'receipt',  sort_order: 2 },
+      { business_id: req.businessId, branch_id: branchId, name: 'POS',    kind: 'receipt',  sort_order: 2 },
     ])
     .select();
   if (mkErr) { sendError(res, mkErr); return; }

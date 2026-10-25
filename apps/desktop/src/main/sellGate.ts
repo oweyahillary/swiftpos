@@ -28,7 +28,7 @@ import { hasMarker, isOwnerRole, personCan, type PersonLike } from './personAcce
 export const SELL_KEY = 'orders.create';
 
 /** The words a person without "Sell" reads — on the till's plain screen, the POS and any refused call. */
-export const SELL_REFUSAL = 'Your role can’t sell on this till — ask a manager to add ‘Sell’ to your role in Settings › Roles.';
+export const SELL_REFUSAL = 'Your role can’t sell on this POS — ask a manager to add ‘Sell’ to your role in Settings › Roles.';
 
 /** May this person START a sale on this till? Nobody signed in → no. */
 export function maySell(p: PersonLike | null | undefined): boolean {

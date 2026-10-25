@@ -36,15 +36,19 @@ The research suggests some lines that go beyond today's product. The site uses t
 | Day close | Drawer counts, over/short by cashier, shift confirmation, close a branch from the till or the web | — |
 | Owner away | Every branch on one web dashboard; a daily summary by email; partner and accountant logins | Telegram or WhatsApp summaries, until those channels are set up |
 | Analytics | "Do this next" in plain words: what to order, what to have in for a busy day ("your week at a glance"), stock to move between branches (words only, no quantity or KES), credit to chase, a dish to feature, items without a cost; KES estimates only where honest, marked as estimates; voids and discounts as a **warning to look into**; tables capped at the top 10 | Guaranteed savings; AI; **any price-rise suggestion** (owner: prices should be competitive); voids as money "to recover" |
-| Kitchen | Kitchen and dispatch tickets, a kitchen display, variants and combos on one line; extras and the cashier's notes printed under the dish (A559) | Menus by time of day |
+| Kitchen | Kitchen and dispatch tickets, a kitchen display, variants and combos on one line; extras and the cashier's notes printed under the dish (A559); menus (and a shop's departments) by days and hours, a scan refused outside them, e.g. alcohol only in licensed hours (A578, A580) | — |
 | Credit | Customer accounts with limits (existing customers too, A567); sales on account at the till within the limit; every credit sale confirmed by a manager | — |
+| Weighed items | Items sold by weight: the weight typed on a keypad or read from a scale's label (prefix 21–29, weight or price inside), "0.452 kg @ 650/kg" on the receipt, stock to the gram (A577) | — |
 | Stock | Stock levels, deliveries, transfers between branches, counts, wastage, recipes and costs; see other branches' stock and request a transfer (A564; at the till with ZapTill Online); when stock hits zero: sell as normal, show sold out, or hide (A563) | Purchase orders sent to suppliers automatically |
-| Barcodes and labels | Scan at the till; generate in-store EAN-13 codes for products without one (prefix 20, never overwrites); labels on any printer and size: label printers (TSPL/ZPL), A4 sticker sheets, the receipt printer; every label carries a barcode (A571, A574) | Weighed items / scale barcodes (21–29 are reserved, not built) |
+| Barcodes and labels | Scan at the till; generate in-store EAN-13 codes for products without one (prefix 20, never overwrites); labels on any printer and size: label printers (TSPL/ZPL), A4 sticker sheets, the receipt printer; every label carries a barcode (A571, A574) | Reading a scale by cable; printing the scale's labels from ZapTill (A577 does not do either) |
 | Staff | Ready-made roles (General Manager to Cashier), PINs, partner logins | — |
 | Brand | Your logo and colours on the till and receipt, per branch | — |
 | Support | Updates install themselves; support can pull a till's log remotely; 24-hour support for **priority clients** | "24/7 support" for everyone |
 | Platforms | Windows till; web dashboard on any phone | Android or iPad till |
 | eTIMS | One honest FAQ line: clients handle eTIMS with their own provider today | eTIMS built in |
+| Petrol stations (2026-10-23) | The till opens on the pumps (desktop and web); fuel by amount or litres with 500/1,000/2,000/5,000 quick amounts; every fuel sale records its pump; grades priced a litre, per branch; tanks in litres with deliveries, each sale taken off its tank, low tanks; Fuel Sales (grade, pump, hour), Pump Monitor, Wet Stock / tank reconciliation, delivery log, Excel; the Fuel attendant role; shop items scanned on the same sale, labels (never fuel); pumps work offline on the desktop till | Pump meter (totaliser) readings, tank dips, attendant reconciliation against the meters, "Show litres on receipt" and the other Station policies (saved, not used), nozzles, a tank gauge |
+| Car parks (2026-10-23) | Web till only: a bay opened with the plate, vehicle type and rate an hour; each hour started charged, at least one; paid through the normal checkout (cash, M-Pesa, card); a bay can't be opened twice; voided sessions recorded; bays in zones; Parking Overview (free, occupied, occupancy, open sessions); the Watch list's "vehicles let out with no charge" (premium) | Offline parking; printed entry tickets; plate cameras or barriers; grace periods, lost-ticket fees, day caps or vehicle-class tariffs (shared/parkingTariff.ts is not wired); a parking revenue report |
+| Watch list (A576) | Warnings about voids, refunds, discounts, free sales, short drawers, sales below the list price, kitchen items taken back (food), vehicles let out with no charge (car parks); owner and managers only; premium (with Analytics) | Proof of theft; who let a car out (a session does not record who closed it) |
 
 Before launch, the owner re-checks this table against the release then current.
 
@@ -54,15 +58,17 @@ Before launch, the owner re-checks this table against the release then current.
 |---|---|---|
 | **Home** | Hook, proof, path | Hero · trust strip · "Choose your business" · 4 benefit blocks with screens · offline scene · owner-away block · "Do this next" teaser · the price in one line · FAQ excerpt · final WhatsApp call to action |
 | **How it works** | A day with ZapTill | Morning open → lunch rush → kitchen → evening close → owner's phone at night; one screen per step |
-| **Features** | The full list, grouped by job | Sell · Kitchen · Money and day close · Stock · Staff · Branches · Analytics · Support |
+| **Features** | The full list, grouped by job, each feature tagged with its business types, a type filter | Sell · Barcodes and labels · Stock and suppliers · Kitchen · Pumps and fuel · Parking · Money and day close · Staff · Branches · Analytics · Support · Offline |
 | **For restaurants and cafés** | The lead industry | Kitchen flow, combos and variants, tables, menus by time of day |
 | **For bars and lounges** | Leak control | Over/short by cashier, credit for regulars, the night close |
 | **For quick service** | Speed | Counter speed, offers, dispatch tickets |
-| **For retail** and **for petrol stations** | Secondary lanes | Shorter pages; petrol: pumps, attendants, tank deliveries |
+| **For shops and supermarkets** (/for/retail/), **for minimarts** | Equal lanes (2026-10-23) | Barcodes and labels, departments, weighed items, stock and suppliers; minimarts: the quick queue, weighing, licensed hours, neighbours on account |
+| **For petrol stations**, **for car parks** | Equal lanes, only what ships (2026-10-23) | Pumps, fuel by amount or litres, tanks, fuel reports, the forecourt shop, an honest "not yet" box, "talk to us about your forecourt"; bays, plates, hourly charge, occupancy, "needs the internet" |
 | **Analytics** | The premium upsell | A real "Do this next" card, what sells when, money leaks, payback logic, the first-month money-leak report |
-| **Pricing** | Value for money | Packages, what the setup buys, the cost per day, the leak calculator, "No surprises", pricing FAQ |
+| **Pricing** | Value for money | Packages, what the setup buys, the cost per day, the leak calculator, ZapTill vs a cash book vs a basic POS (night 3), "No surprises", pricing FAQ |
 | **Contact / Book a visit** | Conversion | WhatsApp (pre-filled), phone, demo form (with the spam protection in the brief), area served |
 | Privacy, Terms | Required | Data stance, the Kenya Data Protection Act |
+| **Guides** (/guides/, night 3) | Search and trust: practical reading that sells value honestly | Four drafts: cash going missing, two branches from a distance, the internet going off, setup vs monthly pricing; each ends with a soft WhatsApp call to action; drafts are noindex until the owner sets `status: 'ready'` in `src/lib/guides.ts` |
 
 The **Sign in** button in the header goes to `app.zaptill.co.ke`.
 

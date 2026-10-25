@@ -490,7 +490,7 @@ app.whenReady().then(async () => {
         if (ins.kind !== 'close_day') {
           // Named, not ignored: an unknown kind means the node is on a newer
           // build — the manager must find out rather than watch it spin.
-          const ack = { ok: false, error: `this till does not understand '${ins.kind}' — it is on an older build` };
+          const ack = { ok: false, error: `this POS does not understand '${ins.kind}' — it is on an older build` };
           await sendAck(ins, ack);
           continue;
         }
@@ -573,7 +573,7 @@ app.whenReady().then(async () => {
       } },
     { name: 'staff', what: 'staff list, PINs and permissions', run: () => refreshStaffRosterNow('start') },
     { name: 'settings', what: 'the branch\'s technician settings', run: () => refreshTechConfigNow() },
-    { name: 'push', what: 'sales, drawers and changes waiting on this till',
+    { name: 'push', what: 'sales, drawers and changes waiting on this POS',
       run: async () => {
         // A521 (#15): the cloud's test-data clears before anything this till holds goes up (a till that was off during an
         // admin clear sent its unsent test sales back first — to the cloud, and to the branch server, which relays them).

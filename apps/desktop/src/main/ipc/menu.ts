@@ -231,7 +231,7 @@ export function registerMenuHandlers(ctx: IpcShared) {
   });
   handle('manage:unassignedCategories', async () => {
     try {
-      if (Object.keys(readPendingRouting(getLocalDb())).length) throw new Error('A411: answer from this till while routing waits');
+      if (Object.keys(readPendingRouting(getLocalDb())).length) throw new Error('A411: answer from this POS while routing waits');
       return await manageFetch('/api/stations/unassigned', 'GET');
     }
     catch {
@@ -277,7 +277,7 @@ export function registerMenuHandlers(ctx: IpcShared) {
       { staff_name: string; role_name: string | null; permissions: string } | undefined;
     if (!staff) throw new Error('Not signed in');
     if (!mayRoute(staff.role_name, staff.permissions)) throw new Error('Your role does not allow this change.');   // A490: stations.manage
-    if (!db.prepare(`SELECT 1 FROM print_stations WHERE id = ?`).get(id)) throw new Error('That station is not on this till — leave this screen and open it again.');
+    if (!db.prepare(`SELECT 1 FROM print_stations WHERE id = ?`).get(id)) throw new Error('That station is not on this POS — leave this screen and open it again.');
     const saved = saveRoutingLocally(db, id, categoryIds, staff.staff_name);
     const outcome = (await pushStationRoutingNow())[id];
     if (outcome?.state === 'saved') {
@@ -288,7 +288,7 @@ export function registerMenuHandlers(ctx: IpcShared) {
       try { await refreshStationsLocal(); } catch { /* the next pull does it */ }
       return { station_id: id, state: 'refused', message: outcome.message, category_ids: null, rejected: [] };
     }
-    return { station_id: id, state: 'pending', message: outcome?.message ?? 'Saved on this till — it goes to the cloud at the next sync.',
+    return { station_id: id, state: 'pending', message: outcome?.message ?? 'Saved on this POS — it goes to the cloud at the next sync.',
              category_ids: saved, rejected: [] };
   });
 }

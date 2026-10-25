@@ -1,0 +1,64 @@
+---
+// The guides hub (night 3). The list comes from src/lib/guides.ts. While every guide is a draft, the hub is kept out
+// of search engines too (it would only list pages that are).
+import Base from '../../layouts/Base.astro';
+import WhatsAppButton from '../../components/WhatsAppButton.astro';
+import { GUIDES, guideHref } from '../../lib/guides';
+import { WA_MESSAGES } from '../../lib/site';
+import { breadcrumb } from '../../lib/schema';
+
+const allDraft = GUIDES.every((g) => g.status === 'draft');
+---
+<Base
+  title="Guides for business owners in Kenya | ZapTill"
+  description="Practical guides for shop, restaurant, bar and petrol station owners in Kenya: stopping cash going missing, running branches from a distance, POS prices and outages."
+  waMessage={WA_MESSAGES.guides}
+  noindex={allDraft}
+  jsonLd={[breadcrumb([['Guides', '/guides/']])]}
+>
+  <section class="page-head guides-head">
+    <div class="wrap">
+      <h1>Guides for owners</h1>
+      <p class="lede">
+        Short, practical reading for anyone who runs a shop, a minimart, a restaurant, a bar, a petrol station or a car
+        park in Kenya. Most of it helps whatever system you use.
+      </p>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="guides-list-title">
+    <div class="wrap">
+      <h2 id="guides-list-title" class="visually-hidden">All guides</h2>
+      <ul class="guides">
+        {GUIDES.map((g) => (
+          <li class="guides__item">
+            <h3><a href={guideHref(g)}>{g.title}</a></h3>
+            <p>{g.summary}</p>
+            <p class="small muted">{g.minutes} min read</p>
+          </li>
+        ))}
+      </ul>
+      <div class="guides-ask">
+        <p>Is there something you would like us to write about? Tell us.</p>
+        <WhatsAppButton message={WA_MESSAGES.guides} label="Suggest a guide on WhatsApp" />
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .guides-head { background: var(--card); border-bottom: 1px solid var(--line); }
+  .guides { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-5); grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); }
+  .guides__item { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-5); position: relative; }
+  .guides__item:hover { border-color: var(--teal-strong); }
+  .guides__item h3 { font-size: var(--fs-lg); margin-bottom: var(--s-3); }
+  .guides__item h3 a { color: var(--ink); text-decoration: none; }
+  /* The whole card is the link's target. */
+  .guides__item h3 a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+  .guides__item h3 a:focus-visible { outline: none; }
+  .guides__item:focus-within { outline: 3px solid var(--teal); outline-offset: 3px; }
+  .guides__item p { color: var(--ink-2); }
+  .guides__item p:last-child { margin-bottom: 0; }
+  .guides-ask { margin-top: var(--s-7); display: flex; flex-wrap: wrap; gap: var(--s-4); align-items: center; }
+  .guides-ask p { margin: 0; font-weight: 600; }
+</style>

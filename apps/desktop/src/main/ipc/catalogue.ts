@@ -5,6 +5,7 @@ import { getDeviceConfig, getPosFeatures, getStockCountFreeze, getScaleSettings 
 import { parseNotePicks } from '../orderNotes';
 import { cleanShowDays } from '../productDays';
 import { tillStockView } from '../stockGateLocal';   // A563
+import { forecourtSales, forecourtTanks } from '../forecourt';   // A588
 import { type IpcShared } from './shared';
 
 /** The sale screen's data: products, categories, variants, modifiers, tables, pumps, payment methods. */
@@ -41,6 +42,17 @@ export function registerCatalogueHandlers(ctx: IpcShared) {
       LEFT JOIN products p ON p.id = pu.fuel_product_id
       ORDER BY pu.sort_order, pu.name
     `).all();
+  });
+
+  // A588: the pumps screen's gauges and counters — this POS's own fuel sales, and the tanks' levels when the cloud can
+  // say (online licence, at most once a minute, 2 s); never a number this POS does not hold.
+  handle('pos:forecourt', async () => {
+    const tanks = await forecourtTanks(async () => {
+      const res = await withinMs(tillFetch('/api/fuel-tanks', {}, 2_000), 2_000);
+      if (!res.ok) throw new Error(String(res.status));
+      return res.json();
+    });
+    return { ...forecourtSales(), ...tanks };
   });
 
   handle('pos:init', async () => {

@@ -46,11 +46,11 @@ export default function TechFindServer({ isServer, onJoined }: { isServer: boole
       if (busy) return; busy = true;
       try {
         const st = await posApi.install.joinStatus();
-        if (st.status === 'denied') { setJoinTarget(null); setNote({ ok: false, text: 'The server did not allow this till to join.' }); }
+        if (st.status === 'denied') { setJoinTarget(null); setNote({ ok: false, text: 'The server did not allow this POS to join.' }); }
         else if (st.status === 'expired' || st.status === 'none') { setJoinTarget(null); setNote({ ok: false, text: 'The request ran out — ask again.' }); }
         else if (st.status === 'joined') {
           setJoinTarget(null); setServers(null);
-          setNote({ ok: true, text: `Joined the branch server at ${joinTarget.ip}.${isServer ? ' This machine is now a till.' : ''}` });
+          setNote({ ok: true, text: `Joined the branch server at ${joinTarget.ip}.${isServer ? ' This machine is now a POS.' : ''}` });
           onJoined();
         }
       } catch (e: any) { setJoinTarget(null); setNote({ ok: false, text: e?.message ?? 'Joining failed — ask again.' }); }
@@ -63,8 +63,8 @@ export default function TechFindServer({ isServer, onJoined }: { isServer: boole
     <div data-testid="tech-find-server" className="space-y-2">
       <p className="text-[11px] text-gray-400">
         {isServer
-          ? 'To make this machine a till of another branch server: find that server, then press Allow there. This machine stops serving.'
-          : 'To join this till to a branch server (a new one, or one that replaced the old): find it, then press Allow on the server. Nothing on this till is cleared.'}
+          ? 'To make this machine a POS of another branch server: find that server, then press Allow there. This machine stops serving.'
+          : 'To join this POS to a branch server (a new one, or one that replaced the old): find it, then press Allow on the server. Nothing on this POS is cleared.'}
       </p>
       <button onClick={find} disabled={searching || !!joinTarget}
         className="w-full bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">

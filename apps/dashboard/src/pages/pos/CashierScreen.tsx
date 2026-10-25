@@ -49,6 +49,8 @@ import { useMenuHours } from '../../lib/useMenuHours';   // A578
 import { getWebDayCutoff } from '../../lib/webDayCutoff';   // A578: hours past midnight belong to the night before
 import Toast from '../../components/Toast';
 import WeightModal from './WeightModal';   // A577: items sold by weight
+import { FuelStrip, PumpGrade, type PumpTank } from './cashier/Forecourt';   // A588: the grades as nozzles, a pump's grade and tank
+import { QUICK_AMOUNTS } from '../../lib/forecourt';   // A588: 500 / 1,000 / 2,000 (and Full tank)
 import { parseScaleBarcode, findScaleProduct, scaleLine, isSoldByWeight, formatWeight } from '../../lib/scaleBarcode';   // A577
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -85,6 +87,8 @@ interface Pump {
   name: string;
   sort_order: number;
   status: 'idle' | 'dispensing' | 'inactive';
+  fuel_product_id?: string | null;   // A588: the grade it pours (/api/pumps sends the row)
+  fuel_tanks?: PumpTank | PumpTank[] | null;   // A588: the tank it draws from, when linked (its level for the gauge)
 }
 
 interface ParkingSession {
@@ -1188,13 +1192,19 @@ export default function CashierScreen() {
   const ctlRate = Number(business?.ctl_rate ?? 0) || 0;
   const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(orderTotal, vatRate, ctlRate);
 
+  // A588: the business's fuel grades (sold from the pumps and the nozzles strip, never as shop tiles).
+  const fuelGrades = useMemo(() => products.filter((p) => (p as any).is_fuel && p.status === 'active'), [products]);
+  const fuelById = useMemo(() => new Map(fuelGrades.map((g) => [g.id, g])), [fuelGrades]);
+  const gradeCategoryColour = (g: any): string | null => g?.category_color ?? g?.categories?.color ?? null;
+
   // ── Product filter ─────────────────────────────────────────────────────────
   const filtered = products.filter((p) => {
     const matchCat = activeCategory === 'all' || p.category_id === activeCategory;
     const matchMenu = inMenuScope(p, gridMenuScope(menuFilterScope, search));   // A537: a menu chosen = its categories only; A566: a search looks through every menu
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    // For petrol stations, show only fuel products on the product grid
-    const matchFuel = isPetrol ? (p as any).is_fuel === true : !(p as any).is_fuel;
+    // A588: fuel is never a tile — a petrol station's grades are the nozzles above the grid (FuelStrip) and the grid is its
+    // forecourt shop (oil, water, snacks, car care…). Before, the grid listed ONLY the fuel: shop items only by scanning.
+    const matchFuel = !(p as any).is_fuel;
     // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
     const matchDay = onGrid((p as any).show_days, search.trim() !== '');
     const matchStock = !hiddenOutOfStock(stockView.mode, stockView, p.id);   // A563: "Hide when out of stock"
@@ -1615,7 +1625,7 @@ export default function CashierScreen() {
                       <button
                         key={pump.id}
                         style={{
-                          ...s.slotCard,
+                          ...s.slotCard, height: 'auto', minHeight: 130,   // A588: room for the grade and its tank
                           ...(status === 'dispensing' ? s.slotOccupied : {}),
                           ...(status === 'idle' ? s.slotFree : {}),
                           ...(status === 'inactive' ? s.slotInactive : {}),
@@ -1624,7 +1634,9 @@ export default function CashierScreen() {
                         disabled={status === 'inactive'}
                       >
                         <div style={s.slotName}>{pump.name}</div>
-                        <div style={s.slotSub}>⛽ Pump</div>
+                        <PumpGrade name={fuelById.get(pump.fuel_product_id ?? '')?.name ?? null} productId={pump.fuel_product_id ?? null}
+                          categoryColour={gradeCategoryColour(fuelById.get(pump.fuel_product_id ?? ''))}
+                          index={fuelGrades.findIndex((g) => g.id === pump.fuel_product_id)} tanks={pump.fuel_tanks} />
                         {order ? (
                           <div style={s.slotOrderInfo}>
                             <span style={s.slotItemCount}>{order.cart.reduce((sum, i) => sum + i.quantity, 0)} items</span>
@@ -1669,6 +1681,13 @@ export default function CashierScreen() {
                     </span>
                   )}
                 </div>
+              )}
+
+              {/* A588: a petrol station's grades as nozzles — the open pump's grade first; a tap opens the fuel entry */}
+              {isPetrol && (
+                <FuelStrip grades={fuelGrades.map((g) => ({ ...g, category_color: gradeCategoryColour(g) }))} currency={currency}
+                  firstId={pumps.find((p) => p.id === (activeKey ? openOrders[activeKey]?.pumpId : undefined))?.fuel_product_id ?? null}
+                  onPick={(g) => addToCart(g as unknown as Product)} />
               )}
 
               {/* Barcode search hint for minimart */}
@@ -2350,23 +2369,29 @@ export default function CashierScreen() {
               <input
                 style={s.modalInput}
                 type="number" inputMode="decimal"
-                value={fuelEdited === 'litres' ? fuelLitresStr : (litres ? litres.toFixed(2) : '')}
+                value={fuelEdited === 'litres' ? fuelLitresStr : (litres ? litres.toFixed(3) : '')}
                 onChange={e => { setFuelEdited('litres'); setFuelLitresStr(e.target.value); }}
                 placeholder="0.00"
               />
 
               <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
-                {[500, 1000, 2000, 5000].map(q => (
+                {QUICK_AMOUNTS.map(q => (
                   <button key={q}
                     style={{ ...s.modalCancel, flex: 1, padding: '8px 0' }}
                     onClick={() => { setFuelEdited('amount'); setFuelAmountStr(String(q)); }}>
-                    {q.toLocaleString()}
+                    {q.toLocaleString('en-KE')}
                   </button>
                 ))}
+                {/* A588: Full tank — fill up, then type the litres the pump shows */}
+                <button data-testid="fuel-full-tank"
+                  style={{ ...s.modalCancel, flex: 1.3, padding: '8px 0', ...(fuelEdited === 'litres' ? { borderColor: 'rgb(var(--act-strong, 34 197 94))', color: 'var(--pos-text)' } : {}) }}
+                  onClick={() => { setFuelEdited('litres'); setFuelLitresStr(''); }}>
+                  Full tank
+                </button>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 12 }}>
-                <span style={{ color: 'var(--pos-text3)' }}>{litres ? litres.toFixed(2) : '0.00'} {unit}</span>
+                <span style={{ color: 'var(--pos-text3)' }}>{litres ? litres.toFixed(3) : '0.000'} {unit}</span>
                 <span style={{ color: 'var(--pos-text)', fontWeight: 700 }}>{currency} {amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
 

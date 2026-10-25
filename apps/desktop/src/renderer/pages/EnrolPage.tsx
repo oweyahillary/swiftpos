@@ -59,7 +59,7 @@ export default function EnrolPage({ onComplete }: Props) {
       if (busy) return; busy = true;
       try {
         const st = await posApi.install.joinStatus();
-        if (st.status === 'denied') { setJoinTarget(null); setJoinNote('The server did not allow this till to join.'); }
+        if (st.status === 'denied') { setJoinTarget(null); setJoinNote('The server did not allow this POS to join.'); }
         else if (st.status === 'expired' || st.status === 'none') { setJoinTarget(null); setJoinNote('The request ran out — ask again.'); }
         else if (st.status === 'joined') { setJoinTarget(null); onComplete(); }
       } catch (e: any) { setJoinTarget(null); setJoinNote(e?.message ?? 'Joining failed — ask again.'); }
@@ -110,8 +110,8 @@ export default function EnrolPage({ onComplete }: Props) {
         <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-6 shadow-2xl mb-4" data-testid="enrol-find-server">
           <p className="text-white text-sm font-semibold">Join through the branch server</p>
           <p className="text-[#64748b] text-xs leading-relaxed mt-1">
-            No code needed: this till asks the branch server on this network, and someone at the server presses Allow.
-            Everything on this till is kept.
+            No code needed: this POS asks the branch server on this network, and someone at the server presses Allow.
+            Everything on this POS is kept.
           </p>
           {servers && servers.length > 0 && !joinTarget && (
             <div className="mt-3 space-y-2">
@@ -139,7 +139,7 @@ export default function EnrolPage({ onComplete }: Props) {
 
             <p className="text-[#64748b] text-xs leading-relaxed">
               Enter the business ID and the one-time enrolment code from ZapTill.
-              The till signs in as itself — no one's password is used here.
+              The POS signs in as itself — no one's password is used here.
             </p>
 
             <div>

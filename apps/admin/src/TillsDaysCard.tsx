@@ -54,7 +54,7 @@ export default function TillsDaysCard({ clientId, req }: { clientId: string; req
 
   const load = async () => {
     try { const d = await req("GET", `${base}/overview`); setTills(Array.isArray(d?.tills) ? d.tills : []); setError(""); }
-    catch (e: any) { setError(e?.message ?? "Could not load the client's tills."); }
+    catch (e: any) { setError(e?.message ?? "Could not load the client's points of sale."); }
   };
   useEffect(() => { void load(); }, [clientId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -70,7 +70,7 @@ export default function TillsDaysCard({ clientId, req }: { clientId: string; req
     const amount = typed === "" ? null : Number(typed);
     if (amount !== null && (!Number.isFinite(amount) || amount < 0)) { setMsg("The count must be 0 or more — or leave it empty."); return; }
     if (act.kind === "drawer" && act.counted && amount === null) { setMsg("Enter the cash counted in the drawer."); return; }
-    if (act.kind === "abandon" && !abandonOk) { setMsg("Tick that the till's unsent sales are not in this close."); return; }
+    if (act.kind === "abandon" && !abandonOk) { setMsg("Tick that the POS's unsent sales are not in this close."); return; }
     setBusy(true); setMsg("");
     try {
       let r: any;
@@ -96,13 +96,13 @@ export default function TillsDaysCard({ clientId, req }: { clientId: string; req
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 220 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Tills &amp; days</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Close a till's day or a drawer for the client. It takes effect on the cloud at once; the till adopts it when it next connects. A reason is required; the owner is e-mailed and it is audited.</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Close a POS's day or a drawer for the client. It takes effect on the cloud at once; the POS adopts it when it next connects. A reason is required; the owner is e-mailed and it is audited.</div>
         </div>
         <button onClick={() => void load()} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Reload</button>
       </div>
       {error && <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{error}</div>}
       {done && <div style={{ fontSize: 12, color: C.green, marginTop: 8 }}>{done}</div>}
-      {tills && tills.length === 0 && <div style={{ fontSize: 12, color: C.muted, marginTop: 10 }}>No tills.</div>}
+      {tills && tills.length === 0 && <div style={{ fontSize: 12, color: C.muted, marginTop: 10 }}>No points of sale.</div>}
       {(tills ?? []).map((t) => (
         <div key={t.device_id} style={{ marginTop: 12 }} data-testid={`admin-till-${t.device_id}`}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>
@@ -130,8 +130,8 @@ export default function TillsDaysCard({ clientId, req }: { clientId: string; req
           {t.pending.map((w) => (
             <div key={w.id} style={row}>
               <span style={{ flex: 1, color: w.waiting ? "#fbbf24" : C.muted }}>
-                {w.cloud_closed ? `Day ${w.business_date} closed on the cloud — the till adopts it when it connects.`
-                  : w.waiting ? `Close of ${w.business_date} waiting — ${w.code === "DRAWER_OPEN" ? "a drawer is open on the till" : w.code === "SHIFTS_UNCONFIRMED" ? "a shift waits for confirmation" : (w.error ?? "the till cannot close yet")}.`
+                {w.cloud_closed ? `Day ${w.business_date} closed on the cloud — the POS adopts it when it connects.`
+                  : w.waiting ? `Close of ${w.business_date} waiting — ${w.code === "DRAWER_OPEN" ? "a drawer is open on the POS" : w.code === "SHIFTS_UNCONFIRMED" ? "a shift waits for confirmation" : (w.error ?? "the POS cannot close yet")}.`
                   : `Close of ${w.business_date} queued ${ago(w.created_at)}${w.delivered_at ? " — collected" : ""}.`}
                 {w.reason ? ` Reason: ${w.reason}.` : ""}
               </span>
@@ -166,13 +166,13 @@ export default function TillsDaysCard({ clientId, req }: { clientId: string; req
           {act.kind === "close_day" && askForce && (
             <label style={{ display: "flex", gap: 8, fontSize: 12, color: C.danger, marginTop: 8 }}>
               <input type="checkbox" checked={forceOk} onChange={(e) => setForceOk(e.target.checked)} />
-              <span>Force-close the open drawer(s) first ({act.till.open_drawers.map((d) => d.cashier_name).join(", ") || "on the till"}) — recorded uncounted.</span>
+              <span>Force-close the open drawer(s) first ({act.till.open_drawers.map((d) => d.cashier_name).join(", ") || "on the POS"}) — recorded uncounted.</span>
             </label>
           )}
           {act.kind === "abandon" && (
             <label style={{ display: "flex", gap: 8, fontSize: 12, color: "#fbbf24", marginTop: 8 }}>
               <input type="checkbox" checked={abandonOk} onChange={(e) => setAbandonOk(e.target.checked)} />
-              <span>The till's unsent sales are not in this close.</span>
+              <span>The POS's unsent sales are not in this close.</span>
             </label>
           )}
           {msg && <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{msg}</div>}

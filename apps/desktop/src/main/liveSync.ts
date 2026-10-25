@@ -397,7 +397,7 @@ export function socketKeepalive(now = Date.now()): 'none' | 'ping' | 'dead' | 'r
   try { target = liveSocketTarget(); } catch { target = null; }
   // The till renewed its token since this socket signed in: the cloud would end the socket when the old one runs out.
   if (target?.token && target.token !== socketToken) {
-    if (!socketFeatures.has('reauth')) { renewSocket(now, 'the till renewed its sign-in'); return 'renew'; }
+    if (!socketFeatures.has('reauth')) { renewSocket(now, 'the POS renewed its sign-in'); return 'renew'; }
     if (reauthToken !== target.token) {
       reauthToken = target.token; reauthSentAt = now;
       if (!sendOnSocket({ type: 'reauth', token: target.token })) { renewSocket(now, 'the renewed sign-in could not be sent'); return 'renew'; }
