@@ -30,8 +30,12 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
+import { quietMemo } from '../lib/quietMemo';   // A593
+
 const router = safeRouter();
 router.use(requireAuth);
+/** A593: GET / per business — kept while the catalogue is not written, at most an hour (lib/quietMemo.ts). */
+const stationsMemo = quietMemo<unknown[]>('stations.list', { catalogue: true, maxMs: 60 * 60_000, max: 2000 });
 
 const KINDS = ['kitchen', 'dispatch', 'receipt'] as const;
 type Kind = (typeof KINDS)[number];
@@ -45,6 +49,12 @@ type Kind = (typeof KINDS)[number];
 // empty while the second request is in flight.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
+  // A593: a POS before 1.0.20 asks this on its 10-minute whole-menu pull (2 reads each). The answer is the business's,
+  // not the caller's — kept while no catalogue write was made for the business (routes/index.ts: /stations, /categories,
+  // /changes … move the catalogue generation; a sale does not), at most an hour (as /init).
+  const kept = stationsMemo.get(req.businessId!, 'all');
+  if (kept) { res.json(kept); return; }
+  const mark = stationsMemo.mark(req.businessId!);
   const { data: stations, error } = await supabase
     .from('print_stations')
     .select('*')
@@ -71,10 +81,12 @@ router.get('/', async (req, res) => {
     byStation.set(l.station_id, list);
   }
 
-  res.json((stations ?? []).map((s: { id: string }) => ({
+  const answer = (stations ?? []).map((s: { id: string }) => ({
     ...s,
     category_ids: byStation.get(s.id) ?? [],
-  })));
+  }));
+  stationsMemo.set(req.businessId!, 'all', answer, mark);
+  res.json(answer);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -10,16 +10,20 @@
  */
 import { supabase } from './supabase';
 import { normalizeAlertSettings, type AlertSettings, type NotificationRow } from './adminAlertPolicy';
+import { memoEnabled } from './writeActivity';   // A593
 
 const SETTINGS_KEY = 'alert_settings';
 const DIGEST_KEY = 'digest_state';
 const CACHE_MS = 60_000;
+/** A593: the settings change only through saveAlertSettings (which forgets them): kept 30 minutes while the A591
+ *  memories are on (the digest check reads them every 5 minutes, the watchdog every 10). A change straight in SQL: 30 min. */
+const QUIET_CACHE_MS = 30 * 60_000;
 let cache: { at: number; value: AlertSettings } | null = null;
 
 export function forgetAlertSettings(): void { cache = null; }
 
 export async function readAlertSettings(now = Date.now()): Promise<AlertSettings> {
-  if (cache && now - cache.at < CACHE_MS) return cache.value;
+  if (cache && now - cache.at < (memoEnabled() ? QUIET_CACHE_MS : CACHE_MS)) return cache.value;
   let value = normalizeAlertSettings(null);
   try {
     const { data, error } = await supabase.from('admin_settings').select('value').eq('key', SETTINGS_KEY).maybeSingle();
@@ -50,13 +54,17 @@ export async function addAdminNotifications(rows: NotificationRow[], now = new D
 }
 
 let lastDigestDate: string | null = null;
+/** A593: none stored yet (a new cloud, before its first digest) — asked again at most every 30 minutes, not every 5. */
+let noDigestCheckedAt = 0;
 
-export async function readDigestDate(): Promise<string | null> {
+export async function readDigestDate(now = Date.now()): Promise<string | null> {
   if (lastDigestDate) return lastDigestDate;
+  if (memoEnabled() && noDigestCheckedAt && now - noDigestCheckedAt < QUIET_CACHE_MS) return null;
   try {
     const { data } = await supabase.from('admin_settings').select('value').eq('key', DIGEST_KEY).maybeSingle();
     const d = (data as { value?: { last_date?: unknown } } | null)?.value?.last_date;
     if (typeof d === 'string') lastDigestDate = d;
+    else noDigestCheckedAt = now;
   } catch { /* none */ }
   return lastDigestDate;
 }
@@ -69,4 +77,4 @@ export async function writeDigestDate(date: string): Promise<void> {
 }
 
 /** For tests. */
-export function forgetDigestDate(): void { lastDigestDate = null; }
+export function forgetDigestDate(): void { lastDigestDate = null; noDigestCheckedAt = 0; }

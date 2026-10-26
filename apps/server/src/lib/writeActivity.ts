@@ -68,6 +68,28 @@ export function noteCatalogueWrite(businessId: string | null): void {
 }
 export function catalogueGen(businessId: string): string { return `${catGlobal}:${cat.get(businessId) ?? 0}`; }
 
+/**
+ * A593: the PEOPLE generation — moved only by a write through a router that changes people (routes/index.ts
+ * forgetOnWrite({ staff }) / ({ people }): staff, roles, PINs, devices, admin) and by a write with no business. For the
+ * closers' and confirmers' names a branch server's drawers answer carries (lib/branchDrawers.ts): a sale does not rename
+ * anybody.
+ */
+const ppl = new Map<string, number>();
+let pplGlobal = 0;
+export function notePeopleWrite(businessId: string | null): void {
+  if (!businessId) { pplGlobal++; return; }
+  ppl.set(businessId, (ppl.get(businessId) ?? 0) + 1);
+  if (ppl.size > MAX) { ppl.clear(); pplGlobal++; }
+}
+export function peopleGen(businessId: string): string { return `${pplGlobal}:${ppl.get(businessId) ?? 0}`; }
+
+/**
+ * A593: how long a polled answer read under a write generation may be used while nothing is written for its business
+ * (lib/quietMemo.ts, the sign-in check, the cloud-plan gate). Every change a POS or the web makes comes through this
+ * server and moves the generation at once; only a change made straight in SQL waits this long.
+ */
+export const QUIET_MAX_MS = 5 * 60_000;
+
 /** The business's write generation — compare the one a read was made under with the current one. */
 export function writeGen(businessId: string): string { return `${globalGen}:${biz.get(businessId)?.gen ?? 0}`; }
 
@@ -93,12 +115,12 @@ function trackWrite(req: Request, res: Response, next: NextFunction): void {
     // Never signed in (refused before any route ran): nothing of any business was written.
     if (!b && (res.statusCode === 401 || res.statusCode === 403 || res.statusCode === 429)) return;
     noteWrite(b);
-    if (!b) noteCatalogueWrite(null);
+    if (!b) { noteCatalogueWrite(null); notePeopleWrite(null); }
   });
   next();
 }
 
 /** Test seams. */
-export function _resetWrites(): void { biz.clear(); cat.clear(); globalGen = 0; catGlobal = 0; globalAt = 0; lastAny = 0; }
+export function _resetWrites(): void { biz.clear(); cat.clear(); ppl.clear(); globalGen = 0; catGlobal = 0; pplGlobal = 0; globalAt = 0; lastAny = 0; }
 export function _setTracking(on: boolean): void { tracking = on; }
 export function _setWriteClock(fn: (() => number) | null): void { clock = fn ?? (() => Date.now()); }

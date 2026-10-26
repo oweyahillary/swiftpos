@@ -39,6 +39,9 @@ import { businessOutOfStockMode, branchStockView } from '../lib/stockGateStore';
 import { assertBranchAccess } from '../middleware/rbac';                        // A563
 import { scaleSettingsOrDefault, SCALE_SETTINGS_KEY } from '../lib/scaleBarcode';   // A577
 import { loadCreditRule, approversAt } from '../lib/creditApprovers';   // A585
+import { quietMemo, quietNow } from '../lib/quietMemo';   // A593
+/** A593: GET /test-data-clears per (business, the POS's last applied clear) — lib/quietMemo.ts. */
+const clearsMemo = quietMemo<unknown[]>('pos.test_clears');
 
 /** P1-9: a paged read in the { data, error } shape the /init batch destructures (an error instead of a throw). */
 async function pagedResult<T>(read: () => Promise<T[]>): Promise<{ data: T[] | null; error: { message: string } | null }> {
@@ -784,14 +787,27 @@ router.get('/credit-customers', async (req, res) => {
 // the test sales and the test day that then locked it. The 60-day floor stays only for a till that has applied none yet
 // (a new till must not replay an old clear — a whole-menu clear would empty the menu it has just pulled).
 router.get('/test-data-clears', async (req, res) => {
-  const floor = new Date(Date.now() - 60 * 86_400_000).toISOString();
+  const floor = new Date(quietNow() - 60 * 86_400_000).toISOString();   // A593: quietNow — Date.now() but for the tests
   const asked = typeof req.query.after === 'string' && !Number.isNaN(Date.parse(req.query.after)) ? req.query.after : null;
   const after = asked ?? floor;
+  // A593: a clear is made only in the admin portal (through this server: every business's generation moves) — the POS's
+  // ask every beat is answered from memory while nothing was written (≤ 5 minutes for a change made in SQL). Keyed by
+  // the POS's own `after` (none: the 60-day floor — it moves with the clock, so the kept rows are cut at THIS ask's floor,
+  // and a kept list that was full (20) is read again: the next ones might be due).
+  const memoKey = asked ? `after:${asked}` : 'floor';
+  const kept = clearsMemo.get(req.businessId!, memoKey) as Array<{ created_at?: string }> | undefined;
+  if (kept && (asked || kept.length < 20)) {
+    res.set('Cache-Control', 'no-store');
+    res.json(asked ? kept : kept.filter((c) => Date.parse(String(c.created_at)) > Date.parse(floor)));
+    return;
+  }
+  const mark = clearsMemo.mark(req.businessId!);
   const clearsOf = (cols: string) => supabase.from('test_data_purges').select(cols)
     .eq('business_id', req.businessId).gt('created_at', after).order('created_at', { ascending: true }).limit(20);
   let { data, error } = await clearsOf('id, from_at, to_at, created_at, menu');
   if (error) ({ data, error } = await clearsOf('id, from_at, to_at, created_at'));
   if (error) { res.json([]); return; }   // before migration 122: nothing to clear
+  clearsMemo.set(req.businessId!, memoKey, (data ?? []) as unknown[], mark);
   res.set('Cache-Control', 'no-store');
   res.json(data ?? []);
 });

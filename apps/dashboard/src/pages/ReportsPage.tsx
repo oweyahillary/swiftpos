@@ -16,7 +16,7 @@ import { methodColour } from '../lib/paymentColours';   // A439
 import MonthlyPackTab from './reports/MonthlyPackTab';   // A455
 import DownloadExcelButton from '../components/DownloadExcelButton';   // A467
 import { localStamp, type ReportColumn, type ReportSheet } from '../lib/reportDownload';   // A467
-import { reportPresets } from '../lib/reportPeriods';   // A467
+import { reportPresets, activePreset } from '../lib/reportPeriods';   // A467; activePreset: one preset lit
 import * as fmt from '../lib/format';   // A471: one money/number/date format ('money' here is the Excel column shorthand)
 import Pager, { usePageSize } from '../components/Pager';   // A475
 import { paginate } from '../lib/paginate';
@@ -217,14 +217,16 @@ function DateRangeBar({ range, onChange, branches, branchId, onBranchChange, all
 }) {
   // A467: Today · Yesterday · This week · Last week · This month · Last month — local (EAT) days, Monday-first weeks.
   const presets = reportPresets();
+  const [picked, setPicked] = useState<string | null>(null);   // the preset clicked: only that one lights up
+  const lit = activePreset(presets, range, picked);
   const inputCls = 'text-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200';
   return (
     <div className="flex flex-wrap items-center gap-2 mb-5">
       {/* A467: six presets — on a phone the row scrolls sideways inside its box instead of widening the page. */}
       <div data-testid="report-presets" className="flex items-center gap-1 max-w-full overflow-x-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
         {presets.map(p => (
-          <button key={p.label} onClick={() => onChange({ from: p.from, to: p.to })}
-            className={`flex-shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-md transition-colors ${range.from === p.from && range.to === p.to ? 'bg-swift-strong text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+          <button key={p.label} onClick={() => { setPicked(p.label); onChange({ from: p.from, to: p.to }); }}
+            className={`flex-shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-md transition-colors ${lit === p.label ? 'bg-swift-strong text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
             {p.label}
           </button>
         ))}

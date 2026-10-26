@@ -26,6 +26,9 @@ import { supabase } from '../lib/supabase';
 import { waitingCode, mayAbandon, silentHours, ABANDON_SILENT_HOURS } from '../lib/dayCloseRules';   // A522
 import { abandonTillDays } from '../lib/abandonTill';   // A522
 import { notifyOwner } from '../lib/ownerNotice';   // A522
+import { quietMemo } from '../lib/quietMemo';         // A593
+/** A593: a POS's waiting instructions (GET /pending), per (business, device) — lib/quietMemo.ts. */
+const pendingMemo = quietMemo<Array<{ id: string; kind: string; payload: unknown }>>('day_close.pending');
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -124,9 +127,17 @@ router.get('/pending', async (req: any, res) => {
   const deviceId = ownTill(req);
   if (!deviceId) { res.status(403).json({ error: 'Only a POS collects its own day-close instructions.', code: 'TILL_ONLY' }); return; }
 
+  // A593: the POS asks every beat and the answer is almost always "none" (or the same instruction it is waiting on —
+  // a drawer still open). Kept while nothing is written for the business (an instruction made, acked or cancelled always
+  // comes through this server; ≤ 5 minutes for a change made in SQL), and the delivered stamp written only for the rows
+  // that do not have one yet (it was an update call on every ask while one waited — one client's for 16 days).
+  const memoKey = String(deviceId);
+  const kept = pendingMemo.get(req.businessId, memoKey);
+  if (kept) { res.json(kept); return; }
+  const mark = pendingMemo.mark(req.businessId);
   const { data, error } = await supabase
     .from('day_close_instructions')
-    .select('id, payload')
+    .select('id, payload, delivered_at')
     .eq('business_id', req.businessId)
     .eq('device_id', deviceId)
     .eq('status', 'pending')
@@ -134,16 +145,19 @@ router.get('/pending', async (req: any, res) => {
   if (error) { sendError(res, error); return; }
 
   const rows = data ?? [];
-  if (rows.length) {
+  const undelivered = rows.filter((r: any) => !r.delivered_at).map((r: any) => r.id);
+  if (undelivered.length) {
     // Visibility for the manager screen; status stays 'pending' until an ack.
-    const ids = rows.map((r: any) => r.id);
     await supabase
       .from('day_close_instructions')
       .update({ delivered_at: new Date().toISOString() })
-      .in('id', ids)
+      .in('id', undelivered)
       .is('delivered_at', null);
   }
-  res.json(rows.map((r: any) => ({ id: r.id, kind: 'close_day', payload: r.payload })));
+  const answer = rows.map((r: any) => ({ id: r.id, kind: 'close_day', payload: r.payload }));
+  // Kept unless this ask wrote the delivered stamp (that write moved the generation: the next ask reads once more).
+  if (!undelivered.length) pendingMemo.set(req.businessId, memoKey, answer, mark);
+  res.json(answer);
 });
 
 // ── Till: record a verdict, retiring the instruction ─────────────────────────

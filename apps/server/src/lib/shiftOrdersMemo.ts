@@ -14,17 +14,19 @@
  *   2. only the sales the answer can contain are read in full (the same columns, lines and payments as before) — the
  *      ones the till did not ring, and its own that were voided or refunded;
  *   3. while nothing has been written for the business through this server (lib/writeActivity.ts) and the last read is
- *      under 60 s old, the answer comes from memory with no read at all.
+ *      under 5 minutes old (A593; it was 60 s), the answer comes from memory with no read at all.
  * The answer is the same rows, in the same order, through the same foreignOrders / ownReversals (lib/foreignCash.ts).
  * A591_MEMO=off reads as before (every ask: the whole drawer, in full).
  */
 import { supabase } from './supabase';
 import { chunkIn } from './pgQuery';
-import { memoEnabled, writeGen } from './writeActivity';
+import { memoEnabled, writeGen, QUIET_MAX_MS } from './writeActivity';   // A593: QUIET_MAX_MS
 import { traffic } from './trafficStats';
 import type { CloudOrder } from './foreignCash';
 
-export const FRESH_MS = 60_000;
+/** A593: 5 minutes while nothing is written for the business (was 60 s) — a web sale or void comes through this server
+ *  and moves the generation at once; only a change made straight in SQL waits this long. */
+export const FRESH_MS = QUIET_MAX_MS;
 export const FULL_EVERY_MS = 10 * 60_000;
 export const OVERLAP_MS = 120_000;
 /** As the route always read: the drawer's first 2,000 sales. */

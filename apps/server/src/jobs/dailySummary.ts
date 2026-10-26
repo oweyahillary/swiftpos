@@ -81,15 +81,25 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
   const nowEatDate = formatInTimeZone(now, EAT, 'yyyy-MM-dd');
   const nowEatHHMM = formatInTimeZone(now, EAT, 'HH:mm');
 
+  // A593: every business's schedule and last-sent stamp in ONE read (it was one or two reads per business every 15 min).
+  // A duplicate key, or the read failing: that business read on its own, as before.
+  const pre = await readSettingsFor((businesses as Array<{ id: string }>).map((b) => b.id), ['report_schedule', 'report_schedule_last_sent']);
+  const one = (bizId: string, key: string): { value: unknown } | null | undefined => {
+    if (!pre) return undefined;
+    const rows = pre.get(`${bizId}|${key}`) ?? [];
+    return rows.length > 1 ? undefined : (rows[0] ?? null);
+  };
   for (const biz of businesses) {
     try {
       // A54: the report goes out only if this business enabled it, only at/after
       // its own send_time, and only once per EAT day.
-      const schedule = await readReportSchedule(biz.id);
+      const pre1 = one(biz.id, 'report_schedule');
+      const schedule = pre1 === undefined ? await readReportSchedule(biz.id) : parseReportSchedule(pre1);
       // A591: a business with the report off is decided without its last-sent stamp (decideDailySend refuses a schedule
       // that is off first) — one Supabase call per business every 15 minutes instead of two.
       if (!schedule?.enabled) continue;
-      const lastSent = await readLastSent(biz.id);
+      const pre2 = one(biz.id, 'report_schedule_last_sent');
+      const lastSent = pre2 === undefined ? await readLastSent(biz.id) : lastSentOf(pre2);
       if (!decideDailySend(schedule, nowEatDate, nowEatHHMM, lastSent)) continue;
 
       const recipients = await gatherRecipients(biz, schedule);
@@ -117,6 +127,43 @@ export async function runDailySummary(now: Date = new Date()): Promise<void> {  
 // The send decision itself lives in ./reportScheduleDecision (pure + tested).
 
 
+/**
+ * A593: business_settings rows of MANY businesses for a few keys in one read per 150 businesses × keys (the jobs read
+ * one row per business per key every 15 minutes). `${business_id}|${key}` → the rows found (more than one = a duplicate
+ * key, which the single read refuses — the caller then reads that one as before). null when the read failed (the caller
+ * reads each as before).
+ */
+export type SettingsRows = Map<string, Array<{ id: string; value: unknown }>>;
+export async function readSettingsFor(businessIds: string[], keys: string[]): Promise<SettingsRows | null> {
+  const out: SettingsRows = new Map();
+  try {
+    for (let k = 0; k < keys.length; k += 100) {
+      const ks = keys.slice(k, k + 100);
+      for (let i = 0; i < businessIds.length; i += 150) {
+        const rows = await pageAll<{ id: string; business_id: string; key: string; value: unknown }>(() => supabase
+          .from('business_settings').select('id, business_id, key, value')
+          .in('business_id', businessIds.slice(i, i + 150)).in('key', ks), 1000);
+        for (const r of rows) {
+          const kk = `${r.business_id}|${r.key}`;
+          out.set(kk, [...(out.get(kk) ?? []), { id: r.id, value: r.value }]);
+        }
+      }
+    }
+    return out;
+  } catch { return null; }
+}
+
+const DEFAULT_SCHEDULE = { enabled: false, send_time: '21:00', recipients: [] as string[] };
+/** The schedule as readReportSchedule answers it, from the row's value (null: no row). */
+export function parseReportSchedule(data: { value: unknown } | null): { enabled: boolean; send_time: string; recipients: string[] } {
+  const DEFAULT = { ...DEFAULT_SCHEDULE, recipients: [] as string[] };
+  if (!data) return DEFAULT;
+  try {
+    const p = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+    return { ...DEFAULT, ...(p && typeof p === 'object' ? p : {}) };
+  } catch { return DEFAULT; }
+}
+
 export async function readReportSchedule(
   businessId: string,
 ): Promise<{ enabled: boolean; send_time: string; recipients: string[] }> {
@@ -129,6 +176,12 @@ export async function readReportSchedule(
     const p = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
     return { ...DEFAULT, ...(p && typeof p === 'object' ? p : {}) };
   } catch { return DEFAULT; }
+}
+
+/** A593: readLastSent's answer from the row (null: no row). */
+function lastSentOf(data: { value: unknown } | null): string | null {
+  if (!data?.value) return null;
+  return typeof data.value === 'string' ? data.value.replace(/"/g, '') : String(data.value);
 }
 
 async function readLastSent(businessId: string): Promise<string | null> {

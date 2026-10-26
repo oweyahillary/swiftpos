@@ -651,6 +651,16 @@ jobs:
       - name: Supabase egress and calls (A591)
         run: node --no-warnings tests/supabase-egress-a591.test.mjs
 
+      # A593 — "logs are full already" (~82,000 Supabase calls a day; the target ~15,000): the sign-in check's row kept 5
+      # minutes while nothing is written (a write, a block, A591_MEMO=off: as before); the cloud-plan gate's facts read
+      # once for every business (the standing still worked out at each ask's time); a GET route's write moves its own
+      # business only; a branch server's drawers from 2 reads a beat (the SAME answer as the reads before — the three
+      # drawer lists, the 50 awaiting, a cut-short page read as before); a repeat poll of shifts/state, day-close/pending,
+      # test-data-clears, stations: 0 calls, the same answer; ownerAlerts, the watchdog and dailySummary read every
+      # business at once; the System page's calls-a-day target and its top 5. Needs the server build. In the loop too.
+      - name: Supabase calls cut (A593)
+        run: TZ=UTC node --no-warnings tests/supabase-calls-a593.test.mjs
+
       # A592 — "How can we make these messages look better": every admin Telegram message and email laid out the same —
       # Telegram HTML (a client "A&B <Shop>" escaped, valid), URL buttons ("Close it remotely", "Open run", "Guide"), a 400
       # "can't parse entities" sent again as plain text; "8 days 22 h" not "214 h", "Mon 26 Oct 13:07 EAT"; client problems

@@ -7,9 +7,15 @@
  */
 import { supabase } from './supabase';
 import { BUSINESS_DAY_CUTOFF_KEY, cleanCutoff } from './businessDay';
+import { memoEnabled, catalogueGen } from './writeActivity';   // A593
 
 const TTL_MS = 60_000;
-const cache = new Map<string, { at: number; minutes: number }>();
+/** A593: a cut-off changes only through a settings route (a catalogue router — it moves the catalogue generation, and
+ *  calls invalidateDayCutoff): kept up to 10 minutes while that generation stands (the watchdog asks every 10 minutes). */
+const QUIET_TTL_MS = 10 * 60_000;
+const cache = new Map<string, { at: number; minutes: number; gen?: string }>();
+const fresh = (hit: { at: number; gen?: string } | undefined, businessId: string, now: number): boolean => !!hit
+  && (now - hit.at < TTL_MS || (memoEnabled() && hit.gen === catalogueGen(businessId) && now - hit.at < QUIET_TTL_MS));
 
 export function invalidateDayCutoff(businessId: string | undefined): void {
   if (!businessId) return;
@@ -21,7 +27,8 @@ export async function getDayCutoff(businessId: string | undefined, branchId?: st
   if (!businessId) return 0;
   const key = `${businessId}|${branchId ?? ''}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.minutes;
+  if (hit && fresh(hit, businessId, Date.now())) return hit.minutes;
+  const gen = catalogueGen(businessId);   // A593: before the read
   let minutes = 0;
   try {
     const { data: biz } = await supabase.from('business_settings').select('value')
@@ -33,6 +40,44 @@ export async function getDayCutoff(businessId: string | undefined, branchId?: st
       if (br) minutes = cleanCutoff((br as any).value) ?? minutes;
     }
   } catch { minutes = 0; }
-  cache.set(key, { at: Date.now(), minutes });
+  cache.set(key, { at: Date.now(), minutes, gen });
   return minutes;
+}
+
+/**
+ * A593: the cut-offs of many businesses and branches in TWO reads (the watchdog's open days asked one or two reads per
+ * day row, every 10 minutes). Fills the same memory getDayCutoff reads, with the same rule: the business's value, a
+ * branch's own when it has one. A pair whose rows cannot be told apart (a duplicate key — maybeSingle would refuse it) or
+ * any failed read is left out: getDayCutoff then reads it as before. Never throws.
+ */
+export async function primeDayCutoffs(pairs: Array<{ businessId: string; branchId?: string | null }>, now = Date.now()): Promise<void> {
+  const want = pairs.filter((p) => p.businessId && !fresh(cache.get(`${p.businessId}|${p.branchId ?? ''}`), p.businessId, now));
+  if (!want.length) return;
+  try {
+    const bizIds = [...new Set(want.map((p) => p.businessId))].slice(0, 500);
+    const gens = new Map(bizIds.map((b) => [b, catalogueGen(b)]));   // before the reads
+    const branchIds = [...new Set(want.map((p) => p.branchId).filter((x): x is string => !!x))].slice(0, 500);
+    const { data: bs, error: bErr } = await supabase.from('business_settings').select('business_id, value')
+      .in('business_id', bizIds).eq('key', BUSINESS_DAY_CUTOFF_KEY);
+    if (bErr) return;
+    const brRows = branchIds.length
+      ? await supabase.from('branch_settings').select('business_id, branch_id, value').in('branch_id', branchIds).eq('key', BUSINESS_DAY_CUTOFF_KEY)
+      : { data: [], error: null };
+    if (brRows.error) return;
+    const count = (rows: any[], k: (r: any) => string) => { const m = new Map<string, any[]>(); for (const r of rows) { const key = k(r); m.set(key, [...(m.get(key) ?? []), r]); } return m; };
+    const byBiz = count((bs ?? []) as any[], (r) => String(r.business_id));
+    const byBranch = count((brRows.data ?? []) as any[], (r) => `${r.business_id}|${r.branch_id}`);
+    for (const p of want) {
+      if (!bizIds.includes(p.businessId) || (p.branchId && !branchIds.includes(p.branchId))) continue;
+      const b = byBiz.get(p.businessId) ?? [];
+      if (b.length > 1) continue;
+      let minutes = cleanCutoff(b[0]?.value) ?? 0;
+      if (p.branchId) {
+        const r = byBranch.get(`${p.businessId}|${p.branchId}`) ?? [];
+        if (r.length > 1) continue;
+        if (r[0]) minutes = cleanCutoff(r[0].value) ?? minutes;
+      }
+      cache.set(`${p.businessId}|${p.branchId ?? ''}`, { at: now, minutes, gen: gens.get(p.businessId) });
+    }
+  } catch { /* getDayCutoff reads each as before */ }
 }

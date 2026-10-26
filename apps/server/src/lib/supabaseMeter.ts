@@ -24,7 +24,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { noteWrite } from './writeActivity';
 
-interface Store { label: string; quiet?: boolean }
+/** A593: `req` — the request a route label runs for (its businessId is read when a write is seen: requireAuth sets it later). */
+interface Store { label: string; quiet?: boolean; req?: { businessId?: string | null } }
 const als = new AsyncLocalStorage<Store>();
 
 export const HOUR_MS = 3_600_000;
@@ -115,10 +116,14 @@ export function meteredFetch(base?: FetchLike): FetchLike {
     const method = String(init?.method ?? input?.method ?? 'GET').toUpperCase();
     // Noted before (a read made meanwhile is not taken as current) and after (nor one made before it committed).
     const jobWrite = !als.getStore()?.quiet && kind === 'rest' && method !== 'GET' && method !== 'HEAD' && !/^(POST|PUT|PATCH|DELETE) \//.test(label);
-    if (jobWrite) noteWrite(null);
-    if (!enabled) { try { return await f(input, init); } finally { if (jobWrite) noteWrite(null); } }
+    // A593: a GET route's own write (a day-close instruction marked delivered, a till's row bound to its branch) is its
+    // business's write — it used to move EVERY business, forgetting every POS's remembered answers. A job's, a timer's,
+    // or a route with no business yet (signed in nowhere): every business, as before.
+    const writer = jobWrite ? (als.getStore()?.req?.businessId ?? null) : null;
+    if (jobWrite) noteWrite(writer);
+    if (!enabled) { try { return await f(input, init); } finally { if (jobWrite) noteWrite(writer); } }
     let res: Response;
-    try { res = await f(input, init); } catch (e) { recordCall(label, kind, 0, 0); throw e; } finally { if (jobWrite) noteWrite(null); }
+    try { res = await f(input, init); } catch (e) { recordCall(label, kind, 0, 0); throw e; } finally { if (jobWrite) noteWrite(writer); }
     if (!res.body || NULL_BODY.has(res.status)) { recordCall(label, kind, 0, 0); return res; }
     const buf = await res.arrayBuffer();
     const len = Number(res.headers.get('content-length'));
@@ -128,10 +133,10 @@ export function meteredFetch(base?: FetchLike): FetchLike {
 }
 
 /** Express: every request's Supabase calls carry its route label; the request itself is counted under it. */
-export function labelRequests(req: { method: string; originalUrl?: string; url?: string }, _res: unknown, next: () => void): void {
+export function labelRequests(req: { method: string; originalUrl?: string; url?: string; businessId?: string | null }, _res: unknown, next: () => void): void {
   const label = routeLabel(req.method, req.originalUrl || req.url || '/');
   recordApi(label);
-  withLabel(label, next);
+  als.run({ label, req }, next);   // A593: the request, so a GET route's write is noted for its own business
 }
 
 export interface MeterRow { label: string; calls: number; bytes: number; wire: number; api: number; kinds: Record<string, number> }
@@ -145,7 +150,15 @@ export interface MeterSnapshot {
   per_day: { calls: number; bytes: number; wire: number };
   rows: MeterRow[];
   enabled: boolean;
+  /** A593: the owner's ceiling for Supabase calls a day (log ingestion: Free plan 1 GB a month) — SUPABASE_CALLS_TARGET. */
+  target_calls_per_day: number;
+  /** A593: the 5 labels with the most calls in the window, most first (highlighted on the System page). */
+  top_by_calls: string[];
 }
+
+/** A593: the owner's target, 2026-10-26: "logs are full already" — at most ~15,000 Supabase calls a day. */
+export const CALLS_TARGET_PER_DAY = 15_000;
+const callsTarget = () => { const n = Number(process.env.SUPABASE_CALLS_TARGET); return Number.isFinite(n) && n > 0 ? Math.round(n) : CALLS_TARGET_PER_DAY; };
 
 /** The last 24 h, largest first (by bytes). `top` rows, the rest summed as "(the rest)". */
 export function meterSnapshot(top = 40, now = clock()): MeterSnapshot {
@@ -179,6 +192,8 @@ export function meterSnapshot(top = 40, now = clock()): MeterSnapshot {
     per_day: { calls: Math.round(totals.calls * scale), bytes: Math.round(totals.bytes * scale), wire: Math.round(totals.wire * scale) },
     rows,
     enabled,
+    target_calls_per_day: callsTarget(),
+    top_by_calls: [...all].sort((a, b) => b.calls - a.calls || b.bytes - a.bytes).filter((r) => r.calls > 0).slice(0, 5).map((r) => r.label),
   };
 }
 
