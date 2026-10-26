@@ -12,6 +12,7 @@
  * A528: a fourth card, Traffic since start — requests per route family, and how often the tills' polled answers came from
  * memory (Render suspended production over bandwidth, 2026-10-19).
  * A591: a fifth, Supabase pulled (24 h) — what the server read from Supabase per route and job, and how many calls.
+ * A593: with the calls a day against the owner's target (15,000 — log ingestion) and the 5 sources with the most calls.
  * Super admins only (the menu hides it from agents; the cloud refuses them). Cloud: routes/opsAdmin.ts.
  */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -44,6 +45,8 @@ interface SupabaseMeter {
   totals: { calls: number; bytes: number; wire: number };
   per_day: { calls: number; bytes: number; wire: number };
   rows: Array<{ label: string; calls: number; bytes: number; wire: number; api: number }>;
+  target_calls_per_day?: number;   // A593: the owner's ceiling (15,000)
+  top_by_calls?: string[];         // A593: the 5 labels with the most calls
 }
 interface Summary {
   live: { commit: string | null; started_at: string };
@@ -186,6 +189,30 @@ function TrafficCard({ t }: { t?: Traffic }) {
   );
 }
 
+/** A593 (owner, 2026-10-26: "logs are full already" — log ingestion grows with the NUMBER of calls): the calls a day at
+ *  this rate against the target, as a bar with the target line — green under it, amber within 25 % over, red beyond. */
+function CallsTarget({ calls, target }: { calls: number; target: number }) {
+  const ratio = target > 0 ? calls / target : 0;
+  const col = ratio <= 1 ? C.green : ratio <= 1.25 ? "#f59e0b" : C.danger;
+  const scale = Math.max(target * 1.5, calls);   // the bar's full width
+  const pct = (n: number) => `${Math.min(100, (n / scale) * 100).toFixed(1)}%`;
+  return (
+    <div data-testid="supabase-calls-target" style={{ padding: "4px 0 6px" }}>
+      <div style={{ display: "flex", gap: 10, fontSize: 12 }}>
+        <span style={{ color: C.muted, width: 112, flexShrink: 0 }}>Calls a day</span>
+        <span style={{ color: col, fontVariantNumeric: "tabular-nums" }}>
+          {calls.toLocaleString()} of {target.toLocaleString()} target · {ratio <= 1 ? "under" : `${Math.round((ratio - 1) * 100)} % over`}
+        </span>
+      </div>
+      <div style={{ position: "relative", height: 8, borderRadius: 4, background: "rgba(255,255,255,0.08)", marginTop: 4, marginLeft: 122 }}
+        role="img" aria-label={`${calls} Supabase calls a day against a target of ${target}`}>
+        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: pct(calls), background: col, borderRadius: 4 }} />
+        <div title={`target ${target.toLocaleString()} a day`} style={{ position: "absolute", left: pct(target), top: -3, bottom: -3, width: 2, background: C.text ?? "#fff" }} />
+      </div>
+    </div>
+  );
+}
+
 /** A591 (owner, 2026-10-26: Supabase's Free plan 5 GB egress went over; projects restricted from 20 Nov): what this server
  *  pulled from Supabase in the last 24 h — by route (ids folded) and by job — so the biggest share is seen without the
  *  database. Calls are what fill Supabase's log quota; "a day" is the window scaled to 24 h (an estimate after a restart). */
@@ -201,9 +228,20 @@ function SupabaseCard({ m }: { m?: SupabaseMeter }) {
           <Line k="Covers" v={`the last ${m.covered_hours} h · since ${ago(m.started_at)}`} />
           <Line k="So far" v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{kb(m.totals.bytes)} · {m.totals.calls.toLocaleString()} calls</span>} />
           <Line k="A day at this rate" v={<span style={{ fontVariantNumeric: "tabular-nums" }} data-testid="supabase-per-day">{kb(m.per_day.bytes)} ({kb(m.per_day.wire)} sent compressed) · {m.per_day.calls.toLocaleString()} calls</span>} />
-          {(all ? m.rows : m.rows.slice(0, 8)).map((r) => (
-            <Line key={r.label} k={r.label} v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{kb(r.bytes)} · {r.calls.toLocaleString()} calls · {r.api.toLocaleString()} {r.label.startsWith("job:") ? "runs" : "asked"}</span>} />
-          ))}
+          <CallsTarget calls={m.per_day.calls} target={m.target_calls_per_day ?? 15_000} />
+          {(m.top_by_calls?.length ?? 0) > 0 && (
+            <Line k="Most calls" v={<span data-testid="supabase-top-calls">{m.top_by_calls!.map((l, i) => {
+              const r = m.rows.find((x) => x.label === l);
+              return <span key={l} style={{ color: "#f59e0b" }}>{i ? " · " : ""}{l}{r ? ` (${r.calls.toLocaleString()})` : ""}</span>;
+            })}</span>} />
+          )}
+          {(all ? m.rows : m.rows.slice(0, 8)).map((r) => {
+            const top = m.top_by_calls?.includes(r.label) ?? false;   // A593: the 5 with the most calls stand out
+            return (
+              <Line key={r.label} k={r.label} v={<span style={{ fontVariantNumeric: "tabular-nums", ...(top ? { color: "#f59e0b", fontWeight: 600 } : {}) }}
+                data-top-calls={top ? "1" : undefined}>{kb(r.bytes)} · {r.calls.toLocaleString()} calls · {r.api.toLocaleString()} {r.label.startsWith("job:") ? "runs" : "asked"}</span>} />
+            );
+          })}
           {m.rows.length > 8 && (
             <button onClick={() => setAll(!all)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, padding: "5px 10px", marginTop: 6 }}>
               {all ? "Fewer" : `All ${m.rows.length}`}

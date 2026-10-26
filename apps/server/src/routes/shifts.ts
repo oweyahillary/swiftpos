@@ -14,6 +14,9 @@ import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
 import { webTillName } from '../lib/terminalLabel';
 import { foreignCash, foreignOrders, ownReversals } from '../lib/foreignCash';
 import { readShift, shiftOrdersFor } from '../lib/shiftOrdersMemo';   // A591
+import { quietMemo } from '../lib/quietMemo';   // A593
+/** A593: GET /state's rows and names per (business, the ids asked) — lib/quietMemo.ts. */
+const stateMemo = quietMemo<{ rows: unknown[]; names: Record<string, string> }>('shifts.state');
 import { recorderId } from '../lib/expenseRecorder';
 import { cleanExpenseMethod, nonCashExpenses } from '../lib/expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from '../lib/confirmReasons';
@@ -212,20 +215,32 @@ router.get('/state', async (req, res) => {
   const ids = String(req.query.ids ?? '').split(',').map((x) => x.trim())
     .filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
   if (!ids.length) { res.json([]); return; }
-  const { data, error } = await supabase.from('shifts')
-    // A433: and the confirmation — a shift confirmed on the web or another till is confirmed on the till that holds it.
-    .select('id, branch_id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes, confirmed_at, confirmed_by, confirmed_methods, expected_methods, confirm_reasons, confirm_self')
-    .eq('business_id', req.businessId).in('id', ids);
-  if (error) { sendError(res, error); return; }
-  // A582: a partner gets only the drawers of their branches (the ids came from the caller)
-  const rows = ((data ?? []) as Array<{ id: string; branch_id?: string | null; status: string; closed_by: string | null; [k: string]: unknown }>)
-    .filter((r) => !partnerOutside(req, r.branch_id));
-  const closerIds = [...new Set(rows.flatMap((r) => [r.closed_by, r.confirmed_by as string | null]).filter((x): x is string => !!x))];
-  const names = new Map<string, string>();
-  if (closerIds.length) {
-    const { data: us } = await supabase.from('users').select('id, name').in('id', closerIds);
-    for (const u of (us ?? []) as Array<{ id: string; name: string | null }>) names.set(u.id, u.name ?? '');
+  // A593: the drawers' rows and their closers' names, kept while nothing is written for the business (a close, a force
+  // close, a confirmation — a POS's or the web's — all come through this server; ≤ 5 minutes for a change made in SQL).
+  // The POS asks every 20 s and the answer is almost always the same. The partner filter below runs on every ask.
+  type StateRow = { id: string; branch_id?: string | null; status: string; closed_by: string | null; [k: string]: unknown };
+  const memoKey = ids.join(',');
+  let kept = stateMemo.get(req.businessId!, memoKey);
+  if (!kept) {
+    const mark = stateMemo.mark(req.businessId!);
+    const { data, error } = await supabase.from('shifts')
+      // A433: and the confirmation — a shift confirmed on the web or another till is confirmed on the till that holds it.
+      .select('id, branch_id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes, confirmed_at, confirmed_by, confirmed_methods, expected_methods, confirm_reasons, confirm_self')
+      .eq('business_id', req.businessId).in('id', ids);
+    if (error) { sendError(res, error); return; }
+    const all = (data ?? []) as StateRow[];
+    const everyCloser = [...new Set(all.flatMap((r) => [r.closed_by, r.confirmed_by as string | null]).filter((x): x is string => !!x))];
+    const nameOf: Record<string, string> = {};
+    if (everyCloser.length) {
+      const { data: us, error: uErr } = await supabase.from('users').select('id, name').in('id', everyCloser);
+      for (const u of (us ?? []) as Array<{ id: string; name: string | null }>) nameOf[u.id] = u.name ?? '';
+      if (uErr) { kept = { rows: all, names: nameOf }; }   // answered as before (names missing), never kept
+    }
+    if (!kept) { kept = { rows: all, names: nameOf }; stateMemo.set(req.businessId!, memoKey, kept, mark); }
   }
+  // A582: a partner gets only the drawers of their branches (the ids came from the caller)
+  const rows = (kept.rows as StateRow[]).filter((r) => !partnerOutside(req, r.branch_id));
+  const names = new Map<string, string>(Object.entries(kept.names));
   res.json(rows.map((r) => ({
     ...r,
     closed_by_name: r.closed_by ? names.get(r.closed_by) || null : null,

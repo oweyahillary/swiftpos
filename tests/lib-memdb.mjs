@@ -11,7 +11,7 @@
  */
 export function installMemDb(supabase) {
   // latency(table, op) → ms before a READ answers (the write itself stays atomic): lets two requests overlap for a race test.
-  const mem = { db: {}, fail: () => null, latency: () => 0, rowCap: Infinity, calls: [], nextId: 1, rpc: async () => ({ data: null, error: null }) };
+  const mem = { realOr: false, db: {}, fail: () => null, latency: () => 0, rowCap: Infinity, calls: [], nextId: 1, rpc: async () => ({ data: null, error: null }) };
   // latency may also return a Promise (a barrier): the read answers when it settles.
   const later = (table, op, fn, filters) => {
     const l = op === 'select' ? mem.latency(table, op, filters) : 0;
@@ -24,6 +24,36 @@ export function installMemDb(supabase) {
     const a = typeof v === 'number' ? Number(x) : String(x), b = typeof v === 'number' ? v : String(v);
     return op === 'gte' ? a >= b : op === 'lte' ? a <= b : op === 'gt' ? a > b : a < b;
   };
+  // A593: split at the top-level commas (not inside and(…)).
+  const splitTop = (s) => { const out = []; let depth = 0, cur = ''; for (const ch of s) { if (ch === '(') depth++; if (ch === ')') depth--; if (ch === ',' && depth === 0) { out.push(cur); cur = ''; } else cur += ch; } if (cur) out.push(cur); return out; };
+  const condTest = (item) => {
+    if (item.startsWith('and(') && item.endsWith(')')) { const parts = splitTop(item.slice(4, -1)).map(condTest); return (r) => parts.every((t) => t(r)); }
+    if (item.startsWith('or(') && item.endsWith(')')) { const parts = splitTop(item.slice(3, -1)).map(condTest); return (r) => parts.some((t) => t(r)); }
+    const [col, op0, ...rest] = item.split('.');
+    let op = op0, neg = false, val = rest.join('.');
+    if (op === 'not') { neg = true; op = rest[0]; val = rest.slice(1).join('.'); }
+    const lit = val === 'null' ? null : val === 'true' ? true : val === 'false' ? false : val;
+    const one = (r) => {
+      const x = r[col];
+      if (op === 'is') return lit === null ? x == null : x === lit;
+      if (op === 'in') {
+        const list = splitTop(String(val).replace(/^\(/, '').replace(/\)$/, '')).map((v) => v.replace(/^"(.*)"$/, '$1'));
+        return x != null && list.includes(String(x));
+      }
+      if (op === 'eq') return x != null && String(x) === String(val);
+      if (op === 'neq') return x != null && String(x) !== String(val);
+      if (['gt', 'gte', 'lt', 'lte'].includes(op)) {
+        if (x == null) return false;
+        const num = /^-?\d+(\.\d+)?$/.test(val);
+        const a = num ? Number(x) : (Number.isFinite(Date.parse(x)) && Number.isFinite(Date.parse(val)) ? Date.parse(x) : String(x));
+        const b = num ? Number(val) : (typeof a === 'number' ? Date.parse(val) : String(val));
+        return op === 'gt' ? a > b : op === 'gte' ? a >= b : op === 'lt' ? a < b : a <= b;
+      }
+      throw new Error(`lib-memdb: or() operator ${op} not supported`);
+    };
+    return neg ? (r) => !one(r) : one;
+  };
+  const orTest = (expr) => { const parts = splitTop(expr).map(condTest); return (r) => parts.some((t) => t(r)); };
   supabase.from = (table) => {
     const f = []; const filters = {}; let op = 'select'; let payload = null; let opts = null;
     let rng = null; let lim = null; let ord = null; let head = false; let cols = '*'; let returning = false;
@@ -77,6 +107,9 @@ export function installMemDb(supabase) {
           const re = pat.includes('%') ? new RegExp(`^${pat.split('%').map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`, 'i') : null;
           f.push((r) => (re ? re.test(String(r[k] ?? '')) : String(r[k] ?? '').toLowerCase() === pat.toLowerCase())); return q;
         };
+        // A593: PostgREST's or=(…) — applied only when a test asks (mem.realOr = true): `col.op.value` items (eq neq gt gte
+        // lt lte is in, `col.not.op.value`) and and(…) groups. Off (the default, as before A593): ignored — no filter.
+        if (prop === 'or') return (expr) => { if (mem.realOr) { const t = orTest(String(expr)); f.push((r) => t(r)); } return q; };
         if (prop === 'order') return (k, o) => { ord = [k, o?.ascending !== false]; return q; };
         if (prop === 'range') return (a, b) => { rng = [a, b]; return q; };
         if (prop === 'limit') return (n) => { lim = n; return q; };

@@ -1,7 +1,9 @@
 import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
-import { getDayCutoff } from '../lib/dayCutoff';
+import { getDayCutoff, primeDayCutoffs } from '../lib/dayCutoff';   // A593: primeDayCutoffs
+import { memoEnabled } from '../lib/writeActivity';   // A593
+import { opsEventsGen } from '../lib/opsEvents';     // A593
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 import { notifyRendered, alertChannels, alertLinks } from '../lib/alertNotify';   // A592: laid out by lib/alertFormat.ts
@@ -101,20 +103,46 @@ async function tradeEvidence(tills: DeviceRow[], now: Date): Promise<Record<stri
     if (error) throw error;
     for (const r of (data ?? []) as any[]) if (r.device_id) open.add(r.device_id);
   } catch (err: any) { console.error('[watchdog] A579 open drawers read failed:', err?.message ?? err); }
-  for (const d of withId.slice(0, 200)) {
+  // A593: ONE orders read per branch (from the earliest of its quiet tills' last syncs), not one per till — each till
+  // still counts only its branch's sales since its OWN last sync. A branch with 1,000 sales or more since then: each of
+  // its tills is read on its own, as before (the cap must not hide a till's own sale).
+  const dayAgo = now.getTime() - DAY_MS;
+  const sinceOf = (d: DeviceRow) => new Date(Math.max(d.last_sync_at ? Date.parse(d.last_sync_at) : 0, dayAgo)).toISOString();
+  const tally = (ev: TradeEvidence, d: DeviceRow, rows: any[], since: string | null) => {
+    for (const o of rows) {
+      if (since && !(Date.parse(o.created_at) >= Date.parse(since))) continue;
+      if (o.device_id === d.device_id) ev.ownSales = (ev.ownSales ?? 0) + 1;
+      else ev.otherSales = (ev.otherSales ?? 0) + 1;
+    }
+  };
+  const first200 = withId.slice(0, 200);
+  const byBranch = new Map<string, DeviceRow[]>();
+  for (const d of first200) if (d.branch_id) { const k = `${d.business_id}|${d.branch_id}`; byBranch.set(k, [...(byBranch.get(k) ?? []), d]); }
+  const branchRows = new Map<string, any[] | null>();
+  for (const [k, list] of byBranch) {
+    if (list.length < 2) continue;   // one till: its own read below, exactly as before
+    const since = list.map(sinceOf).sort()[0];
+    try {
+      const { data, error } = await supabase.from('orders').select('device_id, created_at')
+        .eq('business_id', list[0].business_id).eq('branch_id', list[0].branch_id).gte('created_at', since).limit(1000);
+      if (error) throw error;
+      branchRows.set(k, (data ?? []).length >= 1000 ? null : (data ?? []) as any[]);
+    } catch { branchRows.set(k, null); }
+  }
+  for (const d of first200) {
     const ev: TradeEvidence = { openShift: open.has(d.device_id as string), otherSales: 0, ownSales: 0 };
     if (d.branch_id) {
-      const dayAgo = now.getTime() - DAY_MS;
-      const since = new Date(Math.max(d.last_sync_at ? Date.parse(d.last_sync_at) : 0, dayAgo)).toISOString();
-      try {
-        const { data, error } = await supabase.from('orders').select('device_id')
-          .eq('business_id', d.business_id).eq('branch_id', d.branch_id).gte('created_at', since).limit(1000);
-        if (error) throw error;
-        for (const o of (data ?? []) as any[]) {
-          if (o.device_id === d.device_id) ev.ownSales = (ev.ownSales ?? 0) + 1;
-          else ev.otherSales = (ev.otherSales ?? 0) + 1;
-        }
-      } catch (err: any) { console.error('[watchdog] A579 branch sales read failed:', err?.message ?? err); }
+      const since = sinceOf(d);
+      const together = branchRows.get(`${d.business_id}|${d.branch_id}`);
+      if (together) tally(ev, d, together, since);
+      else {
+        try {
+          const { data, error } = await supabase.from('orders').select('device_id')
+            .eq('business_id', d.business_id).eq('branch_id', d.branch_id).gte('created_at', since).limit(1000);
+          if (error) throw error;
+          tally(ev, d, (data ?? []) as any[], null);
+        } catch (err: any) { console.error('[watchdog] A579 branch sales read failed:', err?.message ?? err); }
+      }
     }
     out[d.id] = ev;
   }
@@ -134,6 +162,11 @@ async function dbPing(): Promise<{ ok: boolean; ms: number; error?: string }> {
     return { ok: false, ms: Date.now() - started, error: err?.message ?? String(err) };
   }
 }
+
+/** A593: the last good backup the watchdog read, and under which ops-event generation. */
+let backupSeen: { gen: number; at: number; lastOk: string | null; any: boolean } | null = null;
+/** Test seam. */
+export function _forgetBackupSeen(): void { backupSeen = null; }
 
 export interface Collected {
   alerts: Alert[];
@@ -160,6 +193,13 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
   } else for (const k of CHECK_KEYS.load) failed.add(k);   // the digest's read: the overload alert stays as it is
   await step('backup', async () => {
     if (!ping.ok) throw new Error('database unreachable');
+    // A593: the last good backup, kept while no ops event was stored (routes/ops.ts) — at most 30 minutes; the rule is
+    // the clock's (backupMissed decides from it at this run's time). It was 1–2 reads every 10 minutes for a weekly job.
+    const kept = backupSeen;
+    if (memoEnabled() && kept && kept.gen === opsEventsGen() && now.getTime() >= kept.at && now.getTime() - kept.at < 30 * 60_000) {
+      return backupMissed(kept.lastOk, kept.any, now);
+    }
+    const gen = opsEventsGen();
     const last = await supabase.from('ops_events').select('created_at').eq('kind', 'backup').eq('status', 'ok')
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (last.error) throw last.error;
@@ -169,7 +209,9 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
       if (r.error) throw r.error;
       any = Boolean(r.data);
     }
-    return backupMissed((last.data as { created_at?: string } | null)?.created_at ?? null, any, now);
+    const lastOk = (last.data as { created_at?: string } | null)?.created_at ?? null;
+    backupSeen = { gen, at: now.getTime(), lastOk, any };
+    return backupMissed(lastOk, any, now);
   });
 
   const { ok, active, names: nm, approved } = ping.ok ? await names() : { ok: false, active: [], names: {}, approved: {} };
@@ -193,10 +235,25 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
   }
   if (!active.length) return { alerts, failed };
 
+  // A593: the POS check and the signed-out check read the same rows (every POS not retired of the active clients) — one
+  // read for both. If it fails (a cloud before migration 125 has no session_lost_*), each reads its own, as before.
+  const POS_COLS = 'id, business_id, branch_id, device_id, device_label, terminal_code, status, retired_at, last_seen_at, last_sync_at, app_version, schema_version';
+  let shared: Promise<any[] | null> | null = null;
+  const sharedDevices = () => (shared ??= (async () => {
+    const { data, error } = await supabase.from('user_devices').select(`${POS_COLS}, session_lost_at, session_lost_reason`)
+      .in('business_id', active).is('retired_at', null);
+    return error ? null : ((data ?? []) as any[]);
+  })().catch(() => null));
+  const signedOutShared = async () => {
+    const both = await sharedDevices();
+    return both ? { data: both.filter((d) => d.session_lost_at != null), error: null } : null;
+  };
+
   await step('pos', async () => {
-    const { data, error } = await supabase
+    const both = await sharedDevices();
+    const { data, error } = both ? { data: both, error: null } : await supabase
       .from('user_devices')
-      .select('id, business_id, branch_id, device_id, device_label, terminal_code, status, retired_at, last_seen_at, last_sync_at, app_version, schema_version')
+      .select(POS_COLS)
       .in('business_id', active)
       .is('retired_at', null);
     if (error) throw error;
@@ -213,7 +270,7 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
   // A407: tills signed out that could not sign back in — read on their own so a cloud before migration 125 still runs
   // every other check.
   await step('tills signed out', async () => {   // till-wording: ok — a developer's log label
-    const { data, error } = await supabase
+    const { data, error } = (await signedOutShared()) ?? await supabase   // A593: the rows the POS check read
       .from('user_devices')
       .select('id, business_id, device_label, terminal_code, status, retired_at, session_lost_at, session_lost_reason')
       .in('business_id', active)
@@ -258,7 +315,9 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
       .limit(1000);
     if (error) throw error;
     // A522: a RETIRED till's open day is not an alert (it is closed as abandoned on Remote Day Close, never by the till).
-    const devIds = [...new Set(((data ?? []) as any[]).map((d) => d.device_id).filter(Boolean))];
+    // A593: a POS among the not-retired rows already read is not retired — only the others are asked about.
+    const joined = new Set(((await sharedDevices()) ?? []).map((d) => d.device_id).filter(Boolean));
+    const devIds = [...new Set(((data ?? []) as any[]).map((d) => d.device_id).filter(Boolean))].filter((id) => !joined.has(id));
     const retired = new Set<string>();
     if (devIds.length) {
       const { data: devs } = await supabase.from('user_devices').select('device_id, retired_at').in('device_id', devIds.slice(0, 1000));
@@ -272,6 +331,8 @@ export async function collectAlerts(now = new Date(), opts: { load?: boolean } =
       for (const b of (br ?? []) as any[]) branchName[b.id] = b.name;
     }
     const rows: any[] = [];
+    // A593: every open day's cut-off in two reads (each day row read one or two before).
+    await primeDayCutoffs(((data ?? []) as any[]).filter(inActive).map((d) => ({ businessId: d.business_id, branchId: d.branch_id })));
     for (const d of ((data ?? []) as any[]).filter(inActive)) {
       if (d.device_id && retired.has(d.device_id)) continue;
       const cutoff = await getDayCutoff(d.business_id, d.branch_id);
@@ -379,8 +440,13 @@ export async function runWatchdog(now = new Date()): Promise<WatchdogRun> {
   }
 
   const due = new Set(plan.remind.map((r) => r.row.id));
+  // A593: a problem still open with nothing new to store (the same severity, title and detail, no reminder due) only
+  // moves last_seen_at — ONE update for all of them, not one per row every 10 minutes.
+  const seenOnly: string[] = [];
   for (const { row, alert } of plan.stillOpen) {
     const patch: Record<string, unknown> = { last_seen_at: iso, severity: alert.severity, title: alert.title, detail: alert.detail };
+    if (!row.id.startsWith('mem:') && !due.has(row.id) && row.severity === alert.severity && row.title === alert.title
+        && (row.detail ?? null) === (alert.detail ?? null)) { seenOnly.push(row.id); continue; }
     if (due.has(row.id)) {
       patch.last_notified_at = iso;
       patch.notify_count = (row.notify_count ?? 0) + (emailed.has(alert.key) ? 1 : 0);
@@ -399,6 +465,10 @@ export async function runWatchdog(now = new Date()): Promise<WatchdogRun> {
     }
     const { error } = await supabase.from('watchdog_alerts').update(patch).eq('id', row.id);
     if (error) console.error('[watchdog] could not update alert', row.alert_key, error.message);
+  }
+  for (let i = 0; i < seenOnly.length; i += 150) {
+    const { error } = await supabase.from('watchdog_alerts').update({ last_seen_at: iso }).in('id', seenOnly.slice(i, i + 150));
+    if (error) console.error('[watchdog] could not move last_seen_at of', seenOnly.length, 'open alerts:', error.message);
   }
 
   for (const row of resolved) {
@@ -513,13 +583,13 @@ export function startWatchdogJob(): void {
     } finally {
       running = false;
     }
-  }), { timezone: 'UTC' });
+  }, { quietWrites: true }), { timezone: 'UTC' });   // A593: its writes are its own (watchdog_alerts, the bell) — no POS answer holds them
 
   // A589: the digest at the settings' time (default 07:00 Nairobi), checked every 5 minutes; WATCHDOG_DIGEST_CRON fixes it.
   const fixed = process.env.WATCHDOG_DIGEST_CRON;
   let morning = false;
   if (fixed) {
-    cron.schedule(fixed, meterJob('watchdogMorning', () => { void sendMorning(); }), { timezone: 'Africa/Nairobi' });
+    cron.schedule(fixed, meterJob('watchdogMorning', () => { void sendMorning(); }, { quietWrites: true }), { timezone: 'Africa/Nairobi' });
   } else {
     cron.schedule('*/5 * * * *', meterJob('watchdogDigest', async () => {
       if (morning) return;
@@ -527,7 +597,7 @@ export function startWatchdogJob(): void {
       try { if (await claimDigest()) await sendMorning(); }
       catch (err: any) { console.error('[watchdog] digest check failed:', err?.message ?? err); }
       finally { morning = false; }
-    }), { timezone: 'UTC' });
+    }, { quietWrites: true }), { timezone: 'UTC' });
   }
   console.log(`[watchdog] Scheduled: checks ${schedule} UTC, digest ${fixed ? `${fixed} Africa/Nairobi` : 'at the admin settings\' time (default 07:00 Nairobi)'} — Telegram ${ch.telegram ? 'on' : 'off'}, email ${ch.email ? 'on' : 'off'}`);
 }

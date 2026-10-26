@@ -19,6 +19,12 @@ import { traffic } from './trafficStats';
 
 export type ChoiceKind = 'variant' | 'modifier';
 export const CHOICE_MAX_AGE_MS = 10 * 60_000;
+/**
+ * A593: a POS before 1.0.20 pulls every 10 minutes, so a 10-minute memory was rebuilt on almost every pull. Kept up to an
+ * hour while no catalogue write was made for the business (the same rule as /init, lib/posInit.ts) — every variant or
+ * modifier edit comes through a catalogue router and moves the generation at once; a change straight in SQL: an hour.
+ */
+export const CHOICE_QUIET_AGE_MS = 60 * 60_000;
 const ROW_CAP = 1000;   // a chunk answered with this many rows may have been cut short (db-max-rows): not kept
 const MAX_BUSINESSES = 500;
 
@@ -62,7 +68,7 @@ export async function tillChoiceGroups(kind: ChoiceKind, businessId: string, pro
   const key = `${kind}|${businessId}`;
   let k = kept.get(key);
   const now = clock();
-  if (!k || k.gen !== catalogueGen(businessId) || now - k.at >= CHOICE_MAX_AGE_MS) {
+  if (!k || k.gen !== catalogueGen(businessId) || now - k.at >= CHOICE_QUIET_AGE_MS) {   // A593: an hour (10 min before)
     let p = building.get(key);
     if (!p) {
       p = build(kind, businessId);

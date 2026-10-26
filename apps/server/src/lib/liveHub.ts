@@ -267,12 +267,23 @@ export function recheckBusiness(businessId: string | null): void {
  * within a minute. A night of tills left on was 17,280 reads a day; idle, it is 1,440. A591_MEMO=off: every 5 s as before.
  */
 export const HEADS_ACTIVE_MS = 130_000;
-export const HEADS_IDLE_MS = 60_000;
+/**
+ * A593 (owner, 2026-10-26: job:liveHeads 317 Supabase calls in 1.1 h — "logs are full already"): any write of ANY
+ * business kept the 5 s read going for 130 s, so a day of trading anywhere read every 5 s all day. The change log gets an
+ * entry only when something is written, every write a POS or the web makes comes through this server, and it is noted
+ * when the request has FINISHED (its transaction committed — the entry is there to be read, a late commit included: that
+ * request's own finish is noted after it). So the read now runs on the next 5 s tick after a write was noted for a
+ * business that has a socket open (or a write with no business, or a job's) since the last read began — one read for
+ * every business, as before — and otherwise every 5 minutes (a change made straight in SQL: within 5 minutes, as a POS
+ * without a socket asks). A write of a business with no socket open reads nothing. A591_MEMO=off: every 5 s as before.
+ */
+export const HEADS_IDLE_MS = 5 * 60_000;
 let headsReadAt = 0;
 export function headsDue(now = Date.now()): boolean {
   if (!memoEnabled()) return true;
-  if (now - lastWriteAt() < HEADS_ACTIVE_MS) return true;
-  return now - headsReadAt >= HEADS_IDLE_MS;
+  if (now - headsReadAt >= HEADS_IDLE_MS) return true;
+  for (const b of byBusiness.keys()) if (lastWriteAt(b) >= headsReadAt) return true;   // a write since the last read began
+  return false;
 }
 
 export async function headsTick(now = Date.now()): Promise<void> {

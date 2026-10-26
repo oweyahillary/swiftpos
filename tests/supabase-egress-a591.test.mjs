@@ -17,8 +17,9 @@
  *   C a drawer's web sales (POST /api/shifts/:id/foreign-orders): the SAME answer as the old full read for a drawer of
  *     own sales, web sales, own sales voided / refunded on the web, open tabs; only the sales the answer can hold read in
  *     full; the next ask with nothing written: no read at all; a web sale / a web void after a write: there at once (a
- *     delta read); 60 s on: a delta read; 10 min on: the whole drawer; A591_MEMO=off: the old read every time
+ *     delta read); 60 s on: a delta read (A593: 5 minutes); 10 min on: the whole drawer; A591_MEMO=off: the old read every time
  *   D the 5 s change-log read: every 5 s while writes come in (and 130 s after), once a minute when nothing is written
+ *     (A593: the next tick after a write of a business with a socket open; every 5 minutes when nothing is written)
  *   E the catalogue version kept up to 5 min while nothing is written (the 15 s rule still answers after a write)
  *   F /init kept up to an hour while nothing is written (10 min after any write, as before)
  *   G a till's whole-menu pull: every product's variants and modifiers from one read of the business's groups — the same
@@ -354,11 +355,14 @@ try {
     assert.deepEqual(r.body, oldAnswer(own2));
     assert.deepEqual(r.body.own_reversals.map((x) => x.local_id), [uuid(7)]);
   });
-  await ok('60 s on with nothing written: read again (a delta); 10 minutes on: the whole drawer', async () => {
+  await ok('A593: 61 s on with nothing written: still from memory; 5 minutes on: read again (a delta); 10 minutes on: the whole drawer', async () => {
     reset();
     await ask();
     const c0 = counters();
     clockMs += 61_000;
+    await ask();
+    assert.equal((counters()['foreign.delta'] ?? 0) - (c0['foreign.delta'] ?? 0), 0, 'A593: kept 5 minutes while nothing is written (60 s before)');
+    clockMs += 4 * 60_000;
     await ask();
     const c1 = counters();
     assert.equal((c1['foreign.delta'] ?? 0) - (c0['foreign.delta'] ?? 0), 1);
@@ -397,29 +401,32 @@ try {
   });
 
   console.log('\nD. the 5 s change-log read\n');
-  await ok('every 5 s while writes come in and 130 s after; once a minute when nothing is written', async () => {
+  // A593: the read follows a write of a business with a socket open (the next tick), not "any write in 130 s"; idle: 5 min.
+  await ok('A593: read on the next tick after a write of a business with a socket open; a write of a business with none reads nothing; every 5 minutes when nothing is written', async () => {
     reset();
     WA._setWriteClock(() => clockMs);
     const t0 = clockMs + 10 * 60_000;
     assert.equal(LH.headsDue(t0), true, 'never read: due');
-    WA.noteWrite(B);   // at clockMs
-    clockMs = t0; WA.noteWrite(B);
-    assert.equal(LH.headsDue(t0 + 5_000), true);
-    assert.equal(LH.headsDue(t0 + 129_000), true, 'within the replay window');
-    // a socket open: the read happens (and is timed)
     const drop = LH._addTestConn(B, 'dev-T2', () => {}, BR);
-    await LH.headsTick(t0 + 200_000);
-    assert.equal(LH.headsDue(t0 + 205_000), false, 'nothing written for 130 s and read 5 s ago: not due');
-    assert.equal(LH.headsDue(t0 + 255_000), false);
-    assert.equal(LH.headsDue(t0 + 260_000), true, 'once a minute');
-    clockMs = t0 + 230_000; WA.noteWrite(B2);
-    assert.equal(LH.headsDue(t0 + 235_000), true, 'a write of any business: every 5 s again');
+    await LH.headsTick(t0);
+    assert.equal(LH.headsDue(t0 + 5_000), false, 'nothing written since the read: not due');
+    clockMs = t0 + 7_000; WA.noteWrite(B);
+    assert.equal(LH.headsDue(t0 + 10_000), true, 'a write of the business whose POS holds a socket: the next tick reads');
+    await LH.headsTick(t0 + 10_000);
+    assert.equal(LH.headsDue(t0 + 15_000), false, 'read since: not due');
+    clockMs = t0 + 16_000; WA.noteWrite(B2);
+    assert.equal(LH.headsDue(t0 + 20_000), false, 'a write of a business with no socket open: nothing read');
+    clockMs = t0 + 21_000; WA.noteWrite(null);
+    assert.equal(LH.headsDue(t0 + 25_000), true, 'a write with no business (it may be any): read');
+    await LH.headsTick(t0 + 25_000);
+    assert.equal(LH.headsDue(t0 + 25_000 + 5 * 60_000 - 1), false);
+    assert.equal(LH.headsDue(t0 + 25_000 + 5 * 60_000), true, 'every 5 minutes when nothing is written');
     process.env.A591_MEMO = 'off';
-    assert.equal(LH.headsDue(t0 + 500_000 - 1), true, 'off: every tick'); delete process.env.A591_MEMO;
+    assert.equal(LH.headsDue(t0 + 30_000), true, 'off: every tick'); delete process.env.A591_MEMO;
     drop();
     assert.match(read('apps/server/src/lib/liveHub.ts'), /if \(headsDue\(now\)\) void headsTick\(now\);\s*else flushStock\(now\);/);
     assert.match(read('apps/server/src/lib/liveHub.ts'), /headsReadAt = now;/);
-    assert.equal(LH.HEADS_IDLE_MS, 60_000); assert.equal(LH.HEADS_ACTIVE_MS, 130_000);
+    assert.equal(LH.HEADS_IDLE_MS, 5 * 60_000);
   });
 
   console.log('\nE. the catalogue version\n');

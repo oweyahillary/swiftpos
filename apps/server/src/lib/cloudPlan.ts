@@ -50,6 +50,7 @@
  * Pure rules first (the tests run them), storage after.
  */
 import { supabase } from './supabase';
+import { memoEnabled, writeGen } from './writeActivity';   // A593
 import { CLOUD_TRIAL_KEY, TRIAL_REPORTS_ONLY_DAYS, cleanTrial, type CloudTrial } from './cloudTrial';
 import {
   DAY_MS, EAT_MS, UNPAID_DAYS, ADMIN_WARN_DAY, NOT_INTERESTED_MONTHS, nairobiDay, daysUntil, effectiveDue, lockAtFor, unpaidDaysAt, paidState,
@@ -484,13 +485,32 @@ export async function cloudBusinessIds(): Promise<string[]> {
 export const gatedBusinessIds = cloudBusinessIds;
 
 /**
+ * A593: the facts of every business the billing rules concern (cloudBusinessIds + readCloudFacts: 8 reads), kept up to
+ * 10 minutes while nothing is written with no business of its own (an admin portal write, a job's) and nothing forgot a
+ * standing (a payment, a plan, web access — forgetStanding). The standing is still worked out at the caller's own time.
+ * A591_MEMO=off: read every time, as before.
+ */
+let governedKept: { at: number; gen: string; fg: number; facts: Map<string, CloudFactsRow> } | null = null;
+export async function governedFacts(now: number = Date.now()): Promise<Map<string, CloudFactsRow>> {
+  const gen = writeGen('*');   // no business is named '*': the generation every business shares
+  if (memoEnabled() && governedKept && governedKept.gen === gen && governedKept.fg === factsGeneration && now - governedKept.at < STANDING_QUIET_MS) {
+    return governedKept.facts;
+  }
+  const fg = factsGeneration;
+  const facts = await readCloudFacts(await cloudBusinessIds());
+  // kept even when none is governed (the common case — 8 reads for nothing every 10 minutes otherwise)
+  if (memoEnabled() && fg === factsGeneration) governedKept = { at: now, gen, fg, facts };
+  return facts;
+}
+
+/**
  * The businesses whose tills the cloud refuses now (locked). The watchdog and the owner's alerts leave their tills out of
  * "on but not syncing" — that is the plan's decision, not a fault. A failed read: none.
  */
 export async function lapsedBusinessIds(now: number = Date.now()): Promise<Set<string>> {
   const out = new Set<string>();
   try {
-    const facts = await readCloudFacts(await cloudBusinessIds());
+    const facts = await governedFacts(now);   // A593: kept while nothing is written (8 reads every watchdog run before)
     for (const [id, f] of facts) if (!f.suspended && cloudStanding(f, now).syncRefused) out.add(id);
   } catch (e) { console.warn('[cloud-plan] lapsed businesses not read:', (e as Error)?.message ?? e); }
   return out;
@@ -608,8 +628,68 @@ function warnOnce(what: string, msg: string): void {
 export const STANDING_TTL_MS = 60_000;
 const memo = new Map<string, { at: number; standing: CloudStanding | null }>();
 
+/**
+ * A593 (owner, 2026-10-26: "logs are full already" — ~82,000 Supabase calls a day): every POS write (its sale, a drawer's
+ * read-only POST every 20 s) and every web request passed this gate, and a minute's memory meant FOUR reads (plan, trial,
+ * business, flag) per business per minute all day. Now the FACTS are kept — the standing is worked out from them at each
+ * request's own time (a grace period runs out by the clock, with no write) — up to 10 minutes while nothing is written for
+ * the business through this server (lib/writeActivity.ts; a payment, a plan, web access changed in the admin portal also
+ * forget it at once, forgetStanding), and when they must be read, ONE read set refreshes every business the gate has
+ * asked about (4 reads for all, not 4 each). A change made straight in SQL: within 10 minutes. A591_MEMO=off: as before.
+ */
+export const STANDING_QUIET_MS = 10 * 60_000;
+const factsKept = new Map<string, { at: number; gen: string; facts: CloudFactsRow | null }>();
+let factsReading: Promise<void> | null = null;
+let factsGeneration = 0;
+let standingClock: () => number = () => Date.now();   // A593: a test seam
+export function _setStandingClock(fn: (() => number) | null): void { standingClock = fn ?? (() => Date.now()); }
+/** Test seam. */
+export function _resetStanding(): void { memo.clear(); factsKept.clear(); governedKept = null; factsGeneration++; }
+const standingOf = (f: CloudFactsRow | null, now: number): CloudStanding | null => (f && !f.suspended ? cloudStanding(f, now) : null);
+
+async function refreshFacts(businessId: string, now: number): Promise<void> {
+  const ids = [businessId, ...[...factsKept.keys()].filter((k) => k !== businessId)].slice(0, 200);
+  const gens = new Map(ids.map((id) => [id, writeGen(id)]));   // before the read
+  const fg = factsGeneration;
+  let read: Map<string, CloudFactsRow> | null = null;
+  try { read = await readCloudFacts(ids); }
+  catch (e) { console.warn('[cloud-plan] standing read failed — not gated this time:', (e as Error)?.message ?? e); }
+  if (fg !== factsGeneration) return;   // forgotten meanwhile: not kept (the next ask reads again)
+  // Nothing at all came back for any of them: the read failed (bizs unreadable) — not gated, asked again in a minute.
+  const failed = !read || (read.size === 0 && ids.length > 0);
+  for (const id of ids) {
+    factsKept.delete(id);
+    factsKept.set(id, { at: now, gen: failed ? '' : gens.get(id)!, facts: failed ? null : (read!.get(id) ?? null) });
+  }
+  while (factsKept.size > 5000) { const first = factsKept.keys().next().value; if (first === undefined) break; factsKept.delete(first); }
+}
+
+/** A593: a job about to ask the standing of many businesses (ownerAlerts' tick) — ONE read set for all that are not kept. */
+export async function primeStandings(businessIds: string[], now: number = standingClock()): Promise<void> {
+  if (!memoEnabled() || !businessIds.length) return;
+  const stale = businessIds.filter((id) => {
+    const e = factsKept.get(id);
+    return !(e && (now - e.at < STANDING_TTL_MS || (e.gen !== '' && e.gen === writeGen(id) && now - e.at < STANDING_QUIET_MS)));
+  });
+  if (!stale.length) return;
+  for (const id of stale.slice(1)) if (!factsKept.has(id)) factsKept.set(id, { at: 0, gen: '', facts: null });   // asked with it
+  await refreshFacts(stale[0], now);
+}
+
 /** The standing for the gates, remembered a minute. A failed read answers null (never refuse on a failed read). */
-export async function standingFor(businessId: string, now: number = Date.now()): Promise<CloudStanding | null> {
+export async function standingFor(businessId: string, now: number = standingClock()): Promise<CloudStanding | null> {
+  if (memoEnabled()) {   // A593
+    const fresh = (e: { at: number; gen: string } | undefined) => !!e && (now - e.at < STANDING_TTL_MS
+      || (e.gen !== '' && e.gen === writeGen(businessId) && now - e.at < STANDING_QUIET_MS));
+    let e = factsKept.get(businessId);
+    if (!fresh(e)) {
+      if (!factsReading) factsReading = refreshFacts(businessId, now).finally(() => { factsReading = null; });
+      await factsReading;
+      e = factsKept.get(businessId);
+      if (!fresh(e)) { await refreshFacts(businessId, now); e = factsKept.get(businessId); }   // read for others meanwhile
+    }
+    return standingOf(e?.facts ?? null, now);
+  }
   const hit = memo.get(businessId);
   if (hit && now - hit.at < STANDING_TTL_MS) return hit.standing;
   let standing: CloudStanding | null = null;
@@ -627,7 +707,8 @@ export async function standingFor(businessId: string, now: number = Date.now()):
 
 /** A payment, a plan or web access changed — the next request reads afresh (this server; another one within a minute). */
 export function forgetStanding(businessId?: string): void {
-  if (businessId) memo.delete(businessId); else memo.clear();
+  factsGeneration++;   // A593: a read already under way is not kept
+  if (businessId) { memo.delete(businessId); factsKept.delete(businessId); } else { memo.clear(); factsKept.clear(); }
 }
 
 /** The refusal for a till's write, or null when it may go. */

@@ -48,7 +48,7 @@ import { findTenant, ownedTenantBusiness } from '../lib/tenant';   // A378: a cl
 import { getWebAccess, webAccessRefusal } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import { refreshHandshakeDecision, type HandshakeDecision, type HandshakeSuccessor } from '../lib/refreshHandshake';   // A477
-import { checkTillIdentity, resetTillIdentity } from '../lib/tillIdentity';   // A477
+import { checkTillIdentity, resetTillIdentity, IDENTITY_COLS } from '../lib/tillIdentity';   // A477 (A593: IDENTITY_COLS)
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A398
 import { sessionKind, revokeBrowserSessions, markTillSessionLost, clearTillSessionLost, markTillSecurityAlert } from '../lib/tillSessions';   // A407, A477
 import { cleanEmail, passwordProblem, signInAccountForEmail, sendResetCode, checkResetCode, setOwnerPassword } from '../lib/passwordReset';   // A402, A550
@@ -1132,19 +1132,28 @@ router.post('/refresh', async (req, res) => {
   const tillSession = isTillPayload(cleanPayload) || isOwnerEraTillPayload(cleanPayload);
   let newPayload: TokenPayload;
   let personPermissions: Record<string, true> | null = null;   // A490: the renewed person's permission map
-  let tillDevice: { device_id: string; device_secret_hash: string | null; identityMatched: boolean } | null = null;
+  let tillDevice: { device_id: string; device_secret_hash: string | null; identityMatched: boolean; sessionLost?: boolean | null } | null = null;   // A593: sessionLost (null: not known)
   if (tillSession) {
     const header = String(req.header('x-device-id') ?? '').split(',')[0].trim();
     // Which till: the token's own id; a pre-A415 session is matched by the device it was issued to (or the id the till
     // sends, for one issued before the device id was kept).
     const candidates = [...new Set([isTillPayload(cleanPayload) ? String(cleanPayload.deviceId) : '', dbRow.device_hint ?? '', header]
       .map((x) => String(x).trim()).filter((x) => x && x.length <= 64))];
-    const { data: rows, error: devErr } = candidates.length
-      ? await supabase.from('user_devices').select('device_id, branch_id, status, retired_at, device_secret_hash')
-          .eq('business_id', cleanPayload.businessId).in('device_id', candidates)
+    // A593: the row with its machine identity and its signed-out mark — the identity check and the clearing below use
+    // it instead of reading the same row again (6 calls a renewal before). Before migrations 125 / 131 (no such
+    // columns): read as before, and they read their own.
+    const devQuery = (cols: string) => supabase.from('user_devices').select(cols)
+      .eq('business_id', cleanPayload.businessId).in('device_id', candidates);
+    let withIdentity = true;
+    let { data: rows, error: devErr } = candidates.length
+      ? await devQuery(`device_id, branch_id, status, retired_at, device_secret_hash, session_lost_at, ${IDENTITY_COLS}`)
       : { data: [], error: null };
+    if (devErr && candidates.length) {
+      withIdentity = false;
+      ({ data: rows, error: devErr } = await devQuery('device_id, branch_id, status, retired_at, device_secret_hash'));
+    }
     if (devErr) { sendError(res, devErr); return; }
-    const row = candidates.map((c) => (rows ?? []).find((r: any) => r.device_id === c)).find(Boolean) as any;
+    const row = candidates.map((c) => ((rows ?? []) as any[]).find((r: any) => r.device_id === c)).find(Boolean) as any;
     if (!row) {
       res.status(401).json({ error: 'This POS is no longer joined to the business. A technician can rejoin it.', code: 'DEVICE_UNKNOWN' });
       return;
@@ -1155,12 +1164,14 @@ router.post('/refresh', async (req, res) => {
     }
     // A477: the key is bound to the machine — from another computer it is refused (the session is NOT revoked, the
     // owner is alerted); the token stays unspent.
-    const ident = await checkTillIdentity(cleanPayload.businessId, row.device_id, (n) => req.header(n));
+    const ident = await checkTillIdentity(cleanPayload.businessId, row.device_id, (n) => req.header(n), new Date(),
+      withIdentity ? row : undefined);   // A593: the row just read
     if (ident.verdict === 'mismatch') {
       res.status(401).json({ error: 'This POS\'s sign-in belongs to another computer.', code: 'DEVICE_MISMATCH' });
       return;
     }
-    tillDevice = { device_id: row.device_id, device_secret_hash: row.device_secret_hash ?? null, identityMatched: ident.matched };
+    tillDevice = { device_id: row.device_id, device_secret_hash: row.device_secret_hash ?? null, identityMatched: ident.matched,
+      sessionLost: withIdentity ? row.session_lost_at != null : null };
     newPayload = buildDeviceTokenPayload({
       deviceId: row.device_id, businessId: cleanPayload.businessId,
       branchId: tillBranch(null, row.branch_id, cleanPayload.branchId), sessionId: cleanPayload.sessionId,
@@ -1328,7 +1339,7 @@ router.post('/refresh', async (req, res) => {
         // A477: the till lost its copy — a fresh one, only for the machine on record.
         deviceSecret = await issueSecret(tillDevice, newPayload.businessId);
       }
-      await clearTillSessionLost(newPayload.businessId, tillDevice.device_id);
+      if (tillDevice.sessionLost !== false) await clearTillSessionLost(newPayload.businessId, tillDevice.device_id);   // A593: only when it is (or may be) marked
     } catch { /* additive — the renewal stands without it */ }
   }
 
@@ -1339,11 +1350,11 @@ router.post('/refresh', async (req, res) => {
 
 /** A477: retire the token a confirmed successor replaced (one row, by id). */
 async function revokeParentOf(id: string): Promise<void> {
-  const { data: parents, error } = await supabase.from('refresh_tokens').select('id').eq('replaced_by', id).is('revoked_at', null);
-  if (error) { console.warn('[refresh] A477: the replaced token could not be found', error.message); return; }
-  for (const p of (parents ?? []) as Array<{ id: string }>) {
-    await supabase.from('refresh_tokens').update({ revoked_at: new Date().toISOString() }).eq('id', p.id).is('revoked_at', null);
-  }
+  // A593: ONE update of the token(s) it replaced — the same rows the read-then-update-each found (2+ calls before).
+  // till-safe: only the token(s) whose replaced_by is THIS successor's id — the one parent it replaced, never a session
+  const { error } = await supabase.from('refresh_tokens').update({ revoked_at: new Date().toISOString() })
+    .eq('replaced_by', id).is('revoked_at', null);
+  if (error) console.warn('[refresh] A477: the replaced token could not be retired', error.message);
 }
 
 // ── POST /api/auth/refresh/ack ────────────────────────────────────────────────

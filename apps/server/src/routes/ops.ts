@@ -17,7 +17,7 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
-import { ingestAuth, IngestSchema, failAlertText } from '../lib/opsEvents';
+import { ingestAuth, IngestSchema, failAlertText, noteOpsEvent } from '../lib/opsEvents';   // A593: noteOpsEvent
 import { notifyRendered, alertLinks } from '../lib/alertNotify';   // A592
 import { readAlertSettings, addAdminNotifications } from '../lib/adminAlerts';   // A589
 import { isInstant } from '../lib/adminAlertPolicy';
@@ -59,6 +59,7 @@ router.post('/events', ingestLimiter, async (req, res) => {
     return;
   }
   console.log(`[ops] ${ev.kind} ${ev.status} from ${ev.source}: ${ev.title}`);
+  noteOpsEvent();   // A593: the watchdog reads the last good backup again
   if (ev.status === 'fail') {
     // Best effort: the row is stored whatever Telegram or the mail say; never awaited by the answer.
     // A592: laid out — "🔴 Backup failed — Mon 26 Oct 13:07 EAT", the step in plain words, buttons (run, guide, System).

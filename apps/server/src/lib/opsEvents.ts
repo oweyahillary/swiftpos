@@ -177,3 +177,11 @@ export function failAlertMessage(ev: IngestEvent, now: Date = new Date(), links:
 export function failAlertText(ev: IngestEvent, now: Date = new Date(), links: AlertLinks = DEFAULT_LINKS): RenderedMessage {
   return renderMessage(failAlertMessage(ev, now, links), links);
 }
+
+/**
+ * A593: an ops event was stored (routes/ops.ts) — the watchdog's remembered "last good backup" is read again on its next
+ * run. The watchdog read ops_events (1–2 calls) every 10 minutes for a backup that runs weekly.
+ */
+let opsEventsGeneration = 0;
+export function noteOpsEvent(): void { opsEventsGeneration++; }
+export function opsEventsGen(): number { return opsEventsGeneration; }
