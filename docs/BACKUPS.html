@@ -31,7 +31,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 @media print{.toc{break-after:page} h2{break-before:page;border-top:none} figure{break-inside:avoid} table{break-inside:auto} a{color:inherit;text-decoration:none}}
 </style></head><body><div class="wrap">
 <h1 id="backups-and-the-down-check">Backups and the down check</h1>
-<p>ZapTill backs up every client&#39;s data every night at midnight (00:00 Nairobi), encrypted, into a storage bucket that belongs to you — not to GitHub, and not only to Supabase. This guide covers what is backed up, where it goes, how to set it up once, how to restore a backup, how to test a restore every month, and the outside check that tells you when the server is down. (A589, 2026-10-25.)</p>
+<p>ZapTill backs up every client&#39;s data once a week, at midnight going into Sunday (00:00 Nairobi), encrypted, into a storage bucket that belongs to you — not to GitHub, and not only to Supabase. This guide covers what is backed up, where it goes, how to set it up once, how to restore a backup, how to test a restore every month, and the outside check that tells you when the server is down. (A589, 2026-10-25.)</p>
 <blockquote>
 <p>Owner, 2026-10-25: &quot;how can I be doing backups to protect my client data each night at 12am&quot;.</p>
 </blockquote>
@@ -49,7 +49,7 @@ li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
 </tr>
 <tr>
 <td><strong>When</strong></td>
-<td>Every night at 00:00 Nairobi (21:00 UTC). GitHub can start a scheduled job a few minutes late. You can also run it at any time: GitHub › Actions › Nightly backup › Run workflow.</td>
+<td>Weekly: Sunday 00:00 Nairobi (Saturday 21:00 UTC), once you switch the schedule on — GitHub › Settings › Secrets and variables › Actions › <strong>Variables</strong> › <code>BACKUP_SCHEDULE_ENABLED</code> = <code>true</code>. Until then it runs only by hand: GitHub › Actions › Nightly backup › Run workflow. <strong>Why weekly (A591, 2026-10-26):</strong> every full backup reads the whole database out of Supabase, which counts as egress — the Free plan allows 5 GB a month in all, so a nightly full copy would use it up. Before switching the schedule on, check the database size (Supabase SQL: <code>select pg_size_pretty(pg_database_size(current_database()));</code>) — four of those a month must fit the egress budget. On Supabase Pro its own daily backups cover the days between.</td>
 </tr>
 <tr>
 <td><strong>How</strong></td>
@@ -116,7 +116,7 @@ ALTER ROLE zaptill_backup SET default_transaction_read_only = on;
 <h2 id="when-something-goes-wrong">When something goes wrong</h2>
 <ul>
 <li><strong>A backup fails:</strong> the admin is emailed at once (&quot;ZapTill nightly backup FAILED&quot;, and Telegram), it shows red on the admin portal › System and on the bell, and the GitHub run is red. The older backups are untouched — the clean-up only runs after a good backup.</li>
-<li><strong>No backup for 26 hours</strong> (it failed, or did not run at all): the server&#39;s watchdog emails &quot;Backup: no good nightly backup for …&quot;. GitHub switches a schedule off after 60 days without a commit to the repository; the Actions tab then says so — enable the workflow again there.</li>
+<li><strong>No backup for 8 days</strong> (it failed, or did not run at all — weekly, A591): the server&#39;s watchdog emails &quot;Backup: no good backup for …&quot;. GitHub switches a schedule off after 60 days without a commit to the repository; the Actions tab then says so — enable the workflow again there.</li>
 <li><strong>The passphrase is lost:</strong> the existing backups cannot be opened by anyone, including you. Set a new <code>BACKUP_PASSPHRASE</code>; the next backups use it.</li>
 </ul>
 <p>Which alerts are emailed at once is set on the admin portal › Alerts › Email settings (a super admin). The backup is &quot;at once&quot; by default.</p>

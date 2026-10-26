@@ -122,8 +122,10 @@ const NOTIFY_ENV = { NOTIFY_RESEND_URL: `${LOCAL}/resend`, NOTIFY_SENDGRID_URL: 
 
 try {
   console.log('\n1. The workflows\n');
-  await ok('nightly-backup.yml: 21:00 UTC = 00:00 Nairobi, and by hand; the "backup" environment; read-only token; one at a time', () => {
-    assert.match(yml, /schedule:\s*\n\s*- cron: '0 21 \* \* \*'/);
+  await ok('nightly-backup.yml: weekly, Saturday 21:00 UTC = Sunday 00:00 Nairobi (A591), only once switched on, and by hand; the "backup" environment; read-only token; one at a time', () => {
+    assert.match(yml, /- cron: '0 21 \* \* 6'/);
+    assert.doesNotMatch(yml, /- cron: '0 21 \* \* \*'/, 'never nightly: a full dump is a whole database of egress');
+    assert.match(yml, /if: github\.event_name == 'workflow_dispatch' \|\| vars\.BACKUP_SCHEDULE_ENABLED == 'true'/);
     assert.match(yml, /workflow_dispatch: \{\}/);
     assert.match(yml, /environment: backup/);
     assert.match(yml, /permissions:\s*\n\s*contents: read\s*\n/);

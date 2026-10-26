@@ -24,7 +24,9 @@ name: Nightly backup
 
 on:
   schedule:
-    - cron: '0 21 * * *'   # 21:00 UTC = 00:00 Nairobi (EAT, UTC+3, no daylight saving)
+    # A591: weekly, not nightly - a full dump is a whole database of Supabase egress each run (Free plan: 5 GB a month).
+    # Saturday 21:00 UTC = Sunday 00:00 Nairobi (EAT, UTC+3, no daylight saving).
+    - cron: '0 21 * * 6'
   workflow_dispatch: {}
 
 concurrency:
@@ -37,6 +39,9 @@ permissions:
 jobs:
   backup:
     name: Back up the production database
+    # A591: the schedule only runs once the owner turns it on (repository variable BACKUP_SCHEDULE_ENABLED = true);
+    # "Run workflow" by hand always runs.
+    if: github.event_name == 'workflow_dispatch' || vars.BACKUP_SCHEDULE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: backup

@@ -292,15 +292,15 @@ try {
     await settle();
     assert.equal(mails.length, 0, 'a good backup is not emailed');
   });
-  await ok('the backup missed (no good one for 26 h): an email at once; none recorded ever: quiet', async () => {
+  await ok('the backup missed (no good one for 8 days, weekly - A591): an email at once; none recorded ever: quiet', async () => {
     reset();
     await W.runWatchdog(new Date());
     assert.equal(mails.length, 0, 'no backup ever recorded: nothing to say');
-    mem.db.ops_events.push({ id: 'b1', kind: 'backup', status: 'ok', title: 'Backup OK', created_at: iso(Date.now() - 30 * 3600_000) });
+    mem.db.ops_events.push({ id: 'b1', kind: 'backup', status: 'ok', title: 'Backup OK', created_at: iso(Date.now() - 9 * 24 * 3600_000) });
     await W.runWatchdog(new Date());
-    assert.equal(adminMails().length, 1); assert.match(adminMails()[0].subject, /Backup: no good nightly backup for 30 h/);
+    assert.equal(adminMails().length, 1); assert.match(adminMails()[0].subject, /Backup: no good backup for/);
     reset();
-    mem.db.ops_events.push({ id: 'b2', kind: 'backup', status: 'ok', title: 'Backup OK', created_at: iso(Date.now() - 2 * 3600_000) });
+    mem.db.ops_events.push({ id: 'b2', kind: 'backup', status: 'ok', title: 'Backup OK', created_at: iso(Date.now() - 6 * 24 * 3600_000) });
     await W.runWatchdog(new Date());
     assert.equal(mails.length, 0);
   });

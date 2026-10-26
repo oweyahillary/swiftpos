@@ -1,6 +1,6 @@
 # Backups and the down check
 
-ZapTill backs up every client's data every night at midnight (00:00 Nairobi), encrypted, into a storage bucket that belongs to you — not to GitHub, and not only to Supabase. This guide covers what is backed up, where it goes, how to set it up once, how to restore a backup, how to test a restore every month, and the outside check that tells you when the server is down. (A589, 2026-10-25.)
+ZapTill backs up every client's data once a week, at midnight going into Sunday (00:00 Nairobi), encrypted, into a storage bucket that belongs to you — not to GitHub, and not only to Supabase. This guide covers what is backed up, where it goes, how to set it up once, how to restore a backup, how to test a restore every month, and the outside check that tells you when the server is down. (A589, 2026-10-25.)
 
 > Owner, 2026-10-25: "how can I be doing backups to protect my client data each night at 12am".
 
@@ -9,7 +9,7 @@ ZapTill backs up every client's data every night at midnight (00:00 Nairobi), en
 | | |
 |---|---|
 | **What** | The whole cloud database: every client's products, sales, payments, stock, staff, settings (the `public` schema), the owners' sign-in accounts (`auth`) and the file list of Supabase Storage (`storage`). |
-| **When** | Every night at 00:00 Nairobi (21:00 UTC). GitHub can start a scheduled job a few minutes late. You can also run it at any time: GitHub › Actions › Nightly backup › Run workflow. |
+| **When** | Weekly: Sunday 00:00 Nairobi (Saturday 21:00 UTC), once you switch the schedule on — GitHub › Settings › Secrets and variables › Actions › **Variables** › `BACKUP_SCHEDULE_ENABLED` = `true`. Until then it runs only by hand: GitHub › Actions › Nightly backup › Run workflow. **Why weekly (A591, 2026-10-26):** every full backup reads the whole database out of Supabase, which counts as egress — the Free plan allows 5 GB a month in all, so a nightly full copy would use it up. Before switching the schedule on, check the database size (Supabase SQL: `select pg_size_pretty(pg_database_size(current_database()));`) — four of those a month must fit the egress budget. On Supabase Pro its own daily backups cover the days between. |
 | **How** | `pg_dump` in PostgreSQL's own compressed format, checked with `pg_restore --list`, then **encrypted** (AES-256, with your passphrase) before it leaves the GitHub machine. The encrypted copy is decrypted once more and compared, so the file that is stored is known to restore. |
 | **Where** | Your Cloudflare R2 bucket: `daily/2026-10-26/zaptill-2026-10-26T0003EAT.dump.gpg` (plus a small `.json` with its checksum), and on the 1st of each month also under `monthly/2026-11/`. The last result is in `status/latest.json`, the history in `status/history.jsonl`. |
 | **How long** | The newest **30 daily** and **12 monthly** copies. Older ones are deleted after each good backup — never after a failed one. |
@@ -80,7 +80,7 @@ GitHub › Actions › **Nightly backup** › Run workflow. When it is green: th
 ## When something goes wrong
 
 - **A backup fails:** the admin is emailed at once ("ZapTill nightly backup FAILED", and Telegram), it shows red on the admin portal › System and on the bell, and the GitHub run is red. The older backups are untouched — the clean-up only runs after a good backup.
-- **No backup for 26 hours** (it failed, or did not run at all): the server's watchdog emails "Backup: no good nightly backup for …". GitHub switches a schedule off after 60 days without a commit to the repository; the Actions tab then says so — enable the workflow again there.
+- **No backup for 8 days** (it failed, or did not run at all — weekly, A591): the server's watchdog emails "Backup: no good backup for …". GitHub switches a schedule off after 60 days without a commit to the repository; the Actions tab then says so — enable the workflow again there.
 - **The passphrase is lost:** the existing backups cannot be opened by anyone, including you. Set a new `BACKUP_PASSPHRASE`; the next backups use it.
 
 Which alerts are emailed at once is set on the admin portal › Alerts › Email settings (a super admin). The backup is "at once" by default.

@@ -19,7 +19,7 @@
  *     • A392: a till the cloud keeps refusing — 3+ pushes refused in 30 min and none taken (licence, branch, a revoked
  *       till, an old build), or rows refused on their merits in the last hour (they will not be retried).
  *     • A589: the server overloaded (slow answers, a blocked event loop, a slow database), the database unreachable, the
- *       nightly backup missed (no good one for 26 h).
+ *       weekly backup missed (no good one for 8 days).
  *   Only CRITICAL problems are emailed (owner, 2026-10-04: "all alerts emails should only get critical failures … others
  *   put in the admin"): new and still-happening. "Resolved" and the digest go to Telegram and the admin portal's Alerts.
  *   A589 (owner, 2026-10-25: "till not closed should not come as an email for each client"): WHO hears WHAT is decided
@@ -70,7 +70,7 @@ export const WATCHDOG = {
   OVERLOAD_LOOP_LAG_MS: 1000,
   OVERLOAD_DB_PING_MS: 4000,
   // A589: the nightly backup (00:00 Nairobi) — missed when the last good one is older than this.
-  BACKUP_MAX_AGE_H: 26,
+  BACKUP_MAX_AGE_H: 8 * 24 + 2,   // A591: weekly backups - a week and a day, plus 2 h
 } as const;
 
 const MIN = 60_000;
@@ -369,8 +369,8 @@ export function databaseUnreachable(ping: { ok: boolean; error?: string | null; 
 }
 
 /**
- * CRITICAL (A589): the nightly backup (00:00 Nairobi, .github/workflows/nightly-backup.yml) has not succeeded for over
- * 26 hours — it failed, or did not run (GitHub turns a schedule off after 60 days without activity in the repository).
+ * CRITICAL (A589, A591 weekly): the backup (Sunday 00:00 Nairobi, .github/workflows/nightly-backup.yml) has not succeeded
+ * for over 8 days — it failed, or did not run (GitHub turns a schedule off after 60 days without activity in the repository).
  * Only once a backup has ever been recorded (ops_events kind 'backup'): a cloud without backups set up stays quiet.
  */
 export function backupMissed(lastOkAt: string | null, anyRecorded: boolean, now: Date): Alert[] {
@@ -379,8 +379,8 @@ export function backupMissed(lastOkAt: string | null, anyRecorded: boolean, now:
   if (age <= WATCHDOG.BACKUP_MAX_AGE_H) return [];
   return [{
     key: 'backup_missed', severity: 'critical', businessId: null,
-    title: lastOkAt ? `Backup: no good nightly backup for ${durationLabel(age * 60)}` : 'Backup: no nightly backup has succeeded yet',
-    client: 'ZapTill cloud', where: '—', problem: 'Nightly backup missed or failing',
+    title: lastOkAt ? `Backup: no good backup for ${durationLabel(age * 60)}` : 'Backup: no backup has succeeded yet',
+    client: 'ZapTill cloud', where: '—', problem: 'Weekly backup missed or failing',
     detail: 'GitHub › Actions › Nightly backup: look at the last run (a failure says why; no run at all — the schedule may be '
       + 'off: enable the workflow, then "Run workflow"). docs/BACKUPS.md.',
   }];
