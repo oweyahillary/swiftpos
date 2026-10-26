@@ -8,6 +8,10 @@
  * an alert yet (refused sign-ins, refused till syncs), and the counters since the morning digest. A critical alert is
  * emailed when it opens and every 3 hours while it lasts — "Mute reminders" stops the reminders; it stays listed until
  * it clears.
+ * A589 (owner, 2026-10-25: "till not closed should not come as an email for each client; let it be a notification on
+ * the admin portal"): only the SYSTEM emergencies are emailed at once (server errors, overloaded, database unreachable,
+ * sign-in attacks, the backup); a CLIENT problem goes to the bell (NotificationBell) and the morning digest's table.
+ * "Email settings" (a super admin changes it): which categories are emailed at once, the digest time, the two daily emails.
  */
 import { useState, useEffect, useCallback } from "react";
 import { C, S } from "./theme";
@@ -152,8 +156,10 @@ export default function AlertsPage({ req, isSuper }: { req: Req; isSuper: boolea
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Alerts</h1>
           <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0", maxWidth: 640, lineHeight: 1.5 }}>
-            The cloud checks every client every 10 minutes. Only <b style={{ color: C.text }}>critical</b> problems are
-            emailed — when they start and every 3 hours while they last. Everything else is listed here.
+            The cloud checks every client every 10 minutes. Server emergencies (errors, overload, the database, sign-in
+            attacks, the backup) are <b style={{ color: C.text }}>emailed at once</b> and every 3 hours while they last.
+            A client's problem (a day not closed, a POS not syncing …) comes to the 🔔 bell and the morning digest — one
+            email with a table, not one email per client.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -182,7 +188,7 @@ export default function AlertsPage({ req, isSuper }: { req: Req; isSuper: boolea
         <>
           <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.danger }}>Critical ({crit.length})</div>
-            <div style={{ fontSize: 11, color: C.muted, margin: "2px 0 6px" }}>Emailed. Sales or security are affected now.</div>
+            <div style={{ fontSize: 11, color: C.muted, margin: "2px 0 6px" }}>Sales or security are affected now. Server emergencies are emailed at once; client problems are on the bell and in the morning digest.</div>
             {!crit.length && <div style={{ fontSize: 13, color: "#34e5a0", padding: "6px 0" }}>Nothing critical.</div>}
             {crit.map(row)}
           </div>
@@ -236,10 +242,81 @@ export default function AlertsPage({ req, isSuper }: { req: Req; isSuper: boolea
         </div>
       )}
 
+      <EmailSettingsCard req={req} isSuper={isSuper} />
+
       {counters && (
         <div style={{ fontSize: 12, color: C.muted }}>
           Since {String(counters.since).slice(0, 16).replace("T", " ")} UTC: {counters.serverErrors} server errors ·{" "}
           {counters.failedSignIns} refused sign-ins · {counters.writeGuard} POS writes the cloud would block.
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface Category { id: string; label: string; group: "system" | "client" | "billing"; instantDefault: boolean }
+interface AlertSettings { instant: string[]; digestEmail: boolean; digestTime: string; billingSummaryEmail: boolean }
+
+/** A589: which alerts are emailed at once, the digest time, the two daily emails. Everyone reads; a super admin saves. */
+export function EmailSettingsCard({ req, isSuper }: { req: Req; isSuper: boolean }) {
+  const [data, setData] = useState<{ settings: AlertSettings; defaults: AlertSettings; categories: Category[] } | null>(null);
+  const [form, setForm] = useState<AlertSettings | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    req("GET", "/alert-settings").then((d) => { setData(d); setForm(d.settings); }).catch((e) => setMsg(e?.message || "Couldn't load the email settings."));
+  }, [req]);
+  if (!data || !form) return msg ? <div style={{ ...S.card, fontSize: 12, color: C.muted }}>{msg}</div> : null;
+  const toggle = (id: string) => setForm((f) => f && ({ ...f, instant: f.instant.includes(id) ? f.instant.filter((x) => x !== id) : [...f.instant, id] }));
+  const save = async (next: AlertSettings) => {
+    setBusy(true); setMsg("");
+    try { const r = await req("PUT", "/alert-settings", next); setForm(r.settings); setData((d) => d && ({ ...d, settings: r.settings })); setMsg("Saved."); }
+    catch (e: any) { setMsg(e?.message || "Could not save."); }
+    finally { setBusy(false); }
+  };
+  const groups: Array<[Category["group"], string]> = [["system", "Server and security"], ["client", "Client problems"], ["billing", "Billing"]];
+  const changed = JSON.stringify(form) !== JSON.stringify(data.settings);
+  return (
+    <div style={S.card} data-testid="alert-email-settings">
+      <div style={{ fontSize: 13, fontWeight: 600 }}>Email settings</div>
+      <div style={{ fontSize: 11, color: C.muted, margin: "2px 0 10px", lineHeight: 1.5 }}>
+        Ticked: emailed at once (and every 3 hours while it lasts). Not ticked: the 🔔 bell, Telegram (one message per check)
+        and the morning digest. Client problems emailed at once still come as one email with a table, never one per client.
+        {!isSuper && " Only a super admin changes these."}
+      </div>
+      {groups.map(([g, title]) => (
+        <div key={g} style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>{title}</div>
+          {data.categories.filter((c) => c.group === g).map((c) => (
+            <label key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "3px 0", cursor: isSuper ? "pointer" : "default" }}>
+              <input type="checkbox" disabled={!isSuper || busy} checked={form.instant.includes(c.id)} onChange={() => toggle(c.id)} data-testid={`instant-${c.id}`} />
+              <span>{c.label}</span>
+              {c.instantDefault && <span style={{ fontSize: 10, color: C.muted }}>(default: at once)</span>}
+            </label>
+          ))}
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", fontSize: 13, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          Morning digest at
+          <input type="time" disabled={!isSuper || busy} value={form.digestTime} onChange={(e) => setForm({ ...form, digestTime: e.target.value })}
+            style={{ ...S.input, width: 110, padding: "5px 8px" }} data-testid="digest-time" />
+          <span style={{ fontSize: 11, color: C.muted }}>Nairobi</span>
+        </label>
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" disabled={!isSuper || busy} checked={form.digestEmail} onChange={() => setForm({ ...form, digestEmail: !form.digestEmail })} />
+          Email the digest (a table of open problems)
+        </label>
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" disabled={!isSuper || busy} checked={form.billingSummaryEmail} onChange={() => setForm({ ...form, billingSummaryEmail: !form.billingSummaryEmail })} />
+          Email the daily billing summary (a table)
+        </label>
+      </div>
+      {isSuper && (
+        <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <button disabled={!changed || busy} onClick={() => save(form)} style={{ ...S.btn, ...S.btnPrimary }} data-testid="alert-settings-save">{busy ? "Saving…" : "Save"}</button>
+          <button disabled={busy} onClick={() => setForm(data.defaults)} style={{ ...S.btn, ...S.btnGhost }}>Back to the defaults</button>
+          {msg && <span style={{ fontSize: 12, color: C.muted }}>{msg}</span>}
         </div>
       )}
     </div>

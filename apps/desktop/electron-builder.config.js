@@ -13,6 +13,12 @@
  * four can never disagree. Version is still owned by the build tooling
  * (`npm version` in release:patch) and is deliberately not set here (rule 22).
  */
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+// A590: ctx.arch is electron-builder's Arch enum number (builder-util: ia32 = 0, x64 = 1, armv7l = 2, arm64 = 3,
+// universal = 4). Mapped here, not required from electron-builder, so this file still loads where it is not installed.
+const Arch = ['ia32', 'x64', 'armv7l', 'arm64', 'universal'];
+
 const dev = String(process.env.SWIFTPOS_ENV || 'prod').toLowerCase() === 'dev';
 
 // 0.6.36 (A386): the product is ZapTill — the installer, the Start-menu and Apps entry, and the data folder
@@ -32,6 +38,32 @@ module.exports = {
   // in this file's header true.
   extraMetadata: { productName: name },
   directories: { output: 'release' },
+  // A590 (P0): the 32-bit app of every combined installer (0.6.32 … 1.0.20) shipped NO SQLite driver for its arch —
+  // better-sqlite3 13 has no win32-ia32 prebuild, and its binding.gyp builds nothing when the HOST (x64) has a prebuild,
+  // so electron-builder's per-arch @electron/rebuild "finished" for ia32 in 2 s having compiled nothing (and wiped
+  // build/). better-sqlite3 is Node-API (one binary serves every Electron), so:
+  //   - npmRebuild: false — electron-builder no longer runs node-gyp per arch (it could only wipe the ia32 driver);
+  //   - beforePack: x64 → the shipped prebuilds/win32-x64.node is checked; ia32 → build/Release/better_sqlite3.node is
+  //     compiled from source (force_build=1, Electron headers) when missing or stale — scripts/native-driver.mjs;
+  //   - afterPack: that arch's own packaged exe must load better-sqlite3 and open ':memory:' — scripts/native-gate.mjs
+  //     (the release workflow runs the same gate again on both unpacked apps and the installer before it uploads).
+  // The loader takes prebuilds/win32-x64.node on 64-bit and build/Release/better_sqlite3.node on 32-bit, so both apps
+  // carry both files; each loads only its own.
+  npmRebuild: false,
+  beforePack: async (ctx) => {
+    if (ctx.electronPlatformName !== 'win32') return;
+    const arch = Arch[ctx.arch];
+    const { ensureDriver } = await import(pathToFileURL(path.join(__dirname, 'scripts', 'native-driver.mjs')).href);
+    ensureDriver(arch);
+  },
+  afterPack: async (ctx) => {
+    if (ctx.electronPlatformName !== 'win32' || process.platform !== 'win32') return;
+    const arch = Arch[ctx.arch];
+    const { gateDir } = await import(pathToFileURL(path.join(__dirname, 'scripts', 'native-gate.mjs')).href);
+    const g = gateDir(ctx.appOutDir, arch);
+    for (const l of g.lines) console.log(`  • A590 gate ${l}`);
+    if (!g.ok) throw new Error(`A590: the ${arch} app cannot load its SQLite driver — not packaging it (${g.lines.join('; ')})`);
+  },
   compression: 'normal',
   // D3: auto-update feed. Only the PROD flavour publishes/consumes a feed — dev
   // builds are hand-installed for trade-tests and never auto-update (autoUpdate.ts
@@ -57,6 +89,8 @@ module.exports = {
     '!node_modules/exceljs/dist/**',
     '!node_modules/better-sqlite3/{src,deps,build/Release/obj,build/Release/obj.target}/**',
     '!node_modules/better-sqlite3/build/**/*.{o,a,lib,exp,pdb,ilk}',
+    // A590: build/ keeps only Release/better_sqlite3.node (scripts/native-driver.mjs tidies it); never its stamp.
+    '!node_modules/better-sqlite3/build/Release/zaptill-native.json',
   ],
   // A509: the updater task's script, shipped as resources\updater\zaptill-update.ps1 (a reference copy a technician can
   // read). The task never runs this copy: build/installer.nsh writes the script straight from the installer's own
@@ -71,7 +105,8 @@ module.exports = {
     // on demand if ever needed; don't publish it.
     // 0.6.32 (owner, 2026-10-02: a client's till is Windows 10 32-bit, 4 GB): ONE installer for 64-bit AND 32-bit
     // Windows — it installs the build that fits the machine. The auto-updater follows it (latest.yml names this file),
-    // so a 32-bit till keeps updating to 32-bit. Electron publishes win32-ia32; better-sqlite3 is rebuilt per arch.
+    // so a 32-bit till keeps updating to 32-bit. Electron publishes win32-ia32; the 32-bit SQLite driver is compiled
+    // from source (A590, see beforePack).
     // About twice the download of a 64-bit-only installer. Windows 7/8 are not supported by this Electron at all.
     target: [{ target: 'nsis', arch: ['x64', 'ia32'] }],
     icon: dev ? 'resources/icon.dev.ico' : 'resources/icon.ico',

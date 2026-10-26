@@ -10,6 +10,7 @@ import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "./lib/tenant
 import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
 import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and Account pages
 import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
+import NotificationBell from "./NotificationBell";   // A589: the bell — client problems and billing notices, not an email each
 import SystemPage from "./SystemPage";   // A525: what production runs, the deploy check, the dependency scan
 import SignInCodeCard from "./SignInCodeCard";   // A391
 import TestDataCard from "./TestDataCard";   // A396
@@ -2994,6 +2995,8 @@ export default function AdminPortal() {
             {page === "client_detail" ? selectedClient?.name
               : NAV_GROUPS.flatMap(g => g.items).find(n => n.id === page)?.label ?? "Dashboard"}
           </span>
+
+          <NotificationBell req={req} enabled={Boolean(token && admin)} onOpenAlerts={() => { setPage("alerts"); setSelectedClient(null); }} />
 
           <span className="sp-email-label" style={{ fontSize: 12, color: C.muted, flexShrink: 0, whiteSpace: "nowrap" }}>
             Logged in as <strong style={{ color: C.text }}>{admin.email}</strong>

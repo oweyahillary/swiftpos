@@ -243,10 +243,14 @@ try {
     const pure = EM.invoiceWords({ businessName: 'Duka', invoiceNumber: 'INV-2026-0001', periodStart: '2026-11-23T07:00:00Z', periodEnd: '2026-12-23T07:00:00Z', amount: 3000, currency: 'KES', period: 'monthly' });
     for (const l of [pure.subject, pure.headline, ...pure.lines, ...pure.facts.flat()]) assert.doesNotMatch(l, NO_REVOKE, l);
   });
-  await ok('ZapTill gets its copy (the admin email): the invoice, who it went to, when it locks', async () => {
-    const admin = mails.find((m) => /billing@zaptill\.test/.test(m.to) && /Pollo/.test(m.subject) && /invoice/i.test(m.subject));
-    assert.ok(admin, mails.map((m) => `${m.to}: ${m.subject}`).join(' | '));
-    assert.match(admin.html, /owner@pollo\.test/); assert.match(admin.html, /locks at the end of/);
+  // A589 (owner, 2026-10-25: "also invoices let it be the same" — not an email per client): ZapTill's copy is a
+  // notification on the admin portal's bell, and the daily billing summary email (tests/admin-alerts-a589.test.mjs).
+  await ok('ZapTill gets its copy on the admin portal\'s bell (not an email): the invoice, who it went to, when it locks', async () => {
+    assert.equal(mails.filter((m) => /billing@zaptill\.test/.test(m.to)).length, 0, mails.map((m) => `${m.to}: ${m.subject}`).join(' | '));
+    const admin = (mem.db.admin_notifications ?? []).find((n) => n.category === 'billing' && n.business_id === M && n.data?.milestone === 'invoice');
+    assert.ok(admin, JSON.stringify(mem.db.admin_notifications));
+    assert.match(admin.title, /Pollo/); assert.match(admin.title, /invoice/i);
+    assert.match(admin.detail, /owner@pollo\.test/); assert.match(admin.detail, /locks at the end of/);
   });
   await ok('once per period: the next hour sends nothing; even with the claim lost, no second invoice for the period', async () => {
     mails.length = 0;
@@ -313,20 +317,22 @@ try {
     const ms = mem.db.cloud_plan_reminders.filter((r) => r.business_id === M).map((r) => r.milestone).sort();
     assert.deepEqual(ms, ['invoice', 'unpaid_5']);
     assert.deepEqual(CP.adminMilestones(CP.cloudStanding((await CP.readCloudFacts([M])).get(M), noon - DAY), noon - DAY), ['invoice'], 'day 4: no note yet');
-    const note = mails.find((m) => /unpaid/.test(m.subject));
-    assert.ok(note && /billing@zaptill\.test/.test(note.to), mails.map((m) => `${m.to}: ${m.subject}`).join(' | '));
-    assert.match(note.subject, /locks in 2 days/);
+    // A589: ZapTill hears on the admin portal's bell (and the daily billing summary), not by an email each.
+    const note = (mem.db.admin_notifications ?? []).find((n) => n.category === 'billing' && n.data?.milestone === 'unpaid_5');
+    assert.ok(note, JSON.stringify(mem.db.admin_notifications));
+    assert.match(note.title, /locks in 2 days/);
+    assert.equal(mails.filter((m) => /billing@zaptill\.test/.test(m.to)).length, 0, 'no admin email');
     assert.equal(mails.filter((m) => m.to === 'owner@pollo.test').length, 1, 'the owner: the invoice only');
     assert.doesNotMatch(mails.find((m) => m.to === 'owner@pollo.test').html.replace(/<[^>]+>/g, ' '), NO_REVOKE);
   });
   await ok('the lock: ZapTill once (never the client), then the morning digest lists it every day', async () => {
     mails.length = 0; setPaidUntil(Date.now() - 10 * DAY);
     await run();
-    const locked = mails.filter((m) => /locked/.test(m.subject));
-    assert.equal(locked.length, 1); assert.match(locked[0].to, /billing@zaptill\.test/);
+    const lockedNote = () => (mem.db.admin_notifications ?? []).filter((n) => n.category === 'billing' && n.data?.milestone === 'locked');
+    assert.equal(lockedNote().length, 1, 'A589: on the admin portal\'s bell'); assert.equal(mails.filter((m) => /locked/.test(m.subject)).length, 0, 'not emailed');
     assert.equal(mails.filter((m) => m.to === 'owner@pollo.test').length, 0, 'nothing to the owner: no lock notice (and no invoice once locked — A587: pay as you go)');
     mails.length = 0; await run();
-    assert.equal(mails.filter((m) => /locked/.test(m.subject)).length, 0, 'once');
+    assert.equal(lockedNote().length, 1, 'once');
     const lines = await CP.billingDigestLines();
     assert.ok(lines.some((l) => /Cloud locked \(1\)/.test(l)) && lines.some((l) => /Pollo/.test(l)), lines.join(' | '));
     assert.match(read('apps/server/src/jobs/watchdog.ts'), /billingDigestLines\(now\.getTime\(\)\)/);

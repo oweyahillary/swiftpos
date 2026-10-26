@@ -250,7 +250,7 @@ try {
   });
   await ok('the refusal is not a server error for the watchdog (res.locals.cloudLapsed; index.ts skips it)', () => {
     assert.match(read('apps/server/src/middleware/auth.ts'), /res\.locals\.cloudLapsed = true/);
-    assert.match(read('apps/server/src/index.ts'), /if \(res\.locals\.cloudLapsed === true\) return;\n\s+if \(res\.statusCode >= 500\) recordServerError/);
+    assert.match(read('apps/server/src/index.ts'), /if \(res\.locals\.cloudLapsed === true\) return;\n(?:\s*\/\/[^\n]*\n|\s*const type[^\n]*\n|\s*if \(!\/event-stream[^\n]*\n)*\s+if \(res\.statusCode >= 500\) recordServerError/);
   });
   await ok('a till cannot join (enrolment code redeem) — refused BEFORE the code is spent, words for the technician', async () => {
     const r = await call('POST', '/api/auth/enrol/redeem', null, { business_id: B, code: CODE, device_id: 'new-till' });

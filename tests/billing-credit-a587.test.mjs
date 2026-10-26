@@ -247,11 +247,15 @@ try {
     assert.equal(inv.status, 'written_off');
     const a = mem.db.admin_audit_log.find((x) => x.action === 'cloud_plan.not_interested' && x.business_id === M);
     assert.ok(a); assert.deepEqual(a.after_data.written_off, ['INV-2026-0001']); assert.equal(a.after_data.state, 'not_interested');
-    const n = mails.filter((m) => /Not interested/.test(m.subject));
-    assert.equal(n.length, 1); assert.match(n[0].to, /billing@zaptill\.test/); assert.match(n[0].html ?? n[0].text ?? '', /INV-2026-0001/);
+    // A589: ZapTill hears on the admin portal's bell (and the daily billing summary), not by an email each.
+    const n = (mem.db.admin_notifications ?? []).filter((x) => x.category === 'billing' && x.data?.milestone === 'not_interested');
+    assert.equal(n.length, 1); assert.match(n[0].title, /Not interested/); assert.match(n[0].detail, /INV-2026-0001/);
+    assert.deepEqual(n[0].data.written_off, ['INV-2026-0001']);
+    assert.equal(mails.filter((m) => /billing@zaptill\.test/.test(m.to)).length, 0, 'no admin email');
     assert.equal(mails.filter((m) => m.to === 'owner@pollo.test').length, 0);
     mails.length = 0; await run();
     assert.equal(mails.length, 0, 'once'); assert.equal(mem.db.invoices.filter((i) => i.business_id === M).length, 1, 'no new invoice');
+    assert.equal((mem.db.admin_notifications ?? []).filter((x) => x.data?.milestone === 'not_interested').length, 1, 'the bell once');
     assert.equal((await call('POST', '/api/sync/push', TILL_M, {})).status, 503, 'still locked');
     assert.equal((await call('GET', '/api/reports/daily', web(M))).status, 403);
   });
@@ -286,7 +290,9 @@ try {
     assert.ok(inv, 'invoiced'); assert.deepEqual([inv.status, inv.kind, inv.amount, inv.period_start], ['pending', 'cloud', 3000, end]);
     const mail = mails.find((m) => m.to === 'trial@salon.test');
     assert.ok(mail); assert.match(stripTags(mail.html), /trial ended on/); assert.doesNotMatch(stripTags(mail.html), NO_REVOKE);
-    assert.ok(mails.some((m) => /billing@zaptill\.test/.test(m.to) && /Trial Salon/.test(m.subject)));
+    // A589: ZapTill's copy on the admin portal's bell, not an email.
+    assert.ok((mem.db.admin_notifications ?? []).some((n) => n.category === 'billing' && n.business_id === TR && /Trial Salon/.test(n.title)));
+    assert.equal(mails.filter((m) => /billing@zaptill\.test/.test(m.to)).length, 0);
   });
   await ok('the 7 days with full access (web and sync), then locked with the trial\'s words (CLOUD_TRIAL_ENDED)', async () => {
     const w = await W.getWebAccess(TR, 'active');

@@ -13,6 +13,7 @@ node build.mjs ../../setup/TECHNICIAN-SETUP-GUIDE.md
 **What the markdown can contain:**
 - headings: `#` title, `##` sections (each starts a new page in Word), `###` subsections;
 - paragraphs with **bold**, *italic*, `code` and links;
+- fenced code blocks (commands, SQL — A589);
 - numbered and bullet lists, and `- [ ]` checklists;
 - tables;
 - `>` notes (amber box);
@@ -25,3 +26,4 @@ node build.mjs ../../setup/TECHNICIAN-SETUP-GUIDE.md
 **Manuals built with it:**
 - `docs/setup/TECHNICIAN-SETUP-GUIDE` (the screenshots are in `docs/setup/screenshots/`). The same guide is also shared as a Claude doc.
 - `docs/Manuals/BARCODE-LABELS` (A571: barcodes, label sizes, printing on label printers, sticker sheets and the receipt printer; driver tips for Xprinter, TSC and Zebra).
+- `docs/BACKUPS` (A589: the nightly backup, the restore and its monthly test, the down check).

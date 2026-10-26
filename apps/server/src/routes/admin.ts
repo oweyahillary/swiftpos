@@ -81,6 +81,8 @@ import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
 import { alertChannels, notifyAdmin } from '../lib/alertNotify';   // A383: the watchdog's channels
 import { digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';   // A392
 import { syncRefusalHint } from '../lib/watchdogRules';   // A392
+import { readAlertSettings, saveAlertSettings } from '../lib/adminAlerts';   // A589
+import { ALERT_CATEGORIES, DEFAULT_ALERT_SETTINGS, normalizeAlertSettings, DIGEST_TIME_RE } from '../lib/adminAlertPolicy';   // A589
 import { otpGate, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, otpDisabled, trustValid } from '../lib/loginOtp';   // A391
 
 const router = safeRouter();
@@ -2429,6 +2431,55 @@ router.post('/watchdog/:id/ack', requireAdmin, async (req: any, res) => {
     .eq('id', req.params.id);
   if (error) { res.status(500).json({ error: 'Could not save — is migration 119 applied?' }); return; }
   res.json({ muted: mute });
+});
+
+// ── A589: the admin's alert settings and the bell ─────────────────────────────
+// Owner, 2026-10-25: "till not closed should not come as an email for each client; let it be a notification on the admin
+// portal … or if they must come as an email let it be a table". Every admin reads; a super admin changes what is emailed
+// at once, the digest time and the two daily emails (lib/adminAlertPolicy.ts — public.admin_settings, migration 174).
+router.get('/alert-settings', requireAdmin, async (_req, res) => {
+  res.json({ settings: await readAlertSettings(), defaults: DEFAULT_ALERT_SETTINGS, categories: ALERT_CATEGORIES, channels: alertChannels() });
+});
+
+router.put('/alert-settings', requireAdmin, requireSuperAdmin, async (req: any, res) => {
+  const body = req.body ?? {};
+  if (body.digestTime !== undefined && (typeof body.digestTime !== 'string' || !DIGEST_TIME_RE.test(body.digestTime))) {
+    res.status(400).json({ error: 'The digest time must be HH:MM (24 hours, Nairobi), e.g. 07:00.' }); return;
+  }
+  if (body.instant !== undefined && !Array.isArray(body.instant)) { res.status(400).json({ error: 'instant must be a list of categories' }); return; }
+  const known = new Set(ALERT_CATEGORIES.map((c) => c.id as string));
+  const unknown = (Array.isArray(body.instant) ? body.instant : []).filter((c: unknown) => typeof c !== 'string' || !known.has(c));
+  if (unknown.length) { res.status(400).json({ error: `Unknown categories: ${unknown.join(', ')}` }); return; }
+  const before = await readAlertSettings();
+  const next = normalizeAlertSettings({ ...before, ...body });
+  const saved = await saveAlertSettings(next, req.adminEmail ?? null);
+  if (!saved.ok) { res.status(503).json({ error: 'Could not save — is migration 174 applied?' }); return; }
+  await writeAdminAudit({ adminId: req.adminId, adminEmail: req.adminEmail, action: 'alert_settings.update', resource: 'admin_settings',
+    before, after: next, ip: req.ip });
+  res.json({ settings: next });
+});
+
+// The bell: the newest notifications (?unread=1: the unread only) and how many are unread.
+router.get('/notifications', requireAdmin, async (req, res) => {
+  const unreadOnly = req.query.unread === '1' || req.query.unread === 'true';
+  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+  let q = supabase.from('admin_notifications').select('id, category, business_id, alert_key, title, detail, data, created_at, read_at, read_by');
+  if (unreadOnly) q = q.is('read_at', null);
+  const { data, error } = await q.order('created_at', { ascending: false }).limit(limit);
+  if (error) { res.json({ notifications: [], unread: 0, unavailable: true }); return; }   // before migration 174: an empty bell
+  const counted = await supabase.from('admin_notifications').select('id', { count: 'exact', head: true }).is('read_at', null);
+  res.json({ notifications: data ?? [], unread: Number(counted.count ?? 0) });
+});
+
+// Mark read: { ids: [...] } or { all: true }.
+router.post('/notifications/read', requireAdmin, async (req: any, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x: unknown) => typeof x === 'string').slice(0, 500) : [];
+  if (!ids.length && req.body?.all !== true) { res.status(400).json({ error: 'Give ids, or all: true' }); return; }
+  let q = supabase.from('admin_notifications').update({ read_at: new Date().toISOString(), read_by: req.adminEmail ?? null }).is('read_at', null);
+  if (ids.length) q = q.in('id', ids);
+  const { error } = await q;
+  if (error) { res.status(503).json({ error: 'Could not save — is migration 174 applied?' }); return; }
+  res.json({ ok: true });
 });
 
 // A495: requireAdmin first — requireSuperAdmin alone read a role nothing had verified (no token, no role, refused only by luck).

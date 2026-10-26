@@ -22,7 +22,7 @@ import { startMonthlyPackJob }  from './jobs/monthlyPack';       // A455
 import { startOwnerAlertsJob }  from './jobs/ownerAlerts';       // A476
 import { startLossAlertsJob }   from './jobs/lossAlerts';        // A576
 import { startCloudPlanRemindersJob } from './jobs/cloudPlanReminders';   // A581
-import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt, recordSyncQueue, parseQueueCount } from './lib/watchdogCounters';
+import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt, recordSyncQueue, parseQueueCount, recordRequestDuration } from './lib/watchdogCounters';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { refreshPermissionsState } from './lib/permissionsState';   // A490
@@ -171,6 +171,7 @@ app.use((req, res, next) => {
   const path0 = req.originalUrl || req.url || '';
   const tillSync = isTillSync(req.method, path0) && !!req.header('X-Device-Id');
   let answer: any = null;
+  const startedAt = Date.now();   // A589: the answer time — the overload signal (lib/watchdogRules.ts serverOverload)
   if (tillSync) {
     const json = res.json.bind(res);
     res.json = ((body: any) => { answer = body; return json(body); }) as typeof res.json;
@@ -180,6 +181,9 @@ app.use((req, res, next) => {
     // A581: a lapsed cloud plan's 503 (CLOUD_SUBSCRIPTION_ENDED) is a decision, not a fault — never a server error, never a
     // till "the cloud keeps refusing" (the admin is told by the plan's reminders and the client list).
     if (res.locals.cloudLapsed === true) return;
+    // A589: a stream or a file download takes as long as it takes — not a slow server.
+    const type = String(res.getHeader('content-type') ?? '');
+    if (!/event-stream|octet-stream|application\/x-msdownload/i.test(type)) recordRequestDuration(Date.now() - startedAt);
     if (res.statusCode >= 500) recordServerError(path);
     else if (isSignInFailure(req.method, path, res.statusCode)) {
       recordFailedSignIn({ path, account: typeof req.body?.email === 'string' ? req.body.email : '', ip: req.ip ?? '' });

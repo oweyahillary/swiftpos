@@ -67,6 +67,8 @@ h3{font-size:1.1rem;margin:28px 0 8px}
 p{margin:10px 0}
 a{color:var(--teal)}
 code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+pre{background:#f3f4f6;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:.88rem;line-height:1.5}
+pre code{background:none;padding:0}
 table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
 th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
 th{background:var(--head)}
@@ -191,6 +193,13 @@ for (const tok of tokens) {
         border: { left: { style: BorderStyle.SINGLE, size: 24, color: 'F59E0B', space: 8 } },
         children: runs(p.tokens) }));
     }
+  } else if (tok.type === 'code') {
+    // A589: a fenced block (commands, SQL) — one shaded monospace line each, nothing wrapped into the next.
+    for (const line of String(tok.text).split('\n')) {
+      children.push(new Paragraph({ spacing: { after: 0 }, indent: { left: 200 }, shading: { type: ShadingType.CLEAR, fill: 'F3F4F6', color: 'auto' },
+        children: [new TextRun({ text: line || ' ', font: 'Consolas', size: 17 })] }));
+    }
+    children.push(new Paragraph({ spacing: { after: 80 }, children: [] }));
   } else if (tok.type === 'hr') {
     children.push(new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: LINE, space: 1 } }, children: [] }));
   }

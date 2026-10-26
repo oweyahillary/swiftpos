@@ -21,7 +21,7 @@ import { ago } from "./AlertsPage";
 
 type Req = (method: string, path: string, body?: unknown) => Promise<any>;
 
-type Kind = "boot" | "deploy_check" | "vuln_scan";
+type Kind = "boot" | "deploy_check" | "vuln_scan" | "backup" | "uptime";   // A589: backup, uptime
 type Status = "ok" | "warn" | "fail";
 interface OpsEvent {
   id: string; kind: Kind; status: Status; commit: string | null; title: string;
@@ -39,6 +39,7 @@ interface Traffic {
 interface Summary {
   live: { commit: string | null; started_at: string };
   boot: OpsEvent | null; deploy_check: OpsEvent | null; vuln_scan: OpsEvent | null;
+  backup?: OpsEvent | null; uptime?: OpsEvent | null;   // A589
   traffic?: Traffic;
 }
 interface Fix { name: string; version: string; isSemVerMajor: boolean }
@@ -48,7 +49,8 @@ interface Pkg {
 }
 interface AppScan { error?: string; counts?: Record<string, number>; total?: number; packages?: Pkg[]; truncated?: boolean }
 
-const KIND_LABEL: Record<Kind, string> = { boot: "Server start", deploy_check: "Deploy check", vuln_scan: "Dependency scan" };
+const KIND_LABEL: Record<Kind, string> = { boot: "Server start", deploy_check: "Deploy check", vuln_scan: "Dependency scan", backup: "Nightly backup", uptime: "Outage" };
+const mb = (b: unknown) => (typeof b === "number" && Number.isFinite(b) ? `${(b / 1048576).toFixed(1)} MB` : "—");
 const STATUS_COLOUR: Record<Status, string> = { ok: C.green, warn: "#f59e0b", fail: C.danger };
 const SEV_COLOUR: Record<string, string> = { critical: C.danger, high: "#ff8a5c", moderate: "#f59e0b", low: C.muted, info: C.muted };
 const SEVS = ["critical", "high", "moderate", "low"];
@@ -175,10 +177,34 @@ function TrafficCard({ t }: { t?: Traffic }) {
   );
 }
 
+/** A589: what the nightly backup recorded — size, how long, where it is, the check it passed. */
+function BackupDetails({ ev }: { ev: OpsEvent }) {
+  const d = ev.details ?? {};
+  return (
+    <div>
+      {d.size_bytes != null && <Line k="Size" v={`${mb(d.size_bytes)} (encrypted)`} />}
+      {d.seconds != null && <Line k="Took" v={`${d.seconds} s`} />}
+      {d.object && <Line k="Stored as" v={<span style={mono}>{String(d.object)}</span>} />}
+      {d.tables != null && <Line k="Checked" v={`${d.tables} tables readable (pg_restore --list)`} />}
+      {d.error && <Line k="Error" v={<span style={{ color: C.danger }}>{String(d.error)}</span>} />}
+      {d.run_url && <Line k="GitHub run" v={<a href={String(d.run_url)} target="_blank" rel="noreferrer" style={{ color: C.accent }}>open</a>} />}
+    </div>
+  );
+}
+
 function Details({ ev }: { ev: OpsEvent }) {
   if (ev.kind === "deploy_check") return <DeployDetails ev={ev} />;
   if (ev.kind === "vuln_scan") return <ScanDetails ev={ev} />;
+  if (ev.kind === "backup") return <BackupDetails ev={ev} />;
   const d = ev.details ?? {};
+  if (ev.kind === "uptime") return (
+    <div>
+      {d.down_since && <Line k="Down since" v={when(d.down_since)} />}
+      {d.minutes != null && <Line k="Lasted" v={`about ${d.minutes} min`} />}
+      {d.targets && <Line k="Checked" v={String(d.targets)} />}
+      {d.run_url && <Line k="GitHub run" v={<a href={String(d.run_url)} target="_blank" rel="noreferrer" style={{ color: C.accent }}>open</a>} />}
+    </div>
+  );
   return (
     <div>
       <Line k="Commit" v={<span style={mono}>{ev.commit ?? "unknown"}</span>} />
@@ -281,6 +307,18 @@ export default function SystemPage({ req }: { req: Req }) {
           )}
         </div>
 
+        <div style={{ ...S.card, marginBottom: 0 }} data-testid="card-backup">
+          {cardTitle("Last nightly backup", summary?.backup?.status)}
+          {!summary?.backup ? <div style={{ fontSize: 12, color: C.muted }}>None recorded yet — GitHub backs the database up every night at 00:00 Nairobi (docs/BACKUPS.md: the secrets, then OPS_INGEST_TOKEN to record it here).</div> : (
+            <>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>{summary.backup.title}</div>
+              <Line k="When" v={`${when(summary.backup.created_at)} · ${ago(summary.backup.created_at)}`} />
+              <BackupDetails ev={summary.backup} />
+            </>
+          )}
+          {summary?.uptime && <Line k="Last outage" v={`${summary.uptime.title} · ${ago(summary.uptime.created_at)}`} />}
+        </div>
+
         <TrafficCard t={summary?.traffic} />
       </div>
 
@@ -288,7 +326,7 @@ export default function SystemPage({ req }: { req: Req }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>History</div>
           <div className="sp-tab-bar" style={{ marginBottom: 0 }}>
-            {([["", "All"], ["deploy_check", "Deploy checks"], ["vuln_scan", "Dependency scans"], ["boot", "Server starts"]] as const).map(([k, l]) => (
+            {([["", "All"], ["deploy_check", "Deploy checks"], ["vuln_scan", "Dependency scans"], ["backup", "Backups"], ["uptime", "Outages"], ["boot", "Server starts"]] as const).map(([k, l]) => (
               <button key={k || "all"} data-testid={`ops-filter-${k || "all"}`} onClick={() => { setKind(k); setPage(1); }}
                 style={{ ...S.tab, ...(kind === k ? S.tabActive : {}) }}>{l}</button>
             ))}

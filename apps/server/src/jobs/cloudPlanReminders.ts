@@ -11,9 +11,14 @@
  *      began, so a licence that had already run out is due today — an invoice, then the 7 days.
  *   2. THE INVOICE, on the due day (the first day of the new period; for a monthly plan, each month): an invoice (pending,
  *      kind 'cloud', the period and amount) raised ONCE per business and period, emailed to the owner (sign-in email, else
- *      the business email) — never a word of a lock — and ZapTill's copy (ADMIN_ALERT_EMAIL / Telegram).
+ *      the business email) — never a word of a lock — and ZapTill's copy (A589: the admin portal's bell).
  *   3. ZAPTILL ONLY: the 5th unpaid day ("locks in 2 days"), the lock (once — the morning digest lists locked clients
  *      after: jobs/watchdog.ts).
+ * A589 (owner, 2026-10-25: "also invoices let it be the same" — not an email per client): ZapTill's copy of each notice
+ * (the invoice issued, day 5, locked, trial ended, not interested) is a notification on the admin portal's bell
+ * (public.admin_notifications, category 'billing', migration 174) — never an email each. ONE daily billing summary email
+ * lists them in a table (client | invoice | amount | due | status) with the clients still unpaid or locked
+ * (jobs/watchdog.ts sendBillingSummary). The client's own invoice email is unchanged.
  * A587 (owner, 2026-10-24 — "it's pay as you go, not pay for missed months"): a locked client gets no further invoices;
  * 3 months after its first unpaid due date it is "Not interested": its open cloud invoices are written off (audited
  * 'cloud_plan.not_interested'), still locked, and ZapTill hears once. A trial's end is its due day — an invoice like a
@@ -26,7 +31,8 @@
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
 import { sendEmailChecked } from '../lib/mailer';
-import { notifyAdmin } from '../lib/alertNotify';
+import { addAdminNotifications } from '../lib/adminAlerts';           // A589: the admin portal's bell, not an email each
+import { billingStatus } from '../lib/adminAlertPolicy';
 import {
   cloudBusinessIds, readCloudFacts, cloudStanding, adminMilestones, reminderHour, invoicePeriod, inferBridgePeriod, defaultAmount,
   nextInvoiceNumber, insertCloudInvoice, forgetStanding, invoiceStarts, lockedUnderOldLadder, writeOffCloudInvoices,
@@ -205,17 +211,24 @@ async function sendOne(businessId: string, f: CloudFactsRow, s: CloudStanding, m
     forgetStanding(businessId);
   }
 
-  // 3. ZapTill's copy / notice.
+  // 3. ZapTill's copy / notice — A589: the admin portal's bell (and the daily billing summary email), not an email each.
   let adminSent = false;
   try {
+    const dueAt = milestone === 'invoice' ? key : s.dueAt;
     const a = adminNoticeText({
-      businessName: f.name ?? 'a client', milestone, dueAt: milestone === 'invoice' ? key : s.dueAt, lockAt: s.lockAt, unpaidDays: s.unpaidDays, lockInDays: s.lockInDays,
+      businessName: f.name ?? 'a client', milestone, dueAt, lockAt: s.lockAt, unpaidDays: s.unpaidDays, lockInDays: s.lockInDays,
       amount: ip.amount, currency: f.plan?.currency ?? 'KES', period: ip.period, invoiceNumber, ownerEmail, ownerSent,
       trial: s.trial, notInterestedAt: s.notInterestedAt, writtenOff,
     });
-    const r = await notifyAdmin(a.subject, a.text, { email: true });
-    adminSent = r.email || r.telegram;
-    if (!adminSent) errors.push('ZapTill: no alert channel worked (ADMIN_ALERT_EMAIL / Telegram)');
+    adminSent = await addAdminNotifications([{
+      category: 'billing', business_id: businessId, alert_key: `billing:${milestone}:${businessId}:${key}`, title: a.subject, detail: a.text,
+      data: {
+        milestone, client: f.name ?? 'a client', invoice: invoiceNumber, amount: ip.amount, currency: f.plan?.currency ?? 'KES', due: dueAt,
+        status: billingStatus(milestone, { unpaidDays: s.unpaidDays, lockInDays: s.lockInDays, ownerSent: milestone === 'invoice' ? ownerSent : null, trial: s.trial }),
+        owner_email: ownerEmail, owner_sent: milestone === 'invoice' ? ownerSent : null, written_off: writtenOff,
+      },
+    }], now);
+    if (!adminSent) errors.push('ZapTill: the admin portal notification was not stored (migration 174?)');
   } catch (e: any) { errors.push(`ZapTill: ${e?.message ?? e}`); }
   if (errors.length) console.warn(`[cloudPlan] ${f.name} ${milestone}: ${errors.join('; ')}`);
   await supabase.from('cloud_plan_reminders').update({

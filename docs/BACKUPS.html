@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backups and the down check</title>
+<style>
+:root{--ink:#1f2937;--quiet:#6b7280;--teal:#0f766e;--line:#d1d5db;--head:#e6f4f1;--note:#fff7e6;--bg:#ffffff;--card:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:2rem;line-height:1.2;color:var(--teal);margin:0 0 4px}
+h2{font-size:1.4rem;color:var(--teal);margin:48px 0 12px;padding-top:12px;border-top:2px solid var(--head)}
+h3{font-size:1.1rem;margin:28px 0 8px}
+p{margin:10px 0}
+a{color:var(--teal)}
+code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-size:.92em}
+pre{background:#f3f4f6;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:.88rem;line-height:1.5}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.94rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--card)}
+figure{margin:18px 0;text-align:center}
+figure img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+figcaption{color:var(--quiet);font-size:.85rem;margin-top:6px}
+blockquote{margin:14px 0;padding:10px 14px;background:var(--note);border-left:4px solid #f59e0b;border-radius:4px}
+ul,ol{padding-left:24px}
+li{margin:4px 0}
+li input[type=checkbox]{margin-right:8px;transform:scale(1.15)}
+li:has(> input[type=checkbox]){list-style:none;margin-left:-22px}
+.toc{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;margin:20px 0}
+.toc ol{margin:6px 0 0}
+@media print{.toc{break-after:page} h2{break-before:page;border-top:none} figure{break-inside:avoid} table{break-inside:auto} a{color:inherit;text-decoration:none}}
+</style></head><body><div class="wrap">
+<h1 id="backups-and-the-down-check">Backups and the down check</h1>
+<p>ZapTill backs up every client&#39;s data every night at midnight (00:00 Nairobi), encrypted, into a storage bucket that belongs to you — not to GitHub, and not only to Supabase. This guide covers what is backed up, where it goes, how to set it up once, how to restore a backup, how to test a restore every month, and the outside check that tells you when the server is down. (A589, 2026-10-25.)</p>
+<blockquote>
+<p>Owner, 2026-10-25: &quot;how can I be doing backups to protect my client data each night at 12am&quot;.</p>
+</blockquote>
+<h2 id="what-is-backed-up-when-and-where">What is backed up, when, and where</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>What</strong></td>
+<td>The whole cloud database: every client&#39;s products, sales, payments, stock, staff, settings (the <code>public</code> schema), the owners&#39; sign-in accounts (<code>auth</code>) and the file list of Supabase Storage (<code>storage</code>).</td>
+</tr>
+<tr>
+<td><strong>When</strong></td>
+<td>Every night at 00:00 Nairobi (21:00 UTC). GitHub can start a scheduled job a few minutes late. You can also run it at any time: GitHub › Actions › Nightly backup › Run workflow.</td>
+</tr>
+<tr>
+<td><strong>How</strong></td>
+<td><code>pg_dump</code> in PostgreSQL&#39;s own compressed format, checked with <code>pg_restore --list</code>, then <strong>encrypted</strong> (AES-256, with your passphrase) before it leaves the GitHub machine. The encrypted copy is decrypted once more and compared, so the file that is stored is known to restore.</td>
+</tr>
+<tr>
+<td><strong>Where</strong></td>
+<td>Your Cloudflare R2 bucket: <code>daily/2026-10-26/zaptill-2026-10-26T0003EAT.dump.gpg</code> (plus a small <code>.json</code> with its checksum), and on the 1st of each month also under <code>monthly/2026-11/</code>. The last result is in <code>status/latest.json</code>, the history in <code>status/history.jsonl</code>.</td>
+</tr>
+<tr>
+<td><strong>How long</strong></td>
+<td>The newest <strong>30 daily</strong> and <strong>12 monthly</strong> copies. Older ones are deleted after each good backup — never after a failed one.</td>
+</tr>
+<tr>
+<td><strong>Never</strong></td>
+<td>A GitHub artifact. The repository is public; an artifact can be downloaded by anyone who can see the run.</td>
+</tr>
+</tbody></table>
+<p><strong>Not in the database backup:</strong></p>
+<ul>
+<li>Product photos are stored on Cloudinary (the dashboard uploads them there), not in Supabase. Cloudinary keeps them; the database keeps their links.</li>
+<li>The receipt and branding logos are inside the database (as images in the settings), so they are in the backup.</li>
+<li>The onboarding logo is a file in the Supabase Storage bucket <code>business-assets</code> — the only Storage bucket ZapTill uses. Its file <em>list</em> is in the backup; the files themselves only if you turn the bucket backup on (set the variable <code>BACKUP_STORAGE_BUCKETS</code> to <code>business-assets</code> and add the secrets <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code>). It is small and owners can upload their logo again, so it is optional.</li>
+</ul>
+<p><strong>What Supabase keeps on its own.</strong> On the Free plan Supabase keeps no backups you can download or restore. On the Pro plan it keeps daily backups for 7 days, and Point-in-Time Recovery is a paid add-on — but those copies live in the same Supabase account as the database. This nightly backup is yours, in a separate account, and does not depend on the Supabase plan.</p>
+<p><strong>Cost.</strong> Cloudflare R2 includes 10 GB of storage free each month and charges nothing to download. 30 daily + 12 monthly copies of today&#39;s database fit well inside that. GitHub Actions minutes are free for a public repository.</p>
+<nav class="toc"><strong>Contents</strong><ol><li><a href="#what-is-backed-up-when-and-where">What is backed up, when, and where</a></li><li><a href="#setting-it-up-once">Setting it up (once)</a></li><li><a href="#when-something-goes-wrong">When something goes wrong</a></li><li><a href="#restoring-a-backup">Restoring a backup</a></li><li><a href="#testing-a-restore-every-month">Testing a restore every month</a></li><li><a href="#the-down-check">The down check</a></li><li><a href="#the-secrets-all-in-one-list">The secrets, all in one list</a></li></ol></nav>
+<h2 id="setting-it-up-once">Setting it up (once)</h2>
+<p>Do these in order. Each secret goes in GitHub: the repository › Settings › Secrets and variables › Actions (or, better for the database ones, Settings › Environments › <strong>backup</strong> › Environment secrets — the workflow runs in an environment called <code>backup</code>).</p>
+<h3 id="1-the-cloudflare-r2-bucket">1. The Cloudflare R2 bucket</h3>
+<ol>
+<li>Cloudflare dashboard › R2 Object Storage › <strong>Create bucket</strong>. Name it, for example, <code>zaptill-backups</code>. Location: Automatic. Leave public access <strong>off</strong>.</li>
+<li>R2 › <strong>Manage API tokens</strong> › Create API token. Permissions: <strong>Object Read &amp; Write</strong>, applied to the <code>zaptill-backups</code> bucket only. TTL: forever.</li>
+<li>Copy the <strong>Access Key ID</strong>, the <strong>Secret Access Key</strong> and your <strong>Account ID</strong> (shown on the R2 overview page). The secret key is shown once.</li>
+<li>In GitHub add: <code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code>, <code>R2_BUCKET</code> (= <code>zaptill-backups</code>).</li>
+</ol>
+<h3 id="2-a-read-only-database-role-for-the-backup">2. A read-only database role for the backup</h3>
+<p>The backup should not use the database owner&#39;s password (the one <code>db-migrate-prod.yml</code> uses). It gets its own role that can <strong>read everything and change nothing</strong>. In Supabase › SQL Editor, run (with a long random password of your own):</p>
+<pre><code>CREATE ROLE zaptill_backup WITH LOGIN PASSWORD &#39;a-long-random-password&#39; BYPASSRLS;
+GRANT pg_read_all_data TO zaptill_backup;
+ALTER ROLE zaptill_backup SET default_transaction_read_only = on;
+</code></pre>
+<ul>
+<li><code>pg_read_all_data</code> lets it read every table; it has no right to insert, change or delete anything (checked: even with read-only switched off, a delete is refused with &quot;permission denied&quot;).</li>
+<li><code>BYPASSRLS</code> is needed because the tables have row-level security: without it the dump would be refused (&quot;query would be affected by row-level security policy&quot;).</li>
+<li>If Supabase refuses <code>BYPASSRLS</code> for a new role, use the <code>postgres</code> role&#39;s connection string for <code>BACKUP_DATABASE_URL</code> instead, in the <code>backup</code> environment only.</li>
+</ul>
+<h3 id="3-the-connection-string">3. The connection string</h3>
+<p>Supabase › <strong>Connect</strong> › Session pooler (port <strong>5432</strong> — not the transaction pooler on 6543, which <code>pg_dump</code> cannot use). Change the user to the backup role. It looks like:</p>
+<p><code>postgresql://zaptill_backup.&lt;project-ref&gt;:&lt;password&gt;@aws-0-&lt;region&gt;.pooler.supabase.com:5432/postgres?sslmode=require</code></p>
+<p>Add it in GitHub as <code>BACKUP_DATABASE_URL</code>.</p>
+<h3 id="4-the-passphrase">4. The passphrase</h3>
+<p>Make a long passphrase (at least 20 characters — 6 random words is good). Add it in GitHub as <code>BACKUP_PASSPHRASE</code>, <strong>and keep a copy in your password manager</strong>. GitHub never shows a secret again: without your own copy, no backup can ever be opened.</p>
+<h3 id="5-the-alert-and-the-admin-portal-line">5. The alert and the admin portal line</h3>
+<p>These are the same values the server already uses on Render, so the admin is told when a backup fails and the admin portal shows the last one:</p>
+<ul>
+<li><code>OPS_INGEST_TOKEN</code> — the same value as on Render. With it the admin portal › System shows &quot;Last nightly backup: 26 Oct 00:03, 48.2 MB, OK&quot;.</li>
+<li><code>ADMIN_ALERT_EMAIL</code>, <code>RESEND_API_KEY</code> (or <code>SENDGRID_API_KEY</code>), optionally <code>ALERT_FROM_EMAIL</code>, <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code> — used when the server cannot pass the alert on (it is down).</li>
+</ul>
+<h3 id="6-the-postgresql-version">6. The PostgreSQL version</h3>
+<p>Supabase › Project Settings › Infrastructure shows the Postgres version (15 or 17). The backup installs the version-17 client, which reads both. Only if Supabase moves you to a newer version, add the variable <code>BACKUP_PG_MAJOR</code> with that number — the backup says so in its error if it is needed.</p>
+<h3 id="7-run-it-once">7. Run it once</h3>
+<p>GitHub › Actions › <strong>Nightly backup</strong> › Run workflow. When it is green: the R2 bucket has <code>daily/&lt;today&gt;/…dump.gpg</code>, and the admin portal › System shows the backup. Then restore it once (section 4) so you know it works.</p>
+<h2 id="when-something-goes-wrong">When something goes wrong</h2>
+<ul>
+<li><strong>A backup fails:</strong> the admin is emailed at once (&quot;ZapTill nightly backup FAILED&quot;, and Telegram), it shows red on the admin portal › System and on the bell, and the GitHub run is red. The older backups are untouched — the clean-up only runs after a good backup.</li>
+<li><strong>No backup for 26 hours</strong> (it failed, or did not run at all): the server&#39;s watchdog emails &quot;Backup: no good nightly backup for …&quot;. GitHub switches a schedule off after 60 days without a commit to the repository; the Actions tab then says so — enable the workflow again there.</li>
+<li><strong>The passphrase is lost:</strong> the existing backups cannot be opened by anyone, including you. Set a new <code>BACKUP_PASSPHRASE</code>; the next backups use it.</li>
+</ul>
+<p>Which alerts are emailed at once is set on the admin portal › Alerts › Email settings (a super admin). The backup is &quot;at once&quot; by default.</p>
+<h2 id="restoring-a-backup">Restoring a backup</h2>
+<p>The restore script is <code>scripts/restore-backup.sh</code>. It downloads the backup from R2, checks it against its checksum, decrypts it, shows what it holds, asks you to type RESTORE, and restores it. It <strong>refuses a target that looks like production</strong> unless you add <code>--i-know</code>.</p>
+<p>You need, on the machine you restore from: Git Bash or a Linux/macOS shell, the PostgreSQL client tools (<code>pg_restore</code>, <code>psql</code> — version 17 or newer), <code>gpg</code>, <code>jq</code>, and for a download from R2 the <code>aws</code> command line. Set the R2 values and the passphrase in the shell first (the passphrase is asked for if you leave it out):</p>
+<pre><code>export R2_ACCOUNT_ID=… R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… R2_BUCKET=zaptill-backups
+export PRODUCTION_DB_MATCH=&lt;your production project ref&gt;
+bash scripts/restore-backup.sh --latest --list-only
+bash scripts/restore-backup.sh --latest --target &quot;postgresql://postgres:…@localhost:5432/restore_test&quot; --prepare-plain
+bash scripts/restore-backup.sh --object daily/2026-10-26/zaptill-2026-10-26T0003EAT.dump.gpg --target &quot;…&quot;
+</code></pre>
+<ul>
+<li><code>--list-only</code> decrypts and lists the tables; it restores nothing.</li>
+<li><code>--prepare-plain</code> is for a plain PostgreSQL (your laptop, Docker): it first creates what every Supabase database has (the <code>anon</code>, <code>authenticated</code> and <code>service_role</code> roles, the <code>extensions</code> and <code>auth</code> schemas) and restores the <code>public</code> schema — all the client data.</li>
+<li><code>--schema public</code> restores one schema only; <code>--keep-going</code> reports errors and carries on (useful into a Supabase project, where Supabase&#39;s own objects already exist).</li>
+<li><code>PRODUCTION_DB_MATCH</code> tells the script which database is production (your project ref), so a scratch Supabase project is allowed. Without it, every Supabase address is treated as production.</li>
+</ul>
+<p><strong>Restoring over production</strong> (a real disaster) replaces the live data with the backup&#39;s: every sale made after the backup is lost from the cloud (the points of sale still hold their own sales and send them again as they sync). Stop and think first; if you go ahead, the script needs <code>--i-know</code> and asks you to type the database&#39;s host name.</p>
+<h2 id="testing-a-restore-every-month">Testing a restore every month</h2>
+<p>A backup you have never restored is a hope, not a backup. On the first Monday of each month:</p>
+<ol>
+<li>Start a throwaway PostgreSQL 17. With Docker: <code>docker run --name zaptill-restore-test -e POSTGRES_PASSWORD=test -p 55432:5432 -d postgres:17</code> — or create a free scratch project in Supabase.</li>
+<li>Restore the newest backup into it: <code>bash scripts/restore-backup.sh --latest --target &quot;postgresql://postgres:test@localhost:55432/postgres&quot; --prepare-plain</code>.</li>
+<li>Check: the script prints the number of businesses; it should match the admin portal&#39;s client count. Open a table or two (<code>psql … -c &quot;select count(*) from orders&quot;</code>).</li>
+<li>Throw it away: <code>docker rm -f zaptill-restore-test</code> (only the container you started).</li>
+<li>Write the date and the result in your notes.</li>
+</ol>
+<blockquote>
+<p>Tested on 2026-10-25 (A589): the full schema (every migration to 174) with sample data, backed up with the read-only role, encrypted, put in a local folder in place of R2, decrypted and restored into an empty PostgreSQL — the same row count in all 135 tables, the same 116 security policies. A wrong passphrase was refused; a Supabase address was refused as production.</p>
+</blockquote>
+<h2 id="the-down-check">The down check</h2>
+<p>A server that is down cannot send its own alert. GitHub checks production from the outside every 10 minutes (<code>.github/workflows/uptime-check.yml</code>):</p>
+<ul>
+<li>it asks <code>https://api.zaptill.co.ke/health</code> (must answer 200) and <code>https://app.zaptill.co.ke</code> (the web dashboard);</li>
+<li>only <strong>two failed checks in a row, a minute apart</strong>, count as down — a slow start or one lost request is not an outage;</li>
+<li>when it goes down: one email and Telegram (&quot;ZapTill PRODUCTION DOWN&quot;), and a GitHub issue &quot;Production down&quot; is opened. While the issue is open you are not told again;</li>
+<li>when it is back: the issue is closed, one email and Telegram (&quot;production is back — down about 25 min&quot;), and the outage is recorded on the admin portal › System.</li>
+</ul>
+<p>It uses the same secrets as the backup&#39;s alert (<code>ADMIN_ALERT_EMAIL</code>, <code>RESEND_API_KEY</code> or <code>SENDGRID_API_KEY</code>, <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>, <code>OPS_INGEST_TOKEN</code>) and, optionally, the variables <code>PROD_URL</code> and <code>APP_URL</code>.</p>
+<p>Inside the server the watchdog still emails at once when the server is overloaded (slow answers, a busy server, a slow database), when the database cannot be reached, on a burst of server errors and on many failed sign-ins.</p>
+<h2 id="the-secrets-all-in-one-list">The secrets, all in one list</h2>
+<table>
+<thead>
+<tr>
+<th>Secret or variable</th>
+<th>Used by</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>BACKUP_DATABASE_URL</code></td>
+<td>backup</td>
+<td>the read-only role&#39;s session-pooler connection string</td>
+</tr>
+<tr>
+<td><code>BACKUP_PASSPHRASE</code></td>
+<td>backup, restore</td>
+<td>the encryption passphrase — keep your own copy</td>
+</tr>
+<tr>
+<td><code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code>, <code>R2_BUCKET</code></td>
+<td>backup, restore</td>
+<td>the Cloudflare R2 bucket and its token</td>
+</tr>
+<tr>
+<td><code>OPS_INGEST_TOKEN</code></td>
+<td>backup, down check</td>
+<td>the same value as on Render — results on the admin portal</td>
+</tr>
+<tr>
+<td><code>ADMIN_ALERT_EMAIL</code></td>
+<td>backup, down check</td>
+<td>who is emailed</td>
+</tr>
+<tr>
+<td><code>RESEND_API_KEY</code> or <code>SENDGRID_API_KEY</code></td>
+<td>backup, down check</td>
+<td>the mail provider (the server&#39;s own)</td>
+</tr>
+<tr>
+<td><code>ALERT_FROM_EMAIL</code> (optional)</td>
+<td>backup, down check</td>
+<td>the sender, default <code>ZapTill &lt;noreply@zaptill.co.ke&gt;</code></td>
+</tr>
+<tr>
+<td><code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code> (optional)</td>
+<td>backup, down check</td>
+<td>Telegram</td>
+</tr>
+<tr>
+<td><code>SUPABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code> (optional)</td>
+<td>backup</td>
+<td>only for the Storage bucket backup</td>
+</tr>
+<tr>
+<td>variable <code>BACKUP_STORAGE_BUCKETS</code> (optional)</td>
+<td>backup</td>
+<td><code>business-assets</code> to back up the onboarding logos</td>
+</tr>
+<tr>
+<td>variable <code>BACKUP_PG_MAJOR</code> (optional)</td>
+<td>backup</td>
+<td>only if Supabase runs a PostgreSQL newer than 17</td>
+</tr>
+<tr>
+<td>variables <code>PROD_URL</code>, <code>APP_URL</code> (optional)</td>
+<td>down check</td>
+<td>default <code>https://api.zaptill.co.ke</code>, <code>https://app.zaptill.co.ke</code></td>
+</tr>
+</tbody></table>
+
+</div></body></html>
