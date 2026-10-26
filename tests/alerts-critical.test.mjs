@@ -106,9 +106,10 @@ await ok('a muted (acknowledged) critical alert is not reminded; it stays open',
 // is lib/adminAlertPolicy.ts routeRun, run for real in tests/admin-alerts-a589.test.mjs.
 await ok('the digest and "resolved" go to Telegram only; new and still-happening system emergencies are emailed', () => {
   const w = read('apps/server/src/jobs/watchdog.ts');
-  assert.match(w, /if \(routed\.telegramGroup\) telegram = \(await notifyAdmin\(routed\.telegramGroup\.subject, routed\.telegramGroup\.text, \{ email: false \}\)\)\.telegram;/);
-  assert.match(w, /await notifyAdmin\(`ZapTill daily check — \$\{now\.toISOString\(\)\.slice\(0, 10\)\}`, text, \{ email: false \}\);/);
-  assert.match(w, /for \(const m of routed\.instantEach\) \{\s*const r = await notifyAdmin\(m\.subject, m\.text\);/);
+  // A592: each message rendered (lib/alertFormat.ts) and sent as it is (notifyRendered).
+  assert.match(w, /if \(routed\.telegramGroup\) telegram = \(await notifyRendered\(routed\.telegramGroup, \{ email: false \}\)\)\.telegram;/);
+  assert.match(w, /const tg = digestTelegram\(rows, counters, now, billing, links\);\s*await notifyRendered\(tg, \{ email: false \}\);/);
+  assert.match(w, /for \(const m of routed\.instantEach\) \{\s*const r = await notifyRendered\(m\);/);
   assert.match(w, /repeatedSignInFailures\(recentSignInFailures\(\), now\)/);
   assert.match(w, /return tillSyncRefused\(attempts, now, nm, tills\);/);
 });

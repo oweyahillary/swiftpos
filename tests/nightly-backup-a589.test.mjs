@@ -110,7 +110,9 @@ let opsStatus = 201;
 const srv = http.createServer((req, res) => {
   let body = ''; req.on('data', (c) => { body += c; });
   req.on('end', () => {
-    hits.push({ url: req.url, auth: req.headers.authorization ?? null, body: body ? JSON.parse(body) : null });
+    // A592: Telegram is sent urlencoded (curl --data-urlencode), the rest as JSON.
+    const form = /x-www-form-urlencoded/.test(req.headers['content-type'] ?? '');
+    hits.push({ url: req.url, auth: req.headers.authorization ?? null, body: !body ? null : form ? Object.fromEntries(new URLSearchParams(body)) : JSON.parse(body) });
     if (req.url === '/api/ops/events') { res.writeHead(opsStatus, { 'content-type': 'application/json' }); res.end(JSON.stringify({ id: 'e1' })); return; }
     res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
   });
@@ -122,6 +124,12 @@ const NOTIFY_ENV = { NOTIFY_RESEND_URL: `${LOCAL}/resend`, NOTIFY_SENDGRID_URL: 
 
 try {
   console.log('\n1. The workflows\n');
+  await ok('the first run (no monthly/ yet) does not wipe the work folder: traps act in the main shell only, prune tolerates no folders', () => {
+    assert.match(sh, /MAIN_PID=\$BASHPID/);
+    assert.match(sh, /cleanup\(\) \{[\s\S]{0,200}\[ "\$BASHPID" = "\$MAIN_PID" \] \|\| return 0/);
+    assert.match(sh, /fail\(\) \{[\s\S]{0,80}\[ "\$BASHPID" = "\$MAIN_PID" \] \|\| return "\$code"/);
+    assert.match(sh, /\{ grep -E "\$pattern" \|\| true; \}/);
+  });
   await ok('nightly-backup.yml: weekly, Saturday 21:00 UTC = Sunday 00:00 Nairobi (A591), only once switched on, and by hand; the "backup" environment; read-only token; one at a time', () => {
     assert.match(yml, /- cron: '0 21 \* \* 6'/);
     assert.doesNotMatch(yml, /- cron: '0 21 \* \* \*'/, 'never nightly: a full dump is a whole database of egress');
@@ -287,7 +295,8 @@ try {
       const p = await runAsync('scripts/backup/report.sh', [], { ...NOTIFY_ENV, RUNNER_TEMP: posix(path.join(TMP, 'fail', 'run')), PROD_URL: LOCAL, OPS_INGEST_TOKEN: 'o'.repeat(40) });
       assert.equal(p.code, 1);
       const mail = hits.find((h) => h.url === '/resend');
-      assert.ok(mail, p.out); assert.match(mail.body.subject, /ZapTill nightly backup FAILED/); assert.match(mail.body.text, /failed while dumping the database/);
+      // A592: "🔴 Backup failed · Mon 26 Oct", the step in plain words, the buttons (tests/alert-format-a592.test.mjs has the rest).
+      assert.ok(mail, p.out); assert.match(mail.body.subject, /^🔴 Backup failed · \w{3} \d{1,2} \w{3}$/); assert.match(mail.body.text, /Step: dumping the database \(exit \d+\)/);
       assert.equal(hits.filter((h) => h.url.startsWith('/tg')).length, 2, 'both Telegram chats');
       hits.length = 0;
       const q = await runAsync('scripts/backup/report.sh', [], { ...NOTIFY_ENV, RUNNER_TEMP: posix(path.join(TMP, 'nothing', 'run')), PROD_URL: LOCAL, OPS_INGEST_TOKEN: '' });

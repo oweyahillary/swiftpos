@@ -110,7 +110,8 @@ const openDays = (n = 7, date = daysAgo(3)) => {
   for (let i = 0; i < n; i++) mem.db.business_days.push({ id: `day-${i}-${date}`, business_id: bid(i), branch_id: brid(i), device_id: null, terminal_code: `T${i + 1}`, business_date: date, status: 'open' });
 };
 const adminMails = () => mails.filter((m) => /boss@zaptill\.test/.test(m.to));
-const tables = (html) => (html.match(/<table/g) ?? []).length;
+// A592: the email's layout is tables too (Gmail) — a DATA table is one with a <thead>.
+const tables = (html) => (html.match(/<thead>/g) ?? []).length;
 const bodyRows = (html) => (String(html).split('<tbody>')[1] ?? '').split('</tbody>')[0].match(/<tr>/g)?.length ?? 0;
 const settle = () => new Promise((r) => setTimeout(r, 60));
 
@@ -157,18 +158,20 @@ try {
     assert.equal(mails.length, 0); assert.equal(tg.length, 0);
     assert.equal(mem.db.admin_notifications.length, 7, 'no new bell rows');
   });
-  await ok('the morning digest: ONE email, ONE table, 7 rows — client | branch / POS | problem | since', async () => {
+  await ok('the morning digest: ONE email, ONE table, 7 rows — client | problem | since | what to do (A592)', async () => {
     mails.length = 0; tg.length = 0;
     const d = await W.sendDigest(new Date());
     assert.equal(d.emailed, true);
     const m = adminMails();
     assert.equal(m.length, 1);
-    assert.match(m[0].subject, /ZapTill daily check — .*: 7 open problems/);
+    assert.match(m[0].subject, /Daily check · .* — 7 open problems/);   // A592
     assert.equal(tables(m[0].html), 1);
     assert.equal(bodyRows(m[0].html), 7);
-    for (const h of ['Client', 'Branch / POS', 'Problem', 'Since']) assert.ok(m[0].html.includes(`>${h}</th>`), h);
+    for (const h of ['Client', 'Problem', 'Since', 'What to do']) assert.ok(m[0].html.includes(`>${h}</th>`), h);   // A592: the owner's four columns
+    assert.ok(m[0].html.includes('Close it at the POS or by Remote Day Close'), 'the recommendation column');
     for (const c of CLIENTS) assert.ok(m[0].html.includes(c), c);
-    assert.match(m[0].html, /Day \d{4}-\d{2}-\d{2} not closed/);
+    assert.match(m[0].html, />Day not closed \(T\d\)</);   // A592: "Day not closed (T1)", since the day ended ("3 days")
+    assert.match(m[0].html, />[23] days</);
     assert.equal(tg.length, 1, 'the digest text on Telegram, as before');
   });
   await ok('nothing open → the digest sends no email (Telegram still says all is well)', async () => {
@@ -220,14 +223,14 @@ try {
     assert.match(n[0].data.status, /^Invoice issued/);
     assert.equal(mem.db.cloud_plan_reminders[0].admin_sent, true, 'recorded as told (the bell)');
   });
-  await ok('the daily billing summary: ONE email, one table — client | invoice | amount | due | status; marked, not repeated', async () => {
+  await ok('the daily billing summary: ONE email, one table — client | problem (status, invoice, amount) | since | what to do; marked, not repeated', async () => {
     mails.length = 0;
     const s = await W.sendBillingSummary(new Date());
     assert.equal(s.emailed, true);
     const m = adminMails(); assert.equal(m.length, 1);
-    assert.match(m[0].subject, /ZapTill billing summary — .*: 1 notice/);
+    assert.match(m[0].subject, /Billing summary · .* — 1 notice/);   // A592
     assert.equal(tables(m[0].html), 1); assert.equal(bodyRows(m[0].html), 1, 'the client once (its notice), not again as "unpaid"');
-    for (const h of ['Client', 'Invoice', 'Amount', 'Due', 'Status']) assert.ok(m[0].html.includes(`>${h}</th>`), h);
+    for (const h of ['Client', 'Problem', 'Since', 'What to do']) assert.ok(m[0].html.includes(`>${h}</th>`), h);   // A592
     assert.ok(m[0].html.includes(mem.db.invoices[0].invoice_number)); assert.ok(m[0].html.includes('KES 3,000'));
     assert.ok(mem.db.admin_notifications.every((x) => x.digest_sent_at), 'marked as summarised');
     mails.length = 0;
@@ -254,7 +257,7 @@ try {
     for (let i = 0; i < 12; i++) K.recordServerError('/api/sync/push');
     await W.runWatchdog(new Date());
     const m = adminMails();
-    assert.equal(m.length, 1); assert.match(m[0].subject, /ZapTill alert: Cloud: 12 server errors in 5 min/);
+    assert.equal(m.length, 1); assert.match(m[0].subject, /^🔴 Cloud: 12 server errors in 5 min/);   // A592
     assert.equal(mem.db.watchdog_alerts[0].notify_count, 1);
     assert.ok(tg.some((t) => /server errors/.test(t)));
     mails.length = 0;
@@ -285,7 +288,8 @@ try {
     const r = await call('POST', '/api/ops/events', 'x'.repeat(40), { kind: 'backup', status: 'fail', title: 'Backup FAILED — failed while dumping the database (exit 1)', details: { error: 'failed while dumping the database (exit 1)' } });
     assert.equal(r.status, 201, JSON.stringify(r.body));
     await settle();
-    const m = adminMails(); assert.equal(m.length, 1); assert.match(m[0].subject, /Backup FAILED/);
+    const m = adminMails(); assert.equal(m.length, 1); assert.match(m[0].subject, /^🔴 Backup failed · /);   // A592
+    assert.match(m[0].html, /dumping the database \(exit 1\)/);
     assert.equal(mem.db.admin_notifications.filter((n) => n.category === 'backup').length, 1);
     mails.length = 0;
     assert.equal((await call('POST', '/api/ops/events', 'x'.repeat(40), { kind: 'backup', status: 'ok', title: 'Backup OK — 48.2 MB, 37 s', details: { size_bytes: 50_000_000 } })).status, 201);
@@ -319,7 +323,7 @@ try {
     assert.equal(back.opened, 0, 'the 7 days are not "new" again');
     assert.equal(mem.db.watchdog_alerts.filter((a) => a.alert_key.startsWith('day_not_closed') && !a.resolved_at).length, 7, 'still open');
     assert.equal(mails.length, 0);
-    assert.equal(tg.length, 1); assert.match(tg[0], /Resolved \(1\):\n• Cloud: the database is unreachable/);
+    assert.equal(tg.length, 1); assert.match(tg[0], /^✅ <b>Resolved after [^<]+<\/b>\nCloud: the database is unreachable/);   // A592
     assert.equal(mem.db.admin_notifications.filter((n) => n.category === 'day_not_closed').length, 7, 'no second bell row');
   });
 
