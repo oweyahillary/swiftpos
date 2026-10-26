@@ -78,13 +78,17 @@ else
   # R2 and the newest aws CLI checksums: only when the API requires them.
   export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
   EP="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-  s3() { aws --endpoint-url "$EP" --only-show-errors "$@"; }
-  put_object()    { s3 s3 cp "$1" "s3://$R2_BUCKET/$2"; }
-  copy_object()   { s3 s3 cp "s3://$R2_BUCKET/$1" "s3://$R2_BUCKET/$2"; }
-  get_object()    { s3 s3 cp "s3://$R2_BUCKET/$1" "$2" 2>/dev/null; }
-  list_folders()  { s3 s3 ls "s3://$R2_BUCKET/$1/" | awk '$1 == "PRE" { sub(/\/$/, "", $2); print $2 }'; }
-  delete_folder() { s3 s3 rm --recursive "s3://$R2_BUCKET/$1/"; }
-  object_size()   { s3 s3api head-object --bucket "$R2_BUCKET" --key "$1" --query ContentLength --output text; }
+  # --only-show-errors is an option of `aws s3 cp/rm` only: `aws s3 ls` and `aws s3api` refuse it ("Unknown options").
+  s3cp()  { aws --endpoint-url "$EP" s3 cp --only-show-errors "$@"; }
+  s3rm()  { aws --endpoint-url "$EP" s3 rm --only-show-errors "$@"; }
+  s3ls()  { aws --endpoint-url "$EP" s3 ls "$@"; }
+  s3api() { aws --endpoint-url "$EP" s3api "$@"; }
+  put_object()    { s3cp "$1" "s3://$R2_BUCKET/$2"; }
+  copy_object()   { s3cp "s3://$R2_BUCKET/$1" "s3://$R2_BUCKET/$2"; }
+  get_object()    { s3cp "s3://$R2_BUCKET/$1" "$2" 2>/dev/null; }
+  list_folders()  { s3ls "s3://$R2_BUCKET/$1/" | awk '$1 == "PRE" { sub(/\/$/, "", $2); print $2 }'; }
+  delete_folder() { s3rm --recursive "s3://$R2_BUCKET/$1/"; }
+  object_size()   { s3api head-object --bucket "$R2_BUCKET" --key "$1" --query ContentLength --output text; }
   WHERE="R2 bucket $R2_BUCKET"
 fi
 if [ "${#BACKUP_PASSPHRASE}" -lt 20 ]; then STEP="checking the passphrase"; echo "::error::BACKUP_PASSPHRASE is shorter than 20 characters"; false; fi
