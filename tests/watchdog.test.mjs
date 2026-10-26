@@ -153,7 +153,7 @@ await ok('the job: every 10 min, the digest at the settings\' time (or WATCHDOG_
   const j = read('apps/server/src/jobs/watchdog.ts');
   assert.match(j, /WATCHDOG_CRON \?\? '\*\/10 \* \* \* \*'/);
   assert.match(j, /const fixed = process\.env\.WATCHDOG_DIGEST_CRON;/);
-  assert.match(j, /cron\.schedule\('\*\/5 \* \* \* \*', async \(\) => \{[\s\S]*?if \(await claimDigest\(\)\) await sendMorning\(\);/);
+  assert.match(j, /cron\.schedule\('\*\/5 \* \* \* \*', meterJob\('watchdogDigest', async \(\) => \{[\s\S]*?if \(await claimDigest\(\)\) await sendMorning\(\);/);   // A591: metered
   assert.match(j, /timezone: 'Africa\/Nairobi'/);
   assert.match(j, /from\('watchdog_alerts'\)\.insert/);
   assert.match(j, /if \(running\) return;/);

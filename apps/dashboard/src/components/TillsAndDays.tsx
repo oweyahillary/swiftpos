@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { money, dateTime } from '../lib/format';
 import { agoLabel, syncRecent } from '../lib/tillSync';
+import { whenVisible } from '../lib/visiblePoll';   // A591
 import { CreditAwaitingNotice } from './CreditSalesToConfirm';   // A545
 
 interface Client { get: <T>(p: string) => Promise<T>; post: <T>(p: string, body?: unknown) => Promise<T> }
@@ -71,7 +72,7 @@ export default function TillsAndDays({ client, currency, base = '/api/tills-days
   }, [client, base]);
   useEffect(() => {
     void load();
-    const t = setInterval(() => { void load(); }, 20_000);   // the till answering shows within a beat
+    const t = setInterval(whenVisible(() => { void load(); }), 20_000);   // the till answering shows within a beat (A591: not while hidden)
     return () => clearInterval(t);
   }, [load]);
 

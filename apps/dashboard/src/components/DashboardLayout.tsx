@@ -9,6 +9,7 @@ import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
 import { usePermissions } from '../context/PermissionsContext';   // A550
 import { relative } from '../lib/format';
+import { whenVisible } from '../lib/visiblePoll';   // A591: the badges are not asked while the tab is hidden
 import CloudTrialNotice from './CloudTrialNotice';   // A569: the owner's notice in the trial's last 7 days
 import { businessTerms, foodAreas, FOOD_SERVICE_TYPES } from '../lib/businessTerms';   // A573
 
@@ -441,7 +442,7 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60_000);
+    const interval = setInterval(whenVisible(fetchNotifications), 60_000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
@@ -460,7 +461,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     const check = () => { api.get<{ count: number }>('/api/changes/count').then((r) => setApprovalsCount(Number(r?.count) || 0)).catch(() => {}); };
     check();
-    const interval = setInterval(check, 60_000);
+    const interval = setInterval(whenVisible(check), 60_000);
     return () => clearInterval(interval);
   }, []);
   // ── A545: credit sales waiting for a manager's confirmation (0 for anyone who may not see them) ──
@@ -468,7 +469,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     const check = () => { api.get<{ awaiting: number }>('/api/credit/sales/count').then((r) => setCreditCount(Number(r?.awaiting) || 0)).catch(() => {}); };
     check();
-    const interval = setInterval(check, 120_000);
+    const interval = setInterval(whenVisible(check), 120_000);
     return () => clearInterval(interval);
   }, []);
   // ── A564: requests from other branches waiting for an answer (0 for anyone who does not handle transfers) ──
@@ -476,7 +477,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     const check = () => { api.get<{ incoming: number }>('/api/stock/requests/count').then((r) => setBranchRequestsCount(Number(r?.incoming) || 0)).catch(() => {}); };
     check();
-    const interval = setInterval(check, 120_000);
+    const interval = setInterval(whenVisible(check), 120_000);
     return () => clearInterval(interval);
   }, []);
   const badges: Record<string, number> = { approvals: approvalsCount, credit: creditCount, branchRequests: branchRequestsCount };
@@ -495,7 +496,7 @@ export default function DashboardLayout() {
       } catch { /* non-critical */ }
     }
     checkLowStock();
-    const interval = setInterval(checkLowStock, 5 * 60_000); // every 5 min
+    const interval = setInterval(whenVisible(checkLowStock), 5 * 60_000); // every 5 min
     return () => clearInterval(interval);
   }, []);
 

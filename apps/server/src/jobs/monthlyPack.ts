@@ -6,6 +6,7 @@
  * Owner, 2026-10-12: "email and downloadable". Switched on in Reports › Monthly pack ("Email it on the 1st"), stored in
  * the report schedule (report_schedule.monthly_pack). Hourly; the decision is jobs/monthlyPackDecision.ts.
  */
+import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
 import cron from 'node-cron';
 import ExcelJS from 'exceljs';
 // A478: formatInTimeZone CONVERTS to EAT; date-fns-tz's format(…, { timeZone }) only labels the machine's local time — on
@@ -24,9 +25,9 @@ const LAST_SENT_KEY = 'monthly_pack_last_sent';
 
 export function startMonthlyPackJob(): void {
   const schedule = process.env.MONTHLY_PACK_CRON ?? '23 * * * *';
-  cron.schedule(schedule, async () => {
+  cron.schedule(schedule, meterJob('monthlyPack', async () => {
     try { await runMonthlyPack(); } catch (err: any) { console.error('[monthlyPack] Job failed:', err?.message); }
-  }, { timezone: 'UTC' });
+  }), { timezone: 'UTC' });
   console.log(`[monthlyPack] Scheduled: ${schedule} (sends on the 1st, from 07:00 EAT)`);
 }
 

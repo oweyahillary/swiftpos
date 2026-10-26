@@ -11,6 +11,7 @@
  * a row opens to its details (for a scan: each vulnerable package, its fix and its advisories).
  * A528: a fourth card, Traffic since start — requests per route family, and how often the tills' polled answers came from
  * memory (Render suspended production over bandwidth, 2026-10-19).
+ * A591: a fifth, Supabase pulled (24 h) — what the server read from Supabase per route and job, and how many calls.
  * Super admins only (the menu hides it from agents; the cloud refuses them). Cloud: routes/opsAdmin.ts.
  */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -35,6 +36,14 @@ interface Traffic {
   branch_staff: { full: number; unchanged_from_memory: number; unchanged_after_read: number };
   auth_cache: { hits: number; misses: number; hit_rate: number | null };
   db_queries_polled: number;
+  supabase?: SupabaseMeter;   // A591
+}
+/** A591: what the server pulled from Supabase in the last 24 h, by route and job (lib/supabaseMeter.ts). */
+interface SupabaseMeter {
+  started_at: string; window_hours: number; covered_hours: number; enabled: boolean;
+  totals: { calls: number; bytes: number; wire: number };
+  per_day: { calls: number; bytes: number; wire: number };
+  rows: Array<{ label: string; calls: number; bytes: number; wire: number; api: number }>;
 }
 interface Summary {
   live: { commit: string | null; started_at: string };
@@ -171,6 +180,35 @@ function TrafficCard({ t }: { t?: Traffic }) {
           <Line k="Staff list" v={`${(t.branch_staff.unchanged_from_memory).toLocaleString()} unchanged from memory · ${t.branch_staff.full.toLocaleString()} sent`} />
           <Line k="Sign-in check" v={`${pct(t.auth_cache.hit_rate)} from memory`} />
           <Line k="DB queries" v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{t.db_queries_polled.toLocaleString()} (polled paths)</span>} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A591 (owner, 2026-10-26: Supabase's Free plan 5 GB egress went over; projects restricted from 20 Nov): what this server
+ *  pulled from Supabase in the last 24 h — by route (ids folded) and by job — so the biggest share is seen without the
+ *  database. Calls are what fill Supabase's log quota; "a day" is the window scaled to 24 h (an estimate after a restart). */
+function SupabaseCard({ m }: { m?: SupabaseMeter }) {
+  const [all, setAll] = useState(false);
+  return (
+    <div style={{ ...S.card, marginBottom: 0 }} data-testid="card-supabase">
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Supabase pulled (24 h)</div>
+      {!m ? <div style={{ fontSize: 12, color: C.muted }}>Not reported by this server yet.</div> : !m.enabled ? (
+        <div style={{ fontSize: 12, color: C.muted }}>Counting is off on this server (SUPABASE_METER=off).</div>
+      ) : (
+        <>
+          <Line k="Covers" v={`the last ${m.covered_hours} h · since ${ago(m.started_at)}`} />
+          <Line k="So far" v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{kb(m.totals.bytes)} · {m.totals.calls.toLocaleString()} calls</span>} />
+          <Line k="A day at this rate" v={<span style={{ fontVariantNumeric: "tabular-nums" }} data-testid="supabase-per-day">{kb(m.per_day.bytes)} ({kb(m.per_day.wire)} sent compressed) · {m.per_day.calls.toLocaleString()} calls</span>} />
+          {(all ? m.rows : m.rows.slice(0, 8)).map((r) => (
+            <Line key={r.label} k={r.label} v={<span style={{ fontVariantNumeric: "tabular-nums" }}>{kb(r.bytes)} · {r.calls.toLocaleString()} calls · {r.api.toLocaleString()} {r.label.startsWith("job:") ? "runs" : "asked"}</span>} />
+          ))}
+          {m.rows.length > 8 && (
+            <button onClick={() => setAll(!all)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, padding: "5px 10px", marginTop: 6 }}>
+              {all ? "Fewer" : `All ${m.rows.length}`}
+            </button>
+          )}
         </>
       )}
     </div>
@@ -320,6 +358,7 @@ export default function SystemPage({ req }: { req: Req }) {
         </div>
 
         <TrafficCard t={summary?.traffic} />
+        <SupabaseCard m={summary?.traffic?.supabase} />
       </div>
 
       <div style={S.card}>

@@ -9,6 +9,8 @@ import { apiHelmet } from './lib/apiHeaders';     // A528
 import { countTraffic } from './lib/trafficStats'; // A528
 import { signAnswers } from './lib/serverSignature'; // A529
 import { compressJson } from './lib/compressJson';    // A531
+import { labelRequests } from './lib/supabaseMeter';  // A591
+import { trackWrites } from './lib/writeActivity';    // A591
 import { attachLiveHub, startSyncChangePruneJob } from './lib/liveHub'; // A531
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import apiRoutes   from './routes';
@@ -206,6 +208,12 @@ app.use((req, res, next) => {
   next();
 });
 
+// A591: every Supabase call is counted against the route that made it (lib/supabaseMeter.ts — the System page's Supabase
+// card), and every write a client makes moves its business's write generation (lib/writeActivity.ts — the polled answers
+// remembered while nothing was written). After the body parser: a request's work runs inside its label from here on.
+app.use(labelRequests);
+app.use(trackWrites());
+
 app.use('/api/auth',       authLimiter);
 app.use('/api/auth',       renewLimiter);   // A415
 app.use('/api/admin/auth', authLimiter); // brute-force on admin login
@@ -344,13 +352,19 @@ const httpServer = app.listen(PORT, () => {
   // throws — a shop must not fail to trade over an unverified mail domain.
   void reportMailReadiness();
 
-  startDailySummaryJob();
-  startEtimsRetryJob();
-  startWatchdogJob();
-  startMonthlyPackJob();   // A455: the monthly pack by email on the 1st
-  startOwnerAlertsJob();   // A476: branch managers' open tills (always), the owner's alerts, the weekly summary
-  startLossAlertsJob();    // A576: loss-prevention alerts every hour (the watch list, the bell)
-  startCloudPlanRemindersJob();   // A581: cloud plan reminders to the owner and ZapTill (14/7/3/1 days, lapse, weekly)
+  // A591: BACKGROUND_JOBS=off (the DEV service on Render) starts none of the scheduled jobs — every one reads Supabase
+  // around the clock, and the dev project's egress counts against the same Free-plan organisation as production.
+  if (String(process.env.BACKGROUND_JOBS ?? '').toLowerCase() === 'off') {
+    console.log('[jobs] BACKGROUND_JOBS=off — no scheduled jobs on this server (summaries, watchdog, alerts, billing)');
+  } else {
+    startDailySummaryJob();
+    startEtimsRetryJob();
+    startWatchdogJob();
+    startMonthlyPackJob();   // A455: the monthly pack by email on the 1st
+    startOwnerAlertsJob();   // A476: branch managers' open tills (always), the owner's alerts, the weekly summary
+    startLossAlertsJob();    // A576: loss-prevention alerts every hour (the watch list, the bell)
+    startCloudPlanRemindersJob();   // A581: cloud plan reminders to the owner and ZapTill (14/7/3/1 days, lapse, weekly)
+  }
 
   // A525: the start, in the admin portal's System page (public.ops_events). Never awaited, never throws — a missing
   // table (migration 149 not run) is a warning in the log.

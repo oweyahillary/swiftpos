@@ -28,6 +28,7 @@
  * sent; an invoice that could not be written gives the claim back for the next hour. No email provider (SendGrid is the
  * owner's pending action): logged and recorded, never a crash. A suspended business is skipped.
  */
+import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
 import { sendEmailChecked } from '../lib/mailer';
@@ -44,9 +45,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export function startCloudPlanRemindersJob(): void {
   const schedule = process.env.CLOUD_PLAN_REMINDERS_CRON ?? '40 * * * *';
-  cron.schedule(schedule, async () => {
+  cron.schedule(schedule, meterJob('cloudPlanReminders', async () => {
     try { await runCloudBilling(new Date()); } catch (err: any) { console.error('[cloudPlan] billing pass failed:', err?.message); }
-  }, { timezone: 'UTC' });
+  }), { timezone: 'UTC' });
   console.log(`[cloudPlan] Scheduled: ${schedule} (cloud billing: the bridge, invoices on the due day, ZapTill's notices)`);
 }
 

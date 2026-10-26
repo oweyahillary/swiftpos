@@ -14,6 +14,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { forgetTopic } from './syncVersions';
 import { forgetTillsOf, forgetPeopleOf, forgetAllAuth } from './authCache';
 import { nudge, recheckBusiness } from './liveHub';   // A531
+import { noteCatalogueWrite } from './writeActivity';   // A591
 
 const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -39,7 +40,7 @@ export function forgetOnWrite(what: ForgetWhat) {
       if ((res as { locals?: { forgetNothing?: boolean } }).locals?.forgetNothing) return;
       const biz = what.everyBusiness ? null : ((req as { businessId?: string }).businessId ?? null);
       if (!biz && !what.everyBusiness) return;   // never signed in: nothing of a business was written
-      if (what.catalogue) forgetTopic(biz, 'catalogue');
+      if (what.catalogue) { forgetTopic(biz, 'catalogue'); noteCatalogueWrite(biz); }   // A591: /init and the choices too
       if (what.staff) forgetTopic(biz, 'staff');
       if (what.everyBusiness) {
         if (what.tills || what.people) forgetAllAuth();

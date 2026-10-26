@@ -1,3 +1,4 @@
+import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
 import cron from 'node-cron';
 import { processPending } from '../lib/etims/queue';
 import { etimsEnabledGlobally } from '../lib/etims/provider';
@@ -13,13 +14,13 @@ export function startEtimsRetryJob(): void {
     return;
   }
   const schedule = process.env.ETIMS_RETRY_CRON ?? '*/15 * * * *';
-  cron.schedule(schedule, async () => {
+  cron.schedule(schedule, meterJob('etimsRetry', async () => {
     try {
       const { retried } = await processPending();
       if (retried > 0) console.log(`[etimsRetry] reprocessed ${retried} invoice(s)`);
     } catch (err: any) {
       console.error('[etimsRetry] job failed:', err?.message);
     }
-  }, { timezone: 'UTC' });
+  }), { timezone: 'UTC' });
   console.log(`[etimsRetry] Scheduled: ${schedule} UTC`);
 }

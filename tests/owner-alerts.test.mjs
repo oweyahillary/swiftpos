@@ -430,6 +430,28 @@ await ok('a big cash difference at confirm: once per shift, specific subject', a
   assert.equal(SENT.length, 0);
 });
 
+await ok('A591: nothing written since a run that left nothing to tell → the next run does not re-read 48 h of voids and drawers; a write → read, and the new void told', async () => {
+  const WA = require(path.join(DIST, 'lib/writeActivity.js'));
+  reset(); WA._resetWrites(); WA._setTracking(true); J._resetOwnerQuiet();
+  try {
+    db.business_settings.push({ id: 'st', business_id: BZ, key: 'owner_alerts_state', value: { seeded: true, sent: {}, not_syncing: {} } });
+    await J.alertsForBusiness(biz, schedule(), NOW);
+    const reads = [];
+    FAIL = (t) => { reads.push(t); return null; };
+    await J.alertsForBusiness(biz, schedule(), at('2026-10-14T12:15:00Z'));
+    assert.ok(!reads.includes('orders'), JSON.stringify(reads));
+    assert.ok(!reads.includes('shifts') && !reads.includes('user_devices'), 'the tills and open drawers from memory too (the clock decides on them again)');
+    db.orders.push(voidOrder({ id: 'v-after' }));
+    WA.noteWrite(BZ);
+    await J.alertsForBusiness(biz, schedule(), at('2026-10-14T12:30:00Z'));
+    assert.equal(SENT.length, 1, 'the void written since is told');
+    assert.ok(reads.includes('user_devices'), 'and the tills read again');
+    reads.length = 0;
+    await J.alertsForBusiness(biz, schedule(), at('2026-10-14T19:00:00Z'));
+    assert.ok(reads.includes('orders'), 'read again at least every 6 hours');
+  } finally { WA._setTracking(false); FAIL = () => null; }
+});
+
 console.log('\nThe weekly summary\n');
 await ok('Monday 08:05 EAT with it on: last week against the week before, once; off → nothing', async () => {
   reset();

@@ -17,14 +17,22 @@
  */
 import { supabase } from './supabase';
 import { traffic } from './trafficStats';
+import { writeGen, memoEnabled } from './writeActivity';   // A591
 
 export type SyncTopic = 'catalogue' | 'staff';
 
 export const TOPIC_TTL_MS = 15_000;
+/**
+ * A591 (owner's System page, 2026-10-26: "Catalogue check 3.3% from memory" — tills before 1.0.20 ask every 20 s, so a
+ * 15 s memory almost never answered): a version is also kept up to 5 minutes while nothing at all has been written for
+ * the business through this server (lib/writeActivity.ts) since it was read. Every change a till or the web makes comes
+ * through this server; only a change made straight in SQL waits (up to 5 minutes, as the old tills' 10-minute pull did).
+ */
+export const TOPIC_QUIET_TTL_MS = 5 * 60_000;
 export const FALLBACK_TTL_MS = 60_000;
 const MAX_ENTRIES = 5_000;
 
-interface Entry<T> { value: T; at: number }
+interface Entry<T> { value: T; at: number; gen?: string }
 const topicCache = new Map<string, Entry<number>>();
 const fallbackCache = new Map<string, Entry<string | null>>();
 /** The table is missing (or the read failed): until when not to ask again. */
@@ -46,17 +54,21 @@ export async function readTopicVersion(businessId: string | null | undefined, to
   if (!businessId) return null;
   const k = keyOf(businessId, topic);
   const hit = topicCache.get(k);
-  if (hit && now - hit.at < TOPIC_TTL_MS) { traffic.count(`${topic}.version_cached`); return hit.value; }
+  if (hit && (now - hit.at < TOPIC_TTL_MS
+    || (memoEnabled() && hit.gen === writeGen(businessId) && now - hit.at < TOPIC_QUIET_TTL_MS))) {
+    traffic.count(`${topic}.version_cached`); return hit.value;
+  }
   if (now < unavailableUntil) return null;
   traffic.count(`${topic}.version_read`); traffic.queries(1);
   const gen = generation;
+  const wgen = writeGen(businessId);   // A591: taken before the read
   try {
     const { data, error } = await supabase.from('sync_versions').select('version')
       .eq('business_id', businessId).eq('topic', topic).maybeSingle();
     if (error) throw error;
     const value = Number((data as { version?: number | string } | null)?.version ?? 0);
     if (!Number.isFinite(value)) throw new Error('bad version');
-    if (gen === generation) { topicCache.delete(k); topicCache.set(k, { value, at: now }); prune(topicCache); }
+    if (gen === generation) { topicCache.delete(k); topicCache.set(k, { value, at: now, gen: wgen }); prune(topicCache); }
     return value;
   } catch (e) {
     unavailableUntil = now + FALLBACK_TTL_MS;

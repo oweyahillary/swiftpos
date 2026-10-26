@@ -641,6 +641,16 @@ jobs:
           node --no-warnings tests/nightly-backup-a589.test.mjs
           node --no-warnings scripts/test-migration-174.mjs
 
+      # A591 — Supabase over the Free plan's 5 GB egress (projects restricted from 20 Nov 2026), log ingestion 0.8 of 1 GB:
+      # the meter (every Supabase answer counted by the route or job that asked — the System page's Supabase card, over
+      # the real supabase-js client), the write generation, a drawer's web sales read only when changed and only the sales
+      # the answer holds (the same answer as the old full read), the 5 s change-log read once a minute when nothing is
+      # written, the catalogue version and /init kept while nothing changes, a till's whole-menu pull from one read of the
+      # business's choices, the hourly loss run skipped when nothing changed. Needs the server build. In the loop too;
+      # named here so a failure says what broke.
+      - name: Supabase egress and calls (A591)
+        run: node --no-warnings tests/supabase-egress-a591.test.mjs
+
       - name: Run offline suites
         run: |
           set -e

@@ -1,3 +1,4 @@
+import { meterJob } from '../lib/supabaseMeter';   // A591: this job's Supabase calls, counted
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
 import { getDayCutoff } from '../lib/dayCutoff';
@@ -496,7 +497,7 @@ export function startWatchdogJob(): void {
   startLoopMonitor();   // A589: the overload signal
   let running = false;
   const schedule = process.env.WATCHDOG_CRON ?? '*/10 * * * *';
-  cron.schedule(schedule, async () => {
+  cron.schedule(schedule, meterJob('watchdog', async () => {
     if (running) return;                                   // a slow run never overlaps the next
     running = true;
     try {
@@ -507,21 +508,21 @@ export function startWatchdogJob(): void {
     } finally {
       running = false;
     }
-  }, { timezone: 'UTC' });
+  }), { timezone: 'UTC' });
 
   // A589: the digest at the settings' time (default 07:00 Nairobi), checked every 5 minutes; WATCHDOG_DIGEST_CRON fixes it.
   const fixed = process.env.WATCHDOG_DIGEST_CRON;
   let morning = false;
   if (fixed) {
-    cron.schedule(fixed, () => { void sendMorning(); }, { timezone: 'Africa/Nairobi' });
+    cron.schedule(fixed, meterJob('watchdogMorning', () => { void sendMorning(); }), { timezone: 'Africa/Nairobi' });
   } else {
-    cron.schedule('*/5 * * * *', async () => {
+    cron.schedule('*/5 * * * *', meterJob('watchdogDigest', async () => {
       if (morning) return;
       morning = true;
       try { if (await claimDigest()) await sendMorning(); }
       catch (err: any) { console.error('[watchdog] digest check failed:', err?.message ?? err); }
       finally { morning = false; }
-    }, { timezone: 'UTC' });
+    }), { timezone: 'UTC' });
   }
   console.log(`[watchdog] Scheduled: checks ${schedule} UTC, digest ${fixed ? `${fixed} Africa/Nairobi` : 'at the admin settings\' time (default 07:00 Nairobi)'} — Telegram ${ch.telegram ? 'on' : 'off'}, email ${ch.email ? 'on' : 'off'}`);
 }

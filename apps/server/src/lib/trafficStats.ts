@@ -8,6 +8,7 @@
  * made. In memory only: a restart starts again from zero (started_at says when).
  */
 import type { Request, Response, NextFunction } from 'express';
+import { meterSnapshot, type MeterSnapshot } from './supabaseMeter';   // A591
 
 const MAX_FAMILIES = 60;
 const startedAt = new Date().toISOString();
@@ -53,6 +54,8 @@ export interface TrafficSnapshot {
   auth_cache: { hits: number; misses: number; hit_rate: number | null };
   db_queries_polled: number;
   counters: Record<string, number>;
+  /** A591: what this server pulled from Supabase in the last 24 h, by route and job (lib/supabaseMeter.ts). */
+  supabase: MeterSnapshot;
 }
 
 export function trafficSnapshot(): TrafficSnapshot {
@@ -71,6 +74,7 @@ export function trafficSnapshot(): TrafficSnapshot {
     auth_cache: { hits: c('auth.hit'), misses: c('auth.miss'), hit_rate: rate(c('auth.hit'), c('auth.miss')) },
     db_queries_polled: dbQueries,
     counters: Object.fromEntries([...counters.entries()].sort(([a], [b]) => a.localeCompare(b))),
+    supabase: meterSnapshot(),
   };
 }
 

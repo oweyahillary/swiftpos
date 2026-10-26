@@ -107,7 +107,13 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.CROSS_SYNC_TS) {
   const route = sh.slice(sh.indexOf("router.post('/:id/foreign-orders'"), sh.indexOf("router.post('/:id/close'"));
   await ok('foreign-orders: read-only, scoped to the business and the shift, authorised like foreign-cash', () => {
     assert.ok(route.length > 0);
-    assert.match(route, /\.eq\('shift_id', id\)\s*\.eq\('business_id', req\.businessId\)/);
+    // A591: the reads moved to lib/shiftOrdersMemo.ts (only what changed, only the sales the answer can hold) — still the
+    // business's and the shift's.
+    assert.match(route, /readShift\(req\.businessId, id\)/);
+    assert.match(route, /shiftOrdersFor\(req\.businessId, id, shift, ownIds\)/);
+    const memo = read('apps/server/src/lib/shiftOrdersMemo.ts');
+    assert.ok((memo.match(/\.eq\('shift_id', shiftId\)\.eq\('business_id', businessId\)/g) ?? []).length >= 3);
+    assert.doesNotMatch(memo, /\.(update|insert|upsert)\(|\.delete\(\)/);   // (Map.delete(key) is the memory's own)
     assert.doesNotMatch(route, /\.(update|insert|upsert|delete)\(/);
     assert.match(route, /if \(!openedByRequester && !sameTerminal && !can\(req, 'shifts\.confirm'\)\) \{\s*res\.status\(403\)/);
     assert.match(route, /res\.json\(\{ orders: foreignOrders\(/);
